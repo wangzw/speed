@@ -113,17 +113,17 @@ starters/demo/
 | 端 | `prefixes` |
 |---|---|
 | `api` | `/api` |
-| `account` | `/api/v1/auth`、`/api/v1/features`、`/api/v1/workspace` |
-| `admin` | `/api/v1/audit`、`/api/v1/authz`、`/api/v1/settings`、`/api/v1/sms`、`/api/v1/tenant` |
+| `account` | `/api/v1/auth`、`/api/v1/features`、`/api/v1/workspace`、`/api/v1/tenants`、`/api/v1/system/auth` |
+| `admin` | `/api/v1/system/audit`、`/api/v1/system/permissions`、`/api/v1/system/settings`、`/api/v1/system/sms`、`/api/v1/system/tenants` |
 | `web` | `/`：`backend` 监听的[兜底端点](../../glossary.md)，`webui` 的通配路由挂在这里 |
 
 `ops` 独占 `ops` 监听，省略 `prefixes`，即认领 `/`。
 
-每个模块的 API 路由都以 `/api/v1/<能力>` 为根；ops 探针留在 `ops` 监听的根上（[ADR-http-api-prefix-2026-10-18](../../adr/adr-http-api-prefix-2026-10-18.md)）。
+每个模块的 API 路由都以 `/api/v1/<作用域>/<能力>` 为根（租户级是 `/api/v1/tenants/<租户>/…`）；ops 探针留在 `ops` 监听的根上（[ADR-http-api-prefix-2026-10-18](../../adr/adr-http-api-prefix-2026-10-18.md)）。
 
-- **认领是产品固定的命名空间表，去掉一项能力不删它的认领。** 撤出运行集也好，删掉 import 也好，那项能力的命名空间都留在认领里：示范的二进制 import 了 `sms.admin` 而基线不运行它，`admin` 仍认领 `/api/v1/sms`；从示范拷出、删掉 `tenant.admin` import 的产品，仍认领 `/api/v1/tenant`。认领表覆盖可用集里每个 operation 的命名空间，以及平台前端包会寻址的命名空间。
+- **认领是产品固定的命名空间表，去掉一项能力不删它的认领。** 撤出运行集也好，删掉 import 也好，那项能力的命名空间都留在认领里：示范的二进制 import 了 `sms.admin` 而基线不运行它，`admin` 仍认领 `/api/v1/system/sms`；从示范拷出、删掉 `tenant.admin` import 的产品，仍认领 `/api/v1/system/tenants`。认领表覆盖可用集里每个 operation 的命名空间，以及平台前端包会寻址的命名空间。
 - **前端页面路径不落在 `/` 以外的任何认领之下。** 落在这类认领之下的页面路径，整页导航得到那个端的应答，拿不到入口文档。
-- **开发代理由共享清单生成。** `starters/demo/web/backend-prefixes.json` 列出 `backend` 监听上全部非 `/` 的认领；`vite.config.ts` 的 `server.proxy` 由它生成按段边界匹配的正则键（`/api/v1/auth` 的键不匹配 `/api/v1/authz/...`），前端测试据它核对页面路径。
+- **开发代理由共享清单生成。** `starters/demo/web/backend-prefixes.json` 列出 `backend` 监听上全部非 `/` 的认领；`vite.config.ts` 的 `server.proxy` 由它生成按段边界匹配的正则键（`/api/v1/tenants` 的键不匹配 `/api/v1/tenants-old`），前端测试据它核对页面路径。
 
 **认领由测试守住。**
 

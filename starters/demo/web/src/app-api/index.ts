@@ -1627,116 +1627,6 @@ export interface WorkspacePersonalReply {
   tenant: WorkspacePersonalTenant;
 }
 
-export type AuditAdminRecordsListParams = {
-/**
- * Read rows at or after this instant, RFC 3339
- */
-since?: string;
-/**
- * Read rows before this instant, RFC 3339
- */
-until?: string;
-/**
- * Narrow to rows carrying one of these actions
- */
-action?: string[];
-/**
- * Narrow to rows whose outcome is one of these
- */
-outcome?: string[];
-/**
- * Narrow to rows whose actor is one of these
- */
-actor?: string[];
-/**
- * Continue after the row this cursor names
- */
-cursor?: string;
-/**
- * The page's maximum size; the read surface caps it
- * @minimum 0
- */
-limit?: number;
-};
-
-export type AuthnAdminAccountsListParams = {
-/**
- * Filters by account status: disabled, active or deleted. Absent or empty selects every status except deleted; deleted selects the tombstones. Any other value is 400.
- */
-status?: string;
-/**
- * Filters by account kind: user or service. Absent or empty selects both; any other value is 400.
- */
-kind?: string;
-/**
- * Filters by the leading part of one identifier of the kind named in identifier_kind. The prefix is normalized the way stored identifiers are (a username lower-cased, an email address trimmed and lower-cased) and must be at least 3 characters. It must be given together with identifier_kind; one without the other is 400.
- */
-identifier_prefix?: string;
-/**
- * The identifier kind the prefix applies to: username, email or phone. Required whenever identifier_prefix is given, and refused without it.
- */
-identifier_kind?: string;
-/**
- * The account's display name by its leading bytes, case-sensitive; must be valid UTF-8 text; absent or empty selects every display name
- */
-display_name_prefix?: string;
-/**
- * The next_cursor of the previous page, or empty for the first page. The cursor is the identifier of the last account on that page, and the page is read by it rather than by an offset.
- */
-after?: string;
-/**
- * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
- */
-limit?: number;
-};
-
-export type AuthnAdminImpersonationsListParams = {
-/**
- * The tenant whose records the page holds, as the tenant identifier; it scopes the read and fills the decision's tenant. Required: absent or empty is 400.
- */
-tenant: string;
-/**
- * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
- */
-limit?: number;
-/**
- * The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page.
- */
-after?: string;
-};
-
-export type AuthnInviteListParams = {
-/**
- * Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400.
- */
-limit?: number;
-/**
- * Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page.
- */
-after?: string;
-};
-
-/**
- * The issue request: the invited address, which is normalized before it is stored, and an optional deadline.
- */
-export type AuthnInviteIssueBody = {
-  /** The invited address as given; it is trimmed, lower-cased and must be printable ASCII with exactly one @, at most 254 bytes. */
-  email: string;
-  /** Absolute deadline in RFC 3339. Omitted or the zero instant takes the configured lifetime; a value not later than the current time is refused with 400. */
-  expires_at?: string;
-};
-
-export type AuthnAdminMembersListParams = {
-/**
- * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
- */
-limit?: number;
-/**
- * The account identifier of the last membership on the previous page, or empty for the first page.
- */
-after?: string;
-};
-
 /**
  * The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request.
  */
@@ -1930,46 +1820,6 @@ export type AuthnTokenRevokeBody = {
   token?: string;
 };
 
-/**
- * The catalog's declared permissions.
- */
-export type AuthzAdminPermissionsList200 = {
-  /** Every declared permission, one view each; not sorted. */
-  permissions: AuthzAdminPermissionView[];
-};
-
-/**
- * The tenant's bindings.
- */
-export type AuthzAdminBindingsList200 = {
-  /** Every binding of the tenant, ordered by account and then role. */
-  bindings: AuthzAdminBindingView[];
-};
-
-/**
- * The account's bindings within the tenant.
- */
-export type AuthzAdminBindingsOf200 = {
-  /** Every binding the account holds within the tenant, ordered by role name. */
-  bindings: AuthzAdminBindingView[];
-};
-
-/**
- * The tenant's roles.
- */
-export type AuthzAdminRolesList200 = {
-  /** Every role of the tenant, ordered by role name. */
-  roles: AuthzAdminRoleView[];
-};
-
-/**
- * The role's grants.
- */
-export type AuthzAdminGrantsList200 = {
-  /** Every grant the role holds, ordered by resource and then action. */
-  grants: AuthzAdminGrantView[];
-};
-
 export type NotificationInboxListMessagesParams = {
 /**
  * Filter by group; absent or empty means every group
@@ -2080,6 +1930,77 @@ export type ObjectstoreMetadataGetObject200 = {
 export type ObjectstoreMetadataCompleteObject200 = {
   /** The completed object's view. */
   object: ObjectstoreObject;
+};
+
+export type AuditAdminRecordsListParams = {
+/**
+ * Read rows at or after this instant, RFC 3339
+ */
+since?: string;
+/**
+ * Read rows before this instant, RFC 3339
+ */
+until?: string;
+/**
+ * Narrow to rows carrying one of these actions
+ */
+action?: string[];
+/**
+ * Narrow to rows whose outcome is one of these
+ */
+outcome?: string[];
+/**
+ * Narrow to rows whose actor is one of these
+ */
+actor?: string[];
+/**
+ * Continue after the row this cursor names
+ */
+cursor?: string;
+/**
+ * The page's maximum size; the read surface caps it
+ * @minimum 0
+ */
+limit?: number;
+};
+
+export type AuthnAdminAccountsListParams = {
+/**
+ * Filters by account status: disabled, active or deleted. Absent or empty selects every status except deleted; deleted selects the tombstones. Any other value is 400.
+ */
+status?: string;
+/**
+ * Filters by account kind: user or service. Absent or empty selects both; any other value is 400.
+ */
+kind?: string;
+/**
+ * Filters by the leading part of one identifier of the kind named in identifier_kind. The prefix is normalized the way stored identifiers are (a username lower-cased, an email address trimmed and lower-cased) and must be at least 3 characters. It must be given together with identifier_kind; one without the other is 400.
+ */
+identifier_prefix?: string;
+/**
+ * The identifier kind the prefix applies to: username, email or phone. Required whenever identifier_prefix is given, and refused without it.
+ */
+identifier_kind?: string;
+/**
+ * The account's display name by its leading bytes, case-sensitive; must be valid UTF-8 text; absent or empty selects every display name
+ */
+display_name_prefix?: string;
+/**
+ * The next_cursor of the previous page, or empty for the first page. The cursor is the identifier of the last account on that page, and the page is read by it rather than by an offset.
+ */
+after?: string;
+/**
+ * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
+ */
+limit?: number;
+};
+
+/**
+ * The catalog's declared permissions.
+ */
+export type AuthzAdminPermissionsList200 = {
+  /** Every declared permission, one view each; not sorted. */
+  permissions: AuthzAdminPermissionView[];
 };
 
 export type SettingsAdminSettingsListParams = {
@@ -2236,6 +2157,38 @@ export type TenantAdminTenantsSetAliasBody = {
 };
 
 /**
+ * The tenant's bindings.
+ */
+export type AuthzAdminBindingsList200 = {
+  /** Every binding of the tenant, ordered by account and then role. */
+  bindings: AuthzAdminBindingView[];
+};
+
+/**
+ * The account's bindings within the tenant.
+ */
+export type AuthzAdminBindingsOf200 = {
+  /** Every binding the account holds within the tenant, ordered by role name. */
+  bindings: AuthzAdminBindingView[];
+};
+
+/**
+ * The tenant's roles.
+ */
+export type AuthzAdminRolesList200 = {
+  /** Every role of the tenant, ordered by role name. */
+  roles: AuthzAdminRoleView[];
+};
+
+/**
+ * The role's grants.
+ */
+export type AuthzAdminGrantsList200 = {
+  /** Every grant the role holds, ordered by resource and then action. */
+  grants: AuthzAdminGrantView[];
+};
+
+/**
  * active serves the tenant; disabled stops serving it.
  */
 export type TenantAdminTenantsSetStatusBodyStatus = typeof TenantAdminTenantsSetStatusBodyStatus[keyof typeof TenantAdminTenantsSetStatusBodyStatus];
@@ -2251,2899 +2204,48 @@ export type TenantAdminTenantsSetStatusBody = {
   status: TenantAdminTenantsSetStatusBodyStatus;
 };
 
+export type AuthnAdminImpersonationsListParams = {
 /**
- * Reads one page of the audit table across every tenant and the rows that belong to none, newest first. All supplied conditions apply together: the time window plus each non-empty set of actions, outcomes and actors. Paging is cut by row identifier rather than by offset, so rows appended while paging do not shift the page that follows. The page size defaults to 50 and is capped at 200; the answer's next is empty on the last page.
- * @summary Page through the audit records, newest first
+ * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
  */
-export const auditAdminRecordsList = (
-    params?: AuditAdminRecordsListParams,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuditAdminRecordPage>(
-      {url: `/api/v1/audit/admin/records`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getAuditAdminRecordsListQueryKey = (params?: AuditAdminRecordsListParams,) => {
-    return [
-    `/api/v1/audit/admin/records`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getAuditAdminRecordsListQueryOptions = <TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuditAdminRecordsListQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof auditAdminRecordsList>>> = ({ signal }) => auditAdminRecordsList(params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuditAdminRecordsListQueryResult = NonNullable<Awaited<ReturnType<typeof auditAdminRecordsList>>>
-export type AuditAdminRecordsListQueryError = Problem
-
-
-export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
- params: undefined |  AuditAdminRecordsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof auditAdminRecordsList>>,
-          TError,
-          Awaited<ReturnType<typeof auditAdminRecordsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
- params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof auditAdminRecordsList>>,
-          TError,
-          Awaited<ReturnType<typeof auditAdminRecordsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
- params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+limit?: number;
 /**
- * @summary Page through the audit records, newest first
+ * The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page.
  */
+after?: string;
+};
 
-export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
- params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuditAdminRecordsListQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
+export type AuthnInviteListParams = {
+/**
+ * Maximum number of invitations to return. Omitted or 0 serves 100; a value above 1000 is capped at 1000. A negative or non-integer value is refused with 400.
+ */
+limit?: number;
+/**
+ * Opaque cursor from a previous page's next_cursor; omit it to start at the first page. A value that does not decode is refused with 400 rather than served as the first page.
+ */
+after?: string;
+};
 
 /**
- * Reads one audit row by its identifier. The identifier is unique over the whole table, so the row is found whatever tenant it belongs to, or when it belongs to none. The identifier must be a non-negative decimal integer and the request must carry no query parameter; anything else is a 400. An identifier of zero, or one that no row holds, is a 404.
- * @summary Read one audit record by its row identifier
+ * The issue request: the invited address, which is normalized before it is stored, and an optional deadline.
  */
-export const auditAdminRecordsGet = (
-    id: string,
- signal?: AbortSignal
-) => {
+export type AuthnInviteIssueBody = {
+  /** The invited address as given; it is trimmed, lower-cased and must be printable ASCII with exactly one @, at most 254 bytes. */
+  email: string;
+  /** Absolute deadline in RFC 3339. Omitted or the zero instant takes the configured lifetime; a value not later than the current time is refused with 400. */
+  expires_at?: string;
+};
 
-
-      return speedRequest<AuditAdminRecord>(
-      {url: `/api/v1/audit/admin/records/${id}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuditAdminRecordsGetQueryKey = (id: string,) => {
-    return [
-    `/api/v1/audit/admin/records/${id}`
-    ] as const;
-    }
-
-
-export const getAuditAdminRecordsGetQueryOptions = <TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuditAdminRecordsGetQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof auditAdminRecordsGet>>> = ({ signal }) => auditAdminRecordsGet(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuditAdminRecordsGetQueryResult = NonNullable<Awaited<ReturnType<typeof auditAdminRecordsGet>>>
-export type AuditAdminRecordsGetQueryError = Problem | void
-
-
-export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof auditAdminRecordsGet>>,
-          TError,
-          Awaited<ReturnType<typeof auditAdminRecordsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof auditAdminRecordsGet>>,
-          TError,
-          Awaited<ReturnType<typeof auditAdminRecordsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export type AuthnAdminMembersListParams = {
 /**
- * @summary Read one audit record by its row identifier
+ * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
  */
-
-export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuditAdminRecordsGetQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
+limit?: number;
 /**
- * Returns one page of accounts in ascending identifier order, which for the UUIDv7 identifiers the module generates is close to creation order. Deleted accounts (tombstones) are left out unless the status filter asks for them. Every accepted filter given an empty value means no filter, and the query parameter set is closed: a parameter not declared here is refused with 400 rather than ignored. Requires the account.read action on the platform scope.
- * @summary List accounts, one page at a time
+ * The account identifier of the last membership on the previous page, or empty for the first page.
  */
-export const authnAdminAccountsList = (
-    params?: AuthnAdminAccountsListParams,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminAccountList>(
-      {url: `/api/v1/auth/admin/accounts`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminAccountsListQueryKey = (params?: AuthnAdminAccountsListParams,) => {
-    return [
-    `/api/v1/auth/admin/accounts`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getAuthnAdminAccountsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsListQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsList>>> = ({ signal }) => authnAdminAccountsList(params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminAccountsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsList>>>
-export type AuthnAdminAccountsListQueryError = Problem
-
-
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
- params: undefined |  AuthnAdminAccountsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
- params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
- params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List accounts, one page at a time
- */
-
-export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
- params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminAccountsListQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a service account signs in with a service secret and is not held to that. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.
- * @summary Create an account
- */
-export const authnAdminAccountsCreate = (
-    authnAdminAccountCreate: AuthnAdminAccountCreate,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminAccountEnvelope>(
-      {url: `/api/v1/auth/admin/accounts`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminAccountCreate, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsCreateMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsCreate'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, {data: AuthnAdminAccountCreate}> = (props) => {
-          const {data} = props ?? {};
-
-          return  authnAdminAccountsCreate(data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsCreate>>>
-    export type AuthnAdminAccountsCreateMutationBody = AuthnAdminAccountCreate
-    export type AuthnAdminAccountsCreateMutationError = Problem
-
-    /**
- * @summary Create an account
- */
-export const useAuthnAdminAccountsCreate = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsCreate>>,
-        TError,
-        {data: AuthnAdminAccountCreate},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsCreateMutationOptions(options), queryClient);
-    }
-
-/**
- * Deletes the account and erases its personal data, leaving a tombstone that keeps the identifier, kind, status and creation time: identifiers, external bindings, password credential, service secrets and memberships are removed. Requires account.delete and a fresh local multi-factor authentication from the caller.
- * @summary Delete an account
- */
-export const authnAdminAccountsDelete = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/accounts/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsDeleteMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminAccountsDelete(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsDelete>>>
-
-    export type AuthnAdminAccountsDeleteMutationError = Problem | void
-
-    /**
- * @summary Delete an account
- */
-export const useAuthnAdminAccountsDelete = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsDelete>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsDeleteMutationOptions(options), queryClient);
-    }
-
-/**
- * Reads one account by its identifier. A deleted account reads as not found, as does an identifier that never existed. Requires the account.read action, with the account as both the decision's target and target account.
- * @summary Read one account
- */
-export const authnAdminAccountsGet = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminAccountEnvelope>(
-      {url: `/api/v1/auth/admin/accounts/${id}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminAccountsGetQueryKey = (id: string,) => {
-    return [
-    `/api/v1/auth/admin/accounts/${id}`
-    ] as const;
-    }
-
-
-export const getAuthnAdminAccountsGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsGetQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsGet>>> = ({ signal }) => authnAdminAccountsGet(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminAccountsGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsGet>>>
-export type AuthnAdminAccountsGetQueryError = Problem | void
-
-
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsGet>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsGet>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Read one account
- */
-
-export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminAccountsGetQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Writes the display name, the whole attribute set and the protected flag, each only when the request names it; a field left out is left as it is. protected is a host's mark that the account may not be impersonated, independent of any Decider. Requires account.update.
- * @summary Update an account
- */
-export const authnAdminAccountsPatch = (
-    id: string,
-    authnAdminAccountPatch: AuthnAdminAccountPatch,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminAccountEnvelope>(
-      {url: `/api/v1/auth/admin/accounts/${id}`, method: 'PATCH',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminAccountPatch, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsPatchMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsPatch'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, {id: string;data: AuthnAdminAccountPatch}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminAccountsPatch(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsPatchMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsPatch>>>
-    export type AuthnAdminAccountsPatchMutationBody = AuthnAdminAccountPatch
-    export type AuthnAdminAccountsPatchMutationError = Problem | void
-
-    /**
- * @summary Update an account
- */
-export const useAuthnAdminAccountsPatch = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsPatch>>,
-        TError,
-        {id: string;data: AuthnAdminAccountPatch},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsPatchMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists the account's registered factors as kind, label and status, and nothing of their credentials. Requires account.read.
- * @summary List an account's registered factors
- */
-export const authnAdminAccountsFactors = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminFactorList>(
-      {url: `/api/v1/auth/admin/accounts/${id}/factors`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminAccountsFactorsQueryKey = (id: string,) => {
-    return [
-    `/api/v1/auth/admin/accounts/${id}/factors`
-    ] as const;
-    }
-
-
-export const getAuthnAdminAccountsFactorsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsFactorsQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsFactors>>> = ({ signal }) => authnAdminAccountsFactors(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminAccountsFactorsQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsFactors>>>
-export type AuthnAdminAccountsFactorsQueryError = Problem | void
-
-
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsFactors>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsFactors>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsFactors>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsFactors>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List an account's registered factors
- */
-
-export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminAccountsFactorsQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Adds a login name (username) or an email address to the account. The identifier is recorded as administrator-asserted (verified_via admin) and is not evidence of ownership, so it does not by itself justify automatic linking or merging. A phone number is refused here: it is added or changed only through an SMS code. Requires account.update.
- * @summary Add an identifier to an account
- */
-export const authnAdminAccountsAddIdentifier = (
-    id: string,
-    authnAdminIdentifierWrite: AuthnAdminIdentifierWrite,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/accounts/${id}/identifiers`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminIdentifierWrite, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsAddIdentifierMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsAddIdentifier'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, {id: string;data: AuthnAdminIdentifierWrite}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminAccountsAddIdentifier(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsAddIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>>
-    export type AuthnAdminAccountsAddIdentifierMutationBody = AuthnAdminIdentifierWrite
-    export type AuthnAdminAccountsAddIdentifierMutationError = Problem | void
-
-    /**
- * @summary Add an identifier to an account
- */
-export const useAuthnAdminAccountsAddIdentifier = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>,
-        TError,
-        {id: string;data: AuthnAdminIdentifierWrite},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsAddIdentifierMutationOptions(options), queryClient);
-    }
-
-/**
- * Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. Requires account.update.
- * @summary Remove an identifier from an account
- */
-export const authnAdminAccountsRemoveIdentifier = (
-    id: string,
-    identifier: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/accounts/${id}/identifiers/${identifier}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsRemoveIdentifierMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsRemoveIdentifier'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, {id: string;identifier: string}> = (props) => {
-          const {id,identifier} = props ?? {};
-
-          return  authnAdminAccountsRemoveIdentifier(id,identifier,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsRemoveIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>>
-
-    export type AuthnAdminAccountsRemoveIdentifierMutationError = Problem | void
-
-    /**
- * @summary Remove an identifier from an account
- */
-export const useAuthnAdminAccountsRemoveIdentifier = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>,
-        TError,
-        {id: string;identifier: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsRemoveIdentifierMutationOptions(options), queryClient);
-    }
-
-/**
- * Sets the account-level flag that requires the account to register a factor. Requires account.update.
- * @summary Set whether an account must register a factor
- */
-export const authnAdminAccountsSetMFARequired = (
-    id: string,
-    authnAdminMFARequired: AuthnAdminMFARequired,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/accounts/${id}/mfa-required`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminMFARequired, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsSetMFARequiredMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsSetMFARequired'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, {id: string;data: AuthnAdminMFARequired}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminAccountsSetMFARequired(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsSetMFARequiredMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>>
-    export type AuthnAdminAccountsSetMFARequiredMutationBody = AuthnAdminMFARequired
-    export type AuthnAdminAccountsSetMFARequiredMutationError = Problem | void
-
-    /**
- * @summary Set whether an account must register a factor
- */
-export const useAuthnAdminAccountsSetMFARequired = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>,
-        TError,
-        {id: string;data: AuthnAdminMFARequired},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsSetMFARequiredMutationOptions(options), queryClient);
-    }
-
-/**
- * Disables every factor registered on the account, sets the account's mfa_required flag so it must register a factor again, revokes every session of the account, and answers how many factors were removed. Requires mfa.reset, a fresh local non-SMS multi-factor authentication and a seasoned non-SMS factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
- * @summary Remove an account's registered factors
- */
-export const authnAdminAccountsResetMFA = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminRemoved>(
-      {url: `/api/v1/auth/admin/accounts/${id}/mfa-reset`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsResetMFAMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsResetMFA'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminAccountsResetMFA(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsResetMFAMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>>
-
-    export type AuthnAdminAccountsResetMFAMutationError = Problem | void
-
-    /**
- * @summary Remove an account's registered factors
- */
-export const useAuthnAdminAccountsResetMFA = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsResetMFAMutationOptions(options), queryClient);
-    }
-
-/**
- * Sets a temporary password that the account must change at its next sign-in, then revokes every session of the account. The revocation runs after the password write, so its failure is logged and does not undo the reset. The password is never echoed, logged or audited. Requires account.update, a fresh local non-SMS multi-factor authentication and a seasoned factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
- * @summary Reset an account's password
- */
-export const authnAdminAccountsResetPassword = (
-    id: string,
-    authnAdminPasswordReset: AuthnAdminPasswordReset,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/accounts/${id}/password`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminPasswordReset, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsResetPasswordMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsResetPassword'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, {id: string;data: AuthnAdminPasswordReset}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminAccountsResetPassword(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsResetPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>>
-    export type AuthnAdminAccountsResetPasswordMutationBody = AuthnAdminPasswordReset
-    export type AuthnAdminAccountsResetPasswordMutationError = Problem | void
-
-    /**
- * @summary Reset an account's password
- */
-export const useAuthnAdminAccountsResetPassword = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>,
-        TError,
-        {id: string;data: AuthnAdminPasswordReset},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsResetPasswordMutationOptions(options), queryClient);
-    }
-
-/**
- * Revokes every unrevoked browser and token session of the account, including one whose deadline has already passed, and answers with the number revoked. One audit row per session is written before the revocation, so the set read and the set revoked are the same; an account with nothing in that set revokes nothing and writes nothing. Requires session.revoke. Retrying is idempotent.
- * @summary Revoke every session of an account
- */
-export const authnAdminAccountsRevokeSessions = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminRevoked>(
-      {url: `/api/v1/auth/admin/accounts/${id}/revoke-sessions`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsRevokeSessionsMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsRevokeSessions'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminAccountsRevokeSessions(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsRevokeSessionsMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>>
-
-    export type AuthnAdminAccountsRevokeSessionsMutationError = Problem | void
-
-    /**
- * @summary Revoke every session of an account
- */
-export const useAuthnAdminAccountsRevokeSessions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsRevokeSessionsMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists the account's service secrets oldest first, as identifier, label, absolute expiry and revocation state; the secret value itself is never returned. Requires account.read.
- * @summary List an account's service secrets
- */
-export const authnAdminAccountsSecretsList = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminSecretList>(
-      {url: `/api/v1/auth/admin/accounts/${id}/secrets`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminAccountsSecretsListQueryKey = (id: string,) => {
-    return [
-    `/api/v1/auth/admin/accounts/${id}/secrets`
-    ] as const;
-    }
-
-
-export const getAuthnAdminAccountsSecretsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsSecretsListQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>> = ({ signal }) => authnAdminAccountsSecretsList(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminAccountsSecretsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>>
-export type AuthnAdminAccountsSecretsListQueryError = Problem | void
-
-
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List an account's service secrets
- */
-
-export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminAccountsSecretsListQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Mints a service secret for a service account; only a service account has them, so any other account is 400. The secret value is returned in this response only and can never be read again. An expiry, when given, must be in the future. Requires client.manage and a fresh local multi-factor authentication.
- * @summary Create a service secret for an account
- */
-export const authnAdminAccountsSecretsCreate = (
-    id: string,
-    authnAdminSecretCreate: AuthnAdminSecretCreate,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminSecretCreated>(
-      {url: `/api/v1/auth/admin/accounts/${id}/secrets`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminSecretCreate, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsSecretsCreateMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsSecretsCreate'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, {id: string;data: AuthnAdminSecretCreate}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminAccountsSecretsCreate(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsSecretsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>>
-    export type AuthnAdminAccountsSecretsCreateMutationBody = AuthnAdminSecretCreate
-    export type AuthnAdminAccountsSecretsCreateMutationError = Problem | void
-
-    /**
- * @summary Create a service secret for an account
- */
-export const useAuthnAdminAccountsSecretsCreate = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>,
-        TError,
-        {id: string;data: AuthnAdminSecretCreate},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsSecretsCreateMutationOptions(options), queryClient);
-    }
-
-/**
- * Revokes the service secret named by its identifier, not by the secret value. Requires client.manage and a fresh local multi-factor authentication.
- * @summary Revoke a service secret
- */
-export const authnAdminAccountsSecretsRevoke = (
-    id: string,
-    secret: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/accounts/${id}/secrets/${secret}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsSecretsRevokeMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsSecretsRevoke'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, {id: string;secret: string}> = (props) => {
-          const {id,secret} = props ?? {};
-
-          return  authnAdminAccountsSecretsRevoke(id,secret,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsSecretsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>>
-
-    export type AuthnAdminAccountsSecretsRevokeMutationError = Problem | void
-
-    /**
- * @summary Revoke a service secret
- */
-export const useAuthnAdminAccountsSecretsRevoke = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>,
-        TError,
-        {id: string;secret: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsSecretsRevokeMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists the account's live browser and token sessions, most recently created first, without any credential or token material. Each row's current is true when it is the caller's own session. Requires session.read.
- * @summary List an account's sessions
- */
-export const authnAdminAccountsSessions = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminSessionList>(
-      {url: `/api/v1/auth/admin/accounts/${id}/sessions`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminAccountsSessionsQueryKey = (id: string,) => {
-    return [
-    `/api/v1/auth/admin/accounts/${id}/sessions`
-    ] as const;
-    }
-
-
-export const getAuthnAdminAccountsSessionsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsSessionsQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsSessions>>> = ({ signal }) => authnAdminAccountsSessions(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminAccountsSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSessions>>>
-export type AuthnAdminAccountsSessionsQueryError = Problem | void
-
-
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsSessions>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsSessions>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminAccountsSessions>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminAccountsSessions>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List an account's sessions
- */
-
-export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminAccountsSessionsQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Disables or restores an account; status is active or disabled. The deleted state is reached only through the delete route and is refused here. Requires account.disable and a fresh local multi-factor authentication. Sessions of a disabled account are cleaned up synchronously; a cleanup failure answers 503 while the status change stands, and retrying the same request completes the cleanup idempotently.
- * @summary Change an account's status
- */
-export const authnAdminAccountsStatus = (
-    id: string,
-    authnAdminAccountStatus: AuthnAdminAccountStatus,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminAccountEnvelope>(
-      {url: `/api/v1/auth/admin/accounts/${id}/status`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminAccountStatus, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminAccountsStatusMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext> => {
-
-const mutationKey = ['authnAdminAccountsStatus'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, {id: string;data: AuthnAdminAccountStatus}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminAccountsStatus(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminAccountsStatusMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsStatus>>>
-    export type AuthnAdminAccountsStatusMutationBody = AuthnAdminAccountStatus
-    export type AuthnAdminAccountsStatusMutationError = Problem | void
-
-    /**
- * @summary Change an account's status
- */
-export const useAuthnAdminAccountsStatus = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminAccountsStatus>>,
-        TError,
-        {id: string;data: AuthnAdminAccountStatus},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminAccountsStatusMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists the impersonation records of the tenant named by the required tenant query parameter, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.
- * @summary List impersonation records, one page at a time
- */
-export const authnAdminImpersonationsList = (
-    params: AuthnAdminImpersonationsListParams,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminImpersonationList>(
-      {url: `/api/v1/auth/admin/impersonations`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminImpersonationsListQueryKey = (params?: AuthnAdminImpersonationsListParams,) => {
-    return [
-    `/api/v1/auth/admin/impersonations`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminImpersonationsListQueryKey(params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminImpersonationsList>>> = ({ signal }) => authnAdminImpersonationsList(params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminImpersonationsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsList>>>
-export type AuthnAdminImpersonationsListQueryError = Problem
-
-
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
- params: AuthnAdminImpersonationsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminImpersonationsList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminImpersonationsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
- params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminImpersonationsList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminImpersonationsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
- params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List impersonation records, one page at a time
- */
-
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
- params: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminImpersonationsListQueryOptions(params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Revokes an impersonation record; the record is read first, including an already ended one, to learn its tenant and target, which fill the decision. Revoking a record that has already ended is a no-op and gets the same answer as the first revocation. This route writes no mandatory audit: revoking is a move in the safe direction, and the impersonation module writes its own best-effort row. Requires impersonation.revoke.
- * @summary Revoke an impersonation record
- */
-export const authnAdminImpersonationsRevoke = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/impersonations/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminImpersonationsRevokeMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminImpersonationsRevoke'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminImpersonationsRevoke(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminImpersonationsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>>
-
-    export type AuthnAdminImpersonationsRevokeMutationError = Problem | void
-
-    /**
- * @summary Revoke an impersonation record
- */
-export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminImpersonationsRevokeMutationOptions(options), queryClient);
-    }
-
-/**
- * Revokes one session by its identifier. The session is read first to learn its account, which fills the decision's target account. Requires session.revoke. Revoking an already revoked session succeeds with the same answer.
- * @summary Revoke one session by its identifier
- */
-export const authnAdminSessionsRevoke = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/sessions/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSessionsRevokeMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminSessionsRevoke'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminSessionsRevoke(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSessionsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>>
-
-    export type AuthnAdminSessionsRevokeMutationError = Problem | void
-
-    /**
- * @summary Revoke one session by its identifier
- */
-export const useAuthnAdminSessionsRevoke = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSessionsRevoke>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSessionsRevokeMutationOptions(options), queryClient);
-    }
-
-/**
- * Deletes the provider. Requires idp.manage, with the provider's own tenant as the decision's tenant.
- * @summary Delete an SSO provider
- */
-export const authnAdminSsoProvidersDelete = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersDeleteMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminSsoProvidersDelete(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>>
-
-    export type AuthnAdminSsoProvidersDeleteMutationError = Problem | void
-
-    /**
- * @summary Delete an SSO provider
- */
-export const useAuthnAdminSsoProvidersDelete = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersDeleteMutationOptions(options), queryClient);
-    }
-
-/**
- * Reads one provider by its identifier. The provider's own tenant, resolved from the store, is the decision's tenant. The encrypted client secret never appears. Requires idp.manage.
- * @summary Read one SSO provider
- */
-export const authnAdminSsoProvidersGet = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminProviderEnvelope>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminSsoProvidersGetQueryKey = (id: string,) => {
-    return [
-    `/api/v1/auth/admin/sso/providers/${id}`
-    ] as const;
-    }
-
-
-export const getAuthnAdminSsoProvidersGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminSsoProvidersGetQueryKey(id);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>> = ({ signal }) => authnAdminSsoProvidersGet(id, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminSsoProvidersGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>>
-export type AuthnAdminSsoProvidersGetQueryError = Problem | void
-
-
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary Read one SSO provider
- */
-
-export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminSsoProvidersGetQueryOptions(id,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. Booleans left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.
- * @summary Update an SSO provider
- */
-export const authnAdminSsoProvidersUpdate = (
-    id: string,
-    authnAdminProviderWrite: AuthnAdminProviderWrite,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminProviderEnvelope>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}`, method: 'PUT',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminProviderWrite, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersUpdateMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersUpdate'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, {id: string;data: AuthnAdminProviderWrite}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminSsoProvidersUpdate(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersUpdateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>>
-    export type AuthnAdminSsoProvidersUpdateMutationBody = AuthnAdminProviderWrite
-    export type AuthnAdminSsoProvidersUpdateMutationError = Problem | void
-
-    /**
- * @summary Update an SSO provider
- */
-export const useAuthnAdminSsoProvidersUpdate = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{id: string;data: AuthnAdminProviderWrite}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>,
-        TError,
-        {id: string;data: AuthnAdminProviderWrite},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersUpdateMutationOptions(options), queryClient);
-    }
-
-/**
- * Claims a domain for the provider and answers the verification token to publish in the domain's DNS TXT record; the claim stays unverified until the verify route finds that record. Requires idp.manage. A domain another provider has already verified is 409; an unverified claim by another provider may stand beside this one.
- * @summary Claim a domain for an SSO provider
- */
-export const authnAdminSsoProvidersClaimDomain = (
-    id: string,
-    authnAdminDomainClaim: AuthnAdminDomainClaim,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminVerifyToken>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}/domains`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminDomainClaim, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersClaimDomainMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersClaimDomain'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, {id: string;data: AuthnAdminDomainClaim}> = (props) => {
-          const {id,data} = props ?? {};
-
-          return  authnAdminSsoProvidersClaimDomain(id,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersClaimDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>>
-    export type AuthnAdminSsoProvidersClaimDomainMutationBody = AuthnAdminDomainClaim
-    export type AuthnAdminSsoProvidersClaimDomainMutationError = Problem | void
-
-    /**
- * @summary Claim a domain for an SSO provider
- */
-export const useAuthnAdminSsoProvidersClaimDomain = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{id: string;data: AuthnAdminDomainClaim}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>,
-        TError,
-        {id: string;data: AuthnAdminDomainClaim},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersClaimDomainMutationOptions(options), queryClient);
-    }
-
-/**
- * Removes a claimed domain, verified or not, from the provider. Requires idp.manage.
- * @summary Remove a domain from an SSO provider
- */
-export const authnAdminSsoProvidersRemoveDomain = (
-    id: string,
-    domain: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}/domains/${domain}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersRemoveDomainMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{id: string;domain: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{id: string;domain: string}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersRemoveDomain'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, {id: string;domain: string}> = (props) => {
-          const {id,domain} = props ?? {};
-
-          return  authnAdminSsoProvidersRemoveDomain(id,domain,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersRemoveDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>>
-
-    export type AuthnAdminSsoProvidersRemoveDomainMutationError = Problem | void
-
-    /**
- * @summary Remove a domain from an SSO provider
- */
-export const useAuthnAdminSsoProvidersRemoveDomain = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{id: string;domain: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>,
-        TError,
-        {id: string;domain: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersRemoveDomainMutationOptions(options), queryClient);
-    }
-
-/**
- * Verifies a claimed domain by looking up the TXT record that must hold the verification token and, when it does, marks the claim verified. A domain the provider holds no claim on, or a record that does not hold the token, marks nothing verified. Requires idp.manage.
- * @summary Verify a claimed domain of an SSO provider
- */
-export const authnAdminSsoProvidersVerifyDomain = (
-    id: string,
-    domain: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}/domains/${domain}/verify`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersVerifyDomainMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{id: string;domain: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{id: string;domain: string}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersVerifyDomain'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, {id: string;domain: string}> = (props) => {
-          const {id,domain} = props ?? {};
-
-          return  authnAdminSsoProvidersVerifyDomain(id,domain,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersVerifyDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>>
-
-    export type AuthnAdminSsoProvidersVerifyDomainMutationError = Problem | void
-
-    /**
- * @summary Verify a claimed domain of an SSO provider
- */
-export const useAuthnAdminSsoProvidersVerifyDomain = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{id: string;domain: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>,
-        TError,
-        {id: string;domain: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersVerifyDomainMutationOptions(options), queryClient);
-    }
-
-/**
- * Refreshes the provider's metadata by dispatching to the refresher registered for its protocol. A protocol with no refresher in this assembly is 400, and a provider with no metadata URL cannot be refreshed. On a parse or validation failure the stored config is kept and the failure is answered. Requires idp.manage; a successful refresh writes the new config and raises version.
- * @summary Refresh an SSO provider's metadata
- */
-export const authnAdminSsoProvidersRefreshMetadata = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminProviderEnvelope>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}/metadata/refresh`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersRefreshMetadataMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersRefreshMetadata'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminSsoProvidersRefreshMetadata(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersRefreshMetadataMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>>
-
-    export type AuthnAdminSsoProvidersRefreshMetadataMutationError = Problem | void
-
-    /**
- * @summary Refresh an SSO provider's metadata
- */
-export const useAuthnAdminSsoProvidersRefreshMetadata = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersRefreshMetadataMutationOptions(options), queryClient);
-    }
-
-/**
- * Re-runs verification for every domain the provider has verified; a claim that was never verified is not looked up. Requires idp.manage.
- * @summary Re-verify every claimed domain of an SSO provider
- */
-export const authnAdminSsoProvidersReverifyDomains = (
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/sso/providers/${id}/reverify-domains`, method: 'POST', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersReverifyDomainsMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{id: string}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersReverifyDomains'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
-
-          return  authnAdminSsoProvidersReverifyDomains(id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersReverifyDomainsMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>>
-
-    export type AuthnAdminSsoProvidersReverifyDomainsMutationError = Problem | void
-
-    /**
- * @summary Re-verify every claimed domain of an SSO provider
- */
-export const useAuthnAdminSsoProvidersReverifyDomains = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>,
-        TError,
-        {id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersReverifyDomainsMutationOptions(options), queryClient);
-    }
-
-/**
- * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.
- * @summary One page of a tenant's invitations
- */
-export const authnInviteList = (
-    tenant: string,
-    params?: AuthnInviteListParams,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnInvitePage>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/invitations`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnInviteListQueryKey = (tenant: string,
-    params?: AuthnInviteListParams,) => {
-    return [
-    `/api/v1/auth/admin/tenants/${tenant}/invitations`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getAuthnInviteListQueryOptions = <TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(tenant: string,
-    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnInviteListQueryKey(tenant,params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnInviteList>>> = ({ signal }) => authnInviteList(tenant,params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnInviteListQueryResult = NonNullable<Awaited<ReturnType<typeof authnInviteList>>>
-export type AuthnInviteListQueryError = Problem
-
-
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
- tenant: string,
-    params: undefined |  AuthnInviteListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnInviteList>>,
-          TError,
-          Awaited<ReturnType<typeof authnInviteList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
- tenant: string,
-    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnInviteList>>,
-          TError,
-          Awaited<ReturnType<typeof authnInviteList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
- tenant: string,
-    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary One page of a tenant's invitations
- */
-
-export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
- tenant: string,
-    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnInviteListQueryOptions(tenant,params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
- * @summary Issue an invitation to an address in a tenant
- */
-export const authnInviteIssue = (
-    tenant: string,
-    authnInviteIssueBody: AuthnInviteIssueBody,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnInviteIssued>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/invitations`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnInviteIssueBody, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnInviteIssueMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext> => {
-
-const mutationKey = ['authnInviteIssue'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnInviteIssue>>, {tenant: string;data: AuthnInviteIssueBody}> = (props) => {
-          const {tenant,data} = props ?? {};
-
-          return  authnInviteIssue(tenant,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnInviteIssueMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteIssue>>>
-    export type AuthnInviteIssueMutationBody = AuthnInviteIssueBody
-    export type AuthnInviteIssueMutationError = Problem
-
-    /**
- * @summary Issue an invitation to an address in a tenant
- */
-export const useAuthnInviteIssue = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnInviteIssue>>,
-        TError,
-        {tenant: string;data: AuthnInviteIssueBody},
-        TContext
-      > => {
-      return useMutation(getAuthnInviteIssueMutationOptions(options), queryClient);
-    }
-
-/**
- * Revokes a pending invitation and voids its token; the invitation identifier also serves as the decision's target. Revoking an already revoked invitation succeeds idempotently, while revoking an accepted one answers 409 because removing a membership is not this route's job. Failure to write the mandatory audit row answers 503 without revoking.
- * @summary Revoke a pending invitation
- */
-export const authnInviteRevoke = (
-    tenant: string,
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/invitations/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnInviteRevokeMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext> => {
-
-const mutationKey = ['authnInviteRevoke'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnInviteRevoke>>, {tenant: string;id: string}> = (props) => {
-          const {tenant,id} = props ?? {};
-
-          return  authnInviteRevoke(tenant,id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnInviteRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteRevoke>>>
-
-    export type AuthnInviteRevokeMutationError = Problem | void
-
-    /**
- * @summary Revoke a pending invitation
- */
-export const useAuthnInviteRevoke = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnInviteRevoke>>,
-        TError,
-        {tenant: string;id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnInviteRevokeMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists one tenant's memberships, one page at a time, in ascending account-identifier order. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
- * @summary List a tenant's members
- */
-export const authnAdminMembersList = (
-    tenant: string,
-    params?: AuthnAdminMembersListParams,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminMemberList>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/members`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminMembersListQueryKey = (tenant: string,
-    params?: AuthnAdminMembersListParams,) => {
-    return [
-    `/api/v1/auth/admin/tenants/${tenant}/members`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getAuthnAdminMembersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(tenant: string,
-    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminMembersListQueryKey(tenant,params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminMembersList>>> = ({ signal }) => authnAdminMembersList(tenant,params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminMembersListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersList>>>
-export type AuthnAdminMembersListQueryError = Problem
-
-
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
- tenant: string,
-    params: undefined |  AuthnAdminMembersListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminMembersList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminMembersList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
- tenant: string,
-    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminMembersList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminMembersList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
- tenant: string,
-    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List a tenant's members
- */
-
-export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
- tenant: string,
-    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminMembersListQueryOptions(tenant,params,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Removes the account's membership from the tenant. Requires membership.manage with the path's tenant. The route is idempotent: a membership that is not there is already removed, and the call answers 204.
- * @summary Remove an account's membership from a tenant
- */
-export const authnAdminMembersRemove = (
-    tenant: string,
-    account: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/members/${account}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminMembersRemoveMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext> => {
-
-const mutationKey = ['authnAdminMembersRemove'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersRemove>>, {tenant: string;account: string}> = (props) => {
-          const {tenant,account} = props ?? {};
-
-          return  authnAdminMembersRemove(tenant,account,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminMembersRemoveMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersRemove>>>
-
-    export type AuthnAdminMembersRemoveMutationError = Problem | void
-
-    /**
- * @summary Remove an account's membership from a tenant
- */
-export const useAuthnAdminMembersRemove = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminMembersRemove>>,
-        TError,
-        {tenant: string;account: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminMembersRemoveMutationOptions(options), queryClient);
-    }
-
-/**
- * Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. Requires membership.manage with the path's tenant.
- * @summary Write an account's membership in a tenant
- */
-export const authnAdminMembersPut = (
-    tenant: string,
-    account: string,
-    authnAdminMemberWrite: AuthnAdminMemberWrite,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/members/${account}`, method: 'PUT',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminMemberWrite, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminMembersPutMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext> => {
-
-const mutationKey = ['authnAdminMembersPut'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersPut>>, {tenant: string;account: string;data: AuthnAdminMemberWrite}> = (props) => {
-          const {tenant,account,data} = props ?? {};
-
-          return  authnAdminMembersPut(tenant,account,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminMembersPutMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersPut>>>
-    export type AuthnAdminMembersPutMutationBody = AuthnAdminMemberWrite
-    export type AuthnAdminMembersPutMutationError = Problem | void
-
-    /**
- * @summary Write an account's membership in a tenant
- */
-export const useAuthnAdminMembersPut = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminMembersPut>>,
-        TError,
-        {tenant: string;account: string;data: AuthnAdminMemberWrite},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminMembersPutMutationOptions(options), queryClient);
-    }
-
-/**
- * Sets or clears a member's emergency exemption from the tenant's enforced SSO requirement. The membership must already exist: an absent one is 404, and the route changes only the exemption, leaving the rest of the membership as it is. Requires membership.manage.
- * @summary Set an account's exemption from a tenant's SSO requirement
- */
-export const authnAdminMembersSsoExempt = (
-    tenant: string,
-    account: string,
-    authnAdminMemberSSOExempt: AuthnAdminMemberSSOExempt,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/members/${account}/sso-exempt`, method: 'PUT',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminMemberSSOExempt, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminMembersSsoExemptMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext> => {
-
-const mutationKey = ['authnAdminMembersSsoExempt'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, {tenant: string;account: string;data: AuthnAdminMemberSSOExempt}> = (props) => {
-          const {tenant,account,data} = props ?? {};
-
-          return  authnAdminMembersSsoExempt(tenant,account,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminMembersSsoExemptMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>>
-    export type AuthnAdminMembersSsoExemptMutationBody = AuthnAdminMemberSSOExempt
-    export type AuthnAdminMembersSsoExemptMutationError = Problem | void
-
-    /**
- * @summary Set an account's exemption from a tenant's SSO requirement
- */
-export const useAuthnAdminMembersSsoExempt = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>,
-        TError,
-        {tenant: string;account: string;data: AuthnAdminMemberSSOExempt},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminMembersSsoExemptMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists the tenant's SSO providers. The encrypted client secret never appears. Requires idp.manage with the path's tenant.
- * @summary List a tenant's SSO providers
- */
-export const authnAdminSsoProvidersList = (
-    tenant: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminProviderList>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/sso/providers`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminSsoProvidersListQueryKey = (tenant: string,) => {
-    return [
-    `/api/v1/auth/admin/tenants/${tenant}/sso/providers`
-    ] as const;
-    }
-
-
-export const getAuthnAdminSsoProvidersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminSsoProvidersListQueryKey(tenant);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>> = ({ signal }) => authnAdminSsoProvidersList(tenant, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthnAdminSsoProvidersListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>>
-export type AuthnAdminSsoProvidersListQueryError = Problem
-
-
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
- tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>,
-          TError,
-          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List a tenant's SSO providers
- */
-
-export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthnAdminSsoProvidersListQueryOptions(tenant,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.
- * @summary Create an SSO provider in a tenant
- */
-export const authnAdminSsoProvidersCreate = (
-    tenant: string,
-    authnAdminProviderWrite: AuthnAdminProviderWrite,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminProviderEnvelope>(
-      {url: `/api/v1/auth/admin/tenants/${tenant}/sso/providers`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
-      data: authnAdminProviderWrite, signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminSsoProvidersCreateMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext> => {
-
-const mutationKey = ['authnAdminSsoProvidersCreate'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, {tenant: string;data: AuthnAdminProviderWrite}> = (props) => {
-          const {tenant,data} = props ?? {};
-
-          return  authnAdminSsoProvidersCreate(tenant,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminSsoProvidersCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>>
-    export type AuthnAdminSsoProvidersCreateMutationBody = AuthnAdminProviderWrite
-    export type AuthnAdminSsoProvidersCreateMutationError = Problem
-
-    /**
- * @summary Create an SSO provider in a tenant
- */
-export const useAuthnAdminSsoProvidersCreate = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>,
-        TError,
-        {tenant: string;data: AuthnAdminProviderWrite},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminSsoProvidersCreateMutationOptions(options), queryClient);
-    }
+after?: string;
+};
 
 /**
  * Handles a provider's callback as a top-level browser navigation. The callback is bound through the flow cookie only, because a navigation cannot set a request header; the path's provider must equal the provider recorded in the flow and the flow must be at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The engine moves the flow to processing before calling the method, so a replayed authorization code or assertion loses the compare-and-swap and gets 401 flow-invalid. A GET callback that carries no flow cookie is always 401 flow-invalid: an identity-provider-initiated sign-in is served only as a POST. A cookie login that completes on this route answers 303 to the flow's stored return target instead of a body. A callback of a purpose other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 the same way, with no session made: the flow stays in the cookie at ready for the host's callback page to read with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`.
@@ -7675,881 +4777,6 @@ export const useAuthnTokenRevoke = <TError = Problem | AuthnTokenOAuthError,
     }
 
 /**
- * Lists every permission the process's catalog declares, one view each: the union of the permission lists the registered modules declared. The order is the catalog's collection order and is not sorted. The list is not filtered by which modules this process runs, so a permission may be listed that no mounted surface serves.
- * @summary List every permission the catalog declares
- */
-export const authzAdminPermissionsList = (
-
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthzAdminPermissionsList200>(
-      {url: `/api/v1/authz/admin/permissions`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthzAdminPermissionsListQueryKey = () => {
-    return [
-    `/api/v1/authz/admin/permissions`
-    ] as const;
-    }
-
-
-export const getAuthzAdminPermissionsListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminPermissionsListQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminPermissionsList>>> = ({ signal }) => authzAdminPermissionsList(signal);
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthzAdminPermissionsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminPermissionsList>>>
-export type AuthzAdminPermissionsListQueryError = Problem
-
-
-export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminPermissionsList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminPermissionsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminPermissionsList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminPermissionsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List every permission the catalog declares
- */
-
-export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthzAdminPermissionsListQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Lists every role binding of the tenant, ordered by account identifier and then role name, one view each. A tenant with no binding yields an empty list. The list is not paginated.
- * @summary List every role binding of a tenant
- */
-export const authzAdminBindingsList = (
-    tenant: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthzAdminBindingsList200>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/bindings`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthzAdminBindingsListQueryKey = (tenant: string,) => {
-    return [
-    `/api/v1/authz/admin/tenants/${tenant}/bindings`
-    ] as const;
-    }
-
-
-export const getAuthzAdminBindingsListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminBindingsListQueryKey(tenant);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminBindingsList>>> = ({ signal }) => authzAdminBindingsList(tenant, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthzAdminBindingsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsList>>>
-export type AuthzAdminBindingsListQueryError = Problem
-
-
-export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
- tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminBindingsList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminBindingsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminBindingsList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminBindingsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List every role binding of a tenant
- */
-
-export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthzAdminBindingsListQueryOptions(tenant,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Lists every binding the account holds within the tenant, ordered by role name ascending, one view each. An account with no binding, or a tenant with none, yields an empty list; the account is not looked up. The list is not paginated.
- * @summary List every binding an account holds within a tenant
- */
-export const authzAdminBindingsOf = (
-    tenant: string,
-    account: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthzAdminBindingsOf200>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/bindings/${account}`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthzAdminBindingsOfQueryKey = (tenant: string,
-    account: string,) => {
-    return [
-    `/api/v1/authz/admin/tenants/${tenant}/bindings/${account}`
-    ] as const;
-    }
-
-
-export const getAuthzAdminBindingsOfQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(tenant: string,
-    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminBindingsOfQueryKey(tenant,account);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminBindingsOf>>> = ({ signal }) => authzAdminBindingsOf(tenant,account, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && account !== null && account !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthzAdminBindingsOfQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsOf>>>
-export type AuthzAdminBindingsOfQueryError = Problem
-
-
-export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
- tenant: string,
-    account: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminBindingsOf>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminBindingsOf>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
- tenant: string,
-    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminBindingsOf>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminBindingsOf>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
- tenant: string,
-    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List every binding an account holds within a tenant
- */
-
-export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
- tenant: string,
-    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthzAdminBindingsOfQueryOptions(tenant,account,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
- * @summary Remove an account's binding to a role within a tenant
- */
-export const authzAdminBindingsDelete = (
-    tenant: string,
-    account: string,
-    role: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/bindings/${account}/${role}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthzAdminBindingsDeleteMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext> => {
-
-const mutationKey = ['authzAdminBindingsDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, {tenant: string;account: string;role: string}> = (props) => {
-          const {tenant,account,role} = props ?? {};
-
-          return  authzAdminBindingsDelete(tenant,account,role,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthzAdminBindingsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsDelete>>>
-
-    export type AuthzAdminBindingsDeleteMutationError = Problem
-
-    /**
- * @summary Remove an account's binding to a role within a tenant
- */
-export const useAuthzAdminBindingsDelete = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authzAdminBindingsDelete>>,
-        TError,
-        {tenant: string;account: string;role: string},
-        TContext
-      > => {
-      return useMutation(getAuthzAdminBindingsDeleteMutationOptions(options), queryClient);
-    }
-
-/**
- * Binds a role to an account within the tenant. The role must exist in the tenant; a builtin role may be bound. An empty account is refused with a 400 before anything is written. Binding a role the account already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
- * @summary Bind a role to an account within a tenant
- */
-export const authzAdminBindingsPut = (
-    tenant: string,
-    account: string,
-    role: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/bindings/${account}/${role}`, method: 'PUT', signal
-    },
-      );
-    }
-
-
-
-export const getAuthzAdminBindingsPutMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext> => {
-
-const mutationKey = ['authzAdminBindingsPut'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminBindingsPut>>, {tenant: string;account: string;role: string}> = (props) => {
-          const {tenant,account,role} = props ?? {};
-
-          return  authzAdminBindingsPut(tenant,account,role,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthzAdminBindingsPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsPut>>>
-
-    export type AuthzAdminBindingsPutMutationError = Problem
-
-    /**
- * @summary Bind a role to an account within a tenant
- */
-export const useAuthzAdminBindingsPut = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authzAdminBindingsPut>>,
-        TError,
-        {tenant: string;account: string;role: string},
-        TContext
-      > => {
-      return useMutation(getAuthzAdminBindingsPutMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields an empty list. The list is not paginated.
- * @summary List a tenant's roles
- */
-export const authzAdminRolesList = (
-    tenant: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthzAdminRolesList200>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/roles`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthzAdminRolesListQueryKey = (tenant: string,) => {
-    return [
-    `/api/v1/authz/admin/tenants/${tenant}/roles`
-    ] as const;
-    }
-
-
-export const getAuthzAdminRolesListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminRolesListQueryKey(tenant);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminRolesList>>> = ({ signal }) => authzAdminRolesList(tenant, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthzAdminRolesListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminRolesList>>>
-export type AuthzAdminRolesListQueryError = Problem
-
-
-export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
- tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminRolesList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminRolesList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminRolesList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminRolesList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List a tenant's roles
- */
-
-export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
- tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthzAdminRolesListQueryOptions(tenant,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Removes the role and, in one transaction, its permission grants and its account bindings, so no grant or binding outlives the role. Removing a role that does not exist succeeds with 204 and changes nothing. A builtin role cannot be removed. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
- * @summary Remove a role, revoking its grants and bindings with it
- */
-export const authzAdminRolesDelete = (
-    tenant: string,
-    role: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/roles/${role}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthzAdminRolesDeleteMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesDelete>>, TError,{tenant: string;role: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesDelete>>, TError,{tenant: string;role: string}, TContext> => {
-
-const mutationKey = ['authzAdminRolesDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminRolesDelete>>, {tenant: string;role: string}> = (props) => {
-          const {tenant,role} = props ?? {};
-
-          return  authzAdminRolesDelete(tenant,role,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthzAdminRolesDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminRolesDelete>>>
-
-    export type AuthzAdminRolesDeleteMutationError = Problem
-
-    /**
- * @summary Remove a role, revoking its grants and bindings with it
- */
-export const useAuthzAdminRolesDelete = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesDelete>>, TError,{tenant: string;role: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authzAdminRolesDelete>>,
-        TError,
-        {tenant: string;role: string},
-        TContext
-      > => {
-      return useMutation(getAuthzAdminRolesDeleteMutationOptions(options), queryClient);
-    }
-
-/**
- * The request carries the role's description key only. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.
- * @summary Create or rewrite a role
- */
-export const authzAdminRolesPut = (
-    tenant: string,
-    role: string,
-    authzAdminRoleWrite: AuthzAdminRoleWrite,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/roles/${role}`, method: 'PUT',
-      headers: {'Content-Type': 'application/json', },
-      data: authzAdminRoleWrite, signal
-    },
-      );
-    }
-
-
-
-export const getAuthzAdminRolesPutMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesPut>>, TError,{tenant: string;role: string;data: AuthzAdminRoleWrite}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesPut>>, TError,{tenant: string;role: string;data: AuthzAdminRoleWrite}, TContext> => {
-
-const mutationKey = ['authzAdminRolesPut'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminRolesPut>>, {tenant: string;role: string;data: AuthzAdminRoleWrite}> = (props) => {
-          const {tenant,role,data} = props ?? {};
-
-          return  authzAdminRolesPut(tenant,role,data,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthzAdminRolesPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminRolesPut>>>
-    export type AuthzAdminRolesPutMutationBody = AuthzAdminRoleWrite
-    export type AuthzAdminRolesPutMutationError = Problem
-
-    /**
- * @summary Create or rewrite a role
- */
-export const useAuthzAdminRolesPut = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesPut>>, TError,{tenant: string;role: string;data: AuthzAdminRoleWrite}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authzAdminRolesPut>>,
-        TError,
-        {tenant: string;role: string;data: AuthzAdminRoleWrite},
-        TContext
-      > => {
-      return useMutation(getAuthzAdminRolesPutMutationOptions(options), queryClient);
-    }
-
-/**
- * Lists every permission grant the role holds as the (resource, action) pairs the policy engine matches on, ordered by resource and then action. A role that holds no grant, or does not exist, yields an empty list; the role is not looked up. The list is not paginated.
- * @summary List every permission grant a role holds
- */
-export const authzAdminGrantsList = (
-    tenant: string,
-    role: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthzAdminGrantsList200>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/roles/${role}/grants`, method: 'GET', signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthzAdminGrantsListQueryKey = (tenant: string,
-    role: string,) => {
-    return [
-    `/api/v1/authz/admin/tenants/${tenant}/roles/${role}/grants`
-    ] as const;
-    }
-
-
-export const getAuthzAdminGrantsListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(tenant: string,
-    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminGrantsListQueryKey(tenant,role);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminGrantsList>>> = ({ signal }) => authzAdminGrantsList(tenant,role, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && role !== null && role !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type AuthzAdminGrantsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminGrantsList>>>
-export type AuthzAdminGrantsListQueryError = Problem
-
-
-export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
- tenant: string,
-    role: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminGrantsList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminGrantsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
- tenant: string,
-    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof authzAdminGrantsList>>,
-          TError,
-          Awaited<ReturnType<typeof authzAdminGrantsList>>
-        > , 'initialData'
-      >, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
- tenant: string,
-    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>>, }
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List every permission grant a role holds
- */
-
-export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
- tenant: string,
-    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>>, }
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getAuthzAdminGrantsListQueryOptions(tenant,role,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Revokes one permission from a role. The permission in the path is translated to its (resource, action) pair; a permission with no translation row is a 400. Revoking a grant the role does not hold succeeds with 204 and changes nothing, and a role that is not in the tenant is not refused: no grant row matches and the answer is also 204. A builtin role's grants cannot be revoked: that is a 409. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
- * @summary Revoke a permission from a role
- */
-export const authzAdminGrantsDelete = (
-    tenant: string,
-    role: string,
-    permission: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/roles/${role}/grants/${permission}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthzAdminGrantsDeleteMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext> => {
-
-const mutationKey = ['authzAdminGrantsDelete'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, {tenant: string;role: string;permission: string}> = (props) => {
-          const {tenant,role,permission} = props ?? {};
-
-          return  authzAdminGrantsDelete(tenant,role,permission,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthzAdminGrantsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminGrantsDelete>>>
-
-    export type AuthzAdminGrantsDeleteMutationError = Problem
-
-    /**
- * @summary Revoke a permission from a role
- */
-export const useAuthzAdminGrantsDelete = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authzAdminGrantsDelete>>,
-        TError,
-        {tenant: string;role: string;permission: string},
-        TContext
-      > => {
-      return useMutation(getAuthzAdminGrantsDeleteMutationOptions(options), queryClient);
-    }
-
-/**
- * Grants one permission to a role. The permission in the path is checked against the catalog and translated to its (resource, action) pair before anything is written; a permission the catalog does not declare, or one with no translation row, is a 400 and no write happens. The role must exist in the tenant and must not be builtin: an absent role is a 400, and a builtin one is a 409, since its grants cannot be changed. Granting a permission the role already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
- * @summary Grant a permission to a role
- */
-export const authzAdminGrantsPut = (
-    tenant: string,
-    role: string,
-    permission: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/authz/admin/tenants/${tenant}/roles/${role}/grants/${permission}`, method: 'PUT', signal
-    },
-      );
-    }
-
-
-
-export const getAuthzAdminGrantsPutMutationOptions = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext> => {
-
-const mutationKey = ['authzAdminGrantsPut'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminGrantsPut>>, {tenant: string;role: string;permission: string}> = (props) => {
-          const {tenant,role,permission} = props ?? {};
-
-          return  authzAdminGrantsPut(tenant,role,permission,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthzAdminGrantsPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminGrantsPut>>>
-
-    export type AuthzAdminGrantsPutMutationError = Problem
-
-    /**
- * @summary Grant a permission to a role
- */
-export const useAuthzAdminGrantsPut = <TError = Problem,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof authzAdminGrantsPut>>,
-        TError,
-        {tenant: string;role: string;permission: string},
-        TContext
-      > => {
-      return useMutation(getAuthzAdminGrantsPutMutationOptions(options), queryClient);
-    }
-
-/**
  * The feature names this process serves, ascending and without repetition. The set is decided by the assembly at start and is the same for every caller; it is not filtered by permission or tenant. Its content may differ between callers and tenants (a tenant-level narrowing is a future addition), so a response must not be cached across sessions.
  * @summary Read the feature document this process serves
  */
@@ -9849,6 +6076,1601 @@ export const useObjectstoreMetadataUploadObjectContent = <TError = Problem,
     }
 
 /**
+ * Reads one page of the audit table across every tenant and the rows that belong to none, newest first. All supplied conditions apply together: the time window plus each non-empty set of actions, outcomes and actors. Paging is cut by row identifier rather than by offset, so rows appended while paging do not shift the page that follows. The page size defaults to 50 and is capped at 200; the answer's next is empty on the last page.
+ * @summary Page through the audit records, newest first
+ */
+export const auditAdminRecordsList = (
+    params?: AuditAdminRecordsListParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuditAdminRecordPage>(
+      {url: `/api/v1/system/audit/records`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getAuditAdminRecordsListQueryKey = (params?: AuditAdminRecordsListParams,) => {
+    return [
+    `/api/v1/system/audit/records`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuditAdminRecordsListQueryOptions = <TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuditAdminRecordsListQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof auditAdminRecordsList>>> = ({ signal }) => auditAdminRecordsList(params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuditAdminRecordsListQueryResult = NonNullable<Awaited<ReturnType<typeof auditAdminRecordsList>>>
+export type AuditAdminRecordsListQueryError = Problem
+
+
+export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
+ params: undefined |  AuditAdminRecordsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof auditAdminRecordsList>>,
+          TError,
+          Awaited<ReturnType<typeof auditAdminRecordsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
+ params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof auditAdminRecordsList>>,
+          TError,
+          Awaited<ReturnType<typeof auditAdminRecordsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
+ params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Page through the audit records, newest first
+ */
+
+export function useAuditAdminRecordsList<TData = Awaited<ReturnType<typeof auditAdminRecordsList>>, TError = Problem>(
+ params?: AuditAdminRecordsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuditAdminRecordsListQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Reads one audit row by its identifier. The identifier is unique over the whole table, so the row is found whatever tenant it belongs to, or when it belongs to none. The identifier must be a non-negative decimal integer and the request must carry no query parameter; anything else is a 400. An identifier of zero, or one that no row holds, is a 404.
+ * @summary Read one audit record by its row identifier
+ */
+export const auditAdminRecordsGet = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuditAdminRecord>(
+      {url: `/api/v1/system/audit/records/${id}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuditAdminRecordsGetQueryKey = (id: string,) => {
+    return [
+    `/api/v1/system/audit/records/${id}`
+    ] as const;
+    }
+
+
+export const getAuditAdminRecordsGetQueryOptions = <TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuditAdminRecordsGetQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof auditAdminRecordsGet>>> = ({ signal }) => auditAdminRecordsGet(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuditAdminRecordsGetQueryResult = NonNullable<Awaited<ReturnType<typeof auditAdminRecordsGet>>>
+export type AuditAdminRecordsGetQueryError = Problem | void
+
+
+export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof auditAdminRecordsGet>>,
+          TError,
+          Awaited<ReturnType<typeof auditAdminRecordsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof auditAdminRecordsGet>>,
+          TError,
+          Awaited<ReturnType<typeof auditAdminRecordsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one audit record by its row identifier
+ */
+
+export function useAuditAdminRecordsGet<TData = Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuditAdminRecordsGetQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Returns one page of accounts in ascending identifier order, which for the UUIDv7 identifiers the module generates is close to creation order. Deleted accounts (tombstones) are left out unless the status filter asks for them. Every accepted filter given an empty value means no filter, and the query parameter set is closed: a parameter not declared here is refused with 400 rather than ignored. Requires the account.read action on the platform scope.
+ * @summary List accounts, one page at a time
+ */
+export const authnAdminAccountsList = (
+    params?: AuthnAdminAccountsListParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminAccountList>(
+      {url: `/api/v1/system/auth/accounts`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminAccountsListQueryKey = (params?: AuthnAdminAccountsListParams,) => {
+    return [
+    `/api/v1/system/auth/accounts`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuthnAdminAccountsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsListQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsList>>> = ({ signal }) => authnAdminAccountsList(params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminAccountsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsList>>>
+export type AuthnAdminAccountsListQueryError = Problem
+
+
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
+ params: undefined |  AuthnAdminAccountsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
+ params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
+ params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List accounts, one page at a time
+ */
+
+export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof authnAdminAccountsList>>, TError = Problem>(
+ params?: AuthnAdminAccountsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminAccountsListQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a service account signs in with a service secret and is not held to that. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.
+ * @summary Create an account
+ */
+export const authnAdminAccountsCreate = (
+    authnAdminAccountCreate: AuthnAdminAccountCreate,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminAccountEnvelope>(
+      {url: `/api/v1/system/auth/accounts`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminAccountCreate, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsCreateMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsCreate'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, {data: AuthnAdminAccountCreate}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authnAdminAccountsCreate(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsCreate>>>
+    export type AuthnAdminAccountsCreateMutationBody = AuthnAdminAccountCreate
+    export type AuthnAdminAccountsCreateMutationError = Problem
+
+    /**
+ * @summary Create an account
+ */
+export const useAuthnAdminAccountsCreate = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsCreate>>, TError,{data: AuthnAdminAccountCreate}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsCreate>>,
+        TError,
+        {data: AuthnAdminAccountCreate},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsCreateMutationOptions(options), queryClient);
+    }
+
+/**
+ * Deletes the account and erases its personal data, leaving a tombstone that keeps the identifier, kind, status and creation time: identifiers, external bindings, password credential, service secrets and memberships are removed. Requires account.delete and a fresh local multi-factor authentication from the caller.
+ * @summary Delete an account
+ */
+export const authnAdminAccountsDelete = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/auth/accounts/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsDeleteMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  authnAdminAccountsDelete(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsDelete>>>
+
+    export type AuthnAdminAccountsDeleteMutationError = Problem | void
+
+    /**
+ * @summary Delete an account
+ */
+export const useAuthnAdminAccountsDelete = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsDelete>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsDelete>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsDeleteMutationOptions(options), queryClient);
+    }
+
+/**
+ * Reads one account by its identifier. A deleted account reads as not found, as does an identifier that never existed. Requires the account.read action, with the account as both the decision's target and target account.
+ * @summary Read one account
+ */
+export const authnAdminAccountsGet = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminAccountEnvelope>(
+      {url: `/api/v1/system/auth/accounts/${id}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminAccountsGetQueryKey = (id: string,) => {
+    return [
+    `/api/v1/system/auth/accounts/${id}`
+    ] as const;
+    }
+
+
+export const getAuthnAdminAccountsGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsGetQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsGet>>> = ({ signal }) => authnAdminAccountsGet(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminAccountsGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsGet>>>
+export type AuthnAdminAccountsGetQueryError = Problem | void
+
+
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsGet>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsGet>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one account
+ */
+
+export function useAuthnAdminAccountsGet<TData = Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminAccountsGetQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Writes the display name, the whole attribute set and the protected flag, each only when the request names it; a field left out is left as it is. protected is a host's mark that the account may not be impersonated, independent of any Decider. Requires account.update.
+ * @summary Update an account
+ */
+export const authnAdminAccountsPatch = (
+    id: string,
+    authnAdminAccountPatch: AuthnAdminAccountPatch,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminAccountEnvelope>(
+      {url: `/api/v1/system/auth/accounts/${id}`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminAccountPatch, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsPatchMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsPatch'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, {id: string;data: AuthnAdminAccountPatch}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnAdminAccountsPatch(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsPatchMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsPatch>>>
+    export type AuthnAdminAccountsPatchMutationBody = AuthnAdminAccountPatch
+    export type AuthnAdminAccountsPatchMutationError = Problem | void
+
+    /**
+ * @summary Update an account
+ */
+export const useAuthnAdminAccountsPatch = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsPatch>>, TError,{id: string;data: AuthnAdminAccountPatch}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsPatch>>,
+        TError,
+        {id: string;data: AuthnAdminAccountPatch},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsPatchMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists the account's registered factors as kind, label and status, and nothing of their credentials. Requires account.read.
+ * @summary List an account's registered factors
+ */
+export const authnAdminAccountsFactors = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminFactorList>(
+      {url: `/api/v1/system/auth/accounts/${id}/factors`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminAccountsFactorsQueryKey = (id: string,) => {
+    return [
+    `/api/v1/system/auth/accounts/${id}/factors`
+    ] as const;
+    }
+
+
+export const getAuthnAdminAccountsFactorsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsFactorsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsFactors>>> = ({ signal }) => authnAdminAccountsFactors(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminAccountsFactorsQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsFactors>>>
+export type AuthnAdminAccountsFactorsQueryError = Problem | void
+
+
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsFactors>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsFactors>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsFactors>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsFactors>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an account's registered factors
+ */
+
+export function useAuthnAdminAccountsFactors<TData = Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsFactors>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminAccountsFactorsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Adds a login name (username) or an email address to the account. The identifier is recorded as administrator-asserted (verified_via admin) and is not evidence of ownership, so it does not by itself justify automatic linking or merging. A phone number is refused here: it is added or changed only through an SMS code. Requires account.update.
+ * @summary Add an identifier to an account
+ */
+export const authnAdminAccountsAddIdentifier = (
+    id: string,
+    authnAdminIdentifierWrite: AuthnAdminIdentifierWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/auth/accounts/${id}/identifiers`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminIdentifierWrite, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsAddIdentifierMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsAddIdentifier'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, {id: string;data: AuthnAdminIdentifierWrite}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnAdminAccountsAddIdentifier(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsAddIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>>
+    export type AuthnAdminAccountsAddIdentifierMutationBody = AuthnAdminIdentifierWrite
+    export type AuthnAdminAccountsAddIdentifierMutationError = Problem | void
+
+    /**
+ * @summary Add an identifier to an account
+ */
+export const useAuthnAdminAccountsAddIdentifier = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>, TError,{id: string;data: AuthnAdminIdentifierWrite}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsAddIdentifier>>,
+        TError,
+        {id: string;data: AuthnAdminIdentifierWrite},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsAddIdentifierMutationOptions(options), queryClient);
+    }
+
+/**
+ * Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. Requires account.update.
+ * @summary Remove an identifier from an account
+ */
+export const authnAdminAccountsRemoveIdentifier = (
+    id: string,
+    identifier: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/auth/accounts/${id}/identifiers/${identifier}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsRemoveIdentifierMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsRemoveIdentifier'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, {id: string;identifier: string}> = (props) => {
+          const {id,identifier} = props ?? {};
+
+          return  authnAdminAccountsRemoveIdentifier(id,identifier,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsRemoveIdentifierMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>>
+
+    export type AuthnAdminAccountsRemoveIdentifierMutationError = Problem | void
+
+    /**
+ * @summary Remove an identifier from an account
+ */
+export const useAuthnAdminAccountsRemoveIdentifier = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>, TError,{id: string;identifier: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsRemoveIdentifier>>,
+        TError,
+        {id: string;identifier: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsRemoveIdentifierMutationOptions(options), queryClient);
+    }
+
+/**
+ * Sets the account-level flag that requires the account to register a factor. Requires account.update.
+ * @summary Set whether an account must register a factor
+ */
+export const authnAdminAccountsSetMFARequired = (
+    id: string,
+    authnAdminMFARequired: AuthnAdminMFARequired,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/auth/accounts/${id}/mfa-required`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminMFARequired, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsSetMFARequiredMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsSetMFARequired'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, {id: string;data: AuthnAdminMFARequired}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnAdminAccountsSetMFARequired(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsSetMFARequiredMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>>
+    export type AuthnAdminAccountsSetMFARequiredMutationBody = AuthnAdminMFARequired
+    export type AuthnAdminAccountsSetMFARequiredMutationError = Problem | void
+
+    /**
+ * @summary Set whether an account must register a factor
+ */
+export const useAuthnAdminAccountsSetMFARequired = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>, TError,{id: string;data: AuthnAdminMFARequired}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsSetMFARequired>>,
+        TError,
+        {id: string;data: AuthnAdminMFARequired},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsSetMFARequiredMutationOptions(options), queryClient);
+    }
+
+/**
+ * Disables every factor registered on the account, sets the account's mfa_required flag so it must register a factor again, revokes every session of the account, and answers how many factors were removed. Requires mfa.reset, a fresh local non-SMS multi-factor authentication and a seasoned non-SMS factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
+ * @summary Remove an account's registered factors
+ */
+export const authnAdminAccountsResetMFA = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminRemoved>(
+      {url: `/api/v1/system/auth/accounts/${id}/mfa-reset`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsResetMFAMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsResetMFA'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  authnAdminAccountsResetMFA(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsResetMFAMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>>
+
+    export type AuthnAdminAccountsResetMFAMutationError = Problem | void
+
+    /**
+ * @summary Remove an account's registered factors
+ */
+export const useAuthnAdminAccountsResetMFA = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsResetMFA>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsResetMFAMutationOptions(options), queryClient);
+    }
+
+/**
+ * Sets a temporary password that the account must change at its next sign-in, then revokes every session of the account. The revocation runs after the password write, so its failure is logged and does not undo the reset. The password is never echoed, logged or audited. Requires account.update, a fresh local non-SMS multi-factor authentication and a seasoned factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
+ * @summary Reset an account's password
+ */
+export const authnAdminAccountsResetPassword = (
+    id: string,
+    authnAdminPasswordReset: AuthnAdminPasswordReset,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/auth/accounts/${id}/password`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminPasswordReset, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsResetPasswordMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsResetPassword'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, {id: string;data: AuthnAdminPasswordReset}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnAdminAccountsResetPassword(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsResetPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>>
+    export type AuthnAdminAccountsResetPasswordMutationBody = AuthnAdminPasswordReset
+    export type AuthnAdminAccountsResetPasswordMutationError = Problem | void
+
+    /**
+ * @summary Reset an account's password
+ */
+export const useAuthnAdminAccountsResetPassword = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>, TError,{id: string;data: AuthnAdminPasswordReset}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsResetPassword>>,
+        TError,
+        {id: string;data: AuthnAdminPasswordReset},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsResetPasswordMutationOptions(options), queryClient);
+    }
+
+/**
+ * Revokes every unrevoked browser and token session of the account, including one whose deadline has already passed, and answers with the number revoked. One audit row per session is written before the revocation, so the set read and the set revoked are the same; an account with nothing in that set revokes nothing and writes nothing. Requires session.revoke. Retrying is idempotent.
+ * @summary Revoke every session of an account
+ */
+export const authnAdminAccountsRevokeSessions = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminRevoked>(
+      {url: `/api/v1/system/auth/accounts/${id}/revoke-sessions`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsRevokeSessionsMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsRevokeSessions'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  authnAdminAccountsRevokeSessions(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsRevokeSessionsMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>>
+
+    export type AuthnAdminAccountsRevokeSessionsMutationError = Problem | void
+
+    /**
+ * @summary Revoke every session of an account
+ */
+export const useAuthnAdminAccountsRevokeSessions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsRevokeSessions>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsRevokeSessionsMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists the account's service secrets oldest first, as identifier, label, absolute expiry and revocation state; the secret value itself is never returned. Requires account.read.
+ * @summary List an account's service secrets
+ */
+export const authnAdminAccountsSecretsList = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminSecretList>(
+      {url: `/api/v1/system/auth/accounts/${id}/secrets`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminAccountsSecretsListQueryKey = (id: string,) => {
+    return [
+    `/api/v1/system/auth/accounts/${id}/secrets`
+    ] as const;
+    }
+
+
+export const getAuthnAdminAccountsSecretsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsSecretsListQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>> = ({ signal }) => authnAdminAccountsSecretsList(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminAccountsSecretsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>>
+export type AuthnAdminAccountsSecretsListQueryError = Problem | void
+
+
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an account's service secrets
+ */
+
+export function useAuthnAdminAccountsSecretsList<TData = Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminAccountsSecretsListQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Mints a service secret for a service account; only a service account has them, so any other account is 400. The secret value is returned in this response only and can never be read again. An expiry, when given, must be in the future. Requires client.manage and a fresh local multi-factor authentication.
+ * @summary Create a service secret for an account
+ */
+export const authnAdminAccountsSecretsCreate = (
+    id: string,
+    authnAdminSecretCreate: AuthnAdminSecretCreate,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminSecretCreated>(
+      {url: `/api/v1/system/auth/accounts/${id}/secrets`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminSecretCreate, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsSecretsCreateMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsSecretsCreate'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, {id: string;data: AuthnAdminSecretCreate}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnAdminAccountsSecretsCreate(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsSecretsCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>>
+    export type AuthnAdminAccountsSecretsCreateMutationBody = AuthnAdminSecretCreate
+    export type AuthnAdminAccountsSecretsCreateMutationError = Problem | void
+
+    /**
+ * @summary Create a service secret for an account
+ */
+export const useAuthnAdminAccountsSecretsCreate = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>, TError,{id: string;data: AuthnAdminSecretCreate}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsSecretsCreate>>,
+        TError,
+        {id: string;data: AuthnAdminSecretCreate},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsSecretsCreateMutationOptions(options), queryClient);
+    }
+
+/**
+ * Revokes the service secret named by its identifier, not by the secret value. Requires client.manage and a fresh local multi-factor authentication.
+ * @summary Revoke a service secret
+ */
+export const authnAdminAccountsSecretsRevoke = (
+    id: string,
+    secret: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/auth/accounts/${id}/secrets/${secret}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsSecretsRevokeMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsSecretsRevoke'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, {id: string;secret: string}> = (props) => {
+          const {id,secret} = props ?? {};
+
+          return  authnAdminAccountsSecretsRevoke(id,secret,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsSecretsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>>
+
+    export type AuthnAdminAccountsSecretsRevokeMutationError = Problem | void
+
+    /**
+ * @summary Revoke a service secret
+ */
+export const useAuthnAdminAccountsSecretsRevoke = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>, TError,{id: string;secret: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsSecretsRevoke>>,
+        TError,
+        {id: string;secret: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsSecretsRevokeMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists the account's live browser and token sessions, most recently created first, without any credential or token material. Each row's current is true when it is the caller's own session. Requires session.read.
+ * @summary List an account's sessions
+ */
+export const authnAdminAccountsSessions = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminSessionList>(
+      {url: `/api/v1/system/auth/accounts/${id}/sessions`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminAccountsSessionsQueryKey = (id: string,) => {
+    return [
+    `/api/v1/system/auth/accounts/${id}/sessions`
+    ] as const;
+    }
+
+
+export const getAuthnAdminAccountsSessionsQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminAccountsSessionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminAccountsSessions>>> = ({ signal }) => authnAdminAccountsSessions(id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminAccountsSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsSessions>>>
+export type AuthnAdminAccountsSessionsQueryError = Problem | void
+
+
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsSessions>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsSessions>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminAccountsSessions>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminAccountsSessions>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an account's sessions
+ */
+
+export function useAuthnAdminAccountsSessions<TData = Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError = Problem | void>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminAccountsSessions>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminAccountsSessionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Disables or restores an account; status is active or disabled. The deleted state is reached only through the delete route and is refused here. Requires account.disable and a fresh local multi-factor authentication. Sessions of a disabled account are cleaned up synchronously; a cleanup failure answers 503 while the status change stands, and retrying the same request completes the cleanup idempotently.
+ * @summary Change an account's status
+ */
+export const authnAdminAccountsStatus = (
+    id: string,
+    authnAdminAccountStatus: AuthnAdminAccountStatus,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminAccountEnvelope>(
+      {url: `/api/v1/system/auth/accounts/${id}/status`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminAccountStatus, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminAccountsStatusMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext> => {
+
+const mutationKey = ['authnAdminAccountsStatus'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, {id: string;data: AuthnAdminAccountStatus}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  authnAdminAccountsStatus(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminAccountsStatusMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminAccountsStatus>>>
+    export type AuthnAdminAccountsStatusMutationBody = AuthnAdminAccountStatus
+    export type AuthnAdminAccountsStatusMutationError = Problem | void
+
+    /**
+ * @summary Change an account's status
+ */
+export const useAuthnAdminAccountsStatus = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminAccountsStatus>>, TError,{id: string;data: AuthnAdminAccountStatus}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminAccountsStatus>>,
+        TError,
+        {id: string;data: AuthnAdminAccountStatus},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminAccountsStatusMutationOptions(options), queryClient);
+    }
+
+/**
+ * Revokes one session by its identifier. The session is read first to learn its account, which fills the decision's target account. Requires session.revoke. Revoking an already revoked session succeeds with the same answer.
+ * @summary Revoke one session by its identifier
+ */
+export const authnAdminSessionsRevoke = (
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/auth/sessions/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSessionsRevokeMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['authnAdminSessionsRevoke'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  authnAdminSessionsRevoke(id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSessionsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>>
+
+    export type AuthnAdminSessionsRevokeMutationError = Problem | void
+
+    /**
+ * @summary Revoke one session by its identifier
+ */
+export const useAuthnAdminSessionsRevoke = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSessionsRevoke>>, TError,{id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSessionsRevoke>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSessionsRevokeMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists every permission the process's catalog declares, one view each: the union of the permission lists the registered modules declared. The order is the catalog's collection order and is not sorted. The list is not filtered by which modules this process runs, so a permission may be listed that no mounted surface serves.
+ * @summary List every permission the catalog declares
+ */
+export const authzAdminPermissionsList = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzAdminPermissionsList200>(
+      {url: `/api/v1/system/permissions`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzAdminPermissionsListQueryKey = () => {
+    return [
+    `/api/v1/system/permissions`
+    ] as const;
+    }
+
+
+export const getAuthzAdminPermissionsListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminPermissionsListQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminPermissionsList>>> = ({ signal }) => authzAdminPermissionsList(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthzAdminPermissionsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminPermissionsList>>>
+export type AuthzAdminPermissionsListQueryError = Problem
+
+
+export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminPermissionsList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminPermissionsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminPermissionsList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminPermissionsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List every permission the catalog declares
+ */
+
+export function useAuthzAdminPermissionsList<TData = Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError = Problem>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminPermissionsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthzAdminPermissionsListQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
  * Returns every item in the declaration listing, including keys declared by modules that do not run in this process, each with the value it resolves to on the selected layer. Resolution walks the three-level fallback starting at that layer: the tenant row, then the global row, then the declared default. Every value-bearing field is text in the declared type's own form; for a sensitive item default is empty and written and value carry a fixed mask string. A failure to read the layer's rows or to resolve a value answers 503 rather than leaving the item out.
  * @summary List every declared setting with its value on the selected layer
  */
@@ -9859,7 +7681,7 @@ export const settingsAdminSettingsList = (
 
 
       return speedRequest<SettingsAdminSetting[]>(
-      {url: `/api/v1/settings/admin/settings`, method: 'GET',
+      {url: `/api/v1/system/settings`, method: 'GET',
         params, signal
     },
       );
@@ -9870,7 +7692,7 @@ export const settingsAdminSettingsList = (
 
 export const getSettingsAdminSettingsListQueryKey = (params?: SettingsAdminSettingsListParams,) => {
     return [
-    `/api/v1/settings/admin/settings`, ...(params ? [params] : [])
+    `/api/v1/system/settings`, ...(params ? [params] : [])
     ] as const;
     }
 
@@ -9955,7 +7777,7 @@ export const settingsAdminSettingsListNamespace = (
 
 
       return speedRequest<SettingsAdminSetting[]>(
-      {url: `/api/v1/settings/admin/settings/${namespace}`, method: 'GET',
+      {url: `/api/v1/system/settings/${namespace}`, method: 'GET',
         params, signal
     },
       );
@@ -9967,7 +7789,7 @@ export const settingsAdminSettingsListNamespace = (
 export const getSettingsAdminSettingsListNamespaceQueryKey = (namespace: string,
     params?: SettingsAdminSettingsListNamespaceParams,) => {
     return [
-    `/api/v1/settings/admin/settings/${namespace}`, ...(params ? [params] : [])
+    `/api/v1/system/settings/${namespace}`, ...(params ? [params] : [])
     ] as const;
     }
 
@@ -10058,7 +7880,7 @@ export const settingsAdminSettingsRemove = (
 
 
       return speedRequest<void>(
-      {url: `/api/v1/settings/admin/settings/${namespace}/${key}`, method: 'DELETE',
+      {url: `/api/v1/system/settings/${namespace}/${key}`, method: 'DELETE',
         params, signal
     },
       );
@@ -10125,7 +7947,7 @@ export const settingsAdminSettingsSet = (
 
 
       return speedRequest<void>(
-      {url: `/api/v1/settings/admin/settings/${namespace}/${key}`, method: 'PUT',
+      {url: `/api/v1/system/settings/${namespace}/${key}`, method: 'PUT',
       headers: {'Content-Type': 'application/json', },
       data: settingsAdminSettingsSetBody,
         params, signal
@@ -10191,7 +8013,7 @@ export const smsAdminTemplatesList = (
 
 
       return speedRequest<SmsAdminTemplatesList200>(
-      {url: `/api/v1/sms/admin/templates`, method: 'GET',
+      {url: `/api/v1/system/sms/templates`, method: 'GET',
         params, signal
     },
       );
@@ -10202,7 +8024,7 @@ export const smsAdminTemplatesList = (
 
 export const getSmsAdminTemplatesListQueryKey = (params?: SmsAdminTemplatesListParams,) => {
     return [
-    `/api/v1/sms/admin/templates`, ...(params ? [params] : [])
+    `/api/v1/system/sms/templates`, ...(params ? [params] : [])
     ] as const;
     }
 
@@ -10286,7 +8108,7 @@ export const smsAdminTemplatesRegister = (
 
 
       return speedRequest<SmsAdminTemplatesRegister201>(
-      {url: `/api/v1/sms/admin/templates`, method: 'POST',
+      {url: `/api/v1/system/sms/templates`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: smsAdminRegister, signal
     },
@@ -10351,7 +8173,7 @@ export const smsAdminTemplatesOffer = (
 
 
       return speedRequest<SmsAdminTemplatesOffer201>(
-      {url: `/api/v1/sms/admin/templates/submissions`, method: 'POST',
+      {url: `/api/v1/system/sms/templates/submissions`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: smsAdminSubmission, signal
     },
@@ -10416,7 +8238,7 @@ export const smsAdminTemplatesRemove = (
 
 
       return speedRequest<void>(
-      {url: `/api/v1/sms/admin/templates/${name}`, method: 'DELETE', signal
+      {url: `/api/v1/system/sms/templates/${name}`, method: 'DELETE', signal
     },
       );
     }
@@ -10480,7 +8302,7 @@ export const smsAdminTemplatesSetEnabled = (
 
 
       return speedRequest<void>(
-      {url: `/api/v1/sms/admin/templates/${name}/enabled`, method: 'POST',
+      {url: `/api/v1/system/sms/templates/${name}/enabled`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: smsAdminTemplatesSetEnabledBody, signal
     },
@@ -10545,7 +8367,7 @@ export const tenantAdminTenantsList = (
 
 
       return speedRequest<TenantAdminTenantsList200>(
-      {url: `/api/v1/tenant/admin/tenants`, method: 'GET', signal
+      {url: `/api/v1/system/tenants`, method: 'GET', signal
     },
       );
     }
@@ -10555,7 +8377,7 @@ export const tenantAdminTenantsList = (
 
 export const getTenantAdminTenantsListQueryKey = () => {
     return [
-    `/api/v1/tenant/admin/tenants`
+    `/api/v1/system/tenants`
     ] as const;
     }
 
@@ -10639,7 +8461,7 @@ export const tenantAdminTenantsCreate = (
 
 
       return speedRequest<TenantAdminTenantsCreate201>(
-      {url: `/api/v1/tenant/admin/tenants`, method: 'POST',
+      {url: `/api/v1/system/tenants`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: tenantAdminTenantRegistration, signal
     },
@@ -10698,13 +8520,13 @@ export const useTenantAdminTenantsCreate = <TError = Problem,
  * @summary Read one tenant the roster holds
  */
 export const tenantAdminTenantsGet = (
-    id: string,
+    tenant: string,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<TenantAdminTenantsGet200>(
-      {url: `/api/v1/tenant/admin/tenants/${id}`, method: 'GET', signal
+      {url: `/api/v1/system/tenants/${tenant}`, method: 'GET', signal
     },
       );
     }
@@ -10712,29 +8534,29 @@ export const tenantAdminTenantsGet = (
 
 
 
-export const getTenantAdminTenantsGetQueryKey = (id: string,) => {
+export const getTenantAdminTenantsGetQueryKey = (tenant: string,) => {
     return [
-    `/api/v1/tenant/admin/tenants/${id}`
+    `/api/v1/system/tenants/${tenant}`
     ] as const;
     }
 
 
-export const getTenantAdminTenantsGetQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>>, }
+export const getTenantAdminTenantsGetQueryOptions = <TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>>, }
 ) => {
 
 const {query: queryOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getTenantAdminTenantsGetQueryKey(id);
+  const queryKey =  queryOptions?.queryKey ?? getTenantAdminTenantsGetQueryKey(tenant);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantAdminTenantsGet>>> = ({ signal }) => tenantAdminTenantsGet(id, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantAdminTenantsGet>>> = ({ signal }) => tenantAdminTenantsGet(tenant, signal);
 
 
 
 
 
-   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
 export type TenantAdminTenantsGetQueryResult = NonNullable<Awaited<ReturnType<typeof tenantAdminTenantsGet>>>
@@ -10742,7 +8564,7 @@ export type TenantAdminTenantsGetQueryError = Problem | void
 
 
 export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(
- id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>> & Pick<
+ tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof tenantAdminTenantsGet>>,
           TError,
@@ -10752,7 +8574,7 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>> & Pick<
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof tenantAdminTenantsGet>>,
           TError,
@@ -10762,7 +8584,7 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>>, }
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -10770,11 +8592,11 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
  */
 
 export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError = Problem | void>(
- id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>>, }
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof tenantAdminTenantsGet>>, TError, TData>>, }
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getTenantAdminTenantsGetQueryOptions(id,options)
+  const queryOptions = getTenantAdminTenantsGetQueryOptions(tenant,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -10792,14 +8614,14 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
  * @summary Change one tenant's alias
  */
 export const tenantAdminTenantsSetAlias = (
-    id: string,
+    tenant: string,
     tenantAdminTenantsSetAliasBody: TenantAdminTenantsSetAliasBody,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<void>(
-      {url: `/api/v1/tenant/admin/tenants/${id}`, method: 'PATCH',
+      {url: `/api/v1/system/tenants/${tenant}`, method: 'PATCH',
       headers: {'Content-Type': 'application/json', },
       data: tenantAdminTenantsSetAliasBody, signal
     },
@@ -10809,8 +8631,8 @@ export const tenantAdminTenantsSetAlias = (
 
 
 export const getTenantAdminTenantsSetAliasMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{id: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{id: string;data: TenantAdminTenantsSetAliasBody}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{tenant: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{tenant: string;data: TenantAdminTenantsSetAliasBody}, TContext> => {
 
 const mutationKey = ['tenantAdminTenantsSetAlias'];
 const {mutation: mutationOptions} = options ?
@@ -10822,10 +8644,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, {id: string;data: TenantAdminTenantsSetAliasBody}> = (props) => {
-          const {id,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, {tenant: string;data: TenantAdminTenantsSetAliasBody}> = (props) => {
+          const {tenant,data} = props ?? {};
 
-          return  tenantAdminTenantsSetAlias(id,data,)
+          return  tenantAdminTenantsSetAlias(tenant,data,)
         }
 
 
@@ -10843,14 +8665,795 @@ const {mutation: mutationOptions} = options ?
  * @summary Change one tenant's alias
  */
 export const useTenantAdminTenantsSetAlias = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{id: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>, TError,{tenant: string;data: TenantAdminTenantsSetAliasBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof tenantAdminTenantsSetAlias>>,
         TError,
-        {id: string;data: TenantAdminTenantsSetAliasBody},
+        {tenant: string;data: TenantAdminTenantsSetAliasBody},
         TContext
       > => {
       return useMutation(getTenantAdminTenantsSetAliasMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists every role binding of the tenant, ordered by account identifier and then role name, one view each. A tenant with no binding yields an empty list. The list is not paginated.
+ * @summary List every role binding of a tenant
+ */
+export const authzAdminBindingsList = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzAdminBindingsList200>(
+      {url: `/api/v1/system/tenants/${tenant}/bindings`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzAdminBindingsListQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/system/tenants/${tenant}/bindings`
+    ] as const;
+    }
+
+
+export const getAuthzAdminBindingsListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminBindingsListQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminBindingsList>>> = ({ signal }) => authzAdminBindingsList(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthzAdminBindingsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsList>>>
+export type AuthzAdminBindingsListQueryError = Problem
+
+
+export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
+ tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminBindingsList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminBindingsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminBindingsList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminBindingsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List every role binding of a tenant
+ */
+
+export function useAuthzAdminBindingsList<TData = Awaited<ReturnType<typeof authzAdminBindingsList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthzAdminBindingsListQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Lists every binding the account holds within the tenant, ordered by role name ascending, one view each. An account with no binding, or a tenant with none, yields an empty list; the account is not looked up. The list is not paginated.
+ * @summary List every binding an account holds within a tenant
+ */
+export const authzAdminBindingsOf = (
+    tenant: string,
+    account: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzAdminBindingsOf200>(
+      {url: `/api/v1/system/tenants/${tenant}/bindings/${account}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzAdminBindingsOfQueryKey = (tenant: string,
+    account: string,) => {
+    return [
+    `/api/v1/system/tenants/${tenant}/bindings/${account}`
+    ] as const;
+    }
+
+
+export const getAuthzAdminBindingsOfQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(tenant: string,
+    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminBindingsOfQueryKey(tenant,account);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminBindingsOf>>> = ({ signal }) => authzAdminBindingsOf(tenant,account, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && account !== null && account !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthzAdminBindingsOfQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsOf>>>
+export type AuthzAdminBindingsOfQueryError = Problem
+
+
+export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
+ tenant: string,
+    account: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminBindingsOf>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminBindingsOf>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
+ tenant: string,
+    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminBindingsOf>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminBindingsOf>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
+ tenant: string,
+    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List every binding an account holds within a tenant
+ */
+
+export function useAuthzAdminBindingsOf<TData = Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError = Problem>(
+ tenant: string,
+    account: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminBindingsOf>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthzAdminBindingsOfQueryOptions(tenant,account,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Remove an account's binding to a role within a tenant
+ */
+export const authzAdminBindingsDelete = (
+    tenant: string,
+    account: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/bindings/${account}/${role}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzAdminBindingsDeleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext> => {
+
+const mutationKey = ['authzAdminBindingsDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, {tenant: string;account: string;role: string}> = (props) => {
+          const {tenant,account,role} = props ?? {};
+
+          return  authzAdminBindingsDelete(tenant,account,role,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzAdminBindingsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsDelete>>>
+
+    export type AuthzAdminBindingsDeleteMutationError = Problem
+
+    /**
+ * @summary Remove an account's binding to a role within a tenant
+ */
+export const useAuthzAdminBindingsDelete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsDelete>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authzAdminBindingsDelete>>,
+        TError,
+        {tenant: string;account: string;role: string},
+        TContext
+      > => {
+      return useMutation(getAuthzAdminBindingsDeleteMutationOptions(options), queryClient);
+    }
+
+/**
+ * Binds a role to an account within the tenant. The role must exist in the tenant; a builtin role may be bound. An empty account is refused with a 400 before anything is written. Binding a role the account already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Bind a role to an account within a tenant
+ */
+export const authzAdminBindingsPut = (
+    tenant: string,
+    account: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/bindings/${account}/${role}`, method: 'PUT', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzAdminBindingsPutMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext> => {
+
+const mutationKey = ['authzAdminBindingsPut'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminBindingsPut>>, {tenant: string;account: string;role: string}> = (props) => {
+          const {tenant,account,role} = props ?? {};
+
+          return  authzAdminBindingsPut(tenant,account,role,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzAdminBindingsPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminBindingsPut>>>
+
+    export type AuthzAdminBindingsPutMutationError = Problem
+
+    /**
+ * @summary Bind a role to an account within a tenant
+ */
+export const useAuthzAdminBindingsPut = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminBindingsPut>>, TError,{tenant: string;account: string;role: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authzAdminBindingsPut>>,
+        TError,
+        {tenant: string;account: string;role: string},
+        TContext
+      > => {
+      return useMutation(getAuthzAdminBindingsPutMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields an empty list. The list is not paginated.
+ * @summary List a tenant's roles
+ */
+export const authzAdminRolesList = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzAdminRolesList200>(
+      {url: `/api/v1/system/tenants/${tenant}/roles`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzAdminRolesListQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/system/tenants/${tenant}/roles`
+    ] as const;
+    }
+
+
+export const getAuthzAdminRolesListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminRolesListQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminRolesList>>> = ({ signal }) => authzAdminRolesList(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthzAdminRolesListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminRolesList>>>
+export type AuthzAdminRolesListQueryError = Problem
+
+
+export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
+ tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminRolesList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminRolesList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminRolesList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminRolesList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List a tenant's roles
+ */
+
+export function useAuthzAdminRolesList<TData = Awaited<ReturnType<typeof authzAdminRolesList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminRolesList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthzAdminRolesListQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Removes the role and, in one transaction, its permission grants and its account bindings, so no grant or binding outlives the role. Removing a role that does not exist succeeds with 204 and changes nothing. A builtin role cannot be removed. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Remove a role, revoking its grants and bindings with it
+ */
+export const authzAdminRolesDelete = (
+    tenant: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/roles/${role}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzAdminRolesDeleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesDelete>>, TError,{tenant: string;role: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesDelete>>, TError,{tenant: string;role: string}, TContext> => {
+
+const mutationKey = ['authzAdminRolesDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminRolesDelete>>, {tenant: string;role: string}> = (props) => {
+          const {tenant,role} = props ?? {};
+
+          return  authzAdminRolesDelete(tenant,role,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzAdminRolesDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminRolesDelete>>>
+
+    export type AuthzAdminRolesDeleteMutationError = Problem
+
+    /**
+ * @summary Remove a role, revoking its grants and bindings with it
+ */
+export const useAuthzAdminRolesDelete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesDelete>>, TError,{tenant: string;role: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authzAdminRolesDelete>>,
+        TError,
+        {tenant: string;role: string},
+        TContext
+      > => {
+      return useMutation(getAuthzAdminRolesDeleteMutationOptions(options), queryClient);
+    }
+
+/**
+ * The request carries the role's description key only. The builtin mark is not writable here: it is set by the host that seeds the policy data, and once set it cannot be cleared through this surface.
+ * @summary Create or rewrite a role
+ */
+export const authzAdminRolesPut = (
+    tenant: string,
+    role: string,
+    authzAdminRoleWrite: AuthzAdminRoleWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/roles/${role}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authzAdminRoleWrite, signal
+    },
+      );
+    }
+
+
+
+export const getAuthzAdminRolesPutMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesPut>>, TError,{tenant: string;role: string;data: AuthzAdminRoleWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesPut>>, TError,{tenant: string;role: string;data: AuthzAdminRoleWrite}, TContext> => {
+
+const mutationKey = ['authzAdminRolesPut'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminRolesPut>>, {tenant: string;role: string;data: AuthzAdminRoleWrite}> = (props) => {
+          const {tenant,role,data} = props ?? {};
+
+          return  authzAdminRolesPut(tenant,role,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzAdminRolesPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminRolesPut>>>
+    export type AuthzAdminRolesPutMutationBody = AuthzAdminRoleWrite
+    export type AuthzAdminRolesPutMutationError = Problem
+
+    /**
+ * @summary Create or rewrite a role
+ */
+export const useAuthzAdminRolesPut = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminRolesPut>>, TError,{tenant: string;role: string;data: AuthzAdminRoleWrite}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authzAdminRolesPut>>,
+        TError,
+        {tenant: string;role: string;data: AuthzAdminRoleWrite},
+        TContext
+      > => {
+      return useMutation(getAuthzAdminRolesPutMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists every permission grant the role holds as the (resource, action) pairs the policy engine matches on, ordered by resource and then action. A role that holds no grant, or does not exist, yields an empty list; the role is not looked up. The list is not paginated.
+ * @summary List every permission grant a role holds
+ */
+export const authzAdminGrantsList = (
+    tenant: string,
+    role: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzAdminGrantsList200>(
+      {url: `/api/v1/system/tenants/${tenant}/roles/${role}/grants`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzAdminGrantsListQueryKey = (tenant: string,
+    role: string,) => {
+    return [
+    `/api/v1/system/tenants/${tenant}/roles/${role}/grants`
+    ] as const;
+    }
+
+
+export const getAuthzAdminGrantsListQueryOptions = <TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(tenant: string,
+    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzAdminGrantsListQueryKey(tenant,role);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzAdminGrantsList>>> = ({ signal }) => authzAdminGrantsList(tenant,role, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && role !== null && role !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthzAdminGrantsListQueryResult = NonNullable<Awaited<ReturnType<typeof authzAdminGrantsList>>>
+export type AuthzAdminGrantsListQueryError = Problem
+
+
+export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
+ tenant: string,
+    role: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminGrantsList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminGrantsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
+ tenant: string,
+    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authzAdminGrantsList>>,
+          TError,
+          Awaited<ReturnType<typeof authzAdminGrantsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
+ tenant: string,
+    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List every permission grant a role holds
+ */
+
+export function useAuthzAdminGrantsList<TData = Awaited<ReturnType<typeof authzAdminGrantsList>>, TError = Problem>(
+ tenant: string,
+    role: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authzAdminGrantsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthzAdminGrantsListQueryOptions(tenant,role,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Revokes one permission from a role. The permission in the path is translated to its (resource, action) pair; a permission with no translation row is a 400. Revoking a grant the role does not hold succeeds with 204 and changes nothing, and a role that is not in the tenant is not refused: no grant row matches and the answer is also 204. A builtin role's grants cannot be revoked: that is a 409. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Revoke a permission from a role
+ */
+export const authzAdminGrantsDelete = (
+    tenant: string,
+    role: string,
+    permission: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/roles/${role}/grants/${permission}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzAdminGrantsDeleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext> => {
+
+const mutationKey = ['authzAdminGrantsDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, {tenant: string;role: string;permission: string}> = (props) => {
+          const {tenant,role,permission} = props ?? {};
+
+          return  authzAdminGrantsDelete(tenant,role,permission,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzAdminGrantsDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminGrantsDelete>>>
+
+    export type AuthzAdminGrantsDeleteMutationError = Problem
+
+    /**
+ * @summary Revoke a permission from a role
+ */
+export const useAuthzAdminGrantsDelete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsDelete>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authzAdminGrantsDelete>>,
+        TError,
+        {tenant: string;role: string;permission: string},
+        TContext
+      > => {
+      return useMutation(getAuthzAdminGrantsDeleteMutationOptions(options), queryClient);
+    }
+
+/**
+ * Grants one permission to a role. The permission in the path is checked against the catalog and translated to its (resource, action) pair before anything is written; a permission the catalog does not declare, or one with no translation row, is a 400 and no write happens. The role must exist in the tenant and must not be builtin: an absent role is a 400, and a builtin one is a 409, since its grants cannot be changed. Granting a permission the role already holds succeeds and leaves the existing row unchanged. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.
+ * @summary Grant a permission to a role
+ */
+export const authzAdminGrantsPut = (
+    tenant: string,
+    role: string,
+    permission: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/roles/${role}/grants/${permission}`, method: 'PUT', signal
+    },
+      );
+    }
+
+
+
+export const getAuthzAdminGrantsPutMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext> => {
+
+const mutationKey = ['authzAdminGrantsPut'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authzAdminGrantsPut>>, {tenant: string;role: string;permission: string}> = (props) => {
+          const {tenant,role,permission} = props ?? {};
+
+          return  authzAdminGrantsPut(tenant,role,permission,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthzAdminGrantsPutMutationResult = NonNullable<Awaited<ReturnType<typeof authzAdminGrantsPut>>>
+
+    export type AuthzAdminGrantsPutMutationError = Problem
+
+    /**
+ * @summary Grant a permission to a role
+ */
+export const useAuthzAdminGrantsPut = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authzAdminGrantsPut>>, TError,{tenant: string;role: string;permission: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authzAdminGrantsPut>>,
+        TError,
+        {tenant: string;role: string;permission: string},
+        TContext
+      > => {
+      return useMutation(getAuthzAdminGrantsPutMutationOptions(options), queryClient);
     }
 
 /**
@@ -10858,14 +9461,14 @@ export const useTenantAdminTenantsSetAlias = <TError = Problem | void,
  * @summary Change one tenant's state
  */
 export const tenantAdminTenantsSetStatus = (
-    id: string,
+    tenant: string,
     tenantAdminTenantsSetStatusBody: TenantAdminTenantsSetStatusBody,
  signal?: AbortSignal
 ) => {
 
 
       return speedRequest<void>(
-      {url: `/api/v1/tenant/admin/tenants/${id}/status`, method: 'POST',
+      {url: `/api/v1/system/tenants/${tenant}/status`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: tenantAdminTenantsSetStatusBody, signal
     },
@@ -10875,8 +9478,8 @@ export const tenantAdminTenantsSetStatus = (
 
 
 export const getTenantAdminTenantsSetStatusMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{id: string;data: TenantAdminTenantsSetStatusBody}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{id: string;data: TenantAdminTenantsSetStatusBody}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{tenant: string;data: TenantAdminTenantsSetStatusBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{tenant: string;data: TenantAdminTenantsSetStatusBody}, TContext> => {
 
 const mutationKey = ['tenantAdminTenantsSetStatus'];
 const {mutation: mutationOptions} = options ?
@@ -10888,10 +9491,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, {id: string;data: TenantAdminTenantsSetStatusBody}> = (props) => {
-          const {id,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, {tenant: string;data: TenantAdminTenantsSetStatusBody}> = (props) => {
+          const {tenant,data} = props ?? {};
 
-          return  tenantAdminTenantsSetStatus(id,data,)
+          return  tenantAdminTenantsSetStatus(tenant,data,)
         }
 
 
@@ -10909,14 +9512,1429 @@ const {mutation: mutationOptions} = options ?
  * @summary Change one tenant's state
  */
 export const useTenantAdminTenantsSetStatus = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{id: string;data: TenantAdminTenantsSetStatusBody}, TContext>, }
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>, TError,{tenant: string;data: TenantAdminTenantsSetStatusBody}, TContext>, }
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof tenantAdminTenantsSetStatus>>,
         TError,
-        {id: string;data: TenantAdminTenantsSetStatusBody},
+        {tenant: string;data: TenantAdminTenantsSetStatusBody},
         TContext
       > => {
       return useMutation(getTenantAdminTenantsSetStatusMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists the impersonation records of the tenant named by the required tenant query parameter, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.
+ * @summary List impersonation records, one page at a time
+ */
+export const authnAdminImpersonationsList = (
+    tenant: string,
+    params?: AuthnAdminImpersonationsListParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminImpersonationList>(
+      {url: `/api/v1/tenants/${tenant}/impersonations`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminImpersonationsListQueryKey = (tenant: string,
+    params?: AuthnAdminImpersonationsListParams,) => {
+    return [
+    `/api/v1/tenants/${tenant}/impersonations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(tenant: string,
+    params?: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminImpersonationsListQueryKey(tenant,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminImpersonationsList>>> = ({ signal }) => authnAdminImpersonationsList(tenant,params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminImpersonationsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsList>>>
+export type AuthnAdminImpersonationsListQueryError = Problem
+
+
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
+ tenant: string,
+    params: undefined |  AuthnAdminImpersonationsListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminImpersonationsList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminImpersonationsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminImpersonationsList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminImpersonationsList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List impersonation records, one page at a time
+ */
+
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnAdminImpersonationsListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminImpersonationsListQueryOptions(tenant,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Revokes an impersonation record; the record is read first, including an already ended one, to learn its tenant and target, which fill the decision. Revoking a record that has already ended is a no-op and gets the same answer as the first revocation. This route writes no mandatory audit: revoking is a move in the safe direction, and the impersonation module writes its own best-effort row. Requires impersonation.revoke.
+ * @summary Revoke an impersonation record
+ */
+export const authnAdminImpersonationsRevoke = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/impersonations/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminImpersonationsRevokeMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext> => {
+
+const mutationKey = ['authnAdminImpersonationsRevoke'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, {tenant: string;id: string}> = (props) => {
+          const {tenant,id} = props ?? {};
+
+          return  authnAdminImpersonationsRevoke(tenant,id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminImpersonationsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>>
+
+    export type AuthnAdminImpersonationsRevokeMutationError = Problem | void
+
+    /**
+ * @summary Revoke an impersonation record
+ */
+export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>,
+        TError,
+        {tenant: string;id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminImpersonationsRevokeMutationOptions(options), queryClient);
+    }
+
+/**
+ * Returns one page of the tenant's invitations, ordered by status ascending (pending, accepted, revoked) and then by creation time descending with the identifier as the tie-break. The cursor is opaque: pass the previous page's next_cursor as after to resume, and an unreadable cursor is refused with 400 rather than served as the first page. Expired pending invitations are still listed with status pending. A read writes no audit row.
+ * @summary One page of a tenant's invitations
+ */
+export const authnInviteList = (
+    tenant: string,
+    params?: AuthnInviteListParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnInvitePage>(
+      {url: `/api/v1/tenants/${tenant}/invitations`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnInviteListQueryKey = (tenant: string,
+    params?: AuthnInviteListParams,) => {
+    return [
+    `/api/v1/tenants/${tenant}/invitations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuthnInviteListQueryOptions = <TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(tenant: string,
+    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnInviteListQueryKey(tenant,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnInviteList>>> = ({ signal }) => authnInviteList(tenant,params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnInviteListQueryResult = NonNullable<Awaited<ReturnType<typeof authnInviteList>>>
+export type AuthnInviteListQueryError = Problem
+
+
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
+ tenant: string,
+    params: undefined |  AuthnInviteListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnInviteList>>,
+          TError,
+          Awaited<ReturnType<typeof authnInviteList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnInviteList>>,
+          TError,
+          Awaited<ReturnType<typeof authnInviteList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary One page of a tenant's invitations
+ */
+
+export function useAuthnInviteList<TData = Awaited<ReturnType<typeof authnInviteList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnInviteListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnInviteList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnInviteListQueryOptions(tenant,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.
+ * @summary Issue an invitation to an address in a tenant
+ */
+export const authnInviteIssue = (
+    tenant: string,
+    authnInviteIssueBody: AuthnInviteIssueBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnInviteIssued>(
+      {url: `/api/v1/tenants/${tenant}/invitations`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnInviteIssueBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnInviteIssueMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext> => {
+
+const mutationKey = ['authnInviteIssue'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnInviteIssue>>, {tenant: string;data: AuthnInviteIssueBody}> = (props) => {
+          const {tenant,data} = props ?? {};
+
+          return  authnInviteIssue(tenant,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnInviteIssueMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteIssue>>>
+    export type AuthnInviteIssueMutationBody = AuthnInviteIssueBody
+    export type AuthnInviteIssueMutationError = Problem
+
+    /**
+ * @summary Issue an invitation to an address in a tenant
+ */
+export const useAuthnInviteIssue = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteIssue>>, TError,{tenant: string;data: AuthnInviteIssueBody}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnInviteIssue>>,
+        TError,
+        {tenant: string;data: AuthnInviteIssueBody},
+        TContext
+      > => {
+      return useMutation(getAuthnInviteIssueMutationOptions(options), queryClient);
+    }
+
+/**
+ * Revokes a pending invitation and voids its token; the invitation identifier also serves as the decision's target. Revoking an already revoked invitation succeeds idempotently, while revoking an accepted one answers 409 because removing a membership is not this route's job. Failure to write the mandatory audit row answers 503 without revoking.
+ * @summary Revoke a pending invitation
+ */
+export const authnInviteRevoke = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/invitations/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnInviteRevokeMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext> => {
+
+const mutationKey = ['authnInviteRevoke'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnInviteRevoke>>, {tenant: string;id: string}> = (props) => {
+          const {tenant,id} = props ?? {};
+
+          return  authnInviteRevoke(tenant,id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnInviteRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnInviteRevoke>>>
+
+    export type AuthnInviteRevokeMutationError = Problem | void
+
+    /**
+ * @summary Revoke a pending invitation
+ */
+export const useAuthnInviteRevoke = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnInviteRevoke>>, TError,{tenant: string;id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnInviteRevoke>>,
+        TError,
+        {tenant: string;id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnInviteRevokeMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists one tenant's memberships, one page at a time, in ascending account-identifier order. The path names the tenant identifier itself, not an alias: the module holds no tenant roster and does not look the tenant up, and the same identifier is the decision's tenant. Requires membership.manage.
+ * @summary List a tenant's members
+ */
+export const authnAdminMembersList = (
+    tenant: string,
+    params?: AuthnAdminMembersListParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminMemberList>(
+      {url: `/api/v1/tenants/${tenant}/members`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminMembersListQueryKey = (tenant: string,
+    params?: AuthnAdminMembersListParams,) => {
+    return [
+    `/api/v1/tenants/${tenant}/members`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuthnAdminMembersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(tenant: string,
+    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminMembersListQueryKey(tenant,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminMembersList>>> = ({ signal }) => authnAdminMembersList(tenant,params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminMembersListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersList>>>
+export type AuthnAdminMembersListQueryError = Problem
+
+
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
+ tenant: string,
+    params: undefined |  AuthnAdminMembersListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminMembersList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminMembersList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminMembersList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminMembersList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List a tenant's members
+ */
+
+export function useAuthnAdminMembersList<TData = Awaited<ReturnType<typeof authnAdminMembersList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnAdminMembersListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminMembersList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminMembersListQueryOptions(tenant,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Removes the account's membership from the tenant. Requires membership.manage with the path's tenant. The route is idempotent: a membership that is not there is already removed, and the call answers 204.
+ * @summary Remove an account's membership from a tenant
+ */
+export const authnAdminMembersRemove = (
+    tenant: string,
+    account: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/members/${account}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminMembersRemoveMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext> => {
+
+const mutationKey = ['authnAdminMembersRemove'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersRemove>>, {tenant: string;account: string}> = (props) => {
+          const {tenant,account} = props ?? {};
+
+          return  authnAdminMembersRemove(tenant,account,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminMembersRemoveMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersRemove>>>
+
+    export type AuthnAdminMembersRemoveMutationError = Problem | void
+
+    /**
+ * @summary Remove an account's membership from a tenant
+ */
+export const useAuthnAdminMembersRemove = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersRemove>>, TError,{tenant: string;account: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminMembersRemove>>,
+        TError,
+        {tenant: string;account: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminMembersRemoveMutationOptions(options), queryClient);
+    }
+
+/**
+ * Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. Requires membership.manage with the path's tenant.
+ * @summary Write an account's membership in a tenant
+ */
+export const authnAdminMembersPut = (
+    tenant: string,
+    account: string,
+    authnAdminMemberWrite: AuthnAdminMemberWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/members/${account}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminMemberWrite, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminMembersPutMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext> => {
+
+const mutationKey = ['authnAdminMembersPut'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersPut>>, {tenant: string;account: string;data: AuthnAdminMemberWrite}> = (props) => {
+          const {tenant,account,data} = props ?? {};
+
+          return  authnAdminMembersPut(tenant,account,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminMembersPutMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersPut>>>
+    export type AuthnAdminMembersPutMutationBody = AuthnAdminMemberWrite
+    export type AuthnAdminMembersPutMutationError = Problem | void
+
+    /**
+ * @summary Write an account's membership in a tenant
+ */
+export const useAuthnAdminMembersPut = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersPut>>, TError,{tenant: string;account: string;data: AuthnAdminMemberWrite}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminMembersPut>>,
+        TError,
+        {tenant: string;account: string;data: AuthnAdminMemberWrite},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminMembersPutMutationOptions(options), queryClient);
+    }
+
+/**
+ * Sets or clears a member's emergency exemption from the tenant's enforced SSO requirement. The membership must already exist: an absent one is 404, and the route changes only the exemption, leaving the rest of the membership as it is. Requires membership.manage.
+ * @summary Set an account's exemption from a tenant's SSO requirement
+ */
+export const authnAdminMembersSsoExempt = (
+    tenant: string,
+    account: string,
+    authnAdminMemberSSOExempt: AuthnAdminMemberSSOExempt,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/members/${account}/sso-exempt`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminMemberSSOExempt, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminMembersSsoExemptMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext> => {
+
+const mutationKey = ['authnAdminMembersSsoExempt'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, {tenant: string;account: string;data: AuthnAdminMemberSSOExempt}> = (props) => {
+          const {tenant,account,data} = props ?? {};
+
+          return  authnAdminMembersSsoExempt(tenant,account,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminMembersSsoExemptMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>>
+    export type AuthnAdminMembersSsoExemptMutationBody = AuthnAdminMemberSSOExempt
+    export type AuthnAdminMembersSsoExemptMutationError = Problem | void
+
+    /**
+ * @summary Set an account's exemption from a tenant's SSO requirement
+ */
+export const useAuthnAdminMembersSsoExempt = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>, TError,{tenant: string;account: string;data: AuthnAdminMemberSSOExempt}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminMembersSsoExempt>>,
+        TError,
+        {tenant: string;account: string;data: AuthnAdminMemberSSOExempt},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminMembersSsoExemptMutationOptions(options), queryClient);
+    }
+
+/**
+ * Lists the tenant's SSO providers. The encrypted client secret never appears. Requires idp.manage with the path's tenant.
+ * @summary List a tenant's SSO providers
+ */
+export const authnAdminSsoProvidersList = (
+    tenant: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminProviderList>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminSsoProvidersListQueryKey = (tenant: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/sso/providers`
+    ] as const;
+    }
+
+
+export const getAuthnAdminSsoProvidersListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminSsoProvidersListQueryKey(tenant);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>> = ({ signal }) => authnAdminSsoProvidersList(tenant, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminSsoProvidersListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>>
+export type AuthnAdminSsoProvidersListQueryError = Problem
+
+
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
+ tenant: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminSsoProvidersList>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List a tenant's SSO providers
+ */
+
+export function useAuthnAdminSsoProvidersList<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError = Problem>(
+ tenant: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersList>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminSsoProvidersListQueryOptions(tenant,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.
+ * @summary Create an SSO provider in a tenant
+ */
+export const authnAdminSsoProvidersCreate = (
+    tenant: string,
+    authnAdminProviderWrite: AuthnAdminProviderWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminProviderEnvelope>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminProviderWrite, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersCreateMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersCreate'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, {tenant: string;data: AuthnAdminProviderWrite}> = (props) => {
+          const {tenant,data} = props ?? {};
+
+          return  authnAdminSsoProvidersCreate(tenant,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersCreateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>>
+    export type AuthnAdminSsoProvidersCreateMutationBody = AuthnAdminProviderWrite
+    export type AuthnAdminSsoProvidersCreateMutationError = Problem
+
+    /**
+ * @summary Create an SSO provider in a tenant
+ */
+export const useAuthnAdminSsoProvidersCreate = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>, TError,{tenant: string;data: AuthnAdminProviderWrite}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersCreate>>,
+        TError,
+        {tenant: string;data: AuthnAdminProviderWrite},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersCreateMutationOptions(options), queryClient);
+    }
+
+/**
+ * Deletes the provider. Requires idp.manage, with the provider's own tenant as the decision's tenant.
+ * @summary Delete an SSO provider
+ */
+export const authnAdminSsoProvidersDelete = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersDeleteMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{tenant: string;id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{tenant: string;id: string}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, {tenant: string;id: string}> = (props) => {
+          const {tenant,id} = props ?? {};
+
+          return  authnAdminSsoProvidersDelete(tenant,id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>>
+
+    export type AuthnAdminSsoProvidersDeleteMutationError = Problem | void
+
+    /**
+ * @summary Delete an SSO provider
+ */
+export const useAuthnAdminSsoProvidersDelete = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>, TError,{tenant: string;id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersDelete>>,
+        TError,
+        {tenant: string;id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersDeleteMutationOptions(options), queryClient);
+    }
+
+/**
+ * Reads one provider by its identifier. The provider's own tenant, resolved from the store, is the decision's tenant. The encrypted client secret never appears. Requires idp.manage.
+ * @summary Read one SSO provider
+ */
+export const authnAdminSsoProvidersGet = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminProviderEnvelope>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminSsoProvidersGetQueryKey = (tenant: string,
+    id: string,) => {
+    return [
+    `/api/v1/tenants/${tenant}/sso/providers/${id}`
+    ] as const;
+    }
+
+
+export const getAuthnAdminSsoProvidersGetQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(tenant: string,
+    id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminSsoProvidersGetQueryKey(tenant,id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>> = ({ signal }) => authnAdminSsoProvidersGet(tenant,id, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined && id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AuthnAdminSsoProvidersGetQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>>
+export type AuthnAdminSsoProvidersGetQueryError = Problem | void
+
+
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
+ tenant: string,
+    id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
+ tenant: string,
+    id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>,
+          TError,
+          Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>
+        > , 'initialData'
+      >, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
+ tenant: string,
+    id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one SSO provider
+ */
+
+export function useAuthnAdminSsoProvidersGet<TData = Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError = Problem | void>(
+ tenant: string,
+    id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersGet>>, TError, TData>>, }
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAuthnAdminSsoProvidersGetQueryOptions(tenant,id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. Booleans left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.
+ * @summary Update an SSO provider
+ */
+export const authnAdminSsoProvidersUpdate = (
+    tenant: string,
+    id: string,
+    authnAdminProviderWrite: AuthnAdminProviderWrite,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminProviderEnvelope>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}`, method: 'PUT',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminProviderWrite, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersUpdateMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{tenant: string;id: string;data: AuthnAdminProviderWrite}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{tenant: string;id: string;data: AuthnAdminProviderWrite}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersUpdate'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, {tenant: string;id: string;data: AuthnAdminProviderWrite}> = (props) => {
+          const {tenant,id,data} = props ?? {};
+
+          return  authnAdminSsoProvidersUpdate(tenant,id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersUpdateMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>>
+    export type AuthnAdminSsoProvidersUpdateMutationBody = AuthnAdminProviderWrite
+    export type AuthnAdminSsoProvidersUpdateMutationError = Problem | void
+
+    /**
+ * @summary Update an SSO provider
+ */
+export const useAuthnAdminSsoProvidersUpdate = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>, TError,{tenant: string;id: string;data: AuthnAdminProviderWrite}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersUpdate>>,
+        TError,
+        {tenant: string;id: string;data: AuthnAdminProviderWrite},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersUpdateMutationOptions(options), queryClient);
+    }
+
+/**
+ * Claims a domain for the provider and answers the verification token to publish in the domain's DNS TXT record; the claim stays unverified until the verify route finds that record. Requires idp.manage. A domain another provider has already verified is 409; an unverified claim by another provider may stand beside this one.
+ * @summary Claim a domain for an SSO provider
+ */
+export const authnAdminSsoProvidersClaimDomain = (
+    tenant: string,
+    id: string,
+    authnAdminDomainClaim: AuthnAdminDomainClaim,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminVerifyToken>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}/domains`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnAdminDomainClaim, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersClaimDomainMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{tenant: string;id: string;data: AuthnAdminDomainClaim}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{tenant: string;id: string;data: AuthnAdminDomainClaim}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersClaimDomain'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, {tenant: string;id: string;data: AuthnAdminDomainClaim}> = (props) => {
+          const {tenant,id,data} = props ?? {};
+
+          return  authnAdminSsoProvidersClaimDomain(tenant,id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersClaimDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>>
+    export type AuthnAdminSsoProvidersClaimDomainMutationBody = AuthnAdminDomainClaim
+    export type AuthnAdminSsoProvidersClaimDomainMutationError = Problem | void
+
+    /**
+ * @summary Claim a domain for an SSO provider
+ */
+export const useAuthnAdminSsoProvidersClaimDomain = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>, TError,{tenant: string;id: string;data: AuthnAdminDomainClaim}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersClaimDomain>>,
+        TError,
+        {tenant: string;id: string;data: AuthnAdminDomainClaim},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersClaimDomainMutationOptions(options), queryClient);
+    }
+
+/**
+ * Removes a claimed domain, verified or not, from the provider. Requires idp.manage.
+ * @summary Remove a domain from an SSO provider
+ */
+export const authnAdminSsoProvidersRemoveDomain = (
+    tenant: string,
+    id: string,
+    domain: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}/domains/${domain}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersRemoveDomainMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{tenant: string;id: string;domain: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{tenant: string;id: string;domain: string}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersRemoveDomain'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, {tenant: string;id: string;domain: string}> = (props) => {
+          const {tenant,id,domain} = props ?? {};
+
+          return  authnAdminSsoProvidersRemoveDomain(tenant,id,domain,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersRemoveDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>>
+
+    export type AuthnAdminSsoProvidersRemoveDomainMutationError = Problem | void
+
+    /**
+ * @summary Remove a domain from an SSO provider
+ */
+export const useAuthnAdminSsoProvidersRemoveDomain = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>, TError,{tenant: string;id: string;domain: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersRemoveDomain>>,
+        TError,
+        {tenant: string;id: string;domain: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersRemoveDomainMutationOptions(options), queryClient);
+    }
+
+/**
+ * Verifies a claimed domain by looking up the TXT record that must hold the verification token and, when it does, marks the claim verified. A domain the provider holds no claim on, or a record that does not hold the token, marks nothing verified. Requires idp.manage.
+ * @summary Verify a claimed domain of an SSO provider
+ */
+export const authnAdminSsoProvidersVerifyDomain = (
+    tenant: string,
+    id: string,
+    domain: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}/domains/${domain}/verify`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersVerifyDomainMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{tenant: string;id: string;domain: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{tenant: string;id: string;domain: string}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersVerifyDomain'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, {tenant: string;id: string;domain: string}> = (props) => {
+          const {tenant,id,domain} = props ?? {};
+
+          return  authnAdminSsoProvidersVerifyDomain(tenant,id,domain,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersVerifyDomainMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>>
+
+    export type AuthnAdminSsoProvidersVerifyDomainMutationError = Problem | void
+
+    /**
+ * @summary Verify a claimed domain of an SSO provider
+ */
+export const useAuthnAdminSsoProvidersVerifyDomain = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>, TError,{tenant: string;id: string;domain: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersVerifyDomain>>,
+        TError,
+        {tenant: string;id: string;domain: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersVerifyDomainMutationOptions(options), queryClient);
+    }
+
+/**
+ * Refreshes the provider's metadata by dispatching to the refresher registered for its protocol. A protocol with no refresher in this assembly is 400, and a provider with no metadata URL cannot be refreshed. On a parse or validation failure the stored config is kept and the failure is answered. Requires idp.manage; a successful refresh writes the new config and raises version.
+ * @summary Refresh an SSO provider's metadata
+ */
+export const authnAdminSsoProvidersRefreshMetadata = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminProviderEnvelope>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}/metadata/refresh`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersRefreshMetadataMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{tenant: string;id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{tenant: string;id: string}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersRefreshMetadata'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, {tenant: string;id: string}> = (props) => {
+          const {tenant,id} = props ?? {};
+
+          return  authnAdminSsoProvidersRefreshMetadata(tenant,id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersRefreshMetadataMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>>
+
+    export type AuthnAdminSsoProvidersRefreshMetadataMutationError = Problem | void
+
+    /**
+ * @summary Refresh an SSO provider's metadata
+ */
+export const useAuthnAdminSsoProvidersRefreshMetadata = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>, TError,{tenant: string;id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersRefreshMetadata>>,
+        TError,
+        {tenant: string;id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersRefreshMetadataMutationOptions(options), queryClient);
+    }
+
+/**
+ * Re-runs verification for every domain the provider has verified; a claim that was never verified is not looked up. Requires idp.manage.
+ * @summary Re-verify every claimed domain of an SSO provider
+ */
+export const authnAdminSsoProvidersReverifyDomains = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/tenants/${tenant}/sso/providers/${id}/reverify-domains`, method: 'POST', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminSsoProvidersReverifyDomainsMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{tenant: string;id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{tenant: string;id: string}, TContext> => {
+
+const mutationKey = ['authnAdminSsoProvidersReverifyDomains'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, {tenant: string;id: string}> = (props) => {
+          const {tenant,id} = props ?? {};
+
+          return  authnAdminSsoProvidersReverifyDomains(tenant,id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminSsoProvidersReverifyDomainsMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>>
+
+    export type AuthnAdminSsoProvidersReverifyDomainsMutationError = Problem | void
+
+    /**
+ * @summary Re-verify every claimed domain of an SSO provider
+ */
+export const useAuthnAdminSsoProvidersReverifyDomains = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>, TError,{tenant: string;id: string}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminSsoProvidersReverifyDomains>>,
+        TError,
+        {tenant: string;id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminSsoProvidersReverifyDomainsMutationOptions(options), queryClient);
     }
 
 /**

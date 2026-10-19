@@ -120,9 +120,11 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 | 面 | 方法 路径 | 登记 | 授权 |
 |---|---|---|---|
-| 管理面 | `POST B/admin/tenants/:tenant/invitations` | `Guarded` | 判定接缝 + 强制档审计 |
-| 管理面 | `GET B/admin/tenants/:tenant/invitations` | `Guarded` | 判定接缝；读不写审计 |
-| 管理面 | `DELETE B/admin/tenants/:tenant/invitations/:id` | `Guarded` | 判定接缝 + 强制档审计 |
+`B` 是普通面的基路径，`Bt` 是 `tenants` 作用域的基路径（`authn.gate.mount.bases`，见 [authn-gate](design-authn-gate.md)）。
+
+| 管理面 | `POST Bt/:tenant/invitations` | `Guarded` | 判定接缝 + 强制档审计 |
+| 管理面 | `GET Bt/:tenant/invitations` | `Guarded` | 判定接缝；读不写审计 |
+| 管理面 | `DELETE Bt/:tenant/invitations/:id` | `Guarded` | 判定接缝 + 强制档审计 |
 | account 面 | `GET B/invitations/:token` | `Public` | 令牌 |
 | account 面 | `POST B/invitations/:token` | `Public` | 令牌 |
 
@@ -148,7 +150,7 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 - **模块名**：`authn.invite`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置输入项**：`authn.invite.ttl`（时长，缺省取声明的邀请存活期，取主配置源）。键的名字、取值域与缺省在 [design-authn-config](design-authn-config.md)。
-- **路由**：`B/admin/tenants/:tenant/invitations` 下的签发、列表与撤销，以及 `B/invitations/:token` 下的读取与接受；询问的动作 `authn.membership.manage`。
+- **路由**：`Bt/:tenant/invitations` 下的签发、列表与撤销，以及 `B/invitations/:token` 下的读取与接受；询问的动作 `authn.membership.manage`。
 - **令牌前缀**：接受令牌以 `spd_inv_` 起头，供日志脱敏识别（对照 `spd_rt_`、`spd_cs_` 两条既有前缀，见 [design-authn-token](design-authn-token.md)）。
 - **特性名**：`authn.invitations`，静态特性（见「声明的特性」）。
 

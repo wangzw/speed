@@ -22,17 +22,36 @@ const gateNamespace = "authn.gate"
 // The keys this module reads, relative to gateNamespace.
 const (
 	endpointItem       = "mount.endpoint"
-	basePathItem       = "mount.base-path"
+	basesItem          = "mount.bases"
 	publicURLItem      = "mount.public-url"
 	insecureItem       = "mount.allow-insecure"
 	trustedOriginsItem = "trusted-origins"
 )
 
+// bases is the base path of the management scopes plus the ordinary surface.
+// The capability's routes span the levels, so the mount points are written per
+// scope: one path cannot serve routes the path taxonomy publishes under
+// different segments.
+type bases struct {
+	Default string `config:"default"`
+	Tenants string `config:"tenants"`
+	System  string `config:"system"`
+}
+
+// defaults is the base path of each scope when the deployment configures none.
+func defaultBases() bases {
+	return bases{
+		Default: mount.DefaultBasePath,
+		Tenants: mount.DefaultTenantsBasePath,
+		System:  mount.DefaultSystemBasePath,
+	}
+}
+
 // settings is the part of the gateway's section this module reads.
 type settings struct {
 	Mount struct {
 		Endpoint      string `config:"endpoint"`
-		BasePath      string `config:"base-path"`
+		Bases         bases  `config:"bases"`
 		PublicURL     string `config:"public-url"`
 		AllowInsecure bool   `config:"allow-insecure"`
 	} `config:"mount"`
@@ -44,11 +63,11 @@ type settings struct {
 // configuration.
 func readSettings(reader config.Reader) (settings, error) {
 	var s settings
-	// The default is the one the gateway declares, read from the shared value:
-	// when the gateway module is in the assembly it declares mount.base-path
-	// and the decode fills it, and when a host supplies a gateway of its own
-	// nobody declares the keys and this is what the base path is.
-	s.Mount.BasePath = mount.DefaultBasePath
+	// The defaults are the ones the gateway declares, read from the shared
+	// values: when the gateway module is in the assembly it declares the
+	// mount keys and the decode fills them, and when a host supplies a gateway
+	// of its own nobody declares the keys and this is what the base paths are.
+	s.Mount.Bases = defaultBases()
 	if err := reader.Decode(gateNamespace, &s); err != nil {
 		return settings{}, err
 	}
@@ -67,8 +86,17 @@ func key(item string) string { return gateNamespace + "." + item }
 // its user information, query or fragment: it may carry a password written where
 // none belongs.
 func (s settings) check() error {
-	if err := checkBasePath(s.Mount.BasePath); err != nil {
-		return err
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"mount.bases.default", s.Mount.Bases.Default},
+		{"mount.bases.tenants", s.Mount.Bases.Tenants},
+		{"mount.bases.system", s.Mount.Bases.System},
+	} {
+		if err := checkBasePath(item.name, item.value); err != nil {
+			return err
+		}
 	}
 	if _, err := mount.TrustedOrigins(s.Mount.PublicURL, s.TrustedOrigins); err != nil {
 		return fmt.Errorf("%w: %s or %s is not an origin the cross-origin check can trust: %w",
@@ -77,21 +105,21 @@ func (s settings) check() error {
 	return checkPublicURL(s.Mount.PublicURL, s.Mount.AllowInsecure)
 }
 
-// checkBasePath holds the base path to the form gin keeps a path in: it begins
+// checkBasePath holds a base path to the form gin keeps a path in: it begins
 // with a slash, does not end with one, carries no wildcard or parameter and is
 // what path.Clean would make of it.
-func checkBasePath(p string) error {
+func checkBasePath(item, p string) error {
 	switch {
 	case !strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/"):
 		return fmt.Errorf("%w: %s is %q, which has to begin with a slash and not end with one, "+
-			"such as /api/v1/auth", authn.ErrInvalidConfig, key(basePathItem), clip(p))
+			"such as /api/v1/auth", authn.ErrInvalidConfig, key(item), clip(p))
 	case strings.ContainsAny(p, "*:?#{}"):
 		return fmt.Errorf("%w: %s is %q, which carries a wildcard, a parameter, a query or a "+
 			"fragment, and routes are mounted under a literal path", authn.ErrInvalidConfig,
-			key(basePathItem), clip(p))
+			key(item), clip(p))
 	case path.Clean(p) != p:
 		return fmt.Errorf("%w: %s is %q, which is not in the cleaned form gin keeps a path in",
-			authn.ErrInvalidConfig, key(basePathItem), clip(p))
+			authn.ErrInvalidConfig, key(item), clip(p))
 	}
 	return nil
 }
@@ -111,7 +139,7 @@ func checkPublicURL(raw string, allowInsecure bool) error {
 	shown := clip(withoutUser(u))
 	if u.Path != "" {
 		return fmt.Errorf("%w: %s is %q, which carries a path. Write scheme, host and port alone: "+
-			"the path is %s", authn.ErrInvalidConfig, key(publicURLItem), shown, key(basePathItem))
+			"the path is %s", authn.ErrInvalidConfig, key(publicURLItem), shown, key(basesItem))
 	}
 	if u.Scheme == "http" && !allowInsecure && !loopbackHost(u.Hostname()) {
 		return fmt.Errorf("%w: %s is %q, which is not https. Cookies and redirects built on it would "+

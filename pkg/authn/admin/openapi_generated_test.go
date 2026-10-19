@@ -6,36 +6,49 @@ import (
 	"os"
 	"testing"
 
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/internal/openapigen"
 )
 
-// fragmentPath is this module's fragment, relative to the package directory
-// `go test` runs in.
-const fragmentPath = "openapi/admin.json"
+// The module's two fragments, relative to the package directory `go test` runs
+// in: the platform-domain surface and the tenant-domain one.
+const (
+	systemFragmentPath  = "openapi/admin.json"
+	tenantsFragmentPath = "openapi/admin.tenants.json"
+)
 
-// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragment to
-// what the declarations generate. The fragment is a build product: a handler or
-// a route that changes without the declaration fails here, and the fix is to
+// TestTheFragmentIsGeneratedFromTheDeclarations holds the embedded fragments to
+// what the declarations generate. A fragment is a build product: a handler or a
+// route that changes without the declaration fails here, and the fix is to
 // change the declaration and regenerate.
 //
-// Run with UPDATE_FRAGMENTS=1 to write the generated fragment.
+// Run with UPDATE_FRAGMENTS=1 to write the generated fragments.
 func TestTheFragmentIsGeneratedFromTheDeclarations(t *testing.T) {
-	generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, operations)
-	if err != nil {
-		t.Fatalf("generating the fragment: %v", err)
-	}
-	if os.Getenv("UPDATE_FRAGMENTS") == "1" {
-		if writeErr := os.WriteFile(fragmentPath, generated, 0o644); writeErr != nil {
-			t.Fatalf("writing %s: %v", fragmentPath, writeErr)
+	for _, fragment := range []struct {
+		path       string
+		operations speedhttp.Operations
+	}{
+		{systemFragmentPath, systemOperations},
+		{tenantsFragmentPath, tenantOperations},
+	} {
+		generated, err := openapigen.Generate(fragmentTitle, fragmentVersion, fragment.operations)
+		if err != nil {
+			t.Fatalf("generating %s: %v", fragment.path, err)
 		}
-	}
-	committed, err := os.ReadFile(fragmentPath)
-	if err != nil {
-		t.Fatalf("reading %s: %v", fragmentPath, err)
-	}
-	if !bytes.Equal(generated, committed) {
-		t.Errorf("the committed fragment is out of step with the declarations; regenerate it with " +
-			"UPDATE_FRAGMENTS=1 go -C pkg test ./authn/admin -run TestTheFragmentIsGeneratedFromTheDeclarations")
+		if os.Getenv("UPDATE_FRAGMENTS") == "1" {
+			if writeErr := os.WriteFile(fragment.path, generated, 0o644); writeErr != nil {
+				t.Fatalf("writing %s: %v", fragment.path, writeErr)
+			}
+		}
+		committed, err := os.ReadFile(fragment.path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", fragment.path, err)
+		}
+		if !bytes.Equal(generated, committed) {
+			t.Errorf("the committed fragment %s is out of step with the declarations; regenerate it "+
+				"with UPDATE_FRAGMENTS=1 go -C pkg test ./authn/admin "+
+				"-run TestTheFragmentIsGeneratedFromTheDeclarations", fragment.path)
+		}
 	}
 }
 
@@ -53,7 +66,7 @@ func TestTheProviderWriteConfigIsPublishedAsAnObject(t *testing.T) {
 			} `json:"schemas"`
 		} `json:"components"`
 	}
-	if err := json.Unmarshal(adminFragment, &doc); err != nil {
+	if err := json.Unmarshal(adminTenantsFragment, &doc); err != nil {
 		t.Fatalf("the embedded OpenAPI fragment is not a JSON object: %v", err)
 	}
 	schema, ok := doc.Components.Schemas["AuthnAdminProviderWrite"]

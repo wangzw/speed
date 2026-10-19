@@ -4,7 +4,7 @@
  * The page carries two surfaces over one page: the operator's own
  * impersonation session on /api/v1/auth/impersonation (the status read, the start
  * form and the end action -- the caller-session operations the page calls
- * directly), and the tenant's record list on /api/v1/auth/admin/impersonations
+ * directly), and the tenant's record list on /api/v1/tenants/{tenant}/impersonations
  * (through the scripted operations bundle).
  *
  * The caller-session half is exercised over the api-sdk runtime seam: the

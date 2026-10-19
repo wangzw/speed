@@ -60,7 +60,7 @@ func TestARegistrationOutsideTheWindowPanicsAndNamesTheRoute(t *testing.T) {
 // what to do, instead of dropping the registration.
 func TestARegistrationBeforeTheModuleHasInitialisedPanicsAndNamesTheRoute(t *testing.T) {
 	var s settings
-	s.Mount.BasePath = "/api/v1/auth"
+	s.Mount.Bases = defaultBases()
 	p, err := newProduct(s)
 	if err != nil {
 		t.Fatalf("building the product: %v", err)

@@ -161,7 +161,7 @@ type Mounter interface {
     Optional(method, rel string, h gin.HandlerFunc, opts ...Option)  // 路由加 Optional
     Guarded(method, rel string, h gin.HandlerFunc, opts ...Option)   // 只登记路由，网关守
     Callback(methods []string, rel string, h gin.HandlerFunc)        // 公开，且不做跨源检查（外部方的跨站回跳）
-    Base() string                                                    // 基路径 B
+    BaseIn(scope) string                                             // 该作用域的基路径
     Endpoint() string                                                // 路由挂载所在的端名；处理器自答 401 时写作挑战的 realm
     PublicURL() string                                               // 对外基址
     CSRF() *http.CrossOriginProtection
@@ -172,7 +172,7 @@ type Mounter interface {
 
 - 经本包装的处理器所写的响应加 `Cache-Control: no-store`（`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它，如密钥集自带缓存头）；网关在处理器之前自产的 401/503 不经这一层，不带该头，入口模块对 panic 的缺陷响应按它自己的形状处置；
 - 非 `Callback` 的 `POST`、`PUT`、`PATCH`、`DELETE` 先过跨源检查，不过即 401（`Wrap` 写的，只带 `Bearer` 与 `Cookie` 挑战）；
-- 路径是 `Base() + rel`；路由冲突或窗口外的登记失败以 panic 拒绝，文本点名方法与路径（`Route` 的 panic 约定不点名路由，挂载端在重抛时补上）；
+- 路径是 `BaseIn(scope) + rel`；路由冲突或窗口外的登记失败以 panic 拒绝，文本点名方法与路径（`Route` 的 panic 约定不点名路由，挂载端在重抛时补上）；
 - 路由与访问级别在同一次调用里成对写入入口模块与 `Gate`。
 
 `Mounter.CSRF()` 返回的 `CrossOriginProtection` 与网关自己的是各自独立的实例：`Gate` 只有登记方法，宿主又可以预置自己的 `Gate`，`authn.mount` 因此拿不到网关的实例而自建一份。两者的信任集都由 `internal/mount` 的同一份规则从 `public-url` 与 `trusted-origins` 推出（见可信来源的规范形式），不各推一遍。`Callback` 的旁路模式 `POST <base>/{provider}`（gin 的路径参数 `:provider` 在这里写成 `{provider}`）只加在 `authn.mount` 自己的实例上，回跳路由的旁路因此不会变成网关的口子。
@@ -208,7 +208,7 @@ var ErrMalformedHash error
 | `authn.gate.call-budget` | 一次后端调用的期限；超出之后交回的答案一律作废为 503 |
 | `authn.gate.in-flight` | 同时在飞的后端调用数；满则 503，不排队 |
 | `authn.gate.mount.endpoint` | authn 自己的路由挂在哪个端。空且入口模块恰好声明了一个端时取那一个，否则 `ErrRoutesUnconfigured`；这一条由 `authn.mount` 在 `Init` 里判，因为入口模块的端要等路由器实例存在才读得到，网关在 `Start` 对同一规则再判一次；必须是网关所守的端（`ErrRoutesUnguarded`；缺省的唯一端必然受守，受守集合是入口声明端的非空子集）；不得是准入层所守的端（`ScopeGuard.Covers` 为真即 `ErrInvalidConfig`）；不得出现在 `tenant.resolve.endpoints` 里：全局账户的请求不带租户名，被解析层所守的端对它们答 404。网关在 `Start` 核对，读得出该清单且挂载端在其中时 `ErrInvalidConfig`，读不出解码形状时只写一行 `Warn`，不终止启动 |
-| `authn.gate.mount.base-path` | 路由基路径 `B`；须是 gin 规整后的写法，以 `/` 起头、不以 `/` 结尾、无通配 |
+| `authn.gate.mount.bases.default`、`.tenants`、`.system` | 各作用域的路由基路径 `B`；须是 gin 规整后的写法，以 `/` 起头、不以 `/` 结尾、无通配 |
 | `authn.gate.mount.public-url` | 对外基址，只含来源、不含路径；入口模块没有对外基址的概念，不能从 `Host` 与 `X-Forwarded-*` 可靠推出。OIDC 的 `redirect_uri`、SAML 的 ACS 与实体标识、通行密钥的依赖方来源、令牌的 `iss`、`__Host-` cookie 都要它；需要它的模块在自己的 `Prepare` 里读，空即 `ErrInvalidConfig`。要求 `https`，回环主机除外，否则 `ErrInsecureConfig` |
 | `authn.gate.mount.allow-insecure` | 仅开发：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure`；为真时启动诊断写一行 Warn |
 | `authn.gate.trusted-origins` | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`；每项先规范成浏览器发送的形式再匹配，规则见可信来源的规范形式；`public-url` 的来源恒可信 |
@@ -218,7 +218,7 @@ var ErrMalformedHash error
 
 `mount.*` 与 `trusted-origins` 由 `authn.gate` 声明，`authn.mount` 不声明输入项；`authn.mount` 与需要 `public-url` 的模块在自己的 `Prepare` 里读这几个键，这是已有的跨模块读法，不是重复声明。`authn.static.name` 不存在：口令表的名字是常量。
 
-`base-path` 的形状检查与 `public-url` 的 https、回环判断在网关与 `authn.mount` 各有一份（各自的 `config` 校验做一次），因为预置自有 `Gate` 的宿主没有网关来校验这些键，而 `authn.mount` 把 `Base()` 与 `PublicURL()` 交给全部挂路由模块。可信来源的规范与挂载端规则则共用 `internal/mount` 的一份，不各推一遍。
+`bases` 的形状检查与 `public-url` 的 https、回环判断在网关与 `authn.mount` 各有一份（各自的 `config` 校验做一次），因为预置自有 `Gate` 的宿主没有网关来校验这些键，而 `authn.mount` 把 `BaseIn(scope)` 与 `PublicURL()` 交给全部挂路由模块。可信来源的规范与挂载端规则则共用 `internal/mount` 的一份，不各推一遍。
 
 ### 对宿主的要求
 
@@ -371,8 +371,8 @@ sequenceDiagram
     participant Q as 请求
 
     M->>U: Public(method, rel, h)
-    U->>R: Endpoint.Route(method, Base()+rel, 包好的 h)
-    U->>G: Exempt(endpoint, method, Base()+rel)
+    U->>R: Endpoint.Route(method, BaseIn(scope)+rel, 包好的 h)
+    U->>G: Exempt(endpoint, method, BaseIn(scope)+rel)
     Note over G: 窗口内只记录，不判定
     Note over G: Start 关窗：端存在 端受守 类别无冲突 然后冻结
     Q->>R: 请求
@@ -416,7 +416,7 @@ sequenceDiagram
 
 | 阶段 | 网关 | `authn.mount` |
 |---|---|---|
-| `Prepare` | 取配置读取面并 `Decode` 自己那份配置；校验 `public-url`（非空时）与 `base-path` 的形状；表态 `StateEnabled`。任何输入项都有缺省，本阶段不因缺项失败 | 不声明输入项；读 `authn.gate.mount.*` 与 `trusted-origins`；表态 `StateEnabled` |
+| `Prepare` | 取配置读取面并 `Decode` 自己那份配置；校验 `public-url`（非空时）与 `bases` 的形状；表态 `StateEnabled`。任何输入项都有缺省，本阶段不因缺项失败 | 不声明输入项；读 `authn.gate.mount.*` 与 `trusted-origins`；表态 `StateEnabled` |
 | `New` | 建在飞闸门、`CrossOriginProtection`（加入 `trusted-origins` 与 `public-url` 的来源）与 `Gate` 实例；向日志功能登记键名脱敏规则与不依赖 scheme 的值形状规则（JWT、令牌前缀、`otpauth://`、查询串里的机密对、会话 cookie 的 `sid` 对） | 建 `Mounter`，含它自己的 `CrossOriginProtection` |
 | `Migrate` | 打开 `Exempt`、`Optional`、`Impersonable` 的登记窗口 | 无动作 |
 | `Init` | 取 `Router`（缺则 `ErrNoRouter`）；`Router.Endpoints()` 得全集并算出受守的端；`ResolveAll[Verifier]` 建分派表并校验准入；可选取 `ScopeGuard`；逐端建挑战；逐端 `Use` 中间件；取日志（`Named`）与指标；登记依赖各后端认领的 scheme 的值形状脱敏规则；写启动诊断，其中每个不带 `__Host-` 前缀的被认领 cookie 名各占一行 `Warn` | 取 `Router`，经 `mount.Endpoint` 得出挂载端：键为空而入口声明的端不是恰好一个（零个或多个）即 `ErrRoutesUnconfigured`；挂路由的模块在各自的 `Init` 里经 `Mounter` 登记 |
@@ -547,7 +547,7 @@ sequenceDiagram
 
 跨源检查信任的来源是 `public-url` 的来源，加上 `trusted-origins` 的每一项；规则放在 `internal/mount`，由网关与 `authn.mount` 共用同一份，两者因此不会从同一份配置推出不同的信任集。标准库按字节比对请求的 `Origin` 头与信任集，所以每一项先规范成浏览器发送的形式再入集：scheme 与主机小写，默认端口（`http` 的 80、`https` 的 443）省略，主机末尾的点去掉。写成 `https://Example.com:443` 的一项与浏览器发出的 `https://example.com` 是同一个来源。
 
-不能规范成来源的项在启动期以 `ErrInvalidConfig` 失败，不是被跳过：被跳过的项读起来像一份已经生效的清单。`trusted-origins` 的一项是来源而不是 URL，带路径的项同样被拒；`public-url` 只含来源，路径另由 `base-path` 承载。错误文本只含不带用户信息、查询与片段的部分：`trusted-origins` 的项只以序号点名，不抄值，`public-url` 与 `base-path` 只回显去掉这些部分之后的值，因为配置里写错位置的值可能夹带口令。被拒的形态列在 [design-authn-config](design-authn-config.md) 的启动期自检表。
+不能规范成来源的项在启动期以 `ErrInvalidConfig` 失败，不是被跳过：被跳过的项读起来像一份已经生效的清单。`trusted-origins` 的一项是来源而不是 URL，带路径的项同样被拒；`public-url` 只含来源，路径另由 `bases` 承载。错误文本只含不带用户信息、查询与片段的部分：`trusted-origins` 的项只以序号点名，不抄值，`public-url` 与 `bases` 只回显去掉这些部分之后的值，因为配置里写错位置的值可能夹带口令。被拒的形态列在 [design-authn-config](design-authn-config.md) 的启动期自检表。
 
 ### `WWW-Authenticate`
 

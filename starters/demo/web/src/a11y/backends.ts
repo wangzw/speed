@@ -245,34 +245,34 @@ function answer(data: unknown, empty: unknown): RouteAnswer {
 
 /** The path-only endpoint answers (no path parameter). */
 const EXACT: Readonly<Record<string, RouteAnswer>> = {
-  '/api/v1/tenant/admin/tenants': answer(
+  '/api/v1/system/tenants': answer(
     { tenants: [TENANT] } satisfies TenantAdminTenantsList200,
     { tenants: [] } satisfies TenantAdminTenantsList200,
   ),
-  '/api/v1/settings/admin/settings': answer(
+  '/api/v1/system/settings': answer(
     [SETTING] satisfies SettingsAdminSetting[],
     [] satisfies SettingsAdminSetting[],
   ),
-  '/api/v1/audit/admin/records': answer(
+  '/api/v1/system/audit/records': answer(
     { entries: [AUDIT_RECORD], next: '' } satisfies AuditAdminRecordPage,
     { entries: [], next: '' } satisfies AuditAdminRecordPage,
   ),
-  '/api/v1/authz/admin/permissions': answer(
+  '/api/v1/system/permissions': answer(
     { permissions: [{ permission: 'example.read' }] } satisfies {
       permissions: AuthzAdminPermissionView[]
     },
     { permissions: [] } satisfies { permissions: AuthzAdminPermissionView[] },
   ),
-  '/api/v1/auth/admin/accounts': answer(
+  '/api/v1/system/auth/accounts': answer(
     { accounts: [ACCOUNT], next_cursor: '' } satisfies AuthnAdminAccountList,
     { accounts: [], next_cursor: '' } satisfies AuthnAdminAccountList,
   ),
-  '/api/v1/auth/admin/impersonations': answer(
+  '/api/v1/tenants/acme/impersonations': answer(
     { impersonations: [IMPERSONATION_RECORD], next_cursor: '' } satisfies AuthnAdminImpersonationList,
     { impersonations: [], next_cursor: '' } satisfies AuthnAdminImpersonationList,
   ),
   '/api/v1/auth/impersonation': answer(IMPERSONATION_GRANT, NOT_FOUND),
-  '/api/v1/sms/admin/templates': answer(
+  '/api/v1/system/sms/templates': answer(
     { templates: [SMS_TEMPLATE], next_cursor: '' } satisfies SmsAdminTemplatesList200,
     { templates: [], next_cursor: '' } satisfies SmsAdminTemplatesList200,
   ),

@@ -25,13 +25,17 @@ func TestResolveBuildsTheRedirectTarget(t *testing.T) {
 		{
 			name: "a configured base path",
 			cfg:  moduleConfig{ClientID: "id", ClientSecret: "secret"},
-			gm:   gateMount{PublicURL: "https://app.example.com", BasePath: "/identity"},
+			gm: gateMount{PublicURL: "https://app.example.com", Bases: struct {
+				Default string `config:"default"`
+			}{Default: "/identity"}},
 			want: "https://app.example.com/identity/callback/google",
 		},
 		{
 			name: "a trailing slash on the address",
 			cfg:  moduleConfig{ClientID: "id", ClientSecret: "secret"},
-			gm:   gateMount{PublicURL: "https://app.example.com/", BasePath: "/api/v1/auth/"},
+			gm: gateMount{PublicURL: "https://app.example.com/", Bases: struct {
+				Default string `config:"default"`
+			}{Default: "/api/v1/auth/"}},
 			want: "https://app.example.com/api/v1/auth/callback/google",
 		},
 	}

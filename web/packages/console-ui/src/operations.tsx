@@ -7,10 +7,10 @@
  * useConsoleOperations -- a plain object whose members are the
  * react-query read hooks and write mutations of the administration
  * surfaces the pages render: the tenant roster, settings and audit
- * surfaces over /api/v1/tenant/admin, /api/v1/settings/admin and /api/v1/audit/admin; the
+ * surfaces over /api/v1/system/tenants, /api/v1/system/settings and /api/v1/system/audit; the
  * account, session, impersonation, invitation and membership and SSO
- * surfaces over /api/v1/auth and /api/v1/authz/admin; and the SMS template surface over
- * /api/v1/sms/admin. The bundle the package ships (consoleOperations) is a thin
+ * surfaces over /api/v1/auth and /api/v1/system; and the SMS template surface over
+ * /api/v1/system/sms. The bundle the package ships (consoleOperations) is a thin
  * adapter over those generated operations: the reads run the generated
  * query options through useQuery with a `select` that flattens the page
  * envelope to the view rows, and the writes call the generated mutation
@@ -148,7 +148,6 @@ import type {
   AuthnAdminFactor,
   AuthnAdminIdentifierWrite,
   AuthnAdminImpersonation,
-  AuthnAdminImpersonationsListParams,
   AuthnAdminMember,
   AuthnAdminMemberSSOExempt,
   AuthnAdminMemberWrite,
@@ -182,8 +181,8 @@ import type {
  * layer, whose rows only platform staff may read and write. */
 const GLOBAL_LAYER = { layer: 'global' } as const
 
-/** One tenant as /api/v1/tenant/admin shows it -- the generated row of
- * GET /api/v1/tenant/admin/tenants, named for the console's own view. */
+/** One tenant as /api/v1/system/tenants shows it -- the generated row of
+ * GET /api/v1/system/tenants, named for the console's own view. */
 export type ConsoleTenant = TenantAdminTenant
 
 /** The roster's closed status set: the only values a status write may
@@ -192,12 +191,12 @@ export type ConsoleTenant = TenantAdminTenant
  * TenantAdminTenantStatus enum. */
 export type ConsoleTenantStatus = TenantAdminTenantStatus
 
-/** One setting as /api/v1/settings/admin shows it -- the generated row of
- * GET /api/v1/settings/admin/settings. */
+/** One setting as /api/v1/system/settings shows it -- the generated row of
+ * GET /api/v1/system/settings. */
 export type ConsoleSetting = SettingsAdminSetting
 
-/** One audit record as /api/v1/audit/admin shows it -- the generated row of
- * GET /api/v1/audit/admin/records. */
+/** One audit record as /api/v1/system/audit shows it -- the generated row of
+ * GET /api/v1/system/audit/records. */
 export type ConsoleAuditRecord = AuditAdminRecord
 
 /** One page of audit records: the rows and the next-page cursor. */
@@ -218,19 +217,19 @@ export type ConsoleInvitationPage = AuthnInvitePage
 /** One page of SMS templates: the rows and the next-page cursor. */
 export type ConsoleSmsTemplatePage = SmsAdminTemplatesList200
 
-/** POST /api/v1/tenant/admin/tenants body: a tenant not registered yet. */
+/** POST /api/v1/system/tenants body: a tenant not registered yet. */
 export interface ConsoleCreateTenantInput {
   readonly id: string
   readonly alias: string
 }
 
-/** PATCH /api/v1/tenant/admin/tenants/:id body: a new alias. */
+/** PATCH /api/v1/system/tenants/:id body: a new alias. */
 export interface ConsoleSetTenantAliasInput {
   readonly id: string
   readonly alias: string
 }
 
-/** POST /api/v1/tenant/admin/tenants/:id/status body: a new state. */
+/** POST /api/v1/system/tenants/:id/status body: a new state. */
 export interface ConsoleSetTenantStatusInput {
   readonly id: string
   readonly status: ConsoleTenantStatus
@@ -243,7 +242,7 @@ export interface ConsoleTenantQuery {
 }
 
 /**
- * PUT /api/v1/settings/admin/settings/:namespace/:key body: the new value's text.
+ * PUT /api/v1/system/settings/:namespace/:key body: the new value's text.
  * `namespace` is the module that declared the item (a module name may
  * contain a dot), and `key` is the rest of the key under it -- the full
  * key is `<namespace>.<key>` -- because that is how the route addresses
@@ -256,7 +255,7 @@ export interface ConsoleSetSettingInput {
   readonly value: string
 }
 
-/** DELETE /api/v1/settings/admin/settings/:namespace/:key target (see ConsoleSetSettingInput). */
+/** DELETE /api/v1/system/settings/:namespace/:key target (see ConsoleSetSettingInput). */
 export interface ConsoleRemoveSettingInput {
   readonly namespace: string
   readonly key: string
@@ -277,16 +276,16 @@ export function settingKeyRest(
     : fullKey
 }
 
-// --- Authorization surface (/api/v1/authz/admin) -------------------------------
+// --- Authorization surface (/api/v1/system) -------------------------------
 // The authorization administration surface is tenant-scoped: the role,
 // grant and binding routes all carry the tenant as a path segment, so
 // every read and write here names the tenant it acts on (the tenant an
 // operator picks on the page, not the session's current tenant).
 
-/** One permission the catalog declares (GET /api/v1/authz/admin/permissions). */
+/** One permission the catalog declares (GET /api/v1/system/permissions). */
 export type ConsolePermission = AuthzAdminPermissionView
 
-/** One tenant role (GET /api/v1/authz/admin/tenants/:tenant/roles). */
+/** One tenant role (GET /api/v1/system/tenants/:tenant/roles). */
 export type ConsoleRole = AuthzAdminRoleView
 
 /** One permission grant a role holds (GET .../roles/:role/grants). */
@@ -333,9 +332,9 @@ export interface ConsoleAccountBindingsQuery {
   readonly account: string | undefined
 }
 
-// --- Account surface (/api/v1/auth/admin) --------------------------------------
+// --- Account surface (/api/v1/system/auth) --------------------------------------
 
-/** One account as /api/v1/auth/admin shows it (GET /api/v1/auth/admin/accounts). */
+/** One account as /api/v1/system/auth shows it (GET /api/v1/system/auth/accounts). */
 export type ConsoleAccount = AuthnAdminAccount
 
 /** One registered factor of an account (GET .../accounts/:id/factors). */
@@ -350,12 +349,26 @@ export type ConsoleAccountSecretCreated = AuthnAdminSecretCreated
 /** One session of an account (GET .../accounts/:id/sessions). */
 export type ConsoleAccountSession = AuthnAdminSession
 
-/** One impersonation record (GET /api/v1/auth/admin/impersonations). */
+/** One impersonation record (GET /api/v1/tenants/{tenant}/impersonations). */
 export type ConsoleImpersonation = AuthnAdminImpersonation
 
 /** An account target (its detail reads and its writes). */
 export interface ConsoleAccountRef {
   readonly id: string
+}
+
+/** The impersonation record surface's page request: the tenant the records are
+ * filed under, and the page's own paging inputs. */
+export interface ConsoleImpersonationListParams {
+  readonly tenant: string
+  readonly limit?: number
+  readonly after?: string
+}
+
+/** DELETE .../tenants/{tenant}/impersonations/:id target. */
+export interface ConsoleImpersonationRef {
+  readonly id: string
+  readonly tenant: string
 }
 
 /** An account target for a read that stays disabled while no id is chosen. */
@@ -377,14 +390,14 @@ export interface ConsoleRevokeSecretInput {
 }
 
 /**
- * POST /api/v1/auth/admin/accounts body: the fields a create names. It is the
+ * POST /api/v1/system/auth/accounts body: the fields a create names. It is the
  * generated request shape itself, so a field the module's fragment adds
  * reaches the page through this type with no parallel model to keep in
  * step.
  */
 export type ConsoleCreateAccountInput = AuthnAdminAccountCreate
 
-/** PATCH /api/v1/auth/admin/accounts/:id: the account id beside the fields to change. */
+/** PATCH /api/v1/system/auth/accounts/:id: the account id beside the fields to change. */
 export type ConsolePatchAccountInput = AuthnAdminAccountPatch & {
   readonly id: string
 }
@@ -458,13 +471,15 @@ export type ConsoleSetMemberSSOExemptInput = AuthnAdminMemberSSOExempt & {
   readonly account: string
 }
 
-// --- SSO surface (/api/v1/auth/admin/sso) --------------------------------------
+// --- SSO surface (/api/v1/tenants/:tenant/sso) --------------------------------------
 
 /** One SSO provider (GET .../tenants/:tenant/sso/providers, or .../providers/:id). */
 export type ConsoleSsoProvider = AuthnAdminProvider
 
 /** A provider target for a read that stays disabled while no id is chosen. */
 export interface ConsoleSsoProviderQuery {
+  /** The tenant the provider belongs to. */
+  readonly tenant: string
   /** The provider id, or undefined to read nothing. */
   readonly id: string | undefined
 }
@@ -494,7 +509,7 @@ export type ConsoleCreateSsoProviderInput = AuthnAdminProviderWrite & {
   readonly tenant: string
 }
 
-/** PUT /api/v1/auth/admin/sso/providers/:id body: the provider to rewrite, with its tenant. */
+/** PUT /api/v1/tenants/{tenant}/sso/providers/:id body: the provider to rewrite, with its tenant. */
 export type ConsoleWriteSsoProviderInput = AuthnAdminProviderWrite & {
   readonly id: string
   readonly tenant: string
@@ -513,12 +528,12 @@ export interface ConsoleRevokeSessionInput {
   readonly sessionId: string
 }
 
-// --- SMS template surface (/api/v1/sms/admin) ----------------------------------
+// --- SMS template surface (/api/v1/system/sms) ----------------------------------
 
-/** One SMS template (GET /api/v1/sms/admin/templates). */
+/** One SMS template (GET /api/v1/system/sms/templates). */
 export type ConsoleSmsTemplate = SmsAdminTemplate
 
-/** POST /api/v1/sms/admin/templates body: take up a template by vendor code. */
+/** POST /api/v1/system/sms/templates body: take up a template by vendor code. */
 export interface ConsoleRegisterSmsTemplateInput {
   readonly name: string
   readonly params: readonly string[]
@@ -527,7 +542,7 @@ export interface ConsoleRegisterSmsTemplateInput {
 }
 
 /**
- * POST /api/v1/sms/admin/templates/submissions body: hand a template to the
+ * POST /api/v1/system/sms/templates/submissions body: hand a template to the
  * vendor for review (the code arrives on a later read).
  */
 export interface ConsoleOfferSmsTemplateInput {
@@ -539,7 +554,7 @@ export interface ConsoleOfferSmsTemplateInput {
   readonly remark: string
 }
 
-/** POST /api/v1/sms/admin/templates/:name/enabled body: the send switch. */
+/** POST /api/v1/system/sms/templates/:name/enabled body: the send switch. */
 export interface ConsoleSetSmsTemplateEnabledInput {
   readonly name: string
   readonly enabled: boolean
@@ -583,48 +598,48 @@ export interface ConsoleAuditRecordsOptions {
  * request.
  */
 export interface ConsoleOperations {
-  /** GET /api/v1/tenant/admin/tenants -- the whole roster, in the roster's order. */
+  /** GET /api/v1/system/tenants -- the whole roster, in the roster's order. */
   readonly useTenants: () => UseQueryResult<readonly ConsoleTenant[], unknown>
-  /** GET /api/v1/tenant/admin/tenants/:id -- one tenant (disabled while no id). */
+  /** GET /api/v1/system/tenants/:id -- one tenant (disabled while no id). */
   readonly useTenant: (
     query: ConsoleTenantQuery,
   ) => UseQueryResult<ConsoleTenant, unknown>
-  /** POST /api/v1/tenant/admin/tenants -- register a tenant not registered yet. */
+  /** POST /api/v1/system/tenants -- register a tenant not registered yet. */
   readonly useCreateTenant: () => UseMutationResult<
     ConsoleTenant,
     unknown,
     ConsoleCreateTenantInput
   >
-  /** PATCH /api/v1/tenant/admin/tenants/:id -- rename a tenant's alias. */
+  /** PATCH /api/v1/system/tenants/:id -- rename a tenant's alias. */
   readonly useSetTenantAlias: () => UseMutationResult<
     void,
     unknown,
     ConsoleSetTenantAliasInput
   >
-  /** POST /api/v1/tenant/admin/tenants/:id/status -- enable or disable a tenant. */
+  /** POST /api/v1/system/tenants/:id/status -- enable or disable a tenant. */
   readonly useSetTenantStatus: () => UseMutationResult<
     void,
     unknown,
     ConsoleSetTenantStatusInput
   >
-  /** GET /api/v1/settings/admin/settings[/:namespace] -- the declared items' views. */
+  /** GET /api/v1/system/settings[/:namespace] -- the declared items' views. */
   readonly useSettings: (
     namespace: string | undefined,
   ) => UseQueryResult<readonly ConsoleSetting[], unknown>
-  /** PUT /api/v1/settings/admin/settings/:namespace/:key -- write one item's value. */
+  /** PUT /api/v1/system/settings/:namespace/:key -- write one item's value. */
   readonly useSetSetting: () => UseMutationResult<
     void,
     unknown,
     ConsoleSetSettingInput
   >
-  /** DELETE /api/v1/settings/admin/settings/:namespace/:key -- remove one item's override. */
+  /** DELETE /api/v1/system/settings/:namespace/:key -- remove one item's override. */
   readonly useRemoveSetting: () => UseMutationResult<
     void,
     unknown,
     ConsoleRemoveSettingInput
   >
   /**
-   * GET /api/v1/audit/admin/records -- one page of audit records, newest first,
+   * GET /api/v1/system/audit/records -- one page of audit records, newest first,
    * narrowed by the filters the caller passes (since / until / action /
    * cursor / limit). The read returns the page envelope (the entries and
    * the next cursor), so the page can offer server-side pagination.
@@ -633,27 +648,27 @@ export interface ConsoleOperations {
     params?: AuditAdminRecordsListParams,
     options?: ConsoleAuditRecordsOptions,
   ) => UseQueryResult<ConsoleAuditPage, unknown>
-  /** GET /api/v1/audit/admin/records/:id -- one audit record (disabled while no id). */
+  /** GET /api/v1/system/audit/records/:id -- one audit record (disabled while no id). */
   readonly useAuditRecord: (
     query: ConsoleAuditRecordQuery,
   ) => UseQueryResult<ConsoleAuditRecord, unknown>
 
-  // --- Authorization surface (/api/v1/authz/admin, tenant-scoped) --------------
+  // --- Authorization surface (/api/v1/system, tenant-scoped) --------------
 
-  /** GET /api/v1/authz/admin/permissions -- the whole permission catalog. */
+  /** GET /api/v1/system/permissions -- the whole permission catalog. */
   readonly usePermissions: () => UseQueryResult<
     readonly ConsolePermission[],
     unknown
   >
-  /** GET /api/v1/authz/admin/tenants/:tenant/roles -- a tenant's roles. */
+  /** GET /api/v1/system/tenants/:tenant/roles -- a tenant's roles. */
   readonly useRoles: (
     tenant: string,
   ) => UseQueryResult<readonly ConsoleRole[], unknown>
-  /** PUT /api/v1/authz/admin/tenants/:tenant/roles/:role -- create or rewrite a role. */
+  /** PUT /api/v1/system/tenants/:tenant/roles/:role -- create or rewrite a role. */
   readonly useWriteRole: () => UseMutationResult<void, unknown, ConsoleWriteRoleInput>
-  /** DELETE /api/v1/authz/admin/tenants/:tenant/roles/:role -- remove a role. */
+  /** DELETE /api/v1/system/tenants/:tenant/roles/:role -- remove a role. */
   readonly useRemoveRole: () => UseMutationResult<void, unknown, ConsoleRoleRef>
-  /** GET /api/v1/authz/admin/tenants/:tenant/roles/:role/grants -- a role's grants. */
+  /** GET /api/v1/system/tenants/:tenant/roles/:role/grants -- a role's grants. */
   readonly useGrants: (
     tenant: string,
     role: string | undefined,
@@ -662,7 +677,7 @@ export interface ConsoleOperations {
   readonly useGrantPermission: () => UseMutationResult<void, unknown, ConsoleGrantRef>
   /** DELETE .../roles/:role/grants/:permission -- revoke a permission. */
   readonly useRevokePermission: () => UseMutationResult<void, unknown, ConsoleGrantRef>
-  /** GET /api/v1/authz/admin/tenants/:tenant/bindings -- a tenant's bindings. */
+  /** GET /api/v1/system/tenants/:tenant/bindings -- a tenant's bindings. */
   readonly useBindings: (
     tenant: string,
   ) => UseQueryResult<readonly ConsoleBinding[], unknown>
@@ -675,10 +690,10 @@ export interface ConsoleOperations {
   /** DELETE .../bindings/:account/:role -- unbind a role from an account. */
   readonly useUnbindRole: () => UseMutationResult<void, unknown, ConsoleBindingRef>
 
-  // --- Account surface (/api/v1/auth/admin) ------------------------------------
+  // --- Account surface (/api/v1/system/auth) ------------------------------------
 
   /**
-   * GET /api/v1/auth/admin/accounts -- one page of accounts. `enabled` false
+   * GET /api/v1/system/auth/accounts -- one page of accounts. `enabled` false
    * declares the read disabled (no request) when the params do not name an
    * applicable search.
    */
@@ -686,7 +701,7 @@ export interface ConsoleOperations {
     params?: AuthnAdminAccountsListParams,
     options?: { readonly enabled?: boolean },
   ) => UseQueryResult<ConsoleAccountPage, unknown>
-  /** GET /api/v1/auth/admin/accounts/:id -- one account (disabled while no id). */
+  /** GET /api/v1/system/auth/accounts/:id -- one account (disabled while no id). */
   readonly useAccount: (
     query: ConsoleAccountQuery,
   ) => UseQueryResult<ConsoleAccount, unknown>
@@ -702,7 +717,7 @@ export interface ConsoleOperations {
   readonly useAccountSessions: (
     query: ConsoleAccountQuery,
   ) => UseQueryResult<readonly ConsoleAccountSession[], unknown>
-  /** DELETE /api/v1/auth/admin/accounts/:id -- delete an account. */
+  /** DELETE /api/v1/system/auth/accounts/:id -- delete an account. */
   readonly useDeleteAccount: () => UseMutationResult<void, unknown, ConsoleAccountRef>
   /** DELETE .../accounts/:id/identifiers/:identifier -- remove an identifier. */
   readonly useRemoveIdentifier: () => UseMutationResult<
@@ -724,19 +739,19 @@ export interface ConsoleOperations {
     unknown,
     ConsoleRevokeSecretInput
   >
-  /** DELETE /api/v1/auth/admin/sessions/:id -- revoke one session by id. */
+  /** DELETE /api/v1/system/auth/sessions/:id -- revoke one session by id. */
   readonly useRevokeSession: () => UseMutationResult<
     void,
     unknown,
     ConsoleRevokeSessionInput
   >
-  /** POST /api/v1/auth/admin/accounts -- create an account. */
+  /** POST /api/v1/system/auth/accounts -- create an account. */
   readonly useCreateAccount: () => UseMutationResult<
     ConsoleAccount,
     unknown,
     ConsoleCreateAccountInput
   >
-  /** PATCH /api/v1/auth/admin/accounts/:id -- change a display name, an attribute set or the protected flag. */
+  /** PATCH /api/v1/system/auth/accounts/:id -- change a display name, an attribute set or the protected flag. */
   readonly usePatchAccount: () => UseMutationResult<
     ConsoleAccount,
     unknown,
@@ -773,24 +788,24 @@ export interface ConsoleOperations {
     ConsoleCreateSecretInput
   >
 
-  // --- Impersonation surface (/api/v1/auth/admin) ------------------------------
+  // --- Impersonation surface (/api/v1/system/auth) ------------------------------
 
   /**
-   * GET /api/v1/auth/admin/impersonations -- one page of impersonation records.
+   * GET /api/v1/tenants/{tenant}/impersonations -- one page of impersonation records.
    * The read is tenant-scoped by a required query parameter, so it stays
    * disabled while the caller names no tenant; `enabled` lets a page hold
    * it further, for a session whose impersonation the gateway would refuse
    * the read of.
    */
   readonly useImpersonations: (
-    params: AuthnAdminImpersonationsListParams,
+    params: ConsoleImpersonationListParams,
     options?: { readonly enabled?: boolean },
   ) => UseQueryResult<readonly ConsoleImpersonation[], unknown>
-  /** DELETE /api/v1/auth/admin/impersonations/:id -- terminate an impersonation. */
+  /** DELETE /api/v1/tenants/{tenant}/impersonations/:id -- terminate an impersonation. */
   readonly useRevokeImpersonation: () => UseMutationResult<
     void,
     unknown,
-    ConsoleAccountRef
+    ConsoleImpersonationRef
   >
 
   // --- Invitation surface (tenant-scoped) -------------------------------
@@ -836,17 +851,17 @@ export interface ConsoleOperations {
     ConsoleSetMemberSSOExemptInput
   >
 
-  // --- SSO surface (/api/v1/auth/admin/sso) ------------------------------------
+  // --- SSO surface (/api/v1/tenants/:tenant/sso) ------------------------------------
 
   /** GET .../tenants/:tenant/sso/providers -- a tenant's providers. */
   readonly useSsoProviders: (
     tenant: string,
   ) => UseQueryResult<readonly ConsoleSsoProvider[], unknown>
-  /** GET /api/v1/auth/admin/sso/providers/:id -- one provider (disabled while no id). */
+  /** GET /api/v1/tenants/{tenant}/sso/providers/:id -- one provider (disabled while no id). */
   readonly useSsoProvider: (
     query: ConsoleSsoProviderQuery,
   ) => UseQueryResult<ConsoleSsoProvider, unknown>
-  /** DELETE /api/v1/auth/admin/sso/providers/:id -- delete a provider. */
+  /** DELETE /api/v1/tenants/{tenant}/sso/providers/:id -- delete a provider. */
   readonly useDeleteSsoProvider: () => UseMutationResult<
     void,
     unknown,
@@ -882,7 +897,7 @@ export interface ConsoleOperations {
     unknown,
     ConsoleCreateSsoProviderInput
   >
-  /** PUT /api/v1/auth/admin/sso/providers/:id -- rewrite a provider. */
+  /** PUT /api/v1/tenants/{tenant}/sso/providers/:id -- rewrite a provider. */
   readonly useUpdateSsoProvider: () => UseMutationResult<
     ConsoleSsoProvider,
     unknown,
@@ -895,31 +910,31 @@ export interface ConsoleOperations {
     ConsoleClaimSsoDomainInput
   >
 
-  // --- SMS template surface (/api/v1/sms/admin) --------------------------------
+  // --- SMS template surface (/api/v1/system/sms) --------------------------------
 
-  /** GET /api/v1/sms/admin/templates -- one page of templates. */
+  /** GET /api/v1/system/sms/templates -- one page of templates. */
   readonly useSmsTemplates: (
     params?: SmsAdminTemplatesListParams,
   ) => UseQueryResult<ConsoleSmsTemplatePage, unknown>
-  /** POST /api/v1/sms/admin/templates -- take up a template by vendor code. */
+  /** POST /api/v1/system/sms/templates -- take up a template by vendor code. */
   readonly useRegisterSmsTemplate: () => UseMutationResult<
     void,
     unknown,
     ConsoleRegisterSmsTemplateInput
   >
-  /** POST /api/v1/sms/admin/templates/submissions -- offer a template for review. */
+  /** POST /api/v1/system/sms/templates/submissions -- offer a template for review. */
   readonly useOfferSmsTemplate: () => UseMutationResult<
     void,
     unknown,
     ConsoleOfferSmsTemplateInput
   >
-  /** POST /api/v1/sms/admin/templates/:name/enabled -- turn sending on or off. */
+  /** POST /api/v1/system/sms/templates/:name/enabled -- turn sending on or off. */
   readonly useSetSmsTemplateEnabled: () => UseMutationResult<
     void,
     unknown,
     ConsoleSetSmsTemplateEnabledInput
   >
-  /** DELETE /api/v1/sms/admin/templates/:name -- drop a runtime template. */
+  /** DELETE /api/v1/system/sms/templates/:name -- drop a runtime template. */
   readonly useRemoveSmsTemplate: () => UseMutationResult<
     void,
     unknown,
@@ -1060,7 +1075,7 @@ export const consoleOperations: ConsoleOperations = {
       enabled: id !== undefined && id !== '',
     }),
 
-  // --- Authorization surface (/api/v1/authz/admin, tenant-scoped) --------------
+  // --- Authorization surface (/api/v1/system, tenant-scoped) --------------
 
   usePermissions: () =>
     useQuery({
@@ -1184,7 +1199,7 @@ export const consoleOperations: ConsoleOperations = {
     })
   },
 
-  // --- Account surface (/api/v1/auth/admin) ------------------------------------
+  // --- Account surface (/api/v1/system/auth) ------------------------------------
 
   useAccounts: (params, options) =>
     useQuery({
@@ -1435,11 +1450,14 @@ export const consoleOperations: ConsoleOperations = {
     })
   },
 
-  // --- Impersonation surface (/api/v1/auth/admin) ------------------------------
+  // --- Impersonation surface (/api/v1/system/auth) ------------------------------
 
   useImpersonations: (params, options) =>
     useQuery({
-      ...getAuthnAdminImpersonationsListQueryOptions(params),
+      ...getAuthnAdminImpersonationsListQueryOptions(
+        params.tenant,
+        { limit: params.limit, after: params.after },
+      ),
       select: (page) => page.impersonations,
       // The tenant is a required query parameter on the route, so an empty
       // one would fire a request the module refuses as a shape it cannot
@@ -1452,11 +1470,11 @@ export const consoleOperations: ConsoleOperations = {
   useRevokeImpersonation: () => {
     const queryClient = useQueryClient()
     return useMutation({
-      mutationFn: (input: ConsoleAccountRef) =>
-        authnAdminImpersonationsRevoke(input.id),
-      onSuccess: () => {
+      mutationFn: (input: ConsoleImpersonationRef) =>
+        authnAdminImpersonationsRevoke(input.tenant, input.id),
+      onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
-          queryKey: getAuthnAdminImpersonationsListQueryKey(),
+          queryKey: getAuthnAdminImpersonationsListQueryKey(input.tenant),
         })
       },
     })
@@ -1557,7 +1575,7 @@ export const consoleOperations: ConsoleOperations = {
     })
   },
 
-  // --- SSO surface (/api/v1/auth/admin/sso) ------------------------------------
+  // --- SSO surface (/api/v1/tenants/:tenant/sso) ------------------------------------
 
   useSsoProviders: (tenant) =>
     useQuery({
@@ -1566,9 +1584,9 @@ export const consoleOperations: ConsoleOperations = {
       enabled: tenant !== '',
     }),
 
-  useSsoProvider: ({ id }) =>
+  useSsoProvider: ({ tenant, id }) =>
     useQuery({
-      ...getAuthnAdminSsoProvidersGetQueryOptions(id ?? ''),
+      ...getAuthnAdminSsoProvidersGetQueryOptions(tenant, id ?? ''),
       select: (envelope) => envelope.provider,
       enabled: id !== undefined && id !== '',
     }),
@@ -1577,13 +1595,13 @@ export const consoleOperations: ConsoleOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: ConsoleSsoProviderRef) =>
-        authnAdminSsoProvidersDelete(input.id),
+        authnAdminSsoProvidersDelete(input.tenant, input.id),
       onSuccess: (_answer, input) => {
         void queryClient.invalidateQueries({
           queryKey: getAuthnAdminSsoProvidersListQueryKey(input.tenant),
         })
         queryClient.removeQueries({
-          queryKey: getAuthnAdminSsoProvidersGetQueryKey(input.id),
+          queryKey: getAuthnAdminSsoProvidersGetQueryKey(input.tenant, input.id),
         })
       },
     })
@@ -1593,7 +1611,7 @@ export const consoleOperations: ConsoleOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: ConsoleSsoDomainRef) =>
-        authnAdminSsoProvidersRemoveDomain(input.id, input.domain),
+        authnAdminSsoProvidersRemoveDomain(input.tenant, input.id, input.domain),
       onSuccess: (_answer, input) => {
         invalidateSsoProvider(queryClient, input.id, input.tenant)
       },
@@ -1604,7 +1622,7 @@ export const consoleOperations: ConsoleOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: ConsoleSsoDomainRef) =>
-        authnAdminSsoProvidersVerifyDomain(input.id, input.domain),
+        authnAdminSsoProvidersVerifyDomain(input.tenant, input.id, input.domain),
       onSuccess: (_answer, input) => {
         invalidateSsoProvider(queryClient, input.id, input.tenant)
       },
@@ -1615,7 +1633,7 @@ export const consoleOperations: ConsoleOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: ConsoleSsoProviderRef) =>
-        authnAdminSsoProvidersRefreshMetadata(input.id).then(() => undefined),
+        authnAdminSsoProvidersRefreshMetadata(input.tenant, input.id).then(() => undefined),
       onSuccess: (_answer, input) => {
         invalidateSsoProvider(queryClient, input.id, input.tenant)
       },
@@ -1626,7 +1644,7 @@ export const consoleOperations: ConsoleOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: ConsoleSsoProviderRef) =>
-        authnAdminSsoProvidersReverifyDomains(input.id),
+        authnAdminSsoProvidersReverifyDomains(input.tenant, input.id),
       onSuccess: (_answer, input) => {
         invalidateSsoProvider(queryClient, input.id, input.tenant)
       },
@@ -1654,8 +1672,8 @@ export const consoleOperations: ConsoleOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: ConsoleWriteSsoProviderInput) => {
-        const { id, ...body } = input
-        return authnAdminSsoProvidersUpdate(id, body).then(
+        const { id, tenant, ...body } = input
+        return authnAdminSsoProvidersUpdate(tenant, id, body).then(
           (answer) => answer.provider,
         )
       },
@@ -1669,7 +1687,7 @@ export const consoleOperations: ConsoleOperations = {
     const queryClient = useQueryClient()
     return useMutation({
       mutationFn: (input: ConsoleClaimSsoDomainInput) =>
-        authnAdminSsoProvidersClaimDomain(input.id, {
+        authnAdminSsoProvidersClaimDomain(input.tenant, input.id, {
           domain: input.domain,
         }),
       onSuccess: (_answer, input) => {
@@ -1678,7 +1696,7 @@ export const consoleOperations: ConsoleOperations = {
     })
   },
 
-  // --- SMS template surface (/api/v1/sms/admin) --------------------------------
+  // --- SMS template surface (/api/v1/system/sms) --------------------------------
 
   useSmsTemplates: (params) =>
     useQuery({
@@ -1790,7 +1808,7 @@ function invalidateSsoProvider(
   tenant: string,
 ): void {
   void queryClient.invalidateQueries({
-    queryKey: getAuthnAdminSsoProvidersGetQueryKey(id),
+    queryKey: getAuthnAdminSsoProvidersGetQueryKey(tenant, id),
   })
   void queryClient.invalidateQueries({
     queryKey: getAuthnAdminSsoProvidersListQueryKey(tenant),

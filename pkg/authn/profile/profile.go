@@ -238,5 +238,5 @@ func (p *product) wire(reg *core.Registry) error {
 // profile surface did without scanning a chain listing.
 func (p *product) diagnose() {
 	p.logger.Info(diagnosticPrefix + ModuleName + ": the profile routes are mounted under " +
-		p.mounter.Base() + "/me on the endpoint " + p.mounter.Endpoint())
+		p.mounter.BaseIn(speedhttp.Scope("")) + "/me on the endpoint " + p.mounter.Endpoint())
 }

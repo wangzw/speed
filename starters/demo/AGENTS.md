@@ -301,8 +301,8 @@ the choice. `server/testdata/` declares the table:
 | Endpoint | Claims |
 |---|---|
 | `api` | `/api` |
-| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace` |
-| `admin` | `/api/v1/audit`, `/api/v1/authz`, `/api/v1/settings`, `/api/v1/sms`, `/api/v1/tenant` |
+| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace`, `/api/v1/tenants`, `/api/v1/system/auth` |
+| `admin` | `/api/v1/system/audit`, `/api/v1/system/permissions`, `/api/v1/system/settings`, `/api/v1/system/sms`, `/api/v1/system/tenants` |
 | `ops` | `/` (omitted: it is alone on its listener) |
 | `web` | `/` |
 
@@ -310,7 +310,7 @@ The table is the product's fixed namespace map, not a description of the
 current run: a capability dropped from `baselineServe`, or removed from the
 imports altogether, keeps its namespace claimed. `sms.admin` is the example —
 the binary imports it for the contract and no command runs it, so `admin`
-claims `/api/v1/sms` even though no route answers there. A path under a claim reaches
+claims `/api/v1/system/sms` even though no route answers there. A path under a claim reaches
 that endpoint's chain even when no route matches: with no credentials the
 gateway refuses it 401, and an admitted caller gets the endpoint's own 404. A
 frontend page path must stay outside every non-root claim, or a page navigation
@@ -347,8 +347,10 @@ under `server/testdata/` names them:
 - The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its own
   routes — login, session, registration, profile, the account-management routes,
   invitations, impersonation and the enterprise provider register — mount on the
-  `account` endpoint under `authn.gate.mount.base-path` (`/api/v1/auth` by default).
-  The login flow is delivered as a session cookie: the frontend's login flow
+  `account` endpoint under the scope's base path (`authn.gate.mount.bases`;
+  `/api/v1/auth`, `/api/v1/auth`, `/api/v1/tenants` and
+  `/api/v1/system/auth` by default). The login flow is delivered as a session
+  cookie: the frontend's login flow
   requests `delivery: 'session'` (and `@speed/auth-core` forces it), so a
   completed login answers `{state: 'authenticated', session: {id, expires_at}}`
   with a `Set-Cookie` and no token pair, and a page reload stays signed in by

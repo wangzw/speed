@@ -306,17 +306,17 @@ func TestARealRegistryMountsEveryManagementRouteAndDeliversNothing(t *testing.T)
 	}
 
 	want := map[mountedRoute]bool{
-		{http.MethodGet, "/api/v1/authz/admin/permissions"}:                                       true,
-		{http.MethodGet, "/api/v1/authz/admin/tenants/:tenant/roles"}:                             true,
-		{http.MethodPut, "/api/v1/authz/admin/tenants/:tenant/roles/:role"}:                       true,
-		{http.MethodDelete, "/api/v1/authz/admin/tenants/:tenant/roles/:role"}:                    true,
-		{http.MethodGet, "/api/v1/authz/admin/tenants/:tenant/roles/:role/grants"}:                true,
-		{http.MethodPut, "/api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission"}:    true,
-		{http.MethodDelete, "/api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission"}: true,
-		{http.MethodGet, "/api/v1/authz/admin/tenants/:tenant/bindings"}:                          true,
-		{http.MethodGet, "/api/v1/authz/admin/tenants/:tenant/bindings/:account"}:                 true,
-		{http.MethodPut, "/api/v1/authz/admin/tenants/:tenant/bindings/:account/:role"}:           true,
-		{http.MethodDelete, "/api/v1/authz/admin/tenants/:tenant/bindings/:account/:role"}:        true,
+		{http.MethodGet, "/api/v1/system/permissions"}:                                       true,
+		{http.MethodGet, "/api/v1/system/tenants/:tenant/roles"}:                             true,
+		{http.MethodPut, "/api/v1/system/tenants/:tenant/roles/:role"}:                       true,
+		{http.MethodDelete, "/api/v1/system/tenants/:tenant/roles/:role"}:                    true,
+		{http.MethodGet, "/api/v1/system/tenants/:tenant/roles/:role/grants"}:                true,
+		{http.MethodPut, "/api/v1/system/tenants/:tenant/roles/:role/grants/:permission"}:    true,
+		{http.MethodDelete, "/api/v1/system/tenants/:tenant/roles/:role/grants/:permission"}: true,
+		{http.MethodGet, "/api/v1/system/tenants/:tenant/bindings"}:                          true,
+		{http.MethodGet, "/api/v1/system/tenants/:tenant/bindings/:account"}:                 true,
+		{http.MethodPut, "/api/v1/system/tenants/:tenant/bindings/:account/:role"}:           true,
+		{http.MethodDelete, "/api/v1/system/tenants/:tenant/bindings/:account/:role"}:        true,
 	}
 	got := router.endpoint("public").registered()
 	if len(got) != len(want) {

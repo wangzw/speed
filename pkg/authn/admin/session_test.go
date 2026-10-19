@@ -55,7 +55,7 @@ func TestOnlyTheCallersOwnSessionIsMarkedCurrent(t *testing.T) {
 		r.sessions.put(authn.SessionInfo{ID: sessionOwn, Account: adminID, Kind: authn.SessionBrowser})
 		r.sessions.put(authn.SessionInfo{ID: sessionOther, Account: adminID, Kind: authn.SessionBrowser})
 		r.sessions.put(authn.SessionInfo{ID: sessionThird, Account: adminID, Kind: authn.SessionBrowser})
-		rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts/"+string(adminID)+"/sessions", nil,
+		rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts/"+string(adminID)+"/sessions", nil,
 			fresh(authntest.WithSession(sessionOwn))...)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("listing the caller's own account answered %d: %s", rec.Code, rec.Body.String())
@@ -70,7 +70,7 @@ func TestOnlyTheCallersOwnSessionIsMarkedCurrent(t *testing.T) {
 		r := newRig(t)
 		r.sessions.put(authn.SessionInfo{ID: sessionOther, Account: userID, Kind: authn.SessionBrowser})
 		r.sessions.put(authn.SessionInfo{ID: sessionThird, Account: userID, Kind: authn.SessionBrowser})
-		rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts/"+string(userID)+"/sessions", nil,
+		rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts/"+string(userID)+"/sessions", nil,
 			fresh(authntest.WithSession(sessionOwn))...)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("listing another account answered %d: %s", rec.Code, rec.Body.String())
@@ -85,7 +85,7 @@ func TestOnlyTheCallersOwnSessionIsMarkedCurrent(t *testing.T) {
 		r := newRig(t)
 		r.sessions.put(authn.SessionInfo{ID: sessionOther, Account: adminID, Kind: authn.SessionBrowser})
 		r.sessions.put(authn.SessionInfo{ID: sessionOwn, Account: adminID, Kind: authn.SessionToken})
-		rec := r.do(http.MethodGet, "/api/v1/auth/admin/accounts/"+string(adminID)+"/sessions", nil,
+		rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts/"+string(adminID)+"/sessions", nil,
 			fresh(authntest.WithSession(sessionOwn))...)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("listing a token-kind caller's account answered %d: %s", rec.Code, rec.Body.String())

@@ -476,9 +476,9 @@ func ExampleErrorResponder() {
 //
 // The fragment is a static declaration: this module stores it and checks its
 // shape at startup, and a reader takes the declarations up with
-// core.Resources, each carrying the name of the module that owns it. Prefix and
+// core.Resources, each carrying the name of the module that owns it. Prefix,
 // Version are bare segments the reader joins into the root the fragment's
-// paths are relative to.
+// paths are relative to; a management surface adds a third, Scope.
 func ExampleSpec() {
 	reg := core.New()
 	reg.Register(core.Module{

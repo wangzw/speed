@@ -72,15 +72,17 @@ func serveWithout(list string) {
 // table is what testdata/ and the case's configuration claim, and the D2 case
 // holds the two together.
 var expectedOwners = map[string]string{
-	"/api":              "api",
-	"/api/v1/auth":      "account",
-	"/api/v1/features":  "account",
-	"/api/v1/workspace": "account",
-	"/api/v1/audit":     "admin",
-	"/api/v1/authz":     "admin",
-	"/api/v1/settings":  "admin",
-	"/api/v1/sms":       "admin",
-	"/api/v1/tenant":    "admin",
+	"/api":                       "api",
+	"/api/v1/auth":               "account",
+	"/api/v1/features":           "account",
+	"/api/v1/workspace":          "account",
+	"/api/v1/tenants":            "account",
+	"/api/v1/system/auth":        "account",
+	"/api/v1/system/audit":       "admin",
+	"/api/v1/system/permissions": "admin",
+	"/api/v1/system/settings":    "admin",
+	"/api/v1/system/sms":         "admin",
+	"/api/v1/system/tenants":     "admin",
 }
 
 // expectedEndpoint answers which endpoint the table says answers a path on the
@@ -982,8 +984,8 @@ func runDifferential(t *testing.T, topo topology) {
 
 	// The comparator's own check: the same request twice is the same answer,
 	// and two answers that differ are reported as different.
-	first := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/tenant/admin/tenants", ports["backend"]))
-	second := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/tenant/admin/tenants", ports["backend"]))
+	first := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/system/tenants", ports["backend"]))
+	second := getRaw(t, fmt.Sprintf("http://127.0.0.1:%d/api/v1/system/tenants", ports["backend"]))
 	if difference := firstDifference(first, second); difference != "" {
 		t.Errorf("the comparator reports two identical requests as different: %s", difference)
 	}

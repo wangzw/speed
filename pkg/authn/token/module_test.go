@@ -137,14 +137,14 @@ func TestWireMountsTheTokenEndpoints(t *testing.T) {
 		t.Fatalf("wire: %v", err)
 	}
 
-	token := form(m, m.Base()+tokenPath, url.Values{"grant_type": {"not-a-grant"}})
+	token := form(m, m.BaseIn("")+tokenPath, url.Values{"grant_type": {"not-a-grant"}})
 	if token.Code == http.StatusNotFound {
 		t.Fatalf("POST %s answered 404; wire did not mount the token endpoint", tokenPath)
 	}
 	if token.Code != http.StatusBadRequest {
 		t.Errorf("POST %s with an unknown grant answered %d, want 400", tokenPath, token.Code)
 	}
-	if revoke := form(m, m.Base()+revokePath, url.Values{}); revoke.Code != http.StatusOK {
+	if revoke := form(m, m.BaseIn("")+revokePath, url.Values{}); revoke.Code != http.StatusOK {
 		t.Errorf("POST %s answered %d, want 200", revokePath, revoke.Code)
 	}
 }

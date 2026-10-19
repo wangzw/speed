@@ -40,6 +40,7 @@ import type {
   ConsoleAccountPage,
   ConsoleAccountQuery,
   ConsoleAccountRef,
+  ConsoleImpersonationRef,
   ConsoleAccountSecret,
   ConsoleAccountSecretCreated,
   ConsoleAccountSession,
@@ -157,7 +158,7 @@ export interface ConsoleBackend {
   listImpersonations: (
     params: Parameters<ConsoleOperations['useImpersonations']>[0],
   ) => Promise<readonly ConsoleImpersonation[]>
-  revokeImpersonation: (input: ConsoleAccountRef) => Promise<void>
+  revokeImpersonation: (input: ConsoleImpersonationRef) => Promise<void>
 
   // Invitation + membership surfaces (tenant-scoped).
   listInvitations: (tenant: string) => Promise<ConsoleInvitationPage>
@@ -781,18 +782,18 @@ export function createConsoleOperations(
         // The generated key factory, because the page acts on this read's
         // cache directly: the entry it drops on ending an impersonation
         // must be the one production's read builds.
-        queryKey: getAuthnAdminImpersonationsListQueryKey(params),
+        queryKey: getAuthnAdminImpersonationsListQueryKey(params.tenant, { limit: params.limit, after: params.after }),
         queryFn: () => backend.listImpersonations(params),
         enabled: params.tenant !== '' && (options?.enabled ?? true),
       }),
     useRevokeImpersonation: () => {
       const client = useQueryClient()
       return useMutation({
-        mutationFn: (input: ConsoleAccountRef) =>
+        mutationFn: (input: ConsoleImpersonationRef) =>
           backend.revokeImpersonation(input),
-        onSuccess: () => {
+        onSuccess: (_answer, input) => {
           void client.invalidateQueries({
-            queryKey: getAuthnAdminImpersonationsListQueryKey(),
+            queryKey: getAuthnAdminImpersonationsListQueryKey(input.tenant),
           })
         },
       })

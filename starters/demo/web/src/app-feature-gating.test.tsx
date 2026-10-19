@@ -364,7 +364,7 @@ describe('the live notification stream', () => {
     // context: this case serves the roster and answers it, the way a
     // deployment with notification.stream always can.
     bindRequestFn((async (path: string) => {
-      if (path === '/api/v1/tenant/admin/tenants') {
+      if (path === '/api/v1/system/tenants') {
         return { tenants: [{ id: 'acme', alias: 'acme', status: 'active' }] }
       }
       throw new Error(`the gating suite binds only the roster: ${path}`)

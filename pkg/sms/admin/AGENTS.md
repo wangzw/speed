@@ -1,7 +1,7 @@
 # pkg/sms/admin
 
 The SMS capability's management module. It mounts the template-management routes
-under `/api/v1/sms/admin/*` and delivers no capability of its own: every route's action
+under `/api/v1/system/sms/*` and delivers no capability of its own: every route's action
 is a call on the template registry, reached through the `sms.Registry`
 capability, and the module holds no template, no rule and no data of its own.
 
@@ -24,7 +24,7 @@ The API is the package's godoc, plus the `Registry`, `Record`, `TemplateSpec`,
 
 ## Routes and the permissions they are held to
 
-Every route is mounted under the base path `/api/v1/sms/admin`, on the endpoints the
+Every route is mounted under the base path `/api/v1/system/sms`, on the endpoints the
 module's configuration lists. A route is addressed by a natural key — a template
 name — so no opaque row identifier ever appears in a path. The whole surface is
 one group, `templates`, and it is always mounted, because the registry it reads
@@ -32,11 +32,11 @@ and writes is required. This set is the module's whole route surface.
 
 | Group | Method and path | Permission |
 |---|---|---|
-| Templates | `GET /api/v1/sms/admin/templates` | `sms.template.read` |
-| Templates | `POST /api/v1/sms/admin/templates` | `sms.template.manage` |
-| Templates | `POST /api/v1/sms/admin/templates/submissions` | `sms.template.manage` |
-| Templates | `POST /api/v1/sms/admin/templates/:name/enabled` | `sms.template.manage` |
-| Templates | `DELETE /api/v1/sms/admin/templates/:name` | `sms.template.manage` |
+| Templates | `GET /api/v1/system/sms/templates` | `sms.template.read` |
+| Templates | `POST /api/v1/system/sms/templates` | `sms.template.manage` |
+| Templates | `POST /api/v1/system/sms/templates/submissions` | `sms.template.manage` |
+| Templates | `POST /api/v1/system/sms/templates/:name/enabled` | `sms.template.manage` |
+| Templates | `DELETE /api/v1/system/sms/templates/:name` | `sms.template.manage` |
 
 A read route is held to `sms.template.read` and a write route to
 `sms.template.manage`. A read answers 200; a write that creates a record

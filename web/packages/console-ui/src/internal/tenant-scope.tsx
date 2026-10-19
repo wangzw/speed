@@ -3,14 +3,14 @@
  * pages carry.
  *
  * Some administration surfaces address a tenant as a route segment
- * (/api/v1/authz/admin/tenants/:tenant/..., the invitation and membership
+ * (/api/v1/system/tenants/:tenant/..., the invitation and membership
  * routes, the SSO provider routes). Those pages are still platform
  * surfaces -- the operator is platform staff -- but each request names
  * the tenant it acts on, and the tenant is an argument of the request,
  * not the session's current tenant (the console has none; switching the
  * current tenant is tenancy-ui's, a different shell).
  *
- * The selector lists the platform roster (GET /api/v1/tenant/admin/tenants, the
+ * The selector lists the platform roster (GET /api/v1/system/tenants, the
  * same read the roster page owns) so the operator picks a registered
  * tenant by its alias rather than typing an identifier. The value is the
  * chosen tenant id, or '' for none chosen yet; a page holds it in its own

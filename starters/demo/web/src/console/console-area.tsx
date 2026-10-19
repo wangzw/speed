@@ -7,7 +7,7 @@
  * tenant-facing ProductShell, and the app chooses between them by which area
  * of its route table the URL lands in (src/app.tsx).
  *
- * The console's pages reach /api/v1/tenant/admin, /api/v1/settings/admin and /api/v1/audit/admin
+ * The console's pages reach /api/v1/system/tenants, /api/v1/system/settings and /api/v1/system/audit
  * through the operations bundle console-ui ships, over the request function
  * the app-entry assembly bound into the @speed/api-sdk runtime seam
  * (src/main.tsx's bootstrapSpeedApp call), so this area mounts no provider of

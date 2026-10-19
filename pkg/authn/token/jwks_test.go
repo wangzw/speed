@@ -69,11 +69,11 @@ func TestTheJWKSRouteCarriesItsOwnHeadersAndContentType(t *testing.T) {
 	p := &product{keys: set, mounter: m, logger: slog.Default()}
 	p.mountJWKS()
 
-	if _, ok := m.Registered(http.MethodGet, m.Base()+jwksPath); !ok {
-		t.Fatalf("no GET %s%s is registered: %v", m.Base(), jwksPath, m.Registrations())
+	if _, ok := m.Registered(http.MethodGet, m.BaseIn("")+jwksPath); !ok {
+		t.Fatalf("no GET %s%s is registered: %v", m.BaseIn(""), jwksPath, m.Registrations())
 	}
 
-	rec := m.Do(httptest.NewRequest(http.MethodGet, m.Base()+jwksPath, nil))
+	rec := m.Do(httptest.NewRequest(http.MethodGet, m.BaseIn("")+jwksPath, nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("the key set answered %d: %s", rec.Code, rec.Body.String())
 	}
@@ -100,7 +100,7 @@ func TestTheJWKSHeadersAreTheStableLiterals(t *testing.T) {
 	m := mounttest.New(t)
 	p := &product{keys: set, mounter: m, logger: slog.Default()}
 	p.mountJWKS()
-	rec := m.Do(httptest.NewRequest(http.MethodGet, m.Base()+jwksPath, nil))
+	rec := m.Do(httptest.NewRequest(http.MethodGet, m.BaseIn("")+jwksPath, nil))
 	if got := rec.Header().Get("Content-Type"); got != "application/jwk-set+json" {
 		t.Errorf("Content-Type is %q, want application/jwk-set+json", got)
 	}

@@ -38,7 +38,9 @@ type moduleConfig struct {
 type gateConfig struct {
 	Mount struct {
 		PublicURL string `config:"public-url"`
-		BasePath  string `config:"base-path"`
+		Bases     struct {
+			Default string `config:"default"`
+		} `config:"bases"`
 	} `config:"mount"`
 }
 
@@ -95,14 +97,14 @@ func readConfig(reader config.Reader) (resolved, error) {
 		return resolved{}, fmt.Errorf("%w: %s.mount.public-url is empty, and the callback address the "+
 			"provider is told is built from it", authn.ErrInvalidConfig, gateNamespace)
 	}
-	if gate.Mount.BasePath == "" {
-		return resolved{}, fmt.Errorf("%w: %s.mount.base-path is empty, and the callback path is built "+
+	if gate.Mount.Bases.Default == "" {
+		return resolved{}, fmt.Errorf("%w: %s.mount.bases.default is empty, and the callback path is built "+
 			"from it", authn.ErrInvalidConfig, gateNamespace)
 	}
 	return resolved{
 		clientID:     cfg.ClientID,
 		clientSecret: cfg.ClientSecret,
-		redirectURI:  gate.Mount.PublicURL + gate.Mount.BasePath + callbackPath,
+		redirectURI:  gate.Mount.PublicURL + gate.Mount.Bases.Default + callbackPath,
 		endpoint:     endpoints.GitHub,
 		apiBase:      githubAPIBase,
 	}, nil

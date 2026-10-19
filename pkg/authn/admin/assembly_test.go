@@ -127,10 +127,10 @@ func (a assembly) drive(t *testing.T, run func(m *mounttest.Mounter)) error {
 // the module mounts the account and membership groups and delivers nothing.
 func TestARealRegistryMountsTheManagementRoutes(t *testing.T) {
 	err := assembly{audit: &recordingAudit{}}.drive(t, func(m *mounttest.Mounter) {
-		if _, ok := m.Registered(http.MethodGet, "/api/v1/auth/admin/accounts"); !ok {
+		if _, ok := m.Registered(http.MethodGet, "/api/v1/system/auth/accounts"); !ok {
 			t.Error("the account group is not mounted")
 		}
-		if _, ok := m.Registered(http.MethodGet, "/api/v1/auth/admin/tenants/:tenant/members"); !ok {
+		if _, ok := m.Registered(http.MethodGet, "/api/v1/tenants/:tenant/members"); !ok {
 			t.Error("the membership group is not mounted")
 		}
 	})

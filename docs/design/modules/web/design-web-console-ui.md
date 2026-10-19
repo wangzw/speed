@@ -4,16 +4,16 @@
 
 `@speed/console-ui` 是平台员工的控制台面组件族：把后端的管理面渲染成一组由平台员工操作的页面。它对应后端的下列管理面：
 
-- **租户管理**：名册的读写，经 `/api/v1/tenant/admin`（[tenant.admin](../tenant/design-tenant-admin.md)、[ADR-console-tenant-2026-10-15](../../../adr/adr-console-tenant-2026-10-15.md)）。
-- **账户管理**：账户的列出、详情与写入，经 `/api/v1/auth/admin/accounts`。
-- **会话管理**：按账户列出会话并撤销，经 `/api/v1/auth/admin/accounts/:id/sessions` 与 `/api/v1/auth/admin/sessions/:id`。
-- **冒充管理**：冒充记录的列出与终止，经 `/api/v1/auth/admin/impersonations`；运营者自身会话上的冒充状态读取与发起与结束，经 `/api/v1/auth/impersonation`。
-- **权限管理**：角色、授权、权限目录与账户绑定，经 `/api/v1/authz/admin`。
-- **邀请与成员**：按租户的邀请与成员，经 `/api/v1/auth/admin/tenants/:tenant/invitations` 与 `/api/v1/auth/admin/tenants/:tenant/members`。
-- **SSO 提供方**：按租户的提供方与域名，经 `/api/v1/auth/admin/sso/providers` 与 `/api/v1/auth/admin/tenants/:tenant/sso/providers`。
-- **设置读写**：运行期设置的读写，经 `/api/v1/settings/admin`（[settings.admin](../settings/design-settings-admin.md)、[ADR-console-settings-2026-10-15](../../../adr/adr-console-settings-2026-10-15.md)）。
-- **短信模板**：运行期短信模板的读写，经 `/api/v1/sms/admin`。
-- **审计查询**：审计记录的检索，经 `/api/v1/audit/admin`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin-2026-10-15](../../../adr/adr-audit-admin-2026-10-15.md)）。
+- **租户管理**：名册的读写，经 `/api/v1/system/tenants`（[tenant.admin](../tenant/design-tenant-admin.md)、[ADR-console-tenant-2026-10-15](../../../adr/adr-console-tenant-2026-10-15.md)）。
+- **账户管理**：账户的列出、详情与写入，经 `/api/v1/system/auth/accounts`。
+- **会话管理**：按账户列出会话并撤销，经 `/api/v1/system/auth/accounts/:id/sessions` 与 `/api/v1/system/auth/sessions/:id`。
+- **冒充管理**：冒充记录的列出与终止，经 `/api/v1/tenants/{tenant}/impersonations`；运营者自身会话上的冒充状态读取与发起与结束，经 `/api/v1/auth/impersonation`。
+- **权限管理**：角色、授权、权限目录与账户绑定，经 `/api/v1/system`。
+- **邀请与成员**：按租户的邀请与成员，经 `/api/v1/tenants/{tenant}/invitations` 与 `/api/v1/tenants/{tenant}/members`。
+- **SSO 提供方**：按租户的提供方与域名，经 `/api/v1/tenants/{tenant}/sso/providers`。
+- **设置读写**：运行期设置的读写，经 `/api/v1/system/settings`（[settings.admin](../settings/design-settings-admin.md)、[ADR-console-settings-2026-10-15](../../../adr/adr-console-settings-2026-10-15.md)）。
+- **短信模板**：运行期短信模板的读写，经 `/api/v1/system/sms`。
+- **审计查询**：审计记录的检索，经 `/api/v1/system/audit`（[audit.admin](../audit/design-audit-admin.md)、[ADR-audit-admin-2026-10-15](../../../adr/adr-audit-admin-2026-10-15.md)）。
 
 **控制台根（`/`）渲染仪表盘**，其指标与最近活动由名册读与审计读拼出；各管理面的列表页可链入其详情页。
 
@@ -23,7 +23,7 @@
 
 **外壳骨架是 [layout-kit](design-web-layout-kit.md) 的 `AppShell`。** 控制台壳把带标签的声明派生出的平台导航交给 `AppShell` 渲染：固定顶栏、随视口变化的导航抽屉（`md` 及以上常驻、以下为临时覆盖式）与内容区都由它提供（[layout](design-web-layout.md)），本包不另造一套帧。导航地标默认以本包的 `shell.navLabel` 命名，宿主可经 `navLabel` 另给名字（经 `AppShell` 的 `navLabel`），与其它外壳的导航地标可区分。两处外壳因此同一形状——侧栏不随内容滚走、窄视口是汉堡抽屉而非把导航堆在内容上方、桌面侧栏由宿主显式选择收起、内容区是唯一滚动层。
 
-**按租户寻址的页面持租户选择器。** 权限面、邀请与成员面、SSO 提供方面把租户当作**路由段参数**（`/api/v1/authz/admin/tenants/:tenant/...`）；冒充面把租户当作读的**必填查询参数**（`/api/v1/auth/admin/impersonations?tenant=`）。这些页面仍是平台员工的页面，但每条请求指名它作用到的租户；租户是请求的一个实参，不是会话的当前租户。页面因此持一个租户选择器（数据来自平台名册读 `GET /api/v1/tenant/admin/tenants`），在其取值为空前禁用该页的租户作用域读。这四页各接受三个可选 prop：`tenant` 受控给出作用域（给出即锁定该值并隐藏选择器）、`defaultTenant` 作为初值（优先于 URL）与 `onTenantChange`（每次改选上报宿主）。三者都缺席时初值取自页面 URL 的 `tenant` 查询参数（缺省为空），故一条链接能把租户上下文带过页界；选择器仍是此后改变它的途径。这四页因此读 `tenant` 查询参数，README 写明这条。冒充页的发起表单与被冒充记录共用这一个选择：目标租户是请求的必填字段，被冒充账户必须是该租户的成员，故发起表单不另设租户输入，未选租户时提交不可用。
+**按租户寻址的页面持租户选择器。** 权限面、邀请与成员面、SSO 提供方面把租户当作**路由段参数**（`/api/v1/system/tenants/:tenant/...`）；冒充面把租户当作路径段（`/api/v1/tenants/{tenant}/impersonations`）。这些页面仍是平台员工的页面，但每条请求指名它作用到的租户；租户是请求的一个实参，不是会话的当前租户。页面因此持一个租户选择器（数据来自平台名册读 `GET /api/v1/system/tenants`），在其取值为空前禁用该页的租户作用域读。这四页各接受三个可选 prop：`tenant` 受控给出作用域（给出即锁定该值并隐藏选择器）、`defaultTenant` 作为初值（优先于 URL）与 `onTenantChange`（每次改选上报宿主）。三者都缺席时初值取自页面 URL 的 `tenant` 查询参数（缺省为空），故一条链接能把租户上下文带过页界；选择器仍是此后改变它的途径。这四页因此读 `tenant` 查询参数，README 写明这条。冒充页的发起表单与被冒充记录共用这一个选择：目标租户是请求的必填字段，被冒充账户必须是该租户的成员，故发起表单不另设租户输入，未选租户时提交不可用。
 
 **它复用声明式注册面。** 每个页面导出的一份声明即 [route-kit](design-web-route-kit.md) 的 `RouteDeclaration`：路径 pattern、视图回调、可选导航标签、可选权限码、该页依赖的特性名（`requires`）（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。`permission` 是数据，本包不据它判定；`label` 缺席即该页不进导航。`requires` 同样是数据，本包不据它判定：宿主经 route-kit 按特性在场收窄注册面，特性缺席的页面与未登记路径走同一个未命中回退，导航里也不出现（[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。声明由应用的组合层收齐后交给路由层渲染；本包不 import `route-kit`，也不自己做路径匹配或导航。壳另交出一个 `onNavigate` 回调接缝：宿主给了它，帧内点一条导航项即把该项的路径交回调（由宿主的路由器就地跳转，不整页重载），不给则该项是整页链接。租户侧的 [product-shell](design-web-product-shell.md) 用同一份声明形状，两者只是壳不同。
 
@@ -264,7 +264,7 @@ graph TD
     host["宿主\n特性判定 · 路由表 · 会话 · 冒充钩子"]
     frame["ConsoleShell / ConsoleProvider\n包级上下文"]
     api["@speed/api-sdk\n生成操作"]
-    platform["平台管理面\n/tenant/admin · /api/v1/auth/admin\n/authz/admin · /api/v1/settings/admin\n/sms/admin · /api/v1/audit/admin"]
+    platform["平台管理面\n/api/v1/system/tenants · /api/v1/system/auth\n/api/v1/system/settings · /api/v1/system/audit\n/api/v1/system/sms · /api/v1/system/permissions"]
     pages --> decl
     decl --> collect
     host --> frame
@@ -332,7 +332,7 @@ graph TD
 
 **各列表页的列优先级与宽度上限**服从 [layout](design-web-layout.md) 的数据表规则。标识符列（账户与会话的 `id`）只显示前 8 个字符、设 `low`，完整值经 `cellFullValue` 给出（悬停标题与复制控件）；主辨识列不设优先级，取主辨识列的宽度上限；状态列设 `high`。逐页：账户页以显示名为主辨识列，状态 `high`，类型 `medium`，MFA 与标识 `low`；会话页以创建时间为主辨识列，状态 `high`，保障等级 `medium`，种类、最近使用、到期与标识 `low`，`lg` 档放不下时按种类、到期的次序移出列；邀请页以邮箱为主辨识列，状态 `high`，邀请人 `medium`，到期 `low`；成员表同形，以账户为主辨识列，状态 `high`，来源 `medium`，SSO 豁免 `low`；SSO 页以名称为主辨识列，协议与启用 `medium`，版本 `low`，行操作的可见文案取短形式（刷新元数据、重新验证、删除），完整含义与提供方名称由可及名给出；元数据刷新的可见文字不取单字「刷新」，使它与页的刷新动作可区分（见「页的刷新动作」）；三个操作与主辨识列仍须在 `sm` 档同屏，行内文字加长后须在浏览器层实测该档不换行、不撑破容器，放不下时调整列宽或操作形态，不退回单字「刷新」；审计表的优先级不变（见上），动作为主辨识列，取主辨识列的内容宽度上限，对象与操作者为长文本列，各取 160px（文本与复制控件合计），完整值已由 `cellFullValue` 给出。会话页的「当前会话」标记显示在主辨识列（创建时间）里，不放在会随优先级隐藏的标识列里，使撤销自己当前会话的提示在任一档都可见。账户详情面板里的表（服务密钥、会话、因素）按面板内容自身的容器宽度适用同一规则。
 
-**账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、邀请与成员页的邀请人与成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、权限页绑定表及其账户查询结果的账户列。特性 `authn.admin` 在场时，它经 `GET /api/v1/auth/admin/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见「特性在场的接收」。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染记录值并标注身份未解析，而不是把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，否则用记录值。成功文案点名账户时同样经它：文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，解析失败或被拒时回落记录值，不阻塞确认；成员移除、成员写入与 SSO 豁免的切换这类点名成员账户的确认都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。
+**账户身份单元**把一处记录的账户标识解析成可读身份，页面展示另一条记录所携带的账户标识处都经它渲染：审计查询页与仪表盘最近活动的操作者列、审计详情页的操作者、邀请与成员页的邀请人与成员账户、冒充记录页与当前冒充面板的操作者与被冒充账户、权限页绑定表及其账户查询结果的账户列。特性 `authn.admin` 在场时，它经 `GET /api/v1/system/auth/accounts/:id` 读账户的显示名；特性缺席时不发这条读，见「特性在场的接收」。该读受 `authn.account.read` 把守，页面自身的权限（`audit.read`、`authz.role.read` 等）不含它，因此只持页面权限的查看者的解析会被拒；该格此时渲染记录值并标注身份未解析，而不是把它当作已解析（或系统）的账户。读按账户标识缓存：同一账户的多行与重渲染共用一次读。绑定表的解绑控件以同一个解析结果命名账户：解析到显示名时用显示名，否则用记录值。成功文案点名账户时同样经它：文案是 `succeed` 时刻的译文快照，所以解析在调用 `succeed` 之前完成，解析失败或被拒时回落记录值，不阻塞确认；成员移除、成员写入与 SSO 豁免的切换这类点名成员账户的确认都属此列；邀请的签发与撤销点名的是被邀请人的邮箱，不是账户，不经此单元。
 
 ### 账户查询的筛选
 

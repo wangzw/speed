@@ -7,7 +7,7 @@ import "testing"
 func TestRelativePathStripsTheBase(t *testing.T) {
 	for _, c := range []struct{ base, absolute, want string }{
 		{"/api/v1/auth", "/api/v1/auth/session", "/session"},
-		{"/api/v1/auth", "/api/v1/auth/admin/accounts/:id", "/admin/accounts/:id"},
+		{"/api/v1/system/auth", "/api/v1/system/auth/accounts/:id", "/accounts/:id"},
 		{"", "/session", "/session"},
 	} {
 		got, err := RelativePath(c.base, c.absolute)

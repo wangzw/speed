@@ -59,8 +59,8 @@ const tenantName = "acme"
 // The management paths a case sends. The write path carries a natural key — the
 // role — and never an opaque row identifier.
 const (
-	permissionsPath = "/api/v1/authz/admin/permissions"
-	rolesPath       = "/api/v1/authz/admin/tenants/" + tenantName + "/roles"
+	permissionsPath = "/api/v1/system/permissions"
+	rolesPath       = "/api/v1/system/tenants/" + tenantName + "/roles"
 	rolePath        = rolesPath + "/editor"
 )
 

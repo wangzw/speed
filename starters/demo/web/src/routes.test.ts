@@ -198,9 +198,9 @@ describe('the backend prefix manifest', () => {
 
   it('matches a claimed prefix at a segment boundary, not inside a segment', () => {
     expect(fallsUnderPrefix('/api/v1/auth', '/api/v1/auth')).toBe(true)
-    expect(fallsUnderPrefix('/api/v1/auth/methods', '/api/v1/auth')).toBe(true)
-    expect(fallsUnderPrefix('/api/v1/authz', '/api/v1/auth')).toBe(false)
-    expect(fallsUnderPrefix('/api/v1/authz/roles', '/api/v1/auth')).toBe(false)
+    expect(fallsUnderPrefix('/api/v1/auth/me', '/api/v1/auth')).toBe(true)
+    expect(fallsUnderPrefix('/api/v1/system', '/api/v1/auth')).toBe(false)
+    expect(fallsUnderPrefix('/api/v1/system/roles', '/api/v1/auth')).toBe(false)
   })
 
   it('generates one segment-anchored proxy key per claimed prefix', () => {
@@ -242,12 +242,12 @@ describe('the backend prefix manifest', () => {
     }
   })
 
-  it('forwards both /api/v1/auth and /api/v1/authz without one swallowing the other', () => {
+  it('forwards both /api/v1/auth and /api/v1/system without one swallowing the other', () => {
     const keys = Object.keys(backendProxyRules('http://backend.test'))
     const forwards = (url: string): boolean =>
       keys.some((key) => proxyMatches(key, url))
     expect(forwards('/api/v1/auth/methods')).toBe(true)
-    expect(forwards('/api/v1/authz/admin/permissions')).toBe(true)
+    expect(forwards('/api/v1/system/permissions')).toBe(true)
     expect(forwards('/authx')).toBe(false)
   })
 })

@@ -82,6 +82,7 @@
 | [OpenAPI 片段由 Go 中的 operation 声明生成](adr-http-openapi-generation-2026-10-18.md) | 2026-10-18 | 已接受 |
 | [错误应答按公共集加覆盖声明，Fault 可返回也可 panic](adr-http-failure-responses-2026-10-19.md) | 2026-10-19 | 已接受 |
 | [operation 声明覆盖完整的 HTTP 输入与应答形态](adr-http-request-response-kinds-2026-10-19.md) | 2026-10-19 | 已接受 |
+| [管理面路径以作用域段开头，普通面不带段](adr-http-api-path-scopes-2026-10-19.md) | 2026-10-19 | 已接受 |
 | [Stop 关闭监听器并等在途请求排空结束](adr-http-shutdown-2026-09-14.md) | 2026-09-14 | 已接受 |
 | [请求路径的 panic 兜底由入口模块内建，每端唯一](adr-http-recovery-2026-09-22.md) | 2026-09-22 | 已接受 |
 | [入口模块定义默认的错误响应形状，并经可选接缝接受定制](adr-http-errors-2026-10-10.md) | 2026-10-10 | 已接受 |

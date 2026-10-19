@@ -188,7 +188,7 @@ func TestNoTokenReachesTheLogsMetricsOrErrors(t *testing.T) {
 	_, refresh := r.issueRefresh()
 
 	// A successful client credential: its access token must not leak.
-	rec := form(m, m.Base()+tokenPath, url.Values{
+	rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 		"grant_type":    {grantClientCredentials},
 		"client_id":     {string(account)},
 		"client_secret": {secret},
@@ -196,15 +196,15 @@ func TestNoTokenReachesTheLogsMetricsOrErrors(t *testing.T) {
 	access := decodeToken(t, rec).AccessToken
 
 	// A rotation and a revocation each write a line.
-	form(m, m.Base()+tokenPath, url.Values{"grant_type": {grantRefreshToken}, "refresh_token": {refresh.Value}})
-	form(m, m.Base()+revokePath, url.Values{"token": {refresh.Value}})
+	form(m, m.BaseIn("")+tokenPath, url.Values{"grant_type": {grantRefreshToken}, "refresh_token": {refresh.Value}})
+	form(m, m.BaseIn("")+revokePath, url.Values{"token": {refresh.Value}})
 
 	// A rejected credential: the secret no longer verifies, so this request is
 	// the 401 whose body and log line must carry none of the three secrets.
 	r.passwords.verify = func(string, string) (authn.AccountID, string, time.Time, error) {
 		return "", "", time.Time{}, authn.ErrInvalidCredentials
 	}
-	bad := form(m, m.Base()+tokenPath, url.Values{
+	bad := form(m, m.BaseIn("")+tokenPath, url.Values{
 		"grant_type":    {grantClientCredentials},
 		"client_id":     {string(account)},
 		"client_secret": {secret},

@@ -6,7 +6,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// handleGrantList answers GET /api/v1/authz/admin/tenants/:tenant/roles/:role/grants:
+// handleGrantList answers GET /api/v1/system/tenants/:tenant/roles/:role/grants:
 // every permission grant the role holds. It is a read, so the action is
 // role.read; the identity and the permission are decided by the route's guard
 // wrapper before this handler is called.
@@ -23,7 +23,7 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 }
 
 // handleGrantPut answers PUT
-// /api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission: it grants a
+// /api/v1/system/tenants/:tenant/roles/:role/grants/:permission: it grants a
 // permission to a role. It is a write, so the action is role.manage.
 //
 // The permission named in the path is checked against the catalog and
@@ -59,7 +59,7 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 }
 
 // handleGrantDelete answers DELETE
-// /api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission: it revokes a
+// /api/v1/system/tenants/:tenant/roles/:role/grants/:permission: it revokes a
 // permission from a role. It is a write, so the action is role.manage.
 //
 // The permission named in the path is translated to the (resource, action) pair

@@ -38,7 +38,7 @@ func (r secrecyReader) Decode(path string, target any) error {
 func gateWithMount(publicURL, basePath string) gateConfig {
 	var g gateConfig
 	g.Mount.PublicURL = publicURL
-	g.Mount.BasePath = basePath
+	g.Mount.Bases.Default = basePath
 	return g
 }
 

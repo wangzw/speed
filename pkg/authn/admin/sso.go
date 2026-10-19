@@ -187,16 +187,9 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 // handleProviderGet answers GET /admin/sso/providers/:id. The decision's tenant
 // is the provider's own, resolved from the store before the Decider is asked.
 func (m *product) handleProviderGet(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	id, err := m.caller(ctx)
+	id, p, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
-		return nil, err
-	}
-	if err = m.admit(id); err != nil {
-		return nil, err
-	}
-	p, err := m.ssoProviders.Get(ctx, in.ID)
-	if err != nil {
-		return m.replyFailure("reading a provider", err)
+		return m.lookupFailure(err)
 	}
 	if err := m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: p.Tenant, Target: p.ID}); err != nil {
 		return nil, err
@@ -208,16 +201,9 @@ func (m *product) handleProviderGet(ctx context.Context, in providerIDInput, _ *
 // provider's own and is immutable: a body that names another is refused. The
 // action is idp.manage.
 func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	id, err := m.caller(ctx)
+	id, existing, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
-		return nil, err
-	}
-	if err = m.admit(id); err != nil {
-		return nil, err
-	}
-	existing, err := m.ssoProviders.Get(ctx, in.ID)
-	if err != nil {
-		return m.replyFailure("reading a provider", err)
+		return m.lookupFailure(err)
 	}
 	if in.BodyTenant != "" && in.BodyTenant != existing.Tenant {
 		return nil, m.bad()
@@ -241,16 +227,9 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 // handleProviderDelete answers DELETE /admin/sso/providers/:id. The action is
 // idp.manage.
 func (m *product) handleProviderDelete(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	id, err := m.caller(ctx)
+	id, p, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
-		return nil, err
-	}
-	if err = m.admit(id); err != nil {
-		return nil, err
-	}
-	p, err := m.ssoProviders.Get(ctx, in.ID)
-	if err != nil {
-		return m.replyFailure("reading a provider", err)
+		return m.lookupFailure(err)
 	}
 	if err := m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: p.Tenant, Target: in.ID}); err != nil {
 		return nil, err
@@ -270,7 +249,7 @@ func (m *product) handleProviderDelete(ctx context.Context, in providerIDInput, 
 // handleDomainClaim answers POST /admin/sso/providers/:id/domains and returns
 // the token to publish in DNS. The action is idp.manage.
 func (m *product) handleDomainClaim(ctx context.Context, in domainClaimInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	id, provider, err := m.providerFor(ctx, in.ID)
+	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
 		return m.lookupFailure(err)
 	}
@@ -312,7 +291,7 @@ func (m *product) handleDomainVerify(ctx context.Context, in domainAddressInput,
 // handleReverifyDomains answers POST /admin/sso/providers/:id/reverify-domains.
 // The action is idp.manage.
 func (m *product) handleReverifyDomains(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	id, provider, err := m.providerFor(ctx, in.ID)
+	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
 		return m.lookupFailure(err)
 	}
@@ -335,7 +314,7 @@ func (m *product) handleReverifyDomains(ctx context.Context, in providerIDInput,
 // routes: resolve the provider, decide, write the mandatory audit, call the
 // capability.
 func (m *product) changeDomain(ctx context.Context, in domainAddressInput, change string, act func(idpID, domain string) error) (speedhttp.Reply, error) {
-	id, provider, err := m.providerFor(ctx, in.ID)
+	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
 		return m.lookupFailure(err)
 	}
@@ -357,7 +336,11 @@ func (m *product) changeDomain(ctx context.Context, in domainAddressInput, chang
 // providerFor reads the provider a route's :id names, after the caller and
 // admission checks. Its error is either the handler's own refusal or
 // errNotFound, which lookupFailure turns into the bare 404.
-func (m *product) providerFor(ctx context.Context, providerID string) (authn.Identity, authn.SSOProvider, error) {
+// providerFor reads one provider and holds it to the tenant the path names: a
+// provider addressed under a tenant it does not belong to answers not found,
+// the same answer a provider that does not exist gets, so the path cannot be
+// used to probe another tenant's providers.
+func (m *product) providerFor(ctx context.Context, tenant, providerID string) (authn.Identity, authn.SSOProvider, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
 		return authn.Identity{}, authn.SSOProvider{}, err
@@ -368,6 +351,9 @@ func (m *product) providerFor(ctx context.Context, providerID string) (authn.Ide
 	p, err := m.ssoProviders.Get(ctx, providerID)
 	if err != nil {
 		return authn.Identity{}, authn.SSOProvider{}, m.answer("reading a provider", err)
+	}
+	if p.Tenant != tenant {
+		return authn.Identity{}, authn.SSOProvider{}, errNotFound
 	}
 	return id, p, nil
 }
@@ -385,7 +371,7 @@ func (m *product) lookupFailure(err error) (speedhttp.Reply, error) {
 // /admin/sso/providers/:id/metadata/refresh: it dispatches to the refresher of
 // the provider's protocol. The action is idp.manage.
 func (m *product) handleMetadataRefresh(ctx context.Context, in providerIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
-	id, provider, err := m.providerFor(ctx, in.ID)
+	id, provider, err := m.providerFor(ctx, in.Tenant, in.ID)
 	if err != nil {
 		return m.lookupFailure(err)
 	}

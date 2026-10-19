@@ -178,13 +178,16 @@ type Spec struct {
     Endpoint string // 这份文档描述哪个端点上的 API
     Prefix   string // 该端点服务 API 的路径，写作裸段，如 "api"
     Version  string // 该模块服务的 API 版本段，如 "v1"
-    Document []byte // OpenAPI 文档片段，JSON；paths 相对 Prefix 与 Version
+    Scope    Scope  // 管理作用域：tenants 或 system；空为普通面
+    Document []byte // OpenAPI 文档片段，JSON；paths 相对 Prefix、Version 与 Scope
 }
 ```
 
 `Document` 是片段而非完整的规格：它描述声明它的那个模块提供的 API，一个进程的完整规格由读取方把各片段合并得出。模块通常以 `//go:embed` 把自己的 `openapi.json` 读进来。
 
-**片段的 paths 是相对写法。** 一条路由的完整路径由读取方拼出：`Prefix` 与 `Version` 非空的部分以 `/` 连成 API 根（`api` 加 `v1` 是 `/api/v1`），再接片段里的 path（`/auth/me`），得 `/api/v1/auth/me`。斜杠由读取方插入，声明里不写前导或尾随斜杠。**版本段由模块自己声明**：同一个模块开始服务第二版时，它为那一版再声明一个 `Spec`，两版的片段各带自己的 `Version`。**`Prefix` 是端点属性，同样由模块声明**：它是这个端点服务 API 的路径，与宿主配置里的认领前缀是两份各自维护的事实，本模块不解释、也不核对它们一致。
+**片段的 paths 是相对写法。** 一条路由的完整路径由读取方拼出：`Prefix`、`Version` 与 `Scope` 非空的部分以 `/` 连成 API 根（`api`、`v1` 是 `/api/v1`；管理面再加 `system` 得 `/api/v1/system`），再接片段里的 path（`/auth/me`），得 `/api/v1/auth/me`。斜杠由读取方插入，声明里不写前导或尾随斜杠。**版本段由模块自己声明**：同一个模块开始服务第二版时，它为那一版再声明一个 `Spec`，两版的片段各带自己的 `Version`。**`Prefix` 是端点属性，同样由模块声明**：它是这个端点服务 API 的路径，与宿主配置里的认领前缀是两份各自维护的事实，本模块不解释、也不核对它们一致。
+
+**`Scope` 只标注管理面。** 它表达一条 operation 的管理级别，而不是访问级别：`tenants` 是在租户域判定并由该租户的管理权限执行的租户管理，`system` 是在平台域判定的系统管理。空值是普通面：调用者自己的资源与未认证的登录面（登录流程、回调、公钥），它的访问级别由网关注册逐条决定，不在路径里。租户级在作用域之后先写租户（`/api/v1/tenants/{tenant}/members`），租户是地址的一部分而不是查询值。路径的分类见 [ADR-http-api-path-scopes-2026-10-19](../../../adr/adr-http-api-path-scopes-2026-10-19.md)。
 
 **片段可以由 operation 声明生成，声明同时绑定 handler。** 模块在 `Resources` 里再声明一份 `http.Operations`：每条 operation 带方法、相对路径、描述、请求体声明与应答集。两种形态共用同一个描述符，生成器一视同仁：
 
@@ -205,7 +208,7 @@ type Spec struct {
 
 一个 `Spec` 对应一个端，API 分布在多个端的模块把多个 `Spec` 放进自己的 `Resources`。`Spec.Endpoint` 指向一个未声明的端时本模块不报错：资源是静态声明，本模块只保存并供查询，不解释它描述的内容。
 
-**本模块校验文档的形状，不校验它的内容。** 空的 `Document`、不是 UTF-8、不是合法 JSON、顶层不是 JSON 对象、顶层没有 `openapi` 字段、`Prefix` 不是裸段列表、`Version` 不是单段、`paths` 里的一条不以 `/` 开头或已经带着 `Prefix` 与 `Version` 拼出的根，各是一类启动失败。最后两条挡住的是相对写法被破坏的两种形状：根会被拼两次，或拼出来不是一条合法路径。完整的 OpenAPI 语法校验要引入解析库，本模块不引入它；这里挡住的是会让下游的合并在启动之后才崩掉的那一类。
+**本模块校验文档的形状，不校验它的内容。** 空的 `Document`、不是 UTF-8、不是合法 JSON、顶层不是 JSON 对象、顶层没有 `openapi` 字段、`Prefix` 不是裸段列表、`Version` 不是单段、`Scope` 非空且不在封闭集内、`tenants` 作用域里的一条 path 不以 `/{tenant}/` 开头、`paths` 里的一条不以 `/` 开头或已经带着 `Prefix`、`Version` 与 `Scope` 拼出的根，各是一类启动失败。作用域那一条挡住的是级别拼错；租户那一条挡住的是租户不在地址里。其余挡住的是相对写法被破坏的形状：根会被拼两次，或拼出来不是一条合法路径。完整的 OpenAPI 语法校验要引入解析库，本模块不引入它；这里挡住的是会让下游的合并在启动之后才崩掉的那一类。
 
 **配置**。本模块以 `config.Schema` 资源声明自己的输入项，分**监听**与**端点**两组。每条监听各有地址、四项超时、可选的 TLS 证书位置与排空时限，`Stop` 以排空时限为界等待该监听上在途请求走完；每个端点各有它挂靠的监听名、它认领的路径前缀、请求体上限、可信代理网段与来源地址头名。端点的 `listener` 指向一条不存在的监听时启动失败，错误点名该端点、它指的名字与已声明的监听名。监听的集合由配置给出：一条监听都没有声明时本模块无法启动，启动失败，错误点名缺的是监听的声明。纳入本模块即承诺装配它，配好至少一条监听因而不可省——无论由宿主在命令树上点名，还是不写命令树的调用方走 `Run` 入口。
 
@@ -221,7 +224,7 @@ http:
       prefixes: ["/api"]
     admin:
       listener: backend
-      prefixes: ["/api/v1/audit", "/api/v1/settings", "/api/v1/tenant"]
+      prefixes: ["/api/v1/system/audit", "/api/v1/system/settings", "/api/v1/system/tenants"]
     web:
       listener: backend
       prefixes: ["/"]      # 兜底端点：本监听上无人认领的路径交给它
@@ -304,9 +307,9 @@ func Draining(ctx context.Context) <-chan struct{}
 
 - **认领是产品固定的命名空间表，不随 import、也不随运行集增删。** 它至少覆盖可用集里各模块以 `Spec` 声明的路径所在的命名空间，以及该监听所服务的前端会寻址的命名空间，不论对应模块本次是否运行。
 - **去掉一项能力时，它的命名空间留在认领里**，不论是把它撤出运行集，还是删掉它的 import。
-- **认领按能力命名空间写**，例如 `/api/v1/tenant` 而不是 `/api/v1/tenant/admin`；只有要把一段子树划给另一个端点时才写更深的前缀。示范的业务端点认领 `/api`，同一监听上另两个端点因而按 `/api/v1/<能力>` 认领各自的那段子树（[ADR-http-api-prefix-2026-10-18](../../../adr/adr-http-api-prefix-2026-10-18.md)）。
+- **认领按作用域命名空间写**，例如 `/api/v1/system/tenants` 而不是逐条路由的完整路径；只有要把一段子树划给另一个端点时才写更深的前缀。示范的业务端点认领 `/api`，同一监听上另两个端点因而按作用域与服务面认领各自的那段子树，例如 `/api/v1/system/tenants` 与 `/api/v1/system/auth`（[ADR-http-api-prefix-2026-10-18](../../../adr/adr-http-api-prefix-2026-10-18.md)、[ADR-http-api-path-scopes-2026-10-19](../../../adr/adr-http-api-path-scopes-2026-10-19.md)）。
 - **与前端同源部署时，前端的页面路径不落在同一监听上任何非 `/` 认领之下。** 落在某条认领之下的页面路径，整页导航拿到的是那个端点的应答（未认证时是它的拒绝，已认证时是它的 404），拿不到前端的入口文档。
-- **模块的挂载路径可以配置时，认领随之改**，例如认证的挂载基路径 `authn.gate.mount.base-path`。
+- **模块的挂载路径可以配置时，认领随之改**，例如认证的挂载基路径 `authn.gate.mount.bases`（普通面与两类管理面各一条基路径）。
 
 漏写的认领一部分会在启动时暴露：模块运行时，它落在认领之外的路由让 `Serve` 以 `ErrUnclaimedRoute` 失败（见分派 handler 一节）。不运行的模块、删掉了 import 的能力漏写认领，本模块判不出，它们的缺席能从「拒绝还是兜底应答」读出。
 
@@ -365,6 +368,7 @@ classDiagram
         +Endpoint string
         +Prefix string
         +Version string
+        +Scope Scope
         +Document []byte
     }
     class ErrorResponder {
@@ -718,5 +722,6 @@ gin 的 `*gin.Context` 只在它所属那次请求的处理期间有效：handle
 | 拒绝文本的本地化渲染与本模块的消息目录 | 已实现 | `pkg/http/messages.go` `localesFS`、`messageCatalog`、`refusalKey`、`refusalTitle`，`pkg/http/locales/*.json`；`pkg/http/module.go` `localizerFor` |
 | 错误响应的形状与写出入口 | 已实现 | `pkg/http/problem.go` `Problem`、`ErrorResponder`、`Fail`、`respondProblem`，`pkg/http/module.go` `errorResponder` |
 | `Spec` 资源、形状校验与查询 | 已实现 | `pkg/http/surface.go` `Spec`、`pkg/http/spec.go` `validateSpecs`、`validateSpec` |
+| 路径作用域与 API 根 | 已实现 | `pkg/http/scope.go` `Scope`、`Scope.Valid`；`pkg/http/surface.go` `Spec.Scope`、`Spec.APIRoot`、`Spec.ResolvePath`；`pkg/http/spec.go` `validateSpecRoot`、`validateDocumentPaths` |
 | operation 声明资源与 OpenAPI 片段生成 | 已实现 | `pkg/http/operation.go` `Operations`、`Operation`、`ProblemDocument`；`pkg/internal/openapigen` `Generate`；`pkg/http/openapigen` `Generate`（给宿主模块的转出口） |
 | 排空信号 | 已实现 | `pkg/http/draining.go` `Draining`、`pkg/http/listener.go` `(*listener).start`、`(*listener).stop` |

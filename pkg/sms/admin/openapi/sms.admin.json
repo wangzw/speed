@@ -191,7 +191,7 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/sms/admin/templates": {
+    "/sms/templates": {
       "get": {
         "description": "Returns one page of every template the registry holds, configured ones included, ordered by template name. A page holds 50 entries when the request names no limit; a limit of 0 reads the same way, and a limit above 200 is capped at 200. The decision is made in the platform domain on sms.template.read, so a grant in a tenant does not reach this set.",
         "operationId": "sms.admin.templates.list",
@@ -398,7 +398,7 @@
         "summary": "Take up a template whose vendor code the operator already has"
       }
     },
-    "/sms/admin/templates/submissions": {
+    "/sms/templates/submissions": {
       "post": {
         "description": "Hands a template to the vendor for review through the vendor's own API and takes up the code the vendor answers with; the submission's language starts pending. Content is written with ${name} placeholders naming the entries of params, and a carrier whose vendor takes positional placeholders rewrites them in params order. An empty or whitespace-only name is a 400 before the vendor is called; a submission the vendor or the registry refuses is a 400, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and submits nothing.",
         "operationId": "sms.admin.templates.offer",
@@ -511,7 +511,7 @@
         "summary": "Hand a template to the vendor for review and take up the code it answers with"
       }
     },
-    "/sms/admin/templates/{name}": {
+    "/sms/templates/{name}": {
       "delete": {
         "description": "Drops a runtime template from this process; the vendor's copy is left alone. A template that came from the configuration cannot be removed at runtime: naming one is a 409 whose problem type is urn:speed:sms:config-template, while a name the registry does not hold is a 404 with no problem body. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and removes nothing. Success is 204 with no body.",
         "operationId": "sms.admin.templates.remove",
@@ -587,7 +587,7 @@
         "summary": "Drop a runtime template from this process, the vendor left alone"
       }
     },
-    "/sms/admin/templates/{name}/enabled": {
+    "/sms/templates/{name}/enabled": {
       "post": {
         "description": "Turns a runtime template's ability to send on or off. Enablement is orthogonal to the vendor's review: a template may be enabled while its review is still pending, and a send still waits for the review. The body must carry enabled; a body without it is a 400 rather than a disable by omission. A configured template is a 409 whose problem type is urn:speed:sms:config-template, and an unknown name is a 404. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and changes nothing. Success is 204 with no body.",
         "operationId": "sms.admin.templates.setEnabled",

@@ -1,7 +1,7 @@
 # pkg/audit/admin
 
 The audit capability's management module. It mounts the record-query routes
-under `/api/v1/audit/admin/*` and delivers no capability of its own: every route's
+under `/api/v1/system/audit/*` and delivers no capability of its own: every route's
 action is one read of the audit table, reached through the audit implementation
 subpackage's read surface — `journal.Reader` — and the module holds no table, no
 rule and no data of its own.
@@ -26,7 +26,7 @@ The API is the package's godoc, plus the `Reader`, `Query` and `Row` types in
 
 ## Routes and the permission they are held to
 
-Every route is mounted under the base path `/api/v1/audit/admin`, on the endpoints the
+Every route is mounted under the base path `/api/v1/system/audit`, on the endpoints the
 module's configuration lists. A route is addressed by a natural key — a row
 identifier — so no opaque cursor ever appears in a path. The whole surface is one
 group, `records`, and it is always mounted, because the read surface it reads
@@ -36,8 +36,8 @@ module's to carry.
 
 | Group | Method and path | Permission |
 |---|---|---|
-| Records | `GET /api/v1/audit/admin/records` | `audit.read` |
-| Records | `GET /api/v1/audit/admin/records/:id` | `audit.read` |
+| Records | `GET /api/v1/system/audit/records` | `audit.read` |
+| Records | `GET /api/v1/system/audit/records/:id` | `audit.read` |
 
 The list route answers 200 with one page of records and the cursor of the next.
 The get route answers 200 with one record, or a 404 when the table holds no such

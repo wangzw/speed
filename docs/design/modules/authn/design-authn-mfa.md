@@ -133,7 +133,7 @@ type MFA interface {
 | 登记因素 | `POST B/flows/authenticated {purpose:"enroll", input:{kind}}`，随后经 `POST B/flows/answer {step:"enroll"}` 推进；登记只经登录引擎这一个入口 | 账户已有有效因素：新鲜的本地多因素；账户没有因素：新鲜的第一因素；CSRF；冒充中拒绝 |
 | 删除因素 | `DELETE B/factors/:id` | 新鲜的本地多因素；`mfa_required` 的账户不得删最后一个；CSRF；冒充中拒绝 |
 | 加强认证 | `POST B/flows/authenticated {purpose:"step-up"}` | 复用登录引擎；见「加强认证」 |
-| 管理员重置因素 | `POST B/admin/accounts/:id/mfa-reset`（路由由 `authn.admin` 挂） | 见「删除与重置」 |
+| 管理员重置因素 | `POST B/accounts/:id/mfa-reset`（路由由 `authn.admin` 挂） | 见「删除与重置」 |
 
 账户已有因素时，登记要求的是本地验证过的多因素，不是会话里已有的单因素，被盗会话因此无法为攻击者添加因素。
 
@@ -528,8 +528,8 @@ CREATE TABLE authn_webauthn_credentials (
 找回途径限于下列各项（封闭集），排列顺序即使用顺序：依赖的外部判断由少到多，靠前的不可用时才退到靠后的（[ADR-authn-mfa-recovery-2026-10-10](../../../adr/adr-authn-mfa-recovery-2026-10-10.md)）。
 
 1. **冗余。** 账户登记了不止一个因素时，丢了一个，用另一种做加强认证，撤销丢失的并重新登记。账户只有一个因素时，登录与登记的应答带 `warnings: ["single-factor"]`，建议再登记一个。
-2. **管理员重置因素。** 路由 `POST B/admin/accounts/:id/mfa-reset`，效果见「删除与重置」。发起者必须有新鲜的本地多因素，其强认证里含非短信因素，名下有启用已满 `sensitive-min-age` 的非短信因素（`MFA.Seasoned`），不得是静态口令表主体，不得在冒充中。`Decider` 可以实现双人复核。
-3. **管理员重置口令。** 路由 `POST B/admin/accounts/:id/password`，经 `Decider`（动作 `authn.account.update`，缺席即全拒）；发起者的要求同管理员重置因素；管理员提交的临时口令是请求体，从不回显、不进日志与审计，缺省置 `must_change`；强制审计；成功后撤销该账户的全部会话。这是只有口令登录名的管理员创建账户的唯一重置路径，也是忘记口令之后组织内的找回途径。
+2. **管理员重置因素。** 路由 `POST B/accounts/:id/mfa-reset`，效果见「删除与重置」。发起者必须有新鲜的本地多因素，其强认证里含非短信因素，名下有启用已满 `sensitive-min-age` 的非短信因素（`MFA.Seasoned`），不得是静态口令表主体，不得在冒充中。`Decider` 可以实现双人复核。
+3. **管理员重置口令。** 路由 `POST B/accounts/:id/password`，经 `Decider`（动作 `authn.account.update`，缺席即全拒）；发起者的要求同管理员重置因素；管理员提交的临时口令是请求体，从不回显、不进日志与审计，缺省置 `must_change`；强制审计；成功后撤销该账户的全部会话。这是只有口令登录名的管理员创建账户的唯一重置路径，也是忘记口令之后组织内的找回途径。
 4. **运维经 Go 接口。** 宿主的命令直接调用 `MFA.Reset` 与 `Passwords.Set`，不经 `Decider`，是最后手段。
 
 忘记口令没有自助流程：账户主人经短信、社交或企业 SSO 登录后改口令，登录时同样过该账户的第二因素；或由管理员重置。找回途径的判据见 [ADR-authn-mfa-recovery-2026-10-10](../../../adr/adr-authn-mfa-recovery-2026-10-10.md)。

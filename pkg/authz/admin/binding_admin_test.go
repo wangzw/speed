@@ -18,7 +18,7 @@ func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.
 	r := newRig(t)
 	r.guard.allow = false
 	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
-		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
+		"/api/v1/system/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("an unauthorised binding delete answered %d, want 403", w.Code)
@@ -42,7 +42,7 @@ func TestAnUnauthorisedBindingDeleteReachesNoManagerAndWritesNoAudit(t *testing.
 func TestDeletingABindingAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
-		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
+		"/api/v1/system/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("deleting a binding answered %d, want 204", w.Code)
@@ -73,7 +73,7 @@ func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(authz.ErrTenantMismatch)
 		w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
-			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
+			"/api/v1/system/tenants/t1/bindings/acct-1/editor",
 			params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 		if w.Code != http.StatusBadRequest {
 			t.Fatalf("a delete whose manager refused the tenant answered %d, want 400", w.Code)
@@ -83,7 +83,7 @@ func TestDeletingABindingTheManagerRefusesIsMapped(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(errors.New("the store is down"))
 		w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
-			"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
+			"/api/v1/system/tenants/t1/bindings/acct-1/editor",
 			params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a binding delete whose store failed answered %d, want 503", w.Code)
@@ -111,7 +111,7 @@ func TestABindingWriteWhoseAuditDoesNotLandIsA503(t *testing.T) {
 	r := newRig(t)
 	r.audit.fail(errors.New("the audit store is down"))
 	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
-		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
+		"/api/v1/system/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a binding write whose mandatory audit did not land answered %d, want 503", w.Code)
@@ -134,12 +134,12 @@ func TestAnonymousRequestsAreRefusedOnEveryBindingRoute(t *testing.T) {
 	}{
 		"the list": {func(p *product) gin.HandlerFunc {
 			return readRoute(p, bindingListOperation.Handle(p.handleBindingList))
-		}, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings", params("tenant", "t1")},
-		"the account read": {func(p *product) gin.HandlerFunc { return readRoute(p, bindingOfOperation.Handle(p.handleBindingOf)) }, http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings/acct-1", params("tenant", "t1", "account", "acct-1")},
-		"the write":        {func(p *product) gin.HandlerFunc { return writeRoute(p, bindingPutOperation.Handle(p.handleBindingPut)) }, http.MethodPut, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
+		}, http.MethodGet, "/api/v1/system/tenants/t1/bindings", params("tenant", "t1")},
+		"the account read": {func(p *product) gin.HandlerFunc { return readRoute(p, bindingOfOperation.Handle(p.handleBindingOf)) }, http.MethodGet, "/api/v1/system/tenants/t1/bindings/acct-1", params("tenant", "t1", "account", "acct-1")},
+		"the write":        {func(p *product) gin.HandlerFunc { return writeRoute(p, bindingPutOperation.Handle(p.handleBindingPut)) }, http.MethodPut, "/api/v1/system/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
 		"the delete": {func(p *product) gin.HandlerFunc {
 			return writeRoute(p, bindingDeleteOperation.Handle(p.handleBindingDelete))
-		}, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
+		}, http.MethodDelete, "/api/v1/system/tenants/t1/bindings/acct-1/editor", params("tenant", "t1", "account", "acct-1", "role", "editor")},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -166,7 +166,7 @@ func TestABindingReadWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("the list", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(errors.New("the store is down"))
-		w := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings",
+		w := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/system/tenants/t1/bindings",
 			params("tenant", "t1"), nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a binding list whose manager failed answered %d, want 503", w.Code)
@@ -178,7 +178,7 @@ func TestABindingReadWhoseManagerFailsIsMapped(t *testing.T) {
 	t.Run("the account read", func(t *testing.T) {
 		r := newRig(t)
 		r.manager.fail(errors.New("the store is down"))
-		w := r.serve(readRoute(r.p, bindingOfOperation.Handle(r.p.handleBindingOf)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings/acct-1",
+		w := r.serve(readRoute(r.p, bindingOfOperation.Handle(r.p.handleBindingOf)), http.MethodGet, "/api/v1/system/tenants/t1/bindings/acct-1",
 			params("tenant", "t1", "account", "acct-1"), nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("an account read whose manager failed answered %d, want 503", w.Code)
@@ -197,7 +197,7 @@ func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 		{Tenant: "t1", Account: "acct-1", Role: "editor"},
 		{Tenant: "t1", Account: "acct-2", Role: "viewer"},
 	}
-	w := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/authz/admin/tenants/t1/bindings",
+	w := r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/system/tenants/t1/bindings",
 		params("tenant", "t1"), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("listing the bindings answered %d, want 200", w.Code)
@@ -222,7 +222,7 @@ func TestTheBindingListViewCarriesEveryField(t *testing.T) {
 func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 	r := newRig(t)
 	w := r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut,
-		"/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor",
+		"/api/v1/system/tenants/t1/bindings/acct-1/editor",
 		params("tenant", "t1", "account", "acct-1", "role", "editor"), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("binding a role answered %d, want 204", w.Code)
@@ -244,11 +244,11 @@ func TestABindingWriteCarriesTheRoleAndTheAuditObject(t *testing.T) {
 func TestTheBindingDecisionIsAskedInThePlatformDomain(t *testing.T) {
 	for name, drive := range map[string]func(*rig){
 		"the list": func(r *rig) {
-			r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/authz/admin/tenants/other/bindings",
+			r.serve(readRoute(r.p, bindingListOperation.Handle(r.p.handleBindingList)), http.MethodGet, "/api/v1/system/tenants/other/bindings",
 				params("tenant", "other"), nil)
 		},
 		"the write": func(r *rig) {
-			r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut, "/api/v1/authz/admin/tenants/other/bindings/acct-1/editor",
+			r.serve(writeRoute(r.p, bindingPutOperation.Handle(r.p.handleBindingPut)), http.MethodPut, "/api/v1/system/tenants/other/bindings/acct-1/editor",
 				params("tenant", "other", "account", "acct-1", "role", "editor"), nil)
 		},
 	} {

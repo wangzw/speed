@@ -17,7 +17,7 @@ import (
 // The paths are the resolved forms of the declarations in operations.go, which
 // are written relative to the API root the fragment carries.
 const (
-	basePath = "/api/v1/sms/admin"
+	basePath = "/api/v1/system/sms"
 
 	pathTemplates   = basePath + "/templates"
 	pathSubmissions = basePath + "/templates/submissions"

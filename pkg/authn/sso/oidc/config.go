@@ -31,7 +31,9 @@ type moduleConfig struct {
 // gateMount is the part of the gateway's configuration this module reads.
 type gateMount struct {
 	PublicURL string `config:"public-url"`
-	BasePath  string `config:"base-path"`
+	Bases     struct {
+		Default string `config:"default"`
+	} `config:"bases"`
 }
 
 // resolved is the configuration the method runs on.
@@ -75,7 +77,7 @@ func readConfig(reader config.Reader) (resolved, error) {
 		return resolved{}, fmt.Errorf("%w: %s.%s is not an origin: %w",
 			authn.ErrInvalidConfig, gateNamespace, gatePublicURLItem, err)
 	}
-	base := strings.TrimSpace(gm.BasePath)
+	base := strings.TrimSpace(gm.Bases.Default)
 	if base == "" {
 		base = mount.DefaultBasePath
 	}

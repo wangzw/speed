@@ -4,7 +4,7 @@
 
 本模块交付认证能力的**用户档案自服务面**：把「账户读改自己的档案」暴露成挂在基路径下的路由，身份取自请求上下文，路径里不出现账户标识。
 
-- **路由面。** `GET B/me` 读本人的档案，`PATCH B/me` 改本人的档案；`B` 取 `authn.gate.mount.base-path`（缺省 `/api/v1/auth`，见 [authn-config](design-authn-config.md)）。
+- **路由面。** `GET B/me` 读本人的档案，`PATCH B/me` 改本人的档案；`B` 是普通面的基路径（`authn.gate.mount.bases.default`，缺省 `/api/v1/auth`，见 [authn-config](design-authn-config.md)）。
 - **身份取自上下文。** 路由经 `authn.FromContext` 取发起者的身份，账户由身份给出，不由路径或正文里的标识给出。授权依据是「发起者就是这个账户」这条无须策略的事实，自助范围的判据见 [authn-admin](design-authn-admin.md)。
 - **自写字段集。** 可自写的字段是一个封闭集：显示名、属性、语言、时区；其余字段不可自写。
 - **复用既有写面。** 写经根包接缝 `authn.AccountAdmin` 的 `SetDisplayName` 与 `SetAttributes` 落到账户模块；语言与时区是账户属性集里的具名用法，键由 `i18n.LocaleAttributeKey`、`i18n.TimeZoneAttributeKey` 命名，由 [i18n](../design-i18n.md) 的账户桥接读回，其存储归账户属性集的通用界面（[ADR-i18n-preferences-storage-2026-10-13](../../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。本模块不另造写面、不新持状态、不新增存储。
@@ -82,7 +82,7 @@
 
 ### 与账户其他自助路由的关系
 
-本模块接替登录引擎当前挂在同端上的 `GET B/me` 读面与 `PATCH B/me/preferences` 写面：档案的自读自写集中在本模块，登录引擎保留改动认证事实的自助路由（改口令、手机、删标识、解绑）。登录引擎与本模块挂在同一个基路径 `B` 上，同一路径不得被两处登记，所以 `/me` 只由本模块挂。
+本模块接替登录引擎当前挂在同端上的 `GET B/me` 读面与 `PATCH B/me/preferences` 写面：档案的自读自写集中在本模块，登录引擎保留改动认证事实的自助路由（改口令、手机、删标识、解绑）。登录引擎与本模块挂在同一个 `self` 基路径 `Bs` 上，同一路径不得被两处登记，所以 `/me` 只由本模块挂。
 
 ### 对外接口面
 

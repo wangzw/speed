@@ -560,7 +560,7 @@ stateDiagram-v2
 | 哨兵 | 触发条件 | 修复动作 |
 |---|---|---|
 | `ErrInsecureConfig` | `public-url` 不是 https（回环主机除外）而未开 `allow-insecure`；`same-site` 取 `none` | 改基址，或显式开 `allow-insecure`（仅开发）；`same-site` 取 `lax` 或 `strict` |
-| `ErrInvalidConfig` | `public-url` 为空或不合法；`base-path` 不合法 | 点名该项 |
+| `ErrInvalidConfig` | `public-url` 为空或不合法；`bases` 不合法 | 点名该项 |
 | `ErrRoutesUnconfigured`、`ErrRoutesUnguarded` | `mount.endpoint` 为空而入口声明的端不是恰好一个；`mount.endpoint` 不是网关所守的端 | 配置 `authn.gate.mount.endpoint`；把它写进 `endpoints` |
 | `ErrNotMigrated` | `Start` 探测不到 `authn_sessions` | 点名施加迁移的命令；把本模块静态级纳入它（`IncludeAllDeclarations`） |
 | `ErrMissingProvider` | 宿主漏点名 `Requires` 里的排他功能（`db.Database`、`mount.Mounter`、`Accounts`） | 把对应模块写进这条命令 |

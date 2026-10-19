@@ -50,9 +50,9 @@ func TestTheModuleIsDeliveredAndTheCapabilityResolvesToIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the drive failed: %v", err)
 	}
-	if got.Base() != "/api/v1/auth" || got.Endpoint() != "main" || got.PublicURL() != "https://app.example.com" || got.CSRF() == nil {
+	if got.BaseIn("") != "/api/v1/auth" || got.Endpoint() != "main" || got.PublicURL() != "https://app.example.com" || got.CSRF() == nil {
 		t.Errorf("the capability reads base %q, endpoint %q, public URL %q, check %v; want /api/v1/auth, main, "+
-			"https://app.example.com and a check", got.Base(), got.Endpoint(), got.PublicURL(), got.CSRF())
+			"https://app.example.com and a check", got.BaseIn(""), got.Endpoint(), got.PublicURL(), got.CSRF())
 	}
 }
 

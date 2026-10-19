@@ -97,7 +97,7 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/settings/admin/settings": {
+    "/settings": {
       "get": {
         "description": "Returns every item in the declaration listing, including keys declared by modules that do not run in this process, each with the value it resolves to on the selected layer. Resolution walks the three-level fallback starting at that layer: the tenant row, then the global row, then the declared default. Every value-bearing field is text in the declared type's own form; for a sensitive item default is empty and written and value carry a fixed mask string. A failure to read the layer's rows or to resolve a value answers 503 rather than leaving the item out.",
         "operationId": "settings.admin.settings.list",
@@ -182,7 +182,7 @@
         "summary": "List every declared setting with its value on the selected layer"
       }
     },
-    "/settings/admin/settings/{namespace}": {
+    "/settings/{namespace}": {
       "get": {
         "description": "Returns the declared items whose namespace equals the path segment, that is the group one module declared, each carrying the same fields and resolved the same way as on the all-items route. The declaration listing is not narrowed to the modules running in this process. A namespace no declared item belongs to answers 404 without a problem document.",
         "operationId": "settings.admin.settings.listNamespace",
@@ -279,7 +279,7 @@
         "summary": "List the declared settings one namespace declares"
       }
     },
-    "/settings/admin/settings/{namespace}/{key}": {
+    "/settings/{namespace}/{key}": {
       "delete": {
         "description": "Drops the selected layer's explicit row for the setting named by the namespace and key path segments. The full key `<namespace>.<key>` must match a declared item, otherwise the answer is 404; deleting a row the layer does not hold is not an error. Once the row is gone the item resolves through the fallback again. A mandatory audit row is written before the change, and if it cannot be written the row is left in place and the answer is 503. The change is attributed to the caller's accountability key, which under an impersonation is the administrator making the request rather than the account impersonated. Success is 204 with no body.",
         "operationId": "settings.admin.settings.remove",

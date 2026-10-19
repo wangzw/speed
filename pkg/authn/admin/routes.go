@@ -2,11 +2,22 @@ package admin
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
+
+// guardedIn is the group's registration primitive: every route of the group is
+// guarded and published under the group's scope, so a group's level is written
+// once rather than beside each route.
+func guardedIn(m mount.Mounter, scope speedhttp.Scope) func(string, string, gin.HandlerFunc, ...mount.Option) {
+	return func(method, rel string, h gin.HandlerFunc, opts ...mount.Option) {
+		m.Guarded(method, rel, h, append(opts, mount.InScope(scope))...)
+	}
+}
 
 // mountRoutes registers every management route whose group has its capability.
 // All are guarded by the gateway and none is registered impersonable: the
@@ -35,7 +46,7 @@ func (m *product) mountRoutes() {
 		m.postFeature(featureSSO)
 		if len(m.refreshers) > 0 {
 			m.mounter.Guarded(http.MethodPost, mountRel(metadataRefreshOperation.Path),
-				metadataRefreshOperation.Handle(m.handleMetadataRefresh))
+				metadataRefreshOperation.Handle(m.handleMetadataRefresh), mount.InScope(speedhttp.ScopeTenants))
 			m.groups = append(m.groups, "sso-metadata-refresh")
 			m.postFeature(featureSSOMetadata)
 		}
@@ -50,7 +61,7 @@ func (m *product) mountRoutes() {
 // mountAccountRoutes registers the account group, which is always mounted: the
 // account read and write surfaces are required.
 func (m *product) mountAccountRoutes() {
-	g := m.mounter.Guarded
+	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(http.MethodGet, mountRel(accountListOperation.Path),
 		closedQuery(accountListParams, accountListOperation.Handle(m.handleAccountList)))
 	g(http.MethodPost, mountRel(accountCreateOperation.Path),
@@ -82,7 +93,7 @@ func (m *product) mountAccountRoutes() {
 // mountSessionRoutes registers the session group, mounted with the session
 // store.
 func (m *product) mountSessionRoutes() {
-	g := m.mounter.Guarded
+	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(http.MethodGet, mountRel(accountSessionsOperation.Path), accountSessionsOperation.Handle(m.handleAccountSessions))
 	g(http.MethodPost, mountRel(revokeSessionsOperation.Path), revokeSessionsOperation.Handle(m.handleRevokeAccountSessions))
 	g(http.MethodDelete, mountRel(sessionRevokeOperation.Path), sessionRevokeOperation.Handle(m.handleSessionRevoke))
@@ -91,7 +102,7 @@ func (m *product) mountSessionRoutes() {
 // mountSecretRoutes registers the service-secret group, mounted with the token
 // module.
 func (m *product) mountSecretRoutes() {
-	g := m.mounter.Guarded
+	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(http.MethodGet, mountRel(secretListOperation.Path), secretListOperation.Handle(m.handleSecretList))
 	g(http.MethodPost, mountRel(secretCreateOperation.Path),
 		mount.GuardBody(nil, secretCreateOperation.Handle(m.handleSecretCreate)))
@@ -101,7 +112,7 @@ func (m *product) mountSecretRoutes() {
 // mountMembershipRoutes registers the membership group, which is always mounted:
 // the membership reads are required.
 func (m *product) mountMembershipRoutes() {
-	g := m.mounter.Guarded
+	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
 	g(http.MethodGet, mountRel(memberListOperation.Path), memberListOperation.Handle(m.handleMemberList))
 	g(http.MethodPut, mountRel(memberWriteOperation.Path),
 		mount.GuardBody(nil, memberWriteOperation.Handle(m.handleMemberPut)))
@@ -113,7 +124,7 @@ func (m *product) mountMembershipRoutes() {
 
 // mountSSORoutes registers the SSO provider group, mounted with the SSO module.
 func (m *product) mountSSORoutes() {
-	g := m.mounter.Guarded
+	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
 	g(http.MethodGet, mountRel(providerListOperation.Path), providerListOperation.Handle(m.handleProviderList))
 	g(http.MethodPost, mountRel(providerCreateOperation.Path),
 		mount.GuardBody(nil, providerCreateOperation.Handle(m.handleProviderCreate)))
@@ -132,7 +143,7 @@ func (m *product) mountSSORoutes() {
 // with an impersonation capability that answers the extended shape the routes
 // read a record through.
 func (m *product) mountImpersonationRoutes() {
-	g := m.mounter.Guarded
+	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
 	g(http.MethodGet, mountRel(impersonationListOperation.Path), impersonationListOperation.Handle(m.handleImpersonationList))
 	g(http.MethodDelete, mountRel(impersonationRevokeOperation.Path), impersonationRevokeOperation.Handle(m.handleImpersonationRevoke))
 }
@@ -158,15 +169,22 @@ func closedQuery(accepted map[string]bool, next gin.HandlerFunc) gin.HandlerFunc
 // mountRel turns a declared route into the relative path the mounter joins to
 // its base. The declaration writes the route against the module's API root, and
 // the fragment is a static declaration fixed before configuration, so the mounter
-// path is derived from the default base rather than the configured one: a
+// path is derived from the scope's default base rather than the configured one: a
 // configured base moves the routes without moving the contract, which is the
-// split the Spec already accepts. A declared route that is not under that base
+// split the Spec already accepts. The scope follows from the declaration: a
+// route that names the tenant first is the tenant-domain surface, every other
+// route is the platform-domain one. A declared route that is not under its base
 // is a declaration defect, not something to mount at a guessed path.
 func mountRel(declared string) string {
-	relative, err := mount.RelativePath(mount.DefaultBasePath, adminSpec.ResolvePath(declared))
+	spec, scope := adminSpec, speedhttp.ScopeSystem
+	if strings.HasPrefix(declared, "/:tenant/") {
+		spec, scope = adminTenantsSpec, speedhttp.ScopeTenants
+	}
+	base := mount.DefaultBaseFor(scope)
+	relative, err := mount.RelativePath(base, spec.ResolvePath(declared))
 	if err != nil {
 		panic(diagnosticPrefix + ModuleName + ": the declared route " + declared +
-			" is not under the capability's mounted path " + mount.DefaultBasePath)
+			" is not under the capability's mounted path " + base)
 	}
 	return relative
 }

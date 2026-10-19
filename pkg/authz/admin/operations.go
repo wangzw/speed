@@ -17,15 +17,15 @@ const (
 // Spec declares. The mounting resolves them to the absolute paths the routes are
 // registered at, so a path is written once.
 const (
-	pathPermissionsFragment = "/authz/admin/permissions"
+	pathPermissionsFragment = "/permissions"
 
-	pathRolesFragment     = "/authz/admin/tenants/:tenant/roles"
-	pathRoleFragment      = "/authz/admin/tenants/:tenant/roles/:role"
-	pathGrantsFragment    = "/authz/admin/tenants/:tenant/roles/:role/grants"
-	pathGrantFragment     = "/authz/admin/tenants/:tenant/roles/:role/grants/:permission"
-	pathBindingsFragment  = "/authz/admin/tenants/:tenant/bindings"
-	pathBindingOfFragment = "/authz/admin/tenants/:tenant/bindings/:account"
-	pathBindingFragment   = "/authz/admin/tenants/:tenant/bindings/:account/:role"
+	pathRolesFragment     = "/tenants/:tenant/roles"
+	pathRoleFragment      = "/tenants/:tenant/roles/:role"
+	pathGrantsFragment    = "/tenants/:tenant/roles/:role/grants"
+	pathGrantFragment     = "/tenants/:tenant/roles/:role/grants/:permission"
+	pathBindingsFragment  = "/tenants/:tenant/bindings"
+	pathBindingOfFragment = "/tenants/:tenant/bindings/:account"
+	pathBindingFragment   = "/tenants/:tenant/bindings/:account/:role"
 )
 
 // tenantInput is the request of a route that acts on one tenant's policy data.
@@ -123,7 +123,7 @@ type (
 	}
 )
 
-// permissionListOperation declares GET /authz/admin/permissions: every
+// permissionListOperation declares GET /permissions: every
 // permission the catalog declares.
 var permissionListOperation = speedhttp.NewOperation[struct{}, permissionListBody](
 	"authz.admin.permissions.list",
@@ -148,7 +148,7 @@ var permissionListOperation = speedhttp.NewOperation[struct{}, permissionListBod
 	},
 )
 
-// roleListOperation declares GET /authz/admin/tenants/:tenant/roles: every role
+// roleListOperation declares GET /tenants/:tenant/roles: every role
 // of the tenant.
 var roleListOperation = speedhttp.NewOperation[tenantInput, roleListBody](
 	"authz.admin.roles.list",
@@ -173,7 +173,7 @@ var roleListOperation = speedhttp.NewOperation[tenantInput, roleListBody](
 	},
 )
 
-// rolePutOperation declares PUT /authz/admin/tenants/:tenant/roles/:role: it
+// rolePutOperation declares PUT /tenants/:tenant/roles/:role: it
 // creates or rewrites a role without the builtin mark.
 var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	"authz.admin.roles.put",
@@ -203,7 +203,7 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 	},
 )
 
-// roleDeleteOperation declares DELETE /authz/admin/tenants/:tenant/roles/:role:
+// roleDeleteOperation declares DELETE /tenants/:tenant/roles/:role:
 // it removes a role, which revokes its grants and bindings with it.
 var roleDeleteOperation = speedhttp.NewOperation[roleInput, struct{}](
 	"authz.admin.roles.delete",
@@ -229,7 +229,7 @@ var roleDeleteOperation = speedhttp.NewOperation[roleInput, struct{}](
 	},
 )
 
-// grantListOperation declares GET /authz/admin/tenants/:tenant/roles/:role/grants:
+// grantListOperation declares GET /tenants/:tenant/roles/:role/grants:
 // every permission grant the role holds.
 var grantListOperation = speedhttp.NewOperation[roleInput, grantListBody](
 	"authz.admin.grants.list",
@@ -255,7 +255,7 @@ var grantListOperation = speedhttp.NewOperation[roleInput, grantListBody](
 )
 
 // grantPutOperation declares PUT
-// /authz/admin/tenants/:tenant/roles/:role/grants/:permission: it grants a
+// /tenants/:tenant/roles/:role/grants/:permission: it grants a
 // permission to a role.
 var grantPutOperation = speedhttp.NewOperation[grantInput, struct{}](
 	"authz.admin.grants.put",
@@ -287,7 +287,7 @@ var grantPutOperation = speedhttp.NewOperation[grantInput, struct{}](
 )
 
 // grantDeleteOperation declares DELETE
-// /authz/admin/tenants/:tenant/roles/:role/grants/:permission: it revokes a
+// /tenants/:tenant/roles/:role/grants/:permission: it revokes a
 // permission from a role.
 var grantDeleteOperation = speedhttp.NewOperation[grantInput, struct{}](
 	"authz.admin.grants.delete",
@@ -317,7 +317,7 @@ var grantDeleteOperation = speedhttp.NewOperation[grantInput, struct{}](
 	},
 )
 
-// bindingListOperation declares GET /authz/admin/tenants/:tenant/bindings: every
+// bindingListOperation declares GET /tenants/:tenant/bindings: every
 // role binding of the tenant.
 var bindingListOperation = speedhttp.NewOperation[tenantInput, bindingListBody](
 	"authz.admin.bindings.list",
@@ -342,7 +342,7 @@ var bindingListOperation = speedhttp.NewOperation[tenantInput, bindingListBody](
 )
 
 // bindingOfOperation declares GET
-// /authz/admin/tenants/:tenant/bindings/:account: every binding the account
+// /tenants/:tenant/bindings/:account: every binding the account
 // holds within the tenant.
 var bindingOfOperation = speedhttp.NewOperation[tenantAccountInput, accountBindingListBody](
 	"authz.admin.bindings.of",
@@ -368,7 +368,7 @@ var bindingOfOperation = speedhttp.NewOperation[tenantAccountInput, accountBindi
 )
 
 // bindingPutOperation declares PUT
-// /authz/admin/tenants/:tenant/bindings/:account/:role: it binds a role to an
+// /tenants/:tenant/bindings/:account/:role: it binds a role to an
 // account within the tenant.
 var bindingPutOperation = speedhttp.NewOperation[bindingInput, struct{}](
 	"authz.admin.bindings.put",
@@ -396,7 +396,7 @@ var bindingPutOperation = speedhttp.NewOperation[bindingInput, struct{}](
 )
 
 // bindingDeleteOperation declares DELETE
-// /authz/admin/tenants/:tenant/bindings/:account/:role: it removes an account's
+// /tenants/:tenant/bindings/:account/:role: it removes an account's
 // binding to a role within the tenant.
 var bindingDeleteOperation = speedhttp.NewOperation[bindingInput, struct{}](
 	"authz.admin.bindings.delete",

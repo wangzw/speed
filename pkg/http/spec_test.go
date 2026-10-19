@@ -96,7 +96,7 @@ func TestAPIRootJoinsBareSegments(t *testing.T) {
 		{Spec{Prefix: "api"}, "/api"},
 		{Spec{Version: "v1"}, "/v1"},
 		{Spec{Prefix: "api", Version: "v1"}, "/api/v1"},
-		{Spec{Prefix: "internal/api", Version: "v1"}, "/internal/api/v1"},
+		{Spec{Prefix: "internal/api", Version: "v1", Scope: ScopeSystem}, "/internal/api/v1/system"},
 	} {
 		if got := c.spec.APIRoot(); got != c.root {
 			t.Errorf("APIRoot of Prefix %q and Version %q is %q, want %q",
@@ -183,6 +183,50 @@ func TestSpecUnknownEndpointIsNotAFailure(t *testing.T) {
 func TestSpecsWithNothingDeclaredIsNotAFailure(t *testing.T) {
 	if err := validateSpecs(nil); err != nil {
 		t.Fatalf("an assembly declaring no fragment failed: %v", err)
+	}
+}
+
+// TestAnOrdinarySpecCarriesNoScope holds the ordinary surface's shape: a
+// fragment under the API root with no scope is published directly below the
+// root, and its paths carry no level segment.
+func TestAnOrdinarySpecCarriesNoScope(t *testing.T) {
+	spec := Spec{Endpoint: "public", Prefix: "api", Version: "v1", Document: []byte(validFragment)}
+	if err := validateSpec("billing", spec); err != nil {
+		t.Fatalf("an ordinary fragment was refused: %v", err)
+	}
+	if got := spec.ResolvePath("/auth/me"); got != "/api/v1/auth/me" {
+		t.Errorf("an ordinary path resolves to %q", got)
+	}
+}
+
+// TestSpecRefusesAnUnknownScope holds the closed set: a level nobody decided on
+// is a declaration defect, not a value to carry through the merge.
+func TestSpecRefusesAnUnknownScope(t *testing.T) {
+	err := validateSpec("billing", Spec{
+		Endpoint: "public", Prefix: "api", Version: "v1", Scope: Scope("admin"),
+		Document: []byte(validFragment),
+	})
+	assertInvalidSpec(t, err, "billing", "not one of")
+}
+
+// TestATenantsScopePathNamesTheTenantFirst holds the shape the tenant level
+// prescribes: the tenant is part of the address, so a path that does not name it
+// first cannot be published under that level.
+func TestATenantsScopePathNamesTheTenantFirst(t *testing.T) {
+	err := validateSpec("billing", Spec{
+		Endpoint: "public", Prefix: "api", Version: "v1", Scope: ScopeTenants,
+		Document: []byte(`{"openapi":"3.1.0","paths":{"/members":{}}}`),
+	})
+	assertInvalidSpec(t, err, "billing", "/{tenant}/")
+
+	if err := validateSpec("billing", Spec{
+		Endpoint: "public", Prefix: "api", Version: "v1", Scope: ScopeTenants,
+		Document: []byte(`{"openapi":"3.1.0","paths":{"/{tenant}/members":{}}}`),
+	}); err != nil {
+		t.Fatalf("a tenant-scoped fragment was refused: %v", err)
+	}
+	if got := (Spec{Prefix: "api", Version: "v1", Scope: ScopeTenants}).ResolvePath("/{tenant}/members"); got != "/api/v1/tenants/{tenant}/members" {
+		t.Errorf("ResolvePath under the tenant scope is %q", got)
 	}
 }
 

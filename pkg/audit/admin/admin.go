@@ -1,5 +1,5 @@
 // Package admin is the audit capability's management module: it mounts the
-// record-query routes under /api/v1/audit/admin/* and delivers no capability of its
+// record-query routes under /api/v1/system/audit/* and delivers no capability of its
 // own.
 //
 // The module holds no data and no rule. Every route's action is one read of the
@@ -93,6 +93,7 @@ var auditSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
 	Version:  "v1",
+	Scope:    speedhttp.ScopeSystem,
 	Document: openAPIFragment,
 }
 

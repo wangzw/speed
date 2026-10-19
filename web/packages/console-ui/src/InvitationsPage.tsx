@@ -2,7 +2,7 @@
  * InvitationsPage: the tenant invitation and membership page of the
  * console.
  *
- * Both surfaces are tenant-scoped (/api/v1/auth/admin/tenants/:tenant/...), so
+ * Both surfaces are tenant-scoped (/api/v1/tenants/:tenant/...), so
  * the page opens with a tenant selector and keeps its reads disabled
  * until a tenant is chosen. It renders:
  *
@@ -848,7 +848,7 @@ function InvitationLinkNotice({
 
 /**
  * MemberWriteForm: the membership-write control (PUT
- * /api/v1/auth/admin/tenants/:tenant/members/:account) -- it adds, suspends or
+ * /api/v1/tenants/:tenant/members/:account) -- it adds, suspends or
  * resumes a membership, naming the account chosen through the account
  * search picker, its active state, an optional source and, where the SSO
  * surface is present, the SSO exemption. A landed write clears the account

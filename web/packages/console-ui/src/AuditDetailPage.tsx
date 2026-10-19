@@ -3,7 +3,7 @@
  *
  * The audit query page lists the platform's append-only trail; a row's
  * action links here to the record itself, read from
- * GET /api/v1/audit/admin/records/:id. It is a detail page: a main column
+ * GET /api/v1/system/audit/records/:id. It is a detail page: a main column
  * carrying the record's fields (when it happened, who did it, what it
  * was, how it ended and why) and a fixed-width side column carrying the
  * row's identifier and a way back to the query.

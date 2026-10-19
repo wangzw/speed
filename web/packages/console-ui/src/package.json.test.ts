@@ -6,7 +6,7 @@
  * @mui/material, @emotion/* and @tanstack/react-query are peers; i18n,
  * ui-kit and layout-kit are regular dependencies. @speed/api-sdk is
  * declared a dependency per the console-ui design (the contract phase
- * binds its generated /api/v1/tenant/admin, /api/v1/settings/admin and /api/v1/audit/admin
+ * binds its generated /api/v1/system/tenants, /api/v1/system/settings and /api/v1/system/audit
  * operations to the console operations bundle), and is a
  * devDependency-visible workspace link today. @speed/layout-kit is the
  * shared frame: the console's ConsoleShell renders the platform

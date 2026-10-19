@@ -20,7 +20,7 @@ const (
 // namespace and the rest of the key — so that no opaque row identifier ever
 // appears in a path.
 const (
-	pathSettings     = "/settings/admin/settings"
+	pathSettings     = "/settings"
 	pathNamespace    = pathSettings + "/:namespace"
 	pathNamespaceKey = pathSettings + "/:namespace/:key"
 )
@@ -100,7 +100,7 @@ type removeInput struct {
 // management surface shows it.
 var settingListType = reflect.TypeOf([]SettingsAdminSetting{})
 
-// listOperation declares GET /settings/admin/settings: every declared item with
+// listOperation declares GET /settings: every declared item with
 // the value it resolves to on the selected layer. The handler returns one
 // success body, so this is the simple form.
 var listOperation = speedhttp.NewOperation[listInput, []SettingsAdminSetting](
@@ -130,7 +130,7 @@ var listOperation = speedhttp.NewOperation[listInput, []SettingsAdminSetting](
 	},
 )
 
-// namespaceOperation declares GET /settings/admin/settings/:namespace: the
+// namespaceOperation declares GET /settings/:namespace: the
 // declared items one namespace declares. The handler builds its own answer
 // because a namespace no declared item belongs to is a bare 404, which the
 // simple form cannot write.
@@ -160,7 +160,7 @@ var namespaceOperation = speedhttp.NewReplyOperation[namespaceInput](
 	},
 )
 
-// setOperation declares PUT /settings/admin/settings/:namespace/:key: it writes
+// setOperation declares PUT /settings/:namespace/:key: it writes
 // one row on the selected layer. The handler builds its own answer because a
 // success is 204 with no body and an undeclared key is a bare 404.
 var setOperation = speedhttp.NewReplyOperation[setInput](
@@ -198,7 +198,7 @@ var setOperation = speedhttp.NewReplyOperation[setInput](
 	},
 )
 
-// removeOperation declares DELETE /settings/admin/settings/:namespace/:key: it
+// removeOperation declares DELETE /settings/:namespace/:key: it
 // drops the selected layer's explicit row for one key. The handler builds its
 // own answer because a success is 204 with no body and an undeclared key is a
 // bare 404.

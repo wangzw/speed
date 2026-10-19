@@ -113,7 +113,7 @@ export default defineConfig({
     // The keys are segment-anchored regular expressions (`^/auth(?:[/?]|$)`
     // rather than `/api/v1/auth`), because vite matches a key that begins with `^`
     // as a regular expression and anything else with `startsWith`: a plain
-    // `/api/v1/auth` key would also forward `/api/v1/authz`.
+    // `/api/v1/auth` key would also forward `/api/v1/system`.
     proxy: backendProxyRules(backendProxy),
   },
 })

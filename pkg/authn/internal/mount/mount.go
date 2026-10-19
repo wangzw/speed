@@ -34,14 +34,38 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// DefaultBasePath is the base path the capability's routes are mounted under
-// without a configured one. The gateway declares it as the default of
-// mount.base-path and the module that mounts routes reads it back the same way;
-// it is written once here so a host-supplied gateway and the module cannot come
-// to disagree on where the routes are.
+// DefaultBasePath is the base path the capability's ordinary routes are
+// mounted under without a configured one: the self-service and sign-in
+// surface, which carries no scope segment. The gateway declares it as the
+// default of mount.bases.default and the module that mounts routes reads it
+// back the same way; it is written once here so a host-supplied gateway and
+// the module cannot come to disagree on where the routes are.
 const DefaultBasePath = "/api/v1/auth"
+
+// The defaults of the management scopes. Each is derived from the same API
+// root and the scope segment, so a deployment that changes none of them gets
+// the path taxonomy the repository publishes.
+const (
+	DefaultTenantsBasePath = "/api/v1/tenants"
+	DefaultSystemBasePath  = "/api/v1/system/auth"
+)
+
+// DefaultBaseFor answers the default base path of one scope. The empty scope
+// is the ordinary surface.
+func DefaultBaseFor(scope speedhttp.Scope) string {
+	switch scope {
+	case speedhttp.ScopeTenants:
+		return DefaultTenantsBasePath
+	case speedhttp.ScopeSystem:
+		return DefaultSystemBasePath
+	default:
+		return DefaultBasePath
+	}
+}
 
 // Mounter registers routes under the capability's base path together with the
 // access level the gateway is to apply to each.
@@ -65,8 +89,8 @@ type Mounter interface {
 	// cross-origin check, for the redirect an external party sends the
 	// browser back with from another site.
 	Callback(methods []string, rel string, h gin.HandlerFunc)
-	// Base is the base path every rel is joined to.
-	Base() string
+	// BaseIn is the base path routes of the given scope are joined to.
+	BaseIn(scope speedhttp.Scope) string
 	// Endpoint is the name of the endpoint the routes are mounted on. A handler
 	// that answers 401 itself writes it as the realm of its challenge, the name
 	// of the protection space being the endpoint, as the gateway's own is.
@@ -85,6 +109,7 @@ type Option func(*routeSpec)
 // routeSpec is what the options of one registration add up to.
 type routeSpec struct {
 	impersonable bool
+	scope        speedhttp.Scope
 }
 
 // Spec is what the options of one registration add up to, as the implementation
@@ -94,6 +119,17 @@ type Spec struct {
 	// Impersonable is whether the route is one an impersonating identity may
 	// pass, registered through the gateway's Impersonable.
 	Impersonable bool
+	// Scope is the management level the route is published under. Empty is
+	// the ordinary surface: the self-service and sign-in routes, which share
+	// one base regardless of their access level.
+	Scope speedhttp.Scope
+}
+
+// InScope publishes the route under the given scope's base path. A module
+// whose routes span levels, such as the administration module serving system
+// and tenant surfaces, passes it on the routes of every management scope.
+func InScope(scope speedhttp.Scope) Option {
+	return func(s *routeSpec) { s.scope = scope }
 }
 
 // Impersonable lets an impersonating identity through the route. It is for the
@@ -112,5 +148,5 @@ func Resolve(opts ...Option) Spec {
 			o(&s)
 		}
 	}
-	return Spec{Impersonable: s.impersonable}
+	return Spec{Impersonable: s.impersonable, Scope: s.scope}
 }

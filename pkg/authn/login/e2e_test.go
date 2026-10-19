@@ -146,7 +146,7 @@ func assemble(t *testing.T, use func(h *harness)) {
 		"kv": map[string]any{"memory": map[string]any{"replicas": 1}},
 		"authn": map[string]any{
 			"gate": map[string]any{"mount": map[string]any{
-				"endpoint": "public", "base-path": "/api/v1/auth",
+				"endpoint":   "public",
 				"public-url": "http://127.0.0.1", "allow-insecure": true,
 			}},
 		},

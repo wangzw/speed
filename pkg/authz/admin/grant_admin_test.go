@@ -20,7 +20,7 @@ func TestAnUnauthorisedGrantDeleteReachesNoManagerAndWritesNoAudit(t *testing.T)
 	r := newRig(t, authz.PermissionAccountRead)
 	r.guard.allow = false
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("an unauthorised grant delete answered %d, want 403", w.Code)
@@ -45,7 +45,7 @@ func TestAnUnauthorisedGrantDeleteReachesNoManagerAndWritesNoAudit(t *testing.T)
 func TestDeletingAGrantAsksForRoleManageAndLandsOneSuccessRow(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("deleting a grant answered %d, want 204", w.Code)
@@ -80,7 +80,7 @@ func TestDeletingAGrantWhoseActionFailsLinksAFailedRow(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	r.manager.fail(errors.New("the store is down"))
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a grant delete whose action failed answered %d, want 503", w.Code)
@@ -110,7 +110,7 @@ func TestADeleteTheManagerRefusesIsMapped(t *testing.T) {
 		r := newRig(t, authz.PermissionAccountRead)
 		r.manager.fail(authz.ErrBuiltinRole)
 		w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
-			"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+			"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 			params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 		if w.Code != http.StatusConflict {
 			t.Fatalf("deleting a grant on a builtin role answered %d, want 409", w.Code)
@@ -120,7 +120,7 @@ func TestADeleteTheManagerRefusesIsMapped(t *testing.T) {
 		r := newRig(t, authz.PermissionAccountRead)
 		r.manager.fail(errors.New("the store is down"))
 		w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
-			"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+			"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 			params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 		if w.Code != http.StatusServiceUnavailable {
 			t.Fatalf("a grant delete whose store failed answered %d, want 503", w.Code)
@@ -139,7 +139,7 @@ func TestADeleteTheManagerRefusesIsMapped(t *testing.T) {
 func TestDeletingAGrantWithoutATranslationRowIsRefused(t *testing.T) {
 	r := newRig(t, authz.Permission("authn.unknown.thing"))
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.unknown.thing",
+		"/api/v1/system/tenants/t1/roles/r1/grants/authn.unknown.thing",
 		params("tenant", "t1", "role", "r1", "permission", "authn.unknown.thing"), nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("deleting a grant with no translation row answered %d, want 400", w.Code)
@@ -157,7 +157,7 @@ func TestDeletingAGrantWithoutATranslationRowIsRefused(t *testing.T) {
 func TestDeletingAGrantDoesNotConsultTheCatalog(t *testing.T) {
 	r := newRig(t) // the catalog declares nothing
 	w := r.serve(writeRoute(r.p, grantDeleteOperation.Handle(r.p.handleGrantDelete)), http.MethodDelete,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("deleting an undeclared grant answered %d, want 204: the delete does not consult the catalog", w.Code)
@@ -178,7 +178,7 @@ func TestAListingGrantsWhoseManagerFailsIsMapped(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.fail(errors.New("the store is down"))
 	w := r.serve(readRoute(r.p, grantListOperation.Handle(r.p.handleGrantList)), http.MethodGet,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants",
+		"/api/v1/system/tenants/t1/roles/r1/grants",
 		params("tenant", "t1", "role", "r1"), nil)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("a grant list whose manager failed answered %d, want 503", w.Code)
@@ -197,7 +197,7 @@ func TestTheGrantListViewCarriesEveryField(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	r.manager.grants = []authz.GrantRecord{{Tenant: "t1", Role: "r1", Resource: "account", Action: "read"}}
 	w := r.serve(readRoute(r.p, grantListOperation.Handle(r.p.handleGrantList)), http.MethodGet,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants",
+		"/api/v1/system/tenants/t1/roles/r1/grants",
 		params("tenant", "t1", "role", "r1"), nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("listing the grants answered %d, want 200", w.Code)
@@ -227,7 +227,7 @@ func TestGrantingASecondPermissionUsesItsOwnTranslation(t *testing.T) {
 	}
 	r := newRig(t, authz.PermissionSessionRead)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.session.read",
+		"/api/v1/system/tenants/t1/roles/r1/grants/authn.session.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionSessionRead)), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("granting a second permission answered %d, want 204", w.Code)
@@ -249,7 +249,7 @@ func TestGrantingASecondPermissionUsesItsOwnTranslation(t *testing.T) {
 func TestTheGrantPutMandatoryRowCarriesTheObjectAndDetail(t *testing.T) {
 	r := newRig(t, authz.PermissionAccountRead)
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read",
+		"/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read",
 		params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead)), nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("granting a permission answered %d, want 204", w.Code)
@@ -274,7 +274,7 @@ func TestTheGrantPutMandatoryRowCarriesTheObjectAndDetail(t *testing.T) {
 func TestGrantingAPermissionTheTranslationLacksIsRefused(t *testing.T) {
 	r := newRig(t, authz.Permission("vendor.custom.read")) // declared, but absent from the translation
 	w := r.serve(writeRoute(r.p, grantPutOperation.Handle(r.p.handleGrantPut)), http.MethodPut,
-		"/api/v1/authz/admin/tenants/t1/roles/r1/grants/vendor.custom.read",
+		"/api/v1/system/tenants/t1/roles/r1/grants/vendor.custom.read",
 		params("tenant", "t1", "role", "r1", "permission", "vendor.custom.read"), nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("granting a permission with no translation row answered %d, want 400", w.Code)
@@ -296,11 +296,11 @@ func TestAnonymousRequestsAreRefusedOnEveryGrantRoute(t *testing.T) {
 		path    string
 		params  gin.Params
 	}{
-		"the list":  {func(p *product) gin.HandlerFunc { return readRoute(p, grantListOperation.Handle(p.handleGrantList)) }, http.MethodGet, "/api/v1/authz/admin/tenants/t1/roles/r1/grants", params("tenant", "t1", "role", "r1")},
-		"the write": {func(p *product) gin.HandlerFunc { return writeRoute(p, grantPutOperation.Handle(p.handleGrantPut)) }, http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read", params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead))},
+		"the list":  {func(p *product) gin.HandlerFunc { return readRoute(p, grantListOperation.Handle(p.handleGrantList)) }, http.MethodGet, "/api/v1/system/tenants/t1/roles/r1/grants", params("tenant", "t1", "role", "r1")},
+		"the write": {func(p *product) gin.HandlerFunc { return writeRoute(p, grantPutOperation.Handle(p.handleGrantPut)) }, http.MethodPut, "/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read", params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead))},
 		"the delete": {func(p *product) gin.HandlerFunc {
 			return writeRoute(p, grantDeleteOperation.Handle(p.handleGrantDelete))
-		}, http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/r1/grants/authn.account.read", params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead))},
+		}, http.MethodDelete, "/api/v1/system/tenants/t1/roles/r1/grants/authn.account.read", params("tenant", "t1", "role", "r1", "permission", string(authz.PermissionAccountRead))},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

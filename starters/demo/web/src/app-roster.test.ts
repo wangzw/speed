@@ -33,7 +33,7 @@ describe('the announced tenant, once the roster is read', () => {
     const request: RequestFn = async <T>(
       path: string,
     ): Promise<T> => {
-      if (path === '/api/v1/tenant/admin/tenants') {
+      if (path === '/api/v1/system/tenants') {
         return {
           tenants: [{ id: 'acme', alias: 'acme-inc', status: 'active' }],
         } as T
@@ -60,7 +60,7 @@ describe('the announced tenant, once the roster is read', () => {
     // offers: a roster tenant outside it would leave the caller in a tenant
     // the bar cannot name and the switcher cannot leave.
     const request: RequestFn = async <T>(path: string): Promise<T> => {
-      if (path === '/api/v1/tenant/admin/tenants') {
+      if (path === '/api/v1/system/tenants') {
         return {
           tenants: [
             { id: 'personal-abc', alias: 'personal-abc', status: 'active' },

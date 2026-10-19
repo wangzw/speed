@@ -37,9 +37,8 @@ func grantViewOf(g authn.ImpersonationGrant) AuthnAdminImpersonation {
 	return v
 }
 
-// handleImpersonationList answers GET /admin/impersonations: it lists the records
-// of one tenant, named by the required query parameter. The action is
-// impersonation.read.
+// handleImpersonationList answers GET /tenants/:tenant/impersonations: it lists
+// the records of the tenant the path names. The action is impersonation.read.
 func (m *product) handleImpersonationList(ctx context.Context, in impersonationListInput) (AuthnAdminImpersonationList, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -61,8 +60,8 @@ func (m *product) handleImpersonationList(ctx context.Context, in impersonationL
 	if err != nil {
 		return AuthnAdminImpersonationList{}, m.unavailable("listing impersonation records", err)
 	}
-	// The tenant is the required query parameter and is passed to the store, so
-	// the page holds only that tenant's records and the cursor counts them.
+	// The tenant is the path segment and is passed to the store, so the page
+	// holds only that tenant's records and the cursor counts them.
 	views := make([]AuthnAdminImpersonation, 0, len(grants))
 	for _, g := range grants {
 		views = append(views, grantViewOf(g))
@@ -88,6 +87,12 @@ func (m *product) handleImpersonationRevoke(ctx context.Context, in impersonatio
 	grant, err := m.records.Get(ctx, in.ID)
 	if err != nil {
 		return m.replyFailure("reading an impersonation record", err)
+	}
+	// The path names the tenant the operation is filed under; a record that
+	// belongs to another tenant answers not found, the same answer a record
+	// that does not exist gets.
+	if grant.Tenant != in.Tenant {
+		return speedhttp.EmptyReply(404), nil
 	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionImpersonationRevoke, Actor: id,

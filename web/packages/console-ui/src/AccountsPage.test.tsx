@@ -990,7 +990,7 @@ describe('AccountsPage', () => {
   it('sends the identifier prefix and its kind when the search is submitted', async () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/auth/admin/accounts') {
+      if (call.path === '/api/v1/system/auth/accounts') {
         return { accounts: [], next_cursor: '' }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -1003,7 +1003,7 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       expect(calls).toContainEqual({
         method: 'GET',
-        path: '/api/v1/auth/admin/accounts',
+        path: '/api/v1/system/auth/accounts',
         query: { identifier_prefix: 'ada', identifier_kind: 'email' },
       })
     })
@@ -1012,7 +1012,7 @@ describe('AccountsPage', () => {
   it('sends the status and kind filters when the search is submitted', async () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/auth/admin/accounts') {
+      if (call.path === '/api/v1/system/auth/accounts') {
         return { accounts: [], next_cursor: '' }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -1026,7 +1026,7 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       expect(calls).toContainEqual({
         method: 'GET',
-        path: '/api/v1/auth/admin/accounts',
+        path: '/api/v1/system/auth/accounts',
         query: { status: 'disabled', kind: 'service' },
       })
     })
@@ -1035,7 +1035,7 @@ describe('AccountsPage', () => {
   it('sends the display-name prefix when the search is submitted', async () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/auth/admin/accounts') {
+      if (call.path === '/api/v1/system/auth/accounts') {
         return { accounts: [], next_cursor: '' }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -1046,7 +1046,7 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       expect(calls).toContainEqual({
         method: 'GET',
-        path: '/api/v1/auth/admin/accounts',
+        path: '/api/v1/system/auth/accounts',
         query: { display_name_prefix: 'Ada' },
       })
     })
@@ -1055,7 +1055,7 @@ describe('AccountsPage', () => {
   it('omits the status and kind filters when they are left at all', async () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/auth/admin/accounts') {
+      if (call.path === '/api/v1/system/auth/accounts') {
         return { accounts: [], next_cursor: '' }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -1063,7 +1063,7 @@ describe('AccountsPage', () => {
     renderWithProviders(<AccountsPage />, { operations: consoleOperations })
     await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
     await vi.waitFor(() => {
-      const call = calls.find((entry) => entry.path === '/api/v1/auth/admin/accounts')
+      const call = calls.find((entry) => entry.path === '/api/v1/system/auth/accounts')
       expect(call).toBeDefined()
       // No filter is set, so the generated call carries no query parameter.
       expect(call?.query ?? {}).toEqual({})

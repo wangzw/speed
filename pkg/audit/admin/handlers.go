@@ -40,7 +40,7 @@ var listParams = map[string]bool{
 	paramLimit:   true,
 }
 
-// handleRecordList answers GET /api/v1/audit/admin/records: one page of audit records,
+// handleRecordList answers GET /api/v1/system/audit/records: one page of audit records,
 // narrowed by a time window and sets of actions, outcomes and actors, read
 // newest first.
 //
@@ -71,7 +71,7 @@ func (p *product) handleRecordList(ctx context.Context, in RecordListInput) (Aud
 	return AuditAdminRecordPage{Entries: entries, Next: next}, nil
 }
 
-// handleRecordGet answers GET /api/v1/audit/admin/records/:id: one audit record, taken
+// handleRecordGet answers GET /api/v1/system/audit/records/:id: one audit record, taken
 // by the row identifier, which is unique over the whole table and so needs no
 // tenant.
 //

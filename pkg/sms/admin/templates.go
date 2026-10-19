@@ -20,7 +20,7 @@ const (
 	maxPageSize     = 200
 )
 
-// handleTemplateList answers GET /sms/admin/templates: one page of the template
+// handleTemplateList answers GET /sms/templates: one page of the template
 // set, configured templates included. It is a read, so the action is
 // template.read. The page is ordered by template name and the cursor is the last
 // name on it, so a caller continues from where the previous page ended.
@@ -82,7 +82,7 @@ func paginate(records []sms.Record, q listQuery) ([]sms.Record, string) {
 	return page, next
 }
 
-// handleTemplateRegister answers POST /sms/admin/templates: it takes up a
+// handleTemplateRegister answers POST /sms/templates: it takes up a
 // template whose vendor code the operator already has. It is a write, so the
 // action is template.manage. The mandatory audit row lands before the registry
 // is called; a name the registry already holds is a 409, and a template set the
@@ -112,7 +112,7 @@ func (p *product) handleTemplateRegister(ctx context.Context, in registerBody, _
 	return speedhttp.JSONReply(http.StatusCreated, registeredTemplateBody{Template: templateViewOf(record)}), nil
 }
 
-// handleTemplateOffer answers POST /sms/admin/templates/submissions: it hands a
+// handleTemplateOffer answers POST /sms/templates/submissions: it hands a
 // template to the vendor for review and takes up the code the vendor answers
 // with. It is a write, so the action is template.manage. The mandatory audit row
 // lands before the registry is called; a submission the vendor or the registry
@@ -147,7 +147,7 @@ func (p *product) handleTemplateOffer(ctx context.Context, in offerBody, _ *spee
 	return speedhttp.JSONReply(http.StatusCreated, offeredTemplateBody{Template: templateViewOf(record)}), nil
 }
 
-// handleTemplateSetEnabled answers POST /sms/admin/templates/:name/enabled: it
+// handleTemplateSetEnabled answers POST /sms/templates/:name/enabled: it
 // turns a message's ability to go out under a runtime template on or off. It is
 // a write, so the action is template.manage. The mandatory audit row lands
 // before the registry is called; a template that came from the configuration is
@@ -171,7 +171,7 @@ func (p *product) handleTemplateSetEnabled(ctx context.Context, in setEnabledInp
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
-// handleTemplateRemove answers DELETE /sms/admin/templates/:name: it drops a
+// handleTemplateRemove answers DELETE /sms/templates/:name: it drops a
 // runtime template from this process, at the vendor left alone. It is a write,
 // so the action is template.manage. The mandatory audit row lands before the
 // registry is called; a template that came from the configuration is a 409

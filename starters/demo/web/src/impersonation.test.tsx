@@ -289,7 +289,7 @@ function makeBackend(options: {
     ) {
       tenantReads += 1
     }
-    if (path === '/api/v1/tenant/admin/tenants') {
+    if (path === '/api/v1/system/tenants') {
       rosterReads += 1
       if (options.rosterGate !== undefined) {
         return options.rosterGate.then(() => ({ tenants: [TENANT] }) as T)
@@ -364,7 +364,7 @@ function makeBackend(options: {
         return Promise.resolve(undefined as T)
       }
     }
-    if (path.startsWith('/api/v1/auth/admin/impersonations')) {
+    if (path.startsWith('/api/v1/tenants/')) {
       recordReads += 1
       recordSignal = request?.signal
       if (options.recordsGate !== undefined) {
@@ -899,7 +899,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/authz/admin/permissions') {
+      if (path === '/api/v1/system/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },
@@ -1693,7 +1693,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/authz/admin/permissions') {
+      if (path === '/api/v1/system/permissions') {
         return impersonating
           ? Promise.reject({ status: 403, code: 'rbac.permission_denied' })
           : Promise.resolve({
@@ -1771,7 +1771,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/authz/admin/permissions') {
+      if (path === '/api/v1/system/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },
@@ -1837,7 +1837,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/authz/admin/permissions') {
+      if (path === '/api/v1/system/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },
@@ -1906,7 +1906,7 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/authz/admin/permissions') {
+      if (path === '/api/v1/system/permissions') {
         return Promise.resolve({
           permissions: [
             { permission: 'tenant.read' },

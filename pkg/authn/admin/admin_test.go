@@ -99,56 +99,56 @@ func TestDecisionFill(t *testing.T) {
 		wantTarget  string
 		wantAccount string
 	}{
-		{"account list", http.MethodGet, "/api/v1/auth/admin/accounts", nil, authn.ActionAccountRead, "", "", ""},
-		{"account get", http.MethodGet, "/api/v1/auth/admin/accounts/acct-t2", nil, authn.ActionAccountRead, "", "acct-t2", "acct-t2"},
-		{"account create", http.MethodPost, "/api/v1/auth/admin/accounts", map[string]any{"kind": "user", "username": "new"}, authn.ActionAccountCreate, "", "", ""},
-		{"account patch", http.MethodPatch, "/api/v1/auth/admin/accounts/acct-t2", map[string]any{"display_name": "y"}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
-		{"account status", http.MethodPost, "/api/v1/auth/admin/accounts/acct-t2/status", map[string]any{"status": "disabled"}, authn.ActionAccountDisable, "", "acct-t2", "acct-t2"},
-		{"identifier add", http.MethodPost, "/api/v1/auth/admin/accounts/acct-t2/identifiers", map[string]any{"kind": "username", "value": "z"}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
-		{"identifier remove", http.MethodDelete, "/api/v1/auth/admin/accounts/acct-t2/identifiers/" + identifier, nil, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
-		{"password reset", http.MethodPost, "/api/v1/auth/admin/accounts/acct-t2/password", map[string]any{"password": "a-long-temporary-one"}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
-		{"factor list", http.MethodGet, "/api/v1/auth/admin/accounts/acct-t2/factors", nil, authn.ActionAccountRead, "", "acct-t2", "acct-t2"},
-		{"mfa required", http.MethodPost, "/api/v1/auth/admin/accounts/acct-t2/mfa-required", map[string]any{"required": true}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
-		{"mfa reset", http.MethodPost, "/api/v1/auth/admin/accounts/acct-t2/mfa-reset", nil, authn.ActionMFAReset, "", "acct-t2", "acct-t2"},
-		{"account sessions", http.MethodGet, "/api/v1/auth/admin/accounts/acct-t2/sessions", nil, authn.ActionSessionRead, "", "acct-t2", "acct-t2"},
-		{"revoke sessions", http.MethodPost, "/api/v1/auth/admin/accounts/acct-t2/revoke-sessions", nil, authn.ActionSessionRevoke, "", "acct-t2", "acct-t2"},
-		{"secret list", http.MethodGet, "/api/v1/auth/admin/accounts/acct-t2/secrets", nil, authn.ActionAccountRead, "", "acct-t2", "acct-t2"},
-		{"secret create", http.MethodPost, "/api/v1/auth/admin/accounts/acct-t2/secrets", map[string]any{"label": "ci"}, authn.ActionClientManage, "", "acct-t2", "acct-t2"},
-		{"secret revoke", http.MethodDelete, "/api/v1/auth/admin/accounts/acct-t2/secrets/" + secretA, nil, authn.ActionClientManage, "", "acct-t2", "acct-t2"},
-		{"member list", http.MethodGet, "/api/v1/auth/admin/tenants/" + tenantB + "/members", nil, authn.ActionMembershipManage, tenantB, "", ""},
+		{"account list", http.MethodGet, "/api/v1/system/auth/accounts", nil, authn.ActionAccountRead, "", "", ""},
+		{"account get", http.MethodGet, "/api/v1/system/auth/accounts/acct-t2", nil, authn.ActionAccountRead, "", "acct-t2", "acct-t2"},
+		{"account create", http.MethodPost, "/api/v1/system/auth/accounts", map[string]any{"kind": "user", "username": "new"}, authn.ActionAccountCreate, "", "", ""},
+		{"account patch", http.MethodPatch, "/api/v1/system/auth/accounts/acct-t2", map[string]any{"display_name": "y"}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
+		{"account status", http.MethodPost, "/api/v1/system/auth/accounts/acct-t2/status", map[string]any{"status": "disabled"}, authn.ActionAccountDisable, "", "acct-t2", "acct-t2"},
+		{"identifier add", http.MethodPost, "/api/v1/system/auth/accounts/acct-t2/identifiers", map[string]any{"kind": "username", "value": "z"}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
+		{"identifier remove", http.MethodDelete, "/api/v1/system/auth/accounts/acct-t2/identifiers/" + identifier, nil, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
+		{"password reset", http.MethodPost, "/api/v1/system/auth/accounts/acct-t2/password", map[string]any{"password": "a-long-temporary-one"}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
+		{"factor list", http.MethodGet, "/api/v1/system/auth/accounts/acct-t2/factors", nil, authn.ActionAccountRead, "", "acct-t2", "acct-t2"},
+		{"mfa required", http.MethodPost, "/api/v1/system/auth/accounts/acct-t2/mfa-required", map[string]any{"required": true}, authn.ActionAccountUpdate, "", "acct-t2", "acct-t2"},
+		{"mfa reset", http.MethodPost, "/api/v1/system/auth/accounts/acct-t2/mfa-reset", nil, authn.ActionMFAReset, "", "acct-t2", "acct-t2"},
+		{"account sessions", http.MethodGet, "/api/v1/system/auth/accounts/acct-t2/sessions", nil, authn.ActionSessionRead, "", "acct-t2", "acct-t2"},
+		{"revoke sessions", http.MethodPost, "/api/v1/system/auth/accounts/acct-t2/revoke-sessions", nil, authn.ActionSessionRevoke, "", "acct-t2", "acct-t2"},
+		{"secret list", http.MethodGet, "/api/v1/system/auth/accounts/acct-t2/secrets", nil, authn.ActionAccountRead, "", "acct-t2", "acct-t2"},
+		{"secret create", http.MethodPost, "/api/v1/system/auth/accounts/acct-t2/secrets", map[string]any{"label": "ci"}, authn.ActionClientManage, "", "acct-t2", "acct-t2"},
+		{"secret revoke", http.MethodDelete, "/api/v1/system/auth/accounts/acct-t2/secrets/" + secretA, nil, authn.ActionClientManage, "", "acct-t2", "acct-t2"},
+		{"member list", http.MethodGet, "/api/v1/tenants/" + tenantB + "/members", nil, authn.ActionMembershipManage, tenantB, "", ""},
 		{
-			"member put", http.MethodPut, "/api/v1/auth/admin/tenants/" + tenantB + "/members/acct-t2",
+			"member put", http.MethodPut, "/api/v1/tenants/" + tenantB + "/members/acct-t2",
 			map[string]any{"active": true},
 			authn.ActionMembershipManage, tenantB, "acct-t2", "acct-t2",
 		},
 		{
-			"sso exempt", http.MethodPut, "/api/v1/auth/admin/tenants/" + tenantB + "/members/acct-t2/sso-exempt",
+			"sso exempt", http.MethodPut, "/api/v1/tenants/" + tenantB + "/members/acct-t2/sso-exempt",
 			map[string]any{"sso_exempt": true},
 			authn.ActionMembershipManage, tenantB, "acct-t2", "acct-t2",
 		},
-		{"member remove", http.MethodDelete, "/api/v1/auth/admin/tenants/" + tenantB + "/members/acct-t2", nil, authn.ActionMembershipManage, tenantB, "acct-t2", "acct-t2"},
-		{"provider list", http.MethodGet, "/api/v1/auth/admin/tenants/" + tenantB + "/sso/providers", nil, authn.ActionIDPManage, tenantB, "", ""},
+		{"member remove", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/members/acct-t2", nil, authn.ActionMembershipManage, tenantB, "acct-t2", "acct-t2"},
+		{"provider list", http.MethodGet, "/api/v1/tenants/" + tenantB + "/sso/providers", nil, authn.ActionIDPManage, tenantB, "", ""},
 		{
-			"provider create", http.MethodPost, "/api/v1/auth/admin/tenants/" + tenantB + "/sso/providers",
+			"provider create", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers",
 			map[string]any{"protocol": "saml", "name": "x", "provisioning": "jit"},
 			authn.ActionIDPManage, tenantB, "", "",
 		},
-		{"provider get", http.MethodGet, "/api/v1/auth/admin/sso/providers/" + idpA, nil, authn.ActionIDPManage, tenantB, idpA, ""},
+		{"provider get", http.MethodGet, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA, nil, authn.ActionIDPManage, tenantB, idpA, ""},
 		{
-			"provider update", http.MethodPut, "/api/v1/auth/admin/sso/providers/" + idpA,
+			"provider update", http.MethodPut, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA,
 			map[string]any{"protocol": "saml", "name": "x", "provisioning": "jit"},
 			authn.ActionIDPManage, tenantB, idpA, "",
 		},
-		{"domain claim", http.MethodPost, "/api/v1/auth/admin/sso/providers/" + idpA + "/domains", map[string]any{"domain": "d.example"}, authn.ActionIDPManage, tenantB, idpA, ""},
-		{"domain remove", http.MethodDelete, "/api/v1/auth/admin/sso/providers/" + idpA + "/domains/d.example", nil, authn.ActionIDPManage, tenantB, idpA, ""},
-		{"domain verify", http.MethodPost, "/api/v1/auth/admin/sso/providers/" + idpA + "/domains/d.example/verify", nil, authn.ActionIDPManage, tenantB, idpA, ""},
-		{"reverify domains", http.MethodPost, "/api/v1/auth/admin/sso/providers/" + idpA + "/reverify-domains", nil, authn.ActionIDPManage, tenantB, idpA, ""},
-		{"metadata refresh", http.MethodPost, "/api/v1/auth/admin/sso/providers/" + idpA + "/metadata/refresh", nil, authn.ActionIDPManage, tenantB, idpA, ""},
-		{"impersonation list", http.MethodGet, "/api/v1/auth/admin/impersonations?tenant=" + tenantB, nil, authn.ActionImpersonationRead, tenantB, "", ""},
-		{"impersonation revoke", http.MethodDelete, "/api/v1/auth/admin/impersonations/" + grantA, nil, authn.ActionImpersonationRevoke, tenantB, "acct-t2", "acct-t2"},
-		{"session delete", http.MethodDelete, "/api/v1/auth/admin/sessions/" + string(sessionA), nil, authn.ActionSessionRevoke, "", string(sessionA), "acct-t2"},
-		{"account delete", http.MethodDelete, "/api/v1/auth/admin/accounts/acct-t2", nil, authn.ActionAccountDelete, "", "acct-t2", "acct-t2"},
-		{"provider delete", http.MethodDelete, "/api/v1/auth/admin/sso/providers/" + idpA, nil, authn.ActionIDPManage, tenantB, idpA, ""},
+		{"domain claim", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/domains", map[string]any{"domain": "d.example"}, authn.ActionIDPManage, tenantB, idpA, ""},
+		{"domain remove", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/domains/d.example", nil, authn.ActionIDPManage, tenantB, idpA, ""},
+		{"domain verify", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/domains/d.example/verify", nil, authn.ActionIDPManage, tenantB, idpA, ""},
+		{"reverify domains", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/reverify-domains", nil, authn.ActionIDPManage, tenantB, idpA, ""},
+		{"metadata refresh", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/metadata/refresh", nil, authn.ActionIDPManage, tenantB, idpA, ""},
+		{"impersonation list", http.MethodGet, "/api/v1/tenants/" + tenantB + "/impersonations", nil, authn.ActionImpersonationRead, tenantB, "", ""},
+		{"impersonation revoke", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/impersonations/" + grantA, nil, authn.ActionImpersonationRevoke, tenantB, "acct-t2", "acct-t2"},
+		{"session delete", http.MethodDelete, "/api/v1/system/auth/sessions/" + string(sessionA), nil, authn.ActionSessionRevoke, "", string(sessionA), "acct-t2"},
+		{"account delete", http.MethodDelete, "/api/v1/system/auth/accounts/acct-t2", nil, authn.ActionAccountDelete, "", "acct-t2", "acct-t2"},
+		{"provider delete", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA, nil, authn.ActionIDPManage, tenantB, idpA, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -188,7 +188,7 @@ func TestATenantMismatchIsRefusedBeforeTheDecider(t *testing.T) {
 	})
 
 	// The body names a tenant other than the path's.
-	rec := r.do(http.MethodPost, "/api/v1/auth/admin/tenants/"+tenantA+"/sso/providers",
+	rec := r.do(http.MethodPost, "/api/v1/tenants/"+tenantA+"/sso/providers",
 		map[string]any{"tenant": tenantB, "protocol": "saml", "name": "x", "provisioning": "jit"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("create with a mismatched tenant: status = %d, want 400", rec.Code)
@@ -198,13 +198,42 @@ func TestATenantMismatchIsRefusedBeforeTheDecider(t *testing.T) {
 	}
 
 	// The body names a tenant other than the stored one, which PUT cannot change.
-	rec = r.do(http.MethodPut, "/api/v1/auth/admin/sso/providers/"+idpA,
+	rec = r.do(http.MethodPut, "/api/v1/tenants/"+tenantB+"/sso/providers/"+idpA,
 		map[string]any{"tenant": tenantA, "protocol": "saml", "name": "x", "provisioning": "jit"}, fresh()...)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("update changing the tenant: status = %d, want 400", rec.Code)
 	}
 	if r.decider.count() != 0 {
 		t.Errorf("the Decider was asked %d times after a mismatch, want none", r.decider.count())
+	}
+}
+
+// TestARecordAddressedUnderAnotherTenantIsNotFound holds the path's tenant to
+// the record's own: a provider or an impersonation record reached under a
+// tenant it does not belong to answers not found and the Decider is not asked,
+// so the address cannot be used to probe another tenant's records.
+func TestARecordAddressedUnderAnotherTenantIsNotFound(t *testing.T) {
+	r := newRig(t)
+	r.providers.put(authn.SSOProvider{
+		ID: idpA, Tenant: tenantA, Protocol: authn.SSOProtocolSAML,
+		Provisioning: authn.ProvisioningJIT,
+	})
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/sso/providers/"+idpA, nil, fresh()...)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("provider under another tenant: status = %d, want 404", rec.Code)
+	}
+	if r.decider.count() != 0 {
+		t.Errorf("the Decider was asked for a provider of another tenant")
+	}
+
+	r = newRig(t)
+	r.records.put(authn.ImpersonationGrant{ID: grantA, Actor: adminID, Target: userID, Tenant: tenantA})
+	rec = r.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("impersonation record under another tenant: status = %d, want 404", rec.Code)
+	}
+	if r.decider.count() != 0 {
+		t.Errorf("the Decider was asked for an impersonation record of another tenant")
 	}
 }
 
@@ -246,7 +275,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	// A create: the row is written before Create.
 	r := newRig(t)
 	r.audit.fails(audit.ErrWriteFailed)
-	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "user", "username": "alice"}, fresh()...)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("create with a failing audit: status = %d, want 503", rec.Code)
@@ -258,7 +287,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 	// A delete: the row is written before Delete.
 	r = newRig(t)
 	r.audit.fails(audit.ErrWriteFailed)
-	rec = r.do(http.MethodDelete, "/api/v1/auth/admin/accounts/"+string(userID), nil, fresh()...)
+	rec = r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID), nil, fresh()...)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("delete with a failing audit: status = %d, want 503", rec.Code)
 	}
@@ -273,7 +302,7 @@ func TestTheMandatoryAuditLandsBeforeTheWrite(t *testing.T) {
 func TestTheMandatoryAuditLandsBeforeASecretWrite(t *testing.T) {
 	r := newRig(t)
 	r.audit.fails(audit.ErrWriteFailed)
-	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts/"+string(userID)+"/secrets",
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/secrets",
 		map[string]any{"label": "ci"}, fresh()...)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("secret create with a failing audit: status = %d, want 503", rec.Code)
@@ -300,8 +329,8 @@ func TestAStaticSubjectIsRefusedOnTheStrongRoutes(t *testing.T) {
 		path   string
 		body   any
 	}{
-		{http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/password", map[string]any{"password": "a-long-temporary-one"}},
-		{http.MethodPost, "/api/v1/auth/admin/accounts/" + string(userID) + "/mfa-reset", nil},
+		{http.MethodPost, "/api/v1/system/auth/accounts/" + string(userID) + "/password", map[string]any{"password": "a-long-temporary-one"}},
+		{http.MethodPost, "/api/v1/system/auth/accounts/" + string(userID) + "/mfa-reset", nil},
 	} {
 		rec := r.do(rt.method, rt.path, rt.body, static...)
 		if rec.Code != http.StatusUnauthorized {
@@ -325,7 +354,7 @@ func TestADeciderThatFailsOrPanicsIsUnavailable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t)
 			tc.setup(r.decider)
-			rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
+			rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 				map[string]any{"kind": "user", "username": "alice"}, fresh()...)
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Errorf("status = %d, want 503", rec.Code)
@@ -339,7 +368,7 @@ func TestADeciderThatFailsOrPanicsIsUnavailable(t *testing.T) {
 	// A Decider that panics is caught and answered the same way.
 	r := newRig(t)
 	r.p.decider = panicDecider{}
-	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "user", "username": "alice"}, fresh()...)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("panicking decider: status = %d, want 503", rec.Code)
@@ -361,7 +390,7 @@ func (panicDecider) Decide(context.Context, authn.Decision) (bool, error) {
 func TestARefusalIsForbiddenAndNothingHappens(t *testing.T) {
 	r := newRig(t)
 	r.decider.allow = false
-	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "user", "username": "alice"}, fresh()...)
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want 403", rec.Code)
@@ -378,7 +407,7 @@ func TestARefusalIsForbiddenAndNothingHappens(t *testing.T) {
 // is asked about twice, and a user account once.
 func TestACreateNeedsClientManageForAServiceAccount(t *testing.T) {
 	r := newRig(t)
-	rec := r.do(http.MethodPost, "/api/v1/auth/admin/accounts",
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "service", "username": "svc"}, fresh()...)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", rec.Code)
@@ -389,7 +418,7 @@ func TestACreateNeedsClientManageForAServiceAccount(t *testing.T) {
 	}
 
 	r2 := newRig(t)
-	r2.do(http.MethodPost, "/api/v1/auth/admin/accounts",
+	r2.do(http.MethodPost, "/api/v1/system/auth/accounts",
 		map[string]any{"kind": "user", "username": "alice"}, fresh()...)
 	if n := r2.decider.count(); n != 1 {
 		t.Errorf("a user-account create asked the Decider %d times, want once", n)
@@ -407,24 +436,15 @@ func TestTheImpersonationRecordGroup(t *testing.T) {
 		EndedAt: time.Now(), EndReason: authn.EndExplicit,
 	})
 
-	// The tenant query parameter is required.
-	rec := r.do(http.MethodGet, "/api/v1/auth/admin/impersonations", nil, fresh()...)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("list with no tenant: status = %d, want 400", rec.Code)
-	}
-	if r.decider.count() != 0 {
-		t.Errorf("the Decider was asked for a list with no tenant")
-	}
-
 	// A list shows only the tenant's records.
-	rec = r.do(http.MethodGet, "/api/v1/auth/admin/impersonations?tenant="+tenantB, nil, fresh()...)
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/impersonations", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list: status = %d, want 200", rec.Code)
 	}
 
 	// A missing record is a 404 before the Decider.
 	missing := newRig(t)
-	rec = missing.do(http.MethodDelete, "/api/v1/auth/admin/impersonations/absent", nil, fresh()...)
+	rec = missing.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/absent", nil, fresh()...)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("revoke of a missing record: status = %d, want 404", rec.Code)
 	}
@@ -435,14 +455,14 @@ func TestTheImpersonationRecordGroup(t *testing.T) {
 	// The revocation is best-effort: a failing audit does not stop it, and an
 	// already-ended record gets the same answer.
 	r.audit.fails(audit.ErrWriteFailed)
-	rec = r.do(http.MethodDelete, "/api/v1/auth/admin/impersonations/"+grantA, nil, fresh()...)
+	rec = r.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("revoke with a failing audit: status = %d, want 204", rec.Code)
 	}
 	if r.records.revokes != 1 {
 		t.Errorf("the record was revoked %d times, want once", r.records.revokes)
 	}
-	rec = r.do(http.MethodDelete, "/api/v1/auth/admin/impersonations/ended", nil, fresh()...)
+	rec = r.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/ended", nil, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("revoke of an ended record: status = %d, want 204", rec.Code)
 	}
@@ -458,33 +478,33 @@ func TestRouteGroupsFollowTheirCapabilities(t *testing.T) {
 	}{
 		{
 			omit:    noSessions,
-			absent:  [][2]string{{http.MethodGet, "/api/v1/auth/admin/accounts/:id/sessions"}, {http.MethodDelete, "/api/v1/auth/admin/sessions/:id"}},
-			present: [][2]string{{http.MethodGet, "/api/v1/auth/admin/accounts/:id/factors"}},
+			absent:  [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts/:id/sessions"}, {http.MethodDelete, "/api/v1/system/auth/sessions/:id"}},
+			present: [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts/:id/factors"}},
 		},
 		{
 			omit:    noMFA,
-			absent:  [][2]string{{http.MethodGet, "/api/v1/auth/admin/accounts/:id/factors"}, {http.MethodPost, "/api/v1/auth/admin/accounts/:id/password"}},
-			present: [][2]string{{http.MethodGet, "/api/v1/auth/admin/accounts/:id/sessions"}},
+			absent:  [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts/:id/factors"}, {http.MethodPost, "/api/v1/system/auth/accounts/:id/password"}},
+			present: [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts/:id/sessions"}},
 		},
 		{
 			omit:    noTokens,
-			absent:  [][2]string{{http.MethodGet, "/api/v1/auth/admin/accounts/:id/secrets"}},
-			present: [][2]string{{http.MethodGet, "/api/v1/auth/admin/accounts/:id/sessions"}},
+			absent:  [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts/:id/secrets"}},
+			present: [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts/:id/sessions"}},
 		},
 		{
 			omit:    noProviders,
-			absent:  [][2]string{{http.MethodGet, "/api/v1/auth/admin/sso/providers/:id"}, {http.MethodPost, "/api/v1/auth/admin/sso/providers/:id/metadata/refresh"}},
-			present: [][2]string{{http.MethodPost, "/api/v1/auth/admin/accounts/:id/revoke-sessions"}},
+			absent:  [][2]string{{http.MethodGet, "/api/v1/tenants/:tenant/sso/providers/:id"}, {http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh"}},
+			present: [][2]string{{http.MethodPost, "/api/v1/system/auth/accounts/:id/revoke-sessions"}},
 		},
 		{
 			omit:    noRefresher,
-			absent:  [][2]string{{http.MethodPost, "/api/v1/auth/admin/sso/providers/:id/metadata/refresh"}},
-			present: [][2]string{{http.MethodGet, "/api/v1/auth/admin/sso/providers/:id"}},
+			absent:  [][2]string{{http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh"}},
+			present: [][2]string{{http.MethodGet, "/api/v1/tenants/:tenant/sso/providers/:id"}},
 		},
 		{
 			omit:    noRecords,
-			absent:  [][2]string{{http.MethodGet, "/api/v1/auth/admin/impersonations"}},
-			present: [][2]string{{http.MethodGet, "/api/v1/auth/admin/accounts"}},
+			absent:  [][2]string{{http.MethodGet, "/api/v1/tenants/:tenant/impersonations"}},
+			present: [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts"}},
 		},
 	}
 	for _, tc := range cases {
@@ -509,10 +529,10 @@ func TestRouteGroupsFollowTheirCapabilities(t *testing.T) {
 func TestTheAccountAndMembershipGroupsAreAlwaysMounted(t *testing.T) {
 	r := newRig(t, noSessions, noMFA, noTokens, noProviders, noRefresher, noRecords)
 	for _, want := range [][2]string{
-		{http.MethodGet, "/api/v1/auth/admin/accounts"},
-		{http.MethodDelete, "/api/v1/auth/admin/accounts/:id"},
-		{http.MethodGet, "/api/v1/auth/admin/tenants/:tenant/members"},
-		{http.MethodPut, "/api/v1/auth/admin/tenants/:tenant/members/:account"},
+		{http.MethodGet, "/api/v1/system/auth/accounts"},
+		{http.MethodDelete, "/api/v1/system/auth/accounts/:id"},
+		{http.MethodGet, "/api/v1/tenants/:tenant/members"},
+		{http.MethodPut, "/api/v1/tenants/:tenant/members/:account"},
 	} {
 		if _, ok := r.mounter.Registered(want[0], want[1]); !ok {
 			t.Errorf("%s %s is not mounted", want[0], want[1])
@@ -531,8 +551,8 @@ func TestAnUnseasonedActorIsForbiddenOnTheResets(t *testing.T) {
 		path string
 		body any
 	}{
-		{"factor reset", "/api/v1/auth/admin/accounts/" + string(userID) + "/mfa-reset", nil},
-		{"password reset", "/api/v1/auth/admin/accounts/" + string(userID) + "/password", map[string]any{"password": "a-long-temporary-one"}},
+		{"factor reset", "/api/v1/system/auth/accounts/" + string(userID) + "/mfa-reset", nil},
+		{"password reset", "/api/v1/system/auth/accounts/" + string(userID) + "/password", map[string]any{"password": "a-long-temporary-one"}},
 	}
 
 	for _, c := range routes {
@@ -576,7 +596,7 @@ func TestAnUnseasonedActorIsForbiddenOnTheResets(t *testing.T) {
 func TestAStrengthShortfallIsAStepUp(t *testing.T) {
 	r := newRig(t)
 	stale := append(fresh(), authntest.WithAuthTime(time.Now().Add(-time.Hour)))
-	rec := r.do(http.MethodDelete, "/api/v1/auth/admin/accounts/"+string(userID), nil, stale...)
+	rec := r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID), nil, stale...)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("stale authentication: status = %d, want 401", rec.Code)
 	}

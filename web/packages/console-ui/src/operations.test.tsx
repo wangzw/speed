@@ -28,7 +28,7 @@ import { recordFixture } from '../test-utils/operations.js'
 describe('useConsoleOperations', () => {
   it('falls back to the shipped bundle when no provider is mounted', async () => {
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/tenant/admin/tenants') {
+      if (call.path === '/api/v1/system/tenants') {
         return { tenants: [{ id: 'acme', alias: 'Acme', status: 'active' }] }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -48,14 +48,14 @@ describe('useConsoleOperations', () => {
       </QueryClientProvider>,
     )
     expect(await screen.findByText('roster:Acme')).toBeInTheDocument()
-    expect(calls).toContainEqual({ method: 'GET', path: '/api/v1/tenant/admin/tenants' })
+    expect(calls).toContainEqual({ method: 'GET', path: '/api/v1/system/tenants' })
   })
 })
 
 describe('consoleOperations', () => {
   it('reads the roster from the generated tenant endpoint', async () => {
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/tenant/admin/tenants') {
+      if (call.path === '/api/v1/system/tenants') {
         return { tenants: [{ id: 'acme', alias: 'Acme', status: 'active' }] }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -66,13 +66,13 @@ describe('consoleOperations', () => {
     }
     renderWithProviders(<Roster />, { operations: consoleOperations })
     expect(await screen.findByText('roster:Acme')).toBeInTheDocument()
-    expect(calls).toContainEqual({ method: 'GET', path: '/api/v1/tenant/admin/tenants' })
+    expect(calls).toContainEqual({ method: 'GET', path: '/api/v1/system/tenants' })
   })
 
   it('writes a new tenant to the generated registration endpoint', async () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/tenant/admin/tenants') {
+      if (call.path === '/api/v1/system/tenants') {
         return { tenant: { id: 'acme', alias: 'Acme', status: 'active' } }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -95,14 +95,14 @@ describe('consoleOperations', () => {
     await waitFor(() => {
       expect(calls).toContainEqual({
         method: 'POST',
-        path: '/api/v1/tenant/admin/tenants',
+        path: '/api/v1/system/tenants',
       })
     })
   })
 
   it('reads the global settings layer from the generated settings endpoint', async () => {
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/settings/admin/settings') {
+      if (call.path === '/api/v1/system/settings') {
         return [
           {
             key: 'mail.retry',
@@ -128,14 +128,14 @@ describe('consoleOperations', () => {
     expect(await screen.findByText('settings:1')).toBeInTheDocument()
     expect(calls).toContainEqual({
       method: 'GET',
-      path: '/api/v1/settings/admin/settings',
+      path: '/api/v1/system/settings',
       query: { layer: 'global' },
     })
   })
 
   it('reads the audit journal from the generated records endpoint', async () => {
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/audit/admin/records') {
+      if (call.path === '/api/v1/system/audit/records') {
         return { entries: [], next: '' }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -148,13 +148,13 @@ describe('consoleOperations', () => {
     expect(await screen.findByText('audit:0')).toBeInTheDocument()
     expect(calls).toContainEqual({
       method: 'GET',
-      path: '/api/v1/audit/admin/records',
+      path: '/api/v1/system/audit/records',
     })
   })
 
   it('reads a single tenant from the generated detail endpoint', async () => {
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/tenant/admin/tenants/acme') {
+      if (call.path === '/api/v1/system/tenants/acme') {
         return { tenant: { id: 'acme', alias: 'Acme', status: 'active' } }
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -167,13 +167,13 @@ describe('consoleOperations', () => {
     expect(await screen.findByText('tenant:Acme')).toBeInTheDocument()
     expect(calls).toContainEqual({
       method: 'GET',
-      path: '/api/v1/tenant/admin/tenants/acme',
+      path: '/api/v1/system/tenants/acme',
     })
   })
 
   it('reads a single audit record from the generated detail endpoint', async () => {
     const calls = bindConsoleRequest((call) => {
-      if (call.path === '/api/v1/audit/admin/records/rec-1') {
+      if (call.path === '/api/v1/system/audit/records/rec-1') {
         return recordFixture({ id: 'rec-1' })
       }
       throw new Error(`unexpected request: ${call.path}`)
@@ -186,7 +186,7 @@ describe('consoleOperations', () => {
     expect(await screen.findByText('record:rec-1')).toBeInTheDocument()
     expect(calls).toContainEqual({
       method: 'GET',
-      path: '/api/v1/audit/admin/records/rec-1',
+      path: '/api/v1/system/audit/records/rec-1',
     })
   })
 
@@ -217,11 +217,11 @@ describe('consoleOperations', () => {
     await waitFor(() => {
       expect(calls).toContainEqual({
         method: 'PATCH',
-        path: '/api/v1/tenant/admin/tenants/acme',
+        path: '/api/v1/system/tenants/acme',
       })
       expect(calls).toContainEqual({
         method: 'POST',
-        path: '/api/v1/tenant/admin/tenants/acme/status',
+        path: '/api/v1/system/tenants/acme/status',
       })
     })
   })
@@ -257,12 +257,12 @@ describe('consoleOperations', () => {
     await waitFor(() => {
       expect(calls).toContainEqual({
         method: 'PUT',
-        path: '/api/v1/settings/admin/settings/mail/mail.retry',
+        path: '/api/v1/system/settings/mail/mail.retry',
         query: { layer: 'global' },
       })
       expect(calls).toContainEqual({
         method: 'DELETE',
-        path: '/api/v1/settings/admin/settings/mail/mail.retry',
+        path: '/api/v1/system/settings/mail/mail.retry',
         query: { layer: 'global' },
       })
     })
@@ -271,10 +271,10 @@ describe('consoleOperations', () => {
   it('refreshes the detail read after a status write, which the list key does not cover', async () => {
     const user = userEvent.setup()
     const calls = bindConsoleRequest((call) => {
-      if (call.method === 'GET' && call.path === '/api/v1/tenant/admin/tenants/acme') {
+      if (call.method === 'GET' && call.path === '/api/v1/system/tenants/acme') {
         return { tenant: { id: 'acme', alias: 'Acme', status: 'active' } }
       }
-      if (call.method === 'POST' && call.path === '/api/v1/tenant/admin/tenants/acme/status') {
+      if (call.method === 'POST' && call.path === '/api/v1/system/tenants/acme/status') {
         return undefined
       }
       throw new Error(`unexpected request: ${call.method} ${call.path}`)
@@ -282,7 +282,7 @@ describe('consoleOperations', () => {
     const detailReads = (): number =>
       calls.filter(
         (call) =>
-          call.method === 'GET' && call.path === '/api/v1/tenant/admin/tenants/acme',
+          call.method === 'GET' && call.path === '/api/v1/system/tenants/acme',
       ).length
     function Detail() {
       const query = consoleOperations.useTenant({ id: 'acme' })
@@ -302,8 +302,8 @@ describe('consoleOperations', () => {
     await screen.findByText('tenant:Acme')
     expect(detailReads()).toBe(1)
     await user.click(screen.getByRole('button', { name: 'disable' }))
-    // The detail key ['/api/v1/tenant/admin/tenants/acme'] is not prefixed by the
-    // list key ['/api/v1/tenant/admin/tenants'], so the write must invalidate it
+    // The detail key ['/api/v1/system/tenants/acme'] is not prefixed by the
+    // list key ['/api/v1/system/tenants'], so the write must invalidate it
     // on its own or the detail page keeps the pre-write value.
     await waitFor(() => {
       expect(detailReads()).toBeGreaterThan(1)
@@ -421,7 +421,7 @@ function AccountWrites() {
       <button onClick={() => revokeSessions.mutate({ id: 'acc-1' })}>revokeSessions</button>
       <button onClick={() => revokeSecret.mutate({ id: 'acc-1', secret: 'sec-1' })}>revokeSecret</button>
       <button onClick={() => revokeSession.mutate({ accountId: 'acc-1', sessionId: 'sess-1' })}>revokeSession</button>
-      <button onClick={() => revokeImpersonation.mutate({ id: 'imp-1' })}>revokeImpersonation</button>
+      <button onClick={() => revokeImpersonation.mutate({ id: 'imp-1', tenant: 'acme' })}>revokeImpersonation</button>
     </>
   )
 }
@@ -431,7 +431,7 @@ function TenantReads() {
   const invitations = consoleOperations.useInvitations('acme')
   const members = consoleOperations.useMembers('acme')
   const providers = consoleOperations.useSsoProviders('acme')
-  const provider = consoleOperations.useSsoProvider({ id: 'idp-1' })
+  const provider = consoleOperations.useSsoProvider({ tenant: 'acme', id: 'idp-1' })
   const settled = [invitations, members, providers, provider].every((query) => query.isSuccess)
   return <p>{settled ? 'ready' : 'loading'}</p>
 }
@@ -494,11 +494,11 @@ describe('consoleOperations administration surfaces', () => {
     renderWithProviders(<AuthzReads />, { operations: consoleOperations })
     expect(await screen.findByText('ready')).toBeInTheDocument()
     for (const path of [
-      '/api/v1/authz/admin/permissions',
-      '/api/v1/authz/admin/tenants/acme/roles',
-      '/api/v1/authz/admin/tenants/acme/roles/editor/grants',
-      '/api/v1/authz/admin/tenants/acme/bindings',
-      '/api/v1/authz/admin/tenants/acme/bindings/acc-1',
+      '/api/v1/system/permissions',
+      '/api/v1/system/tenants/acme/roles',
+      '/api/v1/system/tenants/acme/roles/editor/grants',
+      '/api/v1/system/tenants/acme/bindings',
+      '/api/v1/system/tenants/acme/bindings/acc-1',
     ]) {
       expect(calls).toContainEqual({ method: 'GET', path })
     }
@@ -512,12 +512,12 @@ describe('consoleOperations administration surfaces', () => {
       await user.click(screen.getByRole('button', { name }))
     }
     await waitFor(() => {
-      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/authz/admin/tenants/acme/roles/editor' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/authz/admin/tenants/acme/roles/editor' })
-      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/authz/admin/tenants/acme/roles/editor/grants/deal:read' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/authz/admin/tenants/acme/roles/editor/grants/deal:read' })
-      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/authz/admin/tenants/acme/bindings/acc-1/editor' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/authz/admin/tenants/acme/bindings/acc-1/editor' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/system/tenants/acme/roles/editor' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/tenants/acme/roles/editor' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/system/tenants/acme/roles/editor/grants/deal:read' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/tenants/acme/roles/editor/grants/deal:read' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/system/tenants/acme/bindings/acc-1/editor' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/tenants/acme/bindings/acc-1/editor' })
     })
   })
 
@@ -526,12 +526,12 @@ describe('consoleOperations administration surfaces', () => {
     renderWithProviders(<AccountReads />, { operations: consoleOperations })
     expect(await screen.findByText('ready')).toBeInTheDocument()
     for (const path of [
-      '/api/v1/auth/admin/accounts',
-      '/api/v1/auth/admin/accounts/acc-1',
-      '/api/v1/auth/admin/accounts/acc-1/factors',
-      '/api/v1/auth/admin/accounts/acc-1/secrets',
-      '/api/v1/auth/admin/accounts/acc-1/sessions',
-      '/api/v1/auth/admin/impersonations',
+      '/api/v1/system/auth/accounts',
+      '/api/v1/system/auth/accounts/acc-1',
+      '/api/v1/system/auth/accounts/acc-1/factors',
+      '/api/v1/system/auth/accounts/acc-1/secrets',
+      '/api/v1/system/auth/accounts/acc-1/sessions',
+      '/api/v1/tenants/acme/impersonations',
     ]) {
       expect(calls.some((c) => c.method === 'GET' && c.path === path)).toBe(true)
     }
@@ -555,7 +555,7 @@ describe('consoleOperations administration surfaces', () => {
     expect(
       calls.some(
         (call) =>
-          call.method === 'GET' && call.path === '/api/v1/auth/admin/impersonations',
+          call.method === 'GET' && call.path === '/api/v1/tenants/acme/impersonations',
       ),
     ).toBe(false)
   })
@@ -568,20 +568,20 @@ describe('consoleOperations administration surfaces', () => {
       await user.click(screen.getByRole('button', { name }))
     }
     await waitFor(() => {
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts' })
-      expect(calls).toContainEqual({ method: 'PATCH', path: '/api/v1/auth/admin/accounts/acc-1' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts/acc-1/status' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts/acc-1/mfa-required' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts/acc-1/password' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts/acc-1/identifiers' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts/acc-1/secrets' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/accounts/acc-1' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/accounts/acc-1/identifiers/ada@example.com' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts/acc-1/mfa-reset' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/accounts/acc-1/revoke-sessions' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/accounts/acc-1/secrets/sec-1' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/sessions/sess-1' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/impersonations/imp-1' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts' })
+      expect(calls).toContainEqual({ method: 'PATCH', path: '/api/v1/system/auth/accounts/acc-1' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/status' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/mfa-required' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/password' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/identifiers' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/secrets' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/auth/accounts/acc-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/auth/accounts/acc-1/identifiers/ada@example.com' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/mfa-reset' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/revoke-sessions' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/auth/accounts/acc-1/secrets/sec-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/auth/sessions/sess-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/tenants/acme/impersonations/imp-1' })
     })
   })
 
@@ -590,10 +590,10 @@ describe('consoleOperations administration surfaces', () => {
     renderWithProviders(<TenantReads />, { operations: consoleOperations })
     expect(await screen.findByText('ready')).toBeInTheDocument()
     for (const path of [
-      '/api/v1/auth/admin/tenants/acme/invitations',
-      '/api/v1/auth/admin/tenants/acme/members',
-      '/api/v1/auth/admin/tenants/acme/sso/providers',
-      '/api/v1/auth/admin/sso/providers/idp-1',
+      '/api/v1/tenants/acme/invitations',
+      '/api/v1/tenants/acme/members',
+      '/api/v1/tenants/acme/sso/providers',
+      '/api/v1/tenants/acme/sso/providers/idp-1',
     ]) {
       expect(calls).toContainEqual({ method: 'GET', path })
     }
@@ -607,19 +607,19 @@ describe('consoleOperations administration surfaces', () => {
       await user.click(screen.getByRole('button', { name }))
     }
     await waitFor(() => {
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/tenants/acme/invitations' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/tenants/acme/invitations/inv-1' })
-      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/auth/admin/tenants/acme/members/acc-1' })
-      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/auth/admin/tenants/acme/members/acc-1/sso-exempt' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/tenants/acme/sso/providers' })
-      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/auth/admin/sso/providers/idp-1' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/sso/providers/idp-1/domains' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/tenants/acme/members/acc-1' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/sso/providers/idp-1' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/auth/admin/sso/providers/idp-1/domains/acme.com' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/sso/providers/idp-1/domains/acme.com/verify' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/sso/providers/idp-1/metadata/refresh' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/auth/admin/sso/providers/idp-1/reverify-domains' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/invitations' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/tenants/acme/invitations/inv-1' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/tenants/acme/members/acc-1' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/tenants/acme/members/acc-1/sso-exempt' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers' })
+      expect(calls).toContainEqual({ method: 'PUT', path: '/api/v1/tenants/acme/sso/providers/idp-1' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers/idp-1/domains' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/tenants/acme/members/acc-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/tenants/acme/sso/providers/idp-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/tenants/acme/sso/providers/idp-1/domains/acme.com' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers/idp-1/domains/acme.com/verify' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers/idp-1/metadata/refresh' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/tenants/acme/sso/providers/idp-1/reverify-domains' })
     })
   })
 
@@ -632,11 +632,11 @@ describe('consoleOperations administration surfaces', () => {
       await user.click(screen.getByRole('button', { name }))
     }
     await waitFor(() => {
-      expect(calls).toContainEqual({ method: 'GET', path: '/api/v1/sms/admin/templates' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/sms/admin/templates' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/sms/admin/templates/submissions' })
-      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/sms/admin/templates/n/enabled' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/sms/admin/templates/n' })
+      expect(calls).toContainEqual({ method: 'GET', path: '/api/v1/system/sms/templates' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/sms/templates' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/sms/templates/submissions' })
+      expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/sms/templates/n/enabled' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/sms/templates/n' })
     })
   })
 })
@@ -688,11 +688,11 @@ describe('consoleOperations write invalidation', () => {
     const reads = (path: string): number =>
       calls.filter((call) => call.method === 'GET' && call.path === path).length
     const paths = {
-      roles: '/api/v1/authz/admin/tenants/acme/roles',
-      grants: '/api/v1/authz/admin/tenants/acme/roles/editor/grants',
-      bindings: '/api/v1/authz/admin/tenants/acme/bindings',
-      accountBindings: '/api/v1/authz/admin/tenants/acme/bindings/acc-1',
-      otherTenant: '/api/v1/authz/admin/tenants/other/bindings/acc-1',
+      roles: '/api/v1/system/tenants/acme/roles',
+      grants: '/api/v1/system/tenants/acme/roles/editor/grants',
+      bindings: '/api/v1/system/tenants/acme/bindings',
+      accountBindings: '/api/v1/system/tenants/acme/bindings/acc-1',
+      otherTenant: '/api/v1/system/tenants/other/bindings/acc-1',
     }
     for (const path of Object.values(paths)) {
       expect(reads(path)).toBe(1)
@@ -745,12 +745,12 @@ describe('consoleOperations write invalidation', () => {
     await screen.findByText('ready')
     const reads = (path: string): number =>
       calls.filter((call) => call.method === 'GET' && call.path === path).length
-    expect(reads('/api/v1/auth/admin/accounts')).toBe(1)
-    expect(reads('/api/v1/auth/admin/accounts/acc-1')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-1')).toBe(1)
     await user.click(screen.getByRole('button', { name: 'removeIdentifier' }))
     await waitFor(() => {
-      expect(reads('/api/v1/auth/admin/accounts')).toBeGreaterThan(1)
-      expect(reads('/api/v1/auth/admin/accounts/acc-1')).toBeGreaterThan(1)
+      expect(reads('/api/v1/system/auth/accounts')).toBeGreaterThan(1)
+      expect(reads('/api/v1/system/auth/accounts/acc-1')).toBeGreaterThan(1)
     })
   })
 
@@ -782,14 +782,14 @@ describe('consoleOperations write invalidation', () => {
     await screen.findByText('ready')
     const reads = (path: string): number =>
       calls.filter((call) => call.method === 'GET' && call.path === path).length
-    expect(reads('/api/v1/auth/admin/accounts/acc-1/sessions')).toBe(1)
-    expect(reads('/api/v1/auth/admin/accounts/acc-2/sessions')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-1/sessions')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-2/sessions')).toBe(1)
     await user.click(screen.getByRole('button', { name: 'disable' }))
     await waitFor(() => {
-      expect(reads('/api/v1/auth/admin/accounts/acc-1/sessions')).toBeGreaterThan(1)
+      expect(reads('/api/v1/system/auth/accounts/acc-1/sessions')).toBeGreaterThan(1)
     })
     // The write is scoped to the account it disables.
-    expect(reads('/api/v1/auth/admin/accounts/acc-2/sessions')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-2/sessions')).toBe(1)
   })
 
   it('leaves the sessions read alone when a status write re-enables the account', async () => {
@@ -822,7 +822,7 @@ describe('consoleOperations write invalidation', () => {
       calls.filter(
         (call) =>
           call.method === 'GET' &&
-          call.path === '/api/v1/auth/admin/accounts/acc-1/sessions',
+          call.path === '/api/v1/system/auth/accounts/acc-1/sessions',
       ).length
     expect(reads()).toBe(1)
     await user.click(screen.getByRole('button', { name: 'enable' }))
@@ -863,15 +863,15 @@ describe('consoleOperations write invalidation', () => {
     await screen.findByText('ready')
     const reads = (path: string): number =>
       calls.filter((call) => call.method === 'GET' && call.path === path).length
-    expect(reads('/api/v1/auth/admin/accounts/acc-1/factors')).toBe(1)
-    expect(reads('/api/v1/auth/admin/accounts/acc-1/sessions')).toBe(1)
-    expect(reads('/api/v1/auth/admin/accounts/acc-2/sessions')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-1/factors')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-1/sessions')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-2/sessions')).toBe(1)
     await user.click(screen.getByRole('button', { name: 'resetMFA' }))
     await waitFor(() => {
-      expect(reads('/api/v1/auth/admin/accounts/acc-1/factors')).toBeGreaterThan(1)
-      expect(reads('/api/v1/auth/admin/accounts/acc-1/sessions')).toBeGreaterThan(1)
+      expect(reads('/api/v1/system/auth/accounts/acc-1/factors')).toBeGreaterThan(1)
+      expect(reads('/api/v1/system/auth/accounts/acc-1/sessions')).toBeGreaterThan(1)
     })
     // The reset is scoped to the account it resets.
-    expect(reads('/api/v1/auth/admin/accounts/acc-2/sessions')).toBe(1)
+    expect(reads('/api/v1/system/auth/accounts/acc-2/sessions')).toBe(1)
   })
 })

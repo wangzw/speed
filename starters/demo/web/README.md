@@ -23,9 +23,10 @@ app talks to its own origin by default (the client base URL falls back to
 `window.location.origin`), and the dev server proxies the namespaces the
 backend endpoints claim onto the demo's backend listener: the api, account and
 admin endpoints all answer on one port. The claimed prefixes live in
-`backend-prefixes.json` beside this package (`/api`; `/api/v1/auth`, `/api/v1/features` and
-`/api/v1/workspace`; `/api/v1/audit`, `/api/v1/authz`, `/api/v1/settings`, `/api/v1/sms` and
-`/api/v1/tenant`), and
+`backend-prefixes.json` beside this package (`/api`; `/api/v1/auth`,
+`/api/v1/features`, `/api/v1/workspace`, `/api/v1/tenants` and `/api/v1/system/auth`;
+`/api/v1/system/audit`, `/api/v1/system/permissions`, `/api/v1/system/settings`,
+`/api/v1/system/sms` and `/api/v1/system/tenants`), and
 `vite.config.ts` generates one segment-anchored proxy key per prefix from that
 list. The target defaults to the `sqlite-memory` stack's backend listener
 (`127.0.0.1:8080`); override it with `DEMO_WEB_BACKEND_PROXY` when a run moves
@@ -250,7 +251,7 @@ access" state for a code the session is known to lack, so a member who reaches
 The entry's visibility turns on the caller's platform permission set, which the
 host attaches (`src/platform-permissions.tsx`, wired into the assembly in
 `src/main.tsx`). The platform carries no read of the caller's *held* permissions,
-so the app reads the declared-permission catalog (`GET /api/v1/authz/admin/permissions`)
+so the app reads the declared-permission catalog (`GET /api/v1/system/permissions`)
 -- a platform-staff operation that answers only to a principal holding
 `authz.role.read` in the platform domain, and whose answer is every permission
 the process declares. The seed's platform administrator holds exactly that set,

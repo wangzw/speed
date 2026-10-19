@@ -8,7 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// handleTenantList answers GET /api/v1/tenant/admin/tenants: every tenant the
+// handleTenantList answers GET /api/v1/system/tenants: every tenant the
 // roster holds, in the roster's own order — by identifier. It is a read, so the
 // action is tenant.read. The roster is the set of tenants one deployment serves,
 // and it is not paged.
@@ -31,7 +31,7 @@ func (p *product) handleTenantList(ctx context.Context, _ struct{}) (tenantListB
 	return tenantListBody{Tenants: views}, nil
 }
 
-// handleTenantGet answers GET /api/v1/tenant/admin/tenants/:id: one tenant the
+// handleTenantGet answers GET /api/v1/system/tenants/:tenant: one tenant the
 // roster holds. It is a read, so the action is tenant.read.
 //
 // A read goes straight to the roster, with no shape check of its own: whether an
@@ -49,7 +49,7 @@ func (p *product) handleTenantGet(ctx context.Context, in getTenantInput, _ *spe
 	return speedhttp.JSONReply(http.StatusOK, tenantReadBody{Tenant: tenantViewOf(got)}), nil
 }
 
-// handleTenantCreate answers POST /api/v1/tenant/admin/tenants: it registers a
+// handleTenantCreate answers POST /api/v1/system/tenants: it registers a
 // tenant whose identifier the roster does not hold yet. It is a write, so the
 // action is tenant.manage.
 //
@@ -86,7 +86,7 @@ type aliasBody struct {
 	Alias string `json:"alias"`
 }
 
-// handleTenantSetAlias answers PATCH /api/v1/tenant/admin/tenants/:id: it changes
+// handleTenantSetAlias answers PATCH /api/v1/system/tenants/:tenant: it changes
 // one tenant's alias and nothing else. It is a write, so the action is
 // tenant.manage.
 //
@@ -129,7 +129,7 @@ type statusBody struct {
 	Status string `json:"status"`
 }
 
-// handleTenantSetStatus answers POST /api/v1/tenant/admin/tenants/:id/status: it
+// handleTenantSetStatus answers POST /api/v1/system/tenants/:tenant/status: it
 // changes one tenant's state. It is a write, so the action is tenant.manage.
 //
 // The state is a closed set: active or disabled, anything else a 400 before the

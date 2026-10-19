@@ -57,23 +57,39 @@ const ConfigNamespace = ModuleName
 // known, so it carries the conventional name.
 const defaultEndpoint = "account"
 
-// inviteFragment is this module's OpenAPI fragment, describing the management
-// and acceptance routes. It is generated from the operation declarations, never
+// inviteFragment is this module's public OpenAPI fragment, describing the
+// acceptance routes. It is generated from the operation declarations, never
 // written by hand.
 //
 //go:embed openapi/invite.json
 var inviteFragment []byte
 
-// inviteSpec is the API root this module's fragment and routes hang off. Its
-// prefix and version are the common ones; the fragment writes the capability's
+// inviteTenantsFragment is this module's tenant-domain fragment, describing the
+// management routes.
+//
+//go:embed openapi/invite.tenants.json
+var inviteTenantsFragment []byte
+
+// inviteSpec and inviteTenantsSpec are the two APIs this module's declarations
+// hang off: the ordinary acceptance surface and the tenant management one. Their
+// prefix and version are the common ones; the fragments write the capability's
 // own segment, so a route's declared path begins with the part of the mounter's
-// base that lies below this root.
-var inviteSpec = speedhttp.Spec{
-	Endpoint: defaultEndpoint,
-	Prefix:   "api",
-	Version:  "v1",
-	Document: inviteFragment,
-}
+// base that lies below the root.
+var (
+	inviteSpec = speedhttp.Spec{
+		Endpoint: defaultEndpoint,
+		Prefix:   "api",
+		Version:  "v1",
+		Document: inviteFragment,
+	}
+	inviteTenantsSpec = speedhttp.Spec{
+		Endpoint: defaultEndpoint,
+		Prefix:   "api",
+		Version:  "v1",
+		Scope:    speedhttp.ScopeTenants,
+		Document: inviteTenantsFragment,
+	}
+)
 
 //go:embed migrations
 var migrationRoot embed.FS
@@ -130,7 +146,9 @@ func Module() core.Module {
 			schema(),
 			db.Migrations{FS: migrationsFS},
 			inviteSpec,
-			operations,
+			inviteTenantsSpec,
+			tenantOperations,
+			publicOperations,
 			// The invitation faces: issued and accepted on routes mounted
 			// whenever the module is in force, so the feature is static.
 			feature.Spec{Name: "authn.invitations"},
@@ -311,5 +329,5 @@ func (p *product) checkMigrated(ctx context.Context) error {
 // mounted on.
 func (p *product) diagnose() {
 	p.logger.Info(ModuleName+": the invitation routes are mounted",
-		"endpoint", p.mounter.Endpoint(), "base_path", p.mounter.Base())
+		"endpoint", p.mounter.Endpoint(), "base_path", p.mounter.BaseIn(speedhttp.Scope("")))
 }

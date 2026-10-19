@@ -56,7 +56,7 @@ func (f *fakeReader) Decode(path string, target any) error {
 		}
 	case gateNamespace + ".mount":
 		if g, ok := target.(*gateMount); ok {
-			g.PublicURL, g.BasePath = f.publicURL, f.basePath
+			g.PublicURL, g.Bases.Default = f.publicURL, f.basePath
 		}
 	}
 	return nil

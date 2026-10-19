@@ -14,25 +14,25 @@ frame, the console root being a dashboard:
 - the **dashboard** at the console root (`/`) -- a KPI row derived from
   the roster read (its length and status split) and the newest page of the
   audit query as the recent-activity list;
-- the **tenant roster** over `/api/v1/tenant/admin` -- list, register, rename,
+- the **tenant roster** over `/api/v1/system/tenants` -- list, register, rename,
   enable/disable, and a row opens that tenant's detail page;
-- the **account surface** over `/api/v1/auth/admin/accounts` -- list, detail,
+- the **account surface** over `/api/v1/system/auth/accounts` -- list, detail,
   and the writes whose request body the contract declares;
-- the **session surface** over `/api/v1/auth/admin/accounts/:id/sessions` --
+- the **session surface** over `/api/v1/system/auth/accounts/:id/sessions` --
   list one account's sessions and revoke one;
-- the **impersonation surface** over `/api/v1/auth/admin/impersonations` -- list
+- the **impersonation surface** over `/api/v1/tenants/{tenant}/impersonations` -- list
   a tenant's records (the read takes the tenant as a required query
   argument) and terminate one;
-- the **authorization surface** over `/api/v1/authz/admin` -- a tenant's roles,
+- the **authorization surface** over `/api/v1/system` -- a tenant's roles,
   their grants, the permission catalog and the account bindings;
 - the **invitation and membership surface** over
-  `/api/v1/auth/admin/tenants/:tenant/invitations` and `/members` -- a tenant's
+  `/api/v1/tenants/:tenant/invitations` and `/members` -- a tenant's
   invitations and members;
-- the **SSO surface** over `/api/v1/auth/admin/sso/providers` -- a tenant's
+- the **SSO surface** over `/api/v1/tenants/{tenant}/sso/providers` -- a tenant's
   providers and their domains;
-- the **settings read-write surface** over `/api/v1/settings/admin`;
-- the **SMS template surface** over `/api/v1/sms/admin`;
-- the **audit query** over `/api/v1/audit/admin` -- filtered, cursor-paged, with
+- the **settings read-write surface** over `/api/v1/system/settings`;
+- the **SMS template surface** over `/api/v1/system/sms`;
+- the **audit query** over `/api/v1/system/audit` -- filtered, cursor-paged, with
   readable actor identities (resolved through the account read, which
   needs `authn.account.read` beside the page's own `audit.read`), and a
   row opens that record's detail page.

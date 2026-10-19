@@ -122,7 +122,7 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/audit/admin/records": {
+    "/audit/records": {
       "get": {
         "description": "Reads one page of the audit table across every tenant and the rows that belong to none, newest first. All supplied conditions apply together: the time window plus each non-empty set of actions, outcomes and actors. Paging is cut by row identifier rather than by offset, so rows appended while paging do not shift the page that follows. The page size defaults to 50 and is capped at 200; the answer's next is empty on the last page.",
         "operationId": "audit.admin.records.list",
@@ -259,7 +259,7 @@
         "summary": "Page through the audit records, newest first"
       }
     },
-    "/audit/admin/records/{id}": {
+    "/audit/records/{id}": {
       "get": {
         "description": "Reads one audit row by its identifier. The identifier is unique over the whole table, so the row is found whatever tenant it belongs to, or when it belongs to none. The identifier must be a non-negative decimal integer and the request must carry no query parameter; anything else is a 400. An identifier of zero, or one that no row holds, is a 404.",
         "operationId": "audit.admin.records.get",

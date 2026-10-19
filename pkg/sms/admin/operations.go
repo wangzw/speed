@@ -20,10 +20,10 @@ const (
 // relative, while the routes are mounted by resolving the same declaration
 // against that root.
 const (
-	relTemplates     = "/sms/admin/templates"
-	relSubmissions   = "/sms/admin/templates/submissions"
-	relTemplate      = "/sms/admin/templates/:name"
-	relTemplateState = "/sms/admin/templates/:name/enabled"
+	relTemplates     = "/sms/templates"
+	relSubmissions   = "/sms/templates/submissions"
+	relTemplate      = "/sms/templates/:name"
+	relTemplateState = "/sms/templates/:name/enabled"
 )
 
 // ListTemplatesInput is the request of the page read: the cursor and the page
@@ -167,7 +167,7 @@ var (
 		"The caller holds no sms.template.manage in the platform domain")
 )
 
-// listOperation declares GET /sms/admin/templates: one page of the template set,
+// listOperation declares GET /sms/templates: one page of the template set,
 // configured templates included. The handler returns the page, so the simple
 // form binds the query and writes the declared 200.
 var listOperation = speedhttp.NewOperation[ListTemplatesInput, templatePageBody](
@@ -192,7 +192,7 @@ var listOperation = speedhttp.NewOperation[ListTemplatesInput, templatePageBody]
 	),
 )
 
-// registerOperation declares POST /sms/admin/templates: a template whose vendor
+// registerOperation declares POST /sms/templates: a template whose vendor
 // code the operator already has is taken up. Its handler builds the answer
 // because a registry sentinel is answered 404 with no problem document, which
 // the simple form cannot write.
@@ -223,7 +223,7 @@ var registerOperation = speedhttp.NewReplyOperation[registerBody](
 	}),
 )
 
-// offerOperation declares POST /sms/admin/templates/submissions: a template is
+// offerOperation declares POST /sms/templates/submissions: a template is
 // handed to the vendor for review and the code it answers with is taken up. Its
 // handler builds the answer because a registry sentinel is answered 404 with no
 // problem document.
@@ -255,7 +255,7 @@ var offerOperation = speedhttp.NewReplyOperation[offerBody](
 	}),
 )
 
-// setEnabledOperation declares POST /sms/admin/templates/:name/enabled: a
+// setEnabledOperation declares POST /sms/templates/:name/enabled: a
 // runtime template's ability to send is turned on or off. Its handler builds
 // the answer because success is 204 and a missing template is a 404 with no
 // problem document.
@@ -282,7 +282,7 @@ var setEnabledOperation = speedhttp.NewReplyOperation[setEnabledInput](
 	}),
 )
 
-// removeOperation declares DELETE /sms/admin/templates/:name: a runtime template
+// removeOperation declares DELETE /sms/templates/:name: a runtime template
 // is dropped from this process, the vendor left alone. Its handler builds the
 // answer because success is 204 and a missing template is a 404 with no problem
 // document.

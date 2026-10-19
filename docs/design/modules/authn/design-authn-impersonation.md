@@ -25,7 +25,7 @@
 - **不通知被冒充者。** authn 没有通知通道；`authn.impersonation.started` 事件是宿主接通知的钩子。
 - **不清除记录。** 记录永不由本模块删除，保留期是宿主的合规策略。
 - **不为冒充中的业务请求加限制。** 冒充时是否只读等业务约束，由 `authz.guard` 与宿主读 `Identity.Impersonating()` 与 `Actor()` 自行决定；本模块只管 authn 自己的处理器。
-- **不挂管理面路由。** 列出与撤销记录的 HTTP 路由 `B/admin/impersonations` 归 `authn.admin`；本模块只提供它调用的 `List`、`Revoke` 与单条读取 `Get`。
+- **不挂管理面路由。** 列出与撤销记录的 HTTP 路由 `Bt/:tenant/impersonations` 归 `authn.admin`；本模块只提供它调用的 `List`、`Revoke` 与单条读取 `Get`。
 - **不提供全局冒充、嵌套冒充、冒充服务账户与可续期的冒充令牌。**
 - **不声明配置键与设置键。** 键的名字、取值域与缺省值只在 [design-authn-config](design-authn-config.md) 给全，本文只写它们的语义。
 - **不定义事件、审计与指标的取值表。** 全部类型、载荷与属性的权威表在 [design-authn-events](design-authn-events.md)；本文只写本模块在何处写、写什么约束。
@@ -441,11 +441,11 @@ WHERE id = ? AND ended_at IS NULL
 | 增删标识 | `POST B/phone`、`POST B/phone/verify`、`DELETE B/identifiers/:id` |
 | 增删因素 | `DELETE B/factors/:id`，登记经 `POST B/flows/authenticated` |
 | 关联与解绑外部身份 | `DELETE B/links/:id`，关联经 `POST B/flows/authenticated` |
-| 创建与撤销服务密钥 | `B/admin/accounts/:id/secrets` 一组 |
+| 创建与撤销服务密钥 | `B/accounts/:id/secrets` 一组 |
 | 列出与踢掉会话 | `GET B/sessions`、`DELETE B/sessions`、`DELETE B/sessions/:id` |
 | 加强认证 | `POST B/flows/authenticated`，用途 `step-up` |
 | 再次开始冒充 | `POST B/impersonation` |
-| 管理面 | 全部 `B/admin/*` |
+| 管理面 | 全部 `Bt/:tenant/*` |
 
 **冒充期间允许的 authn 路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；`POST B/logout` 与 `GET B/session` 由 [design-authn-session](design-authn-session.md) 经 `mount.Impersonable()` 登记，`GET B/me` 由 [design-authn-profile](design-authn-profile.md) 经 `mount.Impersonable()` 登记，路由的访问级别以各自的路由表为准。`POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
 

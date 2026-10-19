@@ -50,7 +50,8 @@ const diagnosticPrefix = "authn: "
 
 // product is this module's product. It implements mount.Mounter.
 type product struct {
-	base string
+	// bases is the base path of each scope the capability's routes span.
+	bases map[speedhttp.Scope]string
 	// publicURL is the origin of the configured public URL in the form a browser
 	// sends it, and empty when none is configured.
 	publicURL string
@@ -165,7 +166,14 @@ func newProduct(set settings) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s is not an origin: %w", authn.ErrInvalidConfig, key(publicURLItem), err)
 	}
-	return &product{base: set.Mount.BasePath, publicURL: origin, configured: set.Mount.Endpoint, csrf: csrf}, nil
+	return &product{
+		bases: map[speedhttp.Scope]string{
+			"":                     set.Mount.Bases.Default,
+			speedhttp.ScopeTenants: set.Mount.Bases.Tenants,
+			speedhttp.ScopeSystem:  set.Mount.Bases.System,
+		},
+		publicURL: origin, configured: set.Mount.Endpoint, csrf: csrf,
+	}, nil
 }
 
 // wire runs in Init: it settles the endpoint the routes go on, takes up the two
@@ -220,6 +228,9 @@ func (p *product) wire(reg *core.Registry) error {
 		return fmt.Errorf("%staking up the logging capability for the startup diagnostic: %w", diagnosticPrefix, err)
 	}
 	logger.Info(diagnosticPrefix+"the authentication routes are mounted",
-		slog.String("endpoint", name), slog.String("base_path", p.base))
+		slog.String("endpoint", name),
+		slog.String("default_base_path", p.bases[""]),
+		slog.String("tenants_base_path", p.bases[speedhttp.ScopeTenants]),
+		slog.String("system_base_path", p.bases[speedhttp.ScopeSystem]))
 	return nil
 }

@@ -19,7 +19,7 @@ const (
 	budgetItem         = "call-budget"
 	inFlightItem       = "in-flight"
 	mountEndpointItem  = "mount.endpoint"
-	mountBasePathItem  = "mount.base-path"
+	mountBasesItem     = "mount.bases"
 	mountPublicURLItem = "mount.public-url"
 	mountInsecureItem  = "mount.allow-insecure"
 	trustedOriginsItem = "trusted-origins"
@@ -40,7 +40,11 @@ var configDefaults = moduleConfig{
 	Endpoints:  []string{allEndpoints},
 	CallBudget: 5 * time.Second,
 	InFlight:   64,
-	Mount:      mountConfig{BasePath: mount.DefaultBasePath},
+	Mount: mountConfig{Bases: bases{
+		Default: mount.DefaultBasePath,
+		Tenants: mount.DefaultTenantsBasePath,
+		System:  mount.DefaultSystemBasePath,
+	}},
 }
 
 // moduleConfig is the set of input items this module accepts.
@@ -84,13 +88,22 @@ type mountConfig struct {
 	// Empty means the one endpoint the entry point declares, when it declares
 	// exactly one.
 	Endpoint string `config:"endpoint"`
-	// BasePath is the path the capability's routes are mounted under.
-	BasePath string `config:"base-path"`
+	// Bases is the base path of each scope the capability's routes are mounted
+	// under: the levels are published under different path segments.
+	Bases bases `config:"bases"`
 	// PublicURL is the origin the deployment is reached at from outside, which
 	// the entry point cannot derive from a request.
 	PublicURL string `config:"public-url"`
 	// AllowInsecure admits an http public URL, for development.
 	AllowInsecure bool `config:"allow-insecure"`
+}
+
+// bases is the base path of the ordinary surface and of each management scope
+// the capability's routes are published under, written as bare literal paths.
+type bases struct {
+	Default string `config:"default"`
+	Tenants string `config:"tenants"`
+	System  string `config:"system"`
 }
 
 // settings is the configuration this module actually runs on.
@@ -129,8 +142,17 @@ func (c moduleConfig) resolve() (settings, error) {
 		return settings{}, fmt.Errorf("%w: %s.%s is %d, and a gateway that admits no call at all "+
 			"refuses every request it is given", authn.ErrInvalidConfig, ConfigNamespace, inFlightItem, s.inFlight)
 	}
-	if err := checkBasePath(s.mount.BasePath); err != nil {
-		return settings{}, err
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"default", s.mount.Bases.Default},
+		{"tenants", s.mount.Bases.Tenants},
+		{"system", s.mount.Bases.System},
+	} {
+		if err := checkBasePath(item.name, item.value); err != nil {
+			return settings{}, err
+		}
 	}
 	if err := checkPublicURL(s.mount.PublicURL, s.mount.AllowInsecure); err != nil {
 		return settings{}, err
@@ -184,25 +206,25 @@ func checkEndpoints(names []string) error {
 	return nil
 }
 
-// checkBasePath holds the mount path to the form gin keeps a path in: it begins
+// checkBasePath holds a mount path to the form gin keeps a path in: it begins
 // with a slash, does not end with one, carries no wildcard or parameter and is
 // already what path.Clean would make of it.
-func checkBasePath(p string) error {
+func checkBasePath(item, p string) error {
 	switch {
 	case !strings.HasPrefix(p, "/"):
-		return fmt.Errorf("%w: %s.%s is %q, which does not begin with a slash",
-			authn.ErrInvalidConfig, ConfigNamespace, mountBasePathItem, clip(p))
+		return fmt.Errorf("%w: %s.%s.%s is %q, which does not begin with a slash",
+			authn.ErrInvalidConfig, ConfigNamespace, mountBasesItem, item, clip(p))
 	case strings.HasSuffix(p, "/"):
-		return fmt.Errorf("%w: %s.%s is %q, which ends with a slash or is the root. Write the "+
+		return fmt.Errorf("%w: %s.%s.%s is %q, which ends with a slash or is the root. Write the "+
 			"path without a trailing slash, such as /api/v1/auth", authn.ErrInvalidConfig, ConfigNamespace,
-			mountBasePathItem, clip(p))
+			mountBasesItem, item, clip(p))
 	case strings.ContainsAny(p, "*:?#{}"):
-		return fmt.Errorf("%w: %s.%s is %q, which carries a wildcard, a parameter, a query or a "+
+		return fmt.Errorf("%w: %s.%s.%s is %q, which carries a wildcard, a parameter, a query or a "+
 			"fragment, and routes are mounted under a literal path", authn.ErrInvalidConfig,
-			ConfigNamespace, mountBasePathItem, clip(p))
+			ConfigNamespace, mountBasesItem, item, clip(p))
 	case path.Clean(p) != p:
-		return fmt.Errorf("%w: %s.%s is %q, which is not in the cleaned form gin keeps a path in",
-			authn.ErrInvalidConfig, ConfigNamespace, mountBasePathItem, clip(p))
+		return fmt.Errorf("%w: %s.%s.%s is %q, which is not in the cleaned form gin keeps a path in",
+			authn.ErrInvalidConfig, ConfigNamespace, mountBasesItem, item, clip(p))
 	}
 	return nil
 }
@@ -232,7 +254,7 @@ func checkPublicURL(raw string, allowInsecure bool) error {
 		return fmt.Errorf("%w: %s.%s is %q, which carries more than an origin: user "+
 			"information, a path, a query or a fragment (user information, query and fragment are not "+
 			"shown). Write scheme, host and port alone: the path is %s.%s", authn.ErrInvalidConfig, ConfigNamespace,
-			mountPublicURLItem, shown, ConfigNamespace, mountBasePathItem)
+			mountPublicURLItem, shown, ConfigNamespace, mountBasesItem)
 	}
 	if u.Scheme == "http" && !allowInsecure && !loopbackHost(u.Hostname()) {
 		return fmt.Errorf("%w: %s.%s is %q, which is not https. Cookies and redirects built on it "+
@@ -288,8 +310,14 @@ func schema() config.Schema {
 				Description: "the endpoint the authentication routes are mounted on; empty " +
 					"takes the entry point's only endpoint",
 			},
-			mountBasePathItem: {
-				Description: "the path the authentication routes are mounted under",
+			mountBasesItem + ".default": {
+				Description: "the base path the ordinary authentication routes are mounted under",
+			},
+			mountBasesItem + ".tenants": {
+				Description: "the base path the tenant-administration routes are mounted under",
+			},
+			mountBasesItem + ".system": {
+				Description: "the base path the platform-administration routes are mounted under",
 			},
 			mountPublicURLItem: {
 				Description: "the origin the deployment is reached at from outside, without a " +

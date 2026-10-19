@@ -273,18 +273,24 @@ type Spec struct {
 	// it here and beside it a fragment for that version. Empty means the
 	// module's API carries no version segment.
 	Version string
+	// Scope is the management level the fragment's paths are published
+	// under, one segment: tenants or system. Empty is the ordinary level:
+	// the caller's own resources and the unauthenticated sign-in routes,
+	// served directly under Prefix and Version. The fragment's paths are
+	// relative to the scope segment when one is declared.
+	Scope Scope
 	// Document is the OpenAPI fragment, as JSON. Its paths are relative to
-	// Prefix and Version — "/auth/me", not "/api/v1/auth/me". A module
-	// usually reads its own openapi.json in with //go:embed.
+	// Prefix, Version and Scope — "/auth/me", not "/api/v1/auth/me". A
+	// module usually reads its own openapi.json in with //go:embed.
 	Document []byte
 }
 
-// APIRoot is the path the fragment's paths are relative to: Prefix and
-// Version joined into one absolute path, with an empty part contributing no
+// APIRoot is the path the fragment's paths are relative to: Prefix, Version
+// and Scope joined into one absolute path, with an empty part contributing no
 // segment. It is "" when the fragment's paths are absolute.
 func (s Spec) APIRoot() string {
-	parts := make([]string, 0, 2)
-	for _, part := range []string{s.Prefix, s.Version} {
+	parts := make([]string, 0, 3)
+	for _, part := range []string{s.Prefix, s.Version, s.Scope.scopeRoot()} {
 		if part != "" {
 			parts = append(parts, part)
 		}

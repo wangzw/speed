@@ -18,9 +18,9 @@ const (
 // Spec declares. The mounting resolves them to the absolute paths the routes are
 // registered at, so a path is written once.
 const (
-	pathTenantsFragment      = "/tenant/admin/tenants"
-	pathTenantFragment       = "/tenant/admin/tenants/:id"
-	pathTenantStatusFragment = "/tenant/admin/tenants/:id/status"
+	pathTenantsFragment      = "/tenants"
+	pathTenantFragment       = "/tenants/:tenant"
+	pathTenantStatusFragment = "/tenants/:tenant/status"
 )
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -58,24 +58,24 @@ type createBody struct {
 // getTenantInput is the request of a single-tenant read: the identifier in the
 // path.
 type getTenantInput struct {
-	ID string `path:"id" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	ID string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
 }
 
 // setAliasInput is the request of a rename: the identifier in the path and the
 // new alias in the body.
 type setAliasInput struct {
-	ID    string `path:"id" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	ID    string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
 	Alias string `json:"alias" required:"true" description:"The new alias; an alias another tenant holds is refused with a 409."`
 }
 
 // setStatusInput is the request of a status change: the identifier in the path
 // and the target state in the body.
 type setStatusInput struct {
-	ID     string `path:"id" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
+	ID     string `path:"tenant" description:"The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters."`
 	Status string `json:"status" required:"true" enum:"active,disabled" description:"active serves the tenant; disabled stops serving it."`
 }
 
-// listOperation declares GET /tenant/admin/tenants: every tenant the roster
+// listOperation declares GET /tenants: every tenant the roster
 // holds, in the roster's own order.
 var listOperation = speedhttp.NewOperation[struct{}, tenantListBody](
 	"tenant.admin.tenants.list",
@@ -100,7 +100,7 @@ var listOperation = speedhttp.NewOperation[struct{}, tenantListBody](
 	},
 )
 
-// createOperation declares POST /tenant/admin/tenants: it registers a tenant
+// createOperation declares POST /tenants: it registers a tenant
 // whose identifier the roster does not hold yet.
 var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 	"tenant.admin.tenants.create",
@@ -135,7 +135,7 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 	},
 )
 
-// getOperation declares GET /tenant/admin/tenants/:id: one tenant the roster
+// getOperation declares GET /tenants/:tenant: one tenant the roster
 // holds. Its handler builds the answer because a tenant the roster does not hold
 // is a bare 404, which the problem-document writer cannot produce.
 var getOperation = speedhttp.NewReplyOperation[getTenantInput](
@@ -166,7 +166,7 @@ var getOperation = speedhttp.NewReplyOperation[getTenantInput](
 	},
 )
 
-// setAliasOperation declares PATCH /tenant/admin/tenants/:id: it changes one
+// setAliasOperation declares PATCH /tenants/:tenant: it changes one
 // tenant's alias and nothing else. Its handler builds the answer because the
 // success is a 204 and an unknown tenant is a bare 404.
 var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
@@ -202,7 +202,7 @@ var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
 	},
 )
 
-// setStatusOperation declares POST /tenant/admin/tenants/:id/status: it changes
+// setStatusOperation declares POST /tenants/:tenant/status: it changes
 // one tenant's state. Its handler builds the answer because the success is a 204
 // and an unknown tenant is a bare 404.
 var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](

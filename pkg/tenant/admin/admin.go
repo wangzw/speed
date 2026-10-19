@@ -1,5 +1,5 @@
 // Package admin is the tenant capability's management module: it mounts the
-// roster-management routes under /api/v1/tenant/admin/* and delivers no capability of
+// roster-management routes under /api/v1/system/tenants and delivers no capability of
 // its own.
 //
 // The module holds no data and no rule. Every route's action is a call on the
@@ -95,6 +95,7 @@ var tenantAdminSpec = speedhttp.Spec{
 	Endpoint: defaultEndpoint,
 	Prefix:   "api",
 	Version:  "v1",
+	Scope:    speedhttp.ScopeSystem,
 	Document: openAPIFragment,
 }
 

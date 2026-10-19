@@ -39,7 +39,7 @@ describe('PlatformPermissions', () => {
     const requestFn: RequestFn = <T,>(
       path: string,
     ): Promise<T> => {
-      if (path === '/api/v1/authz/admin/permissions') {
+      if (path === '/api/v1/system/permissions') {
         return Promise.resolve({
           permissions: [{ permission: 'tenant.read' }, { permission: 'audit.read' }],
         } as T)

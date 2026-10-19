@@ -21,8 +21,8 @@ const (
 // registration resolves the same declaration against its base, so the path is
 // written once.
 const (
-	invitationsPath = "/auth/admin/tenants/:tenant/invitations"
-	invitationPath  = "/auth/admin/tenants/:tenant/invitations/:id"
+	invitationsPath = "/:tenant/invitations"
+	invitationPath  = "/:tenant/invitations/:id"
 	acceptPath      = "/auth/invitations/:token"
 )
 
@@ -306,10 +306,17 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 
 // operations is this module's declaration of the API it serves. The fragment is
 // generated from it; the routes are mounted from the same declarations.
-var operations = speedhttp.Operations{
+// tenantOperations is the management surface, decided in the tenant's own
+// policy domain.
+var tenantOperations = speedhttp.Operations{
 	issueOperation,
 	listOperation,
 	revokeOperation,
+}
+
+// publicOperations is the acceptance surface: the token is the whole credential
+// and there is no identity to decide on.
+var publicOperations = speedhttp.Operations{
 	acceptViewOperation,
 	acceptOperation,
 }

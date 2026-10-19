@@ -289,7 +289,9 @@ var configDefaults = moduleConfig{}
 // public address and the base path its callback route is mounted under.
 type gateMount struct {
 	PublicURL string `config:"public-url"`
-	BasePath  string `config:"base-path"`
+	Bases     struct {
+		Default string `config:"default"`
+	} `config:"bases"`
 }
 
 // resolved is the configuration this module runs on.
@@ -318,7 +320,7 @@ func (c moduleConfig) resolve(g gateMount) (resolved, error) {
 		return resolved{}, fmt.Errorf("%w: %s.mount.public-url is empty, and the WeChat callback "+
 			"address the provider is told to return to is built from it", authn.ErrInvalidConfig, gateNamespace)
 	}
-	basePath := strings.TrimSpace(g.BasePath)
+	basePath := strings.TrimSpace(g.Bases.Default)
 	if basePath == "" {
 		basePath = mount.DefaultBasePath
 	}

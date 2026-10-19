@@ -1,7 +1,7 @@
 /**
  * SmsPage: the SMS-template administration page of the console.
  *
- * It renders the runtime SMS template set over /api/v1/sms/admin: it lists the
+ * It renders the runtime SMS template set over /api/v1/system/sms: it lists the
  * templates (name, source, enabled state, languages, per-language
  * approval state), takes up a template whose vendor code the operator
  * already holds, hands a template to the vendor for review, turns a

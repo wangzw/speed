@@ -72,14 +72,14 @@ describe('bindRequestFn / speedRequest', () => {
 
   it('carries a repeated (array) query parameter through to the transport unchanged', async () => {
     // A spec parameter declared `style: form, explode: true` -- audit's
-    // `action` on GET /api/v1/audit/admin/records -- makes orval emit an
+    // `action` on GET /api/v1/system/audit/records -- makes orval emit an
     // array-typed field on that operation's params type. The seam's
     // params type admits scalar arrays precisely so this call
     // type-checks, and forward() must pass the array through untouched
     // (the @speed/api-client transport expands it into repeated query
     // parameters) rather than stringifying or dropping it.
     await speedRequest<unknown>({
-      url: '/api/v1/audit/admin/records',
+      url: '/api/v1/system/audit/records',
       method: 'GET',
       params: { action: ['login.create', 'login.failed'] },
     })

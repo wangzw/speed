@@ -18,7 +18,7 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-const pathAdmin = "/api/v1/auth/admin/tenants/tenant-a/invitations"
+const pathAdmin = "/api/v1/tenants/tenant-a/invitations"
 
 // request sends one request through the Mounter with the body given. The caller
 // sets the identity first with Mounter.As or Mounter.AsAnonymous.
@@ -166,7 +166,7 @@ func TestListAndRevokeRoutes(t *testing.T) {
 		t.Errorf("a read wrote %d audit rows, want none", len(h.audit.entries()))
 	}
 
-	w = h.request(http.MethodDelete, "/api/v1/auth/admin/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
+	w = h.request(http.MethodDelete, "/api/v1/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("revoke status = %d, want 204: %s", w.Code, w.Body.String())
 	}
@@ -182,7 +182,7 @@ func TestRevokingAnAcceptedRouteAnswers409(t *testing.T) {
 		t.Fatalf("accepting: %v", err)
 	}
 	h.asAdmin()
-	w := h.request(http.MethodDelete, "/api/v1/auth/admin/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
+	w := h.request(http.MethodDelete, "/api/v1/tenants/tenant-a/invitations/"+issued.Invitation.ID, nil)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 revoking an accepted invitation", w.Code)
 	}
@@ -221,7 +221,7 @@ func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
 func TestAnUnknownObjectIsAnsweredWithABare404(t *testing.T) {
 	h := newHarness(t)
 	h.asAdmin()
-	w := h.request(http.MethodDelete, "/api/v1/auth/admin/tenants/tenant-a/invitations/no-such-id", nil)
+	w := h.request(http.MethodDelete, "/api/v1/tenants/tenant-a/invitations/no-such-id", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("revoke status = %d, want 404", w.Code)
 	}
@@ -324,9 +324,9 @@ func TestRoutesMountUnderAConfiguredBasePath(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodPost, "/identity/admin/tenants/:tenant/invitations"},
-		{http.MethodGet, "/identity/admin/tenants/:tenant/invitations"},
-		{http.MethodDelete, "/identity/admin/tenants/:tenant/invitations/:id"},
+		{http.MethodPost, "/identity/:tenant/invitations"},
+		{http.MethodGet, "/identity/:tenant/invitations"},
+		{http.MethodDelete, "/identity/:tenant/invitations/:id"},
 		{http.MethodGet, "/identity/invitations/:token"},
 		{http.MethodPost, "/identity/invitations/:token"},
 	} {

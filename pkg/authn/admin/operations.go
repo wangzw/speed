@@ -21,37 +21,37 @@ const (
 // The mounter registration resolves the same declaration against its base, so
 // each path is written once.
 const (
-	pathAccounts   = "/auth/admin/accounts"
-	pathAccount    = "/auth/admin/accounts/:id"
-	pathIdentities = pathAccount + "/identifiers"
-	pathIdentity   = pathIdentities + "/:identifier"
-	pathStatus     = pathAccount + "/status"
-	pathPassword   = pathAccount + "/password"
-	pathFactors    = pathAccount + "/factors"
-	pathMFAFlag    = pathAccount + "/mfa-required"
-	pathMFAReset   = pathAccount + "/mfa-reset"
-
+	// System scope: the platform-domain account and session surfaces.
+	pathAccounts        = "/auth/accounts"
+	pathAccount         = "/auth/accounts/:id"
+	pathIdentities      = pathAccount + "/identifiers"
+	pathIdentity        = pathIdentities + "/:identifier"
+	pathStatus          = pathAccount + "/status"
+	pathPassword        = pathAccount + "/password"
+	pathFactors         = pathAccount + "/factors"
+	pathMFAFlag         = pathAccount + "/mfa-required"
+	pathMFAReset        = pathAccount + "/mfa-reset"
 	pathAccountSessions = pathAccount + "/sessions"
 	pathRevokeSessions  = pathAccount + "/revoke-sessions"
-	pathSession         = "/auth/admin/sessions/:id"
+	pathSession         = "/auth/sessions/:id"
+	pathSecrets         = pathAccount + "/secrets"
+	pathSecret          = pathSecrets + "/:secret"
 
-	pathSecrets = pathAccount + "/secrets"
-	pathSecret  = pathSecrets + "/:secret"
-
-	pathMembers      = "/auth/admin/tenants/:tenant/members"
-	pathMember       = pathMembers + "/:account"
-	pathMemberExempt = pathMember + "/sso-exempt"
-
-	pathProviders       = "/auth/admin/tenants/:tenant/sso/providers"
-	pathProvider        = "/auth/admin/sso/providers/:id"
+	// Tenant scope: routes decided in the tenant's own policy domain. The
+	// tenant is the first segment, so the level and the tenant it acts on are
+	// both on the request line.
+	pathMembers         = "/:tenant/members"
+	pathMember          = pathMembers + "/:account"
+	pathMemberExempt    = pathMember + "/sso-exempt"
+	pathProviders       = "/:tenant/sso/providers"
+	pathProvider        = "/:tenant/sso/providers/:id"
 	pathProviderDomains = pathProvider + "/domains"
 	pathProviderDomain  = pathProviderDomains + "/:domain"
 	pathDomainVerify    = pathProviderDomain + "/verify"
 	pathDomainReverify  = pathProvider + "/reverify-domains"
 	pathMetadataRefresh = pathProvider + "/metadata/refresh"
-
-	pathImpersonations = "/auth/admin/impersonations"
-	pathImpersonation  = "/auth/admin/impersonations/:id"
+	pathImpersonations  = "/:tenant/impersonations"
+	pathImpersonation   = "/:tenant/impersonations/:id"
 )
 
 // The inputs of the module's operations. Each carries the request's parameters
@@ -196,6 +196,7 @@ type providerCreateInput struct {
 
 // providerUpdateInput replaces a provider. The tenant is immutable.
 type providerUpdateInput struct {
+	Tenant            string                     `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
 	ID                string                     `path:"id" description:"The provider's identifier."`
 	BodyTenant        string                     `json:"tenant" description:"Absent on a create takes the path's tenant; a value that names another is refused"`
 	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml. The set is closed."`
@@ -212,17 +213,20 @@ type providerUpdateInput struct {
 
 // providerIDInput addresses one provider.
 type providerIDInput struct {
-	ID string `path:"id" description:"The provider's identifier."`
+	Tenant string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
+	ID     string `path:"id" description:"The provider's identifier."`
 }
 
 // domainClaimInput claims a domain for a provider.
 type domainClaimInput struct {
+	Tenant string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
 	ID     string `path:"id" description:"The provider's identifier."`
 	Domain string `json:"domain" required:"true" description:"The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored."`
 }
 
 // domainAddressInput addresses one claimed domain of one provider.
 type domainAddressInput struct {
+	Tenant string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
 	ID     string `path:"id" description:"The provider's identifier."`
 	Domain string `path:"domain" description:"The claimed domain name."`
 }
@@ -236,14 +240,15 @@ type sessionRevokeInput struct {
 
 // impersonationListInput is a tenant's impersonation-record page.
 type impersonationListInput struct {
-	Tenant string `query:"tenant" required:"true" description:"The tenant whose records the page holds, as the tenant identifier; it scopes the read and fills the decision's tenant. Required: absent or empty is 400."`
+	Tenant string `path:"tenant" description:"The tenant whose records the page holds, as the tenant identifier; it scopes the read and fills the decision's tenant."`
 	Limit  int    `query:"limit" description:"The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400."`
 	After  string `query:"after" description:"The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page."`
 }
 
 // impersonationIDInput addresses one impersonation record.
 type impersonationIDInput struct {
-	ID string `path:"id" description:"The impersonation record's identifier."`
+	Tenant string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
+	ID     string `path:"id" description:"The impersonation record's identifier."`
 }
 
 // The types the reply answers declare their JSON bodies with. The simple form's
@@ -958,9 +963,9 @@ var impersonationRevokeOperation = speedhttp.NewReplyOperation[impersonationIDIn
 	),
 )
 
-// operations is this module's declaration of the API it serves. The fragment is
-// generated from it; the routes are mounted from the same declarations.
-var operations = speedhttp.Operations{
+// systemOperations is the part of the API decided in the platform domain:
+// accounts, their sessions and their service secrets.
+var systemOperations = speedhttp.Operations{
 	accountListOperation,
 	accountCreateOperation,
 	accountGetOperation,
@@ -979,6 +984,12 @@ var operations = speedhttp.Operations{
 	secretListOperation,
 	secretCreateOperation,
 	secretRevokeOperation,
+}
+
+// tenantOperations is the part of the API decided in the tenant's own policy
+// domain: memberships, invitations' administrative view, identity providers and
+// impersonation records.
+var tenantOperations = speedhttp.Operations{
 	memberListOperation,
 	memberWriteOperation,
 	memberRemoveOperation,
@@ -996,3 +1007,8 @@ var operations = speedhttp.Operations{
 	impersonationListOperation,
 	impersonationRevokeOperation,
 }
+
+// operations is every operation the module serves, for the checks that hold the
+// declaration as a whole. The fragments are generated from the two scoped
+// slices, not from this one.
+var operations = append(append(speedhttp.Operations{}, systemOperations...), tenantOperations...)

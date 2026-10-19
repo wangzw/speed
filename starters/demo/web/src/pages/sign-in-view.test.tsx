@@ -416,7 +416,7 @@ describe('the sign-in surface', () => {
         }),
       // An ordinary member cannot read the tenant roster; the frame's failed
       // read leaves no current tenant, which is what lets the ensure run.
-      'GET /api/v1/tenant/admin/tenants': () => {
+      'GET /api/v1/system/tenants': () => {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,
         })

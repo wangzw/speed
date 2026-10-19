@@ -34,6 +34,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // Kind is the kind of a registration, which is the access level the gateway is
@@ -58,17 +59,32 @@ type Registration struct {
 
 // Defaults of a Mounter that no option changed.
 const (
-	DefaultBase      = "/api/v1/auth"
+	DefaultBase      = mount.DefaultBasePath
 	DefaultPublicURL = "https://app.example.com"
 	DefaultEndpoint  = "main"
 )
 
+// defaultBases is the base path of each scope the mounter stands in for.
+func defaultBases() map[speedhttp.Scope]string {
+	return map[speedhttp.Scope]string{
+		"":                     mount.DefaultBasePath,
+		speedhttp.ScopeTenants: mount.DefaultTenantsBasePath,
+		speedhttp.ScopeSystem:  mount.DefaultSystemBasePath,
+	}
+}
+
 // Option sets one thing about the Mounter New builds.
 type Option func(*Mounter)
 
-// WithBase sets the base path every rel is joined to. The default is
-// DefaultBase.
-func WithBase(base string) Option { return func(m *Mounter) { m.base = base } }
+// WithBase sets the base path every scope is joined to. The default is the
+// default base of each scope, from the mount package.
+func WithBase(base string) Option {
+	return func(m *Mounter) {
+		for scope := range m.bases {
+			m.bases[scope] = base
+		}
+	}
+}
 
 // WithPublicURL sets the origin the deployment is reached at from outside. The
 // default is DefaultPublicURL, which is the first trusted origin of the
@@ -93,7 +109,7 @@ type Mounter struct {
 	t         testing.TB
 	engine    *gin.Engine
 	csrf      *http.CrossOriginProtection
-	base      string
+	bases     map[speedhttp.Scope]string
 	publicURL string
 	endpoint  string
 	trusted   []string
@@ -110,7 +126,7 @@ var _ mount.Mounter = (*Mounter)(nil)
 func New(t testing.TB, opts ...Option) *Mounter {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	m := &Mounter{t: t, base: DefaultBase, publicURL: DefaultPublicURL, endpoint: DefaultEndpoint}
+	m := &Mounter{t: t, bases: defaultBases(), publicURL: DefaultPublicURL, endpoint: DefaultEndpoint}
 	for _, o := range opts {
 		o(m)
 	}
@@ -212,8 +228,8 @@ func (m *Mounter) Callback(methods []string, rel string, h gin.HandlerFunc) {
 	m.register(Callback, methods, rel, h, nil)
 }
 
-// Base is the base path every rel is joined to.
-func (m *Mounter) Base() string { return m.base }
+// BaseIn is the base path every rel is joined to for the given scope.
+func (m *Mounter) BaseIn(scope speedhttp.Scope) string { return m.bases[scope] }
 
 // PublicURL is the origin the deployment is reached at from outside.
 func (m *Mounter) PublicURL() string { return m.publicURL }
@@ -225,8 +241,8 @@ func (m *Mounter) Endpoint() string { return m.endpoint }
 func (m *Mounter) CSRF() *http.CrossOriginProtection { return m.csrf }
 
 func (m *Mounter) register(kind Kind, methods []string, rel string, h gin.HandlerFunc, opts []mount.Option) {
-	path := m.base + rel
 	spec := mount.Resolve(opts...)
+	path := m.bases[spec.Scope] + rel
 	chain := mount.Wrap(m.csrf, m.endpoint, h)
 	if kind == Callback {
 		mount.AllowCallback(m.csrf, methods, path)

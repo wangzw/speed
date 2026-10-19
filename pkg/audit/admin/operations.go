@@ -18,8 +18,8 @@ const (
 // Spec declares. The mounting resolves them to the absolute paths the routes are
 // registered at.
 const (
-	pathRecords = "/audit/admin/records"
-	pathRecord  = "/audit/admin/records/:id"
+	pathRecords = "/audit/records"
+	pathRecord  = "/audit/records/:id"
 )
 
 // RecordListInput is the request of the list route: the closed set of query
@@ -64,7 +64,7 @@ func unauthorized(description string) speedhttp.Response {
 	return response
 }
 
-// listOperation declares GET /audit/admin/records and binds its types: the
+// listOperation declares GET /audit/records and binds its types: the
 // handler receives the declared query parameters and returns the page, so the
 // entry point binds the request and writes the declared 200.
 var listOperation = speedhttp.NewOperation[RecordListInput, AuditAdminRecordPage](
@@ -95,7 +95,7 @@ var listOperation = speedhttp.NewOperation[RecordListInput, AuditAdminRecordPage
 	},
 )
 
-// getOperation declares GET /audit/admin/records/:id and binds its types. The
+// getOperation declares GET /audit/records/:id and binds its types. The
 // handler builds the answer because a row the table does not hold is a bare 404
 // with no problem document, which the simple form cannot write.
 var getOperation = speedhttp.NewReplyOperation[RecordGetInput](

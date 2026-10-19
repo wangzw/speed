@@ -59,17 +59,32 @@ const ModuleName = "authn.admin"
 // known, so it carries the conventional name.
 const defaultEndpoint = "account"
 
-// adminFragment is this module's OpenAPI fragment, describing every route of the
-// groups the module can mount.
+// adminFragment is this module's platform-domain OpenAPI fragment, describing
+// the account and session groups.
 //
 //go:embed openapi/admin.json
 var adminFragment []byte
 
-// adminSpec is the API this module's operations are declared against: the
-// fragment's endpoint, its root and the document generated from the
-// declarations. The mounting resolves each declared route against the same
-// root, so a path is written once.
-var adminSpec = speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: adminFragment}
+// adminTenantsFragment is this module's tenant-domain fragment, describing the
+// membership, identity-provider and impersonation groups.
+//
+//go:embed openapi/admin.tenants.json
+var adminTenantsFragment []byte
+
+// adminSpec and adminTenantsSpec are the two APIs this module's operations are
+// declared against: the platform-domain surface and the tenant-domain one. The
+// mounting resolves each declared route against the same root, so a path is
+// written once.
+var (
+	adminSpec = speedhttp.Spec{
+		Endpoint: defaultEndpoint, Prefix: "api", Version: "v1",
+		Scope: speedhttp.ScopeSystem, Document: adminFragment,
+	}
+	adminTenantsSpec = speedhttp.Spec{
+		Endpoint: defaultEndpoint, Prefix: "api", Version: "v1",
+		Scope: speedhttp.ScopeTenants, Document: adminTenantsFragment,
+	}
+)
 
 // diagnosticPrefix starts every line this module writes to the startup
 // diagnostics, which have several writers; it is the gateway's, so that a
@@ -125,6 +140,7 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			adminSpec,
+			adminTenantsSpec,
 			feature.Spec{Name: featureAdmin},
 			feature.Spec{Name: featureSessions, Conditional: true},
 			feature.Spec{Name: featureFactors, Conditional: true},

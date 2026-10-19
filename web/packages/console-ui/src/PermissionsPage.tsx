@@ -3,7 +3,7 @@
  *
  * The authorization surface is tenant-scoped: the roles, their grants and
  * the account bindings all live under one tenant
- * (/api/v1/authz/admin/tenants/:tenant/...). The page therefore opens with a
+ * (/api/v1/system/tenants/:tenant/...). The page therefore opens with a
  * tenant selector (fed by the platform roster) and keeps every read
  * disabled until a tenant is chosen; the tenant is an argument of the
  * request, not the session's current tenant.

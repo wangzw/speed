@@ -38,13 +38,13 @@ const contentTypeMetadata = "application/samlmetadata+xml"
 // distinct service provider. It is derived from the configured public address
 // alone, never from the Host header or a forwarded header.
 func (p *product) entityID(id string) string {
-	return p.mounter.PublicURL() + p.mounter.Base() + "/sso/saml/" + id + "/metadata"
+	return p.mounter.PublicURL() + p.mounter.BaseIn(speedhttp.Scope("")) + "/sso/saml/" + id + "/metadata"
 }
 
 // acsURL is the assertion consumer service address for one provider: the
 // engine's callback route for the provider identifier.
 func (p *product) acsURL(id string) string {
-	return p.mounter.PublicURL() + p.mounter.Base() + callbackPathPrefix + id
+	return p.mounter.PublicURL() + p.mounter.BaseIn(speedhttp.Scope("")) + callbackPathPrefix + id
 }
 
 // mountMetadata registers the service provider metadata route as a public one.

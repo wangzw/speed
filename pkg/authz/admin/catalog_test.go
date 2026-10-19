@@ -9,7 +9,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 )
 
-// TestTheCatalogRouteListsDeclaredPermissions drives GET /api/v1/authz/admin/permissions
+// TestTheCatalogRouteListsDeclaredPermissions drives GET /api/v1/system/permissions
 // over the shared rig: the set the catalog declares appears in the answer
 // verbatim, one view per permission and in the order the catalog gave them, and
 // each view carries the one field the route declares and nothing else. The
@@ -23,7 +23,7 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 		authz.PermissionAccountRead,
 	}
 	r := newRig(t, declared...)
-	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
+	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("the catalog route answered %d, want 200", w.Code)
 	}
@@ -62,7 +62,7 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 	t.Run("the route asks the guard for role.read", func(t *testing.T) {
 		r := newRig(t, authz.PermissionRoleRead)
-		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
+		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
 		if got := r.guard.askedFor(); len(got) != 1 || got[0] != authz.PermissionRoleRead {
 			t.Fatalf("the catalog route asked the guard for %v, want [authz.role.read]", got)
 		}
@@ -81,7 +81,7 @@ func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 	t.Run("a refusal is a 403 with nothing downstream", func(t *testing.T) {
 		r := newRig(t, authz.PermissionRoleRead)
 		r.guard.allow = false
-		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/authz/admin/permissions", nil, nil)
+		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("a refused catalog read answered %d, want 403", w.Code)
 		}
@@ -106,8 +106,8 @@ func TestTheCatalogRouteRequiresRoleRead(t *testing.T) {
 // command exposes no account parameter a caller could name), and the view names
 // each permission by the permission string itself and by no id.
 func TestTheCatalogRouteNamesNoOpaqueID(t *testing.T) {
-	if pathPermissions != "/api/v1/authz/admin/permissions" {
-		t.Fatalf("the catalog path = %q, want the literal /api/v1/authz/admin/permissions", pathPermissions)
+	if pathPermissions != "/api/v1/system/permissions" {
+		t.Fatalf("the catalog path = %q, want the literal /api/v1/system/permissions", pathPermissions)
 	}
 	for _, segment := range strings.Split(pathPermissions, "/") {
 		if strings.HasPrefix(segment, ":") || strings.HasPrefix(segment, "*") {

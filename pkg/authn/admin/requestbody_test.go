@@ -72,7 +72,7 @@ func ginPath(path string) string {
 func fragmentBodies(t *testing.T) map[operationKey]map[string]bool {
 	t.Helper()
 
-	var doc struct {
+	type document struct {
 		Paths map[string]map[string]struct {
 			RequestBody *struct {
 				Content map[string]struct {
@@ -89,37 +89,40 @@ func fragmentBodies(t *testing.T) map[operationKey]map[string]bool {
 			} `json:"schemas"`
 		} `json:"components"`
 	}
-	if err := json.Unmarshal(adminFragment, &doc); err != nil {
-		t.Fatalf("the embedded OpenAPI fragment is not a JSON object: %v", err)
-	}
 
 	out := map[operationKey]map[string]bool{}
-	for path, item := range doc.Paths {
-		for method, op := range item {
-			if method == "parameters" {
-				continue
-			}
-			key := operationKey{strings.ToUpper(method), ginPath(path)}
-			if op.RequestBody == nil {
-				continue
-			}
-			properties := map[string]json.RawMessage{}
-			for _, media := range op.RequestBody.Content {
-				properties = media.Schema.Properties
-				if ref := media.Schema.Ref; ref != "" {
-					name := ref[strings.LastIndex(ref, "/")+1:]
-					schema, ok := doc.Components.Schemas[name]
-					if !ok {
-						t.Fatalf("the requestBody of %s %s references the missing schema %q", method, path, name)
-					}
-					properties = schema.Properties
+	for _, raw := range [][]byte{adminFragment, adminTenantsFragment} {
+		var doc document
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("an embedded OpenAPI fragment is not a JSON object: %v", err)
+		}
+		for path, item := range doc.Paths {
+			for method, op := range item {
+				if method == "parameters" {
+					continue
 				}
+				key := operationKey{strings.ToUpper(method), ginPath(path)}
+				if op.RequestBody == nil {
+					continue
+				}
+				properties := map[string]json.RawMessage{}
+				for _, media := range op.RequestBody.Content {
+					properties = media.Schema.Properties
+					if ref := media.Schema.Ref; ref != "" {
+						name := ref[strings.LastIndex(ref, "/")+1:]
+						schema, ok := doc.Components.Schemas[name]
+						if !ok {
+							t.Fatalf("the requestBody of %s %s references the missing schema %q", method, path, name)
+						}
+						properties = schema.Properties
+					}
+				}
+				names := map[string]bool{}
+				for name := range properties {
+					names[name] = true
+				}
+				out[key] = names
 			}
-			names := map[string]bool{}
-			for name := range properties {
-				names[name] = true
-			}
-			out[key] = names
 		}
 	}
 	return out

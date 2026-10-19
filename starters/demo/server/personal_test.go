@@ -1218,7 +1218,7 @@ func TestTheEnsureRefusesAnAccountOfAnotherTenant(t *testing.T) {
 	}
 
 	added := send(t, client, http.MethodPut,
-		base+"/api/v1/auth/admin/tenants/demo/members/"+who.AccountID,
+		base+"/api/v1/tenants/demo/members/"+who.AccountID,
 		map[string]any{"active": true},
 		map[string]string{"Authorization": "Bearer " + operatorToken})
 	if added.status != http.StatusNoContent {
@@ -1261,7 +1261,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	// The role's grants, read by the administrator through the policy surface,
 	// are the allowlist's two (object, action) pairs and nothing else.
 	grants := send(t, client, http.MethodGet,
-		base+"/api/v1/authz/admin/tenants/"+personalID+"/roles/"+string(personalOwnerRole)+"/grants",
+		base+"/api/v1/system/tenants/"+personalID+"/roles/"+string(personalOwnerRole)+"/grants",
 		nil, operatorAuth)
 	if grants.status != http.StatusOK {
 		t.Fatalf("reading the owner role's grants answered %d:\n%s", grants.status, grants.body)
@@ -1303,7 +1303,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	}
 
 	added := send(t, client, http.MethodPut,
-		base+"/api/v1/auth/admin/tenants/"+personalID+"/members/"+who.AccountID,
+		base+"/api/v1/tenants/"+personalID+"/members/"+who.AccountID,
 		map[string]any{"active": true}, memberAuth)
 	if added.status != http.StatusForbidden {
 		t.Errorf("the personal tenant's owner wrote a membership and answered %d, want 403:\n%s",
@@ -1311,7 +1311,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	}
 
 	invited := send(t, client, http.MethodPost,
-		base+"/api/v1/auth/admin/tenants/"+personalID+"/invitations",
+		base+"/api/v1/tenants/"+personalID+"/invitations",
 		map[string]any{"email": "someone@example.test"}, memberAuth)
 	if invited.status != http.StatusForbidden {
 		t.Errorf("the personal tenant's owner issued an invitation and answered %d, want 403:\n%s",

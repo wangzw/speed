@@ -27,7 +27,7 @@ import {
   readyFeatures,
 } from './test-utils/session.js'
 
-const ROSTER_PATH = '/api/v1/tenant/admin/tenants'
+const ROSTER_PATH = '/api/v1/system/tenants'
 const ENSURE_PATH = '/api/v1/workspace/personal'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 

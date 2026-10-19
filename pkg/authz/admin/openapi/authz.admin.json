@@ -163,7 +163,7 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/authz/admin/permissions": {
+    "/permissions": {
       "get": {
         "description": "Lists every permission the process's catalog declares, one view each: the union of the permission lists the registered modules declared. The order is the catalog's collection order and is not sorted. The list is not filtered by which modules this process runs, so a permission may be listed that no mounted surface serves.",
         "operationId": "authz.admin.permissions.list",
@@ -225,7 +225,7 @@
         "summary": "List every permission the catalog declares"
       }
     },
-    "/authz/admin/tenants/{tenant}/bindings": {
+    "/tenants/{tenant}/bindings": {
       "get": {
         "description": "Lists every role binding of the tenant, ordered by account identifier and then role name, one view each. A tenant with no binding yields an empty list. The list is not paginated.",
         "operationId": "authz.admin.bindings.list",
@@ -308,7 +308,7 @@
         "summary": "List every role binding of a tenant"
       }
     },
-    "/authz/admin/tenants/{tenant}/bindings/{account}": {
+    "/tenants/{tenant}/bindings/{account}": {
       "get": {
         "description": "Lists every binding the account holds within the tenant, ordered by role name ascending, one view each. An account with no binding, or a tenant with none, yields an empty list; the account is not looked up. The list is not paginated.",
         "operationId": "authz.admin.bindings.of",
@@ -400,7 +400,7 @@
         "summary": "List every binding an account holds within a tenant"
       }
     },
-    "/authz/admin/tenants/{tenant}/bindings/{account}/{role}": {
+    "/tenants/{tenant}/bindings/{account}/{role}": {
       "delete": {
         "description": "Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "operationId": "authz.admin.bindings.delete",
@@ -560,7 +560,7 @@
         "summary": "Bind a role to an account within a tenant"
       }
     },
-    "/authz/admin/tenants/{tenant}/roles": {
+    "/tenants/{tenant}/roles": {
       "get": {
         "description": "Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields an empty list. The list is not paginated.",
         "operationId": "authz.admin.roles.list",
@@ -643,7 +643,7 @@
         "summary": "List a tenant's roles"
       }
     },
-    "/authz/admin/tenants/{tenant}/roles/{role}": {
+    "/tenants/{tenant}/roles/{role}": {
       "delete": {
         "description": "Removes the role and, in one transaction, its permission grants and its account bindings, so no grant or binding outlives the role. Removing a role that does not exist succeeds with 204 and changes nothing. A builtin role cannot be removed. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "operationId": "authz.admin.roles.delete",
@@ -826,7 +826,7 @@
         "summary": "Create or rewrite a role"
       }
     },
-    "/authz/admin/tenants/{tenant}/roles/{role}/grants": {
+    "/tenants/{tenant}/roles/{role}/grants": {
       "get": {
         "description": "Lists every permission grant the role holds as the (resource, action) pairs the policy engine matches on, ordered by resource and then action. A role that holds no grant, or does not exist, yields an empty list; the role is not looked up. The list is not paginated.",
         "operationId": "authz.admin.grants.list",
@@ -918,7 +918,7 @@
         "summary": "List every permission grant a role holds"
       }
     },
-    "/authz/admin/tenants/{tenant}/roles/{role}/grants/{permission}": {
+    "/tenants/{tenant}/roles/{role}/grants/{permission}": {
       "delete": {
         "description": "Revokes one permission from a role. The permission in the path is translated to its (resource, action) pair; a permission with no translation row is a 400. Revoking a grant the role does not hold succeeds with 204 and changes nothing, and a role that is not in the tenant is not refused: no grant row matches and the answer is also 204. A builtin role's grants cannot be revoked: that is a 409. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "operationId": "authz.admin.grants.delete",

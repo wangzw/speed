@@ -27,13 +27,21 @@ select the endpoint that registered it, or the startup fails with
 included, fail the startup as `ErrClaimConflict`.
 
 **A `Spec` carries the path its fragment is relative to.** `Endpoint` names the
-logical endpoint; `Prefix` and `Version` are bare segments the reader joins into
-the API root (`api` and `v1` compose `/api/v1`), and the fragment's paths are
-written relative to it (`/auth/me`). A module serving a second API version
-declares a second `Spec` carrying that version. `Spec.APIRoot` and
-`Spec.ResolvePath` are the composition; the shape check refuses a `Prefix` with
-a leading or trailing slash, a `Version` that is not one literal segment, and a
-path that already carries the composed root.
+logical endpoint; `Prefix`, `Version` and `Scope` are bare segments the reader
+joins into the API root (`api` and `v1` compose `/api/v1`; adding `system`
+composes `/api/v1/system`), and the fragment's paths are written relative to it
+(`/auth/me`). `Scope` is optional and, when set, is `tenants` or `system`: it is
+the management level the fragment is published under. An empty scope is the
+ordinary surface — the caller's own resources and the unauthenticated sign-in
+routes — and its paths hang directly off the root. In the `tenants` scope every
+path names the tenant first (`/{tenant}/members`). A fragment outside the API
+root, such as the process probes, carries no `Prefix` either. A module serving a
+second API version or a second management level declares a second `Spec`.
+`Spec.APIRoot` and `Spec.ResolvePath` are the composition; the shape check
+refuses a `Prefix` with a leading or trailing slash, a `Version` that is not one
+literal segment, a `Scope` that is neither of the two, a `tenants` path that
+does not start with `/{tenant}/`, and a path that already carries the composed
+root.
 
 **A module may declare its operations instead of writing a fragment.** An
 `Operations` resource carries one `Operation[In, Out]` per route: method, path,

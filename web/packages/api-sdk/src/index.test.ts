@@ -126,7 +126,7 @@ describe('auditAdminRecordsList', () => {
     await auditAdminRecordsList({ action: ['login.create', 'login.failed'] })
     expect(calls).toMatchObject([
       {
-        path: '/api/v1/audit/admin/records',
+        path: '/api/v1/system/audit/records',
         options: {
           method: 'GET',
           query: { action: ['login.create', 'login.failed'] },

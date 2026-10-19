@@ -9,7 +9,17 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/authn/internal/mount"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
+
+// scopeOf is the scope a registration lands in: the one the caller named, or
+// the ordinary surface when none was named. The access level does not imply a
+// scope: a public route and a guarded one of the same module share the same
+// base unless the declaration says otherwise.
+func scopeOf(lvl level, spec mount.Spec) speedhttp.Scope {
+	_ = lvl
+	return spec.Scope
+}
 
 // level is the access level a registration asks the gateway to apply.
 type level uint8
@@ -44,8 +54,8 @@ func (p *product) Callback(methods []string, rel string, h gin.HandlerFunc) {
 	p.register("Callback", levelPublic, methods, rel, h, mount.Spec{}, true)
 }
 
-// Base is the base path every rel is joined to.
-func (p *product) Base() string { return p.base }
+// BaseIn is the base path routes of the given scope are joined to.
+func (p *product) BaseIn(scope speedhttp.Scope) string { return p.bases[scope] }
 
 // Endpoint is the endpoint the routes are mounted on. It is settled in Init, and
 // empty before it.
@@ -78,9 +88,15 @@ func (p *product) register(call string, lvl level, methods []string, rel string,
 			"requirement on the route-mounting capability and register from the Init callback, "+
 			"which runs after this module's", ModuleName, call, strings.Join(methods, ", "), rel))
 	}
-	p.checkCall(call, methods, rel, h)
+	scope := scopeOf(lvl, spec)
+	base := p.bases[scope]
+	if base == "" {
+		panic(fmt.Sprintf("%s: %s(%s, %q) was registered for the scope %q, which has no configured "+
+			"base path", ModuleName, call, strings.Join(methods, ", "), rel, scope))
+	}
+	p.checkCall(call, methods, rel, h, base)
 
-	path := p.base + rel
+	path := base + rel
 	chain := mount.Wrap(p.csrf, w.name, h)
 	if callback {
 		registering(call, strings.Join(methods, ", "), path, func() { mount.AllowCallback(p.csrf, methods, path) })
@@ -121,13 +137,13 @@ func registering(call, method, path string, write func()) {
 // a path nobody wrote, a handler that is nil would crash on the first request,
 // and a callback with no method or one written twice registers nothing or
 // conflicts with itself.
-func (p *product) checkCall(call string, methods []string, rel string, h gin.HandlerFunc) {
+func (p *product) checkCall(call string, methods []string, rel string, h gin.HandlerFunc, base string) {
 	refuse := func(why string) {
 		panic(fmt.Sprintf("%s: %s(%s, %q) %s", ModuleName, call, strings.Join(methods, ", "), rel, why))
 	}
 	if !strings.HasPrefix(rel, "/") {
 		refuse("was given a path that does not begin with a slash, so it would not be joined to the " +
-			"base path " + p.base + " as written")
+			"base path " + base + " as written")
 	}
 	if h == nil {
 		refuse("was given a nil handler, which would crash when a request reaches the route")

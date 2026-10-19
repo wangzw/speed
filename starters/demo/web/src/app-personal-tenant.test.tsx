@@ -36,7 +36,7 @@ import {
 } from './test-utils/session.js'
 
 const PERSONAL_ID = 'personal-account-1'
-const ROSTER_PATH = '/api/v1/tenant/admin/tenants'
+const ROSTER_PATH = '/api/v1/system/tenants'
 const ENSURE_PATH = '/api/v1/workspace/personal'
 
 const PERSONAL_FEATURES = ['tenant.admin', 'workspace.personal'] as const

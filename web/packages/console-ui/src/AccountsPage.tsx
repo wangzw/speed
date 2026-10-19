@@ -1,7 +1,7 @@
 /**
  * AccountsPage: the account-administration page of the console.
  *
- * It lists accounts (GET /api/v1/auth/admin/accounts, narrowed by an identifier
+ * It lists accounts (GET /api/v1/system/auth/accounts, narrowed by an identifier
  * prefix of one identifier kind), creates an account, and opens one
  * account's detail: its read-only fields, its registered factors, its
  * service secrets and its sessions, with the write controls the platform
@@ -1466,7 +1466,7 @@ type CreateAccountMutation = UseMutationResult<
 >
 
 /**
- * AccountCreateForm: the account-creation control (POST /api/v1/auth/admin/accounts),
+ * AccountCreateForm: the account-creation control (POST /api/v1/system/auth/accounts),
  * rendered inside the create panel. It names the fields the handler decodes
  * into its create request; a field left blank is not sent. A user account
  * requires a display name and at least one login identifier (a username, an

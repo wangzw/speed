@@ -20,7 +20,7 @@
  *    empty one) and the target account must be a member of it, so the
  *    form has no separate tenant input;
  *
- *  - the tenant's impersonation records, over /api/v1/auth/admin/impersonations:
+ *  - the tenant's impersonation records, over /api/v1/tenants/{tenant}/impersonations:
  *    the record list (GET) and one record's termination (DELETE). The read
  *    names its tenant as a required query parameter, so the page opens that
  *    half with the same tenant selection the start form uses, fed by the
@@ -300,7 +300,7 @@ export function ImpersonationsPage({
         // just changed. Drop them so the returning surface reads again
         // instead of presenting the old list as current.
         queryClient.removeQueries({
-          queryKey: getAuthnAdminImpersonationsListQueryKey(),
+          queryKey: getAuthnAdminImpersonationsListQueryKey(tenant),
         })
       },
     },
@@ -335,7 +335,7 @@ export function ImpersonationsPage({
           queryKey: getAuthnImpersonationStatusQueryKey(),
         })
         queryClient.removeQueries({
-          queryKey: getAuthnAdminImpersonationsListQueryKey(),
+          queryKey: getAuthnAdminImpersonationsListQueryKey(tenant),
         })
       }
       // The write settled: the host re-reads the identity, without the
@@ -348,7 +348,7 @@ export function ImpersonationsPage({
     const attempt = (): Promise<void> =>
       recordsFeedback.run(async () => {
         try {
-          await revokeImpersonation.mutateAsync({ id: record.id })
+          await revokeImpersonation.mutateAsync({ id: record.id, tenant })
           // A termination changes what the caller's own status read may
           // name, so that read is refreshed alongside the list the bundle
           // already invalidates.

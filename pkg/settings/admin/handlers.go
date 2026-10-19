@@ -31,14 +31,14 @@ func replyJSON(body any) (speedhttp.Reply, error) {
 	return speedhttp.BytesReply(http.StatusOK, jsonContentType, encoded), nil
 }
 
-// handleList answers GET /settings/admin/settings: every declared setting item
+// handleList answers GET /settings: every declared setting item
 // with the value each resolves to on the selected layer. The route's
 // authorization step has already settled the layer and decided the read.
 func (p *product) handleList(ctx context.Context, in listInput) ([]SettingsAdminSetting, error) {
 	return p.list(ctx, selectionOf(in.Layer, in.Tenant), "")
 }
 
-// handleListNamespace answers GET /settings/admin/settings/:namespace: the
+// handleListNamespace answers GET /settings/:namespace: the
 // declared items that namespace declared, each as the all-items route shows it.
 // A namespace that no declared item belongs to is a bare 404.
 func (p *product) handleListNamespace(ctx context.Context, in namespaceInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
@@ -114,7 +114,7 @@ func (p *product) resolve(item settings.DeclaredItem, layer settings.Layer) (str
 	return renderValue(item.Type, target.Elem().Interface())
 }
 
-// handleSet answers PUT /settings/admin/settings/:namespace/:key: it writes one
+// handleSet answers PUT /settings/:namespace/:key: it writes one
 // row on the selected layer. The route's authorization step has already settled
 // the layer and decided the write, and the entry point has already bound the
 // body.
@@ -155,7 +155,7 @@ func (p *product) handleSet(ctx context.Context, in setInput, _ *speedhttp.Meta)
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
-// handleRemove answers DELETE /settings/admin/settings/:namespace/:key: it drops
+// handleRemove answers DELETE /settings/:namespace/:key: it drops
 // the selected layer's explicit row for one key. The route's authorization step
 // has already settled the layer and decided the write.
 //

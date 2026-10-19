@@ -2,7 +2,7 @@
 
 ## 职责
 
-`tenant.admin` 是租户名册的 HTTP 管理面，挂在固定基路径 `/api/v1/tenant/admin` 下，不交付任何功能接口，只把名册的读写暴露成路由。每条路由的动作是经 `tenant.Catalog` 调名册——登记、读回、改别名、改状态——模块自己不持数据、不持规则：名册由名册模块拥有，本模块只决定谁可以问、答案长什么样。
+`tenant.admin` 是租户名册的 HTTP 管理面，挂在固定基路径 `/api/v1/system/tenants` 下，不交付任何功能接口，只把名册的读写暴露成路由。每条路由的动作是经 `tenant.Catalog` 调名册——登记、读回、改别名、改状态——模块自己不持数据、不持规则：名册由名册模块拥有，本模块只决定谁可以问、答案长什么样。
 
 **本模块是框架为名册提供的那个提供者。** 租户能力本身不提供管理面：名册的写入是它唯一的运维面动作，而它交付的是接缝与实现，不是 HTTP 路由（[design-tenant](design-tenant.md)）。一个想要名册管理面的宿主把本模块写进命令树，不必自己手写同一组路由、同一套判定与同一条审计前置。它不改变租户能力的立场——`pkg/tenant` 仍不带管理面——只把这一面从「宿主自建」补成「框架提供一个可选用的提供者」（[ADR-console-tenant-2026-10-15](../../../adr/adr-console-tenant-2026-10-15.md)）。
 
@@ -27,15 +27,15 @@
 
 ### 路由
 
-基路径 `/api/v1/tenant/admin`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。
+基路径 `/api/v1/system/tenants`，下表是路由的全集（封闭集）：组、方法、路径与每条需要的权限。
 
 | 组 | 方法 路径 | 权限 |
 |---|---|---|
-| 租户 | `GET /api/v1/tenant/admin/tenants` | `tenant.read` |
-| 租户 | `POST /api/v1/tenant/admin/tenants` | `tenant.manage` |
-| 租户 | `GET /api/v1/tenant/admin/tenants/:id` | `tenant.read` |
-| 租户 | `PATCH /api/v1/tenant/admin/tenants/:id` | `tenant.manage` |
-| 租户 | `POST /api/v1/tenant/admin/tenants/:id/status` | `tenant.manage` |
+| 租户 | `GET /api/v1/system/tenants` | `tenant.read` |
+| 租户 | `POST /api/v1/system/tenants` | `tenant.manage` |
+| 租户 | `GET /api/v1/system/tenants/:tenant` | `tenant.read` |
+| 租户 | `PATCH /api/v1/system/tenants/:tenant` | `tenant.manage` |
+| 租户 | `POST /api/v1/system/tenants/:tenant/status` | `tenant.manage` |
 
 每条路由的动作是一次 `tenant.Catalog` 调用（方法集与各方法的语义见 [design-tenant](design-tenant.md)）：
 
@@ -43,9 +43,9 @@
 |---|---|
 | `GET /tenants` | `List`，列出全部租户，按标识排序 |
 | `POST /tenants` | `Create`，登记一个尚未登记的标识 |
-| `GET /tenants/:id` | `Get`，按标识取一个租户 |
-| `PATCH /tenants/:id` | `SetAlias` 换别名 |
-| `POST /tenants/:id/status` | `SetStatus`，改一个租户的状态 |
+| `GET /tenants/:tenant` | `Get`，按标识取一个租户 |
+| `PATCH /tenants/:tenant` | `SetAlias` 换别名 |
+| `POST /tenants/:tenant/status` | `SetStatus`，改一个租户的状态 |
 
 **登记走 `Create`，从不覆盖既有租户。** 开一个租户是一个名册表里尚未持有的标识的插入；一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行、别名与状态一并取新值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。既有租户的改名走 `PATCH`，改状态走状态路由；名册没有删除动作，停用只经 `SetStatus`。
 
@@ -75,7 +75,7 @@
 
 - **模块名**：`tenant.admin`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`tenant.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
-- **管理端点**：`tenant.admin.endpoints` 列出的端，`/api/v1/tenant/admin/*` 下的名册读写路由（路由见「路由」）。
+- **管理端点**：`tenant.admin.endpoints` 列出的端，`/api/v1/system/tenants/*` 下的名册读写路由（路由见「路由」）。
 - **权限**：读路由询 `tenant.read`，写路由询 `tenant.manage`；本模块的权限经 `authz.PermissionSpec` 进入进程目录、经 `authz.TranslationSpec` 进入进程翻译（`tenant.read` 译成 `(tenant, read)`、`tenant.manage` 译成 `(tenant, manage)`）。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:tenant:`，其下的码 `bad-request`、`conflict`。
 
@@ -149,8 +149,8 @@ sequenceDiagram
 |---|---|---|
 | 租户视图 | `{id, alias, status}` | 从 `tenant.Tenant` 逐字段构造；`status` 是 `active` 或 `disabled` |
 | 登记正文 | `{id, alias}` | `POST /tenants` 的正文；新租户起于 `active` |
-| 改名正文 | `{alias}` | `PATCH /tenants/:id` 的正文 |
-| 状态正文 | `{status}` | `POST /tenants/:id/status` 的正文；取值闭集 `active`、`disabled` |
+| 改名正文 | `{alias}` | `PATCH /tenants/:tenant` 的正文 |
+| 状态正文 | `{status}` | `POST /tenants/:tenant/status` 的正文；取值闭集 `active`、`disabled` |
 
 视图与正文都是本模块自己的类型，不是根包的 `tenant.Tenant`：`Tenant` 是名册上的一行（含状态枚举），而交出去的是它的字符串化视图、收进来的是校验过的形状。
 

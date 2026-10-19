@@ -104,13 +104,13 @@ func TestTheRegistrationsAreRecordedWithTheirKindAndTheImpersonableMark(t *testi
 // makes of its Mounter and that each option changes its own.
 func TestTheMounterReportsItsBaseOriginAndEndpoint(t *testing.T) {
 	m := mounttest.New(t)
-	if m.Base() != mounttest.DefaultBase || m.PublicURL() != mounttest.DefaultPublicURL ||
+	if m.BaseIn("") != mounttest.DefaultBase || m.PublicURL() != mounttest.DefaultPublicURL ||
 		m.Endpoint() != mounttest.DefaultEndpoint || m.CSRF() == nil {
-		t.Errorf("defaults: base %q, public URL %q, endpoint %q, csrf %v", m.Base(), m.PublicURL(), m.Endpoint(), m.CSRF())
+		t.Errorf("defaults: base %q, public URL %q, endpoint %q, csrf %v", m.BaseIn(""), m.PublicURL(), m.Endpoint(), m.CSRF())
 	}
 	c := mounttest.New(t, mounttest.WithBase("/identity"), mounttest.WithPublicURL("https://id.example.org"), mounttest.WithEndpoint("public"))
-	if c.Base() != "/identity" || c.PublicURL() != "https://id.example.org" || c.Endpoint() != "public" {
-		t.Errorf("options: base %q, public URL %q, endpoint %q", c.Base(), c.PublicURL(), c.Endpoint())
+	if c.BaseIn("") != "/identity" || c.PublicURL() != "https://id.example.org" || c.Endpoint() != "public" {
+		t.Errorf("options: base %q, public URL %q, endpoint %q", c.BaseIn(""), c.PublicURL(), c.Endpoint())
 	}
 	c.Public(http.MethodGet, "/x", func(g *gin.Context) { g.String(http.StatusOK, "ok") })
 	if rec := get(c, "/identity/x"); rec.Code != http.StatusOK {
@@ -332,7 +332,7 @@ func TestAConflictingRegistrationPanicsAsTheRouterDoes(t *testing.T) {
 			t.Error("a second registration of the same route did not panic")
 		}
 	}()
-	m.Guarded(http.MethodGet, "/x", func(*gin.Context) {})
+	m.Public(http.MethodGet, "/x", func(*gin.Context) {})
 }
 
 // refuses stands in for the *testing.T handed to New, so that the refusal of an

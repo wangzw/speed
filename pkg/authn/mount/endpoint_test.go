@@ -34,15 +34,15 @@ func TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares(t *
 	}{
 		{name: "one endpoint declared, key empty", declared: []string{"main"}, want: "main"},
 		{name: "one endpoint declared, the key names it", declared: []string{"main"}, configured: "main", want: "main"},
-		{name: "several declared, the key names one", declared: []string{"admin", "public"}, configured: "public", want: "public"},
-		{name: "several declared, the key names the other", declared: []string{"admin", "public"}, configured: "admin", want: "admin"},
+		{name: "several declared, the key names one", declared: []string{"admin", "default"}, configured: "default", want: "default"},
+		{name: "several declared, the key names the other", declared: []string{"admin", "default"}, configured: "admin", want: "admin"},
 		{
 			name: "no endpoint declared, key empty", wantErr: authn.ErrRoutesUnconfigured,
 			inMessage: []string{"authn.gate.mount.endpoint", "no endpoint"},
 		},
 		{
-			name: "two endpoints declared, key empty", declared: []string{"public", "admin"},
-			wantErr: authn.ErrRoutesUnconfigured, inMessage: []string{"authn.gate.mount.endpoint", "admin, public"},
+			name: "two endpoints declared, key empty", declared: []string{"default", "admin"},
+			wantErr: authn.ErrRoutesUnconfigured, inMessage: []string{"authn.gate.mount.endpoint", "admin, default"},
 		},
 		{
 			name: "three endpoints declared, key empty", declared: []string{"a", "b", "c"},
@@ -113,8 +113,8 @@ func TestTheStartupDiagnosticNamesTheEndpointAndTheBasePath(t *testing.T) {
 	logs := &recorder{}
 	l := &ledger{}
 	err := stack{
-		body:   `{"authn":{"gate":{"mount":{"endpoint":"admin","base-path":"/identity"}}}}`,
-		router: &standInRouter{names: []string{"admin", "public"}, ledger: l},
+		body:   `{"authn":{"gate":{"mount":{"endpoint":"admin","bases":{"default":"/identity","tenants":"/identity","system":"/identity"}}}}}`,
+		router: &standInRouter{names: []string{"admin", "default"}, ledger: l},
 		gate:   standInGate{ledger: l}, realGateModule: true,
 		logs: logs,
 	}.drive(t, nothing)
@@ -128,7 +128,7 @@ func TestTheStartupDiagnosticNamesTheEndpointAndTheBasePath(t *testing.T) {
 	if got := attrText(rec, "endpoint"); got != "admin" {
 		t.Errorf("the line names endpoint %q, want admin", got)
 	}
-	if got := attrText(rec, "base_path"); got != "/identity" {
+	if got := attrText(rec, "default_base_path"); got != "/identity" {
 		t.Errorf("the line names base path %q, want /identity", got)
 	}
 }

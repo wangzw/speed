@@ -10,7 +10,7 @@
  * neither a control nor a query key.
  *
  * Every read and write is an operation on the console operations bundle
- * -- the host binds the generated /api/v1/tenant/admin operations to it -- so
+ * -- the host binds the generated /api/v1/system/tenants operations to it -- so
  * the page builds no client and writes no query key. The row's state
  * renders from the roster's own spelling (active / disabled); a value
  * outside that closed set renders the generic label, never a raw value.

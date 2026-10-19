@@ -73,7 +73,7 @@
 | `authn.gate.call-budget` | `time.Duration` | `5s` | 默认 | | 一次进入校验后端的调用的期限；须为正 |
 | `authn.gate.in-flight` | 整数 | `64` | 默认 | | 同时进行的后端调用数上限，满时请求收口 503；须为正 |
 | `authn.gate.mount.endpoint` | 字符串 | 空 | 默认 | | authn 自己的路由所挂的入口端 |
-| `authn.gate.mount.base-path` | 字符串 | `/api/v1/auth` | 默认 | | 路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin 规整后的写法 |
+| `authn.gate.mount.bases.default`、`.tenants`、`.system` | 字符串 | `/api/v1/auth`、`/api/v1/tenants`、`/api/v1/system/auth` | 默认 | | 各作用域的路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin 规整后的写法 |
 | `authn.gate.mount.public-url` | 字符串 | 空 | 默认 | | 对外基址，只含来源不含路径 |
 | `authn.gate.mount.allow-insecure` | 布尔 | `false` | 主 | | 放宽开关，仅开发：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure` |
 | `authn.gate.trusted-origins` | 字符串列表 | 空 | 主 | | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`，先规范成浏览器发送的形式再匹配（规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）；`public-url` 的来源恒可信 |
@@ -418,7 +418,7 @@ flowchart TD
 
 ### 启动期自检
 
-任一失败即终止启动，错误点名缺的那一项，且不带秘密：`trusted-origins` 的项只以序号点名，`public-url` 与 `base-path` 至多回显去掉用户信息、查询与片段之后的值。下表是配置与秘密相关自检的全集（封闭集合）。网关装配自检（无入口模块、无校验后端、载体撞车）归 [design-authn-gate](design-authn-gate.md)。
+任一失败即终止启动，错误点名缺的那一项，且不带秘密：`trusted-origins` 的项只以序号点名，`public-url` 与 `bases` 至多回显去掉用户信息、查询与片段之后的值。下表是配置与秘密相关自检的全集（封闭集合）。网关装配自检（无入口模块、无校验后端、载体撞车）归 [design-authn-gate](design-authn-gate.md)。
 
 | 自检 | 失败的哨兵 |
 |---|---|
@@ -426,7 +426,7 @@ flowchart TD
 | `tenant.admission.endpoints` 非空，且不含 `*` | `ErrInvalidConfig` |
 | `authn.gate.endpoints` 里的端名存在于入口模块 | `ErrUnknownEndpoint` |
 | `authn.gate.mount.public-url` 非空（由需要它的模块判）；`authn.gate.mount.public-url` 不是带主机的 http 或 https URL，或带用户信息、路径、查询、片段、空端口、越界端口、通配，或主机不是 ASCII（国际化域名写 punycode） | `ErrInvalidConfig` |
-| `authn.gate.mount.base-path` 不以 `/` 起头、以 `/` 结尾、含通配或路径参数（`*`、`:`）、`?` 或 `#`，或不是 `path.Clean` 之后的写法 | `ErrInvalidConfig` |
+| `authn.gate.mount.bases.{default,tenants,system}` 的任一项不以 `/` 起头、以 `/` 结尾、含通配或路径参数（`*`、`:`）、`?` 或 `#`，或不是 `path.Clean` 之后的写法 | `ErrInvalidConfig` |
 | `authn.gate.trusted-origins` 的某一项不是 `scheme://host[:port]`：scheme 不是 http 或 https，带用户信息、路径、查询、片段、空端口、通配，端口不在 1 到 65535，或主机不是 ASCII（国际化域名写 punycode）；每项先规范成浏览器发送的形式，规范后相同的项并作一项 | `ErrInvalidConfig` |
 | `authn.static.cache-size` 不在 1 到 1000000（0 被拒绝）；`authn.static.concurrency` 不在 1 到 256 | `ErrInvalidConfig` |
 | `authn.gate.mount.public-url` 是 https（回环主机与 `allow-insecure` 为真时除外）；`authn.session.same-site` 不取 `none` | `ErrInsecureConfig` |
@@ -441,7 +441,7 @@ flowchart TD
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
 | `Requires` 里的排他功能齐备（在构造之前） | `core.ErrMissingProvider` |
 
-阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.base-path` 由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoint` 是否被网关所守与是否被 `ScopeGuard` 所守由网关在 `Start` 里核对；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。
+阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoint` 是否被网关所守与是否被 `ScopeGuard` 所守由网关在 `Start` 里核对；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。
 
 ### 加密列往返自检
 

@@ -122,7 +122,7 @@ func TestConfigurationBoundaries(t *testing.T) {
 		}
 	}
 	for name, edit := range map[string]func(*moduleConfig){
-		"a base path with a fragment mark":    func(c *moduleConfig) { c.Mount.BasePath = "/auth#x" },
+		"a base path with a fragment mark":    func(c *moduleConfig) { c.Mount.Bases.Default = "/auth#x" },
 		"a public URL with a bare query mark": func(c *moduleConfig) { c.Mount.PublicURL = "https://a.example?" },
 	} {
 		if _, err := func() (settings, error) { c := base(); edit(&c); return c.resolve() }(); !errors.Is(err, authn.ErrInvalidConfig) {
@@ -136,10 +136,11 @@ func TestConfigBoundaries(t *testing.T) {
 	base := func(m mountConfig) moduleConfig {
 		c := configDefaults
 		c.Mount = m
-		c.Mount.BasePath = "/api/v1/auth"
+		c.Mount.Bases = configDefaults.Mount.Bases
+		c.Mount.Bases.Default = "/api/v1/auth"
 		return c
 	}
-	withBase := func(p string) moduleConfig { c := configDefaults; c.Mount.BasePath = p; return c }
+	withBase := func(p string) moduleConfig { c := configDefaults; c.Mount.Bases.Default = p; return c }
 	for _, c := range []struct {
 		name string
 		cfg  moduleConfig

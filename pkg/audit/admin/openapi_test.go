@@ -36,7 +36,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 			ConfigNamespace: map[string]any{"endpoints": []string{"admin"}},
 		},
 		QueryParams: map[routecontract.Route]map[string]bool{
-			{Method: "GET", Path: "/api/v1/audit/admin/records"}: listParams,
+			{Method: "GET", Path: "/api/v1/system/audit/records"}: listParams,
 		},
 	})
 }

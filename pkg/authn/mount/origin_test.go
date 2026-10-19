@@ -67,7 +67,7 @@ func sameSitePost(target, origin string) *http.Request {
 
 func originSettings() settings {
 	var s settings
-	s.Mount.BasePath = "/api/v1/auth"
+	s.Mount.Bases = defaultBases()
 	s.Mount.PublicURL = originPublicURL
 	s.TrustedOrigins = originTrusted
 	return s
@@ -109,7 +109,7 @@ func TestThePublicURLIsHandedOutAsTheOriginABrowserSends(t *testing.T) {
 		{"", ""},
 	} {
 		var s settings
-		s.Mount.BasePath = "/api/v1/auth"
+		s.Mount.Bases = defaultBases()
 		s.Mount.PublicURL = c.configured
 		s.Mount.AllowInsecure = true
 		p, err := newProduct(s)

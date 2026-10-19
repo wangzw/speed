@@ -73,9 +73,9 @@ func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 		want  string
 		avoid string
 	}{
-		"the roles list":    {"/api/v1/authz/admin/tenants/t1/roles", "roles", "bindings"},
-		"the grants list":   {"/api/v1/authz/admin/tenants/t1/roles/r1/grants", "grants", "roles"},
-		"the bindings list": {"/api/v1/authz/admin/tenants/t1/bindings", "bindings", "roles"},
+		"the roles list":    {"/api/v1/system/tenants/t1/roles", "roles", "bindings"},
+		"the grants list":   {"/api/v1/system/tenants/t1/roles/r1/grants", "grants", "roles"},
+		"the bindings list": {"/api/v1/system/tenants/t1/bindings", "bindings", "roles"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -98,7 +98,7 @@ func TestEachReadRouteIsWiredToItsOwnHandler(t *testing.T) {
 func TestThePermissionsReadRouteIsWired(t *testing.T) {
 	r := newRig(t, authz.PermissionRoleRead)
 	e := r.engine()
-	w := r.send(e, http.MethodGet, "/api/v1/authz/admin/permissions")
+	w := r.send(e, http.MethodGet, "/api/v1/system/permissions")
 	if w.Code != http.StatusOK {
 		t.Fatalf("the catalog route answered %d, want 200; body = %q", w.Code, w.Body.String())
 	}
@@ -119,12 +119,12 @@ func TestEveryWriteRouteAsksForRoleManage(t *testing.T) {
 		path   string
 		body   any
 	}{
-		"the role write":     {http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor", roleBody{DescriptionKey: "authz.role.editor"}},
-		"the role delete":    {http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor", nil},
-		"the grant write":    {http.MethodPut, "/api/v1/authz/admin/tenants/t1/roles/editor/grants/" + string(authz.PermissionAccountRead), nil},
-		"the grant delete":   {http.MethodDelete, "/api/v1/authz/admin/tenants/t1/roles/editor/grants/" + string(authz.PermissionAccountRead), nil},
-		"the binding write":  {http.MethodPut, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", nil},
-		"the binding delete": {http.MethodDelete, "/api/v1/authz/admin/tenants/t1/bindings/acct-1/editor", nil},
+		"the role write":     {http.MethodPut, "/api/v1/system/tenants/t1/roles/editor", roleBody{DescriptionKey: "authz.role.editor"}},
+		"the role delete":    {http.MethodDelete, "/api/v1/system/tenants/t1/roles/editor", nil},
+		"the grant write":    {http.MethodPut, "/api/v1/system/tenants/t1/roles/editor/grants/" + string(authz.PermissionAccountRead), nil},
+		"the grant delete":   {http.MethodDelete, "/api/v1/system/tenants/t1/roles/editor/grants/" + string(authz.PermissionAccountRead), nil},
+		"the binding write":  {http.MethodPut, "/api/v1/system/tenants/t1/bindings/acct-1/editor", nil},
+		"the binding delete": {http.MethodDelete, "/api/v1/system/tenants/t1/bindings/acct-1/editor", nil},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

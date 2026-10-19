@@ -80,7 +80,7 @@ func TestTheTokenEndpointAnswersAClientCredentialWithAnAccessTokenOnly(t *testin
 	m := r.mountToken()
 	session := r.goodServiceSecret()
 
-	rec := form(m, m.Base()+tokenPath, url.Values{
+	rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 		"grant_type":    {grantClientCredentials},
 		"client_id":     {string(account)},
 		"client_secret": {"spd_cs_whatever"},
@@ -117,7 +117,7 @@ func TestTheTokenEndpointTakesTheClientCredentialFromTheBasicHeader(t *testing.T
 	m := r.mountToken()
 	r.goodServiceSecret()
 
-	req := httptest.NewRequest(http.MethodPost, m.Base()+tokenPath,
+	req := httptest.NewRequest(http.MethodPost, m.BaseIn("")+tokenPath,
 		strings.NewReader(url.Values{"grant_type": {grantClientCredentials}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.SetBasicAuth(string(account), "spd_cs_whatever")
@@ -137,7 +137,7 @@ func TestTheTokenEndpointAnswersARefreshWithANewPair(t *testing.T) {
 	m := r.mountToken()
 	_, first := r.issueRefresh()
 
-	rec := form(m, m.Base()+tokenPath, url.Values{
+	rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 		"grant_type":    {grantRefreshToken},
 		"refresh_token": {first.Value},
 	})
@@ -170,21 +170,21 @@ func TestTheTokenEndpointFailuresAreTheOAuthShape(t *testing.T) {
 		{
 			name: "a missing grant_type",
 			build: func(r *rig, m *mounttest.Mounter) *httptest.ResponseRecorder {
-				return form(m, m.Base()+tokenPath, url.Values{})
+				return form(m, m.BaseIn("")+tokenPath, url.Values{})
 			},
 			wantStatus: http.StatusBadRequest, wantError: errInvalidRequest,
 		},
 		{
 			name: "a grant_type outside the set",
 			build: func(r *rig, m *mounttest.Mounter) *httptest.ResponseRecorder {
-				return form(m, m.Base()+tokenPath, url.Values{"grant_type": {"password"}})
+				return form(m, m.BaseIn("")+tokenPath, url.Values{"grant_type": {"password"}})
 			},
 			wantStatus: http.StatusBadRequest, wantError: errUnsupportedGrantType,
 		},
 		{
 			name: "a body past the limit",
 			build: func(r *rig, m *mounttest.Mounter) *httptest.ResponseRecorder {
-				return raw(m, m.Base()+tokenPath, "application/x-www-form-urlencoded",
+				return raw(m, m.BaseIn("")+tokenPath, "application/x-www-form-urlencoded",
 					"grant_type=refresh_token&refresh_token="+strings.Repeat("a", formLimit))
 			},
 			wantStatus: http.StatusBadRequest, wantError: errInvalidRequest,
@@ -192,14 +192,14 @@ func TestTheTokenEndpointFailuresAreTheOAuthShape(t *testing.T) {
 		{
 			name: "a body that is not a form",
 			build: func(r *rig, m *mounttest.Mounter) *httptest.ResponseRecorder {
-				return raw(m, m.Base()+tokenPath, "application/json", `{"grant_type":"client_credentials"}`)
+				return raw(m, m.BaseIn("")+tokenPath, "application/json", `{"grant_type":"client_credentials"}`)
 			},
 			wantStatus: http.StatusBadRequest, wantError: errInvalidRequest,
 		},
 		{
 			name: "a client that presented nothing",
 			build: func(r *rig, m *mounttest.Mounter) *httptest.ResponseRecorder {
-				return form(m, m.Base()+tokenPath, url.Values{"grant_type": {grantClientCredentials}})
+				return form(m, m.BaseIn("")+tokenPath, url.Values{"grant_type": {grantClientCredentials}})
 			},
 			wantStatus: http.StatusUnauthorized, wantError: errInvalidClient,
 		},
@@ -209,7 +209,7 @@ func TestTheTokenEndpointFailuresAreTheOAuthShape(t *testing.T) {
 				r.passwords.verify = func(string, string) (authn.AccountID, string, time.Time, error) {
 					return "", "", time.Time{}, authn.ErrInvalidCredentials
 				}
-				return form(m, m.Base()+tokenPath, url.Values{
+				return form(m, m.BaseIn("")+tokenPath, url.Values{
 					"grant_type":    {grantClientCredentials},
 					"client_id":     {string(account)},
 					"client_secret": {badSecret},
@@ -221,7 +221,7 @@ func TestTheTokenEndpointFailuresAreTheOAuthShape(t *testing.T) {
 			name: "a client in back-off",
 			build: func(r *rig, m *mounttest.Mounter) *httptest.ResponseRecorder {
 				r.throttle.retry = 30 * time.Second
-				return form(m, m.Base()+tokenPath, url.Values{
+				return form(m, m.BaseIn("")+tokenPath, url.Values{
 					"grant_type":    {grantClientCredentials},
 					"client_id":     {string(account)},
 					"client_secret": {badSecret},
@@ -232,7 +232,7 @@ func TestTheTokenEndpointFailuresAreTheOAuthShape(t *testing.T) {
 		{
 			name: "a refresh token that is not in the store",
 			build: func(r *rig, m *mounttest.Mounter) *httptest.ResponseRecorder {
-				return form(m, m.Base()+tokenPath, url.Values{
+				return form(m, m.BaseIn("")+tokenPath, url.Values{
 					"grant_type":    {grantRefreshToken},
 					"refresh_token": {"spd_rt_" + strings.Repeat("A", 43)},
 				})
@@ -284,7 +284,7 @@ func TestTheTokenEndpointAnswersUnavailableWhenTheStoreIsDown(t *testing.T) {
 		t.Fatalf("closing the database: %v", err)
 	}
 
-	rec := form(m, m.Base()+tokenPath, url.Values{
+	rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 		"grant_type":    {grantRefreshToken},
 		"refresh_token": {first.Value},
 	})
@@ -305,7 +305,7 @@ func TestTheRevocationEndpointAnswers200ForATokenOutcome(t *testing.T) {
 		r := newRig(t)
 		m := r.mountToken()
 		id, refresh := r.issueRefresh()
-		rec := form(m, m.Base()+revokePath, url.Values{"token": {refresh.Value}})
+		rec := form(m, m.BaseIn("")+revokePath, url.Values{"token": {refresh.Value}})
 		if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
 			t.Fatalf("status = %d, body = %q, want 200 and an empty body", rec.Code, rec.Body.String())
 		}
@@ -318,13 +318,13 @@ func TestTheRevocationEndpointAnswers200ForATokenOutcome(t *testing.T) {
 		build func(m *mounttest.Mounter) *httptest.ResponseRecorder
 	}{
 		{"no token", func(m *mounttest.Mounter) *httptest.ResponseRecorder {
-			return form(m, m.Base()+revokePath, url.Values{})
+			return form(m, m.BaseIn("")+revokePath, url.Values{})
 		}},
 		{"an unrecognisable token", func(m *mounttest.Mounter) *httptest.ResponseRecorder {
-			return form(m, m.Base()+revokePath, url.Values{"token": {"not-a-token"}})
+			return form(m, m.BaseIn("")+revokePath, url.Values{"token": {"not-a-token"}})
 		}},
 		{"a body past the limit", func(m *mounttest.Mounter) *httptest.ResponseRecorder {
-			return raw(m, m.Base()+revokePath, "application/x-www-form-urlencoded",
+			return raw(m, m.BaseIn("")+revokePath, "application/x-www-form-urlencoded",
 				"token="+strings.Repeat("a", formLimit))
 		}},
 	} {
@@ -342,7 +342,7 @@ func TestTheRevocationEndpointAnswers200ForATokenOutcome(t *testing.T) {
 		m := r.mountToken()
 		service := r.serviceSession()
 		access := r.accessFor(service, string(account))
-		rec := form(m, m.Base()+revokePath, url.Values{"token": {access}})
+		rec := form(m, m.BaseIn("")+revokePath, url.Values{"token": {access}})
 		if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
 			t.Fatalf("status = %d, body = %q, want 200 and an empty body", rec.Code, rec.Body.String())
 		}
@@ -362,7 +362,7 @@ func TestTheRevocationEndpointAnswers200ForATokenOutcome(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Issue: %v", err)
 		}
-		rec := form(m, m.Base()+revokePath, url.Values{"token": {access.Value}})
+		rec := form(m, m.BaseIn("")+revokePath, url.Values{"token": {access.Value}})
 		if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
 			t.Fatalf("status = %d, body = %q, want 200 and an empty body", rec.Code, rec.Body.String())
 		}
@@ -385,7 +385,7 @@ func TestTheRevocationEndpointRefusesWhenTheStoreIsDown(t *testing.T) {
 	_, refresh := r.issueRefresh()
 	r.closeStore()
 
-	rec := form(m, m.Base()+revokePath, url.Values{"token": {refresh.Value}})
+	rec := form(m, m.BaseIn("")+revokePath, url.Values{"token": {refresh.Value}})
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
 	}
@@ -403,13 +403,13 @@ func TestTheTokenEndpointsAreCallbacksWithoutTheCrossOriginCheck(t *testing.T) {
 	m := r.mountToken()
 
 	for _, path := range []string{tokenPath, revokePath} {
-		reg, ok := m.Registered(http.MethodPost, m.Base()+path)
+		reg, ok := m.Registered(http.MethodPost, m.BaseIn("")+path)
 		if !ok || reg.Kind != mounttest.Callback {
 			t.Errorf("POST %s is registered as %+v, want a Callback registration", path, reg)
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodPost, m.Base()+tokenPath,
+	req := httptest.NewRequest(http.MethodPost, m.BaseIn("")+tokenPath,
 		strings.NewReader(url.Values{}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
@@ -434,7 +434,7 @@ func TestTheEndpointsReadTheFormTheWayTheDesignFixesIt(t *testing.T) {
 		r := newRig(t)
 		m := r.mountToken()
 		r.goodServiceSecret()
-		rec := form(m, m.Base()+tokenPath, url.Values{
+		rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 			"grant_type":    {grantClientCredentials},
 			"client_id":     {string(account)},
 			"client_secret": {"spd_cs_whatever"},
@@ -449,7 +449,7 @@ func TestTheEndpointsReadTheFormTheWayTheDesignFixesIt(t *testing.T) {
 		r := newRig(t)
 		m := r.mountToken()
 		r.goodServiceSecret()
-		rec := form(m, m.Base()+tokenPath, url.Values{
+		rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 			"grant_type":    {grantClientCredentials, "password"},
 			"client_id":     {string(account)},
 			"client_secret": {"spd_cs_whatever"},
@@ -463,7 +463,7 @@ func TestTheEndpointsReadTheFormTheWayTheDesignFixesIt(t *testing.T) {
 		r := newRig(t)
 		m := r.mountToken()
 		id, refresh := r.issueRefresh()
-		rec := form(m, m.Base()+revokePath, url.Values{
+		rec := form(m, m.BaseIn("")+revokePath, url.Values{
 			"token":           {refresh.Value},
 			"token_type_hint": {"refresh_token"},
 		})
@@ -514,7 +514,7 @@ func TestTheGrantErrorMappingIsClosed(t *testing.T) {
 func TestARefreshGrantWithoutATokenIsInvalidRequest(t *testing.T) {
 	r := newRig(t)
 	m := r.mountToken()
-	rec := form(m, m.Base()+tokenPath, url.Values{"grant_type": {grantRefreshToken}})
+	rec := form(m, m.BaseIn("")+tokenPath, url.Values{"grant_type": {grantRefreshToken}})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
@@ -531,7 +531,7 @@ func TestAClaimsContributorDefectIsLoggedAtError(t *testing.T) {
 	r.p.claims = []authn.ClaimsContributor{contributor{claims: map[string]any{"sub": "x"}}}
 	m := r.mountToken()
 	r.goodServiceSecret()
-	rec := form(m, m.Base()+tokenPath, url.Values{
+	rec := form(m, m.BaseIn("")+tokenPath, url.Values{
 		"grant_type":    {grantClientCredentials},
 		"client_id":     {string(account)},
 		"client_secret": {"spd_cs_whatever"},

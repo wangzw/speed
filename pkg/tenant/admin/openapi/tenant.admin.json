@@ -84,7 +84,7 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/tenant/admin/tenants": {
+    "/tenants": {
       "get": {
         "description": "Reads every tenant in the roster, ordered by identifier. The roster is the set of tenants this deployment serves and the read is not paged, so the answer always carries the whole list. It is a platform-domain read: the caller needs tenant.read in the platform domain, and no cross-tenant context or permission is involved. Reads write no audit row.",
         "operationId": "tenant.admin.tenants.list",
@@ -244,7 +244,7 @@
         "summary": "Register an active tenant"
       }
     },
-    "/tenant/admin/tenants/{id}": {
+    "/tenants/{tenant}": {
       "get": {
         "description": "Reads one tenant by its identifier, the natural key the roster keys a row by, so no opaque row identifier appears in a path. An identifier the roster does not hold is a 404. Reads write no audit row.",
         "operationId": "tenant.admin.tenants.get",
@@ -252,7 +252,7 @@
           {
             "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
             "in": "path",
-            "name": "id",
+            "name": "tenant",
             "required": true,
             "schema": {
               "type": "string"
@@ -323,7 +323,7 @@
           {
             "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
             "in": "path",
-            "name": "id",
+            "name": "tenant",
             "required": true,
             "schema": {
               "type": "string"
@@ -422,7 +422,7 @@
         "summary": "Change one tenant's alias"
       }
     },
-    "/tenant/admin/tenants/{id}/status": {
+    "/tenants/{tenant}/status": {
       "post": {
         "description": "Changes one tenant's state, which is one of the closed set active and disabled. The roster has no delete, so disabling is the only way to stop serving a tenant. An identifier the roster does not hold is a 404. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
         "operationId": "tenant.admin.tenants.setStatus",
@@ -430,7 +430,7 @@
           {
             "description": "The tenant's identifier, the natural key the roster keys a tenant by: non-empty and free of whitespace and control characters.",
             "in": "path",
-            "name": "id",
+            "name": "tenant",
             "required": true,
             "schema": {
               "type": "string"

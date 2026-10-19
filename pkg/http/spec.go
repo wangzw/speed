@@ -87,7 +87,7 @@ func validateSpec(module string, s Spec) error {
 	return validateDocumentPaths(module, s, top)
 }
 
-// validateSpecRoot checks Prefix and Version, the two path parts the reader
+// validateSpecRoot checks Prefix, Version and Scope, the path parts the reader
 // prepends to every path in the fragment.
 func validateSpecRoot(module string, s Spec) error {
 	if s.Prefix != "" {
@@ -101,6 +101,11 @@ func validateSpecRoot(module string, s Spec) error {
 		return fmt.Errorf("%w: module %q declared a Spec whose Version %q is not one bare literal "+
 			"segment. Write the version without slashes or wildcards, for example \"v1\"",
 			ErrInvalidSpec, module, s.Version)
+	}
+	if s.Scope != "" && !s.Scope.Valid() {
+		return fmt.Errorf("%w: module %q declared the Scope %q, which is not one of %q or %q. "+
+			"The ordinary surface declares no scope and its paths hang directly off the API root",
+			ErrInvalidSpec, module, s.Scope, ScopeTenants, ScopeSystem)
 	}
 	return nil
 }
@@ -131,6 +136,11 @@ func validateDocumentPaths(module string, s Spec, top map[string]json.RawMessage
 			return fmt.Errorf("%w: module %q declared the path %q, which already carries the API root "+
 				"%q. Write the path relative to the root, for example %q",
 				ErrInvalidSpec, module, path, root, strings.TrimPrefix(path, root))
+		}
+		if !s.Scope.joinsPath(path) {
+			return fmt.Errorf("%w: module %q declared the path %q in the %q scope, where every path "+
+				"names the tenant first: write it as %q",
+				ErrInvalidSpec, module, path, s.Scope, tenantPathPrefix+strings.TrimPrefix(path, "/"))
 		}
 	}
 	return nil

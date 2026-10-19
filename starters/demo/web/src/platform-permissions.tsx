@@ -6,7 +6,7 @@
  * nothing itself -- setPermissionSet is the seam, and usePermission is a pure
  * set lookup over what was attached. The platform exposes no "what may I do"
  * read to a caller, so the demo learns the caller's platform permissions from
- * the declared-permission catalog (GET /api/v1/authz/admin/permissions): that route is
+ * the declared-permission catalog (GET /api/v1/system/permissions): that route is
  * a platform-staff operation, answered only to a principal holding
  * authz.role.read in the platform domain, and its answer is every permission
  * the process declares -- the exact set the seed's platform administrator

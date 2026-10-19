@@ -25,7 +25,7 @@ const (
 	gateNamespace     = "authn.gate"
 	gateMountPath     = "mount"
 	gatePublicURLItem = "mount.public-url"
-	gateBasePathItem  = "mount.base-path"
+	gateBasePathItem  = "mount.bases.default"
 )
 
 // moduleConfig is the set of input items this module accepts.
@@ -48,7 +48,9 @@ var configDefaults = moduleConfig{}
 // gateMount is the part of the gateway's configuration this module reads.
 type gateMount struct {
 	PublicURL string `config:"public-url"`
-	BasePath  string `config:"base-path"`
+	Bases     struct {
+		Default string `config:"default"`
+	} `config:"bases"`
 }
 
 // resolved is the configuration the method runs on.
@@ -85,7 +87,7 @@ func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 		clientID:     clientID,
 		clientSecret: c.ClientSecret,
 		hostedDomain: strings.TrimSpace(c.HostedDomain),
-		redirectURL:  redirectTarget(publicURL, gm.BasePath),
+		redirectURL:  redirectTarget(publicURL, gm.Bases.Default),
 	}, nil
 }
 

@@ -1,7 +1,7 @@
 # pkg/authz/admin
 
 The authorization capability's management module. It mounts the permission
-catalog, role, permission-grant and role-binding routes under `/api/v1/authz/admin/*`
+catalog, role, permission-grant and role-binding routes under `/api/v1/system/*`
 and delivers no capability of its own: every route's action is a table operation
 of the policy module, reached through the `Manager` capability, and the module
 holds no policy rule, no transaction and no data of its own.
@@ -27,7 +27,7 @@ types in `pkg/authz`.
 
 ## Routes and the permissions they are held to
 
-Every route is mounted under the base path `/api/v1/authz/admin`, on the endpoints the
+Every route is mounted under the base path `/api/v1/system`, on the endpoints the
 module's configuration lists. A route is addressed by a natural key — a tenant,
 a role, a permission, an account — so no opaque row identifier ever appears in a
 path. The tenant is taken from the path as the identifier of the rows the route
@@ -39,17 +39,17 @@ required. This set is the module's whole route surface.
 
 | Group | Method and path | Permission |
 |---|---|---|
-| Catalog | `GET /api/v1/authz/admin/permissions` | `authz.role.read` |
-| Roles | `GET /api/v1/authz/admin/tenants/:tenant/roles` | `authz.role.read` |
-| Roles | `PUT /api/v1/authz/admin/tenants/:tenant/roles/:role` | `authz.role.manage` |
-| Roles | `DELETE /api/v1/authz/admin/tenants/:tenant/roles/:role` | `authz.role.manage` |
-| Grants | `GET /api/v1/authz/admin/tenants/:tenant/roles/:role/grants` | `authz.role.read` |
-| Grants | `PUT /api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
-| Grants | `DELETE /api/v1/authz/admin/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
-| Bindings | `GET /api/v1/authz/admin/tenants/:tenant/bindings` | `authz.role.read` |
-| Bindings | `GET /api/v1/authz/admin/tenants/:tenant/bindings/:account` | `authz.role.read` |
-| Bindings | `PUT /api/v1/authz/admin/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
-| Bindings | `DELETE /api/v1/authz/admin/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
+| Catalog | `GET /api/v1/system/permissions` | `authz.role.read` |
+| Roles | `GET /api/v1/system/tenants/:tenant/roles` | `authz.role.read` |
+| Roles | `PUT /api/v1/system/tenants/:tenant/roles/:role` | `authz.role.manage` |
+| Roles | `DELETE /api/v1/system/tenants/:tenant/roles/:role` | `authz.role.manage` |
+| Grants | `GET /api/v1/system/tenants/:tenant/roles/:role/grants` | `authz.role.read` |
+| Grants | `PUT /api/v1/system/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
+| Grants | `DELETE /api/v1/system/tenants/:tenant/roles/:role/grants/:permission` | `authz.role.manage` |
+| Bindings | `GET /api/v1/system/tenants/:tenant/bindings` | `authz.role.read` |
+| Bindings | `GET /api/v1/system/tenants/:tenant/bindings/:account` | `authz.role.read` |
+| Bindings | `PUT /api/v1/system/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
+| Bindings | `DELETE /api/v1/system/tenants/:tenant/bindings/:account/:role` | `authz.role.manage` |
 
 A read route is held to `authz.role.read` and a write route to
 `authz.role.manage`; the catalog read is the one route whose manager call is the

@@ -18,7 +18,9 @@ import (
 type gateDefaults struct {
 	Mount struct {
 		PublicURL string `config:"public-url"`
-		BasePath  string `config:"base-path"`
+		Bases     struct {
+			Default string `config:"default"`
+		} `config:"bases"`
 	} `config:"mount"`
 }
 
@@ -26,7 +28,7 @@ type gateDefaults struct {
 // may configure them without pulling the whole gateway in.
 func gateStandIn() core.Module {
 	d := &gateDefaults{}
-	d.Mount.BasePath = "/api/v1/auth"
+	d.Mount.Bases.Default = "/api/v1/auth"
 	return core.Module{
 		Name:      "standin.gate",
 		Resources: []any{config.Schema{Namespace: gateNamespace, Mounts: []config.Mount{{Value: d}}}},
@@ -96,7 +98,7 @@ func TestTheReaderServesACompleteSection(t *testing.T) {
 // TestAHostMountPathIsUsedInTheRedirect holds that a configured mount path moves
 // the callback route with it.
 func TestAHostMountPathIsUsedInTheRedirect(t *testing.T) {
-	body := `{"authn":{"gate":{"mount":{"public-url":"https://app.example","base-path":"/sso"}},` +
+	body := `{"authn":{"gate":{"mount":{"public-url":"https://app.example","bases":{"default":"/sso"}}},` +
 		`"login":{"github":{"client-id":"the-id","client-secret":"the-secret"}}}}`
 	got, err := readConfig(readerOver(t, body))
 	if err != nil {

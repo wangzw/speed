@@ -6,7 +6,7 @@
  * navigation (narrower than the shell's own sidebar) listing the
  * namespaces, beside the settings themselves, with a sticky save bar at
  * the bottom. Choosing a namespace narrows the read to that namespace
- * (GET /api/v1/settings/admin/settings/:namespace over the global layer); the
+ * (GET /api/v1/system/settings/:namespace over the global layer); the
  * "all namespaces" entry reads the whole declared set. The namespaces in
  * the navigation come from that whole-set read, so a namespace shows up
  * as soon as any of its items is declared.
