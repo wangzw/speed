@@ -25,22 +25,24 @@
  * switcher, which is why the exit is a plain link rather than a switcher.
  */
 
+import { useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
-import type { ConsoleNavGroup, ConsoleRouteTable } from '@speed/console-ui'
+import type {
+  ConsoleImpersonationStarting,
+  ConsoleNavGroup,
+  ConsoleRouteTable,
+} from '@speed/console-ui'
 import { ConsoleShell, consoleNavGroups } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
-import { useNavigate } from '@speed/route-kit'
+import { useNavigate, useNavItems, useRouteLinkProps } from '@speed/route-kit'
 import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
 import { useAppServices } from '../app-services.js'
 import { AppBrand, HeaderActions, UserMenu } from '../chrome.js'
+import { TENANT_HOME_PATH } from '../pages/not-found-page.js'
 import { invitationPath, ACCOUNT_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
-
-/** The tenant area's root: the app's business slot, which the console's exit
- * returns the operator to. */
-const TENANT_HOME_PATH = '/'
 
 export interface ConsoleAreaProps {
   /** The console's page declarations, whose labelled entries become its navigation. */
@@ -76,6 +78,12 @@ export interface ConsoleAreaProps {
   readonly onImpersonationChange?: (
     change: 'started' | 'ended',
   ) => void | Promise<void>
+  /**
+   * The host's hook before an impersonation start is written: the frame
+   * enters its "starting" state ahead of the request and releases a write
+   * that does not land (the app's read hold, src/impersonation.tsx).
+   */
+  readonly onImpersonationStarting?: ConsoleImpersonationStarting
 }
 
 export function ConsoleArea({
@@ -86,9 +94,19 @@ export function ConsoleArea({
   sidebarCollapsed,
   onSidebarCollapsedChange,
   onImpersonationChange,
+  onImpersonationStarting,
 }: ConsoleAreaProps): ReactElement {
   const navigate = useNavigate()
   const { session } = useAppServices()
+  // The console entries the router derived for the current URL: the frame
+  // marks a row selected by asking whether that row's path is one of them
+  // and is the selected one (the shell does no path matching of its own).
+  const items = useNavItems()
+  const isSelected = useCallback(
+    (path: string): boolean =>
+      items.some((item) => item.id === path && item.selected),
+    [items],
+  )
   return (
     <ConsoleShell
       routes={routes}
@@ -116,6 +134,8 @@ export function ConsoleArea({
       // the session and the identity-dependent host state, then moves the
       // operator home after a start.
       onImpersonationChange={onImpersonationChange}
+      onImpersonationStarting={onImpersonationStarting}
+      isSelected={isSelected}
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={onSidebarCollapsedChange}
     >
@@ -131,17 +151,17 @@ export function ConsoleArea({
  * the console does not reload the page and sign the operator out.
  */
 function ConsoleHeaderActions(): ReactElement {
-  const navigate = useNavigate()
   const { t } = useTranslation(DEMO_NAMESPACE)
+  // The exit is a real link whose plain-click handler route-kit supplies:
+  // the browser keeps a modified or new-tab click, and an in-app click moves
+  // the history without a page load.
+  const { href, onClick } = useRouteLinkProps(TENANT_HOME_PATH)
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
       <Link
-        href={TENANT_HOME_PATH}
+        href={href}
         underline="hover"
-        onClick={(event) => {
-          event.preventDefault()
-          navigate(TENANT_HOME_PATH)
-        }}
+        onClick={onClick}
         sx={{ color: 'inherit' }}
       >
         {t('console.backToApp')}

@@ -1,8 +1,11 @@
 /**
- * applyDocumentMetadata: the entry document's language and title follow the
- * active language, at boot and across a switch -- so a Chinese interface is
- * announced as Chinese (WCAG 3.1.1) and the tab names the brand instead of a
- * build-time placeholder.
+ * applyDocumentMetadata: the entry document's title follows the active
+ * language, at boot and across a switch, so the tab names the brand instead
+ * of a build-time placeholder.
+ *
+ * `<html lang>` belongs to the app-entry assembly (SpeedAppDefinition's
+ * `documentLanguage`), so this module must not touch it: the suite pins that
+ * boundary as well as the title.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -26,11 +29,10 @@ function demoI18n(language: string) {
 }
 
 describe('applyDocumentMetadata', () => {
-  it('announces the active language and names the brand in the title', () => {
+  it('names the brand in the title, in the active language', () => {
     const i18n = demoI18n('zh-CN')
     applyDocumentMetadata(i18n)
 
-    expect(document.documentElement.lang).toBe('zh-CN')
     expect(document.title).toBe(zhCN.app.title)
     expect(document.title).not.toBe('demo')
   })
@@ -40,7 +42,15 @@ describe('applyDocumentMetadata', () => {
     applyDocumentMetadata(i18n)
 
     await i18n.changeLanguage('en-US')
-    expect(document.documentElement.lang).toBe('en-US')
     expect(document.title).toBe(enUS.app.title)
+  })
+
+  it('leaves the document language to the assembly', () => {
+    // The assembly owns <html lang> (a host that opts out of its binding
+    // manages it itself). A second writer here would fight it on every
+    // switch, so the title helper must not touch the attribute.
+    document.documentElement.lang = 'fr'
+    applyDocumentMetadata(demoI18n('zh-CN'))
+    expect(document.documentElement.lang).toBe('fr')
   })
 })

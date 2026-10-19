@@ -21,10 +21,16 @@ import type { AuthDomain, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions, SpeedClient } from '@speed/api-client'
 import { FEATURE_NAMES } from '@speed/api-sdk/features'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
-import authUiEnUS from '../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
-import consoleUiEnUS from '../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
-import layoutKitEnUS from '../../../../web/packages/layout-kit/src/locales/en-US.json' with { type: 'json' }
-import tenancyUiEnUS from '../../../../web/packages/tenancy-ui/src/locales/en-US.json' with { type: 'json' }
+import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
+import {
+  CONSOLE_UI_NAMESPACE,
+  consoleUiResources,
+} from '@speed/console-ui'
+import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
+import {
+  createSpeedI18n,
+} from '@speed/product-shell/bootstrap'
+import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
@@ -38,6 +44,27 @@ import {
   authenticatedSnapshot,
   createTestSession,
 } from './test-utils/session.js'
+
+/**
+ * The expected copy, resolved from the packages' shipped resources through a
+ * production instance rather than read from a file path: the release the app
+ * ships is what the suite asserts, and the text is never a literal here.
+ */
+const textI18n = createSpeedI18n({
+  supportedLanguages: ['zh-CN', 'en-US'],
+  defaultLanguage: 'en-US',
+  storage: null,
+  urlParameterName: null,
+  navigatorLanguages: [],
+  namespaces: [
+    { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+    { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
+  ],
+})
+const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
+const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
+const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
+const tTenancy = textI18n.getFixedT('en-US', TENANCY_UI_NAMESPACE)
 
 const TENANT = { id: 'acme', alias: 'acme', status: 'active' as const }
 
@@ -442,7 +469,7 @@ function streamClient(): {
 /** The banner's named region, or null while none is in force. */
 function banner(): HTMLElement | null {
   return screen.queryByRole('region', {
-    name: authUiEnUS.impersonation.regionLabel,
+    name: tAuth('impersonation.regionLabel'),
   })
 }
 
@@ -455,7 +482,7 @@ function tenantSwitcherTrigger(): HTMLElement | null {
   return (
     screen.queryByRole('button', { name: 'acme' }) ??
     screen.queryByRole('button', {
-      name: tenancyUiEnUS.tenantSwitcher.noCurrentTenant,
+      name: tTenancy('tenantSwitcher.noCurrentTenant'),
     })
   )
 }
@@ -490,9 +517,9 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     // The console page is reachable and the start form waits for its fields.
-    await screen.findByText('You are not impersonating any account.')
-    await user.type(screen.getByLabelText('Target account'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await screen.findByText(tConsole('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
 
     // The start settled; the host's action re-read the session and moved the
     // operator to the tenant home.
@@ -507,14 +534,14 @@ describe('the impersonation shell', () => {
     // The banner names the impersonated account, and its tenant comes from
     // the status read issued under the new identity.
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     expect(notice).toHaveTextContent(
-      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
     expect(
       within(notice).getByText(
-        authUiEnUS.impersonation.tenant.replace('{{tenant}}', 'acme'),
+        tAuth('impersonation.tenant', { tenant: 'acme' }),
       ),
     ).toBeInTheDocument()
     await waitFor(() =>
@@ -538,13 +565,13 @@ describe('the impersonation shell', () => {
     const user = userEvent.setup()
 
     renderDemoApp({ session })
-    expect(await screen.findByRole('region', { name: authUiEnUS.impersonation.regionLabel })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: tAuth('impersonation.regionLabel') })).toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: demoEnUS.nav.objects }))
 
     await waitFor(() => expect(window.location.pathname).toBe('/objects'))
     expect(
-      screen.getByRole('region', { name: authUiEnUS.impersonation.regionLabel }),
+      screen.getByRole('region', { name: tAuth('impersonation.regionLabel') }),
     ).toBeInTheDocument()
   })
 
@@ -562,7 +589,7 @@ describe('the impersonation shell', () => {
     // The status read settles the impersonated identity first, so the
     // absence below is the mounted shell's, not a pending render's.
     await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await waitFor(() =>
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
@@ -592,13 +619,13 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     expect(tenantSwitcherTrigger()).toBeNull()
     const rosterBefore = backend.rosterReads()
 
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
     // The identity change settled and the roster read ran under the
@@ -630,7 +657,7 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await waitFor(() =>
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
@@ -638,7 +665,7 @@ describe('the impersonation shell', () => {
     expect(tenantSwitcherTrigger()).toBeNull()
 
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
     // The identity change has settled and the roster read is in flight. The
@@ -652,7 +679,7 @@ describe('the impersonation shell', () => {
     expect(tenantSwitcherTrigger()).toBeNull()
     expect(
       screen.queryByRole('button', {
-        name: tenancyUiEnUS.tenantSwitcher.noCurrentTenant,
+        name: tTenancy('tenantSwitcher.noCurrentTenant'),
       }),
     ).toBeNull()
 
@@ -682,7 +709,7 @@ describe('the impersonation shell', () => {
     await waitFor(() => expect(backend.rosterReads()).toBe(1))
     expect(
       screen.getByRole('button', {
-        name: tenancyUiEnUS.tenantSwitcher.noCurrentTenant,
+        name: tTenancy('tenantSwitcher.noCurrentTenant'),
       }),
     ).toBeInTheDocument()
   })
@@ -717,22 +744,26 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session, api: client })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     // The subscription registered under the impersonated account once the
-    // status read settled the tenant.
-    await waitFor(() => expect(opened.length).toBe(1))
+    // status read settled the tenant. The bench renders the production
+    // stack, StrictMode included, so the mount effect runs twice: the first
+    // connection is closed by the cleanup and the live one is the last.
+    await waitFor(() => expect(opened.length).toBeGreaterThan(0))
+    const openedBefore = opened.length
+    const liveBefore = opened[openedBefore - 1]
     const rosterBefore = backend.rosterReads()
 
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
     // The banner disappears; the confirmation stays in the live region the
     // component keeps mounted.
     await waitFor(() => expect(banner()).toBeNull())
     expect(
-      screen.getByText(authUiEnUS.impersonation.ended),
+      screen.getByText(tAuth('impersonation.ended')),
     ).toBeInTheDocument()
 
     // The operator's own identity is back: the console entry returns, and
@@ -745,10 +776,10 @@ describe('the impersonation shell', () => {
     // The page did not move.
     expect(window.location.pathname).toBe('/')
 
-    // The stream was rebuilt for the operator's account: the old connection
-    // closed and a new registration opened.
-    await waitFor(() => expect(opened.length).toBeGreaterThanOrEqual(2))
-    expect(opened[0]?.closed).toBe(1)
+    // The stream was rebuilt for the operator's account: the connection that
+    // was live before the end closed, and a new registration opened.
+    await waitFor(() => expect(opened.length).toBeGreaterThan(openedBefore))
+    expect(liveBefore?.closed).toBe(1)
   })
 
   it('shows the banner for a new impersonation after an end settles normally', async () => {
@@ -784,10 +815,10 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(banner()).toBeNull())
     await screen.findByRole('link', { name: demoEnUS.nav.console })
@@ -798,20 +829,20 @@ describe('the impersonation shell', () => {
       session.set(targetSnapshot())
     })
     const again = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     expect(again).toHaveTextContent(
-      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
     // The finished interval's confirmation does not cover the new
     // interval's announcement in the permanent live region.
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(
-        authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+        tAuth('impersonation.actingAs', { subject: 'Target One' }),
       ),
     )
     expect(screen.getByRole('status')).not.toHaveTextContent(
-      authUiEnUS.impersonation.ended,
+      tAuth('impersonation.ended'),
     )
   })
 
@@ -852,10 +883,10 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(deletes).toBe(1))
 
@@ -879,10 +910,10 @@ describe('the impersonation shell', () => {
       session.set(targetSnapshot())
     })
     const again = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     expect(again).toHaveTextContent(
-      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
   })
 
@@ -923,10 +954,10 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(banner()).toBeNull())
     await screen.findByRole('link', { name: demoEnUS.nav.console })
@@ -938,21 +969,21 @@ describe('the impersonation shell', () => {
     })
 
     expect(
-      await screen.findByText(consoleUiEnUS.impersonations.current.title),
+      await screen.findByText(tConsole('impersonations.current.title')),
     ).toBeInTheDocument()
     // The finished grant is not rendered as current while the read is out:
     // the interval's cache entry was evicted when its read was disabled.
     expect(
-      screen.getByText(consoleUiEnUS.impersonations.current.loading),
+      screen.getByText(tConsole('impersonations.current.loading')),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText(consoleUiEnUS.impersonations.current.target, {
+      screen.queryByText(tConsole('impersonations.current.target'), {
         exact: false,
       }),
     ).toBeNull()
     expect(
       screen.queryByRole('button', {
-        name: consoleUiEnUS.impersonations.current.end,
+        name: tConsole('impersonations.current.end'),
       }),
     ).toBeNull()
   })
@@ -967,10 +998,10 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session: scriptedSession(targetSnapshot(), () => targetSnapshot()) })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     expect(notice).toHaveTextContent(
-      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
     // The tenant comes from the grant, not from the roster: a roster read
     // is a platform management read and is refused to an impersonated
@@ -978,7 +1009,7 @@ describe('the impersonation shell', () => {
     // placeholder.
     expect(
       await within(notice).findByText(
-        authUiEnUS.impersonation.tenant.replace('{{tenant}}', 'acme'),
+        tAuth('impersonation.tenant', { tenant: 'acme' }),
       ),
     ).toBeInTheDocument()
     expect(backend.rosterReads()).toBe(0)
@@ -1042,7 +1073,7 @@ describe('the impersonation shell', () => {
       renderDemoApp({ session, api: client })
       expect(
         await screen.findByRole('region', {
-          name: authUiEnUS.impersonation.regionLabel,
+          name: tAuth('impersonation.regionLabel'),
         }),
       ).toBeInTheDocument()
       // Let the status read's state update and the timer effect settle
@@ -1092,16 +1123,16 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
     // Fulfilled, not failed: the confirmation renders, the banner closes
     // through the same identity change, and no failure text appears.
     expect(
-      await screen.findByText(authUiEnUS.impersonation.ended),
+      await screen.findByText(tAuth('impersonation.ended')),
     ).toBeInTheDocument()
     await waitFor(() => expect(banner()).toBeNull())
     expect(backend.deletes()).toBe(1)
@@ -1125,10 +1156,10 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session: gated.session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
     // The DELETE settled and the re-read is held open. The banner is gone,
@@ -1136,9 +1167,9 @@ describe('the impersonation shell', () => {
     // end control went with the banner.
     await waitFor(() => expect(gated.pendingRestores()).toBe(1))
     await waitFor(() => expect(banner()).toBeNull())
-    expect(screen.getByText(authUiEnUS.impersonation.ended)).toBeInTheDocument()
+    expect(screen.getByText(tAuth('impersonation.ended'))).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: authUiEnUS.impersonation.end }),
+      screen.queryByRole('button', { name: tAuth('impersonation.end') }),
     ).toBeNull()
 
     // The re-read settles the operator: the null is released and the banner
@@ -1146,7 +1177,7 @@ describe('the impersonation shell', () => {
     await gated.releaseRestore()
     await waitFor(() => expect(gated.pendingRestores()).toBe(0))
     expect(banner()).toBeNull()
-    expect(screen.getByText(authUiEnUS.impersonation.ended)).toBeInTheDocument()
+    expect(screen.getByText(tAuth('impersonation.ended'))).toBeInTheDocument()
   })
 
   it('returns the banner to the snapshot once the bounded re-read spends its check-ttl bound', async () => {
@@ -1168,11 +1199,11 @@ describe('the impersonation shell', () => {
 
       renderDemoApp({ session })
       const notice = await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       })
       await user.click(
         within(notice).getByRole('button', {
-          name: authUiEnUS.impersonation.end,
+          name: tAuth('impersonation.end'),
         }),
       )
       await act(async () => {
@@ -1200,7 +1231,7 @@ describe('the impersonation shell', () => {
       // next identity change runs and converges from there.
       await user.click(
         within(restored!).getByRole('button', {
-          name: authUiEnUS.impersonation.end,
+          name: tAuth('impersonation.end'),
         }),
       )
       await act(async () => {
@@ -1235,11 +1266,11 @@ describe('the impersonation shell', () => {
 
       renderDemoApp({ session })
       const notice = await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       })
       await user.click(
         within(notice).getByRole('button', {
-          name: authUiEnUS.impersonation.end,
+          name: tAuth('impersonation.end'),
         }),
       )
       await act(async () => {
@@ -1260,7 +1291,7 @@ describe('the impersonation shell', () => {
       })
       expect(banner()).toBeNull()
       expect(restores).toBe(settledRestores)
-      expect(screen.getByText(authUiEnUS.impersonation.ended)).toBeInTheDocument()
+      expect(screen.getByText(tAuth('impersonation.ended'))).toBeInTheDocument()
     } finally {
       vi.useRealTimers()
     }
@@ -1297,13 +1328,13 @@ describe('the impersonation shell', () => {
 
     // The start form waits on a settled "not impersonating" answer, and the
     // record read is in flight.
-    await screen.findByText('You are not impersonating any account.')
+    await screen.findByText(tConsole('impersonations.current.none'))
     await waitFor(() => expect(backend.recordReads()).toBe(1))
-    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
 
     // The write is issued: the record read in flight is cancelled at that
     // moment, and the client's queries are paused.
-    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
     await waitFor(() => expect(backend.recordsAborted()).toBe(true))
     expect(onlineManager.isOnline()).toBe(false)
@@ -1337,16 +1368,16 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session: createTestSession(operatorSnapshot()) })
 
-    await screen.findByText('You are not impersonating any account.')
-    await user.type(screen.getByLabelText('Target account'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await screen.findByText(tConsole('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
     // The write changed no identity, so the pause is released at once and
     // the page's reads run again (its refresh control re-reads the status).
     await waitFor(() => expect(onlineManager.isOnline()).toBe(true))
     const readsBefore = backend.reads()
-    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await user.click(screen.getByRole('button', { name: tConsole('common.refresh') }))
     await waitFor(() => expect(backend.reads()).toBeGreaterThan(readsBefore))
   })
 
@@ -1362,10 +1393,10 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session: gated.session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
 
     // The DELETE settled and the identity change's re-read is held open. An
@@ -1443,7 +1474,7 @@ describe('the impersonation shell', () => {
       expect(notice).not.toBeNull()
       expect(
         within(notice!).getByRole('button', {
-          name: authUiEnUS.impersonation.end,
+          name: tAuth('impersonation.end'),
         }),
       ).toBeInTheDocument()
     } finally {
@@ -1468,7 +1499,7 @@ describe('the impersonation shell', () => {
 
       renderDemoApp({ session })
       await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       })
       // Let the status read settle so the recorded expiry is in place
       // before the clock moves.
@@ -1500,7 +1531,7 @@ describe('the impersonation shell', () => {
       expect(notice).not.toBeNull()
       expect(
         within(notice!).getByRole('button', {
-          name: authUiEnUS.impersonation.end,
+          name: tAuth('impersonation.end'),
         }),
       ).toBeInTheDocument()
     } finally {
@@ -1530,7 +1561,7 @@ describe('the impersonation shell', () => {
 
       renderDemoApp({ session })
       await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       })
       // Let the status read settle so the recorded expiry is in place
       // before the clock moves.
@@ -1596,7 +1627,7 @@ describe('the impersonation shell', () => {
 
       renderDemoApp({ session })
       await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       })
       await waitFor(() =>
         expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
@@ -1738,7 +1769,7 @@ describe('the impersonation shell', () => {
     })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await waitFor(() => expect(attached).toEqual([null, []]))
     expect(
@@ -1746,7 +1777,7 @@ describe('the impersonation shell', () => {
     ).toBeNull()
 
     await user.click(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     )
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() =>
@@ -1808,9 +1839,9 @@ describe('the impersonation shell', () => {
       ),
     })
 
-    await screen.findByText('You are not impersonating any account.')
-    await user.type(screen.getByLabelText('Target account'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await screen.findByText(tConsole('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
 
     // The write settled and the identity change is waiting on the session
     // re-read. The console must keep rendering: its permission set was not
@@ -1823,7 +1854,7 @@ describe('the impersonation shell', () => {
       }),
     ).toBeNull()
     expect(
-      screen.getByText(consoleUiEnUS.impersonations.current.title),
+      screen.getByText(tConsole('impersonations.current.title')),
     ).toBeInTheDocument()
 
     await gated.releaseRestore()
@@ -1873,9 +1904,9 @@ describe('the impersonation shell', () => {
       ),
     })
 
-    await screen.findByText('You are not impersonating any account.')
-    await user.type(screen.getByLabelText('Target account'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await screen.findByText(tConsole('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
     // The re-read was refused, and the identity did not change; the console
@@ -1950,7 +1981,7 @@ describe('the impersonation shell', () => {
     // The console's own status surface settles the grant; the end control
     // belongs to it.
     const end = await screen.findByRole('button', {
-      name: consoleUiEnUS.impersonations.current.end,
+      name: tConsole('impersonations.current.end'),
     })
     await user.click(end)
     await waitFor(() => expect(backend.deletes()).toBe(1))
@@ -2008,11 +2039,11 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session, api: client })
 
-    await screen.findByText('You are not impersonating any account.')
-    await user.type(screen.getByLabelText('Target account'), 'acc-1')
+    await screen.findByText(tConsole('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
     const tenantBefore = backend.tenantReads()
     const openedBefore = opened.length
-    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
 
     // The frame remounted while the status read is still held: the grant's
     // tenant is not known, so no tenant-scoped read and no stream may run
@@ -2053,10 +2084,10 @@ describe('the impersonation shell', () => {
     })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     expect(notice).toHaveTextContent(
-      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'acc-1'),
+      tAuth('impersonation.actingAs', { subject: 'acc-1' }),
     )
   })
 
@@ -2082,18 +2113,18 @@ describe('the impersonation shell', () => {
 
     renderDemoApp({ session })
 
-    await screen.findByText('You are not impersonating any account.')
-    await user.type(screen.getByLabelText('Target account'), 'acc-1')
-    await user.click(screen.getByRole('button', { name: 'Start impersonation' }))
+    await screen.findByText(tConsole('impersonations.current.none'))
+    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
 
     // A start announces itself through the re-read: the banner appears with
     // the impersonated identity and no end confirmation precedes it.
     expect(
       await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       }),
     ).toBeInTheDocument()
-    expect(screen.queryByText(authUiEnUS.impersonation.ended)).toBeNull()
+    expect(screen.queryByText(tAuth('impersonation.ended'))).toBeNull()
   })
 
   it('closes the notice, keeps the live region, and ends from the account menu', async () => {
@@ -2108,11 +2139,11 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
       within(notice).getByRole('button', {
-        name: authUiEnUS.impersonation.hide,
+        name: tAuth('impersonation.hide'),
       }),
     )
 
@@ -2121,17 +2152,17 @@ describe('the impersonation shell', () => {
     expect(banner()).toBeNull()
     expect(
       document.querySelector(
-        `section[aria-label="${authUiEnUS.impersonation.regionLabel}"]`,
+        `section[aria-label="${tAuth('impersonation.regionLabel')}"]`,
       ),
     ).toBeNull()
     expect(screen.getByRole('status')).toHaveTextContent(
-      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target One'),
+      tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
 
     // The header chip is now collapsed, and it took the focus the close
     // control could no longer hold.
     const chip = screen.getByRole('button', {
-      name: authUiEnUS.impersonation.impersonating,
+      name: tAuth('impersonation.impersonating'),
     })
     expect(chip).toHaveAttribute('aria-expanded', 'false')
     expect(chip).toHaveFocus()
@@ -2140,13 +2171,13 @@ describe('the impersonation shell', () => {
     // hidden, and it is the same write attempt.
     await user.click(screen.getByRole('button', { name: 'Target One' }))
     await user.click(
-      screen.getByRole('menuitem', { name: authUiEnUS.impersonation.end }),
+      screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
     )
 
     await waitFor(() => expect(banner()).toBeNull())
     expect(
       screen.queryByRole('button', {
-        name: authUiEnUS.impersonation.impersonating,
+        name: tAuth('impersonation.impersonating'),
       }),
     ).toBeNull()
     // Ending the impersonation remounts the tenant menu, whose switcher
@@ -2156,9 +2187,9 @@ describe('the impersonation shell', () => {
     // that carries it.
     expect(
       screen
-        .getByText(authUiEnUS.impersonation.ended)
+        .getByText(tAuth('impersonation.ended'))
         .closest('[role="status"]'),
-    ).toHaveTextContent(authUiEnUS.impersonation.ended)
+    ).toHaveTextContent(tAuth('impersonation.ended'))
     expect(backend.deletes()).toBe(1)
   })
 
@@ -2175,32 +2206,32 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
       within(notice).getByRole('button', {
-        name: authUiEnUS.impersonation.hide,
+        name: tAuth('impersonation.hide'),
       }),
     )
     expect(banner()).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Target One' }))
     await user.click(
-      screen.getByRole('menuitem', { name: authUiEnUS.impersonation.end }),
+      screen.getByRole('menuitem', { name: tAuth('impersonation.end') }),
     )
 
     // The failure text belongs to the banner, which was hidden: the host
     // resets the dismissal so the error is visible, and the chip is
     // expanded again.
     const again = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     expect(
       within(again).getByRole('alert'),
-    ).toHaveTextContent(authUiEnUS.errors.authn.unavailable)
+    ).toHaveTextContent(tAuth('errors.authn.unavailable'))
     expect(
       screen.getByRole('button', {
-        name: authUiEnUS.impersonation.impersonating,
+        name: tAuth('impersonation.impersonating'),
       }),
     ).toHaveAttribute('aria-expanded', 'true')
     expect(backend.deletes()).toBe(1)
@@ -2218,21 +2249,21 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
       within(notice).getByRole('button', {
-        name: authUiEnUS.impersonation.hide,
+        name: tAuth('impersonation.hide'),
       }),
     )
     const chip = screen.getByRole('button', {
-      name: authUiEnUS.impersonation.impersonating,
+      name: tAuth('impersonation.impersonating'),
     })
     await user.click(chip)
 
     expect(
       await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       }),
     ).toBeInTheDocument()
     expect(chip).toHaveAttribute('aria-expanded', 'true')
@@ -2251,11 +2282,11 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
       within(notice).getByRole('button', {
-        name: authUiEnUS.impersonation.hide,
+        name: tAuth('impersonation.hide'),
       }),
     )
     expect(banner()).toBeNull()
@@ -2267,7 +2298,7 @@ describe('the impersonation shell', () => {
     expect(banner()).toBeNull()
     expect(
       screen.getByRole('button', {
-        name: authUiEnUS.impersonation.impersonating,
+        name: tAuth('impersonation.impersonating'),
       }),
     ).toHaveAttribute('aria-expanded', 'false')
   })
@@ -2284,11 +2315,11 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     await user.click(
       within(notice).getByRole('button', {
-        name: authUiEnUS.impersonation.hide,
+        name: tAuth('impersonation.hide'),
       }),
     )
     expect(banner()).toBeNull()
@@ -2309,11 +2340,11 @@ describe('the impersonation shell', () => {
 
     expect(
       await screen.findByRole('region', {
-        name: authUiEnUS.impersonation.regionLabel,
+        name: tAuth('impersonation.regionLabel'),
       }),
     ).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent(
-      authUiEnUS.impersonation.actingAs.replace('{{subject}}', 'Target Two'),
+      tAuth('impersonation.actingAs', { subject: 'Target Two' }),
     )
   })
 
@@ -2329,7 +2360,7 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
 
     const notice = await screen.findByRole('region', {
-      name: authUiEnUS.impersonation.regionLabel,
+      name: tAuth('impersonation.regionLabel'),
     })
     // The AppBar is the shell's banner landmark; the page may carry a
     // header of its own inside main, so take the first one.
@@ -2347,13 +2378,13 @@ describe('the impersonation shell', () => {
     // The skip link is the shell's first focusable element.
     await user.tab()
     expect(
-      screen.getByRole('link', { name: layoutKitEnUS.appShell.skipToContent }),
+      screen.getByRole('link', { name: tLayout('appShell.skipToContent') }),
     ).toHaveFocus()
 
     // Then the header's controls (the chip and the account trigger), then
     // the banner's own controls.
     const chip = screen.getByRole('button', {
-      name: authUiEnUS.impersonation.impersonating,
+      name: tAuth('impersonation.impersonating'),
     })
     chip.focus()
     await user.tab()
@@ -2362,12 +2393,12 @@ describe('the impersonation shell', () => {
     ).toHaveFocus()
     await user.tab()
     expect(
-      within(notice).getByRole('button', { name: authUiEnUS.impersonation.end }),
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
     ).toHaveFocus()
     await user.tab()
     expect(
       within(notice).getByRole('button', {
-        name: authUiEnUS.impersonation.hide,
+        name: tAuth('impersonation.hide'),
       }),
     ).toHaveFocus()
   })

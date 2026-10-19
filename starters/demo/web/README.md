@@ -60,14 +60,15 @@ rather than failing to start.
 
 ## The API contract
 
-The typed API surface comes from two generation levels, and `api:gen` runs the
-app's own:
+The typed API surface comes from two generation levels, and a command per level
+owns its outputs:
 
 ```
-pnpm api:gen                        # or: pnpm --filter demo-web api:gen, from web/
+pnpm api:gen                        # from web/: regenerates the platform package
+pnpm --filter demo-web run api:gen  # from web/: regenerates this app's own surface
 ```
 
-It runs four legs in order:
+This app's `api:gen` runs four legs in order:
 
 1. The Go host's `gen` command merges the OpenAPI fragments the binary's imports
    reach and writes the merged document to `contracts/api.json` at the
@@ -76,17 +77,35 @@ It runs four legs in order:
    `genDocument`). Every feature entry and every operation carries an owner
    (`platform` or `application`) that `gen` derives from the declaring
    module's Go package; this app's own route and feature are application-owned.
-2. `node ../../../web/scripts/feature-names.mjs ../../../contracts/features.json
-   ../../../web/packages/api-sdk/src/features.ts src/app-api/features.ts`
-   generates the platform feature-name type and `FEATURE_NAMES` into the
-   published package from the platform-owned entries, and this app's module
-   augmentation of the same registry into `src/app-api/features.ts` from the
-   application-owned ones.
+2. `node scripts/feature-names.mjs ../../../contracts/features.json
+   src/app-api/features.ts` generates this app's module augmentation of the
+   feature registry from the application-owned entries. The script is this
+   app's own copy; the platform-owned half of the vocabulary is the platform
+   package's output and this app never writes it.
 3. `pnpm dlx orval@8.17.0 --config orval.config.ts` generates this app's own
    surface from that document into `src/app-api/index.ts`.
-4. `node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts
+4. `node scripts/orval-nodenext-fixup.mjs src/app-api/index.ts
    src/app-api/runtime.ts` rewrites the generated mutator import to its explicit
    `.js` form.
+
+The platform level's `api:gen` (in `web/package.json`) owns the published
+package's outputs: it generates `web/packages/api-sdk/src/features.ts` from the
+platform-owned entries, then runs the platform orval configuration and the same
+fixup. Neither command writes into the other's tree.
+
+| Output | Owner | Command |
+|---|---|---|
+| `contracts/api.json`, `contracts/features.json` | the host's `gen` | this app's `api:gen` |
+| `src/app-api/index.ts` | this app's orval configuration | this app's `api:gen` |
+| `src/app-api/features.ts` | the app's feature-name copy | this app's `api:gen` |
+| `web/packages/api-sdk/src/index.ts` | `web/orval.config.ts` | the platform `api:gen` |
+| `web/packages/api-sdk/src/features.ts` | the platform feature-name generator | the platform `api:gen` |
+
+The two generation scripts exist as an app copy and a repository copy. The
+fixup is byte-identical on both sides; the feature-name generator differs only
+in the documented generation-mode block (the repository copy also writes the
+package registry). `web/scripts/starter-script-consistency.test.mjs` pins both
+relationships.
 
 orval is never a dependency of this workspace: `pnpm dlx` fetches the pinned
 version on demand and it stays out of `web/pnpm-lock.yaml`.
@@ -100,12 +119,14 @@ The platform level belongs to the package library and produces the package the
 shell packages import; the app level belongs to the app and produces a surface
 inside it. Both read `contracts/api.json` -- the document the host's `gen`
 command writes, carrying every fragment the binary's imports reach, so the
-platform fragments plus the app's own, should it declare any. This starter
-declares none, so the two levels cover the same operations. Both levels reach the backend
-through the same seam: `src/app-api/runtime.ts` re-exports the mutators
-`@speed/api-sdk/runtime` exports, so the one `bindRequestFn` call at bootstrap
-serves both generated surfaces and no generated or bridge file performs HTTP
-itself.
+platform fragments plus the app's own. This starter's own fragment is the
+personal-tenant route (`starters/demo/server/personal-openapi.json`): it is in
+the merged document and in the app surface, and the platform configuration's
+`input.filters` excludes it so the published package stays platform-only. Both
+levels reach the backend through the same seam: `src/app-api/runtime.ts`
+re-exports the mutators `@speed/api-sdk/runtime` exports, so the one
+`bindRequestFn` call at bootstrap serves both generated surfaces and no
+generated or bridge file performs HTTP itself.
 
 `src/app-api/index.ts` is generated output carrying a DO-NOT-EDIT header, and it
 is committed -- regenerating it produces the same file. `src/app-api/runtime.ts`
@@ -122,16 +143,18 @@ app builds and tests against the sibling source without a rebuild of the
 packages. Copied out of the repository, the same `package.json` installs those
 packages from the registry, with no `workspace:` protocol to rewrite.
 
-Three repo-internal pieces make the in-repo build resolve to the siblings'
-**source** (a published `dist/` is never committed and is not built when this
-app's typecheck runs), and **all three are repository-internal development
-wiring that a copied-out project drops**:
+Three kinds of repo-internal wiring make the in-repo build resolve to the
+siblings' **source** (a published `dist/` is never committed and is not built
+when this app's typecheck runs), and **all of it is repository-internal
+development wiring that a copied-out project drops**:
 
-- `vite.config.ts` and `vitest.config.ts` import the workspace's single package
-  map (`web/scripts/speed-aliases.mjs`) and alias every `@speed/*` specifier onto
-  its sibling's `src/`.
-- `tsconfig.json` carries the same map as a `paths` section (tsconfig cannot
-  import), pinned against the map by `src/alias-manifest.test.ts`.
+- `vite.config.ts`, `vitest.config.ts` and `vitest.a11y.config.ts` import the
+  workspace's single package map (`web/scripts/speed-aliases.mjs`) and alias
+  every `@speed/*` specifier onto its sibling's `src/`.
+- `tsconfig.json` carries the map's `paths` projection minus the workspace's
+  private test-support entries (tsconfig cannot import; the app carries its own
+  fixtures under `src/test-utils/` instead), pinned against that projection by
+  `src/alias-manifest.test.ts`.
 - `eslint.config.mjs` imports `web/eslint.config.mjs` and scopes the two
   workspace discipline rules (`speed/no-literal-text`, `speed/no-direct-http`)
   to this app's runtime `src/`.
@@ -149,7 +172,7 @@ wiring that a copied-out project drops**:
 | `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
 | `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities) and the account page. |
 | `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL), falling back to same-origin. |
-| `src/document-metadata.ts` | Keeps `<html lang>` and the document title in step with the active language. |
+| `src/document-metadata.ts` | Keeps the document title in step with the active language. `<html lang>` is the assembly's (the app-entry bootstrap binds it and follows every switch). |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
 | `orval.config.ts`, `src/app-api/` | The app's own generation level: the second orval configuration and the surface it generates, plus the seam that surface calls (see "The API contract"). |
 | `AGENTS.md` | This directory's own contract for an agent working here. |
@@ -199,7 +222,9 @@ tenant -- or a name the roster no longer holds -- is refused 404. The tenant is 
 request-time routing fact, not a claim of the access token (the token carries
 none), so the client announces it as a header. The host keeps the tenant's two
 names apart: the switcher keys on the tenant id (`src/chrome.tsx`'s
-`getCurrentTenantId`; a switch in `src/app.tsx` writes it), while
+`getCurrentTenantId`; a switch goes through the same file's
+`useTenantSelection`, which writes it, and `DemoApp` clears it when a session
+ends), while
 `bootstrapDemoApp` wires the client's `tenantProvider` to the current tenant's
 **alias** (`getCurrentTenantAlias`), which the client reads on every attempt and
 sends as `X-Tenant`. A rename moves the alias and leaves the id, so once a viewer
@@ -278,6 +303,12 @@ list), an app-wide language switch and a color-mode toggle, and an avatar
 account menu (profile / account settings / sign out), all from
 `src/chrome.tsx`. The language and color-mode controls appear in the console
 banner too; the tenant switcher does not (the console resolves no tenant).
+The color-mode choice is written to the device and read back at boot (with the
+operating system's `prefers-color-scheme` as the fallback), so a reload starts
+in the mode the user left. A tenant switch evicts the departing tenant's
+cached rows (`src/chrome.tsx`'s `useTenantSelection` calls auth-core's
+`evictTenantQueries` with the id read before the switch), so the next
+tenant's reads never see the previous one's data.
 
 ### The starting page and the first account
 
@@ -299,21 +330,63 @@ deployment's facts, not text the page asserts.
 
 - Rename the package (`package.json`'s `name`) and the app's title
   (`src/locales/*`).
-- Bump the `@speed/*` ranges to the versions you install, and remove the three
-  repository-internal wiring pieces above (the alias imports, the tsconfig
-  `paths` section with its drift test, and the eslint config's import of
-  `web/eslint.config.mjs`) -- outside this repository the packages resolve from
-  `node_modules` and there is no `web/scripts` to import.
+- Inline `tsconfig.json`'s `extends: "../../../web/tsconfig.base.json"` into the
+  file: the base compiler options it supplies (strictness, module resolution,
+  `noEmit`) are ordinary settings, but the file it points at lives in the
+  repository and is not part of the skeleton.
+- Remove the in-repo alias configuration: the `paths` section in
+  `tsconfig.json`, the `speedAliases()` imports and `resolve.alias` entries in
+  `vite.config.ts`, `vitest.config.ts` and `vitest.a11y.config.ts`, the
+  `fs.allow` workspace root in `vite.config.ts`, and `src/alias-manifest.test.ts`
+  (the drift test for that section). Outside this repository the packages
+  resolve from `node_modules` and there is no `web/scripts` to import.
+  `eslint.config.mjs` likewise imports the repository's `web/eslint.config.mjs`;
+  replace that with a config of your own. `vitest.a11y.config.ts` keeps
+  working without the aliases -- it is the same config as
+  `vitest.config.ts` except for the file set -- so `test:a11y` still runs
+  after the edit.
+- Serve the app under a sub-path instead of an origin root: set vite's `base`
+  in `vite.config.ts` (the bundle's asset URLs follow it), make
+  `runtimeConfigUrl()` in `src/runtime-config.ts` resolve the config file
+  under that prefix instead of the origin root -- it is deliberately
+  root-absolute so a deep link cannot shift the read, which also means it
+  ignores a deployment prefix -- and pass the same prefix as `basename` to
+  `RouteProvider` in `src/app.tsx`, so route-kit's hrefs and navigation carry
+  it. The three must agree; a mismatch resolves assets, the runtime config and
+  routes under different roots.
+- The social-binding round trip (`SocialBindingsSection` in
+  `src/pages/account-page.tsx`) sends `returnTo` as the link flow's top-level
+  `return_to`, and the backend lands the browser there once the provider
+  answers. The app passes its root-absolute `ACCOUNT_CALLBACK_PATH`, which is
+  right when the page and the API share an origin. A deployment that separates
+  them (the API on another origin, the page on a static host) must pass an
+  absolute URL on an origin the deployment trusts instead, or the browser is
+  sent to the API host rather than back to the page.
+- Dependency contract: every `@speed/*` package a non-test file under `src/`
+  imports must be declared in `dependencies` at a registry range
+  (`^0.0.1`-style). Packages used only by suites belong in `devDependencies`.
+  Never use the `workspace:` protocol in any dependency block -- a copied-out
+  skeleton has no workspace to link from. Bump the ranges to the versions you
+  install. Keep these four properties when you edit the manifest or the
+  sources: `src/copy-out-guards.test.ts` asserts them (no `workspace:`
+  specifier, every runtime `@speed/*` import declared, no suite importing
+  repository source through a relative path, and no source file importing the
+  workspace's private `@speed/test-utils` package).
+- `src/test-utils/` carries the host's own test fixtures (the scripted session
+  harness, the emitted-CSS probe and the matchMedia stub). They are part of
+  the skeleton and import only `@speed` packages and the standard test
+  toolchain, so they travel with the copy.
 - Replace the business slot: put your pages under `src/pages/` and name them in
   `src/routes.tsx`. Replace the starting page's cards
   (`src/pages/home-page.tsx`) with your own entry points, and replace the
   sign-in note (`src/pages/sign-in-view.tsx`) with the registration the product
   offers.
-- Retarget `api:gen` and `orval.config.ts` at your own setup: the script's
-  fixup step points at the workspace's
-  `web/scripts/orval-nodenext-fixup.mjs`, and its `gen` step writes
+- Retarget `api:gen` and `orval.config.ts` at your own setup: the generation
+  scripts travel with the copy in `scripts/`, and the `gen` step writes
   `contracts/api.json` at the repository root (the document path
-  `orval.config.ts` reads, and the input the platform level uses too).
+  `orval.config.ts` reads). The platform package's `features.ts` and generated
+  surface are the package library's outputs; a copy-out project installs the
+  published package instead of regenerating them.
 - Keep the console area only if the product has a platform-staff face; drop it
   and its `@speed/console-ui` dependency otherwise.
 
@@ -323,5 +396,6 @@ deployment's facts, not text the page asserts.
 pnpm lint        # eslint
 pnpm typecheck   # tsc --noEmit
 pnpm test        # vitest
+pnpm test:a11y   # the route-level axe sweep (its own config and file set)
 pnpm build       # tsc + vite build into ../server/dist
 ```

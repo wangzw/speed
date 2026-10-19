@@ -33,10 +33,13 @@ There is no `dist`: the package is consumed as source, the same way the
 map resolves every workspace sibling, so `build` is the standalone
 compile check.
 
-The map is workspace-wide, so the demo host's tsconfig mirrors this
-package's specifiers too — its alias-manifest suite pins the whole map
-into that tsconfig, which is why the entries appear there — even though
-the app imports none of them.
+The map is workspace-wide, but the demo host's tsconfig deliberately
+carries none of this package's specifiers: the app imports none of them,
+and its own fixtures live under `starters/demo/web/src/test-utils/`. The
+host's alias-manifest suite compares `speedTsconfigPaths()` against the
+map with these specifiers filtered out, so what it pins is the map's
+projection minus the workspace's private test-support entries, not the
+whole map.
 
 This package's own `@speed` imports (the session harness drives
 `@speed/auth-core` sessions over `@speed/api-client` and the

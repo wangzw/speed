@@ -25,6 +25,37 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
 
+/**
+ * An in-memory device storage for every suite.
+ *
+ * The Node runtime's experimental global `localStorage` shadows jsdom's and
+ * is unavailable without `--localstorage-file` (it warns on access and yields
+ * nothing), so the app's device-level choices -- the language and the colour
+ * mode -- would hit a storage that is not there. This stand-in is installed
+ * on the global window once; a suite that asserts on writes still installs
+ * its own double with `vi.stubGlobal` (and `vi.unstubAllGlobals` restores
+ * this one).
+ */
+const deviceStorage = new Map<string, string>()
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  writable: true,
+  value: {
+    getItem: (key: string) => deviceStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      deviceStorage.set(key, value)
+    },
+    removeItem: (key: string) => {
+      deviceStorage.delete(key)
+    },
+    clear: () => deviceStorage.clear(),
+    key: (index: number) => [...deviceStorage.keys()][index] ?? null,
+    get length() {
+      return deviceStorage.size
+    },
+  },
+})
+
 window.matchMedia = vi.fn().mockImplementation((query: string) => ({
   matches: true,
   media: query,

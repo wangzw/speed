@@ -14,11 +14,15 @@
     // workspace's single package map (web/scripts/speed-aliases.mjs), which
     // the vite and vitest configs import directly and this section mirrors:
     // tsconfig cannot import, so src/alias-manifest.test.ts pins these
-    // entries against speedTsconfigPaths() for this directory's depth. A
-    // published sibling's dist/ is never committed and may not exist when
-    // this app typechecks, so resolution maps every workspace specifier onto
-    // its source. List order matters -- a subpath entry must be tried before
-    // the entry that is its prefix (first match wins in paths).
+    // entries against speedTsconfigPaths() for this directory's depth. The
+    // workspace's private test-support entries are deliberately absent --
+    // this app carries its own copies under src/test-utils so a copy of the
+    // skeleton resolves them without the workspace -- and the drift test
+    // filters them out of the map it compares. A published sibling's dist/ is
+    // never committed and may not exist when this app typechecks, so
+    // resolution maps every workspace specifier onto its source. List order
+    // matters -- a subpath entry must be tried before the entry that is its
+    // prefix (first match wins in paths).
     "paths": {
       "@speed/api-sdk/runtime": ["../../../web/packages/api-sdk/src/runtime.ts"],
       "@speed/api-sdk/features": ["../../../web/packages/api-sdk/src/features.ts"],
@@ -40,14 +44,7 @@
       "@speed/i18n/platform-errors": ["../../../web/packages/i18n/src/platform-errors.ts"],
       "@speed/i18n": ["../../../web/packages/i18n/src/index.ts"],
       "@speed/tokens": ["../../../web/packages/tokens/src/index.ts"],
-      "@speed/ui-kit": ["../../../web/packages/ui-kit/src/index.ts"],
-      "@speed/test-utils/axe": ["../../../web/test-utils/src/axe.ts"],
-      "@speed/test-utils/emitted-css": ["../../../web/test-utils/src/emitted-css.ts"],
-      "@speed/test-utils/matchMedia": ["../../../web/test-utils/src/matchMedia.ts"],
-      "@speed/test-utils/real-client": ["../../../web/test-utils/src/real-client.ts"],
-      "@speed/test-utils/render": ["../../../web/test-utils/src/render.tsx"],
-      "@speed/test-utils/session-harness": ["../../../web/test-utils/src/session-harness.ts"],
-      "@speed/test-utils/setup": ["../../../web/test-utils/src/setup.ts"]
+      "@speed/ui-kit": ["../../../web/packages/ui-kit/src/index.ts"]
     }
   }
 }

@@ -62,8 +62,9 @@ program beside this directory embeds with `go:embed` and serves through
   `X-Tenant` header (`server/testdata/*.yaml`) and looks the name up in the
   roster's alias column, so the value announced is the current tenant's
   **alias**, never its id. The host keeps the two apart: the switcher keys on the
-  tenant id (`getCurrentTenantId` in `src/chrome.tsx`, written on a switch in
-  `src/app.tsx`), while `bootstrapDemoApp` wires the client's `tenantProvider` to
+  tenant id (`getCurrentTenantId` in `src/chrome.tsx`; a switch goes through the
+  same file's `useTenantSelection`, which writes it, and `DemoApp` clears it when
+  a session ends), while `bootstrapDemoApp` wires the client's `tenantProvider` to
   `getCurrentTenantAlias`; the client announces it on every request, per attempt.
   A rename moves the alias and leaves the id, so `src/app.tsx` reads the roster
   (`tenantAdminTenantsList`, the app's own generated operation) once a viewer is
@@ -86,9 +87,10 @@ program beside this directory embeds with `go:embed` and serves through
   module augmentation that adds the application-owned feature names
   (`workspace.personal`) to `FeatureName`, which the published package's
   registry deliberately does not carry. `api:gen` also runs the host's `gen`
-  command and the feature-name generator for both sides, so the document and
-  the vocabulary it generates from are fresh rather than stale committed
-  copies.
+  command and the app's own copy of the feature-name generator, so the
+  document and the vocabulary it generates from are fresh rather than stale
+  committed copies. The platform package's `features.ts` belongs to
+  `web/package.json`'s `api:gen`; this app's command never writes it.
 - **The API origin is read at runtime, never baked in** (`src/runtime-config.ts`,
   falling back to same-origin). One build output serves every deployment topology.
 - **The app reaches the API at one origin, which must be a gateway.** The demo's
@@ -139,7 +141,8 @@ program beside this directory embeds with `go:embed` and serves through
   bindings section lists existing bindings with no add area, and the
   binding-callback route is mounted beside it for a product that configures one.
   `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
-  tenancy-ui, demo) beside the four the assembly registers automatically.
+  objectstore-ui, tenancy-ui, notification-ui, demo) beside the four the
+  assembly registers automatically.
 - **A page reload keeps the viewer signed in.** The session is delivered as
   the server's httpOnly cookie (the login flow requests `delivery: 'session'`,
   the client sends it with `credentials: 'same-origin'`), so a reload
@@ -179,10 +182,10 @@ console shells, in three data states, scanning each with axe-core and failing on
 h1, a missing main landmark, a landmark-containment break or a heading-order
 break (`src/a11y/scan.ts`'s `PAGE_STRUCTURE_RULES`; those rules carry only axe's
 best-practice tag, so the gate runs them by rule id). `moderate`/`minor`
-non-page-structure findings are warned and registered. The component scans under
-`@speed/test-utils/axe`, one tier below, fail on *any* violation, so the route
-gate's impact threshold is the looser of the two — a page-level regression net,
-not a superset of the component scans' threshold. `test:a11y` is its own
+non-page-structure findings are warned and registered. Component-level scans,
+where a product adds them, sit one tier below and fail on *any* violation, so
+the route gate's impact threshold is the looser of the two — a page-level
+regression net, not a superset of a component scan's threshold. `test:a11y` is its own
 frontend-gate leg beside lint / typecheck / test -- the root Makefile's
 `web-a11y` -- and the ordinary `test` run excludes `src/a11y/**`, so it runs
 once. axe covers only the mechanically decidable part of WCAG (roughly 30-40%);

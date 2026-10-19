@@ -25,10 +25,14 @@ import {
   readyFeatures,
 } from '../test-utils/session.js'
 
-/** The account-ui password label the setup page renders after a login name
- * exists, taken from the package's real bundle. */
+/** The account-ui password copy the setup page now renders: the section owns
+ * the heading and the explanation it shows while no login name exists. */
 const accountEn = accountUiResources['en-US'] as unknown as {
-  readonly password: { readonly new: { readonly label: string } }
+  readonly password: {
+    readonly title: string
+    readonly loginNameRequired: string
+    readonly new: { readonly label: string }
+  }
 }
 
 /** The one read the page (and both its sections) make. */
@@ -78,7 +82,7 @@ beforeEach(() => {
 })
 
 describe('the account setup page', () => {
-  it('withholds the password section behind an explanation until a login name exists', async () => {
+  it("withholds the password form behind the section's own explanation until a login name exists", async () => {
     bindProfile(
       profileOf({
         password_set: false,
@@ -95,12 +99,14 @@ describe('the account setup page', () => {
     )
     renderSetup()
 
-    // A verified phone signs in but is not a login name: the page says what
-    // to add first, and the password form stays out of reach.
+    // A verified phone signs in but is not a login name: the section renders
+    // its own heading and says what to add first, and the password form stays
+    // out of reach. The page adds no second heading of its own.
     expect(
-      await screen.findByText(
-        demoEnUS.accountSetup.password.loginNameRequired,
-      ),
+      await screen.findByText(accountEn.password.loginNameRequired),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { level: 2, name: accountEn.password.title }),
     ).toBeInTheDocument()
     expect(
       screen.queryByLabelText(accountEn.password.new.label),
@@ -139,7 +145,7 @@ describe('the account setup page', () => {
       await screen.findByLabelText(accountEn.password.new.label),
     ).toBeInTheDocument()
     expect(
-      screen.queryByText(demoEnUS.accountSetup.password.loginNameRequired),
+      screen.queryByText(accountEn.password.loginNameRequired),
     ).not.toBeInTheDocument()
   })
 

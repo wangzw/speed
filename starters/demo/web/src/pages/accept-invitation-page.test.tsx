@@ -19,6 +19,7 @@ import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import type { AuthSession, AuthSnapshot, FeatureState } from '@speed/auth-core'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { authUiResources } from '@speed/auth-ui'
 import {
   FEATURES_GET,
   LOGIN_ANSWER,
@@ -31,12 +32,27 @@ import {
   methodList,
   openFlow,
   principal,
-} from '@speed/test-utils/session-harness'
-import authUiEnUS from '../../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
+} from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
 import { authenticatedSnapshot, createTestSession } from '../test-utils/session.js'
 import { INVITATION_PREFIX } from '../paths.js'
+
+/**
+ * The auth-ui bundle the accept screen and the sign-in surface render from,
+ * read as test data: the package's shipped text, not a repository file path.
+ * A renamed label fails here rather than silently in a selector.
+ */
+const authEn = authUiResources['en-US'] as unknown as {
+  readonly acceptInvitation: { readonly title: string; readonly accept: string }
+  readonly mode: { readonly registerEntry: string }
+  readonly smsSignIn: {
+    readonly phoneLabel: string
+    readonly sendCode: string
+    readonly codeLabel: string
+    readonly submit: string
+  }
+}
 
 const TOKEN = 'tok-123'
 const PATH = `${INVITATION_PREFIX}/${TOKEN}`
@@ -128,7 +144,7 @@ describe('the invitation landing', () => {
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
-        name: authUiEnUS.acceptInvitation.title,
+        name: authEn.acceptInvitation.title,
       }),
     ).not.toBeInTheDocument()
   })
@@ -144,12 +160,12 @@ describe('the invitation landing', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: authUiEnUS.acceptInvitation.title,
+        name: authEn.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
 
     await user.click(
-      screen.getByRole('button', { name: authUiEnUS.acceptInvitation.accept }),
+      screen.getByRole('button', { name: authEn.acceptInvitation.accept }),
     )
     await waitFor(() => {
       expect(backend.accepted).toEqual([TOKEN])
@@ -204,25 +220,25 @@ describe('the invitation landing', () => {
 
     await user.click(
       await screen.findByRole('button', {
-        name: authUiEnUS.mode.registerEntry,
+        name: authEn.mode.registerEntry,
       }),
     )
     await user.type(
-      screen.getByLabelText(authUiEnUS.smsSignIn.phoneLabel),
+      screen.getByLabelText(authEn.smsSignIn.phoneLabel),
       '+14155550123',
     )
     await user.click(
-      screen.getByRole('button', { name: authUiEnUS.smsSignIn.sendCode }),
+      screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
     )
     await user.type(
-      await screen.findByLabelText(authUiEnUS.smsSignIn.codeLabel),
+      await screen.findByLabelText(authEn.smsSignIn.codeLabel),
       '123456',
     )
     const form = screen
-      .getByLabelText(authUiEnUS.smsSignIn.codeLabel)
+      .getByLabelText(authEn.smsSignIn.codeLabel)
       .closest('form') as HTMLFormElement
     await user.click(
-      within(form).getByRole('button', { name: authUiEnUS.smsSignIn.submit }),
+      within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
     )
 
     // The registration stayed on the invitation URL and the page re-rendered
@@ -231,7 +247,7 @@ describe('the invitation landing', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: authUiEnUS.acceptInvitation.title,
+        name: authEn.acceptInvitation.title,
       }),
     ).toBeInTheDocument()
   })

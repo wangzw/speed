@@ -9,7 +9,7 @@
  *
  * The seam exists as a file of its own because orval emits the mutator
  * import as a sibling relative path (`./runtime`), which
- * web/scripts/orval-nodenext-fixup.mjs rewrites to './runtime.js' after
+ * scripts/orval-nodenext-fixup.mjs rewrites to './runtime.js' after
  * every regeneration -- the same shape the platform package's
  * src/runtime.ts has. Regeneration covers src/app-api/index.ts only,
  * never this file.

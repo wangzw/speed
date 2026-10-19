@@ -36,7 +36,7 @@
  * falls through to the tenant area like any other gated path.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -64,13 +64,16 @@ import {
   presentDeclarations,
   RouteProvider,
   RouteView,
+  useLocationPath,
   useMatch,
   useNavigate,
   useNavItems,
+  useRedirect,
+  useRouteLinkProps,
 } from '@speed/route-kit'
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
+import { httpStatusOf } from '@speed/ui-kit'
 import type { ReactElement, ReactNode } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
 import { setupIncomplete } from './account-setup.js'
 import { tenantAdminTenantsList, workspacePersonalEnsure } from './app-api/index.js'
 import { useAppServices } from './app-services.js'
@@ -85,6 +88,7 @@ import {
   setTenantAliases,
   TenantMenu,
   UserMenu,
+  useTenantSelection,
 } from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
 import {
@@ -101,12 +105,6 @@ import {
   useImpersonationStatus,
 } from './impersonation.js'
 import { DemoNavLabel } from './nav-label.js'
-import {
-  AccountNavIcon,
-  HomeNavIcon,
-  NotificationsNavIcon,
-  ObjectsNavIcon,
-} from './nav-icons.js'
 import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
@@ -115,11 +113,12 @@ import {
   TENANT_HOME_PATH,
 } from './pages/not-found-page.js'
 import { SignInView } from './pages/sign-in-view.js'
-import { ACCOUNT_PATH, isAccountLevelPath, OBJECTS_PATH } from './paths.js'
+import { isAccountLevelPath } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   AUTH_CALLBACK_PATH,
   invitationRoutes,
+  navIconFor,
   NOTIFICATIONS_PATH,
   routes,
 } from './routes.js'
@@ -135,20 +134,6 @@ const CONSOLE_PERMISSION_DOMAIN = 'system'
  * derives. The two spellings must stay in sync by hand.
  */
 const PERSONAL_TENANT_ID_PREFIX = 'personal-'
-
-/**
- * The tenant navigation's icons, keyed by the route path `useNavItems` uses
- * as an entry's id. The collapsed sidebar rail shows an entry's icon in
- * place of its clipped label (AppShell's own contract), so every tenant
- * entry carries one: without it, collapsing the sidebar would show cut-off
- * text where the console's navigation shows icons.
- */
-const TENANT_NAV_ICONS: Readonly<Record<string, ReactElement>> = {
-  '/': <HomeNavIcon />,
-  [ACCOUNT_PATH]: <AccountNavIcon />,
-  [OBJECTS_PATH]: <ObjectsNavIcon />,
-  [NOTIFICATIONS_PATH]: <NotificationsNavIcon />,
-}
 
 /** The app view root: routing installed once, over the shell switch. The
  * route table is gated (the notification, object and console declarations
@@ -197,7 +182,7 @@ function AppFrame({
 }: {
   readonly presence: RoutePresence
 }): ReactElement {
-  const { pathname } = useLocation()
+  const { path: pathname } = useLocationPath()
   // The declaration the current URL matches exactly on the narrowed surface:
   // used to tell a live invitation landing from a path that merely looks like
   // one. Absent, pending or failed, no declaration matches and the path falls
@@ -205,8 +190,9 @@ function AppFrame({
   const match = useMatch()
   // The host's identity-change action, handed to the console page so a
   // settled start or end re-reads the identity the way the tenant frame's
-  // banner does.
-  const { applyIdentityChange } = useIdentityChange()
+  // banner does, plus the start seam: the page calls it before it writes, so
+  // reads are held across the start's cookie rotation window.
+  const { applyIdentityChange, onImpersonationStarting } = useIdentityChange()
   // The desktop sidebar's collapse state, host-held and shared by both areas:
   // each frame renders the toggle (the collapse props are supplied) and reports
   // each flip here, so the collapse carries across the tenant/console switch.
@@ -276,6 +262,7 @@ function AppFrame({
                   routes={consoleRoutes}
                   hasFeature={hasFeature}
                   onImpersonationChange={applyIdentityChange}
+                  onImpersonationStarting={onImpersonationStarting}
                   sidebarCollapsed={sidebarCollapsed}
                   onSidebarCollapsedChange={setSidebarCollapsed}
                 >
@@ -335,7 +322,7 @@ function TenantFrame({
   // The page the frame is rendering. The personal-tenant failure placeholder
   // replaces only the pages that read tenant data; the account-level pages
   // read none and stay usable (src/paths.ts).
-  const { pathname } = useLocation()
+  const { path: pathname } = useLocationPath()
   const accountLevel = isAccountLevelPath(pathname)
   // The notification surfaces and the roster are feature-gated; the hooks fail
   // closed, so a pending or failed document opens and reads nothing.
@@ -399,13 +386,9 @@ function TenantFrame({
   // console took over, and a first frame carrying it would issue one read
   // (and open one stream) under the impersonated session and the operator's
   // alias before the status read settles the grant's tenant.
-  const [tenantId, setTenantIdState] = useState<string | null>(() =>
+  const [tenantId, setTenantId] = useTenantSelection(
     impersonating ? null : getCurrentTenantId(),
   )
-  const setTenantId = useCallback((id: string | null): void => {
-    setCurrentTenantId(id)
-    setTenantIdState(id)
-  }, [])
   // The personal tenant the server ensured, held for the switcher's label: the
   // tenant record carries no display name, so the host renders the bilingual
   // 「个人空间 / Personal workspace」 text from it (src/chrome.tsx).
@@ -566,7 +549,7 @@ function TenantFrame({
         // create a personal tenant: it falls back to the placeholder, as the
         // frame does when the feature is off.
         setTenantId(
-          personalServed && errorStatus(error) === 403
+          personalServed && httpStatusOf(error) === 403
             ? null
             : DEFAULT_TENANT_ID,
         )
@@ -652,7 +635,7 @@ function TenantFrame({
         if (cancelled) {
           return
         }
-        if (errorStatus(error) === 409) {
+        if (httpStatusOf(error) === 409) {
           // already-member: the account belongs to another tenant. It gets no
           // personal one, and the placeholder tenant is what makes its reads
           // fire and render the admission refusal.
@@ -687,21 +670,20 @@ function TenantFrame({
   // (the console's pages are filtered out above, so nothing else points into
   // the console). The console entry is deliberately not a navigation item: it
   // lives in the header's action slot, offered only to platform staff, so a
-  // member meets a navigation with no way into the console. Each entry keeps
-  // its href (for a middle click or a copy) and navigates through the router
-  // on a plain click, so the page never reloads.
+  // member meets a navigation with no way into the console. The entry's
+  // href/onClick pair is route-kit's -- a plain click navigates in place while
+  // a modified or new-tab click stays with the browser -- and its icon is the
+  // one its declaration carries (src/routes.tsx), looked up by the entry id
+  // that declaration path supplies.
   const navItems: readonly AppShellNavItem[] = items
     .filter((item) => !isConsolePath(item.id))
     .map((item): AppShellNavItem => ({
       id: item.id,
       label: item.label,
-      icon: TENANT_NAV_ICONS[item.id],
+      icon: navIconFor(item.id),
       href: item.href,
       selected: item.selected,
-      onClick: (event) => {
-        event.preventDefault()
-        navigate(item.href)
-      },
+      onClick: item.onClick,
     }))
 
   return (
@@ -855,22 +837,28 @@ function ConsoleEntry({
   /** The console declarations the presence predicate left in force. */
   readonly routes: readonly ConsoleRoute[]
 }): ReactElement | null {
-  const navigate = useNavigate()
   // An impersonated session has no console to enter; the shared derivation
   // carries that rule for the header entry and the start page's card alike.
   const target = useConsoleTarget(routes)
   if (target === null) {
     return null
   }
+  // The link itself renders in its own component: the href/onClick pair is a
+  // hook call, and hooks cannot follow the null branch above.
+  return <ConsoleEntryLink target={target} />
+}
+
+/** The console entry's anchor, with route-kit's basename-aware href and its
+ * plain-click-navigates / modified-click-stays-with-the-browser handler. */
+function ConsoleEntryLink({
+  target,
+}: {
+  /** The console page the entry points at (a route, not yet a served URL). */
+  readonly target: string
+}): ReactElement {
+  const { href, onClick } = useRouteLinkProps(target)
   return (
-    <Button
-      color="inherit"
-      href={target}
-      onClick={(event) => {
-        event.preventDefault()
-        navigate(target)
-      }}
-    >
+    <Button color="inherit" href={href} onClick={onClick}>
       <DemoNavLabel labelKey="nav.console" />
     </Button>
   )
@@ -918,7 +906,7 @@ function ConsoleImpersonationGate({
 }): ReactElement {
   const snapshot = useAuthState()
   if (snapshot.state === 'authenticated' && snapshot.impersonating) {
-    return <Navigate to={TENANT_HOME_PATH} replace />
+    return <TenantHomeRedirect />
   }
   return <>{children}</>
 }
@@ -985,9 +973,24 @@ function ConsoleAreaGate({
     return <>{children}</>
   }
   if (status === 'denied') {
-    return <Navigate to={TENANT_HOME_PATH} replace />
+    return <TenantHomeRedirect />
   }
   return <ConsoleAccessPending />
+}
+
+/**
+ * Replaces the current history entry with the tenant home, rendered instead
+ * of a surface the current identity may not use. It navigates from an effect
+ * (route-kit's useRedirect), which is where the router wants a render-driven
+ * move, and renders nothing: the gates that mount it render no console chrome
+ * on the way.
+ */
+function TenantHomeRedirect(): null {
+  const redirect = useRedirect()
+  useEffect(() => {
+    redirect(TENANT_HOME_PATH)
+  }, [redirect])
+  return null
 }
 
 /**
@@ -1066,15 +1069,6 @@ function TenantProvisionFailure({
       </Box>
     </Box>
   )
-}
-
-/** The HTTP status of a failed generated call, when it carries one. */
-function errorStatus(error: unknown): number | undefined {
-  if (typeof error !== 'object' || error === null) {
-    return undefined
-  }
-  const status = (error as { readonly status?: unknown }).status
-  return typeof status === 'number' ? status : undefined
 }
 
 /** The view a feature-gated path renders while the host's presence

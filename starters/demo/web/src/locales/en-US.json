@@ -19,7 +19,9 @@
   },
   "signIn": {
     "heading": "Sign in",
-    "subtitle": "Use your account to continue."
+    "subtitle": "Use your account to continue.",
+    "registerHeading": "Create an account",
+    "registerSubtitle": "Create your account with one of the methods below."
   },
   "home": {
     "heading": "Get started",
@@ -62,11 +64,7 @@
     "complete": "Your account setup is complete. You can sign in with your username and password.",
     "completeWithEmail": "Your account setup is complete. You can sign in with your email address and password.",
     "home": "Go to the home page",
-    "later": "Set up later",
-    "password": {
-      "title": "Password",
-      "loginNameRequired": "Password sign-in needs a login name. Add a username first."
-    }
+    "later": "Set up later"
   },
   "userMenu": {
     "accountMenu": "Account menu",

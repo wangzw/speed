@@ -16,22 +16,26 @@
  * apart.
  */
 
-import { act, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import authUiEnUS from '../../../../web/packages/auth-ui/src/locales/en-US.json' with { type: 'json' }
-import authUiZhCN from '../../../../web/packages/auth-ui/src/locales/zh-CN.json' with { type: 'json' }
-import consoleUiEnUS from '../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
-import layoutKitEnUS from '../../../../web/packages/layout-kit/src/locales/en-US.json' with { type: 'json' }
-import layoutKitZhCN from '../../../../web/packages/layout-kit/src/locales/zh-CN.json' with { type: 'json' }
-import notificationUiEnUS from '../../../../web/packages/notification-ui/src/locales/en-US.json' with { type: 'json' }
-import notificationUiZhCN from '../../../../web/packages/notification-ui/src/locales/zh-CN.json' with { type: 'json' }
-import uiKitEnUS from '../../../../web/packages/ui-kit/src/locales/en-US.json' with { type: 'json' }
+import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
+import {
+  CONSOLE_UI_NAMESPACE,
+  consoleUiResources,
+} from '@speed/console-ui'
+import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
+import {
+  NOTIFICATION_UI_NAMESPACE,
+  notificationUiResources,
+} from '@speed/notification-ui'
+import { createSpeedI18n } from '@speed/product-shell/bootstrap'
+import { UI_KIT_NAMESPACE } from '@speed/ui-kit'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import { renderDemoApp } from './test-utils/render.js'
-import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
-import { mockMatchMedia } from '@speed/test-utils/matchMedia'
+import { hasCoarsePointerTouchTarget } from './test-utils/emitted-css.js'
+import { mockMatchMedia } from './test-utils/matchMedia.js'
 import { AUTH_CALLBACK_PATH } from './routes.js'
 import {
   ANONYMOUS_SNAPSHOT,
@@ -39,6 +43,38 @@ import {
   createTestSession,
 } from './test-utils/session.js'
 import { DEFAULT_TENANT_ID, getCurrentTenantId, setCurrentTenantId } from './chrome.js'
+
+/**
+ * The expected copy, resolved from the packages' shipped resources through a
+ * production instance rather than read from a file path: the release the app
+ * ships is what the suite asserts. The two languages are fixed per tag, so
+ * the bilingual cases compare translations, not a literal.
+ */
+const textI18n = createSpeedI18n({
+  supportedLanguages: ['zh-CN', 'en-US'],
+  defaultLanguage: 'en-US',
+  storage: null,
+  urlParameterName: null,
+  navigatorLanguages: [],
+  namespaces: [
+    { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+    { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },
+  ],
+})
+const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
+const tAuthZh = textI18n.getFixedT('zh-CN', AUTH_UI_NAMESPACE)
+const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
+const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
+const tLayoutZh = textI18n.getFixedT('zh-CN', LAYOUT_KIT_NAMESPACE)
+const tNotifications = textI18n.getFixedT(
+  'en-US',
+  NOTIFICATION_UI_NAMESPACE,
+)
+const tNotificationsZh = textI18n.getFixedT(
+  'zh-CN',
+  NOTIFICATION_UI_NAMESPACE,
+)
+const tUiKit = textI18n.getFixedT('en-US', UI_KIT_NAMESPACE)
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
@@ -80,7 +116,7 @@ describe('the app at the root path', () => {
       screen.getByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
     ).toBeInTheDocument()
     expect(
-      await screen.findByLabelText(authUiEnUS.passwordSignIn.identifierLabel),
+      await screen.findByLabelText(tAuth('passwordSignIn.identifierLabel')),
     ).toBeInTheDocument()
     // The authenticated frame's business page is not rendered.
     expect(screen.queryByText(demoEnUS.home.heading)).not.toBeInTheDocument()
@@ -107,7 +143,7 @@ describe('the app at the root path', () => {
     // Wait for the surface (the discovery read resolves a document with the
     // one channel). No SMS axis is offered (the skeleton delivers no code),
     // so there is nothing to switch between and no tablist.
-    await screen.findByLabelText(authUiEnUS.passwordSignIn.identifierLabel)
+    await screen.findByLabelText(tAuth('passwordSignIn.identifierLabel'))
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
   })
 
@@ -118,7 +154,7 @@ describe('the app at the root path', () => {
       screen.getByRole('heading', { level: 1, name: demoZhCN.signIn.heading }),
     ).toBeInTheDocument()
     expect(
-      await screen.findByLabelText(authUiZhCN.passwordSignIn.identifierLabel),
+      await screen.findByLabelText(tAuthZh('passwordSignIn.identifierLabel')),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
@@ -134,7 +170,7 @@ describe('the app at the root path', () => {
     // nowhere: the callback route is not gated by the tenant shell.
     expect(
       await screen.findByRole('button', {
-        name: authUiEnUS.socialCallback.retry,
+        name: tAuth('socialCallback.retry'),
       }),
     ).toBeInTheDocument()
     expect(
@@ -166,7 +202,7 @@ describe('the tenant shell with a session', () => {
     await user.click(entry)
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
   })
@@ -240,7 +276,7 @@ describe('the console area', () => {
     // The frame is up at the console path while the session is authenticated.
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
 
@@ -257,7 +293,7 @@ describe('the console area', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).not.toBeInTheDocument()
   })
 
@@ -269,7 +305,7 @@ describe('the console area', () => {
       screen.getByRole('heading', { level: 1, name: demoEnUS.signIn.heading }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).not.toBeInTheDocument()
   })
 
@@ -284,7 +320,7 @@ describe('the console area', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: consoleUiEnUS.tenants.title,
+        name: tConsole('tenants.title'),
       }),
     ).toBeInTheDocument()
   })
@@ -304,13 +340,13 @@ describe('the console area', () => {
     // its page links -- and no no-permission surface inside a console shell: the
     // content is not swapped for a denial, the whole area is withheld.
     expect(
-      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('link', { name: consoleUiEnUS.tenants.title }),
+      screen.queryByRole('link', { name: tConsole('tenants.title') }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByText(uiKitEnUS.emptyState.noPermission.title),
+      screen.queryByText(tUiKit('emptyState.noPermission.title')),
     ).not.toBeInTheDocument()
 
     // The viewer lands in the tenant area instead: the redirect left the
@@ -337,7 +373,7 @@ describe('the console area', () => {
         }),
       ).toBeInTheDocument()
       expect(
-        screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+        screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
       ).not.toBeInTheDocument()
       unmount()
     }
@@ -359,7 +395,7 @@ describe('the console area', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
@@ -381,7 +417,7 @@ describe('the console area', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).not.toBeInTheDocument()
 
     // A platform permission lands: the area admits the console frame.
@@ -390,7 +426,7 @@ describe('the console area', () => {
     })
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
   })
@@ -416,7 +452,7 @@ describe('the console area', () => {
     ).toBeInTheDocument()
     expect(window.location.pathname).toBe('/')
     expect(
-      screen.queryByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.queryByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).not.toBeInTheDocument()
   })
 
@@ -435,16 +471,16 @@ describe('the console area', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: consoleUiEnUS.tenants.title,
+        name: tConsole('tenants.title'),
       }),
     ).toBeInTheDocument()
 
     // Activate another page from the console's own navigation.
     const nav = screen.getByRole('navigation', {
-      name: consoleUiEnUS.shell.navLabel,
+      name: tConsole('shell.navLabel'),
     })
     await user.click(
-      within(nav).getByRole('link', { name: consoleUiEnUS.settings.title }),
+      within(nav).getByRole('link', { name: tConsole('settings.title') }),
     )
 
     // The settings page renders in place: the console frame -- and the session
@@ -453,11 +489,11 @@ describe('the console area', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: consoleUiEnUS.settings.title,
+        name: tConsole('settings.title'),
       }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.getByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
@@ -510,17 +546,17 @@ describe('the console area', () => {
     // (named) rather than disappearing.
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     await user.click(
-      screen.getByRole('button', { name: layoutKitEnUS.appShell.collapseNav }),
+      screen.getByRole('button', { name: tLayout('appShell.collapseNav') }),
     )
     expect(
-      screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
+      screen.getByRole('button', { name: tLayout('appShell.expandNav') }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('navigation', { name: consoleUiEnUS.shell.navLabel }),
+      screen.getByRole('navigation', { name: tConsole('shell.navLabel') }),
     ).toBeInTheDocument()
   })
 
@@ -533,7 +569,7 @@ describe('the console area', () => {
 
     // Collapse in the console area.
     await user.click(
-      screen.getByRole('button', { name: layoutKitEnUS.appShell.collapseNav }),
+      screen.getByRole('button', { name: tLayout('appShell.collapseNav') }),
     )
     // Leave for the tenant area through the console banner's exit link: the
     // sidebar is collapsed to the rail, so the exit link is the way back.
@@ -542,7 +578,7 @@ describe('the console area', () => {
     // both areas, so the operator's collapse survives the switch rather than
     // resetting to open.
     expect(
-      screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
+      screen.getByRole('button', { name: tLayout('appShell.expandNav') }),
     ).toBeInTheDocument()
   })
 })
@@ -586,14 +622,14 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
 
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(window.location.pathname).toBe('/console/audit')
     // The page's own code is unheld, so the route guard hides the page content
     // inside the frame the area gate admitted.
     expect(
-      await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
+      await screen.findByText(tUiKit('emptyState.noPermission.title')),
     ).toBeInTheDocument()
   })
 
@@ -606,13 +642,13 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
     // tiers agree on a staff viewer who holds the page's code.
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: consoleUiEnUS.audit.title,
+        name: tConsole('audit.title'),
       }),
     ).toBeInTheDocument()
   })
@@ -628,16 +664,16 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
     // no-permission surface.
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(
-      await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
+      await screen.findByText(tUiKit('emptyState.noPermission.title')),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
         level: 1,
-        name: consoleUiEnUS.tenants.title,
+        name: tConsole('tenants.title'),
       }),
     ).not.toBeInTheDocument()
   })
@@ -653,11 +689,11 @@ describe('a staff viewer whose platform permission is not the dashboard code', (
 
     expect(
       await screen.findByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).toBeInTheDocument()
     expect(
-      await screen.findByText(uiKitEnUS.emptyState.noPermission.title),
+      await screen.findByText(tUiKit('emptyState.noPermission.title')),
     ).toBeInTheDocument()
   })
 })
@@ -724,10 +760,10 @@ describe('the tenant area header controls', () => {
     // collapse props); collapsing removes the permanent drawer and the
     // toggle now offers to expand.
     await user.click(
-      screen.getByRole('button', { name: layoutKitEnUS.appShell.collapseNav }),
+      screen.getByRole('button', { name: tLayout('appShell.collapseNav') }),
     )
     expect(
-      screen.getByRole('button', { name: layoutKitEnUS.appShell.expandNav }),
+      screen.getByRole('button', { name: tLayout('appShell.expandNav') }),
     ).toBeInTheDocument()
   })
 
@@ -746,6 +782,29 @@ describe('the tenant area header controls', () => {
   })
 })
 
+describe('the tenant navigation', () => {
+  it('leaves a modified click on an entry to the browser', async () => {
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+    const entry = await screen.findByRole('link', { name: demoEnUS.nav.account })
+
+    // A Ctrl/⌘ click belongs to the browser (a new tab), so the app must
+    // neither navigate in place nor suppress the default action. This
+    // document-level listener runs after the app's handler (React listens on
+    // the root container), records whether the app prevented the default,
+    // then cancels the navigation jsdom cannot carry out.
+    let appPreventedDefault: boolean | null = null
+    const recordAndCancel = (event: MouseEvent): void => {
+      appPreventedDefault = event.defaultPrevented
+      event.preventDefault()
+    }
+    document.addEventListener('click', recordAndCancel, { once: true })
+    fireEvent.click(entry, { ctrlKey: true })
+
+    expect(appPreventedDefault).toBe(false)
+    expect(window.location.pathname).toBe('/')
+  })
+})
+
 describe('the tenant navigation icons', () => {
   const CASES = [
     {
@@ -754,10 +813,10 @@ describe('the tenant navigation icons', () => {
         demoEnUS.nav.home,
         demoEnUS.nav.account,
         demoEnUS.nav.objects,
-        notificationUiEnUS.inbox.title,
+        tNotifications('inbox.title'),
       ],
-      collapse: layoutKitEnUS.appShell.collapseNav,
-      open: layoutKitEnUS.appShell.openNav,
+      collapse: tLayout('appShell.collapseNav'),
+      open: tLayout('appShell.openNav'),
     },
     {
       language: 'zh-CN',
@@ -765,10 +824,10 @@ describe('the tenant navigation icons', () => {
         demoZhCN.nav.home,
         demoZhCN.nav.account,
         demoZhCN.nav.objects,
-        notificationUiZhCN.inbox.title,
+        tNotificationsZh('inbox.title'),
       ],
-      collapse: layoutKitZhCN.appShell.collapseNav,
-      open: layoutKitZhCN.appShell.openNav,
+      collapse: tLayoutZh('appShell.collapseNav'),
+      open: tLayoutZh('appShell.openNav'),
     },
   ] as const
 
@@ -818,14 +877,14 @@ describe('the tenant navigation icons', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     await user.click(
-      screen.getByRole('button', { name: layoutKitEnUS.appShell.openNav }),
+      screen.getByRole('button', { name: tLayout('appShell.openNav') }),
     )
 
     for (const label of [
       demoEnUS.nav.home,
       demoEnUS.nav.account,
       demoEnUS.nav.objects,
-      notificationUiEnUS.inbox.title,
+      tNotifications('inbox.title'),
     ]) {
       const link = screen.getByRole('link', { name: label })
       expect(link.querySelector('.MuiListItemIcon-root svg')).not.toBeNull()

@@ -48,7 +48,12 @@ beforeEach(() => {
 describe('the live subscription and the tenant context', () => {
   it('waits for the personal tenant before opening the stream or reading the count', async () => {
     const calls: string[] = []
-    const openStream = vi.fn(() => ({ close: () => undefined }))
+    const closes: string[] = []
+    const openStream = vi.fn(() => ({
+      close: () => {
+        closes.push('close')
+      },
+    }))
     let resolveEnsure: (value: unknown) => void = () => undefined
     const ensurePending = new Promise((resolve) => {
       resolveEnsure = resolve
@@ -95,8 +100,13 @@ describe('the live subscription and the tenant context', () => {
       created: true,
     })
 
-    // The ensure settled the personal tenant, and both surfaces follow.
-    await waitFor(() => expect(openStream).toHaveBeenCalledTimes(1))
+    // The ensure settled the personal tenant, and both surfaces follow. The
+    // harness renders the production stack, StrictMode included, so the
+    // subscriber mounts, is torn down and mounts again: exactly one of the
+    // two connections stays live.
+    await waitFor(() => expect(openStream).toHaveBeenCalledTimes(2))
+    expect(closes).toHaveLength(1)
+    expect(openStream.mock.calls.length - closes.length).toBe(1)
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
     await waitFor(() => expect(calls).toContain(`GET ${UNREAD_PATH}`))
   })

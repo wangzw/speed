@@ -8,6 +8,10 @@
  * entry's icon instead of its clipped label; without one, a collapsed
  * tenant navigation would show cut-off text ("Acco…") where the console
  * shows icons.
+ *
+ * Each icon is attached to its route declaration (src/routes.tsx), which is
+ * where the frame looks a navigation entry's mark up from; nothing here
+ * knows a path.
  */
 
 interface IconProps {

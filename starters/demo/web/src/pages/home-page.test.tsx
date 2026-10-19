@@ -11,10 +11,10 @@
  * viewer.
  */
 
-import { act, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { emittedStyleText } from '@speed/test-utils/emitted-css'
+import { emittedStyleText } from '../test-utils/emitted-css.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
 import {
@@ -235,5 +235,30 @@ describe('the start page', () => {
         name: demoEnUS.account.title,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('leaves a modified click on a card to the browser', () => {
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // Ctrl/⌘-click means "open in a new tab": the anchor keeps the browser's
+    // own action instead of being intercepted into an in-app navigation. The
+    // document-level probe reads the event after the card's own handler has
+    // run (React's root listener is closer to the target) and cancels the
+    // default action so jsdom does not attempt a navigation it cannot make.
+    const anchor = cardFor(demoEnUS.home.cards.account.title)
+    let prevented: boolean | undefined
+    const probe = (event: MouseEvent): void => {
+      prevented = event.defaultPrevented
+      event.preventDefault()
+    }
+    document.addEventListener('click', probe)
+    try {
+      fireEvent.click(anchor, { ctrlKey: true })
+    } finally {
+      document.removeEventListener('click', probe)
+    }
+
+    expect(prevented).toBe(false)
+    expect(window.location.pathname).toBe('/')
   })
 })

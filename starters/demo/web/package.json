@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "api:gen": "go -C ../server run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen --title speed -o ../../../contracts/api.json --features ../../../contracts/features.json && node ../../../web/scripts/feature-names.mjs ../../../contracts/features.json ../../../web/packages/api-sdk/src/features.ts src/app-api/features.ts && pnpm dlx orval@8.17.0 --config orval.config.ts && node ../../../web/scripts/orval-nodenext-fixup.mjs src/app-api/index.ts src/app-api/runtime.ts",
+    "api:gen": "go -C ../server run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen --title speed -o ../../../contracts/api.json --features ../../../contracts/features.json && node scripts/feature-names.mjs ../../../contracts/features.json src/app-api/features.ts && pnpm dlx orval@8.17.0 --config orval.config.ts && node scripts/orval-nodenext-fixup.mjs src/app-api/index.ts src/app-api/runtime.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -18,6 +18,9 @@
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^9.4.0",
     "@speed/account-ui": "^0.0.1",
+    "@speed/api-client": "^0.0.1",
+    "@speed/api-sdk": "^0.0.1",
+    "@speed/auth-core": "^0.0.1",
     "@speed/auth-ui": "^0.0.1",
     "@speed/console-ui": "^0.0.1",
     "@speed/i18n": "^0.0.1",
@@ -35,9 +38,6 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
-    "@speed/api-client": "^0.0.1",
-    "@speed/auth-core": "^0.0.1",
-    "@speed/test-utils": "workspace:*",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",

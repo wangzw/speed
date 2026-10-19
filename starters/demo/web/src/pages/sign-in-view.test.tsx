@@ -14,6 +14,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { accountUiResources } from '@speed/account-ui'
 import { authUiResources } from '@speed/auth-ui'
 import type { AuthnFlowState, AuthnMethodList, AuthSession } from '@speed/auth-core'
 import {
@@ -28,7 +29,7 @@ import {
   methodList,
   openFlow,
   principal,
-} from '@speed/test-utils/session-harness'
+} from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { ACCOUNT_SETUP_PATH } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
@@ -73,7 +74,10 @@ function redirectSession(): { session: AuthSession; startFlow: ReturnType<typeof
  * real bundle, so a renamed label fails here rather than in a selector.
  */
 const authEn = authUiResources['en-US'] as unknown as {
-  readonly mode: { readonly registerEntry: string }
+  readonly mode: {
+    readonly registerEntry: string
+    readonly signInEntry: string
+  }
   readonly passwordSignIn: { readonly identifierLabel: string }
   readonly smsSignIn: {
     readonly phoneLabel: string
@@ -81,6 +85,12 @@ const authEn = authUiResources['en-US'] as unknown as {
     readonly codeLabel: string
     readonly submit: string
   }
+}
+
+/** The account-ui explanation the setup page renders while the account has
+ * no login name (PasswordSection owns that copy now). */
+const accountEn = accountUiResources['en-US'] as unknown as {
+  readonly password: { readonly loginNameRequired: string }
 }
 
 beforeEach(() => {
@@ -98,6 +108,54 @@ describe('the sign-in surface', () => {
     // The end-user surface states nothing about how the deployment is
     // operated: no seeding instruction, no repository-document pointer.
     expect(container.textContent).not.toMatch(/seed|AGENTS\.md/)
+  })
+
+  it('follows the register / sign-in switch in the page heading', async () => {
+    // A deployment whose password channel opens an account: the screen offers
+    // its register entry, and the host page heading has to follow the switch
+    // it reports.
+    const session: AuthSession = Object.assign(createTestSession(), {
+      listMethods: (): Promise<AuthnMethodList> =>
+        Promise.resolve({
+          methods: [{ name: 'password', kind: 'form', opens_account: true }],
+          signup: { enabled: true },
+          mfa: { factors: [] },
+        }),
+    })
+    renderDemoApp({ session })
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.registerHeading,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(demoEnUS.signIn.registerSubtitle),
+    ).toBeInTheDocument()
+
+    // The screen's own way back reports the other mode the same way.
+    await user.click(
+      screen.getByRole('button', { name: authEn.mode.signInEntry }),
+    )
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(demoEnUS.signIn.subtitle)).toBeInTheDocument()
   })
 
   it('navigates the current window to a redirect method authorization URL', async () => {
@@ -175,7 +233,7 @@ describe('the sign-in surface', () => {
       expect(window.location.pathname).toBe(ACCOUNT_SETUP_PATH),
     )
     expect(
-      await screen.findByText(demoEnUS.accountSetup.password.loginNameRequired),
+      await screen.findByText(accountEn.password.loginNameRequired),
     ).toBeInTheDocument()
   })
 

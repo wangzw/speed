@@ -18,6 +18,7 @@ import Box from '@mui/material/Box'
 import { SocialCallbackHandler } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import { useAppServices } from '../app-services.js'
+import { TENANT_HOME_PATH } from './not-found-page.js'
 
 export function AuthCallbackPage({
   absent,
@@ -50,7 +51,7 @@ export function AuthCallbackPage({
       <Box sx={{ width: '100%', maxWidth: 400 }}>
         <SocialCallbackHandler
           session={session}
-          onSignedIn={() => navigate('/')}
+          onSignedIn={() => navigate(TENANT_HOME_PATH)}
           absent={absent}
         />
       </Box>

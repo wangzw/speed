@@ -23,6 +23,7 @@ import {
   consoleShellRoutes,
   invitationRoutes,
   isConsolePath,
+  navIconFor,
   OBJECTS_PATH,
   NOTIFICATIONS_PATH,
   routes,
@@ -52,6 +53,22 @@ describe('the route table', () => {
     // navigation destinations.
     expect(labelled.has(ACCOUNT_SETUP_PATH)).toBe(false)
     expect(labelled.has(ACCOUNT_CALLBACK_PATH)).toBe(false)
+  })
+
+  it('carries each navigation entry its icon on the declaration itself', () => {
+    // The frame builds an entry from a NavItem (whose id is the declaration
+    // path) and looks the mark up through navIconFor; the icon therefore has
+    // to ride the same declaration that names the entry, not a parallel table.
+    for (const route of businessRoutes) {
+      if (route.label === undefined) {
+        // A completion point contributes no navigation entry, so it carries
+        // no mark either.
+        expect(navIconFor(route.path), route.path).toBeUndefined()
+        continue
+      }
+      expect(route.icon, route.path).toBeDefined()
+      expect(navIconFor(route.path), route.path).toBe(route.icon)
+    }
   })
 
   it('mounts every console page under the console prefix', () => {

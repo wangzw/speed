@@ -79,24 +79,10 @@ export function isAccountLevelPath(pathname: string): boolean {
  */
 export const INVITATION_PREFIX = '/invitations'
 
-/** The path an invitation link points at for one token. */
+/** The path an invitation link points at for one token. The landing route's
+ * own declaration (`${INVITATION_PREFIX}/:token`) is what matches the URL and
+ * hands the page its token, so this builder is the only side that spells the
+ * shape. */
 export function invitationPath(token: string): string {
   return `${INVITATION_PREFIX}/${encodeURIComponent(token)}`
-}
-
-/**
- * The token a path addresses, or null when the path is not an invitation
- * landing (the prefix itself, a deeper path, or anything else). The matcher
- * takes exactly one segment after the prefix.
- */
-export function matchInvitationToken(pathname: string): string | null {
-  const prefix = `${INVITATION_PREFIX}/`
-  if (!pathname.startsWith(prefix)) {
-    return null
-  }
-  const rest = pathname.slice(prefix.length)
-  if (rest === '' || rest.includes('/')) {
-    return null
-  }
-  return decodeURIComponent(rest)
 }

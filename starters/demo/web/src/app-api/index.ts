@@ -3,7 +3,7 @@
 // The app-owned SDK surface (src/app-api/); regenerate with
 // `pnpm api:gen` from starters/demo/web. The mutator import in
 // this file is rewritten to an explicit .js extension by
-// web/scripts/orval-nodenext-fixup.mjs, the last step of that
+// scripts/orval-nodenext-fixup.mjs, the last step of that
 // script; rerun it after every regeneration.
 import {
   useMutation,

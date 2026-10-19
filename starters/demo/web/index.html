@@ -1,9 +1,11 @@
 <!doctype html>
 <!-- The static defaults below describe the document before the app boots: a
      valid language tag, the brand as the title, the favicon and a
-     description. src/main.tsx's applyDocumentMetadata rewrites <html lang> and
-     the title to the language the instance negotiates, so the served defaults
-     never contradict the rendered interface (WCAG 3.1.1). -->
+     description. The app-entry assembly (bootstrapSpeedApp, through
+     SpeedAppDefinition.documentLanguage) sets <html lang> at startup and
+     follows every switch; applyDocumentMetadata keeps the title in step with
+     the language the instance negotiates, so the served defaults never
+     contradict the rendered interface (WCAG 3.1.1). -->
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />

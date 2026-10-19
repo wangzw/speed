@@ -31,6 +31,7 @@ import type { InvitationOperations } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import { authnInviteAccept, authnInviteAcceptView } from '../app-api/index.js'
 import type { AuthnInviteView } from '../app-api/index.js'
+import { TENANT_HOME_PATH } from './not-found-page.js'
 import { SignInView } from './sign-in-view.js'
 
 export interface AcceptInvitationPageProps {
@@ -91,7 +92,7 @@ export function AcceptInvitationPage({
         <AcceptInvitationScreen
           token={token}
           invitations={invitations}
-          onAccepted={() => navigate('/')}
+          onAccepted={() => navigate(TENANT_HOME_PATH)}
         />
       </Paper>
     </Box>

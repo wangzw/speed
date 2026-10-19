@@ -17,12 +17,13 @@
  * permission set or feature document the host has not settled reads as "not
  * offered", so a card stays hidden until the fact it depends on is known.
  *
- * Each card is an anchor carrying its target path, so a middle click or a
- * copy opens the destination too; a plain click is caught and routed, so the
- * page never reloads (the same shape the shell's navigation entries take).
+ * Each card is an anchor carrying its target path, so a middle click, a
+ * modified click or a copy opens the destination too; a plain primary click
+ * is caught and routed, so the page never reloads (route-kit's
+ * useRouteLinkProps decides which click is which).
  */
 
-import type { MouseEvent, ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
@@ -34,9 +35,9 @@ import { useTranslation } from '@speed/i18n'
 import {
   presentDeclarations,
   useHasRoute,
+  useRouteLinkProps,
 } from '@speed/route-kit'
 import { PageHeader } from '@speed/ui-kit'
-import { useNavigate } from 'react-router-dom'
 import { setupIncomplete } from '../account-setup.js'
 import { useAuthnProfileGet } from '../app-api/index.js'
 import {
@@ -85,7 +86,7 @@ const START_CARDS: readonly StartCard[] = [
 /** The app's starting page: the platform's capabilities as a card grid. */
 export function HomePage(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const navigate = useNavigate()
+  const setupLink = useRouteLinkProps(ACCOUNT_SETUP_PATH)
   // The frame's ensure answer is the trigger: the account just received its
   // personal tenant and its GET /api/v1/auth/me shows setup incomplete
   // (src/personal-tenant-notice.tsx). The sign-in screen's registration mode
@@ -131,12 +132,9 @@ export function HomePage(): ReactElement {
             {t('home.setupNotice.title')}
           </Typography>
           <Link
-            href={ACCOUNT_SETUP_PATH}
+            href={setupLink.href}
+            onClick={setupLink.onClick}
             underline="hover"
-            onClick={(event) => {
-              event.preventDefault()
-              navigate(ACCOUNT_SETUP_PATH)
-            }}
           >
             {t('home.setupNotice.action')}
           </Link>
@@ -228,17 +226,13 @@ function StartCardView({
   }
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const navigate = useNavigate()
-  const open = (path: string) => (event: MouseEvent<HTMLElement>): void => {
-    event.preventDefault()
-    navigate(path)
-  }
+  const link = useRouteLinkProps(card.path)
   return (
     <Card variant="outlined">
       <CardActionArea
         component="a"
-        href={card.path}
-        onClick={open(card.path)}
+        href={link.href}
+        onClick={link.onClick}
         sx={{
           display: 'flex',
           flexDirection: 'column',

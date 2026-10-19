@@ -22,6 +22,13 @@
  * set coincide here. A product whose principals hold a subset of the declared
  * permissions must replace this with its own source of the caller's held set.
  *
+ * There is currently no replaceable source for that set: the platform exposes
+ * no read of the caller's held platform- or tenant-domain permissions (the
+ * gap is recorded in the authz design), so a product cannot substitute a
+ * correct source for this bridge yet. It can only replace the *derivation*
+ * here -- for example by holding the catalog only for the staff principal
+ * and attaching an empty set otherwise -- until that read exists.
+ *
  * A login clears the sets (auth-core's survival rule), so a re-login as
  * another principal replaces them rather than inheriting the previous
  * principal's.

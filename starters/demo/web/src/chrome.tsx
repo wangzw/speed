@@ -23,21 +23,27 @@
  *    strand the operator without a way to end it.
  */
 
-import { useId, useState } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
-import { useAuthState } from '@speed/auth-core'
+import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { ImpersonationEndMenuItem } from '@speed/auth-ui'
-import { readSupportedLanguages, switchLanguage, useTranslation } from '@speed/i18n'
+import {
+  languageDisplayName,
+  readSupportedLanguages,
+  switchLanguage,
+  useTranslation,
+} from '@speed/i18n'
 import { Avatar } from '@speed/layout-kit'
 import { useNavigate } from '@speed/route-kit'
 import { TenantSwitcher } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
 import { useAppThemeMode } from '@speed/ui-kit'
+import type { AppThemeMode } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
 import { ACCOUNT_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
@@ -181,6 +187,41 @@ export function getCurrentTenantAlias(): string | null {
 }
 
 /**
+ * The current tenant as React state over the module cell above, with a
+ * switch that evicts the departing tenant's cached rows.
+ *
+ * A switch is a host route change, not a session operation, and every cached
+ * row a tenant-scoped read produced is keyed under the tenant it was read
+ * in. The setter therefore hands the departing id to auth-core's
+ * evictTenantQueries before announcing the new one -- read *before* the
+ * write, because the new tenant's id names nothing to remove. A
+ * null-to-something transition (the first tenant the frame settles) evicts
+ * nothing; there is no departing tenant to clean up after.
+ */
+export function useTenantSelection(
+  initialTenantId: string | null,
+): readonly [string | null, (tenantId: string | null) => void] {
+  const { queryClient } = useAppServices()
+  const [tenantId, setTenantId] = useState<string | null>(initialTenantId)
+  // The committed id, kept beside the state so the setter reads the tenant
+  // actually left rather than a value captured when the callback was built.
+  const committed = useRef<string | null>(initialTenantId)
+  const select = useCallback(
+    (nextTenantId: string | null): void => {
+      const previous = committed.current
+      if (previous !== null && previous !== nextTenantId) {
+        evictTenantQueries(queryClient, previous)
+      }
+      committed.current = nextTenantId
+      setCurrentTenantId(nextTenantId)
+      setTenantId(nextTenantId)
+    },
+    [queryClient],
+  )
+  return [tenantId, select]
+}
+
+/**
  * The top bar's brand: the demo namespace's title, in the header's own
  * type. It carries the header's type but is NOT a heading element
  * (`component="div"`, never the h6 role the variant would pick): the
@@ -231,10 +272,14 @@ export function HeaderActions(): ReactElement {
  * translated.
  */
 export function TenantMenu({
+  tenants: offered = DEMO_TENANTS,
   tenantId,
   personalTenant,
   onTenantSelect,
 }: {
+  /** The tenant list the host offers; defaults to the placeholder list. A
+   * product passes the tenants its own membership source returns. */
+  readonly tenants?: readonly DemoTenant[]
   /** The id of the tenant the host currently resolves to, or null. */
   readonly tenantId: string | null
   /** The caller's personal tenant, when one was ensured, or null. */
@@ -245,7 +290,7 @@ export function TenantMenu({
   const { t } = useTranslation(DEMO_NAMESPACE)
   const tenants: readonly DemoTenant[] =
     personalTenant === null
-      ? DEMO_TENANTS.map((tenant) => ({ ...tenant, name: tenant.alias }))
+      ? offered.map((tenant) => ({ ...tenant, name: tenant.alias }))
       : [
           {
             id: personalTenant.id,
@@ -260,15 +305,6 @@ export function TenantMenu({
       onSelect={onTenantSelect}
     />
   )
-}
-
-/** The language name for a tag, in the current UI language; the raw tag is the fallback. */
-function languageName(tag: string, uiLanguage: string): string {
-  try {
-    return new Intl.DisplayNames([uiLanguage], { type: 'language' }).of(tag) ?? tag
-  } catch {
-    return tag
-  }
 }
 
 /**
@@ -315,7 +351,7 @@ export function LanguageSwitcher(): ReactElement {
               void switchLanguage(i18n, tag)
             }}
           >
-            {languageName(tag, current)}
+            {languageDisplayName(tag, current)}
           </MenuItem>
         ))}
       </Menu>
@@ -323,20 +359,80 @@ export function LanguageSwitcher(): ReactElement {
   )
 }
 
+/** The device key the chosen colour mode is remembered under. */
+export const COLOR_MODE_STORAGE_KEY = 'demo-web.color-mode'
+
+/** Whether a stored value is one of the two theme modes. */
+function isColorMode(value: unknown): value is AppThemeMode {
+  return value === 'light' || value === 'dark'
+}
+
+/** The colour mode the device remembers, or null when none was stored (or
+ * the storage is unavailable). */
+export function readStoredColorMode(): AppThemeMode | null {
+  try {
+    const stored = window.localStorage.getItem(COLOR_MODE_STORAGE_KEY)
+    return isColorMode(stored) ? stored : null
+  } catch {
+    // Storage can be refused (privacy modes, a sandboxed document). The
+    // choice then lasts the page instead of failing the render.
+    return null
+  }
+}
+
+/** Records the user's colour-mode choice on the device. */
+export function persistColorMode(mode: AppThemeMode): void {
+  try {
+    window.localStorage.setItem(COLOR_MODE_STORAGE_KEY, mode)
+  } catch {
+    // See readStoredColorMode: a refused storage is not a failed switch.
+  }
+}
+
+/**
+ * The mode the app starts in: the device's stored choice, else the operating
+ * system's preference, else light. Read at boot (src/main.tsx passes it to
+ * the assembly as the theme's defaultMode), so a reload with a stored choice
+ * renders in it without a flash of the other mode.
+ */
+export function initialColorMode(): AppThemeMode {
+  const stored = readStoredColorMode()
+  if (stored !== null) {
+    return stored
+  }
+  try {
+    if (
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+      return 'dark'
+    }
+  } catch {
+    // No media-query support: fall through to the light default.
+  }
+  return 'light'
+}
+
 /**
  * The color-mode toggle: a moon/sun button reading the active mode from
  * ui-kit's AppThemeProvider and flipping it. The button's accessible name
- * describes the action (switch to the other mode).
+ * describes the action (switch to the other mode). The flip is a manual
+ * choice, so it is written to the device: the next boot reads it back as the
+ * theme's defaultMode (initialColorMode).
  */
 export function ColorModeToggle(): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   const { mode, toggleMode } = useAppThemeMode()
   const dark = mode === 'dark'
+  const toggle = (): void => {
+    persistColorMode(dark ? 'light' : 'dark')
+    toggleMode()
+  }
   return (
     <IconButton
       color="inherit"
       aria-label={dark ? t('colorMode.toLight') : t('colorMode.toDark')}
-      onClick={toggleMode}
+      onClick={toggle}
     >
       {dark ? <SunIcon /> : <MoonIcon />}
     </IconButton>

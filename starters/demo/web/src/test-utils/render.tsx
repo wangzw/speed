@@ -1,33 +1,32 @@
 /**
- * The demo host's render harness: the provider tree a component or view suite
- * needs, built from the app's own pieces rather than the production assembly.
+ * The demo host's render harness: the app's production provider stack and
+ * instance, with a scripted session and client in place of the assembly's.
  *
- * It mounts DemoApp -- the routing composition and the shell switch -- under a
- * fresh bilingual i18n instance with every namespace the app's views render
- * from, the ui-kit theme provider, the assembly's own query client
- * (`createQueryClient`, so a suite's re-read timing matches production
- * rather than a locally reconstructed policy), and the app-services provider
- * carrying a session and a client that must not be called (a suite that
- * drives the console pages overrides the shipped console operations
- * instead). The session is attached to the auth hooks, so the
- * shells read it: the test session by default (test-utils/session) -- an
- * anonymous snapshot whose discovery reads resolve, so the sign-in surface
- * renders without a network -- and a suite that wants the authenticated frame
- * passes its own.
+ * It mounts DemoApp -- the routing composition and the shell switch -- under
+ * the same two constructions production renders: `createSpeedI18n` (the
+ * framework namespaces, the platform error bundle and the app's own bundles,
+ * registered through the one call that does it) and `SpeedAppProviders` (the
+ * provider stack from StrictMode down to the query client). A bench that
+ * rebuilt either would let a suite pass on a tree the app never renders.
+ *
+ * What the bench adds is the test seam the assembly fills at runtime: the
+ * app-services provider, carrying a session attached to the auth hooks and a
+ * client that must not be called. The session defaults to the test session
+ * (test-utils/session) -- an anonymous snapshot whose discovery reads
+ * resolve, so the sign-in surface renders without a network -- and a suite
+ * that wants the authenticated frame (or one whose state it drives) passes
+ * its own. The client defaults to the inert harness client; a suite that
+ * observes a client seam passes its own.
  */
 
-import { QueryClientProvider } from '@tanstack/react-query'
-import type { QueryClient } from '@tanstack/react-query'
 import { render, type RenderResult } from '@testing-library/react'
 import type { ReactElement, ReactNode } from 'react'
+import type { RequestFn, SpeedClient } from '@speed/api-client'
 import { attachSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
-import type { RequestFn, SpeedClient } from '@speed/api-client'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
-import { AUTH_UI_NAMESPACE, authUiResources } from '@speed/auth-ui'
 import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
-import { createI18n, I18nextProvider, registerNamespace } from '@speed/i18n'
-import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
+import type { I18nInstance } from '@speed/i18n'
 import {
   OBJECTSTORE_UI_NAMESPACE,
   objectstoreUiResources,
@@ -36,11 +35,13 @@ import {
   NOTIFICATION_UI_NAMESPACE,
   notificationUiResources,
 } from '@speed/notification-ui'
-import { PRODUCT_SHELL_NAMESPACE, productShellResources } from '@speed/product-shell'
-import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
-import { createQueryClient } from '@speed/product-shell/bootstrap'
+import {
+  createQueryClient,
+  createSpeedI18n,
+  SpeedAppProviders,
+} from '@speed/product-shell/bootstrap'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
-import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
+import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from '../app-services.js'
 import { DemoApp } from '../app.js'
 import { DEMO_NAMESPACE, demoResources } from '../resources.js'
@@ -88,32 +89,37 @@ export function createHarnessClient(): SpeedClient {
   })
 }
 
+/** The app bundles the production assembly registers beyond the framework
+ * four (src/main.tsx names the same list). */
+const APP_NAMESPACES = [
+  { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+  { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
+  { namespace: OBJECTSTORE_UI_NAMESPACE, resources: objectstoreUiResources },
+  { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
+  { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },
+  { namespace: DEMO_NAMESPACE, resources: demoResources },
+] as const
+
 export interface RenderDemoAppResult extends RenderResult {
+  /** The instance the tree renders with: the production construction, in the
+   * requested language. */
+  readonly i18n: I18nInstance
   /** The query client the tree renders with: the assembly's own client. */
-  readonly queryClient: QueryClient
+  readonly queryClient: ReturnType<typeof createQueryClient>
 }
 
 /** Renders DemoApp under the app's provider tree. */
 export function renderDemoApp(
   options: RenderDemoAppOptions = {},
 ): RenderDemoAppResult {
-  const i18n = createI18n({
+  const i18n = createSpeedI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
     defaultLanguage: options.language ?? 'en-US',
     storage: null,
     urlParameterName: null,
     navigatorLanguages: [],
+    namespaces: APP_NAMESPACES,
   })
-  registerNamespace(i18n, UI_KIT_NAMESPACE, uiKitResources)
-  registerNamespace(i18n, LAYOUT_KIT_NAMESPACE, layoutKitResources)
-  registerNamespace(i18n, AUTH_UI_NAMESPACE, authUiResources)
-  registerNamespace(i18n, PRODUCT_SHELL_NAMESPACE, productShellResources)
-  registerNamespace(i18n, CONSOLE_UI_NAMESPACE, consoleUiResources)
-  registerNamespace(i18n, ACCOUNT_UI_NAMESPACE, accountUiResources)
-  registerNamespace(i18n, OBJECTSTORE_UI_NAMESPACE, objectstoreUiResources)
-  registerNamespace(i18n, TENANCY_UI_NAMESPACE, tenancyUiResources)
-  registerNamespace(i18n, NOTIFICATION_UI_NAMESPACE, notificationUiResources)
-  registerNamespace(i18n, DEMO_NAMESPACE, demoResources)
 
   const queryClient = createQueryClient()
   const api = options.api ?? createHarnessClient()
@@ -123,15 +129,11 @@ export function renderDemoApp(
   const app = <DemoApp />
 
   const result = render(
-    <I18nextProvider i18n={i18n}>
-      <AppThemeProvider i18n={i18n}>
-        <QueryClientProvider client={queryClient}>
-          <AppServicesProvider services={services}>
-            {options.wrap === undefined ? app : options.wrap(app)}
-          </AppServicesProvider>
-        </QueryClientProvider>
-      </AppThemeProvider>
-    </I18nextProvider>,
+    <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
+      <AppServicesProvider services={services}>
+        {options.wrap === undefined ? app : options.wrap(app)}
+      </AppServicesProvider>
+    </SpeedAppProviders>,
   )
-  return { ...result, queryClient }
+  return { ...result, i18n, queryClient }
 }

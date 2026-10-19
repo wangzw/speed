@@ -2,14 +2,18 @@
  * The host's sign-in surface: the chrome the app puts around auth-ui's
  * sign-in family.
  *
- * auth-ui's SignInScreen renders no heading, branding or layout -- those are
+ * auth-ui's SignInScreen renders no branding or page heading -- those are
  * host content -- so the host frames it in a centered card with the brand and
- * a heading; the channels it offers come from the deployment's discovery
- * document, so the skeleton renders whatever login methods the running
- * deployment enables. The tenant shell's sign-in slot, its console area's
- * session gate, and the invitation-acceptance route all reuse this one
- * surface, so an anonymous viewer meets the same sign-in (and register) entry
- * wherever the app gates them.
+ * a heading; the only title the screen renders is its own register-mode
+ * block. The page heading and subtitle follow the mode through
+ * `onModeChange`: giving it makes the screen's `mode` the single source, so
+ * the host's title says what the surface is asking for. The channels it
+ * offers come from the deployment's discovery document, so the skeleton
+ * renders whatever login methods the running deployment enables. The tenant
+ * shell's sign-in slot, its console area's session gate, and the
+ * invitation-acceptance route all reuse this one surface, so an anonymous
+ * viewer meets the same sign-in (and register) entry wherever the app gates
+ * them.
  *
  * A redirect method's flow answers an authorization URL; the host navigates
  * the current window to it, and the provider's round trip lands on this app's
@@ -45,10 +49,11 @@ import Box from '@mui/material/Box'
 import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
-import type { SignInContext } from '@speed/auth-ui'
+import type { SignInContext, SignInMode } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
+import { useNavigate } from '@speed/route-kit'
+import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAppServices } from '../app-services.js'
 import { ACCOUNT_SETUP_PATH, AUTH_CALLBACK_PATH } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -80,6 +85,10 @@ export function SignInView({
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
+  // The mode the screen presents. Giving `onModeChange` makes the screen
+  // controlled, so this state is the single source of what the surface asks
+  // for; the page title above the screen follows it.
+  const [mode, setMode] = useState<SignInMode>('sign-in')
   // A registration completed through SMS: the register mode decides where
   // the just-opened account lands. With the personal tenant in force it
   // lands in the tenant area; the home page decides on its own whether the
@@ -137,14 +146,20 @@ export function SignInView({
             {t('app.title')}
           </Typography>
           <Typography component="h1" variant="h5" sx={{ mt: 0.5 }}>
-            {t('signIn.heading')}
+            {mode === 'register'
+              ? t('signIn.registerHeading')
+              : t('signIn.heading')}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {t('signIn.subtitle')}
+            {mode === 'register'
+              ? t('signIn.registerSubtitle')
+              : t('signIn.subtitle')}
           </Typography>
         </Box>
         <SignInScreen
           session={session}
+          mode={mode}
+          onModeChange={setMode}
           onSignedIn={onSignedIn}
           social={SOCIAL_SIGN_IN}
         />

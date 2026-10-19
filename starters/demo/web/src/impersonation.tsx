@@ -74,9 +74,10 @@
  * issued under the cookie the server has just replaced, and a read answered
  * 401 in that window runs the transport's silent restore with the stale
  * cookie -- which reads "no session" and turns the local session anonymous.
- * The mutation cache exposes the moment the start write leaves the browser
- * (the console page issues it), and this provider uses that moment, not the
- * settled write, to cut both halves of the window: the queries in flight are
+ * The console page reports that moment through the shell's
+ * `onImpersonationStarting` seam (console-ui calls the host's hook
+ * synchronously before it writes); this provider uses it, not the settled
+ * write, to cut both halves of the window: the queries in flight are
  * cancelled (their generated query functions carry react-query's abort
  * signal into the transport, so no 401 answer reaches the session hook), and
  * new query fetches stay paused until applyIdentityChange finishes -- after
@@ -96,11 +97,11 @@ import {
   useImpersonationNotice,
 } from '@speed/auth-ui'
 import type { ImpersonationBannerState } from '@speed/auth-ui'
+import type { ConsoleImpersonationStarting } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
-import { useWriteFeedback } from '@speed/ui-kit'
+import { httpStatusOf, useWriteFeedback } from '@speed/ui-kit'
 import {
-  getAuthnImpersonationStartMutationOptions,
   getAuthnImpersonationStatusQueryKey,
   useAuthnImpersonationEnd,
   useAuthnImpersonationStatus,
@@ -117,13 +118,6 @@ const CHECK_TTL_MAX_MS = 60_000
  * impersonating after the recorded expiry (the check-ttl default). */
 const CHECK_TTL_RETRY_MS = 5_000
 
-/** The generated start mutation's key. The console page issues the write, so
- * the shared mutation cache is the host's only view of the moment it leaves
- * the browser; the key is read from the generated options rather than
- * repeated here, so a regeneration cannot silently rename it. */
-const START_MUTATION_KEY: readonly unknown[] | undefined =
-  getAuthnImpersonationStartMutationOptions().mutationKey
-
 /** The status read's generated query key. The identity change evicts every
  * other cached row and leaves this one alone: evicting it would make the
  * mounted status observer re-read immediately, and a re-read that answers
@@ -131,17 +125,6 @@ const START_MUTATION_KEY: readonly unknown[] | undefined =
  * is disabled -- the interval is over -- its own hook evicts it, so the next
  * interval starts from a fresh read rather than the finished grant. */
 const STATUS_QUERY_KEY: readonly unknown[] = getAuthnImpersonationStatusQueryKey()
-
-/** Whether a mutation key is the start write's (same parts, same order). */
-function isStartMutationKey(key: readonly unknown[] | undefined): boolean {
-  if (START_MUTATION_KEY === undefined || key === undefined) {
-    return false
-  }
-  return (
-    key.length === START_MUTATION_KEY.length &&
-    key.every((part, index) => part === START_MUTATION_KEY[index])
-  )
-}
 
 /** Whether a query key is the status read's (same parts, same order). */
 function isStatusQueryKey(key: readonly unknown[]): boolean {
@@ -157,6 +140,9 @@ interface ReadHold {
   /** The client's online state when the hold began; a client that was
    * genuinely offline stays offline when the hold is released. */
   readonly resumeOnline: boolean
+  /** Set once the hold was released, so a pause scheduled by the hold does
+   * not land on an already-released window. */
+  released: boolean
 }
 
 /** Which identity edge just settled. */
@@ -168,6 +154,9 @@ interface IdentityChangeContextValue {
   /** Bumped after each identity change, for hosts that re-register
    * identity-scoped subscriptions. */
   readonly generation: number
+  /** The console shell's start seam: holds reads while a start write is in
+   * flight and returns the release for a write that does not land. */
+  readonly onImpersonationStarting: ConsoleImpersonationStarting
 }
 
 const IdentityChangeContext =
@@ -194,65 +183,63 @@ export function IdentityChangeProvider({
     if (hold === null) {
       return
     }
+    hold.released = true
     holdRef.current = null
     if (hold.resumeOnline) {
       onlineManager.setOnline(true)
     }
   }, [])
 
-  /** Cuts both halves of the start write's rotation window. */
-  const holdReads = useCallback((): void => {
-    if (holdRef.current !== null) {
-      return
-    }
-    // Every read in flight was issued under the session cookie the start
-    // write is about to replace. Cancel them before any 401 answer can run
-    // the transport's silent restore with the stale cookie.
-    void queryClient.cancelQueries()
-    const resumeOnline = onlineManager.isOnline()
-    holdRef.current = { resumeOnline }
-    if (resumeOnline) {
-      // Pausing the client's fetches is the one client-wide gate react-query
-      // exposes: queries created or refetching while held stay paused and
-      // issue no request. The start write itself is exempted below (its
-      // mutation key runs with networkMode 'always'), so the pause cannot
-      // stall the write that opened the window.
-      onlineManager.setOnline(false)
-    }
-  }, [queryClient])
-
-  // Watches for the start write being issued through the shared mutation
-  // cache. A pending start holds reads; a refused one releases them (no
-  // identity change follows); a successful one stays held until the identity
-  // change settles the new session.
-  useEffect(() => {
-    if (START_MUTATION_KEY === undefined) {
-      return undefined
-    }
-    queryClient.setMutationDefaults(START_MUTATION_KEY, {
-      networkMode: 'always',
-    })
-    const unsubscribe = queryClient.getMutationCache().subscribe((event) => {
-      if (event.type !== 'added' && event.type !== 'updated') {
-        return
+  /**
+   * Cuts both halves of the start write's rotation window and returns the
+   * release for a write that does not land. This is the console shell's
+   * `onImpersonationStarting` hook: console-ui calls it synchronously before
+   * issuing the start write, and calls the returned release when that write
+   * is refused, blocked by step-up or throws. A write that lands releases
+   * through applyIdentityChange's own finally instead -- the identity change
+   * is what must settle before reads go out again.
+   */
+  const holdReads = useCallback((): (() => void) => {
+    let hold = holdRef.current
+    if (hold === null) {
+      // Every read in flight was issued under the session cookie the start
+      // write is about to replace. Cancel them before any 401 answer can run
+      // the transport's silent restore with the stale cookie.
+      void queryClient.cancelQueries()
+      const created: ReadHold = {
+        resumeOnline: onlineManager.isOnline(),
+        released: false,
       }
-      const { mutation } = event
-      if (!isStartMutationKey(mutation.options.mutationKey)) {
-        return
+      hold = created
+      holdRef.current = created
+      if (created.resumeOnline) {
+        // Pausing the client's fetches is the one client-wide gate
+        // react-query exposes: queries created or refetching while held stay
+        // paused and issue no request. The pause lands one task after this
+        // hook, because the caller issues the start write in the same turn:
+        // pausing now would park that write behind the pause (a mutation
+        // with the client's default networkMode waits while the client is
+        // offline), and the write is what opens the window. What the pause
+        // holds back is every read that would follow the write, none of
+        // which can leave before the invalidation the settled write fires.
+        setTimeout(() => {
+          if (holdRef.current === created && !created.released) {
+            onlineManager.setOnline(false)
+          }
+        }, 0)
       }
-      if (mutation.state.status === 'pending') {
-        holdReads()
-      } else if (mutation.state.status === 'error') {
+    }
+    const held = hold
+    return () => {
+      if (holdRef.current === held) {
         releaseReads()
       }
-    })
-    return () => {
-      unsubscribe()
-      // A provider torn down mid-hold must not leave the shared client
-      // paused for whatever renders next.
-      releaseReads()
     }
-  }, [queryClient, holdReads, releaseReads])
+  }, [queryClient, releaseReads])
+
+  // A provider torn down mid-hold must not leave the shared client paused
+  // for whatever renders next.
+  useEffect(() => releaseReads, [releaseReads])
 
   // The action's callers include the expiry timer, which must not restart
   // when the route changes. The collaborators still reach the stable
@@ -299,7 +286,13 @@ export function IdentityChangeProvider({
   )
 
   return (
-    <IdentityChangeContext.Provider value={{ applyIdentityChange, generation }}>
+    <IdentityChangeContext.Provider
+      value={{
+        applyIdentityChange,
+        generation,
+        onImpersonationStarting: holdReads,
+      }}
+    >
       {children}
     </IdentityChangeContext.Provider>
   )
@@ -316,16 +309,12 @@ export function useIdentityChange(): IdentityChangeContextValue {
 
 /**
  * Whether a failure is the impersonation endpoint's bare 404: "there is no
- * impersonation in force". The transport surfaces it either as an HTTP
- * status or as the client.http.404 code, the same structural reading
- * console-ui makes of the same answer.
+ * impersonation in force". The status reading is ui-kit's structural one
+ * (httpStatusOf): the transport surfaces the answer either as an HTTP status
+ * or as the client.http.404 code, and both read as 404.
  */
 export function isNotImpersonating(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false
-  }
-  const candidate = error as { readonly status?: unknown; readonly code?: unknown }
-  return candidate.status === 404 || candidate.code === 'client.http.404'
+  return httpStatusOf(error) === 404
 }
 
 /**

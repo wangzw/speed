@@ -26,16 +26,19 @@ import {
   consoleUiResources,
 } from '@speed/console-ui'
 import { LAYOUT_KIT_NAMESPACE, layoutKitResources } from '@speed/layout-kit'
-import { createQueryClient } from '@speed/product-shell/bootstrap'
+import {
+  createQueryClient,
+  createSpeedI18n,
+} from '@speed/product-shell/bootstrap'
 import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
 import { RouteProvider } from '@speed/route-kit'
 import { AppThemeProvider, UI_KIT_NAMESPACE, uiKitResources } from '@speed/ui-kit'
-import consoleUiEnUS from '../../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
 import { AppServicesProvider } from '../app-services.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { invitationPath } from '../paths.js'
 import { DEMO_NAMESPACE, demoResources } from '../resources.js'
 import { consoleShellRoutes } from '../routes.js'
+import { hasCoarsePointerTouchTarget } from '../test-utils/emitted-css.js'
 import { createHarnessClient } from '../test-utils/render.js'
 import { createTestSession } from '../test-utils/session.js'
 import { ConsoleArea } from './console-area.js'
@@ -45,37 +48,20 @@ afterEach(() => {
 })
 
 /**
- * Whether `element` carries a coarse-pointer rule that sets both minimum
- * edges to the 44px floor. The same probe `@speed/test-utils/emitted-css`
- * ships, kept local because the demo host declares every `@speed`
- * dependency by registry version and so cannot import the private
- * workspace test-support package.
+ * The expected copy, resolved from the console package's shipped resources
+ * through a production instance rather than read from a file path.
  */
-function hasCoarsePointerTouchTarget(element: Element): boolean {
-  const css = Array.from(document.querySelectorAll('style'))
-    .map((style) => style.textContent ?? '')
-    .join('\n')
-  const classes = Array.from(element.classList).filter((name) =>
-    name.startsWith('css-'),
-  )
-  return classes.some((className) =>
-    css
-      .split('@media (pointer: coarse)')
-      .slice(1)
-      .some((block) => {
-        const at = block.indexOf(`.${className}`)
-        if (at < 0) return false
-        const open = block.indexOf('{', at)
-        const close = open < 0 ? -1 : block.indexOf('}', open)
-        if (open < 0 || close < 0) return false
-        const declarations = block.slice(open + 1, close)
-        return (
-          declarations.includes('min-width:44px') &&
-          declarations.includes('min-height:44px')
-        )
-      }),
-  )
-}
+const textI18n = createSpeedI18n({
+  supportedLanguages: ['zh-CN', 'en-US'],
+  defaultLanguage: 'en-US',
+  storage: null,
+  urlParameterName: null,
+  navigatorLanguages: [],
+  namespaces: [
+    { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+  ],
+})
+const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
 
 function renderConsoleArea(children: ReactNode = <p>console page</p>) {
   const i18n = createI18n({
@@ -103,13 +89,23 @@ function renderConsoleArea(children: ReactNode = <p>console page</p>) {
 
   // The area reads the router (route-kit's navigate) to route its navigation
   // and its exit in place, so it renders under a RouteProvider as the app
-  // mounts it; the routed child is the stand-in, so the table stays empty.
+  // mounts it. The table is the console's own declarations: the area derives
+  // its selected entry from the nav items that table yields, exactly as the
+  // app does with its full table. The routed child stays the stand-in.
   return render(
     <I18nextProvider i18n={i18n}>
       <AppThemeProvider i18n={i18n}>
         <AppServicesProvider services={services}>
           <QueryClientProvider client={services.queryClient}>
-            <RouteProvider table={[]} fallback={() => null}>
+            <RouteProvider
+              table={consoleShellRoutes}
+              fallback={() => null}
+              // Every console declaration is gated, so the provider needs the
+              // host's presence answer: this suite serves every feature.
+              presence={{ state: 'ready', has: () => true }}
+              pending={() => null}
+              failed={() => null}
+            >
               <ConsoleArea
                 routes={consoleShellRoutes}
                 hasFeature={() => true}
@@ -144,16 +140,16 @@ describe('ConsoleArea', () => {
         .getAllByRole('button')
         .map((button) => button.textContent),
     ).toEqual([
-      consoleUiEnUS.nav.groups.identity,
-      consoleUiEnUS.nav.groups.platform,
+      tConsole('nav.groups.identity'),
+      tConsole('nav.groups.platform'),
     ])
     // A single-entry group is promoted: its one page stands as a top-level
     // link at the position the group would have taken, with no disclosure
     // control of its own.
     for (const loneGroup of [
-      consoleUiEnUS.nav.groups.overview,
-      consoleUiEnUS.nav.groups.tenants,
-      consoleUiEnUS.nav.groups.audit,
+      tConsole('nav.groups.overview'),
+      tConsole('nav.groups.tenants'),
+      tConsole('nav.groups.audit'),
     ]) {
       expect(
         within(nav).queryByRole('button', { name: loneGroup }),
@@ -167,18 +163,34 @@ describe('ConsoleArea', () => {
         .getAllByRole('link')
         .map((link) => link.textContent),
     ).toEqual([
-      consoleUiEnUS.dashboard.title,
-      consoleUiEnUS.accounts.title,
-      consoleUiEnUS.sessions.title,
-      consoleUiEnUS.impersonations.title,
-      consoleUiEnUS.permissions.title,
-      consoleUiEnUS.invitations.title,
-      consoleUiEnUS.sso.title,
-      consoleUiEnUS.tenants.title,
-      consoleUiEnUS.settings.title,
-      consoleUiEnUS.sms.title,
-      consoleUiEnUS.audit.title,
+      tConsole('dashboard.title'),
+      tConsole('accounts.title'),
+      tConsole('sessions.title'),
+      tConsole('impersonations.title'),
+      tConsole('permissions.title'),
+      tConsole('invitations.title'),
+      tConsole('sso.title'),
+      tConsole('tenants.title'),
+      tConsole('settings.title'),
+      tConsole('sms.title'),
+      tConsole('audit.title'),
     ])
+  })
+
+  it('marks the current console page in the navigation', () => {
+    window.history.replaceState({}, '', '/console/settings')
+    renderConsoleArea()
+    const nav = screen.getByRole('navigation')
+
+    // The shell does no path matching: the host derives the selection from
+    // the console nav items and hands it in, so exactly the current page's
+    // entry is marked.
+    expect(
+      within(nav).getByRole('link', { name: tConsole('settings.title') }),
+    ).toHaveAttribute('aria-current', 'page')
+    expect(
+      within(nav).getByRole('link', { name: tConsole('tenants.title') }),
+    ).not.toHaveAttribute('aria-current')
   })
 
   it('routes a console navigation entry in place instead of reloading', async () => {
@@ -188,7 +200,7 @@ describe('ConsoleArea', () => {
 
     const nav = screen.getByRole('navigation')
     await user.click(
-      within(nav).getByRole('link', { name: consoleUiEnUS.settings.title }),
+      within(nav).getByRole('link', { name: tConsole('settings.title') }),
     )
     // The entry went through the router: the URL moved without a page load.
     expect(window.location.pathname).toBe('/console/settings')
@@ -260,15 +272,15 @@ describe('ConsoleArea', () => {
     const user = userEvent.setup()
     renderConsoleArea(<InvitationsPage />)
 
-    await user.click(screen.getByLabelText(consoleUiEnUS.common.tenant))
+    await user.click(screen.getByLabelText(tConsole('common.tenant')))
     await user.click(await screen.findByRole('option', { name: 'Acme' }))
     await user.type(
-      await screen.findByLabelText(consoleUiEnUS.invitations.issue.emailLabel),
+      await screen.findByLabelText(tConsole('invitations.issue.emailLabel')),
       'new@example.com',
     )
     await user.click(
       screen.getByRole('button', {
-        name: consoleUiEnUS.invitations.issue.submit,
+        name: tConsole('invitations.issue.submit'),
       }),
     )
 
@@ -276,10 +288,7 @@ describe('ConsoleArea', () => {
     // invitationPath), not dropped: the dead-code path is wired.
     expect(
       await screen.findByText(
-        consoleUiEnUS.invitations.issued.link.replace(
-          '{{email}}',
-          'new@example.com',
-        ),
+        tConsole('invitations.issued.link', { email: 'new@example.com' }),
       ),
     ).toBeInTheDocument()
     expect(

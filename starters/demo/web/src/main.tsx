@@ -41,11 +41,12 @@ import {
 import {
   bootstrapSpeedApp,
   type SpeedAppBootstrap,
+  type SpeedAppThemeOptions,
 } from '@speed/product-shell/bootstrap'
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
-import { getCurrentTenantAlias } from './chrome.js'
+import { getCurrentTenantAlias, initialColorMode } from './chrome.js'
 import { applyDocumentMetadata } from './document-metadata.js'
 import { PlatformPermissions } from './platform-permissions.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
@@ -55,6 +56,22 @@ import { loadRuntimeConfig } from './runtime-config.js'
 export type DemoAppBootstrap = SpeedAppBootstrap
 
 /**
+ * The theme options the bootstrap hands the assembly. The tree starts in the
+ * device's remembered colour mode, else the operating system's preference,
+ * else light (src/chrome.tsx reads it before the first render, so a reload
+ * renders in the mode the user left). The project-layer tokens are the brand
+ * placeholder: an empty override keeps the platform's shipped palette, and a
+ * product replaces it with its own (@speed/ui-kit's README, "The theme
+ * factory").
+ */
+export function demoThemeOptions(): SpeedAppThemeOptions {
+  return {
+    defaultMode: initialColorMode(),
+    projectTokens: {},
+  }
+}
+
+/**
  * Builds the whole app composition into the given container. Calling it twice
  * into one container double-mounts; a page bootstraps exactly once.
  */
@@ -62,6 +79,7 @@ export async function bootstrapDemoApp(
   container: Element,
 ): Promise<DemoAppBootstrap> {
   const { apiOrigin } = await loadRuntimeConfig()
+  const theme = demoThemeOptions()
   const bootstrap = bootstrapSpeedApp(container, {
     namespaces: [
       { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
@@ -89,6 +107,7 @@ export async function bootstrapDemoApp(
       ),
     ],
     view: <DemoApp />,
+    theme,
     baseUrl: apiOrigin,
     // The tenant every request announces as X-Tenant: the host's current
     // tenant's ALIAS, read per attempt (src/chrome.tsx holds the one value
@@ -98,9 +117,10 @@ export async function bootstrapDemoApp(
     // tenant-scoped call without it is refused 404.
     tenantProvider: getCurrentTenantAlias,
   })
-  // The entry document's <html lang> and title follow the language the
-  // assembly resolved, so an interface rendered in Chinese is announced as
-  // Chinese rather than the static build-time default.
+  // The entry document's title follows the language the assembly resolved,
+  // so the tab names the brand in the interface's own language. `<html lang>`
+  // is the assembly's: it binds the document language at boot and follows
+  // every switch (SpeedAppDefinition.documentLanguage).
   applyDocumentMetadata(bootstrap.i18n)
   return bootstrap
 }

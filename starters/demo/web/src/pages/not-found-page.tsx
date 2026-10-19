@@ -13,7 +13,7 @@ import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import { useTranslation } from '@speed/i18n'
-import { useNavigate } from '@speed/route-kit'
+import { useRouteLinkProps } from '@speed/route-kit'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /** The tenant area's home path: the fallback's offered way out. */
@@ -29,7 +29,7 @@ export function NotFoundPage({
   readonly path: string
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const navigate = useNavigate()
+  const homeLink = useRouteLinkProps(TENANT_HOME_PATH)
   return (
     <Box
       component="section"
@@ -45,12 +45,9 @@ export function NotFoundPage({
       </Typography>
       <Typography variant="body1">{t('notFound.body')}</Typography>
       <Link
-        href={TENANT_HOME_PATH}
+        href={homeLink.href}
+        onClick={homeLink.onClick}
         underline="hover"
-        onClick={(event) => {
-          event.preventDefault()
-          navigate(TENANT_HOME_PATH)
-        }}
       >
         {t('notFound.home')}
       </Link>

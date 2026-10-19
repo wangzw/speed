@@ -8,9 +8,10 @@
  *
  * This is the configuration a product owns: it lives with the app, not
  * with the package library, and it regenerates through the app's own
- * `pnpm api:gen` (package.json), which runs the three legs in order --
- * the host's `gen` command writing the merged document, orval over it,
- * then web/scripts/orval-nodenext-fixup.mjs. Change the generator
+ * `pnpm api:gen` (package.json), which runs the four legs in order --
+ * the host's `gen` command writing the merged document and the feature
+ * vocabulary, this app's feature-name generator, orval over the
+ * document, then scripts/orval-nodenext-fixup.mjs. Change the generator
  * configuration here and regenerate; never patch the artifact.
  *
  * orval version pinned: 8.17.0, the same pin the platform level names.
@@ -51,7 +52,7 @@ export default {
           `// The app-owned SDK surface (src/app-api/); regenerate with\n` +
           `// \`pnpm api:gen\` from starters/demo/web. The mutator import in\n` +
           `// this file is rewritten to an explicit .js extension by\n` +
-          `// web/scripts/orval-nodenext-fixup.mjs, the last step of that\n` +
+          `// scripts/orval-nodenext-fixup.mjs, the last step of that\n` +
           `// script; rerun it after every regeneration.\n`,
         mutator: {
           path: './src/app-api/runtime.ts',

@@ -29,11 +29,15 @@ import {
   makeHarness,
   principal,
   PROFILE_GET,
-} from '@speed/test-utils/session-harness'
-import consoleUiEnUS from '../../../../web/packages/console-ui/src/locales/en-US.json' with { type: 'json' }
-import accountUiEnUS from '../../../../web/packages/account-ui/src/locales/en-US.json' with { type: 'json' }
-import layoutKitEnUS from '../../../../web/packages/layout-kit/src/locales/en-US.json' with { type: 'json' }
-import notificationUiEnUS from '../../../../web/packages/notification-ui/src/locales/en-US.json' with { type: 'json' }
+} from './test-utils/session-harness.js'
+import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
+import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
+import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
+import {
+  NOTIFICATION_UI_NAMESPACE,
+  notificationUiResources,
+} from '@speed/notification-ui'
+import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { DEFAULT_TENANT_ID, setCurrentTenantId } from './chrome.js'
 import { renderDemoApp } from './test-utils/render.js'
@@ -42,6 +46,30 @@ import {
   createTestSession,
   readyFeatures,
 } from './test-utils/session.js'
+
+/**
+ * The expected copy, resolved from the packages' shipped resources through a
+ * production instance rather than read from a file path.
+ */
+const textI18n = createSpeedI18n({
+  supportedLanguages: ['zh-CN', 'en-US'],
+  defaultLanguage: 'en-US',
+  storage: null,
+  urlParameterName: null,
+  navigatorLanguages: [],
+  namespaces: [
+    { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+    { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
+    { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },
+  ],
+})
+const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
+const tAccount = textI18n.getFixedT('en-US', ACCOUNT_UI_NAMESPACE)
+const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
+const tNotifications = textI18n.getFixedT(
+  'en-US',
+  NOTIFICATION_UI_NAMESPACE,
+)
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
@@ -58,18 +86,22 @@ function sessionWith(
 
 /** The notification bell's accessible name (the unread count is not read
  * here, so the plain label is the answer). */
-const BELL_NAME = new RegExp(`^${notificationUiEnUS.bell.label}`)
+const BELL_NAME = new RegExp(`^${tNotifications('bell.label')}`)
 
-/** A client whose event-stream opener records each open, so a suite can
- * assert the stream gating without a transport. */
-function countingClient(opened: string[]): SpeedClient {
+/** A client whose event-stream opener records each open and each close, so a
+ * suite can assert the stream gating and how many subscriptions survive. */
+function countingClient(opened: string[], closed: string[]): SpeedClient {
   const request = (async () => {
     throw new Error('the gating suite client must not be called')
   }) as RequestFn
   return Object.assign(request, {
     openEventStream: (path: string) => {
       opened.push(path)
-      return { close: () => undefined }
+      return {
+        close: () => {
+          closed.push(path)
+        },
+      }
     },
   })
 }
@@ -115,7 +147,7 @@ describe('a served document narrows the tenant area', () => {
       cardHeading(demoEnUS.home.cards.notifications.title),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('link', { name: notificationUiEnUS.inbox.title }),
+      screen.queryByRole('link', { name: tNotifications('inbox.title') }),
     ).not.toBeInTheDocument()
   })
 
@@ -134,7 +166,7 @@ describe('a served document narrows the tenant area', () => {
     expect(
       screen.queryByRole('heading', {
         level: 1,
-        name: notificationUiEnUS.inbox.title,
+        name: tNotifications('inbox.title'),
       }),
     ).not.toBeInTheDocument()
   })
@@ -150,7 +182,7 @@ describe('a served document narrows the tenant area', () => {
     expect(
       await screen.findByRole('heading', {
         level: 1,
-        name: notificationUiEnUS.inbox.title,
+        name: tNotifications('inbox.title'),
       }),
     ).toBeInTheDocument()
     expect(
@@ -307,13 +339,13 @@ describe('the console area follows the path, not the feature document', () => {
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('navigation', {
-        name: consoleUiEnUS.shell.navLabel,
+        name: tConsole('shell.navLabel'),
       }),
     ).not.toBeInTheDocument()
     // The tenant frame did render: the area decision fell back, it did not
     // sign the viewer out or leave a blank page.
     expect(
-      screen.getByRole('navigation', { name: layoutKitEnUS.appShell.navLabel }),
+      screen.getByRole('navigation', { name: tLayout('appShell.navLabel') }),
     ).toBeInTheDocument()
   })
 })
@@ -370,6 +402,7 @@ describe('the live notification stream', () => {
       throw new Error(`the gating suite binds only the roster: ${path}`)
     }) as RequestFn)
     const served: string[] = []
+    const closed: string[] = []
     const { unmount } = renderDemoApp({
       session: sessionWith(
         readyFeatures(
@@ -378,15 +411,23 @@ describe('the live notification stream', () => {
           'notification.stream',
         ),
       ),
-      api: countingClient(served),
+      api: countingClient(served, closed),
     })
-    await waitFor(() => expect(served).toHaveLength(1))
+    // The served feature opens a connection. The suite renders the production
+    // stack, StrictMode included, so the mount effect runs twice: the first
+    // connection is closed by the cleanup and exactly one live subscription
+    // remains. A cleanup that stopped closing would leave two open.
+    await waitFor(() => expect(served).toHaveLength(2))
+    expect(closed).toHaveLength(1)
+    expect(served.length - closed.length).toBe(1)
     unmount()
+    // Unmounting closes the surviving subscription too.
+    expect(served.length - closed.length).toBe(0)
 
     const absent: string[] = []
     renderDemoApp({
       session: sessionWith(readyFeatures('tenant.admin', 'notification.inbox')),
-      api: countingClient(absent),
+      api: countingClient(absent, []),
     })
     await screen.findByText(demoEnUS.home.heading)
     // The provider would otherwise open a connection the server must refuse
@@ -409,13 +450,13 @@ describe('the account page mounts only the sections its document serves', () => 
     expect(
       screen.queryByRole('heading', {
         level: 2,
-        name: accountUiEnUS.mfa.title,
+        name: tAccount('mfa.title'),
       }),
     ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('heading', {
         level: 2,
-        name: accountUiEnUS.phone.title,
+        name: tAccount('phone.title'),
       }),
     ).not.toBeInTheDocument()
   })
@@ -429,13 +470,13 @@ describe('the account page mounts only the sections its document serves', () => 
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: accountUiEnUS.mfa.title,
+        name: tAccount('mfa.title'),
       }),
     ).toBeInTheDocument()
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: accountUiEnUS.phone.title,
+        name: tAccount('phone.title'),
       }),
     ).toBeInTheDocument()
   })
