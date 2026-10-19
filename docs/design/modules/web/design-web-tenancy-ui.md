@@ -11,7 +11,8 @@
 - **触发器显示当前租户。** 标签是租户列表里与 `currentTenantId` 相配那一行的名字——宿主数据，原样渲染，从不翻译。没有相配的行，或 `currentTenantId` 为空时，触发器禁用并显示 `tenantSwitcher.noCurrentTenant` 文案。
 - **打开列表列出全部租户，当前那一行禁用**，它的点击守卫在任何回调之前返回，故合成点击也改不动。
 - **选中另一行调 `onSelect(id)`。** 用户的选择报给宿主，由宿主把路由切到那个租户、更新租户上下文并逐出离任租户的查询缓存。
-- **一次选择安静地宣布。** 提交给宿主之后，一条 `role="status"` 区域报出已切换到的新租户（`tenantSwitcher.switchedTo`）。
+- **一次选择安静地宣布。** 提交给宿主之后，一条 `role="status"` 区域报出已切换到的新租户（`tenantSwitcher.switchedTo`）。该区域从控件挂载起存在，`announcement` 决定确认文本是否在触发器旁绘制。
+- **宿主条目可以跟在列表后面。** `menuFooter` 在租户行之后、同一菜单内的分隔线下方渲染宿主条目；它收到的 `close` 关闭菜单，供跳转前调用。
 
 ### 非职责
 
@@ -35,10 +36,19 @@ interface TenantSwitcherProps {
   readonly tenants: readonly TenantOption[]
   readonly currentTenantId: string | null
   readonly onSelect: (tenantId: string) => void
+  readonly menuFooter?: (close: () => void) => ReactNode
+  readonly announcement?: 'inline' | 'visually-hidden'
+  readonly triggerProps?: Pick<ButtonProps, 'variant' | 'size' | 'sx' | 'startIcon'>
 }
 ```
 
 **`tenants`、`currentTenantId`、`onSelect` 是必需属性，`TenantOption` 的两个字段只读。** 这是本控件对宿主的语义契约：宿主必须提供这三者。把其中任一个放宽为可选，类型上属于源码兼容的放宽，但它破坏了这条语义契约——一个不再提供它们的宿主仍能通过编译，故这是契约语义层面的破坏性变更，而不是类型不兼容。`TenantOption` 的字段与这三个属性同属宿主提供的输入：宿主构造租户列表，控件只读取渲染。故按同一分类，给 `TenantOption` 新增可选字段是源码兼容的；新增必选字段、删除字段、或改字段的含义或名，是不兼容变更。
+
+**`menuFooter`、`announcement`、`triggerProps` 是可选属性，缺省时行为不变。**
+
+- `menuFooter(close)` 在租户行之后、同一菜单内的分隔线下方渲染宿主条目。`close` 关闭菜单；需要跳转的宿主条目在跳转前调用它。未提供时菜单只有租户行。
+- `announcement` 选择切换确认的位置：`inline`（缺省）在触发器旁绘制确认文本，`visually-hidden` 始终裁切、只留在无障碍树中播报。两种取值都从挂载起就渲染同一条 `role="status"` 区域。
+- `triggerProps` 只携带呈现属性——`variant`、`size`、`sx`、`startIcon`——展开到触发器按钮上，使控件的外观与宿主自己的 chrome 一致。未提供时触发器是继承环境文字颜色的描边按钮。
 
 **`onSelect` 在用户选一个非当前租户时触发一次，携带选中的租户标识。** 宿主在那里把路由切过去、更新租户上下文、重取数据并逐出上一租户的查询缓存；回调抛出不是选择失败，本包把它包住，既不当错误渲染，也不让它逃成未处理的拒绝。
 
@@ -49,10 +59,10 @@ interface TenantSwitcherProps {
 | 依赖 | 用途 |
 |---|---|
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子 |
-| `@speed/ui-kit` | 声明的依赖，`src/` 不 import 它；只有 `test-utils/` 用它的主题 provider 与 `ui-kit` 命名空间，宿主在 ui-kit 的主题下组合本包 |
+| `@speed/ui-kit` | `src/` 取共享的裁切配方 `visuallyHiddenSx`；`test-utils/` 用它的主题 provider 与 `ui-kit` 命名空间，宿主在 ui-kit 的主题下组合本包 |
 | `@mui/material`、`react`、`react-dom`、`@emotion/*` | peer（必需）：`Button`／`Menu`／`MenuItem` 原语与宿主拥有的 MUI／React 树 |
 
-`@speed/auth-core`、`@speed/api-client` 与 `@speed/api-sdk` 是 devDependency：本包的 `src/` 不引用它们，公开类型也不引用。`@speed/ui-kit` 在本包之下，本包的 `src/` 不 import 它；本包与 `@speed/auth-ui` 同为能力 UI，同层之间互不 import。
+`@speed/auth-core`、`@speed/api-client` 与 `@speed/api-sdk` 是 devDependency：本包的 `src/` 不引用它们，公开类型也不引用。`@speed/ui-kit` 在本包之下，本包的 `src/` 只从它取共享的裁切配方 `visuallyHiddenSx`；本包与 `@speed/auth-ui` 同为能力 UI，同层之间互不 import。
 
 ## UML 图
 
@@ -82,7 +92,7 @@ sequenceDiagram
 
 1. 用户在列表里点一个非当前租户的行；行的点击守卫先确认它不是当前租户，再把菜单关掉、调 `onSelect(id)`。
 2. 宿主接手：把路由切到那个租户，更新它交给 `TenantProvider` 的租户标识，并用切换之前读到的离任租户 id 逐出该租户的查询子树。
-3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；控件挂在宿主的 `userMenu` 槽，运行期只依赖 `@speed/i18n` 与 MUI，不 import ui-kit，区域是本包自己的，遵守与 `InlineSuccess` 同一条先挂空区域、再填文本的做法；租户切换是宿主回调，不是写入，不在 `useWriteFeedback` 的作用域之内。
+3. 控件报出已切换的租户（`role="status"`）。该区域在控件挂载时就已存在、内容为空，选择时才填入文本，使第一次选择也被播报；`announcement` 为 `visually-hidden` 时该区域始终裁切、只留在无障碍树中。控件挂在宿主的 `userMenu` 槽，运行期只依赖 `@speed/i18n`、`@speed/ui-kit`（仅取共享的裁切配方 `visuallyHiddenSx`）与 MUI，区域是本包自己的，遵守与 `InlineSuccess` 同一条先挂空区域、再填文本的做法；租户切换是宿主回调，不是写入，不在 `useWriteFeedback` 的作用域之内。
 
 ### 当前租户收敛
 
@@ -109,4 +119,5 @@ sequenceDiagram
 |---|---|---|
 | 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcher`、`TenantOption`、`TenantSwitcherProps` |
 | 命名空间资源 | 已实现 | `web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
-| 切换通知的区域在控件挂载时存在 | 未实现 | — |
+| 切换通知的区域在控件挂载时存在 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcher` |
+| 菜单页脚、播报位置与触发器呈现选项 | 已实现 | `web/packages/tenancy-ui/src/TenantSwitcher.tsx` `TenantSwitcherProps` |

@@ -134,6 +134,9 @@ documented usage cannot drift from the API.
 | `tenants` | `readonly TenantOption[]` (required) | the host-supplied list; `TenantOption` is `{ id: string; name: string }`, both readonly |
 | `currentTenantId` | `string \| null` (required) | the tenant the host's route resolves to, from the host's own data source (typically `useCurrentTenant()`) |
 | `onSelect` | `(tenantId: string) => void` (required) | fired exactly once when the user picks a non-current row; the host's route-change hook |
+| `menuFooter` | `(close: () => void) => ReactNode` (optional) | host entries rendered after the tenant rows under a divider in the same menu; `close()` dismisses the menu |
+| `announcement` | `'inline' \| 'visually-hidden'` (optional; default `inline`) | whether the switched-to confirmation is painted beside the trigger or stays visually hidden while announcing |
+| `triggerProps` | `Pick<ButtonProps, 'variant' \| 'size' \| 'sx' \| 'startIcon'>` (optional) | presentation spread onto the trigger button, so it can match the host's chrome |
 
 Behaviour, all of it controlled and test-pinned:
 
@@ -158,9 +161,23 @@ Behaviour, all of it controlled and test-pinned:
   person using a screen reader cannot glance at the chrome to check. The
   confirmation stays until the next selection replaces it (no
   auto-dismiss timer), so its lifetime never races a screen reader's
-  processing of it. The component renders no error surface: the switch
+  processing of it. The region is mounted from the first render, empty
+  and clipped, so the first selection fills a region the screen reader
+  already knows. The `announcement` prop chooses whether the
+  confirmation is painted (`inline`, the default) or stays clipped for
+  its whole lifetime (`visually-hidden`, for a host whose chrome has no
+  room for it). The component renders no error surface: the switch
   itself is the host's, and its failures belong to the host's route and
   data layer.
+- **Host entries can follow the tenant rows.** `menuFooter(close)`
+  renders its content after the list, under a divider, inside the same
+  menu. The supplied `close` dismisses the menu, so an entry that
+  navigates elsewhere calls it first. Without it the menu contains only
+  the tenant rows.
+- **The trigger accepts presentation.** `triggerProps` carries
+  `variant`, `size`, `sx` and `startIcon` onto the trigger button, so the
+  control can match the host's own chrome; without it the trigger is the
+  outlined button that inherits the ambient text color.
 - **The component is controlled and never changes its own display.** The
   trigger keeps showing the host-supplied `currentTenantId`'s row until
   the host hands back a new id; it never derives the current tenant and
@@ -194,7 +211,10 @@ and `aria-controls` on the open list; the menu renders MUI's menu
 semantics, with the current-tenant row `disabled` -- announced and
 skipped by assistive tech, and inert even to synthetic clicks. The
 switched-to confirmation is a `role="status"` live region (announced
-without interrupting). The component suite runs axe over the open list.
+without interrupting) mounted from the first render; with
+`announcement="visually-hidden"` it is clipped to the 1x1 box but stays
+in the accessibility tree, never `display: none`. The component suite
+runs axe over the open list, with and without a host menu footer.
 As in `ui-kit` and `auth-ui`, `color-contrast` stays axe-disabled in
 jsdom (no real paint); contrast is asserted at the theme-value level in
 the component suite.
@@ -231,15 +251,16 @@ over auth-core's `TenantProvider` / `useCurrentTenant`.
 | `@mui/material` | peer (required, ^9) | the `Button`/`Menu`/`MenuItem` primitives and the ambient theme |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
 | `@speed/i18n` | dependency | the namespace registration and the translation hook every string renders through |
-| `@speed/ui-kit` | dependency | the MUI theme layer the host composes under and the `ui-kit` namespace a host app registers |
+| `@speed/ui-kit` | dependency | the shared `visuallyHiddenSx` clip recipe, the MUI theme layer the host composes under, and the `ui-kit` namespace a host app registers |
 
 `@speed/auth-core`, `@speed/api-client` and `@speed/api-sdk` are
 devDependencies: no `src/` code references them and no public type of
 this package does either -- the test suite composes a host over
-auth-core's tenant context, but the shipped component does not. `ui-kit`'s
-theme provider is likewise test-only -- it appears only in `test-utils/`,
-never in `src/`, because the test tree must render under a real host
-composition. No direct HTTP exists anywhere in `src/` -- the component
+auth-core's tenant context, but the shipped component does not. The
+component's `src/` takes only the shared `visuallyHiddenSx` clip recipe
+from `ui-kit`; its theme provider is test-only -- it appears only in
+`test-utils/`, never in `src/`, because the test tree must render under a
+real host composition. No direct HTTP exists anywhere in `src/` -- the component
 sends no request at all -- and the workspace's `speed/no-direct-http`
 rule enforces that (this package is simply absent from the rule's one
 whitelist, `packages/api-client`); the `speed/no-literal-text` rule

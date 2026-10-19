@@ -7,19 +7,27 @@ nothing else. It is installed into business projects via `npm install`,
 so everything below that touches the public surface is contract, not
 style.
 
-## Public surface (frozen)
+## Public surface
 
-`src/index.ts` exports exactly five names -- `TENANCY_UI_NAMESPACE`,
-`tenancyUiResources`, `TenantOption`, `TenantSwitcherProps`,
-`TenantSwitcher` -- and nothing more. Every other `src/` file is
-`internal/` plumbing: the translation hook. It exists to be tested, never
-to be imported by a consumer; adding an export is a breaking change under
-lockstep versioning. `TenantOption` is `{ id, name }` with both fields
-readonly -- extending the shape breaks delivered projects.
-`TenantSwitcherProps` is `{ tenants, currentTenantId, onSelect }`: all
-three are required, and `onSelect` is `(tenantId: string) => void`.
-Making any of them optional, or re-introducing a `session` prop, is a
-consumer-visible breaking change.
+`src/index.ts` exports `TENANCY_UI_NAMESPACE`, `tenancyUiResources`,
+`TenantOption`, `TenantSwitcherProps` and `TenantSwitcher`, and nothing
+more. Every other `src/` file is `internal/` plumbing: the translation
+hook. It exists to be tested, never to be imported by a consumer.
+Changes are classified by TypeScript's source semantics: a new export and
+a new optional field are source-compatible; removing an export or field,
+changing an existing export's or field's meaning or name, or changing a
+signature (parameters or return type) is incompatible. `TenantOption` is
+`{ id, name }` with both fields readonly -- adding an optional field is
+source-compatible and leaves a host that does not set it unchanged;
+adding a required field, removing a field, or changing a field's meaning
+or name is incompatible. `TenantSwitcherProps` is `{ tenants,
+currentTenantId, onSelect }`, all three required, with `onSelect`
+`(tenantId: string) => void`, plus the optional `menuFooter`,
+`announcement` and `triggerProps`. Making a required prop optional is
+source-compatible in type terms but breaks this control's semantic
+contract (a host that stops passing it still compiles), so it is a
+breaking change; re-introducing a `session` prop is consumer-visible
+breaking.
 
 ## Controlled discipline (non-negotiable in src/)
 
@@ -54,7 +62,8 @@ MUI/React tree. `@speed/auth-core`, `@speed/api-client` and
 `@speed/api-sdk` are devDependencies: `src/` does not import them and no
 public type of this package references them -- the test suite composes a
 host over auth-core's tenant context, but the shipped component does
-not. `ui-kit`'s theme provider stays test-only: it appears only in
+not. `src/` takes only the shared `visuallyHiddenSx` clip recipe from
+`ui-kit`; its theme provider stays test-only: it appears only in
 `test-utils/`, because the test tree must render under a real host
 composition.
 

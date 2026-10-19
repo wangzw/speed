@@ -38,6 +38,23 @@
  * says. The confirmation stays on the page until the next selection
  * replaces it -- deliberately no auto-dismiss timer, so the
  * announcement's lifetime never races a reader's processing of it.
+ * The announcement region is mounted from the start, empty and clipped,
+ * so a live region that only receives its text later is present before
+ * the text arrives: a region born together with its content is not
+ * reliably announced. The `announcement` option chooses whether the
+ * confirmation is also painted (`inline`, the default) or stays clipped
+ * for its whole lifetime (`visually-hidden`, for a host whose chrome has
+ * no room for it); the region is in the accessibility tree either way.
+ *
+ * A host may render its own entries after the tenant list through
+ * `menuFooter`: the function receives a `close` callback that closes the
+ * menu, so an entry that navigates elsewhere can dismiss the list first.
+ * The footer renders under a divider, in the same menu, after the tenant
+ * rows. `triggerProps` carries presentation only -- variant, size, sx
+ * and startIcon -- onto the trigger button, so a host can match the
+ * control to its own chrome (a contained button in a plain toolbar, a
+ * small one in a dense header) without this component growing a styling
+ * API of its own.
  *
  * The component is controlled and fails closed: the tenant list and the
  * current tenant id are host data, and nothing here consumes the
@@ -60,11 +77,20 @@
  */
 
 import { useId, useState } from 'react'
+import type { ReactNode } from 'react'
 import Button from '@mui/material/Button'
+import type { ButtonProps } from '@mui/material/Button'
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
+// The clip recipe for the visually hidden announcement, shared with every
+// other hidden live region on the platform: the element keeps its place in
+// the accessibility tree -- so a text change still announces -- while its
+// 1x1 out-of-flow box paints nothing. Never display:none, which takes the
+// region out of the tree and makes it not live.
+import { visuallyHiddenSx } from '@speed/ui-kit'
 import { useTenancyUiTranslation } from './internal/translation.js'
 
 /** One switchable tenant: the id onSelect is called with, and the name
@@ -91,12 +117,34 @@ export interface TenantSwitcherProps {
    * and never renders an error, and the component contains it, so it
    * cannot escape as an unhandled rejection either. */
   readonly onSelect: (tenantId: string) => void
+  /** Host entries rendered after the tenant list, under a divider, in the
+   * same menu. The callback receives a `close` function that closes the
+   * menu; an entry that navigates elsewhere calls it first. Omitted, the
+   * menu contains only the tenant rows. */
+  readonly menuFooter?: (close: () => void) => ReactNode
+  /** Whether the switched-to confirmation is painted beside the trigger
+   * (`inline`, the default) or stays visually hidden (`visually-hidden`).
+   * Both mount one `role="status"` region from the start; the hidden form
+   * keeps it in the accessibility tree and announcing while painting
+   * nothing, for a host whose chrome has no room for the confirmation. */
+  readonly announcement?: 'inline' | 'visually-hidden'
+  /** Presentation for the trigger button: variant, size, sx and startIcon
+   * are spread onto it, so the control can match the host's own chrome.
+   * Omitted, the trigger is the default outlined button inheriting the
+   * ambient text color. */
+  readonly triggerProps?: Pick<
+    ButtonProps,
+    'variant' | 'size' | 'sx' | 'startIcon'
+  >
 }
 
 export function TenantSwitcher({
   tenants,
   currentTenantId,
   onSelect,
+  menuFooter,
+  announcement = 'inline',
+  triggerProps,
 }: TenantSwitcherProps) {
   const { t } = useTenancyUiTranslation()
   const menuId = useId()
@@ -109,6 +157,7 @@ export function TenantSwitcher({
   const menuOpen = anchorEl !== null
   const currentTenant =
     tenants.find((tenant) => tenant.id === currentTenantId) ?? null
+  const closeMenu = (): void => setAnchorEl(null)
 
   const select = (tenant: TenantOption): void => {
     // The selection is a synchronous hand-off to the host: close the
@@ -117,7 +166,7 @@ export function TenantSwitcher({
     // contract), so it renders no error, never becomes an unhandled
     // rejection from this fire-and-forget handler, and the selection is
     // still announced.
-    setAnchorEl(null)
+    closeMenu()
     try {
       onSelect(tenant.id)
     } catch {
@@ -147,22 +196,35 @@ export function TenantSwitcher({
           onClick={(event) => {
             setAnchorEl(event.currentTarget)
           }}
+          {...triggerProps}
         >
           {currentTenant === null
             ? t('tenantSwitcher.noCurrentTenant')
             : currentTenant.name}
         </Button>
-        {selectedName !== null ? (
-          <Typography component="span" role="status" sx={{ color: 'inherit' }}>
-            {t('tenantSwitcher.switchedTo', { tenant: selectedName })}
-          </Typography>
-        ) : null}
+        <Typography
+          component="span"
+          role="status"
+          // The region is mounted from the first render, empty and
+          // clipped, so the live region exists before the text arrives.
+          // The inline confirmation paints once a selection fills it; the
+          // visually-hidden form never paints.
+          sx={
+            announcement === 'visually-hidden' || selectedName === null
+              ? visuallyHiddenSx
+              : { color: 'inherit' }
+          }
+        >
+          {selectedName === null
+            ? ''
+            : t('tenantSwitcher.switchedTo', { tenant: selectedName })}
+        </Typography>
       </Box>
       <Menu
         id={menuId}
         anchorEl={anchorEl}
         open={menuOpen}
-        onClose={() => setAnchorEl(null)}
+        onClose={closeMenu}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       >
@@ -183,6 +245,12 @@ export function TenantSwitcher({
             {tenant.name}
           </MenuItem>
         ))}
+        {menuFooter === undefined ? null : (
+          <>
+            <Divider />
+            {menuFooter(closeMenu)}
+          </>
+        )}
       </Menu>
     </Box>
   )

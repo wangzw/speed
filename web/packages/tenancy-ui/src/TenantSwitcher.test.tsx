@@ -10,13 +10,18 @@
  * -- it renders no error, never escapes as an unhandled rejection, and
  * the selection is still announced (a throwing host callback is not a
  * selection failure). With no current tenant the trigger is disabled and
- * shows the noCurrentTenant text, and nothing opens. Text expectations
+ * shows the noCurrentTenant text, and nothing opens. The optional props
+ * extend this without changing it: menuFooter renders host entries after
+ * the rows under a divider and receives a close callback, announcement
+ * keeps the status region mounted and can leave it clipped, and
+ * triggerProps spreads presentation onto the trigger. Text expectations
  * read the bundle values, never inline language.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import MenuItem from '@mui/material/MenuItem'
 import { switchLanguage } from '@speed/i18n'
 import { createAppTheme } from '@speed/ui-kit'
 import { TenantSwitcher } from './TenantSwitcher.js'
@@ -86,6 +91,18 @@ function contrastRatio(a: string, b: string): number {
   const lighter = Math.max(luminance(a), luminance(b))
   const darker = Math.min(luminance(a), luminance(b))
   return (lighter + 0.05) / (darker + 0.05)
+}
+
+/** Whether the element is clipped to the 1x1 visually-hidden box. jsdom
+ * renders no layout, but it resolves the emotion class rules into
+ * computed styles, so the clip recipe is observable. */
+function isVisuallyHidden(element: Element): boolean {
+  const style = getComputedStyle(element)
+  return (
+    style.position === 'absolute' &&
+    ((style.clip !== '' && style.clip !== 'auto') ||
+      (style.clipPath !== '' && style.clipPath !== 'none'))
+  )
 }
 
 describe('TenantSwitcher', () => {
@@ -336,8 +353,106 @@ describe('TenantSwitcher', () => {
     )
   })
 
+  it('mount the announcement region empty and clipped before the first selection, then paint it inline', async () => {
+    const user = userEvent.setup()
+    renderSwitcher()
+    // A live region born together with its text is not reliably
+    // announced: the region is in the tree from the first render, empty
+    // and clipped, and the first selection fills a region the screen
+    // reader already knows.
+    const before = screen.getByRole('status')
+    expect(before).toBeEmptyDOMElement()
+    expect(isVisuallyHidden(before)).toBe(true)
+    const { other } = await openMenu(user)
+    await user.click(other)
+    const after = screen.getByRole('status')
+    expect(after).toHaveTextContent(SWITCHED_TO_ZH('Bright Smile Clinic'))
+    // Inline is the default: the confirmation is painted beside the
+    // trigger once a selection fills it.
+    expect(isVisuallyHidden(after)).toBe(false)
+  })
+
+  it('keep the status region visually hidden while announcing when announcement is visually-hidden', async () => {
+    const user = userEvent.setup()
+    renderSwitcher({ announcement: 'visually-hidden' })
+    expect(isVisuallyHidden(screen.getByRole('status'))).toBe(true)
+    const { other } = await openMenu(user)
+    await user.click(other)
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent(SWITCHED_TO_ZH('Bright Smile Clinic'))
+    // The region stays in the accessibility tree -- clipped, not
+    // display:none, which would make it not live -- and never paints.
+    expect(isVisuallyHidden(status)).toBe(true)
+    expect(getComputedStyle(status).display).not.toBe('none')
+  })
+
+  it('render the menu footer after the tenant rows under a divider and close the menu from its callback', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const menuFooter = vi.fn((close: () => void) => (
+      <MenuItem onClick={close}>Create tenant</MenuItem>
+    ))
+    renderWithProviders(
+      <TenantSwitcher
+        tenants={TENANTS}
+        currentTenantId="tenant-1"
+        onSelect={onSelect}
+        menuFooter={menuFooter}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Sunshine Dental' }))
+    const lastRow = await screen.findByRole('menuitem', {
+      name: 'Bright Smile Clinic',
+    })
+    const divider = screen.getByRole('separator')
+    const footerItem = screen.getByRole('menuitem', { name: 'Create tenant' })
+    // The footer sits after every tenant row, separated from them.
+    expect(
+      lastRow.compareDocumentPosition(divider) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      divider.compareDocumentPosition(footerItem) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    // The supplied close callback dismisses the list; the footer is host
+    // text and reports nothing through onSelect.
+    await user.click(footerItem)
+    await waitFor(() =>
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
+    )
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('spread the trigger presentation props onto the button', () => {
+    renderSwitcher({
+      triggerProps: {
+        variant: 'contained',
+        size: 'small',
+        sx: { textTransform: 'none' },
+        startIcon: <span data-testid="tenant-icon" />,
+      },
+    })
+    const trigger = screen.getByRole('button', { name: 'Sunshine Dental' })
+    expect(trigger).toHaveClass('MuiButton-contained')
+    expect(trigger).toHaveClass('MuiButton-sizeSmall')
+    expect(trigger).toContainElement(screen.getByTestId('tenant-icon'))
+    expect(trigger).toHaveStyle({ textTransform: 'none' })
+  })
+
   it('pass axe with no violations over the open list', async () => {
     renderSwitcher()
+    const user = userEvent.setup()
+    await openMenu(user)
+    await expectNoAxeViolations()
+  })
+
+  it('pass axe with the host menu footer open', async () => {
+    renderSwitcher({
+      menuFooter: (close) => (
+        <MenuItem onClick={close}>Create tenant</MenuItem>
+      ),
+    })
     const user = userEvent.setup()
     await openMenu(user)
     await expectNoAxeViolations()
