@@ -19,8 +19,10 @@
     // never committed and not yet built in a fresh checkout. Emitted
     // dist/ keeps the bare specifiers, which consumers resolve against
     // the real published packages. Keep this in lockstep with what src/
-    // and test-utils/ import (the workspace alias suite pins this
-    // section against the shared package map). List order matters: "@speed/api-sdk/runtime"
+    // and test-utils/ import (src/tsconfig-paths.test.ts checks this
+    // section against the shared package map and walks the sibling
+    // sources this program reaches, so a subpath a sibling imports is
+    // pinned too). List order matters: "@speed/api-sdk/runtime"
     // must be tried before its "@speed/api-sdk" prefix, and
     // "@speed/i18n/mui-locale" before "@speed/i18n" (first match wins in
     // paths).
@@ -30,6 +32,7 @@
       "@speed/api-sdk/features": ["../api-sdk/src/features.ts"],
       "@speed/api-sdk": ["../api-sdk/src/index.ts"],
       "@speed/api-client": ["../api-client/src/index.ts"],
+      "@speed/auth-core/webauthn": ["../auth-core/src/webauthn.ts"],
       "@speed/auth-core": ["../auth-core/src/index.ts"],
       "@speed/auth-ui": ["../auth-ui/src/index.ts"],
       "@speed/route-kit": ["../route-kit/src/index.ts"],
