@@ -21,7 +21,18 @@
  * over the host's QueryClient -- nothing here builds a client, attaches a
  * session, reads storage, navigates or touches the network directly. The
  * upload's byte leg is the generated content operation with the picked File
- * as its body, which the transport sends verbatim. Helpers shared between
+ * as its body, which the transport sends verbatim.
+ *
+ * A host that renders its own surface over the same capability composes
+ * the two public orchestrations instead of this page: `useObjectUploads`
+ * owns the FileUploader queue and runs the three-step transfer (reporting
+ * a completed object through its `onUploaded` callback), and
+ * `useObjectDownload` fetches one object's bytes and saves them under the
+ * derived filename. `useObjectUploads` must render under the host's
+ * TenantProvider (its post-upload invalidation namespaces by that context's
+ * tenant); `useObjectDownload` reads no React tenant context and follows
+ * the bound client's `tenantProvider` instead.
+ * `ObjectsPage` composes them too. The remaining helpers shared between
  * the components live in src/internal/ and are deliberately not exported.
  *
  * What the object view carries is what the page can show: the routes answer
@@ -39,3 +50,9 @@ export {
   ObjectDetailDialog,
   type ObjectDetailDialogProps,
 } from './ObjectDetailDialog.js'
+export {
+  useObjectUploads,
+  type ObjectUploads,
+  type UseObjectUploadsOptions,
+} from './uploads.js'
+export { useObjectDownload } from './downloads.js'

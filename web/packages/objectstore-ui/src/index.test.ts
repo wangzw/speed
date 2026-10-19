@@ -12,6 +12,8 @@ describe('@speed/objectstore-ui public surface', () => {
         'ObjectDetailDialog',
         'ObjectsPage',
         'objectstoreUiResources',
+        'useObjectDownload',
+        'useObjectUploads',
       ].sort(),
     )
   })

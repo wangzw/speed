@@ -17,13 +17,15 @@
  * current cursor is the stack's top, Next pushes the answered cursor,
  * Previous pops. An empty next cursor means there is no further page.
  *
- * The upload surface owns its queue (internal/uploads.ts): a picked file
- * runs the module's three-step transfer (declare -> upload bytes ->
- * complete) and the row settles succeeded or failed. The delete control
- * asks the page to hold a description of what it will do, rendered through
- * ui-kit's danger ConfirmDialog; the mutation fires only on the confirming
- * click. A download is saved under the view's stored name, falling back to
- * the identifier plus a MIME-derived extension when the name is empty.
+ * The upload surface owns its queue (uploads.ts): a picked file runs the
+ * module's three-step transfer (declare -> upload bytes -> complete) and
+ * the row settles succeeded or failed. The delete control asks the page to
+ * hold a description of what it will do, rendered through ui-kit's danger
+ * ConfirmDialog; the mutation fires only on the confirming click. A
+ * download reads the object's bytes and saves them under the view's stored
+ * name, falling back to the identifier plus a MIME-derived extension when
+ * the name is empty; both orchestrations are the package's public hooks
+ * (`useObjectUploads`, `useObjectDownload`), and the page composes them.
  *
  * Download and delete share one write-feedback scope whose region sits
  * under the list and above the pager: the slot holds at most one outcome,
@@ -35,8 +37,9 @@
  * re-reads the tenant subtree so a row the server no longer holds does not
  * stay on screen.
  *
- * The refresh control re-reads the list. It reports the read's busy state
- * as `aria-busy` and stays focusable rather than becoming natively
+ * The refresh control is ui-kit's RefreshButton over the shared
+ * usePageRefresh mechanism: it re-reads the list, reports the read's busy
+ * state as `aria-busy`, stays focusable rather than becoming natively
  * disabled, and a second activation issues no second request. It is
  * natively disabled while a page write is in flight, and with no tenant
  * in play -- a re-read ignores the read's enablement gate, so an enabled
@@ -48,10 +51,9 @@
  * -- the page owns no path and adds no navigation entry of its own.
  */
 
-import { useId, useRef, useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import {
@@ -61,28 +63,29 @@ import {
   ListSkeleton,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  RefreshButton,
   WriteFeedbackRegion,
+  pageRefreshRead,
+  usePageRefresh,
   useWriteFeedback,
 } from '@speed/ui-kit'
-import type { DataTableColumn } from '@speed/ui-kit'
+import type { DataTableColumn, FileUploaderProps } from '@speed/ui-kit'
+import { formatInstant } from '@speed/i18n'
+import { isTenantAdmissionRefusal } from '@speed/auth-core'
+import type { ObjectstoreObject } from '@speed/api-sdk'
 import { useObjectstoreUiTranslation } from './internal/translation.js'
-import { useObjectUploads } from './internal/uploads.js'
-import {
-  ObjectAsyncSection,
-  isForbidden,
-  isTenantRefusal,
-} from './internal/async-section.js'
+import { useObjectUploads } from './uploads.js'
+import { useObjectDownload } from './downloads.js'
+import { ObjectAsyncSection, isForbidden } from './internal/async-section.js'
 import { ObjectDetailDialog } from './ObjectDetailDialog.js'
 import { useObjectstoreUiErrorText } from './internal/error-text.js'
-import { downloadFilename, formatByteNumber, formatUtc } from './internal/format.js'
+import { formatByteNumber } from './internal/format.js'
 import { stateLabelKey } from './internal/status.js'
 import {
-  getObjectContent,
   useDeleteObject,
   useInvalidateObjects,
   useObjectsListQuery,
 } from './internal/queries.js'
-import { saveBlob } from './internal/download.js'
 import type { StoredObject } from './internal/models.js'
 
 /** The rows the list requests per page (within the module's accepted range). */
@@ -110,14 +113,31 @@ export interface ObjectsPageProps {
    * upper bound of its own, so a value here is a hint, never a guarantee.
    */
   readonly pageSize?: number
+  /**
+   * The upload surface's picker options, or false to hide the surface
+   * entirely. Omitted, the page renders the picker as it always has:
+   * several files per selection, any content type.
+   */
+  readonly upload?: false | Pick<FileUploaderProps, 'accept' | 'multiple'>
+  /**
+   * Extra controls appended to each row's actions cell, after the built-in
+   * download, details and delete controls. The cell stays one column, so
+   * the name and the actions share one screen at every tier.
+   */
+  readonly rowActions?: (object: ObjectstoreObject) => ReactNode
 }
 
 /** The tenant object store's page. */
-export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) {
+export function ObjectsPage({
+  pageSize = DEFAULT_PAGE_SIZE,
+  upload,
+  rowActions,
+}: ObjectsPageProps) {
   const { t, i18n } = useObjectstoreUiTranslation()
   const resolveErrorText = useObjectstoreUiErrorText()
   const invalidate = useInvalidateObjects()
   const uploads = useObjectUploads()
+  const downloadObject = useObjectDownload()
   const removeObject = useDeleteObject()
   // The one slot every page write settles into: a download or a delete.
   const feedback = useWriteFeedback()
@@ -136,34 +156,27 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
   const hasNext = nextCursor !== ''
   const pending = query.isPending && query.data === undefined
   const deletePending = removeObject.isPending
-  // The refresh control is natively disabled by the two states that make a
-  // re-read wrong, never by the read's own busy state (that one is
-  // reported as aria-busy so focus is not dropped).
-  const refreshBlocked = tenantId === null || feedback.pending
-  const refreshBusy = query.isFetching
-  const refreshLoadingId = useId()
+
+  // The refresh re-reads the list and resets the write-feedback scope
+  // first: an outcome from the list as it stood before the re-read would
+  // otherwise sit above the new one.
+  const pageRefresh = usePageRefresh(
+    [pageRefreshRead('objects', query)],
+    feedback.reset,
+  )
+
+  // Omitted upload options keep the surface's long-standing shape: several
+  // files per selection, any content type. A caller that passes options
+  // hands the picker exactly those.
+  const uploadOptions: Pick<FileUploaderProps, 'accept' | 'multiple'> =
+    upload === undefined || upload === false ? { multiple: true } : upload
 
   const [detailId, setDetailId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<StoredObject | null>(null)
 
-  // A second activation that lands before the busy state reaches a render
-  // issues no second read.
-  const refreshInFlight = useRef(false)
-  const refresh = (): void => {
-    if (refreshInFlight.current || query.isFetching) {
-      return
-    }
-    feedback.reset()
-    refreshInFlight.current = true
-    void query.refetch().finally(() => {
-      refreshInFlight.current = false
-    })
-  }
-
   const download = (object: StoredObject): void => {
     void feedback.run(async () => {
-      const blob = await getObjectContent(object.id)
-      saveBlob(blob, downloadFilename(object.name, object.id, object.mime))
+      await downloadObject(object)
       return t('download.saved', {
         name: object.name === '' ? object.id : object.name,
       })
@@ -269,7 +282,9 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
       cellWrap: 'nowrap',
       cell: (object) => (
         <Typography variant="body2" color="text.secondary">
-          {formatUtc(object.created_at, i18n.language) ?? ''}
+          {formatInstant(object.created_at, i18n.language, {
+            timeZone: 'UTC',
+          })}
         </Typography>
       ),
     },
@@ -311,6 +326,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
           >
             {t('actions.delete')}
           </Button>
+          {rowActions?.(object)}
         </Box>
       ),
     },
@@ -322,51 +338,38 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
         title={t('page.title')}
         description={t('page.description')}
         actions={
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            // The busy indicator is named by the button's own text: the
-            // button carries the id while it is busy, and the progressbar
-            // is labelled by it.
-            id={refreshBusy ? refreshLoadingId : undefined}
-            // A focused control moved to native disabled drops focus to
-            // the document, so the read's busy state is aria-busy only;
-            // the two states that make a re-read wrong keep it disabled.
-            disabled={refreshBlocked}
-            aria-busy={refreshBusy || undefined}
-            startIcon={
-              refreshBusy ? (
-                <CircularProgress
-                  aria-labelledby={refreshLoadingId}
-                  color="inherit"
-                  size={16}
-                />
-              ) : undefined
-            }
-            onClick={refresh}
-          >
-            {t('page.refresh')}
-          </Button>
+          <RefreshButton
+            busy={pageRefresh.busy}
+            // No tenant means no read to re-read: a refetch ignores the
+            // read's enablement gate, so an enabled control would issue a
+            // tenant-less request.
+            disabled={tenantId === null}
+            writePending={feedback.pending}
+            label={t('page.refresh')}
+            onClick={pageRefresh.refresh}
+          />
         }
       />
 
-      <Box component="section">
-        <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-          {t('upload.heading')}
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          {t('upload.description')}
-        </Typography>
-        <FileUploader
-          rows={uploads.rows}
-          onSelectFiles={uploads.selectFiles}
-          onRetry={uploads.retry}
-          onRemove={uploads.remove}
-          allowDrop
-          multiple
-        />
-      </Box>
+      {upload === false ? null : (
+        <Box component="section">
+          <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
+            {t('upload.heading')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t('upload.description')}
+          </Typography>
+          <FileUploader
+            rows={uploads.rows}
+            onSelectFiles={uploads.selectFiles}
+            onRetry={uploads.retry}
+            onRemove={uploads.remove}
+            allowDrop
+            accept={uploadOptions.accept}
+            multiple={uploadOptions.multiple}
+          />
+        </Box>
+      )}
 
       <Box component="section">
         <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
@@ -414,7 +417,7 @@ export function ObjectsPage({ pageSize = DEFAULT_PAGE_SIZE }: ObjectsPageProps) 
           resolve={resolveErrorText}
         />
         {query.data !== undefined &&
-        !isTenantRefusal(query.error) &&
+        !isTenantAdmissionRefusal(query.error) &&
         !isForbidden(query.error) &&
         (hasPrevious || hasNext) ? (
           <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>

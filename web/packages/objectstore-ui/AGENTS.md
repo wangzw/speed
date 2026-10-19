@@ -45,13 +45,28 @@ reading the current tenant from `@speed/auth-core`'s tenant context.
   instants, the byte size's number through `Intl.NumberFormat` with the
   unit from the bundle); code-level failures resolve through the
   namespace's error text.
+- **The upload and download orchestrations are public.** `useObjectUploads`
+  owns the `FileUploader` queue and runs the three-step transfer, reporting
+  a completed object and its `File` through `onUploaded` (the latest
+  function passed, read at settle time, so a re-render mid-transfer neither
+  restarts the queue nor strands the transfer in flight; a callback that
+  throws leaves the settled row alone and its exception stops at the
+  callback boundary); `useObjectDownload`
+  returns the operation that fetches one object's bytes and saves them under
+  the derived filename. A host rendering its own surface composes them
+  directly; `ObjectsPage` composes the same two hooks. `useObjectUploads`
+  must render under the host's `TenantProvider` -- it namespaces its
+  post-upload invalidation by that context's tenant. `useObjectDownload`
+  reads no React tenant context: its generated operation announces the
+  current tenant through the bound client's `tenantProvider`, so it needs
+  no provider of its own.
 - **It composes ui-kit, it does not re-implement it.** The list is
   `DataTable`, the async states are `AsyncSection` (with a permission-refusal
   branch and, in the details dialog, an object-gone branch for a typed
   `objectstore.not_found` 404, with no retry), the queue is
-  `FileUploader`, the delete is `ConfirmDialog`, the failures are
-  `InlineError`. The page never lays out its own spinner, empty block or
-  alert.
+  `FileUploader`, the delete is `ConfirmDialog`, the refresh control is
+  `RefreshButton` over `usePageRefresh`, the failures are `InlineError`. The
+  page never lays out its own spinner, empty block or alert.
 
 ## What it is not
 
@@ -77,9 +92,9 @@ reading the current tenant from `@speed/auth-core`'s tenant context.
 | Dependency | Why |
 |---|---|
 | `@speed/api-sdk` | the generated objectstore operations and response models |
-| `@speed/auth-core` | `TenantProvider`/`useCurrentTenant`, `useTenantQueryKey` and `tenantQueryKey` |
-| `@speed/ui-kit` | the composed components (DataTable, FileUploader, AsyncSection, ConfirmDialog, InlineError, PageHeader, ListSkeleton) |
-| `@speed/i18n` | the namespace, the translation hook and the error-text resolver |
+| `@speed/auth-core` | `TenantProvider`/`useCurrentTenant`, `useTenantQueryKey`, `tenantQueryKey` and `isTenantAdmissionRefusal` |
+| `@speed/ui-kit` | the composed components (DataTable, FileUploader, AsyncSection, ConfirmDialog, InlineError, PageHeader, ListSkeleton, RefreshButton, usePageRefresh, httpStatusOf) |
+| `@speed/i18n` | the namespace, the translation hook, the error-text resolver and `formatInstant` |
 
 `react`, `react-dom`, `@mui/material`, `@emotion/*` and `@tanstack/react-query`
 are peer dependencies (the host renders the tree and owns the QueryClient).

@@ -9,8 +9,9 @@
  * Every field renders from the objectstore-ui namespace; the name leads the
  * field list -- the list truncates it to one line, so this is where its full
  * value lives -- and an empty name renders the "unnamed" copy. Instants render
- * through Intl in the active language and in UTC, and an absent expiry
- * renders the "never" copy rather than an empty cell.
+ * through @speed/i18n's `formatInstant` in the active language and
+ * explicitly in UTC, and an absent expiry renders the "never" copy rather
+ * than an empty cell.
  *
  * The async state is the shared four-state branch (loading, error,
  * empty/content), so the dialog never re-invents a spinner or an error
@@ -31,9 +32,10 @@ import Skeleton from '@mui/material/Skeleton'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { ListSkeleton } from '@speed/ui-kit'
+import { formatInstant } from '@speed/i18n'
 import { useObjectDetailQuery } from './internal/queries.js'
 import { ObjectAsyncSection } from './internal/async-section.js'
-import { formatByteNumber, formatUtc } from './internal/format.js'
+import { formatByteNumber } from './internal/format.js'
 import { stateLabelKey } from './internal/status.js'
 import { useObjectstoreUiTranslation } from './internal/translation.js'
 import type { StoredObject } from './internal/models.js'
@@ -138,15 +140,23 @@ export function ObjectDetailDialog({ id, onClose }: ObjectDetailDialogProps) {
               />
               <DetailRow
                 label={t('detail.field.expires')}
-                value={formatUtc(settled.expires_at, i18n.language) ?? t('detail.never')}
+                value={
+                  formatInstant(settled.expires_at ?? '', i18n.language, {
+                    timeZone: 'UTC',
+                  }) || t('detail.never')
+                }
               />
               <DetailRow
                 label={t('detail.field.created')}
-                value={formatUtc(settled.created_at, i18n.language) ?? ''}
+                value={formatInstant(settled.created_at, i18n.language, {
+                  timeZone: 'UTC',
+                })}
               />
               <DetailRow
                 label={t('detail.field.updated')}
-                value={formatUtc(settled.updated_at, i18n.language) ?? ''}
+                value={formatInstant(settled.updated_at, i18n.language, {
+                  timeZone: 'UTC',
+                })}
               />
             </Stack>
           )}

@@ -6,6 +6,8 @@
 
 - `ObjectsPage`：本租户的对象列表（名称、对象标识、状态、大小、内容类型、创建时间，以及每行的下载、详情与删除控件），经 `@speed/ui-kit` 的 `FileUploader` 驱动的上传面（每个文件走对象存储模块的三步传输：声明 → 上传字节 → 完成），一个逐对象的详情对话框，一次下载与一次删除。删除经 ui-kit 危险 `ConfirmDialog` 的 `doubleConfirm` 两步守卫确认——对象连同其字节一并销毁、界面上无从恢复。
 - `ObjectDetailDialog`：单个对象的元数据（含名称），读 `GET /api/v1/objects/{id}`，由 `ObjectsPage` 的「详情」控件打开。
+- `useObjectUploads`：上传编排。宿主用自己的界面渲染 `FileUploader` 时复用它：它持队列、跑三步传输，并经 `onUploaded` 交出完成的对象与产生它的文件。
+- `useObjectDownload`：下载编排。返回一个操作，取回一个对象的字节并按派生文件名落盘。
 - 命名为 `OBJECTSTORE_UI_NAMESPACE` 与 `objectstoreUiResources` 的双语命名空间资源。
 
 **本包是能力 UI 包，与一个后端能力目录对应**（[design-web](design-web.md) 的划分轴）：`@speed/objectstore-ui` 对 `pkg/objectstore`，把该模块的路由渲染成一个页面。它处在生成钩子这一层之上，与 `@speed/account-ui`、`@speed/console-ui` 同层而互不 import。
@@ -31,26 +33,37 @@
 ```tsx
 interface ObjectsPageProps {
   readonly pageSize?: number // 列表请求的页大小，模块另施自己的缺省与上限
+  readonly upload?: false | Pick<FileUploaderProps, 'accept' | 'multiple'> // false 隐藏上传面；缺省为多选、任意类型
+  readonly rowActions?: (object: ObjectstoreObject) => ReactNode // 追加在既有操作单元格内，不新增列
 }
 
 interface ObjectDetailDialogProps {
   readonly id: string | null // null 即关闭，读被禁用
   readonly onClose: () => void
 }
+
+interface UseObjectUploadsOptions {
+  readonly onUploaded?: (object: ObjectstoreObject, file: File) => void
+}
+
+useObjectUploads(options?: UseObjectUploadsOptions): ObjectUploads // { rows, selectFiles, retry, remove }
+useObjectDownload(): (object: ObjectstoreObject) => Promise<void>
 ```
 
-导出集为 `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources`、`ObjectsPage`（连同 `ObjectsPageProps`）、`ObjectDetailDialog`（连同 `ObjectDetailDialogProps`）。`src/internal/` 下的错误文案解析器、失败横幅、异步分支、上传编排与格式化助手是页内管线，不外导。
+导出集为 `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources`、`ObjectsPage`（连同 `ObjectsPageProps`）、`ObjectDetailDialog`（连同 `ObjectDetailDialogProps`）、`useObjectUploads`（连同 `UseObjectUploadsOptions`、`ObjectUploads`）与 `useObjectDownload`。`src/internal/` 下的错误文案解析器、异步分支与格式化助手是页内管线，不外导。
 
-**对外接口面。** 上述导出集与 `ObjectsPageProps`、`ObjectDetailDialogProps` 的形状是对宿主的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。包以锁定版本组发布。
+**两个公开钩子都在宿主的租户上下文内使用。** `useObjectUploads` 以该上下文的租户标识失效查询子树，`useObjectDownload` 的生成操作经宿主绑定的客户端出行、由客户端的 `tenantProvider` 宣告同一租户；两者本身不挂载提供者，宿主的 `TenantProvider` 缺席时上传后的列表不会重读。`ObjectsPage` 内部同样组合这两个钩子。
+
+**对外接口面。** 上述导出集与 `ObjectsPageProps`、`ObjectDetailDialogProps`、`UseObjectUploadsOptions` 与两个钩子的返回形状是对宿主的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。包以锁定版本组发布。
 
 ## 依赖
 
 | 依赖 | 用途 |
 |---|---|
 | `@speed/api-sdk` | 生成的 objectstore 操作与响应模型 |
-| `@speed/auth-core` | `TenantProvider`/`useCurrentTenant`、`useTenantQueryKey`、`tenantQueryKey` |
-| `@speed/ui-kit` | `DataTable`、`FileUploader`、`AsyncSection`、`ConfirmDialog`、`InlineError`、`WriteFeedbackRegion`、`useWriteFeedback`、`PageHeader`、`ListSkeleton` |
-| `@speed/i18n` | 命名空间注册、文案翻译钩子与错误码文本解析器 |
+| `@speed/auth-core` | `TenantProvider`/`useCurrentTenant`、`useTenantQueryKey`、`tenantQueryKey`、`isTenantAdmissionRefusal` |
+| `@speed/ui-kit` | `DataTable`、`FileUploader`、`AsyncSection`、`ConfirmDialog`、`InlineError`、`WriteFeedbackRegion`、`useWriteFeedback`、`PageHeader`、`ListSkeleton`、`RefreshButton`、`usePageRefresh`、`httpStatusOf` |
+| `@speed/i18n` | 命名空间注册、文案翻译钩子、错误码文本解析器与 `formatInstant` |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient 与它上面的钩子 |
 | `react`、`react-dom`、`@mui/material`、`@emotion/*` | peer（必需）：宿主拥有的 React／MUI 树 |
 
@@ -99,7 +112,9 @@ sequenceDiagram
 
 ### 上传三步
 
-`useObjectUploads`（`src/internal/uploads.ts`）持有队列并驱动每个文件的三步：一次 `create`（`POST /objects`，体为 `{name, size, content_type}`，`name` 取文件的 `name`，`content_type` 取文件的 `type`，为空折成 `application/octet-stream`）→ 一次 `upload`（`PUT /objects/{id}/content`，文件作为 Blob 体）→ 一次 `complete`（`POST /objects/{id}/complete`）。三步按序 `await`；任一步失败即把该行置 `failed` 并带上该失败码的文本，前一步落下的声明留在原地（模块语义：一个上传失败的已声明对象保持 `pending` 直到窗口关闭）。成功即把该行置 `succeeded` 并失效租户前缀。重试用行上的文件重跑整条链。
+`useObjectUploads`（`src/uploads.ts`）持有队列并驱动每个文件的三步：一次 `create`（`POST /objects`，体为 `{name, size, content_type}`，`name` 取文件的 `name`，`content_type` 取文件的 `type`，为空折成 `application/octet-stream`）→ 一次 `upload`（`PUT /objects/{id}/content`，文件作为 Blob 体）→ 一次 `complete`（`POST /objects/{id}/complete`）。三步按序 `await`；任一步失败即把该行置 `failed` 并带上该失败码的文本，前一步落下的声明留在原地（模块语义：一个上传失败的已声明对象保持 `pending` 直到窗口关闭）。成功即把该行置 `succeeded`、失效租户前缀，并以 `complete` 的应答对象与产生它的文件调用 `onUploaded`。重试用行上的文件重跑整条链。
+
+`onUploaded` 按引用取最新一次传入的函数，在传输结算时读取：宿主用内联箭头传入时，函数标识每次渲染都变，在途传输也因此调用最新一次传入的那个，队列不重启、已排的传输不丢失。宿主回调抛出不影响已落定的行——传输在该回调之前已结算；异常止于回调边界，包既不重开该行，也不把它转投到别处，传输的 promise 保持已解决，宿主若需对自己的失败作反应，应在回调内部处理。
 
 ### 键集游标的分页
 
@@ -107,7 +122,7 @@ sequenceDiagram
 
 ### 下载
 
-「下载」以 `objectstoreMetadataGetObjectContent(id)` 取回 Blob，交 `saveBlob`（`src/internal/download.ts`）经一个临时对象 URL 上的锚点另存，文件名取视图的 `name`，`name` 为空串时取 `id` 加一个由 `mime` 推出的扩展名（`extensionForMime`）。对象 URL API 按其是否存在探测：无 `createObjectURL` 的环境（测试 DOM）仍得到锚点，运行不抛。
+`useObjectDownload`（`src/downloads.ts`）返回下载操作：以 `objectstoreMetadataGetObjectContent(id)` 取回 Blob，交 `saveBlob`（`src/internal/download.ts`）经一个临时对象 URL 上的锚点另存，文件名取视图的 `name`，`name` 为空串时取 `id` 加一个由 `mime` 推出的扩展名（`extensionForMime`）。对象 URL API 按其是否存在探测：无 `createObjectURL` 的环境（测试 DOM）仍得到锚点，运行不抛。失败以传输的 ApiError 拒绝，由调用方的反馈作用域报告。
 
 ### 写入的反馈
 
@@ -115,7 +130,7 @@ sequenceDiagram
 
 - **一个槽，翻页与刷新也 `reset`，它们在下载或删除进行中禁用。** 下载的失败不与「对象已删除」并存；翻页与刷新改变列表的上下文，旧结果不留在新的一页之上，因此翻页与刷新在作用域 `pending` 时禁用。
 - **删除的确认对话框在确认点击时关闭；删除进行中，本页全部删除控件禁用并标忙。** 删除因此不重叠，一个槽不丢结果。
-- **读在进行中时，刷新控件带 `aria-busy` 与忙态指示、保持原生可聚焦，再次激活不发第二次请求；已有数据的刷新失败保留旧列表并渲染陈旧提示**，来源包括刷新、标签页重新可见与上传或删除后的失效重读；刷新失败是 403 时，无权限空态替换旧列表并隐藏分页控件，不渲染陈旧提示、不给重试。聚焦的控件被置为原生 `disabled` 会使焦点落回文档，所以读的忙态不禁用刷新控件，与 [console-ui](design-web-console-ui.md) 的「页的刷新动作」同一规则。
+- **刷新控件是 ui-kit 的 `RefreshButton`，机制是 `usePageRefresh`。** 读在进行中时它带 `aria-busy` 与忙态指示、保持原生可聚焦，再次激活不发第二次请求；已有数据的刷新失败保留旧列表并渲染陈旧提示，来源包括刷新、标签页重新可见与上传或删除后的失效重读；刷新失败是 403 时，无权限空态替换旧列表并隐藏分页控件，不渲染陈旧提示、不给重试。聚焦的控件被置为原生 `disabled` 会使焦点落回文档，所以读的忙态不禁用刷新控件，与 [console-ui](design-web-console-ui.md) 的「页的刷新动作」同一规则。
 - **无租户在场时刷新控件禁用。** 列表读因无租户在场而被禁用时，刷新直接调用查询的重读，重读不看读的启用条件，不禁用就会在无租户在场时发出请求，破坏该读的失败关闭（见「错误与失败语义」）。
 - **下载经同一个作用域，落定且无失败时落一条点名对象的成功文案。** 下载以一次 `run` 结算，成功文案点名被下载的对象，在 zh-CN 与 en-US 语言包里各一键，取代槽里先前的「对象已删除」；失败落错误码文本。
 - **删除失败也使租户子树失效重读**，使服务端已不存在的行（`objectstore.not_found`、`objectstore.conflict`）不留在屏上。
@@ -126,6 +141,8 @@ sequenceDiagram
 ## 错误与失败语义
 
 **失败面是一个错误码白名单加一族按状态参数化的叶子。** 每次失败解析成一个错误码，渲染在一条 `role="alert"` 横幅里；白名单外的码渲染 `errors.unknown`，永不渲染裸键。
+
+**拒绝按结构判定。** 403 经 ui-kit 的 `httpStatusOf` 读应答的状态或 `client.http.<状态>` 码；准入层的裸 404 经 `@speed/auth-core` 的 `isTenantAdmissionRefusal` 识别，它同样接受尚未合成码的裸 404 形状。带 `objectstore.not_found` 的 404 不是准入拒绝。
 
 **对象存储的拒绝以 RFC 9457 问题对象出行**（一个 `type` `urn:speed:objectstore:<码>`，正文不带 `code` 成员）；api-client 从该 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，[api-client](design-web-api-client.md)），故这些拒绝在客户端表现为 `objectstore.bad_request`／`objectstore.not_found`／`objectstore.conflict`，各自在命名空间白名单里有一条叶子，渲染双语文本而非通用兜底。授权守卫的 403（`type` `urn:speed:authz:forbidden`）同样到达为 `authz.forbidden`：读路径按状态分到无权限空态，写路径（下载、删除）由该码的叶子渲染文本。
 
@@ -152,6 +169,9 @@ sequenceDiagram
 ## 扩展点
 
 - **页面大小的提示。** `ObjectsPageProps.pageSize` 是列表请求的页大小提示，模块另施自己的缺省与上限。
+- **上传面的开关与选择器选项。** `ObjectsPageProps.upload` 为 `false` 时整块上传面不渲染；给出对象时把其中的 `accept` 与 `multiple` 交给 `FileUploader`，不给则维持多选、任意类型的既有形态。
+- **行操作。** `ObjectsPageProps.rowActions` 的返回值追加在该行的既有操作单元格内、内置控件之后，不新增列，名称与操作同屏的列优先级保证不变。
+- **独立的编排。** 宿主用自己的界面替换整页时，`useObjectUploads` 与 `useObjectDownload` 提供与页内相同的行为；前者经 `onUploaded` 交出完成的对象，后者返回对一个对象执行一次下载的操作。
 - **措辞改写。** 宿主在启动处向 `OBJECTSTORE_UI_NAMESPACE` 注册自己的一对同键 bundle，`objectstoreUiResources` 只是发布的默认。
 - **挂点。** 宿主把 `ObjectsPage` 挂在自选的路由上、加自己的导航标签与 `requires`；本包不声明路由。
 
@@ -162,8 +182,9 @@ sequenceDiagram
 | 对象页（列表、上传、下载、删除、详情） | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
 | 详情对话框 | 已实现 | `web/packages/objectstore-ui/src/ObjectDetailDialog.tsx` `ObjectDetailDialog` |
 | 生成的读与写、租户查询键、失效 | 已实现 | `web/packages/objectstore-ui/src/internal/queries.ts` `useObjectsListQuery`、`useObjectDetailQuery`、`useInvalidateObjects`、`getObjectContent` |
-| 上传队列编排 | 已实现 | `web/packages/objectstore-ui/src/internal/uploads.ts` `useObjectUploads` |
-| 格式化与下载落盘 | 已实现 | `web/packages/objectstore-ui/src/internal/format.ts` `formatUtc`、`formatByteNumber`、`downloadFilename`；`web/packages/objectstore-ui/src/internal/download.ts` `saveBlob` |
+| 上传队列编排与完成回调 | 已实现 | `web/packages/objectstore-ui/src/uploads.ts` `useObjectUploads` |
+| 下载编排 | 已实现 | `web/packages/objectstore-ui/src/downloads.ts` `useObjectDownload` |
+| 格式化与下载落盘 | 已实现 | `web/packages/objectstore-ui/src/internal/format.ts` `formatByteNumber`、`extensionForMime`、`downloadFilename`；`web/packages/objectstore-ui/src/internal/download.ts` `saveBlob` |
 | 错误文案与异步分支 | 已实现 | `web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText`；`web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection` |
 | 命名空间资源 | 已实现 | `web/packages/objectstore-ui/src/resources.ts` `OBJECTSTORE_UI_NAMESPACE`、`objectstoreUiResources` |
 | 对象页的反馈作用域（下载与删除共用一个槽，下载成功落点名对象的确认，翻页与刷新 `reset`，作用域写入在途时它们禁用） | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
@@ -176,5 +197,7 @@ sequenceDiagram
 | 对象名称的列表列、详情字段与下载文件名 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage`；`web/packages/objectstore-ui/src/ObjectDetailDialog.tsx` `ObjectDetailDialog`；`web/packages/objectstore-ui/src/internal/format.ts` `downloadFilename` |
 | 对象列表的列优先级与对象标识的短显示 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
 | 错误白名单组合会话生命周期码族及其双语文案 | 已实现 | `web/packages/objectstore-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`、`SESSION_LIFECYCLE_ERROR_CODES` |
-| 上传行的失败文本取自错误码 | 已实现 | `web/packages/objectstore-ui/src/internal/uploads.ts` |
-| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成对象存储的失败占位 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`、`isTenantRefusal`；`web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText` |
+| 上传行的失败文本取自错误码 | 已实现 | `web/packages/objectstore-ui/src/uploads.ts` |
+| 准入层的裸 404 渲染为「无法访问当前组织」，不渲染成对象存储的失败占位 | 已实现 | `web/packages/objectstore-ui/src/internal/async-section.tsx` `ObjectAsyncSection`；`@speed/auth-core` 的 `isTenantAdmissionRefusal`；`web/packages/objectstore-ui/src/internal/error-text.ts` `useObjectstoreUiErrorText` |
+| 上传面开关与选择器选项 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |
+| 行操作扩展 | 已实现 | `web/packages/objectstore-ui/src/ObjectsPage.tsx` `ObjectsPage` |

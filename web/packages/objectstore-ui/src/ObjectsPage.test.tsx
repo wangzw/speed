@@ -488,6 +488,75 @@ describe('ObjectsPage', () => {
     expect(await screen.findByText('o-new')).toBeInTheDocument()
   })
 
+  it('hides the upload surface when upload is false', async () => {
+    makeObjectStoreRig(() => jsonResponse(200, { objects: [], next_cursor: '' }))
+    const { container } = renderWithProviders(<ObjectsPage upload={false} />, {
+      language: 'en-US',
+    })
+    await screen.findByText('No objects yet')
+
+    expect(screen.queryByText(enUS.upload.heading)).not.toBeInTheDocument()
+    expect(screen.queryByText(enUS.upload.description)).not.toBeInTheDocument()
+    expect(container.querySelector('input[type="file"]')).toBeNull()
+  })
+
+  it('forwards the upload picker options and keeps multiple by default', async () => {
+    makeObjectStoreRig(() => jsonResponse(200, { objects: [], next_cursor: '' }))
+    const defaults = renderWithProviders(<ObjectsPage />, { language: 'en-US' })
+    await screen.findByText('No objects yet')
+    const defaultInput = defaults.container.querySelector('input[type="file"]')
+    expect(defaultInput).not.toBeNull()
+    // Omitted options leave the picker as it always was.
+    expect(defaultInput).toHaveAttribute('multiple')
+    defaults.unmount()
+
+    const custom = renderWithProviders(
+      <ObjectsPage upload={{ accept: 'image/*', multiple: false }} />,
+      { language: 'en-US' },
+    )
+    await screen.findByText('No objects yet')
+    const customInput = custom.container.querySelector('input[type="file"]')
+    expect(customInput).not.toBeNull()
+    expect(customInput).toHaveAttribute('accept', 'image/*')
+    expect(customInput).not.toHaveAttribute('multiple')
+  })
+
+  it('appends rowActions to the existing actions cell, after the built-in controls', async () => {
+    makeObjectStoreRig(() =>
+      jsonResponse(200, { objects: [OBJECT_A], next_cursor: '' }),
+    )
+    renderWithProviders(
+      <ObjectsPage
+        rowActions={(object) => (
+          <button type="button">Archive {object.id}</button>
+        )}
+      />,
+      { language: 'en-US' },
+    )
+    await screen.findByText('o-aaa')
+
+    const actionsCell = screen
+      .getByRole('button', { name: 'Download object o-aaa' })
+      .closest('td')
+    expect(actionsCell).not.toBeNull()
+    const archive = within(actionsCell as HTMLElement).getByRole('button', {
+      name: 'Archive o-aaa',
+    })
+    const deleteControl = within(actionsCell as HTMLElement).getByRole(
+      'button',
+      { name: 'Delete object o-aaa' },
+    )
+    // The host's control rides the existing cell after the built-in ones.
+    expect(
+      deleteControl.compareDocumentPosition(archive) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    // No column was added for it: the built-in header row is unchanged.
+    expect(
+      screen.getAllByRole('columnheader').map((cell) => cell.textContent),
+    ).toEqual(['Name', 'Object', 'State', 'Size', 'Type', 'Created', 'Actions'])
+  })
+
   it("downloads an object's bytes under its stored name", async () => {
     const user = userEvent.setup()
     vi.mocked(saveBlob).mockClear()

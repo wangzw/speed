@@ -27,9 +27,10 @@
  * 'languageChanged' subscription re-renders the tree.
  */
 
-import { render } from '@testing-library/react'
+import { render, renderHook } from '@testing-library/react'
+import type { RenderHookResult } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ReactElement } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
 import { TenantProvider } from '@speed/auth-core'
@@ -69,6 +70,29 @@ export interface ObjectstoreRenderOptions extends RenderWithProvidersOptions {
   readonly tenantId?: string | null
 }
 
+/** The provider tree a rendered unit or hook runs under. */
+function Providers({
+  i18n,
+  queryClient,
+  tenantId,
+  children,
+}: {
+  readonly i18n: I18nInstance
+  readonly queryClient: QueryClient
+  readonly tenantId: string | null
+  readonly children: ReactNode
+}) {
+  return (
+    <I18nextProvider i18n={i18n}>
+      <AppThemeProvider i18n={i18n}>
+        <QueryClientProvider client={queryClient}>
+          <TenantProvider tenantId={tenantId}>{children}</TenantProvider>
+        </QueryClientProvider>
+      </AppThemeProvider>
+    </I18nextProvider>
+  )
+}
+
 export function renderWithProviders(
   ui: ReactElement,
   options: ObjectstoreRenderOptions = {},
@@ -77,13 +101,36 @@ export function renderWithProviders(
   const instance = i18n ?? createObjectstoreUiI18n(language)
   const queryClient = createTestQueryClient()
   const result = render(
-    <I18nextProvider i18n={instance}>
-      <AppThemeProvider i18n={instance}>
-        <QueryClientProvider client={queryClient}>
-          <TenantProvider tenantId={tenantId}>{ui}</TenantProvider>
-        </QueryClientProvider>
-      </AppThemeProvider>
-    </I18nextProvider>,
+    <Providers i18n={instance} queryClient={queryClient} tenantId={tenantId}>
+      {ui}
+    </Providers>,
   )
+  return { ...result, i18n: instance, queryClient }
+}
+
+export interface RenderHookWithProvidersResult<TResult, TProps>
+  extends RenderHookResult<TResult, TProps> {
+  readonly i18n: I18nInstance
+  readonly queryClient: QueryClient
+}
+
+/** Mounts a hook under the same provider tree a rendered component gets. */
+export function renderHookWithProviders<TResult, TProps = void>(
+  hook: (props: TProps) => TResult,
+  options: ObjectstoreRenderOptions & {
+    readonly initialProps?: TProps
+  } = {},
+): RenderHookWithProvidersResult<TResult, TProps> {
+  const { language = 'zh-CN', i18n, tenantId = 'acme', initialProps } = options
+  const instance = i18n ?? createObjectstoreUiI18n(language)
+  const queryClient = createTestQueryClient()
+  const result = renderHook(hook, {
+    wrapper: ({ children }) => (
+      <Providers i18n={instance} queryClient={queryClient} tenantId={tenantId}>
+        {children}
+      </Providers>
+    ),
+    initialProps,
+  })
   return { ...result, i18n: instance, queryClient }
 }

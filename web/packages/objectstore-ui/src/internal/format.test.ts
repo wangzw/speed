@@ -3,24 +3,7 @@ import {
   downloadFilename,
   extensionForMime,
   formatByteNumber,
-  formatUtc,
 } from './format.js'
-
-describe('formatUtc', () => {
-  it('renders an RFC 3339 instant as localized UTC text', () => {
-    const text = formatUtc('2026-10-16T12:34:00Z', 'en-US')
-    expect(text).not.toBeNull()
-    // The formatter is pinned to UTC, so the instant renders as its own
-    // UTC wall-clock regardless of the machine's zone.
-    expect(text).toContain('2026')
-  })
-
-  it('returns null for an absent or malformed instant', () => {
-    expect(formatUtc(undefined, 'en-US')).toBeNull()
-    expect(formatUtc('', 'en-US')).toBeNull()
-    expect(formatUtc('not-a-date', 'en-US')).toBeNull()
-  })
-})
 
 describe('formatByteNumber', () => {
   it('formats through Intl.NumberFormat, localizing the grouping', () => {
