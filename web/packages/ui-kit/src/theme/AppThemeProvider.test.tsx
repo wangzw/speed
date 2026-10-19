@@ -8,7 +8,7 @@
 
 import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
-import { useTheme } from '@mui/material/styles'
+import { createTheme, ThemeProvider, useTheme } from '@mui/material/styles'
 import type { Theme } from '@mui/material/styles'
 import { enUS, zhCN } from '@mui/material/locale'
 import { describe, expect, it, vi } from 'vitest'
@@ -90,6 +90,37 @@ describe('AppThemeProvider', () => {
     expect(seen?.palette.secondary.main).toBe('#222222')
     // Untouched branches keep the defaults.
     expect(seen?.palette.error.main).toBe(defaultTokens.color.semantic.error.main)
+  })
+
+  it('keeps the kit palette, typography and shape under a components-only override layer', () => {
+    let seen: Theme | undefined
+    // The README's component-level customisation recipe: the second
+    // createTheme argument is a diff options object, never a theme built
+    // by createTheme() -- a full theme would re-apply MUI's defaults over
+    // the token-mapped palette, typography and shape.
+    const componentOverrides = {
+      components: {
+        MuiButton: {
+          defaultProps: { disableElevation: true, size: 'small' as const },
+        },
+      },
+    }
+    renderWithProviders(
+      <ThemeProvider theme={(outer) => createTheme(outer, componentOverrides)}>
+        <ThemeProbe onTheme={(theme) => (seen = theme)} />
+      </ThemeProvider>,
+    )
+    expect(seen?.palette.primary.main).toBe(
+      defaultTokens.color.semantic.primary.main,
+    )
+    expect(seen?.typography.fontFamily).toBe(
+      defaultTokens.typography.fontFamily.sans,
+    )
+    expect(seen?.shape.borderRadius).toBe(defaultTokens.shape.borderRadius)
+    expect(seen?.components?.MuiButton?.defaultProps).toMatchObject({
+      disableElevation: true,
+      size: 'small',
+    })
   })
 
   it('rebuilds the theme when an override layer changes identity', () => {

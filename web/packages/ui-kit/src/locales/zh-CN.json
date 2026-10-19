@@ -44,6 +44,16 @@
     "invalid": "该号码在 +{{code}} 下无效。",
     "incompleteInternational": "请输入完整的国际号码。"
   },
+  "refreshButton": {
+    "label": "刷新"
+  },
+  "copyButton": {
+    "copyLabel": "复制 {{value}}",
+    "copiedLabel": "已复制 {{value}}"
+  },
+  "oneTimeValuePanel": {
+    "copied": "已复制"
+  },
   "dataTable": {
     "loading": "加载中",
     "noData": "没有数据",

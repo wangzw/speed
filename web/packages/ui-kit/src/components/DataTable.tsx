@@ -166,7 +166,6 @@ import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
-import IconButton from '@mui/material/IconButton'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -180,7 +179,7 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { EmptyState } from './EmptyState.js'
 import type { EmptyStateHeadingLevel } from './EmptyState.js'
 import { useUiKitTranslation } from '../internal/translation.js'
-import { CopiedIcon, CopyIcon } from '../internal/icons.js'
+import { CopyButton } from './CopyButton.js'
 import { POINTER_FINE_HOVER_QUERY } from '../internal/pointer.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
@@ -286,6 +285,17 @@ export interface DataTableFilter {
   readonly value: string
   /** Fired on every input change; the host filters rows itself. */
   readonly onValueChange: (value: string) => void
+  /**
+   * The filter field's visible label, which is also its accessible name.
+   * Omitting it keeps the prior shape: no visible label, and the ui-kit
+   * `dataTable.filterLabel` string as the accessible name.
+   */
+  readonly label?: string
+  /**
+   * The field's placeholder; defaults to the ui-kit `dataTable.filterLabel`
+   * string.
+   */
+  readonly placeholder?: string
 }
 
 /** The controlled pagination state (MUI conventions: page is 0-based). */
@@ -344,6 +354,19 @@ export interface DataTableProps<T> {
   readonly onSelectionChange?: (keys: readonly (string | number)[]) => void
   /** Renders the MUI TablePagination footer with these controlled values. */
   readonly pagination?: DataTablePagination
+  /**
+   * The table's accessible name; defaults to the ui-kit
+   * `dataTable.ariaLabel` string. It is ignored when `ariaLabelledBy` is
+   * given, because an id reference wins over an inline name.
+   */
+  readonly ariaLabel?: string
+  /**
+   * The id of an element that names the table. When given it replaces the
+   * inline name -- the namespace default or `ariaLabel` -- so the table
+   * takes its name from the page's own heading. Omitting it keeps the
+   * prior behavior.
+   */
+  readonly ariaLabelledBy?: string
   /** Overrides the built-in empty title (rendered inside the stock EmptyState). */
   readonly emptyTitle?: ReactNode
   /** Overrides the built-in empty description. */
@@ -451,66 +474,6 @@ function columnCellWrapSx(
   return { whiteSpace: 'nowrap' }
 }
 
-/** How long the copy control keeps its copied state and announcement. */
-const COPY_FEEDBACK_MS = 2000
-
-/**
- * The full-value column's copy control: a focusable button that writes the
- * complete value to the clipboard and announces the copy, so a value
- * clipped by the table's horizontal scroll stays reachable by keyboard and
- * touch. The value is also the body cell's `title` -- the hover channel --
- * which remains when the Clipboard API is unavailable (an insecure context
- * has no `navigator.clipboard`), and a refused write leaves the control
- * silent rather than failing the page.
- */
-function CopyValueButton({
-  value,
-  pinned = false,
-}: {
-  readonly value: string
-  /**
-   * Whether the hosting cell declares a `contentMaxWidth`. The cap must
-   * leave the control its full width, so a pinned control refuses to
-   * shrink; without the cap the prior flex behavior stays byte-identical.
-   */
-  readonly pinned?: boolean
-}) {
-  const { t } = useUiKitTranslation()
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!copied) return undefined
-    const timer = window.setTimeout(() => setCopied(false), COPY_FEEDBACK_MS)
-    return () => window.clearTimeout(timer)
-  }, [copied])
-
-  const copy = (): void => {
-    const clipboard: Clipboard | undefined = navigator.clipboard
-    if (clipboard === undefined) return
-    void clipboard.writeText(value).then(
-      () => setCopied(true),
-      () => undefined,
-    )
-  }
-
-  return (
-    <>
-      <IconButton
-        type="button"
-        size="small"
-        aria-label={t('dataTable.copyValue', { value })}
-        onClick={copy}
-        sx={pinned ? { flexShrink: 0 } : undefined}
-      >
-        {copied ? <CopiedIcon /> : <CopyIcon />}
-      </IconButton>
-      <Box component="span" role="status" sx={visuallyHiddenSx}>
-        {copied ? t('dataTable.copiedValue', { value }) : ''}
-      </Box>
-    </>
-  )
-}
-
 /**
  * The controlled table view. See the header note for the ownership
  * contract -- every knob here is props in, callbacks out.
@@ -531,6 +494,8 @@ export function DataTable<T>({
   emptyDescription,
   emptyAction,
   emptyHeadingLevel,
+  ariaLabel,
+  ariaLabelledBy,
   sx,
 }: DataTableProps<T>) {
   const { t } = useUiKitTranslation()
@@ -633,12 +598,17 @@ export function DataTable<T>({
         >
           <TextField
             size="small"
+            label={filter.label}
             value={filter.value}
             onChange={(event) => filter.onValueChange(event.target.value)}
             slotProps={{
               htmlInput: {
-                'aria-label': t('dataTable.filterLabel'),
-                placeholder: t('dataTable.filterLabel'),
+                // A visible label already names the field; without one the
+                // namespace string stays the accessible name.
+                ...(filter.label === undefined
+                  ? { 'aria-label': t('dataTable.filterLabel') }
+                  : {}),
+                placeholder: filter.placeholder ?? t('dataTable.filterLabel'),
               },
             }}
             // Container-keyed width: 20rem once the table is at least `sm`
@@ -650,7 +620,15 @@ export function DataTable<T>({
         </Box>
       )}
       <TableContainer>
-        <Table aria-label={t('dataTable.ariaLabel')} size={size}>
+        <Table
+          aria-label={
+            ariaLabelledBy === undefined
+              ? (ariaLabel ?? t('dataTable.ariaLabel'))
+              : undefined
+          }
+          aria-labelledby={ariaLabelledBy}
+          size={size}
+        >
           <TableHead>
             <TableRow>
               {selectable && (
@@ -866,9 +844,15 @@ export function DataTable<T>({
                             ) : (
                               column.cell(row, index)
                             )}
-                            <CopyValueButton
+                            <CopyButton
                               value={fullValue}
                               pinned={capped}
+                              label={t('dataTable.copyValue', {
+                                value: fullValue,
+                              })}
+                              copiedLabel={t('dataTable.copiedValue', {
+                                value: fullValue,
+                              })}
                             />
                           </Box>
                         )}

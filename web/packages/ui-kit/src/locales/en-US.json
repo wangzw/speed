@@ -44,6 +44,16 @@
     "invalid": "The number is not valid under +{{code}}.",
     "incompleteInternational": "Enter the complete international number."
   },
+  "refreshButton": {
+    "label": "Refresh"
+  },
+  "copyButton": {
+    "copyLabel": "Copy {{value}}",
+    "copiedLabel": "Copied {{value}}"
+  },
+  "oneTimeValuePanel": {
+    "copied": "Copied"
+  },
   "dataTable": {
     "loading": "Loading",
     "noData": "No data",

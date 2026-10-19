@@ -6,12 +6,15 @@
  * guesses no namespace of its own. errorCodeOf is pinned beside it: an
  * ApiError-shaped failure keeps its code, anything else -- a bug-shaped
  * throw, a code that is not a non-empty string -- collapses to the
- * code no resolver lists.
+ * code no resolver lists. httpStatusOf reads the status structurally:
+ * the numeric field when it is a valid HTTP status, the bare-HTTP code,
+ * the field over the code when both are present, and null when neither
+ * names one.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import { InlineError, errorCodeOf } from './InlineError.js'
+import { InlineError, errorCodeOf, httpStatusOf } from './InlineError.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 
 /** A resolver in the surface families' convention: the listed code's
@@ -89,5 +92,51 @@ describe('errorCodeOf', () => {
     // it out of the ApiError branch even when a `code` was assigned to it.
     const callable = Object.assign(() => {}, { code: 'tenant.future' })
     expect(errorCodeOf(callable)).toBe('client.unknown')
+  })
+})
+
+describe('httpStatusOf', () => {
+  it('reads a numeric status property', () => {
+    expect(httpStatusOf({ status: 403 })).toBe(403)
+  })
+
+  it('parses a bare-HTTP code when no numeric status is present', () => {
+    expect(httpStatusOf({ code: 'client.http.404' })).toBe(404)
+  })
+
+  it('prefers the numeric status when both are present', () => {
+    expect(httpStatusOf({ status: 401, code: 'client.http.403' })).toBe(401)
+  })
+
+  it('returns null when neither shape names a status', () => {
+    expect(httpStatusOf({ code: 'authn.invalid_credentials' })).toBeNull()
+    expect(httpStatusOf({ status: '403' })).toBeNull()
+    expect(httpStatusOf(new Error('boom'))).toBeNull()
+    expect(httpStatusOf('boom')).toBeNull()
+    expect(httpStatusOf(null)).toBeNull()
+    expect(httpStatusOf(undefined)).toBeNull()
+  })
+
+  it('treats a transport failure status of 0 as no status', () => {
+    // api-client writes exactly this shape for a network or timeout
+    // failure; a caller branching on `=== null` must not read it as HTTP 0.
+    expect(httpStatusOf({ status: 0, code: 'client.network' })).toBeNull()
+    expect(httpStatusOf({ status: 0, code: 'client.timeout' })).toBeNull()
+    expect(httpStatusOf({ status: 0 })).toBeNull()
+  })
+
+  it('ignores a numeric status outside the HTTP range', () => {
+    expect(httpStatusOf({ status: 99 })).toBeNull()
+    expect(httpStatusOf({ status: 600 })).toBeNull()
+    expect(httpStatusOf({ status: -1 })).toBeNull()
+  })
+
+  it('returns null when reading the status throws', () => {
+    const hostile = Object.defineProperty({}, 'status', {
+      get() {
+        throw new Error('revoked')
+      },
+    })
+    expect(httpStatusOf(hostile)).toBeNull()
   })
 })

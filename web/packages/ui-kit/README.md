@@ -20,7 +20,10 @@ pending/error/empty/content branches of an async read (`ListSkeleton`,
 `AsyncSection`) and the
 shared style recipes (`visuallyHiddenSx` for hidden elements,
 `touchTargetSx` for the coarse-pointer floor of elements the theme does
-not reach). Every
+not reach). Beside them ship the refresh pair (`RefreshButton` +
+`usePageRefresh`), the clipboard and one-time-value pair (`CopyButton`,
+`OneTimeValuePanel`), and the display-preference contexts
+(`DisplayTimeZoneProvider`, `PhoneCountryDefaultProvider`). Every
 built-in user-facing
 string lives in the bilingual `ui-kit` namespace registered through
 `@speed/i18n` -- components never ship text in code, and the workspace's
@@ -43,8 +46,14 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `phone-number.ts` | `toE164`, `validatePhoneNumber`, `formatNationalPhoneNumber`, `parseInternationalPhoneNumber`, `nationalNumberDigits`, `defaultPhoneCountry`, `phoneCountries`, `phoneCountryCallingCode`, `phoneCountryName`, `isPhoneCountry`, `PhoneNumberParts`, `PhoneNumberValidation` |
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `LONG_TEXT_COLUMN_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
-| `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf` |
+| `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf`, `httpStatusOf` |
 | `components/InlineSuccess.tsx` | `InlineSuccess`, `InlineSuccessProps` |
+| `components/RefreshButton.tsx` | `RefreshButton`, `RefreshButtonProps` |
+| `use-page-refresh.ts` | `usePageRefresh`, `pageRefreshRead`, `PageRefresh`, `PageRefreshRead`, `PageRefreshReadHandle`, `PageRefreshSettled` |
+| `components/CopyButton.tsx` | `CopyButton`, `CopyButtonProps` |
+| `components/OneTimeValuePanel.tsx` | `OneTimeValuePanel`, `OneTimeValuePanelProps` |
+| `display-time-zone.tsx` | `DisplayTimeZoneProvider`, `DisplayTimeZoneProviderProps`, `useDisplayTimeZone` |
+| `phone-country-default.tsx` | `PhoneCountryDefaultProvider`, `PhoneCountryDefaultProviderProps`, `usePhoneCountryDefault` |
 | `components/WriteFeedbackRegion.tsx` | `WriteFeedbackRegion`, `WriteFeedbackRegionProps` |
 | `write-feedback.ts` | `useWriteFeedback`, `WriteFeedback`, `WriteOutcome` |
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
@@ -341,6 +350,7 @@ MUI's theme surface:
 | `color.neutral` | `palette.grey` | steps 50-900 by number; A100/A200/A400/A700 alias the same-number steps (MUI's own grey aliasing); tone 950 has no MUI slot and stays token-only |
 | `color.text/background/divider` | same-named slots | direct |
 | `typography.fontFamily.sans` | `typography.fontFamily` | direct; the stack ends in CJK-capable fallbacks |
+| `typography.fontFamily.mono` | `typography.fontFamilyMono` | module augmentation on MUI's typography surface (MUI has no monospace slot); read it like `fontFamily`, including from `sx` callbacks |
 | `typography` sizes/weights | `typography` variant roles | h1-h6 from 5xl..lg (tight line height, semibold); subtitle1/2 from md/sm (normal, medium); body1/2 from md/sm (normal, regular); button from sm (medium); caption from xs; overline from xs (semibold, wide spacing). Converted to rem on MUI's 16px default base; `fontWeight.light` has no token and keeps MUI's 300 |
 | `spacing.unit` | the theme spacing unit | the token unit IS the MUI unit (probe-verified against MUI 9.4.0: a numeric spacing option sets the base, so `theme.spacing(n) === n x unit`) |
 | `shape.borderRadius` | `shape.borderRadius` | direct |
@@ -389,9 +399,12 @@ namespace: both belong to the host bootstrap.
 
 All components share one contract: **fully controlled**. Every piece of
 state is owned by the host and flows through props; a component echoes
-state back and fires change callbacks. Components never fetch, never
-mutate data, never keep business state -- so the same component works in
-a form, a modal and a server-rendered screen without surprises.
+state back and fires change callbacks. Components never fetch on their
+own transport, never mutate data, never keep business state -- so the
+same component works in a form, a modal and a server-rendered screen
+without surprises. The one read seam is `usePageRefresh`: it calls the
+`refetch` of the query handles the host passes, reads those handles
+structurally, and imports no query client or transport (see its section).
 `FileUploader` follows the same contract: its queue renders from
 host-owned `rows` props, and every pick, cancel, retry and remove
 reports up through a callback -- an upload in flight is host state,
@@ -480,6 +493,15 @@ covers the confirm button alone -- Cancel, Escape and the backdrop stay
 live throughout it. Hosts should pass the real business content as
 `title`/`message` (any ReactNode, so their own translations flow
 naturally); buttons fall back to namespace defaults.
+
+`children` renders host content inside the dialog below the message (a
+required acknowledgement, a detail list); it is deliberately **not**
+part of `aria-describedby`, so the message stays the dialog's
+description. `confirmDisabled` disables the confirm button on its own --
+a host-owned precondition independent of the busy state -- and leaves
+the double-confirm arming and lockout logic alone: the disabled button
+cannot arm, and an arm already in progress resumes when the flag clears.
+Both default to absent and change nothing for existing callers.
 
 ### SidePanel
 
@@ -663,9 +685,12 @@ the package's `ZodType` are one class.
 
 ### PhoneNumberField
 
-The two-part phone control every phone surface shares: a searchable
-country/region selector and a local number, joined into E.164 for
-submission.
+The two-part mobile-number (SMS) control every phone surface shares: a
+searchable country/region selector and a local number, joined into E.164
+for submission. Its metadata is libphonenumber-js's `mobile` build, so
+`validatePhoneNumber` and `toE164` apply **mobile** number-plan
+validation: a number of a legal length but no possible mobile plan is
+refused rather than handed to an SMS channel.
 
 ```tsx
 import { useState } from 'react'
@@ -694,6 +719,11 @@ const [attempted, setAttempted] = useState(false)
 const phone = toE164(country, nationalNumber) // null while invalid
 ```
 
+- **`preferredCountries?: readonly string[]`** moves the caller's
+  country codes to the top of the selector in the given order -- a host
+  serving one market puts its own countries first. A code the metadata
+  does not cover is skipped, and the remaining countries keep their usual
+  order; omitting it keeps that order exactly.
 - **The selector** lists every country the phone metadata covers. Each
   option shows its flag, its name in the active language (from
   `Intl.DisplayNames`, not a translation key per region) and its calling
@@ -746,7 +776,9 @@ as state echo plus callbacks:
   column flips); the host applies the sort to the data it passes in.
 - `filter: DataTableFilter { value, onValueChange }` -- renders the
   labeled filter input; the field-to-field filtering logic stays with
-  the host.
+  the host. Optional `label` gives the field a visible label (also its
+  accessible name) instead of the namespace default, and optional
+  `placeholder` rewrites the placeholder.
 
 Selection is enabled by passing `onSelectionChange`; `selectedRowKeys`
 then holds `rowKey` results (index-keyed by default -- pass an id-based
@@ -765,7 +797,10 @@ announcement is a live region mounted empty for the whole empty phase
 and filled on refresh (same rule as FileUploader's region: a live
 region announces content changes that follow its own existence, never
 text that mounts with it), so the empty-list-then-refresh path is
-audible. Extra props: `rowKey?`, `size?` ('small' | 'medium'), `sx?`.
+audible. The table's accessible name is the namespace default; pass
+`ariaLabel` to name the table for its surface, or `ariaLabelledBy` with
+the id of the page's own heading (an id reference replaces the inline
+name). Extra props: `rowKey?`, `size?` ('small' | 'medium'), `sx?`.
 
 **Horizontal-scroll container is a stated, tested contract, not an
 accident of implementation**: the table always renders inside MUI's
@@ -1143,9 +1178,101 @@ does it only when the read has no payload yet, and otherwise leaves the
 content on screen. Omitting `staleState` renders exactly the previous
 behaviour.
 
+`refusedState` is the caller's refusal decision as a prop:
+`{ title, description }` (the no-permission `EmptyState` copy). While the
+section is not pending it replaces the content, the empty placeholder and
+the error branch alike and offers no retry -- a refusal can only be
+refused again. ui-kit inspects no status and knows no permission
+semantics: the caller decides, and omitting the prop keeps every previous
+branch unchanged.
+
 Props: `pending`, `payload`, `empty`, `loading`, `errorState`,
 `emptyState?`, `headingLevel?`, `emptyHeadingLevel?`, `staleState?`,
-`children` (all required except the marked ones).
+`refusedState?`, `children` (all required except the marked ones).
+
+### RefreshButton and usePageRefresh (the refresh action)
+
+The shared pair behind a surface's reconciliation control. `usePageRefresh`
+takes the reads that describe the surface's body and a `reset` callback:
+
+```ts
+const refresh = usePageRefresh(
+  [
+    pageRefreshRead('members', membersQuery),
+    pageRefreshRead('roles', rolesQuery, { onSettled: recordRoleAnswer }),
+  ],
+  resetPageScopes,
+)
+```
+
+- `pageRefreshRead(key, handle, options?)` pairs a query handle with a
+  dedupe key. The handle is read **structurally** -- `isEnabled`,
+  `isFetching`, `status`, `dataUpdatedAt`, `isPlaceholderData`,
+  `refetch` -- so this package imports no query client and no transport.
+  `enabled` overrides the read's own enablement; `keyDriven` marks a read
+  the host re-reads by moving its key (no `refetch` is issued);
+  `onSettled` receives this refresh's own re-read result.
+- `refresh()` runs `reset`, then re-reads every enabled read once per
+  query key. A disabled read is skipped (re-reading it would issue a
+  request missing its arguments); two reads resolving to one key issue
+  one request and notify every settlement callback that key carries.
+- `busy` is true while an included read is in flight -- the refresh's
+  own re-read or an automatic one. The refresh control renders that as
+  `aria-busy`, never a native disable, and the mechanism drops a second
+  activation that lands before the busy state renders.
+- `updatedAt` is the oldest successful settle time among the enabled
+  reads (a placeholder read keeps its pre-change time);
+  `announcements` increments once when every re-read read settles
+  successfully at or after the click, and is reset to 0 at every click so
+  an identical text refills and re-announces.
+
+`RefreshButton` is the matching control: outlined, small, with
+`aria-busy` and a spinner in place of its icon while busy (focusable and
+a second activation dropped). `disabled` carries the "choose a scope
+first" description (`describedBy` + `disabledReason` tooltip);
+`writePending` renders a native disable with neither; `ariaLabel` names
+what is re-read. `label` is the visible text -- callers pass their own
+package's existing translation, and the ui-kit namespace's
+`refreshButton.label` is the default.
+
+> The console package's internal `refresh-button.tsx` and
+> `use-page-refresh.ts` copies are scheduled for removal in the batch that
+> switches the console to these exports.
+
+### CopyButton and OneTimeValuePanel (a value handed out once)
+
+`CopyButton` writes `value` to the clipboard and announces the copy
+through a polite live region. Without `visibleLabel` it is the icon-sized
+control the DataTable renders beside a `cellFullValue`; with it, a small
+outlined text button. `label` names the control and `copiedLabel` is the
+announcement (both default to the `copyButton.*` strings); `pinned`
+refuses to shrink inside a `contentMaxWidth`-capped cell. An insecure
+context without `navigator.clipboard`, or a refused write, leaves the
+control silent rather than failing the surface.
+
+`OneTimeValuePanel` is the presentation of a value handed out once -- an
+invitation's acceptance link, a token. The caller owns the value and its
+lifetime; the panel holds no state and takes `message`, `value`,
+`copyLabel`, `closeLabel`, `closeAriaLabel` and `onClose`. It is one
+polite live region (`role="status"`), renders the value in the theme's
+monospace stack (`theme.typography.fontFamilyMono`), breaks unbroken
+values anywhere, and announces its own copy.
+
+### Display preferences (contexts)
+
+Two optional provider/reader pairs carry a host preference without
+validating it:
+
+- `DisplayTimeZoneProvider({ timeZone })` / `useDisplayTimeZone()` carry
+  an IANA time zone name or `undefined`. The pure validators live in
+  `@speed/i18n`; rendering surfaces apply their own fallback (a device
+  zone, a stored preference) when the context is absent. The default is
+  `undefined`, so a tree without the provider is unchanged.
+- `PhoneCountryDefaultProvider({ country })` / `usePhoneCountryDefault()`
+  carry a preferred ISO alpha-2 starting country; the hook returns it
+  when present and the existing `defaultPhoneCountry()` answer otherwise.
+
+Neither provider holds state: the host owns the value and re-renders.
 
 ### visuallyHiddenSx (the hidden-element recipe)
 
@@ -1183,7 +1310,11 @@ live). The full key set:
 
 | Key | Purpose | Notes |
 |---|---|---|
-| `dataTable.ariaLabel` | table aria-label | |
+| `refreshButton.label` | RefreshButton default visible text | the caller's `label` overrides |
+| `copyButton.copyLabel` | CopyButton default accessible name | interpolates `{{value}}` |
+| `copyButton.copiedLabel` | CopyButton copy announcement | interpolates `{{value}}` |
+| `oneTimeValuePanel.copied` | OneTimeValuePanel copy announcement | |
+| `dataTable.ariaLabel` | table aria-label | `ariaLabel` / `ariaLabelledBy` override |
 | `dataTable.loading` | status-row text while loading | |
 | `dataTable.rowsPerPage` | pagination footer label | |
 | `dataTable.displayedRows` | "from-to of count" counter | interpolates `{{from}}`, `{{to}}`, `{{count}}` |
@@ -1225,13 +1356,115 @@ files; drift surfaces when the namespace registers. The write-feedback
 scope adds no key:
 the success message is host copy passed to `succeed`, and a failure code
 resolves through the region's `resolve` prop in the calling package's
-namespace. `AsyncSection`'s `staleState` likewise takes the caller's
-`description` and `retryLabel`. Host content (a PageHeader title, a
+namespace. `AsyncSection`'s `staleState` and `refusedState` likewise take
+the caller's copy. Host content (a PageHeader title, a
 ConfirmDialog message, a column header) is the host's own translation
 surface, and hosts reword the kit by registering their own bilingual
 bundle pair -- identical key structure, their wording -- under
 `UI_KIT_NAMESPACE` at bootstrap; `uiKitResources` is simply the shipped
 default.
+
+## Recipes
+
+### Component-level customisation
+
+Layer a functional `ThemeProvider` inside `AppThemeProvider`. The
+function form receives the outer theme -- the kit's merged tokens,
+palette and active mode -- and returns a theme built on top of it, so a
+host changes defaults without forking any component:
+
+```tsx
+import { createTheme, ThemeProvider } from '@mui/material/styles'
+import { AppThemeProvider } from '@speed/ui-kit'
+import { RouterLink } from './router-link'
+
+const componentOverrides = {
+  components: {
+    // Density: one default for every button-sized control.
+    MuiButton: {
+      defaultProps: { disableElevation: true, size: 'small' },
+      styleOverrides: { root: { textTransform: 'none' } },
+    },
+    MuiTextField: { defaultProps: { size: 'small' } },
+    // Routing: the host's own link component replaces plain anchors.
+    MuiButtonBase: { defaultProps: { LinkComponent: RouterLink } },
+    MuiLink: { defaultProps: { component: RouterLink } },
+  },
+}
+
+export function Providers({ i18n, children }: { i18n: I18nInstance; children: ReactNode }) {
+  return (
+    <AppThemeProvider i18n={i18n}>
+      <ThemeProvider theme={(outer) => createTheme(outer, componentOverrides)}>
+        {children}
+      </ThemeProvider>
+    </AppThemeProvider>
+  )
+}
+```
+
+`createTheme(outer, options)` applies `options` as a diff over `outer`:
+an option the host does not name keeps the kit's value. The second
+argument must therefore be a diff options object, never a theme built by
+`createTheme()` -- a complete theme carries MUI's default palette,
+typography and shape, and would replace those token-mapped values.
+`defaultProps` and `styleOverrides` reach every instance of the control,
+including the ones the kit's components render internally (a ConfirmDialog
+button, a DataTable pagination footer); `LinkComponent` is how a host
+router intercepts link activation without per-surface props.
+
+### Per-mode palette override
+
+The factory's dark mode reads the same neutral ramp from its dark end, and
+the six semantic roles stay shared between modes. A brand that needs a
+different primary on dark surfaces overrides that role for that mode only:
+
+```tsx
+import type { Theme } from '@mui/material/styles'
+
+function withBrandDarkSurface(outer: Theme): Theme {
+  return createTheme(outer, {
+    palette:
+      outer.palette.mode === 'dark'
+        ? {
+            primary: {
+              main: '#60A5FA',
+              contrastText: '#0B1220',
+            },
+          }
+        : {},
+  })
+}
+
+<ThemeProvider theme={withBrandDarkSurface}>{children}</ThemeProvider>
+```
+
+The function re-runs on every mode change because the active mode is part
+of the outer theme, so light and dark can carry different brand colors
+without a second token tree.
+
+### Third-language MUI Localization
+
+`AppThemeProvider` merges the MUI locale for the active language and falls
+back to en-US when MUI has no mapping for it. A host adding a third
+language supplies MUI's own `Localization` object by nesting one more
+`ThemeProvider` inside `AppThemeProvider` (the inner merge lands after the
+kit's locale merge):
+
+```tsx
+import { frFR } from '@mui/material/locale'
+import { createTheme, ThemeProvider } from '@mui/material/styles'
+
+<AppThemeProvider i18n={i18n}>
+  <ThemeProvider theme={(outer) => createTheme(outer, frFR)}>
+    {children}
+  </ThemeProvider>
+</AppThemeProvider>
+```
+
+MUI built-in texts (table pagination, tooltips) then use the host's
+localization while the app's own translations keep coming from the i18n
+instance.
 
 ## Accessibility
 

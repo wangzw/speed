@@ -24,7 +24,9 @@
  *   theme.spacing(n) === n x unit).
  * - shape.borderRadius maps directly; breakpoints.values and
  *   zIndex.values map directly (the slot names are MUI's own).
- * - typography: fontFamily.sans becomes the theme font family; the named
+ * - typography: fontFamily.sans becomes the theme font family, and
+ *   fontFamily.mono becomes `theme.typography.fontFamilyMono` (module
+ *   augmentation, see the declaration below); the named
  *   size steps feed the variant role table, converted to rem on a 16px
  *   base (MUI's default htmlFontSize); fontWeight.regular/medium/bold
  *   fill fontWeightRegular/Medium/Bold (light has no token and keeps
@@ -86,6 +88,29 @@ import {
   type TokensOverride,
 } from '@speed/tokens'
 import { touchFloorComponents } from './touch-floor.js'
+
+/**
+ * MUI's typography surface carries no monospace entry, while the token
+ * tree does (`typography.fontFamily.mono`). The augmentation adds it
+ * under the theme rather than exposing a sibling helper: a consumer
+ * reads `theme.typography.fontFamilyMono` exactly like
+ * `theme.typography.fontFamily`, including from `sx` callbacks, and a
+ * host override of the token reaches it with no second wiring.
+ *
+ * `fontFamilyMono` is required on the built theme (the factory always
+ * sets it) and optional on the theme options (a host composing its own
+ * `createTheme` without the factory keeps MUI's shape).
+ */
+declare module '@mui/material/styles' {
+  interface TypographyVariants {
+    /** The token tree's monospace font stack (`typography.fontFamily.mono`). */
+    fontFamilyMono: string
+  }
+  interface TypographyVariantsOptions {
+    /** The monospace stack; the factory fills it from the merged tokens. */
+    fontFamilyMono?: string
+  }
+}
 
 /** Typography rem base; MUI's default htmlFontSize is 16, keep aligned. */
 const REM_BASE = 16
@@ -274,6 +299,7 @@ function tokensToThemeOptions(
     },
     typography: {
       fontFamily: t.fontFamily.sans,
+      fontFamilyMono: t.fontFamily.mono,
       fontWeightRegular: t.fontWeight.regular,
       fontWeightMedium: t.fontWeight.medium,
       fontWeightBold: t.fontWeight.bold,

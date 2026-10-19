@@ -1,7 +1,15 @@
 /**
- * PhoneNumberField: the two-part phone-number control of the form family.
+ * PhoneNumberField: the two-part mobile-number (SMS) control of the form
+ * family.
  *
- * A phone number is edited as a country/region selector and a local
+ * The control exists for numbers an SMS can reach: its metadata is
+ * libphonenumber-js's `mobile` build, so the validation below (and
+ * `validatePhoneNumber` / `toE164` in src/phone-number.ts) apply mobile
+ * number-plan metadata, not the fixed-line union. A number of a legal
+ * length but an impossible mobile plan is refused rather than sent to the
+ * SMS channel.
+ *
+ * A number is edited as a country/region selector and a local
  * number, and reaches the host as the two parts; `toE164` in
  * src/phone-number.ts joins them for submission. The selector is a
  * searchable combobox over the countries the phone metadata covers --
@@ -83,6 +91,14 @@ export type PhoneNumberFieldProps = {
    * could not assemble a number, so a viewer is not scolded mid-typing.
    */
   readonly showValidationError?: boolean
+  /**
+   * Country codes to list first, in the given order -- a host serving one
+   * market puts its own countries at the top of the selector. A code the
+   * phone metadata does not cover is skipped, and the remaining countries
+   * keep their usual order. Omitting it keeps the current order
+   * byte-identically.
+   */
+  readonly preferredCountries?: readonly string[]
 }
 
 /**
@@ -110,6 +126,7 @@ export function PhoneNumberField({
   disabled = false,
   autoComplete = 'tel',
   showValidationError = false,
+  preferredCountries,
 }: PhoneNumberFieldProps) {
   const { t, i18n } = useUiKitTranslation()
   const countryFieldId = useId()
@@ -121,18 +138,32 @@ export function PhoneNumberField({
   )
   const [touched, setTouched] = useState(false)
 
-  const options = useMemo<CountryOption[]>(
-    () =>
-      phoneCountries()
-        .map((code) => ({
-          code,
-          name: phoneCountryName(code, i18n.language),
-          callingCode: phoneCountryCallingCode(code) ?? '',
-          flag: flagOf(code),
-        }))
-        .sort((left, right) => left.name.localeCompare(right.name, i18n.language)),
-    [i18n.language],
-  )
+  const options = useMemo<CountryOption[]>(() => {
+    const sorted = phoneCountries()
+      .map((code) => ({
+        code,
+        name: phoneCountryName(code, i18n.language),
+        callingCode: phoneCountryCallingCode(code) ?? '',
+        flag: flagOf(code),
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name, i18n.language))
+    if (preferredCountries === undefined || preferredCountries.length === 0) {
+      return sorted
+    }
+    // The preferred codes move to the front in the caller's order; a code
+    // the metadata does not cover is skipped. Deleting from the map leaves
+    // the rest in their usual sorted order.
+    const remaining = new Map(sorted.map((option) => [option.code, option]))
+    const first: CountryOption[] = []
+    for (const code of preferredCountries) {
+      const option = remaining.get(code)
+      if (option !== undefined) {
+        first.push(option)
+        remaining.delete(code)
+      }
+    }
+    return [...first, ...remaining.values()]
+  }, [i18n.language, preferredCountries])
 
   const selected =
     options.find((option) => option.code === country) ?? null

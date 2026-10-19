@@ -23,6 +23,12 @@
  * visuallyHiddenSx (the clip recipe for hidden live regions and file
  * inputs) and touchTargetSx (the coarse-pointer 44px floor for an
  * interactive target the theme's own control overrides cannot reach).
+ * The refresh pair (RefreshButton + usePageRefresh) re-reads a surface's
+ * own reads through the handles the host passes; the clipboard and
+ * hand-off pair (CopyButton + OneTimeValuePanel) covers a value handed
+ * out once; the two display contexts (DisplayTimeZoneProvider,
+ * PhoneCountryDefaultProvider) carry a host preference read by surfaces
+ * that fall back to their own defaults when it is absent.
  * Everything else stays internal: helpers shared between components live
  * in src/internal/ and are deliberately not exported.
  */
@@ -119,8 +125,21 @@ export {
 export {
   InlineError,
   errorCodeOf,
+  httpStatusOf,
   type InlineErrorProps,
 } from './components/InlineError.js'
+export {
+  CopyButton,
+  type CopyButtonProps,
+} from './components/CopyButton.js'
+export {
+  OneTimeValuePanel,
+  type OneTimeValuePanelProps,
+} from './components/OneTimeValuePanel.js'
+export {
+  RefreshButton,
+  type RefreshButtonProps,
+} from './components/RefreshButton.js'
 export {
   InlineSuccess,
   type InlineSuccessProps,
@@ -143,7 +162,26 @@ export {
   type AsyncSectionEmptyState,
   type AsyncSectionErrorState,
   type AsyncSectionProps,
+  type AsyncSectionRefusedState,
   type AsyncSectionStaleState,
 } from './components/AsyncSection.js'
+export {
+  usePageRefresh,
+  pageRefreshRead,
+  type PageRefresh,
+  type PageRefreshRead,
+  type PageRefreshReadHandle,
+  type PageRefreshSettled,
+} from './use-page-refresh.js'
+export {
+  DisplayTimeZoneProvider,
+  useDisplayTimeZone,
+  type DisplayTimeZoneProviderProps,
+} from './display-time-zone.js'
+export {
+  PhoneCountryDefaultProvider,
+  usePhoneCountryDefault,
+  type PhoneCountryDefaultProviderProps,
+} from './phone-country-default.js'
 export { visuallyHiddenSx } from './visually-hidden.js'
 export { touchTargetSx } from './touch-target.js'

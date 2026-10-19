@@ -1,7 +1,7 @@
 {
   "name": "@speed/ui-kit",
   "version": "0.0.1",
-  "description": "Speed UI kit: the MUI v9 theme factory (createAppTheme + AppThemeProvider), the controlled core components (PageHeader, EmptyState, ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField, DataTable, FileUploader) and the write-feedback scope (useWriteFeedback + WriteFeedbackRegion), bilingual out of the box through @speed/i18n",
+  "description": "Speed UI kit: the MUI v9 theme factory (createAppTheme + AppThemeProvider), the controlled core components (PageHeader, EmptyState, ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField, DataTable, FileUploader), the refresh pair (RefreshButton + usePageRefresh), the clipboard and one-time-value pair (CopyButton + OneTimeValuePanel) and the write-feedback scope (useWriteFeedback + WriteFeedbackRegion), bilingual out of the box through @speed/i18n",
   "type": "module",
   "sideEffects": false,
   "files": ["dist", "README.md", "AGENTS.md"],

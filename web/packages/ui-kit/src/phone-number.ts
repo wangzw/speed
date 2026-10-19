@@ -1,5 +1,11 @@
 /**
- * Phone-number composition for PhoneNumberField.
+ * Phone-number composition for PhoneNumberField, the mobile-number (SMS)
+ * control.
+ *
+ * `validatePhoneNumber` and `toE164` read libphonenumber-js's `mobile`
+ * metadata: their verdicts are mobile number-plan verdicts, so a number
+ * of a legal length but no possible mobile plan is refused rather than
+ * handed to an SMS channel.
  *
  * A phone number is edited as two parts -- a country/region and a local
  * number -- and submitted as one E.164 string. Everything country-aware

@@ -18,9 +18,15 @@ state hosts give them, plus the form family's zod validation bridge
 (`zodFormResolver`), the phone parts' composition helpers (`toE164`,
 `validatePhoneNumber`, `defaultPhoneCountry` and the grouping/parsing
 functions in `src/phone-number.ts`), the write-feedback scope
-(`useWriteFeedback`, the
-one exported hook that holds state, with the slot's renderer
-`WriteFeedbackRegion`) and the shared state primitives (`errorCodeOf`, the
+(`useWriteFeedback`, with the slot's renderer
+`WriteFeedbackRegion`), the refresh pair (`RefreshButton` plus
+`usePageRefresh` / `pageRefreshRead`, which re-reads the query handles the
+host hands it, reading them structurally and importing no query client or
+transport), the clipboard and hand-off pair (`CopyButton`,
+`OneTimeValuePanel`), the display-preference contexts
+(`DisplayTimeZoneProvider` / `useDisplayTimeZone` and
+`PhoneCountryDefaultProvider` / `usePhoneCountryDefault`) and the shared
+state primitives (`errorCodeOf`, `httpStatusOf`, the
 `visuallyHiddenSx` clip recipe, and the `touchTargetSx` recipe as the
 fallback floor for interactive elements the theme does not reach). `FileUploader` is no carve-out: the queue renders from
 host-owned `rows` props, every pick, cancel, retry and remove reports up
@@ -90,13 +96,56 @@ plumbing and deliberately not exported.
   `FileUploader` keeps that contract too: the queue is the host's
   `rows` state, interactions report up through its callbacks, and the
   upload transport is host code — never package code.
-- **`useWriteFeedback` is the one exported hook that holds state, and
-  its state belongs to the calling host component.** Every component
-  above stays controlled; `useAppThemeMode` only reads provider context.
-  The hook holds one feedback scope's slot and in-flight count for the
-  component that calls it -- never provider or global state, never data
-  from the network. Its callbacks keep their identity for the host
-  component's lifetime.
+- **`useWriteFeedback` and `usePageRefresh` are the exported hooks that
+  hold state, and their state belongs to the calling host component.**
+  Every component above stays controlled; `useAppThemeMode`,
+  `useDisplayTimeZone` and `usePhoneCountryDefault` only read provider
+  context. `useWriteFeedback` holds one feedback scope's slot and
+  in-flight count for the component that calls it -- never provider or
+  global state, never data from the network. `usePageRefresh` holds one
+  surface's refresh bookkeeping (in-flight guard, settle times,
+  announcement count); its `refetch` calls reach the network through the
+  host's own reads, never through code in this package. Both hooks'
+  callbacks keep their identity for the host component's lifetime.
+
+- **The refresh seam never imports a query client or transport.**
+  `src/use-page-refresh.ts` and `RefreshButton` read handles
+  structurally (`isEnabled`, `isFetching`, `status`, `dataUpdatedAt`,
+  `isPlaceholderData`, `refetch`) and depend only on React, MUI and this
+  package's own translation seam (`RefreshButton` reads the `ui-kit`
+  namespace through `src/internal/translation.ts`); they import no query
+  client, api-client or transport. Adding
+  `@tanstack/react-query`, `@speed/api-client` or a direct `fetch` here
+  is forbidden -- the package's dependency list is the boundary, and
+  the host passes its own handles. The same rule keeps `httpStatusOf`
+  structural: it reads `status` / `client.http.<n>` and never imports
+  the transport.
+
+- **New display/preference props default to their previous behaviour.**
+  `AsyncSection.refusedState`, `DataTable.ariaLabel` /
+  `ariaLabelledBy`, `DataTableFilter.label` / `placeholder`,
+  `ConfirmDialog.children` / `confirmDisabled`,
+  `PhoneNumberField.preferredCountries`, and the two contexts
+  (`DisplayTimeZoneProvider`, `PhoneCountryDefaultProvider`, both
+  defaulting to `undefined`) all leave the rendered output
+  byte-identical when omitted. `RefreshButton.label` and `CopyButton.label` / `copiedLabel` are the
+  same shape: the caller's string replaces a namespace default that no
+  existing call site passes. `CopyButton.visibleLabel` is different:
+  it switches the control from the icon face to a text-button face, so
+  there is no namespace default behind it. `ConfirmDialog.children` is rendered
+  outside `aria-describedby` by contract -- the message stays the
+  description. `AsyncSection.refusedState` carries the caller's
+  refusal copy and is never derived here: ui-kit inspects no status and
+  knows no permission semantics.
+
+- **The monospace stack is exposed by module augmentation.** The token
+  tree's `typography.fontFamily.mono` maps to
+  `theme.typography.fontFamilyMono` through a `declare module
+  '@mui/material/styles'` augmentation in `src/theme/createAppTheme.ts`
+  (MUI has no monospace slot). The factory always fills it; theme
+  options keep it optional so a host composing its own theme without the
+  factory is unaffected. Read it like `fontFamily`, including from `sx`
+  callbacks.
 - **Write results go through exactly one feedback scope per control
   group.** The scope is one `useWriteFeedback` instance plus one
   `WriteFeedbackRegion` rendered directly under the controls. Each

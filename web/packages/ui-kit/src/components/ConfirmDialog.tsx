@@ -96,6 +96,21 @@ export interface ConfirmDialogProps {
   readonly cancelLabel?: ReactNode
   /** Busy state of the confirmation; both exits are inert while true. */
   readonly confirmLoading?: boolean
+  /**
+   * Disables the confirm button on its own -- for a confirmation whose
+   * precondition the host owns (a required acknowledgement still
+   * unchecked), independent of the busy state. The double-confirm
+   * arming and lockout logic is untouched: a disabled button cannot arm,
+   * and an arm already in progress resumes when the flag clears.
+   */
+  readonly confirmDisabled?: boolean
+  /**
+   * Extra content rendered inside the dialog below the message -- a
+   * checkbox, a form field, a detail list. It is NOT part of
+   * `aria-describedby`: the message stays the dialog's description, and
+   * a focusable child is reached by tabbing into the dialog.
+   */
+  readonly children?: ReactNode
   /** Fired when the user confirms (the second click under doubleConfirm). */
   readonly onConfirm: () => void
   /** Fired on cancel, Escape or backdrop click -- never on confirm. */
@@ -128,6 +143,8 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel,
   confirmLoading = false,
+  confirmDisabled = false,
+  children,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -236,6 +253,10 @@ export function ConfirmDialog({
         <DialogContentText id={messageId}>
           {message ?? t('confirmDialog.message')}
         </DialogContentText>
+        {/* Host content below the message. Deliberately outside the
+            message's id, so a long extra block never becomes the
+            dialog's description. */}
+        {children}
         {/* The arming live region. Mounted (empty) while the dialog shows
             under the doubleConfirm guard -- a region that appeared
             together with its text could not announce the arm -- and
@@ -260,7 +281,7 @@ export function ConfirmDialog({
           // above backs the same window for any event that still
           // arrives). Cancel stays live -- the window covers the confirm
           // button alone.
-          disabled={busy || armLockout}
+          disabled={busy || armLockout || confirmDisabled}
           loading={busy}
           color={confirmColor}
           variant="contained"

@@ -43,12 +43,15 @@ describe('ui-kit resources', () => {
     const sections = Object.keys(uiKitResources['zh-CN']!).sort()
     expect(sections).toEqual([
       'confirmDialog',
+      'copyButton',
       'dataTable',
       'emptyState',
       'fileUploader',
       'form',
+      'oneTimeValuePanel',
       'pageHeader',
       'phoneNumber',
+      'refreshButton',
       'sidePanel',
     ])
   })

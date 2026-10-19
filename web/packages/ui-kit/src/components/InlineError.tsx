@@ -16,6 +16,11 @@
  * lists, so the family renders its unknown fallback. The pair is
  * fail-closed: an operation that throws at all always has a code to
  * show, and classifying it never throws.
+ *
+ * httpStatusOf is the status-reading companion: callers that decide a
+ * branch from an HTTP status (a refusal, a missing record) read it
+ * structurally instead of re-implementing the two shapes
+ * (`error.status`, or the `client.http.<n>` code) at every call site.
  */
 
 import Alert from '@mui/material/Alert'
@@ -45,6 +50,53 @@ export function errorCodeOf(error: unknown): string {
  * so a resolver treats it as unknown and renders its fallback.
  */
 const UNKNOWN_FAILURE_CODE = 'client.unknown'
+
+/**
+ * The HTTP status an error carries, read structurally: a numeric
+ * `status` property holding a valid HTTP status (an integer in 100-599),
+ * or else a `code` of the bare-HTTP shape `client.http.<n>`. Returns
+ * `null` when neither names a status -- a transport failure (whose
+ * `status` is 0), a bug-shaped throw, or a value whose reads throw (a
+ * throwing getter, a revoked proxy).
+ *
+ * The helper is structural like its companion `errorCodeOf`: it imports
+ * nothing from the transport and recognizes no envelope of its own. A
+ * valid numeric `status` wins over a code when both are present, because
+ * the answer's own field is the direct statement; the code is the
+ * synthesized fallback a transport writes when the response carried no
+ * readable envelope. An out-of-range number (0 on a transport failure)
+ * names no status, so the code is still tried.
+ */
+export function httpStatusOf(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null) {
+    return null
+  }
+  let status: unknown
+  try {
+    status = (error as { status?: unknown }).status
+  } catch {
+    return null
+  }
+  if (
+    typeof status === 'number' &&
+    Number.isInteger(status) &&
+    status >= 100 &&
+    status <= 599
+  ) {
+    return status
+  }
+  let code: unknown
+  try {
+    code = (error as { code?: unknown }).code
+  } catch {
+    return null
+  }
+  if (typeof code !== 'string') {
+    return null
+  }
+  const match = /^client\.http\.(\d+)$/.exec(code)
+  return match === null ? null : Number(match[1])
+}
 
 export interface InlineErrorProps {
   /** The code to render, or null for no error (renders nothing). */

@@ -11,7 +11,7 @@
  */
 
 import { useState } from 'react'
-import { act, fireEvent } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { switchLanguage } from '@speed/i18n'
@@ -439,6 +439,82 @@ describe('ConfirmDialog', () => {
     const { onCancel, getByRole } = setup({ confirmLoading: true })
     fireEvent.keyDown(getByRole('dialog'), { key: 'Escape' })
     expect(onCancel).not.toHaveBeenCalled()
+  })
+
+  it('confirmDisabled: disables only the confirm button, leaving cancel live', () => {
+    const { onConfirm, onCancel, getByRole } = setup({ confirmDisabled: true })
+    const confirm = getByRole('button', { name: zhCN.confirmDialog.confirmLabel })
+    expect(confirm).toBeDisabled()
+    fireEvent.click(confirm)
+    expect(onConfirm).not.toHaveBeenCalled()
+
+    const cancel = getByRole('button', { name: zhCN.confirmDialog.cancelLabel })
+    expect(cancel).not.toBeDisabled()
+    fireEvent.click(cancel)
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirmDisabled: clearing it starts the doubleConfirm guard untouched', async () => {
+    const user = userEvent.setup()
+    const onConfirm = vi.fn()
+    function Harness() {
+      const [disabled, setDisabled] = useState(true)
+      return (
+        <ConfirmDialog
+          open
+          variant="danger"
+          doubleConfirm
+          confirmDisabled={disabled}
+          onConfirm={onConfirm}
+          onCancel={() => undefined}
+        >
+          {/* Host content inside the dialog: a control that clears the
+              host-owned precondition. */}
+          <button type="button" onClick={() => setDisabled(false)}>
+            enable
+          </button>
+        </ConfirmDialog>
+      )
+    }
+    renderWithProviders(<Harness />)
+    const confirm = screen.getByRole('button', {
+      name: zhCN.confirmDialog.confirmLabel,
+    })
+    expect(confirm).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'enable' }))
+    const enabled = screen.getByRole('button', {
+      name: zhCN.confirmDialog.confirmLabel,
+    })
+    await user.click(enabled)
+    // The first click armed the guard as usual; the disabled window never
+    // consumed or bypassed it.
+    expect(onConfirm).not.toHaveBeenCalled()
+    // Wait out the arming lockout, exactly as the deliberate second click
+    // does in real use.
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.confirmDialog.confirmAgainLabel,
+      }),
+    )
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders host children below the message, outside aria-describedby', () => {
+    const CHILD_TEXT = 'I understand this cannot be undone'
+    const utils = setup({ children: <p>{CHILD_TEXT}</p> })
+    const dialog = utils.getByRole('dialog')
+    const describedBy = dialog.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    const description = document.getElementById(describedBy!)
+    expect(description).toHaveTextContent(zhCN.confirmDialog.message)
+    expect(description).not.toHaveTextContent(CHILD_TEXT)
+    expect(utils.getByText(CHILD_TEXT)).toBeInTheDocument()
   })
 
   it('wires the dialog to its title and message ids', () => {

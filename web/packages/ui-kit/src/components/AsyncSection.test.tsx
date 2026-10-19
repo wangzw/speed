@@ -37,6 +37,11 @@ const EMPTY_STATE = {
 const STALE_DESCRIPTION = 'The list may be out of date.'
 const STALE_RETRY_LABEL = 'Refresh the list'
 
+const REFUSED_STATE = {
+  title: 'No access',
+  description: 'You cannot view these items.',
+} as const
+
 function staleStateOf(onRetry: () => void): AsyncSectionStaleState {
   return {
     description: STALE_DESCRIPTION,
@@ -627,6 +632,94 @@ describe('AsyncSection', () => {
     // The marker is the host's state: clicking the retry does not
     // dissolve it on its own.
     expect(view.getByRole('alert')).toBeInTheDocument()
+  })
+
+  it('replaces the content with the refused placeholder and no retry', () => {
+    const children = vi.fn(() => <p>content</p>)
+    renderWithProviders(
+      <div>
+        <h1>Page title</h1>
+        <AsyncSection
+          pending={false}
+          payload={['alpha']}
+          empty={false}
+          loading={<p>loading node</p>}
+          errorState={ERROR_STATE}
+          emptyState={EMPTY_STATE}
+          refusedState={REFUSED_STATE}
+        >
+          {children}
+        </AsyncSection>
+      </div>,
+    )
+    // The caller decided the read was refused: the no-permission
+    // placeholder takes the content's place, and nothing offers a retry
+    // that could only be refused again.
+    expect(screen.getByText(REFUSED_STATE.title)).toBeInTheDocument()
+    expect(screen.getByText(REFUSED_STATE.description)).toBeInTheDocument()
+    expect(screen.queryByText('content')).not.toBeInTheDocument()
+    expect(children).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('renders the refused placeholder over the empty, error and stale branches', () => {
+    const first = renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={[]}
+        empty
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        staleState={staleStateOf(vi.fn())}
+        refusedState={REFUSED_STATE}
+      >
+        {(items) => <p>content {items.length}</p>}
+      </AsyncSection>,
+    )
+    expect(screen.getByText(REFUSED_STATE.title)).toBeInTheDocument()
+    expect(screen.queryByText(EMPTY_STATE.title)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+    first.unmount()
+
+    renderWithProviders(
+      <AsyncSection
+        pending={false}
+        payload={undefined}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        refusedState={REFUSED_STATE}
+      >
+        {(items: readonly string[]) => <p>content {items.join(',')}</p>}
+      </AsyncSection>,
+    )
+    // A refusal is not a load failure: the retryable error placeholder and
+    // its retry action are replaced too.
+    expect(screen.getByText(REFUSED_STATE.title)).toBeInTheDocument()
+    expect(screen.queryByText(ERROR_STATE.title)).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: ERROR_STATE.retryLabel }),
+    ).toBeNull()
+  })
+
+  it('keeps rendering the loading branch while pending even with a refusal marker', () => {
+    renderWithProviders(
+      <AsyncSection
+        pending
+        payload={undefined}
+        empty={false}
+        loading={<p>loading node</p>}
+        errorState={ERROR_STATE}
+        emptyState={EMPTY_STATE}
+        refusedState={REFUSED_STATE}
+      >
+        {(items: readonly string[]) => <p>content {items.join(',')}</p>}
+      </AsyncSection>,
+    )
+    expect(screen.getByText('loading node')).toBeInTheDocument()
+    expect(screen.queryByText(REFUSED_STATE.title)).not.toBeInTheDocument()
   })
 
   it('renders no stale notice while pending or in the error branch', () => {

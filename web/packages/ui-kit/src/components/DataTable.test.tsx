@@ -816,6 +816,60 @@ describe('DataTable', () => {
     ).toBeInTheDocument()
   })
 
+  it('takes the filter visible label and placeholder over the namespace defaults', () => {
+    const utils = renderTable({
+      filter: {
+        value: '',
+        onValueChange: vi.fn(),
+        label: 'Filter members',
+        placeholder: 'Name or credits',
+      },
+    })
+    const input = utils.getByLabelText('Filter members')
+    expect(input).toHaveAttribute('placeholder', 'Name or credits')
+    // The label is visible and associated, not an accessible-name-only
+    // fallback: the input carries no aria-label of its own.
+    expect(input).not.toHaveAttribute('aria-label')
+    const label = utils.getByText('Filter members', { selector: 'label' })
+    expect(label.tagName).toBe('LABEL')
+    expect(label).toHaveAttribute('for', input.id)
+    // The namespace default no longer names the field.
+    expect(
+      utils.queryByLabelText(zhCN.dataTable.filterLabel),
+    ).not.toBeInTheDocument()
+  })
+
+  it('uses ariaLabel for the table name and the namespace default otherwise', () => {
+    const named = renderTable({ ariaLabel: 'Member roster' })
+    expect(
+      named.getByRole('table', { name: 'Member roster' }),
+    ).toBeInTheDocument()
+    named.unmount()
+
+    const defaulted = renderTable()
+    expect(
+      defaulted.getByRole('table', { name: zhCN.dataTable.ariaLabel }),
+    ).toBeInTheDocument()
+  })
+
+  it('takes its name from ariaLabelledBy in place of the inline label', () => {
+    const utils = renderWithProviders(
+      <div>
+        <h2 id="members-heading">Members</h2>
+        <DataTable
+          rows={MEMBERS}
+          columns={BASE_COLUMNS}
+          rowKey={keyOf}
+          ariaLabel="Ignored inline name"
+          ariaLabelledBy="members-heading"
+        />
+      </div>,
+    )
+    const table = utils.getByRole('table', { name: 'Members' })
+    expect(table).toHaveAttribute('aria-labelledby', 'members-heading')
+    expect(table).not.toHaveAttribute('aria-label')
+  })
+
   it('uses the rowKey results as the selection keys', () => {
     const onSelectionChange = vi.fn()
     const utils = renderTable({

@@ -13,7 +13,7 @@ import userEvent from '@testing-library/user-event'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { PhoneNumberField } from './PhoneNumberField.js'
-import { phoneCountryName } from '../phone-number.js'
+import { phoneCountries, phoneCountryName } from '../phone-number.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
 // The host supplies both labels as props; the field renders them as the
@@ -77,6 +77,41 @@ describe('PhoneNumberField', () => {
     expect(
       screen.queryByRole('option', { name: optionNamed('US') }),
     ).not.toBeInTheDocument()
+  })
+
+  it('lists the preferred countries first, in the given order, skipping unknown codes', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(
+      <PhoneNumberField
+        country="US"
+        nationalNumber=""
+        onCountryChange={() => undefined}
+        onNationalNumberChange={() => undefined}
+        countryLabel={COUNTRY_LABEL}
+        numberLabel={NUMBER_LABEL}
+        preferredCountries={['ZZ', 'DE', 'CN']}
+      />,
+    )
+    await user.click(screen.getByRole('combobox', { name: COUNTRY_LABEL }))
+    const options = await screen.findAllByRole('option')
+    // 'ZZ' is not a country the metadata covers, so it is skipped; the
+    // covered preferred codes lead in the caller's order.
+    expect(options[0]?.textContent).toContain(phoneCountryName('DE', 'zh-CN'))
+    expect(options[1]?.textContent).toContain(phoneCountryName('CN', 'zh-CN'))
+    expect(options).toHaveLength(phoneCountries().length)
+  })
+
+  it('keeps the usual order when no preferred country is given', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<Harness initialCountry="US" />)
+    await user.click(screen.getByRole('combobox', { name: COUNTRY_LABEL }))
+    const options = await screen.findAllByRole('option')
+    // The sorted order this package has always rendered: the first option
+    // is whichever country sorts first under the active language.
+    const expectedFirst = [...phoneCountries()]
+      .map((code) => ({ code, name: phoneCountryName(code, 'zh-CN') }))
+      .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN'))[0]
+    expect(options[0]?.textContent).toContain(expectedFirst?.name)
   })
 
   it('groups the local number with spaces as the user types', async () => {

@@ -36,6 +36,14 @@
  * loses the state that node holds. A refusal such as HTTP 403 does not
  * use `staleState`: it makes the older data meaningless, so the caller
  * replaces the content with the no-permission placeholder instead.
+ *
+ * `refusedState` is that replacement as a prop: the caller decides a
+ * read was refused (ui-kit inspects no status and knows no permission
+ * semantics), and while the section is not pending the no-permission
+ * placeholder takes the place of everything else -- content, empty and
+ * error branches alike. It carries no retry, because a refusal can only
+ * be answered with a refusal again. Omitting it renders the previous
+ * behaviour unchanged.
  */
 
 import type { ReactNode } from 'react'
@@ -64,6 +72,18 @@ export interface AsyncSectionEmptyState {
   /** The empty state's title. */
   readonly title: string
   /** The empty state's description. */
+  readonly description: string
+}
+
+/**
+ * The refusal placeholder's copy: the caller decided the read was
+ * refused (a permission answer, a policy decision). The placeholder
+ * replaces the content and offers no retry.
+ */
+export interface AsyncSectionRefusedState {
+  /** The no-permission placeholder's title. */
+  readonly title: string
+  /** The no-permission placeholder's description. */
   readonly description: string
 }
 
@@ -118,6 +138,15 @@ export interface AsyncSectionProps<Payload> {
    * caller renders as the no-permission placeholder instead.
    */
   readonly staleState?: AsyncSectionStaleState
+  /**
+   * The no-permission placeholder, supplied when the caller decided the
+   * read was refused. While the section is not pending it replaces the
+   * content, the empty placeholder and the error branch alike, and
+   * offers no retry: a refusal can only be refused again. ui-kit makes
+   * no status or permission check of its own -- the caller decides, and
+   * omitting the prop keeps every previous branch unchanged.
+   */
+  readonly refusedState?: AsyncSectionRefusedState
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
 }
@@ -133,10 +162,23 @@ export function AsyncSection<Payload>({
   headingLevel = 'h2',
   emptyHeadingLevel,
   staleState,
+  refusedState,
   children,
 }: AsyncSectionProps<Payload>) {
   if (pending) {
     return loading
+  }
+  if (refusedState !== undefined) {
+    // A refusal replaces whatever was on screen: the older data no longer
+    // means anything, and there is no retry that could change the answer.
+    return (
+      <EmptyState
+        variant="noPermission"
+        title={refusedState.title}
+        description={refusedState.description}
+        headingLevel={headingLevel}
+      />
+    )
   }
   if (payload === undefined) {
     return (

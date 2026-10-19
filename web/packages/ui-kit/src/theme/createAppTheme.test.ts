@@ -63,6 +63,19 @@ describe('createAppTheme token-to-theme mapping', () => {
     expect(theme.typography.fontWeightBold).toBe(defaultTokens.typography.fontWeight.bold)
   })
 
+  it("exposes the token tree's mono stack as fontFamilyMono", () => {
+    expect(theme.typography.fontFamilyMono).toBe(
+      defaultTokens.typography.fontFamily.mono,
+    )
+  })
+
+  it("follows a project override of the mono stack", () => {
+    const overridden = createAppTheme({
+      typography: { fontFamily: { mono: "'Fira Code', monospace" } },
+    }).theme
+    expect(overridden.typography.fontFamilyMono).toBe("'Fira Code', monospace")
+  })
+
   it('maps heading variants onto the 5xl..lg steps in rem, tight and semibold', () => {
     const sizes = defaultTokens.typography.fontSize
     const cases = [
