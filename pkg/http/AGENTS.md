@@ -48,6 +48,54 @@ member the declaration does not describe is refused rather than dropped. A
 an undeclared one is answered 500. `pkg/internal/openapigen` generates the
 fragment from the same descriptor.
 
+**A request body is bound by its declared media type.**
+`Operation.RequestMediaType` (and a reply operation's) selects the reader:
+`application/json` reads the input's `json`-tagged members,
+`application/x-www-form-urlencoded` its `form`-tagged fields,
+`multipart/form-data` its `form`- and `file`-tagged fields (a `file` field is
+`[]byte`), and `application/octet-stream` its single `raw:"true"` field. A body
+whose Content-Type is not the declared one is a 415; a member, form key or part
+the declaration does not carry is a 400. A declaration no request could satisfy
+— an octet-stream type without exactly one `[]byte` raw field, a raw field under
+another media type, a file field that is not `[]byte`, a body tag the declared
+media type does not read (a `form` field under JSON, a `json` field under form,
+multipart or octet-stream), an unsupported media type — panics when the handler
+is built. After binding, an input with a
+`Validate() error` method that refuses its value is answered 422, with the
+validator's text as the problem detail. The `path`, `query`, `header` and
+`cookie` parameter tags are read for every media type.
+
+**A handler may build its own typed answer.** `ReplyOperation[In]` declares the
+same metadata and response set as `Operation`, and `Handle` takes
+`func(context.Context, In, *Meta) (Reply, error)`. `Meta` is the read-only
+request snapshot: the client IP and the matched route template, taken when the
+handler is called. A `Reply` is one of `JSONReply`, `EmptyReply`, `BytesReply`,
+`StreamReply`, `SSEReply` or `RedirectReply`, optionally wrapped by
+`WithHeaders` and `WithCookies`; the set is closed by an unexported marker
+method. `SSEWriter.Send` writes one server-sent event and flushes it; the data
+is split into one `data:` field per line, with CR, LF and CRLF all ending a
+line. A reply operation implements `Declared` like the simple one; its
+descriptor's `SuccessBody` is nil, because each declared response's own
+`Structure` describes its body. A JSON answer must declare that `Structure`: the
+fragment refuses one that does not, because the entry point would accept any
+JSON value there. An octet-stream answer is published as a binary string
+whatever its `Structure` names, since that is what the entry point writes.
+
+**A reply is checked against its declaration before anything is written.** The
+reply's status must be in the operation's `Responses`, and the kind must match
+that response: a JSON body's `reflect.Type` must equal the declared `Structure`
+(when the declaration names one) and its media type must be the declared one; an
+empty reply needs a body-less response; bytes and streams must carry the
+declared media type, and a stream or event stream must carry its callback; an
+event stream needs `text/event-stream` and gets `Cache-Control: no-store` unless
+the response declares another value; a redirect needs a 3xx status, a declared
+`Location` header and a body-less response. Every dynamic header name
+must be declared on the matched response; cookies are always written. A mismatch
+is answered 500 and the reply's own answer is never written. The declared static
+headers are written first, then the dynamic ones, then the body. A streamed body
+that fails after the status has gone out cannot change it: the failure is
+recorded and the connection is abandoned, which the recovery layer lets through.
+
 **Errors are declared too.** A module declares its shared answers once as a
 common failure set and merges them into each operation with
 `Failures(common, specific...)`: an operation's response replaces the common one
@@ -60,8 +108,8 @@ the media type and type the entry point writes, defaulting to the problem
 document. A host delivering its own `ErrorResponder` declares that responder's
 shape in its error responses, so the contract keeps describing what is written.
 
-The declaration types are plain structs, `reflect.Type` values and one generic
-handler signature, so this package still imports only the standard library.
+The declaration types are plain structs, `reflect.Type` values and generic
+handler signatures, so this package still imports only the standard library.
 `ProblemDocument` is the declared JSON shape of the problem response, the
 counterpart of `Problem` (the value a handler fills in).
 

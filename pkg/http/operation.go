@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,11 @@ type OperationDescriptor struct {
 	Description string
 	// Input is the handler's input type, or nil when it takes none. Its fields
 	// carry the parameters through `path`, `query`, `header` and `cookie`
-	// tags, and the request body through `json` tags.
+	// tags, and the request body according to RequestMediaType: `json` tags
+	// under application/json, `form` tags under
+	// application/x-www-form-urlencoded, `form` and `file` tags under
+	// multipart/form-data, and the single `raw` tag under
+	// application/octet-stream.
 	Input reflect.Type
 	// RequestMediaType is the request body's media type, empty when the
 	// operation takes no body.
@@ -62,8 +67,12 @@ type Operation[In, Out any] struct {
 	Summary     string
 	Description string
 	// RequestMediaType is the request body's media type; empty when the
-	// operation takes no body. A non-empty value makes the entry point decode
-	// In's `json`-tagged fields from the request body.
+	// operation takes no body. The entry point binds In's body fields
+	// according to this media type: `json` tags for application/json, `form`
+	// tags for application/x-www-form-urlencoded, `form` and `file` tags for
+	// multipart/form-data, and the single `raw` tag for
+	// application/octet-stream. An input carrying a body tag under an empty
+	// media type is a declaration defect and panics when the handler is built.
 	RequestMediaType string
 	// Responses is the closed set of answers. Exactly one must be 2xx, and
 	// that one's body is Out.
@@ -89,6 +98,13 @@ func NewOperation[In, Out any](
 
 // Descriptor returns the operation's shape for the generator.
 func (o Operation[In, Out]) Descriptor() OperationDescriptor {
+	status := successStatus(o.Responses)
+	if noBodyStatus(status) && bodyType[Out]() != nil {
+		panic(fmt.Sprintf(
+			"http: the success response %d carries no body, but the handler returns one; use an empty Out type",
+			status,
+		))
+	}
 	return OperationDescriptor{
 		ID:               o.ID,
 		Method:           o.Method,
@@ -97,7 +113,7 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 		Description:      o.Description,
 		Input:            inputType[In](),
 		RequestMediaType: o.RequestMediaType,
-		SuccessStatus:    successStatus(o.Responses),
+		SuccessStatus:    status,
 		SuccessBody:      bodyType[Out](),
 		Responses:        o.Responses,
 	}
@@ -108,6 +124,72 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 // declared success type, so any other signature does not compile here.
 func (o Operation[In, Out]) Handle(handle func(context.Context, In) (Out, error)) gin.HandlerFunc {
 	return bind(handle, inputType[In](), o.RequestMediaType, o.Responses)
+}
+
+// ReplyOperation is one operation whose handler builds its own answer from the
+// reply constructors. It declares the same shape as Operation, but the answer's
+// status, media type and headers are checked against the declaration when the
+// handler returns, rather than fixed by a type parameter.
+//
+// In is the handler's input, bound the way Operation binds it. The handler also
+// receives a read-only Meta snapshot of the request, and returns a Reply built
+// by JSONReply, EmptyReply, BytesReply, StreamReply, SSEReply or RedirectReply,
+// optionally wrapped by WithHeaders and WithCookies.
+type ReplyOperation[In any] struct {
+	ID          string
+	Method      string
+	Path        string
+	Summary     string
+	Description string
+	// RequestMediaType is the request body's media type; empty when the
+	// operation takes no body.
+	RequestMediaType string
+	// Responses is the closed set of answers. The handler may answer any status
+	// it declares, and each reply is checked against that status's declaration.
+	Responses []Response
+}
+
+// NewReplyOperation builds a reply operation declaration. Its handler is bound
+// later with Handle; the declaration itself is a static resource the generator
+// reads.
+func NewReplyOperation[In any](
+	id, method, path, summary, description, requestMediaType string,
+	responses []Response,
+) ReplyOperation[In] {
+	return ReplyOperation[In]{
+		ID:               id,
+		Method:           method,
+		Path:             path,
+		Summary:          summary,
+		Description:      description,
+		RequestMediaType: requestMediaType,
+		Responses:        responses,
+	}
+}
+
+// Descriptor returns the operation's shape for the generator. The success body
+// is nil: a reply operation's body is whatever its handler builds, and each
+// response's own Structure describes it.
+func (o ReplyOperation[In]) Descriptor() OperationDescriptor {
+	return OperationDescriptor{
+		ID:               o.ID,
+		Method:           o.Method,
+		Path:             o.Path,
+		Summary:          o.Summary,
+		Description:      o.Description,
+		Input:            inputType[In](),
+		RequestMediaType: o.RequestMediaType,
+		SuccessStatus:    successStatus(o.Responses),
+		SuccessBody:      nil,
+		Responses:        o.Responses,
+	}
+}
+
+// Handle binds a handler to the declaration and returns the entry point's
+// handler. The handler receives the declared input and the request's Meta, and
+// returns the reply it wants written.
+func (o ReplyOperation[In]) Handle(handle func(context.Context, In, *Meta) (Reply, error)) gin.HandlerFunc {
+	return replyBind(handle, o.ID, inputType[In](), o.RequestMediaType, o.Responses)
 }
 
 // inputType is In's type, or nil for an empty struct: an operation whose

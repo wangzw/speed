@@ -75,13 +75,19 @@ func TestTheHandlerReceivesTheDeclaredInput(t *testing.T) {
 	}
 }
 
+// parameterOnlyInput carries parameters and no body.
+type parameterOnlyInput struct {
+	ID    string `path:"id"`
+	Limit int    `query:"limit"`
+}
+
 // TestAMalformedParameterIsAnsweredBadRequest holds the parameter refusal.
 func TestAMalformedParameterIsAnsweredBadRequest(t *testing.T) {
-	operation := NewOperation[readInput, struct{}](
+	operation := NewOperation[parameterOnlyInput, struct{}](
 		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
 		[]Response{{Status: 204, Description: "No content"}},
 	)
-	handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {
+	handler := operation.Handle(func(context.Context, parameterOnlyInput) (struct{}, error) {
 		t.Error("the handler ran with a parameter it could not have read")
 		return struct{}{}, nil
 	})
@@ -192,5 +198,212 @@ func TestAOneTwoHundredFourAnswersNoBody(t *testing.T) {
 	}
 }
 
+// TestASimpleNoBodySuccessWithANonEmptyOutPanics holds the no-body side: a 204
+// declares no body, so a non-empty Out must be refused at construction rather
+// than published as a body the entry point never writes.
+func TestASimpleNoBodySuccessWithANonEmptyOutPanics(t *testing.T) {
+	defer func() {
+		thrown := recover()
+		if thrown == nil {
+			t.Fatal("building the handler did not panic on a 204 with a non-empty Out")
+		}
+		if message := errString(thrown); !strings.Contains(message, "carries no body") {
+			t.Errorf("the panic reads %q, want it to name the missing body", message)
+		}
+	}()
+	NewOperation[struct{}, readReply](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
+	).Handle(func(context.Context, struct{}) (readReply, error) { return readReply{}, nil })
+}
+
 // jsonBody is a request body reader over a JSON string.
 func jsonBody(body string) *strings.Reader { return strings.NewReader(body) }
+
+// TestASimpleSuccessBodyOfAnotherMediaTypePanics holds the simple form's
+// contract: its entry point always writes JSON, so a success declaration of
+// another media type would publish an answer the handler never writes.
+func TestASimpleSuccessBodyOfAnotherMediaTypePanics(t *testing.T) {
+	defer func() {
+		thrown := recover()
+		if thrown == nil {
+			t.Fatal("building the handler did not panic on a non-JSON success body")
+		}
+		message := errString(thrown)
+		if !strings.Contains(message, "must be application/json") {
+			t.Errorf("the panic reads %q, want it to name the required media type", message)
+		}
+		if !strings.Contains(message, "ReplyOperation") {
+			t.Errorf("the panic reads %q, want it to direct the author to ReplyOperation", message)
+		}
+	}()
+	NewOperation[struct{}, readReply](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]Response{{Status: http.StatusOK, Description: "The item", Body: &Body{MediaType: "text/plain"}}},
+	).Handle(func(context.Context, struct{}) (readReply, error) { return readReply{}, nil })
+}
+
+// TestASimpleSuccessBodyWithNoMediaTypeDefaultsToJSON holds the other side:
+// an empty media type declares the JSON answer the entry point writes.
+func TestASimpleSuccessBodyWithNoMediaTypeDefaultsToJSON(t *testing.T) {
+	operation := NewOperation[struct{}, readReply](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]Response{{Status: http.StatusOK, Description: "The item", Body: &Body{}}},
+	)
+	handler := operation.Handle(func(context.Context, struct{}) (readReply, error) {
+		return readReply{Seen: readInput{ID: "abc"}}, nil
+	})
+	recorder := serve(t, http.MethodGet, "/items", handler, httptest.NewRequest(http.MethodGet, "/items", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("the operation answered %d, want 200", recorder.Code)
+	}
+	if mediaType := recorder.Header().Get("Content-Type"); !strings.HasPrefix(mediaType, "application/json") {
+		t.Errorf("the answer's Content-Type is %q, want application/json", mediaType)
+	}
+}
+
+// jsonTaggedOnlyInput carries a JSON body field and no parameter field.
+type jsonTaggedOnlyInput struct {
+	Name string `json:"name"`
+}
+
+// formTaggedOnlyInput carries a form body field and no parameter field.
+type formTaggedOnlyInput struct {
+	Name string `form:"name"`
+}
+
+// TestABodyTaggedInputWithoutAMediaTypePanics holds the declaration check: a
+// body-tagged field under an empty media type would be declared and never
+// read, so building the handler refuses it.
+func TestABodyTaggedInputWithoutAMediaTypePanics(t *testing.T) {
+	cases := []struct {
+		name  string
+		build func()
+	}{
+		{
+			name: "json tag",
+			build: func() {
+				NewOperation[jsonTaggedOnlyInput, struct{}](
+					"the.module.body", http.MethodPost, "/items", "", "", "",
+					[]Response{{Status: http.StatusNoContent}},
+				).Handle(func(context.Context, jsonTaggedOnlyInput) (struct{}, error) { return struct{}{}, nil })
+			},
+		},
+		{
+			name: "form tag",
+			build: func() {
+				NewOperation[formTaggedOnlyInput, struct{}](
+					"the.module.body", http.MethodPost, "/items", "", "", "",
+					[]Response{{Status: http.StatusNoContent}},
+				).Handle(func(context.Context, formTaggedOnlyInput) (struct{}, error) { return struct{}{}, nil })
+			},
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			defer func() {
+				thrown := recover()
+				if thrown == nil {
+					t.Fatal("building the handler did not panic on a body tag without a media type")
+				}
+				if message := errString(thrown); !strings.Contains(message, "declares no request media type") {
+					t.Errorf("the panic reads %q, want it to name the missing media type", message)
+				}
+			}()
+			testCase.build()
+		})
+	}
+}
+
+// TestAParameterOnlyInputWithoutAMediaTypeBuilds holds the accepted side: an
+// input carrying only parameter tags takes no body and needs no media type.
+func TestAParameterOnlyInputWithoutAMediaTypeBuilds(t *testing.T) {
+	operation := NewOperation[parameterOnlyInput, struct{}](
+		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
+	)
+	handler := operation.Handle(func(_ context.Context, in parameterOnlyInput) (struct{}, error) {
+		if in.ID != "abc" || in.Limit != 7 {
+			t.Errorf("the handler saw %+v, want id=abc limit=7", in)
+		}
+		return struct{}{}, nil
+	})
+	recorder := serve(t, http.MethodGet, "/items/:id", handler,
+		httptest.NewRequest(http.MethodGet, "/items/abc?limit=7", nil))
+
+	if recorder.Code != http.StatusNoContent {
+		t.Errorf("the operation answered %d, want 204", recorder.Code)
+	}
+}
+
+// TestAResponseWithoutABodyMustNotDeclareOne holds the declaration check for
+// 204 and 304: the transport would drop the declared body, so a body there is
+// a defect in the declaration.
+func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
+	declaredBody := func(status int) Response {
+		return Response{Status: status, Description: "No body", Body: &Body{MediaType: "application/json"}}
+	}
+	cases := []struct {
+		name  string
+		build func()
+	}{
+		{
+			name: "simple operation with a 204",
+			build: func() {
+				NewOperation[struct{}, struct{}](
+					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					[]Response{declaredBody(http.StatusNoContent)},
+				).Handle(func(context.Context, struct{}) (struct{}, error) { return struct{}{}, nil })
+			},
+		},
+		{
+			name: "simple operation with a 304 beside its success",
+			build: func() {
+				NewOperation[struct{}, struct{}](
+					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					[]Response{
+						{Status: http.StatusOK, Description: "The item", Body: &Body{MediaType: "application/json"}},
+						declaredBody(http.StatusNotModified),
+					},
+				).Handle(func(context.Context, struct{}) (struct{}, error) { return struct{}{}, nil })
+			},
+		},
+		{
+			name: "reply operation with a 204",
+			build: func() {
+				NewReplyOperation[struct{}](
+					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					[]Response{declaredBody(http.StatusNoContent)},
+				).Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
+					return EmptyReply(http.StatusNoContent), nil
+				})
+			},
+		},
+		{
+			name: "reply operation with a 304",
+			build: func() {
+				NewReplyOperation[struct{}](
+					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					[]Response{declaredBody(http.StatusNotModified)},
+				).Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
+					return EmptyReply(http.StatusNotModified), nil
+				})
+			},
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			defer func() {
+				thrown := recover()
+				if thrown == nil {
+					t.Fatal("building the handler did not panic on a body declared for a status without one")
+				}
+				if message := errString(thrown); !strings.Contains(message, "carries none") {
+					t.Errorf("the panic reads %q, want it to say the status carries no body", message)
+				}
+			}()
+			testCase.build()
+		})
+	}
+}
