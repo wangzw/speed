@@ -67,6 +67,7 @@ var exportedSurface = []string{
 	"field OperationDescriptor.Path",
 	"field OperationDescriptor.RequestMediaType",
 	"field OperationDescriptor.Responses",
+	"field OperationDescriptor.Simple",
 	"field OperationDescriptor.SuccessBody",
 	"field OperationDescriptor.SuccessStatus",
 	"field OperationDescriptor.Summary",

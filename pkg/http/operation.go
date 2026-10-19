@@ -46,8 +46,16 @@ type OperationDescriptor struct {
 	RequestMediaType string
 	// SuccessStatus is the status of the one 2xx response.
 	SuccessStatus int
-	// SuccessBody is the success response's body type, nil for a 204.
+	// SuccessBody is the success response's body type. It is nil when the
+	// success status carries no body; an empty struct is a body too, which the
+	// entry point writes as the JSON object {}.
 	SuccessBody reflect.Type
+	// Simple is true for the simple form. Only its success response writes the
+	// declared headers: the handler cannot build the other answers, which are
+	// problem documents written without them. A reply operation sets it false,
+	// because its handler builds each declared answer and that answer's
+	// declared headers are written on whatever status it names.
+	Simple bool
 	// Responses is the closed set of answers, the success one included.
 	Responses []Response
 }
@@ -99,11 +107,19 @@ func NewOperation[In, Out any](
 // Descriptor returns the operation's shape for the generator.
 func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 	status := successStatus(o.Responses)
-	if noBodyStatus(status) && bodyType[Out]() != nil {
+	body := bodyType[Out]()
+	if noBodyStatus(status) && body != nil {
 		panic(fmt.Sprintf(
 			"http: the success response %d carries no body, but the handler returns one; use an empty Out type",
 			status,
 		))
+	}
+	// An empty Out is still a body: the entry point answers every success
+	// status but a no-body one with a JSON body, which for an empty Out is {}.
+	// The descriptor carries the empty struct's type so a reader publishes that
+	// body rather than reading the success response as body-less.
+	if body == nil && status != 0 && !noBodyStatus(status) {
+		body = outType[Out]()
 	}
 	return OperationDescriptor{
 		ID:               o.ID,
@@ -114,7 +130,8 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 		Input:            inputType[In](),
 		RequestMediaType: o.RequestMediaType,
 		SuccessStatus:    status,
-		SuccessBody:      bodyType[Out](),
+		SuccessBody:      body,
+		Simple:           true,
 		Responses:        o.Responses,
 	}
 }
@@ -181,6 +198,7 @@ func (o ReplyOperation[In]) Descriptor() OperationDescriptor {
 		RequestMediaType: o.RequestMediaType,
 		SuccessStatus:    successStatus(o.Responses),
 		SuccessBody:      nil,
+		Simple:           false,
 		Responses:        o.Responses,
 	}
 }
@@ -206,12 +224,18 @@ func inputType[In any]() reflect.Type {
 // bodyType is Out's type, or nil when Out is an empty struct: a 204 operation
 // answers no body.
 func bodyType[Out any]() reflect.Type {
-	var zero Out
-	t := reflect.TypeOf(&zero).Elem()
+	t := outType[Out]()
 	if t.Kind() == reflect.Struct && t.NumField() == 0 {
 		return nil
 	}
 	return t
+}
+
+// outType is Out's type, including the empty struct that bodyType reads as no
+// body.
+func outType[Out any]() reflect.Type {
+	var zero Out
+	return reflect.TypeOf(&zero).Elem()
 }
 
 // successStatus is the status of the single 2xx response, or 0 when the

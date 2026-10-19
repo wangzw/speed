@@ -291,7 +291,11 @@ func checkBodyMediaType(value *replyValue, response Response) string {
 	if response.Body == nil {
 		return "a body reply is declared against a response with no body"
 	}
-	if normaliseMediaType(response.Body.MediaType) != normaliseMediaType(value.mediaType) {
+	declared := normaliseMediaType(response.Body.MediaType)
+	if declared == "text/event-stream" {
+		return "an event stream is written only with SSEReply"
+	}
+	if declared != normaliseMediaType(value.mediaType) {
 		return fmt.Sprintf("the reply media type is %q and the declared media type is %q",
 			value.mediaType, response.Body.MediaType)
 	}

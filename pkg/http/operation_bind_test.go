@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -195,6 +196,51 @@ func TestAOneTwoHundredFourAnswersNoBody(t *testing.T) {
 	}
 	if recorder.Body.Len() != 0 {
 		t.Errorf("the answer carries a body: %q", recorder.Body.String())
+	}
+}
+
+// TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus holds the descriptor and the
+// write side together: only a no-body status suppresses an empty Out's body,
+// so any other success status answers the JSON object {} and the descriptor
+// carries the empty struct as the success body type rather than leaving it
+// nil.
+func TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus(t *testing.T) {
+	operation := NewOperation[struct{}, struct{}](
+		"the.module.write", http.MethodPost, "/items", "", "", "",
+		[]Response{{Status: http.StatusOK, Description: "Written"}},
+	)
+	descriptor := operation.Descriptor()
+	if descriptor.SuccessBody == nil {
+		t.Fatal("the descriptor carries no success body for an empty Out")
+	}
+	if kind := descriptor.SuccessBody.Kind(); kind != reflect.Struct || descriptor.SuccessBody.NumField() != 0 {
+		t.Errorf("the success body type is %v, want the empty struct", descriptor.SuccessBody)
+	}
+	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
+		return struct{}{}, nil
+	})
+	recorder := serve(t, http.MethodPost, "/items", handler,
+		httptest.NewRequest(http.MethodPost, "/items", nil))
+	if recorder.Code != http.StatusOK {
+		t.Errorf("the operation answered %d, want 200", recorder.Code)
+	}
+	if body := recorder.Body.String(); body != "{}" {
+		t.Errorf("the answer body reads %q, want {}", body)
+	}
+	if mediaType := recorder.Header().Get("Content-Type"); !strings.HasPrefix(mediaType, "application/json") {
+		t.Errorf("the answer's Content-Type is %q, want application/json", mediaType)
+	}
+}
+
+// TestANoBodySuccessKeepsAnEmptyOutBodyless holds the other side: a 204 writes
+// no body at all, so the descriptor carries no success body type.
+func TestANoBodySuccessKeepsAnEmptyOutBodyless(t *testing.T) {
+	operation := NewOperation[struct{}, struct{}](
+		"the.module.delete", http.MethodDelete, "/items", "", "", "",
+		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
+	)
+	if body := operation.Descriptor().SuccessBody; body != nil {
+		t.Errorf("the descriptor's success body is %v, want nil for a 204", body)
 	}
 }
 

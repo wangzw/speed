@@ -160,6 +160,36 @@ func TestABytesReplyOfAnotherMediaTypeIsInternal(t *testing.T) {
 	}
 }
 
+// TestAnEventStreamDeclarationRefusesBytesAndStream holds the event stream's
+// exclusivity: the fragment publishes no-store for it, which only the SSE
+// writer supplies, so the other body kinds are refused rather than answered
+// without that header.
+func TestAnEventStreamDeclarationRefusesBytesAndStream(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		reply func() Reply
+	}{
+		{"bytes", func() Reply { return BytesReply(http.StatusOK, "text/event-stream", []byte("x")) }},
+		{"stream", func() Reply {
+			return StreamReply(http.StatusOK, "text/event-stream", func(context.Context, io.Writer) error { return nil })
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", "",
+				[]Response{{Status: http.StatusOK, Description: "The events",
+					Body: &Body{MediaType: "text/event-stream"}}})
+			handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
+				return c.reply(), nil
+			})
+			recorder := serve(t, http.MethodGet, "/events", handler,
+				httptest.NewRequest(http.MethodGet, "/events", nil))
+			if recorder.Code != http.StatusInternalServerError {
+				t.Errorf("a %s reply against an event stream answered %d, want 500", c.name, recorder.Code)
+			}
+		})
+	}
+}
+
 // TestAStreamReplyWritesWhatTheCallbackWrites holds the stream row.
 func TestAStreamReplyWritesWhatTheCallbackWrites(t *testing.T) {
 	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/stream", "", "", "",
