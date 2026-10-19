@@ -21,10 +21,17 @@ import type { NavItem, RouteDeclaration, RouteTable } from './types.js'
  * outranks a prefix parent and a more specific parent outranks a shallower
  * one. Ties keep the earlier declaration. No candidate means nothing is
  * selected, and a declaration without a label is never a candidate.
+ *
+ * `basename` is the deployment prefix the router was installed under. An
+ * entry's `href` includes it, so the value is a URL the browser can open --
+ * a new tab, a copied link and an unmodified click all reach the same place
+ * -- while `id` stays the declaration's own path, which is what in-app
+ * navigation hands the router (the router applies the prefix itself).
  */
 export function deriveNavItems(
   table: RouteTable,
   pathname: string,
+  basename?: string,
 ): readonly NavItem[] {
   const labeled: RouteDeclaration[] = []
   let selectedPath: string | undefined
@@ -43,9 +50,21 @@ export function deriveNavItems(
   return labeled.map((declaration) => ({
     id: declaration.path,
     label: declaration.label,
-    href: declaration.path,
+    href: withBasename(basename, declaration.path),
     selected: declaration.path === selectedPath,
   }))
+}
+
+/**
+ * The declaration path with the deployment prefix applied, following the
+ * rule react-router-dom applies to `href`s: the root path resolves to the
+ * prefix itself, and an absent, empty or root prefix leaves the path alone.
+ */
+function withBasename(basename: string | undefined, path: string): string {
+  if (basename === undefined) return path
+  const prefix = basename.replace(/\/+$/, '')
+  if (prefix === '') return path
+  return path === '/' ? prefix : `${prefix}${path}`
 }
 
 /**

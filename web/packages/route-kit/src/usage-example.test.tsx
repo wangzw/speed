@@ -53,7 +53,7 @@ function TopNav(): ReactNode {
   return (
     <nav>
       {items.map((item) => (
-        <RouteLink key={item.id} to={item.href}>
+        <RouteLink key={item.id} to={item.id}>
           {item.label}
         </RouteLink>
       ))}

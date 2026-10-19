@@ -1,11 +1,12 @@
 /**
  * The registration surface's shared vocabulary: what a product declares and
  * what the package hands back. These shapes are the host-visible contract
- * (see the package README's Stability section and AGENTS.md); changing one
- * after release is a breaking change.
+ * (see the package README's Stability section and AGENTS.md). Adding an
+ * optional field is source-compatible; removing or narrowing an existing
+ * export or field, or changing its meaning, is a breaking change.
  */
 
-import type { ReactNode } from 'react'
+import type { MouseEventHandler, ReactNode } from 'react'
 
 /** The values a matched path pattern captured, keyed by `:name`. */
 export type RouteParams = Readonly<Record<string, string>>
@@ -60,16 +61,32 @@ export type RouteTable = readonly RouteDeclaration[]
 
 /**
  * One navigation entry, derived from a `label`-bearing declaration. The
- * shape is structural (`id`, `label`, `href`, `selected`) so a shell's frame
- * accepts it without a shared type edge.
+ * shape is structural so a shell's frame accepts it without a shared type
+ * edge: its required fields are the frame's (`id`, `label`, `href`,
+ * `selected`), and the optional `onClick` matches the frame's own optional
+ * click field.
  */
 export interface NavItem {
-  /** The declaring path pattern, stable across renders. */
+  /**
+   * The declaring path pattern, stable across renders. In-app navigation
+   * targets this; it is basename-relative, like every path this package
+   * reads.
+   */
   readonly id: string
   /** The declaration's label. */
   readonly label: ReactNode
-  /** The link target built from the declaration's path. */
+  /**
+   * The link target: the declaration's path with the router's basename
+   * included, so a new tab, a copied link and an unmodified click reach the
+   * same served URL.
+   */
   readonly href: string
   /** Whether the current URL selects this entry. */
   readonly selected: boolean
+  /**
+   * Attach this beside `href`: a plain primary click navigates in-app and
+   * every other click keeps the browser's behaviour (new tab, saved
+   * download, default navigation) instead of being swallowed.
+   */
+  readonly onClick?: MouseEventHandler<HTMLElement>
 }

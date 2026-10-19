@@ -36,6 +36,14 @@ export interface RouteProviderProps {
   readonly pending?: (context: RouteContext) => ReactNode
   /** The view a gated path renders when the presence predicate failed. */
   readonly failed?: (context: RouteContext) => ReactNode
+  /**
+   * The path prefix the application is served under, passed to the
+   * installed router (e.g. `/console` for a deployment at
+   * `https://host/console/`). Absent keeps the deployment at the origin
+   * root, which is the default. This is a deployment option, not a router
+   * choice: the router is still this package's.
+   */
+  readonly basename?: string
   readonly children: ReactNode
 }
 
@@ -45,15 +53,16 @@ export function RouteProvider({
   presence,
   pending,
   failed,
+  basename,
   children,
 }: RouteProviderProps): ReactElement {
   assertRouteTable(table, fallback, { presence, pending, failed })
   const value = useMemo(
-    () => ({ table, fallback, presence, pending, failed }),
-    [table, fallback, presence, pending, failed],
+    () => ({ table, fallback, presence, pending, failed, basename }),
+    [table, fallback, presence, pending, failed, basename],
   )
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <RouteKitContext.Provider value={value}>
         {children}
       </RouteKitContext.Provider>

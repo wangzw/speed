@@ -8,10 +8,12 @@ A product declares its pages once — a `RouteTable` of `RouteDeclaration`s
 optional required feature names) — and `RouteProvider` installs it over
 react-router-dom; `RouteView` renders the matched page (or the provider's
 `fallback`, `pending` or `failed` view), `useNavItems` derives the navigation
-entries from the `label`-bearing declarations with the selected one marked,
-`useMatch` and `useHasRoute` answer exact-match questions, and `RouteLink` /
-`useNavigate` move the URL. The table is the single source of truth, so the
-page rendered and the entry highlighted cannot disagree.
+entries from the `label`-bearing declarations with the selected one marked
+and a click handler attached, `useMatch` and `useHasRoute` answer
+exact-match questions, `RouteLink` and `useRouteLinkProps` build links,
+`useNavigate` and `useRedirect` move the URL, and `useLocationPath` reads it.
+The table is the single source of truth, so the page rendered and the entry
+highlighted cannot disagree.
 
 A declaration's `requires` names the backend features the page depends on.
 `RouteProvider` takes the host's feature-presence answer (`presence`) plus the
@@ -71,6 +73,27 @@ not exported.
   model"). Do not add a host-facing prop to swap routers: the seam record
   (`docs/adr/adr-web-route-seam-2026-10-15.md`) makes the third-party router
   a package-level decision precisely so products do not each pick one.
+  `RouteProvider`'s `basename` is the deployment prefix handed to that
+  router, not a router choice, and its absence keeps the origin root.
+- **Only a plain primary click navigates in-app.** `useRouteLinkProps` and
+  `useNavItems` share one judgement (`src/link.ts`): the main button, no
+  modifier key, no `target` other than `_self`, no `download` attribute and
+  no earlier `preventDefault`. Every other click is left to the browser, so
+  a new-tab, saved download or modified click is never swallowed. The
+  judgement implements the same policy as `@speed/layout-kit`'s
+  `isPlainPrimaryClick`, but the no-sibling rule forbids importing it, so
+  the two are independent implementations, not one shared rule: layout-kit
+  also accepts an event with no `button` value, refuses only
+  `target="_blank"` rather than every target other than `_self`, and reads
+  the nearest anchor from the event target instead of the handler's
+  `currentTarget`. Change the policy on both sides deliberately; never
+  assume the two implementations decide an edge case the same way.
+- **An entry's href is a real URL; id is the path.** `NavItem.href` includes
+  the provider's `basename`, so a new tab, a copied link or a middle click
+  opens the URL the application is served at. `NavItem.id` keeps the
+  declaration's path, and `useNavItems`' click handler navigates by `id`:
+  the router applies the basename itself and would double it otherwise.
+  `RouteLink`'s `to` is likewise a basename-relative path.
 - **It rides react-router-dom, it is not a second router.** Path matching
   uses react-router-dom's `matchPath`; links and history use its `Link` and
   `useNavigate`. The package adds the *registration surface* — which pages
@@ -86,28 +109,38 @@ not exported.
   are peer (required) dependencies — one copy in the host tree is what makes
   router context identity work; this package never depends on them directly.
   There are no regular dependencies.
-- **The public API is frozen by convention.** Lockstep versioning makes an
-  exported-signature change a breaking release; extend the surface only
-  intentionally. A public change ships in one commit: the code, its tests,
-  this AGENTS.md and the README (contract prose included).
+- **The public API is frozen by convention.** Lockstep versioning makes a
+  breaking change a breaking release; extend the surface only intentionally.
+  Adding an optional prop or field is source-compatible; removing or
+  narrowing an existing export, field or signature, or changing its meaning,
+  is not. A public change ships in one commit: the code, its tests, this
+  AGENTS.md and the README (contract prose included).
 
 ## Testing
 
 Unit tests are vitest + jsdom (every suite: the whole surface is render-time,
-and a router reads `window.location`), one file per source file under `src/`.
-The shared harness is `test-utils/render.tsx`: `setLocation(path)` pins
-jsdom's address before a mount, and `renderRouteTable(table, ui, options)`
-mounts the unit inside a real `RouteProvider` at that path — the composition
-a host assembles, not a hand-rolled re-wrap — optionally with a presence
-predicate and pending/failed views. The provider mounts a `BrowserRouter`, so
-a suite moves the URL through `setLocation` or through a real link click;
-there is no `MemoryRouter` shortcut, because that would test a router the
-product never runs.
+and a router reads `window.location`), colocated with the source module they
+cover; a module whose surface is only exercised through its caller
+(`context.ts`, `link.ts`) shares that caller's suite. The shared harness is
+`test-utils/render.tsx`: `setLocation(path)` pins jsdom's address before a
+mount, and `renderRouteTable(table, ui, options)` mounts the unit inside a
+real `RouteProvider` at that path — the composition a host assembles, not a
+hand-rolled re-wrap — optionally with a presence predicate, pending/failed
+views and a `basename`. The provider mounts a `BrowserRouter`, so a suite
+moves the URL through `setLocation` or through a real link click; there is no
+`MemoryRouter` shortcut, because that would test a router the product never
+runs.
 
 Assertions pin a decision, not a mount: which declaration matches and with
 what params, the fallback receiving the unmatched path, the selected nav
 entry (exact match, "sits below", longest prefix), `permission` being inert,
 and a click or imperative `navigate` re-rendering the view from the new URL.
+The link suites pin the click judgement: a plain primary click navigates and
+prevents the default, while a modified, non-primary, `_blank`/`download` or
+already-prevented click leaves the event alone. `useRedirect` is asserted to
+replace the history entry where `useNavigate` pushes one, and a provider
+`basename` is asserted to appear in the href and to be absent from the read
+path.
 The gating suites assert the decisions too: an ungated table renders
 identically under every presence value; a ready answer with a feature absent
 reaches `fallback` without calling the view; an absent parameterized page and

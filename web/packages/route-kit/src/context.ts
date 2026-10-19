@@ -15,6 +15,11 @@ export interface RouteKitContextValue {
   readonly presence?: RoutePresence
   readonly pending?: (context: RouteContext) => ReactNode
   readonly failed?: (context: RouteContext) => ReactNode
+  /**
+   * The deployment prefix the provider's router was installed under, handed
+   * on so derived hrefs are real URLs. Absent means the origin root.
+   */
+  readonly basename?: string
 }
 
 export const RouteKitContext = createContext<RouteKitContextValue | undefined>(

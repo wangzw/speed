@@ -61,7 +61,7 @@ function TopNav(): ReactNode {
   return (
     <nav>
       {items.map((item) => (
-        <RouteLink key={item.id} to={item.href}>
+        <RouteLink key={item.id} to={item.id}>
           {item.label}
         </RouteLink>
       ))}
@@ -127,6 +127,9 @@ interface NavItem {
   readonly label: ReactNode
   readonly href: string     // built from the declaring path
   readonly selected: boolean
+  // A plain primary click navigates in-app; every other click is left to
+  // the browser (new tab, download, default navigation).
+  readonly onClick?: MouseEventHandler<HTMLElement>
 }
 ```
 
@@ -146,6 +149,13 @@ interface NavItem {
   predicate's `has`. A declaration is *gated* when the list is non-empty; a
   declaration without the field (or with an empty list) is never affected by
   the predicate.
+- **`onClick` is filled in by the package.** `useNavItems` attaches it beside
+  `href`, so a frame that accepts both gets an in-app navigation for a plain
+  primary click and the browser's own behaviour (a new tab, a saved download,
+  a modified click) for every other one. The handler navigates by the entry's
+  `id`, the declaration's basename-relative path, because the router applies
+  the basename itself. Its type matches the frame's own optional click field,
+  which is why the entry still passes through without a shared type edge.
 
 ## Feature-gated pages
 
@@ -196,14 +206,17 @@ one set.
 
 | Export | Purpose |
 |---|---|
-| `RouteProvider` | Installs the router and hands the table down. Props: `table`, `fallback` (required), `presence`, `pending`, `failed`, `children`. |
+| `RouteProvider` | Installs the router and hands the table down. Props: `table`, `fallback` (required), `presence`, `pending`, `failed`, `basename`, `children`. |
 | `RouteView` | Renders the declaration the current URL matches, the `fallback`, or a gated path's pending/failed view. |
-| `useNavItems` | The narrowed surface's `label`-bearing entries, with the selected one marked. |
+| `useNavItems` | The narrowed surface's `label`-bearing entries, with the selected one marked and a click handler attached; each entry's `href` includes the router's `basename`. |
 | `useMatch` | The declaration the current URL matches exactly on the narrowed surface, plus its context, or `undefined`. |
 | `useHasRoute` | Whether a given path matches such a declaration exactly. |
 | `presentDeclarations` | The narrowed surface: the declarations a presence predicate leaves in force. |
-| `RouteLink` | A clickable link to a target path; navigates without a full reload. |
+| `RouteLink` | A clickable link to a target path; navigates without a full reload and forwards every other prop to the router's `Link`. |
+| `useRouteLinkProps` | `{ href, onClick }` for a link to one path, for hosts that render their own anchor or hand the pair to a MUI `component`. `href` includes the router's `basename`. |
 | `useNavigate` | `(to: string) => void`, pushing a path onto history from an event handler. |
+| `useRedirect` | `(to: string) => void`, replacing the current history entry (a callback page that must not stay in the back stack). |
+| `useLocationPath` | `{ path, search }`: the raw path (matched or not) and the query string, without importing react-router-dom. |
 
 **Selection.** An entry is selected when the current path matches its pattern
 in full, or sits below its declared literal path — so a parent (`/cases`) is
@@ -217,6 +230,70 @@ no declaration of its own does not inherit it. This is what lets a host take
 the matched declaration's `permission` code for its guard without inheriting a
 parent's.
 
+## Extending an entry with an icon or a group
+
+A navigation entry carries what every shell frame needs to render a row —
+`id`, `label`, `href`, `selected` and `onClick` — and nothing about how one
+product's frame decorates it. An icon, a section heading or an access rule is
+that product's own vocabulary, so it belongs to the host's declaration type,
+not to this package: a field added here would put one product's presentation
+into every product's dependency, and the package knows no frame, no component
+library and no product taxonomy.
+
+Extend the declaration type where the host declares its pages:
+
+```tsx
+import type { ReactNode } from 'react'
+import type { RouteDeclaration } from '@speed/route-kit'
+
+export interface ProductRoute extends RouteDeclaration {
+  readonly icon?: ReactNode
+  readonly group?: string
+}
+
+export const routes: readonly ProductRoute[] = [
+  { path: '/', view: Home, label: 'Home', icon: <HomeIcon />, group: 'main' },
+  { path: '/cases', view: CaseList, label: 'Cases', icon: <CaseIcon />, group: 'main' },
+]
+```
+
+The table is still a `RouteTable` — the added fields are optional — so
+`RouteProvider` accepts it unchanged. Look the metadata up by `NavItem.id`,
+which is the declaration's path and is stable across renders:
+
+```tsx
+function TopNav(): ReactNode {
+  const items = useNavItems()
+  return (
+    <nav>
+      {items.map((item) => {
+        const declaration = routes.find((route) => route.path === item.id)
+        return (
+          <a
+            key={item.id}
+            href={item.href}
+            onClick={item.onClick}
+            aria-current={item.selected ? 'page' : undefined}
+          >
+            {declaration?.icon}
+            {item.label}
+          </a>
+        )
+      })}
+    </nav>
+  )
+}
+```
+
+The same lookup buckets entries by `declaration.group`. `href` and `onClick`
+together are what make the row behave like a real link in any frame: a plain
+click navigates in-app, and a new-tab or modified click is left to the
+browser. `item.href` already includes the deployment `basename`, so the
+browser's own navigation (a new tab, a copied link) reaches the served URL;
+`item.id` is the declaration's path and is what `RouteLink`'s `to` takes. For
+an anchor the host renders itself, `useRouteLinkProps` returns the same pair
+without a nav item.
+
 ## Address model
 
 The provider mounts react-router-dom's `BrowserRouter`: pages get real path
@@ -224,6 +301,18 @@ URLs, and a deep link requires the server to fall back unknown paths to the
 entry document (the platform's static-hosting/SPA-fallback module provides
 that). The model is the package's, not a per-product option — see the
 `ADR-web-route-seam-2026-10-15` decision record.
+
+A deployment served under a path prefix passes it as `basename`:
+
+```tsx
+<RouteProvider table={routes} fallback={...} basename="/console">
+```
+
+`useHref`, `useRouteLinkProps` and a nav item's `href` then yield
+`/console/cases` for a `/cases` declaration, while `useLocationPath().path`,
+`RouteView`, `useMatch` and a nav item's `id` keep reading the
+basename-relative path (`/cases`). Absent `basename`, the application is
+served at the origin root, which is the default.
 
 ## Dependencies
 
@@ -237,12 +326,16 @@ The package imports **no** `@speed` sibling package, and no shell imports it.
 ## Stability
 
 `RouteDeclaration` (including `requires`), `RouteTable`, `RouteContext`,
-`RouteParams`, `RoutePresence`, the `RouteProvider` props, the
-`RouteView`/`RouteLink`/`useNavItems`/`useNavigate`/`presentDeclarations`/
-`useMatch`/`useHasRoute` signatures, `RouteMatch` and `NavItem` are the
-host-visible surface. The packages release as one locked version group
-(`.changeset/config.json`), so changing a shape after release is a breaking
-change, labelled with a `!` scope and a `BREAKING CHANGE` footer.
+`RouteParams`, `RoutePresence`, the `RouteProvider` props (including
+`basename`), the
+`RouteView`/`RouteLink`/`RouteLinkProps`/`useRouteLinkProps`/`RouteLinkTarget`/
+`useNavItems`/`useNavigate`/`useRedirect`/`useLocationPath`/
+`RouteLocationPath`/`presentDeclarations`/`useMatch`/`useHasRoute`
+signatures, `RouteMatch` and `NavItem` are the host-visible surface. The
+packages release as one locked version group (`.changeset/config.json`).
+Adding an optional prop or field is source-compatible; removing or narrowing
+an existing export, field or signature, or changing its meaning, is a
+breaking change, labelled with a `!` scope and a `BREAKING CHANGE` footer.
 
 ## Failure semantics
 

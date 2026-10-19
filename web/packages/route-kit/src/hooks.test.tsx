@@ -8,11 +8,19 @@
 
 import { fireEvent, renderHook, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import type { ReactElement } from 'react'
+import type { MouseEventHandler, ReactElement, ReactNode } from 'react'
 import { renderRouteTable } from '../test-utils/render.js'
 import { RouteLink } from './RouteLink.js'
 import { RouteView } from './RouteView.js'
-import { useHasRoute, useMatch, useNavItems, useNavigate } from './hooks.js'
+import {
+  useHasRoute,
+  useLocationPath,
+  useMatch,
+  useNavItems,
+  useNavigate,
+  useRedirect,
+  useRouteLinkProps,
+} from './hooks.js'
 import type { RoutePresence, RouteTable } from './types.js'
 
 function Nav(): ReactElement {
@@ -25,7 +33,23 @@ function Nav(): ReactElement {
           data-testid={`nav-${item.id}`}
           data-selected={String(item.selected)}
         >
-          <RouteLink to={item.href}>{item.label}</RouteLink>
+          <RouteLink to={item.id}>{item.label}</RouteLink>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** A frame that renders each entry as a plain anchor, the README's recipe. */
+function PlainNav(): ReactElement {
+  const items = useNavItems()
+  return (
+    <ul>
+      {items.map((item) => (
+        <li key={item.id} data-testid={`plain-${item.id}`}>
+          <a href={item.href} onClick={item.onClick}>
+            {item.label}
+          </a>
         </li>
       ))}
     </ul>
@@ -71,6 +95,37 @@ describe('useNavItems', () => {
       'true',
     )
     expect(screen.getByTestId('nav-/')).toHaveAttribute('data-selected', 'false')
+  })
+
+  it('includes the basename in href while navigating without doubling it', async () => {
+    const table: RouteTable = [
+      { path: '/', view: () => <span>home</span>, label: 'Home' },
+      { path: '/cases', view: () => <span>case list</span>, label: 'Cases' },
+    ]
+    renderRouteTable(
+      table,
+      <>
+        <PlainNav />
+        <RouteView />
+      </>,
+      { path: '/console/', basename: '/console' },
+    )
+
+    // The anchor href is the served URL a new tab or copied link opens.
+    expect(screen.getByRole('link', { name: 'Cases' })).toHaveAttribute(
+      'href',
+      '/console/cases',
+    )
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute(
+      'href',
+      '/console',
+    )
+
+    // The in-app handler navigates the declaration path, so the router
+    // applies the prefix exactly once.
+    fireEvent.click(screen.getByRole('link', { name: 'Cases' }))
+    await screen.findByText('case list')
+    expect(window.location.pathname).toBe('/console/cases')
   })
 
   it('throws outside a RouteProvider', () => {
@@ -271,5 +326,289 @@ describe('navigation and matching share one narrowed surface', () => {
       .queryAllByTestId(/^nav-/)
       .filter((element) => element.getAttribute('data-selected') === 'true')
     expect(selected).toHaveLength(0)
+  })
+})
+
+describe('useNavItems click handler', () => {
+  function NavButtons(): ReactElement {
+    const items = useNavItems()
+    return (
+      <div>
+        {items.map((item) => (
+          <button
+            key={item.id}
+            data-testid={`go-${item.id}`}
+            onClick={item.onClick}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  const table: RouteTable = [
+    { path: '/', view: () => <span>home</span>, label: 'Home' },
+    { path: '/cases', view: () => <span>case list</span>, label: 'Cases' },
+  ]
+
+  it('navigates in-app on a plain primary click', async () => {
+    renderRouteTable(
+      table,
+      <>
+        <NavButtons />
+        <RouteView />
+      </>,
+    )
+    fireEvent.click(screen.getByTestId('go-/cases'))
+    expect(await screen.findByText('case list')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/cases')
+  })
+
+  it('leaves a modified click to the browser', () => {
+    renderRouteTable(
+      table,
+      <>
+        <NavButtons />
+        <RouteView />
+      </>,
+    )
+    // The return value is false when the event's default was prevented.
+    expect(fireEvent.click(screen.getByTestId('go-/cases'), { metaKey: true })).toBe(
+      true,
+    )
+    expect(window.location.pathname).toBe('/')
+    expect(screen.getByText('home')).toBeInTheDocument()
+  })
+
+  /**
+   * The entry shape a shell frame accepts, mirrored from
+   * @speed/layout-kit's AppShellNavItem because this package imports no
+   * sibling. A NavItem must stay assignable to it without a shared type
+   * edge, which only the type checker can assert.
+   */
+  interface FrameNavItem {
+    readonly id: string
+    readonly label: ReactNode
+    readonly icon?: ReactNode
+    readonly href?: string
+    readonly onClick?: MouseEventHandler<HTMLElement>
+    readonly selected?: boolean
+    readonly children?: readonly FrameNavItem[]
+  }
+
+  it('stays assignable to the frame entry shape', () => {
+    function FrameProbe(): ReactElement {
+      const frameItems: readonly FrameNavItem[] = useNavItems()
+      return <span data-testid="frame-count">{frameItems.length}</span>
+    }
+    renderRouteTable(table, <FrameProbe />)
+    expect(screen.getByTestId('frame-count')).toHaveTextContent('2')
+  })
+})
+
+function HrefProbe({ to }: { readonly to: string }): ReactElement {
+  const { href } = useRouteLinkProps(to)
+  return (
+    <a data-testid="href" href={href}>
+      go
+    </a>
+  )
+}
+
+/**
+ * The click side of the pair. A button, not an anchor: jsdom queues a real
+ * navigation task for every anchor click it is not told to prevent, so a
+ * click the handler correctly leaves to the browser would surface later as
+ * a navigation error instead of an assertion. The judgement reads the
+ * element's `target` and `download` attributes and nothing else, so the
+ * tests set those attributes on this button where they apply.
+ */
+function ClickProbe({ to }: { readonly to: string }): ReactElement {
+  const { onClick } = useRouteLinkProps(to)
+  return (
+    <button data-testid="link" onClick={onClick}>
+      go
+    </button>
+  )
+}
+
+describe('useRouteLinkProps', () => {
+  const table: RouteTable = [
+    { path: '/', view: () => <span>home</span> },
+    { path: '/cases', view: () => <span>case list</span> },
+  ]
+
+  it('derives the href from the target', () => {
+    renderRouteTable(table, <HrefProbe to="/cases" />)
+    expect(screen.getByTestId('href')).toHaveAttribute('href', '/cases')
+  })
+
+  it('includes the provider basename in the href', () => {
+    renderRouteTable(table, <HrefProbe to="/cases" />, {
+      path: '/console/cases',
+      basename: '/console',
+    })
+    expect(screen.getByTestId('href')).toHaveAttribute('href', '/console/cases')
+  })
+
+  it('navigates in-app on a plain primary click', async () => {
+    renderRouteTable(
+      table,
+      <>
+        <ClickProbe to="/cases" />
+        <RouteView />
+      </>,
+    )
+    fireEvent.click(screen.getByTestId('link'))
+    expect(await screen.findByText('case list')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/cases')
+  })
+
+  const notPlain: readonly (readonly [string, MouseEventInit])[] = [
+    ['meta', { metaKey: true }],
+    ['ctrl', { ctrlKey: true }],
+    ['shift', { shiftKey: true }],
+    ['alt', { altKey: true }],
+    ['non-primary button', { button: 1 }],
+  ]
+
+  it.each(notPlain)('leaves a %s click to the browser', (_name, init) => {
+    renderRouteTable(
+      table,
+      <>
+        <ClickProbe to="/cases" />
+        <RouteView />
+      </>,
+    )
+    // The return value is false when the event's default was prevented; the
+    // handler must leave the event alone so the browser's own behaviour runs.
+    expect(fireEvent.click(screen.getByTestId('link'), init)).toBe(true)
+    expect(window.location.pathname).toBe('/')
+    expect(screen.getByText('home')).toBeInTheDocument()
+  })
+
+  it('leaves a target other than _self to the browser', () => {
+    renderRouteTable(
+      table,
+      <>
+        <ClickProbe to="/cases" />
+        <RouteView />
+      </>,
+    )
+    const link = screen.getByTestId('link')
+    link.setAttribute('target', '_blank')
+    expect(fireEvent.click(link)).toBe(true)
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('still navigates when the target is _self', async () => {
+    renderRouteTable(
+      table,
+      <>
+        <ClickProbe to="/cases" />
+        <RouteView />
+      </>,
+    )
+    const link = screen.getByTestId('link')
+    link.setAttribute('target', '_self')
+    fireEvent.click(link)
+    expect(await screen.findByText('case list')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/cases')
+  })
+
+  it('leaves a download link to the browser', () => {
+    renderRouteTable(
+      table,
+      <>
+        <ClickProbe to="/cases" />
+        <RouteView />
+      </>,
+    )
+    const link = screen.getByTestId('link')
+    link.setAttribute('download', '')
+    expect(fireEvent.click(link)).toBe(true)
+    expect(window.location.pathname).toBe('/')
+  })
+
+  it('does nothing when an earlier handler prevented the default', () => {
+    renderRouteTable(
+      table,
+      <div onClickCapture={(event) => event.preventDefault()}>
+        <ClickProbe to="/cases" />
+      </div>,
+    )
+    fireEvent.click(screen.getByTestId('link'))
+    expect(window.location.pathname).toBe('/')
+  })
+})
+
+describe('useRedirect', () => {
+  function RedirectProbe(): ReactElement {
+    const redirect = useRedirect()
+    const navigate = useNavigate()
+    return (
+      <>
+        <button onClick={() => redirect('/cases')}>redirect</button>
+        <button onClick={() => navigate('/cases')}>push</button>
+      </>
+    )
+  }
+
+  const table: RouteTable = [
+    { path: '/', view: () => <span>home</span> },
+    { path: '/cases', view: () => <span>case list</span> },
+  ]
+
+  it('replaces the current history entry instead of pushing one', async () => {
+    renderRouteTable(
+      table,
+      <>
+        <RedirectProbe />
+        <RouteView />
+      </>,
+    )
+    const before = window.history.length
+    fireEvent.click(screen.getByRole('button', { name: 'redirect' }))
+    expect(await screen.findByText('case list')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/cases')
+    expect(window.history.length).toBe(before)
+  })
+
+  it('pushes an entry, which is what distinguishes it from a redirect', async () => {
+    renderRouteTable(
+      table,
+      <>
+        <RedirectProbe />
+        <RouteView />
+      </>,
+    )
+    const before = window.history.length
+    fireEvent.click(screen.getByRole('button', { name: 'push' }))
+    expect(await screen.findByText('case list')).toBeInTheDocument()
+    expect(window.history.length).toBe(before + 1)
+  })
+})
+
+describe('useLocationPath', () => {
+  function LocationProbe(): ReactElement {
+    const { path, search } = useLocationPath()
+    return <span data-testid="location">{`${path}|${search}`}</span>
+  }
+
+  const table: RouteTable = [{ path: '/', view: () => null }]
+
+  it('reads the raw path and query string of an unmatched URL', () => {
+    renderRouteTable(table, <LocationProbe />, {
+      path: '/cases/42?tab=audit&sort=name',
+    })
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/cases/42|?tab=audit&sort=name',
+    )
+  })
+
+  it('reports an empty search when the URL has no query string', () => {
+    renderRouteTable(table, <LocationProbe />, { path: '/cases/42' })
+    expect(screen.getByTestId('location')).toHaveTextContent('/cases/42|')
   })
 })

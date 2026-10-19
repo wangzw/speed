@@ -31,6 +31,8 @@ export interface RenderRouteOptions {
   readonly pending?: (context: RouteContext) => ReactNode
   /** The view a gated path renders when the predicate failed. */
   readonly failed?: (context: RouteContext) => ReactNode
+  /** The path prefix the provider installs its router under. */
+  readonly basename?: string
 }
 
 /** Mount `ui` inside a RouteProvider over `table`, at `path`. */
@@ -39,7 +41,7 @@ export function renderRouteTable(
   ui: ReactNode,
   options: RenderRouteOptions = {},
 ): RenderResult {
-  const { path = '/', fallback, presence, pending, failed } = options
+  const { path = '/', fallback, presence, pending, failed, basename } = options
   const fallbackView =
     fallback ??
     ((context: RouteContext): ReactNode => `no route matched: ${context.path}`)
@@ -51,6 +53,7 @@ export function renderRouteTable(
       presence={presence}
       pending={pending}
       failed={failed}
+      basename={basename}
     >
       {ui}
     </RouteProvider>,

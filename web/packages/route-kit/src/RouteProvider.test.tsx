@@ -34,6 +34,15 @@ describe('RouteProvider', () => {
     expect(screen.getByTestId('child')).toBeInTheDocument()
   })
 
+  it('installs the router under a basename while paths stay relative to it', () => {
+    const table: RouteTable = [{ path: '/cases', view }]
+    renderRouteTable(table, <LocationProbe />, {
+      path: '/console/cases',
+      basename: '/console',
+    })
+    expect(screen.getByTestId('path')).toHaveTextContent('/cases')
+  })
+
   it('throws at assembly on a duplicate pattern, before rendering children', () => {
     const table: RouteTable = [
       { path: '/cases', view },

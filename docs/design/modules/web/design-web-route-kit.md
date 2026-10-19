@@ -6,8 +6,9 @@
 
 - **声明式注册面。** 产品的每个页面导出一份声明——路径、视图、导航标签、所需权限、所需特性；产品在一处点名它由哪些页面组成。这与后端的命令树对称：后端由命令树在一处点名一个程序由哪些模块组成，前端由注册面在一处点名一个产品由哪些页面组成（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。
 - **按特性在场收窄注册面。** 宿主给出在场谓词，本包据它算出有效注册面：带 `requires` 的声明只在其中特性全部在场时渲染视图、进入导航；特性缺席的页面与未登记的路径走同一个 `fallback`。谓词读取中或读取失败时，门控的路径渲染宿主给出的等待视图或失败视图（[ADR-web-route-seam-2026-10-17](../../../adr/adr-web-route-seam-2026-10-17.md)）。
-- **路由与导航独立成层。** 本包是独立包，**不被壳 import，也不 import 任何同族前端包**；一个产品要加页面，插的是本包的注册面，不动壳。它交出的导航条目是一种结构性形状（`id`、`label`、`href`、`selected`），壳的框架按结构接受它，因而不需要一条共享类型边。
+- **路由与导航独立成层。** 本包是独立包，**不被壳 import，也不 import 任何同族前端包**；一个产品要加页面，插的是本包的注册面，不动壳。它交出的导航条目是一种结构性形状（`id`、`label`、`href`、`selected` 与可选 `onClick`），壳的框架按结构接受它，因而不需要一条共享类型边。
 - **这些事由本包一处承担：** 选中态（当前 URL 命中哪一条导航项）、链接构造（由路径生成可点的链接）、深链接解析（一个深链接直接打开对应页面）、未命中回退（没有登记项匹配时渲染回退视图）、精确命中的查询（当前 URL 在有效注册面上命中哪一条声明），以及入口判定（一条路径是否在有效注册面上有声明）。
+- **链接属性与历史动作也由本包交出。** `RouteLink` 渲染可点链接并透传其余 props；`useRouteLinkProps` 交出宿主自绘锚点所需的 `href` 与点击处理器；`useNavigate` 推入历史、`useRedirect` 替换当前历史项、`useLocationPath` 交出当前 URL 的原始路径与查询串。宿主因此不直接 import react-router-dom。
 - **壳共用同一注册面。** 租户侧装配壳 [product-shell](design-web-product-shell.md) 与平台控制台壳 [console-ui](design-web-console-ui.md) 都用这套注册面，差别只在各自的壳。
 
 ### 非职责
@@ -85,6 +86,7 @@ function RouteProvider(props: {
   readonly presence?: RoutePresence                       // 在场谓词
   readonly pending?: (context: RouteContext) => ReactNode // 谓词读取中时门控路径的视图
   readonly failed?: (context: RouteContext) => ReactNode  // 谓词读取失败时门控路径的视图
+  readonly basename?: string                              // 部署路径前缀，缺省在源站根
   readonly children: ReactNode
 }): ReactElement
 
@@ -94,10 +96,11 @@ function RouteView(): ReactElement
 // 导航条目：本包自己定义的结构性形状；由有效注册面上带标签的登记项派生，与壳的框架所接受的
 // 条目形状（id、label、href、selected）同构，两者因此无需共享类型。
 interface NavItem {
-  readonly id: string
+  readonly id: string                              // 声明路径，应用内导航按它走
   readonly label: ReactNode
-  readonly href: string
+  readonly href: string                            // 含部署的 basename，可直接交给浏览器打开
   readonly selected: boolean
+  readonly onClick?: MouseEventHandler<HTMLElement> // 普通主键单击在应用内导航，其余点击交给浏览器
 }
 function useNavItems(): readonly NavItem[]
 
@@ -113,11 +116,29 @@ function useMatch(): { readonly declaration: RouteDeclaration; readonly context:
 // 一条路径是否精确命中有效注册面上的某条声明。
 function useHasRoute(path: string): boolean
 
-// 链接构造：按目标路径渲染一个可点的链接。
-function RouteLink(props: { readonly to: string; readonly children: ReactNode }): ReactElement
+// 链接构造：按目标路径渲染一个可点的链接；其余 props 透传给 react-router-dom 的 Link，
+// 因而可作为 MUI 的 component 目标。
+function RouteLink(props: Omit<LinkProps, 'to'> & { readonly to: string }): ReactElement
+
+// 链接属性：宿主自绘锚点（或交给接受 href 与 onClick 的组件）时使用。
+interface RouteLinkTarget {
+  readonly href: string                          // 含部署的 basename
+  readonly onClick: React.MouseEventHandler<HTMLElement> // 仅普通主键单击导航
+}
+function useRouteLinkProps(to: string): RouteLinkTarget
 
 // 命令式导航：把一个目标路径推入历史。
 function useNavigate(): (to: string) => void
+
+// 替换当前历史项：回调页、登录完成这类不应留在后退栈里的跳转。
+function useRedirect(): (to: string) => void
+
+// 当前 URL 的原始路径与查询串；路径不因是否命中声明而不同。
+interface RouteLocationPath {
+  readonly path: string
+  readonly search: string
+}
+function useLocationPath(): RouteLocationPath
 ```
 
 **声明面的每一处都由产品在一处给出。** 产品把它的全部页面声明组成一张 `RouteTable`，交给 `RouteProvider`；`RouteView` 渲染命中的页面，`useNavItems` 交出导航条目，而 `RouteView` 与 `useNavItems` 读同一份注册面与同一个在场谓词，因而不一致无从产生。
@@ -130,7 +151,13 @@ function useNavigate(): (to: string) => void
 
 **`useHasRoute` 让入口跟随目标页。** `useHasRoute(path)` 当且仅当 `path` 精确命中有效注册面上的某条声明时为真；带参数的 pattern 按路径匹配。指向某页的入口控件（首页卡片、跳转按钮）据它决定是否渲染，目标页特性缺席时入口一并消失，「这一页在不在」只写在页面声明里一处。
 
-**对外接口面。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence` 的字段与形状，`RouteProvider`、`RouteView`、`RouteLink`、`useNavItems`、`useNavigate`、`presentDeclarations`、`useMatch`、`useHasRoute` 的签名，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。变更分类与判据见 [ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)。
+**`RouteProvider` 缺省安装一个路由器。** 它挂载 react-router-dom 的 `BrowserRouter`：页面得到真实路径 URL，深链接由平台的 SPA 回退提供。`basename` 给出部署路径前缀（例如应用挂在 `/console/` 时传 `/console`），缺省为源站根；它不是换路由器的口子，第三方路由器是包级决定（[ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)）。`useNavItems` 交出的 `href` 同样带上这个前缀——新标签、复制链接或中键点击直接打开应用实际服务的 URL——而 `id` 保持声明路径，应用内导航按 `id` 交给路由器，前缀由路由器自己加，不会叠加两次。
+
+**链接只在普通主键单击时接管。** `useRouteLinkProps` 与 `useNavItems` 用同一条判定：主键、无修饰键、`target` 缺失或为 `_self`、无 `download` 属性、且未被先前的处理器 `preventDefault` 的点击，在应用内导航并阻止默认行为；其余点击一概不处理，交给浏览器完成新标签、下载或默认导航。判定在包内私有：本包不 import 同族包，layout-kit 的 `isPlainPrimaryClick` 因此是另一份独立实现。两者共享同一条政策（只接管本意留在应用内的点击），但代码并不等价：本包要求 `event.button === 0`，layout-kit 也接受没有 `button` 值的事件；本包除缺失、空串与 `_self` 外的 `target` 一律不接管，layout-kit 只拒绝 `_blank`（大小写不敏感）；本包从 `event.currentTarget` 取锚点（处理器挂在链接本身），layout-kit 从 `event.target` 找最近的 `a`（处理器可挂在容器上）。改动其中一份时要同时审视另一份，但不得假定两份逐条相同。
+
+**`NavItem` 的 `onClick` 由 `useNavItems` 填入。** 它与 `useRouteLinkProps` 的处理器同一判定，配合 `href` 让壳的条目在普通单击时留在应用内、在修饰键单击时开新标签。`NavItem` 的必填字段与附加的可选字段（`onClick`）同壳的框架条目形状结构兼容，两者因此仍不需要共享类型边。
+
+**对外接口面。** `RouteDeclaration`、`RouteTable`、`RouteContext`、`RouteParams`、`RoutePresence`、`NavItem`、`RouteLinkTarget`、`RouteLocationPath` 的字段与形状，`RouteProvider`、`RouteView`、`RouteLink`、`RouteLinkProps`、`useRouteLinkProps`、`useNavItems`、`useNavigate`、`useRedirect`、`useLocationPath`、`presentDeclarations`、`useMatch`、`useHasRoute` 的签名，是宿主可见面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。变更分类与判据见 [ADR-web-route-seam-2026-10-15](../../../adr/adr-web-route-seam-2026-10-15.md)。
 
 ## 依赖
 
@@ -145,7 +172,7 @@ function useNavigate(): (to: string) => void
 
 ## UML 图
 
-本包的结构：一份声明集合、一个把它装成路由器的 provider、宿主给出的在场谓词，以及从它们派生的消费面。图里画不出的约束：注册面是**唯一**的事实来源（导航与渲染同读它与同一个谓词，不会不一致）；`label` 的在场与否决定一条路由是否进导航；`permission` 只是数据，本包不对它做任何事；`requires` 只交给谓词判定，本包不认识其中的名字；匹配在全表上做，导航、`useMatch` 与 `useHasRoute` 只看有效注册面；本包与壳之间**没有依赖边**（产品在两者之上把它们接到一起）。
+本包的结构：一份声明集合、一个把它装成路由器的 provider、宿主给出的在场谓词，以及从它们派生的消费面。图里画不出的约束：注册面是**唯一**的事实来源（导航与渲染同读它与同一个谓词，不会不一致）；`label` 的在场与否决定一条路由是否进导航；`permission` 只是数据，本包不对它做任何事；`requires` 只交给谓词判定，本包不认识其中的名字；匹配在全表上做，导航、`useMatch` 与 `useHasRoute` 只看有效注册面；链接只在普通主键单击时接管，其余点击交给浏览器；`basename` 是部署前缀，不是换路由器的口子；本包与壳之间**没有依赖边**（产品在两者之上把它们接到一起）。
 
 ```mermaid
 classDiagram
@@ -170,6 +197,7 @@ classDiagram
         +presence RoutePresence
         +pending RouteView
         +failed RouteView
+        +basename string
     }
     class RouteView {
         +render() ReactElement
@@ -192,9 +220,24 @@ classDiagram
         +label ReactNode
         +href string
         +selected boolean
+        +onClick MouseEventHandler
     }
     class RouteLink {
         +to string
+    }
+    class RouteLinkTarget {
+        +href string
+        +onClick MouseEventHandler
+    }
+    class useRouteLinkProps {
+        +props RouteLinkTarget
+    }
+    class useRedirect {
+        +redirect (to) void
+    }
+    class useLocationPath {
+        +path string
+        +search string
     }
     RouteTable *-- RouteDeclaration
     RouteProvider ..> RouteTable : 安装
@@ -205,6 +248,7 @@ classDiagram
     useMatch ..> presentDeclarations : 精确命中
     useHasRoute ..> presentDeclarations : 精确命中
     useNavItems ..> NavItem : 交出
+    useRouteLinkProps ..> RouteLinkTarget : 交出
     RouteLink ..> RouteTable : 构造链接
 ```
 
@@ -231,7 +275,9 @@ flowchart TD
 | 匹配上下文 | `RouteContext` | 命中的路径与路径参数 |
 | 在场谓词 | `RoutePresence`（`presence` 入参） | 读取中、读取失败，或就绪并带 `has` |
 | 有效注册面 | `presentDeclarations` 的结果 | 不带 `requires` 的声明，加上谓词就绪且所需特性全部在场的声明 |
-| 导航条目 | `NavItem` | `id`、`label`、`href`、`selected`；由有效注册面上带标签的登记项派生；结构性形状，壳的框架按结构接受 |
+| 导航条目 | `NavItem` | `id`、`label`、`href`、`selected`，可选 `onClick`；由有效注册面上带标签的登记项派生；结构性形状，壳的框架按结构接受 |
+| 链接属性 | `RouteLinkTarget` | `href`（含部署的 basename）与 `onClick`（仅普通主键单击导航）；供宿主自绘锚点 |
+| 导航位置 | `RouteLocationPath` | 当前 URL 的原始路径与查询串，路径不因是否命中声明而不同 |
 | 回退视图 | `RouteView`（`fallback` 入参） | 无登记项匹配当前 URL、或命中的门控声明特性缺席时渲染 |
 | 等待与失败视图 | `pending`、`failed` 入参 | 谓词读取中、读取失败时，门控路径渲染的视图 |
 
@@ -265,7 +311,9 @@ flowchart TD
 
 ### 链接构造与命令式导航
 
-`RouteLink` 由目标路径生成一个可点链接，点击经历史导航推入该路径，不整页刷新；`useNavigate` 交出一个把目标路径推入历史的函数，供事件处理器使用（如一个成败提示后的返回）。`RouteLink` 与 `useNavigate` 都只改 URL，页面随之被 `RouteView` 按匹配重渲染——`RouteView` 读的是 URL，不是任何组件局部状态。
+`RouteLink` 由目标路径生成一个可点链接，点击经历史导航推入该路径，不整页刷新；其余 props 透传给 react-router-dom 的 `Link`，因此可以充当 MUI 的 `component` 目标。`useRouteLinkProps` 交出同一目标路径的 `href` 与点击处理器：`href` 经 `useHref` 生成、含部署的 basename，处理器只在普通主键单击时导航（主键、无修饰键、`target` 缺失或为 `_self`、无 `download`、未被 `preventDefault`），其余点击不处理而由浏览器完成新标签、下载或默认导航。宿主自绘锚点、或把两者交给接受 `href` 与 `onClick` 的组件时用它。
+
+`useNavigate` 推入历史，供事件处理器使用（如一个成败提示后的返回）；`useRedirect` 以替换语义改当前历史项，用于回调页、登录完成这类不应留在后退栈里的跳转；`useLocationPath` 交出当前 URL 的原始路径与查询串，路径不因是否命中声明而不同。这些接口都只改或读 URL，页面随之被 `RouteView` 按匹配重渲染——`RouteView` 读的是 URL，不是任何组件局部状态。
 
 ## 错误与失败语义
 
@@ -292,6 +340,7 @@ flowchart TD
 - **页面带权限**由声明里的 `permission` 表达、由宿主读它去组合 `RouteGuard`；本包不据此过滤。
 - **页面带特性门控**由声明里的 `requires` 表达；宿主给出在场谓词与等待、失败视图，本包据它收窄注册面。在场谓词从哪来不归本包：特性按租户收窄时，宿主交来的谓词随租户变化，本包与声明都不变。
 - **导航分组与子路由**由路径形状表达（父级声明带标签、子路由不带标签），不由本包新增结构。
+- **导航条目的装饰（图标、分组）**由宿主在自己的声明类型上追加可选字段（如 `icon`、`group`）承载，再按 `NavItem.id`（即声明的路径，跨渲染稳定）回查。这些字段属于产品呈现，不属于路由注册面，本包不新增 `icon` 或分组字段；`RouteProvider` 照常接受带附加可选字段的表。
 
 ## 实现状态
 
@@ -304,3 +353,6 @@ flowchart TD
 | 有效注册面（`presentDeclarations`） | 已实现 | `web/packages/route-kit/src/presence.ts` `presentDeclarations` |
 | 精确命中与入口判定（`useMatch`、`useHasRoute`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useMatch`、`useHasRoute`；`web/packages/route-kit/src/pathing.ts` `matchDeclaration` |
 | 链接构造与命令式导航（`RouteLink`、`useNavigate`） | 已实现 | `web/packages/route-kit/src/RouteLink.tsx` `RouteLink`；`web/packages/route-kit/src/hooks.ts` `useNavigate` |
+| 链接属性与点击判定（`useRouteLinkProps`、`NavItem.onClick`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useRouteLinkProps`、`useNavItems`；`web/packages/route-kit/src/link.ts` `isPlainPrimaryClick`、`createLinkClickHandler`；`web/packages/route-kit/src/types.ts` `NavItem` |
+| 历史动作与原始定位（`useRedirect`、`useLocationPath`） | 已实现 | `web/packages/route-kit/src/hooks.ts` `useRedirect`、`useLocationPath` |
+| 部署路径前缀（`RouteProvider.basename`） | 已实现 | `web/packages/route-kit/src/RouteProvider.tsx` `RouteProvider` |

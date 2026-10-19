@@ -98,4 +98,26 @@ describe('deriveNavItems', () => {
     expect(items[0]?.href).toBe('/cases/:caseId')
     expect(items[0]?.id).toBe('/cases/:caseId')
   })
+
+  it('puts the deployment prefix in href and leaves id on the path', () => {
+    const table: RouteTable = [
+      { path: '/', view, label: 'Home' },
+      { path: '/cases', view, label: 'Cases' },
+    ]
+    const items = deriveNavItems(table, '/cases', '/console')
+    expect(items.find((item) => item.id === '/cases')?.href).toBe(
+      '/console/cases',
+    )
+    // The root path resolves to the prefix itself.
+    expect(items.find((item) => item.id === '/')?.href).toBe('/console')
+  })
+
+  it('leaves href alone for a root or trailing-slash prefix', () => {
+    const table: RouteTable = [{ path: '/cases', view, label: 'Cases' }]
+    expect(deriveNavItems(table, '/cases', undefined)[0]?.href).toBe('/cases')
+    expect(deriveNavItems(table, '/cases', '/')[0]?.href).toBe('/cases')
+    expect(deriveNavItems(table, '/cases', '/console/')[0]?.href).toBe(
+      '/console/cases',
+    )
+  })
 })
