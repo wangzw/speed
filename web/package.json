@@ -12,7 +12,8 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "build": "pnpm -r build"
+    "build": "pnpm -r build",
+    "api:gen": "node scripts/feature-names.mjs ../contracts/features.json packages/api-sdk/src/features.ts && pnpm dlx orval@8.17.0 --config orval.config.ts && node scripts/orval-nodenext-fixup.mjs"
   },
   "devDependencies": {
     "@vitest/browser": "4.1.11",

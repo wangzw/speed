@@ -419,7 +419,7 @@ sequenceDiagram
 | 社交区与回调 | 已实现 | `web/packages/auth-ui/src/SocialSignInSection.tsx`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` |
 | 会话面 | 已实现 | `web/packages/auth-ui/src/SignOutButton.tsx`；`web/packages/auth-ui/src/SignOutMenuItem.tsx`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` |
 | 登录屏的装配面：组次序与首组文案、宿主内容位、提供方图标、标题层级、受控模式、起手门 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`、`SignInScreenProps`、`SignInStartContext`；`web/packages/auth-ui/src/internal/start-gate.ts`；`web/packages/auth-ui/src/internal/group-heading.ts` |
-| 会话结束屏的文案对主动退出与会话失效都成立，不陈述成因 | 未实现 | — |
+| 会话结束屏的文案对主动退出与会话失效都成立，不陈述成因 | 已实现 | `web/packages/auth-ui/src/SessionEndedScreen.tsx`；`web/packages/auth-ui/src/locales/en-US.json`、`web/packages/auth-ui/src/locales/zh-CN.json` 的 `sessionEnded.description` |
 | 邀请受理面 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
 | 邀请受理的新账户输入项取舍、标题层级与显示时区 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps` |
 | 短信通道读取手机号缺省国家/地区 | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm` |

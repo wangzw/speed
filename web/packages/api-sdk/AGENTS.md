@@ -136,8 +136,8 @@ Three entry points:
   the `FeatureName` key type and `FEATURE_NAMES`, written by
   `web/scripts/feature-names.mjs` from `contracts/features.json`. The
   file registers the platform-owned entries only; an application adds
-  its own names through the module augmentation the same generator
-  writes into the application (the demo writes
+  its own names through the module augmentation the app's copy of the
+  same generator writes into the application (the demo writes
   `starters/demo/web/src/app-api/features.ts`). A feature name written
   in frontend code takes this type, so a misspelled name fails to
   compile; `FEATURE_NAMES` is the run-time membership list of the

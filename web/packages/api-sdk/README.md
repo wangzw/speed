@@ -12,35 +12,42 @@ the `speed/no-direct-http` ESLint rule).
 
 ## All-generated discipline
 
-Everything in `src/` except one file is orval output:
+`src/` holds two generated files plus the package's one hand-written
+binding:
 
-- `src/index.ts` -- generated, stamped with a DO-NOT-EDIT header from
-  `web/orval.config.ts`. The header carries the pinned orval version,
-  so tool drift between the generator and the committed artifact shows
-  up as a diff in the header itself.
+- `src/index.ts` -- orval output over the merged document, stamped with
+  a DO-NOT-EDIT header from `web/orval.config.ts`. The header carries
+  the pinned orval version, so tool drift between the generator and the
+  committed artifact shows up as a diff in the header itself.
+- `src/features.ts` -- output of `web/scripts/feature-names.mjs` from
+  `contracts/features.json` (the demo host's `gen --features` output),
+  stamped with its own DO-NOT-EDIT header. Exported as the
+  `@speed/api-sdk/features` subpath.
 - `src/runtime.ts` -- the package's only hand-written source file,
   exported as the `@speed/api-sdk/runtime` subpath. It exists because
   generated code must not know how a host wires its HTTP transport.
 
-Never hand-edit `src/index.ts`, and never add another hand-written file
-inside `src/` to bridge generation gaps: tooling problems belong to
-tooling (see the fixup below), not to shipped source.
+Never hand-edit a generated file, and never add another hand-written
+file inside `src/` to bridge generation gaps: tooling problems belong
+to tooling (see the fixup below), not to shipped source.
 
 ## Regenerating
 
-orval is pinned to 8.17.0 and never enters the workspace lockfile -- it
-is fetched on demand through `pnpm dlx`, and every runner uses the same
-command from `web/` so the two cannot drift:
+One command from `web/` regenerates both generated files:
 
 ```sh
 cd web
-pnpm dlx orval@8.17.0 --config orval.config.ts
-node scripts/orval-nodenext-fixup.mjs
+pnpm api:gen
 ```
 
-Every caller runs
-exactly this pair; a version bump must land in `orval.config.ts`'s
-comment and every caller's command together.
+`web/package.json`'s `api:gen` runs `web/scripts/feature-names.mjs` to
+write `src/features.ts` from `contracts/features.json` first, then runs
+orval over `contracts/api.json` and the nodenext fixup, so one command
+refreshes both files. orval is pinned to 8.17.0 and never enters the
+workspace lockfile -- it is fetched on demand through `pnpm dlx` -- and
+every caller runs this same command, so neither generated file drifts
+from the other or from the pinned generator. A version bump must land in
+`orval.config.ts`'s comment and `web/package.json`'s script together.
 
 ### Why the fixup script
 
@@ -55,9 +62,9 @@ such import to the explicit `'./runtime.js'` form after each
 regeneration and exits non-zero when orval's emission changes or drops
 them; the package's nodenext build then rejects any committed import the
 script did not rewrite. Regeneration and the fixup are manual steps -- no
-CI job reruns them -- so run the pair above whenever `contracts/api.json`
-changes. Config paths in `orval.config.ts` are relative to the config
-file's directory (`web/`).
+CI job reruns them -- so run `pnpm api:gen` whenever `contracts/api.json` or
+`contracts/features.json` changes. Config paths in `orval.config.ts` are
+relative to the config file's directory (`web/`).
 
 ## How generated code calls HTTP
 

@@ -57,7 +57,7 @@ describe('the feature vocabulary', () => {
     const committed = readFileSync(committedPath)
     expect(
       generated.equals(committed),
-      'src/features.ts is stale: run the demo host\'s `pnpm api:gen` (contracts/features.json changed) and commit the regenerated file',
+      "src/features.ts is stale: update contracts/features.json first (the demo host's `gen --features` writes it), then run `pnpm -C web run api:gen` and commit the regenerated file",
     ).toBe(true)
   })
 

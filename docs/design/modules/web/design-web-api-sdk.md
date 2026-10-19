@@ -146,12 +146,13 @@ flowchart LR
 3. 一个操作改走另一个 mutator：`authn.token.issue` 在配置里被覆写为 `speedRequestCredentialless`（见「转发的形状」的凭据为空一档）。
 4. orval 的若干行为在配置与后处理里被规避：它把每个 mutator 的 import 写得没有文件扩展名（在 nodenext 构建下报错），`web/scripts/orval-nodenext-fixup.mjs` 在每次生成后确定性地把它们改写为显式 `./runtime.js`，并覆盖按操作覆写能产出的每一个 mutator 名；一次已修好的文件（import 已带 `.js`）退出 0，因而 fixup 可自由重跑。生成的 `src/index.ts` 与 fixup 后的形状是提交进仓库的产物。
 5. DO-NOT-EDIT 头锚着生成器版本（当前 `8.17.0`），故生成器与产物之间的漂移在头的 diff 里可见。
+6. `web/package.json` 的 `api:gen` 是平台级再生成命令：它运行特性名生成器写出 `src/features.ts`，再运行平台 orval 配置与 fixup。示范应用的 `api:gen` 只写宿主的契约与应用自己的生成面（`starters/demo/web/src/app-api/`），不写本包的产物。
 
 ### 特性名的生成
 
 1. 输入是示范宿主的 `gen` 以 `--features` 写出的 `contracts/features.json`：可用集里的全部特性声明，按名字排序。
 2. 特性名生成器 `web/scripts/feature-names.mjs` 读它，写出 `src/features.ts`：`FeatureNameRegistry` 为每个名字登记一项，`FEATURE_NAMES` 按同一顺序列出全部名字，文件带 DO-NOT-EDIT 头。`contracts/features.json` 的每一项带所有者：声明它的代码在平台的模块路径之下的为平台所有，其余为应用所有，`gen` 按声明所在的包机械写出，不靠名字约定；经平台导出的工厂构造的宿主模块，其声明在平台代码里，按平台所有。生成器写 `src/features.ts` 只取平台所有的项，本包登记的因此始终是平台模块的特性名；应用所有的项由应用内的模块增补承载（见扩展点）。一条测试断言本包的 `features.ts` 不含任何应用所有的名字。
-3. 示范应用的契约再生成脚本（`starters/demo/web/package.json` 的 `api:gen`）在 `gen` 写出契约之后调用特性名生成器，`contracts/features.json` 与 `src/features.ts` 因此随同一次再生成更新。生成的 `src/features.ts` 是提交进仓库的产物。
+3. 生成器有两份副本。平台的 `web/scripts/feature-names.mjs` 由 `web/package.json` 的 `api:gen` 运行，写出本包的 `src/features.ts`；骨架的 `starters/demo/web/scripts/feature-names.mjs` 只留应用增补模式，由示范的 `api:gen` 在 `gen` 写出 `contracts/features.json` 之后运行，写出应用的 `src/app-api/features.ts`，不需要可写的平台产物路径。两份副本在生成模式区块之外逐字节相同，`web/scripts/starter-script-consistency.test.mjs` 守住这条；`orval-nodenext-fixup.mjs` 的两份副本整份逐字节相同，由同一条测试守住。生成的 `src/features.ts` 与应用的 `src/app-api/features.ts` 都是提交进仓库的产物。
 
 `contracts/features.json` 覆盖任何一份可能的特性文档：静态特性都在可用集声明里；经 `feature.Board` 的 `Post` 报告的名字不是报告者声明的条件特性时，`feature.board` 让启动失败（[feature](../design-feature.md)）。所以平台包的 `FeatureName` 覆盖前端可能读到的每一个平台所有的特性名，应用所有的名字由应用内的模块增补补齐。
 
@@ -197,7 +198,7 @@ flowchart LR
 - **新增一个按操作的 mutator 覆写**在 `web/orval.config.ts` 的 `override.operations` 里加一条，使该操作改走另一个已导出的 mutator；`src/runtime.ts` 里另加一个源码文件被禁止，缺口在工具里补。
 - **生成器升级**要同时改 `orval.config.ts` 的注释与每个调用方的命令（版本钉在一处，重生成后头里的版本随之更新）。
 - **平台模块声明一个特性**即让该模块以 `feature.Spec` 声明它；重生成后名字出现在 `./features` 入口。
-- **应用自己的特性名以模块增补并入。** 应用模块声明的特性不进平台包：应用的契约再生成写出的 `contracts/features.json` 含平台与应用两方的声明，生成器取其中所有者为应用的名字，在应用内写出 `declare module '@speed/api-sdk/features' { interface FeatureNameRegistry { … } }`，应用里的 `FeatureName` 因此同时含平台名与应用名，宿主与平台包读的是同一个类型。
+- **应用自己的特性名以模块增补并入。** 应用模块声明的特性不进平台包：应用的契约再生成写出的 `contracts/features.json` 含平台与应用两方的声明，骨架副本 `starters/demo/web/scripts/feature-names.mjs` 取其中所有者为应用的名字，在应用内写出 `declare module '@speed/api-sdk/features' { interface FeatureNameRegistry { … } }`，应用里的 `FeatureName` 因此同时含平台名与应用名，宿主与平台包读的是同一个类型。平台包与平台的 `api:gen` 都不写这份增补。
 
 ## 实现状态
 
@@ -206,10 +207,11 @@ flowchart LR
 | 生成的接口面（操作函数、Query 钩子、响应模型） | 已实现 | `web/packages/api-sdk/src/index.ts`（orval 生成，DO-NOT-EDIT 头） |
 | 运行时接缝与 mutator、按操作覆写 | 已实现 | `web/packages/api-sdk/src/runtime.ts` `bindRequestFn`、`speedRequest`、`speedRequestCredentialless`、`forward`、`OrvalCall` |
 | 生成配置（输入、mutator、按操作覆写） | 已实现 | `web/orval.config.ts` |
-| nodenext 的 mutator import 后处理 | 已实现 | `web/scripts/orval-nodenext-fixup.mjs` |
+| 平台级再生成命令（特性名、平台 orval、fixup） | 已实现 | `web/package.json` 的 `api:gen` |
+| nodenext 的 mutator import 后处理 | 已实现 | `web/scripts/orval-nodenext-fixup.mjs`；骨架副本 `starters/demo/web/scripts/orval-nodenext-fixup.mjs` |
 | 入口的对外面（`.`、`./runtime` 与 `./features`） | 已实现 | `web/packages/api-sdk/package.json` 的 `exports` |
 | 本包的生成面与特性名只含平台所有的成员，由测试守住 | 已实现 | `starters/demo/server/main.go` `moduleOwner`、`markOperations`、`featureVocabulary`；`web/orval.config.ts` 的 `input.filters`；`web/scripts/feature-names.mjs`；`web/packages/api-sdk/src/ownership.test.ts`、`features.test.ts` |
 | 特性名类型（`src/features.ts`） | 已实现 | `web/packages/api-sdk/src/features.ts` `FeatureNameRegistry`、`FeatureName`、`FEATURE_NAMES` |
-| 特性名生成器 | 已实现 | `web/scripts/feature-names.mjs` |
+| 特性名生成器 | 已实现 | `web/scripts/feature-names.mjs`；骨架副本 `starters/demo/web/scripts/feature-names.mjs`；副本一致性 `web/scripts/starter-script-consistency.test.mjs` |
 | 特性名的新鲜度测试与类型断言 | 已实现 | `web/packages/api-sdk/src/features.test.ts`；`web/packages/auth-core/src/features.test.ts` |
-| 应用特性名的模块增补 | 已实现 | `web/scripts/feature-names.mjs`（第三个输出参数）；`starters/demo/web/src/app-api/features.ts`；`starters/demo/web/package.json` 的 `api:gen` |
+| 应用特性名的模块增补 | 已实现 | `starters/demo/web/scripts/feature-names.mjs`；`starters/demo/web/src/app-api/features.ts`；`starters/demo/web/package.json` 的 `api:gen` |
