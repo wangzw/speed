@@ -8,12 +8,16 @@ negotiated start language (`createI18n`), the manual language switch
 (`registerNamespace`), the instance's own supported-language read
 (`readSupportedLanguages`, exported for surfaces that render a language
 picker from the instance's real set rather than the package default),
-the MUI localization bridge (`./mui-locale`), the generated platform
-error-copy bundle with its registration (`./platform-errors`:
-`PLATFORM_ERRORS_NAMESPACE`, `registerPlatformErrors`), and the
-error-code text convention the error surfaces resolve through
-(`createErrorTextResolver` plus the shared code families
-`SESSION_LIFECYCLE_ERROR_CODES` and `CLIENT_TRANSPORT_ERROR_CODES`).
+resource overlays for a host-supplied bundle (`overlayResources`), the
+MUI localization bridge (`./mui-locale`), the hand-maintained platform
+error-copy bundle with its registration and exported resources
+(`./platform-errors`: `PLATFORM_ERRORS_NAMESPACE`,
+`platformErrorResources`, `registerPlatformErrors`), the error-code text
+convention the error surfaces resolve through (`createErrorTextResolver`
+plus the shared code families `SESSION_LIFECYCLE_ERROR_CODES` and
+`CLIENT_TRANSPORT_ERROR_CODES`), and the Intl-only display helpers
+(`resolveTimeZone`, `isSupportedTimeZone`, `formatInstant`,
+`languageDisplayName`).
 It wraps react-i18next/i18next and adds the platform's discipline on top:
 pinned supported-language sets, per-language coverage, key-set parity, and
 missing keys that warn and render as the key -- never another language's
@@ -72,7 +76,13 @@ catalog) and is non-negotiable here.
   for every namespace, the plural coverage of every existing plural
   family in every bundle, and the parity/coverage tests. A language ships
   only when every namespace can cover it -- partial support is refused at
-  registration by design.
+  registration by design. A host whose instance supports a wider set
+  supplies the whole language itself: through `registerPlatformErrors`'s
+  second argument for the platform error bundle, or through
+  `overlayResources` for a package namespace. The per-namespace coverage
+  rule does not relax -- the supplied bundle must cover the same key set
+  -- and registration validates it exactly as it validates any other
+  registration.
 - **Server-resolved profile locales are applied without persisting.**
   `switchLanguage(i18n, locale, null)` applies a language to a live
   instance without writing the manual-choice slot. The persisting default
@@ -93,7 +103,28 @@ catalog) and is non-negotiable here.
   `SESSION_LIFECYCLE_ERROR_CODES` / `CLIENT_TRANSPORT_ERROR_CODES`) and
   binds its namespace's `t`. Hand-rolling the key construction in a
   package re-opens the raw-key / cross-language gaps the convention
-  closes.
+  closes. Its two optional seams do not change the default: `httpFamily`
+  resolves `client.http.<status>` through a parameterized leaf (with
+  optional per-status replacements) instead of collapsing it onto
+  `errors.unknown`, and `fallthrough` resolves an unlisted code through
+  `errors.<code>` only when the caller confirms the bundle carries it.
+  Without the options, resolution is exactly what it was before they
+  existed.
+- **A resource key is part of the package's compatibility surface.**
+  Adding a leaf is compatible; deleting or renaming one is not, because a
+  host's overlay written against the old key set would silently point at
+  nothing. `overlayResources` exists to make that failure loud: replacing
+  a leaf the base bundle does not carry throws instead of adding a key.
+  Do not satisfy an overlay complaint by dropping the check.
+- **Time and language names are formatted through Intl only.** The
+  display-timezone chain lives in `resolveTimeZone` (stored value, then
+  device, then UTC) and every Intl construction is guarded, so one stale
+  value never crashes a render. `formatInstant` caches one formatter per
+  language/style/zone and answers the empty string for a value that
+  carries no instant. The package carries the helpers and holds no
+  display-zone state: which zone a surface renders in (a caller-resolved
+  context value, an explicit UTC, a stored preference) is the host's
+  decision, exactly like the profile language.
 - **Instance options are internal to createI18n, and only some are pinned
   by tests.** i18next's option surface is an implementation detail here
   (v26 internals that shaped the code: `initAsync` defaults true and is
@@ -154,7 +185,9 @@ AGENTS/README/test update in one commit.
 ## Changing the public API
 
 Exports are frozen by convention (lockstep versioning repo-wide). A change
-to `createI18n` options, `registerNamespace` semantics, or the entry-point
-surface updates: this AGENTS.md, the README (negotiation chain, error
-index), `index.test.ts`'s exact-export list, and the feature tests in one
-commit, with rationale.
+to `createI18n` options, `registerNamespace` semantics, `overlayResources`
+semantics, the resolver options, or the entry-point surface updates: this
+AGENTS.md, the README (negotiation chain, error index), `index.test.ts`'s
+exact-export list, and the feature tests in one commit, with rationale.
+Deleting or renaming a shipped resource key is a breaking change for hosts
+whose overlays name it; adding a leaf is not.

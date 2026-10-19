@@ -22,10 +22,15 @@ describe('@speed/i18n main entry', () => {
       'createErrorTextResolver',
       'createI18n',
       'defaultMissingKeyHandler',
+      'formatInstant',
+      'isSupportedTimeZone',
+      'languageDisplayName',
       'matchSupportedLanguage',
       'normalizeLanguageTag',
+      'overlayResources',
       'readSupportedLanguages',
       'registerNamespace',
+      'resolveTimeZone',
       'switchLanguage',
       'useTranslation',
     ])
@@ -43,6 +48,11 @@ describe('@speed/i18n main entry', () => {
     expect(typeof i18nModule.defaultMissingKeyHandler).toBe('function')
     expect(typeof i18nModule.useTranslation).toBe('function')
     expect(typeof i18nModule.createErrorTextResolver).toBe('function')
+    expect(typeof i18nModule.resolveTimeZone).toBe('function')
+    expect(typeof i18nModule.isSupportedTimeZone).toBe('function')
+    expect(typeof i18nModule.formatInstant).toBe('function')
+    expect(typeof i18nModule.languageDisplayName).toBe('function')
+    expect(typeof i18nModule.overlayResources).toBe('function')
     expect(i18nModule.SESSION_LIFECYCLE_ERROR_CODES).toEqual([
       'authn.session_not_found',
       'authn.session_revoked',

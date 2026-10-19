@@ -8,7 +8,12 @@
 import { createInstance } from 'i18next'
 import { describe, expect, it, vi } from 'vitest'
 import { createI18n, type MissingKeyDetails } from './index'
-import { PLATFORM_ERRORS_NAMESPACE, registerPlatformErrors } from './platform-errors'
+import {
+  PLATFORM_ERRORS_NAMESPACE,
+  platformErrorResources,
+  registerPlatformErrors,
+} from './platform-errors'
+import type { ResourceBundle } from './register'
 import { MemoryStorage } from '../test-utils/memory-storage'
 import { registerWelcome } from '../test-utils/welcome'
 import bundleZh from './platform-errors/locales/zh-CN.json' with { type: 'json' }
@@ -74,6 +79,103 @@ describe('registerPlatformErrors', () => {
   it('refuses a second registration on the same instance', () => {
     const instance = createPlatformI18n()
     expect(() => registerPlatformErrors(instance)).toThrow(/already registered/)
+  })
+})
+
+describe('platformErrorResources', () => {
+  it('exports the shipped bundles keyed by language', () => {
+    expect(Object.keys(platformErrorResources).sort()).toEqual(['en-US', 'zh-CN'])
+    expect(platformErrorResources['en-US']).toEqual(enBundle)
+    expect(platformErrorResources['zh-CN']).toEqual(zhBundle)
+  })
+})
+
+describe('registerPlatformErrors with host-supplied languages', () => {
+  /** A whole-language bundle with the packaged key set and a marker per code. */
+  const frResources: Readonly<Record<string, ResourceBundle>> = {
+    'fr-FR': {
+      errors: Object.fromEntries(
+        Object.keys(enBundle.errors).map((code) => [code, `fr:${code}`]),
+      ),
+    },
+  }
+
+  function createWideI18n() {
+    return createI18n({
+      storage: new MemoryStorage(),
+      navigatorLanguages: [],
+      supportedLanguages: ['zh-CN', 'en-US', 'fr-FR'],
+      fallbackNamespaces: [PLATFORM_ERRORS_NAMESPACE],
+    })
+  }
+
+  it('registers a whole language the package does not carry', () => {
+    const instance = createWideI18n()
+    registerPlatformErrors(instance, frResources)
+    expect(
+      instance.t('platform-errors:errors.authn.invalid_credentials', {
+        lng: 'fr-FR',
+      }),
+    ).toBe('fr:authn.invalid_credentials')
+    expect(
+      instance.t('platform-errors:errors.authn.invalid_credentials', {
+        lng: 'en-US',
+      }),
+    ).toBe(codeText(enBundle, 'authn.invalid_credentials'))
+  })
+
+  it('refuses a supplied language whose key set differs from the package', () => {
+    const instance = createWideI18n()
+    expect(() =>
+      registerPlatformErrors(instance, {
+        'fr-FR': { errors: { 'authn.invalid_credentials': 'fr:invalid' } },
+      }),
+    ).toThrow(/packaged key set/)
+  })
+
+  it('refuses supplying a language the package already carries', () => {
+    const instance = createWideI18n()
+    expect(() =>
+      registerPlatformErrors(instance, {
+        'en-US': { errors: { 'authn.invalid_credentials': 'us:invalid' } },
+      }),
+    ).toThrow(/already ships/)
+  })
+
+  it('refuses a supplied language outside the supported set', () => {
+    const instance = createWideI18n()
+    expect(() =>
+      registerPlatformErrors(instance, {
+        ...frResources,
+        'de-DE': frResources['fr-FR']!,
+      }),
+    ).toThrow(/not among the instance's supported languages/)
+  })
+
+  function createFrenchOnlyI18n() {
+    return createI18n({
+      storage: new MemoryStorage(),
+      navigatorLanguages: [],
+      supportedLanguages: ['fr-FR'],
+      defaultLanguage: 'fr-FR',
+    })
+  }
+
+  it('registers a supplied language even when the set omits the packaged pair', () => {
+    const instance = createFrenchOnlyI18n()
+    registerPlatformErrors(instance, frResources)
+    expect(instance.t('platform-errors:errors.authn.invalid_credentials')).toBe(
+      'fr:authn.invalid_credentials',
+    )
+  })
+
+  it('compares a supplied language to the packaged bundle, not only to registered peers', () => {
+    const instance = createFrenchOnlyI18n()
+    expect(() =>
+      registerPlatformErrors(instance, {
+        'fr-FR': { errors: { 'authn.invalid_credentials': 'fr:invalid' } },
+      }),
+    ).toThrow(/must carry the packaged key set/)
   })
 })
 

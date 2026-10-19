@@ -94,7 +94,13 @@ function describeLeaf(value: unknown): string {
   return `a ${typeof value}`
 }
 
-function collectLeafPaths(
+/**
+ * Collect a bundle's leaf paths into `leaves`, refusing empty-string
+ * leaves. Exported for the platform-error registration, which validates a
+ * host-supplied language against the packaged bundle even when the
+ * packaged languages are not part of the instance's supported set.
+ */
+export function collectLeafPaths(
   bundle: ResourceBundle,
   prefix: string,
   leaves: Set<string>,

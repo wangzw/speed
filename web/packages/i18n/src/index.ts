@@ -16,11 +16,22 @@
 
 export { createI18n, switchLanguage } from './create.js'
 export { registerNamespace } from './register.js'
+export { overlayResources, type ResourceOverlay } from './overlay.js'
 export {
   CLIENT_TRANSPORT_ERROR_CODES,
   SESSION_LIFECYCLE_ERROR_CODES,
   createErrorTextResolver,
+  type ErrorTextResolverOptions,
+  type ErrorTextTranslate,
+  type HttpFamilyOptions,
 } from './error-text.js'
+export {
+  formatInstant,
+  isSupportedTimeZone,
+  resolveTimeZone,
+  type FormatInstantOptions,
+} from './time.js'
+export { languageDisplayName } from './language-name.js'
 export {
   DEFAULT_LANGUAGE,
   DEFAULT_SUPPORTED_LANGUAGES,

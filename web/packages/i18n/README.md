@@ -124,6 +124,44 @@ function Greeting() {
 }
 ```
 
+## Display time zones, instants and language names
+
+The package carries the Intl-only helpers a surface formats timestamps and
+language labels with; it holds no display-zone state, so which zone a
+surface renders in stays the host's decision (a preferences store, a
+context provider, or an explicit `'UTC'`).
+
+```ts
+import {
+  formatInstant,
+  isSupportedTimeZone,
+  languageDisplayName,
+  resolveTimeZone,
+} from '@speed/i18n'
+
+resolveTimeZone(storedPreference) // stored when Intl accepts it, else device, else 'UTC'
+isSupportedTimeZone('Asia/Tokyo') // true; an unknown zone answers false, never throws
+formatInstant('2026-10-19T08:30:00Z', 'en-US', { timeZone: 'UTC' }) // medium date, short time
+formatInstant(Date.now(), 'en-US', { timeZone: 'UTC', style: 'long' }) // medium date, long time with zone name
+languageDisplayName('zh-CN', 'en-US') // the language's name in the UI language
+```
+
+The display-timezone chain is three tiers, first usable one wins: the
+stored value the host resolved (an empty or whitespace-only value means
+"not chosen"), the device zone, then `'UTC'`. Every Intl construction is
+guarded: a value the engine rejects is skipped like an empty one, so one
+stale preference never crashes the page that renders a session list. The
+formatting styles map to one documented Intl pair each -- `short` (short
+date and time), `medium` (medium date, short time; the default) and `long`
+(medium date, long time with the zone name) -- and one formatter is cached
+per language, style and zone. A value that carries no instant (empty
+string, unparseable text, invalid `Date`, `NaN`) renders as the empty
+string, and so does a language the engine refuses.
+
+`languageDisplayName` resolves through `Intl.DisplayNames` and falls back
+to the raw tag when the engine cannot name it, so a language picker never
+renders an empty label.
+
 ## Namespaces and registration
 
 One namespace per package, in bare, unscoped form: a name matches
@@ -169,6 +207,37 @@ registerNamespace(i18n, 'welcome', {
 })
 // components: useTranslation('welcome') / t('greeting.hello')
 ```
+
+## Resource overlays
+
+A host that changes a package's wording, or supplies a language the
+package does not ship, overlays the exported bundle before registering it:
+
+```ts
+import { overlayResources, registerNamespace } from '@speed/i18n'
+import { consoleUiResources } from '@speed/console-ui'
+
+const resources = overlayResources(consoleUiResources, {
+  'en-US': { common: { refresh: 'Reload' } },
+  'fr-FR': frResources, // a whole language the package does not carry
+})
+registerNamespace(i18n, 'console-ui', resources)
+```
+
+A partial overlay for a language the package ships is deep-merged leaf by
+leaf: each named leaf must already exist, and is replaced. Naming a leaf
+the base bundle does not carry **throws** -- an overlay written against an
+older key set would otherwise silently add a key the other languages lack,
+and an upgrade that dropped a key must surface loudly instead of leaving a
+stale override unnoticed. A language the package does not carry is taken
+whole and its completeness (every key, every plural form the language
+needs) is validated by `registerNamespace` together with the rest of the
+namespace. Neither the base nor the overlay is mutated.
+
+Resource-key compatibility follows from that rule: **adding a leaf is
+compatible; deleting or renaming one is not**, because a host overlay
+naming the old key stops registering. Do not ship a release that drops a
+key without treating it as a breaking change.
 
 ## Fallback namespaces (opt-in)
 
@@ -262,14 +331,27 @@ reachable from every package lookup:
 import { createI18n } from '@speed/i18n'
 import {
   PLATFORM_ERRORS_NAMESPACE,
+  platformErrorResources,
   registerPlatformErrors,
 } from '@speed/i18n/platform-errors'
 
 const i18n = createI18n({ fallbackNamespaces: [PLATFORM_ERRORS_NAMESPACE] })
 registerPlatformErrors(i18n)
-// t('welcome:errors.authn.invalid_credentials') resolves through the
-// platform bundle where the welcome bundle has no such leaf
+// an instance supporting a wider set supplies the whole language:
+registerPlatformErrors(i18n, { 'fr-FR': frBundle })
 ```
+
+The second argument supplies whole languages the package does not carry.
+The key set of an extra bundle must match the packaged bundle's: it is
+compared against the packaged reference directly (including an instance
+whose supported set omits the packaged pair), and registration then
+enforces the same key set across every registered language. Supplying a
+language the package already ships is refused (whole-language supply and
+per-leaf override are different operations; use `overlayResources` on
+`platformErrorResources` for the latter). With no second argument,
+registration behaves exactly as before. `platformErrorResources` exports
+the shipped `zh-CN`/`en-US` pair for a host that overlays it before
+registering.
 
 Two properties of the bundle are deliberate and worth knowing
 before reading a miss as a bug:
@@ -338,6 +420,37 @@ mid-flight surfaces through the refresh leg) and
 failures). Text for the shared codes stays in each consuming package's
 own bundle — same-tier packages never import one another's catalogs.
 
+### The bare-HTTP family and the platform fallback
+
+Two optional seams extend the same resolver; without them its behaviour is
+exactly as above.
+
+```ts
+import { PLATFORM_ERRORS_NAMESPACE } from '@speed/i18n/platform-errors'
+
+const resolve = createErrorTextResolver(t, new Set(ERROR_TEXT_CODES), {
+  // client.http.<status> resolves through this namespace's leaf, with the
+  // status interpolated; a listed status gets its own leaf instead.
+  httpFamily: {
+    key: 'errors.client.http',
+    byStatus: { '403': 'errors.client.httpForbidden' },
+  },
+  // An unlisted code the platform error bundle carries resolves through
+  // errors.<code> (the fallback namespace answers it), not errors.unknown.
+  fallthrough: (code) =>
+    i18n.exists(`${PLATFORM_ERRORS_NAMESPACE}:errors.${code}`),
+})
+```
+
+`httpFamily` resolves the `client.http.<status>` code the api-client
+synthesizes for a non-2xx with no readable envelope: the status has an
+entry in `byStatus` -> that leaf; otherwise the `key` leaf with
+`{ status }` passed to `t`. `fallthrough` is consulted only for a code
+outside the whitelist; it answers true when the surface's registered
+fallback namespace carries the code, and only then does the resolver ask
+for `errors.<code>`. A code nobody carries still resolves to
+`errors.unknown` — the default never becomes a raw key.
+
 ## Dependencies
 
 | Package | Kind | Why |
@@ -356,12 +469,19 @@ missing or extra leaf paths; an empty translation names its leaf path; an
 incomplete plural family names the family, the languages whose counts
 would spill the raw key and the missing `_<category>` forms; a switch to
 an unsupported language lists the supported tags; registering on a bare
-i18next instance (no pinned supported set) names `createI18n` as the fix.
-Storage is deliberately best-effort, by design: a failing write warns
+i18next instance (no pinned supported set) names `createI18n` as the fix;
+an overlay naming a leaf or a subtree the base bundle does not carry names
+the path and the compatibility rule; supplying a platform-error language
+the bundle already ships, or one outside the supported set, names the
+language and says which operation fits. Storage is deliberately
+best-effort, by design: a failing write warns
 (`[speed-i18n]` console warning) without failing the switch, and a failing
 read at creation silently means "no stored choice". The missing-key
 handler is the other non-throwing surface (a production lookup must
-degrade visibly, not crash).
+degrade visibly, not crash). The display helpers never throw either: a
+zone the engine rejects falls through the chain, a value carrying no
+instant renders as the empty string, and an unnamed language tag renders
+as the raw tag.
 
 ## Development
 

@@ -38,6 +38,107 @@ describe('createErrorTextResolver', () => {
   })
 })
 
+/** A translation function that records the key and options it receives. */
+function recordingTranslate(): {
+  t: (key: string, options?: { readonly status?: string }) => string
+  calls: Array<{ key: string; options?: { readonly status?: string } }>
+} {
+  const calls: Array<{ key: string; options?: { readonly status?: string } }> = []
+  const t = (key: string, options?: { readonly status?: string }): string => {
+    calls.push({ key, options })
+    return `translated:${key}`
+  }
+  return { t, calls }
+}
+
+describe('createErrorTextResolver httpFamily', () => {
+  it('resolves client.http.<status> through the parameterized leaf with the status', () => {
+    const { t, calls } = recordingTranslate()
+    const resolve = createErrorTextResolver(t, new Set(), {
+      httpFamily: { key: 'errors.client.http' },
+    })
+    expect(resolve('client.http.503')).toBe('translated:errors.client.http')
+    expect(calls).toEqual([
+      { key: 'errors.client.http', options: { status: '503' } },
+    ])
+  })
+
+  it('prefers a per-status leaf when the status has one', () => {
+    const { t, calls } = recordingTranslate()
+    const resolve = createErrorTextResolver(t, new Set(), {
+      httpFamily: {
+        key: 'errors.client.http',
+        byStatus: { '403': 'errors.client.httpForbidden' },
+      },
+    })
+    expect(resolve('client.http.403')).toBe('translated:errors.client.httpForbidden')
+    expect(calls).toEqual([{ key: 'errors.client.httpForbidden', options: undefined }])
+    expect(resolve('client.http.500')).toBe('translated:errors.client.http')
+    expect(calls[1]).toEqual({
+      key: 'errors.client.http',
+      options: { status: '500' },
+    })
+  })
+
+  it('leaves a non-HTTP unlisted code to the shared unknown fallback', () => {
+    const { t } = recordingTranslate()
+    const resolve = createErrorTextResolver(t, new Set(), {
+      httpFamily: { key: 'errors.client.http' },
+    })
+    expect(resolve('authn.future_code')).toBe('translated:errors.unknown')
+  })
+
+  it('keeps client.http.<status> on the unknown fallback when no family is configured', () => {
+    const { t } = recordingTranslate()
+    const resolve = createErrorTextResolver(t, new Set())
+    expect(resolve('client.http.503')).toBe('translated:errors.unknown')
+  })
+
+  it('keeps the whitelist ahead of the family', () => {
+    const { t, calls } = recordingTranslate()
+    const resolve = createErrorTextResolver(t, new Set(['client.http.418']), {
+      httpFamily: { key: 'errors.client.http' },
+    })
+    expect(resolve('client.http.418')).toBe('translated:errors.client.http.418')
+    expect(calls).toEqual([
+      { key: 'errors.client.http.418', options: undefined },
+    ])
+  })
+})
+
+describe('createErrorTextResolver fallthrough', () => {
+  it('resolves errors.<code> when the caller confirms the bundle carries it', () => {
+    const { t, calls } = recordingTranslate()
+    const fallthrough = vi.fn((code: string) => code === 'notification.message_not_found')
+    const resolve = createErrorTextResolver(t, new Set(), { fallthrough })
+    expect(resolve('notification.message_not_found')).toBe(
+      'translated:errors.notification.message_not_found',
+    )
+    expect(calls).toEqual([
+      { key: 'errors.notification.message_not_found', options: undefined },
+    ])
+    expect(fallthrough).toHaveBeenCalledWith('notification.message_not_found')
+  })
+
+  it('keeps the unknown fallback when the caller declines the code', () => {
+    const { t } = recordingTranslate()
+    const resolve = createErrorTextResolver(t, new Set(), {
+      fallthrough: () => false,
+    })
+    expect(resolve('notification.unknown_code')).toBe('translated:errors.unknown')
+  })
+
+  it('does not consult the fallthrough for a whitelisted code', () => {
+    const { t } = recordingTranslate()
+    const fallthrough = vi.fn(() => true)
+    const resolve = createErrorTextResolver(t, new Set(['tenant.conflict']), {
+      fallthrough,
+    })
+    expect(resolve('tenant.conflict')).toBe('translated:errors.tenant.conflict')
+    expect(fallthrough).not.toHaveBeenCalled()
+  })
+})
+
 describe('the shared code vocabulary', () => {
   it('names the session-lifecycle family every surface shares', () => {
     expect([...SESSION_LIFECYCLE_ERROR_CODES]).toEqual([

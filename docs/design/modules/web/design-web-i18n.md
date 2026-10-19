@@ -4,7 +4,7 @@
 
 本包是 web 包树的国际化层，包裹 react-i18next 与 i18next 并加上一套纪律：每宿主一个实例，一个协商出的起始语言，按包注册的命名空间（注册时校验覆盖与键集），以及**缺键绝不静默回落到另一种语言**。
 
-它把一个宿主需要的整条 i18n 面收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 与共享错误码家族），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI 本地化助手在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
+它把一个宿主需要的整条 i18n 面收在一处：实例创建（`createI18n`）、语言切换（`switchLanguage`）、命名空间注册（`registerNamespace`）、注册前的资源覆盖（`overlayResources`）、实例自身受支持语言的读取（`readSupportedLanguages`）、缺键处置（`defaultMissingKeyHandler` 与 `MissingKeyDetails`）、错误码到文本的约定（`createErrorTextResolver` 及其 `httpFamily`/`fallthrough` 选项、共享错误码家族）、显示时区与时间格式化的纯函数（`resolveTimeZone`、`isSupportedTimeZone`、`formatInstant`）、语言名（`languageDisplayName`），以及 react-i18next 的绑定再导出（`I18nextProvider`、`useTranslation`）。MUI 本地化助手在独立子路径 `@speed/i18n/mui-locale`，平台错误文案包在 `@speed/i18n/platform-errors`。
 
 react 绑定只从这里再导出，组件包与宿主不直接 import `react-i18next`：版本锁步使一个树里只有一个 react-i18next 副本，`useTranslation` 在交付出去的组件里因此安全。
 
@@ -12,9 +12,9 @@ react 绑定只从这里再导出，组件包与宿主不直接 import `react-i1
 
 - **不渲染服务端生成的文案。** 错误响应、通知类的正文由产生它们的后端模块渲染，客户端与服务端的分工被记为 [ADR-i18n-scope-2026-10-13](../../../adr/adr-i18n-scope-2026-10-13.md)：客户端界面的文案由前端自己的机制承担，服务端文案不进这里。本包只渲染前端界面文案，机器码（如错误码）由前端按码解析成文本。
 - **不持某个具体包的文案，也不在组件或 provider 内注册命名空间。** 每个包交付自己的双语资源，宿主在启动处调用一次 `registerNamespace`；命名空间注册两次会抛错，因此它不能落在组件生命周期里。
-- **不生成文案。** 后端错误码到前端文本的包是 `@speed/i18n/platform-errors` 的机械产物，由生成器从后端目录产出；本包只承载并注册它。
+- **不生成文案。** 后端错误码到前端文本的包在 `@speed/i18n/platform-errors`，当前手工维护（其生成器已随早期实现退役）；本包只承载并注册它。
 - **不做 MUI 本地化本身。** MUI 的本地化对象由 MUI 提供，本包只把语言标签映射到它（见扩展点）。
-- **不持业务状态，不发请求。** 档案语言的解析（如经 `/me`）在宿主一侧，本包只接受其结果。
+- **不持业务状态，不发请求，也不持显示时区。** 档案语言与时区偏好的解析（如经 `/me`、本地偏好存储、上下文提供者）在宿主一侧，本包只接受其结果；`resolveTimeZone` 与 `formatInstant` 只处理传入的值，不决定某个界面该用哪个时区。
 
 ## 外部接口契约
 
@@ -22,6 +22,7 @@ react 绑定只从这里再导出，组件包与宿主不直接 import `react-i1
 export function createI18n(options?: CreateI18nOptions): I18nInstance
 export function switchLanguage(instance: I18nInstance, language: string, storage?: StorageLike | null): Promise<void>
 export function registerNamespace(instance: I18nInstance, namespace: string, resources: Readonly<Record<string, ResourceBundle>>): void
+export function overlayResources(base: Readonly<Record<string, ResourceBundle>>, overlay: Readonly<Record<string, ResourceBundle>>): Record<string, ResourceBundle>
 export function readSupportedLanguages(instance: I18nInstance): readonly string[]
 
 export const DEFAULT_LANGUAGE: 'en-US'
@@ -31,15 +32,20 @@ export function normalizeLanguageTag(input: string): string | null
 export function matchSupportedLanguage(candidate: string, supported: readonly string[]): string | null
 
 export function defaultMissingKeyHandler(details: MissingKeyDetails): void
-export function createErrorTextResolver(t: (key: string) => string, knownCodes: ReadonlySet<string>): (code: string) => string
+export function createErrorTextResolver(t: ErrorTextTranslate, knownCodes: ReadonlySet<string>, options?: ErrorTextResolverOptions): (code: string) => string
 export const SESSION_LIFECYCLE_ERROR_CODES: readonly string[]
 export const CLIENT_TRANSPORT_ERROR_CODES: readonly string[]
+
+export function resolveTimeZone(stored?: string | null): string
+export function isSupportedTimeZone(zone: string): boolean
+export function formatInstant(value: string | number | Date, language: string, options?: { timeZone?: string; style?: 'short' | 'medium' | 'long' }): string
+export function languageDisplayName(tag: string, uiLanguage: string): string
 
 export { I18nextProvider, useTranslation } from 'react-i18next'
 ```
 
 `@speed/i18n/mui-locale`：`muiLocaleFor(language)` 与 `MuiLocale`。
-`@speed/i18n/platform-errors`：`PLATFORM_ERRORS_NAMESPACE` 与 `registerPlatformErrors(instance)`。
+`@speed/i18n/platform-errors`：`PLATFORM_ERRORS_NAMESPACE`、`platformErrorResources` 与 `registerPlatformErrors(instance, extra?)`。
 
 **`createI18n` 的选项契约**（`CreateI18nOptions`）：`supportedLanguages`、`defaultLanguage`、`urlParameterName`、`searchParams`、`storage`、`storageKey`、`profileLanguage`、`navigatorLanguages`、`onMissingKey`、`fallbackNamespaces`。除实例选项外，每个可协商输入都可注入（`searchParams`、`storage`、`navigatorLanguages`），浏览器对象只经守卫读，因而测试与非浏览器宿主是确定性的。
 
@@ -49,9 +55,15 @@ export { I18nextProvider, useTranslation } from 'react-i18next'
 
 **`readSupportedLanguages` 的契约**：报告实例创建时钉住的受支持语言集，过滤掉 i18next 内部的 `cimode` 元语言；未钉住该集的实例返回空数组——`registerNamespace` 与 `switchLanguage` 都拒绝这种实例。
 
+**`overlayResources` 的契约**：按语言接收部分 bundle 的覆盖层。已有语言逐叶子深合并，改写一个在 base 中不存在的叶子即抛错；base 没有的语言整份收下，其完整性（全部键与该语言所需的复数形）由 `registerNamespace` 照常校验。base 与 overlay 都不被修改。抛错是升级信号：宿主的覆盖按旧键集书写，平台包删掉或改名一个叶子后，注册要在启动时失败而不是多出一个无人使用的键。
+
+**显示辅助函数的契约**：`resolveTimeZone` 走三级链（宿主给的已存值、设备时区、`UTC`），每一级 Intl 构造受守卫，拒绝的值按空值跳过；`formatInstant` 只经 Intl 渲染，`short`/`medium`/`long` 三档各自映射到固定的 dateStyle/timeStyle 组合，按语言、档位与时区缓存格式化器，空串、无法解析的值与 Intl 拒绝的语言答空串；`languageDisplayName` 经 `Intl.DisplayNames` 取界面语言里的名字，取不到即回到原标签。三个函数都从不抛错。
+
 ### 对外接口面
 
-`createI18n` 的选项、`registerNamespace` 的语义、入口的导出面（由 `index.test.ts` 的精确导出清单钉住），以及缺键纪律所依赖的实例选项（`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing: true`、始终安装的缺键处理器）和插值纪律（`interpolation.escapeValue: false`），是本包对消费方的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。入口的精确导出清单在新增导出时同步更新——那是本包的回归守卫，不是对消费方的破坏；扩展入口面要与 AGENTS、README 与测试在同一提交内更新。
+`createI18n` 的选项、`registerNamespace` 的语义、`overlayResources` 的语义、错误解析器的选项、入口的导出面（由 `index.test.ts` 的精确导出清单钉住），以及缺键纪律所依赖的实例选项（`fallbackLng: false`、`load: 'currentOnly'`、`saveMissing: true`、始终安装的缺键处理器）和插值纪律（`interpolation.escapeValue: false`），是本包对消费方的接口面。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。入口的精确导出清单在新增导出时同步更新——那是本包的回归守卫，不是对消费方的破坏；扩展入口面要与 AGENTS、README 与测试在同一提交内更新。
+
+**资源键是另一条兼容面**：新增叶子兼容；删除或改名不兼容——宿主的覆盖与补语言按旧键集书写，平台包一旦删键，宿主的注册即失败。这条规则由 `overlayResources` 的抛错与注册期的键集校验共同守住，不得为了让一次升级通过而放宽。
 
 ## 依赖
 
@@ -92,6 +104,9 @@ sequenceDiagram
 | 宿主实例 | `I18nInstance` | i18next 实例；每宿主一个，已安装 `initReactI18next` |
 | 创建选项 | `CreateI18nOptions` | 受支持集、默认语言、各协商源、缺键回调、回退命名空间；各协商源可注入 |
 | 资源包 | `ResourceBundle` | 语言到 bundle；bundle 是嵌套的字符串叶子 |
+| 资源覆盖 | `ResourceOverlay` | 语言到部分 bundle 的覆盖层；改写不存在的叶子即抛错 |
+| 错误解析选项 | `ErrorTextResolverOptions` | `httpFamily` 与 `fallthrough`；都不给时与既有约定一致 |
+| 显示时区 | 字符串 | 宿主解析出的 IANA 时区名；本包只解析与格式化，不持有 |
 | 存储面 | `StorageLike` | `getItem`/`setItem`；满足 localStorage 与宿主测试替身 |
 | 存储绑定 | 挂在实例自身上的私有记录 | 创建时解析的存储与键以包内注册符号为键挂在实例上，切换经同一绑定写；从实例派生的对象（如 `useTranslation` 交回的包装）连同其余自有属性一起携带它 |
 | 缺键详情 | `MissingKeyDetails` | 查找涉及的语言、命名空间、键 |
@@ -132,9 +147,15 @@ sequenceDiagram
 
 **回退命名空间是唯一允许的扩展，且是命名空间回退、从不是语言回退**：宿主经 `fallbackNamespaces` 点名被查命名空间缺键时改查的命名空间，每个被改查的命名空间都在同一协商语言下解析（`fallbackLng` 仍为 false，`load` 仍为 `currentOnly`），且已注册命名空间总覆盖全集，因而不可能供给另一种语言的文本。未设该选项即不配置任何回退命名空间。
 
+### 显示时区与时间格式化
+
+显示时区链由 `resolveTimeZone` 给出：宿主解析出的已存值（空或全空白视为未选）、设备时区、`UTC`，第一个被 Intl 接受的值胜出。链不落在本包的状态里——哪个界面用哪个时区是宿主与组件包的决定：控制台与对象存储的表格固定显式 `UTC`；通知与登录面、账户面的目标口径是读 ui-kit 的显示时区上下文（通知与登录面在上下文缺席时用设备时区；账户面以存下的偏好优先，上下文只替换链中的设备一级）。这一划分随各组件包的改动落地，当前组件包都还没有读取该上下文：通知与登录面用设备时区，账户面只用存下的偏好。ui-kit 的显示时区上下文是宿主把已解析值交给组件的接缝（见 [ui-kit](design-web-ui-kit.md)）。
+
+`formatInstant` 只经 Intl 渲染：`short`、`medium`、`long` 三档各自映射到固定的 dateStyle/timeStyle 组合（`short` 为短日期短时间、`medium` 为中等日期短时间、`long` 为中等日期带时区名的长时间），按语言、档位与时区缓存格式化器，一屏多行共用一个。空串、无法解析的文本、无效日期与 `NaN` 答空串；Intl 拒绝的语言同样答空串——一个坏值或一种坏语言从不抛进渲染。`languageDisplayName` 经 `Intl.DisplayNames` 给出标签在界面语言里的名字，取不到即回到原标签。
+
 ### 错误码到文本
 
-失败以码到达（API 信封的码、api-client 的传输码、分类器的坍缩目标），文本从码解析，而不是取自 API 的英文兜底消息（那仅供日志分诊）。约定：白名单内的码解析到 bundle 的 `errors` 段下它自己的叶子（`errors.<code>`，平台错误包与各包自带的 `errors` 段同用这一段），未列出的码解析到 `errors.unknown`。`createErrorTextResolver` 因此永不渲染裸键，缺译也不泄漏另一种语言的文本。共享错误码家族随本包交付，因为每个受保护表面都可能被它们答复；**共享码的文本住在各消费包自己的 bundle 里**，同层包不互相 import 文案。
+失败以码到达（API 信封的码、api-client 的传输码、分类器的坍缩目标），文本从码解析，而不是取自 API 的英文兜底消息（那仅供日志分诊）。约定：白名单内的码解析到 bundle 的 `errors` 段下它自己的叶子（`errors.<code>`，平台错误包与各包自带的 `errors` 段同用这一段）；`httpFamily` 配置时，`client.http.<status>` 族解析到该命名空间的参数化叶子、状态作为插值传入，`byStatus` 列出的状态改用自己的叶子；其余未列出的码，`fallthrough` 返回真时解析到 `errors.<code>`（由注册为回退命名空间的平台错误包供给文案），否则解析到 `errors.unknown`。两个选项都不给时行为与既有约定完全一致。`createErrorTextResolver` 因此永不渲染裸键，缺译也不泄漏另一种语言的文本。共享错误码家族随本包交付，因为每个受保护表面都可能被它们答复；**共享码的文本住在各消费包自己的 bundle 里**，同层包不互相 import 文案。
 
 ### 语言切换与持久化
 
@@ -158,9 +179,15 @@ sequenceDiagram
 | 叶子为空字符串 | `registerNamespace` 抛错，点名叶路径 |
 | 复数族缺某语言可选的类别 | `registerNamespace` 抛错，点名族、语言与缺的形 |
 | 某语言的复数类别无法解析（Intl 拒绝该标签） | `registerNamespace` 抛错，明说复数校验无法运行 |
+| 覆盖层改写 base 中不存在的叶子、或新增子树 | `overlayResources` 抛错，点名路径 |
+| 补语言与包内平台错误 bundle 的键集不一致 | `registerPlatformErrors` 抛错，点名缺失与多余的叶路径 |
+| 补语言已随包发布、或不在受支持集 | `registerPlatformErrors` 抛错，点名语言 |
 | `switchLanguage` 目标不受支持 | 抛错，列出受支持标签 |
 | 在未钉住受支持集的裸实例上注册或切换 | 抛错，点名用 `createI18n` 创建 |
 | `muiLocaleFor` 收到未知标签 | 抛错（直呼者想要主题装配期的响亮失败） |
+| 时间值不携带时刻、或语言不被 Intl 接受 | `formatInstant` 答空串，不抛错 |
+| 时区名不被 Intl 接受 | `isSupportedTimeZone` 答 false；`resolveTimeZone` 跳过该级 |
+| 标签取不到语言名 | `languageDisplayName` 答原标签 |
 | 缺键 | 渲染为键本身并触发缺键处理器；不抛错，不回落 |
 | 存储写失败 | 仅记可见告警，切换照常完成 |
 | 实例未携带存储绑定（不是 `createI18n` 创建的实例） | 仅记可见告警，切换照常完成 |
@@ -177,7 +204,7 @@ sequenceDiagram
 
 ## 扩展点
 
-- **新增一种语言。** 触及：`DEFAULT_SUPPORTED_LANGUAGES` 与 `DEFAULT_LANGUAGE` 的选择、`muiLocaleFor` 的映射（MUI 本地化必须存在）、每个命名空间的双语夹具、每份 bundle 里每个复数族的覆盖，以及键集与覆盖测试。一个语言只在每个命名空间都能覆盖它时才发布——部分支持在注册时被拒。
+- **新增一种语言。** 平台随包发布新语言时触及：`DEFAULT_SUPPORTED_LANGUAGES` 与 `DEFAULT_LANGUAGE` 的选择、`muiLocaleFor` 的映射（MUI 本地化必须存在）、每个命名空间的双语夹具、每份 bundle 里每个复数族的覆盖，以及键集与覆盖测试。宿主也可以为平台命名空间补整套语言：平台错误包经 `registerPlatformErrors` 的第二个参数补齐，包命名空间经 `overlayResources` 补齐；注册期的覆盖、键集与复数校验照常运行，覆盖规则本身不放宽（[ADR-web-host-language-sets-2026-10-19](../../../adr/adr-web-host-language-sets-2026-10-19.md)）。
 - **新增一个命名空间。** 消费包在自己的 `locales/` 下出 zh-CN 与 en-US、结构一致、无空串、每个复数族带齐类别，宿主在启动处注册一次。
 - **新增错误码家族。** 消费包组合自己的可达码与 `SESSION_LIFECYCLE_ERROR_CODES`、`CLIENT_TRANSPORT_ERROR_CODES`，把本命名空间的 `t` 绑进 `createErrorTextResolver`；在包内手搓键的构造会重新打开裸键与跨语言的缺口。
 
@@ -188,8 +215,11 @@ sequenceDiagram
 | 实例创建与语言协商链 | 已实现 | `web/packages/i18n/src/create.ts` `createI18n`；`web/packages/i18n/src/languages.ts` `detectLanguage`、`matchSupportedLanguage`、`normalizeLanguageTag`、`readSupportedLanguages` |
 | 语言切换与持久化 | 已实现 | `web/packages/i18n/src/create.ts` `switchLanguage`；`web/packages/i18n/src/storage.ts` `SPEED_LOCALE_STORAGE_KEY`、`StorageLike` |
 | 命名空间注册与校验 | 已实现 | `web/packages/i18n/src/register.ts` `registerNamespace`、`ResourceBundle` |
+| 注册前的资源覆盖 | 已实现 | `web/packages/i18n/src/overlay.ts` `overlayResources` |
 | 缺键纪律 | 已实现 | `web/packages/i18n/src/missing-key.ts` `defaultMissingKeyHandler`、`MissingKeyDetails` |
 | 错误码文本约定 | 已实现 | `web/packages/i18n/src/error-text.ts` `createErrorTextResolver`、`SESSION_LIFECYCLE_ERROR_CODES`、`CLIENT_TRANSPORT_ERROR_CODES` |
+| 显示时区与时间格式化 | 已实现 | `web/packages/i18n/src/time.ts` `resolveTimeZone`、`isSupportedTimeZone`、`formatInstant` |
+| 语言名 | 已实现 | `web/packages/i18n/src/language-name.ts` `languageDisplayName` |
 | MUI 本地化映射 | 已实现 | `web/packages/i18n/src/mui-locale.ts` `muiLocaleFor`、`MuiLocale` |
-| 平台错误文案包与注册 | 已实现 | `web/packages/i18n/src/platform-errors.ts` `PLATFORM_ERRORS_NAMESPACE`、`registerPlatformErrors` |
+| 平台错误文案包与注册 | 已实现 | `web/packages/i18n/src/platform-errors.ts` `PLATFORM_ERRORS_NAMESPACE`、`platformErrorResources`、`registerPlatformErrors` |
 | react 绑定再导出 | 已实现 | `web/packages/i18n/src/index.ts` `I18nextProvider`、`useTranslation` |
