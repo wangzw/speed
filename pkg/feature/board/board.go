@@ -29,7 +29,6 @@ package board
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -270,9 +269,9 @@ type board struct {
 	phase  phase
 	posted map[post]struct{}
 
-	// body is the frozen answer. Start writes it before Serve begins, and
+	// document is the frozen answer. Start writes it before Serve begins, and
 	// request handling reads it afterwards without a lock.
-	body []byte
+	document FeatureBoardDocument
 }
 
 // newBoard takes up the configuration and the optional logging capability.
@@ -352,7 +351,7 @@ func (b *board) wire(reg *core.Registry) error {
 		return fmt.Errorf("%s: taking up the authentication gateway: %w", ModuleName, err)
 	}
 
-	endpoint.Route(http.MethodGet, routePath, b.serve)
+	endpoint.Route(http.MethodGet, routePath, readOperation.Handle(b.read))
 	gate.Impersonable(b.endpoint, http.MethodGet, routePath)
 
 	// An impersonating identity reads the document like any other: the set is
@@ -406,11 +405,7 @@ func (b *board) seal(reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
-	body, err := json.Marshal(document{Features: names})
-	if err != nil {
-		return fmt.Errorf("%s: encoding the feature document: %w", ModuleName, err)
-	}
-	b.body = body
+	b.document = FeatureBoardDocument{Features: names}
 
 	if b.logger != nil {
 		b.logger.Info("feature set frozen",

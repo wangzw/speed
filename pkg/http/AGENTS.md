@@ -36,13 +36,34 @@ a leading or trailing slash, a `Version` that is not one literal segment, and a
 path that already carries the composed root.
 
 **A module may declare its operations instead of writing a fragment.** An
-`Operations` resource carries one `Operation` per route — method, path, summary,
-description, an `Input` struct of parameters, an optional request body and the
-responses — and `pkg/internal/openapigen` generates the fragment from it. The
-declaration types are plain structs and `reflect.Type` values, so this package
-still imports only the standard library. `ProblemDocument` is the declared JSON
-shape of the problem response, the counterpart of `Problem` (the value a handler
-fills in).
+`Operations` resource carries one `Operation[In, Out]` per route: method, path,
+summary, description and the response set, with `In` the handler's input and
+`Out` its success body. `Operation.Handle` accepts only
+`func(context.Context, In) (Out, error)`, and the returned entry-point handler
+binds `In` from the request's `path`/`query`/`header`/`cookie` tags and its
+`json`-tagged body fields, then writes the declared response. A handler
+therefore cannot read a parameter the declaration does not carry, and a body
+member the declaration does not describe is refused rather than dropped. A
+`Failure` returned by the handler names a status the operation must declare;
+an undeclared one is answered 500. `pkg/internal/openapigen` generates the
+fragment from the same descriptor.
+
+**Errors are declared too.** A module declares its shared answers once as a
+common failure set and merges them into each operation with
+`Failures(common, specific...)`: an operation's response replaces the common one
+of the same status and adds its own. A handler refuses with `Fault`, returned or
+panicked; the entry point writes it only when the operation declared that
+status, and answers 500 otherwise. The recovery layer honors a fault panic on a
+bound operation the same way; a fault panic on a route without a declaration is
+a defect. The error body's shape is a declaration as well: `ErrorShape` names
+the media type and type the entry point writes, defaulting to the problem
+document. A host delivering its own `ErrorResponder` declares that responder's
+shape in its error responses, so the contract keeps describing what is written.
+
+The declaration types are plain structs, `reflect.Type` values and one generic
+handler signature, so this package still imports only the standard library.
+`ProblemDocument` is the declared JSON shape of the problem response, the
+counterpart of `Problem` (the value a handler fills in).
 
 The API is the package's godoc, plus the runnable examples in `example_test.go`.
 Read `Middleware`'s field comments before adding a seat to a layer.

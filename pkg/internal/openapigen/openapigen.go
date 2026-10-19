@@ -39,7 +39,8 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 		jsonschema.InterceptDefName(func(t reflect.Type, _ string) string { return t.Name() }))
 	r.Spec.Info.WithTitle(title).WithVersion(version)
 
-	for _, operation := range operations {
+	for _, declared := range operations {
+		operation := declared.Descriptor()
 		ctx, err := r.NewOperationContext(operation.Method, ginPathToOpenAPI(operation.Path))
 		if err != nil {
 			return nil, fmt.Errorf("openapigen: %s %s: %w", operation.Method, operation.Path, err)
@@ -49,14 +50,21 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 		ctx.SetDescription(operation.Description)
 
 		if operation.Input != nil {
-			ctx.AddReqStructure(instance(operation.Input))
-		}
-		if operation.Request != nil {
-			ctx.AddReqStructure(instance(operation.Request.Structure),
-				openapi.WithContentType(operation.Request.MediaType))
+			if operation.RequestMediaType != "" {
+				ctx.AddReqStructure(instance(operation.Input),
+					openapi.WithContentType(operation.RequestMediaType))
+			} else {
+				ctx.AddReqStructure(instance(operation.Input))
+			}
 		}
 		for _, response := range operation.Responses {
-			addResponse(ctx, response)
+			structure := reflect.Type(nil)
+			if response.Status == operation.SuccessStatus {
+				structure = operation.SuccessBody
+			} else if response.Body != nil {
+				structure = response.Body.Structure
+			}
+			addResponse(ctx, response, structure)
 		}
 		if err := r.AddOperation(ctx); err != nil {
 			return nil, fmt.Errorf("openapigen: %s %s: %w", operation.Method, operation.Path, err)
@@ -70,13 +78,14 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 	return normalise(raw)
 }
 
-// addResponse adds one declared answer to the operation.
-func addResponse(ctx openapi.OperationContext, response speedhttp.Response) {
+// addResponse adds one declared answer to the operation. structure is the
+// answer's body type, or nil when it answers no body.
+func addResponse(ctx openapi.OperationContext, response speedhttp.Response, structure reflect.Type) {
 	options := []openapi.ContentOption{func(cu *openapi.ContentUnit) {
 		cu.HTTPStatus = response.Status
 		cu.Description = response.Description
 	}}
-	if response.Headers != nil {
+	if len(response.Headers) > 0 {
 		headers := responseHeaders(response.Headers)
 		options = append(options, openapi.WithCustomize(func(cor openapi.ContentOrReference) {
 			resp, ok := cor.(*openapi31.ResponseOrReference)
@@ -88,44 +97,27 @@ func addResponse(ctx openapi.OperationContext, response speedhttp.Response) {
 			}
 		}))
 	}
-	if response.Body != nil {
-		options = append(options, openapi.WithContentType(response.Body.MediaType))
-		ctx.AddRespStructure(instance(response.Body.Structure), options...)
+	if structure == nil {
+		ctx.AddRespStructure(nil, options...)
 		return
 	}
-	// A response with no body still needs an answer entry: the library adds
-	// one from a nil structure, with the description and the status.
-	ctx.AddRespStructure(nil, options...)
+	if response.Body != nil {
+		options = append(options, openapi.WithContentType(response.Body.MediaType))
+	}
+	ctx.AddRespStructure(instance(structure), options...)
 }
 
-// responseHeaders maps a declaration struct to the response's header entries.
-func responseHeaders(structure reflect.Type) map[string]openapi31.HeaderOrReference {
-	headers := map[string]openapi31.HeaderOrReference{}
-	for i := 0; i < structure.NumField(); i++ {
-		field := structure.Field(i)
-		name := field.Tag.Get("header")
-		if name == "" {
-			continue
-		}
-		description := field.Tag.Get("description")
-		headers[name] = openapi31.HeaderOrReference{Header: &openapi31.Header{
+// responseHeaders maps the declared headers to the response's header entries.
+func responseHeaders(headers []speedhttp.Header) map[string]openapi31.HeaderOrReference {
+	out := map[string]openapi31.HeaderOrReference{}
+	for _, header := range headers {
+		description := header.Description
+		out[header.Name] = openapi31.HeaderOrReference{Header: &openapi31.Header{
 			Description: &description,
-			Schema:      map[string]interface{}{"type": schemaType(field.Type)},
+			Schema:      map[string]interface{}{"type": "string"},
 		}}
 	}
-	return headers
-}
-
-// schemaType names the JSON schema type of one header field.
-func schemaType(t reflect.Type) string {
-	switch t.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return "integer"
-	case reflect.Bool:
-		return "boolean"
-	default:
-		return "string"
-	}
+	return out
 }
 
 // instance returns a zero value of t to hand the reflector.

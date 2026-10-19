@@ -19,13 +19,19 @@ failure path.
   serves a frontend.
 - `Resources`: the configuration schema, a `speedhttp.Spec` and an
   `http.Operations` declaration. `operations.go` declares the one operation —
-  method, relative path, summary, description and responses — and
-  `openapi/board.json` is **generated** from it by `pkg/internal/openapigen`,
-  never written by hand. The `Spec` gives the fragment's API root (`api` /
+  method, relative path, summary, description and responses — and binds the
+  handler's types (`Operation[struct{}, FeatureBoardDocument]`), so the entry
+  point supplies the (empty) input and writes the declared 200;
+  `openapi/board.json` is **generated** from the same declaration by
+  `pkg/internal/openapigen`, never written by hand. The `Spec` gives the fragment's API root (`api` /
   `v1`) and the conventional endpoint name `account`; the mounting resolves
   the same declaration's path against that root, so route and document are one
   source. The fragment's endpoint name and the configured one are separately
   maintained facts.
+
+  The 401 is the module's common failure: it is declared once in
+  `commonFailures` and merged into the operation with `Failures`, the same way
+  every route on an endpoint that the authentication gateway guards shares it.
 
   Regenerate the fragment after changing the declaration:
 

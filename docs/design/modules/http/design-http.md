@@ -186,7 +186,11 @@ type Spec struct {
 
 **片段的 paths 是相对写法。** 一条路由的完整路径由读取方拼出：`Prefix` 与 `Version` 非空的部分以 `/` 连成 API 根（`api` 加 `v1` 是 `/api/v1`），再接片段里的 path（`/auth/me`），得 `/api/v1/auth/me`。斜杠由读取方插入，声明里不写前导或尾随斜杠。**版本段由模块自己声明**：同一个模块开始服务第二版时，它为那一版再声明一个 `Spec`，两版的片段各带自己的 `Version`。**`Prefix` 是端点属性，同样由模块声明**：它是这个端点服务 API 的路径，与宿主配置里的认领前缀是两份各自维护的事实，本模块不解释、也不核对它们一致。
 
-**片段可以由 operation 声明生成。** 模块在 `Resources` 里再声明一份 `http.Operations`：每条 operation 带方法、相对路径、参数、请求与响应 DTO 及其描述，字段说明写在结构体 tag 上。`pkg/internal/openapigen` 把这些声明生成为片段，桥接 `swaggest/openapi-go` 做 JSON Schema 反射与 OpenAPI 3.1 组装；片段因此是构建产物，不是手写文件，生成结果与提交的片段不一致即生成测试失败。迁移按模块进行，尚未迁移的模块继续手写片段。`Spec` 给片段的文档与 API 根，`Operations` 给文档的内容；两者都在 `Resources` 里静态声明，都不参与路由（[ADR-http-openapi-generation-2026-10-18](../../../adr/adr-http-openapi-generation-2026-10-18.md)）。
+**片段可以由 operation 声明生成，声明同时绑定 handler。** 模块在 `Resources` 里再声明一份 `http.Operations`：每条 operation 是 `http.Operation[In, Out]`，带方法、相对路径、描述与应答集；`In` 与 `Out` 是 handler 的输入与成功应答类型。handler 经 `Operation.Handle` 绑定，签名必须是 `func(context.Context, In) (Out, error)`——别的签名编译不过。**入口模块负责把请求变成 `In`、把 `Out` 写成声明的成功应答**：参数从 `In` 的 `path`/`query`/`header`/`cookie` tag 绑定，请求体从 `json` tag 解码（未知成员拒绝），因此 handler 拿不到请求本身，读不到声明没带的参数，也写不出声明没描述的字段。handler 返回的错误经 `Failure` 接口给出状态，且只在该状态已声明时才写出，否则答 500。
+
+**错误应答由公共集加覆盖声明。** 模块把一组 `Response` 作为公共失败集，`Failures(common, specific...)` 按状态合并：operation 同名状态的应答覆盖公共应答，任一侧独有的状态被加入。`Fault` 承载状态、问题类型、标题与详情，handler 可以返回它，也可以 `panic` 它；入口模块只写出该 operation 声明过的状态，未声明的一律 500。恢复层把携带 Problem 的 panic 只在该状态已声明时当作拒绝写出，其余 panic 仍按缺陷处理。**错误体形状是一份声明**（`ErrorShape`）：默认是 RFC 9457 问题文档；宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的错误应答，片段因此描述真正会写出的内容（[ADR-http-failure-responses-2026-10-19](../../../adr/adr-http-failure-responses-2026-10-19.md)）。
+
+`pkg/internal/openapigen` 从同一份声明生成片段，桥接 `swaggest/openapi-go` 做 JSON Schema 反射与 OpenAPI 3.1 组装；片段因此是构建产物，生成结果与提交的片段不一致即生成测试失败。迁移按模块进行，尚未迁移的模块继续手写片段。`Spec` 给片段的文档与 API 根，`Operations` 给文档的内容；两者都在 `Resources` 里静态声明，都不参与路由（[ADR-http-openapi-generation-2026-10-18](../../../adr/adr-http-openapi-generation-2026-10-18.md)）。
 
 `Spec` 不参与路由。它供文档合并、网关配置与权限清单这些发生在装配之外的用途读取，与实际登记是两份各自维护的事实（[ADR-http-routing-2026-09-14](../../../adr/adr-http-routing-2026-09-14.md)）。读取方用 `core.Resources[http.Spec](reg)` 取得全部片段，每一份都带着声明它的模块名，合并冲突因而能点到来源。**本模块交付的片段由运行面 [ops](../design-ops.md) 合并并发布，它取可用集、不做减法**（见 [ops](../design-ops.md) 的取材域与 [ADR-ops-spec-reader-2026-10-15](../../../adr/adr-ops-spec-reader-2026-10-15.md)）。
 

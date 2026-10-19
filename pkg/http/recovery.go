@@ -75,6 +75,24 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 			if err, isErr := thrown.(error); isErr && errors.Is(err, nethttp.ErrAbortHandler) {
 				panic(thrown)
 			}
+			// A handler may refuse by panicking with a fault it declared; that is
+			// a deliberate answer, not a defect, so it is written without a
+			// stack and only when the operation declared its status. A fault on
+			// a route with no declaration, or a status it did not declare, is a
+			// defect like any other panic.
+			if fault, ok := thrown.(interface{ Problem() Problem }); ok {
+				if statuses, declared := c.Get(declaredFailuresContextKey); declared {
+					set, _ := statuses.(map[int]struct{})
+					if _, ok := set[fault.Problem().Status]; ok {
+						c.Abort()
+						if responderFrom(c.Request.Context()) == nil {
+							discardRepresentationHeaders(c.Writer.Header())
+						}
+						Fail(c, fault.Problem())
+						return
+					}
+				}
+			}
 			// The stack is taken here, at the recover point, so it is the stack
 			// of this request rather than of a rethrow further out.
 			log.FromContext(c.Request.Context()).Error("a request panicked and the endpoint's recovery layer caught it",

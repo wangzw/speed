@@ -15,11 +15,6 @@ type document struct {
 	Items []string `json:"items" required:"true" description:"The items."`
 }
 
-// headers is one answer's headers.
-type headers struct {
-	CacheControl string `header:"Cache-Control" description:"Always no-store."`
-}
-
 // query is one operation's parameters.
 type query struct {
 	Limit int    `query:"limit" minimum:"0" description:"Page size."`
@@ -42,11 +37,10 @@ func generate(t *testing.T, operations speedhttp.Operations) map[string]interfac
 // TestAPathParameterIsRewritten pins the gin-to-OpenAPI spelling: a declared
 // route writes ":id" and the document writes "{id}".
 func TestAPathParameterIsRewritten(t *testing.T) {
-	doc := generate(t, speedhttp.Operations{{
-		ID: "the.module.read", Method: http.MethodGet, Path: "/items/:id",
-		Input:     reflect.TypeOf(query{}),
-		Responses: []speedhttp.Response{{Status: 204, Description: "No content"}},
-	}})
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[query, struct{}](
+		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
 	paths := doc["paths"].(map[string]interface{})
 	if _, ok := paths["/items/{id}"]; !ok {
 		t.Fatalf("the document has no /items/{id} path: %v", paths)
@@ -57,11 +51,10 @@ func TestAPathParameterIsRewritten(t *testing.T) {
 // and their tags become parameters, a path parameter is required, and the
 // library's duplicated schema description is removed.
 func TestParametersComeFromTheInputStruct(t *testing.T) {
-	doc := generate(t, speedhttp.Operations{{
-		ID: "the.module.read", Method: http.MethodGet, Path: "/items/:id",
-		Input:     reflect.TypeOf(query{}),
-		Responses: []speedhttp.Response{{Status: 204, Description: "No content"}},
-	}})
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[query, struct{}](
+		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
 	params := operationOf(t, doc)["parameters"].([]interface{})
 	byName := map[string]map[string]interface{}{}
 	for _, raw := range params {
@@ -86,14 +79,14 @@ func TestParametersComeFromTheInputStruct(t *testing.T) {
 // TestResponseHeadersComeFromTheTags holds the header surface and the removal
 // of the library's default header style.
 func TestResponseHeadersComeFromTheTags(t *testing.T) {
-	doc := generate(t, speedhttp.Operations{{
-		ID: "the.module.read", Method: http.MethodGet, Path: "/items",
-		Responses: []speedhttp.Response{{
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]speedhttp.Response{{
 			Status: 200, Description: "The items",
-			Headers: reflect.TypeOf(headers{}),
-			Body:    &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(document{})},
+			Headers: []speedhttp.Header{{Name: "Cache-Control", Description: "Always no-store.", Value: "no-store"}},
+			Body:    &speedhttp.Body{MediaType: "application/json"},
 		}},
-	}})
+	)})
 	response := operationOf(t, doc)["responses"].(map[string]interface{})["200"].(map[string]interface{})
 	header := response["headers"].(map[string]interface{})["Cache-Control"].(map[string]interface{})
 	if header["description"] != "Always no-store." {
@@ -107,13 +100,13 @@ func TestResponseHeadersComeFromTheTags(t *testing.T) {
 // TestNullIsDroppedFromTypes holds the platform's shape: no published field is
 // declared nullable even though a Go slice reflects as one.
 func TestNullIsDroppedFromTypes(t *testing.T) {
-	doc := generate(t, speedhttp.Operations{{
-		ID: "the.module.read", Method: http.MethodGet, Path: "/items",
-		Responses: []speedhttp.Response{{
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]speedhttp.Response{{
 			Status: 200, Description: "The items",
-			Body: &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(document{})},
+			Body: &speedhttp.Body{MediaType: "application/json"},
 		}},
-	}})
+	)})
 	schema := component(t, doc, "document")
 	items := schema["properties"].(map[string]interface{})["items"].(map[string]interface{})
 	if kind, ok := items["type"].([]interface{}); ok {
@@ -127,13 +120,15 @@ func TestNullIsDroppedFromTypes(t *testing.T) {
 // TestTheProblemDocumentIsPublishedAsProblem holds the shared component's
 // name: every problem response references one component called Problem.
 func TestTheProblemDocumentIsPublishedAsProblem(t *testing.T) {
-	doc := generate(t, speedhttp.Operations{{
-		ID: "the.module.read", Method: http.MethodGet, Path: "/items",
-		Responses: []speedhttp.Response{{
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]speedhttp.Response{{
+			Status: 204, Description: "No content",
+		}, {
 			Status: 401, Description: "No identity",
 			Body: &speedhttp.Body{MediaType: "application/problem+json", Structure: reflect.TypeOf(speedhttp.ProblemDocument{})},
 		}},
-	}})
+	)})
 	schemas := doc["components"].(map[string]interface{})["schemas"].(map[string]interface{})
 	if _, ok := schemas["Problem"]; !ok {
 		t.Fatalf("the components carry no Problem schema: %v", schemas)
@@ -152,10 +147,10 @@ func TestTheProblemDocumentIsPublishedAsProblem(t *testing.T) {
 // TestTheSameDeclarationsGiveTheSameBytes holds determinism: the merged
 // contract is a build artifact, so generating twice must not differ.
 func TestTheSameDeclarationsGiveTheSameBytes(t *testing.T) {
-	operations := speedhttp.Operations{{
-		ID: "the.module.read", Method: http.MethodGet, Path: "/items",
-		Responses: []speedhttp.Response{{Status: 204, Description: "No content"}},
-	}}
+	operations := speedhttp.Operations{speedhttp.NewOperation[struct{}, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)}
 	first, err := Generate("the.module", "1.0.0", operations)
 	if err != nil {
 		t.Fatalf("generating: %v", err)
@@ -192,4 +187,38 @@ func component(t *testing.T, doc map[string]interface{}, name string) map[string
 		t.Fatalf("the components carry no %s schema: %v", name, schemas)
 	}
 	return schema
+}
+
+// customError is an error body in a host's own shape.
+type customError struct {
+	Code string `json:"code" required:"true" description:"The host's error code."`
+}
+
+// TestACustomErrorShapeIsPublishedAsDeclared holds the seam a host uses to
+// replace the error response: the declared media type and structure are what
+// the fragment carries, with no problem document assumed.
+func TestACustomErrorShapeIsPublishedAsDeclared(t *testing.T) {
+	shape := speedhttp.ErrorShape{
+		MediaType: "application/vnd.test.error+json",
+		Structure: reflect.TypeOf(customError{}),
+	}
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", "",
+		[]speedhttp.Response{
+			{Status: 204, Description: "No content"},
+			speedhttp.ErrorResponse(shape, 409, "Conflict"),
+		},
+	)})
+	response := operationOf(t, doc)["responses"].(map[string]interface{})["409"].(map[string]interface{})
+	content := response["content"].(map[string]interface{})
+	if _, ok := content["application/vnd.test.error+json"]; !ok {
+		t.Fatalf("the conflict carries %v, want the declared media type", content)
+	}
+	schemas := doc["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+	if _, ok := schemas["customError"]; !ok {
+		t.Errorf("the components carry no customError schema: %v", schemas)
+	}
+	if _, ok := schemas["Problem"]; ok {
+		t.Errorf("a problem document was published for a custom shape: %v", schemas)
+	}
 }

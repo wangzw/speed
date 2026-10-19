@@ -121,7 +121,7 @@ core.Module{
 
 **配置。** `feature.board.endpoint`：单个端名，只从主配置源取值，必填，无缺省。缺席即 `Prepare` 以 `config.ErrMissingRequired` 失败，错误以完整路径点名这一项。
 
-**片段。** `Resources` 里的 `Operations` 声明唯一一条 operation `feature.board.list`，`Spec` 以 `openapi/board.json` 为它的文档；片段由声明生成，不是手写文件（[ADR-http-openapi-generation-2026-10-18](../../adr/adr-http-openapi-generation-2026-10-18.md)）。资源是 `init` 期的静态声明，写不进配置点名的端，片段因而按约定的端名 `account` 声明；挂载用配置点名的端，两者各自维护，与 [http](http/design-http.md) 对 `Spec` 的口径相同。
+**片段。** `Resources` 里的 `Operations` 声明唯一一条 operation `feature.board.list`，并绑定 handler 的类型（输入为空、成功应答是特性文档）；`Spec` 以 `openapi/board.json` 为它的文档，片段由同一份声明生成，不是手写文件（[ADR-http-openapi-generation-2026-10-18](../../adr/adr-http-openapi-generation-2026-10-18.md)）。handler 不接触请求：`no-store` 与状态来自声明的应答。资源是 `init` 期的静态声明，写不进配置点名的端，片段因而按约定的端名 `account` 声明；挂载用配置点名的端，两者各自维护，与 [http](http/design-http.md) 对 `Spec` 的口径相同。
 
 **路由。** 本模块在 `feature.board.endpoint` 点名的端上挂 `GET /api/v1/features`，并在 `Init` 登记：
 

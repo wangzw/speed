@@ -268,7 +268,7 @@ func boardOf(t *testing.T, reg *core.Registry) *board {
 // decodeBody reads the frozen answer's names.
 func decodeBody(t *testing.T, body []byte) []string {
 	t.Helper()
-	var doc document
+	var doc FeatureBoardDocument
 	if err := json.Unmarshal(body, &doc); err != nil {
 		t.Fatalf("decoding the frozen answer %q: %v", body, err)
 	}
@@ -364,7 +364,7 @@ func TestTheFrozenSetFollowsTheEnabledSetAndThePostingWindow(t *testing.T) {
 			{Name: "c2.app"},
 		},
 		action: func(reg *core.Registry) error {
-			got = decodeBody(t, boardOf(t, reg).body)
+			got = boardOf(t, reg).document.Features
 			return nil
 		},
 	}
@@ -513,8 +513,8 @@ func TestTheAnswerCarriesNoStoreAndAnOrderedUniqueSet(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
 		t.Errorf("GET %s carries Cache-Control %q, want no-store", routePath, got)
 	}
-	if got := rec.Header().Get("Content-Type"); got != "application/json" {
-		t.Errorf("GET %s carries Content-Type %q, want application/json", routePath, got)
+	if got := rec.Header().Get("Content-Type"); strings.SplitN(got, ";", 2)[0] != "application/json" {
+		t.Errorf("GET %s carries Content-Type %q, want the application/json media type", routePath, got)
 	}
 	got := decodeBody(t, rec.Body.Bytes())
 	if want := []string{"f.one", "f.two"}; !slices.Equal(got, want) {
