@@ -76,6 +76,7 @@ import { useAppServices } from './app-services.js'
 import {
   AppBrand,
   DEFAULT_TENANT_ID,
+  DEMO_TENANTS,
   getCurrentTenantId,
   HeaderActions,
   setCurrentTenantId,
@@ -521,11 +522,16 @@ function TenantFrame({
         // identifier prefix tells them apart. A personal tenant belongs to
         // one account and answers a staff viewer 404; it also sorts before
         // most deployment identifiers ('p' < 't', 'z'), so without this the
-        // first active row would often be a stranger's personal space.
+        // first active row would often be a stranger's personal space. The
+        // default must also be a tenant the switcher offers: the switcher
+        // lists the placeholder's tenants alone, so a row outside that list
+        // would leave the caller in a tenant the bar cannot name and the
+        // switcher cannot leave, with every tenant-scoped request refused.
         const first = answer.tenants.find(
           (tenant) =>
             tenant.status === 'active' &&
-            !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX),
+            !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX) &&
+            DEMO_TENANTS.some((option) => option.id === tenant.id),
         )
         setTenantId(first?.id ?? DEFAULT_TENANT_ID)
         setRosterSettled(true)

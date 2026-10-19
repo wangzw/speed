@@ -52,16 +52,20 @@ describe('the announced tenant, once the roster is read', () => {
     expect(getCurrentTenantAlias()).toBe('acme-inc')
   })
 
-  it('chooses the first active tenant that is not a personal tenant', async () => {
+  it('chooses the first active tenant the switcher offers, skipping personal tenants', async () => {
     // The roster is ordered by identifier, so a personal tenant ('personal-')
     // sorts before most deployment tenants. It belongs to one account and
-    // would refuse a staff viewer, so the default must skip it.
+    // would refuse a staff viewer, so the default must skip it. The default
+    // must also stay inside the placeholder's list, which is all the switcher
+    // offers: a roster tenant outside it would leave the caller in a tenant
+    // the bar cannot name and the switcher cannot leave.
     const request: RequestFn = async <T>(path: string): Promise<T> => {
       if (path === '/api/v1/tenant/admin/tenants') {
         return {
           tenants: [
             { id: 'personal-abc', alias: 'personal-abc', status: 'active' },
-            { id: 'tenant-main', alias: 'tenant-main', status: 'active' },
+            { id: 'accept-tenant', alias: 'accept-tenant', status: 'active' },
+            { id: 'acme', alias: 'acme', status: 'active' },
           ],
         } as T
       }
@@ -72,8 +76,8 @@ describe('the announced tenant, once the roster is read', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     await waitFor(() => {
-      expect(getCurrentTenantId()).toBe('tenant-main')
+      expect(getCurrentTenantId()).toBe('acme')
     })
-    expect(getCurrentTenantAlias()).toBe('tenant-main')
+    expect(getCurrentTenantAlias()).toBe('acme')
   })
 })
