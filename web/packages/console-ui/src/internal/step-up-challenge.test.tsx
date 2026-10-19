@@ -163,7 +163,9 @@ describe('StepUpChallenge', () => {
       />,
     )
     // The flow offers the factor; choosing it starts the code challenge.
-    await user.click(await screen.findByRole('button', { name: 'totp' }))
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
+    )
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
     await vi.waitFor(() => {
@@ -428,7 +430,9 @@ describe('StepUpChallenge', () => {
 
     // The flow settles the elevation and the host closes the dialog, as it
     // does after a won challenge.
-    await user.click(await screen.findByRole('button', { name: 'totp' }))
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.stepUp.factorKind.totp }),
+    )
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
     await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))

@@ -17,7 +17,7 @@
 
 包按下列各条轴划分，各条轴同时成立。
 
-**按层。** `tokens` 与 `i18n` 处于底层，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开面——`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import，provider 词表按约定复制）。
+**按层。** `tokens` 与 `i18n` 处于底层，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开面——`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
 
 **按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户面、`console-ui` 对租户与设置与审计三个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个面。判据是每个能力 UI 包都是某个后端能力在浏览器里的面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
@@ -139,7 +139,7 @@ interface SpeedAppDefinition {
 | `objectstore-ui` | 对象存储能力面：对象页（列表、上传、下载、删除、详情） | `ui-kit`、`i18n`、`api-sdk`、`auth-core` |
 | `notification-ui` | 站内通知面：未读铃铛、收件箱与已读、偏好矩阵、实时订阅与声明式入口 | `ui-kit`、`i18n`、`auth-core`、`api-sdk`、`api-client` |
 
-**`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自定义 provider 词表。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
+**`api-sdk` 是唯一 import 后端契约的包**，它只依赖 `api-client` 的请求函数类型，本身不 import 任何 UI 包。**`api-client` 不依赖任何同族包**，也不认识 tenant。**能力 UI 包之间同层不互依赖**：`auth-ui` 与 `account-ui` 各自只在内部保有 provider 标签回退词表，不共享类型。**`route-kit` 与 `product-shell` 都不 import 对方**，两者由应用的组合层分别消费。
 
 **`billing-ui` 不在新树里。** 后端不做计费，对应的前端包随早期实现一并删除，不进本模块的包清单（[ADR-web-reuse-2026-10-15](../../../adr/adr-web-reuse-2026-10-15.md)）。
 

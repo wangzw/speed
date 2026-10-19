@@ -26,6 +26,11 @@
  *  - `complete`: a single confirm that takes the flow's result with
  *    `step: 'complete'`.
  *  - `redirect`: an external URL; the component never navigates.
+ *
+ * Factor and enroll labels follow the family's guarded vocabulary rule: a
+ * kind the bundle has wording for renders its translated name, an unknown
+ * one renders the kind as given (the deployment's own vocabulary), and a
+ * factor option's server-supplied label wins over both.
  */
 
 import { useState } from 'react'
@@ -39,6 +44,22 @@ import type { AuthnStep } from '@speed/auth-core'
 import type { AuthnFlowAnswer } from '@speed/auth-core'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import { useConsoleUiTranslation } from './translation.js'
+
+/** The factor/enroll kinds the family has wording for. A known kind
+ * renders its translated name; an unknown one renders the kind's own
+ * name (the deployment's vocabulary, shown as given). A factor option's
+ * server-supplied label wins over both. */
+const FACTOR_KIND_KEYS: Readonly<Record<string, string>> = {
+  totp: 'stepUp.factorKind.totp',
+  webauthn: 'stepUp.factorKind.webauthn',
+  sms: 'stepUp.factorKind.sms',
+}
+
+/** A factor kind's display label (see the vocabulary above). */
+function factorKindLabel(kind: string, t: (key: string) => string): string {
+  const key = FACTOR_KIND_KEYS[kind]
+  return key === undefined ? kind : t(key)
+}
 
 export interface FlowStepProps {
   /** The step to render. */
@@ -106,7 +127,7 @@ export function FlowStep({
             variant="outlined"
             onClick={() => onSubmit({ step: 'factor', input: { factor: factor.id } })}
           >
-            {factor.label ?? factor.kind}
+            {factor.label ?? factorKindLabel(factor.kind, t)}
           </Button>
         ))}
       </Box>
@@ -123,7 +144,7 @@ export function FlowStep({
             variant="outlined"
             onClick={() => onSubmit({ step: 'enroll', input: { kind } })}
           >
-            {kind}
+            {factorKindLabel(kind, t)}
           </Button>
         ))}
       </Box>

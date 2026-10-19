@@ -89,6 +89,11 @@
     "description": "该操作要求更强或更新的身份验证，请先完成一次验证。",
     "starting": "正在开始验证…",
     "submit": "验证",
+    "factorKind": {
+      "totp": "身份验证器应用",
+      "webauthn": "通行密钥",
+      "sms": "短信"
+    },
     "cannotElevate": "本部署无法完成此次升级，请重新登录以获得更高的验证强度。",
     "relogin": "重新登录",
     "codeLabel": "验证码",
