@@ -20,7 +20,8 @@
  * The anchor is the clicked element's nearest `a` ancestor, so a click on
  * a child of the link is judged the same as one on the link itself.
  *
- * `@speed/console-ui` will consume this function. `@speed/route-kit` keeps
+ * `@speed/console-ui` consumes this function: its navigation entries and
+ * in-page links judge a click with it before routing in place. `@speed/route-kit` keeps
  * a private variant by design: that package is independent of every
  * sibling package and must not import this one. The variant is stricter
  * than this function -- it requires `button` to be exactly `0` (an absent

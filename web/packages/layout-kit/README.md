@@ -159,7 +159,7 @@ onClick={(event) => {
 }}
 ```
 
-`@speed/console-ui` will consume this function. `@speed/route-kit` keeps a
+`@speed/console-ui` consumes this function. `@speed/route-kit` keeps a
 private variant by design -- it is independent of every sibling package and
 must not import this one -- and that variant is deliberately stricter:
 `button` must be exactly `0` (an absent value is rejected rather than read

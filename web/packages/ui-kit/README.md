@@ -1235,9 +1235,8 @@ what is re-read. `label` is the visible text -- callers pass their own
 package's existing translation, and the ui-kit namespace's
 `refreshButton.label` is the default.
 
-> The console package's internal `refresh-button.tsx` and
-> `use-page-refresh.ts` copies are scheduled for removal in the batch that
-> switches the console to these exports.
+> The console package consumes these exports (`RefreshButton`,
+> `usePageRefresh`); it keeps no copy of its own.
 
 ### CopyButton and OneTimeValuePanel (a value handed out once)
 

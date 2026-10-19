@@ -86,7 +86,7 @@ export function isPlainPrimaryClick(event: React.MouseEvent | MouseEvent): boole
 ```
 
 - **内嵌导航的「普通主键点击」判定。** 只在四项条件全部成立时返回真：主键（`button` 为 `0`，或事件不带该值）、无 ctrl/meta/shift/alt 修饰键、事件未被先前的处理器 `defaultPrevented`、激活所在的最近 `a` 元素既无 `target="_blank"`（按浏览器语义不区分大小写）也无 `download` 属性。链接组件据此决定是否接管一次点击（`preventDefault` 后原地路由）：带修饰键的点击、中键、新标签链接与下载链接保留浏览器自身行为。判定取点击目标最近的锚点祖先，点在链接的子元素上与点在链接上同判。
-- **`@speed/console-ui` 的导航点击将取用本函数；`@speed/route-kit` 按设计保留一份私有的变体。** 后者独立于全部同级包，不 import 本包。该变体比本函数更严格：`button` 必须恰为 `0`（缺值即拒绝，不视为主键），且除缺失、空串与 `_self` 外的任何 `target` 都判为非普通点击，`_top`、`_parent` 与具名窗口一概交给浏览器；本函数只拒绝 `target="_blank"`，并把缺 `button` 值的事件视为主键。任一方判定的条件改动，须在同一改动中同步到两份副本。
+- **`@speed/console-ui` 的导航点击取用本函数；`@speed/route-kit` 按设计保留一份私有的变体。** 后者独立于全部同级包，不 import 本包。该变体比本函数更严格：`button` 必须恰为 `0`（缺值即拒绝，不视为主键），且除缺失、空串与 `_self` 外的任何 `target` 都判为非普通点击，`_top`、`_parent` 与具名窗口一概交给浏览器；本函数只拒绝 `target="_blank"`，并把缺 `button` 值的事件视为主键。任一方判定的条件改动，须在同一改动中同步到两份副本。
 
 ### Avatar
 

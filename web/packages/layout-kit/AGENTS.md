@@ -60,7 +60,7 @@ rule. The public surface is `src/index.ts`; everything under
   uncontrolled temporary drawer, reports through `onMobileOpenChange`
   when the drawer is controlled, and is a no-op for the permanent drawer.
 - **`isPlainPrimaryClick` is shared by convention, not by dependency.**
-  `@speed/console-ui` will consume it; `@speed/route-kit` keeps a
+  `@speed/console-ui` consumes it; `@speed/route-kit` keeps a
   private variant because that package is independent of
   every sibling package and must not import this one. The variant is
   deliberately stricter: `button` must be exactly `0` (this function

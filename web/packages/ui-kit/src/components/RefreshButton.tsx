@@ -43,9 +43,7 @@
  * translation so the control keeps their wording; the ui-kit namespace's
  * `refreshButton.label` is the default.
  *
- * The console package's internal copy
- * (`console-ui/src/internal/refresh-button.tsx`) is scheduled for
- * removal in the batch that switches the console to this export.
+ * The console renders this control; the package keeps no copy of its own.
  */
 
 import { useId } from 'react'
@@ -89,9 +87,8 @@ export interface RefreshButtonProps {
 }
 
 /**
- * The shared refresh control (see the file header). The console package's
- * internal copy is scheduled for removal when the console switches to
- * this export.
+ * The shared refresh control (see the file header), rendered by the
+ * console's pages.
  */
 export function RefreshButton({
   busy,

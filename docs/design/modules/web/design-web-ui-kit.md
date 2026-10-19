@@ -283,7 +283,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 **控件把三种状态分开。** 读忙态是 `aria-busy` 加可聚焦（见「异步读的状态分支」）；写入在途是原生禁用且不带说明；寻址取值为空是原生禁用并带页面自己的选择提示。可见文字由调用方传入本包既有译文键（console 为 `common.refresh`、objectstore 为 `page.refresh`），本包只在调用方未传时用 `refreshButton.label`；`ariaLabel` 供重读对象比页面更具体的场合，且必须以可见文字起头。
 
-console-ui 仍保留 `internal/refresh-button.tsx` 与 `internal/use-page-refresh.ts` 的内部副本；本包导出是可替换它们的实现。
+console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保留 `internal/refresh-button.tsx` 与 `internal/use-page-refresh.ts` 的内部副本。
 
 ### 一次值交接与显示偏好
 

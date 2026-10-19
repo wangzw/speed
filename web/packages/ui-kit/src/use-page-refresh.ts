@@ -56,9 +56,8 @@
  *    the stale marker. Automatic re-reads are outside this bookkeeping and
  *    therefore never announce.
  *
- * The console package's internal copy
- * (`console-ui/src/internal/use-page-refresh.ts`) is scheduled for
- * removal in the batch that switches the console to this export.
+ * The console's pages use this mechanism; the package keeps no copy of
+ * its own.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -181,11 +180,10 @@ function settleTime(
 }
 
 /**
- * The refresh mechanism. `reads` is rebuilt every render from the page's
- * query handles; `reset` clears the page's body-scope slots and row markers
- * (the same function the page calls when a scope's context changes). The
- * console package's internal copy is scheduled for removal when the
- * console switches to this export.
+ * The refresh mechanism, used by the console's pages. `reads` is rebuilt
+ * every render from the page's query handles; `reset` clears the page's
+ * body-scope slots and row markers (the same function the page calls when
+ * a scope's context changes).
  */
 export function usePageRefresh(
   reads: readonly PageRefreshRead[],
