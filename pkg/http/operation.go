@@ -35,15 +35,15 @@ type OperationDescriptor struct {
 	Description string
 	// Input is the handler's input type, or nil when it takes none. Its fields
 	// carry the parameters through `path`, `query`, `header` and `cookie`
-	// tags, and the request body according to RequestMediaType: `json` tags
-	// under application/json, `form` tags under
+	// tags, and the request body according to Request: `json` tags under
+	// application/json, `form` tags under
 	// application/x-www-form-urlencoded, `form` and `file` tags under
 	// multipart/form-data, and the single `raw` tag under
 	// application/octet-stream.
 	Input reflect.Type
-	// RequestMediaType is the request body's media type, empty when the
-	// operation takes no body.
-	RequestMediaType string
+	// Request is the declared request body, or nil when the operation takes
+	// none.
+	Request *RequestBody
 	// SuccessStatus is the status of the one 2xx response.
 	SuccessStatus int
 	// SuccessBody is the success response's body type. It is nil when the
@@ -74,33 +74,51 @@ type Operation[In, Out any] struct {
 	Path        string
 	Summary     string
 	Description string
-	// RequestMediaType is the request body's media type; empty when the
-	// operation takes no body. The entry point binds In's body fields
-	// according to this media type: `json` tags for application/json, `form`
-	// tags for application/x-www-form-urlencoded, `form` and `file` tags for
+	// Request is the declared request body, or nil when the operation takes
+	// no body. The entry point binds In's body fields according to its media
+	// type: `json` tags for application/json, `form` tags for
+	// application/x-www-form-urlencoded, `form` and `file` tags for
 	// multipart/form-data, and the single `raw` tag for
 	// application/octet-stream. An input carrying a body tag under an empty
 	// media type is a declaration defect and panics when the handler is built.
-	RequestMediaType string
+	Request *RequestBody
 	// Responses is the closed set of answers. Exactly one must be 2xx, and
 	// that one's body is Out.
 	Responses []Response
 }
 
+// RequestBody is one operation's declared request body: the media type the
+// entry point binds its input's body fields by, the description the contract
+// publishes for the body, and whether a request must carry one.
+type RequestBody struct {
+	// MediaType is the media type the body is read and published with.
+	MediaType string
+	// Description explains the body to a client.
+	Description string
+	// Required reports whether a request must carry a body.
+	Required bool
+	// Name publishes the body's schema as a named component of the fragment
+	// under this name, referenced by the operation. Empty publishes the schema
+	// inline. A name keeps the generated client's type stable and lets several
+	// operations share one body shape.
+	Name string
+}
+
 // NewOperation builds an operation declaration. Its handler is bound later
 // with Handle; the declaration itself is a static resource the generator reads.
 func NewOperation[In, Out any](
-	id, method, path, summary, description, requestMediaType string,
+	id, method, path, summary, description string,
+	request *RequestBody,
 	responses []Response,
 ) Operation[In, Out] {
 	return Operation[In, Out]{
-		ID:               id,
-		Method:           method,
-		Path:             path,
-		Summary:          summary,
-		Description:      description,
-		RequestMediaType: requestMediaType,
-		Responses:        responses,
+		ID:          id,
+		Method:      method,
+		Path:        path,
+		Summary:     summary,
+		Description: description,
+		Request:     request,
+		Responses:   responses,
 	}
 }
 
@@ -122,17 +140,17 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 		body = outType[Out]()
 	}
 	return OperationDescriptor{
-		ID:               o.ID,
-		Method:           o.Method,
-		Path:             o.Path,
-		Summary:          o.Summary,
-		Description:      o.Description,
-		Input:            inputType[In](),
-		RequestMediaType: o.RequestMediaType,
-		SuccessStatus:    status,
-		SuccessBody:      body,
-		Simple:           true,
-		Responses:        o.Responses,
+		ID:            o.ID,
+		Method:        o.Method,
+		Path:          o.Path,
+		Summary:       o.Summary,
+		Description:   o.Description,
+		Input:         inputType[In](),
+		Request:       o.Request,
+		SuccessStatus: status,
+		SuccessBody:   body,
+		Simple:        true,
+		Responses:     o.Responses,
 	}
 }
 
@@ -140,7 +158,7 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 // handler. The handler receives the declared input type and returns the
 // declared success type, so any other signature does not compile here.
 func (o Operation[In, Out]) Handle(handle func(context.Context, In) (Out, error)) gin.HandlerFunc {
-	return bind(handle, inputType[In](), o.RequestMediaType, o.Responses)
+	return bind(handle, o.ID, inputType[In](), o.Request, o.Responses)
 }
 
 // ReplyOperation is one operation whose handler builds its own answer from the
@@ -158,9 +176,9 @@ type ReplyOperation[In any] struct {
 	Path        string
 	Summary     string
 	Description string
-	// RequestMediaType is the request body's media type; empty when the
-	// operation takes no body.
-	RequestMediaType string
+	// Request is the declared request body, or nil when the operation takes
+	// no body.
+	Request *RequestBody
 	// Responses is the closed set of answers. The handler may answer any status
 	// it declares, and each reply is checked against that status's declaration.
 	Responses []Response
@@ -170,17 +188,18 @@ type ReplyOperation[In any] struct {
 // later with Handle; the declaration itself is a static resource the generator
 // reads.
 func NewReplyOperation[In any](
-	id, method, path, summary, description, requestMediaType string,
+	id, method, path, summary, description string,
+	request *RequestBody,
 	responses []Response,
 ) ReplyOperation[In] {
 	return ReplyOperation[In]{
-		ID:               id,
-		Method:           method,
-		Path:             path,
-		Summary:          summary,
-		Description:      description,
-		RequestMediaType: requestMediaType,
-		Responses:        responses,
+		ID:          id,
+		Method:      method,
+		Path:        path,
+		Summary:     summary,
+		Description: description,
+		Request:     request,
+		Responses:   responses,
 	}
 }
 
@@ -189,17 +208,17 @@ func NewReplyOperation[In any](
 // response's own Structure describes it.
 func (o ReplyOperation[In]) Descriptor() OperationDescriptor {
 	return OperationDescriptor{
-		ID:               o.ID,
-		Method:           o.Method,
-		Path:             o.Path,
-		Summary:          o.Summary,
-		Description:      o.Description,
-		Input:            inputType[In](),
-		RequestMediaType: o.RequestMediaType,
-		SuccessStatus:    successStatus(o.Responses),
-		SuccessBody:      nil,
-		Simple:           false,
-		Responses:        o.Responses,
+		ID:            o.ID,
+		Method:        o.Method,
+		Path:          o.Path,
+		Summary:       o.Summary,
+		Description:   o.Description,
+		Input:         inputType[In](),
+		Request:       o.Request,
+		SuccessStatus: successStatus(o.Responses),
+		SuccessBody:   nil,
+		Simple:        false,
+		Responses:     o.Responses,
 	}
 }
 
@@ -207,7 +226,7 @@ func (o ReplyOperation[In]) Descriptor() OperationDescriptor {
 // handler. The handler receives the declared input and the request's Meta, and
 // returns the reply it wants written.
 func (o ReplyOperation[In]) Handle(handle func(context.Context, In, *Meta) (Reply, error)) gin.HandlerFunc {
-	return replyBind(handle, o.ID, inputType[In](), o.RequestMediaType, o.Responses)
+	return replyBind(handle, o.ID, inputType[In](), o.Request, o.Responses)
 }
 
 // inputType is In's type, or nil for an empty struct: an operation whose

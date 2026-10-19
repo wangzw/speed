@@ -17,10 +17,13 @@
 // The package also holds what every handler mounted through it shares, so that
 // each module writes none of it again: the closed set of problem codes and the
 // writers that answer with them (Fail, Unauthorized, StepUpRequired, Forbidden,
-// Throttled, Unavailable, Busy), the request body decoder (Decode), the wrapper
-// every registration goes through (Wrap) and the bypass of the cross-origin check
-// for a callback (AllowCallback). The mounttest package is a Mounter for the tests
-// of those modules.
+// Throttled, Unavailable, Busy), the response-header writers a typed handler
+// uses for a header its answer body does not express (SetResponseHeader,
+// AddResponseHeader), the challenge a typed handler answers 401 with
+// (UnauthorizedChallenge), the request body decoder
+// (Decode), the wrapper every registration goes through (Wrap) and the bypass of
+// the cross-origin check for a callback (AllowCallback). The mounttest package
+// is a Mounter for the tests of those modules.
 //
 // The package is internal to pkg/authn. The modules that mount routes require
 // the capability by this interface, and a host reaches it only through the

@@ -43,7 +43,7 @@ func serve(t *testing.T, method, path string, handler gin.HandlerFunc, request *
 func TestTheHandlerReceivesTheDeclaredInput(t *testing.T) {
 	operation := NewOperation[readInput, readReply](
 		"the.module.read", http.MethodPost, "/items/:id", "", "",
-		"application/json",
+		requestBody("application/json"),
 		[]Response{{
 			Status:      200,
 			Description: "The item",
@@ -85,7 +85,7 @@ type parameterOnlyInput struct {
 // TestAMalformedParameterIsAnsweredBadRequest holds the parameter refusal.
 func TestAMalformedParameterIsAnsweredBadRequest(t *testing.T) {
 	operation := NewOperation[parameterOnlyInput, struct{}](
-		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]Response{{Status: 204, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, parameterOnlyInput) (struct{}, error) {
@@ -105,7 +105,7 @@ func TestAMalformedParameterIsAnsweredBadRequest(t *testing.T) {
 func TestAnUndeclaredBodyMemberIsRefused(t *testing.T) {
 	operation := NewOperation[readInput, struct{}](
 		"the.module.write", http.MethodPost, "/items/:id", "", "",
-		"application/json",
+		requestBody("application/json"),
 		[]Response{{Status: 204, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {
@@ -125,7 +125,7 @@ func TestAnUndeclaredBodyMemberIsRefused(t *testing.T) {
 func TestANonJSONBodyIsUnsupportedMediaType(t *testing.T) {
 	operation := NewOperation[readInput, struct{}](
 		"the.module.write", http.MethodPost, "/items/:id", "", "",
-		"application/json",
+		requestBody("application/json"),
 		[]Response{{Status: 204, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {
@@ -149,7 +149,7 @@ func (r refusal) StatusCode() int { return r.status }
 // TestADeclaredFailureWritesItsStatus holds the failure mapping.
 func TestADeclaredFailureWritesItsStatus(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]Response{
 			{Status: 204, Description: "No content"},
 			{Status: 409, Description: "Conflict"},
@@ -168,7 +168,7 @@ func TestADeclaredFailureWritesItsStatus(t *testing.T) {
 // status the operation did not declare is never written.
 func TestAnUndeclaredFailureIsAnsweredInternal(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]Response{{Status: 204, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
@@ -183,7 +183,7 @@ func TestAnUndeclaredFailureIsAnsweredInternal(t *testing.T) {
 // TestAOneTwoHundredFourAnswersNoBody holds the success side of a 204.
 func TestAOneTwoHundredFourAnswersNoBody(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.delete", http.MethodDelete, "/items", "", "", "",
+		"the.module.delete", http.MethodDelete, "/items", "", "", nil,
 		[]Response{{Status: 204, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
@@ -206,7 +206,7 @@ func TestAOneTwoHundredFourAnswersNoBody(t *testing.T) {
 // nil.
 func TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.write", http.MethodPost, "/items", "", "", "",
+		"the.module.write", http.MethodPost, "/items", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "Written"}},
 	)
 	descriptor := operation.Descriptor()
@@ -236,7 +236,7 @@ func TestAnEmptyOutIsAJSONBodyOnABodyCarryingStatus(t *testing.T) {
 // no body at all, so the descriptor carries no success body type.
 func TestANoBodySuccessKeepsAnEmptyOutBodyless(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.delete", http.MethodDelete, "/items", "", "", "",
+		"the.module.delete", http.MethodDelete, "/items", "", "", nil,
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)
 	if body := operation.Descriptor().SuccessBody; body != nil {
@@ -258,7 +258,7 @@ func TestASimpleNoBodySuccessWithANonEmptyOutPanics(t *testing.T) {
 		}
 	}()
 	NewOperation[struct{}, readReply](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
 	).Handle(func(context.Context, struct{}) (readReply, error) { return readReply{}, nil })
 }
@@ -284,7 +284,7 @@ func TestASimpleSuccessBodyOfAnotherMediaTypePanics(t *testing.T) {
 		}
 	}()
 	NewOperation[struct{}, readReply](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The item", Body: &Body{MediaType: "text/plain"}}},
 	).Handle(func(context.Context, struct{}) (readReply, error) { return readReply{}, nil })
 }
@@ -293,7 +293,7 @@ func TestASimpleSuccessBodyOfAnotherMediaTypePanics(t *testing.T) {
 // an empty media type declares the JSON answer the entry point writes.
 func TestASimpleSuccessBodyWithNoMediaTypeDefaultsToJSON(t *testing.T) {
 	operation := NewOperation[struct{}, readReply](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The item", Body: &Body{}}},
 	)
 	handler := operation.Handle(func(context.Context, struct{}) (readReply, error) {
@@ -331,7 +331,7 @@ func TestABodyTaggedInputWithoutAMediaTypePanics(t *testing.T) {
 			name: "json tag",
 			build: func() {
 				NewOperation[jsonTaggedOnlyInput, struct{}](
-					"the.module.body", http.MethodPost, "/items", "", "", "",
+					"the.module.body", http.MethodPost, "/items", "", "", nil,
 					[]Response{{Status: http.StatusNoContent}},
 				).Handle(func(context.Context, jsonTaggedOnlyInput) (struct{}, error) { return struct{}{}, nil })
 			},
@@ -340,7 +340,7 @@ func TestABodyTaggedInputWithoutAMediaTypePanics(t *testing.T) {
 			name: "form tag",
 			build: func() {
 				NewOperation[formTaggedOnlyInput, struct{}](
-					"the.module.body", http.MethodPost, "/items", "", "", "",
+					"the.module.body", http.MethodPost, "/items", "", "", nil,
 					[]Response{{Status: http.StatusNoContent}},
 				).Handle(func(context.Context, formTaggedOnlyInput) (struct{}, error) { return struct{}{}, nil })
 			},
@@ -366,7 +366,7 @@ func TestABodyTaggedInputWithoutAMediaTypePanics(t *testing.T) {
 // input carrying only parameter tags takes no body and needs no media type.
 func TestAParameterOnlyInputWithoutAMediaTypeBuilds(t *testing.T) {
 	operation := NewOperation[parameterOnlyInput, struct{}](
-		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)
 	handler := operation.Handle(func(_ context.Context, in parameterOnlyInput) (struct{}, error) {
@@ -398,7 +398,7 @@ func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
 			name: "simple operation with a 204",
 			build: func() {
 				NewOperation[struct{}, struct{}](
-					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					"the.module.nobody", http.MethodGet, "/items", "", "", nil,
 					[]Response{declaredBody(http.StatusNoContent)},
 				).Handle(func(context.Context, struct{}) (struct{}, error) { return struct{}{}, nil })
 			},
@@ -407,7 +407,7 @@ func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
 			name: "simple operation with a 304 beside its success",
 			build: func() {
 				NewOperation[struct{}, struct{}](
-					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					"the.module.nobody", http.MethodGet, "/items", "", "", nil,
 					[]Response{
 						{Status: http.StatusOK, Description: "The item", Body: &Body{MediaType: "application/json"}},
 						declaredBody(http.StatusNotModified),
@@ -419,7 +419,7 @@ func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
 			name: "reply operation with a 204",
 			build: func() {
 				NewReplyOperation[struct{}](
-					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					"the.module.nobody", http.MethodGet, "/items", "", "", nil,
 					[]Response{declaredBody(http.StatusNoContent)},
 				).Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 					return EmptyReply(http.StatusNoContent), nil
@@ -430,7 +430,7 @@ func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
 			name: "reply operation with a 304",
 			build: func() {
 				NewReplyOperation[struct{}](
-					"the.module.nobody", http.MethodGet, "/items", "", "", "",
+					"the.module.nobody", http.MethodGet, "/items", "", "", nil,
 					[]Response{declaredBody(http.StatusNotModified)},
 				).Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 					return EmptyReply(http.StatusNotModified), nil
@@ -451,5 +451,28 @@ func TestAResponseWithoutABodyMustNotDeclareOne(t *testing.T) {
 			}()
 			testCase.build()
 		})
+	}
+}
+
+// TestTheDescriptorCarriesTheRequestDeclaration holds the generator's view of
+// the request body: the declared body itself, description and required
+// included, on both operation forms.
+func TestTheDescriptorCarriesTheRequestDeclaration(t *testing.T) {
+	request := &RequestBody{MediaType: "application/json", Description: "The item.", Required: true}
+	operation := NewOperation[readInput, readReply](
+		"the.module.write", http.MethodPost, "/items/:id", "", "", request,
+		[]Response{{Status: 200, Description: "The item", Body: &Body{MediaType: "application/json"}}},
+	)
+	if descriptor := operation.Descriptor(); descriptor.Request != request {
+		t.Errorf("the descriptor carries %+v, want the declared request body", descriptor.Request)
+	}
+
+	replyRequest := &RequestBody{MediaType: "application/octet-stream", Required: true}
+	reply := NewReplyOperation[struct{}](
+		"the.module.write", http.MethodPut, "/items", "", "", replyRequest,
+		[]Response{{Status: 204, Description: "Written"}},
+	)
+	if descriptor := reply.Descriptor(); descriptor.Request != replyRequest {
+		t.Errorf("the reply descriptor carries %+v, want the declared request body", descriptor.Request)
 	}
 }

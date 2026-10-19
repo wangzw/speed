@@ -110,11 +110,18 @@ func Fail(c *gin.Context, code string) {
 		http.StatusBadRequest, http.StatusConflict, http.StatusUnsupportedMediaType), code)
 }
 
+// challenge is the WWW-Authenticate value of a 401 on realm. It offers Bearer
+// and Cookie and never Basic: a page's fetch that is answered with Basic makes
+// the browser open its own password prompt, and these answers do not ask for a
+// Basic credential. The realm is escaped, because a quote or a backslash in it
+// would end the quoted string early.
+func challenge(realm string) string {
+	q := QuoteRealm(realm)
+	return `Bearer realm="` + q + `", Cookie realm="` + q + `"`
+}
+
 // Unauthorized writes a 401 whose challenge offers Bearer and Cookie and never
-// Basic: a page's fetch that is answered with Basic makes the browser open its
-// own password prompt, and these answers do not ask for a Basic credential.
-// realm is the endpoint's name, escaped here, because a quote or a backslash in
-// it would end the quoted string early.
+// Basic. realm is the endpoint's name; see challenge for what is written.
 //
 // code is login-failed, flow-invalid or link-required, written as the problem's
 // type; the empty string writes none, which is the shape of the gateway's own 401
@@ -126,8 +133,7 @@ func Unauthorized(c *gin.Context, realm, code string) {
 			panic("authn/mount: Unauthorized: insufficient_user_authentication is written with StepUpRequired")
 		}
 	}
-	q := QuoteRealm(realm)
-	c.Header("WWW-Authenticate", `Bearer realm="`+q+`", Cookie realm="`+q+`"`)
+	c.Header("WWW-Authenticate", challenge(realm))
 	problem(c, http.StatusUnauthorized, code)
 }
 

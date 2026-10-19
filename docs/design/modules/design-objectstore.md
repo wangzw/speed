@@ -453,5 +453,5 @@ type Spec[C any] struct {
 | 对象的名字（`name` 列与迁移、入口规整、视图字段、声明请求体的 `name` 可省） | 已实现 | `pkg/objectstore/objectstore.go` `Object`、`Declaration`；`pkg/objectstore/metadata/store.go` `Create`；`pkg/objectstore/metadata/names.go` `normalizeName`；`pkg/objectstore/metadata/views.go` `objectViewOf`；`pkg/objectstore/metadata/migrations/postgres/0002_object_name.sql`、`pkg/objectstore/metadata/migrations/sqlite/0002_object_name.sql` |
 | 本地目录后端 `objectstore.fs` | 已实现 | `pkg/objectstore/fs/fs.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/fs/keys.go` `relativePath`、`splitKey`；`pkg/objectstore/fs/config.go` `items` |
 | S3 兼容后端 `objectstore.s3` | 已实现 | `pkg/objectstore/s3/s3.go` `Module`、`ModuleName`、`Put`、`Open`、`Delete`；`pkg/objectstore/s3/config.go` `items` |
-| 元数据面的 OpenAPI 片段声明 | 已实现 | `pkg/objectstore/metadata/openapi/metadata.json`；`pkg/objectstore/metadata/metadata.go` `metadataFragment`、`defaultEndpoint`、`Module` |
+| operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/objectstore/metadata/operations.go`；`pkg/objectstore/metadata/openapi_generated_test.go`；片段 `pkg/objectstore/metadata/openapi/metadata.json` |
 | 静态特性 `objectstore.objects` 的 `feature.Spec` 声明 | 已实现 | `pkg/objectstore/metadata/metadata.go` `Module`；`pkg/objectstore/metadata/feature_test.go` `TestTheModuleDeclaresTheObjectsFeature` |

@@ -39,7 +39,7 @@ var readOperation = speedhttp.NewOperation[struct{}, FeatureBoardDocument](
 	pathFeatures,
 	"Read the feature document this process serves",
 	"The feature names this process serves, ascending and without repetition. The set is decided by the assembly at start and is the same for every caller; it is not filtered by permission or tenant. Its content may differ between callers and tenants (a tenant-level narrowing is a future addition), so a response must not be cached across sessions.",
-	"",
+	nil,
 	speedhttp.Failures(commonFailures, speedhttp.Response{
 		Status:      200,
 		Description: "The feature document. Its content may differ per caller and tenant, and must not be cached across sessions.",

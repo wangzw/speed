@@ -10,19 +10,8 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The routes, under the fixed base path. The set is closed: every action an
-// object store exposes is one of these seven, and each is bound to the method
-// and path the design fixes.
-const (
-	basePath           = "/api/v1/objects"
-	pathObjects        = basePath
-	pathObject         = basePath + "/:id"
-	pathObjectContent  = basePath + "/:id/content"
-	pathObjectComplete = basePath + "/:id/complete"
-)
-
-// route is one route: the method and path it answers, the permission it needs,
-// and the handler that serves it.
+// route is one route: the method and relative path it answers, the permission it
+// needs, and the handler that serves it.
 type route struct {
 	method  string
 	path    string
@@ -30,17 +19,19 @@ type route struct {
 	handler gin.HandlerFunc
 }
 
-// routes is the closed set of routes, in the order they are mounted. The read
-// routes need objectstore.object.read and the write routes objectstore.object.write.
+// routes is the closed set of routes, in the order they are mounted. Each route
+// is bound from the operation declared for it, so the handler receives the
+// declared input and writes the declared answer. The read routes need
+// objectstore.object.read and the write routes objectstore.object.write.
 func (p *product) routes() []route {
 	return []route{
-		{http.MethodPost, pathObjects, PermissionObjectWrite, p.handleCreate},
-		{http.MethodPut, pathObjectContent, PermissionObjectWrite, p.handleUpload},
-		{http.MethodPost, pathObjectComplete, PermissionObjectWrite, p.handleComplete},
-		{http.MethodGet, pathObjects, PermissionObjectRead, p.handleList},
-		{http.MethodGet, pathObject, PermissionObjectRead, p.handleGet},
-		{http.MethodGet, pathObjectContent, PermissionObjectRead, p.handleContent},
-		{http.MethodDelete, pathObject, PermissionObjectWrite, p.handleDelete},
+		{http.MethodPost, pathObjects, PermissionObjectWrite, createOperation.Handle(p.createObject)},
+		{http.MethodPut, pathObjectContent, PermissionObjectWrite, uploadOperation.Handle(p.uploadContent)},
+		{http.MethodPost, pathObjectComplete, PermissionObjectWrite, completeOperation.Handle(p.completeObject)},
+		{http.MethodGet, pathObjects, PermissionObjectRead, listOperation.Handle(p.listObjects)},
+		{http.MethodGet, pathObject, PermissionObjectRead, getOperation.Handle(p.getObject)},
+		{http.MethodGet, pathObjectContent, PermissionObjectRead, contentOperation.Handle(p.getContent)},
+		{http.MethodDelete, pathObject, PermissionObjectWrite, deleteOperation.Handle(p.deleteObject)},
 	}
 }
 
@@ -63,7 +54,7 @@ func (p *product) mount(router speedhttp.Router) error {
 	}
 	for _, tgt := range targets {
 		for _, r := range p.routes() {
-			tgt.endpoint.Route(r.method, r.path, r.handler)
+			tgt.endpoint.Route(r.method, metadataSpec.ResolvePath(r.path), r.handler)
 		}
 	}
 	return nil
@@ -79,6 +70,6 @@ func (p *product) declare() {
 		return
 	}
 	for _, r := range p.routes() {
-		p.gate.Require(r.method, r.path, r.perm)
+		p.gate.Require(r.method, metadataSpec.ResolvePath(r.path), r.perm)
 	}
 }

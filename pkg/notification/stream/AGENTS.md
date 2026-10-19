@@ -56,6 +56,9 @@ connections whose scope matches the event's `(tenant_id, recipient_user_id)`.
   looking for an `http.Flusher` — a layer that replaced the writer leaves both
   the flusher and `Unwrap` behind — and answers 500 when the chain ends with
   none. There is no fallback to a one-shot body.
+- **The opening timing.** The status and headers are flushed before the first
+  event is built, so a client learns the stream is open without waiting for an
+  event to arrive. Every event is flushed as it is written.
 - **The frame** is `event: message\n`, `data: <json>\n`, and a blank line:
   `event: message\ndata: {…}\n\n`. The event name, the JSON field names and the
   trailing blank line are a promise — a client parses on them. The JSON is the

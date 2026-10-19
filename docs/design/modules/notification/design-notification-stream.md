@@ -198,5 +198,5 @@ classDiagram
 | Hub 与连接 | 已实现 | `pkg/notification/stream/hub.go` `Hub`、`Subscribe`、`Publish`、`connection` |
 | `GET /stream` 路由与帧写出 | 已实现 | `pkg/notification/stream/routes.go` `routes`、`mount`、`handleStream`、`writeFrame` |
 | 停机与注销 | 已实现 | `pkg/notification/stream/stream.go` `Module`；`pkg/notification/stream/hub.go` `Close`、`closeAll`、`remove` |
-| OpenAPI 片段声明 | 已实现 | `pkg/notification/stream/openapi/stream.json`；`pkg/notification/stream/stream.go` `streamFragment`、`defaultEndpoint`、`Module` |
+| operation 声明（SSE 应答）与 OpenAPI 片段生成 | 已实现 | `pkg/notification/stream/operations.go`；`pkg/notification/stream/openapi_generated_test.go`；片段 `pkg/notification/stream/openapi/stream.json` |
 | 静态特性 `notification.stream` 的 `feature.Spec` 声明 | 已实现 | `pkg/notification/stream/stream.go` `Module`；`pkg/notification/stream/feature_test.go` `TestTheModuleDeclaresTheStreamFeature` |

@@ -25,7 +25,7 @@ type formInput struct {
 func TestAFormBodyFillsTheFormTaggedFields(t *testing.T) {
 	operation := NewOperation[formInput, struct{}](
 		"the.module.form", http.MethodPost, "/items/:id", "", "",
-		"application/x-www-form-urlencoded",
+		requestBody("application/x-www-form-urlencoded"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(_ context.Context, in formInput) (struct{}, error) {
@@ -49,7 +49,7 @@ func TestAFormBodyFillsTheFormTaggedFields(t *testing.T) {
 func TestAnUnknownFormKeyIsRefused(t *testing.T) {
 	operation := NewOperation[formInput, struct{}](
 		"the.module.form", http.MethodPost, "/items/:id", "", "",
-		"application/x-www-form-urlencoded",
+		requestBody("application/x-www-form-urlencoded"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(context.Context, formInput) (struct{}, error) {
@@ -69,7 +69,7 @@ func TestAnUnknownFormKeyIsRefused(t *testing.T) {
 func TestANonFormBodyIsUnsupportedMediaType(t *testing.T) {
 	operation := NewOperation[formInput, struct{}](
 		"the.module.form", http.MethodPost, "/items/:id", "", "",
-		"application/x-www-form-urlencoded",
+		requestBody("application/x-www-form-urlencoded"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(context.Context, formInput) (struct{}, error) {
@@ -108,7 +108,7 @@ func multipartBody(t *testing.T, build func(*multipart.Writer)) (*bytes.Buffer, 
 func TestAMultipartBodyFillsTheFormAndFileFields(t *testing.T) {
 	operation := NewOperation[multipartInput, struct{}](
 		"the.module.multipart", http.MethodPost, "/items", "", "",
-		"multipart/form-data",
+		requestBody("multipart/form-data"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(_ context.Context, in multipartInput) (struct{}, error) {
@@ -145,7 +145,7 @@ func TestAnUnknownMultipartPartIsRefused(t *testing.T) {
 		t.Run(part, func(t *testing.T) {
 			operation := NewOperation[multipartInput, struct{}](
 				"the.module.multipart", http.MethodPost, "/items", "", "",
-				"multipart/form-data",
+				requestBody("multipart/form-data"),
 				[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 			)
 			handler := operation.Handle(func(context.Context, multipartInput) (struct{}, error) {
@@ -179,7 +179,7 @@ func TestAnUnknownMultipartPartIsRefused(t *testing.T) {
 func TestANonMultipartBodyIsUnsupportedMediaType(t *testing.T) {
 	operation := NewOperation[multipartInput, struct{}](
 		"the.module.multipart", http.MethodPost, "/items", "", "",
-		"multipart/form-data",
+		requestBody("multipart/form-data"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(context.Context, multipartInput) (struct{}, error) {
@@ -205,7 +205,7 @@ type rawInput struct {
 func TestARawBodyFillsTheRawTaggedField(t *testing.T) {
 	operation := NewOperation[rawInput, struct{}](
 		"the.module.raw", http.MethodPut, "/blobs/:id", "", "",
-		"application/octet-stream",
+		requestBody("application/octet-stream"),
 		[]Response{{Status: http.StatusNoContent, Description: "Stored"}},
 	)
 	handler := operation.Handle(func(_ context.Context, in rawInput) (struct{}, error) {
@@ -228,7 +228,7 @@ func TestARawBodyFillsTheRawTaggedField(t *testing.T) {
 func TestANonOctetStreamBodyIsUnsupportedMediaType(t *testing.T) {
 	operation := NewOperation[rawInput, struct{}](
 		"the.module.raw", http.MethodPut, "/blobs/:id", "", "",
-		"application/octet-stream",
+		requestBody("application/octet-stream"),
 		[]Response{{Status: http.StatusNoContent, Description: "Stored"}},
 	)
 	handler := operation.Handle(func(context.Context, rawInput) (struct{}, error) {
@@ -249,7 +249,7 @@ func TestANonOctetStreamBodyIsUnsupportedMediaType(t *testing.T) {
 func TestARawBodyOverTheLimitIsRefused(t *testing.T) {
 	operation := NewOperation[rawInput, struct{}](
 		"the.module.raw", http.MethodPut, "/blobs/:id", "", "",
-		"application/octet-stream",
+		requestBody("application/octet-stream"),
 		[]Response{{Status: http.StatusNoContent, Description: "Stored"}},
 	)
 	handler := operation.Handle(func(context.Context, rawInput) (struct{}, error) {
@@ -271,7 +271,7 @@ func TestARawBodyOverTheLimitIsRefused(t *testing.T) {
 func TestAMultipartBodyOverTheLimitIsRefused(t *testing.T) {
 	operation := NewOperation[multipartInput, struct{}](
 		"the.module.multipart", http.MethodPost, "/items", "", "",
-		"multipart/form-data",
+		requestBody("multipart/form-data"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(context.Context, multipartInput) (struct{}, error) {
@@ -357,7 +357,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "octet-stream without a raw field",
 			build: func() {
 				NewOperation[noRawInput, struct{}]("the.module.raw", http.MethodPut, "/blobs", "", "",
-					"application/octet-stream", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/octet-stream"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, noRawInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "requires exactly one raw-tagged field",
@@ -366,7 +366,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "raw field under another media type",
 			build: func() {
 				NewOperation[rawWithJSONInput, struct{}]("the.module.raw", http.MethodPut, "/blobs", "", "",
-					"application/json", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/json"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, rawWithJSONInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a raw-tagged field requires the application/octet-stream media type",
@@ -375,7 +375,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "two raw fields",
 			build: func() {
 				NewOperation[twoRawInput, struct{}]("the.module.raw", http.MethodPut, "/blobs", "", "",
-					"application/octet-stream", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/octet-stream"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, twoRawInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "more than one raw-tagged field",
@@ -384,7 +384,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a file field that is not bytes",
 			build: func() {
 				NewOperation[textFileInput, struct{}]("the.module.multipart", http.MethodPost, "/items", "", "",
-					"multipart/form-data", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("multipart/form-data"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, textFileInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "must be []byte",
@@ -393,7 +393,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a file field under JSON",
 			build: func() {
 				NewOperation[jsonBytesFileInput, struct{}]("the.module.file", http.MethodPost, "/items", "", "",
-					"application/json", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/json"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, jsonBytesFileInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a file-tagged field requires the multipart/form-data media type",
@@ -402,7 +402,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a file field under form data",
 			build: func() {
 				NewOperation[formBytesFileInput, struct{}]("the.module.file", http.MethodPost, "/items", "", "",
-					"application/x-www-form-urlencoded", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/x-www-form-urlencoded"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, formBytesFileInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a file-tagged field requires the multipart/form-data media type",
@@ -411,7 +411,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a form field under JSON",
 			build: func() {
 				NewOperation[jsonWithFormInput, struct{}]("the.module.body", http.MethodPost, "/items", "", "",
-					"application/json", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/json"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, jsonWithFormInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a form-tagged field requires the application/x-www-form-urlencoded or multipart/form-data media type",
@@ -420,7 +420,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a JSON field under form data",
 			build: func() {
 				NewOperation[formWithJSONInput, struct{}]("the.module.body", http.MethodPost, "/items", "", "",
-					"application/x-www-form-urlencoded", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/x-www-form-urlencoded"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, formWithJSONInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a json-tagged field requires the application/json media type",
@@ -429,7 +429,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a JSON field under multipart",
 			build: func() {
 				NewOperation[formWithJSONInput, struct{}]("the.module.body", http.MethodPost, "/items", "", "",
-					"multipart/form-data", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("multipart/form-data"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, formWithJSONInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a json-tagged field requires the application/json media type",
@@ -438,7 +438,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a JSON field under octet-stream",
 			build: func() {
 				NewOperation[rawWithJSONInput, struct{}]("the.module.body", http.MethodPost, "/items", "", "",
-					"application/octet-stream", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/octet-stream"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, rawWithJSONInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a json-tagged field requires the application/json media type",
@@ -447,7 +447,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "a form field under octet-stream",
 			build: func() {
 				NewOperation[rawWithFormInput, struct{}]("the.module.body", http.MethodPost, "/items", "", "",
-					"application/octet-stream", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("application/octet-stream"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, rawWithFormInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "a form-tagged field requires the application/x-www-form-urlencoded or multipart/form-data media type",
@@ -456,7 +456,7 @@ func TestAnUnbindableRequestDeclarationPanics(t *testing.T) {
 			name: "an unsupported media type",
 			build: func() {
 				NewOperation[noRawInput, struct{}]("the.module.body", http.MethodPost, "/items", "", "",
-					"text/plain", []Response{{Status: http.StatusNoContent}}).Handle(
+					requestBody("text/plain"), []Response{{Status: http.StatusNoContent}}).Handle(
 					func(context.Context, noRawInput) (struct{}, error) { return struct{}{}, nil })
 			},
 			message: "unsupported request media type",
@@ -506,7 +506,7 @@ func (v *validatedInput) Validate() error {
 func TestAFailedValidateIsAnsweredUnprocessable(t *testing.T) {
 	operation := NewOperation[validatedInput, struct{}](
 		"the.module.validated", http.MethodPost, "/items", "", "",
-		"application/json",
+		requestBody("application/json"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(context.Context, validatedInput) (struct{}, error) {
@@ -529,7 +529,7 @@ func TestAFailedValidateIsAnsweredUnprocessable(t *testing.T) {
 func TestAnAcceptedValueReachesTheHandler(t *testing.T) {
 	operation := NewOperation[validatedInput, struct{}](
 		"the.module.validated", http.MethodPost, "/items", "", "",
-		"application/json",
+		requestBody("application/json"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	ran := false
@@ -552,12 +552,43 @@ func TestAnAcceptedValueReachesTheHandler(t *testing.T) {
 	}
 }
 
+// queryValuesInput carries an integer and a string slice from the query.
+type queryValuesInput struct {
+	Limit int      `query:"limit"`
+	Tags  []string `query:"tag"`
+}
+
+// TestAnEmptyQueryValueLeavesANonStringParameterUnset holds the empty value:
+// "?limit=" is how a client leaves an integer unset, so the handler sees zero,
+// while "?tag=" is a real empty string value in the slice.
+func TestAnEmptyQueryValueLeavesANonStringParameterUnset(t *testing.T) {
+	operation := NewOperation[queryValuesInput, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
+	)
+	handler := operation.Handle(func(_ context.Context, in queryValuesInput) (struct{}, error) {
+		if in.Limit != 0 {
+			t.Errorf("the handler saw limit=%d, want the zero value", in.Limit)
+		}
+		if len(in.Tags) != 1 || in.Tags[0] != "" {
+			t.Errorf("the handler saw %v, want the empty string as one value", in.Tags)
+		}
+		return struct{}{}, nil
+	})
+	recorder := serve(t, http.MethodGet, "/items", handler,
+		httptest.NewRequest(http.MethodGet, "/items?limit=&tag=", nil))
+
+	if recorder.Code != http.StatusNoContent {
+		t.Errorf("an empty query value answered %d, want 204", recorder.Code)
+	}
+}
+
 // TestARepeatedQueryValueForAScalarFieldIsRefused holds the parameter check: a
 // scalar field cannot hold both values, and dropping the second one silently
 // would answer from an input the caller did not send.
 func TestARepeatedQueryValueForAScalarFieldIsRefused(t *testing.T) {
 	operation := NewOperation[parameterOnlyInput, struct{}](
-		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, parameterOnlyInput) (struct{}, error) {
@@ -577,7 +608,7 @@ func TestARepeatedQueryValueForAScalarFieldIsRefused(t *testing.T) {
 func TestARepeatedFormValueForAScalarFieldIsRefused(t *testing.T) {
 	operation := NewOperation[formInput, struct{}](
 		"the.module.form", http.MethodPost, "/items/:id", "", "",
-		"application/x-www-form-urlencoded",
+		requestBody("application/x-www-form-urlencoded"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(context.Context, formInput) (struct{}, error) {
@@ -600,7 +631,7 @@ func TestARepeatedFormValueForAScalarFieldIsRefused(t *testing.T) {
 func TestARepeatedMultipartFilePartIsRefused(t *testing.T) {
 	operation := NewOperation[multipartInput, struct{}](
 		"the.module.multipart", http.MethodPost, "/items", "", "",
-		"multipart/form-data",
+		requestBody("multipart/form-data"),
 		[]Response{{Status: http.StatusNoContent, Description: "Accepted"}},
 	)
 	handler := operation.Handle(func(context.Context, multipartInput) (struct{}, error) {
@@ -632,7 +663,7 @@ func TestARepeatedMultipartFilePartIsRefused(t *testing.T) {
 func TestANullJSONBodyIsRefused(t *testing.T) {
 	operation := NewOperation[readInput, struct{}](
 		"the.module.write", http.MethodPost, "/items/:id", "", "",
-		"application/json",
+		requestBody("application/json"),
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, readInput) (struct{}, error) {

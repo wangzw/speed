@@ -36,6 +36,26 @@ field:
 _ struct{} `description:"..."`
 ```
 
+## The request and reply forms
+
+The generator mirrors the entry point's binding and reply model:
+
+- **Request bodies** follow the declared `RequestBody`: JSON bodies carry the
+  `json`-tagged fields, form bodies the `form`-tagged ones, multipart bodies the
+  form fields plus file fields published as binary strings, and an
+  octet-stream body is a binary string. The request body's description and
+  required flag are published.
+- **Responses** follow the reply kind the declaration allows: a JSON body is
+  the declared structure's schema; an octet-stream or other non-text payload is
+  a binary string; a text payload is a string; `text/event-stream` publishes
+  the media type with no body schema; a redirect publishes its `Location`; a
+  204/304 publishes no content. A declared media type of `*/*` publishes a
+  `*/*` content entry with a binary schema.
+- **Declarations the entry point refuses are refused here too**: a body on a
+  no-body status, a body-tagged input without a media type, an unknown media
+  type, a JSON answer without a structure, and a simple operation without
+  exactly one 2xx.
+
 ## The dependency
 
 The generator bridges `github.com/swaggest/openapi-go` and

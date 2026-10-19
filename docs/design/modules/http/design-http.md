@@ -186,7 +186,14 @@ type Spec struct {
 
 **片段的 paths 是相对写法。** 一条路由的完整路径由读取方拼出：`Prefix` 与 `Version` 非空的部分以 `/` 连成 API 根（`api` 加 `v1` 是 `/api/v1`），再接片段里的 path（`/auth/me`），得 `/api/v1/auth/me`。斜杠由读取方插入，声明里不写前导或尾随斜杠。**版本段由模块自己声明**：同一个模块开始服务第二版时，它为那一版再声明一个 `Spec`，两版的片段各带自己的 `Version`。**`Prefix` 是端点属性，同样由模块声明**：它是这个端点服务 API 的路径，与宿主配置里的认领前缀是两份各自维护的事实，本模块不解释、也不核对它们一致。
 
-**片段可以由 operation 声明生成，声明同时绑定 handler。** 模块在 `Resources` 里再声明一份 `http.Operations`：每条 operation 是 `http.Operation[In, Out]`，带方法、相对路径、描述与应答集；`In` 与 `Out` 是 handler 的输入与成功应答类型。handler 经 `Operation.Handle` 绑定，签名必须是 `func(context.Context, In) (Out, error)`——别的签名编译不过。**入口模块负责把请求变成 `In`、把 `Out` 写成声明的成功应答**：参数从 `In` 的 `path`/`query`/`header`/`cookie` tag 绑定，请求体从 `json` tag 解码（未知成员拒绝），因此 handler 拿不到请求本身，读不到声明没带的参数，也写不出声明没描述的字段。handler 返回的错误经 `Failure` 接口给出状态，且只在该状态已声明时才写出，否则答 500。
+**片段可以由 operation 声明生成，声明同时绑定 handler。** 模块在 `Resources` 里再声明一份 `http.Operations`：每条 operation 带方法、相对路径、描述、请求体声明与应答集。两种形态共用同一个描述符，生成器一视同仁：
+
+- `http.Operation[In, Out]`：handler 经 `Handle` 绑定为 `func(context.Context, In) (Out, error)`，成功应答是唯一声明的 2xx，body 是 `Out`。
+- `http.ReplyOperation[In]`：handler 为 `func(context.Context, In, *Meta) (Reply, error)`，用 `JSON`/`Empty`/`Bytes`/`Stream`/`SSE`/`Redirect` 构造应答，可带 `WithHeaders`/`WithCookies`；`Meta` 给出 client IP、路由模板与请求 Content-Length。
+
+**请求体按 `RequestMediaType` 绑定**：JSON 用 `json` tag、表单用 `form` tag、multipart 用 `form`/`file` tag、二进制用唯一的 `raw` tag 字段；未知成员按类别拒绝，`In` 的 `Validate()` 失败答 422。参数从 `path`/`query`/`header`/`cookie` tag 绑定，它们对每种媒体类型都生效。handler 因此拿不到请求本身，读不到声明没带的参数，也写不出声明没描述的字段。
+
+**应答是封闭集，动态部分运行期核对。** 状态必须已声明；媒体类型必须与该状态的声明一致（声明 `*/*` 表示由 handler 在该状态内选择）；动态响应头的名字必须已声明；JSON 应答的 body 类型必须等于声明的结构；未声明或类型不符按内部错误答 500，不写出未声明的应答。这类拒绝在构建 handler 时也会对明显无法描述的声明生效：空媒体类型的 body、无结构的 JSON body、204/304 带 body、简单形态的多个 2xx。
 
 **错误应答由公共集加覆盖声明。** 模块把一组 `Response` 作为公共失败集，`Failures(common, specific...)` 按状态合并：operation 同名状态的应答覆盖公共应答，任一侧独有的状态被加入。`Fault` 承载状态、问题类型、标题与详情，handler 可以返回它，也可以 `panic` 它；入口模块只写出该 operation 声明过的状态，未声明的一律 500。恢复层把携带 Problem 的 panic 只在该状态已声明时当作拒绝写出，其余 panic 仍按缺陷处理。**错误体形状是一份声明**（`ErrorShape`）：默认是 RFC 9457 问题文档；宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的错误应答，片段因此描述真正会写出的内容（[ADR-http-failure-responses-2026-10-19](../../../adr/adr-http-failure-responses-2026-10-19.md)）。
 

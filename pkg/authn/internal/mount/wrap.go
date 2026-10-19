@@ -18,6 +18,10 @@ import (
 // pass is answered with the 401 of Unauthorized, with no code, and the handler is
 // not called.
 //
+// The handler runs with the response's header map in its request context, which
+// is how a typed handler writes a header its answer body does not express; see
+// SetResponseHeader and AddResponseHeader.
+//
 // The check is csrf.Check, which lets the safe methods through by itself and
 // judges the others by Sec-Fetch-Site and, when that is missing, by Origin
 // against Host. A route that an external party sends the browser back to from
@@ -39,6 +43,7 @@ func Wrap(csrf *http.CrossOriginProtection, realm string, h gin.HandlerFunc) gin
 			Unauthorized(c, realm, "")
 			return
 		}
+		c.Request = c.Request.WithContext(withResponseHeaders(c.Request.Context(), c.Writer.Header()))
 		h(c)
 	}
 }

@@ -16,13 +16,17 @@ import (
 )
 
 // Meta is what an operation's handler knows about the request it is answering,
-// apart from its typed input: the caller's address and the route template the
-// request matched. It is a snapshot taken when the handler is called.
+// apart from its typed input: the caller's address, the route template the
+// request matched and the request body's declared length. It is a snapshot
+// taken when the handler is called.
 type Meta struct {
 	// ClientIP is the client's address as the endpoint resolved it.
 	ClientIP string
 	// Route is the route template the request matched, in gin's form.
 	Route string
+	// ContentLength is the request's Content-Length, or -1 when the length is
+	// unknown, which is the value net/http records for a chunked request.
+	ContentLength int64
 }
 
 // Reply is one answer a handler builds instead of returning a typed body. Its
@@ -133,11 +137,26 @@ func replyValueOf(reply Reply) *replyValue {
 	return value
 }
 
+// mediaTypeAny in a declared response body means the handler chooses the media
+// type at run time within that status. Only bytes and stream replies can carry
+// a dynamic media type, and the contract describes the body as binary.
+const mediaTypeAny = "*/*"
+
 // SSEWriter writes one server-sent event at a time and flushes it, so each
 // event reaches the client before the next one is built.
 type SSEWriter struct {
 	writer io.Writer
 	flush  func()
+}
+
+// NewSSEWriter returns a writer that sends events to w and flushes each one to
+// flusher. A nil flusher writes the events without flushing.
+func NewSSEWriter(writer io.Writer, flusher nethttp.Flusher) *SSEWriter {
+	writerOfEvents := &SSEWriter{writer: writer}
+	if flusher != nil {
+		writerOfEvents.flush = flusher.Flush
+	}
+	return writerOfEvents
 }
 
 // Send writes one event and flushes it. An empty event name writes only the
@@ -181,22 +200,27 @@ func replyBind[In any](
 	handle func(context.Context, In, *Meta) (Reply, error),
 	operationID string,
 	input reflect.Type,
-	requestMediaType string,
+	request *RequestBody,
 	responses []Response,
 ) gin.HandlerFunc {
 	checkResponseBodies(responses)
-	binding := newRequestBinding(input, requestMediaType)
+	checkReplyResponses(responses)
+	binding := newRequestBinding(input, requestMediaTypeOf(request))
 	return func(c *gin.Context) {
-		c.Set(declaredFailuresContextKey, declaredStatuses(responses))
+		c.Set(declaredFailuresContextKey, declaredResponses(responses))
 		in, err := bindInput[In](c, binding)
 		if err != nil {
 			refuseBinding(c, err)
 			return
 		}
-		meta := &Meta{ClientIP: c.ClientIP(), Route: c.FullPath()}
+		meta := &Meta{
+			ClientIP:      c.ClientIP(),
+			Route:         c.FullPath(),
+			ContentLength: c.Request.ContentLength,
+		}
 		reply, err := handle(c.Request.Context(), in, meta)
 		if err != nil {
-			writeFailure(c, responses, err)
+			writeFailure(c, operationID, responses, err)
 			return
 		}
 		writeReply(c, operationID, responses, reply)
@@ -292,6 +316,11 @@ func checkBodyMediaType(value *replyValue, response Response) string {
 		return "a body reply is declared against a response with no body"
 	}
 	declared := normaliseMediaType(response.Body.MediaType)
+	// A dynamic media type accepts whatever bytes or stream reply the handler
+	// builds: the declaration leaves the choice to the handler.
+	if declared == mediaTypeAny {
+		return ""
+	}
 	if declared == "text/event-stream" {
 		return "an event stream is written only with SSEReply"
 	}
@@ -300,6 +329,30 @@ func checkBodyMediaType(value *replyValue, response Response) string {
 			value.mediaType, response.Body.MediaType)
 	}
 	return ""
+}
+
+// checkReplyResponses refuses a reply declaration the writer cannot describe:
+// a body with no media type, or a JSON body whose structure is not declared.
+// Either would publish a shape the entry point cannot validate the reply
+// against, so it is refused when the handler is built.
+func checkReplyResponses(responses []Response) {
+	for _, response := range responses {
+		if response.Body == nil {
+			continue
+		}
+		if normaliseMediaType(response.Body.MediaType) == "" {
+			panic(fmt.Sprintf("http: the response %d declares a body with no media type", response.Status))
+		}
+		if isJSONMediaType(response.Body.MediaType) && response.Body.Structure == nil {
+			panic(fmt.Sprintf("http: the response %d declares a JSON body with no Structure", response.Status))
+		}
+	}
+}
+
+// isJSONMediaType reports whether a media type carries a JSON document.
+func isJSONMediaType(mediaType string) bool {
+	normalised := normaliseMediaType(mediaType)
+	return normalised == "application/json" || strings.HasSuffix(normalised, "+json")
 }
 
 // checkDynamicHeaders requires every dynamic header's name to be declared on
@@ -382,7 +435,10 @@ func writeReplyValue(c *gin.Context, operationID string, response Response, valu
 		c.Header("Content-Type", declaredMediaType(response, "text/event-stream"))
 		c.Status(value.status)
 		c.Writer.WriteHeaderNow()
-		writer := &SSEWriter{writer: c.Writer, flush: c.Writer.Flush}
+		// The status and headers are flushed before the handler builds its
+		// first event, so establishing the connection does not wait for one.
+		c.Writer.Flush()
+		writer := NewSSEWriter(c.Writer, c.Writer)
 		if err := value.events(writer); err != nil {
 			streamFailed(c, err)
 		}

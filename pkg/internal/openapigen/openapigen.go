@@ -39,6 +39,9 @@ const (
 	mediaTypeMultipart   = "multipart/form-data"
 	mediaTypeOctetStream = "application/octet-stream"
 	mediaTypeEventStream = "text/event-stream"
+	// mediaTypeAny is a declared response body's dynamic media type: the
+	// handler chooses at run time within the status.
+	mediaTypeAny = "*/*"
 )
 
 // parameterTags are the tags that read a value from the request line, headers
@@ -78,8 +81,18 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 	}))
 	r.Spec.Info.WithTitle(title).WithVersion(version)
 
+	bodyNames := map[string]string{}
 	for index, declared := range operations {
 		operation := declared.Descriptor()
+		if operation.Request != nil && operation.Request.Name != "" {
+			bodyNames[operation.ID] = operation.Request.Name
+		}
+		// The simple form's writer answers the single declared success status;
+		// a declaration with two of them is refused when the handler is built,
+		// so publishing it would promise an operation that cannot start.
+		if operation.Simple && countSuccess(operation.Responses) != 1 {
+			return nil, fmt.Errorf("openapigen: %s: a simple operation must declare exactly one 2xx response", operation.ID)
+		}
 		ctx, err := r.NewOperationContext(operation.Method, ginPathToOpenAPI(operation.Path))
 		if err != nil {
 			return nil, fmt.Errorf("openapigen: %s %s: %w", operation.Method, operation.Path, err)
@@ -112,7 +125,7 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("openapigen: writing the fragment: %w", err)
 	}
-	return normalise(raw)
+	return normalise(raw, bodyNames)
 }
 
 // addParameters publishes the request's parameters. They are added as a
@@ -135,6 +148,17 @@ func addParameters(ctx openapi.OperationContext, operation speedhttp.OperationDe
 	return nil
 }
 
+// countSuccess is how many 2xx answers a response set carries.
+func countSuccess(responses []speedhttp.Response) int {
+	count := 0
+	for _, response := range responses {
+		if response.Status >= 200 && response.Status < 300 {
+			count++
+		}
+	}
+	return count
+}
+
 // addRequestBody publishes the request body the declared media type reads.
 //
 // The body is generated through a temporary operation and moved onto the real
@@ -142,7 +166,10 @@ func addParameters(ctx openapi.OperationContext, operation speedhttp.OperationDe
 // TRACE, while pkg/http binds one on every method; building the body under a
 // POST that is discarded afterwards is what keeps the two in step.
 func addRequestBody(r *openapi31.Reflector, index int, operation speedhttp.OperationDescriptor) error {
-	mediaType := normaliseMediaType(operation.RequestMediaType)
+	mediaType := ""
+	if operation.Request != nil {
+		mediaType = normaliseMediaType(operation.Request.MediaType)
+	}
 	if err := checkRequestBinding(operation.Input, mediaType); err != nil {
 		return err
 	}
@@ -172,7 +199,7 @@ func addRequestBody(r *openapi31.Reflector, index int, operation speedhttp.Opera
 			openapi.WithContentType(mediaType),
 			openapi.WithCustomize(binaryRequestBody(mediaType)))
 	default:
-		return fmt.Errorf("unsupported request media type %q", operation.RequestMediaType)
+		return fmt.Errorf("unsupported request media type %q", operation.Request.MediaType)
 	}
 	if err := r.AddOperation(ctx); err != nil {
 		return err
@@ -187,6 +214,16 @@ func addRequestBody(r *openapi31.Reflector, index int, operation speedhttp.Opera
 		return fmt.Errorf("the generated %s operation is missing", operation.Method)
 	}
 	target.RequestBody = item.Post.RequestBody
+	// The declared description and required flag travel with the body; the
+	// library leaves both out when they are not set.
+	if target.RequestBody.RequestBody != nil {
+		if operation.Request.Description != "" {
+			target.RequestBody.RequestBody.WithDescription(operation.Request.Description)
+		}
+		if operation.Request.Required {
+			target.RequestBody.RequestBody.WithRequired(true)
+		}
+	}
 	return nil
 }
 
@@ -737,6 +774,12 @@ func addResponse(ctx openapi.OperationContext, operation speedhttp.OperationDesc
 	switch {
 	case !content:
 		structure = nil
+	case mediaType == mediaTypeAny:
+		// A dynamic answer's media type is chosen by the handler at run time.
+		// Only bytes and stream replies are accepted there, and a "*/*" entry
+		// cannot express text, so the body is described as binary octets.
+		binary = true
+		structure = nil
 	case mediaType == mediaTypeOctetStream:
 		// An octet-stream answer is always a raw byte string. Whatever Structure
 		// the declaration names describes a value the entry point writes as
@@ -771,12 +814,6 @@ func addResponse(ctx openapi.OperationContext, operation speedhttp.OperationDesc
 		cu.Description = response.Description
 	}}
 	headers := responseHeaders(response.Headers)
-	// The simple form writes the declared headers on its success response
-	// only: a handler's failures are problem documents, and the entry point
-	// writes no declared header on them.
-	if operation.Simple && response.Status != operation.SuccessStatus {
-		headers = nil
-	}
 	// An event stream is written through a reply, and its writer supplies
 	// Cache-Control: no-store unless the declaration names a Cache-Control of
 	// its own.
@@ -919,13 +956,16 @@ func ginPathToOpenAPI(path string) string {
 // normalise brings the library's output to the shape the platform publishes:
 // no null in type unions, no duplicated parameter descriptions, and no default
 // header style. It keeps every media type and binary format as generated.
-func normalise(raw []byte) ([]byte, error) {
+func normalise(raw []byte, bodyNames map[string]string) ([]byte, error) {
 	var doc map[string]interface{}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("openapigen: reading the generated fragment: %w", err)
 	}
 	walk(doc)
 	normaliseSurfaces(doc)
+	if err := nameRequestBodies(doc, bodyNames); err != nil {
+		return nil, err
+	}
 	var out strings.Builder
 	encoder := json.NewEncoder(&out)
 	encoder.SetEscapeHTML(false)
@@ -949,6 +989,74 @@ func walk(value interface{}) {
 			walk(child)
 		}
 	}
+}
+
+// nameRequestBodies moves each named request body schema into the components
+// and references it, so the generated client gets a stable type name and two
+// operations can share one body shape.
+func nameRequestBodies(doc map[string]interface{}, names map[string]string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	paths, ok := doc["paths"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	components, _ := doc["components"].(map[string]interface{})
+	if components == nil {
+		components = map[string]interface{}{}
+		doc["components"] = components
+	}
+	schemas, _ := components["schemas"].(map[string]interface{})
+	if schemas == nil {
+		schemas = map[string]interface{}{}
+		components["schemas"] = schemas
+	}
+	for _, item := range paths {
+		operations, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, method := range methodKeys {
+			operation, ok := operations[method].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			id, _ := operation["operationId"].(string)
+			name, named := names[id]
+			if !named {
+				continue
+			}
+			body, _ := operation["requestBody"].(map[string]interface{})
+			content, _ := body["content"].(map[string]interface{})
+			for _, mediaValue := range content {
+				media, ok := mediaValue.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				schema, ok := media["schema"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if existing, found := schemas[name]; found {
+					if !equalJSON(existing, schema) {
+						return fmt.Errorf("openapigen: the request body %q is declared with different shapes", name)
+					}
+				} else {
+					schemas[name] = schema
+				}
+				media["schema"] = map[string]interface{}{"$ref": "#/components/schemas/" + name}
+			}
+		}
+	}
+	return nil
+}
+
+// equalJSON compares two decoded JSON values by content.
+func equalJSON(a, b interface{}) bool {
+	left, errLeft := json.Marshal(a)
+	right, errRight := json.Marshal(b)
+	return errLeft == nil && errRight == nil && string(left) == string(right)
 }
 
 // methodKeys are the members of a path item that hold an operation, as the

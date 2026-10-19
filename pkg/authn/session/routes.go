@@ -5,21 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
-
-	"github.com/gin-gonic/gin"
+	"strings"
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
-)
-
-// The relative paths of the routes, joined to the mounter's base path.
-const (
-	sessionPath  = "/session"
-	logoutPath   = "/logout"
-	sessionsPath = "/sessions"
-	sessionByID  = "/sessions/:id"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // The seam-level audit actions and outcome of the self-service revocation
@@ -34,6 +25,22 @@ const (
 	outcomeSuccess      = "success"
 )
 
+// typePrefix starts the Problem.Type of every failure this capability's
+// handlers write, the code following it being one of mount's closed table.
+const typePrefix = "urn:speed:authn:"
+
+// cacheControlSetCookie is the directive a response that clears the session
+// cookie carries. The mounter puts Cache-Control: no-store on every response
+// already; this one is what the session library wrote beside it, and it keeps a
+// cache from holding a response whose Set-Cookie it may ignore.
+const cacheControlSetCookie = `no-cache="Set-Cookie"`
+
+// authnFailure is a refusal of one of the capability's problem codes: the entry
+// point writes it as a problem document of the code's status and type.
+func authnFailure(status int, code string) error {
+	return speedhttp.Fault{Status: status, Type: typePrefix + code}
+}
+
 // recordAudit writes one best-effort seam-level audit row. A failure is an
 // Error and never changes the outcome of the route, and an assembly with no
 // audit capability writes nothing.
@@ -47,10 +54,12 @@ func (p *product) recordAudit(ctx context.Context, e audit.Entry) {
 	}
 }
 
-// mountRoutes registers the five self-service routes through the mounter. The
-// route and the access level the gateway applies to it are registered in one
-// call, and the mounter puts every response under Cache-Control: no-store and
-// every unsafe method behind the cross-origin check.
+// mountRoutes registers the five self-service routes through the mounter. Each
+// route is registered from the operation that declares it, so the handler's
+// input and answer types, the fragment and the route are one source. The route
+// and the access level the gateway applies to it are registered in one call, and
+// the mounter puts every response under Cache-Control: no-store and every unsafe
+// method behind the cross-origin check.
 //
 // GET /session may be asked without a credential and answers that nobody is
 // logged in; a credential that does not hold is still a 401. POST /logout and
@@ -58,36 +67,46 @@ func (p *product) recordAudit(ctx context.Context, e audit.Entry) {
 // routes that list and revoke sessions are not registered for it: the gateway
 // refuses an impersonating identity there, and each handler refuses it again.
 func (p *product) mountRoutes() {
-	p.mounter.Optional(http.MethodGet, sessionPath, p.handleSession, mount.Impersonable())
-	p.mounter.Guarded(http.MethodPost, logoutPath, p.handleLogout, mount.Impersonable())
-	p.mounter.Guarded(http.MethodGet, sessionsPath, p.handleSessions)
-	p.mounter.Guarded(http.MethodDelete, sessionsPath, p.handleRevokeOthers)
-	p.mounter.Guarded(http.MethodDelete, sessionByID, p.handleRevokeOne)
+	p.mounter.Optional(http.MethodGet, mountRel(sessionOperation.Path),
+		sessionOperation.Handle(p.handleSession), mount.Impersonable())
+	p.mounter.Guarded(http.MethodPost, mountRel(logoutOperation.Path),
+		logoutOperation.Handle(p.handleLogout), mount.Impersonable())
+	p.mounter.Guarded(http.MethodGet, mountRel(listOperation.Path),
+		listOperation.Handle(p.handleSessions))
+	p.mounter.Guarded(http.MethodDelete, mountRel(revokeOthersOperation.Path),
+		revokeOthersOperation.Handle(p.handleRevokeOthers))
+	p.mounter.Guarded(http.MethodDelete, mountRel(revokeOneOperation.Path),
+		revokeOneOperation.Handle(p.handleRevokeOne))
 }
 
-// sessionView is the body of GET /session for an identity.
-type sessionView struct {
-	Authenticated bool           `json:"authenticated"`
-	SessionID     string         `json:"session_id,omitempty"`
-	AccountID     string         `json:"account_id,omitempty"`
-	ActorID       string         `json:"actor_id,omitempty"`
-	Impersonating bool           `json:"impersonating,omitempty"`
-	Methods       []authn.Method `json:"methods,omitempty"`
-	Assurance     string         `json:"assurance,omitempty"`
-	AuthTime      *time.Time     `json:"auth_time,omitempty"`
-	Provider      string         `json:"provider,omitempty"`
+// mountRel turns a declared route into the relative path the mounter joins to
+// its base. The declaration writes the route against the module's API root, and
+// the fragment is a static declaration fixed before configuration, so the part
+// of it the capability owns is the default mount base less that root. Removing
+// it leaves the relative path the mounter takes, whatever base the deployment
+// configured: a configured base moves the routes without moving the contract,
+// which is the split the Spec already accepts. A declared route that does not
+// begin with the owned part is a declaration defect, not something to mount at a
+// guessed path.
+func mountRel(declared string) string {
+	owned := strings.TrimPrefix(mount.DefaultBasePath, sessionSpec.APIRoot())
+	rel, found := strings.CutPrefix(declared, owned)
+	if !found {
+		panic(diagnosticPrefix + ModuleName + ": the declared route " + declared +
+			" does not begin with the capability's mounted path " + owned)
+	}
+	return rel
 }
 
 // handleSession answers who is logged in on this session. With no credential the
 // answer is {"authenticated": false}, so a front end can ask on startup without
 // a 401 in its console.
-func (p *product) handleSession(c *gin.Context) {
-	id, ok := authn.FromContext(c.Request.Context())
+func (p *product) handleSession(ctx context.Context, _ struct{}) (AuthnSessionView, error) {
+	id, ok := authn.FromContext(ctx)
 	if !ok {
-		c.JSON(http.StatusOK, sessionView{Authenticated: false})
-		return
+		return AuthnSessionView{}, nil
 	}
-	view := sessionView{
+	view := AuthnSessionView{
 		Authenticated: true,
 		SessionID:     string(id.Session()),
 		AccountID:     string(id.Account()),
@@ -103,7 +122,7 @@ func (p *product) handleSession(c *gin.Context) {
 		view.Impersonating = true
 		view.ActorID = string(id.Actor())
 	}
-	c.JSON(http.StatusOK, view)
+	return view, nil
 }
 
 // assuranceName is the level's name, which is what the wire carries and not its
@@ -121,73 +140,56 @@ func assuranceName(a authn.Assurance) string {
 // handleLogout revokes the session the request came with and clears the cookie.
 // For an impersonating identity the session is the administrator's own, which is
 // the one the request's credential is, and the impersonation ends with it.
-func (p *product) handleLogout(c *gin.Context) {
-	id, ok := authn.FromContext(c.Request.Context())
+func (p *product) handleLogout(ctx context.Context, _ struct{}, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, ok := authn.FromContext(ctx)
 	if !ok || id.Session() == "" {
-		mount.Fail(c, mount.CodeBadRequest)
-		return
+		return nil, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 	}
-	if err := p.Revoke(c.Request.Context(), id.Session(), authn.ReasonSelf); err != nil {
-		p.routeFailure(c, "logout", err)
-		return
+	if err := p.Revoke(ctx, id.Session(), authn.ReasonSelf); err != nil {
+		return nil, p.storeFailure("logout", err)
 	}
-	p.recordAudit(c.Request.Context(), audit.Entry{
+	p.recordAudit(ctx, audit.Entry{
 		Action:  actionLogout,
 		Object:  string(id.Session()),
 		Outcome: outcomeSuccess,
 	})
-	p.ClearCookie(c.Writer)
-	c.Status(http.StatusNoContent)
-}
-
-// sessionItem is one session in the listing.
-type sessionItem struct {
-	ID         string    `json:"id"`
-	Kind       string    `json:"kind"`
-	CreatedAt  time.Time `json:"created_at"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	ExpiresAt  time.Time `json:"expires_at"`
-	ClientIP   string    `json:"client_ip"`
-	UserAgent  string    `json:"user_agent"`
-	Current    bool      `json:"current"`
+	mount.AddResponseHeader(ctx, "Cache-Control", cacheControlSetCookie)
+	return speedhttp.WithCookies(speedhttp.EmptyReply(http.StatusNoContent), p.clearingCookie()), nil
 }
 
 // handleSessions lists the caller's own live browser and token sessions.
-func (p *product) handleSessions(c *gin.Context) {
-	id, ok := p.ownSessionCaller(c)
-	if !ok {
-		return
-	}
-	rows, err := p.liveRows(c.Request.Context(), id.Account(), p.now(), "created_at DESC, id DESC")
+func (p *product) handleSessions(ctx context.Context, _ struct{}) (AuthnSessionList, error) {
+	id, err := p.ownSessionCaller(ctx)
 	if err != nil {
-		p.routeFailure(c, "listing sessions", err)
-		return
+		return AuthnSessionList{}, err
 	}
-	items := make([]sessionItem, len(rows))
+	rows, err := p.liveRows(ctx, id.Account(), p.now(), "created_at DESC, id DESC")
+	if err != nil {
+		return AuthnSessionList{}, p.storeFailure("listing sessions", err)
+	}
+	items := make([]AuthnSessionItem, len(rows))
 	for i, r := range rows {
-		items[i] = sessionItem{
+		items[i] = AuthnSessionItem{
 			ID: r.ID, Kind: r.Kind, CreatedAt: r.CreatedAt, LastSeenAt: r.LastSeenAt,
 			ExpiresAt: r.ExpiresAt.Time, ClientIP: r.ClientIP, UserAgent: r.UserAgent,
 			Current: r.ID == string(id.Session()),
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"sessions": items})
+	return AuthnSessionList{Sessions: items}, nil
 }
 
 // handleRevokeOthers revokes every session of the caller's but the current one.
-func (p *product) handleRevokeOthers(c *gin.Context) {
-	id, ok := p.ownSessionCaller(c)
-	if !ok {
-		return
+func (p *product) handleRevokeOthers(ctx context.Context, _ struct{}) (AuthnSessionRevoked, error) {
+	id, err := p.ownSessionCaller(ctx)
+	if err != nil {
+		return AuthnSessionRevoked{}, err
 	}
-	ctx := c.Request.Context()
 	// The audit row of a revocation names the session it revoked, and the
 	// statement reports the identifiers it ended, so the rows and the revocation
 	// name one set rather than two readings of the table.
 	revoked, err := p.RevokeAccount(ctx, id.Account(), id.Session(), authn.ReasonSelf)
 	if err != nil {
-		p.routeFailure(c, "revoking the other sessions", err)
-		return
+		return AuthnSessionRevoked{}, p.storeFailure("revoking the other sessions", err)
 	}
 	for _, target := range revoked {
 		p.recordAudit(ctx, audit.Entry{
@@ -196,66 +198,72 @@ func (p *product) handleRevokeOthers(c *gin.Context) {
 			Outcome: outcomeSuccess,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"revoked": len(revoked)})
+	return AuthnSessionRevoked{Revoked: len(revoked)}, nil
 }
 
 // handleRevokeOne revokes one of the caller's own sessions. A session that is
 // not the caller's and one that does not exist are answered alike, so that the
 // route does not say which identifiers are in use.
-func (p *product) handleRevokeOne(c *gin.Context) {
-	id, ok := p.ownSessionCaller(c)
-	if !ok {
-		return
+func (p *product) handleRevokeOne(ctx context.Context, in revokeOneInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	id, err := p.ownSessionCaller(ctx)
+	if err != nil {
+		return nil, err
 	}
-	target := authn.SessionID(c.Param("id"))
-	info, err := p.Get(c.Request.Context(), target)
+	target := authn.SessionID(in.ID)
+	info, err := p.Get(ctx, target)
 	switch {
 	case errors.Is(err, authn.ErrSessionNotFound):
-		mount.Forbidden(c, mount.CodeForbidden)
-		return
+		return nil, authnFailure(http.StatusForbidden, mount.CodeForbidden)
 	case err != nil:
-		p.routeFailure(c, "reading a session", err)
-		return
+		return nil, p.storeFailure("reading a session", err)
 	case info.Account != id.Account() || info.Kind == authn.SessionService:
-		mount.Forbidden(c, mount.CodeForbidden)
-		return
+		return nil, authnFailure(http.StatusForbidden, mount.CodeForbidden)
 	}
-	if err := p.Revoke(c.Request.Context(), target, authn.ReasonSelf); err != nil {
-		p.routeFailure(c, "revoking a session", err)
-		return
+	if err := p.Revoke(ctx, target, authn.ReasonSelf); err != nil {
+		return nil, p.storeFailure("revoking a session", err)
 	}
-	p.recordAudit(c.Request.Context(), audit.Entry{
+	p.recordAudit(ctx, audit.Entry{
 		Action:  actionSessionRevoke,
 		Object:  string(target),
 		Outcome: outcomeSuccess,
 	})
+	reply := speedhttp.EmptyReply(http.StatusNoContent)
 	if target == id.Session() {
-		p.ClearCookie(c.Writer)
+		mount.AddResponseHeader(ctx, "Cache-Control", cacheControlSetCookie)
+		reply = speedhttp.WithCookies(reply, p.clearingCookie())
 	}
-	c.Status(http.StatusNoContent)
+	return reply, nil
 }
 
 // ownSessionCaller reads the caller of a route that lists or revokes sessions and
 // refuses one that is impersonating: the gateway already does, as the route is not
 // registered for it, and this is the same refusal where the route is reached by a
 // path that does not go through the gateway.
-func (p *product) ownSessionCaller(c *gin.Context) (authn.Identity, bool) {
-	id, ok := authn.FromContext(c.Request.Context())
+func (p *product) ownSessionCaller(ctx context.Context) (authn.Identity, error) {
+	id, ok := authn.FromContext(ctx)
 	if !ok {
-		mount.Unauthorized(c, p.mounter.Endpoint(), "")
-		return authn.Identity{}, false
+		// The gateway refuses this first, with the capability's challenge. Where
+		// the route is reached without the gateway the handler answers the same
+		// challenge itself, as the fault's declared header, so its 401 is the one
+		// RFC 9110 requires a 401 to carry rather than a bare problem document.
+		return authn.Identity{}, speedhttp.Fault{
+			Status: http.StatusUnauthorized,
+			Headers: []speedhttp.HeaderValue{{
+				Name:  "WWW-Authenticate",
+				Value: mount.UnauthorizedChallenge(p.mounter.Endpoint()),
+			}},
+		}
 	}
 	if id.Impersonating() {
-		mount.Forbidden(c, mount.CodeImpersonationRestricted)
-		return authn.Identity{}, false
+		return authn.Identity{}, authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
 	}
-	return id, true
+	return id, nil
 }
 
-// routeFailure answers a failure of the store: 503, and the cause in the log,
+// storeFailure answers a failure of the store: 503, and the cause in the log,
 // never in the response.
-func (p *product) routeFailure(c *gin.Context, op string, err error) {
+func (p *product) storeFailure(op string, err error) error {
 	p.logger.Error(diagnosticPrefix+ModuleName+": a session route failed", slog.String("operation", op),
 		slog.Any("error", err))
-	mount.Unavailable(c)
+	return authnFailure(http.StatusServiceUnavailable, mount.CodeUnavailable)
 }

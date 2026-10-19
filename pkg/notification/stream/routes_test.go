@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
@@ -29,6 +30,69 @@ func TestTheRouteSetsTheEventStreamContentType(t *testing.T) {
 	}
 }
 
+// The answer's status and headers are flushed before the handler builds its
+// first event: the client learns the stream is open without waiting for an
+// event to arrive. The case observes the order on the response writer — a
+// flush with no body bytes yet, then the written frame — and reads the content
+// type as it was on that first flush.
+func TestTheHeadersAreFlushedBeforeTheFirstEvent(t *testing.T) {
+	rig := newRig(t)
+	ctx, cancel := context.WithCancel(authntest.Context(t, context.Background()))
+	defer cancel()
+
+	recorder := newTimingRecorder()
+	req := httptest.NewRequest(http.MethodGet, pathStream, nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		rig.engine.ServeHTTP(recorder, req)
+		close(done)
+	}()
+
+	// The handler subscribes its connection when the answer's callback begins,
+	// which the entry point reaches only after flushing the declared status and
+	// headers. Reaching this point therefore means that flush has happened.
+	conn := rig.firstConnection(t)
+	opening := recorder.snapshot()
+	if opening.writes != 0 {
+		t.Fatalf("the answer wrote %d body chunks before the handler subscribed, want none", opening.writes)
+	}
+	if opening.emptyFlushes == 0 {
+		t.Fatal("the answer flushed no headers before the handler subscribed")
+	}
+	if opening.status != http.StatusOK {
+		t.Errorf("status at the header flush is %d, want 200", opening.status)
+	}
+	if opening.firstContent != "text/event-stream" {
+		t.Errorf("Content-Type at the header flush is %q, want text/event-stream", opening.firstContent)
+	}
+
+	conn.ch <- frame{event: frameEventName, data: []byte(`{"message_id":"message-1"}`)}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for recorder.snapshot().writes == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the stream wrote no event")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	after := recorder.snapshot()
+	want := "event: message\ndata: {\"message_id\":\"message-1\"}\n\n"
+	if after.body != want {
+		t.Errorf("the event stream is %q, want %q", after.body, want)
+	}
+	// The header flush came first, and each event is flushed as it is written.
+	if after.flushes < 2 {
+		t.Errorf("the answer flushed %d times, want the header flush and one per event", after.flushes)
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream did not end after the request context was cancelled")
+	}
+}
+
 // A request with no identity is a 401: there is no recipient to scope a
 // connection to.
 func TestTheRouteAnswers401WithoutAnIdentity(t *testing.T) {
@@ -43,15 +107,39 @@ func TestTheRouteAnswers401WithoutAnIdentity(t *testing.T) {
 }
 
 // A frame is the event name, the JSON data line, and a blank line: the shape a
-// connected client parses.
+// connected client parses. The case drives the real route and reads the bytes
+// the handler flushes, so the promise is asserted on what a client receives.
 func TestTheFrameIsAnEventNamedMessageWithJsonData(t *testing.T) {
-	w := httptest.NewRecorder()
-	if err := writeFrame(w, w, frame{event: frameEventName, data: []byte(`{"message_id":"message-1"}`)}); err != nil {
-		t.Fatalf("writeFrame failed: %v", err)
+	rig := newRig(t)
+	ctx, cancel := context.WithCancel(authntest.Context(t, context.Background()))
+	defer cancel()
+
+	recorder := newFlushRecorder()
+	req := httptest.NewRequest(http.MethodGet, pathStream, nil).WithContext(ctx)
+	done := make(chan struct{})
+	go func() {
+		rig.engine.ServeHTTP(recorder, req)
+		close(done)
+	}()
+
+	conn := rig.firstConnection(t)
+	conn.ch <- frame{event: frameEventName, data: []byte(`{"message_id":"message-1"}`)}
+
+	select {
+	case got := <-recorder.flushes:
+		want := "event: message\ndata: {\"message_id\":\"message-1\"}\n\n"
+		if got != want {
+			t.Errorf("the frame is %q, want %q", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream flushed no frame")
 	}
-	want := "event: message\ndata: {\"message_id\":\"message-1\"}\n\n"
-	if got := w.Body.String(); got != want {
-		t.Errorf("the frame is %q, want %q", got, want)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the stream did not end after the request context was cancelled")
 	}
 }
 

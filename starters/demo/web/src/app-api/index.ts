@@ -1057,22 +1057,22 @@ export interface AuthnProfileProfile {
  * One live session of the caller's, as the listing reports it.
  */
 export interface AuthnSessionItem {
+  /** Empty when the session carries none */
+  client_ip: string;
+  /** When the session was created, as an RFC 3339 instant in UTC. */
+  created_at: string;
+  /** Whether this is the session the request came with */
+  current: boolean;
+  /** The absolute expiry, as an RFC 3339 instant in UTC. A browser session can stop being valid earlier, once its idle timeout passes. */
+  expires_at: string;
   /** The public session identifier; it names the row and is not a credential. */
   id: string;
   /** The session kind, browser or token; service-account sessions are never listed. */
   kind: string;
-  /** When the session was created, as an RFC 3339 instant in UTC. */
-  created_at: string;
   /** Last activity of the session, as an RFC 3339 instant in UTC. For a browser session this is the last use the row was written for: touches are coalesced, written at most once per effective touch interval — the configured interval capped at half the idle timeout — so the value lags the newest use by up to that interval. A token session has no renewal path, so its value is the creation time. */
   last_seen_at: string;
-  /** The absolute expiry, as an RFC 3339 instant in UTC. A browser session can stop being valid earlier, once its idle timeout passes. */
-  expires_at: string;
-  /** Empty when the session carries none */
-  client_ip: string;
   /** Empty when the session carries none */
   user_agent: string;
-  /** Whether this is the session the request came with */
-  current: boolean;
 }
 
 /**
@@ -1091,6 +1091,18 @@ export interface AuthnSessionRevoked {
   revoked: number;
 }
 
+/**
+ * The assurance level the authentication reached; "none" when the identity carries no level.
+ */
+export type AuthnSessionViewAssurance = typeof AuthnSessionViewAssurance[keyof typeof AuthnSessionViewAssurance];
+
+
+export const AuthnSessionViewAssurance = {
+  none: 'none',
+  single: 'single',
+  multi: 'multi',
+} as const;
+
 export type AuthnSessionViewMethodsItem = typeof AuthnSessionViewMethodsItem[keyof typeof AuthnSessionViewMethodsItem];
 
 
@@ -1107,39 +1119,27 @@ export const AuthnSessionViewMethodsItem = {
 } as const;
 
 /**
- * The assurance level the authentication reached; "none" when the identity carries no level.
- */
-export type AuthnSessionViewAssurance = typeof AuthnSessionViewAssurance[keyof typeof AuthnSessionViewAssurance];
-
-
-export const AuthnSessionViewAssurance = {
-  none: 'none',
-  single: 'single',
-  multi: 'multi',
-} as const;
-
-/**
  * Whether the request carries a signed-in identity and, when it does, the facts the identity is built from.
  */
 export interface AuthnSessionView {
-  /** False when nobody is signed in; every other field is then absent */
-  authenticated: boolean;
-  /** The public identifier of the session the request came with; absent when nobody is signed in. */
-  session_id?: string;
   /** The account the request is taken to be from; the impersonated account while impersonating */
   account_id?: string;
   /** The account whose hands are on the request; present only while impersonating */
   actor_id?: string;
-  /** True only while the identity is impersonating another account; absent otherwise. */
-  impersonating?: boolean;
-  /** The authentication methods the identity completed, each from the closed set named by the enum; absent when the session records none. */
-  methods?: AuthnSessionViewMethodsItem[];
   /** The assurance level the authentication reached; "none" when the identity carries no level. */
   assurance?: AuthnSessionViewAssurance;
   /** The instant of the last interactive authentication, absent when the identity carries none */
   auth_time?: string;
+  /** False when nobody is signed in; every other field is then absent */
+  authenticated: boolean;
+  /** True only while the identity is impersonating another account; absent otherwise. */
+  impersonating?: boolean;
+  /** The authentication methods the identity completed, each from the closed set named by the enum; absent when the session records none. */
+  methods?: AuthnSessionViewMethodsItem[];
   /** The backend that verified the credential */
   provider?: string;
+  /** The public identifier of the session the request came with; absent when nobody is signed in. */
+  session_id?: string;
 }
 
 /**
@@ -1393,18 +1393,15 @@ export interface NotificationType {
   recipient_visible_params: string[];
 }
 
-/**
- * The body of a declaration: what the caller states before any byte is stored. size and content_type are required; name and checksum_sha256 may be omitted.
- */
 export interface ObjectstoreDeclaration {
+  /** The declared SHA-256 as 64 hex digits; empty declares no checksum */
+  checksum_sha256?: string;
+  /** The media type the bytes will carry; must be non-blank. The upload records it as the object's mime. */
+  content_type: string;
   /** An optional label for the object; normalized before storing, and omitted or empty stores an empty name */
   name?: string;
   /** The object's size in bytes; must be positive, and the upload's byte count must equal it exactly. A declaration without a positive size is refused whole. */
   size: number;
-  /** The media type the bytes will carry; must be non-blank. The upload records it as the object's mime. */
-  content_type: string;
-  /** The declared SHA-256 as 64 hex digits; empty declares no checksum */
-  checksum_sha256?: string;
 }
 
 /**
@@ -1424,22 +1421,22 @@ export const ObjectstoreObjectState = {
  * One object as the routes expose it: the values observed by the last upload plus the row's timestamps. It never carries the internal storage key, and every instant is UTC.
  */
 export interface ObjectstoreObject {
-  /** The object's identifier, minted at declaration; every other object route takes it in the path. */
-  id: string;
-  /** The declared label, normalized once when the object was created; empty when none was declared or it normalized to nothing */
-  name: string;
-  /** The lifecycle state: pending after declaration, uploaded once bytes are stored, completed after the completion call, deleted once tombstoned. A deleted object reads as 404 on every route except delete. */
-  state: ObjectstoreObjectState;
-  /** The observed byte count recorded by the last upload; zero until the first upload lands. */
-  size: number;
-  /** The content type recorded by the last upload, taken from the declared content_type; empty until the first upload lands. */
-  mime: string;
   /** The SHA-256 of the stored bytes as 64 lowercase hex digits, computed during the last upload; empty until the first upload lands. */
   checksum_sha256: string;
-  /** When a completed object will be swept into deleted, written from object-ttl at completion; absent when no lifetime is configured, so the object does not expire. */
-  expires_at?: string;
   /** When the object was declared, as an RFC 3339 instant in UTC. */
   created_at: string;
+  /** When a completed object will be swept into deleted, written from object-ttl at completion; absent when no lifetime is configured, so the object does not expire. */
+  expires_at?: string;
+  /** The object's identifier, minted at declaration; every other object route takes it in the path. */
+  id: string;
+  /** The content type recorded by the last upload, taken from the declared content_type; empty until the first upload lands. */
+  mime: string;
+  /** The declared label, normalized once when the object was created; empty when none was declared or it normalized to nothing */
+  name: string;
+  /** The observed byte count recorded by the last upload; zero until the first upload lands. */
+  size: number;
+  /** The lifecycle state: pending after declaration, uploaded once bytes are stored, completed after the completion call, deleted once tombstoned. A deleted object reads as 404 on every route except delete. */
+  state: ObjectstoreObjectState;
   /** When the row last changed, whether by declaration, upload, completion or deletion, as an RFC 3339 instant in UTC. */
   updated_at: string;
 }
@@ -2118,10 +2115,10 @@ limit?: number;
  * One page of the tenant's undeleted objects; next_cursor is empty when the page was not full.
  */
 export type ObjectstoreMetadataListObjects200 = {
-  /** The page's objects, at most limit of them, ordered by creation instant and then identifier, both ascending. */
-  objects: ObjectstoreObject[];
   /** The cursor to pass on the next call; empty when the page was not full, meaning no further page is known. */
   next_cursor: string;
+  /** The page's objects, at most limit of them, ordered by creation instant and then identifier, both ascending. */
+  objects: ObjectstoreObject[];
 };
 
 /**
@@ -9175,7 +9172,7 @@ export const notificationStreamSubscribe = (
 ) => {
 
 
-      return speedRequest<string>(
+      return speedRequest<unknown>(
       {url: `/api/v1/notifications/stream`, method: 'GET', signal
     },
       );
@@ -9734,8 +9731,8 @@ export const useObjectstoreMetadataCompleteObject = <TError = Problem,
     }
 
 /**
- * Streams a completed object's bytes, with Content-Type taken from the recorded mime and application/octet-stream when none was recorded. Only a completed object can be read: pending or uploaded is a 409, while deleted, unknown or another tenant's is a 404. A completed row whose bytes are missing from the backend is a 503. No Content-Disposition is set; a client that wants a filename takes the view's name.
- * @summary The object's bytes, with the content type taken from its recorded MIME
+ * Streams a completed object's bytes with the Content-Type taken from the mime the object recorded at upload, falling back to application/octet-stream when the object records none. Only a completed object can be read: pending or uploaded is a 409, while deleted, unknown or another tenant's is a 404. A completed row whose bytes are missing from the backend is a 503. No Content-Disposition is set; a client that wants a filename takes the view's name.
+ * @summary The object's bytes, streamed with the object's recorded media type
  */
 export const objectstoreMetadataGetObjectContent = (
     id: string,
@@ -9807,7 +9804,7 @@ export function useObjectstoreMetadataGetObjectContent<TData = Awaited<ReturnTyp
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary The object's bytes, with the content type taken from its recorded MIME
+ * @summary The object's bytes, streamed with the object's recorded media type
  */
 
 export function useObjectstoreMetadataGetObjectContent<TData = Awaited<ReturnType<typeof objectstoreMetadataGetObjectContent>>, TError = Problem>(
@@ -9829,7 +9826,7 @@ export function useObjectstoreMetadataGetObjectContent<TData = Awaited<ReturnTyp
 
 
 /**
- * Stores the request body as the object's bytes under the internal key. The request's Content-Length is the byte count that must equal the declared size; a request carrying no Content-Length, or one whose count differs, is refused before any byte is stored. The object must be pending or uploaded and its upload window must still be open: a completed object or a closed window is a 409, and a deleted object or one this tenant cannot see is a 404. A successful upload records the observed size and SHA-256 and moves the object to uploaded; re-uploading a pending or uploaded object replaces its bytes under the same key.
+ * Stores the request body as the object's bytes under the internal key. The request's Content-Length must be present and equal the declared size: a request that names no length, or whose length differs, is refused before any byte is stored. The object must be pending or uploaded and its upload window must still be open: a completed object or a closed window is a 409, and a deleted object or one this tenant cannot see is a 404. A successful upload records the observed size and SHA-256 and moves the object to uploaded; re-uploading a pending or uploaded object replaces its bytes under the same key.
  * @summary Store the request body as the object's bytes
  */
 export const objectstoreMetadataUploadObjectContent = (

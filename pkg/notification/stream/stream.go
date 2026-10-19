@@ -49,8 +49,19 @@ const ConfigNamespace = ModuleName
 // module is told to (notification.stream.endpoints).
 const defaultEndpoint = "api"
 
+// streamFragment is this module's OpenAPI fragment, read at build time. It is
+// generated from operations, not written by hand.
+//
 //go:embed openapi/stream.json
 var streamFragment []byte
+
+// streamSpec is the API root this module's fragment and route hang off.
+var streamSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: streamFragment,
+}
 
 // eventInboxCreated is the type name this module subscribes to. It is the value
 // of the inbox module's EventInboxCreated constant, spelled out here because a
@@ -94,9 +105,9 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // StateEnabled and never StateAuto — whether to serve the stream route is a
 // decision on the command tree, not a conclusion a configuration infers.
 //
-// The descriptor also declares this module's own http.Spec, carrying the OpenAPI
-// fragment that describes GET /api/v1/notifications/stream; the operations module
-// merges it into the document a process serves.
+// The descriptor also declares this module's own http.Spec, generated from the
+// operations the module declares, and the declarations themselves; the
+// operations module merges the fragment into the document a process serves.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -107,7 +118,8 @@ func Module() core.Module {
 		},
 		Resources: []any{
 			schema(),
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: streamFragment},
+			streamSpec,
+			operations,
 			// The real-time push surface: its route is mounted whenever the
 			// module is in force and the process has an entry point, so the
 			// feature is static.

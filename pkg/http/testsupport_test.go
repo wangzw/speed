@@ -25,6 +25,11 @@ import (
 	"github.com/vislake/speed/pkg/log"
 )
 
+// requestBody is one declared request body with the given media type.
+func requestBody(mediaType string) *RequestBody {
+	return &RequestBody{MediaType: mediaType}
+}
+
 // parseProductionFiles parses this package's production files. The test files
 // are excluded: what several tests here pin is the package's own shape, and a
 // declaration made by a test is not part of it.

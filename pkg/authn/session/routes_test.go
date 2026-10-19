@@ -123,6 +123,13 @@ func TestLogoutRevokesTheCallersSession(t *testing.T) {
 	if got := cookiesOf(rec.Header()); len(got) != 1 || got[0].MaxAge >= 0 {
 		t.Errorf("logout wrote %+v, want one clearing cookie", got)
 	}
+	// The mounter's no-store stays, and the route adds the directive the session
+	// library wrote beside it: a response that sets a cookie must not be cached
+	// under a Cache-Control a cache may ignore Set-Cookie in.
+	if got := rec.Header().Values("Cache-Control"); !slices.Contains(got, "no-store") ||
+		!slices.Contains(got, `no-cache="Set-Cookie"`) {
+		t.Errorf("logout answered Cache-Control %v, want no-store and %q", got, `no-cache="Set-Cookie"`)
+	}
 }
 
 // Every self-service revocation route writes the seam-level audit row of the
@@ -276,13 +283,75 @@ func TestAnImpersonatingIdentityIsRefusedByTheHandlersThemselves(t *testing.T) {
 		return w
 	}
 
-	check("GET /sessions", call(http.MethodGet, "/api/v1/auth/sessions", nil, f.p.handleSessions))
-	check("DELETE /sessions", call(http.MethodDelete, "/api/v1/auth/sessions", nil, f.p.handleRevokeOthers))
+	check("GET /sessions", call(http.MethodGet, "/api/v1/auth/sessions", nil,
+		listOperation.Handle(f.p.handleSessions)))
+	check("DELETE /sessions", call(http.MethodDelete, "/api/v1/auth/sessions", nil,
+		revokeOthersOperation.Handle(f.p.handleRevokeOthers)))
 	check("DELETE /sessions/:id", call(http.MethodDelete, "/api/v1/auth/sessions/"+string(issued.ID),
-		gin.Params{{Key: "id", Value: string(issued.ID)}}, f.p.handleRevokeOne))
+		gin.Params{{Key: "id", Value: string(issued.ID)}}, revokeOneOperation.Handle(f.p.handleRevokeOne)))
 
 	if f.row(issued.ID).RevokedAt.Valid {
 		t.Error("an impersonating identity revoked a session through a handler")
+	}
+}
+
+// A request that reaches one of the session-management handlers without the
+// gateway — the path the handler's own refusal exists for — is answered 401 with
+// the capability's challenge, not a bare problem document: RFC 9110 requires a
+// 401 to carry one. The chain is the mounter's own wrapper with no gateway in
+// front of it; the handler writes the header while the entry point has not sent
+// the response yet.
+func TestTheHandlersOwn401CarriesTheCapabilityChallenge(t *testing.T) {
+	f := newFixture(t, dialects[0])
+	cases := []struct {
+		name    string
+		method  string
+		path    string
+		params  gin.Params
+		handler gin.HandlerFunc
+	}{
+		{
+			"GET /sessions", http.MethodGet, "/api/v1/auth/sessions", nil,
+			listOperation.Handle(f.p.handleSessions),
+		},
+		{
+			"DELETE /sessions", http.MethodDelete, "/api/v1/auth/sessions", nil,
+			revokeOthersOperation.Handle(f.p.handleRevokeOthers),
+		},
+		{
+			"DELETE /sessions/:id", http.MethodDelete, "/api/v1/auth/sessions/unknown",
+			gin.Params{{Key: "id", Value: "unknown"}},
+			revokeOneOperation.Handle(f.p.handleRevokeOne),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(tc.method, tc.path, nil)
+			// The cross-origin check the mounter applies to an unsafe method is
+			// not what this case is about; a same-origin request passes it.
+			c.Request.Header.Set("Sec-Fetch-Site", "same-origin")
+			c.Params = tc.params
+			mount.Wrap(f.mounter.CSRF(), f.mounter.Endpoint(), tc.handler)(c)
+
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", w.Code)
+			}
+			if got, want := w.Header().Get("WWW-Authenticate"), `Bearer realm="main", Cookie realm="main"`; got != want {
+				t.Errorf("WWW-Authenticate = %q, want %q", got, want)
+			}
+			var p struct {
+				Type   string `json:"type"`
+				Status int    `json:"status"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil {
+				t.Fatalf("the answer is not a problem document: %v", err)
+			}
+			if p.Type != "about:blank" || p.Status != http.StatusUnauthorized {
+				t.Errorf("the problem is %+v, want the default 401 document", p)
+			}
+		})
 	}
 }
 
@@ -308,6 +377,34 @@ func TestRevokingAnotherOfTheCallersSessionsKeepsTheCookie(t *testing.T) {
 	}
 	if got := cookiesOf(rec.Header()); len(got) != 0 {
 		t.Errorf("revoking another session wrote %+v, want no cookie: the caller is still logged in", got)
+	}
+	if got := rec.Header().Values("Cache-Control"); slices.Contains(got, `no-cache="Set-Cookie"`) {
+		t.Errorf("revoking another session answered Cache-Control %v, want no Set-Cookie directive: no cookie was written", got)
+	}
+}
+
+// Revoking the session the request came on is the other half: the cookie is
+// cleared, and the response carries the directive the session library wrote
+// beside the mounter's no-store.
+func TestRevokingTheCurrentSessionClearsTheCookieWithTheCacheDirective(t *testing.T) {
+	f := newFixture(t, dialects[0])
+	f.accounts.add(alice, nil)
+	current := f.create(newBrowser(alice))
+	f.mounter.As(authntest.WithAccount(alice), authntest.WithSession(current.ID))
+
+	rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions/"+string(current.ID))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if !f.row(current.ID).RevokedAt.Valid {
+		t.Error("the current session was not revoked")
+	}
+	if got := cookiesOf(rec.Header()); len(got) != 1 || got[0].MaxAge >= 0 {
+		t.Errorf("revoking the current session wrote %+v, want one clearing cookie", got)
+	}
+	if got := rec.Header().Values("Cache-Control"); !slices.Contains(got, "no-store") ||
+		!slices.Contains(got, `no-cache="Set-Cookie"`) {
+		t.Errorf("revoking the current session answered Cache-Control %v, want no-store and %q", got, `no-cache="Set-Cookie"`)
 	}
 }
 

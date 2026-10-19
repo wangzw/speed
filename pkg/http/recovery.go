@@ -79,17 +79,25 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 			// a deliberate answer, not a defect, so it is written without a
 			// stack and only when the operation declared its status. A fault on
 			// a route with no declaration, or a status it did not declare, is a
-			// defect like any other panic.
+			// defect like any other panic. So is a fault asking for a header the
+			// matched declared response does not carry.
 			if fault, ok := thrown.(interface{ Problem() Problem }); ok {
-				if statuses, declared := c.Get(declaredFailuresContextKey); declared {
-					set, _ := statuses.(map[int]struct{})
-					if _, ok := set[fault.Problem().Status]; ok {
-						c.Abort()
-						if responderFrom(c.Request.Context()) == nil {
-							discardRepresentationHeaders(c.Writer.Header())
+				if declared, ok := c.Get(declaredFailuresContextKey); ok {
+					if responses, ok := declared.(map[int]Response); ok {
+						if response, found := responses[fault.Problem().Status]; found {
+							headers := faultHeadersOf(thrown)
+							if reason := checkDynamicHeaders(headers, response); reason == "" {
+								c.Abort()
+								if responderFrom(c.Request.Context()) == nil {
+									discardRepresentationHeaders(c.Writer.Header())
+								}
+								for _, header := range headers {
+									c.Header(header.Name, header.Value)
+								}
+								Fail(c, fault.Problem())
+								return
+							}
 						}
-						Fail(c, fault.Problem())
-						return
 					}
 				}
 			}
@@ -105,6 +113,20 @@ func recovery(endpoint string, localizer i18n.Localizer) gin.HandlerFunc {
 		c.Next()
 		returned = true
 	}
+}
+
+// faultHeadersOf returns the headers a panicked fault declares, or nil when the
+// recovered value is not a fault.
+func faultHeadersOf(thrown any) []HeaderValue {
+	switch fault := thrown.(type) {
+	case Fault:
+		return fault.Headers
+	case *Fault:
+		if fault != nil {
+			return fault.Headers
+		}
+	}
+	return nil
 }
 
 // errUnwound is what the Cause of a defect's problem wraps for a handler that

@@ -608,6 +608,25 @@ func (p *product) ClearCookie(w http.ResponseWriter) {
 	p.sm.WriteSessionCookie(p.cookieCtx, w, "", time.Time{})
 }
 
+// clearingCookie is the cookie a reply operation attaches with WithCookies: the
+// manager's configured attributes and the value and expiry the library writes
+// when asked to clear, reproduced as a value because a reply has no response
+// writer to hand.
+func (p *product) clearingCookie() *http.Cookie {
+	c := p.sm.Cookie
+	return &http.Cookie{
+		Name:        c.Name,
+		Domain:      c.Domain,
+		HttpOnly:    c.HttpOnly,
+		Path:        c.Path,
+		SameSite:    c.SameSite,
+		Secure:      c.Secure,
+		Partitioned: c.Partitioned,
+		Expires:     time.Unix(1, 0),
+		MaxAge:      -1,
+	}
+}
+
 // Current finds the live session the request's cookie belongs to, by the digest
 // of the token. It is no defence and has nothing to do with authentication: a
 // login that completes uses it to revoke the session the request came with.

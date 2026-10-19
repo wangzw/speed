@@ -126,6 +126,19 @@ The base path is `/api/v1/objects`. The route set is closed:
 | `GET` | `/api/v1/objects/:id/content` | `objectstore.object.read` |
 | `DELETE` | `/api/v1/objects/:id` | `objectstore.object.write` |
 
+**The routes are declared as HTTP operations, and the fragment is generated.**
+`operations.go` declares each route with its input and answer types; the
+content GET is a `ReplyOperation` answering `*/*` with the object's recorded
+MIME, the content PUT binds the raw body and checks `Meta.ContentLength`
+against the declared size, and the fragment `openapi/metadata.json` is a build
+product of those declarations, regenerated with:
+
+```
+UPDATE_FRAGMENTS=1 go -C pkg test ./objectstore/metadata -run TestTheFragmentIsGeneratedFromTheDeclarations
+```
+
+Without the variable the same test is the drift gate.
+
 Each route declares its permission on the route-declaration surface; the
 enforcement middleware decides and the handler carries no decision of its own.
 The two permissions are declared as `authz.PermissionSpec` and their translation

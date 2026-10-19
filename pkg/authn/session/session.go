@@ -65,6 +65,17 @@ const defaultEndpoint = "account"
 //go:embed openapi/session.json
 var sessionFragment []byte
 
+// sessionSpec is the API root this module's fragment and routes hang off. Its
+// prefix and version are the common ones; the fragment writes the capability's
+// own segment, so a route's declared path begins with the part of the mounter's
+// base that lies below this root.
+var sessionSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: sessionFragment,
+}
+
 // ConfigNamespace is where this module's input items and settings are mounted.
 const ConfigNamespace = ModuleName
 
@@ -171,7 +182,8 @@ func Module() core.Module {
 		Resources: []any{
 			schema(), settingsSchema(),
 			db.Migrations{FS: migrationsFS},
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: sessionFragment},
+			sessionSpec,
+			operations,
 		},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {

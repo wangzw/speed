@@ -49,7 +49,8 @@ an undeclared one is answered 500. `pkg/internal/openapigen` generates the
 fragment from the same descriptor.
 
 **A request body is bound by its declared media type.**
-`Operation.RequestMediaType` (and a reply operation's) selects the reader:
+`Operation.Request` (and a reply operation's) is a `*RequestBody`, nil when the
+operation takes no body; its media type selects the reader:
 `application/json` reads the input's `json`-tagged members,
 `application/x-www-form-urlencoded` its `form`-tagged fields,
 `multipart/form-data` its `form`- and `file`-tagged fields (a `file` field is
@@ -63,18 +64,24 @@ multipart or octet-stream), an unsupported media type — panics when the handle
 is built. After binding, an input with a
 `Validate() error` method that refuses its value is answered 422, with the
 validator's text as the problem detail. The `path`, `query`, `header` and
-`cookie` parameter tags are read for every media type.
+`cookie` parameter tags are read for every media type. An empty query value
+leaves a non-string parameter unset (`?limit=` is zero, not a parse failure),
+while a string keeps the empty value. `RequestBody.Description` and
+`RequestBody.Required` are published by `pkg/internal/openapigen` with the
+request body.
 
 **A handler may build its own typed answer.** `ReplyOperation[In]` declares the
 same metadata and response set as `Operation`, and `Handle` takes
 `func(context.Context, In, *Meta) (Reply, error)`. `Meta` is the read-only
-request snapshot: the client IP and the matched route template, taken when the
-handler is called. A `Reply` is one of `JSONReply`, `EmptyReply`, `BytesReply`,
+request snapshot: the client IP, the matched route template and the request
+Content-Length (-1 when unknown), taken when the handler is called. A `Reply` is one of `JSONReply`, `EmptyReply`, `BytesReply`,
 `StreamReply`, `SSEReply` or `RedirectReply`, optionally wrapped by
 `WithHeaders` and `WithCookies`; the set is closed by an unexported marker
-method. `SSEWriter.Send` writes one server-sent event and flushes it; the data
-is split into one `data:` field per line, with CR, LF and CRLF all ending a
-line. A reply operation implements `Declared` like the simple one; its
+method. `NewSSEWriter` builds the event writer over an `io.Writer` and an
+`http.Flusher`; `SSEWriter.Send` writes one server-sent event and flushes it,
+and the reply path flushes the status and headers once before the event
+callback runs. The data is split into one `data:` field per line, with CR, LF
+and CRLF all ending a line. A reply operation implements `Declared` like the simple one; its
 descriptor's `SuccessBody` is nil, because each declared response's own
 `Structure` describes its body. A JSON answer must declare that `Structure`: the
 fragment refuses one that does not, because the entry point would accept any
@@ -86,10 +93,11 @@ reply's status must be in the operation's `Responses`, and the kind must match
 that response: a JSON body's `reflect.Type` must equal the declared `Structure`
 (when the declaration names one) and its media type must be the declared one; an
 empty reply needs a body-less response; bytes and streams must carry the
-declared media type, and a stream or event stream must carry its callback; an
-event stream needs `text/event-stream` and gets `Cache-Control: no-store` unless
-the response declares another value; a redirect needs a 3xx status, a declared
-`Location` header and a body-less response. Every dynamic header name
+declared media type, and a stream or event stream must carry its callback; a
+declared `*/*` on a bytes or stream body accepts the media type the handler
+chooses; an event stream needs `text/event-stream` and gets `Cache-Control:
+no-store` unless the response declares another value; a redirect needs a 3xx
+status, a declared `Location` header and a body-less response. Every dynamic header name
 must be declared on the matched response; cookies are always written. A mismatch
 is answered 500 and the reply's own answer is never written. The declared static
 headers are written first, then the dynamic ones, then the body. A streamed body
@@ -101,7 +109,8 @@ common failure set and merges them into each operation with
 `Failures(common, specific...)`: an operation's response replaces the common one
 of the same status and adds its own. A handler refuses with `Fault`, returned or
 panicked; the entry point writes it only when the operation declared that
-status, and answers 500 otherwise. The recovery layer honors a fault panic on a
+status, and answers 500 otherwise. A fault's `Headers` are written only when the
+matched response declares each name; an undeclared one is a 500. The recovery layer honors a fault panic on a
 bound operation the same way; a fault panic on a route without a declaration is
 a defect. The error body's shape is a declaration as well: `ErrorShape` names
 the media type and type the entry point writes, defaulting to the problem

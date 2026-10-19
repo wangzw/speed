@@ -1,13 +1,13 @@
 package metadata
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 
-	"github.com/gin-gonic/gin"
-
+	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/objectstore"
 )
 
@@ -22,94 +22,66 @@ const (
 	conflictCode   = "conflict"
 )
 
-// createBody is the request of a declaration: the fields of a Declaration.
-type createBody struct {
-	Name           string `json:"name"`
-	Size           int64  `json:"size"`
-	ContentType    string `json:"content_type"`
-	ChecksumSHA256 string `json:"checksum_sha256"`
-}
-
-// handleCreate answers POST /api/v1/objects: it declares an object and returns
-// its view. A body that is not a JSON object, or a declaration whose shape is
-// not readable, is a 400.
-func (p *product) handleCreate(c *gin.Context) {
-	var body createBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
-		return
-	}
-	obj, err := p.Create(c.Request.Context(), objectstore.Declaration{
-		Name:           body.Name,
-		Size:           body.Size,
-		ContentType:    body.ContentType,
-		ChecksumSHA256: body.ChecksumSHA256,
+// createObject answers POST /objects: it declares an object and returns its
+// view. The entry point has already decoded the JSON body and refused a body
+// member the declaration does not carry.
+func (p *product) createObject(ctx context.Context, in CreateObjectInput) (objectCreatedBody, error) {
+	obj, err := p.Create(ctx, objectstore.Declaration{
+		Name:           in.Name,
+		Size:           int64(in.Size),
+		ContentType:    in.ContentType,
+		ChecksumSHA256: in.ChecksumSHA256,
 	})
 	if err != nil {
-		p.answer(c, "declaring an object", err)
-		return
+		return objectCreatedBody{}, p.answer(ctx, "declaring an object", err)
 	}
-	c.JSON(http.StatusCreated, gin.H{"object": objectViewOf(obj)})
+	return objectCreatedBody{Object: objectViewOf(obj)}, nil
 }
 
-// handleUpload answers PUT /api/v1/objects/:id/content: it stores the request
-// body as the object's bytes. The declared size it checks against is the
-// request's own content length; a request that carries none cannot be checked
-// and is a 400. A successful upload answers 204 with no body.
-func (p *product) handleUpload(c *gin.Context) {
-	size := c.Request.ContentLength
-	if size < 0 {
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
-		return
+// uploadContent answers PUT /objects/:id/content: it stores the request body as
+// the object's bytes. The byte count it checks against is the request's
+// Content-Length, which the entry point snapshots in Meta; a request that names
+// no length cannot be checked and is a 400. A successful upload answers 204
+// with no body.
+func (p *product) uploadContent(ctx context.Context, in UploadObjectContentInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
+	if meta.ContentLength < 0 {
+		return nil, p.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	}
-	if err := p.Upload(c.Request.Context(), c.Param("id"), c.Request.Body, size); err != nil {
-		p.answer(c, "uploading an object's bytes", err)
-		return
+	if err := p.Upload(ctx, in.ID, bytes.NewReader(in.Body), meta.ContentLength); err != nil {
+		return nil, p.answer(ctx, "uploading an object's bytes", err)
 	}
-	p.noContent(c)
+	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }
 
-// handleComplete answers POST /api/v1/objects/:id/complete: it moves an object to
+// completeObject answers POST /objects/:id/complete: it moves an object to
 // completed and returns its view.
-func (p *product) handleComplete(c *gin.Context) {
-	obj, err := p.Complete(c.Request.Context(), c.Param("id"))
+func (p *product) completeObject(ctx context.Context, in CompleteObjectInput) (objectCompletedBody, error) {
+	obj, err := p.Complete(ctx, in.ID)
 	if err != nil {
-		p.answer(c, "completing an object", err)
-		return
+		return objectCompletedBody{}, p.answer(ctx, "completing an object", err)
 	}
-	c.JSON(http.StatusOK, gin.H{"object": objectViewOf(obj)})
+	return objectCompletedBody{Object: objectViewOf(obj)}, nil
 }
 
-// handleGet answers GET /api/v1/objects/:id: one object's view.
-func (p *product) handleGet(c *gin.Context) {
-	obj, err := p.Get(c.Request.Context(), c.Param("id"))
+// getObject answers GET /objects/:id: one object's view.
+func (p *product) getObject(ctx context.Context, in GetObjectInput) (objectReadBody, error) {
+	obj, err := p.Get(ctx, in.ID)
 	if err != nil {
-		p.answer(c, "reading an object", err)
-		return
+		return objectReadBody{}, p.answer(ctx, "reading an object", err)
 	}
-	c.JSON(http.StatusOK, gin.H{"object": objectViewOf(obj)})
+	return objectReadBody{Object: objectViewOf(obj)}, nil
 }
 
-// handleList answers GET /api/v1/objects: one page of this tenant's undeleted
-// objects. The cursor continues from the last row of the previous page and the
-// limit caps the page; the cursor of the page's last row is returned for the
-// next call.
-func (p *product) handleList(c *gin.Context) {
-	q := objectstore.ListQuery{Cursor: c.Query("cursor")}
-	if s := c.Query("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			p.refuse(c, http.StatusBadRequest, badRequestCode)
-			return
-		}
-		q.Limit = n
-	}
-	objs, err := p.List(c.Request.Context(), q)
+// listObjects answers GET /objects: one page of this tenant's undeleted objects.
+// The cursor continues from the last row of the previous page and the limit caps
+// the page; the cursor of the page's last row is returned for the next call.
+func (p *product) listObjects(ctx context.Context, in ListObjectsInput) (objectPageBody, error) {
+	q := objectstore.ListQuery{Cursor: in.Cursor, Limit: in.Limit}
+	objs, err := p.List(ctx, q)
 	if err != nil {
-		p.answer(c, "listing the objects", err)
-		return
+		return objectPageBody{}, p.answer(ctx, "listing the objects", err)
 	}
-	views := make([]objectView, len(objs))
+	views := make([]ObjectstoreObject, len(objs))
 	for i, o := range objs {
 		views[i] = objectViewOf(o)
 	}
@@ -118,74 +90,64 @@ func (p *product) handleList(c *gin.Context) {
 		last := objs[len(objs)-1]
 		next = encodeCursor(last.CreatedAt.UnixMilli(), last.ID)
 	}
-	c.JSON(http.StatusOK, gin.H{"objects": views, "next_cursor": next})
+	return objectPageBody{Objects: views, NextCursor: next}, nil
 }
 
-// handleContent answers GET /api/v1/objects/:id/content: the object's bytes, with
-// the content type taken from its recorded MIME. The object must be completed. A
-// failure that happens after the status and headers are on the wire cannot be
-// answered, so it is logged.
-func (p *product) handleContent(c *gin.Context) {
-	ctx := c.Request.Context()
-	id := c.Param("id")
-	// The view carries the MIME the Content-Type is taken from; OpenContent
-	// carries the bytes. The two are read together because the seam returns the
-	// bytes alone.
-	obj, err := p.Get(ctx, id)
+// getContent answers GET /objects/:id/content: the object's bytes, streamed with
+// the media type the object recorded. The view carries the MIME the Content-Type
+// is taken from; OpenContent carries the bytes. A failure that happens after the
+// status and headers are on the wire cannot be answered, so it is logged and the
+// connection is abandoned by the entry point.
+func (p *product) getContent(ctx context.Context, in GetObjectContentInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
+	obj, err := p.Get(ctx, in.ID)
 	if err != nil {
-		p.answer(c, "reading an object", err)
-		return
+		return nil, p.answer(ctx, "reading an object", err)
 	}
-	content, err := p.OpenContent(ctx, id)
+	content, err := p.OpenContent(ctx, in.ID)
 	if err != nil {
-		p.answer(c, "opening an object's bytes", err)
-		return
+		return nil, p.answer(ctx, "opening an object's bytes", err)
 	}
-	defer func() { _ = content.Close() }()
-	mime := obj.MIME
-	if mime == "" {
-		mime = "application/octet-stream"
+	mediaType := obj.MIME
+	if mediaType == "" {
+		mediaType = fallbackContentType
 	}
-	c.Header("Content-Type", mime)
-	c.Status(http.StatusOK)
-	if _, err := io.Copy(c.Writer, content); err != nil {
-		p.logger.Error(ModuleName+": streaming an object's bytes failed", "object", id, "cause", err.Error())
-	}
+	return speedhttp.StreamReply(http.StatusOK, mediaType, func(_ context.Context, w io.Writer) error {
+		defer func() { _ = content.Close() }()
+		if _, copyErr := io.Copy(w, content); copyErr != nil {
+			p.logger.Error(ModuleName+": streaming an object's bytes failed",
+				"object", in.ID, "cause", copyErr.Error())
+			return copyErr
+		}
+		return nil
+	}), nil
 }
 
-// handleDelete answers DELETE /api/v1/objects/:id: it removes an object's bytes
-// and tombstones its row. It is idempotent on an object already deleted and
-// answers 204 with no body.
-func (p *product) handleDelete(c *gin.Context) {
-	if err := p.Delete(c.Request.Context(), c.Param("id")); err != nil {
-		p.answer(c, "deleting an object", err)
-		return
+// deleteObject answers DELETE /objects/:id: it removes an object's bytes and
+// tombstones its row. It is idempotent on an object already deleted and answers
+// 204 with no body.
+func (p *product) deleteObject(ctx context.Context, in DeleteObjectInput) (struct{}, error) {
+	if err := p.Delete(ctx, in.ID); err != nil {
+		return struct{}{}, p.answer(ctx, "deleting an object", err)
 	}
-	p.noContent(c)
+	return struct{}{}, nil
 }
 
-// answer maps a failure an Objects method returned to the response it belongs
-// to. The mapping is closed and fail-closed: a request whose shape cannot be
-// read is a 400, an object this tenant cannot see is a 404, a state that does
-// not allow the action is a 409, and every other failure — an unavailable byte
-// seam, missing content, anything unnamed — is a 503 whose cause stays in the
-// log and never reaches the caller.
-func (p *product) answer(c *gin.Context, op string, err error) {
+// answer maps a failure an Objects method returned to the fault it belongs to.
+// The mapping is closed and fail-closed: a request whose shape cannot be read is
+// a 400, an object this tenant cannot see is a 404, a state that does not allow
+// the action is a 409, and every other failure — an unavailable byte seam,
+// missing content, anything unnamed — is a 503 whose cause stays in the log and
+// never reaches the caller.
+func (p *product) answer(ctx context.Context, op string, err error) speedhttp.Fault {
 	switch {
 	case errors.Is(err, objectstore.ErrInvalidRequest):
-		p.refuse(c, http.StatusBadRequest, badRequestCode)
+		return p.refusal(ctx, http.StatusBadRequest, badRequestCode)
 	case errors.Is(err, objectstore.ErrObjectNotFound):
-		p.refuse(c, http.StatusNotFound, notFoundCode)
+		return p.refusal(ctx, http.StatusNotFound, notFoundCode)
 	case errors.Is(err, objectstore.ErrStateConflict):
-		p.refuse(c, http.StatusConflict, conflictCode)
+		return p.refusal(ctx, http.StatusConflict, conflictCode)
 	default:
 		p.logger.Error(ModuleName+": "+op+" failed", "cause", err.Error())
-		p.refuse(c, http.StatusServiceUnavailable, "")
+		return p.refusal(ctx, http.StatusServiceUnavailable, "")
 	}
-}
-
-// noContent answers a write that landed: 204 with no body.
-func (p *product) noContent(c *gin.Context) {
-	c.Status(http.StatusNoContent)
-	c.Writer.WriteHeaderNow()
 }

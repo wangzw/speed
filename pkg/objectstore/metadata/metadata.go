@@ -73,6 +73,16 @@ var migrationRoot embed.FS
 //go:embed openapi/metadata.json
 var metadataFragment []byte
 
+// metadataSpec is the API root this module's fragment and routes hang off. The
+// fragment is generated from operations; the routes are mounted from the same
+// declarations and resolved against this root.
+var metadataSpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: metadataFragment,
+}
+
 // migrationsFS is migrationRoot with the wrapping directory removed, so the
 // tree the database module sees has one directory per dialect at its root,
 // which is the shape it reads.
@@ -130,7 +140,8 @@ func Module() core.Module {
 			permissionSpec(),
 			translationSpec(),
 			messageCatalog,
-			speedhttp.Spec{Endpoint: defaultEndpoint, Prefix: "api", Version: "v1", Document: metadataFragment},
+			metadataSpec,
+			operations,
 			// The object surface: its routes are mounted whenever the module is
 			// in force and the process has an entry point, so the feature is
 			// static. Which byte backend is assembled does not change it.

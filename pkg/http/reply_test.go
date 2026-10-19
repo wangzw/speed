@@ -35,7 +35,7 @@ func serveReply(
 	request *http.Request,
 ) *httptest.ResponseRecorder {
 	t.Helper()
-	operation := NewReplyOperation[struct{}]("the.module.reply", method, path, "", "", "", []Response{
+	operation := NewReplyOperation[struct{}]("the.module.reply", method, path, "", "", nil, []Response{
 		jsonBodyResponse(http.StatusOK),
 	})
 	return serve(t, method, path, operation.Handle(handler), request)
@@ -79,8 +79,11 @@ func TestAJSONReplyOfAnotherTypeIsAnsweredInternal(t *testing.T) {
 
 // TestAnUndeclaredStatusIsAnsweredInternal holds the status check.
 func TestAnUndeclaredStatusIsAnsweredInternal(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", "",
-		[]Response{{Status: http.StatusOK, Description: "The body", Body: &Body{MediaType: "application/json"}}})
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", nil,
+		[]Response{{
+			Status: http.StatusOK, Description: "The body",
+			Body: &Body{MediaType: "application/json", Structure: reflect.TypeOf(replyBody{})},
+		}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return JSONReply(http.StatusNotFound, replyBody{Name: "absent"}), nil
 	})
@@ -96,7 +99,7 @@ func TestAnUndeclaredStatusIsAnsweredInternal(t *testing.T) {
 
 // TestAnEmptyReplyWritesNoBody holds the empty row.
 func TestAnEmptyReplyWritesNoBody(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodDelete, "/things", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodDelete, "/things", "", "", nil,
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return EmptyReply(http.StatusNoContent), nil
@@ -128,7 +131,7 @@ func TestAnEmptyReplyAgainstABodyDeclarationIsInternal(t *testing.T) {
 
 // TestABytesReplyWritesTheBodyAndMediaType holds the bytes row.
 func TestABytesReplyWritesTheBodyAndMediaType(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/blob", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/blob", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The bytes", Body: &Body{MediaType: "application/octet-stream"}}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return BytesReply(http.StatusOK, "application/octet-stream", []byte{0, 1, 2, 255}), nil
@@ -148,7 +151,7 @@ func TestABytesReplyWritesTheBodyAndMediaType(t *testing.T) {
 
 // TestABytesReplyOfAnotherMediaTypeIsInternal holds the bytes media-type check.
 func TestABytesReplyOfAnotherMediaTypeIsInternal(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/blob", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/blob", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The bytes", Body: &Body{MediaType: "application/octet-stream"}}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return BytesReply(http.StatusOK, "text/plain", []byte("x")), nil
@@ -175,9 +178,11 @@ func TestAnEventStreamDeclarationRefusesBytesAndStream(t *testing.T) {
 		}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", "",
-				[]Response{{Status: http.StatusOK, Description: "The events",
-					Body: &Body{MediaType: "text/event-stream"}}})
+			operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", nil,
+				[]Response{{
+					Status: http.StatusOK, Description: "The events",
+					Body: &Body{MediaType: "text/event-stream"},
+				}})
 			handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 				return c.reply(), nil
 			})
@@ -192,7 +197,7 @@ func TestAnEventStreamDeclarationRefusesBytesAndStream(t *testing.T) {
 
 // TestAStreamReplyWritesWhatTheCallbackWrites holds the stream row.
 func TestAStreamReplyWritesWhatTheCallbackWrites(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/stream", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/stream", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The stream", Body: &Body{MediaType: "text/plain"}}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return StreamReply(http.StatusOK, "text/plain", func(_ context.Context, writer io.Writer) error {
@@ -217,7 +222,7 @@ func TestAStreamReplyWritesWhatTheCallbackWrites(t *testing.T) {
 // has already gone out, so the failure is recorded and the connection is
 // abandoned rather than answered with another status.
 func TestAStreamErrorAbandonsTheConnection(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/stream", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/stream", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The stream", Body: &Body{MediaType: "text/plain"}}})
 	failure := errors.New("the source went away")
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
@@ -266,7 +271,7 @@ func TestAStreamErrorAbandonsTheConnection(t *testing.T) {
 // TestAnSSEReplyFormatsAndFlushesEvents holds the event stream row and its
 // wire format.
 func TestAnSSEReplyFormatsAndFlushesEvents(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The events", Body: &Body{MediaType: "text/event-stream"}}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return SSEReply(http.StatusOK, func(events *SSEWriter) error {
@@ -297,7 +302,7 @@ func TestAnSSEReplyFormatsAndFlushesEvents(t *testing.T) {
 // CRLF, LF or CR, so a bare CR in the data must start a new data field rather
 // than end the field and leave the rest unread.
 func TestSSEDataIsSplitOnEveryLineEnding(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The events", Body: &Body{MediaType: "text/event-stream"}}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return SSEReply(http.StatusOK, func(events *SSEWriter) error {
@@ -319,7 +324,7 @@ func TestSSEDataIsSplitOnEveryLineEnding(t *testing.T) {
 // a stream with no callback is a defect known before anything is written, so it
 // is answered 500 rather than committed as a 200 and then panicked on.
 func TestAStreamReplyWithoutACallbackIsInternal(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/stream", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/stream", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The stream", Body: &Body{MediaType: "text/plain"}}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return StreamReply(http.StatusOK, "text/plain", nil), nil
@@ -337,7 +342,7 @@ func TestAStreamReplyWithoutACallbackIsInternal(t *testing.T) {
 // TestAnSSEReplyWithoutAnEventCallbackIsInternal holds the event stream's
 // precondition, checked before the status is committed.
 func TestAnSSEReplyWithoutAnEventCallbackIsInternal(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]Response{{Status: http.StatusOK, Description: "The events", Body: &Body{MediaType: "text/event-stream"}}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return SSEReply(http.StatusOK, nil), nil
@@ -355,7 +360,7 @@ func TestAnSSEReplyWithoutAnEventCallbackIsInternal(t *testing.T) {
 // TestADeclaredCacheControlStandsOnAnEventStream holds the default's limit: a
 // declared Cache-Control is what the response carries.
 func TestADeclaredCacheControlStandsOnAnEventStream(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]Response{{
 			Status:      http.StatusOK,
 			Description: "The events",
@@ -376,7 +381,7 @@ func TestADeclaredCacheControlStandsOnAnEventStream(t *testing.T) {
 
 // TestARedirectReplySetsTheLocationAndWritesNoBody holds the redirect row.
 func TestARedirectReplySetsTheLocationAndWritesNoBody(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/old", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/old", "", "", nil,
 		[]Response{{
 			Status:      http.StatusFound,
 			Description: "Moved",
@@ -402,7 +407,7 @@ func TestARedirectReplySetsTheLocationAndWritesNoBody(t *testing.T) {
 // check: a redirect answer carries no body, so it cannot answer a response
 // that declares one.
 func TestARedirectAgainstABodyDeclarationIsInternal(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/old", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/old", "", "", nil,
 		[]Response{{
 			Status:      http.StatusFound,
 			Description: "Moved",
@@ -424,7 +429,7 @@ func TestARedirectAgainstABodyDeclarationIsInternal(t *testing.T) {
 
 // TestARedirectWithoutADeclaredLocationIsInternal holds the redirect check.
 func TestARedirectWithoutADeclaredLocationIsInternal(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/old", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/old", "", "", nil,
 		[]Response{{Status: http.StatusFound, Description: "Moved"}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return RedirectReply(http.StatusFound, "/new"), nil
@@ -453,7 +458,7 @@ func TestARedirectAgainstANonRedirectStatusIsInternal(t *testing.T) {
 // TestADeclaredDynamicHeaderIsWritten holds the declared side of the dynamic
 // header check, and the order dynamic headers are written in.
 func TestADeclaredDynamicHeaderIsWritten(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", nil,
 		[]Response{{
 			Status:      http.StatusOK,
 			Description: "The body",
@@ -498,7 +503,7 @@ func TestAnUndeclaredDynamicHeaderIsInternal(t *testing.T) {
 // TestCookiesAreAlwaysWritten holds the cookie row: a cookie is not part of the
 // declared header set and is written anyway.
 func TestCookiesAreAlwaysWritten(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodDelete, "/things", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodDelete, "/things", "", "", nil,
 		[]Response{{Status: http.StatusNoContent, Description: "No content"}})
 	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 		return WithCookies(EmptyReply(http.StatusNoContent), &http.Cookie{
@@ -518,7 +523,7 @@ func TestCookiesAreAlwaysWritten(t *testing.T) {
 
 // TestMetaIsTheRequestSnapshot holds the Meta values.
 func TestMetaIsTheRequestSnapshot(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/items/:id", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/items/:id", "", "", nil,
 		[]Response{jsonBodyResponse(http.StatusOK)})
 	handler := operation.Handle(func(_ context.Context, _ struct{}, meta *Meta) (Reply, error) {
 		if meta == nil {
@@ -544,7 +549,7 @@ func TestMetaIsTheRequestSnapshot(t *testing.T) {
 // operation: it binds the same input the simple path does.
 func TestAReplyOperationBindsItsDeclaredInput(t *testing.T) {
 	operation := NewReplyOperation[formInput]("the.module.reply", http.MethodPost, "/items/:id", "", "",
-		"application/x-www-form-urlencoded",
+		requestBody("application/x-www-form-urlencoded"),
 		[]Response{jsonBodyResponse(http.StatusOK)})
 	handler := operation.Handle(func(_ context.Context, in formInput, _ *Meta) (Reply, error) {
 		if in.ID != "abc" || in.Name != "alice" || in.Age != 30 {
@@ -565,7 +570,7 @@ func TestAReplyOperationBindsItsDeclaredInput(t *testing.T) {
 // written with its status when the operation declares it, and a Failure that
 // is not declared is answered 500.
 func TestAReplyOperationAnswersADeclaredFault(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", nil,
 		[]Response{
 			jsonBodyResponse(http.StatusOK),
 			ProblemResponse(http.StatusConflict, "Already exists"),
@@ -582,7 +587,7 @@ func TestAReplyOperationAnswersADeclaredFault(t *testing.T) {
 
 // TestAReplyOperationDescriptorHasNoSuccessBody holds the generator's view.
 func TestAReplyOperationDescriptorHasNoSuccessBody(t *testing.T) {
-	operation := NewReplyOperation[formInput]("the.module.reply", http.MethodGet, "/items", "Summary", "Description", "",
+	operation := NewReplyOperation[formInput]("the.module.reply", http.MethodGet, "/items", "Summary", "Description", nil,
 		[]Response{jsonBodyResponse(http.StatusOK)})
 	descriptor := operation.Descriptor()
 
@@ -609,7 +614,7 @@ func TestAReplyOperationDescriptorHasNoSuccessBody(t *testing.T) {
 // descriptor's rule for an operation whose 2xx answers cannot be reduced to
 // one.
 func TestAReplyOperationWithTwoSuccessesDeclaresNoSuccessStatus(t *testing.T) {
-	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", "",
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", nil,
 		[]Response{jsonBodyResponse(http.StatusOK), jsonBodyResponse(http.StatusCreated)})
 
 	if status := operation.Descriptor().SuccessStatus; status != 0 {
@@ -623,7 +628,7 @@ func TestAReplyOperationWithTwoSuccessesDeclaresNoSuccessStatus(t *testing.T) {
 func TestAJSONReplyForAStatusWithoutABodyIsInternal(t *testing.T) {
 	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
-			operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", "",
+			operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", nil,
 				[]Response{{Status: status, Description: "No body"}})
 			handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
 				return JSONReply(status, replyBody{Name: "alice"}), nil
@@ -654,4 +659,204 @@ func TestAJSONReplyAgainstADeclaredBodyForANoBodyStatusIsRefused(t *testing.T) {
 			}
 		})
 	}
+}
+
+// dynamicOperation declares one 200 whose media type the handler chooses.
+func dynamicOperation(t *testing.T) ReplyOperation[struct{}] {
+	t.Helper()
+	return NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/blob", "", "", nil,
+		[]Response{{Status: http.StatusOK, Description: "The bytes", Body: &Body{MediaType: "*/*"}}})
+}
+
+// TestADynamicMediaTypeAcceptsABytesReply holds the dynamic row: a "*/*"
+// declaration accepts any bytes media type the handler builds.
+func TestADynamicMediaTypeAcceptsABytesReply(t *testing.T) {
+	operation := dynamicOperation(t)
+	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
+		return BytesReply(http.StatusOK, "image/png", []byte{0x89, 0x50, 0x4e, 0x47}), nil
+	})
+	recorder := serve(t, http.MethodGet, "/blob", handler, httptest.NewRequest(http.MethodGet, "/blob", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("a dynamic bytes reply answered %d, want 200", recorder.Code)
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "image/png" {
+		t.Errorf("Content-Type is %q, want image/png", got)
+	}
+	if got := recorder.Body.Bytes(); string(got) != string([]byte{0x89, 0x50, 0x4e, 0x47}) {
+		t.Errorf("the answer body is %v, want the reply's bytes", got)
+	}
+}
+
+// TestADynamicMediaTypeAcceptsAStreamReply holds the stream side of the
+// dynamic row.
+func TestADynamicMediaTypeAcceptsAStreamReply(t *testing.T) {
+	operation := dynamicOperation(t)
+	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
+		return StreamReply(http.StatusOK, "text/csv", func(_ context.Context, writer io.Writer) error {
+			_, err := io.WriteString(writer, "a,b")
+			return err
+		}), nil
+	})
+	recorder := serve(t, http.MethodGet, "/blob", handler, httptest.NewRequest(http.MethodGet, "/blob", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("a dynamic stream reply answered %d, want 200", recorder.Code)
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "text/csv" {
+		t.Errorf("Content-Type is %q, want text/csv", got)
+	}
+	if got := recorder.Body.String(); got != "a,b" {
+		t.Errorf("the streamed body is %q, want a,b", got)
+	}
+}
+
+// TestADynamicMediaTypeRefusesAJSONReply holds the dynamic declaration's limit:
+// only bytes and stream replies choose a media type at run time, so a JSON
+// reply against "*/*" is a defect.
+func TestADynamicMediaTypeRefusesAJSONReply(t *testing.T) {
+	operation := dynamicOperation(t)
+	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
+		return JSONReply(http.StatusOK, replyBody{Name: "alice"}), nil
+	})
+	recorder := serve(t, http.MethodGet, "/blob", handler, httptest.NewRequest(http.MethodGet, "/blob", nil))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Errorf("a JSON reply against a dynamic declaration answered %d, want 500", recorder.Code)
+	}
+}
+
+// TestMetaCarriesTheContentLength holds the request length snapshot: a known
+// length is recorded and an unknown one, which net/http spells -1, stays -1.
+func TestMetaCarriesTheContentLength(t *testing.T) {
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodPost, "/items", "", "", nil,
+		[]Response{jsonBodyResponse(http.StatusOK)})
+	var lengths []int64
+	handler := operation.Handle(func(_ context.Context, _ struct{}, meta *Meta) (Reply, error) {
+		lengths = append(lengths, meta.ContentLength)
+		return JSONReply(http.StatusOK, replyBody{Name: "x"}), nil
+	})
+
+	known := httptest.NewRequest(http.MethodPost, "/items", strings.NewReader("hello"))
+	serve(t, http.MethodPost, "/items", handler, known)
+
+	unknown := httptest.NewRequest(http.MethodPost, "/items", strings.NewReader("hello"))
+	unknown.ContentLength = -1
+	serve(t, http.MethodPost, "/items", handler, unknown)
+
+	if len(lengths) != 2 {
+		t.Fatalf("the handler ran %d times, want 2", len(lengths))
+	}
+	if lengths[0] != 5 {
+		t.Errorf("Meta.ContentLength is %d, want 5", lengths[0])
+	}
+	if lengths[1] != -1 {
+		t.Errorf("Meta.ContentLength is %d, want -1 for an unknown length", lengths[1])
+	}
+}
+
+// flushCounter is a response writer that counts the flushes the entry point
+// asks for, so a test can see whether the headers went out before the events.
+type flushCounter struct {
+	*httptest.ResponseRecorder
+	flushes int
+}
+
+func (f *flushCounter) Flush() { f.flushes++ }
+
+// TestTheSSEHeadersAreFlushedBeforeTheFirstEvent holds the connection timing:
+// the status and headers are flushed once before the handler builds its first
+// event, and every event is flushed as it is sent.
+func TestTheSSEHeadersAreFlushedBeforeTheFirstEvent(t *testing.T) {
+	operation := NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/events", "", "", nil,
+		[]Response{{Status: http.StatusOK, Description: "The events", Body: &Body{MediaType: "text/event-stream"}}})
+	counter := &flushCounter{ResponseRecorder: httptest.NewRecorder()}
+	flushedBeforeFirstEvent := false
+	handler := operation.Handle(func(context.Context, struct{}, *Meta) (Reply, error) {
+		return SSEReply(http.StatusOK, func(events *SSEWriter) error {
+			flushedBeforeFirstEvent = counter.flushes > 0
+			return events.Send("tick", []byte("one"))
+		}), nil
+	})
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Handle(http.MethodGet, "/events", handler)
+	engine.ServeHTTP(counter, httptest.NewRequest(http.MethodGet, "/events", nil))
+
+	if !flushedBeforeFirstEvent {
+		t.Error("the SSE headers were not flushed before the first event was built")
+	}
+	if counter.flushes < 2 {
+		t.Errorf("the response was flushed %d times, want the header flush and one per event", counter.flushes)
+	}
+	if got := counter.Body.String(); got != "event: tick\ndata: one\n\n" {
+		t.Errorf("the event stream is %q, want one tick event", got)
+	}
+}
+
+// countingFlusher counts the flushes an SSE writer asks for.
+type countingFlusher struct{ flushes int }
+
+func (f *countingFlusher) Flush() { f.flushes++ }
+
+// TestNewSSEWriterWritesAndFlushesEachEvent holds the exported constructor and
+// its wire format: each event is written and flushed, and a nil flusher writes
+// without panicking.
+func TestNewSSEWriterWritesAndFlushesEachEvent(t *testing.T) {
+	var body strings.Builder
+	flusher := &countingFlusher{}
+	writer := NewSSEWriter(&body, flusher)
+	if err := writer.Send("tick", []byte("one\ntwo")); err != nil {
+		t.Fatalf("sending an event: %v", err)
+	}
+	if got, want := body.String(), "event: tick\ndata: one\ndata: two\n\n"; got != want {
+		t.Errorf("the event stream is %q, want %q", got, want)
+	}
+	if flusher.flushes != 1 {
+		t.Errorf("the writer flushed %d times, want one per event", flusher.flushes)
+	}
+
+	body.Reset()
+	if err := NewSSEWriter(&body, nil).Send("", []byte("three")); err != nil {
+		t.Fatalf("sending without a flusher: %v", err)
+	}
+	if got, want := body.String(), "data: three\n\n"; got != want {
+		t.Errorf("the event stream without a flusher is %q, want %q", got, want)
+	}
+}
+
+// TestAReplyBodyWithoutAMediaTypePanics holds the declaration the writer cannot
+// describe: a body whose media type is empty has no published shape.
+func TestAReplyBodyWithoutAMediaTypePanics(t *testing.T) {
+	defer func() {
+		thrown := recover()
+		if thrown == nil {
+			t.Fatal("building the handler did not panic on a body with no media type")
+		}
+		if message := errString(thrown); !strings.Contains(message, "no media type") {
+			t.Errorf("the panic reads %q, want it to name the missing media type", message)
+		}
+	}()
+	NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", nil,
+		[]Response{{Status: 200, Description: "The thing", Body: &Body{}}}).
+		Handle(func(context.Context, struct{}, *Meta) (Reply, error) { return EmptyReply(200), nil })
+}
+
+// TestAReplyJSONBodyWithoutAStructurePanics holds the other undescribable
+// declaration: a JSON reply whose shape the declaration does not name cannot be
+// validated against anything.
+func TestAReplyJSONBodyWithoutAStructurePanics(t *testing.T) {
+	defer func() {
+		thrown := recover()
+		if thrown == nil {
+			t.Fatal("building the handler did not panic on a JSON body with no Structure")
+		}
+		if message := errString(thrown); !strings.Contains(message, "no Structure") {
+			t.Errorf("the panic reads %q, want it to name the missing structure", message)
+		}
+	}()
+	NewReplyOperation[struct{}]("the.module.reply", http.MethodGet, "/things", "", "", nil,
+		[]Response{{Status: 200, Description: "The thing", Body: &Body{MediaType: "application/json"}}}).
+		Handle(func(context.Context, struct{}, *Meta) (Reply, error) { return JSONReply(200, struct{}{}), nil })
 }

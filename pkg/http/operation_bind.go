@@ -46,8 +46,9 @@ type Failure interface {
 // describe cannot be decoded.
 func bind[In, Out any](
 	handle func(context.Context, In) (Out, error),
+	operationID string,
 	input reflect.Type,
-	requestMediaType string,
+	request *RequestBody,
 	responses []Response,
 ) gin.HandlerFunc {
 	status := successStatus(responses)
@@ -76,9 +77,9 @@ func bind[In, Out any](
 			))
 		}
 	}
-	binding := newRequestBinding(input, requestMediaType)
+	binding := newRequestBinding(input, requestMediaTypeOf(request))
 	return func(c *gin.Context) {
-		c.Set(declaredFailuresContextKey, declaredStatuses(responses))
+		c.Set(declaredFailuresContextKey, declaredResponses(responses))
 		in, err := bindInput[In](c, binding)
 		if err != nil {
 			refuseBinding(c, err)
@@ -86,7 +87,7 @@ func bind[In, Out any](
 		}
 		out, err := handle(c.Request.Context(), in)
 		if err != nil {
-			writeFailure(c, responses, err)
+			writeFailure(c, operationID, responses, err)
 			return
 		}
 		for _, header := range success.Headers {
@@ -99,6 +100,15 @@ func bind[In, Out any](
 		}
 		c.JSON(success.Status, out)
 	}
+}
+
+// requestMediaTypeOf is the media type an operation binds its request body by,
+// or "" when the declaration carries no body.
+func requestMediaTypeOf(request *RequestBody) string {
+	if request == nil {
+		return ""
+	}
+	return request.MediaType
 }
 
 // requestBinding is one operation's request declaration, read once when the
@@ -366,6 +376,14 @@ func bindParameters(c *gin.Context, value reflect.Value, input reflect.Type) err
 		if !present {
 			continue
 		}
+		// An empty query value means the parameter is absent unless the field
+		// holds text: "?limit=" is how a client leaves an integer or a boolean
+		// unset, while "?q=" is a real empty string. A repeated value is still
+		// refused below, because dropping the other value would answer from an
+		// input the caller did not send.
+		if source == "query" && !repeated && raw == "" && !textual(target.Type()) {
+			continue
+		}
 		if target.Kind() == reflect.Slice && source == "query" {
 			if err := setValues(target, c.QueryArray(name)); err != nil {
 				return &bindingError{
@@ -402,6 +420,15 @@ func parameterOf(field reflect.StructField) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// textual reports whether a parameter field holds text: a string, or a slice of
+// strings, keeps an empty request value; every other kind reads it as absent.
+func textual(t reflect.Type) bool {
+	if t.Kind() == reflect.Slice {
+		return t.Elem().Kind() == reflect.String
+	}
+	return t.Kind() == reflect.String
 }
 
 // setScalar stores one request value in a field of a supported kind.
@@ -685,14 +712,22 @@ func readRequestBody(c *gin.Context) ([]byte, error) {
 
 // writeFailure answers a handler's error: the problem the failure names, or a
 // bare 500, and never a status the operation did not declare.
-func writeFailure(c *gin.Context, responses []Response, err error) {
+//
+// A fault's declared headers are written on the answer when the matched
+// declared response declares each of them. A header the declaration does not
+// carry is a handler defect: the answer is a 500 rather than one written with
+// a header the contract does not describe.
+func writeFailure(c *gin.Context, operationID string, responses []Response, err error) {
 	status := http.StatusInternalServerError
 	problem := Problem{Status: status}
+	matched := Response{}
+	declared := false
 	var failure Failure
 	if errors.As(err, &failure) {
-		if _, declared := responseOf(responses, failure.StatusCode()); declared {
+		if response, ok := responseOf(responses, failure.StatusCode()); ok {
 			status = failure.StatusCode()
 			problem = Problem{Status: status}
+			matched, declared = response, true
 		}
 	}
 	var carrier interface{ Problem() Problem }
@@ -701,19 +736,32 @@ func writeFailure(c *gin.Context, responses []Response, err error) {
 			problem = named
 		}
 	}
+	if fault, ok := faultOf(err); ok && declared {
+		if reason := checkDynamicHeaders(fault.Headers, matched); reason != "" {
+			replyDefect(c, operationID, reason)
+			return
+		}
+		for _, header := range fault.Headers {
+			c.Header(header.Name, header.Value)
+		}
+	}
 	Fail(c, problem)
 }
 
-// declaredFailuresContextKey is where the entry point leaves the statuses an
+// declaredFailuresContextKey is where the entry point leaves the answers an
 // operation declared, so the recovery layer can tell a refusal a handler meant
-// from a defect.
+// from a defect and can write the fault's headers against the declared response.
 const declaredFailuresContextKey = "speed.http.declared-failures"
 
-// declaredStatuses is the set of statuses an operation's answers declare.
-func declaredStatuses(responses []Response) map[int]struct{} {
-	statuses := make(map[int]struct{}, len(responses))
+// declaredResponses is the set of answers an operation declares, by status. A
+// status declared more than once keeps the first, which is the one responseOf
+// resolves a handler's answer to.
+func declaredResponses(responses []Response) map[int]Response {
+	declared := make(map[int]Response, len(responses))
 	for _, response := range responses {
-		statuses[response.Status] = struct{}{}
+		if _, exists := declared[response.Status]; !exists {
+			declared[response.Status] = response
+		}
 	}
-	return statuses
+	return declared
 }

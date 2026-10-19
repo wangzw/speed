@@ -24,6 +24,11 @@ type query struct {
 	ID    string `path:"id" description:"The item id."`
 }
 
+// requestBody is one declared request body with the given media type.
+func requestBody(mediaType string) *speedhttp.RequestBody {
+	return &speedhttp.RequestBody{MediaType: mediaType}
+}
+
 func generate(t *testing.T, operations speedhttp.Operations) map[string]interface{} {
 	t.Helper()
 	raw, err := Generate("the.module", "1.0.0", operations)
@@ -41,7 +46,7 @@ func generate(t *testing.T, operations speedhttp.Operations) map[string]interfac
 // route writes ":id" and the document writes "{id}".
 func TestAPathParameterIsRewritten(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[query, struct{}](
-		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	paths := doc["paths"].(map[string]interface{})
@@ -55,7 +60,7 @@ func TestAPathParameterIsRewritten(t *testing.T) {
 // library's duplicated schema description is removed.
 func TestParametersComeFromTheInputStruct(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[query, struct{}](
-		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	params := operationOf(t, doc)["parameters"].([]interface{})
@@ -89,7 +94,7 @@ type doubleTagged struct {
 // so the fragment must not promise the other.
 func TestAParameterIsPublishedOnceUnderTheBoundSource(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[doubleTagged, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	parameters := parametersOf(t, operationOf(t, doc))
@@ -116,7 +121,7 @@ type parameterSources struct {
 // four tags pkg/http binds is published under its source.
 func TestEveryParameterSourceIsPublished(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[parameterSources, struct{}](
-		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	parameters := parametersOf(t, operationOf(t, doc))
@@ -142,7 +147,7 @@ func TestEveryParameterSourceIsPublished(t *testing.T) {
 // of the library's default header style.
 func TestResponseHeadersComeFromTheTags(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The items",
 			Headers: []speedhttp.Header{{Name: "Cache-Control", Description: "Always no-store.", Value: "no-store"}},
@@ -163,7 +168,7 @@ func TestResponseHeadersComeFromTheTags(t *testing.T) {
 // declared nullable even though a Go slice reflects as one.
 func TestNullIsDroppedFromTypes(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The items",
 			Body: &speedhttp.Body{MediaType: "application/json"},
@@ -183,7 +188,7 @@ func TestNullIsDroppedFromTypes(t *testing.T) {
 // name: every problem response references one component called Problem.
 func TestTheProblemDocumentIsPublishedAsProblem(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 204, Description: "No content",
 		}, {
@@ -217,7 +222,7 @@ type ProblemDocument struct {
 // point's default shape is published as Problem.
 func TestTheProblemRenameAppliesOnlyToTheDefaultShape(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, ProblemDocument](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The host's document",
 			Body: &speedhttp.Body{MediaType: "application/json"},
@@ -240,7 +245,7 @@ func TestTheProblemRenameAppliesOnlyToTheDefaultShape(t *testing.T) {
 // contract is a build artifact, so generating twice must not differ.
 func TestTheSameDeclarationsGiveTheSameBytes(t *testing.T) {
 	operations := speedhttp.Operations{speedhttp.NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)}
 	first, err := Generate("the.module", "1.0.0", operations)
@@ -270,7 +275,7 @@ func TestACustomErrorShapeIsPublishedAsDeclared(t *testing.T) {
 		Structure: reflect.TypeOf(customError{}),
 	}
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{
 			{Status: 204, Description: "No content"},
 			speedhttp.ErrorResponse(shape, 409, "Conflict"),
@@ -303,7 +308,7 @@ type jsonInput struct {
 // tags travel with them, and the parameter fields stay parameters.
 func TestAJSONRequestBodyPublishesOnlyJSONFields(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[jsonInput, struct{}](
-		"the.module.write", http.MethodPost, "/items/:id", "", "", "application/json",
+		"the.module.write", http.MethodPost, "/items/:id", "", "", requestBody("application/json"),
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	operation := operationOfMethod(t, doc, "post")
@@ -342,11 +347,32 @@ type parameterOnly struct {
 	Q  string `query:"q"`
 }
 
+// TestANamedRequestBodyPublishesAComponent holds a named request body: its
+// schema moves into the components under the declared name and the operation
+// references it, so the generated client gets a stable type name.
+func TestANamedRequestBodyPublishesAComponent(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[jsonInput, struct{}](
+		"the.module.write", http.MethodPost, "/items/:id", "", "",
+		&speedhttp.RequestBody{MediaType: "application/json", Required: true, Name: "SharedDeclaration"},
+		[]speedhttp.Response{{Status: 204, Description: "No content"}},
+	)})
+	content := requestContentOf(t, operationOfMethod(t, doc, "post"))
+	media := content["application/json"].(map[string]interface{})
+	schema := media["schema"].(map[string]interface{})
+	if schema["$ref"] != "#/components/schemas/SharedDeclaration" {
+		t.Fatalf("the request body schema reads %v, want a reference to the named component", schema)
+	}
+	schemas := doc["components"].(map[string]interface{})["schemas"].(map[string]interface{})
+	if _, ok := schemas["SharedDeclaration"]; !ok {
+		t.Fatalf("the components carry no SharedDeclaration: %v", schemas)
+	}
+}
+
 // TestAnEmptyMediaTypePublishesNoRequestBody holds the no-body declaration: the
 // parameters are published and there is no request body at all.
 func TestAnEmptyMediaTypePublishesNoRequestBody(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[parameterOnly, struct{}](
-		"the.module.read", http.MethodGet, "/items/:id", "", "", "",
+		"the.module.read", http.MethodGet, "/items/:id", "", "", nil,
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	operation := operationOf(t, doc)
@@ -366,7 +392,7 @@ func TestAJSONBodyIsPublishedOnEveryMethod(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodDelete, http.MethodPost} {
 		t.Run(method, func(t *testing.T) {
 			doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[jsonInput, struct{}](
-				"the.module.write", method, "/items/:id", "", "", "application/json",
+				"the.module.write", method, "/items/:id", "", "", requestBody("application/json"),
 				[]speedhttp.Response{{Status: 204, Description: "No content"}},
 			)})
 			operation := operationOfMethod(t, doc, strings.ToLower(method))
@@ -386,7 +412,7 @@ func TestAJSONBodyIsPublishedOnEveryMethod(t *testing.T) {
 // generator refuses it instead of publishing a body the entry point rejects.
 func TestAnUnsupportedMediaTypeIsRefused(t *testing.T) {
 	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[jsonInput, struct{}](
-		"the.module.write", http.MethodPost, "/items/:id", "", "", "text/plain",
+		"the.module.write", http.MethodPost, "/items/:id", "", "", requestBody("text/plain"),
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	if err == nil {
@@ -410,7 +436,7 @@ type multipartInput struct {
 // a binary string, and the form field is not published as a query parameter.
 func TestAMultipartBodyPublishesFormAndFileFields(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[multipartInput, struct{}](
-		"the.module.upload", http.MethodPost, "/items/:id", "", "", "multipart/form-data",
+		"the.module.upload", http.MethodPost, "/items/:id", "", "", requestBody("multipart/form-data"),
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	operation := operationOfMethod(t, doc, "post")
@@ -456,7 +482,7 @@ type multipartFormInput struct {
 // application/x-www-form-urlencoded.
 func TestAMultipartBodyWithoutAFileStaysMultipart(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[multipartFormInput, struct{}](
-		"the.module.upload", http.MethodPost, "/items/:id", "", "", "multipart/form-data",
+		"the.module.upload", http.MethodPost, "/items/:id", "", "", requestBody("multipart/form-data"),
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	content := requestContentOf(t, operationOfMethod(t, doc, "post"))
@@ -481,7 +507,7 @@ type formInput struct {
 // must not promise it as a query parameter too.
 func TestAFormFieldIsNotPublishedAsAQueryParameter(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[formInput, struct{}](
-		"the.module.form", http.MethodPost, "/items/:id", "", "", "application/x-www-form-urlencoded",
+		"the.module.form", http.MethodPost, "/items/:id", "", "", requestBody("application/x-www-form-urlencoded"),
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	operation := operationOfMethod(t, doc, "post")
@@ -514,7 +540,7 @@ type rawInput struct {
 // as they are for every other media type.
 func TestABinaryRequestBodyPublishesItsParameters(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[rawInput, struct{}](
-		"the.module.upload", http.MethodPut, "/items/:id", "", "", "application/octet-stream",
+		"the.module.upload", http.MethodPut, "/items/:id", "", "", requestBody("application/octet-stream"),
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	operation := operationOfMethod(t, doc, "put")
@@ -541,7 +567,7 @@ func TestAParameterlessBinaryRequestStaysBinary(t *testing.T) {
 		Body []byte `raw:"true"`
 	}
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[onlyRaw, struct{}](
-		"the.module.upload", http.MethodPost, "/blob", "", "", "application/octet-stream",
+		"the.module.upload", http.MethodPost, "/blob", "", "", requestBody("application/octet-stream"),
 		[]speedhttp.Response{{Status: 204, Description: "No content"}},
 	)})
 	operation := operationOfMethod(t, doc, "post")
@@ -592,7 +618,7 @@ func TestReplyResponsesPublishTheirBodies(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-				"the.module.reply", http.MethodGet, "/items", "", "", "",
+				"the.module.reply", http.MethodGet, "/items", "", "", nil,
 				[]speedhttp.Response{{
 					Status: 200, Description: "The answer",
 					Body: &speedhttp.Body{MediaType: testCase.mediaType, Structure: testCase.structure},
@@ -633,7 +659,7 @@ func TestReplyResponsesPublishTheirBodies(t *testing.T) {
 // the event stream carries its media type and no schema.
 func TestAnEventStreamWithAStructurePublishesNoBodySchema(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/events", "", "", "",
+		"the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The events",
 			Body: &speedhttp.Body{MediaType: "text/event-stream", Structure: reflect.TypeOf(document{})},
@@ -650,7 +676,7 @@ func TestAnEventStreamWithAStructurePublishesNoBodySchema(t *testing.T) {
 // dropped or rewritten.
 func TestAnEventStreamMediaTypeIsNotStripped(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/events", "", "", "",
+		"the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The events",
 			Body: &speedhttp.Body{MediaType: "text/event-stream; charset=utf-8"},
@@ -668,7 +694,7 @@ func TestAnEventStreamMediaTypeIsNotStripped(t *testing.T) {
 // Structure.
 func TestAnOctetStreamAnswerIsBinaryWhateverItsStructureNames(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/blob", "", "", "",
+		"the.module.reply", http.MethodGet, "/blob", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The bytes",
 			Body: &speedhttp.Body{MediaType: "application/octet-stream", Structure: reflect.TypeOf(document{})},
@@ -688,7 +714,7 @@ func TestAnOctetStreamAnswerIsBinaryWhateverItsStructureNames(t *testing.T) {
 // string, not as text.
 func TestABinaryAnswerOfAnotherMediaTypeIsBinary(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/image", "", "", "",
+		"the.module.reply", http.MethodGet, "/image", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The image",
 			Body: &speedhttp.Body{MediaType: "image/png"},
@@ -704,7 +730,7 @@ func TestABinaryAnswerOfAnotherMediaTypeIsBinary(t *testing.T) {
 // type is a string, not binary octets.
 func TestATextAnswerOfAnotherMediaTypeIsAString(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/text", "", "", "",
+		"the.module.reply", http.MethodGet, "/text", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The text",
 			Body: &speedhttp.Body{MediaType: "text/plain"},
@@ -725,7 +751,7 @@ func TestATextAnswerOfAnotherMediaTypeIsAString(t *testing.T) {
 // published with the reflector's unconstrained default.
 func TestAJSONAnswerWithoutAStructureIsRefused(t *testing.T) {
 	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/items", "", "", "",
+		"the.module.reply", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The answer",
 			Body: &speedhttp.Body{MediaType: "application/json"},
@@ -743,7 +769,7 @@ func TestAJSONAnswerWithoutAStructureIsRefused(t *testing.T) {
 // status and Location header are published and the answer carries no content.
 func TestARedirectPublishesItsLocationAndNoContent(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/old", "", "", "",
+		"the.module.reply", http.MethodGet, "/old", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 303, Description: "See the new location",
 			Headers: []speedhttp.Header{{Name: "Location", Description: "Where the client goes next.", Value: "/new"}},
@@ -765,7 +791,7 @@ func TestANoBodyStatusPublishesNoContent(t *testing.T) {
 	for _, status := range []int{http.StatusNoContent, http.StatusNotModified} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-				"the.module.reply", http.MethodGet, "/items", "", "", "",
+				"the.module.reply", http.MethodGet, "/items", "", "", nil,
 				[]speedhttp.Response{{Status: status, Description: "No body"}},
 			)})
 			response := operationOf(t, doc)["responses"].(map[string]interface{})[strconv.Itoa(status)].(map[string]interface{})
@@ -780,7 +806,7 @@ func TestANoBodyStatusPublishesNoContent(t *testing.T) {
 // body on a status that carries none, so the generator refuses it too.
 func TestABodyOnANoBodyStatusIsRefused(t *testing.T) {
 	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/items", "", "", "",
+		"the.module.reply", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: http.StatusNoContent, Description: "No body",
 			Body: &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(document{})},
@@ -803,7 +829,7 @@ type simpleInput struct {
 // media type out.
 func TestTheSimpleFormPublishesParametersBodyAndSuccess(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[simpleInput, document](
-		"the.module.write", http.MethodPost, "/items", "", "", "application/json",
+		"the.module.write", http.MethodPost, "/items", "", "", requestBody("application/json"),
 		[]speedhttp.Response{{Status: 200, Description: "The document"}},
 	)})
 	operation := operationOfMethod(t, doc, "post")
@@ -825,7 +851,7 @@ func TestTheSimpleFormPublishesParametersBodyAndSuccess(t *testing.T) {
 // another media type is refused rather than published.
 func TestASimpleSuccessOfAnotherMediaTypeIsRefused(t *testing.T) {
 	_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
-		"the.module.write", http.MethodPost, "/items", "", "", "",
+		"the.module.write", http.MethodPost, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The document",
 			Body: &speedhttp.Body{MediaType: "text/event-stream"},
@@ -859,7 +885,7 @@ func TestAnEmptySimpleOutPublishesTheEmptyObjectBody(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, struct{}](
-				"the.module.write", http.MethodPost, "/items", "", "", "",
+				"the.module.write", http.MethodPost, "/items", "", "", nil,
 				[]speedhttp.Response{{Status: http.StatusOK, Description: "Written", Body: testCase.body}},
 			)})
 			media := contentOf(t, operationOfMethod(t, doc, "post"), "200", "application/json")
@@ -890,7 +916,7 @@ func TestAReplyBodyWithoutAMediaTypeIsRefused(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			_, err := Generate("the.module", "1.0.0", speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-				"the.module.reply", http.MethodGet, "/items", "", "", "",
+				"the.module.reply", http.MethodGet, "/items", "", "", nil,
 				[]speedhttp.Response{{Status: http.StatusOK, Description: "The answer", Body: testCase.body}},
 			)})
 			if err == nil {
@@ -946,7 +972,7 @@ func TestAParameterTypeTheEntryPointCannotBindIsRefused(t *testing.T) {
 		{
 			name: "a float query parameter",
 			operation: speedhttp.NewOperation[unbindableFloatQuery, struct{}](
-				"the.module.read", http.MethodGet, "/items", "", "", "",
+				"the.module.read", http.MethodGet, "/items", "", "", nil,
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			message: "query parameter",
@@ -954,7 +980,7 @@ func TestAParameterTypeTheEntryPointCannotBindIsRefused(t *testing.T) {
 		{
 			name: "an unsigned query parameter",
 			operation: speedhttp.NewOperation[unbindableUintQuery, struct{}](
-				"the.module.read", http.MethodGet, "/items", "", "", "",
+				"the.module.read", http.MethodGet, "/items", "", "", nil,
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			message: "query parameter",
@@ -962,7 +988,7 @@ func TestAParameterTypeTheEntryPointCannotBindIsRefused(t *testing.T) {
 		{
 			name: "a time query parameter",
 			operation: speedhttp.NewOperation[unbindableTimeQuery, struct{}](
-				"the.module.read", http.MethodGet, "/items", "", "", "",
+				"the.module.read", http.MethodGet, "/items", "", "", nil,
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			message: "query parameter",
@@ -970,7 +996,7 @@ func TestAParameterTypeTheEntryPointCannotBindIsRefused(t *testing.T) {
 		{
 			name: "a repeated header parameter",
 			operation: speedhttp.NewOperation[unbindableSliceHeader, struct{}](
-				"the.module.read", http.MethodGet, "/items", "", "", "",
+				"the.module.read", http.MethodGet, "/items", "", "", nil,
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			message: "header parameter",
@@ -978,7 +1004,7 @@ func TestAParameterTypeTheEntryPointCannotBindIsRefused(t *testing.T) {
 		{
 			name: "a float form field",
 			operation: speedhttp.NewOperation[unbindableFloatForm, struct{}](
-				"the.module.write", http.MethodPost, "/items", "", "", mediaTypeForm,
+				"the.module.write", http.MethodPost, "/items", "", "", requestBody(mediaTypeForm),
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			message: "form field",
@@ -986,7 +1012,7 @@ func TestAParameterTypeTheEntryPointCannotBindIsRefused(t *testing.T) {
 		{
 			name: "a float multipart form field",
 			operation: speedhttp.NewOperation[unbindableFloatForm, struct{}](
-				"the.module.write", http.MethodPost, "/items", "", "", mediaTypeMultipart,
+				"the.module.write", http.MethodPost, "/items", "", "", requestBody(mediaTypeMultipart),
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			message: "form field",
@@ -1010,7 +1036,7 @@ func TestAParameterTypeTheEntryPointCannotBindIsRefused(t *testing.T) {
 // an array.
 func TestARepeatedQueryParameterPublishesItsSliceType(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[bindableSliceQuery, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)})
 	schema := parametersOf(t, operationOf(t, doc))["values"]["schema"].(map[string]interface{})
@@ -1040,7 +1066,7 @@ type collisionDocument struct {
 // members, so dropping one publishes a shape narrower than the contract.
 func TestABusinessSchemaKeepsMembersNamedLikeAParameterOrHeader(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, collisionDocument](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The item",
 			Body: &speedhttp.Body{MediaType: "application/json"},
@@ -1066,7 +1092,7 @@ func TestABusinessSchemaKeepsMembersNamedLikeAParameterOrHeader(t *testing.T) {
 // every described member.
 func TestABusinessRequestSchemaKeepsMembersNamedLikeAParameterOrHeader(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[collisionDocument, struct{}](
-		"the.module.write", http.MethodPost, "/items", "", "", mediaTypeJSON,
+		"the.module.write", http.MethodPost, "/items", "", "", requestBody(mediaTypeJSON),
 		[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 	)})
 	media := requestContentOf(t, operationOfMethod(t, doc, "post"))[mediaTypeJSON].(map[string]interface{})
@@ -1085,12 +1111,12 @@ func TestABusinessRequestSchemaKeepsMembersNamedLikeAParameterOrHeader(t *testin
 	}
 }
 
-// TestASimpleOperationsFailurePublishesNoDeclaredHeaders holds the write side:
-// the simple form writes the declared headers on its success response only,
-// while a handler's failures are problem documents written without them.
-func TestASimpleOperationsFailurePublishesNoDeclaredHeaders(t *testing.T) {
+// TestASimpleOperationsFailurePublishesItsDeclaredHeaders holds the write side:
+// the entry point writes the declared headers of the response a failure names,
+// so a failure's headers are part of the contract like any other.
+func TestASimpleOperationsFailurePublishesItsDeclaredHeaders(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{
 			{
 				Status: 200, Description: "The items",
@@ -1109,8 +1135,24 @@ func TestASimpleOperationsFailurePublishesNoDeclaredHeaders(t *testing.T) {
 		t.Errorf("the success response drops its declared header: %v", success)
 	}
 	failure := responses["429"].(map[string]interface{})
-	if headers, ok := failure["headers"]; ok {
-		t.Errorf("the failure response publishes headers the entry point never writes: %v", headers)
+	if headers, ok := failure["headers"].(map[string]interface{}); !ok || headers["Retry-After"] == nil {
+		t.Errorf("the failure response drops its declared header: %v", failure)
+	}
+}
+
+// TestASimpleOperationWithTwoSuccessStatusesIsRefused holds the declaration the
+// entry point refuses when the handler is built: the simple writer answers one
+// success status, so the generator must not publish two.
+func TestASimpleOperationWithTwoSuccessStatusesIsRefused(t *testing.T) {
+	operations := speedhttp.Operations{speedhttp.NewOperation[struct{}, document](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		[]speedhttp.Response{
+			{Status: 200, Description: "The items", Body: &speedhttp.Body{MediaType: "application/json"}},
+			{Status: 201, Description: "The items, created", Body: &speedhttp.Body{MediaType: "application/json"}},
+		},
+	)}
+	if _, err := Generate("the.module", "1.0.0", operations); err == nil {
+		t.Fatal("generating an operation with two success statuses succeeded")
 	}
 }
 
@@ -1119,7 +1161,7 @@ func TestASimpleOperationsFailurePublishesNoDeclaredHeaders(t *testing.T) {
 // entry point writes that response's declared headers.
 func TestAReplyOperationsFailurePublishesItsDeclaredHeaders(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/items", "", "", "",
+		"the.module.reply", http.MethodGet, "/items", "", "", nil,
 		[]speedhttp.Response{
 			{
 				Status: 200, Description: "The items",
@@ -1143,7 +1185,7 @@ func TestAReplyOperationsFailurePublishesItsDeclaredHeaders(t *testing.T) {
 // response declares none, so the fragment must publish it.
 func TestAnEventStreamPublishesTheNoStoreDefault(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/events", "", "", "",
+		"the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The events",
 			Body: &speedhttp.Body{MediaType: "text/event-stream"},
@@ -1169,7 +1211,7 @@ func TestAnEventStreamPublishesTheNoStoreDefault(t *testing.T) {
 // entry replaces it.
 func TestADeclaredCacheControlStandsOnAnEventStream(t *testing.T) {
 	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
-		"the.module.reply", http.MethodGet, "/events", "", "", "",
+		"the.module.reply", http.MethodGet, "/events", "", "", nil,
 		[]speedhttp.Response{{
 			Status: 200, Description: "The events",
 			Headers: []speedhttp.Header{{Name: "Cache-Control", Description: "No cache, but revalidate.", Value: "no-cache"}},
@@ -1200,7 +1242,7 @@ func TestEveryRequestBodyObjectIsClosed(t *testing.T) {
 		{
 			name: "JSON",
 			operation: speedhttp.NewOperation[jsonInput, struct{}](
-				"the.module.write", http.MethodPost, "/items/:id", "", "", mediaTypeJSON,
+				"the.module.write", http.MethodPost, "/items/:id", "", "", requestBody(mediaTypeJSON),
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			mediaType: mediaTypeJSON,
@@ -1208,7 +1250,7 @@ func TestEveryRequestBodyObjectIsClosed(t *testing.T) {
 		{
 			name: "form",
 			operation: speedhttp.NewOperation[formInput, struct{}](
-				"the.module.write", http.MethodPost, "/items/:id", "", "", mediaTypeForm,
+				"the.module.write", http.MethodPost, "/items/:id", "", "", requestBody(mediaTypeForm),
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			mediaType: mediaTypeForm,
@@ -1216,7 +1258,7 @@ func TestEveryRequestBodyObjectIsClosed(t *testing.T) {
 		{
 			name: "multipart",
 			operation: speedhttp.NewOperation[multipartInput, struct{}](
-				"the.module.write", http.MethodPost, "/items/:id", "", "", mediaTypeMultipart,
+				"the.module.write", http.MethodPost, "/items/:id", "", "", requestBody(mediaTypeMultipart),
 				[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
 			),
 			mediaType: mediaTypeMultipart,
@@ -1318,4 +1360,55 @@ func resolveSchema(t *testing.T, doc map[string]interface{}, schema map[string]i
 		t.Fatalf("the schema reference reads %q, want a component schema", ref)
 	}
 	return component(t, doc, strings.TrimPrefix(ref, prefix))
+}
+
+// TestARequestBodyPublishesItsDescriptionAndRequired holds the request body's
+// metadata: the media type, the description as the body's own description and
+// the required flag are all published.
+func TestARequestBodyPublishesItsDescriptionAndRequired(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewOperation[jsonInput, struct{}](
+		"the.module.write", http.MethodPost, "/items/:id", "", "",
+		&speedhttp.RequestBody{
+			MediaType:   "application/json",
+			Description: "The item to write.",
+			Required:    true,
+		},
+		[]speedhttp.Response{{Status: http.StatusNoContent, Description: "No content"}},
+	)})
+	body := operationOfMethod(t, doc, "post")["requestBody"].(map[string]interface{})
+	if body["description"] != "The item to write." {
+		t.Errorf("the request body description reads %v, want the declared one", body["description"])
+	}
+	if body["required"] != true {
+		t.Errorf("the request body required reads %v, want true", body["required"])
+	}
+	if _, ok := body["content"].(map[string]interface{})["application/json"]; !ok {
+		t.Errorf("the request body carries %v, want application/json", body["content"])
+	}
+}
+
+// TestADynamicMediaTypeAnswerPublishesABinaryContentEntry holds the "*/*"
+// response body: the declared media type is published with a binary schema,
+// because a handler-chosen media type can only describe bytes.
+func TestADynamicMediaTypeAnswerPublishesABinaryContentEntry(t *testing.T) {
+	doc := generate(t, speedhttp.Operations{speedhttp.NewReplyOperation[struct{}](
+		"the.module.reply", http.MethodGet, "/image", "", "", nil,
+		[]speedhttp.Response{{
+			Status: 200, Description: "An image the handler chooses",
+			Body: &speedhttp.Body{MediaType: "*/*"},
+		}},
+	)})
+	response := operationOf(t, doc)["responses"].(map[string]interface{})["200"].(map[string]interface{})
+	content := response["content"].(map[string]interface{})
+	if len(content) != 1 {
+		t.Fatalf("the answer publishes %v, want only the dynamic media type", content)
+	}
+	media, ok := content["*/*"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("the answer carries %v, want a */* entry", content)
+	}
+	schema := media["schema"].(map[string]interface{})
+	if schema["type"] != "string" || schema["format"] != "binary" {
+		t.Errorf("the dynamic body schema reads %v, want a binary string", schema)
+	}
 }

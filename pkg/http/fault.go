@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"net/http"
 	"reflect"
 )
@@ -24,6 +25,10 @@ type Fault struct {
 	Title string
 	// Detail explains this occurrence.
 	Detail string
+	// Headers are response headers the answer carries. Each name must be
+	// declared on the response the fault's status selects; an undeclared one is
+	// a handler defect and the answer is a 500.
+	Headers []HeaderValue
 }
 
 // Error renders the fault as an error. It never reaches a client: the response
@@ -41,6 +46,20 @@ func (f Fault) StatusCode() int { return f.Status }
 // Problem is the document the fault asks for.
 func (f Fault) Problem() Problem {
 	return Problem{Status: f.Status, Type: f.Type, Title: f.Title, Detail: f.Detail, Cause: f}
+}
+
+// faultOf returns the fault an error carries, by value or by pointer. The
+// second result is false for an error that is not a fault.
+func faultOf(err error) (Fault, bool) {
+	var value Fault
+	if errors.As(err, &value) {
+		return value, true
+	}
+	var pointer *Fault
+	if errors.As(err, &pointer) && pointer != nil {
+		return *pointer, true
+	}
+	return Fault{}, false
 }
 
 // ErrorShape is the body shape the entry point's error handling writes: the

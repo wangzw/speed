@@ -11,28 +11,11 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// The stream route, under the fixed base path. It is the module's whole route
-// surface, and it is a long-lived connection: the answer is one text/event-stream.
-const (
-	basePath   = "/api/v1/notifications"
-	pathStream = basePath + "/stream"
-)
-
-// route is one route: the method and path it answers and the handler that
-// serves it.
-type route struct {
-	method  string
-	path    string
-	handler gin.HandlerFunc
-}
-
-// routes is the closed set of this module's routes, in the order they are
-// mounted.
-func (p *product) routes() []route {
-	return []route{
-		{http.MethodGet, pathStream, p.handleStream},
-	}
-}
+// pathStream is the absolute path the stream route is mounted on: the path the
+// fragment declares, resolved against the API root the module's Spec declares.
+// It is the module's whole route surface, and it is a long-lived connection:
+// the answer is one text/event-stream.
+var pathStream = streamSpec.ResolvePath(pathStreamFragment)
 
 // mount resolves every configured endpoint on the entry point and registers the
 // stream route on each. Every name is looked up before any route is registered,
@@ -51,49 +34,61 @@ func (p *product) mount(router speedhttp.Router) error {
 		}
 		targets = append(targets, target{name: name, endpoint: endpoint})
 	}
+	handler := p.guardStream(subscribeOperation.Handle(p.handleStream))
 	for _, tgt := range targets {
-		for _, r := range p.routes() {
-			tgt.endpoint.Route(r.method, r.path, r.handler)
-		}
+		tgt.endpoint.Route(subscribeOperation.Method, pathStream, handler)
 	}
 	return nil
 }
 
-// handleStream serves GET /stream. It reads the caller, resolves the writer it
-// can flush through, subscribes a connection under (tenant, recipient), sets the
-// event-stream content type, and writes one frame per event until the
-// connection ends.
+// handleStream serves GET /stream. It reads the caller, subscribes a connection
+// under (tenant, recipient) when the answer begins, and writes one frame per
+// event until the connection ends.
 //
 // The recipient is the identity's effective account, Identity.Account, so an
 // impersonating caller sees the impersonated account's inbox. A request with no
 // identity is a 401: there is no recipient to scope the connection to.
-func (p *product) handleStream(c *gin.Context) {
-	ctx := c.Request.Context()
+//
+// The answer is one event stream the entry point writes: it sets the declared
+// content type and status before the callback runs, and each frame the callback
+// sends is flushed before the next one is built. The subscription is made and
+// released inside the callback, so it lives exactly as long as the stream does.
+func (p *product) handleStream(ctx context.Context, _ streamInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusUnauthorized})
-		return
-	}
-	flusher, ok := flusherOf(c.Writer)
-	if !ok {
-		// A writer with no flusher anywhere down the chain cannot refresh a
-		// stream. There is no fallback to a one-shot body: a stream that cannot
-		// flush is not a stream.
-		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusInternalServerError})
-		return
+		return nil, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
 
-	conn := p.hub.Subscribe(tenantOf(ctx), string(id.Account()))
-	// Deregister before the response ends, whatever ends it.
-	defer p.hub.Close(conn)
+	return speedhttp.SSEReply(http.StatusOK, func(w *speedhttp.SSEWriter) error {
+		conn := p.hub.Subscribe(tenantOf(ctx), string(id.Account()))
+		// Deregister the connection before the answer ends, whatever ends it.
+		defer p.hub.Close(conn)
 
-	// The content type is set before any body byte, so the first frame goes out
-	// under the stream media type.
-	c.Header("Content-Type", "text/event-stream")
-	c.Writer.WriteHeaderNow()
-	flusher.Flush()
+		return p.stream(ctx, w, conn)
+	}), nil
+}
 
-	p.stream(ctx, c.Writer, flusher, conn)
+// guardStream holds the one check the declared handler cannot make: the
+// response writer must be able to flush. A writer with no flusher anywhere down
+// the chain cannot refresh a stream, and there is no fallback to a one-shot
+// body, so the route answers the declared 500.
+//
+// The typed handler receives no response writer, so the check stays at the
+// mount, in front of the handler. The identity is read first, which keeps the
+// route's original order: a request with neither an identity nor a flushing
+// writer still answers the declared 401.
+func (p *product) guardStream(next gin.HandlerFunc) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if _, ok := authn.FromContext(c.Request.Context()); !ok {
+			next(c)
+			return
+		}
+		if _, ok := flusherOf(c.Writer); !ok {
+			speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusInternalServerError})
+			return
+		}
+		next(c)
+	}
 }
 
 // stream writes the connection's frames until the connection ends. It ends on
@@ -102,41 +97,26 @@ func (p *product) handleStream(c *gin.Context) {
 // done), and returns on the first write failure. The drain signal is separate
 // from the request context because the request context is not cancelled by a
 // drain; a handler watching only it would run until the drain timeout cut it.
-func (p *product) stream(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, conn *connection) {
+//
+// An error from the writer ends the answer: the response has already begun, so
+// the entry point abandons the connection rather than trying to write a
+// different answer.
+func (p *product) stream(ctx context.Context, w *speedhttp.SSEWriter, conn *connection) error {
 	draining := speedhttp.Draining(ctx)
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-draining:
-			return
+			return nil
 		case <-conn.done:
-			return
+			return nil
 		case f := <-conn.ch:
-			if err := writeFrame(w, flusher, f); err != nil {
-				return
+			if err := w.Send(f.event, f.data); err != nil {
+				return err
 			}
 		}
 	}
-}
-
-// writeFrame writes one frame and flushes it. The frame is
-// "event: <name>\ndata: <json>\n\n": the event name, the JSON data line, and a
-// blank line that ends the event. Both lines and the trailing blank line are
-// part of what a connected client parses, so the shape is fixed.
-func writeFrame(w http.ResponseWriter, flusher http.Flusher, f frame) error {
-	buf := make([]byte, 0, len(f.event)+len(f.data)+len("event: ")+len("data: ")+3)
-	buf = append(buf, "event: "...)
-	buf = append(buf, f.event...)
-	buf = append(buf, '\n')
-	buf = append(buf, "data: "...)
-	buf = append(buf, f.data...)
-	buf = append(buf, '\n', '\n')
-	if _, err := w.Write(buf); err != nil {
-		return err
-	}
-	flusher.Flush()
-	return nil
 }
 
 // flusherOf walks the response-writer chain looking for an http.Flusher. A layer

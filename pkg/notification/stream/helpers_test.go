@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -201,7 +202,8 @@ type rig struct {
 }
 
 // newRig builds the product over a stub bus, subscribes it as Init does, and
-// mounts the stream route on a fresh gin engine.
+// mounts the stream route on a fresh gin engine through the same declared
+// operation and mount guard the module registers with.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -214,7 +216,7 @@ func newRig(t *testing.T) *rig {
 	}
 	p.subscribe()
 	engine := gin.New()
-	engine.GET(pathStream, p.handleStream)
+	engine.GET(pathStream, p.guardStream(subscribeOperation.Handle(p.handleStream)))
 	return &rig{t: t, p: p, bus: bus, engine: engine}
 }
 
@@ -248,3 +250,138 @@ func (u wrapper) Header() http.Header         { return u.w.Header() }
 func (u wrapper) Write(b []byte) (int, error) { return u.w.Write(b) }
 func (u wrapper) WriteHeader(code int)        { u.w.WriteHeader(code) }
 func (u wrapper) Unwrap() http.ResponseWriter { return u.w }
+
+// firstConnection waits until the served stream has subscribed a connection
+// and returns it, so a case can put a frame on the connection the route holds.
+func (r *rig) firstConnection(t *testing.T) *connection {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		r.p.hub.mu.Lock()
+		var found *connection
+		for _, list := range r.p.hub.conns {
+			if len(list) > 0 {
+				found = list[0]
+				break
+			}
+		}
+		r.p.hub.mu.Unlock()
+		if found != nil {
+			return found
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the served stream subscribed no connection")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// flushRecorder is an http.ResponseWriter that publishes, on a channel, the
+// bytes written since its previous flush. A case reads the frames the handler
+// flushes while the stream is still running.
+type flushRecorder struct {
+	header  http.Header
+	mu      sync.Mutex
+	buf     bytes.Buffer
+	status  int
+	flushes chan string
+}
+
+func newFlushRecorder() *flushRecorder {
+	return &flushRecorder{header: make(http.Header), flushes: make(chan string, 8)}
+}
+
+func (w *flushRecorder) Header() http.Header { return w.header }
+
+func (w *flushRecorder) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *flushRecorder) WriteHeader(code int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.status = code
+}
+
+func (w *flushRecorder) Flush() {
+	w.mu.Lock()
+	flushed := w.buf.String()
+	w.buf.Reset()
+	w.mu.Unlock()
+	if flushed != "" {
+		w.flushes <- flushed
+	}
+}
+
+// timingRecorder is an http.ResponseWriter that records the order in which the
+// answer writes its status, flushes, and body bytes. A case reads it to see
+// whether the status and headers went out before the first event was written.
+type timingRecorder struct {
+	mu           sync.Mutex
+	header       http.Header
+	body         bytes.Buffer
+	status       int
+	writes       int
+	flushes      int
+	emptyFlushes int
+	firstContent string
+}
+
+func newTimingRecorder() *timingRecorder {
+	return &timingRecorder{header: make(http.Header)}
+}
+
+func (w *timingRecorder) Header() http.Header { return w.header }
+
+func (w *timingRecorder) WriteHeader(code int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.status = code
+}
+
+func (w *timingRecorder) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.writes++
+	return w.body.Write(p)
+}
+
+// Flush records the flush and, on the first one, the content type the headers
+// carried at that moment. A flush made before any body byte was written is the
+// one that establishes the connection.
+func (w *timingRecorder) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.flushes == 0 {
+		w.firstContent = w.header.Get("Content-Type")
+	}
+	w.flushes++
+	if w.writes == 0 {
+		w.emptyFlushes++
+	}
+}
+
+// timingSnapshot is one read of a timingRecorder's state.
+type timingSnapshot struct {
+	status       int
+	writes       int
+	flushes      int
+	emptyFlushes int
+	firstContent string
+	body         string
+}
+
+func (w *timingRecorder) snapshot() timingSnapshot {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return timingSnapshot{
+		status:       w.status,
+		writes:       w.writes,
+		flushes:      w.flushes,
+		emptyFlushes: w.emptyFlushes,
+		firstContent: w.firstContent,
+		body:         w.body.String(),
+	}
+}

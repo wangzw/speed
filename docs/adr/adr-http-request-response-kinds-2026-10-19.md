@@ -26,11 +26,11 @@
 
 采纳：
 
-- **请求体按媒体类型声明与绑定。** `Operation.RequestMediaType` 取值 JSON、表单、multipart 或二进制媒体类型；`In` 的字段按媒体类型取用：JSON 用 `json` tag，表单用 `form` tag，multipart 用 `form`/`file` tag，二进制用唯一的 `raw` tag 字段。未知成员按类别拒绝。解码后若 `In` 实现 `Validate() error`，按 422 拒绝。
-- **应答用类型化的 `Reply` 构造。** `JSON`、`Empty`、`Bytes`、`Stream`（`func(context.Context, io.Writer) error`）、`SSE`、`Redirect` 六种；`WithHeaders`/`WithCookies` 携带动态头与 Cookie。`ReplyOperation[In]` 的 handler 返回 `Reply`，并拿到只读的 `Meta`（client IP、路由模板）。
-- **声明仍是封闭集，动态部分运行期核对。** 应答的状态必须在 `Responses` 里；媒体类型必须与该状态的声明一致；动态响应头的名字必须已声明；JSON 应答的 body 类型必须等于该状态声明的结构。不满足按内部错误处理，不写出未声明的应答。
+- **请求体按媒体类型声明与绑定。** `Operation.Request` 是 `*RequestBody`，其 `MediaType` 取值 JSON、表单、multipart 或二进制媒体类型；`In` 的字段按媒体类型取用：JSON 用 `json` tag，表单用 `form` tag，multipart 用 `form`/`file` tag，二进制用唯一的 `raw` tag 字段。未知成员按类别拒绝。解码后若 `In` 实现 `Validate() error`，按 422 拒绝。`RequestBody.Description` 与 `RequestBody.Required` 是契约发布的内容，不改变绑定。
+- **应答用类型化的 `Reply` 构造。** `JSON`、`Empty`、`Bytes`、`Stream`（`func(context.Context, io.Writer) error`）、`SSE`、`Redirect` 六种；`WithHeaders`/`WithCookies` 携带动态头与 Cookie。`ReplyOperation[In]` 的 handler 返回 `Reply`，并拿到只读的 `Meta`（client IP、路由模板、请求 Content-Length，未知为 -1）。
+- **声明仍是封闭集，动态部分运行期核对。** 应答的状态必须在 `Responses` 里；媒体类型必须与该状态的声明一致；响应体声明 `*/*` 表示 handler 在该状态内自选媒体类型，只接受 bytes 与 stream 应答。动态响应头的名字必须已声明；JSON 应答的 body 类型必须等于该状态声明的结构。`Fault` 携带的响应头同样只在匹配应答声明过其名字时写出，未声明的名字按内部错误处理。不满足按内部错误处理，不写出未声明的应答。
 - **简单形态保留。** `Operation[In, Out]` 与 `Handle` 仍是编译期最强的路径，成功状态与 body 类型由类型参数给出；复杂形态按 operation 选用，两者都实现同一个 `Declared` 描述符，生成器一视同仁。
-- **生成器按形态产出。** JSON 出 schema；表单/multipart 出对象 schema（文件字段为二进制）；`application/octet-stream` 出二进制字符串；`text/event-stream` 出事件流媒体类型；重定向只出状态与 `Location`。
+- **生成器按形态产出。** JSON 出 schema；表单/multipart 出对象 schema（文件字段为二进制）；`application/octet-stream` 出二进制字符串；`text/event-stream` 出事件流媒体类型；`*/*` 出二进制字符串的 content 项；重定向只出状态与 `Location`。请求体的媒体类型、描述与 required 一并发布。
 
 ## 后果
 

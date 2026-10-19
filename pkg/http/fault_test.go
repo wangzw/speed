@@ -43,7 +43,7 @@ func TestFailuresMergesCommonAndSpecific(t *testing.T) {
 // fault's status and problem fields reach the answer.
 func TestAReturnedFaultWritesItsProblem(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		Failures([]Response{{Status: 204, Description: "No content"}},
 			ProblemResponse(http.StatusConflict, "Conflict")),
 	)
@@ -72,7 +72,7 @@ func TestAReturnedFaultWritesItsProblem(t *testing.T) {
 // the recovery layer, without being treated as a defect.
 func TestADeclaredFaultPanicIsAnswered(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		Failures([]Response{{Status: 204, Description: "No content"}},
 			ProblemResponse(http.StatusConflict, "Conflict")),
 	)
@@ -100,7 +100,7 @@ func TestADeclaredFaultPanicIsAnswered(t *testing.T) {
 // panic path: a status the operation did not declare is never written.
 func TestAnUndeclaredFaultPanicIsAServerError(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		[]Response{{Status: 204, Description: "No content"}},
 	)
 	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
@@ -136,7 +136,7 @@ func TestAFaultPanicWithoutADeclarationIsAServerError(t *testing.T) {
 // keeping the typed handler boundary.
 func TestACustomResponderWritesTheReturnedFault(t *testing.T) {
 	operation := NewOperation[struct{}, struct{}](
-		"the.module.read", http.MethodGet, "/items", "", "", "",
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
 		Failures([]Response{{Status: 204, Description: "No content"}},
 			ProblemResponse(http.StatusConflict, "Conflict")),
 	)
@@ -160,5 +160,117 @@ func TestACustomResponderWritesTheReturnedFault(t *testing.T) {
 	}
 	if got := responder.problem(t, 0); got.Type != "urn:test:conflict" {
 		t.Errorf("the responder was handed %+v, want the fault's type", got)
+	}
+}
+
+// throttleResponses declares a 204 and a 429 that carries Retry-After.
+func throttleResponses(withHeader bool) []Response {
+	throttled := Response{Status: http.StatusTooManyRequests, Description: "Too many requests"}
+	if withHeader {
+		throttled.Headers = []Header{{Name: "Retry-After", Description: "When to retry."}}
+	}
+	return []Response{{Status: http.StatusNoContent, Description: "No content"}, throttled}
+}
+
+// TestAReturnedFaultWritesItsDeclaredHeaders holds the fault's dynamic headers:
+// a header the matched response declares is written with the fault's value.
+func TestAReturnedFaultWritesItsDeclaredHeaders(t *testing.T) {
+	operation := NewOperation[struct{}, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		throttleResponses(true),
+	)
+	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
+		return struct{}{}, Fault{
+			Status:  http.StatusTooManyRequests,
+			Type:    "urn:test:throttled",
+			Headers: []HeaderValue{{Name: "Retry-After", Value: "30"}},
+		}
+	})
+	recorder := serve(t, http.MethodGet, "/items", handler,
+		httptest.NewRequest(http.MethodGet, "/items", nil))
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("a returned fault answered %d, want 429", recorder.Code)
+	}
+	if got := recorder.Header().Get("Retry-After"); got != "30" {
+		t.Errorf("Retry-After is %q, want the fault's value", got)
+	}
+}
+
+// TestAnUndeclaredFaultHeaderIsAnsweredInternal holds the declaration's force
+// on the fault's headers: a header the matched response does not declare is a
+// handler defect, and the answer is a 500.
+func TestAnUndeclaredFaultHeaderIsAnsweredInternal(t *testing.T) {
+	operation := NewOperation[struct{}, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		throttleResponses(false),
+	)
+	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
+		return struct{}{}, Fault{
+			Status:  http.StatusTooManyRequests,
+			Type:    "urn:test:throttled",
+			Headers: []HeaderValue{{Name: "X-Undeclared", Value: "x"}},
+		}
+	})
+	recorder := serve(t, http.MethodGet, "/items", handler,
+		httptest.NewRequest(http.MethodGet, "/items", nil))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Errorf("an undeclared fault header answered %d, want 500", recorder.Code)
+	}
+	if got := recorder.Header().Get("X-Undeclared"); got != "" {
+		t.Errorf("the undeclared header was written with %q", got)
+	}
+}
+
+// TestADeclaredFaultPanicWritesItsHeaders holds the recovery path: a panicked
+// fault's declared headers are written with the recovered answer.
+func TestADeclaredFaultPanicWritesItsHeaders(t *testing.T) {
+	operation := NewOperation[struct{}, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		throttleResponses(true),
+	)
+	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
+		panic(Fault{
+			Status:  http.StatusTooManyRequests,
+			Type:    "urn:test:throttled",
+			Headers: []HeaderValue{{Name: "Retry-After", Value: "30"}},
+		})
+	})
+	logger, _ := newRecordingLogger()
+	assembled := assembleFallback(t, nil, logger, func(e Endpoint) {
+		e.Route(http.MethodGet, "/items", handler)
+	})
+	recorder := serveOnce(assembled, http.MethodGet, "/items")
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("a declared fault panic answered %d, want 429", recorder.Code)
+	}
+	if got := recorder.Header().Get("Retry-After"); got != "30" {
+		t.Errorf("Retry-After is %q, want the fault's value", got)
+	}
+}
+
+// TestAnUndeclaredFaultPanicHeaderIsAServerError holds the recovery path's
+// other side: a panicked fault asking for an undeclared header is a defect.
+func TestAnUndeclaredFaultPanicHeaderIsAServerError(t *testing.T) {
+	operation := NewOperation[struct{}, struct{}](
+		"the.module.read", http.MethodGet, "/items", "", "", nil,
+		throttleResponses(false),
+	)
+	handler := operation.Handle(func(context.Context, struct{}) (struct{}, error) {
+		panic(Fault{
+			Status:  http.StatusTooManyRequests,
+			Type:    "urn:test:throttled",
+			Headers: []HeaderValue{{Name: "X-Undeclared", Value: "x"}},
+		})
+	})
+	logger, _ := newRecordingLogger()
+	assembled := assembleFallback(t, nil, logger, func(e Endpoint) {
+		e.Route(http.MethodGet, "/items", handler)
+	})
+	recorder := serveOnce(assembled, http.MethodGet, "/items")
+	if recorder.Code != http.StatusInternalServerError {
+		t.Errorf("an undeclared fault panic header answered %d, want 500", recorder.Code)
+	}
+	if got := recorder.Header().Get("X-Undeclared"); got != "" {
+		t.Errorf("the undeclared header was written with %q", got)
 	}
 }
