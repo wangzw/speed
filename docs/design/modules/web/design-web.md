@@ -48,6 +48,7 @@
 | `@speed/api-sdk` | `./runtime` | 宿主绑定请求函数的接缝：`bindRequestFn` |
 | `@speed/api-sdk` | `./features` | 由 `contracts/features.json` 生成的特性名类型 `FeatureName` 与全部特性名 `FEATURE_NAMES` |
 | `@speed/i18n` | `./mui-locale`、`./platform-errors` | MUI 本地化助手与平台错误文案包 |
+| `@speed/auth-core` | `./webauthn` | 通行密钥单步仪式的编解码与执行（不渲染、不推进流程） |
 
 ### 装配入口
 
@@ -129,12 +130,12 @@ interface SpeedAppDefinition {
 | `api-client` | 契约无关的手写 HTTP 运行时与错误、重试、超时、上报接缝 | 无 |
 | `api-sdk` | 唯一与后端耦合的包，从后端契约生成：操作面与特性名类型 | `api-client` |
 | `auth-core` | 浏览器会话状态机、特性态与 hooks | `api-sdk`、`api-client` |
-| `auth-ui` | 登录组件族 | `ui-kit`、`i18n`、`auth-core`、`api-sdk` |
+| `auth-ui` | 登录组件族 | `ui-kit`、`i18n`、`auth-core`（`api-sdk` 只是开发期的类型依赖，公开面不引用它的类型） |
 | `account-ui` | 已登录账户管理组件族 | `ui-kit`、`i18n`、`auth-core`、`api-sdk` |
-| `tenancy-ui` | 租户切换控件 | `ui-kit`、`i18n`、`auth-core` |
+| `tenancy-ui` | 租户切换控件 | `ui-kit`、`i18n` |
 | `product-shell` | 组装壳与装配入口 | `layout-kit`、`auth-ui`、`auth-core`、`i18n`（主出口的直接依赖；`./bootstrap` 出口另直接取 `api-client`、`api-sdk`、`ui-kit`） |
 | `route-kit` | 路由与导航独立层、声明式注册面、按特性在场收窄注册面 | 无 |
-| `console-ui` | 控制台面组件族，第二种壳 | `ui-kit`、`i18n`、`api-sdk` |
+| `console-ui` | 控制台面组件族，第二种壳 | `ui-kit`、`layout-kit`、`i18n`、`auth-core`、`api-sdk` |
 | `objectstore-ui` | 对象存储能力面：对象页（列表、上传、下载、删除、详情） | `ui-kit`、`i18n`、`api-sdk`、`auth-core` |
 | `notification-ui` | 站内通知面：未读铃铛、收件箱与已读、偏好矩阵、实时订阅与声明式入口 | `ui-kit`、`i18n`、`auth-core`、`api-sdk`、`api-client` |
 
@@ -172,15 +173,15 @@ graph TD
     auth-ui --> ui-kit
     auth-ui --> auth-core
     auth-ui --> i18n
-    auth-ui --> api-sdk
     account-ui --> ui-kit
     account-ui --> auth-core
     account-ui --> i18n
     account-ui --> api-sdk
-    tenancy-ui --> auth-core
     tenancy-ui --> i18n
     tenancy-ui --> ui-kit
     console-ui --> ui-kit
+    console-ui --> layout-kit
+    console-ui --> auth-core
     console-ui --> api-sdk
     console-ui --> i18n
     objectstore-ui --> ui-kit
