@@ -215,6 +215,8 @@ authz:
     undeclared: closed
   admin:
     endpoints: [admin]
+  self:
+    endpoints: [api]
 audit:
   journal:
     endpoints: [api, account, admin]

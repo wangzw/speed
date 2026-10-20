@@ -3297,6 +3297,78 @@
         "x-endpoint": "account"
       }
     },
+    "/api/v1/authz/me/permissions": {
+      "get": {
+        "description": "Answers the permission names the calling principal effectively holds, as the union over the roles it is bound to in each domain: platform for the platform domain, and tenant for the tenant the request resolved to. A request that resolved no tenant answers an empty tenant list. A held (object, action) pair that no declared permission translates to is left out, and a permission reached through several roles appears once. A policy that cannot be read is a 503, never an empty list.",
+        "operationId": "authz.self.permissions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The permissions the calling principal holds in the two policy domains.",
+                  "properties": {
+                    "platform": {
+                      "description": "The permission names the principal holds in the platform domain, sorted ascending. Empty when it holds none there.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "tenant": {
+                      "description": "The permission names the principal holds in the tenant the request resolved to, sorted ascending. Empty when the request resolved no tenant, or the principal holds none there.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "platform",
+                    "tenant"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The permissions the caller holds in the platform domain and in the request's tenant"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The policy snapshot or its store could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List the permissions the caller holds",
+        "tags": [
+          "authz.self"
+        ],
+        "x-endpoint": "api"
+      }
+    },
     "/api/v1/features": {
       "get": {
         "description": "The feature names this process serves, ascending and without repetition. The set is decided by the assembly at start and is the same for every caller; it is not filtered by permission or tenant. Its content may differ between callers and tenants (a tenant-level narrowing is a future addition), so a response must not be cached across sessions.",
@@ -12837,8 +12909,15 @@
         "type": "object"
       },
       "AuthnMethodDescriptor": {
-        "description": "One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, and the inputs its first step asks for.",
+        "description": "One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, the provider values its bindings appear under, and the inputs its first step asks for.",
         "properties": {
+          "binding_providers": {
+            "description": "The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "fields": {
             "description": "The inputs the method's first step asks for, empty for a method that does not open with a form",
             "items": {
@@ -13453,13 +13532,18 @@
       "AuthzAdminPermissionView": {
         "description": "One permission the catalog declares.",
         "properties": {
+          "description": {
+            "description": "The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback; a client shows the text as received and does not resolve keys.",
+            "type": "string"
+          },
           "permission": {
             "description": "The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action.",
             "type": "string"
           }
         },
         "required": [
-          "permission"
+          "permission",
+          "description"
         ],
         "type": "object"
       },
@@ -14193,6 +14277,9 @@
       "name": "authz.admin"
     },
     {
+      "name": "authz.self"
+    },
+    {
       "name": "feature.board"
     },
     {
@@ -14279,6 +14366,10 @@
     {
       "module": "authz.admin",
       "endpoint": "admin"
+    },
+    {
+      "module": "authz.self",
+      "endpoint": "api"
     },
     {
       "module": "feature.board",

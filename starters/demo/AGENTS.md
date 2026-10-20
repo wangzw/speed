@@ -371,6 +371,10 @@ under `server/testdata/` names them:
 - The platform's management surfaces mount on `admin`: the roster
   (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
   surface (`settings.admin`) and the journal's query routes (`audit.admin`).
+- The caller's own permission read (`authz.self`) mounts on `api`: every
+  authenticated caller may read the permissions it holds in the platform domain
+  and in the request's tenant, and the frontend attaches both sets to the
+  session from that answer.
 - The feature document (`feature.board`) mounts `GET /api/v1/features` on the endpoint
   `feature.board.endpoint` names — `account` in every `testdata/` file, which
   the gateway guards, which resolves no tenant, and whose listener claims

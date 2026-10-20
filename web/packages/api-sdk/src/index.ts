@@ -467,9 +467,11 @@ export interface AuthnProfilePatch {
 }
 
 /**
- * One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, and the inputs its first step asks for.
+ * One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, the provider values its bindings appear under, and the inputs its first step asks for.
  */
 export interface AuthnMethodDescriptor {
+  /** The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name */
+  binding_providers?: string[];
   /** The inputs the method's first step asks for, empty for a method that does not open with a form */
   fields?: AuthnLoginField[];
   /** How a client renders the method: form, redirect, enterprise or webauthn */
@@ -1206,6 +1208,8 @@ export interface AuthnAdminAccountStatus {
  * One permission the catalog declares.
  */
 export interface AuthzAdminPermissionView {
+  /** The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback; a client shows the text as received and does not resolve keys. */
+  description: string;
   /** The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action. */
   permission: string;
 }
@@ -1828,6 +1832,16 @@ export type AuthnTokenIssueBody = {
 export type AuthnTokenRevokeBody = {
   /** The token to revoke: a refresh token, an access token, or any unrecognised string. The response does not reveal which kind it was or whether it existed. */
   token?: string;
+};
+
+/**
+ * The permissions the calling principal holds in the two policy domains.
+ */
+export type AuthzSelfPermissions200 = {
+  /** The permission names the principal holds in the platform domain, sorted ascending. Empty when it holds none there. */
+  platform: string[];
+  /** The permission names the principal holds in the tenant the request resolved to, sorted ascending. Empty when the request resolved no tenant, or the principal holds none there. */
+  tenant: string[];
 };
 
 export type NotificationInboxListMessagesParams = {
@@ -4521,6 +4535,76 @@ export const useAuthnTokenRevoke = <TError = Problem | AuthnTokenOAuthError,
       > => {
       return useMutation(getAuthnTokenRevokeMutationOptions(options));
     }
+
+/**
+ * Answers the permission names the calling principal effectively holds, as the union over the roles it is bound to in each domain: platform for the platform domain, and tenant for the tenant the request resolved to. A request that resolved no tenant answers an empty tenant list. A held (object, action) pair that no declared permission translates to is left out, and a permission reached through several roles appears once. A policy that cannot be read is a 503, never an empty list.
+ * @summary List the permissions the caller holds
+ */
+export const authzSelfPermissions = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthzSelfPermissions200>(
+      {url: `/api/v1/authz/me/permissions`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthzSelfPermissionsQueryKey = () => {
+    return [
+    `/api/v1/authz/me/permissions`
+    ] as const;
+    }
+
+
+export const getAuthzSelfPermissionsQueryOptions = <TData = Awaited<ReturnType<typeof authzSelfPermissions>>, TError = Problem>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzSelfPermissions>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthzSelfPermissionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authzSelfPermissions>>> = ({ signal }) => authzSelfPermissions(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authzSelfPermissions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthzSelfPermissionsQueryResult = NonNullable<Awaited<ReturnType<typeof authzSelfPermissions>>>
+export type AuthzSelfPermissionsQueryError = Problem
+
+
+/**
+ * @summary List the permissions the caller holds
+ */
+
+export function useAuthzSelfPermissions<TData = Awaited<ReturnType<typeof authzSelfPermissions>>, TError = Problem>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authzSelfPermissions>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthzSelfPermissionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 /**
  * The feature names this process serves, ascending and without repetition. The set is decided by the assembly at start and is the same for every caller; it is not filtered by permission or tenant. Its content may differ between callers and tenants (a tenant-level narrowing is a future addition), so a response must not be cached across sessions.

@@ -965,12 +965,10 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/system/permissions') {
+      if (path === '/api/v1/authz/me/permissions') {
         return Promise.resolve({
-          permissions: [
-            { permission: 'tenant.read' },
-            { permission: 'authn.impersonation.read' },
-          ],
+          platform: ['tenant.read', 'authn.impersonation.read'],
+          tenant: [],
         } as T)
       }
       if (
@@ -1756,21 +1754,27 @@ describe('the impersonation shell', () => {
 
   it('resets the platform set to unknown immediately before re-reading it after an impersonation ends', async () => {
     window.history.replaceState({}, '', '/')
+    // The frame starts an impersonation with no settled tenant (the module
+    // cell may still hold the operator's from before). The permission read
+    // follows the cell, so the case starts from the state the frame settles.
+    setCurrentTenantId(null)
     const backend = makeBackend({
       grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
     })
-    // The catalog read is a platform-staff operation: refused while the
-    // session impersonates, answered for the operator.
+    // The read fails while the session impersonates and answers for the
+    // operator: the test needs the two outcomes, not a reason the
+    // impersonated read would fail.
     let impersonating = true
     const request: RequestFn = <T,>(
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/system/permissions') {
+      if (path === '/api/v1/authz/me/permissions') {
         return impersonating
           ? Promise.reject({ status: 403, code: 'rbac.permission_denied' })
           : Promise.resolve({
-              permissions: [{ permission: 'tenant.read' }],
+              platform: ['tenant.read'],
+              tenant: [],
             } as T)
       }
       const answer = backend.fn<T>(path, options)
@@ -1781,7 +1785,7 @@ describe('the impersonation shell', () => {
     }
     bindRequestFn(request)
     // The impersonated snapshot holds a known empty set (the refused read);
-    // the operator's own set is unknown until the catalog read answers.
+    // the operator's own set is unknown until the permission read answers.
     const target: AuthSnapshot = {
       ...targetSnapshot(),
       permissionSets: { tenant: null, system: [] },
@@ -1813,7 +1817,10 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
-    await waitFor(() => expect(attached).toEqual([null, []]))
+    // Two reads before the end: one with no tenant resolved, and one once the
+    // impersonation status read settles the grant's tenant. Each resets the
+    // set before issuing its read.
+    await waitFor(() => expect(attached).toEqual([null, [], null, []]))
     expect(
       screen.queryByRole('link', { name: demoEnUS.nav.console }),
     ).toBeNull()
@@ -1831,7 +1838,7 @@ describe('the impersonation shell', () => {
     // The set went unknown immediately before the re-read that answered it;
     // without that reset a stale set could outlive the identity it was read
     // under.
-    expect(attached).toEqual([null, [], null, ['tenant.read']])
+    expect(attached).toEqual([null, [], null, [], null, ['tenant.read']])
     expect(
       await screen.findByRole('link', { name: demoEnUS.nav.console }),
     ).toBeInTheDocument()
@@ -1844,12 +1851,10 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/system/permissions') {
+      if (path === '/api/v1/authz/me/permissions') {
         return Promise.resolve({
-          permissions: [
-            { permission: 'tenant.read' },
-            { permission: 'authn.impersonation.read' },
-          ],
+          platform: ['tenant.read', 'authn.impersonation.read'],
+          tenant: [],
         } as T)
       }
       return backend.fn<T>(path, options)
@@ -1910,12 +1915,10 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/system/permissions') {
+      if (path === '/api/v1/authz/me/permissions') {
         return Promise.resolve({
-          permissions: [
-            { permission: 'tenant.read' },
-            { permission: 'authn.impersonation.read' },
-          ],
+          platform: ['tenant.read', 'authn.impersonation.read'],
+          tenant: [],
         } as T)
       }
       return backend.fn<T>(path, options)
@@ -1979,12 +1982,10 @@ describe('the impersonation shell', () => {
       path: string,
       options?: RequestOptions,
     ) => {
-      if (path === '/api/v1/system/permissions') {
+      if (path === '/api/v1/authz/me/permissions') {
         return Promise.resolve({
-          permissions: [
-            { permission: 'tenant.read' },
-            { permission: 'authn.impersonation.read' },
-          ],
+          platform: ['tenant.read', 'authn.impersonation.read'],
+          tenant: [],
         } as T)
       }
       return backend.fn<T>(path, options)

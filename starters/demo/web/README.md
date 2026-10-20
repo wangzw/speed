@@ -273,17 +273,26 @@ gates each page on its permission code (composed host-side) and shows a "no
 access" state for a code the session is known to lack, so a member who reaches
 `/console` directly is turned away there.
 
-The entry's visibility turns on the caller's platform permission set, which the
-host attaches (`src/platform-permissions.tsx`, wired into the assembly in
-`src/main.tsx`). The platform carries no read of the caller's *held* permissions,
-so the app reads the declared-permission catalog (`GET /api/v1/system/permissions`)
--- a platform-staff operation that answers only to a principal holding
-`authz.role.read` in the platform domain, and whose answer is every permission
-the process declares. The seed's platform administrator holds exactly that set,
-so the app attaches the catalog's codes as the caller's platform permissions; an
-ordinary member is answered 403 and the app attaches the empty set. A copy whose
-principals hold a subset of the declared permissions must replace this with its
-own source of the caller's held set.
+The entry's visibility turns on the caller's permission sets, which the host
+attaches (`src/platform-permissions.tsx`, wired into the assembly in
+`src/main.tsx`). It reads `GET /api/v1/authz/me/permissions`, the caller-scoped
+read that answers the permissions the caller holds in the platform
+domain and in the tenant the request resolved to; both lists are attached to the
+session through `setPermissionSet`, and the entry turns on the platform list
+being non-empty. The caller is the session's actor, so during an impersonation
+the read still answers the operator's own sets -- the operator's platform list
+and the operator's grants in the impersonation record's tenant -- never the
+impersonated account's. The read is repeated whenever the effective identity or the
+current tenant changes, so a tenant that settles after the first read, or a
+switch to another tenant, replaces the tenant list with the set read under the
+current one. The read needs no platform-staff permission: an ordinary member is
+answered an empty platform list rather than a 403, so the entry stays hidden,
+and the tenant list carries the permissions that member actually holds in the
+tenant the request resolved to (empty when the request resolved no tenant or
+the member holds nothing there). A read that fails or is refused attaches the
+empty set to both domains (fail-closed), and a feature document that is not
+ready leaves both sets unknown
+so the console shows its wait or failure instead of misreading the member.
 
 ### The account page and the app chrome
 

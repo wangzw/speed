@@ -107,9 +107,9 @@ program beside this directory embeds with `go:embed` and serves through
   entry is not among them -- it rides the tenant frame's `headerActions` slot
   (`src/app.tsx`'s `ConsoleEntry`) and appears only to a principal holding a
   platform permission, so an ordinary member is offered no way in. The
-  principal's platform permission set is attached by the assembly
-  (`src/platform-permissions.tsx`, from the declared-permission catalog; see
-  README "Sessions and the console"). `/console` itself redirects to the
+  principal's permission sets are attached by the assembly
+  (`src/platform-permissions.tsx`, from the caller's own permission read at
+  `GET /api/v1/authz/me/permissions`; see README "Sessions and the console"). `/console` itself redirects to the
   console's first page (`src/routes.tsx`). The console area -- and only it, since
   the tenant area is gated by the shell -- carries a `RouteGuard` over the
   matched page's permission code, composed host-side, so reaching `/console`

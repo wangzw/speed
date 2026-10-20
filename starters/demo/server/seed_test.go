@@ -151,6 +151,13 @@ func (c fixedCatalog) ObjectAction(permission authz.Permission) (string, string,
 	return pair[0], pair[1], true
 }
 
+// DescriptionKey answers no key: these cases exercise the seeding surface, which
+// reads the declared set and the translation, never a permission's description.
+func (c fixedCatalog) DescriptionKey(permission authz.Permission) (string, bool) {
+	_, ok := c.pairs[permission]
+	return "", ok
+}
+
 // A permission declared after the builtin mark reaches the role through the
 // seeding surface: seedGrants hands every translated declared permission to
 // SeedGrants, which is the one write that adds to a builtin role. The number

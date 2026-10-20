@@ -289,7 +289,7 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     { entries: [], next: '' } satisfies AuditAdminRecordPage,
   ),
   '/api/v1/system/permissions': answer(
-    { permissions: [{ permission: 'example.read' }] } satisfies {
+    { permissions: [{ permission: 'example.read', description: '' }] } satisfies {
       permissions: AuthzAdminPermissionView[]
     },
     { permissions: [] } satisfies { permissions: AuthzAdminPermissionView[] },

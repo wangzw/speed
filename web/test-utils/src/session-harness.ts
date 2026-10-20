@@ -89,6 +89,7 @@ export interface MethodDescriptorBody {
   protocol?: string
   label?: string
   opens_account?: boolean
+  binding_providers?: string[]
   fields?: { name: string; kind: string; required?: boolean; secret?: boolean }[]
 }
 

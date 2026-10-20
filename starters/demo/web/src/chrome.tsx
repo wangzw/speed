@@ -23,7 +23,7 @@
  *    strand the operator without a way to end it.
  */
 
-import { useCallback, useId, useRef, useState } from 'react'
+import { useCallback, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
@@ -113,14 +113,53 @@ export const DEFAULT_TENANT_ID: string | null = DEMO_TENANTS[0]?.id ?? null
  */
 let currentTenantId: string | null = null
 
+// The listeners notified when the current tenant moves. This cell is the one
+// place the host holds the tenant, and a component mounted above the tenant
+// frame -- src/platform-permissions.tsx, which reads the caller's permission
+// sets -- cannot take it up as a prop, so it subscribes here instead.
+const currentTenantListeners = new Set<() => void>()
+
 /** The tenant the switcher treats as current (its TenantOption.id). */
 export function getCurrentTenantId(): string | null {
   return currentTenantId
 }
 
-/** Records the host's current tenant; the switcher's pick (a tenant id) lands here. */
+/**
+ * Records the host's current tenant; the switcher's pick (a tenant id) lands
+ * here. Listeners are notified only when the value moves, so a write of the
+ * value already held does not re-run the reads keyed on the tenant.
+ */
 export function setCurrentTenantId(tenantId: string | null): void {
+  if (currentTenantId === tenantId) {
+    return
+  }
   currentTenantId = tenantId
+  for (const listener of currentTenantListeners) {
+    listener()
+  }
+}
+
+/**
+ * Subscribes to the current tenant's changes; returns the unsubscribe. It is
+ * the store contract useSyncExternalStore takes, usable by any component that
+ * needs the tenant as a React input.
+ */
+export function subscribeCurrentTenant(listener: () => void): () => void {
+  currentTenantListeners.add(listener)
+  return () => {
+    currentTenantListeners.delete(listener)
+  }
+}
+
+/**
+ * The current tenant as React state, for a component that must re-run
+ * something when the tenant settles or the viewer switches. The tenant
+ * frame's own state projects this cell; reading the cell through
+ * useSyncExternalStore is what lets a component mounted above the frame
+ * follow it too.
+ */
+export function useCurrentTenantId(): string | null {
+  return useSyncExternalStore(subscribeCurrentTenant, getCurrentTenantId)
 }
 
 /**

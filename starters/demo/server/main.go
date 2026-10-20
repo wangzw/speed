@@ -87,6 +87,7 @@ import (
 	authzadmin "github.com/vislake/speed/pkg/authz/admin"
 	authzguard "github.com/vislake/speed/pkg/authz/guard"
 	authzpolicy "github.com/vislake/speed/pkg/authz/policy"
+	authzself "github.com/vislake/speed/pkg/authz/self"
 	"github.com/vislake/speed/pkg/http/cors"
 	i18naccount "github.com/vislake/speed/pkg/i18n/account"
 	i18ncatalog "github.com/vislake/speed/pkg/i18n/catalog"
@@ -316,6 +317,7 @@ var (
 		authzpolicy.ModuleName,
 		authzguard.ModuleName,
 		authzadmin.ModuleName,
+		authzself.ModuleName,
 		ratelimit.ModuleName,
 		settings.ModuleName,
 		settingsadmin.ModuleName,

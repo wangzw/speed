@@ -136,6 +136,8 @@ authz:
     undeclared: closed
   admin:
     endpoints: [admin]
+  self:
+    endpoints: [api]
 
 # The journal records the requests named below on the guarded endpoints, and
 # writes the audit trail the admin surface reads. Its route list is the routes
