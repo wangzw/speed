@@ -71,8 +71,9 @@ options, an optional tenantProvider and the document-language opt-out —
 and wires the
 whole entry composition a host used to hand-derive: a fresh bilingual
 i18n instance (the family's four namespaces registered automatically
-from the packages the assembly composes), the memory-token session
-attached over the generated authn operations, the one client bound
+from the packages the assembly composes), the cookie-delivered session
+attached over the generated authn operations and restored from
+`GET /api/v1/auth/session` once at boot, the one client bound
 into the api-sdk runtime binding with the session refresh as its
 401-refresh leg and the definition's tenantProvider as its tenant
 header source, the no-retry query client (`createQueryClient`, also
@@ -81,6 +82,15 @@ provider stack — StrictMode around I18nextProvider around
 `AppThemeProvider` around `QueryClientProvider`, then the declared
 providers around the declared view. It returns the handles (root, i18n,
 queryClient, session).
+
+**The declared view and its providers render only after that one boot
+restore settles.** The page load's snapshot is unknown until the read
+answers (the credential is an httpOnly cookie no script can inspect),
+so rendering earlier would paint a signed-in reload as a fresh visitor:
+the sign-in surface would show for the length of the read and then be
+replaced by the app. A failed restore settles the gate too — the
+anonymous snapshot is a decided state, and the page falls through to
+its sign-in surface.
 
 The i18n construction is exported as `createSpeedI18n(options?)` and
 the provider stack as `SpeedAppProviders({ i18n, queryClient, theme?,

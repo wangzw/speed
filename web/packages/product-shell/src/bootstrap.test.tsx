@@ -371,6 +371,61 @@ describe('bootstrapSpeedApp', () => {
     container.remove()
   })
 
+  it('holds the declared view until the boot restore settles, so a reload never flashes the sign-in surface', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    // The boot read stays unanswered until the test releases it: the
+    // page load's snapshot is anonymous for that whole window, and the
+    // view (in a real app the shell, whose anonymous branch is the
+    // sign-in surface) must not render into it.
+    let release!: () => void
+    const answer = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    activeResponder = (call) => {
+      if (call.path === '/api/v1/auth/session') {
+        return answer.then(() => jsonResponse(200, { authenticated: false }))
+      }
+      return respond(call)
+    }
+    const boot = await mountApp(container, {
+      view: <span data-testid="probe">app</span>,
+    })
+
+    expect(container.querySelector('[data-testid="probe"]')).toBeNull()
+
+    release()
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="probe"]')).not.toBeNull()
+    })
+
+    await teardown(boot, container)
+  })
+
+  it('renders the declared view after a failed boot restore instead of holding the page blank', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    // A definitive refusal (not a transient class the transport would
+    // retry): restore rethrows, the snapshot stays anonymous, and the
+    // page must fall through to its sign-in surface rather than wait
+    // forever on a restore that already settled.
+    activeResponder = (call) => {
+      if (call.path === '/api/v1/auth/session') {
+        return jsonResponse(400, { code: 'authn.invalid_request' })
+      }
+      return respond(call)
+    }
+    const boot = await mountApp(container, {
+      view: <span data-testid="probe">app</span>,
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-testid="probe"]')).not.toBeNull()
+    })
+
+    await teardown(boot, container)
+  })
+
   it('announces the same-origin credential mode on every request and sends no Authorization', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

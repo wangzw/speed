@@ -168,7 +168,7 @@ export function watchSessionEnd(
 export function createQueryClient(): QueryClient
 ```
 
-**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合）；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 只转发 `projectTokens` 与 `defaultMode`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作租户头播报；`documentLanguage: false` 关闭 `<html lang>` 跟随。
+**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合），与 `providers` 一起只在启动恢复落定后挂载；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 只转发 `projectTokens` 与 `defaultMode`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作租户头播报；`documentLanguage: false` 关闭 `<html lang>` 跟随。
 
 **列出四个族命名空间之一即替换其出厂资源。** 装配自身组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell 自己的）自动注册；在 `namespaces` 里列出其中之一时，它替换该命名空间的出厂语言包而不是被注册两次——这是整体替换平台文案的途径。平台错误包不经此途径替换，只经 `resourceOverrides` 覆盖。
 
@@ -252,10 +252,10 @@ stateDiagram-v2
 `bootstrapSpeedApp` 按下列次序装配，不偏离：
 
 1. **i18n** —— 一份默认双语的实例（`?lang=` 参数、已存选择、navigator 语言、`en-US` 兜底），由 `createSpeedI18n` 构造：注册本包组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell），并以平台错误文案包（`@speed/i18n/platform-errors`）为实例的兜底命名空间。每个命名空间的基准语言包（出厂包、`namespaces` 中的替换包或应用自己的包）先与该命名空间的 `resourceOverrides` 经 `overlayResources` 合并，再把语言集裁到实例的受支持集，然后注册——每个命名空间恰好一次；受支持集里有而合并结果缺的语言由注册抛错。`namespaces` 中列出四个族命名空间之一即替换其出厂包，不触发双重注册。注册先于渲染。
-2. **会话** —— 一个内存访问令牌存储（凭据不落存储）喂给 auth-core 的会话状态机，跑在生成的 authn 操作上，经 `attachSession` 接上。一次刷新按约定转回匿名启动。
+2. **会话** —— 一个内存访问令牌存储（凭据不落存储）喂给 auth-core 的会话状态机，跑在生成的 authn 操作上，经 `attachSession` 接上。一次刷新按约定转回匿名启动。装配在启动时调用一次 `restore()`；**定义的视图（第 5 条）要等这一次恢复落定后才挂载**：cookie 是服务端 httpOnly 的凭据，脚本读不到，页面加载后的快照在恢复应答之前是「未知」而不是「匿名」，先按匿名快照渲染会让已登录用户的重载闪一下登录面再翻回应用。恢复拒绝（传输或服务端失败、快照保持匿名）也算落定，页面落到它本该有的登录面，而不是停在空白上。
 3. **客户端** —— `createClient` 建立在环境的 `fetch` 上，合并定义的 `client`（缺省 `credentials: 'same-origin'`；`fetch`、`timeoutMs`、`retryPolicy`、`reporter`、`tenantHeader` 由该表给出），以会话的静默刷新作 401 刷新腿，以 i18n 实例作语言源（每次尝试读一次，故语言切换后重试的请求播报用户当前所看的语言），以定义的 `tenantProvider` 作租户源（每次尝试读一次，接成租户头，故切租户后重试的请求播报用户当前所处的租户）；再经 `bindRequestFn` 绑进 api-sdk 的运行时接缝，此后一切 API 流量都是生成代码的流量。`createClient` 的产物是 `SpeedClient`：请求函数加事件流开启器 `openEventStream`，后者随 `SpeedAppServices.api` 交给宿主，供需要服务端推送的面打开一条长连接（同一组接缝，不另接一套传输）。
 4. **QueryClient 与会话结束策略** —— 无重试的 `createQueryClient`，加 `watchSessionEnd` 的出厂缺省：会话一结束即逐出离任主体读过的全部缓存。
-5. **provider 栈** —— `SpeedAppProviders` 把 StrictMode 包在 `I18nextProvider` 包 `AppThemeProvider`（收定义的 `theme`）包 `QueryClientProvider` 上；再加定义的 `providers`（最外层在前）包定义的 `view`。
+5. **provider 栈** —— `SpeedAppProviders` 把 StrictMode 包在 `I18nextProvider` 包 `AppThemeProvider`（收定义的 `theme`）包 `QueryClientProvider` 上；再加定义的 `providers`（最外层在前）包定义的 `view`。整棵宿主树（providers 与 view）都排在启动恢复的落定之后，恢复未落定时渲染空；宿主的 provider 因此不会在身份未定的窗口里挂载。
 6. **文档语言** —— 未给 `documentLanguage: false` 时，装配在启动时把 `<html lang>` 置为实例语言，并订阅 `languageChanged` 使其跟随；卸载时解除订阅。无 `document` 的环境照常启动。
 
 ### 会话结束策略
@@ -273,6 +273,8 @@ stateDiagram-v2
 | 情形 | 表现 |
 |---|---|
 | 未接会话（`attachSession` 之前） | 视图机 fail-closed 到匿名快照，只渲染登录分支（或其空） |
+| 启动恢复未落定 | 装配不渲染定义的视图（整棵宿主树），恢复落定后按得到的快照渲染 |
+| 启动恢复被拒绝（传输或服务端失败） | 快照保持匿名，装配照常放行视图，页面落到登录面 |
 | `signIn` 槽缺席 | 未登录分支渲染空；缺省结束屏动作与渲染函数形态的 `returnToSignIn` 都不复位，访问者停在结束屏 |
 | `product-shell` 命名空间未注册 | 播报区域不渲染，焦点转移照常，无原始键文本 |
 | 会话结束（登出或静默刷新被拒） | 缺省整体逐出 query 缓存；定义的 `sessionEnded` 覆盖它 |

@@ -46,7 +46,11 @@
  *     kept in memory here. The assembly calls restore() once at boot, so
  *     a page load re-reads GET /api/v1/auth/session and a still-valid cookie
  *     keeps the user signed in instead of dropping them back to the
- *     sign-in surface.
+ *     sign-in surface. The definition's view (step 5) renders only after
+ *     that one restore settles: until the read answers, the page load's
+ *     state is unknown rather than anonymous, and painting the anonymous
+ *     snapshot first would flash the sign-in surface at every reload of
+ *     a signed-in page.
  *
  *  3. The client -- createClient over the environment's own fetch, with
  *     `credentials: 'same-origin'` by default so the session cookie
@@ -72,7 +76,8 @@
  *     AppThemeProvider around QueryClientProvider, assembled by the
  *     exported SpeedAppProviders (so a view-level test bench and
  *     production share one construction), then the definition's
- *     `providers` (outermost first) around the definition's `view`. The
+ *     `providers` (outermost first) around the definition's `view`, all
+ *     of it behind the boot restore's gate (step 2). The
  *     reference composition: `view` is the app's shell composition
  *     (ProductShell with its host slots), and one provider hands the
  *     app's views the assembled session and client.
@@ -89,7 +94,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { StrictMode, useEffect } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
@@ -634,6 +639,46 @@ export function SpeedAppProviders({
   )
 }
 
+/** The boot restore's gate: the page renders the definition's view only
+ * once the page load's one restore has settled.
+ *
+ * A reload starts from the anonymous snapshot -- the credential is the
+ * server's httpOnly cookie, which script cannot read, so the browser
+ * knows nothing until the read answers -- and rendering the view before
+ * then paints a signed-in user's page load as a fresh visitor: the
+ * sign-in surface shows for the length of the read and is then replaced
+ * by the app. Holding the view keeps one state on screen for the whole
+ * load, whatever the answer turns out to be.
+ *
+ * A failed restore (a transport or server error; the snapshot stays
+ * anonymous) settles the gate too, so the page falls through to the
+ * sign-in surface the session's recovery policy already describes
+ * instead of waiting forever on a read that will never commit. */
+function SessionRestoreGate({
+  restore,
+  children,
+}: {
+  readonly restore: Promise<void>
+  readonly children: ReactNode
+}): ReactElement | null {
+  const [settled, setSettled] = useState(false)
+  useEffect(() => {
+    let active = true
+    const settle = (): void => {
+      if (active) {
+        setSettled(true)
+      }
+    }
+    // Both outcomes settle: a rejected restore leaves the anonymous
+    // snapshot standing, which is a decided state, not a pending one.
+    void restore.then(settle, settle)
+    return () => {
+      active = false
+    }
+  }, [restore])
+  return settled ? <>{children}</> : null
+}
+
 /** The document a browser environment provides, or null where there is
  * none (a Node test host). */
 function currentDocument(): Document | null {
@@ -727,9 +772,15 @@ export function bootstrapSpeedApp(
 
   // Restore the session the cookie names, once, at boot: a valid cookie
   // keeps the user signed in across a reload. The read is fire-and-forget
-  // -- a transport failure at startup leaves the anonymous snapshot and the
-  // sign-in surface, which the next successful request or reload corrects.
-  void session.restore().catch(() => undefined)
+  // for the session itself -- a transport failure at startup leaves the
+  // anonymous snapshot and the sign-in surface, which the next successful
+  // request or reload corrects -- but its settlement gates the first
+  // render (see SessionRestoreGate): before it answers, the page load's
+  // state is unknown, not anonymous.
+  const restored = session.restore().then(
+    () => undefined,
+    () => undefined,
+  )
 
   const queryClient = createQueryClient()
   watchSessionEnd(session, queryClient, definition.sessionEnded)
@@ -753,7 +804,7 @@ export function bootstrapSpeedApp(
       theme={definition.theme}
     >
       {documentLanguage ? <DocumentLanguageBinding i18n={i18n} /> : null}
-      {view}
+      <SessionRestoreGate restore={restored}>{view}</SessionRestoreGate>
     </SpeedAppProviders>,
   )
   return { root, i18n, queryClient, session }

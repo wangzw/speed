@@ -199,7 +199,9 @@ so a backend error code no package namespace covers resolves to the
 module catalog's own words instead of the raw key; the cookie-delivered
 auth-core session over the generated authn operations, attached before
 render and restored from `GET /api/v1/auth/session` once at boot so a reload
-stays logged in; one `@speed/api-client` client
+stays logged in — the view renders only after that one restore settles, so
+a signed-in reload never flashes the sign-in surface first; one
+`@speed/api-client` client
 over the environment's fetch with `credentials: 'same-origin'` (the
 session cookie on every request) and the session's `restore()` as its
 401-refresh leg, and the definition's `tenantProvider` as its tenant
