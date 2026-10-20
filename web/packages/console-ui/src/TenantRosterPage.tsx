@@ -57,6 +57,7 @@ import {
   ListSkeleton,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  SectionCard,
   primaryColumnMaxWidthSx,
   useWriteFeedback,
 } from '@speed/ui-kit'
@@ -454,10 +455,7 @@ export function TenantRosterPage({
         sx={{ mb: 2 }}
       />
 
-      <Box component="section" sx={{ mb: 3 }}>
-        <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-          {t('tenants.create.title')}
-        </Typography>
+      <SectionCard title={t('tenants.create.title')} sx={{ mb: 3 }}>
         <Box
           sx={{
             display: 'flex',
@@ -496,43 +494,45 @@ export function TenantRosterPage({
         <Box ref={createRegionRef}>
           <WriteFeedbackRegion outcome={createFeedback.outcome} />
         </Box>
-      </Box>
+      </SectionCard>
 
-      <ConsoleAsyncSection
-        pending={pending}
-        payload={rows}
-        error={tenants.error}
-        refreshing={tenants.isFetching}
-        empty={rows !== undefined && rows.length === 0}
-        headingLevel="h2"
-        loading={
-          <ListSkeleton
-            label={t('tenants.loading')}
-            rows={[
-              <Skeleton key="a" variant="text" width="60%" />,
-              <Skeleton key="b" variant="text" width="42%" />,
-            ]}
-          />
-        }
-        errorState={{
-          title: t('tenants.error.title'),
-          description: t('tenants.error.description'),
-          retryLabel: t('tenants.retry'),
-          onRetry: () => void tenants.refetch(),
-        }}
-        emptyState={{
-          title: t('tenants.empty.title'),
-          description: t('tenants.empty.description'),
-        }}
-      >
-        {(settled) => (
-          <DataTable
-            rows={settled}
-            columns={columns}
-            rowKey={(tenant) => tenant.id}
-          />
-        )}
-      </ConsoleAsyncSection>
+      <SectionCard flushContent>
+        <ConsoleAsyncSection
+          pending={pending}
+          payload={rows}
+          error={tenants.error}
+          refreshing={tenants.isFetching}
+          empty={rows !== undefined && rows.length === 0}
+          headingLevel="h2"
+          loading={
+            <ListSkeleton
+              label={t('tenants.loading')}
+              rows={[
+                <Skeleton key="a" variant="text" width="60%" />,
+                <Skeleton key="b" variant="text" width="42%" />,
+              ]}
+            />
+          }
+          errorState={{
+            title: t('tenants.error.title'),
+            description: t('tenants.error.description'),
+            retryLabel: t('tenants.retry'),
+            onRetry: () => void tenants.refetch(),
+          }}
+          emptyState={{
+            title: t('tenants.empty.title'),
+            description: t('tenants.empty.description'),
+          }}
+        >
+          {(settled) => (
+            <DataTable
+              rows={settled}
+              columns={columns}
+              rowKey={(tenant) => tenant.id}
+            />
+          )}
+        </ConsoleAsyncSection>
+      </SectionCard>
     </Box>
   )
 }

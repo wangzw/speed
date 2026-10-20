@@ -22,6 +22,9 @@ import type { ReactElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { appBarClasses } from '@mui/material/AppBar'
+import { drawerClasses } from '@mui/material/Drawer'
+import { listItemTextClasses } from '@mui/material/ListItemText'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import layoutKitZhCN from '../../layout-kit/src/locales/zh-CN.json' with { type: 'json' }
 import consoleUiZhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -171,7 +174,7 @@ describe('ConsoleShell', () => {
     const head = banner.parentElement
     expect(head).not.toBeNull()
     expect(getComputedStyle(head as Element).position).toBe('fixed')
-    expect(banner).toHaveClass('MuiAppBar-positionStatic')
+    expect(banner).toHaveClass(appBarClasses.positionStatic)
   })
 
   it('derives the navigation from the labelled declarations only', () => {
@@ -444,9 +447,9 @@ describe('ConsoleShell', () => {
       const nav = screen.getByRole('navigation', {
         name: consoleUiZhCN.shell.navLabel,
       })
-      expect(nav.closest('.MuiDrawer-docked')).not.toBeNull()
+      expect(nav.closest(`.${drawerClasses.docked}`)).not.toBeNull()
       // The permanent variant is the docked drawer, never the temporary one.
-      expect(nav.closest('.MuiDrawer-modal')).toBeNull()
+      expect(nav.closest(`.${drawerClasses.modal}`)).toBeNull()
       // The sidebar is chrome beside the content, not part of the scrolling
       // content column itself.
       expect(screen.getByRole('main').contains(nav)).toBe(false)
@@ -742,7 +745,7 @@ describe('ConsoleShell', () => {
   describe('navigation icons', () => {
     /** The ListItemText root holding an entry's label. */
     const labelRootOf = (element: HTMLElement): Element | null =>
-      element.closest('.MuiListItemText-root')
+      element.closest(`.${listItemTextClasses.root}`)
 
     it('renders a declaration icon beside the visible label while the sidebar is expanded', () => {
       mockMatchMedia(true)
@@ -786,7 +789,7 @@ describe('ConsoleShell', () => {
         // ... and the label taking the clipped accessible-only hiding
         // recipe, rather than the icon-less fallback that keeps the text
         // visible.
-        expect(link.querySelector('.MuiListItemText-root')).toHaveStyle({
+        expect(link.querySelector(`.${listItemTextClasses.root}`)).toHaveStyle({
           position: 'absolute',
         })
       }
@@ -872,8 +875,8 @@ describe('ConsoleShell', () => {
       // content flow. A closed MUI modal keeps its subtree aria-hidden, so
       // look past that to find the drawer's own nav landmark.
       const nav = screen.getByRole('navigation', { hidden: true })
-      expect(nav.closest('.MuiDrawer-modal')).not.toBeNull()
-      expect(nav.closest('.MuiDrawer-docked')).toBeNull()
+      expect(nav.closest(`.${drawerClasses.modal}`)).not.toBeNull()
+      expect(nav.closest(`.${drawerClasses.docked}`)).toBeNull()
       // The nav is never stacked into the content column.
       expect(screen.getByRole('main').contains(nav)).toBe(false)
     })

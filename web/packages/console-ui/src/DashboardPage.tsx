@@ -44,7 +44,7 @@ import type { ReactNode } from 'react'
 import { focusManager, onlineManager } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
+import Card from '@mui/material/Card'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import {
@@ -53,6 +53,7 @@ import {
   LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  SectionCard,
 } from '@speed/ui-kit'
 import type { DataTableColumn, PageRefresh } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -156,7 +157,7 @@ export function KpiCard({
   readonly value: ReactNode
 }) {
   return (
-    <Paper
+    <Card
       component="li"
       variant="outlined"
       sx={{ p: 2, flex: '1 1 12rem', minWidth: 0 }}
@@ -167,7 +168,7 @@ export function KpiCard({
       <Typography variant="h4" component="p" sx={{ margin: 0 }}>
         {value}
       </Typography>
-    </Paper>
+    </Card>
   )
 }
 
@@ -314,9 +315,9 @@ function DashboardFrame({
         sx={{ mb: 2 }}
       />
 
-      <Box component="section" sx={{ mb: 3 }}>
+      <SectionCard sx={{ mb: 3 }}>
         <KpiSection tenants={tenants} />
-      </Box>
+      </SectionCard>
 
       {sections}
 
@@ -492,10 +493,7 @@ function DashboardWithAudit({
 
   const sections = (
     <>
-      <Box component="section" sx={{ mb: 3 }}>
-        <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-          {t('dashboard.health.title')}
-        </Typography>
+      <SectionCard title={t('dashboard.health.title')} sx={{ mb: 3 }}>
         <ConsoleAsyncSection
           pending={healthPending}
           payload={health}
@@ -541,12 +539,9 @@ function DashboardWithAudit({
             </>
           )}
         </ConsoleAsyncSection>
-      </Box>
+      </SectionCard>
 
-      <Box component="section">
-        <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-          {t('dashboard.recent.title')}
-        </Typography>
+      <SectionCard title={t('dashboard.recent.title')} flushContent>
         <ConsoleAsyncSection
           pending={recordsPending}
           payload={recordsRows}
@@ -582,7 +577,7 @@ function DashboardWithAudit({
             />
           )}
         </ConsoleAsyncSection>
-      </Box>
+      </SectionCard>
     </>
   )
 

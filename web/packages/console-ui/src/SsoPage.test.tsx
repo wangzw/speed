@@ -263,7 +263,7 @@ describe('SsoPage', () => {
     const reads = listSsoProviders.mock.calls.length
 
     await pickProvider(user)
-    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
     await expectRefreshInert(listSsoProviders, reads)
 
@@ -435,7 +435,7 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.remove }))
     const dialog = await screen.findByRole('dialog')
@@ -576,7 +576,7 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
     await vi.waitFor(() => {
       expect(claims).toEqual([{ id: 'idp-1', tenant: 'acme', domain: 'acme.com' }])
@@ -741,7 +741,7 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
 
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
     expect(
@@ -771,13 +771,13 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
     expect(alert.closest('section')).toContainElement(
-      screen.getByLabelText(zhCN.sso.domains.domainLabel),
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
     )
   })
 
@@ -792,7 +792,7 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
 
     const token = await screen.findByText('tok-1')
@@ -1036,7 +1036,7 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByLabelText(zhCN.sso.domains.domainLabel), 'acme.com')
+    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
     await screen.findByText('tok-1')
 

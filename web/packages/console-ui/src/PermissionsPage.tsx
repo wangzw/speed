@@ -81,6 +81,7 @@ import {
   LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  SectionCard,
   useWriteFeedback,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -120,15 +121,6 @@ import type {
  * refresh is described by it, so the explanation has one copy on the page.
  */
 const TENANT_HINT_ID = 'permissions-tenant-hint'
-
-/** A section heading; the page's sections sit one level under the h1. */
-function SectionHeading({ children }: { readonly children: string }) {
-  return (
-    <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-      {children}
-    </Typography>
-  )
-}
 
 /**
  * One permission's code with its server-rendered description beneath it.
@@ -883,7 +875,7 @@ export function PermissionsPage({
         {roleGone ? t('permissions.roles.selectionCleared') : ''}
       </Box>
 
-      <Box component="section" sx={{ mb: 3 }}>
+      <SectionCard sx={{ mb: 3 }}>
         {tenantControlled ? (
           <RefreshButton
             busy={pageRefresh.busy}
@@ -912,7 +904,7 @@ export function PermissionsPage({
             }
           />
         )}
-      </Box>
+      </SectionCard>
 
       {tenant === '' ? (
         <EmptyState
@@ -926,8 +918,7 @@ export function PermissionsPage({
         />
       ) : (
         <>
-          <Box component="section" sx={{ mb: 3 }}>
-            <SectionHeading>{t('permissions.roles.title')}</SectionHeading>
+          <SectionCard title={t('permissions.roles.title')} sx={{ mb: 3 }}>
             <Box
               sx={{
                 display: 'flex',
@@ -1001,10 +992,9 @@ export function PermissionsPage({
             <Box ref={roleRegionRef}>
               <WriteFeedbackRegion outcome={roleFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
 
-          <Box component="section" sx={{ mb: 3 }}>
-            <SectionHeading>{t('permissions.grants.title')}</SectionHeading>
+          <SectionCard title={t('permissions.grants.title')} sx={{ mb: 3 }}>
             {selectedRole === '' ? (
               <Typography variant="body2" color="text.secondary">
                 {t('permissions.grants.pickRole')}
@@ -1102,10 +1092,13 @@ export function PermissionsPage({
                 </Box>
               </>
             )}
-          </Box>
+          </SectionCard>
 
-          <Box component="section" sx={{ mb: 3 }}>
-            <SectionHeading>{t('permissions.catalog.title')}</SectionHeading>
+          <SectionCard
+            title={t('permissions.catalog.title')}
+            flushContent
+            sx={{ mb: 3 }}
+          >
             <ConsoleAsyncSection
               pending={catalog.isPending && catalog.data === undefined}
               payload={catalog.data}
@@ -1138,10 +1131,9 @@ export function PermissionsPage({
                 />
               )}
             </ConsoleAsyncSection>
-          </Box>
+          </SectionCard>
 
-          <Box component="section" sx={{ mb: 3 }}>
-            <SectionHeading>{t('permissions.bindings.title')}</SectionHeading>
+          <SectionCard title={t('permissions.bindings.title')} sx={{ mb: 3 }}>
             <Box
               sx={{
                 display: 'flex',
@@ -1214,10 +1206,9 @@ export function PermissionsPage({
             <Box ref={bindingsRegionRef}>
               <WriteFeedbackRegion outcome={bindingsFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
 
-          <Box component="section" sx={{ mb: 3 }}>
-            <SectionHeading>{t('permissions.lookup.title')}</SectionHeading>
+          <SectionCard title={t('permissions.lookup.title')} sx={{ mb: 3 }}>
             <Box
               sx={{
                 display: 'flex',
@@ -1291,7 +1282,7 @@ export function PermissionsPage({
             <Box ref={lookupRegionRef}>
               <WriteFeedbackRegion outcome={lookupFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
 
           <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
         </>

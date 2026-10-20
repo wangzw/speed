@@ -61,6 +61,7 @@ import {
   OneTimeValuePanel,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -510,7 +511,7 @@ export function InvitationsPage({
         sx={{ mb: 2 }}
       />
 
-      <Box component="section" sx={{ mb: 3 }}>
+      <SectionCard sx={{ mb: 3 }}>
         {tenantControlled ? (
           <RefreshButton
             busy={pageRefresh.busy}
@@ -543,7 +544,7 @@ export function InvitationsPage({
             }
           />
         )}
-      </Box>
+      </SectionCard>
 
       {tenant === '' ? (
         <EmptyState
@@ -557,14 +558,7 @@ export function InvitationsPage({
         />
       ) : (
         <>
-          <Box component="section" sx={{ mb: 3 }}>
-            <Typography
-              component="h2"
-              variant="h2"
-              sx={{ fontSize: '1.25rem', mb: 1 }}
-            >
-              {t('invitations.section.title')}
-            </Typography>
+          <SectionCard title={t('invitations.section.title')} sx={{ mb: 3 }}>
             <Box
               sx={{
                 display: 'flex',
@@ -646,16 +640,9 @@ export function InvitationsPage({
             <Box ref={invitationRegionRef}>
               <WriteFeedbackRegion outcome={invitationFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
 
-          <Box component="section" sx={{ mb: 3 }}>
-            <Typography
-              component="h2"
-              variant="h2"
-              sx={{ fontSize: '1.25rem', mb: 1 }}
-            >
-              {t('members.title')}
-            </Typography>
+          <SectionCard title={t('members.title')} sx={{ mb: 3 }}>
             <MemberWriteForm
               tenant={tenant}
               feedback={membersFeedback}
@@ -696,7 +683,7 @@ export function InvitationsPage({
             <Box ref={membersRegionRef}>
               <WriteFeedbackRegion outcome={membersFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
         </>
       )}
 

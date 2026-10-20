@@ -52,6 +52,7 @@ import {
   LONG_TEXT_COLUMN_MAX_WIDTH,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  SectionCard,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { formatInstant } from '@speed/i18n'
@@ -285,98 +286,101 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
         sx={{ mb: 2 }}
       />
 
-      <Box
-        component="section"
-        aria-label={t('audit.filters.label')}
-        sx={{
-          mb: 3,
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'flex-end',
-          columnGap: 2,
-          rowGap: 1,
-        }}
-      >
-        <TextField
-          size="small"
-          type="datetime-local"
-          value={sinceDraft}
-          onChange={(event) => setSinceDraft(event.target.value)}
-          label={t('audit.filters.since')}
-          slotProps={{ inputLabel: { shrink: true } }}
-        />
-        <TextField
-          size="small"
-          type="datetime-local"
-          value={untilDraft}
-          onChange={(event) => setUntilDraft(event.target.value)}
-          label={t('audit.filters.until')}
-          slotProps={{ inputLabel: { shrink: true } }}
-        />
-        <TextField
-          size="small"
-          value={actionDraft}
-          onChange={(event) => setActionDraft(event.target.value)}
-          label={t('audit.filters.action')}
-          placeholder={t('audit.filters.valuePlaceholder')}
-        />
-        <TextField
-          size="small"
-          value={outcomeDraft}
-          onChange={(event) => setOutcomeDraft(event.target.value)}
-          label={t('audit.filters.outcome')}
-          placeholder={t('audit.filters.valuePlaceholder')}
-        />
-        <TextField
-          size="small"
-          value={actorDraft}
-          onChange={(event) => setActorDraft(event.target.value)}
-          label={t('audit.filters.actor')}
-          placeholder={t('audit.filters.valuePlaceholder')}
-        />
-        <Button type="button" variant="contained" onClick={applyFilters}>
-          {t('audit.filters.apply')}
-        </Button>
-        <Button type="button" variant="outlined" onClick={resetFilters}>
-          {t('audit.filters.reset')}
-        </Button>
-      </Box>
+      <SectionCard sx={{ mb: 3 }}>
+        <Box
+          role="group"
+          aria-label={t('audit.filters.label')}
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            columnGap: 2,
+            rowGap: 1,
+          }}
+        >
+          <TextField
+            size="small"
+            type="datetime-local"
+            value={sinceDraft}
+            onChange={(event) => setSinceDraft(event.target.value)}
+            label={t('audit.filters.since')}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          <TextField
+            size="small"
+            type="datetime-local"
+            value={untilDraft}
+            onChange={(event) => setUntilDraft(event.target.value)}
+            label={t('audit.filters.until')}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          <TextField
+            size="small"
+            value={actionDraft}
+            onChange={(event) => setActionDraft(event.target.value)}
+            label={t('audit.filters.action')}
+            placeholder={t('audit.filters.valuePlaceholder')}
+          />
+          <TextField
+            size="small"
+            value={outcomeDraft}
+            onChange={(event) => setOutcomeDraft(event.target.value)}
+            label={t('audit.filters.outcome')}
+            placeholder={t('audit.filters.valuePlaceholder')}
+          />
+          <TextField
+            size="small"
+            value={actorDraft}
+            onChange={(event) => setActorDraft(event.target.value)}
+            label={t('audit.filters.actor')}
+            placeholder={t('audit.filters.valuePlaceholder')}
+          />
+          <Button type="button" variant="contained" onClick={applyFilters}>
+            {t('audit.filters.apply')}
+          </Button>
+          <Button type="button" variant="outlined" onClick={resetFilters}>
+            {t('audit.filters.reset')}
+          </Button>
+        </Box>
+      </SectionCard>
 
-      <ConsoleAsyncSection
-        pending={pending}
-        payload={rows}
-        error={records.error}
-        refreshing={records.isFetching}
-        empty={rows !== undefined && rows.length === 0}
-        headingLevel="h2"
-        loading={
-          <ListSkeleton
-            label={t('audit.loading')}
-            rows={[
-              <Skeleton key="a" variant="text" width="62%" />,
-              <Skeleton key="b" variant="text" width="48%" />,
-            ]}
-          />
-        }
-        errorState={{
-          title: t('audit.error.title'),
-          description: t('audit.error.description'),
-          retryLabel: t('audit.retry'),
-          onRetry: () => void records.refetch(),
-        }}
-        emptyState={{
-          title: t('audit.empty.title'),
-          description: t('audit.empty.description'),
-        }}
-      >
-        {(settled) => (
-          <DataTable
-            rows={settled}
-            columns={columns}
-            rowKey={(record) => record.id}
-          />
-        )}
-      </ConsoleAsyncSection>
+      <SectionCard flushContent>
+        <ConsoleAsyncSection
+          pending={pending}
+          payload={rows}
+          error={records.error}
+          refreshing={records.isFetching}
+          empty={rows !== undefined && rows.length === 0}
+          headingLevel="h2"
+          loading={
+            <ListSkeleton
+              label={t('audit.loading')}
+              rows={[
+                <Skeleton key="a" variant="text" width="62%" />,
+                <Skeleton key="b" variant="text" width="48%" />,
+              ]}
+            />
+          }
+          errorState={{
+            title: t('audit.error.title'),
+            description: t('audit.error.description'),
+            retryLabel: t('audit.retry'),
+            onRetry: () => void records.refetch(),
+          }}
+          emptyState={{
+            title: t('audit.empty.title'),
+            description: t('audit.empty.description'),
+          }}
+        >
+          {(settled) => (
+            <DataTable
+              rows={settled}
+              columns={columns}
+              rowKey={(record) => record.id}
+            />
+          )}
+        </ConsoleAsyncSection>
+      </SectionCard>
 
       <Box
         sx={{

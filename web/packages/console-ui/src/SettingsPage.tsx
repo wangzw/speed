@@ -75,7 +75,7 @@ import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
-import Paper from '@mui/material/Paper'
+import Card from '@mui/material/Card'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -455,7 +455,7 @@ export function SettingsPage() {
             flexShrink: 0,
           }}
         >
-          <Paper variant="outlined">
+          <Card variant="outlined">
             <List dense>
               <ListItem disablePadding>
                 <ListItemButton
@@ -478,12 +478,18 @@ export function SettingsPage() {
                 </ListItem>
               ))}
             </List>
-          </Paper>
+          </Card>
         </Box>
 
         {/* The settings fill the content area beside the namespace nav (a
-            register takes the width it is given). */}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+            register takes the width it is given). The card keeps its
+            surface but not Card's overflow clipping: the save bar below is
+            sticky, and a clipping ancestor would pin it to the card
+            instead of the viewport. */}
+        <Card
+          variant="outlined"
+          sx={{ flex: 1, minWidth: 0, overflow: 'visible', p: 3 }}
+        >
           <ConsoleAsyncSection
             pending={pending}
             payload={items}
@@ -555,7 +561,7 @@ export function SettingsPage() {
                       paddingY: 2,
                       borderTop: 1,
                       borderColor: 'divider',
-                      backgroundColor: 'background.default',
+                      backgroundColor: 'background.paper',
                     }}
                   >
                     {changed.length > 0 && (
@@ -581,7 +587,7 @@ export function SettingsPage() {
               )
             }}
           </ConsoleAsyncSection>
-        </Box>
+        </Card>
       </Box>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />

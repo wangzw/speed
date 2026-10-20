@@ -33,6 +33,7 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   primaryColumnMaxWidthSx,
+  SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -253,7 +254,7 @@ export function SessionsPage() {
         sx={{ mb: 2 }}
       />
 
-      <Box component="section" sx={{ mb: 3 }}>
+      <SectionCard sx={{ mb: 3 }}>
         <SelectorRow
           selectorMaxWidth={260}
           trailing={
@@ -275,7 +276,7 @@ export function SessionsPage() {
             fullWidth
           />
         </SelectorRow>
-      </Box>
+      </SectionCard>
 
       {account === '' ? (
         <EmptyState
@@ -289,41 +290,43 @@ export function SessionsPage() {
         />
       ) : (
         <>
-          <ConsoleAsyncSection
-            pending={pending}
-            payload={rows}
-            error={sessions.error}
-            refreshing={sessions.isFetching}
-            empty={rows !== undefined && rows.length === 0}
-            headingLevel="h2"
-            loading={
-              <ListSkeleton
-                label={t('sessions.loading')}
-                rows={[
-                  <Skeleton key="a" variant="text" width="58%" />,
-                  <Skeleton key="b" variant="text" width="46%" />,
-                ]}
-              />
-            }
-            errorState={{
-              title: t('sessions.error.title'),
-              description: t('sessions.error.description'),
-              retryLabel: t('sessions.retry'),
-              onRetry: () => void sessions.refetch(),
-            }}
-            emptyState={{
-              title: t('sessions.empty.title'),
-              description: t('sessions.empty.description'),
-            }}
-          >
-            {(settled) => (
-              <DataTable
-                rows={settled}
-                columns={columns}
-                rowKey={(session) => session.id}
-              />
-            )}
-          </ConsoleAsyncSection>
+          <SectionCard flushContent>
+            <ConsoleAsyncSection
+              pending={pending}
+              payload={rows}
+              error={sessions.error}
+              refreshing={sessions.isFetching}
+              empty={rows !== undefined && rows.length === 0}
+              headingLevel="h2"
+              loading={
+                <ListSkeleton
+                  label={t('sessions.loading')}
+                  rows={[
+                    <Skeleton key="a" variant="text" width="58%" />,
+                    <Skeleton key="b" variant="text" width="46%" />,
+                  ]}
+                />
+              }
+              errorState={{
+                title: t('sessions.error.title'),
+                description: t('sessions.error.description'),
+                retryLabel: t('sessions.retry'),
+                onRetry: () => void sessions.refetch(),
+              }}
+              emptyState={{
+                title: t('sessions.empty.title'),
+                description: t('sessions.empty.description'),
+              }}
+            >
+              {(settled) => (
+                <DataTable
+                  rows={settled}
+                  columns={columns}
+                  rowKey={(session) => session.id}
+                />
+              )}
+            </ConsoleAsyncSection>
+          </SectionCard>
           {/* The revoke scope's region sits directly under the table whose
               row actions write into it. */}
           <Box ref={regionRef}>

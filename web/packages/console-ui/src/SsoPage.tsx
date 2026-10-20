@@ -65,6 +65,7 @@ import {
   OneTimeValuePanel,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
@@ -472,7 +473,7 @@ export function SsoPage({
         sx={{ mb: 2 }}
       />
 
-      <Box component="section" sx={{ mb: 3 }}>
+      <SectionCard sx={{ mb: 3 }}>
         {tenantControlled ? (
           <RefreshButton
             busy={pageRefresh.busy}
@@ -503,7 +504,7 @@ export function SsoPage({
             }
           />
         )}
-      </Box>
+      </SectionCard>
 
       {tenant === '' ? (
         <EmptyState
@@ -517,7 +518,7 @@ export function SsoPage({
         />
       ) : (
         <>
-          <Box component="section" sx={{ mb: 3 }}>
+          <SectionCard flushContent sx={{ mb: 3 }}>
             <ConsoleAsyncSection
               pending={pending}
               payload={rows}
@@ -556,12 +557,9 @@ export function SsoPage({
             <Box ref={listRegionRef}>
               <WriteFeedbackRegion outcome={listFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
 
-          <Box component="section" sx={{ mb: 3 }}>
-            <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-              {t('sso.provider.title')}
-            </Typography>
+          <SectionCard title={t('sso.provider.title')} sx={{ mb: 3 }}>
             <TextField
               select
               size="small"
@@ -587,16 +585,9 @@ export function SsoPage({
             <Box ref={formRegionRef}>
               <WriteFeedbackRegion outcome={formFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
 
-          <Box component="section" sx={{ mb: 3 }}>
-            <Typography
-              component="h2"
-              variant="h2"
-              sx={{ fontSize: '1.25rem', mb: 1 }}
-            >
-              {t('sso.domains.title')}
-            </Typography>
+          <SectionCard title={t('sso.domains.title')} sx={{ mb: 3 }}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
               {t('sso.domains.note')}
             </Typography>
@@ -669,7 +660,7 @@ export function SsoPage({
             <Box ref={domainsRegionRef}>
               <WriteFeedbackRegion outcome={domainsFeedback.outcome} />
             </Box>
-          </Box>
+          </SectionCard>
         </>
       )}
 

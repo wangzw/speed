@@ -43,13 +43,13 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
   ListSkeleton,
   PageHeader,
+  SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -235,10 +235,7 @@ export function TenantDetailPage({
     const disabled = settled.status === 'disabled'
     return (
       <>
-        <Paper component="section" variant="outlined" sx={{ p: 2, mb: 3 }}>
-          <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-            {t('tenantDetail.summary')}
-          </Typography>
+        <SectionCard title={t('tenantDetail.summary')} sx={{ mb: 3 }}>
           <Box component="dl" sx={{ margin: 0 }}>
             <DefinitionRow label={t('tenantDetail.field.id')} value={settled.id} />
             <DefinitionRow label={t('tenantDetail.field.alias')} value={settled.alias} />
@@ -247,12 +244,9 @@ export function TenantDetailPage({
               value={statusLabel(settled.status, t)}
             />
           </Box>
-        </Paper>
+        </SectionCard>
 
-        <Paper component="section" variant="outlined" sx={{ p: 2, mb: 3 }}>
-          <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-            {t('tenantDetail.actions.title')}
-          </Typography>
+        <SectionCard title={t('tenantDetail.actions.title')} sx={{ mb: 3 }}>
           <Box
             sx={{
               display: 'flex',
@@ -317,13 +311,10 @@ export function TenantDetailPage({
           <Box ref={regionRef}>
             <WriteFeedbackRegion outcome={feedback.outcome} />
           </Box>
-        </Paper>
+        </SectionCard>
 
         {related.length > 0 && (
-          <Paper component="section" variant="outlined" sx={{ p: 2 }}>
-            <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-              {t('tenantDetail.related.title')}
-            </Typography>
+          <SectionCard title={t('tenantDetail.related.title')}>
             <Box
               component="ul"
               sx={{
@@ -341,7 +332,7 @@ export function TenantDetailPage({
                 </Box>
               ))}
             </Box>
-          </Paper>
+          </SectionCard>
         )}
 
         {/* Host sections follow the page's own, with the loaded tenant. */}
@@ -405,10 +396,7 @@ export function TenantDetailPage({
           </ConsoleAsyncSection>
         }
         side={
-          <Paper component="section" variant="outlined" sx={{ p: 2 }}>
-            <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-              {t('tenantDetail.field.id')}
-            </Typography>
+          <SectionCard title={t('tenantDetail.field.id')}>
             <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
               {id}
             </Typography>
@@ -420,7 +408,7 @@ export function TenantDetailPage({
                 <ConsoleLink href={parentHref}>{t('tenantDetail.back')}</ConsoleLink>
               </Box>
             )}
-          </Paper>
+          </SectionCard>
         }
       />
     </Box>

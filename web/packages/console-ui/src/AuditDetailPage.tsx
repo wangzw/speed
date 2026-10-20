@@ -33,10 +33,9 @@
 
 import { useMemo } from 'react'
 import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
-import { ListSkeleton, PageHeader } from '@speed/ui-kit'
+import { ListSkeleton, PageHeader, SectionCard } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
 import { formatInstant } from '@speed/i18n'
@@ -87,10 +86,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
       timeZone: 'UTC',
     })
     return (
-      <Paper component="section" variant="outlined" sx={{ p: 2 }}>
-        <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-          {t('auditDetail.summary')}
-        </Typography>
+      <SectionCard title={t('auditDetail.summary')}>
         <Box component="dl" sx={{ margin: 0 }}>
           <DefinitionRow label={t('auditDetail.field.id')} value={settled.id} />
           <DefinitionRow
@@ -127,7 +123,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
             </Box>
           </Box>
         )}
-      </Paper>
+      </SectionCard>
     )
   }
 
@@ -189,10 +185,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
           </ConsoleAsyncSection>
         }
         side={
-          <Paper component="section" variant="outlined" sx={{ p: 2 }}>
-            <Typography component="h2" variant="h6" sx={{ mb: 1 }}>
-              {t('auditDetail.field.id')}
-            </Typography>
+          <SectionCard title={t('auditDetail.field.id')}>
             <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
               {id}
             </Typography>
@@ -201,7 +194,7 @@ export function AuditDetailPage({ id, parentHref }: AuditDetailPageProps) {
                 <ConsoleLink href={parentHref}>{t('auditDetail.back')}</ConsoleLink>
               </Box>
             )}
-          </Paper>
+          </SectionCard>
         }
       />
     </Box>

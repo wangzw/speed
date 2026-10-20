@@ -108,6 +108,7 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   RefreshButton,
+  SectionCard,
   httpStatusOf,
   pageRefreshRead,
   usePageRefresh,
@@ -488,14 +489,7 @@ export function ImpersonationsPage({
         sx={{ mb: 2 }}
       />
 
-      <Box component="section" sx={{ mb: 3 }}>
-        <Typography
-          component="h2"
-          variant="h2"
-          sx={{ fontSize: '1.25rem', mb: 1 }}
-        >
-          {t('impersonations.current.title')}
-        </Typography>
+      <SectionCard title={t('impersonations.current.title')} sx={{ mb: 3 }}>
         <ConsoleAsyncSection
           pending={statusPending}
           payload={statusPayload}
@@ -557,11 +551,7 @@ export function ImpersonationsPage({
 
         {notInForce && (
           <Box sx={{ mt: 2 }}>
-            <Typography
-              component="h2"
-              variant="h2"
-              sx={{ fontSize: '1.25rem', mb: 1 }}
-            >
+            <Typography component="h3" variant="h6" sx={{ mb: 1 }}>
               {t('impersonations.start.title')}
             </Typography>
             <StartImpersonationForm
@@ -580,7 +570,7 @@ export function ImpersonationsPage({
             with the section, so the success message is not unmounted with
             the form that produced it. */}
         <WriteFeedbackRegion outcome={currentFeedback.outcome} />
-      </Box>
+      </SectionCard>
 
       {impersonating ? (
         // The record half is not offered through an impersonated identity:
@@ -594,7 +584,7 @@ export function ImpersonationsPage({
       ) : (
         <>
           {!tenantControlled && (
-            <Box component="section" sx={{ mb: 3 }}>
+            <SectionCard sx={{ mb: 3 }}>
               <TenantScope
                 value={tenant}
                 onSelect={(next) => {
@@ -603,7 +593,7 @@ export function ImpersonationsPage({
                 }}
                 disabled={currentFeedback.pending || recordsFeedback.pending}
               />
-            </Box>
+            </SectionCard>
           )}
 
           {tenant === '' ? (
@@ -614,43 +604,45 @@ export function ImpersonationsPage({
             />
           ) : (
             <>
-              <ConsoleAsyncSection
-                pending={pending}
-                payload={rows}
-                error={impersonations.error}
-                refreshing={impersonations.isFetching}
-                empty={rows !== undefined && rows.length === 0}
-                headingLevel="h2"
-                loading={
-                  <ListSkeleton
-                    label={t('impersonations.loading')}
-                    rows={[
-                      <Skeleton key="a" variant="text" width="60%" />,
-                      <Skeleton key="b" variant="text" width="44%" />,
-                    ]}
-                  />
-                }
-                errorState={{
-                  title: t('impersonations.error.title'),
-                  description: t('impersonations.error.description'),
-                  retryLabel: t('impersonations.retry'),
-                  onRetry: () => void impersonations.refetch(),
-                }}
-                emptyState={{
-                  title: t('impersonations.empty.title'),
-                  description: t('impersonations.empty.description'),
-                }}
-              >
-                {(settled) => (
-                  <DataTable
-                    rows={settled}
-                    columns={columns}
-                    rowKey={(record) => record.id}
-                  />
-                )}
-              </ConsoleAsyncSection>
-              {/* The table and its row actions share one result location. */}
-              <WriteFeedbackRegion outcome={recordsFeedback.outcome} />
+              <SectionCard flushContent>
+                <ConsoleAsyncSection
+                  pending={pending}
+                  payload={rows}
+                  error={impersonations.error}
+                  refreshing={impersonations.isFetching}
+                  empty={rows !== undefined && rows.length === 0}
+                  headingLevel="h2"
+                  loading={
+                    <ListSkeleton
+                      label={t('impersonations.loading')}
+                      rows={[
+                        <Skeleton key="a" variant="text" width="60%" />,
+                        <Skeleton key="b" variant="text" width="44%" />,
+                      ]}
+                    />
+                  }
+                  errorState={{
+                    title: t('impersonations.error.title'),
+                    description: t('impersonations.error.description'),
+                    retryLabel: t('impersonations.retry'),
+                    onRetry: () => void impersonations.refetch(),
+                  }}
+                  emptyState={{
+                    title: t('impersonations.empty.title'),
+                    description: t('impersonations.empty.description'),
+                  }}
+                >
+                  {(settled) => (
+                    <DataTable
+                      rows={settled}
+                      columns={columns}
+                      rowKey={(record) => record.id}
+                    />
+                  )}
+                </ConsoleAsyncSection>
+                {/* The table and its row actions share one result location. */}
+                <WriteFeedbackRegion outcome={recordsFeedback.outcome} />
+              </SectionCard>
             </>
           )}
         </>

@@ -114,6 +114,7 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   RefreshButton,
+  SectionCard,
   SidePanel,
   pageRefreshRead,
   primaryColumnMaxWidthSx,
@@ -775,120 +776,122 @@ export function AccountsPage({
         onExited={createPanelExited}
       />
 
-      <Box
-        component="section"
-        sx={{
-          mb: 3,
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'flex-end',
-          columnGap: 2,
-          rowGap: 1,
-        }}
-      >
-        <TextField
-          select
-          size="small"
-          value={kindDraft}
-          onChange={(event) => setKindDraft(event.target.value as IdentifierKind)}
-          label={t('accounts.identifierKindLabel')}
-          sx={{ minWidth: 140 }}
-        >
-          {IDENTIFIER_KINDS.map((kind) => (
-            <MenuItem key={kind} value={kind}>
-              {t(`accounts.identifierKind.${kind}`)}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          size="small"
-          value={identifierDraft}
-          onChange={(event) => setIdentifierDraft(event.target.value)}
-          label={t('accounts.identifierLabel')}
-        />
-        <TextField
-          size="small"
-          value={displayNameDraft}
-          onChange={(event) => setDisplayNameDraft(event.target.value)}
-          label={t('accounts.displayNamePrefixLabel')}
-        />
-        <TextField
-          select
-          size="small"
-          value={statusDraft}
-          onChange={(event) => setStatusDraft(event.target.value)}
-          label={t('accounts.filter.status')}
-          sx={{ minWidth: 140 }}
-        >
-          <MenuItem value="">{t('accounts.filter.all')}</MenuItem>
-          {FILTER_STATUSES.map((value) => (
-            <MenuItem key={value} value={value}>
-              {t(`accounts.status.${value}`)}
-            </MenuItem>
-          ))}
-        </TextField>
-        <TextField
-          select
-          size="small"
-          value={accountKindDraft}
-          onChange={(event) => setAccountKindDraft(event.target.value)}
-          label={t('accounts.filter.kind')}
-          sx={{ minWidth: 140 }}
-        >
-          <MenuItem value="">{t('accounts.filter.all')}</MenuItem>
-          {ACCOUNT_KINDS.map((value) => (
-            <MenuItem key={value} value={value}>
-              {t(`accounts.create.kind.${value}`)}
-            </MenuItem>
-          ))}
-        </TextField>
-        <Button
-          type="button"
-          variant="contained"
-          disabled={listWrite.pending}
-          onClick={() => {
-            setIdentifier(identifierDraft.trim())
-            setIdentifierKind(kindDraft)
-            setDisplayName(displayNameDraft.trim())
-            setStatus(statusDraft)
-            setAccountKind(accountKindDraft)
+      <SectionCard sx={{ mb: 3 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            columnGap: 2,
+            rowGap: 1,
           }}
         >
-          {t('accounts.search')}
-        </Button>
-      </Box>
-
-      <ConsoleAsyncSection
-        pending={pending}
-        payload={rows}
-        error={accounts.error}
-        refreshing={accounts.isFetching}
-        empty={rows !== undefined && rows.length === 0}
-        headingLevel="h2"
-        loading={
-          <ListSkeleton
-            label={t('accounts.loading')}
-            rows={[
-              <Skeleton key="a" variant="text" width="58%" />,
-              <Skeleton key="b" variant="text" width="46%" />,
-            ]}
+          <TextField
+            select
+            size="small"
+            value={kindDraft}
+            onChange={(event) => setKindDraft(event.target.value as IdentifierKind)}
+            label={t('accounts.identifierKindLabel')}
+            sx={{ minWidth: 140 }}
+          >
+            {IDENTIFIER_KINDS.map((kind) => (
+              <MenuItem key={kind} value={kind}>
+                {t(`accounts.identifierKind.${kind}`)}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            size="small"
+            value={identifierDraft}
+            onChange={(event) => setIdentifierDraft(event.target.value)}
+            label={t('accounts.identifierLabel')}
           />
-        }
-        errorState={{
-          title: t('accounts.error.title'),
-          description: t('accounts.error.description'),
-          retryLabel: t('accounts.retry'),
-          onRetry: () => void accounts.refetch(),
-        }}
-        emptyState={{
-          title: t('accounts.empty.title'),
-          description: t('accounts.empty.description'),
-        }}
-      >
-        {(settled) => (
-          <DataTable rows={settled} columns={columns} rowKey={(row) => row.id} />
-        )}
-      </ConsoleAsyncSection>
+          <TextField
+            size="small"
+            value={displayNameDraft}
+            onChange={(event) => setDisplayNameDraft(event.target.value)}
+            label={t('accounts.displayNamePrefixLabel')}
+          />
+          <TextField
+            select
+            size="small"
+            value={statusDraft}
+            onChange={(event) => setStatusDraft(event.target.value)}
+            label={t('accounts.filter.status')}
+            sx={{ minWidth: 140 }}
+          >
+            <MenuItem value="">{t('accounts.filter.all')}</MenuItem>
+            {FILTER_STATUSES.map((value) => (
+              <MenuItem key={value} value={value}>
+                {t(`accounts.status.${value}`)}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            value={accountKindDraft}
+            onChange={(event) => setAccountKindDraft(event.target.value)}
+            label={t('accounts.filter.kind')}
+            sx={{ minWidth: 140 }}
+          >
+            <MenuItem value="">{t('accounts.filter.all')}</MenuItem>
+            {ACCOUNT_KINDS.map((value) => (
+              <MenuItem key={value} value={value}>
+                {t(`accounts.create.kind.${value}`)}
+              </MenuItem>
+            ))}
+          </TextField>
+          <Button
+            type="button"
+            variant="contained"
+            disabled={listWrite.pending}
+            onClick={() => {
+              setIdentifier(identifierDraft.trim())
+              setIdentifierKind(kindDraft)
+              setDisplayName(displayNameDraft.trim())
+              setStatus(statusDraft)
+              setAccountKind(accountKindDraft)
+            }}
+          >
+            {t('accounts.search')}
+          </Button>
+        </Box>
+      </SectionCard>
+
+      <SectionCard flushContent>
+        <ConsoleAsyncSection
+          pending={pending}
+          payload={rows}
+          error={accounts.error}
+          refreshing={accounts.isFetching}
+          empty={rows !== undefined && rows.length === 0}
+          headingLevel="h2"
+          loading={
+            <ListSkeleton
+              label={t('accounts.loading')}
+              rows={[
+                <Skeleton key="a" variant="text" width="58%" />,
+                <Skeleton key="b" variant="text" width="46%" />,
+              ]}
+            />
+          }
+          errorState={{
+            title: t('accounts.error.title'),
+            description: t('accounts.error.description'),
+            retryLabel: t('accounts.retry'),
+            onRetry: () => void accounts.refetch(),
+          }}
+          emptyState={{
+            title: t('accounts.empty.title'),
+            description: t('accounts.empty.description'),
+          }}
+        >
+          {(settled) => (
+            <DataTable rows={settled} columns={columns} rowKey={(row) => row.id} />
+          )}
+        </ConsoleAsyncSection>
+      </SectionCard>
 
       {/* The list's feedback: the row delete's result and the create
           panel's success, which is written here only after the panel's

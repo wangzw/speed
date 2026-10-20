@@ -13,6 +13,7 @@ import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { typographyClasses } from '@mui/material/Typography'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { mockMatchMedia } from '@speed/test-utils/matchMedia'
 import { PermissionsPage } from './PermissionsPage.js'
@@ -300,7 +301,7 @@ describe('PermissionsPage', () => {
     await screen.findByText('editor')
     const reads = listRoles.mock.calls.length
 
-    await user.type(screen.getByLabelText(zhCN.permissions.bindings.roleLabel), 'viewer')
+    await user.type(screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }), 'viewer')
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
     await expectRefreshInert(listRoles, reads)
@@ -587,7 +588,7 @@ describe('PermissionsPage', () => {
     expect(cell).not.toBeNull()
     expect(code.parentElement?.children).toHaveLength(1)
     expect(
-      (cell as HTMLElement).querySelector('.MuiTypography-caption'),
+      (cell as HTMLElement).querySelector(`.${typographyClasses.caption}`),
     ).toBeNull()
 
     // The picker option is the bare code, and so is the closed control.
@@ -602,7 +603,7 @@ describe('PermissionsPage', () => {
     const option = await screen.findByRole('option', {
       name: 'crm.deal.read',
     })
-    expect(option.querySelector('.MuiTypography-caption')).toBeNull()
+    expect(option.querySelector(`.${typographyClasses.caption}`)).toBeNull()
     expect(option.textContent).toBe('crm.deal.read')
     await user.click(option)
     expect(
@@ -757,7 +758,7 @@ describe('PermissionsPage', () => {
     await screen.findByText('Operator')
     // A role alone is not a binding: the account must be chosen, and the
     // picker holds no id until then.
-    await user.type(screen.getByLabelText(zhCN.permissions.bindings.roleLabel), 'viewer')
+    await user.type(screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }), 'viewer')
     expect(screen.getByRole('button', { name: zhCN.permissions.bindings.bind })).toBeDisabled()
     // A display name finds the account; the write carries its id ("acc-2"),
     // never the typed name.
@@ -1202,7 +1203,7 @@ describe('PermissionsPage', () => {
     })
     renderWithProviders(<PermissionsPage />, { operations })
     await pickTenant(user)
-    await user.type(screen.getByLabelText(zhCN.permissions.bindings.roleLabel), 'viewer')
+    await user.type(screen.getByRole('textbox', { name: zhCN.permissions.bindings.roleLabel }), 'viewer')
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: zhCN.permissions.bindings.bind }))
 

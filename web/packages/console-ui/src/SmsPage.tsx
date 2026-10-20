@@ -45,6 +45,7 @@ import {
   ListSkeleton,
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
+  SectionCard,
   errorCodeOf,
   httpStatusOf,
   useWriteFeedback,
@@ -389,10 +390,7 @@ export function SmsPage() {
       </Typography>
 
       {!surfaceAbsent && (
-        <Box component="section" sx={{ mb: 3 }}>
-          <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-            {t('sms.register.title')}
-          </Typography>
+        <SectionCard title={t('sms.register.title')} sx={{ mb: 3 }}>
           <Box
             sx={{
               display: 'flex',
@@ -434,14 +432,11 @@ export function SmsPage() {
           <Box ref={registerRegionRef}>
             <WriteFeedbackRegion outcome={registerFeedback.outcome} />
           </Box>
-        </Box>
+        </SectionCard>
       )}
 
       {!surfaceAbsent && (
-        <Box component="section" sx={{ mb: 3 }}>
-          <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-            {t('sms.offer.title')}
-          </Typography>
+        <SectionCard title={t('sms.offer.title')} sx={{ mb: 3 }}>
           <Box
             sx={{
               display: 'flex',
@@ -501,51 +496,53 @@ export function SmsPage() {
           <Box ref={offerRegionRef}>
             <WriteFeedbackRegion outcome={offerFeedback.outcome} />
           </Box>
-        </Box>
+        </SectionCard>
       )}
 
-      <ConsoleAsyncSection
-        pending={pending}
-        payload={rows}
-        error={templates.error}
-        refreshing={templates.isFetching}
-        empty={rows !== undefined && rows.length === 0}
-        headingLevel="h2"
-        loading={
-          <ListSkeleton
-            label={t('sms.loading')}
-            rows={[
-              <Skeleton key="a" variant="text" width="56%" />,
-              <Skeleton key="b" variant="text" width="42%" />,
-            ]}
-          />
-        }
-        errorState={{
-          title: surfaceAbsent
-            ? t('sms.unmounted.title')
-            : t('sms.error.title'),
-          description: surfaceAbsent
-            ? t('sms.unmounted.description')
-            : t('sms.error.description'),
-          retryLabel: t('sms.retry'),
-          onRetry: () => void templates.refetch(),
-        }}
-        emptyState={{
-          title: t('sms.empty.title'),
-          description: t('sms.empty.description'),
-        }}
-      >
-        {(settled) => (
-          <DataTable
-            rows={settled}
-            columns={columns}
-            rowKey={(template) => template.name}
-          />
-        )}
-      </ConsoleAsyncSection>
-      <Box ref={tableRegionRef}>
-        <WriteFeedbackRegion outcome={tableFeedback.outcome} />
-      </Box>
+      <SectionCard flushContent>
+        <ConsoleAsyncSection
+          pending={pending}
+          payload={rows}
+          error={templates.error}
+          refreshing={templates.isFetching}
+          empty={rows !== undefined && rows.length === 0}
+          headingLevel="h2"
+          loading={
+            <ListSkeleton
+              label={t('sms.loading')}
+              rows={[
+                <Skeleton key="a" variant="text" width="56%" />,
+                <Skeleton key="b" variant="text" width="42%" />,
+              ]}
+            />
+          }
+          errorState={{
+            title: surfaceAbsent
+              ? t('sms.unmounted.title')
+              : t('sms.error.title'),
+            description: surfaceAbsent
+              ? t('sms.unmounted.description')
+              : t('sms.error.description'),
+            retryLabel: t('sms.retry'),
+            onRetry: () => void templates.refetch(),
+          }}
+          emptyState={{
+            title: t('sms.empty.title'),
+            description: t('sms.empty.description'),
+          }}
+        >
+          {(settled) => (
+            <DataTable
+              rows={settled}
+              columns={columns}
+              rowKey={(template) => template.name}
+            />
+          )}
+        </ConsoleAsyncSection>
+        <Box ref={tableRegionRef}>
+          <WriteFeedbackRegion outcome={tableFeedback.outcome} />
+        </Box>
+      </SectionCard>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
     </Box>
