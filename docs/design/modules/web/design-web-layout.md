@@ -42,6 +42,17 @@
 
 内容区里的页型占满内容区：表格页、详情页、设置页与仪表盘的宽度即信息量。控制台没有受限宽的内容区容器：成块的表单放进侧边面板，宽度取面板的宽度档（见「次级任务的容器」）；内联写入区的控件随所在的节排布。
 
+### 内容表面
+
+控制台页的每个内容块落在 `SectionCard` 的容器表面上：列表页的表格节、详情页的每一节、设置页的每一节、仪表盘的图表区与活动列表。页面底取 `page` 表面（`background.default`），内容块取 `container` 表面（白底、1px 描边、`shape.borderRadius` 圆角）。
+
+- **标题层级。** 页面的 `h1` 是 `PageHeader`；内容节的标题由 `SectionCard` 渲染为 `h2`，节内再分的块为 `h3`，依次向下。
+- **表格节贴边。** 表格所在的内容节用 `flushContent`，表格到达卡片的边缘，圆角由卡片裁切收住；表头底色取 `header` 表面。
+- **浮层不叠卡片。** 对话框、菜单、工具提示与临时抽屉取 `overlay` 表面；侧边面板本身是浮层表面，面板内不叠 `SectionCard`，用标题与分隔线分节。
+- **表面不引入宽度上限。** `SectionCard` 占满所在的内容列；控制台仍没有受限宽的内容区容器（见「内容区的宽度」）。
+
+表面取值与组件映射见 [ui-kit](design-web-ui-kit.md)，决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+
 ### 页型的骨架
 
 控制台页的骨架有下列几种，都以页头开篇（页头见 [console-ui](design-web-console-ui.md)）：
@@ -144,6 +155,7 @@ graph TD
 
 - **新增一个组件。** 若它会随可用宽度改变自身排布，按容器响应：在自身根节点声明 `container-type: inline-size`，并按自身的宽度取档重排。
 - **新增一个控制台页。** 页内的排布沿用本设计的区域与降级约定；页的组织归该页所属的能力 UI 包。
+- **新增一个控制台内容块。** 它落在 `SectionCard` 上，标题从 `h2` 起；不手写描边 `Paper` 或裸 `section` 作为表面。
 
 ## 实现状态
 
@@ -156,6 +168,7 @@ graph TD
 | 侧栏的分组与二级嵌套 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavGroup`、`AppShellNavItem.children`；`web/packages/console-ui/src/nav-groups.tsx` `consoleNavGroups` |
 | 断点标度等于所装 MUI 主题默认 | 已实现 | `web/packages/tokens/src/breakpoints.ts` `breakpointTokens` |
 | 内容区的宽度（页型占满内容区） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout` |
+| 控制台内容块落在 SectionCard 容器表面 | 未实现 | — |
 | 列表页骨架 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
 | 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
 | 设置页骨架（二级导航与表） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |

@@ -2,7 +2,7 @@
 
 ## 职责
 
-把平台的设计取值——语义配色、字体栈与字号、间距基数、圆角、断点、层级、阴影——作为**纯数据**交付：一棵默认 token 树 `defaultTokens`，加唯一一个不修改入参的覆写方式 `deepMerge`。消费方在这棵树上叠加自己的差异层，得到一份新的 token 树，交给 `ui-kit` 的主题工厂建成 MUI 主题。
+把平台的设计取值——语义配色、表面语义、字体栈与字号、间距基数、圆角、断点、层级、阴影——作为**纯数据**交付：一棵默认 token 树 `defaultTokens`，加唯一一个不修改入参的覆写方式 `deepMerge`。消费方在这棵树上叠加自己的差异层，得到一份新的 token 树，交给 `ui-kit` 的主题工厂建成 MUI 主题。
 
 运行时面**刻意只有这两个符号**，其余导出全是类型：token 作者与主题适配器因此拿到完整的编译期形状，而不为此背任何运行时代价。
 
@@ -26,7 +26,7 @@ export function deepMerge<T extends object>(base: T, ...overrides: Array<DeepPar
 export type SpeedTokens        // 完整 token 树
 export type TokensOverride     // DeepPartial<SpeedTokens>
 export type DeepPartial<T>     // 递归可选；数组与函数是叶子
-// 外加各段的取值类型（颜色、排版、间距、圆角、断点、层级、阴影）
+// 外加各段的取值类型（颜色、表面、排版、间距、圆角、断点、层级、阴影）
 ```
 
 **`deepMerge` 的契约，约束的主体是每一次调用**：
@@ -60,7 +60,7 @@ export type DeepPartial<T>     // 递归可选；数组与函数是叶子
 
 ## UML 图
 
-图给出 `SpeedTokens` 的段划分与运行时符号的位置。图里画不出的约束：每个段字段都是 `readonly`，装配后的整棵树深度冻结；`DeepPartial` 把数组与函数当叶子（整体替换，不逐项合并），token 树不含数组与函数，但助手是泛型的因而必须如此；`deepMerge` 的层数是变参，图上的入参只是当次调用。
+图给出 `SpeedTokens` 的段划分与运行时符号的位置。图里画不出的约束：每个段字段都是 `readonly`，装配后的整棵树深度冻结；`SurfaceRoleTokens` 的每个字段可选，缺省表示继承既有槽（见核心数据结构）；`DeepPartial` 把数组与函数当叶子（整体替换，不逐项合并），token 树不含数组与函数，但助手是泛型的因而必须如此；`deepMerge` 的层数是变参，图上的入参只是当次调用。
 
 ```mermaid
 classDiagram
@@ -72,6 +72,20 @@ classDiagram
         +breakpoints BreakpointTokens
         +zIndex ZIndexTokens
         +shadows ShadowTokens
+        +surface SurfaceTokens
+    }
+    class SurfaceTokens {
+        +page SurfaceRoleTokens
+        +container SurfaceRoleTokens
+        +overlay SurfaceRoleTokens
+        +header SurfaceRoleTokens
+    }
+    class SurfaceRoleTokens {
+        +fill string
+        +borderColor string
+        +borderWidth number
+        +elevation number
+        +backdropFilter string
     }
     class defaultTokens
     class deepMerge {
@@ -87,6 +101,8 @@ classDiagram
     SpeedTokens *-- BreakpointTokens
     SpeedTokens *-- ZIndexTokens
     SpeedTokens *-- ShadowTokens
+    SpeedTokens *-- SurfaceTokens
+    SurfaceTokens *-- SurfaceRoleTokens
     defaultTokens ..> SpeedTokens : 类型为
     deepMerge ..> defaultTokens : base
     deepMerge ..> TokensOverride : overrides
@@ -96,7 +112,7 @@ classDiagram
 
 | 概念 | 类型 | 说明 |
 |---|---|---|
-| token 树 | `SpeedTokens` | `color`、`typography`、`spacing`、`shape`、`breakpoints`、`zIndex`、`shadows`；每个字段 `readonly` |
+| token 树 | `SpeedTokens` | `color`、`typography`、`spacing`、`shape`、`breakpoints`、`zIndex`、`shadows`、`surface`；每个字段 `readonly` |
 | 覆写形状 | `TokensOverride` | `DeepPartial<SpeedTokens>`，一次覆写能写到的最深形状 |
 | 递归可选 | `DeepPartial<T>` | 对象递归可选；数组与函数是叶子，覆写整体替换 |
 | 默认树 | `defaultTokens` | 由各段装配成的单棵树，装配时深度冻结 |
@@ -113,6 +129,11 @@ classDiagram
 | `breakpoints` | `values`，若干命名断点 |
 | `zIndex` | `values`，槽名与 MUI 同名 |
 | `shadows` | 按高度槽名给出的完整 `box-shadow` 值 |
+| `surface` | `page`、`container`、`overlay`、`header` 四个语义角色，每个角色可带 `fill`/`borderColor`/`borderWidth`/`elevation`/`backdropFilter`；字段全部可选，缺省继承既有槽 |
+
+### 表面段
+
+**表面段的字段缺省即继承。** `surface` 的每个角色只为「主题需要加重的那几项」留位：`fill`、`borderColor`、`borderWidth`、`elevation`、`backdropFilter` 全部可选，缺省值不是写死的颜色，而是表示「沿用主题本来读取的那个槽」——`page` 继承 `color.background.default`，`container` 与 `overlay` 继承 `color.background.paper`，边框继承 `color.divider`，`header` 继承 `color.neutral` 色阶（浅色取 50，深色由主题改取 900）。因此该段不携带任何表面颜色字面量：只覆写 `background.paper` 的项目，表面取值不会改变。缺省槽的解析由 [ui-kit](design-web-ui-kit.md) 主题工厂完成，本包只陈述这份继承契约。默认值为 `page: {}`、`container: { borderWidth: 1 }`、`overlay: {}`、`header: {}`；`elevation` 缺省时保留各 MUI 组件自身的层级，不被拉平；圆角复用 `shape.borderRadius`，不新增字段。语义分层与主题映射的决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
 
 **深色表面的角色色调来自 `light`。** ui-kit 的主题工厂在深色模式下把 `main` 与 `light` 都取角色的 `light` 色调，悬停填充由该色调向白色派生；因此给品牌换色只覆写 `main` 不会作用于深色模式，需同时设置 `light`。
 
@@ -151,12 +172,17 @@ classDiagram
 - `DeepPartial` 的机械随 `SpeedTokens` 一起生长——覆写类型由树派生，段一旦加入即自动覆盖，无需另写。
 - 该段若镜像某个 MUI 默认值，走 README 的对齐表加一行，并加一条对着 MUI 安装版本钉住的测试。
 
+**`surface` 段对上述条件的落实：** 它在 `SpeedTokens` 上是一个 `readonly` 字段，形状与默认值在 `surface.ts`，经 `defaultTokens` 的装配受深度冻结，`TokensOverride` 由树派生而自动覆盖四个角色。该段不对应 MUI 的某个默认值，故不在对齐表上加行，MUI 对齐口径的测试不涉及它。
+
+**新增一个表面角色是段形状的变更。** 角色集是闭合的语义集；新增角色要在 `SurfaceTokens` 上加字段，并在 [ui-kit](design-web-ui-kit.md) 的主题解析与组件映射里给它落点，按不兼容变更处理。
+
 ## 实现状态
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | token 树类型、覆写类型与递归可选 | 已实现 | `web/packages/tokens/src/types.ts` `SpeedTokens`、`TokensOverride`、`DeepPartial` |
-| 各段取值与默认值 | 已实现 | `web/packages/tokens/src/color.ts`、`typography.ts`、`spacing.ts`、`shape.ts`、`breakpoints.ts`、`z-index.ts`、`shadows.ts` |
+| 各段取值与默认值 | 已实现 | `web/packages/tokens/src/color.ts`、`typography.ts`、`spacing.ts`、`shape.ts`、`breakpoints.ts`、`z-index.ts`、`shadows.ts`、`surface.ts` |
+| 表面段四个角色与缺省继承契约 | 已实现 | `web/packages/tokens/src/surface.ts` `surfaceTokens`、`SurfaceRoleTokens`、`SurfaceTokens`；`web/packages/tokens/src/defaultTokens.ts` `defaultTokens` |
 | 默认树装配与深度冻结 | 已实现 | `web/packages/tokens/src/defaultTokens.ts` `defaultTokens`、`deepFreeze` |
 | 合并助手与写时复制、恶意键处置 | 已实现 | `web/packages/tokens/src/merge.ts` `deepMerge` |
 | MUI 对齐口径的钉住测试 | 已实现 | `web/packages/tokens/src/index.test.ts`、`defaultTokens.test.ts`、`merge.test.ts` |

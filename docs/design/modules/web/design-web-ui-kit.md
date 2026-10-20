@@ -4,8 +4,8 @@
 
 本包是平台第一个渲染 DOM 的包。它交付：
 
-- **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9 主题，并承载触摸设备上所有可点击目标的 44×44 下限（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动与全局重置组成一个运行期。
-- **受控组件**：`PageHeader`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。每个组件自带的文案来自 `ui-kit` 命名空间。
+- **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9 主题，并承载触摸设备上所有可点击目标的 44×44 下限与表面映射（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动与全局重置组成一个运行期。
+- **受控组件**：`PageHeader`、`SectionCard`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。每个组件自带的文案来自 `ui-kit` 命名空间。
 
 **受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接缝是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。
 
@@ -53,13 +53,15 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **等宽字体走模块扩充。** MUI 的排版面没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
 
-**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
+**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下 warning、info 与 success 的 `contrastText` 取中性色阶 950，这三个角色的白色标签在该底色上达不到 AA（[ADR-web-light-contrast-2026-10-20](../../../adr/adr-web-light-contrast-2026-10-20.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
 
 **返回的主题无本地化，是有意的**：MUI 的内建文本随语言变化，故本地化合并发生在渲染期——`AppThemeProvider` 把活动语言的 MUI 本地化并到基础主题上，或宿主自行 `createTheme(appTheme.theme, muiLocaleFor(i18n.language))`。
 
 **`AppThemeProvider` 的契约**：它持有主题装配（记忆化，使一组覆写加一个模式只建一次合并树与主题）、MUI 本地化联动（订阅 `languageChanged`，使 MUI 内建文本随每次切换更新；本地化合并落在 token 映射之后，使 MUI 组件默认不覆盖 token）、颜色模式状态（活动模式是 provider 自己的状态，起始为 `defaultMode`，经 `useAppThemeMode` 暴露 `mode`／`setMode`／`toggleMode`；切换即重建主题，子树随之重渲染），以及全局重置（渲染一次主题感知的 `CssBaseline`）。它刻意不渲染 `I18nextProvider`、不注册命名空间：两者属于宿主启动。
 
 **主题层承载触摸目标下限。** 粗指针（`pointer: coarse`）下，基础控件的最小宽高为 44×44：`Button`、`IconButton`、`Checkbox`、`Radio`、`Switch`、`ListItemButton` 各有一项，`ButtonBase` 一项覆盖其余以它为根的控件（`Tab`、`MenuItem`、`ToggleButton`、`CardActionArea`、`TableSortLabel` 等）；`InputBase` 的根与输入槽同时取下限，使字段的视觉框与真正接收点击的输入元素都达标；可点击的 `Chip` 按 `MuiChip-clickable` 类取下限，非交互的状态标签保持紧凑。各包由此继承下限，不依赖逐处指定。所有下限声明都嵌在 `@media (pointer: coarse)` 内，细指针下不产生任何声明，桌面观感不变。`Link` 在粗指针下同时改为居中的 `inline-flex` 盒，因为 `min-height` 对非替换行内盒不生效。主题管不到的裸元素——裸 `<a>`、宿主自有的可点元素——由 `touchTargetSx` 兜底（见核心数据结构）。
+
+**主题层同时承载表面映射。** token 的 `surface` 段经工厂解析为 `theme.surface.<角色>`，再经 `theme.components` 落到具体槽位；样式与 `useTheme()` 读同一个值，不会不一致。解析按继承契约把缺省字段换成主题已有的槽：`page` 取 `background.default`，`container` 与 `overlay` 取 `background.paper`，边框取 `divider`，`header` 取中性色阶（浅色 50、深色 800）。组件覆写为：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 container；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。主题组件表按 `Mui*` 槽深合并：触摸目标下限与表面覆写落在同一个组件上时，两组声明都保留。
 
 ### 受控组件
 
@@ -68,6 +70,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | 组件 | 输入 | 上报 |
 |---|---|---|
 | `PageHeader` | 标题（渲染为语义 `h1`）、可选面包屑、描述、动作区 | 面包屑链接的 `onClick` |
+| `SectionCard` | `title`、`description`、`actions`、`headingLevel`（`h2`–`h6`，缺省 `h2`）、`flushContent`、子节点、`sx` | — |
 | `EmptyState` | `variant`（`empty`/`noPermission`/`error`）、可覆写的标题与描述、动作、图标、`headingLevel`（`h1`–`h6` 或 `none`：`none` 把标题渲染为非标题元素、整块成为 `role="status"` 区域，用于不该进入目录层级的空/状态占位） | 动作节点内的宿主回调 |
 | `ConfirmDialog` | `open`、标题、消息、`variant`、`doubleConfirm`、标签、`confirmLoading`、`children`（渲染在消息之后、不进 `aria-describedby`）、`confirmDisabled`（只禁用确认按钮，不改动双次确认的待命与锁定逻辑） | `onConfirm`、`onCancel` |
 | `SidePanel` | `open`、`title`（必填）、`description`、`size`（`medium` 或 `wide`，缺省 `medium`）、`busy`、`closeLabel`、子节点 | `onClose`、`onExited` |
@@ -184,6 +187,8 @@ sequenceDiagram
 |---|---|---|
 | 主题产物 | `AppTheme` | 合并后的 `tokens` 与由它建成的无本地化 `theme` |
 | 主题 provider 入参 | `AppThemeProviderProps` | i18n 实例、项目层、租户层、子树 |
+| 表面角色（解析后） | `SurfaceTheme`、`SurfaceThemeRole` | `page`、`container`、`overlay`、`header`；`fill`、`borderColor`、`borderWidth` 是解析后的具体值，`elevation` 与 `backdropFilter` 缺席表示保留组件自身层级或不加滤镜 |
+| 内容节入参 | `SectionCardProps` | 标题、描述、动作、标题层级（`h2`–`h6`）、`flushContent`、子节点、`sx` |
 | 表单字段渲染状态 | `FormFieldRenderState` | 绑定字段、`invalid`、`isTouched`、`required`、原始错误消息、解析后的显示文本 |
 | 表单校验桥 | `zodFormResolver`、`INVALID_ERROR_KEY` | 把 zod schema 适配成 RHF `Resolver`，失败折成 `ui-kit` 命名空间的键 |
 | 表格列 | `DataTableColumn` | 列 id、表头、可排序、对齐、宽度、优先级、折行策略（`cellWrap`）、完整值访问器（`cellFullValue`）、内容宽度上限（`contentMaxWidth`）、单元格渲染器 |
@@ -204,7 +209,7 @@ sequenceDiagram
 
 | token 段 | MUI 主题槽 | 适配决策 |
 |---|---|---|
-| `color.semantic.<角色>` | `palette.<角色>` | 浅色模式逐键：`main`/`light`/`dark`/`contrastText`；深色模式 `main` 与 `light` 取该角色的 `light` 色调、`contrastText` 取中性色阶 900、`dark` 取该色调向白色混入 20%（MUI 的悬停填充） |
+| `color.semantic.<角色>` | `palette.<角色>` | 浅色模式逐键：`main`/`light`/`dark` 取 token 值；`contrastText` 逐角色取 token 值，warning、info 与 success 改取中性色阶 950（[ADR-web-light-contrast-2026-10-20](../../../adr/adr-web-light-contrast-2026-10-20.md)）；深色模式 `main` 与 `light` 取该角色的 `light` 色调、`contrastText` 取中性色阶 900、`dark` 取该色调向白色混入 20%（MUI 的悬停填充） |
 | `color.neutral` | `palette.grey` | 数值步按号映射；A 系列别名复用同号步；无 MUI 槽的色阶只在 token 里 |
 | `color.text`/`background`/`divider` | 同名槽 | 直接 |
 | `typography.fontFamily.sans` | `typography.fontFamily` | 直接 |
@@ -215,9 +220,45 @@ sequenceDiagram
 | `breakpoints.values` | `breakpoints.values` | 直接（槽名是 MUI 自己的） |
 | `zIndex.values` | `zIndex` | 直接（槽名是 MUI 自己的） |
 | `shadows`（高度槽） | `theme.shadows`（25 项斜坡） | 每个高度用不高于它的最近 token 槽（向下取整，绝不超出设计标度），0 为 `none` |
+| `surface` 角色 | `theme.surface` 与 `theme.components` | 缺省字段按继承契约从 palette 槽解析；解析结果落在 `theme.surface`，组件覆写读它（见「表面到 theme.components 的映射」） |
 | 触摸目标下限 | `theme.components.*.styleOverrides` | 粗指针下基础控件与可点击 `Chip` 的最小宽高为 44×44；细指针下不产生任何声明 |
 
 阴影斜坡是把 token 的高度槽铺成 MUI 的 25 项数组的确定性做法：`ELEVATION_SLOTS` 按升序，逐高度推进到不高于当前高度的最近槽。MUI 9 接受任意长度的数组，25 项是有意为之，使消费方像对任何原生 MUI 主题一样按下标取 `theme.shadows`。
+
+### 表面到 theme.components 的映射
+
+**解析与映射是两步。** token 的 `surface.<角色>` 只携带项目要加重的字段；工厂先按继承契约把它解析成每个字段都具体的角色（`page`→`background.default`，`container` 与 `overlay`→`background.paper`，边框→`divider`，`header`→中性色阶浅 50 或深 800；`borderWidth` 缺省 0，`elevation` 与 `backdropFilter` 保留缺席），把结果放进 `theme.surface`，组件覆写再从 `theme.surface` 读取并生成 CSS。两处读同一个值，`useTheme()` 读到的与组件绘制的一致。
+
+| 角色 | 主题槽位 |
+|---|---|
+| container | `MuiCard` 的 `variants` 中 `props.variant === 'outlined'` 一项；`MuiDrawer.paper` 且 drawer 为 `permanent` 或 `persistent` |
+| overlay | `MuiDialog.paper`、`MuiMenu.paper`、`MuiPopover.paper`、`MuiTooltip.tooltip`、temporary `MuiDrawer.paper` |
+| header | `MuiTableCell.head` |
+| page | 不设组件覆写：页面底由 `CssBaseline` 读取 `background.default` |
+
+**`MuiCard` 走 `variants` 而不是 `styleOverrides`。** Card 只有 `root` 一个槽，`styleOverrides.outlined` 不会被解析；`props: { variant: 'outlined' }` 的变体是主题组件面里能按 variant 附着样式的写法。圆角不在这里设置：Paper 的根样式读取 `shape.borderRadius`。
+
+**两处不设覆写。** `MuiPaper.root` 不设：MUI 深色模式经 `backgroundImage` 给 elevation Paper 叠一层提亮，清掉它会让 Dialog 与 Menu 在深色下失去层次。`MuiTableContainer` 不设：内容节的表面由 `SectionCard` 承担，表格不再叠第二层表面。
+
+**组件表按槽深合并。** 多个来源的 `components`（触摸目标下限与表面映射）按 `Mui*` 键、再按槽合并：变体数组拼接，同一槽上的两个回调组合为返回两份样式的回调。浅展开会让后者整体覆盖前者的 `styleOverrides`。决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+
+### 内容节 SectionCard
+
+**`SectionCard` 是内容容器的唯一原语。** 它渲染 `Card variant="outlined" component="section"`：`Card` 自带 `overflow: hidden`，表格贴边时由它收住圆角；`section` 使内容节成为可被辅助技术识别的区域。
+
+**标题与可及名。** 有标题时标题渲染为真实标题元素，层级由 `headingLevel` 决定，缺省 `h2`（页面 `h1` 是 `PageHeader`）；视觉字号固定为 `h5` 排版角色，语义层级与视觉大小因此独立。标题经 `aria-labelledby` 成为节的名称，节同时成为 `region` 地标。无标题时不渲染标题块，也不设 `aria-labelledby`；`description` 与 `actions` 依附标题块，只在有标题时渲染。
+
+**内容内边距。** 内容默认取主题间距的 `p: 3`；`flushContent` 去掉内容内边距，让表格或列表贴边，表面本身不变。
+
+**嵌套层级。** 节内再分的块用 `h3`（`headingLevel="h3"`），依次向下。`SidePanel` 本身是浮层表面，面板内不叠 `SectionCard`，用标题与分隔线分节。
+
+### 焦点环与降级动效
+
+**统一焦点环。** 键盘焦点落在基础控件上时显示 2px 实线轮廓、向外偏移 2px，颜色取 `palette.primary.main`；轮廓只在键盘焦点成立时出现，指针点击不显示。实现落在文档化的 `styleOverrides` 槽里（`&.Mui-focusVisible`），不使用未文档化的 `theme.focusVisible`。以 `ButtonBase` 等基础控件为根的控件继承该环；自有的可聚焦元素若不以它们为根，需在自己的槽里加上同一规则。贴在被裁切表面边缘的控件，其焦点环由内容内边距留出的空间容纳，不被 `Card` 的 `overflow: hidden` 裁掉。
+
+**降级动效。** 主题设 `motion.reducedMotion: 'system'`，MUI 自己的过渡（Collapse、Fade、Grow、Slide、Zoom 与菜单、抽屉等）按操作系统的减少动态偏好关闭或缩短。以写死关键帧实现的动画不在该设置的作用范围内（`Skeleton` 的 pulse 与 wave），它们在同样的媒体查询条件下停止动画。既有的 JS 滚动位置判断保持不变：它们读的是滚动位置而不是动画时长。
+
+**动效不承载状态。** 任何过渡被关闭时，控件的状态、层级与可读性不变；动效只改变到达状态的过程。
 
 ### 语言与本地化的联动
 
@@ -349,6 +390,8 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 - **新增一个组件。** 它自带的所有面向用户的字符串进 `ui-kit` 命名空间的双语文案，且在同一提交内给两门语言各加一键、结构一致；组件经绑定到该命名空间的 hook 取文本，不硬编码。
 - **宿主改写措辞。** 在启动处向 `UI_KIT_NAMESPACE` 注册自己的一对同键 bundle（结构一致、措辞自定），`uiKitResources` 只是发布的默认。
 - **表单错误解析的可插层。** `zodFormResolver` 提供的 zod → `react-hook-form` 解析桥就是这一档；校验错误契约是它接入的接缝：解析层可以产出任意消息，表单家族照契约渲染。宿主也可以自行实现该接缝（例如从生成类型派生自己的 schema）。
+- **改表面风格。** 覆写 token 的 `surface` 角色（`fill`、`backdropFilter`、`borderColor` 等），不改页面与组件；一种新风格是 token 取值，不是组件的新 prop 或主题工厂的新参数。
+- **新增一个内容节。** 它落在 `SectionCard` 上，标题层级从 `h2` 起；不手写 `Paper` 或裸 `section` 表面。
 - **可加性的默认等于原行为。** 面向已有消费方新加一个行为时，把新行为的缺省设成原行为（`FormLayout.columns` 缺省单列、`DataTableColumn.priority` 缺省常显），使未传该 prop 的宿主逐字节不受影响。
 
 ## 实现状态
@@ -356,6 +399,11 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 主题工厂与分层合并（含颜色模式） | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`、`AppTheme`、`AppThemeMode` |
+| 表面解析与主题组件映射 | 已实现 | `web/packages/ui-kit/src/theme/surface.ts` `resolveSurfaceTheme`、`surfaceComponents`、`mergeThemeComponents`、`SurfaceTheme`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
+| 浅色模式 warning、info、success 的深色 `contrastText` | 未实现 | — |
+| 内容节表面 `SectionCard` | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`、`SectionCardProps` |
+| 统一焦点环 | 未实现 | — |
+| 降级动效 | 未实现 | — |
 | 主题provider、本地化联动与颜色模式 | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`useAppThemeMode`、`AppThemeModeControl` |
 | 页头与空态 | 已实现 | `web/packages/ui-kit/src/components/PageHeader.tsx` `PageHeader`；`web/packages/ui-kit/src/components/EmptyState.tsx` `EmptyState` |
 | 确认弹窗与双次确认 | 已实现 | `web/packages/ui-kit/src/components/ConfirmDialog.tsx` `ConfirmDialog`、`CONFIRM_ARM_LOCKOUT_MS` |
