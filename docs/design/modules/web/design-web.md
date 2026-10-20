@@ -17,7 +17,7 @@
 
 包按下列各条轴划分，各条轴同时成立。
 
-**按层。** `tokens` 与 `i18n` 处于底层，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开面——`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
+**按层。** `tokens` 与 `theme-presets` 处于底层，`i18n` 同层独立，其上依次是 `ui-kit`、`layout-kit`、能力 UI 包、`product-shell`。判据是依赖方向：一个包的依赖只指向同族中比它低的层，同层的两个包互不依赖。证据是各包 `package.json` 的依赖声明与 `src/index.ts` 的公开面——`theme-presets` 只以类型依赖取 `tokens`，`ui-kit` 取 `tokens`，`layout-kit` 取 `ui-kit` 与 `i18n`，`auth-ui` 与 `account-ui` 同层而互不 import（`web/packages/account-ui/src/index.ts` 的包文档写明同一层的包从不互相 import；两个包各自只在内部保有 provider 标签回退词表，不共享类型）。
 
 **按后端能力。** 一个能力 UI 包对一个后端能力目录：`auth-ui` 对 authn、`tenancy-ui` 对 tenant、`account-ui` 对 authn 的账户面、`console-ui` 对租户与设置与审计三个管理面、`notification-ui` 对通知的收件箱、偏好与推送三个面。判据是每个能力 UI 包都是某个后端能力在浏览器里的面。证据是各包 `src/index.ts` 的包文档——`auth-ui` 驱动会话的登录切片，`account-ui` 驱动账户切片，`tenancy-ui` 驱动租户切换。
 
@@ -115,7 +115,7 @@ interface SpeedAppDefinition {
 
 依赖方向满足架构不变量：依赖只从上层流向下层，同层不互相依赖。
 
-表现层的层自下而上：`tokens`、`i18n`；`ui-kit`；`layout-kit`；能力 UI 包；`product-shell`。
+表现层的层自下而上：`tokens` 与 `theme-presets`；`i18n`；`ui-kit`；`layout-kit`；能力 UI 包；`product-shell`。
 
 与后端契约相关的一条链路自下而上：`api-client`（契约无关的传输运行时）；`api-sdk`（生成的契约面）；`auth-core`（会话状态机）；能力 UI 包与 `product-shell`。
 
@@ -124,6 +124,7 @@ interface SpeedAppDefinition {
 | 包 | 职责 | 依赖的同族包 |
 |---|---|---|
 | `tokens` | 设计令牌的默认值与覆盖入口 | 无 |
+| `theme-presets` | 命名的主题预设货架：相对默认树的成品风格差异 | `tokens`（仅类型） |
 | `i18n` | 每宿主一个 react-i18next 实例、按包命名空间登记与校验、缺键纪律 | 无 |
 | `ui-kit` | `tokens` 到 MUI 主题的适配与一组受控组件 | `tokens`、`i18n` |
 | `layout-kit` | 与认证无关的框架与路由门禁 | `ui-kit`、`i18n` |
@@ -161,6 +162,7 @@ interface SpeedAppDefinition {
 ```mermaid
 graph TD
     tokens
+    theme-presets --> tokens
     i18n
     api-client
     ui-kit --> tokens
@@ -269,6 +271,7 @@ jsdom 不求值媒体查询与容器查询，不做布局，也不判定可聚�
 |---|---|---|
 | 浏览器层的版面与可聚焦性用例 | 已实现 | `web/vitest.browser.config.ts`；`web/test-utils/src/browser-setup.ts`；`web/packages/layout-kit/src/components/AppShell.browser.test.tsx`；`web/packages/ui-kit/src/components/DataTable.browser.test.tsx`；`web/packages/console-ui/src/*.browser.test.tsx`；`./Makefile` `web-browser`；`.github/workflows/browser.yml` |
 | 设计令牌 | 已实现 | `web/packages/tokens/src/index.ts` `defaultTokens`、`deepMerge` |
+| 主题预设 | 已实现 | `web/packages/theme-presets/src/index.ts` `themePresets`、`ThemePreset` |
 | 平台 i18n 层 | 已实现 | `web/packages/i18n/src/index.ts` `createI18n`、`registerNamespace` |
 | 组件族与主题适配 | 部分实现 | `web/packages/ui-kit/src/index.ts` `createAppTheme`、`AppThemeProvider` |
 | 与认证无关的框架与门禁 | 已实现 | `web/packages/layout-kit/src/index.ts` `AppShell`、`RouteGuard` |

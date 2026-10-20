@@ -9,6 +9,7 @@
 - `PhoneSection`：添加或更换手机号的两步——`POST /api/v1/auth/phone` 发送验证码、`POST /api/v1/auth/phone/verify` 提交它；第二步只带验证码，号码是服务端按会话存下的（[authn 登录](../authn/design-authn-login.md)）。号码经 ui-kit 的共享两段式控件（`PhoneNumberField`：国家/地区选择器加本地号码）录入，提交前组装为 E.164 并按国家/地区本地校验；它与 `SMSSignInForm` 用同一控件与同一套规则，两处不会各自漂移。
 - `IdentifiersSection`：账户登录标识的列表、逐条删除与自助添加。标识读自 `GET /api/v1/auth/me` 的 `identifiers` 字段（规格无独立的清单路由），删除走 `DELETE /api/v1/auth/identifiers/{id}`。添加面走登录自助的 `POST /api/v1/auth/identifiers`（体 `{kind, value}`，`kind` 取 `username` 或 `email`）：用户名一步写入；邮箱先发验证码、再经 `POST /api/v1/auth/identifiers/verify` 提交码，通过才写标识（[authn 登录](../authn/design-authn-login.md)）。`emailAvailable` 表示添加面是否提供邮箱一项（缺省提供）；`offerUsername` 表示添加面是否提供用户名一项（缺省提供），与「档案已列出用户名」求交。
 - `PreferencesSection`：语言与时区两个下拉，编辑账户存下的偏好，走账户档案的自写面（`PATCH /api/v1/auth/me`，[authn-profile](../authn/design-authn-profile.md)）。语言的取值集是 i18n 实例自己的受支持集；语言的选取先写账户、确认写入后再落设备（手选槽位），清空偏好只动账户；时区取值集是引擎的 IANA 列表加一个显式的「未选」。
+- `AppearanceSection`：外观主题的选择。它是受控节：预设列表、每个预设的显示名、当前值与选择回调都由宿主给出，本包不 import `@speed/theme-presets`、不读主题 provider，也不持有选择状态。宿主把选择接到主题 provider 后，切换立即生效。
 - `SessionsSection`：账户的会话与设备列表，当前会话所属的那条打上当前徽标，逐条撤销与批量撤销「其它会话」。撤销自己的会话是低损失动作（行上不再确认），撤销其余走 ui-kit 危险 `ConfirmDialog` 的单次确认——它是可恢复的动作（被登出的设备再登录即可），不设 `doubleConfirm` 两步守卫，免得比不可逆的删除还重。
 - `SocialBindingsSection` 加 `BindingCallbackHandler`：社交绑定面与在宿主回调路由上完成一次绑定的处理器。添加区的渠道取自部署的发现文档（`GET /api/v1/auth/methods` 中 `kind=redirect` 的方法）。
 - `MfaSection`：经加强认证（step-up）门控的两步验证设置——清单经读发现，登记入口按发现文档的 `mfa.factors` 逐个生成：已知种类（`totp`、`webauthn`、`sms`）用 `mfa.enroll.<kind>` 的文案，未知种类用通用的其它入口、仍以该种类起登记流程。
@@ -28,10 +29,11 @@
 - **不发明规格没有的操作。** 认证的因素面只提供列出与删除（`GET`/`DELETE /api/v1/auth/factors`），登记的入口是流程；故 `MfaSection` 的状态经读发现，登记走流程，不声明一个不存在的启用端点。
 - **不 import `@speed/auth-ui`。** 同层包互不 import。社交渠道是部署的登录方法名，取自已发现文档；本包不再持有宿主传入的渠道表，也不外导渠道配置类型。已绑定行上的提供方取值按方法描述符的 `binding_providers` 解析：取值等于其中一项或以一项为命名空间前缀即归到该方法，描述符没有该项时按方法名匹配；仍匹配不到时回落到本包自己的封闭词表（五个社交名、企业 SSO 族前缀与通用「其它」）。
 - **不做服务端判定的替代。** 权限、租户隔离与账户归属都由服务端判定；本包只渲染应答。
+- **不定义主题预设，也不让预设生效。** 预设的集合、显示名与切换后的效果归宿主与主题 provider；`AppearanceSection` 只排布宿主给出的选项并上报选择。
 
 ## 外部接口契约
 
-`web/packages/account-ui/src/index.ts` 是公开面：`ProfileSection`（连同 `ProfileSectionProps`）；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`PreferencesSection`（连同 `PreferencesSectionProps`）；`SessionsSection`；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。提权对话框与门控的归属由 [ADR-web-auth-seams-2026-10-19](../../../adr/adr-web-auth-seams-2026-10-19.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `console-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），自助写的提权门控用 `@speed/auth-core` 的 `useStepUpGate`。
+`web/packages/account-ui/src/index.ts` 是公开面：`ProfileSection`（连同 `ProfileSectionProps`）；`PasswordSection`（连同 `PasswordSectionProps`）；`PhoneSection`（连同 `PhoneSectionProps`）；`IdentifiersSection`（连同 `IdentifiersSectionProps`）；`PreferencesSection`（连同 `PreferencesSectionProps`）；`AppearanceSection`（连同 `AppearanceSectionProps`、`ThemePresetChoice`）；`SessionsSection`；`SocialBindingsSection`（连同 `SocialBindingsSectionProps`）；`BindingCallbackHandler`（连同 `BindingCallbackHandlerProps`）；`MfaSection`（连同 `MfaSectionProps`）；`StepUpDialog`（连同 `StepUpDialogProps`）；以及命名为 `ACCOUNT_UI_NAMESPACE`、`accountUiResources` 的资源对。`web/packages/account-ui/src/internal/` 下的错误文案解析器、失败横幅、流程步渲染器与翻译钩子是族内管线，不外导（`StepUpDialog` 是对内部对话框的有意外导）。提权对话框与门控的归属由 [ADR-web-auth-seams-2026-10-19](../../../adr/adr-web-auth-seams-2026-10-19.md) 裁定：对话框以 `StepUpDialog` 外导、**只给宿主用**（同层的 `console-ui` 与 `auth-ui` 不得 import 它，那是一条同层边），自助写的提权门控用 `@speed/auth-core` 的 `useStepUpGate`。
 
 ```tsx
 interface ProfileSectionProps {
@@ -55,6 +57,17 @@ interface IdentifiersSectionProps {
 
 interface PreferencesSectionProps {
   readonly session?: AuthSession // 可选；只为提权门控的对话框服务，不给时被 401 拒绝的写只渲染失败横幅
+}
+
+interface ThemePresetChoice {
+  readonly id: string
+  readonly label: string // 宿主已翻译
+}
+
+interface AppearanceSectionProps {
+  readonly presets: readonly ThemePresetChoice[] // 宿主提供的预设，按显示次序
+  readonly value: string                          // 当前预设 id
+  readonly onChange: (id: string) => void         // 选择回调，收到预设 id
 }
 
 interface SocialBindingsSectionProps {
@@ -86,6 +99,8 @@ interface MfaSectionProps {
 自助写节（`ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`）的 `session` 属性必选，`PreferencesSection` 的可选；它们的 `session` 都只为提权门控的对话框服务：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
 
 `SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑是走共享访问令牌的生成调用，不经会话操作。`SessionsSection` 不接属性：它显示谁的会话，来自调用方绑定的客户端与它的访问令牌。
+
+**`AppearanceSection` 是受控的外观选择。** 它经 `SectionCard` 渲染一节，标题与说明取自本包命名空间；下拉列出宿主传入的全部预设，当前值标记为选中，选择时把该预设的 id 交给 `onChange`。预设列表为空或只有一项时，标题与带标签的控件照常渲染，不塌陷。它不 import `@speed/theme-presets`、不读主题 provider：预设存在与否、叫什么、选中后如何生效都是宿主的事实。
 
 **查询键构造器是公开面。** 失效用本包导出的查询键构造器（如 `getAuthnSessionListQueryKey`），不经手写键。账户自己的标识与绑定读自 `GET /api/v1/auth/me`（其 `identifiers` 与 `links` 字段），无独立的清单端点，故无对应查询键。
 
@@ -133,6 +148,7 @@ sequenceDiagram
 | 时区链 | `resolveTimeZone` + ui-kit 上下文 | 存下的偏好优先，否则 ui-kit 的显示时区上下文（只替换「设备」一级），否则设备时区，否则 UTC；每个时间渲染都显式传 `timeZone` |
 | 渠道词表 | 发现文档的描述符 | 添加区取 `kind=redirect` 的方法名与 `label`，并以描述符的 `binding_providers` 判定方法是否已绑定；已绑定行按同一组 `binding_providers` 匹配（相等或以一项为前缀），缺该项时按方法名，仍匹配不到回落到本包自己的封闭词表 |
 | 加强认证流程 | `StepUpFlow` | 一条 `purpose: 'step-up'` 流程的驱动；成功后重跑被门控的动作 |
+| 外观选择 | `ThemePresetChoice` | 宿主提供的一个预设：id 与已翻译的显示名；`AppearanceSection` 只渲染与上报 |
 | 命名空间 | `accountUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同 |
 
 ## 核心算法与流程
@@ -226,6 +242,7 @@ sequenceDiagram
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
 | 偏好节 | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection` |
+| 外观节 `AppearanceSection`（受控的主题预设选择） | 已实现 | `web/packages/account-ui/src/AppearanceSection.tsx` `AppearanceSection`、`AppearanceSectionProps`、`ThemePresetChoice` |
 | 各节的反馈作用域与成功确认 | 未实现 | — |
 | 读的刷新失败的陈旧提示 | 未实现 | — |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |

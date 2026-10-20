@@ -58,6 +58,8 @@ web/
   eslint.config.mjs     one flat config for the whole workspace
   packages/
     tokens/             @speed/tokens      -- design tokens, zero dependencies
+    theme-presets/      @speed/theme-presets -- pure-data token presets (classic/modern/
+                                             compact/glass/ascii) layered over the defaults
     i18n/               @speed/i18n        -- react-i18next wrapper + namespace registry
     ui-kit/             @speed/ui-kit      -- theme factory + controlled components + shared state primitives
     api-client/         @speed/api-client  -- hand-written HTTP runtime; fetch, retry, ApiError

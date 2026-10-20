@@ -60,7 +60,7 @@ export type DeepPartial<T>     // 递归可选；数组与函数是叶子
 
 ## UML 图
 
-图给出 `SpeedTokens` 的段划分与运行时符号的位置。图里画不出的约束：每个段字段都是 `readonly`，装配后的整棵树深度冻结；`SurfaceRoleTokens` 的每个字段可选，缺省表示继承既有槽（见核心数据结构）；`DeepPartial` 把数组与函数当叶子（整体替换，不逐项合并），token 树不含数组与函数，但助手是泛型的因而必须如此；`deepMerge` 的层数是变参，图上的入参只是当次调用。
+图给出 `SpeedTokens` 的段划分与运行时符号的位置。图里画不出的约束：每个段字段都是 `readonly`，装配后的整棵树深度冻结；`SurfaceRoleTokens` 的每个字段可选，缺省表示继承既有槽（见核心数据结构）；`opacity` 只作用于已解析的 `#RRGGBB` 填充，其它 CSS 颜色原样保留；`typography.textGlow` 与 `color.background.canvas` 同样缺席即无声明；`DeepPartial` 把数组与函数当叶子（整体替换，不逐项合并），token 树不含数组与函数，但助手是泛型的因而必须如此；`deepMerge` 的层数是变参，图上的入参只是当次调用。
 
 ```mermaid
 classDiagram
@@ -82,6 +82,7 @@ classDiagram
     }
     class SurfaceRoleTokens {
         +fill string
+        +opacity number
         +borderColor string
         +borderWidth number
         +elevation number
@@ -122,20 +123,32 @@ classDiagram
 
 | 段 | 形状 |
 |---|---|
-| `color` | `semantic` 为若干语义角色，每个角色带 `main`/`light`/`dark`/`contrastText`：`main` 是浅色表面上的色调、`light` 是给深色表面的色调、`dark` 是最深的一档、`contrastText` 是落在 `main` 上的文字色；`neutral` 为数值色阶；`text`/`background`/`divider` |
-| `typography` | `fontFamily.sans`/`mono`（拉丁优先、附 CJK 回退）、`fontSize` 命名步、`fontWeight` 命名权重、`lineHeight`、`letterSpacing` |
+| `color` | `semantic` 为若干语义角色，每个角色带 `main`/`light`/`dark`/`contrastText`：`main` 是浅色表面上的色调、`light` 是给深色表面的色调、`dark` 是最深的一档、`contrastText` 是落在 `main` 上的文字色；`neutral` 为数值色阶；`text`/`background`/`divider`；`background.canvas` 可选，按明暗两模式各给一对渐变止色 `{from, to}` |
+| `typography` | `fontFamily.sans`/`mono`（拉丁优先、附 CJK 回退）、`fontSize` 命名步、`fontWeight` 命名权重、`lineHeight`、`letterSpacing`；可选 `textGlow`（正文 `text-shadow` 值） |
 | `spacing` | `unit`，布局间隙为它的整数倍 |
 | `shape` | `borderRadius` 单一半径 |
 | `breakpoints` | `values`，若干命名断点 |
 | `zIndex` | `values`，槽名与 MUI 同名 |
 | `shadows` | 按高度槽名给出的完整 `box-shadow` 值 |
-| `surface` | `page`、`container`、`overlay`、`header` 四个语义角色，每个角色可带 `fill`/`borderColor`/`borderWidth`/`elevation`/`backdropFilter`；字段全部可选，缺省继承既有槽 |
+| `surface` | `page`、`container`、`overlay`、`header` 四个语义角色，每个角色可带 `fill`/`opacity`/`borderColor`/`borderWidth`/`elevation`/`backdropFilter`；字段全部可选，缺省继承既有槽 |
 
 ### 表面段
 
-**表面段的字段缺省即继承。** `surface` 的每个角色只为「主题需要加重的那几项」留位：`fill`、`borderColor`、`borderWidth`、`elevation`、`backdropFilter` 全部可选，缺省值不是写死的颜色，而是表示「沿用主题本来读取的那个槽」——`page` 继承 `color.background.default`，`container` 与 `overlay` 继承 `color.background.paper`，边框继承 `color.divider`，`header` 继承 `color.neutral` 色阶（浅色取 50，深色由主题改取 900）。因此该段不携带任何表面颜色字面量：只覆写 `background.paper` 的项目，表面取值不会改变。缺省槽的解析由 [ui-kit](design-web-ui-kit.md) 主题工厂完成，本包只陈述这份继承契约。默认值为 `page: {}`、`container: { borderWidth: 1 }`、`overlay: {}`、`header: {}`；`elevation` 缺省时保留各 MUI 组件自身的层级，不被拉平；圆角复用 `shape.borderRadius`，不新增字段。语义分层与主题映射的决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+**表面段的字段缺省即继承。** `surface` 的每个角色只为「主题需要加重的那几项」留位：`fill`、`opacity`、`borderColor`、`borderWidth`、`elevation`、`backdropFilter` 全部可选，缺省值不是写死的颜色，而是表示「沿用主题本来读取的那个槽」——`page` 继承 `color.background.default`，`container` 与 `overlay` 继承 `color.background.paper`，边框继承 `color.divider`，`header` 继承 `color.neutral` 色阶（浅色取 50，深色由主题改取 900）。因此该段不携带任何表面颜色字面量：只覆写 `background.paper` 的项目，表面取值不会改变。缺省槽的解析由 [ui-kit](design-web-ui-kit.md) 主题工厂完成，本包只陈述这份继承契约。默认值为 `page: {}`、`container: { borderWidth: 1 }`、`overlay: {}`、`header: {}`；`elevation` 缺省时保留各 MUI 组件自身的层级，不被拉平；圆角复用 `shape.borderRadius`，不新增字段。语义分层与主题映射的决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+
+**`opacity` 是填充色的 alpha，与模式无关。** 它取 0–1，缺省为 1（不透明）。主题适配器把它乘在**已按模式解析好的**填充色上：填充是 `#RRGGBB` 时转成同色相的 `rgba(...)`，明暗两种模式各自得到正确结果；填充不是六位十六进制时原样保留，与主题工厂其它颜色派生的口径一致。一个半透明表面因此只写一份填充色加一个 alpha，不必为明暗模式各写一份。
 
 **深色表面的角色色调来自 `light`。** ui-kit 的主题工厂在深色模式下把 `main` 与 `light` 都取角色的 `light` 色调，悬停填充由该色调向白色派生；因此给品牌换色只覆写 `main` 不会作用于深色模式，需同时设置 `light`。
+
+### 页面画布与文字辉光
+
+`color.background.canvas` 与 `typography.textGlow` 是另外两处纯附加的设计取值，都由主题适配器映射到页面的 body 上。
+
+- **画布按模式各带一套止色。** `canvas` 是 `{ light: { from, to }, dark: { from, to } }`，浅色模式取 `light`、深色取 `dark`，映射为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。两套色标是必需形状：一套色标无法同时在明暗两种页面上保持可读。缺席即不渲染渐变。
+- **绘制次序：背景图在背景色之上。** 不透明的画布会盖住 `surface.page.fill`；需要页填充参与合成时，画布止色要自带透明度。以画布作为页面底色的预设不设 `surface.page` 填充。
+- **`textGlow` 是正文的 `text-shadow` 值。** 它放在排版段，因为它是文字的取值而不是表面的取值；沿用 `surface.backdropFilter` 允许一个 CSS 值的先例，它是设计取值而非组件覆盖。缺席即无辉光。
+
+这三处扩展都是有意的纯附加：`opacity`、`textGlow` 与 `canvas` 全为可选字段，缺席时默认树与引入它们之前逐字节一致，深度冻结不受影响。画布是对表面系统「不引入背景图」边界的有意延伸：它只接受两套色标，不接受任意 CSS 背景。
 
 **颜色字面量按段各置一处**：`defaultTokens` 从各段模块装配，同一段里的十六进制值只在该段模块里拼写一次。
 
@@ -174,6 +187,8 @@ classDiagram
 
 **`surface` 段对上述条件的落实：** 它在 `SpeedTokens` 上是一个 `readonly` 字段，形状与默认值在 `surface.ts`，经 `defaultTokens` 的装配受深度冻结，`TokensOverride` 由树派生而自动覆盖四个角色。该段不对应 MUI 的某个默认值，故不在对齐表上加行，MUI 对齐口径的测试不涉及它。
 
+**三处纯附加字段同样走准入条件。** `SurfaceRoleTokens.opacity`、`TypographyTokens.textGlow` 与 `ColorTokens['background'].canvas` 都是可选字段：默认值不出现，`defaultTokens` 的精确相等断言与深度冻结不受影响；三者的主题映射归 [ui-kit](design-web-ui-kit.md)，本包只定义取值形状。
+
 **新增一个表面角色是段形状的变更。** 角色集是闭合的语义集；新增角色要在 `SurfaceTokens` 上加字段，并在 [ui-kit](design-web-ui-kit.md) 的主题解析与组件映射里给它落点，按不兼容变更处理。
 
 ## 实现状态
@@ -183,6 +198,7 @@ classDiagram
 | token 树类型、覆写类型与递归可选 | 已实现 | `web/packages/tokens/src/types.ts` `SpeedTokens`、`TokensOverride`、`DeepPartial` |
 | 各段取值与默认值 | 已实现 | `web/packages/tokens/src/color.ts`、`typography.ts`、`spacing.ts`、`shape.ts`、`breakpoints.ts`、`z-index.ts`、`shadows.ts`、`surface.ts` |
 | 表面段四个角色与缺省继承契约 | 已实现 | `web/packages/tokens/src/surface.ts` `surfaceTokens`、`SurfaceRoleTokens`、`SurfaceTokens`；`web/packages/tokens/src/defaultTokens.ts` `defaultTokens` |
+| 表面填充的 `opacity`、正文的 `textGlow` 与页面画布 `canvas` 三处纯附加字段 | 已实现 | `web/packages/tokens/src/surface.ts` `SurfaceRoleTokens.opacity`；`web/packages/tokens/src/typography.ts` `TypographyTokens.textGlow`；`web/packages/tokens/src/color.ts` `CanvasTokens`、`ColorTokens.background.canvas` |
 | 默认树装配与深度冻结 | 已实现 | `web/packages/tokens/src/defaultTokens.ts` `defaultTokens`、`deepFreeze` |
 | 合并助手与写时复制、恶意键处置 | 已实现 | `web/packages/tokens/src/merge.ts` `deepMerge` |
 | MUI 对齐口径的钉住测试 | 已实现 | `web/packages/tokens/src/index.test.ts`、`defaultTokens.test.ts`、`merge.test.ts` |

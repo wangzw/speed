@@ -17,15 +17,33 @@
 
 本设计对外的面是各包共同遵守的布局与响应约定，逐条如下。
 
-### 外壳的区域划分
+### 外壳形态
 
-控制台外壳由顶栏、侧栏与内容区构成，滚动职责各不同。
+控制台外壳有两种形态，装配期由宿主经 `AppShell` 的 `shellLayout` 选定：**顶栏形态**（`'topbar'`，缺省）与**侧栏形态**（`'sidebar'`）。两种形态共用同一套地标职责、抽屉两态与滚动分工，差别只在 chrome 落在哪块区域。
+
+顶栏形态：
 
 - **顶栏** 横贯全宽、位于最上，承载全局入口：工作区与身份、搜索、通知、用户菜单。它对内容区恒定可见，不随内容滚动移出。顶栏的表面取主题的表面色（`background.paper`），文字取正文色（`text.primary`），与内容区之间以分隔线（`divider`）划分；主色留给动作控件，不铺满顶栏。
 - **侧栏** 位于顶栏之下、内容区之左，承载平台导航。宽度是固定值（`AppShell` 的 `sidebarWidth`，缺省 280），不参与内容区的伸缩。
-- **内容区** 占据余下空间，是**唯一的滚动层**——外壳其余部分不动，只有这里滚动。它的宽度随视口变化，用 `flex: 1` 与 `min-width: 0` 一并承载：`min-width: 0` 使内部宽内容在外壳内自行滚动，而不是把外壳撑破。
+- **内容区** 占据余下空间，用 `flex: 1` 与 `min-width: 0` 承载：`min-width: 0` 使内部宽内容在外壳内自行滚动，而不是把外壳撑破。
 
-区域的地标与实现见 [layout-kit](design-web-layout-kit.md)。
+侧栏形态在 `md` 及以上把 chrome 移进侧栏，内容区因此占满整个视口宽度：
+
+- **固定头** 不渲染顶栏。给出 `banner` 槽时，固定头容器只承载横幅：横幅贴视口顶、占满视口宽度。桌面上因此没有 `banner` 地标。
+- **侧栏纸顶部行** 承载品牌（`header`）与桌面收起开关（宿主给出 `onSidebarCollapsedChange` 时）。
+- **侧栏纸中部** 依次是 `navHeader`、`nav` 地标（撑满剩余高度、自身滚动）、`navFooter`。
+- **侧栏纸底部行** 承载 `headerActions` 与 `userMenu`，贴住纸底。
+- **内容区** 与顶栏形态相同。
+
+**窄视口（`md` 以下）的降级。** 侧栏形态渲染一条极简顶栏，只含抽屉触发按钮与品牌；`headerActions` 与 `userMenu` 留在临时抽屉的底部行，临时抽屉没有顶部行，品牌全页只出现一次。顶栏形态的完整顶栏在窄视口原样保留，头部动作与用户菜单仍在顶栏内。窄视口下两种形态的 `banner` 都在顶栏之下；侧栏形态的桌面横幅贴在视口顶，因为没有顶栏可依附。侧栏形态的极简顶栏是这一宽度下的 `banner` 地标；其桌面形态没有该地标。这一地标差异是两种形态的唯一地标差异：`nav`、`main` 与跳转链接在两种形态下的角色与顺序不变。
+
+**固定头只在有内容时渲染。** 顶栏形态的顶栏恒在；侧栏形态只在有 `banner` 或位于 `md` 以下时渲染固定头容器，桌面且无横幅时不渲染它，也不渲染偏移占位——否则未测量的占位会把主题工具条的高度留成永久空隙。固定头的渲染高度由 `ResizeObserver` 测量，`main` 与抽屉纸内的偏移占位取同一个值。
+
+**滚动分工。** 内容区仍是页面内容的**唯一滚动层**。侧栏形态另有一处受限滚动：导航列在抽屉纸内自身滚动，纸本身不滚动，顶部行与底部行固定不动；它不是页面内容的滚动层，页面内容不经过它。纸、导航与底部行为此各取一条声明：纸 `overflow: hidden`、导航 `flex: 1 1 auto` 配 `minHeight: 0` 与 `overflowY: auto`、底部行 `flexShrink: 0`。这三条只加在侧栏形态；顶栏形态的抽屉纸保持自身滚动，给导航无条件加 `flexGrow` 会把 `navFooter` 推到纸底，改变顶栏形态的行为。抽屉纸与底部行在两种形态下都保持宿主的抽屉两态（常驻与临时）。
+
+**收起窄栏。** 侧栏形态的收起开关落在抽屉纸顶部行末尾，顶栏形态仍在顶栏。收起后的固定宽由主题间距基数算出，且不小于 44px 的触摸目标下限——间距基数较小的主题不会把窄栏压到下限之下。品牌容器在收起时裁剪但保留可及名。
+
+区域的地标与实现见 [layout-kit](design-web-layout-kit.md)，形态取舍见 [ADR-web-shell-layout-variant-2026-10-20](../../../adr/adr-web-shell-layout-variant-2026-10-20.md)。
 
 ### 侧栏的层次
 
@@ -74,7 +92,7 @@
 
 - **侧边面板与导航抽屉是两种东西。** 导航抽屉是外壳的 `nav` 地标，随视口在常驻与临时之间切换；侧边面板是页内任务的容器，是带可及名的 `dialog`，只在页面发起任务时出现。
 - **侧边面板是模态的、锚定视口右缘的覆盖层。** 它占满视口高度，打开时背后的页面被遮罩盖住、不可交互，并对辅助技术不可见。
-- **层级自下而上为内容区、顶栏、侧边面板、对话框。** 顶栏取主题 `zIndex.drawer + 1`（[layout-kit](design-web-layout-kit.md)），侧边面板取 `zIndex.modal`，使面板的头部不被顶栏遮挡；对话框同取 `zIndex.modal`，挂载晚于面板而位于其上。
+- **层级自下而上为内容区、固定头、侧边面板、对话框。** 固定头取主题 `zIndex.drawer + 1`（[layout-kit](design-web-layout-kit.md)），顶栏形态下即顶栏，侧栏形态下即横幅容器；侧边面板取 `zIndex.modal`，使面板的头部不被固定头遮挡；对话框同取 `zIndex.modal`，挂载晚于面板而位于其上。
 - **宽度取档按视口，不按容器。** 面板是锚定视口的覆盖层，不在内容区的流里；它在 `sm` 及以上取所选档位的固定宽度，`sm` 以下占满视口宽度。面板内的组件（`FormLayout`、`DataTable`）仍按各自的容器响应，面板的宽度档因此决定其内的表单取一列还是两列。
 - **同一页面同时打开的侧边面板至多一个，面板内不再打开另一个面板。** 面板内需要二次确认或步进验证时用对话框；需要更重的流程时该流程升为整页。
 - **面板的打开状态是页内状态，不进路由，不进 URL。** 刷新页面回到未打开的状态（[ADR-web-side-panel-2026-10-17](../../../adr/adr-web-side-panel-2026-10-17.md)）。
@@ -85,7 +103,7 @@
 
 ### 响应手段的分工
 
-- **外壳级响应走视口。** 整体形态的变化——导航在常驻与抽屉之间切换、侧栏是否显示——由视口宽度决定，读 MUI 主题的 `breakpoints`；`AppShell` 以 `useMediaQuery(theme.breakpoints.up('md'))` 在两态之间选择。
+- **外壳级响应走视口。** 整体形态的变化——导航在常驻与抽屉之间切换、侧栏是否显示——由视口宽度决定，读 MUI 主题的 `breakpoints`；`AppShell` 以 `useMediaQuery(theme.breakpoints.up('md'))` 在两态之间选择。外壳形态本身是装配期选择（`shellLayout`），不随视口切换；窄视口只改变该形态的降级表现。
 - **组件级响应走容器。** 会随可用宽度改变自身排布的组件——数据表、表单、卡片网格——按**所在容器**的宽度响应，不按视口。容器上下文由组件自建：组件在自身根节点声明 `container-type: inline-size`。
 - **一次一行的组件用内在换行。** 有些行的排布既不需要断点，也不需要容器上下文：固定 `flex-basis` 配 `flex-wrap`，换行点自然跟随所在容器的可用宽度。控制台仪表盘的指标卡行是这个形态（`DashboardPage` 的 `KpiRow`）——它是「组件级响应」的免查询形态：判据与容器查询相同（按自身可用宽度重排），只是不必声明容器上下文。
 - **指针能力走能力查询。** 依赖悬停的交互（悬停展开、悬停显出的操作）只在指针设备上启用；触摸设备上这些操作常显。触摸设备上**所有可点击目标**不小于 44×44——不分是否依赖悬停；下限由主题层对基础控件统一给出，各包继承，不逐处指定。判据是 `hover` 与 `pointer` 媒体查询，不是视口宽度——带键盘的平板与触屏笔记本都是宽视口下的触摸设备。
@@ -114,24 +132,36 @@
 
 ## UML 图
 
-图给出外壳的区域构成。图里画不出的约束：内容区是唯一滚动层；侧栏宽度是固定值、不参与伸缩；区域的地标由外壳渲染而出，供无障碍树识别。
+图给出两种外壳形态的区域构成。图里画不出的约束：内容区是页面内容的唯一滚动层；侧栏形态的导航列在抽屉纸内自身滚动；侧栏宽度是固定值、不参与内容区伸缩；区域的地标由外壳渲染而出，供无障碍树识别；侧栏形态的桌面形态没有 `banner` 地标。
 
 ```mermaid
 graph TD
     shell["控制台外壳"]
-    topbar["顶栏（header 地标）"]
+    topbarForm["顶栏形态（缺省）"]
+    sidebarForm["侧栏形态"]
+    topbar["顶栏（banner 地标）"]
     sidebar["侧栏（nav 地标，固定宽）"]
-    content["内容区（main 地标，唯一滚动层）"]
-    shell --> topbar
-    shell --> sidebar
-    shell --> content
+    contentA["内容区（main 地标，页面内容的唯一滚动层）"]
+    topRow["侧栏纸顶部行（品牌、收起开关）"]
+    bottomRow["侧栏纸底部行（头部动作、用户菜单）"]
+    contentB["内容区（main 地标，页面内容的唯一滚动层）"]
+    shell --> topbarForm
+    shell --> sidebarForm
+    topbarForm --> topbar
+    topbarForm --> sidebar
+    topbarForm --> contentA
+    sidebarForm --> sidebar
+    sidebarForm --> topRow
+    sidebarForm --> bottomRow
+    sidebarForm --> contentB
 ```
 
 ## 核心数据结构
 
 | 概念 | 说明 |
 |---|---|
-| 外壳区域 | 顶栏、侧栏、内容区：各带一个无障碍地标，伸缩与滚动职责见外部接口契约 |
+| 外壳形态 | 顶栏形态（缺省）或侧栏形态，装配期选定；决定 chrome 落在顶栏还是侧栏纸 |
+| 外壳区域 | 顶栏形态为顶栏、侧栏、内容区；侧栏形态为侧栏纸顶部行、导航、底部行与内容区。各区域的地标与滚动职责见外部接口契约 |
 | 断点标度 | `xs`、`sm`、`md`、`lg`、`xl`，取自 token 的 `breakpoints.values` |
 | 容器查询上下文 | 组件在自身根节点经 `container-type: inline-size` 建立的容器；响应按它自身的宽度取档 |
 
@@ -139,7 +169,7 @@ graph TD
 
 ### 一次外壳的响应式判定
 
-外壳读 MUI 主题的断点做一次判定，得到桌面或移动的布尔值，据此在常驻侧栏与覆盖式抽屉之间选择；越断点时把移动抽屉的开合复位为关。判定与复位的完整流程见 [layout-kit](design-web-layout-kit.md)。
+外壳读 MUI 主题的断点做一次判定，得到桌面或移动的布尔值，据此在常驻侧栏与覆盖式抽屉之间选择；越过断点时把移动抽屉的开合复位为关。装配期选定的外壳形态决定同一布尔值上哪块区域承载 chrome：顶栏形态的顶栏在两种宽度下都在，侧栏形态在桌面不渲染顶栏、在窄视口渲染极简顶栏。切换形态或跨断点时，固定头的测量高度复位，旧形态的测量残值不进入新形态。判定与复位的完整流程见 [layout-kit](design-web-layout-kit.md)。
 
 ### 一次组件级响应
 
@@ -150,9 +180,13 @@ graph TD
 | 情形 | 表现 |
 |---|---|
 | 内容区未设 `min-width: 0` | 内部宽内容把外壳撑破，横向溢出整页 |
+| 侧栏形态的桌面无横幅 | 不渲染固定头容器与偏移占位；不应留出工具条高度的空隙 |
+| 传入 `shellLayout` 联合之外的值（绕过类型检查） | 按顶栏形态渲染 |
 
 ## 扩展点
 
+- **新增一种外壳形态。** 形态是闭合的枚举，不是自由插槽：新增一种形态 = 在 `AppShellShellLayout` 上加一个成员、在 `AppShell` 里给出该形态的区域映射、补 jsdom 与真实浏览器的用例、更新本设计与 [layout-kit](design-web-layout-kit.md)；宿主的调用面不变。
+- **只换内容不换结构。** 客户换品牌、头部动作或用户菜单时走现有槽位，不动 `shellLayout`。
 - **新增一个组件。** 若它会随可用宽度改变自身排布，按容器响应：在自身根节点声明 `container-type: inline-size`，并按自身的宽度取档重排。
 - **新增一个控制台页。** 页内的排布沿用本设计的区域与降级约定；页的组织归该页所属的能力 UI 包。
 - **新增一个控制台内容块。** 它落在 `SectionCard` 上，标题从 `h2` 起；不手写描边 `Paper` 或裸 `section` 作为表面。
@@ -162,6 +196,7 @@ graph TD
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 外壳的区域划分与地标 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell` |
+| 两种外壳形态（顶栏 / 侧栏）与窄视口极简顶栏 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`、`shellLayout`、`AppShellShellLayout` |
 | 外壳的视口两态（常驻侧栏 / 覆盖式抽屉） | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShell` |
 | 桌面侧栏的收起 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `sidebarCollapsed` |
 | 侧栏的扁平导航项与选中态 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavItem` |
@@ -181,4 +216,5 @@ graph TD
 | 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
 | 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
 | 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 收起窄栏不小于 44px | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `COLLAPSED_SIDEBAR_MIN_WIDTH`、`collapsedSidebarWidth` |
 | 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/theme/touch-floor.ts` `touchFloorComponents`（基础控件的主题级下限，各包继承）；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`（主题覆盖不到的裸控件兜底） |

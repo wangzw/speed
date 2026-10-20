@@ -41,6 +41,7 @@ export interface ProductShellProps {
   readonly sidebarCollapsed?: boolean
   readonly onSidebarCollapsedChange?: (collapsed: boolean) => void
   readonly sidebarWidth?: number
+  readonly shellLayout?: AppShellShellLayout        // 外壳形态，原样转给 AppShell；缺省 'topbar'
   readonly sx?: SxProps<Theme>
   // 本包自己的三个槽
   readonly signIn?: ReactNode
@@ -57,7 +58,7 @@ export interface ProductShellSessionEndedActions {
 export function ProductShell(props: ProductShellProps): ReactElement
 ```
 
-- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、`banner`、导航地标的可访问名 `navLabel`、抽屉纸内导航前后的两个槽 `navHeader`/`navFooter`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。`banner` 槽由 layout-kit 提供，用途见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
+- **框架 prop 原样透传。** `navItems`、`header`、`headerActions`、`userMenu`、`banner`、导航地标的可访问名 `navLabel`、抽屉纸内导航前后的两个槽 `navHeader`/`navFooter`、抽屉控制（移动开合 `mobileOpen`/`onMobileOpenChange` 与桌面收起 `sidebarCollapsed`/`onSidebarCollapsedChange`）、外壳形态 `shellLayout` 与 `sx` 被拾起后逐字转给 `AppShell`；本包不重解释、不重排序、不做路径匹配。加一个框架 prop 意味着加进那个 `Pick<AppShellProps, ...>`，而不是另建一套解释。`banner` 槽由 layout-kit 提供，用途见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)。
 - **`signIn` 缺席时未登录分支什么都不渲染。** 缺省结束屏的「再次登录」动作需要这个视图存在：它把访问者送回登录分支，而视图机拒绝复位到一个什么都不渲染的分支，故没有 `signIn` 槽的宿主其会话中途结束时停在结束屏。
 - **`sessionEnded` 缺席时渲染 `auth-ui` 的 `SessionEndedScreen`**，并把它的「再次登录」动作接成返回登录分支。给出 `sessionEnded` 节点时原样渲染，视图机状态一并交给该节点，由它自持返回应用的出路；给出渲染函数时把 `ProductShellSessionEndedActions` 交给它并渲染其返回值，其中的 `returnToSignIn` 就是缺省结束屏动作所用的那一次复位（`signIn` 槽缺席时为空操作）。
 - **`children` 只在快照为已认证时渲染进框架的 `main` 地标内。**
@@ -83,7 +84,7 @@ export type SpeedAppClientOptions = Pick<
 
 export type SpeedAppThemeOptions = Pick<
   AppThemeProviderProps,
-  'projectTokens' | 'defaultMode'
+  'projectTokens' | 'defaultMode' | 'presets' | 'defaultPreset'
 >
 
 export type SpeedAppI18nOptions = Pick<
@@ -168,7 +169,7 @@ export function watchSessionEnd(
 export function createQueryClient(): QueryClient
 ```
 
-**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合），与 `providers` 一起只在启动恢复落定后挂载；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 只转发 `projectTokens` 与 `defaultMode`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作租户头播报；`documentLanguage: false` 关闭 `<html lang>` 跟随。
+**`SpeedAppDefinition` 的各项即本包定义的可变面。** `namespaces` 是应用自己的命名空间；`resourceOverrides` 是按命名空间再按语言的宿主覆盖资源，在每个命名空间唯一一次注册前经 `overlayResources` 合并，随后把该命名空间的注册语言集裁到实例的受支持集；`providers` 是标准 provider 栈与视图之间的应用级 provider，最外层在前；`view` 是视图根（通常是宿主槽齐备的 `ProductShell` 组合），与 `providers` 一起只在启动恢复落定后挂载；`sessionEnded` 覆盖出厂的会话结束动作；`baseUrl` 是客户端基地址；`client` 合并进 `createClient`（凭据模式缺省 `same-origin`，另有 reporter、重试策略、超时、fetch 与租户头名）；`theme` 转发 `projectTokens`、`defaultMode`、可切换的预设货架 `presets` 与起始预设 `defaultPreset`；`i18n` 合并进实例创建；`tenantProvider` 是当前租户别名，经客户端作租户头播报；`documentLanguage: false` 关闭 `<html lang>` 跟随。
 
 **列出四个族命名空间之一即替换其出厂资源。** 装配自身组合的四个族命名空间（ui-kit、layout-kit、auth-ui、product-shell 自己的）自动注册；在 `namespaces` 里列出其中之一时，它替换该命名空间的出厂语言包而不是被注册两次——这是整体替换平台文案的途径。平台错误包不经此途径替换，只经 `resourceOverrides` 覆盖。
 
@@ -290,7 +291,7 @@ stateDiagram-v2
 
 ## 扩展点
 
-- **定义即扩展面。** `namespaces` 追加应用自己的命名空间或替换某个族命名空间的出厂包，`resourceOverrides` 覆写装配所注册的命名空间（四个族命名空间、平台错误包与每个 `namespaces` 条目）的文案或补整种语言，`providers` 在标准栈与视图之间插入应用级 provider（收到装配后的 `session`、`api`、`queryClient`），`view` 换掉整个视图根，`sessionEnded` 覆盖会话结束动作（上下文里的 `evictAllQueries()` 供其组合），`baseUrl` 给出客户端基地址（跨域部署的运行期源地址），`client` 给出客户端选项，`theme` 给出项目级主题选项，`i18n` 给出实例选项，`tenantProvider` 给出当前租户别名（接成请求的租户头），`documentLanguage: false` 关闭 `<html lang>` 跟随。运行期租户白标不是定义字段：在应用自己的租户 provider 内嵌套 `AppThemeProvider tenantOverrides`。
+- **定义即扩展面。** `namespaces` 追加应用自己的命名空间或替换某个族命名空间的出厂包，`resourceOverrides` 覆写装配所注册的命名空间（四个族命名空间、平台错误包与每个 `namespaces` 条目）的文案或补整种语言，`providers` 在标准栈与视图之间插入应用级 provider（收到装配后的 `session`、`api`、`queryClient`），`view` 换掉整个视图根，`sessionEnded` 覆盖会话结束动作（上下文里的 `evictAllQueries()` 供其组合），`baseUrl` 给出客户端基地址（跨域部署的运行期源地址），`client` 给出客户端选项，`theme` 给出项目级主题选项与可切换的预设货架，`i18n` 给出实例选项，`tenantProvider` 给出当前租户别名（接成请求的租户头），`documentLanguage: false` 关闭 `<html lang>` 跟随。运行期租户白标不是定义字段：在应用自己的租户 provider 内嵌套 `AppThemeProvider tenantOverrides`。
 - **槽即扩展面。** `signIn` 与 `sessionEnded` 是宿主的视图（`sessionEnded` 还可收 `returnToSignIn` 由宿主决定放置），`children` 是宿主的业务内容（路由与 `RouteGuard` 门在此组装）；框架 prop 透传给 `AppShell`，含 `navLabel`、`navHeader`、`navFooter`。
 - **手工组装经四个导出。** 不在 `bootstrapSpeedApp` 之下的宿主用 `createQueryClient`、`watchSessionEnd`、`createSpeedI18n` 与 `SpeedAppProviders` 复用同一策略、同一实例构造与同一 provider 栈。
 
@@ -300,6 +301,8 @@ stateDiagram-v2
 |---|---|---|
 | `ProductShell` 三支视图机 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
 | `banner` 槽的透传 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
+| `shellLayout` 外壳形态的透传 | 已实现 | `web/packages/product-shell/src/components/ProductShell.tsx` `ProductShell`、`ProductShellProps` |
+| 主题预设选项的透传（`presets`/`defaultPreset`） | 已实现 | `web/packages/product-shell/src/bootstrap.tsx` `SpeedAppThemeOptions`、`SpeedAppProviders` |
 | 应用入口装配 `bootstrapSpeedApp` 与定义类型 | 已实现 | `web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp`、`SpeedAppDefinition`、`SpeedAppServices`、`watchSessionEnd`、`createQueryClient` |
 | 查询缺省显式写出 `staleTime` 与三类自动重读的触发，视图级测试台复用 `createQueryClient` | 已实现 | `web/packages/product-shell/src/bootstrap.tsx` `createQueryClient`；`web/test-utils/src/render.tsx` `createTestQueryClient`；`starters/demo/web/src/test-utils/render.tsx` |
 | 双语命名空间资源 | 已实现 | `web/packages/product-shell/src/resources.ts` `PRODUCT_SHELL_NAMESPACE`、`productShellResources` |

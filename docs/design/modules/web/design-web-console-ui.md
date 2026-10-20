@@ -21,7 +21,7 @@
 
 **它是平台侧的壳（第二种壳）。** 上述管理面挂在**不解析租户**的端上：名册是平台资产、审计表持有全部租户的行、设置的全局层是平台操作。故本包没有**当前租户**切换器，也就没有租户作用域的查询键——它不认识「当前租户」这个概念。
 
-**外壳骨架是 [layout-kit](design-web-layout-kit.md) 的 `AppShell`。** 控制台壳把带标签的声明派生出的平台导航交给 `AppShell` 渲染：固定顶栏、随视口变化的导航抽屉（`md` 及以上常驻、以下为临时覆盖式）与内容区都由它提供（[layout](design-web-layout.md)），本包不另造一套帧。导航地标默认以本包的 `shell.navLabel` 命名，宿主可经 `navLabel` 另给名字（经 `AppShell` 的 `navLabel`），与其它外壳的导航地标可区分。两处外壳因此同一形状——侧栏不随内容滚走、窄视口是汉堡抽屉而非把导航堆在内容上方、桌面侧栏由宿主显式选择收起、内容区是唯一滚动层。
+**外壳骨架是 [layout-kit](design-web-layout-kit.md) 的 `AppShell`。** 控制台壳把带标签的声明派生出的平台导航交给 `AppShell` 渲染：固定顶栏、随视口变化的导航抽屉（`md` 及以上常驻、以下为临时覆盖式）与内容区都由它提供（[layout](design-web-layout.md)），本包不另造一套帧。外壳形态由宿主经 `shellLayout` 选定，缺省顶栏形态，与本包出现之前逐字节一致；侧栏形态把品牌、头部动作、用户菜单移进侧栏，本包同样不重解释。导航地标默认以本包的 `shell.navLabel` 命名，宿主可经 `navLabel` 另给名字（经 `AppShell` 的 `navLabel`），与其它外壳的导航地标可区分。两处外壳因此同一形状——侧栏不随内容滚走、窄视口是汉堡抽屉而非把导航堆在内容上方、桌面侧栏由宿主显式选择收起、内容区是页面内容的唯一滚动层。
 
 **按租户寻址的页面持租户选择器。** 权限面、邀请与成员面、SSO 提供方面把租户当作**路由段参数**（`/api/v1/system/tenants/:tenant/...`）；冒充面把租户当作路径段（`/api/v1/tenants/{tenant}/impersonations`）。这些页面仍是平台员工的页面，但每条请求指名它作用到的租户；租户是请求的一个实参，不是会话的当前租户。页面因此持一个租户选择器（数据来自平台名册读 `GET /api/v1/system/tenants`），在其取值为空前禁用该页的租户作用域读。这四页各接受三个可选 prop：`tenant` 受控给出作用域（给出即锁定该值并隐藏选择器）、`defaultTenant` 作为初值（优先于 URL）与 `onTenantChange`（每次改选上报宿主）。三者都缺席时初值取自页面 URL 的 `tenant` 查询参数（缺省为空），故一条链接能把租户上下文带过页界；选择器仍是此后改变它的途径。这四页因此读 `tenant` 查询参数，README 写明这条。冒充页的发起表单与被冒充记录共用这一个选择：目标租户是请求的必填字段，被冒充账户必须是该租户的成员，故发起表单不另设租户输入，未选租户时提交不可用。
 
@@ -119,6 +119,7 @@ interface ConsoleShellProps {
   readonly sidebarCollapsed?: boolean
   readonly onSidebarCollapsedChange?: (collapsed: boolean) => void
   readonly sidebarWidth?: number
+  readonly shellLayout?: AppShellShellLayout
   readonly userMenu?: ReactNode
   readonly banner?: ReactNode
   readonly mobileOpen?: boolean
@@ -145,7 +146,7 @@ interface ConsoleProviderProps {
 }
 ```
 
-- **框架 prop 原样透传。** `sidebarCollapsed` / `onSidebarCollapsedChange` 是 `AppShell` 的桌面侧边栏收起对，`sidebarWidth`、`userMenu`、`banner`、`mobileOpen` / `onMobileOpenChange` 与 `navHeader` / `navFooter` 是帧的宽度、顶栏槽、横幅槽、受控的窄视口抽屉与抽屉纸内的首尾槽。这些 prop 被拾起后逐字转给 `AppShell`，本包不重解释、不加自己的 chrome。给出收起回调即在帧的顶栏渲染收起／展开按钮并回报每次翻转，不给即维持一直展开的常驻抽屉；收起态是宿主持有的普通值。租户侧的 [product-shell](design-web-product-shell.md) 用同一组 prop，两处外壳在这条上同形。
+- **框架 prop 原样透传。** `shellLayout` 是外壳形态，`sidebarCollapsed` / `onSidebarCollapsedChange` 是 `AppShell` 的桌面侧边栏收起对，`sidebarWidth`、`userMenu`、`banner`、`mobileOpen` / `onMobileOpenChange` 与 `navHeader` / `navFooter` 是帧的宽度、顶栏槽、横幅槽、受控的窄视口抽屉与抽屉纸内的首尾槽。这些 prop 被拾起后逐字转给 `AppShell`，本包不重解释、不加自己的 chrome。给出收起回调即在帧的顶栏（侧栏形态下为抽屉纸顶部行）渲染收起／展开按钮并回报每次翻转，不给即维持一直展开的常驻抽屉；收起态是宿主持有的普通值。租户侧的 [product-shell](design-web-product-shell.md) 用同一组 prop，两处外壳在这条上同形。
 
 - **无帧的 `ConsoleProvider`。** `ConsoleShell` 是「`AppShell` ＋ 本 provider ＋ 内容」的一种组合；provider 本身只安装包级上下文、不渲染任何 DOM，供渲染自有平台外壳的宿主使用（自有 chrome、对话框、侧边面板）。它安装与壳相同的上下文：导航回调、路由表、会话、账户设置页、接受链接构造器、冒充变更与冒充开始、角色描述解析、特性判定。`hasFeature` 与壳一样必填；其余 prop 缺席时上下文缺席或为空，页面维持各自的回落。它仍是平台员工的接缝，不能承载租户侧页面，也不带任何当前租户设施。
 
@@ -243,7 +244,7 @@ interface ConsoleProviderProps {
 | `@speed/api-sdk` | 各管理面端点的生成读钩子与写 mutation；子路径 `@speed/api-sdk/features` 的特性名类型 `FeatureName`，用作 `requires` 的元素类型与 `hasFeature` 的参数类型 |
 | `@speed/auth-core` | 会话：宿主把会话交给壳，页面在特权写被答 401 步进时打开重认证对话框、重放该写；门控用 auth-core 的 `useStepUpGate`，控制台显式传入 `session.isStepUpShortfall` 作为判别。通行密钥仪式经子路径 `@speed/auth-core/webauthn`。本包不读当前租户 |
 | `@speed/ui-kit` | 主题、表单、对话框、数据表与空态原语；页的刷新控件与机制（`RefreshButton`、`usePageRefresh`、`pageRefreshRead`）、按状态读失败（`httpStatusOf`）、复制控件与一次性值面板（`CopyButton`、`OneTimeValuePanel`）也由它提供 |
-| `@speed/layout-kit` | 外壳骨架：`AppShell` 的固定顶栏、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
+| `@speed/layout-kit` | 外壳骨架：`AppShell` 的两种外壳形态（顶栏 / 侧栏）、响应式导航抽屉与内容区，以及就地导航的纯点击判定 `isPlainPrimaryClick` |
 | `@speed/i18n` | 命名空间注册与文案的翻译钩子；时间渲染用 `formatInstant`（本包固定 UTC） |
 | `@tanstack/react-query` | peer（必需）：宿主供给的 QueryClient |
 | `react`、`react-dom`、`@mui/material`、`@emotion/*` | peer（必需）：宿主拥有的 React／MUI 树 |
@@ -487,6 +488,7 @@ graph TD
 | 导航按分组表聚合（壳侧） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`buildNavEntries`；`web/packages/console-ui/src/route.ts` `ConsoleNavGroup`、`ConsoleRoute.group`；`web/packages/console-ui/src/nav-groups.tsx` `consoleNavGroups` |
 | 导航项图标（收起窄栏为图标栏） | 已实现 | `web/packages/console-ui/src/route.ts` `ConsoleRoute.icon`；`web/packages/console-ui/src/ConsoleShell.tsx` `navItemFor`；`web/packages/console-ui/src/routes.tsx`；`web/packages/console-ui/src/internal/icons.tsx` |
 | 桌面侧边栏收起（框架 prop 对透传） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `sidebarCollapsed`、`onSidebarCollapsedChange` |
+| 外壳形态透传（`shellLayout`） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`AppShellPassthroughProps` |
 | 控制台仪表盘（租户 KPI、平台健康度与最近活动） | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/routes.tsx` `dashboardAdminRoutes` |
 | 租户管理页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes` |
 | 租户详情页（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |

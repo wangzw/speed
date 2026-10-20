@@ -4,7 +4,7 @@
 
 本包是平台第一个渲染 DOM 的包。它交付：
 
-- **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9 主题，并承载触摸设备上所有可点击目标的 44×44 下限与表面映射（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动与全局重置组成一个运行期。
+- **主题工厂**：`createAppTheme` 把合并后的 `@speed/tokens` token 树映射成一个 MUI v9 主题，并承载触摸设备上所有可点击目标的 44×44 下限、表面映射与页面基线（组件级 `styleOverrides`，见下文主题工厂一节）；`AppThemeProvider` 把主题、MUI 本地化联动、颜色模式、可选的主题预设层与全局重置组成一个运行期。
 - **受控组件**：`PageHeader`、`SectionCard`、`EmptyState`、`ConfirmDialog`、`SidePanel`、`FormField`、`FormLayout`、`PhoneNumberField`、`DataTable`、`FileUploader`、`InlineError`、`InlineSuccess`、`WriteFeedbackRegion`、`ListSkeleton`、`AsyncSection`，外加跨表面的状态原语（`errorCodeOf`、`httpStatusOf`、`useWriteFeedback`、`visuallyHiddenSx`、`touchTargetSx`）、电话号码的两部分组装助手（`toE164`、`validatePhoneNumber`、`defaultPhoneCountry` 等）、刷新动作的一对（`RefreshButton` 与 `usePageRefresh`／`pageRefreshRead`）、一次值交接的一对（`CopyButton`、`OneTimeValuePanel`）与两个显示偏好上下文（`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`）。每个组件自带的文案来自 `ui-kit` 命名空间。
 
 **受控契约是本包全部组件的共同契约**：每一份状态都由宿主持有、经 props 流入；组件把状态回显并抛出变更回调，从不自带传输取数、从不改数据、从不持业务状态——同一个组件因此在表单、弹窗与服务端渲染的页面里表现一致。交互局部状态只出现在必须能证明它只在交互内存在的组件里，例如 `ConfirmDialog` 的双次确认待命（弹窗一关即复位）与 `PhoneNumberField` 的国际号码草稿和触碰标记；`SidePanel` 不持有任何状态，打开、忙碌与内容都由宿主经 props 给出；`useWriteFeedback` 的状态属于调用它的宿主组件，ui-kit 的组件仍不持有业务状态与写入结果。唯一的读接缝是刷新动作的一对：`usePageRefresh` 调用宿主交来的查询句柄的 `refetch`，只按结构读取句柄，本包不 import 查询客户端、api-client 或任何传输；`CopyButton` 读剪贴板 API 在浏览器本地，不经网络。两个显示偏好 provider 只转交宿主的取值，自身不持状态、不做校验。
@@ -39,17 +39,27 @@ export interface AppThemeModeControl {
 }
 export function useAppThemeMode(): AppThemeModeControl
 
+export interface AppThemePresetControl {
+  readonly preset: string                       // 当前预设 id，无预设时为 'default'
+  readonly setPreset: (id: string) => void      // 未知 id 忽略
+}
+export function useAppThemePreset(): AppThemePresetControl
+
 export interface AppThemeProviderProps {
   readonly i18n: I18nInstance
   readonly projectTokens?: TokensOverride
   readonly tenantOverrides?: TokensOverride
   readonly defaultMode?: AppThemeMode
+  readonly presets?: readonly ThemePreset[]     // 可切换的预设货架；缺席或为空即不叠预设层
+  readonly defaultPreset?: string               // 起始预设 id；不在货架里时回落第一项
   readonly children?: ReactNode
 }
 export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 ```
 
-**分层是 token 树自己的纪律逐层叠加**：内置默认、项目层、租户层，每层都是对下一层的差异，经 token 包的 `deepMerge` 合并。`createAppTheme` 的覆写层入参按序应用（各为差异，可选，undefined 的层整层跳过），产出一份合并树与一份由它建成的主题。
+**分层是 token 树自己的纪律逐层叠加**：内置默认、预设、项目层、租户层，每层都是对下一层的差异，经 token 包的 `deepMerge` 合并。`createAppTheme` 的覆写层入参按序应用（各为差异，可选，undefined 的层整层跳过），产出一份合并树与一份由它建成的主题。`createAppTheme` 的公开签名不因预设改变：`presets` 只进 provider，provider 在调用它之前把活动预设并到项目层之前——`activePreset.tokens` 先于 `projectTokens` 合并，故客户的品牌色始终压过预设，租户层仍最高。
+
+**活动预设是 provider 的局部状态，与颜色模式正交。** `presets` 缺席或为空时不叠任何预设层，`useAppThemePreset` 报 `'default'`；`defaultPreset` 不在货架里时取 `presets[0].id`，不抛错——部署配置写错不该白屏。`setPreset` 只接受货架里的 id，未知 id 忽略。与 `useAppThemeMode` 同样，没有 provider 时 `useAppThemePreset` 抛错，不做静默 no-op。切换预设即重建主题，子树随之重渲染。`@speed/theme-presets` 对本包是类型依赖：只 `import type { ThemePreset }`，预设数据不进运行时。
 
 **等宽字体走模块扩充。** MUI 的排版面没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
 
@@ -61,7 +71,9 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **主题层承载触摸目标下限。** 粗指针（`pointer: coarse`）下，基础控件的最小宽高为 44×44：`Button`、`IconButton`、`Checkbox`、`Radio`、`Switch`、`ListItemButton` 各有一项，`ButtonBase` 一项覆盖其余以它为根的控件（`Tab`、`MenuItem`、`ToggleButton`、`CardActionArea`、`TableSortLabel` 等）；`InputBase` 的根与输入槽同时取下限，使字段的视觉框与真正接收点击的输入元素都达标；可点击的 `Chip` 按 `MuiChip-clickable` 类取下限，非交互的状态标签保持紧凑。各包由此继承下限，不依赖逐处指定。所有下限声明都嵌在 `@media (pointer: coarse)` 内，细指针下不产生任何声明，桌面观感不变。`Link` 在粗指针下同时改为居中的 `inline-flex` 盒，因为 `min-height` 对非替换行内盒不生效。主题管不到的裸元素——裸 `<a>`、宿主自有的可点元素——由 `touchTargetSx` 兜底（见核心数据结构）。
 
-**主题层同时承载表面映射。** token 的 `surface` 段经工厂解析为 `theme.surface.<角色>`，再经 `theme.components` 落到具体槽位；样式与 `useTheme()` 读同一个值，不会不一致。解析按继承契约把缺省字段换成主题已有的槽：`page` 取 `background.default`，`container` 与 `overlay` 取 `background.paper`，边框取 `divider`，`header` 取中性色阶（浅色 50、深色 800）。组件覆写为：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 container；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。主题组件表按 `Mui*` 槽深合并：触摸目标下限与表面覆写落在同一个组件上时，两组声明都保留。
+**主题层同时承载表面映射。** token 的 `surface` 段经工厂解析为 `theme.surface.<角色>`，再经 `theme.components` 落到具体槽位；样式与 `useTheme()` 读同一个值，不会不一致。解析按继承契约把缺省字段换成主题已有的槽：`page` 取 `background.default`，`container` 与 `overlay` 取 `background.paper`，边框取 `divider`，`header` 取中性色阶（浅色 50、深色 900）。角色带 `opacity` 时，解析器把已解析的填充色按该 alpha 转成 `rgba(...)`，明暗两种模式各自转换；填充不是 `#RRGGBB` 时原样保留。`theme.surface` 与组件覆盖读的是同一个解析结果，不会漂移。组件覆写为：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 container；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。主题组件表按 `Mui*` 槽深合并：触摸目标下限、表面覆写与页面基线落在同一个组件上时，各组声明都保留。
+
+**页面基线绘制 `page` 表面、文字辉光与画布。** `MuiCssBaseline` 的 body 取 `theme.surface.page.fill` 为背景色；`typography.textGlow` 给出时取同一 body 的 `textShadow`；`color.background.canvas` 给出时按活动模式取 `light` 或 `dark` 的止色，渲染为 `linear-gradient(160deg, from, to)` 与 `background-attachment: fixed`。缺省的页填充等于 `palette.background.default`，另两项缺席时不发声明，故未设置它们的宿主逐字节不变。**绘制次序：背景图在背景色之上**，不透明的画布会盖住页填充；需要页填充参与合成时画布止色自带透明度，以画布作为页面底色的预设不设 `surface.page` 填充。三项与触摸目标、焦点环、表面覆盖一起经 `mergeThemeComponents` 按槽深合并。
 
 ### 受控组件
 
@@ -140,7 +152,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 
 ### 对外接口面
 
-`createAppTheme`、`AppThemeProvider`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
+`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
 
 ## 依赖
 
@@ -152,13 +164,14 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 | `react-hook-form` | peer（必需，^7） | 表单家族的 `FormProvider`/`Controller` 需要树里只有一份 RHF |
 | `zod` | peer（必需，^4） | 表单校验桥 `zodFormResolver` 的 schema 类型；schema 由宿主构造，树里只能有一份 zod |
 | `@speed/tokens`、`@speed/i18n` | 依赖 | 本包映射的 token 树，与全部组件据以渲染的 i18n 实例与绑定 |
+| `@speed/theme-presets` | 依赖（仅类型） | `ThemePreset` 类型；运行时只 `import type`，预设数据不进本包产物。依赖仍写进 `package.json`，构建的 filter 链与 `@speed/tokens` 同处理 |
 | `libphonenumber-js` | 依赖 | `PhoneNumberField` 与号码助手的逐国家/地区数据：国际区号、随输入分组、号段校验。取它的 `mobile` 元数据集（约 100 KB 原文 / 25 KB gzip 的元数据，另加解析与格式化代码）。选 `mobile` 是因为它带有手机号段模式，长度合法但号段不可能的号码会被拒绝而不是发往短信通道。本包 `sideEffects: false`，不使用该控件的构建会把依赖摇掉 |
 
 框架相邻的 peer 一律是 peer：新加一个框架相邻依赖要在同一提交里给出「单份拷贝」的论证。
 
 ## UML 图
 
-主题与本地化的运行期：工厂记忆化地由 token 层建出无本地化主题，provider 订阅语言事件并按活动语言并入 MUI 本地化。图里画不出的约束：项目的覆写层各为差异、按序合并；本地化合并落在 token 映射之后，使 MUI 组件默认不覆盖 token；语言超出 MUI 映射表时落到 en-US 本地化而非抛错（渲染路径从不抛）；provider 不注册命名空间、不渲染 `I18nextProvider`。
+主题与本地化的运行期：工厂记忆化地由 token 层建出无本地化主题，provider 订阅语言事件并按活动语言并入 MUI 本地化。图里画不出的约束：预设层先于项目层合入，项目的覆写层各为差异、按序合并；活动预设与颜色模式是两个正交的 provider 状态；本地化合并落在 token 映射之后，使 MUI 组件默认不覆盖 token；语言超出 MUI 映射表时落到 en-US 本地化而非抛错（渲染路径从不抛）；provider 不注册命名空间、不渲染 `I18nextProvider`。
 
 ```mermaid
 sequenceDiagram
@@ -168,8 +181,8 @@ sequenceDiagram
     participant Inst as i18n 实例
     participant MUI as ThemeProvider
 
-    Host->>Provider: i18n、projectTokens、tenantOverrides、defaultMode
-    Provider->>Factory: createAppTheme(projectTokens, tenantOverrides, mode) 记忆化
+    Host->>Provider: i18n、presets、defaultPreset、projectTokens、tenantOverrides、defaultMode
+    Provider->>Factory: createAppTheme(预设并入项目层, tenantOverrides, mode) 记忆化
     Factory-->>Provider: AppTheme(tokens、无本地化 theme)
     Provider->>Inst: 订阅 languageChanged，并取当前 language
     Inst-->>Provider: 活动语言
@@ -178,7 +191,7 @@ sequenceDiagram
     Inst-->>Provider: languageChanged
     Provider->>Provider: 重取语言、重并本地化
     Provider->>MUI: 新主题
-    Note over Host,MUI: useAppThemeMode 的 setMode/toggleMode 改 provider 状态，重跑 createAppTheme 并换主题
+    Note over Host,MUI: useAppThemeMode 的 setMode/toggleMode 与 useAppThemePreset 的 setPreset 改 provider 状态，重跑 createAppTheme 并换主题
 ```
 
 ## 核心数据结构
@@ -186,8 +199,9 @@ sequenceDiagram
 | 概念 | 类型 | 说明 |
 |---|---|---|
 | 主题产物 | `AppTheme` | 合并后的 `tokens` 与由它建成的无本地化 `theme` |
-| 主题 provider 入参 | `AppThemeProviderProps` | i18n 实例、项目层、租户层、子树 |
-| 表面角色（解析后） | `SurfaceTheme`、`SurfaceThemeRole` | `page`、`container`、`overlay`、`header`；`fill`、`borderColor`、`borderWidth` 是解析后的具体值，`elevation` 与 `backdropFilter` 缺席表示保留组件自身层级或不加滤镜 |
+| 主题 provider 入参 | `AppThemeProviderProps` | i18n 实例、预设货架与起始预设、项目层、租户层、子树 |
+| 预设控制 | `AppThemePresetControl` | 当前预设 id 与切换函数；由 `useAppThemePreset` 读取 |
+| 表面角色（解析后） | `SurfaceTheme`、`SurfaceThemeRole` | `page`、`container`、`overlay`、`header`；`fill`（已乘 `opacity`）、`borderColor`、`borderWidth` 是解析后的具体值，`elevation` 与 `backdropFilter` 缺席表示保留组件自身层级或不加滤镜 |
 | 内容节入参 | `SectionCardProps` | 标题、描述、动作、标题层级（`h2`–`h6`）、`flushContent`、子节点、`sx` |
 | 表单字段渲染状态 | `FormFieldRenderState` | 绑定字段、`invalid`、`isTouched`、`required`、原始错误消息、解析后的显示文本 |
 | 表单校验桥 | `zodFormResolver`、`INVALID_ERROR_KEY` | 把 zod schema 适配成 RHF `Resolver`，失败折成 `ui-kit` 命名空间的键 |
@@ -220,27 +234,29 @@ sequenceDiagram
 | `breakpoints.values` | `breakpoints.values` | 直接（槽名是 MUI 自己的） |
 | `zIndex.values` | `zIndex` | 直接（槽名是 MUI 自己的） |
 | `shadows`（高度槽） | `theme.shadows`（25 项斜坡） | 每个高度用不高于它的最近 token 槽（向下取整，绝不超出设计标度），0 为 `none` |
-| `surface` 角色 | `theme.surface` 与 `theme.components` | 缺省字段按继承契约从 palette 槽解析；解析结果落在 `theme.surface`，组件覆写读它（见「表面到 theme.components 的映射」） |
+| `surface` 角色 | `theme.surface` 与 `theme.components` | 缺省字段按继承契约从 palette 槽解析；`opacity` 乘在已解析的 `#RRGGBB` 填充上，明暗两种模式各自转换；解析结果落在 `theme.surface`，组件覆写读它（见「表面到 theme.components 的映射」） |
+| `typography.textGlow` | `MuiCssBaseline` 的 body `textShadow` | 给出时落到 body，缺席不发声明 |
+| `color.background.canvas` | `MuiCssBaseline` 的 body `backgroundImage` | 按活动模式取 `light` 或 `dark` 的止色，渲染为 `linear-gradient(160deg, from, to)` 与 `backgroundAttachment: fixed`；缺席不发声明 |
 | 触摸目标下限 | `theme.components.*.styleOverrides` | 粗指针下基础控件与可点击 `Chip` 的最小宽高为 44×44；细指针下不产生任何声明 |
 
 阴影斜坡是把 token 的高度槽铺成 MUI 的 25 项数组的确定性做法：`ELEVATION_SLOTS` 按升序，逐高度推进到不高于当前高度的最近槽。MUI 9 接受任意长度的数组，25 项是有意为之，使消费方像对任何原生 MUI 主题一样按下标取 `theme.shadows`。
 
 ### 表面到 theme.components 的映射
 
-**解析与映射是两步。** token 的 `surface.<角色>` 只携带项目要加重的字段；工厂先按继承契约把它解析成每个字段都具体的角色（`page`→`background.default`，`container` 与 `overlay`→`background.paper`，边框→`divider`，`header`→中性色阶浅 50 或深 800；`borderWidth` 缺省 0，`elevation` 与 `backdropFilter` 保留缺席），把结果放进 `theme.surface`，组件覆写再从 `theme.surface` 读取并生成 CSS。两处读同一个值，`useTheme()` 读到的与组件绘制的一致。
+**解析与映射是两步。** token 的 `surface.<角色>` 只携带项目要加重的字段；工厂先按继承契约把它解析成每个字段都具体的角色（`page`→`background.default`，`container` 与 `overlay`→`background.paper`，边框→`divider`，`header`→中性色阶浅 50 或深 900；`borderWidth` 缺省 0，`elevation` 与 `backdropFilter` 保留缺席），角色带 `opacity` 时把填充色转成对应 alpha 的 `rgba`，把结果放进 `theme.surface`，组件覆写再从 `theme.surface` 读取并生成 CSS。两处读同一个值，`useTheme()` 读到的与组件绘制的一致。
 
 | 角色 | 主题槽位 |
 |---|---|
 | container | `MuiCard` 的 `variants` 中 `props.variant === 'outlined'` 一项；`MuiDrawer.paper` 且 drawer 为 `permanent` 或 `persistent` |
 | overlay | `MuiDialog.paper`、`MuiMenu.paper`、`MuiPopover.paper`、`MuiTooltip.tooltip`、temporary `MuiDrawer.paper` |
 | header | `MuiTableCell.head` |
-| page | 不设组件覆写：页面底由 `CssBaseline` 读取 `background.default` |
+| page | `MuiCssBaseline` 的 body `backgroundColor`，取 `theme.surface.page.fill`；缺省等于 `palette.background.default` |
 
 **`MuiCard` 走 `variants` 而不是 `styleOverrides`。** Card 只有 `root` 一个槽，`styleOverrides.outlined` 不会被解析；`props: { variant: 'outlined' }` 的变体是主题组件面里能按 variant 附着样式的写法。圆角不在这里设置：Paper 的根样式读取 `shape.borderRadius`。
 
 **两处不设覆写。** `MuiPaper.root` 不设：MUI 深色模式经 `backgroundImage` 给 elevation Paper 叠一层提亮，清掉它会让 Dialog 与 Menu 在深色下失去层次。`MuiTableContainer` 不设：内容节的表面由 `SectionCard` 承担，表格不再叠第二层表面。
 
-**组件表按槽深合并。** 多个来源的 `components`（触摸目标下限与表面映射）按 `Mui*` 键、再按槽合并：变体数组拼接，同一槽上的两个回调组合为返回两份样式的回调。浅展开会让后者整体覆盖前者的 `styleOverrides`。决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
+**组件表按槽深合并。** 多个来源的 `components`（触摸目标下限、表面映射与页面基线）按 `Mui*` 键、再按槽合并：变体数组拼接，同一槽上的两个回调组合为返回两份样式的回调。浅展开会让后者整体覆盖前者的 `styleOverrides`。决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。
 
 ### 内容节 SectionCard
 
@@ -390,7 +406,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 - **新增一个组件。** 它自带的所有面向用户的字符串进 `ui-kit` 命名空间的双语文案，且在同一提交内给两门语言各加一键、结构一致；组件经绑定到该命名空间的 hook 取文本，不硬编码。
 - **宿主改写措辞。** 在启动处向 `UI_KIT_NAMESPACE` 注册自己的一对同键 bundle（结构一致、措辞自定），`uiKitResources` 只是发布的默认。
 - **表单错误解析的可插层。** `zodFormResolver` 提供的 zod → `react-hook-form` 解析桥就是这一档；校验错误契约是它接入的接缝：解析层可以产出任意消息，表单家族照契约渲染。宿主也可以自行实现该接缝（例如从生成类型派生自己的 schema）。
-- **改表面风格。** 覆写 token 的 `surface` 角色（`fill`、`backdropFilter`、`borderColor` 等），不改页面与组件；一种新风格是 token 取值，不是组件的新 prop 或主题工厂的新参数。
+- **改表面风格。** 覆写 token 的 `surface` 角色（`fill`、`opacity`、`backdropFilter`、`borderColor` 等），不改页面与组件；一种新风格是 token 取值，不是组件的新 prop 或主题工厂的新参数。成品风格以 `@speed/theme-presets` 的 `ThemePreset` 数据交给 provider，本包只负责把它合进项目层之前并映射成主题。
 - **新增一个内容节。** 它落在 `SectionCard` 上，标题层级从 `h2` 起；不手写 `Paper` 或裸 `section` 表面。
 - **可加性的默认等于原行为。** 面向已有消费方新加一个行为时，把新行为的缺省设成原行为（`FormLayout.columns` 缺省单列、`DataTableColumn.priority` 缺省常显），使未传该 prop 的宿主逐字节不受影响。
 
@@ -400,11 +416,14 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 |---|---|---|
 | 主题工厂与分层合并（含颜色模式） | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`、`AppTheme`、`AppThemeMode` |
 | 表面解析与主题组件映射 | 已实现 | `web/packages/ui-kit/src/theme/surface.ts` `resolveSurfaceTheme`、`surfaceComponents`、`mergeThemeComponents`、`SurfaceTheme`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
-| 浅色模式 warning、info、success 的深色 `contrastText` | 未实现 | — |
+| 浅色模式 warning、info、success 的深色 `contrastText` | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`；`web/packages/tokens/src/color.ts` `colorTokens.semantic` |
 | 内容节表面 `SectionCard` | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`、`SectionCardProps` |
-| 统一焦点环 | 未实现 | — |
-| 降级动效 | 未实现 | — |
+| 统一焦点环 | 已实现 | `web/packages/ui-kit/src/theme/focus-ring.ts` `focusRingComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
+| 降级动效 | 已实现 | `web/packages/ui-kit/src/theme/reduced-motion.ts` `reducedMotionComponents`、`REDUCED_MOTION_QUERY`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 主题provider、本地化联动与颜色模式 | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`useAppThemeMode`、`AppThemeModeControl` |
+| 主题预设层与切换（`presets`/`defaultPreset`、`useAppThemePreset`） | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`AppThemePresetControl`、`useAppThemePreset` |
+| 表面填充 `opacity` 的解析 | 已实现 | `web/packages/ui-kit/src/theme/surface.ts` `resolveSurfaceTheme`、`withOpacity` |
+| 页面基线（页填充、文字辉光、画布渐变） | 已实现 | `web/packages/ui-kit/src/theme/baseline.ts` `baselineComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 页头与空态 | 已实现 | `web/packages/ui-kit/src/components/PageHeader.tsx` `PageHeader`；`web/packages/ui-kit/src/components/EmptyState.tsx` `EmptyState` |
 | 确认弹窗与双次确认 | 已实现 | `web/packages/ui-kit/src/components/ConfirmDialog.tsx` `ConfirmDialog`、`CONFIRM_ARM_LOCKOUT_MS` |
 | 侧边面板 | 已实现 | `web/packages/ui-kit/src/components/SidePanel.tsx` `SidePanel` |
