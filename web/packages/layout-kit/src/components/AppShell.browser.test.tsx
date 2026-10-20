@@ -20,6 +20,8 @@ import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { page, userEvent } from 'vitest/browser'
+import { drawerClasses } from '@mui/material/Drawer'
+import { toolbarClasses } from '@mui/material/Toolbar'
 import { AppShell } from './AppShell.js'
 import type { AppShellNavItem } from './AppShell.js'
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -78,7 +80,9 @@ function fixedHead(): HTMLElement {
  * landmark. */
 function mainSpacer(): HTMLElement {
   const main = screen.getByRole('main')
-  const spacer = main.querySelector<HTMLElement>(':scope > .MuiToolbar-root')
+  const spacer = main.querySelector<HTMLElement>(
+    `:scope > .${toolbarClasses.root}`,
+  )
   if (spacer === null) {
     throw new Error('AppShell: main holds no spacer Toolbar')
   }
@@ -87,11 +91,15 @@ function mainSpacer(): HTMLElement {
 
 /** The spacer inside the mounted drawer paper. */
 function drawerSpacer(): HTMLElement {
-  const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+  const paper = document.querySelector<HTMLElement>(
+    `.${drawerClasses.paper}`,
+  )
   if (paper === null) {
     throw new Error('AppShell: no drawer paper is mounted')
   }
-  const spacer = paper.querySelector<HTMLElement>('.MuiToolbar-root')
+  const spacer = paper.querySelector<HTMLElement>(
+    `.${toolbarClasses.root}`,
+  )
   if (spacer === null) {
     throw new Error('AppShell: the drawer paper holds no spacer Toolbar')
   }
@@ -169,14 +177,14 @@ describe('AppShell geometry in Chromium', () => {
           expect(menuButton).toBeNull()
           expect(
             document
-              .querySelector<HTMLElement>('.MuiDrawer-paper')
+              .querySelector<HTMLElement>(`.${drawerClasses.paper}`)
               ?.getBoundingClientRect().width,
           ).toBeCloseTo(DEFAULT_SIDEBAR_WIDTH, 0)
         } else {
           expect(menuButton).not.toBeNull()
           // The temporary paper is capped to min(sidebarWidth, 85vw).
           const paperWidth =
-            document.querySelector<HTMLElement>('.MuiDrawer-paper')
+            document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)
               ?.getBoundingClientRect().width ?? 0
           expect(paperWidth).toBeLessThanOrEqual(viewport.width * 0.85 + 0.5)
         }
@@ -208,7 +216,9 @@ describe('AppShell geometry in Chromium', () => {
       0,
     )
 
-    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+    const paper = document.querySelector<HTMLElement>(
+    `.${drawerClasses.paper}`,
+  )
     expect(paper).not.toBeNull()
     // The rail is the theme spacing base times seven (56px), never zero:
     // the drawer stays a real nav landmark.
@@ -236,13 +246,13 @@ describe('AppShell geometry in Chromium', () => {
     await waitFor(() => {
       expect(
         document
-          .querySelector<HTMLElement>('.MuiDrawer-paper')
+          .querySelector<HTMLElement>(`.${drawerClasses.paper}`)
           ?.getBoundingClientRect().width ?? 0,
       ).toBeGreaterThan(0)
     })
 
     const paperRect =
-      document.querySelector<HTMLElement>('.MuiDrawer-paper')?.getBoundingClientRect() ??
+      document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)?.getBoundingClientRect() ??
       null
     expect(paperRect).not.toBeNull()
     expect(paperRect?.width ?? 0).toBeLessThanOrEqual(400 * 0.85 + 0.5)
@@ -269,7 +279,9 @@ describe('AppShell drawer slots in Chromium', () => {
     const nav = screen.getByRole('navigation', { name: NAV_LABEL })
     const header = screen.getByTestId('nav-header')
     const footer = screen.getByTestId('nav-footer')
-    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+    const paper = document.querySelector<HTMLElement>(
+    `.${drawerClasses.paper}`,
+  )
     expect(paper).not.toBeNull()
 
     const headerRect = header.getBoundingClientRect()
@@ -318,7 +330,7 @@ describe('AppShell drawer slots in Chromium', () => {
     await waitFor(() => {
       expect(
         document
-          .querySelector<HTMLElement>('.MuiDrawer-paper')
+          .querySelector<HTMLElement>(`.${drawerClasses.paper}`)
           ?.getBoundingClientRect().width ?? 0,
       ).toBeGreaterThan(0)
     })

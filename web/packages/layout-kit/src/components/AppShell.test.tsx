@@ -30,6 +30,12 @@ import { useCallback, useState } from 'react'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { appBarClasses } from '@mui/material/AppBar'
+import { backdropClasses } from '@mui/material/Backdrop'
+import { drawerClasses } from '@mui/material/Drawer'
+import { listItemTextClasses } from '@mui/material/ListItemText'
+import { paperClasses } from '@mui/material/Paper'
+import { toolbarClasses } from '@mui/material/Toolbar'
 import { switchLanguage } from '@speed/i18n'
 import { createAppTheme } from '@speed/ui-kit'
 import enUS from '../locales/en-US.json' with { type: 'json' }
@@ -252,7 +258,7 @@ describe('AppShell', () => {
       // ... and the scrim is cleared: MUI keeps the closed modal's
       // backdrop mounted (keepMounted) but invisible, so "cleared" is a
       // visibility assertion, not an absence one.
-      const backdrop = document.querySelector('.MuiBackdrop-root')
+      const backdrop = document.querySelector(`.${backdropClasses.root}`)
       expect(backdrop).not.toBeNull()
       expect(backdrop).not.toBeVisible()
       // ... the host navigation still ran (jsdom performs the anchor's
@@ -260,7 +266,7 @@ describe('AppShell', () => {
       expect(window.location.hash).toBe('#/home')
       // ... and focus is back in the document instead of stranded
       // inside the closed drawer's aria-hidden region.
-      const paper = document.querySelector('.MuiDrawer-paper')
+      const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
       expect(paper?.contains(document.activeElement)).toBe(false)
     })
@@ -428,7 +434,7 @@ describe('AppShell', () => {
 
     /** The ListItemText root holding an entry's label. */
     const labelRootOf = (element: HTMLElement): Element | null =>
-      element.closest('.MuiListItemText-root')
+      element.closest(`.${listItemTextClasses.root}`)
 
     it('renders no collapse toggle and keeps the permanent icon+text drawer when the host does not opt in', () => {
       mockMatchMedia(true)
@@ -486,7 +492,9 @@ describe('AppShell', () => {
       })
       // ... and the rail is the fixed narrow width derived from the theme
       // spacing base (7 x 8px = 56px), NOT the old zero-width hide.
-      expect(emittedStyleText()).toMatch(/\.MuiDrawer-paper\{[^}]*width:56px/)
+      expect(emittedStyleText()).toMatch(
+        new RegExp(`\\.${drawerClasses.paper}\\{[^}]*width:56px`),
+      )
       // The toggle now offers to expand.
       expect(
         getByRole('button', { name: zhCN.appShell.expandNav }),
@@ -545,7 +553,7 @@ describe('AppShell', () => {
       )
       const primaryOf = (control: HTMLElement): HTMLElement => {
         const primary = control.querySelector<HTMLElement>(
-          '.MuiListItemText-primary',
+          `.${listItemTextClasses.primary}`,
         )
         if (primary === null) {
           throw new Error('expected a ListItemText primary element')
@@ -716,7 +724,7 @@ describe('AppShell', () => {
       // The divider, not a shadow, separates the header from the page:
       // MUI resolves elevation to a CSS variable jsdom cannot read, so
       // the elevation-0 class pins it instead.
-      expect(banner).toHaveClass('MuiPaper-elevation0')
+      expect(banner).toHaveClass(paperClasses.elevation0)
     })
   })
 
@@ -742,7 +750,7 @@ describe('AppShell', () => {
       expect(nav.contains(header)).toBe(false)
       expect(nav.contains(footer)).toBe(false)
 
-      const paper = document.querySelector('.MuiDrawer-paper')
+      const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
       expect(paper).toContainElement(header)
       expect(paper).toContainElement(footer)
@@ -884,7 +892,7 @@ describe('AppShell', () => {
       const nav = getByRole('navigation', { name: zhCN.appShell.navLabel })
       // Before the landmark there is only the head spacer; after it
       // nothing at all -- an absent slot adds no container and no height.
-      expect(nav.previousElementSibling).toHaveClass('MuiToolbar-root')
+      expect(nav.previousElementSibling).toHaveClass(toolbarClasses.root)
       expect(nav.nextElementSibling).toBeNull()
     })
   })
@@ -1045,7 +1053,9 @@ describe('AppShell', () => {
       // unmount) -- this is the permanent Drawer's own docked-paper
       // rule, plain box-sizing/width with no CSS min() wrapping it.
       expect(emittedStyleText()).toMatch(
-        /\.MuiDrawer-paper\{box-sizing:border-box;width:280px;\}/,
+        new RegExp(
+          `\\.${drawerClasses.paper}\\{box-sizing:border-box;width:280px;\\}`,
+        ),
       )
     })
 
@@ -1094,7 +1104,7 @@ describe('AppShell', () => {
           content
         </AppShell>,
       )
-      const toolbar = container.querySelector('.MuiToolbar-root')
+      const toolbar = container.querySelector(`.${toolbarClasses.root}`)
       expect(toolbar).not.toBeNull()
       expect(toolbar).toHaveStyle({ flexWrap: 'wrap' })
     })
@@ -1194,7 +1204,7 @@ describe('AppShell', () => {
 
       // The main landmark's spacer carries the measured height ...
       const main = getByRole('main')
-      const mainSpacer = main.querySelector('.MuiToolbar-root')
+      const mainSpacer = main.querySelector(`.${toolbarClasses.root}`)
       expect(mainSpacer).not.toBeNull()
       expect(mainSpacer).toHaveStyle({ minHeight: '112px' })
       // The height is carried inline, so the theme toolbar's `sm`
@@ -1203,9 +1213,9 @@ describe('AppShell', () => {
       expect((mainSpacer as HTMLElement).style.minHeight).toBe('112px')
 
       // ... and so does the drawer paper's spacer ...
-      const paper = document.querySelector('.MuiDrawer-paper')
+      const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
-      const drawerSpacer = paper?.querySelector('.MuiToolbar-root') ?? null
+      const drawerSpacer = paper?.querySelector(`.${toolbarClasses.root}`) ?? null
       expect(drawerSpacer).not.toBeNull()
       expect(drawerSpacer).toHaveStyle({ minHeight: '112px' })
       expect((drawerSpacer as HTMLElement).style.minHeight).toBe('112px')
@@ -1271,7 +1281,7 @@ describe('AppShell', () => {
       expect(headStyle.right).toBe('0px')
       expect(headStyle.display).toBe('flex')
       expect(headStyle.flexDirection).toBe('column')
-      expect(appBar).toHaveClass('MuiAppBar-positionStatic')
+      expect(appBar).toHaveClass(appBarClasses.positionStatic)
 
       // The slot adds no padding, border or minimum height of its own:
       // its height is exactly the host node's.
@@ -1286,7 +1296,7 @@ describe('AppShell', () => {
       const zIndex = Number(headStyle.zIndex)
       expect(zIndex).toBe(theme.zIndex.drawer + 1)
       expect(zIndex).toBeLessThan(theme.zIndex.modal)
-      const paper = document.querySelector('.MuiDrawer-paper')
+      const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
       expect(zIndex).toBeGreaterThan(
         Number(getComputedStyle(paper as Element).zIndex),
@@ -1316,13 +1326,13 @@ describe('AppShell', () => {
       resizeObserver.emitHeightFor(head, 160)
 
       // The main landmark's spacer carries the head's measured height ...
-      const mainSpacer = getByRole('main').querySelector('.MuiToolbar-root')
+      const mainSpacer = getByRole('main').querySelector(`.${toolbarClasses.root}`)
       expect(mainSpacer).not.toBeNull()
       expect(mainSpacer).toHaveStyle({ minHeight: '160px' })
       // ... and so does the drawer paper's spacer ...
-      const paper = document.querySelector('.MuiDrawer-paper')
+      const paper = document.querySelector(`.${drawerClasses.paper}`)
       expect(paper).not.toBeNull()
-      const drawerSpacer = paper?.querySelector('.MuiToolbar-root') ?? null
+      const drawerSpacer = paper?.querySelector(`.${toolbarClasses.root}`) ?? null
       expect(drawerSpacer).not.toBeNull()
       expect(drawerSpacer).toHaveStyle({ minHeight: '160px' })
       // ... and the paper itself carries no top offset: the fixed head
@@ -1361,11 +1371,11 @@ describe('AppShell', () => {
       resizeObserver.emitHeightFor(head, 160)
 
       const mainSpacer =
-        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
+        getByRole('main').querySelector<HTMLElement>(`.${toolbarClasses.root}`)
       expect(mainSpacer).not.toBeNull()
       expect((mainSpacer as HTMLElement).style.minHeight).toBe('160px')
       const drawerSpacer = document.querySelector<HTMLElement>(
-        '.MuiDrawer-paper .MuiToolbar-root',
+        `.${drawerClasses.paper} .${toolbarClasses.root}`,
       )
       expect(drawerSpacer).not.toBeNull()
       expect(drawerSpacer?.style.minHeight).toBe('160px')
@@ -1386,13 +1396,13 @@ describe('AppShell', () => {
       // The temporary drawer is keepMounted, so its paper and spacer are
       // reachable even while the drawer is closed.
       const drawerSpacer =
-        document.querySelector('.MuiDrawer-paper .MuiToolbar-root')
+        document.querySelector(`.${drawerClasses.paper} .${toolbarClasses.root}`)
       expect(drawerSpacer).not.toBeNull()
 
       resizeObserver.emitHeightFor(head, 104)
 
       expect(
-        getByRole('main').querySelector('.MuiToolbar-root'),
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
       ).toHaveStyle({ minHeight: '104px' })
       expect(drawerSpacer).toHaveStyle({ minHeight: '104px' })
     })
@@ -1414,7 +1424,7 @@ describe('AppShell', () => {
       expect(head.children[0]).toBe(getByRole('banner'))
       expect(head.children[1]).not.toBeUndefined()
       const mainSpacer =
-        getByRole('main').querySelector<HTMLElement>('.MuiToolbar-root')
+        getByRole('main').querySelector<HTMLElement>(`.${toolbarClasses.root}`)
       expect(mainSpacer).not.toBeNull()
       expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
       expect(getComputedStyle(mainSpacer as Element).marginTop).toMatch(/^0(px)?$/)
@@ -1435,7 +1445,7 @@ describe('AppShell', () => {
       const head = headOf(getByTestId('notice'))
       resizeObserver.emitHeightFor(head, 160)
       expect(
-        getByRole('main').querySelector('.MuiToolbar-root'),
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
       ).toHaveStyle({ minHeight: '160px' })
 
       rerender(<AppShell navItems={NAV_ITEMS}>content</AppShell>)
@@ -1446,7 +1456,7 @@ describe('AppShell', () => {
       expect(head.children).toHaveLength(1)
       resizeObserver.emitHeightFor(head, 112)
       expect(
-        getByRole('main').querySelector('.MuiToolbar-root'),
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
       ).toHaveStyle({ minHeight: '112px' })
     })
 
@@ -1496,7 +1506,7 @@ describe('AppShell', () => {
       // measured height is the AppBar alone.
       resizeObserver.emitHeightFor(head, 112)
       expect(
-        getByRole('main').querySelector('.MuiToolbar-root'),
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
       ).toHaveStyle({ minHeight: '112px' })
     })
 
@@ -1867,7 +1877,9 @@ describe('AppShell', () => {
       )
       await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
       expect(
-        document.querySelector('.MuiDrawer-paper')?.getAttribute('aria-modal'),
+        document
+          .querySelector(`.${drawerClasses.paper}`)
+          ?.getAttribute('aria-modal'),
       ).toBe('true')
       await expectNoAxeViolations()
     })

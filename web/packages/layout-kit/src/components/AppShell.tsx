@@ -987,22 +987,19 @@ export function AppShell({
           flexDirection: 'column',
         }}
       >
-        {/* The header paints the surface, not the primary role: the
+        {/* The header is the container surface, not the primary role: the
             shell's brand color belongs to controls, and a saturated bar
             would also read differently from the dark mode, where MUI's
-            primary fill is dropped and the surface shows through. A
-            bottom divider replaces the elevation shadow, matching the
-            content area's own separator. */}
+            primary fill is dropped and the surface shows through. The
+            theme's MuiAppBar mapping paints the fill and the bottom
+            divider that separates the bar from the page, so the shell
+            never re-declares them and a surface token override -- a glass
+            fill, say -- reaches the bar with no change here. */}
         <AppBar
           position="static"
           color="inherit"
           elevation={0}
-          sx={{
-            backgroundColor: 'background.paper',
-            color: 'text.primary',
-            borderBottom: 1,
-            borderColor: 'divider',
-          }}
+          sx={{ color: 'text.primary' }}
         >
           <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
             {!isDesktop && (
