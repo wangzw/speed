@@ -43,10 +43,14 @@ import {
   InlineSuccess,
   ListSkeleton,
   PageHeader,
+  SectionCard,
   errorCodeOf,
   useDisplayTimeZone,
 } from '@speed/ui-kit'
-import type { EmptyStateHeadingLevel } from '@speed/ui-kit'
+import type {
+  EmptyStateHeadingLevel,
+  SectionCardHeadingLevel,
+} from '@speed/ui-kit'
 import { formatDateTime } from './internal/datetime.js'
 import { InlineError } from './internal/inline-error.js'
 import { TenantAsyncSection } from './internal/tenant-section.js'
@@ -231,31 +235,8 @@ export function NotificationInbox({
   const previousDisabled = pageIndex === 0
   const nextDisabled = (pageIndex + 1) * (pageSize ?? 0) >= total
 
-  return (
-    <Box>
-      {variant === 'embedded' ? (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 2,
-            mb: 2,
-          }}
-        >
-          <Typography variant="h5" component={headingLevel}>
-            {t('inbox.title')}
-          </Typography>
-          {markAllAction}
-        </Box>
-      ) : (
-        <PageHeader
-          title={t('inbox.title')}
-          actions={markAllAction}
-          sx={{ mb: 2 }}
-        />
-      )}
-
+  const surfaceContent = (
+    <>
       {/* The read-all confirmation: one standing role="status" region
           (ui-kit's InlineSuccess), mounted for the whole settled phase and
           silent until a write lands -- a region born together with its text
@@ -350,7 +331,31 @@ export function NotificationInbox({
           </Button>
         </Box>
       )}
-    </Box>
+    </>
+  )
+
+  return variant === 'embedded' ? (
+    <SectionCard
+      title={t('inbox.title')}
+      actions={markAllAction}
+      // The embedded heading continues the host page's outline. SectionCard
+      // types its level as the section range (h2-h6); this component keeps
+      // accepting every level it always did, so the value passes through.
+      headingLevel={headingLevel as SectionCardHeadingLevel}
+    >
+      {surfaceContent}
+    </SectionCard>
+  ) : (
+    <>
+      <PageHeader
+        title={t('inbox.title')}
+        actions={markAllAction}
+        sx={{ mb: 2 }}
+      />
+      {/* The page header owns the h1, so the list's card carries no second
+          heading of its own; the list is named by its aria-label. */}
+      <SectionCard>{surfaceContent}</SectionCard>
+    </>
   )
 }
 

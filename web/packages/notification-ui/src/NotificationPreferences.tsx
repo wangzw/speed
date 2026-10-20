@@ -13,6 +13,12 @@
  * re-reads the matrix, so the checkboxes always show the server's answer
  * rather than a local guess.
  *
+ * Every write goes through one `useWriteFeedback` scope whose region
+ * renders under the table: a success confirms the type, channel and new
+ * state, and a failure resolves in that same region. The toggling row's
+ * controls are disabled while its write is in flight; the other rows stay
+ * usable, and there is no optimistic update.
+ *
  * A type the taxonomy marks not unsubscribable (from
  * GET /notifications/types) renders its whole row disabled with a note:
  * a write to such a type is refused 409, so the control is offered as
@@ -37,13 +43,18 @@ import Skeleton from '@mui/material/Skeleton'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
+import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import type { NotificationPreference } from '@speed/api-sdk'
-import { errorCodeOf } from '@speed/ui-kit'
+import {
+  SectionCard,
+  WriteFeedbackRegion,
+  useWriteFeedback,
+} from '@speed/ui-kit'
 import { useNotificationPresence } from './NotificationPresence.js'
-import { InlineError } from './internal/inline-error.js'
+import { useNotificationUiErrorText } from './internal/error-text.js'
 import { TenantAsyncSection } from './internal/tenant-section.js'
 import {
   useNotificationPreferences,
@@ -114,7 +125,23 @@ export function NotificationPreferences({
   const preferences = useNotificationPreferences()
   const types = useNotificationTypes()
   const setPreference = useSetNotificationPreference()
-  const [failureCode, setFailureCode] = useState<string | null>(null)
+  const feedback = useWriteFeedback()
+  const resolveError = useNotificationUiErrorText()
+  const [inFlightTypes, setInFlightTypes] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  )
+
+  const setTypeInFlight = (typeKey: string, inFlight: boolean): void => {
+    setInFlightTypes((current) => {
+      const next = new Set(current)
+      if (inFlight) {
+        next.add(typeKey)
+      } else {
+        next.delete(typeKey)
+      }
+      return next
+    })
+  }
 
   const rows = preferences.data ?? []
   const pending = preferences.isPending && preferences.data === undefined
@@ -131,14 +158,32 @@ export function NotificationPreferences({
 
   const toggle = (
     preference: NotificationPreference,
+    label: string,
     channel: (typeof CHANNELS)[number],
     enabled: boolean,
   ): void => {
-    setFailureCode(null)
-    setPreference.mutate(
-      { typeKey: preference.type_key, channel, data: { enabled } },
-      { onError: (error) => setFailureCode(errorCodeOf(error)) },
-    )
+    const typeKey = preference.type_key
+    setTypeInFlight(typeKey, true)
+    void feedback.run(async () => {
+      try {
+        await setPreference.mutateAsync({
+          typeKey,
+          channel,
+          data: { enabled },
+        })
+        return t('preferences.saved', {
+          type: label,
+          channel: t(`preferences.channel.${channel}`),
+          state: t(
+            enabled
+              ? 'preferences.state.enabled'
+              : 'preferences.state.disabled',
+          ),
+        })
+      } finally {
+        setTypeInFlight(typeKey, false)
+      }
+    })
   }
 
   const renderRow = (preference: NotificationPreference) => {
@@ -161,9 +206,9 @@ export function NotificationPreferences({
           <TableCell key={channel} align="center">
             <Checkbox
               checked={hasChannel(preference, channel)}
-              disabled={locked || setPreference.isPending}
+              disabled={locked || inFlightTypes.has(preference.type_key)}
               onChange={(event) =>
-                toggle(preference, channel, event.target.checked)
+                toggle(preference, label, channel, event.target.checked)
               }
               slotProps={{
                 input: {
@@ -181,16 +226,15 @@ export function NotificationPreferences({
   }
 
   return (
-    <Box>
-      <Typography variant="h5" component="h2" sx={{ mb: 1 }}>
-        {t('preferences.title')}
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {t('preferences.description')}
-      </Typography>
-
-      <InlineError code={failureCode} />
-
+    <SectionCard
+      title={t('preferences.title')}
+      description={t('preferences.description')}
+      // The settled content is a table, so it reaches the card's edges and
+      // the card's own overflow clips it to the radius. The loading branch
+      // and the write-feedback region are not the table, so they carry the
+      // content padding themselves.
+      flushContent
+    >
       <TenantAsyncSection<readonly NotificationPreference[]>
         pending={pending}
         payload={pending ? undefined : rows}
@@ -198,7 +242,12 @@ export function NotificationPreferences({
         empty={rows.length === 0}
         headingLevel="h3"
         loading={
-          <Box role="status" aria-busy="true" aria-label={t('preferences.loading')}>
+          <Box
+            role="status"
+            aria-busy="true"
+            aria-label={t('preferences.loading')}
+            sx={{ px: 3, py: 3 }}
+          >
             <Skeleton variant="text" width="36%" />
             <Skeleton variant="text" width="54%" />
           </Box>
@@ -215,39 +264,53 @@ export function NotificationPreferences({
         }}
       >
         {(settled) => (
-          <Table aria-label={t('preferences.title')} size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('preferences.column.type')}</TableCell>
-                {columns.map((channel) => (
-                  <TableCell key={channel} align="center">
-                    {t(`preferences.channel.${channel}`)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {groupLabel === undefined
-                ? settled.map(renderRow)
-                : groupRows(settled).map((entry) => (
-                    <Fragment key={entry.group}>
-                      {/* A full-width divider row, not a header cell: it
-                          names a section of the single table without
-                          claiming to head the columns. */}
-                      <TableRow>
-                        <TableCell colSpan={columns.length + 1}>
-                          <Typography variant="overline">
-                            {groupLabel(entry.group)}
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
-                      {entry.rows.map(renderRow)}
-                    </Fragment>
-                  ))}
-            </TableBody>
-          </Table>
+          <Fragment>
+            {/* TableContainer owns the horizontal scrolling: without it a
+                matrix with every channel overflows a narrow host column. */}
+            <TableContainer>
+              <Table aria-label={t('preferences.title')} size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t('preferences.column.type')}</TableCell>
+                    {columns.map((channel) => (
+                      <TableCell key={channel} align="center">
+                        {t(`preferences.channel.${channel}`)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {groupLabel === undefined
+                    ? settled.map(renderRow)
+                    : groupRows(settled).map((entry) => (
+                        <Fragment key={entry.group}>
+                          {/* A full-width divider row, not a header cell: it
+                              names a section of the single table without
+                              claiming to head the columns. */}
+                          <TableRow>
+                            <TableCell colSpan={columns.length + 1}>
+                              <Typography variant="overline">
+                                {groupLabel(entry.group)}
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                          {entry.rows.map(renderRow)}
+                        </Fragment>
+                      ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {/* The write result sits under the matrix it describes: the
+                card's flush content gives the table its edges, so the
+                region carries its own padding. */}
+            <WriteFeedbackRegion
+              outcome={feedback.outcome}
+              resolve={resolveError}
+              sx={{ px: 3, py: 2 }}
+            />
+          </Fragment>
         )}
       </TenantAsyncSection>
-    </Box>
+    </SectionCard>
   )
 }

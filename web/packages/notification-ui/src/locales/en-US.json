@@ -66,6 +66,11 @@
     },
     "unsubscribableNote": "Required notification, cannot be turned off",
     "channelToggleAria": "{{type}}: {{channel}}",
+    "saved": "Updated {{type}}: {{channel}} notifications are now {{state}}.",
+    "state": {
+      "enabled": "on",
+      "disabled": "off"
+    },
     "saveFailed": "Could not save the notification preference.",
     "empty": {
       "title": "No configurable notification types",

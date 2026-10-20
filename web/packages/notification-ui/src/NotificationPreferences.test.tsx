@@ -7,14 +7,17 @@
  * channel PUTs that type/channel with the target state and re-reads; a
  * type the taxonomy marks not unsubscribable renders a disabled row with
  * the note; the type label and grouped rendering follow the optional
- * props; an empty taxonomy renders the empty placeholder; and the surface
- * passes axe.
+ * props; an empty taxonomy renders the empty placeholder; a landed write
+ * confirms the type, channel and new state under the table while a failure
+ * resolves in that same region; only the toggling row locks while its
+ * write is in flight; and the surface passes axe.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { ReactElement } from 'react'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { checkboxClasses } from '@mui/material/Checkbox'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   jsonResponse,
@@ -121,6 +124,30 @@ function columnLabels(): string[] {
     .map((header) => header.textContent ?? '')
 }
 
+/** A response the test settles by hand, so a write can be held in flight. */
+function deferredResponse(): {
+  readonly promise: Promise<Response>
+  readonly resolve: (response: Response) => void
+} {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
+/** The checkbox of one channel in one type's row. */
+function channelCheckbox(
+  typeKey: string,
+  channel: 'in_app' | 'email' | 'sms',
+): HTMLElement {
+  return within(rowFor(typeKey)).getByRole('checkbox', {
+    name: zhCN.preferences.channelToggleAria
+      .replace('{{type}}', typeKey)
+      .replace('{{channel}}', zhCN.preferences.channel[channel]),
+  })
+}
+
 /** The row a type key's cells live in. */
 function rowFor(typeKey: string): HTMLElement {
   const cell = screen.getByText(typeKey)
@@ -176,6 +203,75 @@ describe('NotificationPreferences', () => {
       ).toBeChecked(),
     )
     await expectNoAxeViolations()
+  })
+
+  it('confirms a landed toggle with the type, channel and new state', async () => {
+    mount(
+      [
+        { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
+      ],
+      ['email'],
+    )
+    await screen.findByText('demo.thing.happened')
+
+    await userEvent.click(channelCheckbox('demo.thing.happened', 'email'))
+    // The confirmation names what changed: the preference type, the
+    // channel, and the state it now has.
+    expect(
+      await screen.findByText(
+        zhCN.preferences.saved
+          .replace('{{type}}', 'demo.thing.happened')
+          .replace('{{channel}}', zhCN.preferences.channel.email)
+          .replace('{{state}}', zhCN.preferences.state.enabled),
+      ),
+    ).toBeInTheDocument()
+    // The matrix re-read settled the cell before the second toggle.
+    await waitFor(() =>
+      expect(channelCheckbox('demo.thing.happened', 'email')).toBeChecked(),
+    )
+
+    await userEvent.click(channelCheckbox('demo.thing.happened', 'email'))
+    expect(
+      await screen.findByText(
+        zhCN.preferences.saved
+          .replace('{{type}}', 'demo.thing.happened')
+          .replace('{{channel}}', zhCN.preferences.channel.email)
+          .replace('{{state}}', zhCN.preferences.state.disabled),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('locks only the toggling row while its write is in flight', async () => {
+    const gate = deferredResponse()
+    const types: TypeRow[] = [
+      { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
+      { key: 'billing.invoice.due', unsubscribable: true, channels: ['in_app'] },
+    ]
+    const base = preferencesResponder(types)
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'PUT' && call.path.includes('demo.thing.happened')) {
+        return gate.promise.then(() => base(call))
+      }
+      return base(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(
+      withPresence(['email'], <NotificationPreferences />),
+    )
+    await screen.findByText('billing.invoice.due')
+
+    await userEvent.click(channelCheckbox('demo.thing.happened', 'email'))
+    await waitFor(() =>
+      expect(channelCheckbox('demo.thing.happened', 'email')).toBeDisabled(),
+    )
+    // The untouched row stays usable: the lock belongs to the write's own
+    // row, not to the whole matrix.
+    expect(channelCheckbox('billing.invoice.due', 'email')).toBeEnabled()
+
+    gate.resolve(jsonResponse(200, {}))
+    await waitFor(() =>
+      expect(channelCheckbox('demo.thing.happened', 'email')).toBeEnabled(),
+    )
   })
 
   it('offers the in-app column alone when no presence provider is mounted', async () => {
@@ -317,7 +413,7 @@ describe('NotificationPreferences', () => {
         .replace('{{type}}', 'demo.thing.happened')
         .replace('{{channel}}', zhCN.preferences.channel.in_app),
     })
-    const root = checkbox.closest('.MuiCheckbox-root')
+    const root = checkbox.closest(`.${checkboxClasses.root}`)
     expect(root).not.toBeNull()
     expect(hasCoarsePointerTouchTarget(root as Element)).toBe(true)
   })
@@ -392,6 +488,15 @@ describe('NotificationPreferences', () => {
           .replace('{{channel}}', zhCN.preferences.channel.email),
       }),
     )
-    expect(await screen.findByText(zhCN.errors.tenantUnavailable)).toBeInTheDocument()
+    const message = await screen.findByText(zhCN.errors.tenantUnavailable)
+    expect(message).toBeInTheDocument()
+    // The write result is reported in the region under the matrix, not
+    // above it: the failure belongs to the row the operator just changed.
+    const alert = message.closest('[role="alert"]')
+    expect(alert).not.toBeNull()
+    expect(
+      screen.getByRole('table').compareDocumentPosition(alert as Element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })
