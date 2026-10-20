@@ -939,6 +939,29 @@ describe('bootstrapSpeedApp', () => {
     await teardown(lightBoot, lightContainer)
   })
 
+  it('forwards the definition theme presets and default preset to the app theme provider', async () => {
+    function ThemeProbe(): ReactElement {
+      const theme = useTheme()
+      return <span data-testid="probe">{String(theme.shape.borderRadius)}</span>
+    }
+    // The second entry is the deployment's default: a preset the list does
+    // not start with still wins when defaultPreset names it.
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const boot = await mountApp(container, {
+      view: <ThemeProbe />,
+      theme: {
+        presets: [
+          { id: 'sharp', tokens: { shape: { borderRadius: 2 } } },
+          { id: 'round', tokens: { shape: { borderRadius: 18 } } },
+        ],
+        defaultPreset: 'round',
+      },
+    })
+    expect(container.textContent).toBe('18')
+    await teardown(boot, container)
+  })
+
   it('keeps the shipped theme when the definition sets none', async () => {
     function ThemeProbe(): ReactElement {
       const theme = useTheme()

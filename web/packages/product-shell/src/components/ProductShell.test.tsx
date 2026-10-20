@@ -307,6 +307,32 @@ describe('ProductShell view machine', () => {
       Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('passes shellLayout through to the frame', async () => {
+    const rig = makeJourneyRig()
+    attachSession(rig.session)
+    const utils = renderWithProviders(
+      <ProductShell
+        navItems={NAV_ITEMS}
+        header="My App"
+        shellLayout="sidebar"
+        signIn={<p>sign-in view</p>}
+      >
+        <p>app content</p>
+      </ProductShell>,
+    )
+    await signInTo(rig.session)
+    // The frame is in its sidebar form: no AppBar banner landmark, and
+    // the brand renders outside the navigation landmark, ahead of it in
+    // document order (the drawer paper's top row).
+    expect(utils.queryByRole('banner')).not.toBeInTheDocument()
+    const nav = utils.getByRole('navigation')
+    const brand = utils.getByText('My App')
+    expect(nav.contains(brand)).toBe(false)
+    expect(
+      brand.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it('keeps a host without a sign-in view on the ended screen when its action is activated', async () => {
     // The no-signIn composition is legal (the README and the suite above
     // pin its blank fresh-visitor branch): such a host pairs its own

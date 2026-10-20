@@ -114,11 +114,13 @@ instance construction:
 
 The client table is merged into `createClient` with `credentials`
 defaulting to `'same-origin'` and the base URL, refresh leg, language
-source and tenant source the assembly's own. `theme` forwards only
-`projectTokens` and `defaultMode`: tenant white-labelling is runtime host
-composition (a nested `AppThemeProvider tenantOverrides`), never a
-definition field. `documentLanguage: false` disables the `<html lang>`
-binding the assembly otherwise keeps in step with the instance.
+source and tenant source the assembly's own. `theme` forwards
+`projectTokens`, `defaultMode` and the preset pair `presets` /
+`defaultPreset` to the `AppThemeProvider` inside the stack: tenant
+white-labelling is runtime host composition (a nested
+`AppThemeProvider tenantOverrides`), never a definition field.
+`documentLanguage: false` disables the `<html lang>` binding the
+assembly otherwise keeps in step with the instance.
 
 `tenantProvider` answers the tenant **alias** the backend's resolution
 layer looks up by name — the tenant header's value — never the tenant id
@@ -216,12 +218,17 @@ the branch unchanged.
 - **All chrome props pass through to `AppShell` untouched.** The shell
   must not reinterpret, reorder or path-match `navItems` — their
   `selected` state is host-computed, per layout-kit's contract, and a
-  shell that starts deciding selection has begun routing. `navItems`,
+  shell that starts deciding selection has begun routing. `shellLayout`,
+  `navItems`,
   `header`, `headerActions`, `userMenu`, `banner`, `navLabel`,
   `navHeader`, `navFooter`, the drawer controls and `sx`
   are picked off the props and forwarded verbatim; adding a prop means
   adding it to the pass-through `Pick<AppShellProps, ...>`, never to a
-  parallel interpretation.
+  parallel interpretation. The same rule binds the theme side:
+  `SpeedAppThemeOptions` is a `Pick` over `AppThemeProviderProps`, so a
+  provider option a host may set (`projectTokens`, `defaultMode`,
+  `presets`, `defaultPreset`) is added to that `Pick` and forwarded,
+  never re-interpreted.
 - **One sentence of the shell's own, nothing else.** The only strings
   this package renders are the `announcements.sessionEnded` key pair in
   its own bilingual bundle (`src/locales/`, identical leaf key sets);
@@ -276,7 +283,8 @@ layout-kit and tenancy-ui equivalents, and this package's own
   real sessions over the real-client rig (a genuine `@speed/api-client`
   over a scripted fetch answering genuine `Response` objects, bound
   through the api-sdk runtime binding exactly as a host binds one) and
-  asserts the three branches, both slot overrides, the fail-closed
+  asserts the three branches, both slot overrides, the `shellLayout`
+  pass-through to the frame, the fail-closed
   unattached shape, the dead-end regressions (a host without a `signIn`
   view keeps the ended screen when its action is activated — never a
   whitescreen — and the frame still returns on the next sign-in), the

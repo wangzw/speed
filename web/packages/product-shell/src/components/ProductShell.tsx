@@ -100,6 +100,7 @@ type AppShellChromeProps = Pick<
   | 'sidebarCollapsed'
   | 'onSidebarCollapsedChange'
   | 'sidebarWidth'
+  | 'shellLayout'
   | 'sx'
 >
 
@@ -165,6 +166,7 @@ export function ProductShell({
   sidebarCollapsed,
   onSidebarCollapsedChange,
   sidebarWidth,
+  shellLayout,
   sx,
   signIn,
   sessionEnded,
@@ -264,6 +266,7 @@ export function ProductShell({
           sidebarCollapsed={sidebarCollapsed}
           onSidebarCollapsedChange={onSidebarCollapsedChange}
           sidebarWidth={sidebarWidth}
+          shellLayout={shellLayout}
           sx={sx}
         >
           {children}

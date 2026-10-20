@@ -19,7 +19,7 @@ branches from the authenticated snapshot:
 
 | Snapshot | Branch |
 | --- | --- |
-| authenticated | The `AppShell` frame (`banner` + nav `drawer` + `main`) around your app `children` |
+| authenticated | The `AppShell` frame around your app `children`, in either chrome form (`banner` + nav `drawer` + `main`, or the sidebar arrangement selected by `shellLayout`) |
 | anonymous, app never reached | The host's `signIn` slot (pair it with `@speed/auth-ui`'s `SignInScreen`) |
 | anonymous, app was reached | The `sessionEnded` slot, or the default `SessionEndedScreen` if none |
 
@@ -227,7 +227,7 @@ of them behaves exactly as the shipped defaults describe.
 | `sessionEnded` | Replaces the shipped session-end action; the context hands over `evictAllQueries()` so an override can compose it. |
 | `baseUrl` | The client's base URL; defaults to `window.location.origin`. |
 | `client` | Options merged into `createClient`: `credentials` (`'same-origin'` — the default — or `'include'`), `reporter`, `retryPolicy`, `timeoutMs`, `fetch`, `tenantHeader`. |
-| `theme` | `projectTokens` and `defaultMode`, forwarded to the `AppThemeProvider` inside the stack. `projectTokens` follows the token role tones: a role's `main` is its light-surface tone and `light` its dark-surface tone, so a brand recolor names both. |
+| `theme` | `projectTokens`, `defaultMode` and the preset pair `presets` / `defaultPreset`, forwarded to the `AppThemeProvider` inside the stack. `presets` is the shelf of named token diffs the provider may switch between (a host supplies the shipped `@speed/theme-presets` or its own); `defaultPreset` is the id to start at, and an id absent from the list falls back to its first entry rather than throwing. `projectTokens` follows the token role tones: a role's `main` is its light-surface tone and `light` its dark-surface tone, so a brand recolor names both. |
 | `i18n` | Options merged into `createI18n`: `supportedLanguages`, `defaultLanguage`, `storageKey`, `urlParameterName`, `onMissingKey`, `profileLanguage`. |
 | `tenantProvider` | The tenant alias announced per request as the tenant header. See below for how it differs from the tenant id. |
 | `documentLanguage` | `false` disables the `<html lang>` binding. |
@@ -374,10 +374,12 @@ package whose strings render in the frame.
   would render nothing. Such a host's way back into the app is its own:
   supply `signIn`, or supply a `sessionEnded` node that owns its own way
   out.
-- Any `AppShell` chrome prop (`navItems`, `header`, `headerActions`,
+- Any `AppShell` chrome prop (`shellLayout`, `navItems`, `header`, `headerActions`,
   `userMenu`, `banner`, `navLabel`, `navHeader`, `navFooter`, the drawer
   controls, `sx`) is passed straight through; see `@speed/layout-kit`'s
-  `AppShell` for the full surface. `navItems` must arrive host-computed,
+  `AppShell` for the full surface. `shellLayout` selects the frame's form
+  (`'topbar'`, the default, or `'sidebar'`) and changes no other prop's
+  meaning. `navItems` must arrive host-computed,
   `selected` included — nothing here path-matches.
 - The `sessionEnded` slot is optional: with no slot, the default
   `@speed/auth-ui` `SessionEndedScreen` renders, whose action returns the

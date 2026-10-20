@@ -181,7 +181,7 @@ export type SpeedAppClientOptions = Pick<
  * tenant provider (see the README). */
 export type SpeedAppThemeOptions = Pick<
   AppThemeProviderProps,
-  'projectTokens' | 'defaultMode'
+  'projectTokens' | 'defaultMode' | 'presets' | 'defaultPreset'
 >
 
 /** The i18n options the definition may set, forwarded to createI18n. */
@@ -629,6 +629,8 @@ export function SpeedAppProviders({
           i18n={i18n}
           projectTokens={theme?.projectTokens}
           defaultMode={theme?.defaultMode}
+          presets={theme?.presets}
+          defaultPreset={theme?.defaultPreset}
         >
           <QueryClientProvider client={queryClient}>
             {children}
