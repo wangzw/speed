@@ -64,6 +64,7 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   RefreshButton,
+  SectionCard,
   WriteFeedbackRegion,
   pageRefreshRead,
   usePageRefresh,
@@ -156,6 +157,13 @@ export function ObjectsPage({
   const hasNext = nextCursor !== ''
   const pending = query.isPending && query.data === undefined
   const deletePending = removeObject.isPending
+  // The pager belongs to a list the page can page through: a settled
+  // answer that is neither a tenant refusal nor a permission refusal.
+  const showPager =
+    query.data !== undefined &&
+    !isTenantAdmissionRefusal(query.error) &&
+    !isForbidden(query.error) &&
+    (hasPrevious || hasNext)
 
   // The refresh re-reads the list and resets the write-feedback scope
   // first: an outcome from the list as it stood before the re-read would
@@ -352,13 +360,10 @@ export function ObjectsPage({
       />
 
       {upload === false ? null : (
-        <Box component="section">
-          <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-            {t('upload.heading')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {t('upload.description')}
-          </Typography>
+        <SectionCard
+          title={t('upload.heading')}
+          description={t('upload.description')}
+        >
           <FileUploader
             rows={uploads.rows}
             onSelectFiles={uploads.selectFiles}
@@ -368,13 +373,10 @@ export function ObjectsPage({
             accept={uploadOptions.accept}
             multiple={uploadOptions.multiple}
           />
-        </Box>
+        </SectionCard>
       )}
 
-      <Box component="section">
-        <Typography variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
-          {t('list.heading')}
-        </Typography>
+      <SectionCard title={t('list.heading')} flushContent>
         <ObjectAsyncSection<StoredObject[]>
           pending={pending}
           payload={query.data === undefined ? undefined : objects}
@@ -383,13 +385,15 @@ export function ObjectsPage({
           refreshing={query.isFetching}
           headingLevel="h3"
           loading={
-            <ListSkeleton
-              label={t('list.loading')}
-              rows={[
-                <Skeleton key="a" variant="text" width="60%" />,
-                <Skeleton key="b" variant="text" width="45%" />,
-              ]}
-            />
+            <Box sx={{ p: 3 }}>
+              <ListSkeleton
+                label={t('list.loading')}
+                rows={[
+                  <Skeleton key="a" variant="text" width="60%" />,
+                  <Skeleton key="b" variant="text" width="45%" />,
+                ]}
+              />
+            </Box>
           }
           errorState={{
             title: t('list.error.title'),
@@ -411,43 +415,46 @@ export function ObjectsPage({
           )}
         </ObjectAsyncSection>
         {/* The page's one write-feedback region: under the list it
-            describes, above the pager whose context it belongs to. */}
-        <WriteFeedbackRegion
-          outcome={feedback.outcome}
-          resolve={resolveErrorText}
-        />
-        {query.data !== undefined &&
-        !isTenantAdmissionRefusal(query.error) &&
-        !isForbidden(query.error) &&
-        (hasPrevious || hasNext) ? (
-          <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-            <Button
-              type="button"
-              variant="outlined"
-              size="small"
-              disabled={!hasPrevious || feedback.pending}
-              onClick={() => {
-                feedback.reset()
-                setCursorStack((stack) => stack.slice(0, stack.length - 1))
-              }}
-            >
-              {t('list.previous')}
-            </Button>
-            <Button
-              type="button"
-              variant="outlined"
-              size="small"
-              disabled={!hasNext || feedback.pending}
-              onClick={() => {
-                feedback.reset()
-                setCursorStack((stack) => [...stack, nextCursor])
-              }}
-            >
-              {t('list.next')}
-            </Button>
+            describes, above the pager whose context it belongs to. The
+            list's content area is flush so the table reaches the card's
+            edges, so this footer carries the surface's padding instead. */}
+        {feedback.outcome === null && !showPager ? null : (
+          <Box sx={{ px: 3, pb: 3 }}>
+            <WriteFeedbackRegion
+              outcome={feedback.outcome}
+              resolve={resolveErrorText}
+            />
+            {showPager ? (
+              <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  disabled={!hasPrevious || feedback.pending}
+                  onClick={() => {
+                    feedback.reset()
+                    setCursorStack((stack) => stack.slice(0, stack.length - 1))
+                  }}
+                >
+                  {t('list.previous')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  disabled={!hasNext || feedback.pending}
+                  onClick={() => {
+                    feedback.reset()
+                    setCursorStack((stack) => [...stack, nextCursor])
+                  }}
+                >
+                  {t('list.next')}
+                </Button>
+              </Box>
+            ) : null}
           </Box>
-        ) : null}
-      </Box>
+        )}
+      </SectionCard>
 
       <ObjectDetailDialog id={detailId} onClose={() => setDetailId(null)} />
 
