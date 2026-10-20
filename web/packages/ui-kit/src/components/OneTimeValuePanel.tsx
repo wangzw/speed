@@ -19,14 +19,17 @@
  * the caller's feedback scope.
  */
 
-import type { ReactNode } from 'react'
+import { forwardRef } from 'react'
+import type { ReactNode, Ref } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 import { CopyButton } from './CopyButton.js'
 
-export interface OneTimeValuePanelProps {
+export interface OneTimeValuePanelProps extends RootStyleProps {
   /** The line describing what was handed out and to whom. */
   readonly message: ReactNode
   /** The one-time value itself (a link, a token, a secret). */
@@ -41,29 +44,38 @@ export interface OneTimeValuePanelProps {
   readonly onClose: () => void
 }
 
-/** The presentation-only one-time-value panel (see the file header). */
-export function OneTimeValuePanel({
-  message,
-  value,
-  copyLabel,
-  closeLabel,
-  closeAriaLabel,
-  onClose,
-}: OneTimeValuePanelProps) {
+function OneTimeValuePanelInner(
+  {
+    message,
+    value,
+    copyLabel,
+    closeLabel,
+    closeAriaLabel,
+    onClose,
+    sx,
+    className,
+  }: OneTimeValuePanelProps,
+  ref: Ref<HTMLDivElement>,
+) {
   const { t } = useUiKitTranslation()
   return (
     <Box
+      ref={ref}
+      className={className}
       role="status"
-      sx={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        columnGap: 2,
-        mb: 2,
-        p: 2,
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 1,
-      }}
+      sx={layerSx(
+        {
+          display: 'flex',
+          alignItems: 'flex-start',
+          columnGap: 2,
+          mb: 2,
+          p: 2,
+          border: 1,
+          borderColor: 'divider',
+          borderRadius: 1,
+        },
+        sx,
+      )}
     >
       <Box sx={{ flex: 1 }}>
         <Typography variant="body2">{message}</Typography>
@@ -105,3 +117,6 @@ export function OneTimeValuePanel({
     </Box>
   )
 }
+
+/** The presentation-only one-time-value panel (see the file header). */
+export const OneTimeValuePanel = forwardRef(OneTimeValuePanelInner)

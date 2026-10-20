@@ -22,7 +22,7 @@
  *   MUI's own grey aliasing). Tone 950 has no MUI slot and stays a token
  *   only. text/background/divider map directly.
  * - spacing: the token unit IS the MUI spacing unit (probe-verified
- *   against MUI 9.4.0: a numeric spacing option sets the base unit, so
+ *   against MUI 9.5.0: a numeric spacing option sets the base unit, so
  *   theme.spacing(n) === n x unit).
  * - shape.borderRadius maps directly; breakpoints.values and
  *   zIndex.values map directly (the slot names are MUI's own).
@@ -44,10 +44,28 @@
  *   'none' at 0. MUI 9 accepts any array length, so the 25-entry ramp is
  *   deliberate: consumers can index theme.shadows like any stock MUI
  *   theme.
- * - components: the clickable-target floor. Every base control carries a
- *   `minWidth`/`minHeight` of 44 nested under `@media (pointer: coarse)`
- *   (see touch-floor.ts), so the floor reaches every consuming package
- *   with no per-surface gating; a fine pointer emits none of it.
+ * - components: the clickable-target floor, the surface mapping and the
+ *   focus ring, merged by component slot (see surface.ts, touch-floor.ts
+ *   and focus-ring.ts). Every base control carries a
+ *   `minWidth`/`minHeight` of 44 nested under `@media (pointer: coarse)`,
+ *   so the floor reaches every consuming package with no per-surface
+ *   gating; a fine pointer emits none of it. The surface overrides paint
+ *   the container, overlay and header roles and read their values from
+ *   `theme.surface`, never from the tokens directly. Every button-like
+ *   control and Link carries a 2px `palette.primary.main` outline in its
+ *   `focusVisible` state.
+ * - motion: `motion.reducedMotion = 'system'` makes every MUI transition
+ *   helper (Collapse, Fade, Grow, Slide, Zoom and the menu/drawer
+ *   transitions) honour the operating system's reduced-motion
+ *   preference. Skeleton paints keyframes rather than transitions, so it
+ *   also carries an explicit root rule under the same media feature.
+ * - surface: the resolved surface roles (module augmentation, see
+ *   surface.ts) ride on the theme, so `useTheme()` and host components
+ *   read exactly the values the component overrides paint with. The
+ *   omitted token fields resolve through the inheritance contract: page
+ *   -> background.default, container/overlay -> background.paper,
+ *   borders -> divider, header -> neutral 50 (light) / neutral 800
+ *   (dark).
  *
  * The returned theme is locale-free on purpose: AppThemeProvider merges
  * the MUI locale matching the active language on top at render time, and
@@ -71,7 +89,7 @@
  * 'light', so every existing caller that omits the argument renders
  * byte-for-byte as before.
  *
- * MUI 9 notes verified against the installed 9.4.0 at implementation
+ * MUI 9 notes verified against the installed 9.5.0 at implementation
  * time: css variables are off by default (theme.vars is absent), so no
  * cssVariables setup is needed for a plain palette theme; createTheme
  * partial options merge with the defaults (keys left unmapped keep MUI's
@@ -96,7 +114,15 @@ import {
   type SpeedTokens,
   type TokensOverride,
 } from '@speed/tokens'
+import { focusRingComponents } from './focus-ring.js'
+import { reducedMotionComponents } from './reduced-motion.js'
 import { touchFloorComponents } from './touch-floor.js'
+import {
+  mergeThemeComponents,
+  resolveSurfaceTheme,
+  surfaceComponents,
+} from './surface.js'
+import type { SurfacePaletteSlots } from './surface.js'
 
 /**
  * MUI's typography surface carries no monospace entry, while the token
@@ -298,7 +324,7 @@ function shadowRamp(shadows: ShadowTokens): ThemeOptions['shadows'] {
 function surfacePalette(
   tokens: SpeedTokens,
   mode: AppThemeMode,
-): Pick<PaletteOptions, 'text' | 'background' | 'divider'> {
+): SurfacePaletteSlots & Pick<PaletteOptions, 'text' | 'background' | 'divider'> {
   if (mode === 'light') {
     return {
       text: {
@@ -346,18 +372,21 @@ function tokensToThemeOptions(
     fontWeight: weight,
     letterSpacing: letterSpacing ?? t.letterSpacing.normal,
   })
+  const surfaceSlots = surfacePalette(tokens, mode)
+  const palette: PaletteOptions = {
+    mode,
+    primary: roleOptions(tokens.color.semantic.primary, mode, tokens.color.neutral),
+    secondary: roleOptions(tokens.color.semantic.secondary, mode, tokens.color.neutral),
+    error: roleOptions(tokens.color.semantic.error, mode, tokens.color.neutral),
+    warning: roleOptions(tokens.color.semantic.warning, mode, tokens.color.neutral),
+    info: roleOptions(tokens.color.semantic.info, mode, tokens.color.neutral),
+    success: roleOptions(tokens.color.semantic.success, mode, tokens.color.neutral),
+    grey: neutralAsGrey(tokens.color.neutral),
+    ...surfaceSlots,
+  }
   return {
-    palette: {
-      mode,
-      primary: roleOptions(tokens.color.semantic.primary, mode, tokens.color.neutral),
-      secondary: roleOptions(tokens.color.semantic.secondary, mode, tokens.color.neutral),
-      error: roleOptions(tokens.color.semantic.error, mode, tokens.color.neutral),
-      warning: roleOptions(tokens.color.semantic.warning, mode, tokens.color.neutral),
-      info: roleOptions(tokens.color.semantic.info, mode, tokens.color.neutral),
-      success: roleOptions(tokens.color.semantic.success, mode, tokens.color.neutral),
-      grey: neutralAsGrey(tokens.color.neutral),
-      ...surfacePalette(tokens, mode),
-    },
+    palette,
+    surface: resolveSurfaceTheme(tokens, surfaceSlots, mode),
     typography: {
       fontFamily: t.fontFamily.sans,
       fontFamilyMono: t.fontFamily.mono,
@@ -382,7 +411,13 @@ function tokensToThemeOptions(
     shape: { borderRadius: tokens.shape.borderRadius },
     breakpoints: { values: { ...tokens.breakpoints.values } },
     zIndex: { ...tokens.zIndex.values },
+    motion: { reducedMotion: 'system' },
     shadows: shadowRamp(tokens.shadows),
-    components: touchFloorComponents,
+    components: mergeThemeComponents(
+      touchFloorComponents,
+      surfaceComponents,
+      focusRingComponents,
+      reducedMotionComponents,
+    ),
   }
 }

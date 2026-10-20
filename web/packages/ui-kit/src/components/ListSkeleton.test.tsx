@@ -5,8 +5,10 @@
  * the divider between rows (never above the first).
  */
 
+import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
+import { skeletonClasses } from '@mui/material/Skeleton'
 import { ListSkeleton } from './ListSkeleton.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 
@@ -43,12 +45,29 @@ describe('ListSkeleton', () => {
     expect(rows[0]).not.toHaveStyle({ borderTopStyle: 'solid' })
     expect(rows[1]).toHaveStyle({ borderTopStyle: 'solid' })
     expect(rows[2]).toHaveStyle({ borderTopStyle: 'solid' })
-    expect(container.querySelectorAll('.MuiSkeleton-root')).toHaveLength(0)
+    expect(container.querySelectorAll(`.${skeletonClasses.root}`)).toHaveLength(0)
   })
 
   it('renders an empty announcement for an entry-less list', () => {
     renderWithProviders(<ListSkeleton label="Loading" rows={[]} />)
     const status = screen.getByRole('status', { name: 'Loading' })
     expect(status.children).toHaveLength(0)
+  })
+
+  it('forwards sx, className and ref to the status region', () => {
+    const ref = createRef<HTMLDivElement>()
+    renderWithProviders(
+      <ListSkeleton
+        ref={ref}
+        className="host-skeleton"
+        sx={{ mt: 4 }}
+        label="Loading"
+        rows={[]}
+      />,
+    )
+    const status = screen.getByRole('status', { name: 'Loading' })
+    expect(status).toHaveClass('host-skeleton')
+    expect(status).toBe(ref.current)
+    expect(status).toHaveStyle({ marginTop: '32px' })
   })
 })

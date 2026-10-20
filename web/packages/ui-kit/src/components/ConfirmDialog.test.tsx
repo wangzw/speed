@@ -10,10 +10,11 @@
  * (asserted against the bundles); labels are host-overridable.
  */
 
-import { useState } from 'react'
+import { createRef, useState } from 'react'
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { buttonClasses } from '@mui/material/Button'
 import { switchLanguage } from '@speed/i18n'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import enUS from '../locales/en-US.json' with { type: 'json' }
@@ -142,14 +143,14 @@ describe('ConfirmDialog', () => {
   it('paints the danger variant confirm button with the error role', () => {
     const { getByRole } = setup({ variant: 'danger' })
     expect(getByRole('button', { name: zhCN.confirmDialog.confirmLabel })).toHaveClass(
-      'MuiButton-colorError',
+      buttonClasses.colorError,
     )
   })
 
   it('keeps the default variant confirm button in the primary role', () => {
     const { getByRole } = setup()
     expect(getByRole('button', { name: zhCN.confirmDialog.confirmLabel })).toHaveClass(
-      'MuiButton-colorPrimary',
+      buttonClasses.colorPrimary,
     )
   })
 
@@ -527,5 +528,22 @@ describe('ConfirmDialog', () => {
   it('passes axe over an open dialog', async () => {
     setup()
     await expectNoAxeViolations()
+  })
+
+  it('forwards sx, className and ref to the dialog root', () => {
+    const ref = createRef<HTMLDivElement>()
+    renderWithProviders(
+      <ConfirmDialog
+        open
+        ref={ref}
+        className="host-dialog"
+        sx={{ mt: 4 }}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    )
+    expect(ref.current).not.toBeNull()
+    expect(ref.current).toHaveClass('host-dialog')
+    expect(ref.current).toHaveStyle({ marginTop: '32px' })
   })
 })

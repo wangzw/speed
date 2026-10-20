@@ -22,23 +22,33 @@
  * on its own.
  */
 
+import { forwardRef } from 'react'
 import Alert from '@mui/material/Alert'
 import { visuallyHiddenSx } from '../visually-hidden.js'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 
-export interface InlineSuccessProps {
+export interface InlineSuccessProps extends RootStyleProps {
   /** The confirmation text, or null for nothing to confirm (renders silent). */
   readonly message: string | null
 }
 
 /** The whole-attempt success banner, one role="status" live region. */
-export function InlineSuccess({ message }: InlineSuccessProps) {
-  return (
-    <Alert
-      severity="success"
-      role="status"
-      sx={message === null ? visuallyHiddenSx : { width: '100%' }}
-    >
-      {message ?? ''}
-    </Alert>
-  )
-}
+export const InlineSuccess = forwardRef<HTMLDivElement, InlineSuccessProps>(
+  function InlineSuccess({ message, sx, className }, ref) {
+    return (
+      <Alert
+        ref={ref}
+        className={className}
+        severity="success"
+        role="status"
+        sx={layerSx(
+          message === null ? visuallyHiddenSx : { width: '100%' },
+          sx,
+        )}
+      >
+        {message ?? ''}
+      </Alert>
+    )
+  },
+)

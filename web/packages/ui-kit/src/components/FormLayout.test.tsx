@@ -8,6 +8,7 @@
  * FormField children and follow the language like everything else.
  */
 
+import { createRef } from 'react'
 import { act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useForm } from 'react-hook-form'
@@ -298,5 +299,30 @@ describe('FormLayout', () => {
     const user = userEvent.setup()
     await user.click(utils.getByRole('button', { name: 'Save member' }))
     await expectNoAxeViolations()
+  })
+
+  it('forwards sx, className and ref to the form root box', () => {
+    const ref = createRef<HTMLDivElement>()
+    function RootPropsForm() {
+      const form = useForm<MemberFormValues>({
+        defaultValues: { name: '', email: '' },
+      })
+      return (
+        <FormLayout
+          form={form}
+          ref={ref}
+          className="host-layout"
+          sx={{ mt: 4 }}
+        >
+          <span>field</span>
+        </FormLayout>
+      )
+    }
+    const { container } = renderWithProviders(<RootPropsForm />)
+    const root = container.firstChild as HTMLElement
+    expect(root).toHaveClass('host-layout')
+    expect(root).toBe(ref.current)
+    expect(root).toHaveStyle({ marginTop: '32px' })
+    expect(root).toHaveTextContent('field')
   })
 })

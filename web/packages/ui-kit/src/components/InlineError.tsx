@@ -23,7 +23,10 @@
  * (`error.status`, or the `client.http.<n>` code) at every call site.
  */
 
+import { forwardRef } from 'react'
 import Alert from '@mui/material/Alert'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 
 /** Collapses an arbitrary thrown value to the code InlineError renders. */
 export function errorCodeOf(error: unknown): string {
@@ -98,7 +101,7 @@ export function httpStatusOf(error: unknown): number | null {
   return match === null ? null : Number(match[1])
 }
 
-export interface InlineErrorProps {
+export interface InlineErrorProps extends RootStyleProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
   /**
@@ -109,14 +112,25 @@ export interface InlineErrorProps {
   readonly resolve: (code: string) => string
 }
 
-/** The whole-attempt failure banner, one role="alert" per error. */
-export function InlineError({ code, resolve }: InlineErrorProps) {
-  if (code === null) {
-    return null
-  }
-  return (
-    <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-      {resolve(code)}
-    </Alert>
-  )
-}
+/**
+ * The whole-attempt failure banner, one role="alert" per error. With no
+ * error nothing renders, so a host ref stays unattached.
+ */
+export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
+  function InlineError({ code, resolve, sx, className }, ref) {
+    if (code === null) {
+      return null
+    }
+    return (
+      <Alert
+        ref={ref}
+        className={className}
+        severity="error"
+        role="alert"
+        sx={layerSx({ width: '100%' }, sx)}
+      >
+        {resolve(code)}
+      </Alert>
+    )
+  },
+)

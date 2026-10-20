@@ -12,7 +12,7 @@
  * re-announced because the region's text did not change).
  */
 
-import { useState } from 'react'
+import { createRef, useState } from 'react'
 import { act, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -955,5 +955,21 @@ describe('FileUploader', () => {
       )
       await expectNoAxeViolations()
     })
+  })
+
+  it('forwards sx, className and ref to the queue root', () => {
+    const ref = createRef<HTMLDivElement>()
+    const { container } = renderWithProviders(
+      <FileUploader
+        ref={ref}
+        className="host-uploader"
+        sx={{ mt: 4 }}
+        rows={[]}
+      />,
+    )
+    const root = container.firstChild as HTMLElement
+    expect(root).toHaveClass('host-uploader')
+    expect(root).toBe(ref.current)
+    expect(root).toHaveStyle({ marginTop: '32px' })
   })
 })

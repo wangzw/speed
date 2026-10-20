@@ -9,6 +9,7 @@
  * ui-kit namespace's key as the default.
  */
 
+import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -111,5 +112,22 @@ describe('RefreshButton', () => {
       screen.getByRole('button', { name: CALLER_LABEL }),
     ).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: REFRESH })).toBeNull()
+  })
+
+  it('forwards sx, className and ref to the control', () => {
+    const ref = createRef<HTMLButtonElement>()
+    renderWithProviders(
+      <RefreshButton
+        busy={false}
+        ref={ref}
+        className="host-refresh"
+        sx={{ mt: 4 }}
+        onClick={() => undefined}
+      />,
+    )
+    const button = screen.getByRole('button', { name: REFRESH })
+    expect(button).toHaveClass('host-refresh')
+    expect(button).toBe(ref.current)
+    expect(button).toHaveStyle({ marginTop: '32px' })
   })
 })

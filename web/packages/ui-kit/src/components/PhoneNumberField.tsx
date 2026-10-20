@@ -34,13 +34,15 @@
  * anything.
  */
 
-import { useId, useMemo, useState } from 'react'
-import type { ChangeEvent, FocusEvent } from 'react'
+import { forwardRef, useId, useMemo, useState } from 'react'
+import type { ChangeEvent, FocusEvent, Ref } from 'react'
 import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 import {
   formatNationalPhoneNumber,
   nationalNumberDigits,
@@ -67,7 +69,7 @@ function flagOf(code: string): string {
   )
 }
 
-export type PhoneNumberFieldProps = {
+export type PhoneNumberFieldProps = RootStyleProps & {
   /** The selected country, ISO 3166-1 alpha-2. */
   readonly country: string
   /** The local number, digits only. */
@@ -115,19 +117,24 @@ const COUNTRY_WIDTH_SX: SxProps<Theme> = (theme) => ({
   '& .MuiInputLabel-root.MuiInputLabel-shrink': { maxWidth: 'none' },
 })
 
-export function PhoneNumberField({
-  country,
-  nationalNumber,
-  onCountryChange,
-  onNationalNumberChange,
-  countryLabel,
-  numberLabel,
-  numberHelperText,
-  disabled = false,
-  autoComplete = 'tel',
-  showValidationError = false,
-  preferredCountries,
-}: PhoneNumberFieldProps) {
+function PhoneNumberFieldInner(
+  {
+    country,
+    nationalNumber,
+    onCountryChange,
+    onNationalNumberChange,
+    countryLabel,
+    numberLabel,
+    numberHelperText,
+    disabled = false,
+    autoComplete = 'tel',
+    showValidationError = false,
+    preferredCountries,
+    sx,
+    className,
+  }: PhoneNumberFieldProps,
+  ref: Ref<HTMLDivElement>,
+) {
   const { t, i18n } = useUiKitTranslation()
   const countryFieldId = useId()
   const numberFieldId = useId()
@@ -226,13 +233,18 @@ export function PhoneNumberField({
 
   return (
     <Box
-      sx={{
-        display: 'flex',
-        flexWrap: 'nowrap',
-        alignItems: 'flex-start',
-        gap: 1,
-        width: '100%',
-      }}
+      ref={ref}
+      className={className}
+      sx={layerSx(
+        {
+          display: 'flex',
+          flexWrap: 'nowrap',
+          alignItems: 'flex-start',
+          gap: 1,
+          width: '100%',
+        },
+        sx,
+      )}
     >
       <Autocomplete<CountryOption, false, true, false, 'div', string>
         id={countryFieldId}
@@ -346,3 +358,10 @@ export function PhoneNumberField({
     </Box>
   )
 }
+
+/**
+ * The two-part mobile-number control (see the file header). `sx`,
+ * `className` and the ref reach the row box that holds the country
+ * selector and the local number field.
+ */
+export const PhoneNumberField = forwardRef(PhoneNumberFieldInner)

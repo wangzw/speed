@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { page } from 'vitest/browser'
+import { tableContainerClasses } from '@mui/material/TableContainer'
 import {
   DataTable,
   LONG_TEXT_COLUMN_MAX_WIDTH,
@@ -132,7 +133,9 @@ describe('DataTable content caps in Chromium', () => {
     const text = await screen.findByText(LONG_TEXT)
     // The TableContainer is the horizontal scroll fallback: content wider
     // than the host's container scrolls inside it, never out of the page.
-    const wrapper = text.closest<HTMLElement>('.MuiTableContainer-root')
+    const wrapper = text.closest<HTMLElement>(
+      `.${tableContainerClasses.root}`,
+    )
     expect(wrapper).not.toBeNull()
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(
       document.documentElement.clientWidth,

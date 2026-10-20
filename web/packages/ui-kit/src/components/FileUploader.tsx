@@ -58,15 +58,16 @@
  * renders the affordance inert and ignores picks and drops.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, DragEvent as ReactDragEvent } from 'react'
-import type { SxProps, Theme } from '@mui/material/styles'
+import { forwardRef, useEffect, useRef, useState } from 'react'
+import type { ChangeEvent, DragEvent as ReactDragEvent, Ref } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import LinearProgress from '@mui/material/LinearProgress'
 import Typography from '@mui/material/Typography'
 import { styled } from '@mui/material/styles'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /** One row's transfer state, owned by the host. */
@@ -91,7 +92,7 @@ export interface FileUploaderRow {
   readonly error?: string
 }
 
-export interface FileUploaderProps {
+export interface FileUploaderProps extends RootStyleProps {
   /** The queue to render, owned by the host. Uploads run in host code. */
   readonly rows: readonly FileUploaderRow[]
   /**
@@ -117,8 +118,6 @@ export interface FileUploaderProps {
   readonly disabled?: boolean
   /** Picker affordance label; defaults to the built-in bilingual text (which names dragging too when `allowDrop` is on). */
   readonly chooseFilesLabel?: string
-  /** sx pass-through, consistent with sibling components. */
-  readonly sx?: SxProps<Theme>
 }
 
 /**
@@ -165,23 +164,23 @@ function toPercent(fraction: number): number {
   return Math.round(Math.min(1, Math.max(0, fraction)) * 100)
 }
 
-/**
- * The queue renderer: host-owned `rows`, optional pick/drop reporting and
- * per-row action callbacks, and the announcement live region.
- */
-export function FileUploader({
-  accept,
-  allowDrop,
-  chooseFilesLabel,
-  disabled = false,
-  multiple,
-  onCancel,
-  onRemove,
-  onRetry,
-  onSelectFiles,
-  rows,
-  sx,
-}: FileUploaderProps) {
+function FileUploaderInner(
+  {
+    accept,
+    allowDrop,
+    chooseFilesLabel,
+    disabled = false,
+    multiple,
+    onCancel,
+    onRemove,
+    onRetry,
+    onSelectFiles,
+    rows,
+    sx,
+    className,
+  }: FileUploaderProps,
+  ref: Ref<HTMLDivElement>,
+) {
   const { t } = useUiKitTranslation()
   const [announcement, setAnnouncement] = useState<Announcement>(null)
   const previousRowsRef = useRef<readonly FileUploaderRow[] | null>(null)
@@ -414,13 +413,17 @@ export function FileUploader({
 
   return (
     <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 1,
-        ...sx,
-      }}
+      ref={ref}
+      className={className}
+      sx={layerSx(
+        {
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 1,
+        },
+        sx,
+      )}
     >
       {pickerRendered ? (
         /* One selection zone: the click target and the drop target are the
@@ -598,3 +601,9 @@ export function FileUploader({
     </Box>
   )
 }
+
+/**
+ * The queue renderer: host-owned `rows`, optional pick/drop reporting and
+ * per-row action callbacks, and the announcement live region.
+ */
+export const FileUploader = forwardRef(FileUploaderInner)

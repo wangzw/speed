@@ -40,8 +40,9 @@
  * errors surface after the host's submit/trigger, per the useForm mode.
  */
 
-import { useMemo } from 'react'
-import type { ReactElement } from 'react'
+import { forwardRef, useMemo } from 'react'
+import type { ReactElement, Ref } from 'react'
+import Box from '@mui/material/Box'
 import { Controller, useFormContext } from 'react-hook-form'
 import type {
   Control,
@@ -53,6 +54,7 @@ import type {
 } from 'react-hook-form'
 import { UI_KIT_NAMESPACE } from '../resources.js'
 import { useUiKitTranslation } from '../internal/translation.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 import { resolveValidationError } from '../internal/validation-error.js'
 
 /** The message key the `required` convenience switch injects. */
@@ -79,7 +81,7 @@ export interface FormFieldRenderState<
 export interface FormFieldProps<
   TFieldValues extends FieldValues = FieldValues,
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
-> {
+> extends RootStyleProps {
   /** The field path inside the form values. */
   readonly name: TName
   /**
@@ -112,19 +114,27 @@ export interface FormFieldProps<
 
 /**
  * The RHF field adapter: Controller plumbing plus the resolved-error
- * state contract for the host control.
+ * state contract for the host control. The component renders no chrome
+ * of its own, so `sx`, `className` and the ref apply to a box placed
+ * around the host control only when the host passes one of them; with
+ * none passed, the rendered tree is exactly the host control.
  */
-export function FormField<
+function FormFieldInner<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
->({
-  name,
-  control: controlProp,
-  rules,
-  defaultValue,
-  required = false,
-  render,
-}: FormFieldProps<TFieldValues, TName>) {
+>(
+  {
+    name,
+    control: controlProp,
+    rules,
+    defaultValue,
+    required = false,
+    render,
+    sx,
+    className,
+  }: FormFieldProps<TFieldValues, TName>,
+  ref: Ref<HTMLDivElement>,
+): ReactElement {
   const { t, i18n } = useUiKitTranslation()
   const contextControl = useFormContext<TFieldValues>()?.control
   const control = controlProp ?? contextControl
@@ -146,6 +156,7 @@ export function FormField<
 
   const exists = (key: string): boolean =>
     i18n.exists(key, { ns: UI_KIT_NAMESPACE })
+  const needsRoot = sx !== undefined || className !== undefined || ref != null
 
   return (
     <Controller<TFieldValues, TName>
@@ -155,7 +166,7 @@ export function FormField<
       defaultValue={defaultValue}
       render={({ field, fieldState }) => {
         const message = fieldState.error?.message ?? null
-        return render({
+        const controlNode = render({
           field,
           invalid: fieldState.invalid,
           isTouched: fieldState.isTouched,
@@ -163,7 +174,34 @@ export function FormField<
           errorMessage: message,
           errorText: resolveValidationError(message, { exists, t }),
         })
+        if (!needsRoot) {
+          return controlNode
+        }
+        // Only a host that asked for a root prop gets the box; the
+        // ordinary rendering stays the bare host control, so a field's
+        // place in FormLayout's flow never gains an element it did not
+        // have.
+        return (
+          <Box ref={ref} className={className} sx={sx}>
+            {controlNode}
+          </Box>
+        )
       }}
     />
   )
 }
+
+/**
+ * The RHF field adapter (see `FormFieldInner`). The generic signature is
+ * preserved across `forwardRef` by the cast below: React 18 forwards a
+ * ref only through `forwardRef`, which erases the component's own type
+ * parameters.
+ */
+export const FormField = forwardRef(FormFieldInner) as <
+  TFieldValues extends FieldValues = FieldValues,
+  TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
+>(
+  props: FormFieldProps<TFieldValues, TName> & {
+    readonly ref?: Ref<HTMLDivElement>
+  },
+) => ReactElement

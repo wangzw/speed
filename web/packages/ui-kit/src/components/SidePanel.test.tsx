@@ -10,12 +10,14 @@
  * from the ui-kit namespace; the close label is host-overridable.
  */
 
-import { useState } from 'react'
+import { createRef, useState } from 'react'
 import { act, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { useTheme } from '@mui/material/styles'
 import type { Theme } from '@mui/material/styles'
+import { backdropClasses } from '@mui/material/Backdrop'
+import { drawerClasses } from '@mui/material/Drawer'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { switchLanguage } from '@speed/i18n'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -152,7 +154,7 @@ describe('SidePanel', () => {
     // The dialog is the drawer's paper itself -- not a second wrapper --
     // and it carries the tabIndex={-1} MUI supplies for programmatic
     // focus, never a duplicate tabIndex={0}.
-    expect(dialog).toBe(document.querySelector('.MuiDrawer-paper'))
+    expect(dialog).toBe(document.querySelector(`.${drawerClasses.paper}`))
     expect(dialog).toHaveAttribute('tabindex', '-1')
   })
 
@@ -176,7 +178,7 @@ describe('SidePanel', () => {
     )
     expect(theme).toBeDefined()
     expect(theme!.zIndex.modal).toBe(1600)
-    const root = document.querySelector<HTMLElement>('.MuiDrawer-root')
+    const root = document.querySelector<HTMLElement>(`.${drawerClasses.root}`)
     expect(root).not.toBeNull()
     // The AppShell AppBar sits at theme.zIndex.drawer + 1; the panel must
     // resolve its stacking context above that.
@@ -186,7 +188,7 @@ describe('SidePanel', () => {
 
   it('fills the viewport width below sm and takes the tier width from sm up', () => {
     const medium = setup()
-    const mediumPaper = document.querySelector('.MuiDrawer-paper')
+    const mediumPaper = document.querySelector(`.${drawerClasses.paper}`)
     expect(mediumPaper).not.toBeNull()
     const mediumCss = emittedStyleText()
     expect(widthAt(mediumCss, mediumPaper!, 0)).toBe('100%')
@@ -195,7 +197,7 @@ describe('SidePanel', () => {
     medium.unmount()
 
     setup({ size: 'wide' })
-    const widePaper = document.querySelector('.MuiDrawer-paper')
+    const widePaper = document.querySelector(`.${drawerClasses.paper}`)
     expect(widePaper).not.toBeNull()
     const wideCss = emittedStyleText()
     expect(widthAt(wideCss, widePaper!, 0)).toBe('100%')
@@ -204,18 +206,18 @@ describe('SidePanel', () => {
 
   it('anchors the panel to the right edge', () => {
     setup()
-    const root = document.querySelector('.MuiDrawer-root')
-    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+    const root = document.querySelector(`.${drawerClasses.root}`)
+    const paper = document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)
     expect(root).not.toBeNull()
     expect(paper).not.toBeNull()
-    expect(root).toHaveClass('MuiDrawer-anchorRight')
+    expect(root).toHaveClass(drawerClasses.anchorRight)
     expect(getComputedStyle(paper!).right).toBe('0px')
     expect(getComputedStyle(paper!).left).toBe('auto')
   })
 
   it('keeps the paper fixed and makes the content box the only scroll layer', () => {
     const { getByText } = setup()
-    const paper = document.querySelector<HTMLElement>('.MuiDrawer-paper')
+    const paper = document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)
     expect(paper).not.toBeNull()
     expect(paper).toHaveStyle({ overflowY: 'hidden' })
 
@@ -244,7 +246,7 @@ describe('SidePanel', () => {
 
   it('calls onClose on a backdrop click when not busy', () => {
     const { onClose } = setup()
-    const backdrop = document.querySelector('.MuiBackdrop-root')
+    const backdrop = document.querySelector(`.${backdropClasses.root}`)
     expect(backdrop).not.toBeNull()
     fireEvent.click(backdrop!)
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -252,7 +254,7 @@ describe('SidePanel', () => {
 
   it('does not call onClose on a backdrop click while busy', () => {
     const { onClose } = setup({ busy: true })
-    const backdrop = document.querySelector('.MuiBackdrop-root')
+    const backdrop = document.querySelector(`.${backdropClasses.root}`)
     expect(backdrop).not.toBeNull()
     fireEvent.click(backdrop!)
     expect(onClose).not.toHaveBeenCalled()
@@ -338,5 +340,25 @@ describe('SidePanel', () => {
   it('passes axe over an open panel', async () => {
     setup({ description: DESCRIPTION })
     await expectNoAxeViolations()
+  })
+
+  it('forwards sx, className and ref to the drawer root', () => {
+    const ref = createRef<HTMLDivElement>()
+    renderWithProviders(
+      <SidePanel
+        open
+        title={TITLE}
+        ref={ref}
+        className="host-panel"
+        sx={{ mt: 4 }}
+        onClose={vi.fn()}
+        onExited={vi.fn()}
+      >
+        <p>{BODY}</p>
+      </SidePanel>,
+    )
+    expect(ref.current).not.toBeNull()
+    expect(ref.current).toHaveClass('host-panel')
+    expect(ref.current).toHaveStyle({ marginTop: '32px' })
   })
 })

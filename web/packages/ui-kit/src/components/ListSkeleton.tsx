@@ -10,10 +10,12 @@
  * rows mirror the content rows of their own list.
  */
 
+import { forwardRef } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 
-export interface ListSkeletonProps {
+export interface ListSkeletonProps extends RootStyleProps {
   /** The loading announcement's accessible name, already translated. */
   readonly label: string
   /** One entry per placeholder row, contents of the row. */
@@ -21,22 +23,31 @@ export interface ListSkeletonProps {
 }
 
 /** The pending-state placeholder of a list read. */
-export function ListSkeleton({ label, rows }: ListSkeletonProps) {
-  return (
-    <Box role="status" aria-label={label} aria-busy="true">
-      {rows.map((row, index) => (
-        <Box
-          key={String(index)}
-          sx={{
-            py: 1.5,
-            ...(index > 0
-              ? { borderTop: '1px solid', borderColor: 'divider' }
-              : {}),
-          }}
-        >
-          {row}
-        </Box>
-      ))}
-    </Box>
-  )
-}
+export const ListSkeleton = forwardRef<HTMLDivElement, ListSkeletonProps>(
+  function ListSkeleton({ label, rows, sx, className }, ref) {
+    return (
+      <Box
+        ref={ref}
+        className={className}
+        sx={sx}
+        role="status"
+        aria-label={label}
+        aria-busy="true"
+      >
+        {rows.map((row, index) => (
+          <Box
+            key={String(index)}
+            sx={{
+              py: 1.5,
+              ...(index > 0
+                ? { borderTop: '1px solid', borderColor: 'divider' }
+                : {}),
+            }}
+          >
+            {row}
+          </Box>
+        ))}
+      </Box>
+    )
+  },
+)

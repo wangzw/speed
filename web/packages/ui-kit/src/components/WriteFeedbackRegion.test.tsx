@@ -10,6 +10,7 @@
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { alertClasses } from '@mui/material/Alert'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { useWriteFeedback, type WriteOutcome } from '../write-feedback.js'
@@ -201,7 +202,9 @@ describe('WriteFeedbackRegion', () => {
         resolve={resolve}
       />,
     )
-    expect(view.getByRole('status').className).toMatch(/MuiAlert-colorSuccess/)
+    expect(view.getByRole('status').className).toMatch(
+      new RegExp(alertClasses.colorSuccess),
+    )
   })
 
   it('carries one default top margin on the root that both parts share', () => {

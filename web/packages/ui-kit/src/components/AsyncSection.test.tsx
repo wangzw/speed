@@ -15,7 +15,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { useState } from 'react'
+import { createRef, useState } from 'react'
+import { alertClasses } from '@mui/material/Alert'
 import { AsyncSection } from './AsyncSection.js'
 import type { AsyncSectionStaleState } from './AsyncSection.js'
 import { EmptyBoxIcon } from '../internal/icons.js'
@@ -389,9 +390,9 @@ describe('AsyncSection', () => {
     const alert = screen.getByRole('alert')
     // The notice is a warning: a refresh failed but the shown data keeps
     // its meaning. Error and info severities are not this state.
-    expect(alert).toHaveClass('MuiAlert-colorWarning')
-    expect(alert.className).not.toMatch(/MuiAlert-colorError/)
-    expect(alert.className).not.toMatch(/MuiAlert-colorInfo/)
+    expect(alert).toHaveClass(alertClasses.colorWarning)
+    expect(alert.className).not.toMatch(new RegExp(alertClasses.colorError))
+    expect(alert.className).not.toMatch(new RegExp(alertClasses.colorInfo))
     // Two spacing units (8px each) separate the notice from the content
     // rendered beneath it.
     expect(alert).toHaveStyle({ marginBottom: '16px' })
@@ -758,5 +759,28 @@ describe('AsyncSection', () => {
     // marking belongs to the branch whose data is still on screen.
     expect(screen.getByText(ERROR_STATE.title)).toBeInTheDocument()
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('forwards sx, className and ref to a root box around the branch', () => {
+    const ref = createRef<HTMLDivElement>()
+    const { container } = renderWithProviders(
+      <AsyncSection
+        ref={ref}
+        className="host-section"
+        sx={{ mt: 4 }}
+        pending={false}
+        payload={['a']}
+        empty={false}
+        loading={<p>Loading</p>}
+        errorState={ERROR_STATE}
+      >
+        {(items: readonly string[]) => <p>content {items.join(',')}</p>}
+      </AsyncSection>,
+    )
+    const root = container.firstChild as HTMLElement
+    expect(root).toHaveClass('host-section')
+    expect(root).toBe(ref.current)
+    expect(root).toHaveStyle({ marginTop: '32px' })
+    expect(root).toHaveTextContent('content a')
   })
 })

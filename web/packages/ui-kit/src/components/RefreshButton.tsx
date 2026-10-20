@@ -46,14 +46,16 @@
  * The console renders this control; the package keeps no copy of its own.
  */
 
-import { useId } from 'react'
+import { forwardRef, useId } from 'react'
+import type { Ref } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Tooltip from '@mui/material/Tooltip'
 import { useUiKitTranslation } from '../internal/translation.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 
-export interface RefreshButtonProps {
+export interface RefreshButtonProps extends RootStyleProps {
   /** Whether the read it re-reads is in flight. */
   readonly busy: boolean
   /**
@@ -86,20 +88,21 @@ export interface RefreshButtonProps {
   readonly label?: string
 }
 
-/**
- * The shared refresh control (see the file header), rendered by the
- * console's pages.
- */
-export function RefreshButton({
-  busy,
-  disabled = false,
-  writePending = false,
-  onClick,
-  describedBy,
-  disabledReason,
-  ariaLabel,
-  label,
-}: RefreshButtonProps) {
+function RefreshButtonInner(
+  {
+    busy,
+    disabled = false,
+    writePending = false,
+    onClick,
+    describedBy,
+    disabledReason,
+    ariaLabel,
+    label,
+    sx,
+    className,
+  }: RefreshButtonProps,
+  ref: Ref<HTMLButtonElement>,
+) {
   const { t } = useUiKitTranslation()
   // The spinner is named by the button's own text: the button carries the
   // id while it is busy, and the progressbar is labelled by it (the same
@@ -108,6 +111,9 @@ export function RefreshButton({
   const text = label ?? t('refreshButton.label')
   const button = (
     <Button
+      ref={ref}
+      className={className}
+      sx={sx}
       type="button"
       variant="outlined"
       size="small"
@@ -145,3 +151,11 @@ export function RefreshButton({
     </Tooltip>
   )
 }
+
+/**
+ * The shared refresh control (see the file header), rendered by the
+ * console's pages. `sx`, `className` and the ref apply to the button
+ * itself in both of its renderings, including the empty-scope one whose
+ * tooltip wrapper exists only to receive pointer events.
+ */
+export const RefreshButton = forwardRef(RefreshButtonInner)

@@ -9,8 +9,9 @@
 import { useState } from 'react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
+import { alertClasses } from '@mui/material/Alert'
 import { renderWithProviders } from '../../test-utils/render.js'
-import { InlineSuccess, type InlineSuccessProps } from './InlineSuccess.js'
+import { InlineSuccess } from './InlineSuccess.js'
 
 /** A host holding the message, so changes re-render the banner in place. */
 function SuccessHost() {
@@ -52,7 +53,9 @@ describe('InlineSuccess', () => {
 
   it('renders the success severity', () => {
     const { getByRole } = renderWithProviders(<InlineSuccess message="Saved" />)
-    expect(getByRole('status').className).toMatch(/MuiAlert-colorSuccess/)
+    expect(getByRole('status').className).toMatch(
+      new RegExp(alertClasses.colorSuccess),
+    )
   })
 
   it('mounts the region empty and clipped when there is no message', () => {
@@ -85,23 +88,14 @@ describe('InlineSuccess', () => {
     expect(status).toHaveStyle({ width: '100%' })
   })
 
-  it('takes no styling prop, so a stringly-typed sx has no effect', () => {
-    // The type refuses `sx` by contract: spacing belongs to the region that
-    // renders this banner.
-    // @ts-expect-error InlineSuccess takes no sx
-    const typed: InlineSuccessProps = { message: 'Saved', sx: { marginTop: '37px' } }
-    expect(typed.message).toBe('Saved')
-
-    // A caller that bypasses the type (untyped JS, a spread from an unsafe
-    // cast) still gets no effect: the banner reads only `message`.
-    const untyped = {
-      message: 'Saved',
-      sx: { marginTop: '37px' },
-    } as unknown as InlineSuccessProps
-    const view = renderWithProviders(<InlineSuccess {...untyped} />)
-    const status = view.getByRole('status')
-    expect(status).not.toHaveStyle({ marginTop: '37px' })
-    expect(getComputedStyle(status).marginTop).not.toBe('37px')
+  it('forwards sx to the alert root, after the region’s own styles', () => {
+    const { getByRole } = renderWithProviders(
+      <InlineSuccess message="Saved" sx={{ marginTop: '37px' }} />,
+    )
+    const status = getByRole('status')
+    expect(status).toHaveStyle({ marginTop: '37px' })
+    // The banner's own width rule still applies underneath the host rule.
+    expect(status).toHaveStyle({ width: '100%' })
   })
 
   it('fills and clears the same mounted region as the message changes', async () => {

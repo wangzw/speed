@@ -33,8 +33,8 @@
  * not a box in the content flow.
  */
 
-import { useId } from 'react'
-import type { ReactNode } from 'react'
+import { forwardRef, useId } from 'react'
+import type { ReactNode, Ref } from 'react'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
@@ -42,11 +42,13 @@ import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
 import { CloseIcon } from '../internal/icons.js'
 import { useUiKitTranslation } from '../internal/translation.js'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 
 /** The panel's width tier: 36rem (medium) or 52rem (wide) from `sm` up. */
 export type SidePanelSize = 'medium' | 'wide'
 
-export type SidePanelProps = {
+export type SidePanelProps = RootStyleProps & {
   /** Whether the panel is shown; controlled by the host. */
   readonly open: boolean
   /** The panel heading, rendered as an `h2` and used as the dialog's name. */
@@ -85,22 +87,22 @@ const SIZE_WIDTH: Record<SidePanelSize, string> = {
   wide: '52rem',
 }
 
-/**
- * The controlled modal side panel: an `h2`-named dialog anchored to the
- * right edge, with a fixed header, a single scrolling content area and
- * close paths the host can refuse.
- */
-export function SidePanel({
-  open,
-  title,
-  description,
-  size = 'medium',
-  busy = false,
-  closeLabel,
-  children,
-  onClose,
-  onExited,
-}: SidePanelProps) {
+function SidePanelInner(
+  {
+    open,
+    title,
+    description,
+    size = 'medium',
+    busy = false,
+    closeLabel,
+    children,
+    onClose,
+    onExited,
+    sx,
+    className,
+  }: SidePanelProps,
+  ref: Ref<HTMLDivElement>,
+) {
   const { t } = useUiKitTranslation()
   const theme = useTheme()
   const titleId = useId()
@@ -116,11 +118,13 @@ export function SidePanel({
 
   return (
     <Drawer
+      ref={ref}
+      className={className}
       open={open}
       onClose={requestClose}
       anchor="right"
       variant="temporary"
-      sx={{ zIndex: theme.zIndex.modal }}
+      sx={layerSx({ zIndex: theme.zIndex.modal }, sx)}
       slotProps={{
         paper: {
           'aria-labelledby': titleId,
@@ -186,3 +190,12 @@ export function SidePanel({
     </Drawer>
   )
 }
+
+/**
+ * The controlled modal side panel: an `h2`-named dialog anchored to the
+ * right edge, with a fixed header, a single scrolling content area and
+ * close paths the host can refuse. `sx`, `className` and the ref reach
+ * the drawer's root element; the host's styles merge after the panel's
+ * own stacking rule.
+ */
+export const SidePanel = forwardRef(SidePanelInner)

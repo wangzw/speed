@@ -27,18 +27,21 @@
  * byte-identical.
  */
 
-import { useEffect, useState } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
+import type { Ref } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
 import { useUiKitTranslation } from '../internal/translation.js'
 import { CopiedIcon, CopyIcon } from '../internal/icons.js'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 /** How long the copy control keeps its copied state and announcement. */
 const COPY_FEEDBACK_MS = 2000
 
-export interface CopyButtonProps {
+export interface CopyButtonProps extends RootStyleProps {
   /** The complete value written to the clipboard. */
   readonly value: string
   /**
@@ -65,14 +68,18 @@ export interface CopyButtonProps {
   readonly pinned?: boolean
 }
 
-/** The clipboard control (see the file header). */
-export function CopyButton({
-  value,
-  label,
-  copiedLabel,
-  visibleLabel,
-  pinned = false,
-}: CopyButtonProps) {
+function CopyButtonInner(
+  {
+    value,
+    label,
+    copiedLabel,
+    visibleLabel,
+    pinned = false,
+    sx,
+    className,
+  }: CopyButtonProps,
+  ref: Ref<HTMLButtonElement>,
+) {
   const { t } = useUiKitTranslation()
   const [copied, setCopied] = useState(false)
 
@@ -94,27 +101,35 @@ export function CopyButton({
   const accessibleName = label ?? t('copyButton.copyLabel', { value })
   const announcement = copiedLabel ?? t('copyButton.copiedLabel', { value })
   const shrinkSx = pinned ? { flexShrink: 0 } : undefined
+  // The pinned rule stays first, so a host rule wins an overlap; with no
+  // host sx the control renders the exact style value it always did.
+  const controlSx =
+    sx === undefined ? shrinkSx : layerSx(shrinkSx ?? {}, sx)
 
   return (
     <>
       {visibleLabel === undefined ? (
         <IconButton
+          ref={ref}
+          className={className}
           type="button"
           size="small"
           aria-label={accessibleName}
           onClick={copy}
-          sx={shrinkSx}
+          sx={controlSx}
         >
           {copied ? <CopiedIcon /> : <CopyIcon />}
         </IconButton>
       ) : (
         <Button
+          ref={ref}
+          className={className}
           type="button"
           size="small"
           variant="outlined"
           aria-label={accessibleName}
           onClick={copy}
-          sx={shrinkSx}
+          sx={controlSx}
         >
           {visibleLabel}
         </Button>
@@ -125,3 +140,10 @@ export function CopyButton({
     </>
   )
 }
+
+/**
+ * The clipboard control (see the file header). `sx`, `className` and the
+ * ref apply to the copy control itself, not to the hidden live region
+ * that renders beside it.
+ */
+export const CopyButton = forwardRef(CopyButtonInner)

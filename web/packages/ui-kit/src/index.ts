@@ -3,10 +3,10 @@
  *
  * Two kinds of things ship here: the theme factory (createAppTheme,
  * AppThemeProvider) that turns @speed/tokens into a MUI v9 theme, and the
- * fully controlled components (PageHeader, EmptyState, ConfirmDialog,
- * SidePanel, FormField, FormLayout, PhoneNumberField, DataTable,
- * FileUploader, InlineError, InlineSuccess, WriteFeedbackRegion,
- * ListSkeleton, AsyncSection) with
+ * fully controlled components (PageHeader, SectionCard, EmptyState,
+ * ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField,
+ * DataTable, FileUploader, InlineError, InlineSuccess,
+ * WriteFeedbackRegion, ListSkeleton, AsyncSection) with
  * their ui-kit-namespace translations (UI_KIT_NAMESPACE + uiKitResources)
  * for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
@@ -51,6 +51,11 @@ export {
   type PageHeaderProps,
 } from './components/PageHeader.js'
 export {
+  SectionCard,
+  type SectionCardHeadingLevel,
+  type SectionCardProps,
+} from './components/SectionCard.js'
+export {
   EmptyState,
   type EmptyStateHeadingLevel,
   type EmptyStateNoHeading,
@@ -75,6 +80,7 @@ export {
   type FormFieldRenderState,
 } from './components/FormField.js'
 export {
+  FORM_MAX_WIDTH,
   FormLayout,
   type FormLayoutColumns,
   type FormLayoutProps,

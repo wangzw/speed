@@ -19,13 +19,14 @@ import { render, screen } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import Button from '@mui/material/Button'
 import IconButton from '@mui/material/IconButton'
-import Checkbox from '@mui/material/Checkbox'
-import Radio from '@mui/material/Radio'
-import Switch from '@mui/material/Switch'
+import Checkbox, { checkboxClasses } from '@mui/material/Checkbox'
+import Radio, { radioClasses } from '@mui/material/Radio'
+import Switch, { switchClasses } from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Link from '@mui/material/Link'
 import ListItemButton from '@mui/material/ListItemButton'
-import Chip from '@mui/material/Chip'
+import Chip, { chipClasses } from '@mui/material/Chip'
+import { inputBaseClasses } from '@mui/material/InputBase'
 import {
   emittedStyleText,
   hasCoarsePointerTouchTarget,
@@ -56,7 +57,9 @@ function Fixture() {
 }
 
 const inputRoot = (): Element | null =>
-  screen.getByRole('textbox', { name: 'input' }).closest('.MuiInputBase-root')
+  screen
+    .getByRole('textbox', { name: 'input' })
+    .closest(`.${inputBaseClasses.root}`)
 
 // A checkbox's (and radio's) clickable element is its root span; the
 // inner input is the form control, not the hit area. The switch's root is
@@ -65,11 +68,15 @@ const inputRoot = (): Element | null =>
 const checkboxRoot = (): Element =>
   screen
     .getByRole('checkbox', { name: 'checkbox' })
-    .closest('.MuiCheckbox-root') as Element
+    .closest(`.${checkboxClasses.root}`) as Element
 const radioRoot = (): Element =>
-  screen.getByRole('radio', { name: 'radio' }).closest('.MuiRadio-root') as Element
+  screen
+    .getByRole('radio', { name: 'radio' })
+    .closest(`.${radioClasses.root}`) as Element
 const switchRoot = (): Element =>
-  screen.getByRole('switch', { name: 'switch' }).closest('.MuiSwitch-root') as Element
+  screen
+    .getByRole('switch', { name: 'switch' })
+    .closest(`.${switchClasses.root}`) as Element
 
 describe('theme touch-target floor', () => {
   it('raises every sampled control category to the 44px floor', () => {
@@ -118,8 +125,10 @@ describe('theme touch-target floor', () => {
     // track out of the coarse rendering: the target grows, the switch
     // drawing does not.
     const css = emittedStyleText()
-    expect(css).toContain('.MuiSwitch-track{height:14px')
-    expect(css).toContain('.MuiSwitch-sizeSmall .MuiSwitch-track{height:10px')
+    expect(css).toContain(`.${switchClasses.track}{height:14px`)
+    expect(css).toContain(
+      `.${switchClasses.sizeSmall} .${switchClasses.track}{height:10px`,
+    )
   })
 
   it('leaves the status chip at its compact size: only a clickable chip is a target', () => {
@@ -131,7 +140,7 @@ describe('theme touch-target floor', () => {
     ).toBe(true)
     expect(
       hasCoarsePointerTouchTarget(
-        screen.getByText('status chip').closest('.MuiChip-root') as Element,
+        screen.getByText('status chip').closest(`.${chipClasses.root}`) as Element,
       ),
     ).toBe(false)
   })

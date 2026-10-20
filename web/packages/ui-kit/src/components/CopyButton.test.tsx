@@ -6,6 +6,7 @@
  * text button; the icon face renders the icon control.
  */
 
+import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -108,5 +109,23 @@ describe('CopyButton', () => {
         name: renderTemplate(zhCN.copyButton.copyLabel, { value: 'member-1' }),
       }),
     ).toHaveStyle({ flexShrink: '0' })
+  })
+
+  it('forwards sx, className and ref to the copy control', () => {
+    const ref = createRef<HTMLButtonElement>()
+    renderWithProviders(
+      <CopyButton
+        value="member-1"
+        ref={ref}
+        className="host-copy"
+        sx={{ mt: 4 }}
+      />,
+    )
+    const button = screen.getByRole('button', {
+      name: renderTemplate(zhCN.copyButton.copyLabel, { value: 'member-1' }),
+    })
+    expect(button).toHaveClass('host-copy')
+    expect(button).toBe(ref.current)
+    expect(button).toHaveStyle({ marginTop: '32px' })
   })
 })

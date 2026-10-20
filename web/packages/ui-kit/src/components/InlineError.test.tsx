@@ -12,6 +12,7 @@
  * names one.
  */
 
+import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { InlineError, errorCodeOf, httpStatusOf } from './InlineError.js'
@@ -138,5 +139,22 @@ describe('httpStatusOf', () => {
       },
     })
     expect(httpStatusOf(hostile)).toBeNull()
+  })
+
+  it('forwards sx, className and ref to the alert', () => {
+    const ref = createRef<HTMLDivElement>()
+    renderWithProviders(
+      <InlineError
+        code="authn.session_revoked"
+        resolve={resolverOf()}
+        ref={ref}
+        className="host-error"
+        sx={{ mt: 4 }}
+      />,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveClass('host-error')
+    expect(alert).toBe(ref.current)
+    expect(alert).toHaveStyle({ marginTop: '32px' })
   })
 })

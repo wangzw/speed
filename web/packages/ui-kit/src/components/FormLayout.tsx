@@ -42,17 +42,30 @@
  * appearance.
  */
 
-import type { ReactNode } from 'react'
+import { forwardRef } from 'react'
+import type { ReactElement, ReactNode, Ref } from 'react'
 import Box from '@mui/material/Box'
 import { FormProvider } from 'react-hook-form'
 import type { FieldValues, SubmitHandler, UseFormReturn } from 'react-hook-form'
+import { layerSx } from '../internal/root-style-props.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 
 /** The field-flow column count. 2 is a responsive CSS Grid (1 column
  * below the container's `sm`, 2 from it up); 1 is the single-column
  * flex flow. */
 export type FormLayoutColumns = 1 | 2
 
-export interface FormLayoutProps<TFieldValues extends FieldValues = FieldValues> {
+/**
+ * The form family's default content width in px. `FormLayout` caps its
+ * field flow here unless the host passes `maxWidth`; surfaces that lay
+ * out their own form element (a section whose writes are driven by local
+ * state rather than react-hook-form) share the constant so every form
+ * control on a page reads at one width.
+ */
+export const FORM_MAX_WIDTH = 600
+
+export interface FormLayoutProps<TFieldValues extends FieldValues = FieldValues>
+  extends RootStyleProps {
   /** The host's useForm instance (control, handleSubmit, reset all live with the host). */
   readonly form: UseFormReturn<TFieldValues>
   /** The field flow: FormField instances or any custom controls. */
@@ -80,17 +93,23 @@ export interface FormLayoutProps<TFieldValues extends FieldValues = FieldValues>
 
 /**
  * The form skeleton: FormProvider context, optional <form> submission,
- * field flow and actions row.
+ * field flow and actions row. `sx`, `className` and the ref reach the
+ * outer containment box the whole form renders inside.
  */
-export function FormLayout<TFieldValues extends FieldValues>({
-  form,
-  children,
-  onSubmit,
-  actions,
-  spacing = 2,
-  maxWidth = 600,
-  columns = 1,
-}: FormLayoutProps<TFieldValues>) {
+function FormLayoutInner<TFieldValues extends FieldValues>(
+  {
+    form,
+    children,
+    onSubmit,
+    actions,
+    spacing = 2,
+    maxWidth = FORM_MAX_WIDTH,
+    columns = 1,
+    sx,
+    className,
+  }: FormLayoutProps<TFieldValues>,
+  ref: Ref<HTMLDivElement>,
+): ReactElement {
   const handleSubmit = onSubmit === undefined ? undefined : form.handleSubmit(onSubmit)
   const isGrid = columns === 2
   const body = (
@@ -142,10 +161,13 @@ export function FormLayout<TFieldValues extends FieldValues>({
   // panel and stays two-column in a wide one, independent of the
   // viewport.
   const containerSx = { containerType: 'inline-size' } as const
+  // The host's rules merge after the containment rule; an omitted sx
+  // keeps the exact object the form always rendered.
+  const rootSx = layerSx(containerSx, sx)
   if (handleSubmit !== undefined) {
     return (
       <FormProvider {...form}>
-        <Box sx={containerSx}>
+        <Box ref={ref} className={className} sx={rootSx}>
           <Box component="form" noValidate onSubmit={handleSubmit} sx={flowSx}>
             {body}
           </Box>
@@ -155,9 +177,23 @@ export function FormLayout<TFieldValues extends FieldValues>({
   }
   return (
     <FormProvider {...form}>
-      <Box sx={containerSx}>
+      <Box ref={ref} className={className} sx={rootSx}>
         <Box sx={flowSx}>{body}</Box>
       </Box>
     </FormProvider>
   )
 }
+
+/**
+ * The form skeleton (see `FormLayoutInner`). The generic signature is
+ * preserved across `forwardRef` by the cast below: React 18 forwards a
+ * ref only through `forwardRef`, which erases the component's own type
+ * parameters.
+ */
+export const FormLayout = forwardRef(FormLayoutInner) as <
+  TFieldValues extends FieldValues = FieldValues,
+>(
+  props: FormLayoutProps<TFieldValues> & {
+    readonly ref?: Ref<HTMLDivElement>
+  },
+) => ReactElement

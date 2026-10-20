@@ -6,10 +6,12 @@
  * messages (including the empty-at-submit required message).
  */
 
-import { useState } from 'react'
+import { createRef, useState } from 'react'
 import { describe, expect, it } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { autocompleteClasses } from '@mui/material/Autocomplete'
+import { inputLabelClasses } from '@mui/material/InputLabel'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { PhoneNumberField } from './PhoneNumberField.js'
@@ -216,7 +218,7 @@ describe('PhoneNumberField', () => {
     // phone widths. The base rule is the xs width: spacing(12) = 96px;
     // from sm it is spacing(14) = 112px.
     renderWithProviders(<Harness initialCountry="CN" />)
-    const root = document.querySelector('.MuiAutocomplete-root')
+    const root = document.querySelector(`.${autocompleteClasses.root}`)
     expect(root).not.toBeNull()
     const css = emittedStyleText()
     const ownClasses = Array.from(root?.classList ?? []).filter((name) =>
@@ -229,7 +231,30 @@ describe('PhoneNumberField', () => {
     expect(css).toContain('width:112px')
     // The floating label keeps its natural width instead of MUI's
     // ellipsizing cap, so "Country/region" is not truncated at 96px.
-    expect(css).toContain('.MuiInputLabel-root.MuiInputLabel-shrink')
+    expect(css).toContain(
+      `.${inputLabelClasses.root}.${inputLabelClasses.shrink}`,
+    )
     expect(css).toContain('max-width:none')
+  })
+
+  it('forwards sx, className and ref to the row box', () => {
+    const ref = createRef<HTMLDivElement>()
+    const { container } = renderWithProviders(
+      <PhoneNumberField
+        ref={ref}
+        className="host-phone"
+        sx={{ mt: 4 }}
+        country="US"
+        nationalNumber=""
+        onCountryChange={() => undefined}
+        onNationalNumberChange={() => undefined}
+        countryLabel={COUNTRY_LABEL}
+        numberLabel={NUMBER_LABEL}
+      />,
+    )
+    const root = container.firstChild as HTMLElement
+    expect(root).toHaveClass('host-phone')
+    expect(root).toBe(ref.current)
+    expect(root).toHaveStyle({ marginTop: '32px' })
   })
 })

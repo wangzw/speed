@@ -46,9 +46,12 @@
  * behaviour unchanged.
  */
 
-import type { ReactNode } from 'react'
+import { forwardRef } from 'react'
+import type { ReactElement, ReactNode, Ref } from 'react'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 import {
   EmptyState,
   type EmptyStateHeadingLevel,
@@ -101,7 +104,7 @@ export interface AsyncSectionStaleState {
   readonly onRetry: () => void
 }
 
-export interface AsyncSectionProps<Payload> {
+export interface AsyncSectionProps<Payload> extends RootStyleProps {
   /** No answer yet: renders `loading`. */
   readonly pending: boolean
   /** The settled payload; `undefined` renders the error placeholder
@@ -151,37 +154,59 @@ export interface AsyncSectionProps<Payload> {
   readonly children: (payload: Payload) => ReactNode
 }
 
-/** The four-state branch of a section backed by an asynchronous read. */
-export function AsyncSection<Payload>({
-  pending,
-  payload,
-  empty,
-  loading,
-  errorState,
-  emptyState,
-  headingLevel = 'h2',
-  emptyHeadingLevel,
-  staleState,
-  refusedState,
-  children,
-}: AsyncSectionProps<Payload>) {
+/**
+ * The four-state branch of a section backed by an asynchronous read.
+ * Every branch renders inside one root box when the host passes `sx`,
+ * `className` or a ref; with none of them the branch renders exactly the
+ * node it always did, so a fragment keeps its children's identities.
+ */
+function AsyncSectionInner<Payload>(
+  {
+    pending,
+    payload,
+    empty,
+    loading,
+    errorState,
+    emptyState,
+    headingLevel = 'h2',
+    emptyHeadingLevel,
+    staleState,
+    refusedState,
+    children,
+    sx,
+    className,
+  }: AsyncSectionProps<Payload>,
+  ref: Ref<HTMLDivElement>,
+): ReactElement | null {
+  // The host's root props exist only when asked for: an omitted prop must
+  // not add an element around the branch (a wrapped fragment would change
+  // its children's layout context).
+  const withRoot = (node: ReactNode): ReactElement | null =>
+    sx === undefined && className === undefined && ref == null ? (
+      (node as ReactElement | null)
+    ) : (
+      <Box ref={ref} className={className} sx={sx}>
+        {node}
+      </Box>
+    )
+
   if (pending) {
-    return loading
+    return withRoot(loading)
   }
   if (refusedState !== undefined) {
     // A refusal replaces whatever was on screen: the older data no longer
     // means anything, and there is no retry that could change the answer.
-    return (
+    return withRoot(
       <EmptyState
         variant="noPermission"
         title={refusedState.title}
         description={refusedState.description}
         headingLevel={headingLevel}
-      />
+      />,
     )
   }
   if (payload === undefined) {
-    return (
+    return withRoot(
       <EmptyState
         variant="error"
         title={errorState.title}
@@ -190,7 +215,7 @@ export function AsyncSection<Payload>({
           <Button onClick={errorState.onRetry}>{errorState.retryLabel}</Button>
         }
         headingLevel={headingLevel}
-      />
+      />,
     )
   }
   const settled =
@@ -207,7 +232,7 @@ export function AsyncSection<Payload>({
   // Both settled branches return the same fragment: the stale notice
   // mounts and unmounts as the fragment's first child, so the settled node
   // keeps its identity and its local state across the notice's lifecycle.
-  return (
+  return withRoot(
     <>
       {staleState === undefined ? null : (
         <Alert
@@ -224,6 +249,18 @@ export function AsyncSection<Payload>({
         </Alert>
       )}
       {settled}
-    </>
+    </>,
   )
 }
+
+/**
+ * The four-state branch (see `AsyncSectionInner`). The generic signature
+ * is preserved across `forwardRef` by the cast below: React 18 forwards a
+ * ref only through `forwardRef`, which erases the component's own type
+ * parameters.
+ */
+export const AsyncSection = forwardRef(AsyncSectionInner) as <Payload>(
+  props: AsyncSectionProps<Payload> & {
+    readonly ref?: Ref<HTMLDivElement>
+  },
+) => ReactElement | null

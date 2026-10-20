@@ -6,6 +6,7 @@
  * state change.
  */
 
+import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -92,5 +93,26 @@ describe('OneTimeValuePanel', () => {
     expect(close).toHaveTextContent(CLOSE_LABEL)
     await user.click(close)
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('forwards sx, className and ref to the panel root', () => {
+    const ref = createRef<HTMLDivElement>()
+    const { container } = renderWithProviders(
+      <OneTimeValuePanel
+        ref={ref}
+        className="host-panel"
+        sx={{ mt: 4 }}
+        message={MESSAGE}
+        value={VALUE}
+        copyLabel={COPY_LABEL}
+        closeLabel={CLOSE_LABEL}
+        closeAriaLabel={CLOSE_ARIA}
+        onClose={() => undefined}
+      />,
+    )
+    const root = container.firstChild as HTMLElement
+    expect(root).toHaveClass('host-panel')
+    expect(root).toBe(ref.current)
+    expect(root).toHaveStyle({ marginTop: '32px' })
   })
 })

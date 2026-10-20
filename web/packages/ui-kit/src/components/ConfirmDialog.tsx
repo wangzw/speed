@@ -59,8 +59,8 @@
  * channel for "the next click will confirm".
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode, Ref } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -69,11 +69,12 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import { useUiKitTranslation } from '../internal/translation.js'
+import type { RootStyleProps } from '../internal/root-style-props.js'
 import { visuallyHiddenSx } from '../visually-hidden.js'
 
 export type ConfirmDialogVariant = 'default' | 'danger'
 
-export interface ConfirmDialogProps {
+export interface ConfirmDialogProps extends RootStyleProps {
   /** Whether the dialog is shown; controlled by the host. */
   readonly open: boolean
   /** Dialog heading. Defaults to the namespace's generic confirm title. */
@@ -130,24 +131,25 @@ export interface ConfirmDialogProps {
  */
 export const CONFIRM_ARM_LOCKOUT_MS = 600
 
-/**
- * The controlled confirmation modal with a danger/two-step-confirm
- * mode for destructive actions.
- */
-export function ConfirmDialog({
-  open,
-  title,
-  message,
-  variant = 'default',
-  doubleConfirm = false,
-  confirmLabel,
-  cancelLabel,
-  confirmLoading = false,
-  confirmDisabled = false,
-  children,
-  onConfirm,
-  onCancel,
-}: ConfirmDialogProps) {
+function ConfirmDialogInner(
+  {
+    open,
+    title,
+    message,
+    variant = 'default',
+    doubleConfirm = false,
+    confirmLabel,
+    cancelLabel,
+    confirmLoading = false,
+    confirmDisabled = false,
+    children,
+    onConfirm,
+    onCancel,
+    sx,
+    className,
+  }: ConfirmDialogProps,
+  ref: Ref<HTMLDivElement>,
+) {
   const { t } = useUiKitTranslation()
   const titleId = useId()
   const messageId = useId()
@@ -241,6 +243,9 @@ export function ConfirmDialog({
   const confirmColor = variant === 'danger' ? 'error' : 'primary'
   return (
     <Dialog
+      ref={ref}
+      className={className}
+      sx={sx}
       open={open}
       onClose={handleRequestClose}
       aria-labelledby={titleId}
@@ -294,3 +299,10 @@ export function ConfirmDialog({
     </Dialog>
   )
 }
+
+/**
+ * The controlled confirmation modal with a danger/two-step-confirm
+ * mode for destructive actions. `sx`, `className` and the ref reach the
+ * dialog's root element.
+ */
+export const ConfirmDialog = forwardRef(ConfirmDialogInner)

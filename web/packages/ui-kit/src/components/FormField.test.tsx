@@ -9,8 +9,12 @@
  * context and fails loudly without either.
  */
 
+import { createRef } from 'react'
+import type { Ref } from 'react'
 import { act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { textFieldClasses } from '@mui/material/TextField'
+import type { SxProps, Theme } from '@mui/material/styles'
 import { useForm } from 'react-hook-form'
 import type { RegisterOptions, SubmitHandler } from 'react-hook-form'
 import { describe, expect, it, vi } from 'vitest'
@@ -67,6 +71,29 @@ function renderFieldForm(options: {
 
 function nameInput(utils: ReturnType<typeof renderFieldForm>): HTMLInputElement {
   return utils.getByLabelText('Name') as HTMLInputElement
+}
+
+/** A single field with the styling props under test left to the caller. */
+function FieldHarness({
+  sx,
+  className,
+  nodeRef,
+}: {
+  readonly sx?: SxProps<Theme>
+  readonly className?: string
+  readonly nodeRef?: Ref<HTMLDivElement>
+}) {
+  const { control } = useForm<FormValues>({ defaultValues: { name: '' } })
+  return (
+    <FormField<FormValues, 'name'>
+      name="name"
+      control={control}
+      sx={sx}
+      className={className}
+      ref={nodeRef}
+      render={(state) => <TextFieldSlot state={state} label="Name" />}
+    />
+  )
 }
 
 describe('FormField', () => {
@@ -186,6 +213,23 @@ describe('FormField', () => {
     await user.click(input)
     await user.tab()
     expect(utils.states.at(-1)?.isTouched).toBe(true)
+  })
+
+  it('renders the host control with no wrapper when no root prop is given', () => {
+    const { container } = renderWithProviders(<FieldHarness />)
+    expect(container.firstChild).toHaveClass(textFieldClasses.root)
+  })
+
+  it('forwards sx, className and ref to a root box around the host control', () => {
+    const ref = createRef<HTMLDivElement>()
+    const { container, getByLabelText } = renderWithProviders(
+      <FieldHarness sx={{ mt: 4 }} className="host-field" nodeRef={ref} />,
+    )
+    const root = container.firstChild as HTMLElement
+    expect(root).toHaveClass('host-field')
+    expect(root).toBe(ref.current)
+    expect(root).toHaveStyle({ marginTop: '32px' })
+    expect(root).toContainElement(getByLabelText('Name'))
   })
 
   it('fails loudly without a control or FormProvider context', () => {

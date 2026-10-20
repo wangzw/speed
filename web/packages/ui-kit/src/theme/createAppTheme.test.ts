@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultTokens } from '@speed/tokens'
 import type { TokensOverride } from '@speed/tokens'
 import { createAppTheme } from './createAppTheme.js'
+import { REDUCED_MOTION_QUERY } from './reduced-motion.js'
 
 const DEFAULT_BEFORE = JSON.stringify(defaultTokens)
 // Pristine snapshot taken at module load: the shared-branch enforcement
@@ -157,6 +158,23 @@ describe('createAppTheme token-to-theme mapping', () => {
     for (let i = 2; i < shadows.length; i += 1) {
       expect(shadows[i]).not.toBe('none')
     }
+  })
+})
+
+describe('createAppTheme reduced motion', () => {
+  it('asks MUI to follow the operating system preference', () => {
+    const { theme } = createAppTheme()
+    expect(theme.motion.reducedMotion).toBe('system')
+  })
+
+  it('stops the skeleton at its root under reduced motion', () => {
+    // Skeleton animates through keyframes rather than transitions, so the
+    // theme states the gate on the component root as well as on motion.
+    const { theme } = createAppTheme()
+    const root = theme.components?.MuiSkeleton?.styleOverrides?.root as
+      | Record<string, unknown>
+      | undefined
+    expect(root?.[REDUCED_MOTION_QUERY]).toEqual({ animation: 'none' })
   })
 })
 

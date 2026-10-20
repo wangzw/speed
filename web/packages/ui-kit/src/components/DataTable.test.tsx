@@ -16,6 +16,9 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { checkboxClasses } from '@mui/material/Checkbox'
+import { tableCellClasses } from '@mui/material/TableCell'
+import { tableContainerClasses } from '@mui/material/TableContainer'
 import { switchLanguage } from '@speed/i18n'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import enUS from '../locales/en-US.json' with { type: 'json' }
@@ -161,7 +164,9 @@ describe('DataTable', () => {
       }),
     )
     const utils = renderTable({ columns: manyWideColumns })
-    const container = utils.container.querySelector('.MuiTableContainer-root')
+    const container = utils.container.querySelector(
+      `.${tableContainerClasses.root}`,
+    )
     expect(container).not.toBeNull()
     expect(container?.tagName.toLowerCase()).toBe('div')
     expect(container?.querySelector('table')).not.toBeNull()
@@ -171,7 +176,7 @@ describe('DataTable', () => {
   it('applies column alignment and width to cells', () => {
     const utils = renderTable()
     const creditCells = utils.container.querySelectorAll(
-      'tbody td.MuiTableCell-alignRight',
+      `tbody td.${tableCellClasses.alignRight}`,
     )
     expect(creditCells.length).toBe(MEMBERS.length)
     expect(creditCells[0]).toHaveStyle({ width: '120px' })
@@ -883,7 +888,7 @@ describe('DataTable', () => {
   it('applies the small table size class on request', () => {
     const utils = renderTable({ size: 'small' })
     const cell = utils.container.querySelector('tbody td')
-    expect(cell?.className).toContain('MuiTableCell-sizeSmall')
+    expect(cell?.className).toContain(tableCellClasses.sizeSmall)
   })
 
   // The table is a CSS container: the root box declares
@@ -980,7 +985,9 @@ describe('DataTable', () => {
       // overflow. jsdom cannot prove a scrollbar appears at a real
       // width -- the declaration pair is the observable proof.
       const utils = renderTable({ columns: WRAP_COLUMNS })
-      const container = utils.container.querySelector('.MuiTableContainer-root')
+      const container = utils.container.querySelector(
+      `.${tableContainerClasses.root}`,
+    )
       expect(container).toHaveStyle({ overflowX: 'auto' })
       expect(
         utils.getByRole('columnheader', { name: 'Name' }),
@@ -1227,7 +1234,7 @@ describe('DataTable', () => {
       // container width.
       const utils = renderTable()
       const creditCells = utils.container.querySelectorAll(
-        'tbody td.MuiTableCell-alignRight',
+        `tbody td.${tableCellClasses.alignRight}`,
       )
       expect(creditCells[0]).toHaveStyle({ width: '120px' })
       expect(utils.getByText('Ada')).toBeInTheDocument()
@@ -1338,7 +1345,7 @@ describe('DataTable', () => {
         hasCoarsePointerTouchTarget(
           utils
             .getByRole('checkbox', { name: zhCN.dataTable.selectAllRows })
-            .closest('.MuiCheckbox-root') as Element,
+            .closest(`.${checkboxClasses.root}`) as Element,
         ),
       ).toBe(true)
       expect(
@@ -1347,7 +1354,7 @@ describe('DataTable', () => {
             .getByRole('checkbox', {
               name: renderTemplate(zhCN.dataTable.selectRow, { row: 1 }),
             })
-            .closest('.MuiCheckbox-root') as Element,
+            .closest(`.${checkboxClasses.root}`) as Element,
         ),
       ).toBe(true)
     })
