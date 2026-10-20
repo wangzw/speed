@@ -1,0 +1,43 @@
+# The build context of starters/demo/Dockerfile is the repository root: the
+# image compiles the frontend workspace under web/ and the Go workspace go.work
+# declares (pkg/ and the program's own module), so neither tree alone is the
+# context. Everything the image does not read is kept out, so a local build
+# does not upload a checkout's runtime state, tool directories or build output.
+
+.git
+.github
+.claude
+.idea
+.vscode
+.DS_Store
+.pytest_cache
+.venv
+
+# Local runtime state and build products. The frontend bundle is excluded on
+# purpose: the image builds it in the web stage, and a checkout's copy may
+# carry artifacts from earlier runs.
+**/node_modules
+**/dist
+**/.playwright-cli
+**/__screenshots__
+**/coverage
+**/*.tsbuildinfo
+**/*.test
+**/*.out
+**/*.db
+**/*.db-journal
+**/*.sqlite
+
+starters/demo/server/var
+starters/demo/server/demo
+starters/demo/server/demo-review
+var
+
+# Not read by either build stage.
+docs
+tools
+contracts
+compose.yaml
+README.md
+AGENTS.md
+CLAUDE.md

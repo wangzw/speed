@@ -152,6 +152,9 @@ in; replace them all before a deployment serves real traffic:
 | `server/dist/` | The frontend build output, embedded by the Go program |
 | `web/` | The frontend application's source and build; it writes into `server/dist` |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
+| `Dockerfile` | The container image: the frontend workspace built first, then the Go program that embeds it. Built from the repository root, not this directory |
+| `fly.toml` | The Fly.io deployment: one Machine, the volume, the two checks |
+| `deploy/` | The container entrypoint and the configuration template it renders at start |
 | `.gitignore` | Keeps the runtime state (`server/var/`) and the build output (`server/dist/`) out of the tree |
 
 ## Running it
@@ -282,6 +285,69 @@ docker compose -f starters/demo/compose.yaml up -d
 go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres migrate
 go -C starters/demo/server run . --config file:testdata/postgres.yaml postgres serve
 ```
+
+### Deploying to Fly.io
+
+`Dockerfile`, `fly.toml` and `deploy/` are one deployment: the `sqlite` stack on
+a single Machine, with a volume at `/data`. The stack reaches no network for its
+backends, so the image, the Machine and the volume are the whole topology. The
+volume is what keeps the database, the token signing key and the object store
+across deploys and machine stops.
+
+The image is built from the repository root, because it compiles the frontend
+workspace under `web/` and the Go workspace `go.work` declares; neither is
+inside this directory. `fly.toml`'s `[build] dockerfile` is relative to that
+file. The root `Makefile`'s `deploy` target passes the root as the working
+directory.
+
+**One-time setup.** The names below are the file's; a fork changes `app` and the
+volume's `source` together.
+
+```
+flyctl apps create vislake-speed-demo
+flyctl volumes create speed_demo_data --app vislake-speed-demo --region hkg --size 1
+flyctl secrets set --app vislake-speed-demo \
+  DEMO_OPERATOR_EMAIL=operator@example.com \
+  DEMO_OPERATOR_PASSWORD='...' \
+  DEMO_DB_ENCRYPTION_KEY='...'
+
+# the repository secret the deploy workflow reads
+gh secret set FLY_API_TOKEN --body "$(flyctl tokens create deploy --app vislake-speed-demo)"
+```
+
+The deployment carries no development credential. The entrypoint refuses to
+start without the three secrets, so the DEV values the sample configurations
+ship cannot reach a Machine. `DEMO_OPERATOR_PASSWORD` is held to the account
+store's password policy (twelve characters or more by default); a value outside
+it fails the seed on the first start, and the policy is a runtime setting an
+operator can change later. `DEMO_DB_ENCRYPTION_KEY` is at least 14 bytes and
+must stay the same for the life of the volume: it seals columns at rest, and a
+different key on an existing database makes them unreadable.
+
+The origin is derived from `FLY_APP_NAME` (`https://<app>.fly.dev`). A custom
+domain sets `DEMO_PUBLIC_URL` to its https origin, which is what the WebAuthn
+relying party and the gateway's trusted origins are bound to.
+
+**What a start does.** `deploy/entrypoint.sh` renders
+`deploy/fly.yaml.tmpl` into `/data/config.yaml`, replacing the public origin,
+its domain and the operator credential; it takes ownership of the volume and
+drops to an unprivileged user; it runs `sqlite seed` and then hands the process
+to `sqlite serve`. Seeding on every start is safe by the command's own contract:
+it writes only what is absent, so a restart neither duplicates nor overwrites an
+operator's change. `serve` carries the platform baseline's background modules,
+so no second process runs.
+
+**Checks.** A rolling deploy gates on `GET /` on the backend listener, which
+answers with the embedded bundle's entry document. The readiness signal is the
+operations endpoint's `GET /ready` on port 8083, declared as a top-level check
+because the operations listener is not a service; top-level checks report
+Machine health and gate no routing.
+
+**Deploying.** `.github/workflows/deploy.yml` runs `make deploy` when the
+`check` workflow has completed successfully on `main`, and on request. It
+installs the pinned flyctl and builds the image on Fly's remote builder. The
+repository secret `FLY_API_TOKEN` is the account credential; the one-time setup
+above scopes it to the app.
 
 ## Endpoints and guards
 

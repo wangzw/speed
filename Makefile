@@ -52,7 +52,7 @@ each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
         vet-integration vet-review test-review fmt lint tidy tidy-check repo-check tools-test check python-version \
-        modules-present web-check web-a11y web-browser
+        modules-present web-check web-a11y web-browser deploy
 
 help: ## List the entry points
 	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-21s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -227,6 +227,20 @@ web-a11y: ## Run the frontend's route-level accessibility sweep
 # (see .github/workflows/browser.yml).
 web-browser: ## Run the frontend's browser tier in Chromium (geometry, focus order, focusability)
 	@pnpm -C web exec vitest run --config vitest.browser.config.ts
+
+# The deploy leg releases the demo program to Fly.io. It is deliberately not
+# part of `check`: it needs a Fly account and the FLY_API_TOKEN secret, and the
+# workflow that calls it (.github/workflows/deploy.yml) runs only after `check`
+# passed on main. flyctl is deployment machinery rather than a build input, so
+# .mise.toml does not pin it; the workflow installs the pinned version and this
+# target calls what is on PATH.
+#
+# The working directory is the repository root because the image compiles the
+# frontend workspace under web/ and the Go workspace go.work declares, both of
+# which sit outside starters/demo. The Dockerfile path lives in fly.toml and is
+# relative to that file.
+deploy: ## Build and release the demo program to Fly.io
+	@flyctl deploy . --config starters/demo/fly.toml --remote-only
 
 check: ## Run everything a commit is gated on (no external service needed)
 	@echo "check: run one gate per machine at a time — the lint leg now tolerates a concurrent runner, but two full gates starve the test processes and fail them on the clock, not on an assertion"
