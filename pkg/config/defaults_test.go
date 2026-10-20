@@ -218,31 +218,227 @@ func TestDefaultsKeyNotAcceptedFromPrimaryStopsTheStartup(t *testing.T) {
 	}
 }
 
-// TestDefaultsDocumentDoesNotSatisfyRequired pins that the document belongs to
-// the default layer, which never counts as somebody having given a value. The
-// document really does supply the value -- the item's default holds it -- and
-// Decode still reports the item missing, or "nobody gave it" and "somebody
-// gave the default" would be the same answer.
-func TestDefaultsDocumentDoesNotSatisfyRequired(t *testing.T) {
+// TestDefaultsDocumentSatisfiesRequired pins that the document counts as
+// somebody having given a value: it is the host declaring one on purpose, the
+// same act as writing the key in the configuration file. The prototype's field
+// value is not what satisfies the item, and the case tells the two apart by
+// reading back the document's value. Both spellings of a path reach the same
+// conclusion.
+func TestDefaultsDocumentSatisfiesRequired(t *testing.T) {
+	cases := map[string]map[string]any{
+		"flat":   {"cache.addr": "defaults:1"},
+		"nested": {"cache": map[string]any{"addr": "defaults:1"}},
+	}
+	for name, document := range cases {
+		t.Run(name, func(t *testing.T) {
+			items := map[string]Item{"addr": {Required: true}}
+			l, err := loadDefaults(t, yamlParser(document), items, withDefaults("yaml", "ignored"))
+			if err != nil {
+				t.Fatalf("loading with a defaults document failed: %v", err)
+			}
+			var opts cacheOptions
+			if err := l.Reader().Decode("cache", &opts); err != nil {
+				t.Fatalf("a required item supplied by the defaults document failed to decode: %v", err)
+			}
+			if opts.Addr != "defaults:1" {
+				t.Fatalf("cache.addr decoded to %q, want the document's value: the prototype's "+
+					"%q is not what satisfied the item", opts.Addr, "localhost:6379")
+			}
+		})
+	}
+}
+
+// TestDocumentSilentOnRequiredItemKeepsPrototypeOut pins the half that stays
+// true: a document in the run does not make the prototype's field value count.
+// The item holds a non-zero value in the carrier struct and the document gives
+// another key, and Decode still reports the item missing. The message names
+// the four sources that can satisfy it and says the carrier struct's value is
+// not one of them.
+func TestDocumentSilentOnRequiredItemKeepsPrototypeOut(t *testing.T) {
 	items := map[string]Item{"addr": {Required: true}}
 	l, err := loadDefaults(t, yamlParser(map[string]any{
-		"cache": map[string]any{"addr": "defaults:1"},
+		"cache": map[string]any{"ttl": "2m"},
 	}), items, withDefaults("yaml", "ignored"))
 	if err != nil {
 		t.Fatalf("loading with a defaults document failed: %v", err)
 	}
-	if got := l.m.byPath["cache.addr"].def; got != "defaults:1" {
-		t.Fatalf("the item's default is %#v, want the document's value: the case has to prove the "+
-			"document supplied one, or it tests nothing", got)
+	if got := l.m.byPath["cache.addr"].def; got != "localhost:6379" {
+		t.Fatalf("the item's default is %#v, want the prototype's non-zero value: the case has to "+
+			"prove the prototype holds something, or it tests nothing", got)
 	}
 	var opts cacheOptions
 	err = l.Reader().Decode("cache", &opts)
 	if !errors.Is(err, ErrMissingRequired) {
-		t.Fatalf("a required item supplied only by the defaults document returned %v, want "+
-			"%v", err, ErrMissingRequired)
+		t.Fatalf("a required item the document does not give returned %v, want %v",
+			err, ErrMissingRequired)
 	}
 	if !strings.Contains(err.Error(), "cache.addr") {
 		t.Fatalf("the rejection reads %q, which does not name the item", err)
+	}
+	for _, source := range []string{
+		"primary config source", "environment", "command line", defaultsDocument, "carrier struct",
+	} {
+		if !strings.Contains(err.Error(), source) {
+			t.Fatalf("the rejection reads %q, which does not mention %q", err, source)
+		}
+	}
+}
+
+// TestDocumentNullDoesNotSatisfyRequired pins that a key written as nothing is
+// not a value the document gave: every layer reads a nil as unset, so the item
+// is still missing and the prototype's field value is still the default.
+func TestDocumentNullDoesNotSatisfyRequired(t *testing.T) {
+	cases := map[string]map[string]any{
+		"flat":   {"cache.addr": nil},
+		"nested": {"cache": map[string]any{"addr": nil}},
+	}
+	for name, document := range cases {
+		t.Run(name, func(t *testing.T) {
+			items := map[string]Item{"addr": {Required: true}}
+			l, err := loadDefaults(t, yamlParser(document), items, withDefaults("yaml", "ignored"))
+			if err != nil {
+				t.Fatalf("loading with a defaults document failed: %v", err)
+			}
+			if got := l.m.byPath["cache.addr"].def; got != "localhost:6379" {
+				t.Fatalf("the item's default is %#v, want the prototype's value: a null does not "+
+					"replace it either", got)
+			}
+			var opts cacheOptions
+			if err := l.Reader().Decode("cache", &opts); !errors.Is(err, ErrMissingRequired) {
+				t.Fatalf("a required item the document wrote as null returned %v, want %v",
+					err, ErrMissingRequired)
+			}
+		})
+	}
+}
+
+// TestDocumentSuppliesRequiredStringList pins the case a skeleton leans on: an
+// endpoint list is a leaf the environment and the command line could also give,
+// and a required one the document supplies is satisfied through the same
+// judged read as any other required item. The decoded list is the document's,
+// not the prototype's.
+func TestDocumentSuppliesRequiredStringList(t *testing.T) {
+	type endpointsOptions struct{ Endpoints []string }
+	prototype := endpointsOptions{Endpoints: []string{"proto-a", "proto-b"}}
+	l := loadOver(t,
+		providing("format.yaml", yamlParser(map[string]any{
+			"cache": map[string]any{"endpoints": []any{"a", "b"}},
+		})),
+		declaring("cache", Schema{
+			Namespace: "cache",
+			Mounts:    []Mount{{Value: &prototype}},
+			Items: map[string]Item{
+				"endpoints": {Origins: OriginPrimary | OriginEnv | OriginFlag, FlagName: "endpoints", Required: true},
+			},
+		}),
+		withDefaults("yaml", "ignored"),
+	)
+	var opts endpointsOptions
+	if err := l.Reader().Decode("cache", &opts); err != nil {
+		t.Fatalf("a required string list supplied by the defaults document failed to decode: %v", err)
+	}
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(opts.Endpoints, want) {
+		t.Fatalf("cache.endpoints decoded to %#v, want the document's %#v", opts.Endpoints, want)
+	}
+}
+
+// TestDocumentSuppliesRequiredContainerLeaf pins the case the string list does
+// not reach: a map or a list of structs is a container leaf, read back from
+// the source trees rather than through the layering tool, and the required
+// rule governs that branch too. The decoded containers are the document's, not
+// the prototype's.
+func TestDocumentSuppliesRequiredContainerLeaf(t *testing.T) {
+	l, err := loadDefaults(t, yamlParser(map[string]any{
+		"cache": map[string]any{
+			"labels": map[string]any{"Zone": "cold"},
+			"nodes":  []any{map[string]any{"addr": "node:1", "pool-size": 3}},
+		},
+	}), map[string]Item{
+		"labels": {Required: true},
+		"nodes":  {Required: true},
+	}, withDefaults("yaml", "ignored"))
+	if err != nil {
+		t.Fatalf("loading with a defaults document failed: %v", err)
+	}
+	opts := decodeCacheOptions(t, l)
+	wantLabels := map[string]string{"Zone": "cold"}
+	if !reflect.DeepEqual(opts.Labels, wantLabels) {
+		t.Fatalf("cache.labels decoded to %#v, want the document's %#v: a required container the "+
+			"document supplies is satisfied and reads back whole", opts.Labels, wantLabels)
+	}
+	wantNodes := []redisOptions{{Addr: "node:1", PoolSize: 3}}
+	if !reflect.DeepEqual(opts.Nodes, wantNodes) {
+		t.Fatalf("cache.nodes decoded to %#v, want the document's %#v: a required struct list the "+
+			"document supplies is satisfied and reads back whole", opts.Nodes, wantNodes)
+	}
+}
+
+// TestDocumentSuppliesRequiredPointerLeaf pins the other shape the required
+// rule governs: a scalar pointer whose prototype value is nil, the one shape
+// meansUnset reads as "nobody gave one". The document gives it, so the item is
+// satisfied and the pointer is filled from the document.
+func TestDocumentSuppliesRequiredPointerLeaf(t *testing.T) {
+	type retriesOptions struct{ Retries *int }
+	prototype := retriesOptions{}
+	l := loadOver(t,
+		providing("format.yaml", yamlParser(map[string]any{
+			"cache": map[string]any{"retries": 3},
+		})),
+		declaring("cache", Schema{
+			Namespace: "cache",
+			Mounts:    []Mount{{Value: &prototype}},
+			Items:     map[string]Item{"retries": {Required: true}},
+		}),
+		withDefaults("yaml", "ignored"),
+	)
+	var opts retriesOptions
+	if err := l.Reader().Decode("cache", &opts); err != nil {
+		t.Fatalf("a required pointer the defaults document supplies failed to decode: %v", err)
+	}
+	if opts.Retries == nil || *opts.Retries != 3 {
+		t.Fatalf("cache.retries decoded to %v, want a pointer to 3", opts.Retries)
+	}
+}
+
+// TestDocumentSatisfiedRequiredValueLosesToHigherLayers pins that being
+// satisfied and holding the final value are two different questions: the
+// document satisfies the item, and the primary source and the environment
+// still replace the value it gave.
+func TestDocumentSatisfiedRequiredValueLosesToHigherLayers(t *testing.T) {
+	cases := []struct {
+		name    string
+		primary map[string]any
+		env     string
+		want    string
+	}{
+		{name: "document only", want: "defaults:1"},
+		{name: "primary source", primary: map[string]any{"cache": map[string]any{"addr": "file:1"}}, want: "file:1"},
+		{name: "environment", env: "env:1", want: "env:1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env != "" {
+				t.Setenv("MYAPP_CACHE__ADDR", tc.env)
+			}
+			items := map[string]Item{"addr": {Origins: OriginPrimary | OriginEnv | OriginFlag, FlagName: "cache-addr", Required: true}}
+			l, err := loadDefaults(t, yamlParser(map[string]any{
+				"cache": map[string]any{"addr": "defaults:1"},
+			}), items, withDefaults("yaml", "ignored"))
+			if err != nil {
+				t.Fatalf("loading with a defaults document failed: %v", err)
+			}
+			if tc.primary != nil {
+				givePrimaryWhole(t, l, tc.primary)
+			}
+			var opts cacheOptions
+			if err := l.Reader().Decode("cache", &opts); err != nil {
+				t.Fatalf("decoding failed: %v", err)
+			}
+			if opts.Addr != tc.want {
+				t.Fatalf("cache.addr decoded to %q, want %q", opts.Addr, tc.want)
+			}
+		})
 	}
 }
 

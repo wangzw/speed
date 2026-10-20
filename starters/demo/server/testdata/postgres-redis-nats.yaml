@@ -18,10 +18,9 @@
 # seed and the backend section at the bottom. Apart from the OTLP destination
 # above, only the backend section differs between the six stack files.
 #
-# The mounting keys repeated below — the tenant, authorization, audit, settings
-# and feature endpoints, and webui.endpoint — are the ones the loader requires
-# somebody to give. A required item is not satisfied by the defaults document,
-# so every configuration states them; a copy edits them here.
+# No mounting key is repeated here: the loader accepts a required item from the
+# compiled-in document, whose mounting table is complete. A copy changes the
+# table in defaults.yaml, not in this file.
 #
 # The values marked DEV are development defaults a copy must replace before
 # serving real traffic (AGENTS.md lists them together).
@@ -52,10 +51,6 @@ ops:
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
   servers: ["http://localhost:8080"]
 
-# Required: the frontend bundle's endpoint, repeated from defaults.yaml.
-webui:
-  endpoint: web
-
 observability:
   otel:
     service-name: demo
@@ -82,42 +77,6 @@ authn:
       rp-name: demo
       origins:
         - "http://localhost:8080"
-
-# Tenant resolution and admission. The endpoints below and the extractor are
-# required items, so they are stated here as well as in defaults.yaml.
-tenant:
-  resolve:
-    endpoints: [api]
-    extractor: header
-  admission:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-
-# The authorization layer. Both endpoint lists are required items.
-authz:
-  guard:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-  self:
-    endpoints: [api]
-
-# The journal's request list and captured endpoints are platform topology and
-# come from defaults.yaml; the management surface's endpoint list is required.
-audit:
-  admin:
-    endpoints: [admin]
-
-# Required: where the settings management routes mount.
-settings:
-  admin:
-    endpoints: [admin]
-
-# Required: where the feature document is served.
-feature:
-  board:
-    endpoint: account
 
 # The host's own personal-tenant policy; off in the baseline.
 workspace:

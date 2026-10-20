@@ -412,26 +412,41 @@ the values their deployment chooses, and the backend section at the bottom — n
 a second copy of the whole platform table. A copy of this skeleton changes the
 delta, not the table.
 
-One rule limits how far a file can shrink: a **required** input item is not
-satisfied by the defaults document. The document supplies a default, and a
-default is not somebody having given a value, so the loader reports a required
-item it finds only there as missing. The required keys — `webui.endpoint`,
-`feature.board.endpoint`, `tenant.resolve.endpoints`, `tenant.resolve.extractor`,
-`tenant.admission.endpoints`, `objectstore.fs.root`, and the `tenant.admin`,
-`authz.guard`, `authz.admin`, `authz.self`, `audit.admin` and `settings.admin`
-endpoint lists
-— are repeated in every configuration file, and so is `http.cors.endpoints`:
-the CORS module refuses an empty table when it resolves, rather than marking the
-item required in its declaration, and each policy it is given needs at least one
-allow-origin because the library refuses one that disables every origin.
-`http.endpoints`, the journal's
-captured endpoints and request list, the notification mounts,
-`objectstore.metadata.endpoints`, the rate limiter and the gateway's own guard
-list are not, because nothing requires them to be stated. A key in the document
+One rule shapes how far a file can shrink: a **required** input item is
+satisfied by the defaults document, and a prototype's field value is not. The
+document is the host naming a value on purpose, the same act as writing it in
+the configuration file; a prototype value always holds something, so it could
+not tell "nobody gave a value" from the zero one. The mounting table therefore
+lives in `defaults.yaml` alone, and no configuration file repeats it.
+
+What a file must still state is the values the document must not carry:
+
+- `http.cors.endpoints`, because the CORS module refuses an empty table when it
+  resolves rather than marking the item required in its declaration, and each
+  policy needs at least one allow-origin because the library refuses one that
+  disables every origin. Its contents name the origins this deployment is
+  served from, which differ between deployments.
+- `objectstore.fs.root`, which is required and is a path on disk: where a
+  deployment keeps its bytes differs per deployment.
+- `observability.otlp.endpoint`, which is required and names the collector the
+  deployment exports to. `defaults.yaml` carries no `observability.otlp`
+  section: only the `postgres-redis-nats` stack exports through OTLP, and the
+  stacks that export to stdout must not start pointed at a collector that is
+  not there.
+- every credential: a seeded account's password or `password-hash`, the
+  database encryption key, a provider's client secret. A credential never
+  belongs in a document compiled into the binary.
+
+The required items the document carries — `webui.endpoint`,
+`feature.board.endpoint`, `tenant.resolve.endpoints`,
+`tenant.resolve.extractor`, `tenant.admission.endpoints`,
+`tenant.admin.endpoints`, `authz.guard.endpoints`, `authz.admin.endpoints`,
+`authz.self.endpoints`, `audit.admin.endpoints` and
+`settings.admin.endpoints` — need not appear in a file. A key in the document
 is overridden by the same key in the file, and a container leaf such as
-`http.endpoints` is replaced whole rather than merged:
-the split topology the differential case exercises writes the full table to move
-`web` onto a listener of its own.
+`http.endpoints` is replaced whole rather than merged: the split topology the
+differential case exercises writes the full table to move `web` onto a listener
+of its own.
 
 The five endpoints hang on two listeners, which each configuration file
 declares: `api`, `account`, `admin` and `web` share the `backend` listener, and
@@ -452,8 +467,7 @@ refuses it 401, and once admitted the api endpoint answers its own 404 (or its
 405 where the path exists but the method is not allowed).
 
 The baseline now ships the guards each endpoint carries; `server/defaults.yaml`
-names the fixed part of that wiring, and each configuration file states the
-required lists again:
+names the fixed part of that wiring, and no configuration file repeats it:
 
 - The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its own
   routes — login, session, registration, profile, the account-management routes,
@@ -488,8 +502,7 @@ required lists again:
   and in the request's tenant, and the frontend attaches both sets to the
   session from that answer.
 - The feature document (`feature.board`) mounts `GET /api/v1/features` on the endpoint
-  `feature.board.endpoint` names — `account` in `defaults.yaml` and in every
-  configuration file, which
+  `feature.board.endpoint` names — `account` in `defaults.yaml`, which
   the gateway guards, which resolves no tenant, and whose listener claims
   `/api/v1/features`. It publishes only to authenticated callers: a process with no
   authentication gateway fails to start rather than expose the document, and an
@@ -702,8 +715,9 @@ Under every stack:
 - **The platform baseline**: `baselineServe` and `baselineWorker` in
   `server/main.go` are the two lists a product grows from. A module dropped from
   them is a capability the deployment does not carry; a module added is one it
-  does, once its required configuration items are written into
-  `server/testdata/`.
+  does, once its required configuration items have a value — in
+  `server/defaults.yaml` for shared topology, in `server/testdata/` for a
+  deployment value.
 - **A new endpoint, guard or backend on an endpoint**: the endpoint is a
   constant in `server/host.go` and an entry under `http.endpoints` in the
   configuration; which modules guard it is the `Include` list of the command in

@@ -29,9 +29,8 @@
 # field. (The attribute is not named "code" because that name is a registered
 # sensitive key of the process, and the logging layer would mask the value.)
 #
-# The mounting keys repeated below — webui.endpoint above all — are the ones the
-# loader requires somebody to give. A required item is not satisfied by the
-# defaults document, so every configuration states them.
+# No mounting key is repeated here: the loader accepts a required item from the
+# compiled-in document, whose mounting table is complete.
 
 http:
   listeners:
@@ -52,10 +51,6 @@ ops:
   version: 0.1.0
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
   servers: ["http://localhost:8080"]
-
-# Required: the frontend bundle's endpoint, repeated from defaults.yaml.
-webui:
-  endpoint: web
 
 observability:
   otel:
@@ -122,42 +117,6 @@ sms:
         codes:
           en-US: "review-enroll"
           zh-CN: "review-enroll-zh"
-
-# Tenant resolution and admission. The endpoints below and the extractor are
-# required items, so they are stated here as well as in defaults.yaml.
-tenant:
-  resolve:
-    endpoints: [api]
-    extractor: header
-  admission:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-
-# The authorization layer. Both endpoint lists are required items.
-authz:
-  guard:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-  self:
-    endpoints: [api]
-
-# The journal's request list and captured endpoints are platform topology and
-# come from defaults.yaml; the management surface's endpoint list is required.
-audit:
-  admin:
-    endpoints: [admin]
-
-# Required: where the settings management routes mount.
-settings:
-  admin:
-    endpoints: [admin]
-
-# Required: where the feature document is served.
-feature:
-  board:
-    endpoint: account
 
 # REVIEW: the personal tenant the review walkthrough exercises. A registration
 # completed through the SMS sign-in lands in the tenant area with a personal

@@ -17,6 +17,11 @@ import (
 // document that travels with the binary, so that a host's configuration file
 // carries only the deltas from it.
 //
+// A required item is satisfied by the document. The host naming the value here
+// is the same act as writing it in the configuration file, which is what a
+// required item asks for; the prototype's field value is the lower half of the
+// default layer and still never counts.
+//
 // The document is a host artifact like the primary source, so it is judged the
 // same way: a key no module declares, or one the owning module does not accept
 // from the primary source, fails the startup rather than being dropped.
@@ -107,6 +112,7 @@ func (l *loader) applyDefaults(d Defaults, module string) error {
 			continue
 		}
 		item.def = value
+		item.documented = true
 	}
 	return nil
 }

@@ -32,15 +32,16 @@ var _ Reader = (*reader)(nil)
 // prototype the module declared is never consulted again.
 //
 // A path the caller never declared is not an error: target keeps what the
-// caller put in it. A required item that no source gave a value for is
-// ErrMissingRequired, raised here rather than in a global sweep, because the
-// manifest is collected from every registered module, the ones this run does
-// not enable included, while a required item binds only where it is decoded
-// and only for the modules this run takes in at run level. A sweep over the
-// manifest would fail the run over items no participant declared, and judging
-// every decoded path would fail a command that reads a module it only collects
-// from -- one that reports the configuration -- over a value only the command
-// that runs the module needs.
+// caller put in it. A required item that none of the primary config source,
+// the environment, the command line and the host defaults document gave a
+// value for is ErrMissingRequired, raised here rather than in a global sweep,
+// because the manifest is collected from every registered module, the ones
+// this run does not enable included, while a required item binds only where
+// it is decoded and only for the modules this run takes in at run level. A
+// sweep over the manifest would fail the run over items no participant
+// declared, and judging every decoded path would fail a command that reads a
+// module it only collects from -- one that reports the configuration -- over a
+// value only the command that runs the module needs.
 //
 // An illegal target panics rather than returning an error: a non-pointer, a
 // nil, or a struct that cycles back into itself is a programming error at the
@@ -142,6 +143,14 @@ func (r *reader) descend(v reflect.Value, key string, chain []reflect.Type, f re
 // leaf writes one value into the target field and enforces the required rule
 // on it.
 //
+// A required item is satisfied by any of the four sources that give values:
+// the primary config source, the environment, the command line, and the host
+// defaults document. The document counts because it is the host declaring the
+// value on purpose, which is the same act as writing it in the configuration
+// file; the prototype's field value does not, because it always holds
+// something and would make "nobody gave a value" and "somebody gave the zero
+// value" the same answer.
+//
 // Every leaf is read on its own rather than the whole path being decoded in
 // one go. The layering tool answers a request for a section with the topmost
 // layer that holds one, whole, and does not merge the layers below it: a
@@ -149,11 +158,12 @@ func (r *reader) descend(v reflect.Value, key string, chain []reflect.Type, f re
 // value, which is the opposite of the leaf-wise overriding the design states.
 func (r *reader) leaf(path string, fv reflect.Value) error {
 	item, declared := r.l.m.byPath[path]
-	if declared && item.item.Required && r.judged[item.module] && !r.l.given(item) {
-		return fmt.Errorf("%w: %q is required and neither the primary config source, the "+
-			"environment nor the command line gave it a value. The default in the carrier struct "+
-			"does not count: a value nobody gave and a value that happens to be the zero one "+
-			"would otherwise be the same thing",
+	if declared && item.item.Required && r.judged[item.module] &&
+		!r.l.given(item) && !r.l.documentGiven(item) {
+		return fmt.Errorf("%w: %q is required and none of the primary config source, the "+
+			"environment, the command line and the host defaults document gave it a value. "+
+			"The field value in the carrier struct does not count: a value nobody gave and "+
+			"a value that happens to be the zero one would otherwise be the same thing",
 			ErrMissingRequired, path)
 	}
 	// A leaf whose declared value stands for being unset, and that no source

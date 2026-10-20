@@ -410,11 +410,48 @@ func TestHelpOmitsTheDefaultOfARequiredItem(t *testing.T) {
 	}
 }
 
+// TestHelpRendersTheDocumentDefaultOfARequiredItem pins that the help output
+// tells the two kinds of required item apart. A required item the host
+// defaults document supplies does not have to be given on the command line,
+// so the document's value is the default the reader is shown and the mark is
+// gone: saying a run cannot start without it would be false on the one page a
+// reader uses to decide that.
+func TestHelpRendersTheDocumentDefaultOfARequiredItem(t *testing.T) {
+	defaults := struct{ Addr string }{}
+	l := loadOver(t,
+		providing("format.yaml", yamlParser(map[string]any{
+			"greeter": map[string]any{"addr": "defaults:1"},
+		})),
+		declaring("greeter", Schema{
+			Namespace: "greeter",
+			Mounts:    []Mount{{Value: &defaults}},
+			Items: map[string]Item{"addr": {
+				Origins:     OriginPrimary | OriginFlag,
+				FlagName:    "remote-addr",
+				Placeholder: "HOST:PORT",
+				Required:    true,
+				Description: "the address of the greeting service",
+			}},
+		}),
+		withDefaults("yaml", "ignored"),
+	)
+	if got := flagDefaultString(corpusItem(t, l, "remote-addr")); got != "defaults:1" {
+		t.Fatalf("the required item the document supplies hands over %q, want the document's value",
+			got)
+	}
+	usage := helpFlags(t, l, "greeter").FlagUsages()
+	if strings.Contains(usage, "(required)") {
+		t.Errorf("the help output reads\n%s\nand marks required an argument whose omission starts "+
+			"the run", usage)
+	}
+}
+
 // TestHelpMarksARequiredItem pins that the help output tells an argument
 // nobody may omit from an optional one. The default column is what separates
-// them everywhere else, and a required item leaves that column empty, so the
-// mark rides in the usage text the command-line library prints as it stands.
-// Without it the reader is left to guess which arguments the run needs.
+// them everywhere else, and a required item no document supplies leaves that
+// column empty, so the mark rides in the usage text the command-line library
+// prints as it stands. Without it the reader is left to guess which arguments
+// the run needs.
 func TestHelpMarksARequiredItem(t *testing.T) {
 	defaults := struct {
 		Addr string

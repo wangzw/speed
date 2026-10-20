@@ -89,13 +89,13 @@ starters/demo/
 
 **前端不经特性门控就调用其路由的后端模块，`serve` 必须运行级纳入。** 前端调用这些模块的路由之前不查特性文档；它们不在时，前端的登录、会话与特性门控本身都无从成立。这些模块的清单，以及前端用到的其余后端面怎样门控，见 [web](web/design-web.md#不经特性门控的后端模块)。
 
-`testdata/` 的每份配置为基线里需要配置的模块写全必需项，并随骨架带一组开发用值（`seed.accounts` 的明文口令、库加密根键、`seed.settings` 里降到域下限的 `authn.mfa.sensitive-min-age`），由 `AGENTS.md` 点名、要求拷走后替换。签名密钥不由 `testdata/` 交付：`authn.token.signing-key-file` 指向工作目录下的 `var/token-signing-key.pem`，`run()` 在驱动生命周期之前发现该路径无文件时用 `pkg/authn/token` 的 `GenerateKey` 生成一份写入，已有文件则沿用；该路径由 `.gitignore` 挡在树外，生产部署换成自己的密钥材料。平台默认文档 `server/defaults.yaml` 里审计的请求级捕获样例只点名由操作者发起的写入路由，不点名前端会自动轮询的读（会话与本人的读之类）：被轮询的读逐次落一行，审计表与概览的最近活动会被它刷屏，真正要留痕的冒充、账号变更反而被淹没。样例同时避开已经由接缝级审计记录的管理动作，不重复记同一件事。示范的 `AGENTS.md` 是这组值与该基线的契约面。
+`testdata/` 的每份配置只写部署差异——监听地址、来源、路径、库定位符、种子与后端选择。平台默认文档 `server/defaults.yaml` 已经给出的取值不在每份配置里重复，其中包括文档里标了 `Required` 的项：文档由宿主明确写下，满足必填。文档没有给出、而模块又标了必填的项仍由每份配置写出。每份配置随骨架带一组开发用值（`seed.accounts` 的明文口令、库加密根键、`seed.settings` 里降到域下限的 `authn.mfa.sensitive-min-age`），由 `AGENTS.md` 点名、要求拷走后替换。签名密钥不由 `testdata/` 交付：`authn.token.signing-key-file` 指向工作目录下的 `var/token-signing-key.pem`，`run()` 在驱动生命周期之前发现该路径无文件时用 `pkg/authn/token` 的 `GenerateKey` 生成一份写入，已有文件则沿用；该路径由 `.gitignore` 挡在树外，生产部署换成自己的密钥材料。平台默认文档 `server/defaults.yaml` 里审计的请求级捕获样例只点名由操作者发起的写入路由，不点名前端会自动轮询的读（会话与本人的读之类）：被轮询的读逐次落一行，审计表与概览的最近活动会被它刷屏，真正要留痕的冒充、账号变更反而被淹没。样例同时避开已经由接缝级审计记录的管理动作，不重复记同一件事。示范的 `AGENTS.md` 是这组值与该基线的契约面。
 
 ### 审查装配
 
 审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。`server/review.go` 的 `reviewModules` 给 `serve` 的点名集加上基线判据排除在外的登录方式：社交登录方法（`authn.login.google`、`authn.login.github`、`authn.login.wechat-mp`、`authn.login.wechat-web`）与短信家族（`authn.sms`、`sms.registry`、`authn.login.sms`），外加载体 `sms.review`。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这些模块的代码路径；基线的判据与点名集不因它改变。
 
-**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是在平台默认文档 `server/defaults.yaml` 之上的覆盖文档，与 sqlite 栈同一形状，再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、`authn.account.signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
+**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、`authn.account.signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
 
 **验证码由短信模块生成，不写死。** `sms.review` 经 `sms.NewModule` 提供载体的发送与模板两条接缝，不读任何配置项；短信模块把消息的 `code` 参数交给它，它把这一行写进进程日志的 `verification_code` 字段。该字段不叫 `code`，因为 `code` 是进程已登记的敏感键名，日志层会把值打码。号码仍经过真实的预算、挑战行与校验，流程跑的是产品自己的状态机。
 

@@ -26,17 +26,24 @@ var durationType = reflect.TypeFor[time.Duration]()
 // real default still reaches the value of the run, through the layering
 // tool's default layer alone. One whose value stands for being unset, because
 // there is no default to write and a rendered stand-in would become the value
-// the layering tool falls back on when every layer is silent. A required one,
-// because a value nobody may omit has no default to speak of. And one whose
-// default is the zero of its type, because the library omits the default of
-// its own types on the same test, and a rendered zero reads as a value that
-// was chosen.
+// the layering tool falls back on when every layer is silent. A required one
+// the host defaults document does not supply, because a run cannot start
+// without it and printing a default would say it could. And one whose default
+// is the zero of its type, because the library omits the default of its own
+// types on the same test, and a rendered zero reads as a value that was
+// chosen.
+//
+// A required item the document does supply hands over the document's value
+// like any other default: naming it in the document is what makes the run
+// start without the argument, and withholding the value while leaving the
+// default column empty would hide the one fact the reader needs.
 //
 // The last two matter to the reader rather than to the value: an empty string
 // rendered in the form it would be typed back is a bare pair of quotes, which
 // the library then prints as a default the item does not have.
 func flagDefaultString(item *manifestItem) string {
-	if item.item.Sensitive || item.item.Required || meansUnset(reflect.ValueOf(item.def)) {
+	if item.item.Sensitive || (item.item.Required && !item.documented) ||
+		meansUnset(reflect.ValueOf(item.def)) {
 		return ""
 	}
 	if isZeroDefault(item.def) {
@@ -68,10 +75,11 @@ func placeholder(item *manifestItem) string {
 }
 
 // requiredMarker tells an argument nobody may omit from an optional one. The
-// command-line library has no column of its own for it, and a required item
-// hands over no default, so the place left for the marker is the usage text -
-// and without it the two kinds of argument read alike on the page, while
-// which of the two an argument is decides whether the run starts at all.
+// command-line library has no column of its own for it, and a required item no
+// document supplies hands over no default, so the place left for the marker is
+// the usage text - and without it the two kinds of argument read alike on the
+// page, while which of the two an argument is decides whether the run starts
+// at all.
 const requiredMarker = "(required)"
 
 // flagUsage is the text the command-line library prints beside an argument:
@@ -86,8 +94,13 @@ const requiredMarker = "(required)"
 // not constructed -- so no run will come up short of its value, and marking it
 // would say the opposite on the one page where the reader is deciding whether
 // a run can start without it.
+//
+// An item the host defaults document supplies is not marked for the same
+// reason: the document gave the value, so this command starts without the
+// argument, and the marker promises otherwise. The two cases are told apart by
+// what the document named, not by the declaration alone.
 func flagUsage(item *manifestItem, runs bool) string {
-	if !runs || !item.item.Required {
+	if !runs || !item.item.Required || item.documented {
 		return item.item.Description
 	}
 	if item.item.Description == "" {

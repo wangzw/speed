@@ -71,8 +71,13 @@ primary config source.
   fails the startup. A container leaf it gives replaces the prototype's whole
   value, and a primary source giving the same leaf replaces the document's
   whole value; no layer merges inside a container.
-- **Required.** The document supplies defaults, so it never satisfies
-  `Required`.
+- **Required.** The document satisfies `Required`: naming a value here is
+  the host declaring it, the same act as writing the key in the configuration
+  file. A key written as null gives nothing and satisfies nothing. A value
+  only the prototype supplies never satisfies `Required`. A required item the
+  document supplies carries no required mark in the help output, because
+  leaving the argument out starts the run; its value is rendered as the
+  argument's default the way any other default is.
 - **No new dependency.** The document arrives as bytes and leaves through a
   registered `Format`. Adding this resource imports nothing, and the root
   package still carries no third-party dependency of its own.

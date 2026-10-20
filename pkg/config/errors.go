@@ -60,6 +60,7 @@ var (
 	// of the target field.
 	ErrTypeMismatch = errors.New("config: value does not convert to the type of the field")
 	// ErrMissingRequired reports a required item none of the primary source,
-	// the environment and the command line gave a value for.
+	// the environment, the command line and the host defaults document gave a
+	// value for.
 	ErrMissingRequired = errors.New("config: required input item has no value")
 )

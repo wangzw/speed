@@ -24,8 +24,9 @@ import (
 // reads it from there whichever command it selected and wherever on the path
 // the argument was written. The face is per command because what the help
 // output says about the argument is: the same required item is one a run of
-// the command that runs its module cannot start without, and one a run of a
-// command that only collects its declarations can leave out.
+// the command that runs its module cannot start without unless the host
+// defaults document supplies it, and one a run of a command that only collects
+// its declarations can leave out.
 func (l *loader) BindLayer(fs *pflag.FlagSet, taking, running []string) error {
 	takes := make(map[string]bool, len(taking))
 	for _, name := range taking {

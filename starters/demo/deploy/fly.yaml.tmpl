@@ -14,6 +14,12 @@
 # credentials: the listeners bind every address because Fly's proxy and health
 # checker connect over the Machine's private network, and the working directory
 # is /data so the relative paths below all land on the volume.
+#
+# The mounting table — which endpoint each capability sits on, and the
+# endpoints the guards cover — is carried in full by the compiled-in document,
+# required items included, so this file states none of it. What remains below
+# is what differs between deployments: the topology this one reaches the
+# world at, the paths on its volume, and its credentials.
 
 http:
   listeners:
@@ -35,10 +41,6 @@ ops:
   version: 0.1.0
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
   servers: ["__PUBLIC_ORIGIN__"]
-
-# Required: the frontend bundle's endpoint, repeated from defaults.yaml.
-webui:
-  endpoint: web
 
 observability:
   otel:
@@ -66,42 +68,6 @@ authn:
       rp-name: demo
       origins:
         - "__PUBLIC_ORIGIN__"
-
-# Tenant resolution and admission. The endpoints below and the extractor are
-# required items, so they are stated here as well as in defaults.yaml.
-tenant:
-  resolve:
-    endpoints: [api]
-    extractor: header
-  admission:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-
-# The authorization layer. Both endpoint lists are required items.
-authz:
-  guard:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-  self:
-    endpoints: [api]
-
-# The journal's request list and captured endpoints are platform topology and
-# come from defaults.yaml; the management surface's endpoint list is required.
-audit:
-  admin:
-    endpoints: [admin]
-
-# Required: where the settings management routes mount.
-settings:
-  admin:
-    endpoints: [admin]
-
-# Required: where the feature document is served.
-feature:
-  board:
-    endpoint: account
 
 # The host's own personal-tenant policy. Off, as in the baseline: this
 # deployment serves the seeded tenant, and a registration with no membership

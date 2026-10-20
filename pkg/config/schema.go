@@ -112,9 +112,9 @@ type Item struct {
 	// has nothing to go on.
 	Description string
 	// Required makes Decode fail when none of the primary source, the
-	// environment and the command line gave the item a value. The default
-	// layer does not count as a value, or a required item and one that took
-	// the zero value could not be told apart.
+	// environment, the command line and the host defaults document gave the
+	// item a value. The prototype's field value does not count, or a required
+	// item and one that took the zero value could not be told apart.
 	Required bool
 	// Sensitive keeps the value out of logs and out of the error a failed
 	// conversion reports, and keeps the default out of the help output.

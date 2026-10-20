@@ -51,8 +51,14 @@ type manifestItem struct {
 	kind leafKind
 	// def is the field's current value in the prototype, which is this
 	// item's default. Container values are copies, so the prototype is not
-	// reachable through the manifest.
+	// reachable through the manifest. The host defaults document replaces it
+	// where the document names the path (see applyDefaults).
 	def any
+	// documented is whether the host defaults document gave this item its
+	// default. It is the half of the default layer that counts as somebody
+	// having supplied a value, and the help output reads it to tell a
+	// document-supplied required item from one nothing supplied.
+	documented bool
 }
 
 // expandSchema turns one module's declaration into its input items: it walks

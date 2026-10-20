@@ -138,14 +138,14 @@ const demoSeedSection = `seed:
 // locator, with those filled in. It is an override document, the shape
 // testdata/sqlite-memory.yaml holds — the public address among it, so the
 // WebAuthn relying party the sample binds is the one a case runs on — and the
-// platform topology the sample leaves out arrives from the embedded defaults
-// document, exactly as it does for the binary a person runs. The seed section is
-// one account more than the sample's: the case that seeds signs in with two, one
+// platform topology it leaves out arrives from the embedded defaults document,
+// exactly as it does for the binary a person runs. No mounting key is repeated:
+// the defaults document satisfies a required item. The seed section is one
+// account more than the sample's: the case that seeds signs in with two, one
 // given a plaintext password and one given a hash, and the sample files carry
 // only the first shape so that a copy starts with one operator to replace rather
-// than two. The mounting keys below are repeated because a required item is not
-// satisfied by the defaults document. A case of its own holds the template to
-// the sample's WebAuthn block, so the two do not drift apart.
+// than two. A case of its own holds the template to the sample's WebAuthn block,
+// so the two do not drift apart.
 const demoConfig = `http:
   listeners:
     backend:
@@ -162,8 +162,6 @@ ops:
   version: 0.1.0
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
   servers: ["http://localhost:8080"]
-webui:
-  endpoint: web
 observability:
   otel:
     service-name: demo
@@ -181,30 +179,6 @@ authn:
       rp-name: demo
       origins:
         - "http://localhost:8080"
-tenant:
-  resolve:
-    endpoints: [api]
-    extractor: header
-  admission:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-authz:
-  guard:
-    endpoints: [api]
-  admin:
-    endpoints: [admin]
-  self:
-    endpoints: [api]
-audit:
-  admin:
-    endpoints: [admin]
-settings:
-  admin:
-    endpoints: [admin]
-feature:
-  board:
-    endpoint: account
 workspace:
   personal:
     enabled: false

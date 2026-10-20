@@ -10,11 +10,14 @@
 # those there.
 #
 # One rule shapes what a configuration file still has to say: a required input
-# item is not satisfied by this document. The document supplies a default, and
-# a default is not somebody having given a value; the loader reports a required
-# item it finds only here as missing. The required keys below are therefore
-# repeated in every sample configuration, and a copy edits them there. See
-# AGENTS.md.
+# item IS satisfied by this document, and a prototype's field value is not. The
+# document is the host naming a value on purpose, the same act as writing it in
+# the configuration file, so a Required key stated here needs no copy in the
+# file. A prototype value never counts, because it always holds something and
+# could not tell "nobody gave a value" from a zero one. The mounting table below
+# is therefore carried in full. What the document must not carry is a
+# credential or a value that differs between deployments: those stay in the
+# configuration file. See AGENTS.md.
 
 http:
   # The product's fixed namespace map. The dispatch selects an endpoint by these
@@ -67,13 +70,16 @@ tenant:
   admin:
     endpoints: [admin]
 
-# The authorization layer: the guard enforces the API endpoint, and the
-# management routes mount on the admin endpoint.
+# The authorization layer: the guard enforces the API endpoint, the
+# management routes mount on the admin endpoint, and every authenticated
+# caller reads its own permissions from the API endpoint.
 authz:
   guard:
     endpoints: [api]
   admin:
     endpoints: [admin]
+  self:
+    endpoints: [api]
 
 # The journal records the operator writes this product carries: the object
 # store's declaration and delete. A read the frontend polls on its own would
