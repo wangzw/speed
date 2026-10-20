@@ -21,6 +21,28 @@ import { defaultTokens, deepMerge, type TokensOverride } from './index'
 
 const HEX_COLOR = /^#[0-9A-F]{6}$/i
 
+/**
+ * WCAG 2 relative luminance of an sRGB hex color (channels linearized,
+ * then weighted 0.2126/0.7152/0.0722).
+ */
+function relativeLuminance(hex: string): number {
+  const value = hex.slice(1)
+  const linear = (offset: number): number => {
+    const channel = Number.parseInt(value.slice(offset, offset + 2), 16) / 255
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4)
+}
+
+/** WCAG contrast ratio between two hex colors, from 1:1 to 21:1. */
+function contrastRatio(a: string, b: string): number {
+  const brighter = Math.max(relativeLuminance(a), relativeLuminance(b))
+  const darker = Math.min(relativeLuminance(a), relativeLuminance(b))
+  return (brighter + 0.05) / (darker + 0.05)
+}
+
 // Pristine snapshots captured at module load, before any test can write
 // through a merged result: the isolation tests below prove the assembled
 // defaults stay byte-identical to these no matter what a merge result's
@@ -136,6 +158,37 @@ describe('defaultTokens', () => {
     expect(defaultTokens.shape.borderRadius).not.toBe(mui.shape.borderRadius)
   })
 
+  it('ships the four surface roles with the documented defaults', () => {
+    expect(Object.keys(defaultTokens.surface).sort()).toEqual([
+      'container',
+      'header',
+      'overlay',
+      'page',
+    ])
+    expect(defaultTokens.surface).toEqual({
+      page: {},
+      container: { borderWidth: 1 },
+      overlay: {},
+      header: {},
+    })
+  })
+
+  it('carries no surface color literals: an omitted field inherits its slot', () => {
+    // The inheritance contract: page -> background.default, container and
+    // overlay -> background.paper, borders -> divider, header -> the neutral
+    // ramp. Spelling any of those values here would freeze the fallback into
+    // the token tree, so a project recoloring background.paper would stop
+    // reaching the surfaces. Only field presence is pinned; the hex values
+    // live in color.ts.
+    for (const role of Object.values(defaultTokens.surface)) {
+      expect('fill' in role).toBe(false)
+      expect('borderColor' in role).toBe(false)
+      expect('elevation' in role).toBe(false)
+      expect('backdropFilter' in role).toBe(false)
+    }
+    expect(defaultTokens.surface.container.borderWidth).toBe(1)
+  })
+
   it('ships a layered rgba box-shadow for every elevation slot', () => {
     const elevations = [1, 2, 4, 8, 16, 24] as const
     for (const elevation of elevations) {
@@ -167,6 +220,47 @@ describe('defaultTokens', () => {
     deepMerge(defaultTokens, { shape: { borderRadius: '8px' } })
     // @ts-expect-error overriding with an object where a string belongs is a shape error
     deepMerge(defaultTokens, { color: { divider: { main: '#000000' } } })
+    // @ts-expect-error surface border widths are numbers, not CSS strings
+    deepMerge(defaultTokens, { surface: { container: { borderWidth: '1px' } } })
+  })
+})
+
+describe('defaultTokens light-mode contrast', () => {
+  // The light palette's contrastText is the label inside a filled control
+  // painted with the role's main. Text needs 4.5:1 there. Both sides are
+  // read from defaultTokens, so a palette edit that breaks the floor fails
+  // here instead of at a later surface; the dark-mode counterpart lives in
+  // @speed/ui-kit's createAppTheme test, where the label is derived.
+  const roles = [
+    'primary',
+    'secondary',
+    'error',
+    'warning',
+    'info',
+    'success',
+  ] as const
+
+  it('keeps every semantic role label at 4.5:1 or better against its main', () => {
+    for (const role of roles) {
+      const { main, contrastText } = defaultTokens.color.semantic[role]
+      expect(contrastRatio(contrastText, main), role).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+})
+
+describe('defaultTokens surface freeze', () => {
+  it('deep-freezes the surface roles assembled into the default tree', () => {
+    expect(Object.isFrozen(defaultTokens.surface)).toBe(true)
+    expect(Object.isFrozen(defaultTokens.surface.page)).toBe(true)
+    expect(Object.isFrozen(defaultTokens.surface.container)).toBe(true)
+    // Adding a field to a role's empty default must throw: a write through
+    // the shared branch would otherwise pollute every override layer.
+    const writable = defaultTokens as unknown as {
+      surface: { page: { fill?: string } }
+    }
+    expect(() => {
+      writable.surface.page.fill = '#000000'
+    }).toThrow(TypeError)
   })
 })
 

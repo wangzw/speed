@@ -22,6 +22,7 @@ export type {
 export type { ElevationSlot, ShadowTokens } from './shadows.js'
 export type { ShapeTokens } from './shape.js'
 export type { SpacingTokens } from './spacing.js'
+export type { SurfaceRoleTokens, SurfaceTokens } from './surface.js'
 export type { DeepPartial, SpeedTokens, TokensOverride } from './types.js'
 export type {
   FontSizeScale,

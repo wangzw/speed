@@ -20,6 +20,7 @@ import { colorTokens } from './color.js'
 import { shadowTokens } from './shadows.js'
 import { shapeTokens } from './shape.js'
 import { spacingTokens } from './spacing.js'
+import { surfaceTokens } from './surface.js'
 import { typographyTokens } from './typography.js'
 import { zIndexTokens } from './z-index.js'
 
@@ -42,4 +43,5 @@ export const defaultTokens: SpeedTokens = deepFreeze({
   breakpoints: breakpointTokens,
   zIndex: zIndexTokens,
   shadows: shadowTokens,
+  surface: surfaceTokens,
 })

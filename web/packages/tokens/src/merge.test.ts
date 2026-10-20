@@ -115,6 +115,33 @@ describe('deepMerge', () => {
     expect(base).toEqual({ color: { main: '#111111', light: '#222222' }, ok: true })
   })
 
+  it('overrides one surface role and leaves the sibling roles shared', () => {
+    const merged = deepMerge(defaultTokens, {
+      surface: { container: { fill: 'rgba(255, 255, 255, 0.72)' } },
+    })
+    expect(merged.surface.container.fill).toBe('rgba(255, 255, 255, 0.72)')
+    // The role keeps the default field the override did not name.
+    expect(merged.surface.container.borderWidth).toBe(1)
+    // Only the entered branch is rebuilt; the sibling roles stay shared.
+    expect(merged.surface).not.toBe(defaultTokens.surface)
+    expect(merged.surface.container).not.toBe(defaultTokens.surface.container)
+    expect(merged.surface.page).toBe(defaultTokens.surface.page)
+    expect(merged.surface.overlay).toBe(defaultTokens.surface.overlay)
+    expect(merged.surface.header).toBe(defaultTokens.surface.header)
+    // The override never writes into the default tree.
+    expect(defaultTokens.surface.container.fill).toBeUndefined()
+  })
+
+  it('leaves surface untouched when an override only changes background.paper', () => {
+    const merged = deepMerge(defaultTokens, {
+      color: { background: { paper: '#FEFFFE' } },
+    })
+    expect(merged.color.background.paper).toBe('#FEFFFE')
+    // Inheritance contract: surfaces carry no fill of their own, so the
+    // section itself is not rebuilt by a background override.
+    expect(merged.surface).toBe(defaultTokens.surface)
+  })
+
   it('shares untouched branches with the base by identity and rebuilds touched ones', () => {
     const merged = deepMerge(defaultTokens, { color: { divider: '#EEEEEE' } })
     expect(merged.typography).toBe(defaultTokens.typography)

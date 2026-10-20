@@ -12,6 +12,7 @@ import type { ColorTokens } from './color.js'
 import type { ShadowTokens } from './shadows.js'
 import type { ShapeTokens } from './shape.js'
 import type { SpacingTokens } from './spacing.js'
+import type { SurfaceTokens } from './surface.js'
 import type { TypographyTokens } from './typography.js'
 import type { ZIndexTokens } from './z-index.js'
 
@@ -24,6 +25,7 @@ export interface SpeedTokens {
   readonly breakpoints: BreakpointTokens
   readonly zIndex: ZIndexTokens
   readonly shadows: ShadowTokens
+  readonly surface: SurfaceTokens
 }
 
 /**

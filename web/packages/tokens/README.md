@@ -16,6 +16,7 @@ theme factory, apps that need raw values) import data and types only.
 | `breakpoints.ts` | xs..xl values |
 | `z-index.ts` | The eight MUI z-index slot names, MUI-default values |
 | `shadows.ts` | Layered rgba box shadows for elevation slots 1/2/4/8/16/24 |
+| `surface.ts` | Semantic surface roles (page, container, overlay, header); every field optional, omitted fields inherit the slot the theme already reads |
 | `types.ts` | `SpeedTokens`, `DeepPartial`, `TokensOverride` |
 | `defaultTokens.ts` | The assembled tree, deep-frozen at assembly |
 | `merge.ts` | `deepMerge(base, ...overrides)` |
