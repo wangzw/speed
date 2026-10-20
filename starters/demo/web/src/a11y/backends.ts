@@ -25,7 +25,8 @@
  * administration reads (the roster, the audit query, the accounts list, the
  * permissions catalog, the settings and SMS surfaces) and the tenant area's
  * (the profile, sessions and factors the account page mounts, the object list,
- * the notification centre). The impersonations page also fires a caller-session
+ * the notification centre) and the invitation landing's public token read. The
+ * impersonations page also fires a caller-session
  * read on mount -- GET /api/v1/auth/impersonation, the operator's own impersonation
  * status -- which is scripted here too, in data mode as a grant in force and in
  * empty mode as the bare 404 the page reads as "not impersonating". Tenant-scoped
@@ -47,6 +48,7 @@ import type {
   AuthnAdminProviderList,
   AuthnImpersonationGrantEnvelope,
   AuthnInvitePage,
+  AuthnInviteView,
   AuthnMfaFactorList,
   AuthnProfileProfile,
   AuthnSessionList,
@@ -214,6 +216,25 @@ const IMPERSONATION_GRANT: AuthnImpersonationGrantEnvelope = {
 }
 
 /**
+ * The invitation a landing token points to, pending and unaccepted: the body
+ * the accept screen's read (GET /api/v1/auth/invitations/:token) answers in
+ * data mode. `accepted_at` is the zero sentinel, the value the screen reads as
+ * "still redeemable".
+ */
+const INVITATION: AuthnInviteView = {
+  invitation: {
+    id: 'invite-1',
+    tenant: 'acme',
+    email: 'invitee@example.com',
+    invited_by: 'account-1',
+    status: 'pending',
+    created_at: INSTANT,
+    expires_at: INSTANT,
+    accepted_at: ZERO_INSTANT,
+  },
+}
+
+/**
  * One impersonation record, in force: `ended_at` is the zero sentinel the
  * views read as "still active", so the record row renders its state column as
  * in force and offers the terminate action.
@@ -243,8 +264,18 @@ function answer(data: unknown, empty: unknown): RouteAnswer {
   return { data, empty }
 }
 
-/** The path-only endpoint answers (no path parameter). */
-const EXACT: Readonly<Record<string, RouteAnswer>> = {
+/**
+ * The path-only endpoint answers (no path parameter).
+ *
+ * Every key is a full request path exactly as a generated operation issues it,
+ * `/api/v1` prefix included. The prefix is part of the generated URL (see
+ * `web/packages/api-sdk/src/index.ts`), so an entry written without it never
+ * matches and the read falls through to `undefined` -- which react-query logs
+ * as "Query data cannot be undefined" while the page renders an empty state
+ * the sweep would scan as if it were real. The table is exported so
+ * ./backends.test.ts can pin the prefix invariant on every entry.
+ */
+export const EXACT: Readonly<Record<string, RouteAnswer>> = {
   '/api/v1/system/tenants': answer(
     { tenants: [TENANT] } satisfies TenantAdminTenantsList200,
     { tenants: [] } satisfies TenantAdminTenantsList200,
@@ -328,75 +359,84 @@ const EXACT: Readonly<Record<string, RouteAnswer>> = {
   ),
 }
 
-/** Pattern answers, for endpoints whose path carries a segment. */
-const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
+/**
+ * Pattern answers, for endpoints whose path carries a segment.
+ *
+ * Like EXACT, every pattern anchors on the generated operation's full path,
+ * `/api/v1` prefix included (see `web/packages/api-sdk/src/index.ts`); a
+ * pattern written without the prefix never matches and the read falls through
+ * to `undefined`. Every pattern is end-anchored, so a shorter path cannot
+ * shadow a longer one that extends it; ./backends.test.ts also pins that no
+ * entry answers another entry's sample URL.
+ */
+export const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
   [
-    /^\/tenant\/admin\/tenants\/[^/]+$/,
+    /^\/api\/v1\/system\/tenants\/[^/]+$/,
     answer({ tenant: TENANT } satisfies TenantAdminTenantsGet200, {
       tenant: TENANT,
     } satisfies TenantAdminTenantsGet200),
   ],
   [
-    /^\/audit\/admin\/records\/[^/]+$/,
+    /^\/api\/v1\/system\/audit\/records\/[^/]+$/,
     answer(AUDIT_RECORD satisfies AuditAdminRecord, AUDIT_RECORD satisfies AuditAdminRecord),
   ],
   [
-    /^\/auth\/admin\/accounts\/[^/]+\/factors$/,
+    /^\/api\/v1\/system\/auth\/accounts\/[^/]+\/factors$/,
     answer({ factors: [] }, { factors: [] }),
   ],
   [
-    /^\/auth\/admin\/accounts\/[^/]+\/secrets$/,
+    /^\/api\/v1\/system\/auth\/accounts\/[^/]+\/secrets$/,
     answer({ secrets: [] }, { secrets: [] }),
   ],
   [
-    /^\/auth\/admin\/accounts\/[^/]+\/sessions$/,
+    /^\/api\/v1\/system\/auth\/accounts\/[^/]+\/sessions$/,
     answer({ sessions: [] }, { sessions: [] }),
   ],
   [
-    /^\/auth\/admin\/accounts\/[^/]+$/,
+    /^\/api\/v1\/system\/auth\/accounts\/[^/]+$/,
     answer({ account: ACCOUNT } satisfies AuthnAdminAccountEnvelope, {
       account: ACCOUNT,
     } satisfies AuthnAdminAccountEnvelope),
   ],
   [
-    /^\/auth\/admin\/tenants\/[^/]+\/invitations$/,
+    /^\/api\/v1\/auth\/invitations\/[^/]+$/,
+    // An unknown token is the screen's "no such invitation" state: a bare
+    // 404, like the impersonation status read's empty slot.
+    answer(INVITATION, NOT_FOUND),
+  ],
+  [
+    /^\/api\/v1\/tenants\/[^/]+\/invitations$/,
     answer(
       { invitations: [], next_cursor: '' } satisfies AuthnInvitePage,
       { invitations: [], next_cursor: '' } satisfies AuthnInvitePage,
     ),
   ],
   [
-    /^\/auth\/admin\/tenants\/[^/]+\/members$/,
+    /^\/api\/v1\/tenants\/[^/]+\/members$/,
     answer({ members: [] } satisfies AuthnAdminMemberList, {
       members: [],
     } satisfies AuthnAdminMemberList),
   ],
   [
-    /^\/auth\/admin\/tenants\/[^/]+\/sso\/providers$/,
+    /^\/api\/v1\/tenants\/[^/]+\/sso\/providers$/,
     answer({ providers: [] } satisfies AuthnAdminProviderList, {
       providers: [],
     } satisfies AuthnAdminProviderList),
   ],
   [
-    /^\/auth\/admin\/sso\/providers$/,
-    answer({ providers: [] } satisfies AuthnAdminProviderList, {
-      providers: [],
-    } satisfies AuthnAdminProviderList),
-  ],
-  [
-    /^\/authz\/admin\/tenants\/[^/]+\/roles\/[^/]+\/grants$/,
+    /^\/api\/v1\/system\/tenants\/[^/]+\/roles\/[^/]+\/grants$/,
     answer({ grants: [] } as { grants: AuthzAdminGrantView[] }, {
       grants: [],
     } as { grants: AuthzAdminGrantView[] }),
   ],
   [
-    /^\/authz\/admin\/tenants\/[^/]+\/roles$/,
+    /^\/api\/v1\/system\/tenants\/[^/]+\/roles$/,
     answer({ roles: [] } as { roles: AuthzAdminRoleView[] }, {
       roles: [],
     } as { roles: AuthzAdminRoleView[] }),
   ],
   [
-    /^\/authz\/admin\/tenants\/[^/]+\/bindings$/,
+    /^\/api\/v1\/system\/tenants\/[^/]+\/bindings$/,
     answer({ bindings: [] } as { bindings: AuthzAdminBindingView[] }, {
       bindings: [],
     } as { bindings: AuthzAdminBindingView[] }),
@@ -405,9 +445,10 @@ const PATTERNS: readonly (readonly [RegExp, RouteAnswer])[] = [
 
 /**
  * The body one endpoint answers in the given mode, or undefined if unscripted,
- * or NOT_FOUND when the endpoint names a bare-404 empty state.
+ * or NOT_FOUND when the endpoint names a bare-404 empty state. Exported so
+ * ./backends.test.ts can assert every table entry resolves.
  */
-function resolveBody(mode: 'data' | 'empty', url: string): unknown {
+export function resolveBody(mode: 'data' | 'empty', url: string): unknown {
   const exact = EXACT[url]
   if (exact !== undefined) {
     return mode === 'data' ? exact.data : exact.empty
@@ -426,13 +467,25 @@ function resolveBody(mode: 'data' | 'empty', url: string): unknown {
  * the page fires is answered from the table above. An endpoint whose answer is
  * NOT_FOUND rejects with a 404-shaped error, the refusal the page reads as
  * "no such resource".
+ *
+ * `onUnscripted` names a read the tables do not cover. The sweep passes one so
+ * an unanswerable read fails the route instead of resolving `undefined` --
+ * react-query would otherwise log "Query data cannot be undefined" and the
+ * page would render, and be scanned in, a state its real backend never
+ * produces. Error mode rejects every read before lookup and reports nothing.
  */
-export function createBackend(mode: BackendMode): RequestFn {
+export function createBackend(
+  mode: BackendMode,
+  onUnscripted?: (url: string) => void,
+): RequestFn {
   const requestFn = <T,>(url: string): Promise<T> => {
     if (mode === 'error') {
       return Promise.reject(new Error(`scripted backend: ${url} refused`))
     }
     const body = resolveBody(mode, url)
+    if (body === undefined) {
+      onUnscripted?.(url)
+    }
     if (body === NOT_FOUND) {
       return Promise.reject(
         Object.assign(new Error(`scripted backend: ${url} not found`), {

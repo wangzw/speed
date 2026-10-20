@@ -153,13 +153,23 @@ async function scanRoute(
   path: string,
   mode: BackendMode,
 ): Promise<readonly A11yFinding[]> {
-  bindRequestFn(createBackend(mode))
+  const unscripted: string[] = []
+  bindRequestFn(createBackend(mode, (url) => unscripted.push(url)))
   window.history.replaceState({}, '', path)
   const { container } = renderDemoApp({ session: staffSession() })
   // A route that rendered no markup at all is a broken sweep, not an
   // accessible page: fail rather than scan an empty document.
   expect(container.innerHTML, `route ${path} [${mode}] rendered no markup`).not.toBe('')
   await settle()
+  // A read the scripted backend does not answer resolves `undefined`;
+  // react-query only logs "Query data cannot be undefined" and the page
+  // renders, and the sweep scans, a state no real backend produces. Fail the
+  // route here so a table entry that drifts from the generated paths cannot
+  // silently stop covering a read again.
+  expect(
+    unscripted,
+    `route ${path} [${mode}] issued read(s) the scripted backend does not answer`,
+  ).toEqual([])
   const result = await scanPage()
   // The sweep must not surface color-contrast: it is excluded from the gate's
   // rule set (jsdom performs no color computation, so it is indeterminate for
@@ -261,11 +271,16 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
   }
 
   it('scans the anonymous sign-in surface at the tenant root', async () => {
-    bindRequestFn(createBackend('data'))
+    const unscripted: string[] = []
+    bindRequestFn(createBackend('data', (url) => unscripted.push(url)))
     window.history.replaceState({}, '', '/')
     const { container } = renderDemoApp()
     expect(container.innerHTML).not.toBe('')
     await settle()
+    expect(
+      unscripted,
+      'the anonymous sign-in surface issued read(s) the scripted backend does not answer',
+    ).toEqual([])
     const result = await scanPage()
     for (const finding of result.incomplete) {
       console.warn(`[route-a11y] / (anonymous) indeterminate: ${formatFinding(finding)}`)
@@ -282,11 +297,16 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
   })
 
   it('scans the not-found fallback inside the tenant shell', async () => {
-    bindRequestFn(createBackend('data'))
+    const unscripted: string[] = []
+    bindRequestFn(createBackend('data', (url) => unscripted.push(url)))
     window.history.replaceState({}, '', '/no-such-route')
     const { container } = renderDemoApp({ session: staffSession() })
     expect(container.innerHTML).not.toBe('')
     await settle()
+    expect(
+      unscripted,
+      'the not-found fallback issued read(s) the scripted backend does not answer',
+    ).toEqual([])
     const result = await scanPage()
     records.push({ path: '/no-such-route', mode: 'data', findings: result.violations })
     const failing = result.violations.filter(isFailing)
