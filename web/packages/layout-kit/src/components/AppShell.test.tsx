@@ -699,6 +699,27 @@ describe('AppShell', () => {
     })
   })
 
+  describe('header surface', () => {
+    it('paints the app bar from the surface tokens instead of the primary fill', () => {
+      mockMatchMedia(true)
+      const { tokens } = createAppTheme()
+      renderWithProviders(<AppShell navItems={NAV_ITEMS}>content</AppShell>)
+      // The brand role is for controls; the header itself is a surface,
+      // separated from the content by the divider rather than by a
+      // saturated fill or an elevation shadow.
+      const banner = screen.getByRole('banner')
+      expect(banner).toHaveStyle({
+        backgroundColor: tokens.color.background.paper,
+        color: tokens.color.text.primary,
+        borderBottom: `1px solid ${tokens.color.divider}`,
+      })
+      // The divider, not a shadow, separates the header from the page:
+      // MUI resolves elevation to a CSS variable jsdom cannot read, so
+      // the elevation-0 class pins it instead.
+      expect(banner).toHaveClass('MuiPaper-elevation0')
+    })
+  })
+
   describe('drawer header and footer slots', () => {
     it('renders both slots immediately before and after the nav landmark inside the permanent drawer paper', () => {
       mockMatchMedia(true)

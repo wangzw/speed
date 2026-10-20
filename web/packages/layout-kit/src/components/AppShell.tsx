@@ -987,7 +987,23 @@ export function AppShell({
           flexDirection: 'column',
         }}
       >
-        <AppBar position="static">
+        {/* The header paints the surface, not the primary role: the
+            shell's brand color belongs to controls, and a saturated bar
+            would also read differently from the dark mode, where MUI's
+            primary fill is dropped and the surface shows through. A
+            bottom divider replaces the elevation shadow, matching the
+            content area's own separator. */}
+        <AppBar
+          position="static"
+          color="inherit"
+          elevation={0}
+          sx={{
+            backgroundColor: 'background.paper',
+            color: 'text.primary',
+            borderBottom: 1,
+            borderColor: 'divider',
+          }}
+        >
           <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
             {!isDesktop && (
               <IconButton
