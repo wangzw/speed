@@ -1817,10 +1817,11 @@ describe('the impersonation shell', () => {
     const notice = await screen.findByRole('region', {
       name: tAuth('impersonation.regionLabel'),
     })
-    // Two reads before the end: one with no tenant resolved, and one once the
-    // impersonation status read settles the grant's tenant. Each resets the
-    // set before issuing its read.
-    await waitFor(() => expect(attached).toEqual([null, [], null, []]))
+    // One read before the end: the one issued once the impersonation status
+    // read settles the grant's tenant. It resets the set before issuing its
+    // read; the undecided-tenant window before that settles issues no request
+    // (the guarded route answers 404 to a request naming no tenant).
+    await waitFor(() => expect(attached).toEqual([null, []]))
     expect(
       screen.queryByRole('link', { name: demoEnUS.nav.console }),
     ).toBeNull()
@@ -1838,7 +1839,7 @@ describe('the impersonation shell', () => {
     // The set went unknown immediately before the re-read that answered it;
     // without that reset a stale set could outlive the identity it was read
     // under.
-    expect(attached).toEqual([null, [], null, [], null, ['tenant.read']])
+    expect(attached).toEqual([null, [], null, ['tenant.read']])
     expect(
       await screen.findByRole('link', { name: demoEnUS.nav.console }),
     ).toBeInTheDocument()

@@ -11,12 +11,22 @@
  * neither the declared-permission catalog nor any platform-staff permission to
  * answer.
  *
- * The read waits for the feature document to be `ready`: while it is `pending`
- * or `failed` both sets stay unknown (null), so the console area shows its
- * frameless wait or failure rather than misreading the caller as a member.
- * That gating is what keeps the console area's "feature state first, then
- * permission set" order meaningful -- a failed feature read never looks like
- * an empty permission set.
+ * The read waits for the feature document to be `ready` and for the current
+ * tenant to be settled: while the feature state is `pending` or `failed`, or
+ * the host has not decided the current tenant yet, both sets stay unknown
+ * (null), so the console area shows its frameless wait or failure rather than
+ * misreading the caller as a member. That gating is what keeps the console
+ * area's "feature state first, then permission set" order meaningful -- a
+ * failed feature read never looks like an empty permission set.
+ *
+ * The tenant half is the request's own requirement, not a preference: the
+ * route sits on the API endpoint, which the tenant resolver guards, and a
+ * request carrying no tenant name is refused 404 before any handler runs.
+ * Reading before the host settles the current tenant would therefore spend a
+ * request on a known refusal -- a console error at every sign-in -- and attach
+ * the fail-closed empty set to a caller whose sets were never actually asked
+ * for. The tenant is a host fact settled outside the session (src/app.tsx's
+ * tenant frame, or the console area's own settle), and the read follows it.
  *
  * Once the document is ready the read is (re)issued whenever the effective
  * identity changes -- an authenticated transition, a re-login as another
@@ -81,12 +91,15 @@ export function PlatformPermissions({
 /**
  * Reads the caller's permission sets and attaches them to the session.
  *
- * The read is gated on the feature document being `ready`, not on any one
- * feature: the permission read is scoped to the caller, so it belongs to no
- * optional capability. While the document is `pending` or `failed` both sets
- * stay unknown (null) -- neither "absent" nor "present" -- and the console
- * area shows its frameless wait/failure rather than misreading the operator as
- * a member. On every authenticated transition with a ready document the read
+ * The read is gated on the feature document being `ready` and the current
+ * tenant being settled, not on any one feature: the permission read is scoped
+ * to the caller, so it belongs to no optional capability. While the document
+ * is `pending` or `failed`, or the current tenant is undecided, both sets stay
+ * unknown (null) -- neither "absent" nor "present" -- and the console area
+ * shows its frameless wait/failure rather than misreading the operator as a
+ * member. The guarded route answers 404 to a request without a tenant name, so
+ * an undecided tenant is a request that would be refused before any handler;
+ * it is not read. On every authenticated transition with a ready document the read
  * is (re)issued: a login clears the sets (auth-core's survival rule), so a
  * re-login as another principal replaces them rather than inheriting the
  * previous principal's. The current tenant is a second key: the tenant set is
@@ -124,6 +137,11 @@ function usePlatformPermissions(session: AuthSession): void {
     }
     if (!ready) {
       // A pending or failed document leaves the sets unknown.
+      return
+    }
+    if (tenantId === null) {
+      // No current tenant yet: the guarded route would answer 404, and a
+      // refusal it can only ever give says nothing about the caller's sets.
       return
     }
     // Resetting to unknown belongs to this read, not to the identity-change

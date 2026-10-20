@@ -88,6 +88,7 @@ import {
   setTenantAliases,
   TenantMenu,
   UserMenu,
+  useCurrentTenantId,
   useTenantSelection,
 } from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
@@ -134,6 +135,29 @@ const CONSOLE_PERMISSION_DOMAIN = 'system'
  * derives. The two spellings must stay in sync by hand.
  */
 const PERSONAL_TENANT_ID_PREFIX = 'personal-'
+
+/** The tenant the host settles when it has none: the first roster row that is
+ * active, is not someone's personal tenant, and is one the switcher can name.
+ * The roster view carries no kind, so the server's identifier prefix tells the
+ * personal tenants apart: one belongs to a single account and answers a staff
+ * viewer 404, and it also sorts before most deployment identifiers ('p' < 't',
+ * 'z'), so without that check the first active row would often be a stranger's
+ * personal space. The switcher lists the placeholder's tenants alone, so a row
+ * outside that list would leave the caller in a tenant the bar cannot name and
+ * the switcher cannot leave, with every tenant-scoped request refused. Null
+ * when the roster offers no such row. */
+function defaultRosterTenant(
+  tenants: readonly { readonly id: string; readonly status: string }[],
+): string | null {
+  return (
+    tenants.find(
+      (tenant) =>
+        tenant.status === 'active' &&
+        !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX) &&
+        DEMO_TENANTS.some((option) => option.id === tenant.id),
+    )?.id ?? null
+  )
+}
 
 /** The app view root: routing installed once, over the shell switch. The
  * route table is gated (the notification, object and console declarations
@@ -527,13 +551,7 @@ function TenantFrame({
         // lists the placeholder's tenants alone, so a row outside that list
         // would leave the caller in a tenant the bar cannot name and the
         // switcher cannot leave, with every tenant-scoped request refused.
-        const first = answer.tenants.find(
-          (tenant) =>
-            tenant.status === 'active' &&
-            !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX) &&
-            DEMO_TENANTS.some((option) => option.id === tenant.id),
-        )
-        setTenantId(first?.id ?? DEFAULT_TENANT_ID)
+        setTenantId(defaultRosterTenant(answer.tenants) ?? DEFAULT_TENANT_ID)
         setRosterSettled(true)
         setTenantSettled(true)
         setIdentitySettling(false)
@@ -937,6 +955,48 @@ function ConsoleFeatureGate({
 }
 
 /**
+ * Settles a current tenant for the console area when none is settled.
+ *
+ * The caller's permission read (src/platform-permissions.tsx) sits on the API
+ * endpoint, which the tenant resolver guards: a request that names no tenant
+ * is refused 404 before any handler runs. The tenant frame settles the current
+ * tenant for the tenant area, but an operator who reaches a console URL
+ * directly -- a reload of a console page, a bookmark -- mounts no tenant
+ * frame, and without a name the permission read is refused, the platform set
+ * attaches as the fail-closed empty one, and the area gate turns the operator
+ * away. The roster read settles the same default the tenant frame would.
+ *
+ * The number is the request surface's only use here: the console renders no
+ * tenant and has no switcher. A refused or failed roster read leaves the
+ * tenant undecided, and the area gate keeps its fail-closed verdict.
+ */
+function useConsoleTenantSettle(authenticated: boolean): void {
+  const tenantId = useCurrentTenantId()
+  useEffect(() => {
+    if (!authenticated || tenantId !== null) {
+      return undefined
+    }
+    let cancelled = false
+    // Deferred into a promise: the generated operation throws synchronously
+    // when no request function is bound (a suite that mounts the area alone).
+    void Promise.resolve()
+      .then(() => tenantAdminTenantsList())
+      .then((answer) => {
+        if (cancelled || getCurrentTenantId() !== null) {
+          return
+        }
+        setCurrentTenantId(defaultRosterTenant(answer.tenants) ?? DEFAULT_TENANT_ID)
+      })
+      .catch(() => {
+        // Undecided: the gate settles on whatever set is already known.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [authenticated, tenantId])
+}
+
+/**
  * The console area's access gate: the whole area is the platform-staff face,
  * so a principal who holds no platform permission never enters it. The console
  * frame -- its navigation, its banner -- is not rendered at all, rather than
@@ -969,6 +1029,7 @@ function ConsoleAreaGate({
   readonly children: ReactNode
 }): ReactElement | null {
   const snapshot = useAuthState()
+  useConsoleTenantSettle(snapshot.state === 'authenticated')
   const status = consoleAreaStatus(snapshot)
   if (status === 'granted') {
     return <>{children}</>

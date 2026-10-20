@@ -19,6 +19,8 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { AuthDomain, AuthSession } from '@speed/auth-core'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
 import {
   CONSOLE_UI_NAMESPACE,
@@ -43,6 +45,7 @@ import {
   createTestSession,
 } from './test-utils/session.js'
 import { DEFAULT_TENANT_ID, getCurrentTenantId, setCurrentTenantId } from './chrome.js'
+import { PlatformPermissions } from './platform-permissions.js'
 
 /**
  * The expected copy, resolved from the packages' shipped resources through a
@@ -323,6 +326,65 @@ describe('the console area', () => {
         name: tConsole('tenants.title'),
       }),
     ).toBeInTheDocument()
+  })
+
+  it('settles a tenant for a console URL loaded directly, so the permission read answers', async () => {
+    // A console URL loaded directly (a reload, a bookmark) mounts no tenant
+    // frame, and the caller's permission read sits on the guarded API
+    // endpoint: without a tenant name the read is refused 404 before any
+    // handler runs, and the area gate would turn a platform administrator
+    // away. The area settles the default tenant itself before the read.
+    setCurrentTenantId(null)
+    window.history.replaceState({}, '', '/console/tenants')
+    const requested: string[] = []
+    const tenantAtRead: (string | null)[] = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      requested.push(path)
+      if (path === '/api/v1/system/tenants') {
+        return Promise.resolve({
+          tenants: [
+            { id: DEFAULT_TENANT_ID, alias: 'acme', status: 'active' },
+          ],
+        } as T)
+      }
+      if (path === '/api/v1/authz/me/permissions') {
+        tenantAtRead.push(getCurrentTenantId())
+        return Promise.resolve({
+          platform: ['tenant.read'],
+          tenant: [],
+        } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    const base = createTestSession(authenticatedSnapshot())
+    // The harness session attaches nothing by default; this case drives the
+    // production attach, so the set has to land in the snapshot the gates read.
+    const session: AuthSession = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    }
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    expect(
+      await screen.findByRole('navigation', {
+        name: tConsole('shell.navLabel'),
+      }),
+    ).toBeInTheDocument()
+    // The read the area gate settled on carried the tenant the console
+    // boundary chose from the roster.
+    expect(tenantAtRead).toEqual([DEFAULT_TENANT_ID])
+    expect(requested).toContain('/api/v1/system/tenants')
   })
 
   it('turns a member who reaches a console page directly out of the console entirely', async () => {

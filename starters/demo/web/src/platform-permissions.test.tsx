@@ -79,6 +79,9 @@ describe('PlatformPermissions', () => {
   })
 
   it("attaches the caller's own platform and tenant permission sets", async () => {
+    // The guarded route needs a tenant name: the host settles the current
+    // tenant before the read, as the tenant frame does on a page load.
+    setCurrentTenantId('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read', 'tenant.read'],
       tenant: ['notes:read'],
@@ -106,6 +109,7 @@ describe('PlatformPermissions', () => {
   })
 
   it('attaches the empty set to both domains when the read is refused', async () => {
+    setCurrentTenantId('acme')
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
       requested.push(path)
@@ -134,6 +138,7 @@ describe('PlatformPermissions', () => {
   })
 
   it('never reads the declared-permission catalog', async () => {
+    setCurrentTenantId('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read'],
       tenant: [],
@@ -157,6 +162,7 @@ describe('PlatformPermissions', () => {
   it('reads even when the feature document does not serve authz.admin', async () => {
     // The permission read is caller-scoped and serves no optional capability,
     // so its availability does not depend on the management surface's feature.
+    setCurrentTenantId('acme')
     const requested = bindPermissionsAnswer({
       platform: ['audit.read'],
       tenant: [],
@@ -212,6 +218,7 @@ describe('PlatformPermissions', () => {
   )
 
   it('re-reads when the effective identity changes', async () => {
+    setCurrentTenantId('acme')
     let answer = {
       platform: ['audit.read'],
       tenant: ['notes:read'],
@@ -264,7 +271,7 @@ describe('PlatformPermissions', () => {
     expect(requested).toEqual([PERMISSIONS_PATH, PERMISSIONS_PATH])
   })
 
-  it('re-reads when the current tenant settles and on every switch', async () => {
+  it('does not read until the current tenant settles, then follows every switch', async () => {
     setCurrentTenantId(null)
     const requested: string[] = []
     bindRequestFn(<T,>(path: string): Promise<T> => {
@@ -274,7 +281,7 @@ describe('PlatformPermissions', () => {
       }
       // The tenant list answers for the tenant the request resolved to, and
       // the host announces the current tenant from the cell, so the answer
-      // varies with it. A read issued before the tenant settles carries none.
+      // varies with it.
       const tenantId = getCurrentTenantId()
       return Promise.resolve({
         platform: ['audit.read'],
@@ -290,28 +297,22 @@ describe('PlatformPermissions', () => {
       </PlatformPermissions>,
     )
 
-    // The first read goes out before the host has settled a tenant: the tenant
-    // set is a known empty answer, never an error.
-    await waitFor(() =>
-      expect(attached).toEqual([
-        { domain: 'system', perms: null },
-        { domain: 'tenant', perms: null },
-        { domain: 'system', perms: ['audit.read'] },
-        { domain: 'tenant', perms: [] },
-      ]),
-    )
+    // The guarded route answers 404 to a request that names no tenant, so an
+    // undecided current tenant is not read at all: the sets stay unknown
+    // rather than being attached as the fail-closed empty answer.
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(requested).toEqual([])
+    expect(attached).toEqual([])
 
-    // The roster settles the tenant. The read is repeated and attaches the set
-    // held there, rather than leaving the pre-settlement answer in place.
+    // The host settles the tenant: the first read carries its name and
+    // attaches the set held there.
     act(() => {
       setCurrentTenantId('acme')
     })
     await waitFor(() =>
       expect(attached).toEqual([
-        { domain: 'system', perms: null },
-        { domain: 'tenant', perms: null },
-        { domain: 'system', perms: ['audit.read'] },
-        { domain: 'tenant', perms: [] },
         { domain: 'system', perms: null },
         { domain: 'tenant', perms: null },
         { domain: 'system', perms: ['audit.read'] },
@@ -328,10 +329,6 @@ describe('PlatformPermissions', () => {
         { domain: 'system', perms: null },
         { domain: 'tenant', perms: null },
         { domain: 'system', perms: ['audit.read'] },
-        { domain: 'tenant', perms: [] },
-        { domain: 'system', perms: null },
-        { domain: 'tenant', perms: null },
-        { domain: 'system', perms: ['audit.read'] },
         { domain: 'tenant', perms: ['acme:read'] },
         { domain: 'system', perms: null },
         { domain: 'tenant', perms: null },
@@ -339,10 +336,6 @@ describe('PlatformPermissions', () => {
         { domain: 'tenant', perms: ['globex:read'] },
       ]),
     )
-    expect(requested).toEqual([
-      PERMISSIONS_PATH,
-      PERMISSIONS_PATH,
-      PERMISSIONS_PATH,
-    ])
+    expect(requested).toEqual([PERMISSIONS_PATH, PERMISSIONS_PATH])
   })
 })
