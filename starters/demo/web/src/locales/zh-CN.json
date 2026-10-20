@@ -79,6 +79,14 @@
     "toDark": "切换到深色主题",
     "toLight": "切换到浅色主题"
   },
+  "themePreset": {
+    "default": "默认",
+    "classic": "传统",
+    "modern": "时尚",
+    "compact": "紧凑",
+    "glass": "液态玻璃",
+    "ascii": "ASCII 终端"
+  },
   "workspace": {
     "personal": "个人空间",
     "failure": {

@@ -83,6 +83,9 @@ importers:
       '@speed/tenancy-ui':
         specifier: ^0.0.1
         version: link:../../../web/packages/tenancy-ui
+      '@speed/theme-presets':
+        specifier: ^0.0.1
+        version: link:../../../web/packages/theme-presets
       '@speed/ui-kit':
         specifier: ^0.0.1
         version: link:../../../web/packages/ui-kit
@@ -768,6 +771,12 @@ importers:
         specifier: ^19.2.8
         version: 19.3.0(react@19.3.0)
 
+  packages/theme-presets:
+    dependencies:
+      '@speed/tokens':
+        specifier: workspace:*
+        version: link:../tokens
+
   packages/tokens:
     devDependencies:
       '@mui/material':
@@ -779,6 +788,9 @@ importers:
       '@speed/i18n':
         specifier: workspace:*
         version: link:../i18n
+      '@speed/theme-presets':
+        specifier: workspace:*
+        version: link:../theme-presets
       '@speed/tokens':
         specifier: workspace:*
         version: link:../tokens

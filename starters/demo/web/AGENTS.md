@@ -92,8 +92,17 @@ program beside this directory embeds with `go:embed` and serves through
   document and the vocabulary it generates from are fresh rather than stale
   committed copies. The platform package's `features.ts` belongs to
   `web/package.json`'s `api:gen`; this app's command never writes it.
-- **The API origin is read at runtime, never baked in** (`src/runtime-config.ts`,
-  falling back to same-origin). One build output serves every deployment topology.
+- **The deployment's runtime facts are read at runtime, never baked in**
+  (`src/runtime-config.ts`): `apiOrigin` (falling back to same-origin),
+  `shellLayout` (`topbar` or `sidebar`, falling back to `topbar`) and
+  `themePreset` (one of the shipped preset ids, falling back to `default`).
+  One build output serves every deployment topology and white-label style.
+  Each field is read on its own -- a malformed value never drops the others
+  -- and an unknown value is ignored. The layout rides down through
+  `DemoApp` to both `ProductShell` and `ConsoleShell`, so the tenant area
+  and the console present the same arrangement; the preset seeds the theme
+  provider's `defaultPreset`, and a device-stored choice wins over it at
+  boot.
 - **The app reaches the API at one origin, which must be a gateway.** The demo's
   Go program mounts the api, account and admin surfaces on separate ports, so the
   built bundle served straight from it renders for static browsing but cannot
@@ -117,24 +126,35 @@ program beside this directory embeds with `go:embed` and serves through
   directly is turned away there.
 - **The console routes in place and offers an exit.** The console frame hands
   its navigation entries to the app's router through console-ui's `onNavigate`
-  seam (`src/console/console-area.tsx`), and its banner carries an exit back to
+  seam (`src/console/console-area.tsx`), and its frame chrome carries an exit back to
   the tenant area beside the sign-out action. Both push a history entry instead
   of reloading the page, so neither the console pages nor the exit are a
   navigation dead end.
 - **The app composes its own chrome.** `src/chrome.tsx` holds the shared top-bar
-  pieces the tenant frame and the console banner render: the brand, the
+  pieces the tenant frame and the console frame render: the brand, the
   app-wide header actions (the language switch and the color-mode toggle), the
   tenant switcher over the app's placeholder tenant list (`TenantMenu`), and
   the avatar account menu (profile / account settings / sign out). The tenant
   frame puts the actions in `headerActions` and the switcher plus the account
-  menu in `userMenu`; the console banner renders the actions and the account
-  menu but not the switcher (the console resolves no tenant). `src/paths.ts`
+  menu in `userMenu`; the console frame renders the actions and the account
+  menu but not the switcher (the console resolves no tenant). The slot
+  composition is identical in both `shellLayout` forms: AppShell moves the
+  same slots into its drawer paper in the sidebar form, so `src/chrome.tsx`
+  never branches on the layout. `src/paths.ts`
   holds the route paths the chrome links into, shared with the route table.
 - **The account page mounts the account-ui family.** `src/pages/account-page.tsx`
-  composes `@speed/account-ui`'s sections -- the self-service writes (profile,
+  composes `@speed/account-ui`'s sections -- the appearance theme choice
+  first, then the self-service writes (profile,
   password, identifiers), then preferences, sessions, social bindings and
   MFA -- under a `@speed/ui-kit` `PageHeader`, at `/account` in the tenant
-  navigation. The phone write is deliberately left out: its two routes are
+  navigation. The appearance section is `account-ui`'s controlled
+  `AppearanceSection`: the page maps the shipped preset shelf to this
+  bundle's names and passes the provider's active preset and setter
+  (`useAppThemePreset`), and a pick calls `setPreset` and
+  `persistThemePreset` in one handler, so the theme applies at once and the
+  device remembers it (`demo-web.theme-preset`; `src/chrome.tsx` resolves
+  the boot choice as device > deployment > `default`). The phone write is
+  deliberately left out: its two routes are
   registered only when the deployment delivers an SMS code provider, which this
   skeleton's baseline does not (the SMS family needs a carrier's credentials, so
   a product adds it), and a section whose submit would answer 404 is a write the

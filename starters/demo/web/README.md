@@ -171,26 +171,51 @@ development wiring that a copied-out project drops**:
 | `src/chrome.tsx` | The shared top-bar chrome: the brand, the app-wide header actions (language switch, color-mode toggle), the tenant switcher and the avatar account menu. |
 | `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
 | `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities) and the account page. |
-| `src/runtime-config.ts` | Reads the deployment's API origin from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL), falling back to same-origin. |
+| `src/runtime-config.ts` | Reads the deployment's runtime configuration from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL): the API origin, the shell layout and the default theme preset, each falling back on its own. |
 | `src/document-metadata.ts` | Keeps the document title in step with the active language. `<html lang>` is the assembly's (the app-entry bootstrap binds it and follows every switch). |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
 | `orval.config.ts`, `src/app-api/` | The app's own generation level: the second orval configuration and the surface it generates, plus the seam that surface calls (see "The API contract"). |
 | `AGENTS.md` | This directory's own contract for an agent working here. |
 
-### The API origin at runtime
+### The deployment configuration at runtime
 
-One build output is shared across deployment topologies. The API origin is therefore
-not baked into the bundle: the app reads `runtime-config.json` from beside the
-entry document (by its relative path, so the read never needs an origin to
-resolve one) and passes its `apiOrigin` to the client base URL. When the file is
-absent, unreadable, or carries no origin, the app falls back to the page's own
-origin -- the same-origin deployment shape, which is what the demo's dev server
-and a reverse-proxied deployment use. A cross-origin deployment places the file
-beside the bundle:
+One build output is shared across deployment topologies and white-label
+styles, so those facts are not baked into the bundle: the app reads
+`runtime-config.json` from beside the entry document (at the deployment
+root, so the read never needs an origin to resolve one and a deep link
+cannot shift it) before it renders. The committed
+`public/runtime-config.json` is `{}` -- the defaults -- and the build
+copies it into the served output.
+
+| Field | Value | When absent or invalid |
+|---|---|---|
+| `apiOrigin` | the API origin, e.g. `https://api.example.com` | the page's own origin (the same-origin deployment shape) |
+| `shellLayout` | `topbar` or `sidebar` | `topbar` |
+| `themePreset` | one of the shipped preset ids: `default`, `classic`, `modern`, `compact`, `glass`, `ascii` | `default` |
 
 ```json
-{ "apiOrigin": "https://api.example.com" }
+{
+  "apiOrigin": "https://api.example.com",
+  "shellLayout": "sidebar",
+  "themePreset": "glass"
+}
 ```
+
+Every field is read on its own: a malformed value for one leaves the
+others intact, so a typo in `apiOrigin` cannot silently drop the chosen
+layout or preset. An unknown value is ignored. To change the shell form
+of a deployment, set `shellLayout` to the other value -- nothing else in
+the app changes; the value rides down to both frames (`ProductShell` and
+`ConsoleShell`), so the tenant area and the console render the same
+arrangement. The app's dev server and a reverse-proxied deployment use
+the same-origin shape above when `apiOrigin` is absent.
+
+`themePreset` is only the default a device starts on. The user's pick in
+the account settings page (see "The account page and the app chrome")
+is stored on the device and wins over it on the next boot; with no
+stored choice the deployment value applies, and with neither the app
+starts on `default`. The config value is checked against the shipped
+shelf, so an unknown id falls back instead of reaching the provider.
 
 ### One origin for the API
 
@@ -265,10 +290,12 @@ Both shells branch on the same session snapshot: a session that genuinely ends
 than a view that never settles. Nothing persists a credential to storage; the
 cookie is the browser's, not a script's.
 
-The tenant frame's header carries a console entry pointing at `/console`, which
-redirects to the console's first page. It sits at the right end of the bar, with
-the language switch, the color-mode toggle and the notification bell -- not in
-the navigation -- and appears only to a principal that holds a platform
+The tenant frame's `headerActions` slot carries a console entry pointing at
+`/console`, which
+redirects to the console's first page. It sits with the language switch,
+the color-mode toggle and the notification bell -- in the top bar in the
+default shell form, in the drawer paper's bottom row in the `sidebar`
+form -- not in the navigation, and appears only to a principal that holds a platform
 permission, so an ordinary member is offered no way in. The console area itself
 gates each page on its permission code (composed host-side) and shows a "no
 access" state for a code the session is known to lack, so a member who reaches
@@ -298,21 +325,35 @@ so the console shows its wait or failure instead of misreading the member.
 ### The account page and the app chrome
 
 The tenant area ships one account page (`/account`, in the navigation) that
-mounts `@speed/account-ui`'s sections -- the self-service writes (display
+mounts `@speed/account-ui`'s sections -- the appearance theme choice, the
+self-service writes (display
 name, password and sign-in identifiers), then preferences, active sessions,
 social bindings and the step-up-gated two-step-verification setup -- under a
-`@speed/ui-kit` `PageHeader`. The phone write is not mounted: its two routes
+`@speed/ui-kit` `PageHeader`. The appearance section is
+`account-ui`'s controlled `AppearanceSection`, placed ahead of the
+preferences section: it lists the shipped preset shelf with this bundle's
+names (`themePreset.*` in `src/locales/`), reports a pick, and the page
+applies it through `useAppThemePreset` and writes it to the device
+(`demo-web.theme-preset`, `src/chrome.tsx`'s `persistThemePreset`), so the
+theme changes immediately and a reload starts on it. The boot order is the
+stored choice, then the deployment's `themePreset`, then `default`. The
+phone write is not mounted: its two routes
 are registered only when the deployment delivers an SMS code provider, which
 this skeleton's baseline does not. The social-bindings section takes the session and
 the channels the host offers; the skeleton configures none, so it lists
 existing bindings with no add area, and the binding-callback route is mounted
 beside the page for a product that configures a provider.
 
-The top bar carries the tenant switcher (over the app's placeholder tenant
+The shell chrome carries the tenant switcher (over the app's placeholder tenant
 list), an app-wide language switch and a color-mode toggle, and an avatar
 account menu (profile / account settings / sign out), all from
-`src/chrome.tsx`. The language and color-mode controls appear in the console
-banner too; the tenant switcher does not (the console resolves no tenant).
+`src/chrome.tsx`; AppShell places them in the top bar or, in the `sidebar`
+form, in the drawer paper's top and bottom rows. The language and
+color-mode controls appear in the console frame too; the tenant switcher
+does not (the console resolves no tenant).
+The appearance preset selector does not live in the shell chrome at all --
+it is the account page's appearance section, while the chrome keeps the
+color-mode toggle; the two choices are orthogonal and both persist.
 The color-mode choice is written to the device and read back at boot (with the
 operating system's `prefers-color-scheme` as the fallback), so a reload starts
 in the mode the user left. A tenant switch evicts the departing tenant's

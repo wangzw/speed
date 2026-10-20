@@ -12,6 +12,13 @@
  * repeats a spinner or an error block; the catalog's states are the
  * sections' own.
  *
+ * The account page is also where the user's theme preset is chosen: the
+ * appearance section sits ahead of the preferences section, wired to the
+ * theme provider's active preset and to the device's stored choice, so a pick
+ * applies immediately and survives a reload (src/chrome.tsx holds the storage
+ * helpers). The preset names are this bundle's copy; the package renders the
+ * options the host hands it.
+ *
  * The phone write (account-ui's PhoneSection) is mounted only when the
  * deployment serves the `authn.phone` feature: its two routes are registered
  * only when the deployment delivers an SMS code provider (an assembly that
@@ -46,6 +53,7 @@
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import {
+  AppearanceSection,
   BindingCallbackHandler,
   IdentifiersSection,
   MfaSection,
@@ -59,8 +67,10 @@ import {
 import { useFeature } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import { useNavigate } from '@speed/route-kit'
-import { PageHeader } from '@speed/ui-kit'
+import { themePresets } from '@speed/theme-presets'
+import { PageHeader, useAppThemePreset } from '@speed/ui-kit'
 import { useAppServices } from '../app-services.js'
+import { persistThemePreset } from '../chrome.js'
 import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
 import { NotFoundPage } from './not-found-page.js'
@@ -75,6 +85,19 @@ export function AccountSettingsPage(): ReactElement {
   const phoneServed = useFeature('authn.phone')
   const mfaServed = useFeature('authn.mfa')
   const emailIdentifierServed = useFeature('authn.identifiers.email')
+  // The theme preset the provider is applying, and its setter. The choices
+  // are the shipped shelf with this bundle's names; a pick applies at once
+  // (the provider re-renders the theme) and is written to the device so the
+  // next boot starts on it (src/chrome.tsx's initialThemePreset).
+  const { preset, setPreset } = useAppThemePreset()
+  const presetChoices = themePresets.map((option) => ({
+    id: option.id,
+    label: t(`themePreset.${option.id}`),
+  }))
+  const choosePreset = (id: string): void => {
+    setPreset(id)
+    persistThemePreset(id)
+  }
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <PageHeader
@@ -87,6 +110,11 @@ export function AccountSettingsPage(): ReactElement {
       <IdentifiersSection
         session={session}
         emailAvailable={emailIdentifierServed}
+      />
+      <AppearanceSection
+        presets={presetChoices}
+        value={preset}
+        onChange={choosePreset}
       />
       <PreferencesSection session={session} />
       <SessionsSection />

@@ -40,7 +40,11 @@ import {
   createSpeedI18n,
   SpeedAppProviders,
 } from '@speed/product-shell/bootstrap'
-import type { SpeedAppServices } from '@speed/product-shell/bootstrap'
+import type {
+  SpeedAppServices,
+  SpeedAppThemeOptions,
+} from '@speed/product-shell/bootstrap'
+import type { AppShellShellLayout } from '@speed/layout-kit'
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import { AppServicesProvider } from '../app-services.js'
 import { DemoApp } from '../app.js'
@@ -70,6 +74,18 @@ export interface RenderDemoAppOptions {
    * services, so it reads the same session and client the app does.
    */
   readonly wrap?: (app: ReactElement) => ReactNode
+  /**
+   * The shell layout the app is composed with, as the deployment config
+   * supplies it (src/main.tsx). Absent leaves the frames' top-bar default.
+   */
+  readonly shellLayout?: AppShellShellLayout
+  /**
+   * The theme options the provider stack renders with, forwarded to
+   * SpeedAppProviders. The production assembly passes the preset shelf and
+   * the boot preset defaults (src/main.tsx); a suite that asserts themed
+   * behaviour passes the same shape.
+   */
+  readonly theme?: SpeedAppThemeOptions
 }
 
 /**
@@ -126,10 +142,14 @@ export function renderDemoApp(
   const session = options.session ?? createTestSession()
   attachSession(session)
   const services: SpeedAppServices = { session, api, queryClient }
-  const app = <DemoApp />
+  const app = <DemoApp shellLayout={options.shellLayout} />
 
   const result = render(
-    <SpeedAppProviders i18n={i18n} queryClient={queryClient}>
+    <SpeedAppProviders
+      i18n={i18n}
+      queryClient={queryClient}
+      theme={options.theme}
+    >
       <AppServicesProvider services={services}>
         {options.wrap === undefined ? app : options.wrap(app)}
       </AppServicesProvider>

@@ -18,9 +18,12 @@
 
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { drawerClasses } from '@mui/material/Drawer'
+import { useTheme } from '@mui/material/styles'
 import { listItemIconClasses } from '@mui/material/ListItemIcon'
 import { listItemTextClasses } from '@mui/material/ListItemText'
+import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import type { AuthDomain, AuthSession } from '@speed/auth-core'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
@@ -34,6 +37,7 @@ import {
   notificationUiResources,
 } from '@speed/notification-ui'
 import { createSpeedI18n } from '@speed/product-shell/bootstrap'
+import { glassThemePreset, themePresets } from '@speed/theme-presets'
 import { UI_KIT_NAMESPACE } from '@speed/ui-kit'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -46,7 +50,13 @@ import {
   authenticatedSnapshot,
   createTestSession,
 } from './test-utils/session.js'
-import { DEFAULT_TENANT_ID, getCurrentTenantId, setCurrentTenantId } from './chrome.js'
+import {
+  DEFAULT_TENANT_ID,
+  getCurrentTenantId,
+  initialThemePreset,
+  setCurrentTenantId,
+  THEME_PRESET_STORAGE_KEY,
+} from './chrome.js'
 import { PlatformPermissions } from './platform-permissions.js'
 
 /**
@@ -63,10 +73,12 @@ const textI18n = createSpeedI18n({
   navigatorLanguages: [],
   namespaces: [
     { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
+    { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
     { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },
   ],
 })
 const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
+const tAccount = textI18n.getFixedT('en-US', ACCOUNT_UI_NAMESPACE)
 const tAuthZh = textI18n.getFixedT('zh-CN', AUTH_UI_NAMESPACE)
 const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
@@ -1007,6 +1019,43 @@ describe('the not-found fallback', () => {
 })
 
 describe('the account page', () => {
+  /** A browser-storage stand-in: the jsdom environment's own localStorage is
+   * unavailable (the Node runtime's experimental global shadows it), so the
+   * suite installs one it can read back. */
+  function installStorageDouble(): Map<string, string> {
+    const entries = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        entries.set(key, value)
+      },
+      removeItem: (key: string) => {
+        entries.delete(key)
+      },
+      clear: () => entries.clear(),
+    })
+    return entries
+  }
+
+  /** Reads the theme the provider is currently applying. It renders inside
+   * the provider stack (the harness's `wrap` slot), so a preset switch is
+   * observable without reaching into provider internals. */
+  function ThemeRadiusProbe() {
+    const theme = useTheme()
+    return <span data-testid="theme-radius">{String(theme.shape.borderRadius)}</span>
+  }
+
+  /** The theme options the production assembly passes (src/main.tsx): the
+   * shipped shelf, starting on the device's stored choice (else the
+   * deployment default, else 'default'). */
+  function bootThemeOptions() {
+    return { presets: themePresets, defaultPreset: initialThemePreset() }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('mounts the account surfaces in the tenant shell at /account', async () => {
     window.history.replaceState({}, '', '/account')
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
@@ -1018,5 +1067,150 @@ describe('the account page', () => {
         name: demoEnUS.account.title,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('offers the appearance section ahead of the preferences section', async () => {
+    window.history.replaceState({}, '', '/account')
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+      theme: bootThemeOptions(),
+    })
+
+    const appearance = await screen.findByRole('heading', {
+      level: 2,
+      name: tAccount('appearance.title'),
+    })
+    const preferences = await screen.findByRole('heading', {
+      level: 2,
+      name: tAccount('preferences.title'),
+    })
+    // The appearance choice is the first section of the settings page, so a
+    // user meets the theme control before the preference writes.
+    expect(
+      appearance.compareDocumentPosition(preferences) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('applies a chosen preset at once, remembers it, and restores it on a remount', async () => {
+    const entries = installStorageDouble()
+    window.history.replaceState({}, '', '/account')
+    const user = userEvent.setup()
+    const first = renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+      theme: bootThemeOptions(),
+      wrap: (app) => (
+        <>
+          {app}
+          <ThemeRadiusProbe />
+        </>
+      ),
+    })
+
+    const select = await screen.findByRole('combobox', {
+      name: tAccount('appearance.theme.label'),
+    })
+    await user.click(select)
+    await user.click(
+      await screen.findByRole('option', { name: demoEnUS.themePreset.glass }),
+    )
+
+    // The provider applies the preset immediately: the theme's radius is the
+    // glass preset's, not the default one, before any reload.
+    expect(screen.getByTestId('theme-radius')).toHaveTextContent(
+      String(glassThemePreset.tokens.shape?.borderRadius),
+    )
+    // The pick is a manual choice, so it lands on the device too.
+    expect(entries.get(THEME_PRESET_STORAGE_KEY)).toBe('glass')
+
+    // A reload starts from the stored choice: remounting with the same boot
+    // options (whose defaultPreset reads the storage) applies glass again.
+    first.unmount()
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+      theme: bootThemeOptions(),
+      wrap: (app) => (
+        <>
+          {app}
+          <ThemeRadiusProbe />
+        </>
+      ),
+    })
+    expect(await screen.findByTestId('theme-radius')).toHaveTextContent(
+      String(glassThemePreset.tokens.shape?.borderRadius),
+    )
+    expect(
+      screen.getByRole('combobox', {
+        name: tAccount('appearance.theme.label'),
+      }),
+    ).toHaveTextContent(demoEnUS.themePreset.glass)
+  })
+})
+
+describe('the sidebar shell layout', () => {
+  it('renders the brand and the account controls in the side column, with no banner landmark', async () => {
+    renderDemoApp({
+      session: createTestSession(authenticatedSnapshot()),
+      shellLayout: 'sidebar',
+    })
+
+    const brand = await screen.findByText(demoEnUS.app.title)
+    const paper = document.querySelector<HTMLElement>(`.${drawerClasses.paper}`)
+    expect(paper).not.toBeNull()
+    const nav = screen.getByRole('navigation', {
+      name: tLayout('appShell.navLabel'),
+    })
+    const account = screen.getByRole('button', { name: 'Test User' })
+
+    // The desktop sidebar form renders no app bar: the brand sits in the
+    // drawer paper rather than inside a header landmark. (The routed page
+    // carries its own PageHeader element in the content region, so the
+    // absence is asserted on the brand's containing element, not on every
+    // header in the document.)
+    expect(brand.closest('header')).toBeNull()
+    // The brand and the account menu live in the drawer paper, outside the
+    // nav landmark: the brand before it, the menu after it.
+    expect(paper).toContainElement(brand)
+    expect(paper).toContainElement(account)
+    expect(nav.contains(brand)).toBe(false)
+    expect(nav.contains(account)).toBe(false)
+    expect(
+      brand.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      account.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy()
+  })
+
+  it('carries the same side column into the console area', async () => {
+    // The console is the app's second shell. Its area receives the layout
+    // from AppFrame and forwards it to ConsoleShell; dropping either hop
+    // leaves /console on the top-bar form while the tenant area is a
+    // sidebar, which only a full-route render can catch.
+    window.history.replaceState({}, '', '/console/tenants')
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ system: ['tenant.read'] }),
+      ),
+      shellLayout: 'sidebar',
+    })
+
+    const nav = await screen.findByRole('navigation', {
+      name: tConsole('shell.navLabel'),
+    })
+    const brand = screen.getByText(demoEnUS.app.title)
+    // No app bar in the sidebar form. The routed page renders its own
+    // `<header>` (its PageHeader) inside main, so the absence is asserted
+    // on the brand's containing element, not on every header in the page.
+    expect(brand.closest('header')).toBeNull()
+    const account = screen.getByRole('button', { name: 'Test User' })
+    expect(nav.contains(brand)).toBe(false)
+    expect(nav.contains(account)).toBe(false)
+    expect(
+      brand.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      account.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy()
   })
 })

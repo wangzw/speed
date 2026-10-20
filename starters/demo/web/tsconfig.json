@@ -44,6 +44,7 @@
       "@speed/i18n/platform-errors": ["../../../web/packages/i18n/src/platform-errors.ts"],
       "@speed/i18n": ["../../../web/packages/i18n/src/index.ts"],
       "@speed/tokens": ["../../../web/packages/tokens/src/index.ts"],
+      "@speed/theme-presets": ["../../../web/packages/theme-presets/src/index.ts"],
       "@speed/ui-kit": ["../../../web/packages/ui-kit/src/index.ts"]
     }
   }

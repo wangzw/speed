@@ -35,6 +35,7 @@ import type {
 } from '@speed/console-ui'
 import { ConsoleShell, consoleNavGroups } from '@speed/console-ui'
 import { useTranslation } from '@speed/i18n'
+import type { AppShellShellLayout } from '@speed/layout-kit'
 import { useNavigate, useNavItems, useRouteLinkProps } from '@speed/route-kit'
 import type { FeatureName } from '@speed/api-sdk/features'
 import type { ReactElement, ReactNode } from 'react'
@@ -61,6 +62,11 @@ export interface ConsoleAreaProps {
   readonly hasFeature: (name: FeatureName) => boolean
   /** The routed console page, rendered inside the frame's main landmark. */
   readonly children: ReactNode
+  /**
+   * The shell form the deployment selects (src/runtime-config.ts). Absent
+   * keeps the console frame's top-bar default.
+   */
+  readonly shellLayout?: AppShellShellLayout
   /**
    * The desktop sidebar's collapse state, host-held. The console frame
    * renders the collapse toggle and reports each flip through
@@ -91,6 +97,7 @@ export function ConsoleArea({
   navGroups,
   hasFeature,
   children,
+  shellLayout,
   sidebarCollapsed,
   onSidebarCollapsedChange,
   onImpersonationChange,
@@ -136,6 +143,7 @@ export function ConsoleArea({
       onImpersonationChange={onImpersonationChange}
       onImpersonationStarting={onImpersonationStarting}
       isSelected={isSelected}
+      shellLayout={shellLayout}
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={onSidebarCollapsedChange}
     >

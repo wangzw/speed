@@ -33,6 +33,7 @@ import { act } from '@testing-library/react'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import type { AppShellShellLayout } from '@speed/layout-kit'
 import { routes } from '../routes.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
@@ -152,11 +153,12 @@ async function settle(): Promise<void> {
 async function scanRoute(
   path: string,
   mode: BackendMode,
+  shellLayout?: AppShellShellLayout,
 ): Promise<readonly A11yFinding[]> {
   const unscripted: string[] = []
   bindRequestFn(createBackend(mode, (url) => unscripted.push(url)))
   window.history.replaceState({}, '', path)
-  const { container } = renderDemoApp({ session: staffSession() })
+  const { container } = renderDemoApp({ session: staffSession(), shellLayout })
   // A route that rendered no markup at all is a broken sweep, not an
   // accessible page: fail rather than scan an empty document.
   expect(container.innerHTML, `route ${path} [${mode}] rendered no markup`).not.toBe('')
@@ -269,6 +271,38 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
       })
     }
   }
+
+  /**
+   * Scans one route in the sidebar shell form and fails on a serious or
+   * critical finding, exactly as the topbar sweep does. The sidebar form
+   * has its own chrome (a complementary column, no app bar at md+) that
+   * the default sweep never composes with a routed page.
+   */
+  async function scanSidebarRoute(path: string): Promise<void> {
+    const findings = await scanRoute(path, 'data', 'sidebar')
+    const failing = findings.filter(isFailing)
+    warnNonFailing(path, 'data', findings.filter((f) => !isFailing(f)))
+    if (failing.length > 0) {
+      expect.fail(
+        `route ${path} [data, sidebar] has ${failing.length} serious/critical axe violation(s):\n` +
+          formatFindings(failing),
+      )
+    }
+  }
+
+  it('scans a tenant route in the sidebar shell form', async () => {
+    // The account page carries the appearance section and sections of its
+    // own, so the tenant frame's sidebar chrome is scanned against real
+    // content rather than the empty frame.
+    await scanSidebarRoute('/account')
+  })
+
+  it('scans a console route in the sidebar shell form', async () => {
+    // The console is the second shell; it takes the same layout through a
+    // different frame, and its grouped navigation is the shape the tenant
+    // frame does not render.
+    await scanSidebarRoute('/console/tenants')
+  })
 
   it('scans the anonymous sign-in surface at the tenant root', async () => {
     const unscripted: string[] = []

@@ -30,6 +30,7 @@
     "@speed/product-shell": "^0.0.1",
     "@speed/route-kit": "^0.0.1",
     "@speed/tenancy-ui": "^0.0.1",
+    "@speed/theme-presets": "^0.0.1",
     "@speed/ui-kit": "^0.0.1",
     "@tanstack/react-query": "^5.62.0",
     "react": "^19.2.8",

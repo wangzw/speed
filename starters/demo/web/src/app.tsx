@@ -52,7 +52,11 @@ import type { AuthSnapshot } from '@speed/auth-core'
 import { ImpersonationNoticeProvider } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { RouteGuard } from '@speed/layout-kit'
-import type { AppShellNavItem, RouteGuardStatus } from '@speed/layout-kit'
+import type {
+  AppShellNavItem,
+  AppShellShellLayout,
+  RouteGuardStatus,
+} from '@speed/layout-kit'
 import {
   NotificationBell,
   NotificationPresenceProvider,
@@ -163,8 +167,14 @@ function defaultRosterTenant(
  * route table is gated (the notification, object and console declarations
  * carry `requires`), so the host hands the route layer its feature-presence
  * answer -- derived from the session's feature state -- plus the views a
- * gated path renders while that answer is pending or failed. */
-export function DemoApp(): ReactElement {
+ * gated path renders while that answer is pending or failed. The deployment's
+ * shell layout (src/runtime-config.ts) rides down to both frames; absent, the
+ * frames keep their top-bar default. */
+export function DemoApp({
+  shellLayout,
+}: {
+  readonly shellLayout?: AppShellShellLayout
+} = {}): ReactElement {
   const presence = featurePresence(useFeatureState())
   const authenticated = useAuthState().state === 'authenticated'
   // A session that ends leaves no identity for the host's current tenant or
@@ -194,7 +204,7 @@ export function DemoApp(): ReactElement {
           permission set, the current tenant and the live subscription
           belong to (src/impersonation). */}
       <IdentityChangeProvider>
-        <AppFrame presence={presence} />
+        <AppFrame presence={presence} shellLayout={shellLayout} />
       </IdentityChangeProvider>
     </RouteProvider>
   )
@@ -203,8 +213,10 @@ export function DemoApp(): ReactElement {
 /** Renders the area the current URL lands in: the console or the tenant shell. */
 function AppFrame({
   presence,
+  shellLayout,
 }: {
   readonly presence: RoutePresence
+  readonly shellLayout?: AppShellShellLayout
 }): ReactElement {
   const { path: pathname } = useLocationPath()
   // The declaration the current URL matches exactly on the narrowed surface:
@@ -241,6 +253,7 @@ function AppFrame({
         absent={
           <TenantFrame
             presence={presence}
+            shellLayout={shellLayout}
             sidebarCollapsed={sidebarCollapsed}
             onSidebarCollapsedChange={setSidebarCollapsed}
           >
@@ -277,6 +290,7 @@ function AppFrame({
                 // unregistered path does.
                 <TenantFrame
                   presence={presence}
+                  shellLayout={shellLayout}
                   sidebarCollapsed={sidebarCollapsed}
                   onSidebarCollapsedChange={setSidebarCollapsed}
                 >
@@ -286,6 +300,7 @@ function AppFrame({
                 <ConsoleArea
                   routes={consoleRoutes}
                   hasFeature={hasFeature}
+                  shellLayout={shellLayout}
                   onImpersonationChange={applyIdentityChange}
                   onImpersonationStarting={onImpersonationStarting}
                   sidebarCollapsed={sidebarCollapsed}
@@ -306,6 +321,7 @@ function AppFrame({
   return (
     <TenantFrame
       presence={presence}
+      shellLayout={shellLayout}
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={setSidebarCollapsed}
     >
@@ -329,11 +345,13 @@ function AppFrame({
  */
 function TenantFrame({
   presence,
+  shellLayout,
   sidebarCollapsed,
   onSidebarCollapsedChange,
   children,
 }: {
   readonly presence: RoutePresence
+  readonly shellLayout?: AppShellShellLayout
   readonly sidebarCollapsed: boolean
   readonly onSidebarCollapsedChange: (collapsed: boolean) => void
   readonly children: ReactNode
@@ -734,6 +752,7 @@ function TenantFrame({
         >
         <ProductShell
           navItems={navItems}
+          shellLayout={shellLayout}
           header={<AppBrand />}
           // The impersonation notice sits below the app bar for the whole
           // tenant frame. It is always mounted: the component tells the

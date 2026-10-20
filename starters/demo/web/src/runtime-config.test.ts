@@ -1,10 +1,13 @@
 /**
- * loadRuntimeConfig: the deployment's API origin read, and every way it falls
- * back to same-origin. The file is fetched at the deployment root, resolved
+ * loadRuntimeConfig: the deployment facts read before the first render --
+ * the API origin, the shell layout and the default theme preset -- and every
+ * way each falls back. The file is fetched at the deployment root, resolved
  * against the document base rather than the current URL, so the read never
  * needs an origin to resolve one and a deep link cannot shift it under its own
  * path; a missing file, a network failure, a non-2xx answer and an unreadable
- * or origin-less body each yield an empty configuration.
+ * body each yield an empty configuration. The fields are read independently:
+ * one malformed value leaves the others intact, and an unknown value for a
+ * field is dropped.
  *
  * The deployment carries the file itself: the committed asset under public/
  * (RUNTIME_CONFIG_FILE) is one the build copies into the served output, so the
@@ -62,6 +65,86 @@ describe('loadRuntimeConfig', () => {
     })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(requestedPath(fetchMock)).toBe('/runtime-config.json')
+  })
+
+  it('reads the shell layout and the theme preset beside the origin', async () => {
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        apiOrigin: 'https://api.example.com',
+        shellLayout: 'sidebar',
+        themePreset: 'glass',
+      }),
+    })
+
+    await expect(loadRuntimeConfig()).resolves.toEqual({
+      apiOrigin: 'https://api.example.com',
+      shellLayout: 'sidebar',
+      themePreset: 'glass',
+    })
+  })
+
+  it('keeps a valid field when another field is malformed', async () => {
+    // The fields are independent reads. A broken origin must not drop the
+    // layout, and a broken layout must not drop the preset: before this, one
+    // unusable value made the whole body an empty configuration.
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        apiOrigin: 42,
+        shellLayout: 'sidebar',
+        themePreset: 'glass',
+      }),
+    })
+    await expect(loadRuntimeConfig()).resolves.toEqual({
+      shellLayout: 'sidebar',
+      themePreset: 'glass',
+    })
+
+    stubFetch({
+      ok: true,
+      json: async () => ({
+        apiOrigin: 'https://api.example.com',
+        shellLayout: 'two-columns',
+        themePreset: 'glass',
+      }),
+    })
+    await expect(loadRuntimeConfig()).resolves.toEqual({
+      apiOrigin: 'https://api.example.com',
+      themePreset: 'glass',
+    })
+  })
+
+  it('ignores an unknown shell layout and an unknown theme preset', async () => {
+    stubFetch({ ok: true, json: async () => ({ shellLayout: 'two-columns' }) })
+    await expect(loadRuntimeConfig()).resolves.toEqual({})
+    vi.unstubAllGlobals()
+
+    stubFetch({ ok: true, json: async () => ({ shellLayout: 1 }) })
+    await expect(loadRuntimeConfig()).resolves.toEqual({})
+    vi.unstubAllGlobals()
+
+    // An id no shipped preset carries is a configuration typo: ignored here,
+    // so the assembly falls back to its documented default preset.
+    stubFetch({ ok: true, json: async () => ({ themePreset: 'sepia' }) })
+    await expect(loadRuntimeConfig()).resolves.toEqual({})
+    vi.unstubAllGlobals()
+
+    stubFetch({ ok: true, json: async () => ({ themePreset: '' }) })
+    await expect(loadRuntimeConfig()).resolves.toEqual({})
+  })
+
+  it('reads each field on its own when only one is configured', async () => {
+    stubFetch({ ok: true, json: async () => ({ shellLayout: 'sidebar' }) })
+    await expect(loadRuntimeConfig()).resolves.toEqual({ shellLayout: 'sidebar' })
+    vi.unstubAllGlobals()
+
+    stubFetch({ ok: true, json: async () => ({ themePreset: 'compact' }) })
+    await expect(loadRuntimeConfig()).resolves.toEqual({ themePreset: 'compact' })
+    vi.unstubAllGlobals()
+
+    stubFetch({ ok: true, json: async () => ({ apiOrigin: '' }) })
+    await expect(loadRuntimeConfig()).resolves.toEqual({})
   })
 
   it('reads the file at the root even under a deep-link path', async () => {

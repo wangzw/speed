@@ -22,10 +22,10 @@
  *  - The view root, DemoApp, which installs the router and switches the shell
  *    by area (src/app.tsx).
  *
- *  - The API origin: read from the deployment's runtime-config.json beside the
- *    entry document (src/runtime-config.ts), falling back to the page's own
- *    origin when the file is absent. Reading it before the assembly keeps one
- *    dist usable across deployment topologies without a rebuild.
+ *  - The deployment configuration: the API origin, the shell layout and the
+ *    default theme preset, read from the deployment's runtime-config.json
+ *    beside the entry document (src/runtime-config.ts), falling back to the
+ *    page's own origin, the top bar and 'default' when a field is absent.
  */
 
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
@@ -44,9 +44,14 @@ import {
   type SpeedAppThemeOptions,
 } from '@speed/product-shell/bootstrap'
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
+import { themePresets } from '@speed/theme-presets'
 import { AppServicesProvider } from './app-services.js'
 import { DemoApp } from './app.js'
-import { getCurrentTenantAlias, initialColorMode } from './chrome.js'
+import {
+  getCurrentTenantAlias,
+  initialColorMode,
+  initialThemePreset,
+} from './chrome.js'
 import { applyDocumentMetadata } from './document-metadata.js'
 import { PlatformPermissions } from './platform-permissions.js'
 import { DEMO_NAMESPACE, demoResources } from './resources.js'
@@ -59,15 +64,18 @@ export type DemoAppBootstrap = SpeedAppBootstrap
  * The theme options the bootstrap hands the assembly. The tree starts in the
  * device's remembered colour mode, else the operating system's preference,
  * else light (src/chrome.tsx reads it before the first render, so a reload
- * renders in the mode the user left). The project-layer tokens are the brand
- * placeholder: an empty override keeps the platform's shipped palette, and a
- * product replaces it with its own (@speed/ui-kit's README, "The theme
- * factory").
+ * renders in the mode the user left). The preset shelf is the shipped one,
+ * starting on the device's remembered preset, else the deployment's, else
+ * 'default'; the project-layer tokens are the brand placeholder: an empty
+ * override keeps the platform's shipped palette, and a product replaces it
+ * with its own (@speed/ui-kit's README, "The theme factory").
  */
-export function demoThemeOptions(): SpeedAppThemeOptions {
+export function demoThemeOptions(themePreset?: string): SpeedAppThemeOptions {
   return {
     defaultMode: initialColorMode(),
     projectTokens: {},
+    presets: themePresets,
+    defaultPreset: initialThemePreset(themePreset),
   }
 }
 
@@ -78,8 +86,8 @@ export function demoThemeOptions(): SpeedAppThemeOptions {
 export async function bootstrapDemoApp(
   container: Element,
 ): Promise<DemoAppBootstrap> {
-  const { apiOrigin } = await loadRuntimeConfig()
-  const theme = demoThemeOptions()
+  const runtime = await loadRuntimeConfig()
+  const theme = demoThemeOptions(runtime.themePreset)
   const bootstrap = bootstrapSpeedApp(container, {
     namespaces: [
       { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
@@ -106,9 +114,9 @@ export async function bootstrapDemoApp(
         </AppServicesProvider>
       ),
     ],
-    view: <DemoApp />,
+    view: <DemoApp shellLayout={runtime.shellLayout} />,
     theme,
-    baseUrl: apiOrigin,
+    baseUrl: runtime.apiOrigin,
     // The tenant every request announces as X-Tenant: the host's current
     // tenant's ALIAS, read per attempt (src/chrome.tsx holds the one value
     // and resolves its alias). The server's tenant resolution layer looks the

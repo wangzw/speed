@@ -42,6 +42,7 @@ import { Avatar } from '@speed/layout-kit'
 import { useNavigate } from '@speed/route-kit'
 import { TenantSwitcher } from '@speed/tenancy-ui'
 import type { TenantOption } from '@speed/tenancy-ui'
+import { themePresets } from '@speed/theme-presets'
 import { useAppThemeMode } from '@speed/ui-kit'
 import type { AppThemeMode } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
@@ -450,6 +451,56 @@ export function initialColorMode(): AppThemeMode {
     // No media-query support: fall through to the light default.
   }
   return 'light'
+}
+
+/** The device key the chosen theme preset is remembered under. */
+export const THEME_PRESET_STORAGE_KEY = 'demo-web.theme-preset'
+
+/** Whether a stored value names a preset the app ships. */
+function isThemePresetId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    themePresets.some((preset) => preset.id === value)
+  )
+}
+
+/** The theme preset the device remembers, or null when none was stored (or the
+ * stored value names no shipped preset, or the storage is unavailable). */
+export function readStoredThemePreset(): string | null {
+  try {
+    const stored = window.localStorage.getItem(THEME_PRESET_STORAGE_KEY)
+    return isThemePresetId(stored) ? stored : null
+  } catch {
+    // Storage can be refused (privacy modes, a sandboxed document). The
+    // choice then lasts the page instead of failing the render.
+    return null
+  }
+}
+
+/** Records the user's theme-preset choice on the device. */
+export function persistThemePreset(preset: string): void {
+  try {
+    window.localStorage.setItem(THEME_PRESET_STORAGE_KEY, preset)
+  } catch {
+    // See readStoredThemePreset: a refused storage is not a failed switch.
+  }
+}
+
+/**
+ * The preset the app starts on: the device's stored choice, else the
+ * deployment's configured preset, else 'default'. Read at boot (src/main.tsx
+ * passes it to the assembly as the theme's defaultPreset), so a reload with a
+ * stored choice renders in it without a flash of the deployment default. The
+ * deployment value is checked against the shipped shelf too: an unknown id is
+ * a configuration typo, and the provider's documented fallback is the first
+ * preset, not a blank theme.
+ */
+export function initialThemePreset(deploymentPreset?: string): string {
+  const stored = readStoredThemePreset()
+  if (stored !== null) {
+    return stored
+  }
+  return isThemePresetId(deploymentPreset) ? deploymentPreset : 'default'
 }
 
 /**

@@ -79,6 +79,14 @@
     "toDark": "Switch to dark theme",
     "toLight": "Switch to light theme"
   },
+  "themePreset": {
+    "default": "Default",
+    "classic": "Classic",
+    "modern": "Modern",
+    "compact": "Compact",
+    "glass": "Liquid glass",
+    "ascii": "ASCII terminal"
+  },
   "workspace": {
     "personal": "Personal workspace",
     "failure": {
