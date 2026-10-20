@@ -269,13 +269,30 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
-	// The accounts first, and the identifiers of the ones the configuration
-	// marks as administrators.
-	var administrators []authn.AccountID
+	// The account list is judged before anything is written: a list entry is a
+	// value the manifest cannot hold to, so a credential key spelled wrong is
+	// caught here rather than by the store, and a run that would refuse the
+	// account must not have written the settings below first.
 	for _, a := range in.Accounts {
 		if err := a.check(); err != nil {
 			return err
 		}
+	}
+
+	// The settings first: a value the configuration names may govern how the
+	// accounts below are written — the account store's password policy among
+	// them — and a policy written after the account it should have judged has
+	// judged nothing. The settings belong to no account or tenant: each is
+	// written once, into the global layer, and a key that layer already holds is
+	// left as it stands.
+	if err := seedSettings(ctx, store, in.Settings); err != nil {
+		return err
+	}
+
+	// Then the accounts, and the identifiers of the ones the configuration
+	// marks as administrators.
+	var administrators []authn.AccountID
+	for _, a := range in.Accounts {
 		id, err := seedOneAccount(ctx, accounts, admin, a)
 		if err != nil {
 			return err
@@ -292,13 +309,6 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		if err := seedTenant(ctx, roster, t); err != nil {
 			return err
 		}
-	}
-
-	// Then the settings, which belong to no account or tenant: a value the
-	// configuration names is written once, into the global layer, and a key
-	// that layer already holds is left as it stands.
-	if err := seedSettings(ctx, store, in.Settings); err != nil {
-		return err
 	}
 
 	if len(administrators) == 0 {

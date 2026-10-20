@@ -213,3 +213,29 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 		}
 	}
 }
+
+// A deployment may lower the account store's password policy through
+// seed.settings. The setting has to be in force when the seeded accounts are
+// written, so the seed writes the settings before the accounts: an
+// eight-character password is refused under the declared minimum of twelve and
+// accepted once the deployment's value lands first.
+func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
+	t.Parallel()
+	body := configBody(t, freePorts(t, listenerCount), ":memory:")
+	body = strings.Replace(body,
+		`password: "operator-dev-secret"`, `password: "abcd1234"`, 1)
+	body = strings.Replace(body, `    - key: "authn.mfa.sensitive-min-age"
+      value: "1h"`, `    - key: "authn.mfa.sensitive-min-age"
+      value: "1h"
+    - key: "authn.account.password-min-length"
+      value: "8"`, 1)
+	config := writeConfigFile(t, body)
+
+	res := runCommand(t, config, "sqlite", "seed")
+	if res.err != nil {
+		t.Fatalf("seed with a lowered password policy failed: %v\n%s", res.err, res.combined())
+	}
+	if !strings.Contains(res.stdout, "seeded: account operator@demo.test") {
+		t.Errorf("the account with the eight-character password was not seeded:\n%s", res.stdout)
+	}
+}
