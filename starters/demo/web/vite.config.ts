@@ -65,17 +65,27 @@ export default defineConfig({
     // (247 kB gzip) and vite prints its "chunks larger than 500 kB"
     // warning: the app eagerly composes the entire platform shell, so
     // React, MUI, the query client and every @speed package ship in the
-    // one file. Grouping the vendored libraries splits that entry so no
-    // chunk crosses the threshold, and gives the framework chunks a hash
-    // stable across app-only edits -- a consumer's own changes no longer
-    // re-download React or MUI. The app's own code stays in the entry
-    // chunk. If the entry grows past the threshold again, that is a
+    // one file. Grouping the vendored libraries and the workspace
+    // packages splits that entry so no chunk crosses the threshold, and
+    // gives the framework and platform chunks a hash stable across
+    // app-only edits -- a consumer's own changes no longer re-download
+    // React, MUI or the platform packages. The app's own code is what
+    // stays in the entry chunk. If that grows past the threshold, it is a
     // route-level problem (lazy-load the app's own pages), not something
     // a wider vendor split fixes.
     rolldownOptions: {
+      // The build also prints one MODULE_LEVEL_DIRECTIVE warning per
+      // `'use client'` directive carried by a bundled dependency's ESM build
+      // (@mui/*, @tanstack/react-query, react-router). The directive is React
+      // Server Components metadata, and rolldown drops top-level directives
+      // from a bundled browser build anyway; the check exists for library
+      // authors whose output must keep them, which this app is not. It is
+      // switched off through the documented check rather than an onwarn or
+      // log-level filter, so a warning from any other directive still shows.
+      checks: { moduleLevelDirective: false },
       output: {
         codeSplitting: {
-          // First match wins, so the narrower library groups precede the
+          // First match wins, so the narrower groups precede the
           // catch-all: the pnpm store path nests each package under its
           // own `node_modules/`, so a bare specifier directory is what
           // these match at any depth.
@@ -85,21 +95,31 @@ export default defineConfig({
               test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
             },
             { name: 'mui', test: /node_modules[\\/]@mui[\\/]/ },
+            // The workspace packages are aliased onto their live source
+            // (web/packages/<name>/src), so they never match the
+            // node_modules groups. They are split by role rather than
+            // pooled into one chunk: the generated API and the session
+            // layer change on a different rhythm from the UI packages,
+            // and a single platform chunk would sit above the size
+            // heuristic on its own. The demo's own pages stay in the
+            // entry chunk.
+            {
+              name: 'speed-runtime',
+              test: /[\\/]web[\\/]packages[\\/](api-client|api-sdk|auth-core|i18n|route-kit|tokens)[\\/]src[\\/]/,
+            },
+            {
+              name: 'speed-console',
+              test: /[\\/]web[\\/]packages[\\/]console-ui[\\/]src[\\/]/,
+            },
+            {
+              name: 'speed-ui',
+              test: /[\\/]web[\\/]packages[\\/][^\\/]+[\\/]src[\\/]/,
+            },
             { name: 'vendor', test: /node_modules[\\/]/ },
           ],
         },
       },
     },
-    // The build also prints one MODULE_LEVEL_DIRECTIVE warning per
-    // `'use client'` directive carried by a bundled dependency's ESM build
-    // (@mui/*, @tanstack/react-query, react-router -- one line per
-    // dependency ESM file that carries the directive).
-    // The directive is React Server Components metadata from those
-    // packages, not this app's, and it is meaningless in a client-only
-    // bundle, so nothing here can or should remove it. It is left visible
-    // rather than silenced -- no onwarn filter, no log level change, no
-    // dependency swap -- and it goes away when the upstream packages stop
-    // shipping the directive.
   },
   server: {
     // The dev server serves this directory and the workspace siblings the
