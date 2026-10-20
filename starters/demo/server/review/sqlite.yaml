@@ -66,6 +66,8 @@ ops:
   endpoint: ops
   title: demo
   version: 0.1.0
+  description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
+  servers: ["http://localhost:8080"]
 
 webui:
   endpoint: web
