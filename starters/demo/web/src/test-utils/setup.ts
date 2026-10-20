@@ -22,8 +22,17 @@
  */
 
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
+
+// findBy*/waitFor default to a one-second async budget. The workspace runs
+// every package's suite concurrently; under that load a query a case waits
+// on can settle just after the default expires, failing the case on the
+// clock rather than on the behaviour it asserts. This app carries its own
+// copy of the test support (it is a copyable skeleton and does not import
+// the workspace's private test package), so it states the same budget
+// @speed/test-utils/setup does: a wider wait, no looser assertion.
+configure({ asyncUtilTimeout: 5_000 })
 
 /**
  * An in-memory device storage for every suite.

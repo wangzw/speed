@@ -12,6 +12,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
+import { alertClasses } from '@mui/material/Alert'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { accountUiResources } from '@speed/account-ui'
 import type { RequestFn } from '@speed/api-client'
@@ -169,6 +170,11 @@ describe('the account setup page', () => {
     expect(
       await screen.findByText(demoEnUS.accountSetup.complete),
     ).toBeInTheDocument()
+    // The completion notice is MUI's success Alert: it carries the alert
+    // role and the component's root class rather than a hand-built box.
+    const successAlert = screen.getByRole('alert')
+    expect(successAlert).toHaveClass(alertClasses.root)
+    expect(successAlert).toHaveTextContent(demoEnUS.accountSetup.complete)
     // The header reflects the same state: the page never tells an account
     // that already has a username and a password to add them.
     expect(
@@ -212,6 +218,10 @@ describe('the account setup page', () => {
     expect(
       await screen.findByText(demoEnUS.accountSetup.completeWithEmail),
     ).toBeInTheDocument()
+    // The email variant reaches the same success Alert as the username one.
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      demoEnUS.accountSetup.completeWithEmail,
+    )
     // The account has no username, so the completion copy must not tell it
     // to sign in with one.
     expect(

@@ -33,9 +33,9 @@
  * and the password area waits for an answer it can act on.
  */
 
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
-import Typography from '@mui/material/Typography'
 import { IdentifiersSection, PasswordSection } from '@speed/account-ui'
 import { useTranslation } from '@speed/i18n'
 import { useRouteLinkProps } from '@speed/route-kit'
@@ -79,20 +79,11 @@ export function AccountSetupPage(): ReactElement {
         description={complete ? undefined : t('accountSetup.description')}
       />
       {complete ? (
-        <Box
-          sx={{
-            p: 2,
-            border: '1px solid',
-            borderColor: 'success.main',
-            borderRadius: 1,
-          }}
-        >
-          <Typography variant="body1">
-            {hasUsername
-              ? t('accountSetup.complete')
-              : t('accountSetup.completeWithEmail')}
-          </Typography>
-        </Box>
+        <Alert severity="success">
+          {hasUsername
+            ? t('accountSetup.complete')
+            : t('accountSetup.completeWithEmail')}
+        </Alert>
       ) : null}
       {/* Usernames only: the setup page's job is the login name a password
           sign-in needs, and a verified email as one is the account page's

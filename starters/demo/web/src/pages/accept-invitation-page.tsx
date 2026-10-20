@@ -24,7 +24,7 @@
 import { useMemo } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
+import Card from '@mui/material/Card'
 import { useAuthState } from '@speed/auth-core'
 import { AcceptInvitationScreen } from '@speed/auth-ui'
 import type { InvitationOperations } from '@speed/auth-ui'
@@ -88,13 +88,13 @@ export function AcceptInvitationPage({
         p: 2,
       }}
     >
-      <Paper elevation={2} sx={{ width: '100%', maxWidth: 480, p: 4 }}>
+      <Card variant="outlined" sx={{ width: '100%', maxWidth: 480, p: 4 }}>
         <AcceptInvitationScreen
           token={token}
           invitations={invitations}
           onAccepted={() => navigate(TENANT_HOME_PATH)}
         />
-      </Paper>
+      </Card>
     </Box>
   )
 }

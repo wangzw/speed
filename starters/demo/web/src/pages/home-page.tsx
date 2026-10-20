@@ -37,7 +37,7 @@ import {
   useHasRoute,
   useRouteLinkProps,
 } from '@speed/route-kit'
-import { PageHeader } from '@speed/ui-kit'
+import { PageHeader, SectionCard } from '@speed/ui-kit'
 import { setupIncomplete } from '../account-setup.js'
 import { useAuthnProfileGet } from '../app-api/index.js'
 import {
@@ -140,21 +140,24 @@ export function HomePage(): ReactElement {
           </Link>
         </Alert>
       ) : null}
-      <Box
-        sx={{
-          display: 'grid',
-          // Container-keyed tracks, the FormLayout/DataTable recipe: one
-          // column at the container's narrow end (the `@` shorthand's 0px
-          // baseline), two equal tracks from its `sm` (600px) up. The page
-          // collapses to one column in a narrow panel even on a wide viewport.
-          gridTemplateColumns: { '@': '1fr', '@sm': 'repeat(2, 1fr)' },
-          gap: 2,
-        }}
-      >
-        {START_CARDS.map((card) => (
-          <StartCardTile key={card.key} card={card} />
-        ))}
-      </Box>
+      <SectionCard>
+        <Box
+          sx={{
+            display: 'grid',
+            // Container-keyed tracks, the FormLayout/DataTable recipe: one
+            // column at the container's narrow end (the `@` shorthand's 0px
+            // baseline), two equal tracks from its `sm` (600px) up. The page
+            // collapses to one column in a narrow panel even on a wide
+            // viewport.
+            gridTemplateColumns: { '@': '1fr', '@sm': 'repeat(2, 1fr)' },
+            gap: 2,
+          }}
+        >
+          {START_CARDS.map((card) => (
+            <StartCardTile key={card.key} card={card} />
+          ))}
+        </Box>
+      </SectionCard>
     </Box>
   )
 }

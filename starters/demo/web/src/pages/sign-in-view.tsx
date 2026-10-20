@@ -46,7 +46,7 @@
  */
 
 import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
+import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
 import type { SignInContext, SignInMode } from '@speed/auth-ui'
@@ -136,7 +136,7 @@ export function SignInView({
         p: 2,
       }}
     >
-      <Paper elevation={2} sx={{ width: '100%', maxWidth: 400, p: 4 }}>
+      <Card variant="outlined" sx={{ width: '100%', maxWidth: 400, p: 4 }}>
         <Box sx={{ textAlign: 'center', mb: 3 }}>
           <Typography
             variant="subtitle1"
@@ -163,7 +163,7 @@ export function SignInView({
           onSignedIn={onSignedIn}
           social={SOCIAL_SIGN_IN}
         />
-      </Paper>
+      </Card>
     </Box>
   )
 }

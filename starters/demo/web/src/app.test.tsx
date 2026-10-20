@@ -19,6 +19,8 @@
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { listItemIconClasses } from '@mui/material/ListItemIcon'
+import { listItemTextClasses } from '@mui/material/ListItemText'
 import type { AuthDomain, AuthSession } from '@speed/auth-core'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
@@ -918,10 +920,10 @@ describe('the tenant navigation icons', () => {
         // The rail's contract: an entry with an icon shows the icon and
         // hides (clips) the label, which remains the accessible name.
         expect(
-          link.querySelector('.MuiListItemIcon-root svg'),
+          link.querySelector(`.${listItemIconClasses.root} svg`),
         ).not.toBeNull()
         // The clip recipe lives on the ListItemText root.
-        const textRoot = link.querySelector('.MuiListItemText-root')
+        const textRoot = link.querySelector(`.${listItemTextClasses.root}`)
         expect(textRoot).toHaveStyle({ position: 'absolute' })
       }
 
@@ -949,8 +951,8 @@ describe('the tenant navigation icons', () => {
       tNotifications('inbox.title'),
     ]) {
       const link = screen.getByRole('link', { name: label })
-      expect(link.querySelector('.MuiListItemIcon-root svg')).not.toBeNull()
-      const textRoot = link.querySelector('.MuiListItemText-root')
+      expect(link.querySelector(`.${listItemIconClasses.root} svg`)).not.toBeNull()
+      const textRoot = link.querySelector(`.${listItemTextClasses.root}`)
       expect(textRoot).not.toHaveStyle({ position: 'absolute' })
     }
   })

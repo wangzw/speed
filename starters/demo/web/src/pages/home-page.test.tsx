@@ -14,6 +14,7 @@
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { cardClasses } from '@mui/material/Card'
 import { emittedStyleText } from '../test-utils/emitted-css.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
@@ -177,22 +178,34 @@ describe('the start page', () => {
     })
 
     const card = cardFor(demoEnUS.home.cards.account.title)
-    const grid = card.closest('.MuiCard-root')?.parentElement
+    const grid = card.closest(`.${cardClasses.root}`)?.parentElement
     expect(grid).not.toBeNull()
     expect(grid).toHaveStyle({ display: 'grid' })
 
-    // The grid's wrapper is the containment context. Without this
-    // declaration the grid's `@container` rule matches nothing and the
-    // grid never collapses in a narrow panel -- the failure the layout
-    // design records. jsdom evaluates no container queries, so the proof
-    // is the generated CSS text, the same assertion FormLayout's suite
-    // makes.
-    const containerClass = Array.from(
-      grid?.parentElement?.classList ?? [],
-    ).find((name) => name.startsWith('css-'))
+    // The grid's containment context is an ancestor of it -- the card
+    // surface around the grid adds a content layer but declares no
+    // container of its own, and the grid cannot own the rule (a container
+    // query resolves against an ancestor, never the element that owns it).
+    // Without the declaration the grid's `@container` rule matches nothing
+    // and the grid never collapses in a narrow panel -- the failure the
+    // layout design records. jsdom evaluates no container queries, so the
+    // proof is the generated CSS text, the same assertion FormLayout's
+    // suite makes.
+    const css = emittedStyleText()
+    const containerRule = (name: string): RegExp =>
+      new RegExp(`\\.${name}\\s*\\{[^}]*container-type:\\s*inline-size`)
+    let containerClass: string | undefined
+    for (
+      let element = grid?.parentElement ?? null;
+      element !== null && containerClass === undefined;
+      element = element.parentElement
+    ) {
+      containerClass = Array.from(element.classList).find(
+        (name) => name.startsWith('css-') && containerRule(name).test(css),
+      )
+    }
     expect(containerClass).toBeDefined()
 
-    const css = emittedStyleText()
     expect(css).toMatch(
       new RegExp(
         `\\.${containerClass}\\s*\\{[^}]*container-type:\\s*inline-size`,
