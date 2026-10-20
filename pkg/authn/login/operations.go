@@ -486,11 +486,13 @@ var abandonOperation = speedhttp.NewReplyOperation[struct{}](
 
 // callbackResponses are the answers both callback methods share.
 var callbackResponses = []speedhttp.Response{
-	jsonAnswer(http.StatusOK, "The flow, advanced by the callback", AuthnLoginFlow{}),
+	jsonAnswer(http.StatusOK, "The flow, advanced by the callback, as answered to an API callback: a token-delivery login whose callback declares no navigation. A login that declares a navigation is answered 303 instead.", AuthnLoginFlow{}),
 	{
 		Status: http.StatusSeeOther,
 		Description: "The user agent is sent to the flow's stored return target instead of being answered a " +
-			"body: a completed cookie login writes its session cookie in this response, a flow that still " +
+			"body: a completed cookie login writes its session cookie in this response, a token-delivery " +
+			"login whose callback declares a navigation (`Sec-Fetch-Mode: navigate`) keeps the flow cookie " +
+			"at ready and makes no session, a flow that still " +
 			"needs a second factor or an enrollment keeps the flow cookie and resumes with `GET " +
 			"/auth/flows/current`, and a callback of a purpose other than login that reached ready keeps the " +
 			"flow cookie the same way and completes through `POST /auth/flows/answer`. When the flow recorded " +
@@ -519,7 +521,9 @@ var callbackGetOperation = speedhttp.NewReplyOperation[callbackInput](
 		"method, so a replayed authorization code or assertion loses the compare-and-swap and gets 401 "+
 		"flow-invalid. A GET callback that carries no flow cookie is always 401 flow-invalid: an "+
 		"identity-provider-initiated sign-in is served only as a POST. A cookie login that completes on this "+
-		"route answers 303 to the flow's stored return target instead of a body. A callback of a purpose "+
+		"route answers 303 to the flow's stored return target instead of a body. A token-delivery login whose "+
+		"request declares a navigation (`Sec-Fetch-Mode: navigate`) answers 303 the same way, with no session "+
+		"made and the flow left at ready; without that declaration it is answered the completion body. A callback of a purpose "+
 		"other than login (a link, or a step-up of an account with no factor) that reaches ready answers 303 "+
 		"the same way, with no session made: the flow stays in the cookie at ready for the host's callback page to read "+
 		"with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`.",
@@ -540,7 +544,9 @@ var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 		"at its first factor, otherwise the call is a 401 flow-invalid before any method is asked. The posted "+
 		"form is bounded to 512 KiB before it is parsed, and a body over that bound is answered 401 login-failed "+
 		"with the flow left a tombstone. The engine moves the flow to processing before calling the method, so "+
-		"an assertion is handled at most once. A callback of a purpose other than login (a link, or a "+
+		"an assertion is handled at most once. A token-delivery login whose request declares a navigation "+
+		"(`Sec-Fetch-Mode: navigate`) answers 303 to the flow's stored return target with no session made and "+
+		"the flow left at ready; without that declaration it is answered the completion body. A callback of a purpose other than login (a link, or a "+
 		"step-up of an account with no factor) that reaches ready answers 303 to the flow's stored return "+
 		"target, with no session made and the flow left in the cookie for the host's callback page to read with `GET "+
 		"/auth/flows/current` and complete with `POST /auth/flows/answer`. Without a flow cookie the route "+

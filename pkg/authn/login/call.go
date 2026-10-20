@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -170,6 +171,14 @@ func (c *call) header(name string) string {
 		return ""
 	}
 	return c.req.Header.Get(name)
+}
+
+// navigation reports whether the request is a top-level browser navigation,
+// which only Sec-Fetch-Mode: navigate declares. An absent header is not a
+// navigation: a client that does not send fetch metadata is answered like an API
+// request.
+func (c *call) navigation() bool {
+	return strings.EqualFold(c.header("Sec-Fetch-Mode"), "navigate")
 }
 
 // cookieValue reads one request cookie's value, or "".

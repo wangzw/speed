@@ -349,8 +349,10 @@ func (r *routes) replyStep(c *call, rec record, next stepView, echo string) {
 // replyReady writes the reply of a flow that reached ready: for the callback
 // route of a cookie login the session is made here and the user agent is sent to
 // the return target; for a callback of another purpose the user agent is landed
-// the same way, with the flow left in the cookie for the client to complete; for
-// a submit answer the client takes the result with step=complete.
+// the same way, with the flow left in the cookie for the client to complete; a
+// token login's callback that is a navigation is landed the same way too, while
+// one that is an API call is answered the completion body; for a submit answer
+// the client takes the result with step=complete.
 func (r *routes) replyReady(c *call, token string, rec record, callback bool, echo string) {
 	if callback {
 		switch {
@@ -358,7 +360,15 @@ func (r *routes) replyReady(c *call, token string, rec record, callback bool, ec
 			r.completeCallbackLogin(c, token, rec)
 			return
 		case rec.Purpose == authn.PurposeLogin && rec.Delivery == deliveryToken:
-			// A token cannot ride a redirect URL: the flow waits for the client.
+			// A token cannot ride a redirect URL: an API callback waits for the
+			// client to take the completion. A callback that is a top-level
+			// navigation cannot read that body, so it is landed like every other
+			// navigation landing: no session is made, the flow stays at ready in
+			// the cookie, and the client takes the token with a later complete.
+			if c.navigation() {
+				c.redirect(http.StatusSeeOther, r.returnTarget(rec))
+				return
+			}
 			r.replyStep(c, rec, stepView{Kind: nextComplete}, echo)
 			return
 		case rec.Purpose != authn.PurposeLogin:

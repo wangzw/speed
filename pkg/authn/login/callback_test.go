@@ -353,6 +353,81 @@ func TestACookieLoginCallbackWithNoReturnToLandsOnTheDefault(t *testing.T) {
 	})
 }
 
+// TestATokenLoginNavigationCallbackLandsOnTheReturnTarget holds that a
+// token-delivery login whose callback is a top-level browser navigation is
+// landed the way every other navigation landing is: 303 to the flow's return
+// target with no body and no session, and the flow left at ready so the client
+// can still take the token with a later complete. A browser that followed the
+// provider's redirect is never shown the completion JSON.
+func TestATokenLoginNavigationCallbackLandsOnTheReturnTarget(t *testing.T) {
+	m := &redirectMethod{}
+	r := newRigMethod(t, m)
+	r.allow("acct1")
+	r.p.tokens = &fakeTokens{}
+
+	cookie := startRedirect(t, r, `,"delivery":"token","return_to":"/account/token"`)
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie, "Sec-Fetch-Mode", "navigate")
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("a token login's navigation callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+	if loc := cb.Header().Get("Location"); loc != "/account/token" {
+		t.Errorf("the navigation callback went to %q, want the flow's return_to", loc)
+	}
+	if cb.Body.Len() != 0 {
+		t.Errorf("the navigation callback wrote a body: %q", cb.Body.String())
+	}
+	if n := len(r.sessions.created); n != 0 {
+		t.Errorf("the navigation callback made %d sessions, want none", n)
+	}
+
+	current := r.send(http.MethodGet, "/api/v1/auth/flows/current", "", "Cookie", cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("GET flows/current after the callback answered %d: %s", current.Code, current.Body.String())
+	}
+	flow := decode(t, current.Body.String())
+	if flow["state"] != "ready" {
+		t.Errorf("the flow state after the callback is %v, want ready", flow["state"])
+	}
+	if k := flow["next"].(map[string]any)["kind"]; k != "complete" {
+		t.Errorf("the flow's next kind is %v, want complete", k)
+	}
+
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the token completion after a navigation callback answered %d, want 200: %s", done.Code, done.Body.String())
+	}
+	if body := decode(t, done.Body.String()); body["access_token"] != "access-1" {
+		t.Errorf("the token answer carries %v, want the issued access token", body)
+	}
+}
+
+// TestATokenLoginAPICallbackKeepsTheCompletionBody holds the other half: a
+// callback that declares no navigation, as a token client's API call does, keeps
+// answering 200 with the completion body and makes no session until the client
+// answers complete.
+func TestATokenLoginAPICallbackKeepsTheCompletionBody(t *testing.T) {
+	m := &redirectMethod{}
+	r := newRigMethod(t, m)
+	r.allow("acct1")
+	r.p.tokens = &fakeTokens{}
+
+	cookie := startRedirect(t, r, `,"delivery":"token","return_to":"/account/token"`)
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+	if cb.Code != http.StatusOK {
+		t.Fatalf("a token login's API callback answered %d, want 200: %s", cb.Code, cb.Body.String())
+	}
+	body := decode(t, cb.Body.String())
+	if body["state"] != "ready" {
+		t.Errorf("the API callback reports state %v, want ready", body["state"])
+	}
+	if k := body["next"].(map[string]any)["kind"]; k != "complete" {
+		t.Errorf("the API callback's next kind is %v, want complete", k)
+	}
+	if n := len(r.sessions.created); n != 0 {
+		t.Errorf("the API callback made %d sessions, want none", n)
+	}
+}
+
 // TestACompletedLinkWritesItsAuditRow holds the best-effort audit row of a
 // completed link. The capability's action table lists authn.binding.link, the
 // object is the account the identity was bound to, and the detail names the

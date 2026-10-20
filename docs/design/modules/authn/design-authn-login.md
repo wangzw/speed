@@ -506,7 +506,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | `first` | `submit`，`StepUnavailable` | 不变 | 503 | 无 |
 | `first` | `submit`，`StepProven` | 账户解析，随后按策略判定落入 `second`、`enroll` 或 `ready`；解析失败落入 `failed` | 200 或 401 | 见「账户解析与策略判定」 |
 | `first` | `callback` | 先交换成 `processing`，再调 `Answer` | 无 | 无 |
-| `processing` | `StepProven` | 同上，账户解析与策略判定 | 303；仅 `delivery=token` 且无后续步骤的登录为 200 | 无 |
+| `processing` | `StepProven` | 同上，账户解析与策略判定 | 303；例外：`delivery=token` 且无后续步骤、回跳又不是顶层导航时答 200 | 无 |
 | `processing` | `StepRefused`、`StepUnavailable`、账户解析失败 | `failed` | 401 `login-failed`、503、401 | 授权码已用，用户重新开始 |
 | `processing` | 并发的第二次回跳，或崩溃遗留 | 不改 | 401 `flow-invalid` | 无 |
 | `second` | 因素通过 | `ready` | 200 | 无 |
@@ -584,7 +584,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 |---|---|
 | 登录，`delivery=session` 且无后续步骤 | 直接在回调响应里完成：建会话、设 cookie、`303` 到记录里的 `return_to` |
 | 登录，仍需第二因素或登记因素 | `303` 到 `return_to`，流程仍在 cookie 里；前端用 `GET flows/current` 读状态继续 |
-| 登录，`delivery=token` | 令牌不能放进回跳 URL，流程停在 `ready`；客户端随后以带流程绑定的 `POST flows/answer {"step":"complete"}` 取走令牌 |
+| 登录，`delivery=token` | 令牌不能放进回跳 URL，流程停在 `ready`。回跳是顶层导航（`Sec-Fetch-Mode: navigate`）时以 `303` 落到 `return_to`，不建会话；不是导航的 API 回跳答 200 完成体。客户端随后以带流程绑定的 `POST flows/answer {"step":"complete"}` 取走令牌 |
 | 非登录目的（`link`，以及无因素账户经回跳方法的 `step-up`）证明后落到 `ready` | `303` 到 `return_to`，不建会话；流程仍在 cookie 里停在 `ready`，前端用 `GET flows/current` 读到 `next.kind=complete`，再以 `POST flows/answer {"step":"complete"}` 执行终态动作 |
 
 `return_to` 为空时，落到用户代理的收尾改用设置 `authn.login.default-return-to`：它按与 `return_to` 相同的规则校验，不合规时用 `/`，与 IdP 发起的路径一致。
