@@ -100,6 +100,7 @@ import {
   errorCodeOf,
   InlineSuccess,
   ListSkeleton,
+  SectionCard,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
@@ -430,15 +431,8 @@ export function SocialBindingsSection({
   const unbindBusy = unbindTarget !== null && unbindMutation.isPending
 
   return (
-    <Box>
-      {showHeader && (
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="h5" component="h2">
-            {t('bindings.title')}
-          </Typography>
-        </Box>
-      )}
-
+    <>
+      <SectionCard title={showHeader ? t('bindings.title') : undefined}>
       {/* The section header is hidden while the empty placeholder shows, but
           the empty placeholder is a status, not a section: a heading here
           ("No linked social accounts") would still enter the page outline as
@@ -603,6 +597,7 @@ export function SocialBindingsSection({
           </Box>
         )}
       </AsyncSection>
+      </SectionCard>
 
       <ConfirmDialog
         open={unbindTarget !== null}
@@ -618,7 +613,7 @@ export function SocialBindingsSection({
           }
         }}
       />
-    </Box>
+    </>
   )
 }
 

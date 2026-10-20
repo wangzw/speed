@@ -75,7 +75,9 @@ import {
   AsyncSection,
   ConfirmDialog,
   errorCodeOf,
+  FORM_MAX_WIDTH,
   ListSkeleton,
+  SectionCard,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
@@ -336,16 +338,9 @@ export function IdentifiersSection({
   )
 
   return (
-    <Box>
-      {showHeader && (
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="h5" component="h2">
-            {t('identifiers.title')}
-          </Typography>
-        </Box>
-      )}
-
-      <AsyncSection
+    <>
+      <SectionCard title={showHeader ? t('identifiers.title') : undefined}>
+        <AsyncSection
         pending={pending}
         payload={rows}
         empty={rows !== undefined && rows.length === 0}
@@ -499,7 +494,7 @@ export function IdentifiersSection({
                 flexDirection: 'column',
                 alignItems: 'flex-start',
                 gap: 2,
-                maxWidth: 600,
+                maxWidth: FORM_MAX_WIDTH,
                 mt: 1,
               }}
             >
@@ -589,6 +584,7 @@ export function IdentifiersSection({
           </>
         )}
       </Box>
+      </SectionCard>
 
       <ConfirmDialog
         open={removeTarget !== null}
@@ -611,6 +607,6 @@ export function IdentifiersSection({
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
       />
-    </Box>
+    </>
   )
 }

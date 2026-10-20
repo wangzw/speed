@@ -22,6 +22,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { formControlClasses } from '@mui/material/FormControl'
+import { inputLabelClasses } from '@mui/material/InputLabel'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 import {
@@ -145,7 +147,7 @@ describe('PreferencesSection', () => {
     // input); both controls are limited to a comfortable select width
     // (24rem = 384px) rather than stretching across the page.
     for (const control of [language, timezone]) {
-      const root = control.closest('.MuiFormControl-root')
+      const root = control.closest(`.${formControlClasses.root}`)
       expect(root).not.toBeNull()
       expect(root).toHaveStyle({ maxWidth: '384px' })
     }
@@ -175,8 +177,8 @@ describe('PreferencesSection', () => {
       const labelId = control.getAttribute('aria-labelledby')
       expect(labelId).toBeTruthy()
       const label = document.getElementById(labelId as string)
-      expect(label).toHaveClass('MuiInputLabel-root')
-      expect(label).toHaveClass('MuiInputLabel-shrink')
+      expect(label).toHaveClass(inputLabelClasses.root)
+      expect(label).toHaveClass(inputLabelClasses.shrink)
     }
   })
 

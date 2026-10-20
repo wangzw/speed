@@ -40,7 +40,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getAuthnProfileGetQueryKey,
@@ -51,6 +50,8 @@ import { useStepUpGate } from '@speed/auth-core'
 import {
   AsyncSection,
   errorCodeOf,
+  FORM_MAX_WIDTH,
+  SectionCard,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
@@ -124,78 +125,74 @@ export function ProfileSection({ session }: ProfileSectionProps) {
   }
 
   return (
-    <Box>
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" component="h2">
-          {t('profile.title')}
-        </Typography>
-      </Box>
-
-      <AsyncSection
-        pending={pending}
-        payload={data}
-        empty={false}
-        loading={<ProfileSkeleton label={t('profile.loading')} />}
-        errorState={{
-          title: t('profile.error.title'),
-          description: t('profile.error.description'),
-          retryLabel: t('profile.retry'),
-          onRetry: () => void refetch(),
-        }}
-      >
-        {() => (
-          <Box
-            component="form"
-            noValidate
-            onSubmit={(event) => {
-              event.preventDefault()
-              void save(name)
-            }}
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: 2,
-              maxWidth: 600,
-            }}
-          >
-            {/* The save notice is a role="status" live region mounted for
-                the whole settled phase: clipped and visually silent until
-                a save lands, when the same node fills with the notice, so
-                a screen reader announces a change to a region it already
-                knows rather than a region born with its text. */}
-            <Alert
-              severity="success"
-              role="status"
-              sx={saved ? { width: '100%' } : visuallyHiddenSx}
+    <>
+      <SectionCard title={t('profile.title')}>
+        <AsyncSection
+          pending={pending}
+          payload={data}
+          empty={false}
+          loading={<ProfileSkeleton label={t('profile.loading')} />}
+          errorState={{
+            title: t('profile.error.title'),
+            description: t('profile.error.description'),
+            retryLabel: t('profile.retry'),
+            onRetry: () => void refetch(),
+          }}
+        >
+          {() => (
+            <Box
+              component="form"
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault()
+                void save(name)
+              }}
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 2,
+                maxWidth: FORM_MAX_WIDTH,
+              }}
             >
-              {saved ? t('profile.saved') : ''}
-            </Alert>
+              {/* The save notice is a role="status" live region mounted for
+                  the whole settled phase: clipped and visually silent until
+                  a save lands, when the same node fills with the notice, so
+                  a screen reader announces a change to a region it already
+                  knows rather than a region born with its text. */}
+              <Alert
+                severity="success"
+                role="status"
+                sx={saved ? { width: '100%' } : visuallyHiddenSx}
+              >
+                {saved ? t('profile.saved') : ''}
+              </Alert>
 
-            <InlineError code={failureCode} />
+              <InlineError code={failureCode} />
 
-            <TextField
-              fullWidth
-              label={t('profile.displayName.label')}
-              value={name}
-              disabled={patchProfile.isPending}
-              onChange={(event) => setEditedName(event.target.value)}
-            />
+              <TextField
+                fullWidth
+                label={t('profile.displayName.label')}
+                value={name}
+                disabled={patchProfile.isPending}
+                onChange={(event) => setEditedName(event.target.value)}
+              />
 
-            <Button
-              type="submit"
-              variant="contained"
-              // Disabled while the field still holds the account's own name:
-              // a save with nothing changed would fire a no-op PATCH, and the
-              // console account detail's save controls set the same
-              // no-change-disabled convention.
-              disabled={patchProfile.isPending || name === (data?.display_name ?? '')}
-            >
-              {t('profile.save')}
-            </Button>
-          </Box>
-        )}
-      </AsyncSection>
+              <Button
+                type="submit"
+                variant="contained"
+                // Disabled while the field still holds the account's own name:
+                // a save with nothing changed would fire a no-op PATCH, and the
+                // console account detail's save controls set the same
+                // no-change-disabled convention.
+                disabled={patchProfile.isPending || name === (data?.display_name ?? '')}
+              >
+                {t('profile.save')}
+              </Button>
+            </Box>
+          )}
+        </AsyncSection>
+      </SectionCard>
 
       <StepUpChallenge
         open={gate.open}
@@ -203,6 +200,6 @@ export function ProfileSection({ session }: ProfileSectionProps) {
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
       />
-    </Box>
+    </>
   )
 }

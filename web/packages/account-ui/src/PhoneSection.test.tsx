@@ -79,7 +79,7 @@ describe('PhoneSection', () => {
     ).toBeTruthy()
 
     await user.type(
-      screen.getByLabelText(zhCN.phone.phone.label),
+      screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
       US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
@@ -128,7 +128,7 @@ describe('PhoneSection', () => {
     const country = await screen.findByLabelText(zhCN.phone.country.label)
     expect((country as HTMLInputElement).value).toContain('+44')
 
-    await user.type(screen.getByLabelText(zhCN.phone.phone.label), '7911123456')
+    await user.type(screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' }), '7911123456')
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
 
     await waitFor(() =>
@@ -155,7 +155,7 @@ describe('PhoneSection', () => {
     const { rig } = mount(respond)
     const user = userEvent.setup()
 
-    const phone = await screen.findByLabelText(zhCN.phone.phone.label)
+    const phone = await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' })
     await user.type(phone, '415555')
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
 
@@ -179,14 +179,14 @@ describe('PhoneSection', () => {
     const user = userEvent.setup()
 
     await user.type(
-      await screen.findByLabelText(zhCN.phone.phone.label),
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
       US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
     await screen.findByLabelText(zhCN.phone.code.label)
 
     await user.click(screen.getByRole('button', { name: zhCN.phone.cancel }))
-    expect(screen.getByLabelText(zhCN.phone.phone.label)).toBeTruthy()
+    expect(screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' })).toBeTruthy()
     expect(screen.queryByLabelText(zhCN.phone.code.label)).toBeNull()
   })
 
@@ -201,7 +201,7 @@ describe('PhoneSection', () => {
     const user = userEvent.setup()
 
     await user.type(
-      await screen.findByLabelText(zhCN.phone.phone.label),
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
       US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
@@ -266,7 +266,7 @@ describe('PhoneSection', () => {
     const user = userEvent.setup()
 
     await user.type(
-      await screen.findByLabelText(zhCN.phone.phone.label),
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
       US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.phone.send }))

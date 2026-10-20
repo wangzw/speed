@@ -64,6 +64,7 @@ import {
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
+  SectionCard,
   useDisplayTimeZone,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -264,21 +265,11 @@ export function SessionsSection() {
   const showHeader = pending || hasSessions
 
   return (
-    <Box>
-      {showHeader && (
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            gap: 2,
-            mb: 2,
-          }}
-        >
-          <Typography variant="h5" component="h2">
-            {t('sessions.title')}
-          </Typography>
-          {hasSessions && hasRevocableOther && (
+    <>
+      <SectionCard
+        title={showHeader ? t('sessions.title') : undefined}
+        actions={
+          hasSessions && hasRevocableOther ? (
             <Button
               variant="outlined"
               color="error"
@@ -287,11 +278,10 @@ export function SessionsSection() {
             >
               {t('sessions.revokeOthers.label')}
             </Button>
-          )}
-        </Box>
-      )}
-
-      <AsyncSection
+          ) : undefined
+        }
+      >
+        <AsyncSection
         pending={pending}
         payload={sessions}
         empty={sessions !== undefined && sessions.length === 0}
@@ -536,6 +526,7 @@ export function SessionsSection() {
           )
         }}
       </AsyncSection>
+      </SectionCard>
 
       <ConfirmDialog
         open={othersConfirmOpen}
@@ -547,6 +538,6 @@ export function SessionsSection() {
         onCancel={() => setOthersConfirmOpen(false)}
         onConfirm={() => void handleRevokeOthers()}
       />
-    </Box>
+    </>
   )
 }

@@ -45,7 +45,13 @@ import {
 } from '@speed/api-sdk'
 import type { AuthSession } from '@speed/auth-core'
 import { useStepUpGate } from '@speed/auth-core'
-import { AsyncSection, errorCodeOf, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  AsyncSection,
+  errorCodeOf,
+  FORM_MAX_WIDTH,
+  SectionCard,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -197,14 +203,9 @@ export function PasswordSection({
   }
 
   return (
-    <Box>
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" component="h2">
-          {t('password.title')}
-        </Typography>
-      </Box>
-
-      <AsyncSection
+    <>
+      <SectionCard title={t('password.title')}>
+        <AsyncSection
         pending={pending}
         payload={data}
         empty={false}
@@ -231,7 +232,7 @@ export function PasswordSection({
               flexDirection: 'column',
               alignItems: 'flex-start',
               gap: 2,
-              maxWidth: 600,
+              maxWidth: FORM_MAX_WIDTH,
             }}
           >
             <Alert
@@ -315,6 +316,7 @@ export function PasswordSection({
           )
         }
       </AsyncSection>
+      </SectionCard>
 
       <StepUpChallenge
         open={gate.open}
@@ -322,6 +324,6 @@ export function PasswordSection({
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
       />
-    </Box>
+    </>
   )
 }

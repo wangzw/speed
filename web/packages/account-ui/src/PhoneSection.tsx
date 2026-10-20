@@ -53,6 +53,8 @@ import { useStepUpGate } from '@speed/auth-core'
 import {
   PhoneNumberField,
   errorCodeOf,
+  FORM_MAX_WIDTH,
+  SectionCard,
   toE164,
   usePhoneCountryDefault,
   visuallyHiddenSx,
@@ -153,38 +155,33 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   }
 
   return (
-    <Box>
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" component="h2">
-          {t('phone.title')}
-        </Typography>
-      </Box>
-
-      <Box
-        component="form"
-        noValidate
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (sentTo === null) {
-            const phone = toE164(country, nationalNumber)
-            if (phone === null) {
-              setPhoneAttempted(true)
-              return
+    <>
+      <SectionCard title={t('phone.title')}>
+        <Box
+          component="form"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (sentTo === null) {
+              const phone = toE164(country, nationalNumber)
+              if (phone === null) {
+                setPhoneAttempted(true)
+                return
+              }
+              setPhoneAttempted(false)
+              void sendCode(phone)
+            } else {
+              void verifyCode(code)
             }
-            setPhoneAttempted(false)
-            void sendCode(phone)
-          } else {
-            void verifyCode(code)
-          }
-        }}
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 2,
-          maxWidth: 600,
-        }}
-      >
+          }}
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 2,
+            maxWidth: FORM_MAX_WIDTH,
+          }}
+        >
         <Alert
           severity="success"
           role="status"
@@ -256,7 +253,8 @@ export function PhoneSection({ session }: PhoneSectionProps) {
             </Stack>
           </>
         )}
-      </Box>
+        </Box>
+      </SectionCard>
 
       <StepUpChallenge
         open={gate.open}
@@ -264,6 +262,6 @@ export function PhoneSection({ session }: PhoneSectionProps) {
         onSuccess={gate.succeed}
         onCancel={gate.cancel}
       />
-    </Box>
+    </>
   )
 }

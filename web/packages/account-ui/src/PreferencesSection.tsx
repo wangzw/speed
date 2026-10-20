@@ -75,7 +75,12 @@ import {
   readSupportedLanguages,
   switchLanguage,
 } from '@speed/i18n'
-import { AsyncSection, errorCodeOf, InlineSuccess } from '@speed/ui-kit'
+import {
+  AsyncSection,
+  errorCodeOf,
+  InlineSuccess,
+  SectionCard,
+} from '@speed/ui-kit'
 import { useAccountUiErrorText } from './internal/error-text.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -204,12 +209,9 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
   }
 
   return (
-    <Box>
-      <Typography variant="h5" component="h2" sx={{ mb: 2 }}>
-        {t('preferences.title')}
-      </Typography>
-
-      <AsyncSection
+    <>
+      <SectionCard title={t('preferences.title')}>
+        <AsyncSection
         pending={pending}
         payload={data}
         empty={false}
@@ -327,6 +329,7 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
           </Box>
         )}
       </AsyncSection>
+      </SectionCard>
 
       {session !== undefined && (
         <StepUpChallenge
@@ -336,6 +339,6 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
           onCancel={gate.cancel}
         />
       )}
-    </Box>
+    </>
   )
 }

@@ -61,6 +61,7 @@ import {
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
+  SectionCard,
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { FlowStep } from './internal/flow-step.js'
@@ -276,16 +277,11 @@ export function MfaSection({ session }: MfaSectionProps) {
   }
 
   return (
-    <Box>
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" component="h2">
-          {t('mfa.title')}
-        </Typography>
-      </Box>
+    <>
+      <SectionCard title={t('mfa.title')}>
+        <InlineError code={banner} />
 
-      <InlineError code={banner} />
-
-      <AsyncSection
+        <AsyncSection
         pending={pending}
         payload={factors}
         empty={false}
@@ -452,6 +448,7 @@ export function MfaSection({ session }: MfaSectionProps) {
           )
         }
       </AsyncSection>
+      </SectionCard>
 
       <ConfirmDialog
         open={removeTarget !== null}
@@ -474,6 +471,6 @@ export function MfaSection({ session }: MfaSectionProps) {
         onSuccess={handleStepUpSuccess}
         onCancel={() => setGate(null)}
       />
-    </Box>
+    </>
   )
 }
