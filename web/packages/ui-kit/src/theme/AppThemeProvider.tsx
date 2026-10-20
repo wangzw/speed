@@ -1,26 +1,32 @@
 /**
  * AppThemeProvider: composes the MUI theme runtime for an app.
  *
- * It owns four concerns:
+ * It owns five concerns:
  *
  * 1. Theme assembly -- createAppTheme(projectTokens, tenantOverrides,
- *    mode) merges the three token layers; the provider memoizes the
- *    result so the merged tree and the locale-free theme are built once
- *    per (override set, mode) (hosts that rebuild override objects every
+ *    mode) merges the token layers; the provider memoizes the result so
+ *    the merged tree and the locale-free theme are built once per
+ *    (override set, mode) (hosts that rebuild override objects every
  *    render should memoize them, or pass module-level constants).
- * 2. MUI locale linkage -- the provider merges the MUI locale matching
+ * 2. Preset shelf -- when the host passes `presets`, the provider holds
+ *    the active preset id in local state and folds that preset's token
+ *    diff under the project layer, so the assembly order is defaults ->
+ *    preset -> project -> tenant. useAppThemePreset exposes the active id
+ *    and a switch; without presets no layer is applied and the control
+ *    reports 'default'.
+ * 3. MUI locale linkage -- the provider merges the MUI locale matching
  *    the active i18n language onto the base theme (createTheme's second
  *    argument), and subscribes to 'languageChanged' so MUI built-in
  *    texts (table pagination labels, date picker strings, ...) follow
  *    every language switch. The locale merge lands after the token
  *    mapping, so MUI component defaults never overwrite theme tokens.
- * 3. Color mode -- the provider holds the active AppThemeMode in local
+ * 4. Color mode -- the provider holds the active AppThemeMode in local
  *    state (starting at defaultMode, 'light') and exposes it, with a
  *    setter and a toggle, through useAppThemeMode. A mode change
  *    re-assembles the theme; every child under the provider re-renders
  *    with the new palette. The default is 'light', so a host that never
  *    reads the hook sees exactly the previous behavior.
- * 4. Global reset -- CssBaseline renders the theme-aware baseline
+ * 5. Global reset -- CssBaseline renders the theme-aware baseline
  *    (background color from theme.palette.background.default, no body
  *    margin) once, under the same theme context as the children.
  *
@@ -45,7 +51,9 @@ import { enUS } from '@mui/material/locale'
 import type { Localization } from '@mui/material/locale'
 import { muiLocaleFor } from '@speed/i18n/mui-locale'
 import type { I18nInstance } from '@speed/i18n'
+import { deepMerge } from '@speed/tokens'
 import type { TokensOverride } from '@speed/tokens'
+import type { ThemePreset } from '@speed/theme-presets'
 import { createAppTheme } from './createAppTheme.js'
 import type { AppThemeMode } from './createAppTheme.js'
 
@@ -100,13 +108,59 @@ export function useAppThemeMode(): AppThemeModeControl {
   return control
 }
 
+/**
+ * The preset surface useAppThemePreset exposes: the active preset id and
+ * a setter. Backed by the provider's own state and the `presets` shelf it
+ * was given.
+ */
+export interface AppThemePresetControl {
+  /**
+   * The active preset id. 'default' when the provider was given no
+   * presets (nothing is layered in that case).
+   */
+  readonly preset: string
+  /** Switch to the preset with this id. An id outside the shelf is ignored. */
+  readonly setPreset: (id: string) => void
+}
+
+/** The provider's preset control; null until an AppThemeProvider is mounted. */
+const AppThemePresetContext = createContext<AppThemePresetControl | null>(null)
+
+/**
+ * The active theme preset and its switch, read from the nearest
+ * AppThemeProvider. Throws when no provider is mounted above -- the same
+ * loud failure a missing host tree gets elsewhere, rather than a silent
+ * no-op switch.
+ */
+export function useAppThemePreset(): AppThemePresetControl {
+  const control = useContext(AppThemePresetContext)
+  if (control === null) {
+    throw new Error(
+      'useAppThemePreset must be called within an AppThemeProvider',
+    )
+  }
+  return control
+}
+
 export interface AppThemeProviderProps {
   /** The app's i18n instance (createI18n result). MUI built-in texts follow its language. */
   readonly i18n: I18nInstance
-  /** Project-layer token overrides, applied over the speed defaults. */
+  /** Project-layer token overrides, applied over the preset shelf and the speed defaults. */
   readonly projectTokens?: TokensOverride
   /** Tenant-layer token overrides, applied over the project layer. */
   readonly tenantOverrides?: TokensOverride
+  /**
+   * The presets the provider may switch between, applied as one layer
+   * between the defaults and the project tokens. Omitted or empty layers
+   * nothing.
+   */
+  readonly presets?: readonly ThemePreset[]
+  /**
+   * The preset id to start at. An id absent from `presets` falls back to
+   * the first entry rather than throwing: a deployment config typo must
+   * not white-screen the tree.
+   */
+  readonly defaultPreset?: string
   /** The color mode the tree starts in; defaults to 'light'. */
   readonly defaultMode?: AppThemeMode
   readonly children?: ReactNode
@@ -121,6 +175,8 @@ export function AppThemeProvider({
   i18n,
   projectTokens,
   tenantOverrides,
+  presets,
+  defaultPreset,
   defaultMode = 'light',
   children,
 }: AppThemeProviderProps) {
@@ -140,10 +196,66 @@ export function AppThemeProvider({
     [mode, setMode, toggleMode],
   )
 
-  const base = useMemo(
-    () => createAppTheme(projectTokens, tenantOverrides, mode),
-    [projectTokens, tenantOverrides, mode],
+  // The preset shelf is the provider's own state too, but it is a selection
+  // over the host's `presets` list: null means "no user choice yet", so the
+  // resolution below can keep consulting the live `defaultPreset` prop.
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
+  const presetById = useMemo(
+    () => new Map((presets ?? []).map((preset) => [preset.id, preset])),
+    [presets],
   )
+  // Resolve the active preset every render:
+  // - no shelf -> none (the control reports 'default' and nothing is layered)
+  // - a user selection still on the shelf -> it wins
+  // - otherwise defaultPreset when it names an entry, else the first entry.
+  // An unknown defaultPreset falls back rather than throwing: a deployment
+  // config typo must not white-screen the tree.
+  const activePreset = useMemo(() => {
+    if (presets === undefined || presets.length === 0) {
+      return undefined
+    }
+    if (selectedPreset !== null) {
+      const selected = presetById.get(selectedPreset)
+      if (selected !== undefined) {
+        return selected
+      }
+    }
+    if (defaultPreset !== undefined) {
+      const fallback = presetById.get(defaultPreset)
+      if (fallback !== undefined) {
+        return fallback
+      }
+    }
+    return presets[0]
+  }, [presets, presetById, selectedPreset, defaultPreset])
+  const preset = activePreset?.id ?? 'default'
+  const setPreset = useCallback(
+    (id: string) => {
+      // An unknown id is ignored: the shelf defines the addressable set.
+      if (presetById.has(id)) {
+        setSelectedPreset(id)
+      }
+    },
+    [presetById],
+  )
+  const presetControl = useMemo<AppThemePresetControl>(
+    () => ({ preset, setPreset }),
+    [preset, setPreset],
+  )
+
+  const base = useMemo(() => {
+    // Assembly order: defaults -> preset -> project -> tenant.
+    // createAppTheme owns the defaults and the two named layers, so the
+    // preset is folded into the project layer here: a project's brand still
+    // beats a preset, and tenant overrides still beat both.
+    const projectLayer =
+      activePreset === undefined
+        ? projectTokens
+        : projectTokens === undefined
+          ? activePreset.tokens
+          : deepMerge(activePreset.tokens, projectTokens)
+    return createAppTheme(projectLayer, tenantOverrides, mode)
+  }, [activePreset, projectTokens, tenantOverrides, mode])
   // The active MUI locale language, kept in step with the i18n instance.
   // The initial useState(i18n.language) snapshot cannot be the whole story:
   // the subscription below attaches in an effect, and React runs child
@@ -175,11 +287,13 @@ export function AppThemeProvider({
   )
 
   return (
-    <AppThemeModeContext.Provider value={modeControl}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        {children}
-      </ThemeProvider>
-    </AppThemeModeContext.Provider>
+    <AppThemePresetContext.Provider value={presetControl}>
+      <AppThemeModeContext.Provider value={modeControl}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          {children}
+        </ThemeProvider>
+      </AppThemeModeContext.Provider>
+    </AppThemePresetContext.Provider>
   )
 }

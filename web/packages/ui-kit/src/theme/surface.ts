@@ -37,7 +37,10 @@ import type { SpeedTokens, SurfaceRoleTokens } from '@speed/tokens'
  * each MUI component's own elevation, the second means "no filter".
  */
 export interface SurfaceThemeRole {
-  /** The resolved fill color (an inheriting slot when the token omits it). */
+  /**
+   * The resolved fill color with the role's opacity applied (an inheriting
+   * slot when the token omits the fill).
+   */
   readonly fill: string
   /** The resolved border color; surfaces only draw it at `borderWidth > 0`. */
   readonly borderColor: string
@@ -88,6 +91,23 @@ export interface SurfacePaletteSlots {
 }
 
 /**
+ * Apply a role's alpha to its resolved fill. `#RRGGBB` becomes the same
+ * color as `rgba(...)`; any other CSS color is returned unchanged, the
+ * same hex-only rule the factory applies when deriving colors. A missing
+ * or opaque alpha leaves the hex value untouched.
+ */
+function withOpacity(fill: string, opacity: number | undefined): string {
+  if (opacity === undefined || opacity >= 1 || !/^#[0-9a-fA-F]{6}$/.test(fill)) {
+    return fill
+  }
+  const value = Number.parseInt(fill.slice(1), 16)
+  const red = (value >> 16) & 0xff
+  const green = (value >> 8) & 0xff
+  const blue = value & 0xff
+  return `rgba(${red}, ${green}, ${blue}, ${opacity})`
+}
+
+/**
  * Resolve the optional surface tokens against the theme's own slots:
  * page -> background.default, container/overlay -> background.paper,
  * every border -> divider, header -> neutral 50 in light mode and
@@ -96,7 +116,10 @@ export interface SurfacePaletteSlots {
  * the container and overlay surfaces with it.
  *
  * `mode` decides the header tone alone; every other slot already carries
- * its mode-specific value in `palette`.
+ * its mode-specific value in `palette`. A role's `opacity` is applied to
+ * the resolved fill in both modes, so one token value makes a surface
+ * translucent on either page; the alpha is derived per mode from the
+ * already-resolved fill rather than from a second color.
  */
 export function resolveSurfaceTheme(
   tokens: SpeedTokens,
@@ -107,7 +130,7 @@ export function resolveSurfaceTheme(
     role: SurfaceRoleTokens,
     fill: string,
   ): SurfaceThemeRole => ({
-    fill: role.fill ?? fill,
+    fill: withOpacity(role.fill ?? fill, role.opacity),
     borderColor: role.borderColor ?? palette.divider,
     borderWidth: role.borderWidth ?? 0,
     ...(role.elevation === undefined ? {} : { elevation: role.elevation }),

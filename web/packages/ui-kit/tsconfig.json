@@ -6,8 +6,8 @@
     // automatic runtime (react-jsx). The shared base stays JSX-free so the
     // data-only packages keep their plain setting.
     "jsx": "react-jsx",
-    // ui-kit is the first package that imports workspace siblings
-    // (@speed/tokens, @speed/i18n) at runtime. The siblings' published
+    // ui-kit imports workspace siblings: @speed/tokens and @speed/i18n at
+    // runtime, @speed/theme-presets as types only. The siblings' published
     // "types" point into their dist/, which is never committed and not yet
     // built in a fresh checkout (and building upstream to typecheck is a
     // footgun), so type resolution maps the workspace specifiers straight
@@ -18,6 +18,7 @@
     "paths": {
       "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
       "@speed/i18n": ["../i18n/src/index.ts"],
+      "@speed/theme-presets": ["../theme-presets/src/index.ts"],
       "@speed/tokens": ["../tokens/src/index.ts"],
       "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
       "@speed/test-utils/emitted-css": ["../../test-utils/src/emitted-css.ts"],

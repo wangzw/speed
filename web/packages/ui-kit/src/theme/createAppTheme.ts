@@ -44,14 +44,17 @@
  *   'none' at 0. MUI 9 accepts any array length, so the 25-entry ramp is
  *   deliberate: consumers can index theme.shadows like any stock MUI
  *   theme.
- * - components: the clickable-target floor, the surface mapping and the
- *   focus ring, merged by component slot (see surface.ts, touch-floor.ts
- *   and focus-ring.ts). Every base control carries a
+ * - components: the clickable-target floor, the surface mapping, the
+ *   focus ring, the reduced-motion gate and the page baseline, merged by
+ *   component slot (see touch-floor.ts, surface.ts, focus-ring.ts,
+ *   reduced-motion.ts and baseline.ts). Every base control carries a
  *   `minWidth`/`minHeight` of 44 nested under `@media (pointer: coarse)`,
  *   so the floor reaches every consuming package with no per-surface
  *   gating; a fine pointer emits none of it. The surface overrides paint
  *   the container, overlay and header roles and read their values from
- *   `theme.surface`, never from the tokens directly. Every button-like
+ *   `theme.surface`, never from the tokens directly; the baseline paints
+ *   the page role on the body, together with the typography glow and the
+ *   optional canvas gradient. Every button-like
  *   control and Link carries a 2px `palette.primary.main` outline in its
  *   `focusVisible` state.
  * - motion: `motion.reducedMotion = 'system'` makes every MUI transition
@@ -114,6 +117,7 @@ import {
   type SpeedTokens,
   type TokensOverride,
 } from '@speed/tokens'
+import { baselineComponents } from './baseline.js'
 import { focusRingComponents } from './focus-ring.js'
 import { reducedMotionComponents } from './reduced-motion.js'
 import { touchFloorComponents } from './touch-floor.js'
@@ -418,6 +422,7 @@ function tokensToThemeOptions(
       surfaceComponents,
       focusRingComponents,
       reducedMotionComponents,
+      baselineComponents(tokens, mode),
     ),
   }
 }

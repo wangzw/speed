@@ -42,7 +42,9 @@ export {
 export {
   AppThemeProvider,
   useAppThemeMode,
+  useAppThemePreset,
   type AppThemeModeControl,
+  type AppThemePresetControl,
   type AppThemeProviderProps,
 } from './theme/AppThemeProvider.js'
 export {

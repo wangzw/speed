@@ -18,6 +18,7 @@ import type { ReactElement } from 'react'
 import { I18nextProvider, registerNamespace } from '@speed/i18n'
 import type { I18nInstance } from '@speed/i18n'
 import type { TokensOverride } from '@speed/tokens'
+import type { ThemePreset } from '@speed/theme-presets'
 import { createTestI18n } from '@speed/test-utils/render'
 import type { RenderWithProvidersOptions as BaseOptions } from '@speed/test-utils/render'
 import type { RenderWithProvidersResult } from '@speed/test-utils/render'
@@ -31,6 +32,10 @@ export interface RenderWithProvidersOptions extends BaseOptions {
   readonly projectTokens?: TokensOverride
   /** Tenant-layer token overrides passed to AppThemeProvider. */
   readonly tenantOverrides?: TokensOverride
+  /** The preset shelf passed to AppThemeProvider. */
+  readonly presets?: readonly ThemePreset[]
+  /** The preset id the provider starts at. */
+  readonly defaultPreset?: string
 }
 
 export function createUiKitI18n(language: string = 'zh-CN'): I18nInstance {
@@ -48,6 +53,8 @@ export function renderWithProviders(
     i18n,
     projectTokens,
     tenantOverrides,
+    presets,
+    defaultPreset,
   } = options
   const instance = i18n ?? createUiKitI18n(language)
   const result = render(
@@ -56,6 +63,8 @@ export function renderWithProviders(
         i18n={instance}
         projectTokens={projectTokens}
         tenantOverrides={tenantOverrides}
+        presets={presets}
+        defaultPreset={defaultPreset}
       >
         {ui}
       </AppThemeProvider>

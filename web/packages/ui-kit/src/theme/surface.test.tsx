@@ -101,6 +101,54 @@ describe('theme.surface resolution', () => {
   })
 })
 
+describe('surface fill opacity', () => {
+  it('applies the token alpha to the resolved fill in both color modes', () => {
+    const override: TokensOverride = {
+      surface: { container: { fill: '#123456', opacity: 0.5 } },
+    }
+    expect(createAppTheme(override).theme.surface.container.fill).toBe(
+      'rgba(18, 52, 86, 0.5)',
+    )
+    expect(
+      createAppTheme(override, undefined, 'dark').theme.surface.container.fill,
+    ).toBe('rgba(18, 52, 86, 0.5)')
+  })
+
+  it('applies the alpha to an inherited fill as well', () => {
+    const override: TokensOverride = {
+      surface: { container: { opacity: 0.5 } },
+    }
+    // The resolved fill is the mode's own paper color, so the same token
+    // value stays translucent in each mode.
+    expect(createAppTheme(override).theme.surface.container.fill).toBe(
+      'rgba(255, 255, 255, 0.5)',
+    )
+    expect(
+      createAppTheme(override, undefined, 'dark').theme.surface.container.fill,
+    ).toBe('rgba(30, 41, 59, 0.5)')
+  })
+
+  it('leaves an opaque alpha and non-hex fills untouched', () => {
+    const opaque = createAppTheme({ surface: { page: { opacity: 1 } } }).theme
+    expect(opaque.surface.page.fill).toBe(opaque.palette.background.default)
+    const nonHex = createAppTheme({
+      surface: { overlay: { fill: 'rgba(1, 2, 3, 0.5)', opacity: 0.4 } },
+    }).theme
+    expect(nonHex.surface.overlay.fill).toBe('rgba(1, 2, 3, 0.5)')
+  })
+
+  it('paints the alpha fill on the component override', () => {
+    const card = renderCard({
+      surface: { container: { fill: '#123456', opacity: 0.5 } },
+    })
+    const carriers = classesDeclaringBackground(
+      emittedStyleText(),
+      'rgba(18, 52, 86, 0.5)',
+    )
+    expect(carriers.some((name) => card.classList.contains(name))).toBe(true)
+  })
+})
+
 function renderCard(projectTokens?: TokensOverride): Element {
   const { theme } = createAppTheme(projectTokens)
   render(
@@ -119,9 +167,12 @@ function renderCard(projectTokens?: TokensOverride): Element {
  */
 function classesDeclaringBackground(css: string, fill: string): string[] {
   const names: string[] = []
+  const normalizedFill = fill.replace(/\s+/g, '')
   for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const [, selector = '', declarations = ''] = rule
-    if (!declarations.includes(`background-color:${fill}`)) {
+    // Stylis drops whitespace inside a declaration, so an rgba fill is
+    // compared without it.
+    if (!declarations.replace(/\s+/g, '').includes(`background-color:${normalizedFill}`)) {
       continue
     }
     for (const name of selector.matchAll(/\.([A-Za-z0-9_-]+)/g)) {

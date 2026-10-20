@@ -15,12 +15,19 @@ import { describe, expect, it, vi } from 'vitest'
 import { createI18n, I18nextProvider, switchLanguage } from '@speed/i18n'
 import { defaultTokens } from '@speed/tokens'
 import type { TokensOverride } from '@speed/tokens'
+import type { ThemePreset } from '@speed/theme-presets'
 import {
   AppThemeProvider,
   useAppThemeMode,
+  useAppThemePreset,
   type AppThemeModeControl,
+  type AppThemePresetControl,
 } from './AppThemeProvider.js'
-import { createUiKitI18n, renderWithProviders } from '../../test-utils/render.js'
+import {
+  createUiKitI18n,
+  renderWithProviders,
+  type RenderWithProvidersOptions,
+} from '../../test-utils/render.js'
 
 /** Read the theme MUI context hands the tree at render time. */
 function ThemeProbe({ onTheme }: { onTheme: (theme: Theme) => void }) {
@@ -36,6 +43,26 @@ function ModeProbe({
 }) {
   onControl(useAppThemeMode())
   return null
+}
+
+/** Capture the provider's preset control at render time. */
+function PresetProbe({
+  onControl,
+}: {
+  onControl: (control: AppThemePresetControl) => void
+}) {
+  onControl(useAppThemePreset())
+  return null
+}
+
+/** Two addressable presets with a field the built theme exposes directly. */
+const SHARP_PRESET: ThemePreset = {
+  id: 'sharp',
+  tokens: { shape: { borderRadius: 2 } },
+}
+const ROUND_PRESET: ThemePreset = {
+  id: 'round',
+  tokens: { shape: { borderRadius: 18 } },
 }
 
 function paginationLabel(theme: Theme | undefined): string | undefined {
@@ -266,6 +293,169 @@ describe('AppThemeProvider', () => {
     } finally {
       consoleError.mockRestore()
     }
+  })
+
+  describe('theme presets', () => {
+    it('layers the active preset under the project and tenant layers', () => {
+      const preset: ThemePreset = {
+        id: 'branded',
+        tokens: { color: { semantic: { primary: { main: '#111111' } } } },
+      }
+      const project: TokensOverride = {
+        color: { semantic: { primary: { main: '#222222' } } },
+      }
+      const tenant: TokensOverride = {
+        color: { semantic: { primary: { main: '#333333' } } },
+      }
+      const primaryWith = (
+        options: RenderWithProvidersOptions,
+      ): string | undefined => {
+        let seen: Theme | undefined
+        renderWithProviders(<ThemeProbe onTheme={(theme) => (seen = theme)} />, options)
+        return seen?.palette.primary.main
+      }
+      expect(
+        primaryWith({ presets: [preset], defaultPreset: 'branded' }),
+      ).toBe('#111111')
+      expect(
+        primaryWith({
+          presets: [preset],
+          defaultPreset: 'branded',
+          projectTokens: project,
+        }),
+      ).toBe('#222222')
+      expect(
+        primaryWith({
+          presets: [preset],
+          defaultPreset: 'branded',
+          projectTokens: project,
+          tenantOverrides: tenant,
+        }),
+      ).toBe('#333333')
+    })
+
+    it('re-assembles the theme when the active preset changes', () => {
+      let seen: Theme | undefined
+      let control: AppThemePresetControl | undefined
+      renderWithProviders(
+        <>
+          <ThemeProbe onTheme={(theme) => (seen = theme)} />
+          <PresetProbe onControl={(next) => (control = next)} />
+        </>,
+        { presets: [SHARP_PRESET, ROUND_PRESET], defaultPreset: 'sharp' },
+      )
+      expect(control?.preset).toBe('sharp')
+      expect(seen?.shape.borderRadius).toBe(2)
+
+      act(() => {
+        control?.setPreset('round')
+      })
+      expect(control?.preset).toBe('round')
+      expect(seen?.shape.borderRadius).toBe(18)
+    })
+
+    it('keeps the active preset and the color mode independent', () => {
+      // Two dimensions, one theme: a mode change must not reset the
+      // selected preset, and a preset change must not reset the mode. Each
+      // dimension is flipped twice, with the other observed after every
+      // step, so a provider that bound them (resetting the selection on a
+      // mode change, or rebuilding the theme without the mode) fails on
+      // the first assertion after the crossing.
+      let seen: Theme | undefined
+      let presetControl: AppThemePresetControl | undefined
+      let modeControl: AppThemeModeControl | undefined
+      renderWithProviders(
+        <>
+          <ThemeProbe onTheme={(theme) => (seen = theme)} />
+          <PresetProbe onControl={(next) => (presetControl = next)} />
+          <ModeProbe onControl={(next) => (modeControl = next)} />
+        </>,
+        { presets: [SHARP_PRESET, ROUND_PRESET], defaultPreset: 'sharp' },
+      )
+      expect(presetControl?.preset).toBe('sharp')
+      expect(modeControl?.mode).toBe('light')
+      expect(seen?.palette.mode).toBe('light')
+      expect(seen?.shape.borderRadius).toBe(2)
+
+      act(() => {
+        modeControl?.toggleMode()
+      })
+      expect(modeControl?.mode).toBe('dark')
+      expect(seen?.palette.mode).toBe('dark')
+      expect(presetControl?.preset).toBe('sharp')
+      expect(seen?.shape.borderRadius).toBe(2)
+
+      act(() => {
+        presetControl?.setPreset('round')
+      })
+      expect(presetControl?.preset).toBe('round')
+      expect(seen?.shape.borderRadius).toBe(18)
+      expect(seen?.palette.mode).toBe('dark')
+
+      act(() => {
+        modeControl?.setMode('light')
+      })
+      expect(modeControl?.mode).toBe('light')
+      expect(seen?.palette.mode).toBe('light')
+      expect(presetControl?.preset).toBe('round')
+      expect(seen?.shape.borderRadius).toBe(18)
+    })
+
+    it('ignores a setPreset id outside the shelf', () => {
+      let seen: Theme | undefined
+      let control: AppThemePresetControl | undefined
+      renderWithProviders(
+        <>
+          <ThemeProbe onTheme={(theme) => (seen = theme)} />
+          <PresetProbe onControl={(next) => (control = next)} />
+        </>,
+        { presets: [SHARP_PRESET], defaultPreset: 'sharp' },
+      )
+      act(() => {
+        control?.setPreset('missing')
+      })
+      expect(control?.preset).toBe('sharp')
+      expect(seen?.shape.borderRadius).toBe(2)
+    })
+
+    it('layers nothing and reports the default when the shelf is empty', () => {
+      let seen: Theme | undefined
+      let control: AppThemePresetControl | undefined
+      renderWithProviders(
+        <>
+          <ThemeProbe onTheme={(theme) => (seen = theme)} />
+          <PresetProbe onControl={(next) => (control = next)} />
+        </>,
+        { presets: [] },
+      )
+      expect(control?.preset).toBe('default')
+      expect(seen?.shape.borderRadius).toBe(defaultTokens.shape.borderRadius)
+    })
+
+    it('falls back to the first entry when defaultPreset names no preset', () => {
+      let seen: Theme | undefined
+      let control: AppThemePresetControl | undefined
+      renderWithProviders(
+        <>
+          <ThemeProbe onTheme={(theme) => (seen = theme)} />
+          <PresetProbe onControl={(next) => (control = next)} />
+        </>,
+        { presets: [SHARP_PRESET, ROUND_PRESET], defaultPreset: 'missing' },
+      )
+      expect(control?.preset).toBe('sharp')
+      expect(seen?.shape.borderRadius).toBe(2)
+    })
+
+    it('throws when the preset hook is read without a provider above', () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        expect(() => render(<PresetProbe onControl={() => undefined} />)).toThrow(
+          /AppThemeProvider/,
+        )
+      } finally {
+        consoleError.mockRestore()
+      }
+    })
   })
 
   it('renders with a language outside the MUI locale table, using the en-US MUI locale fallback', () => {

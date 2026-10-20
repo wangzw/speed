@@ -36,6 +36,7 @@
       "@speed/auth-core": ["../auth-core/src/index.ts"],
       "@speed/i18n/mui-locale": ["../i18n/src/mui-locale.ts"],
       "@speed/i18n": ["../i18n/src/index.ts"],
+      "@speed/theme-presets": ["../theme-presets/src/index.ts"],
       "@speed/tokens": ["../tokens/src/index.ts"],
       "@speed/ui-kit": ["../ui-kit/src/index.ts"],
       "@speed/test-utils/axe": ["../../test-utils/src/axe.ts"],
