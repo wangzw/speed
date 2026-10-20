@@ -40,16 +40,24 @@ composing pages without the shell mounts itself.
 ## The second shell (the one thing this package's frame decides)
 
 `ConsoleShell` is the platform frame, rendered through `@speed/layout-kit`'s
-`AppShell`: a fixed `header` banner (the console title and any host header
-actions), a responsive `nav` drawer over the platform navigation (the
-labelled declarations), and a `main` landmark holding the host's routed
-content. The console names that `nav` landmark from its own namespace
+`AppShell` in either of its chrome forms: the default `'topbar'` form's fixed
+`header` banner (the console title and any host header actions) above a
+responsive `nav` drawer over the platform navigation (the labelled
+declarations), or the `'sidebar'` form, where the title and the action slots
+move into the drawer paper and no app bar renders at `md` and up. A `main`
+landmark holds the host's routed content in both. The console names that
+`nav` landmark from its own namespace
 (`shell.navLabel`) through the frame's `navLabel`, so the platform
 navigation stays distinguishable from any other shell's. Reusing
 `AppShell` is what makes the two shells one shape — a sidebar that stays
 put while the content scrolls, a hamburger drawer on a narrow viewport
 rather than the navigation stacked above the content, and the content
-region as the single scroll layer. The frame also carries the frame's
+region as the single scroll layer. The console selects the frame's form
+through layout-kit's `shellLayout` -- `'topbar'` by default, or
+`'sidebar'` to move the console title and the frame's action slots into
+the drawer paper -- and passes it straight through, so the console and
+the tenant shell can present the same arrangement. The frame also
+carries the frame's
 desktop sidebar-collapse pair (`sidebarCollapsed` /
 `onSidebarCollapsedChange`), passed straight through: supplying the
 callback renders the collapse toggle and reports each flip, so a host
@@ -73,10 +81,14 @@ for a new tab or a download, and an activation another handler already
 claimed keep the browser's behavior; the judgement is layout-kit's
 `isPlainPrimaryClick`, shared with the package's in-page links.
 
-The frame's other slots and controlled props — `sidebarWidth`,
+The frame's other slots and controlled props — `shellLayout`,
+`sidebarWidth`,
 `userMenu`, `banner`, `mobileOpen` / `onMobileOpenChange` and `navHeader`
 / `navFooter` — pass straight through to `AppShell`, and `navLabel`
-overrides the package's own navigation-landmark name.
+overrides the package's own navigation-landmark name. In the `sidebar`
+form the console title and the account menu follow AppShell's region
+mapping into the drawer paper's top and bottom rows; the package adds no
+chrome of its own to either position.
 
 The shell also publishes host-owned destinations and seams to its routed
 content through package context: `invitationLink`, the acceptance-link
@@ -357,7 +369,8 @@ invalidates the list — with no HTTP transport. `test-utils/request-rig.ts`
 binds a scripted request function into the api-sdk runtime seam, so the
 shipped `consoleOperations` can be driven endpoint by endpoint.
 
-Suites: `ConsoleShell` (the landmarks, the labelled-only navigation, the
+Suites: `ConsoleShell` (the landmarks, the `shellLayout` pass-through,
+the labelled-only navigation, the
 `onNavigate` seam, the skip link, the required `hasFeature` answer
 reaching the pages' feature context, the page-tier axe scan); each page's
 own suite (its reads, writes and failure branches, with an axe scan); the

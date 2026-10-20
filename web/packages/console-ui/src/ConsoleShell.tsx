@@ -94,6 +94,7 @@ type AppShellPassthroughProps = Pick<
   | 'sidebarCollapsed'
   | 'onSidebarCollapsedChange'
   | 'sidebarWidth'
+  | 'shellLayout'
   | 'userMenu'
   | 'banner'
   | 'mobileOpen'
@@ -322,6 +323,7 @@ export function ConsoleShell({
   navFooter,
   sidebarCollapsed,
   onSidebarCollapsedChange,
+  shellLayout,
   sx,
 }: ConsoleShellProps) {
   const { t } = useConsoleUiTranslation()
@@ -354,6 +356,7 @@ export function ConsoleShell({
       navFooter={navFooter}
       sidebarCollapsed={sidebarCollapsed}
       onSidebarCollapsedChange={onSidebarCollapsedChange}
+      shellLayout={shellLayout}
       sx={sx}
     >
       {/* The package-level seams: navigation, route table, session,

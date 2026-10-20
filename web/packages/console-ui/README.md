@@ -63,9 +63,13 @@ application's composition layer. The console imports no router and does
 no path matching.
 
 The frame itself is `@speed/layout-kit`'s `AppShell` -- the same frame
-the tenant-facing shell builds on: a fixed top bar, a responsive
-navigation sidebar (permanent on wide viewports, a hamburger drawer with
-an overlay on narrow ones) and a single scrolling content region. The
+the tenant-facing shell builds on. Its default `'topbar'` form is a fixed
+top bar, a responsive navigation sidebar (permanent on wide viewports, a
+hamburger drawer with an overlay on narrow ones) and a single scrolling
+content region. Passing `shellLayout="sidebar"` selects the other form:
+at `md` and up no app bar renders, the console title sits in the drawer
+paper's top row and the action slots in its bottom row, and the content
+gets the full width under a minimal top bar on narrow viewports. The
 console derives the platform navigation from the labelled declarations
 and hands it to that frame, so the two shells are one shape. It passes the
 frame's desktop sidebar-collapse pair (`sidebarCollapsed` /
@@ -80,11 +84,12 @@ The shell also takes the host's account settings destination as
 dialog's "no active factor" state renders it as a link when supplied and
 text only when absent; the dialog never holds a host path itself.
 
-The rest of the frame is passed through unchanged: `sidebarWidth`,
+The rest of the frame is passed through unchanged: `shellLayout`,
+`sidebarWidth`,
 `userMenu`, `banner`, `mobileOpen` / `onMobileOpenChange` and
 `navHeader` / `navFooter` reach `AppShell` as given, and `navLabel`
 overrides the package's own navigation-landmark name. The console adds no
-chrome to any of them.
+chrome to any of them, in either form.
 
 Selection is the host's, because this package does no path matching:
 supply `isSelected(path)` and each navigation entry's `selected` flag is

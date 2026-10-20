@@ -177,6 +177,26 @@ describe('ConsoleShell', () => {
     expect(banner).toHaveClass(appBarClasses.positionStatic)
   })
 
+  it('passes shellLayout through to the frame', () => {
+    renderWithProviders(
+      <Shell routes={routes} title="Console" shellLayout="sidebar">
+        <h1>Home</h1>
+      </Shell>,
+      { operations },
+    )
+    // The frame is in its sidebar form: no AppBar banner landmark, and
+    // the brand (the console title) renders outside the navigation
+    // landmark, ahead of it in document order (the drawer paper's top
+    // row).
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument()
+    const nav = screen.getByRole('navigation')
+    const brand = screen.getByText('Console')
+    expect(nav.contains(brand)).toBe(false)
+    expect(
+      brand.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it('derives the navigation from the labelled declarations only', () => {
     renderWithProviders(
       <Shell routes={routes} title="Console">
