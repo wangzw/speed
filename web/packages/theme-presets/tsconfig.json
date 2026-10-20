@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"],
+  "compilerOptions": {
+    // The package's one sibling specifier is @speed/tokens, imported as
+    // types only. It resolves to the sibling's source because a published
+    // "types" entry points into a dist/ that is never committed and is not
+    // yet built in a fresh checkout. The runtime-facing tsconfig.build.json
+    // has no paths: the emitted declaration keeps the bare specifier, which
+    // consumers resolve against the published package.
+    "paths": {
+      "@speed/tokens": ["../tokens/src/index.ts"]
+    }
+  }
+}

@@ -120,6 +120,10 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
     entry: 'test-utils/src/session-harness.ts',
   },
   { specifier: '@speed/test-utils/setup', entry: 'test-utils/src/setup.ts' },
+  {
+    specifier: '@speed/theme-presets',
+    entry: 'packages/theme-presets/src/index.ts',
+  },
 ])
 
 /** Absolute path of one map entry's source file. */
