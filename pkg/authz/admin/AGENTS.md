@@ -135,12 +135,21 @@ write that lands answers 204 and no body.
   startup before any route is mounted, rather than answering every route with a
   refusal or a write that cannot land. The HTTP entry point is taken up in `Init`
   and is required — a command that mounts the management routes and has no entry
-  point has nothing to mount on, which is `authz.ErrNoRouter`. The logger is the
-  one optional requirement, and the route-declaration surface is taken up
-  optionally in `Init`.
+  point has nothing to mount on, which is `authz.ErrNoRouter`. The logger and the
+  message localizer are the optional requirements, and the route-declaration
+  surface is taken up optionally in `Init`. With no localizer the catalog view's
+  description is the empty string.
 - **The answer is a view, built field by field.** Every route answers with a view
   assembled from a root-package value and never the value as it stands, so a field
   added to a record later does not reach a client by being there.
+- **A permission's description is rendered here, in the request's language.** The
+  catalog view carries the permission code and its description. The code is the
+  catalog's string; the description is the key the declaring module gave the
+  permission, read through `Catalog.DescriptionKey` and rendered through the
+  optional `i18n.Localizer` in the locale the request carries. No localizer, or a
+  declared permission its module gave no key, answers an empty description. A key
+  no message catalog carries comes back as the key itself — the engine's own
+  fallback — and a client shows the text it received without resolving keys.
 - **A secret and a policy value reach no log line, no error text and no metric.**
   The audit detail names a tenant and a row's natural key — a role, a permission,
   an account — and never a credential or a policy secret; a grant's resource and

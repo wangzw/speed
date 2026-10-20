@@ -346,6 +346,8 @@ graph TD
 
 权限页的授权表按完整权限码列出一个角色持有的权限，与同一页的权限目录逐字同形（形如 `authn.account.read`），而不是 `resource`／`action` 两列：同一页的两个面因此可直接对照，两个命名空间各自声明同名资源时也不会被读成同一行。行的码由已加载的权限目录把授权行的 `(resource, action)` 对映射回来——与撤销请求把同一对映射回码是同一次匹配；目录没有命名该对时，行退化为 `resource/action` 的拼写，且不提供撤销，因为撤销路由只按码命名权限。
 
+**权限目录与授予选择器显示服务端渲染好的说明。** 目录读的每一行是 `permission` 与 `description` 两个字段：后者是服务端按请求语言把该权限的说明键渲染成的文本，不从宿主资源里另做解析。目录读的查询键带着当前界面语言，界面语言切换后目录重取，说明随之换成按新语言渲染的文本，而不是停在上一次请求的语言里。权限目录把权限码作为主文本，说明紧随其下作为次级文本；授予选择器的每个选项同样以权限码为主、说明在下，选定后收起的控件只显示权限码，保持单行高度。`description` 为空（装配里没有消息本地化器，或声明该权限的模块没有给出说明键）时两处都只显示权限码；非空时照收到的文本显示，即使它的形态是一条键——服务端没有可渲染的文本时只回写键本身，页面不判断也不替换它。说明不改变授权表的同形口径：授权表仍按权限目录主文本的完整权限码逐字列出。
+
 ### 破坏性动作的确认
 
 会移除或作废既有数据的写入在发出前经 ui-kit 的确认对话框确认：控件的点击只打开对话框，写入在确认点击时发出，未确认即不发出请求。对话框一律用 `ConfirmDialog` 的 `variant="danger"`；确认的**轻重**随动作是否可逆而分：一个连同其从属记录一并销毁、界面上无从恢复的删除（删除账户、删除角色）额外带 `doubleConfirm` 两步守卫，第一次点击只把按钮改题为「再次点击确认」，第二次才发出；其余的可恢复的移除与撤销（移除成员、移除短信模板、撤销会话、撤销账户全部会话、撤销服务密钥、移除登录标识、重置 MFA、撤销邀请、移除 SSO 域名、移除设置项、删除 SSO 提供方）用单次确认点击——可恢复的动作不该比不可逆的更重。撤销会话与撤销账户全部会话的目标含调用方自己的当前会话时（会话行带 `current` 标记，或所选账户的列表里有 `current` 为真的行），该行显示「当前会话」标记，确认文案说明撤销之后调用方自己也退出登录；标记取自会话读返回的 `current`，不取自前端对会话标识的比对，因为会话快照不携带会话标识。撤销落定之后调用方的下一次读被拒，由会话结束的既有处理接管，页面不另做处理。不改变既有数据的写入直接发出，不经确认；这些是名册登记与改名、设置写值、授权的授予与撤销、绑定与解绑、模板登记与提交审核、开关与冒充终止。
@@ -521,6 +523,7 @@ graph TD
 | 冒充发起被拒的文案、冒充期间记录面的收起 | 已实现 | `web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/console-ui/src/operations.tsx` `useImpersonations` |
 | `onImpersonationChange` 宿主回调 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`onImpersonationChange`；`web/packages/console-ui/src/internal/impersonation-change.tsx` `ConsoleImpersonationChangeProvider`、`useConsoleImpersonationChange`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`、`StartImpersonationForm` |
 | 权限页（角色、授权、目录、绑定） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/routes.tsx` `permissionsAdminRoutes` |
+| 权限目录与授予选择器显示服务端渲染的权限说明 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel` |
 | 内建角色只读（保留查看授权入口，隐藏授予与撤销控件） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 邀请与成员页（邀请读写、成员列出与移除） | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/routes.tsx` `invitationsAdminRoutes` |
 | SSO 页（创建、改动、列出、删除、元数据、域名认领与操作） | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/console-ui/src/routes.tsx` `ssoAdminRoutes` |

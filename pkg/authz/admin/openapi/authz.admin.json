@@ -67,13 +67,18 @@
       "AuthzAdminPermissionView": {
         "description": "One permission the catalog declares.",
         "properties": {
+          "description": {
+            "description": "The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback; a client shows the text as received and does not resolve keys.",
+            "type": "string"
+          },
           "permission": {
             "description": "The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action.",
             "type": "string"
           }
         },
         "required": [
-          "permission"
+          "permission",
+          "description"
         ],
         "type": "object"
       },

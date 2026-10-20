@@ -67,6 +67,12 @@ type catalog struct {
 	declared []authz.Permission
 	set      map[authz.Permission]bool
 	keys     map[authz.Permission]string
+	// reverse maps an (object, action) pair back to the permission it
+	// translates to. The engine matches the pair and never sees the permission,
+	// so a set of held pairs is only a set of permission names through this
+	// map. The translation's rows are unique — Resolve refuses two permissions
+	// sharing one pair — so the reverse is a function.
+	reverse map[[2]string]authz.Permission
 }
 
 // buildCatalog collects every module's PermissionSpec and unions them.
@@ -93,7 +99,34 @@ func buildCatalog(reg *core.Registry) *catalog {
 			}
 		}
 	}
+	c.indexReverse()
 	return c
+}
+
+// indexReverse rebuilds the pair-to-permission map from the process's
+// translation. It runs when the catalog is built and again in the policy
+// module's Init, after the translation is resolved: a module may declare a row
+// of its own, and the map has to hold every row the process carries.
+func (c *catalog) indexReverse() {
+	reverse := make(map[[2]string]authz.Permission, len(c.declared))
+	for _, p := range c.declared {
+		object, action, ok := c.ObjectAction(p)
+		if !ok {
+			continue
+		}
+		reverse[[2]string{object, action}] = p
+	}
+	c.reverse = reverse
+}
+
+// permissionOf returns the permission a held (object, action) pair translates
+// to, and whether any declared permission translates to it at all. A pair no
+// declared permission carries is left out of a permission read: the policy
+// table can hold a grant written against a vocabulary this process no longer
+// translates, and such a grant names no permission a caller could act on.
+func (c *catalog) permissionOf(object, action string) (authz.Permission, bool) {
+	p, ok := c.reverse[[2]string{object, action}]
+	return p, ok
 }
 
 // Declared returns every declared permission. The slice is a copy: a caller

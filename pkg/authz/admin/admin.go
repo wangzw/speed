@@ -31,6 +31,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -101,8 +102,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // host writes them down. The guard being required is what makes the per-request
 // decision available; the audit capability being required is what makes an
 // assembly without one fail before any instance is built, rather than at the
-// first write. The logger is the one optional requirement, taken up so that it
-// is initialised first.
+// first write. The logger is taken up so that it is initialised first, and the
+// message localizer so that the catalog route can render a permission's
+// description in the request's language; both are optional, and an assembly
+// without the localizer answers the description as an empty string.
 //
 // The HTTP entry point and the route-declaration surface are taken up in Init
 // rather than declared: a command that mounts routes and has no entry point is a
@@ -188,8 +191,12 @@ type product struct {
 	// none. When it is there, Init declares every management route open on it so
 	// that a guarded endpoint lets the request reach the handler, which makes the
 	// decision.
-	gate   authz.Gate
-	logger *slog.Logger
+	gate authz.Gate
+	// localizer renders a permission's description into the request's language,
+	// nil when the assembly delivers no i18n engine. With none the catalog route
+	// answers an empty description and a client shows the permission code alone.
+	localizer i18n.Localizer
+	logger    *slog.Logger
 
 	cfg resolved
 }
@@ -247,8 +254,9 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 }
 
 // wire runs in Init, where every instance exists. It takes up the optional
-// route-declaration surface and the logger, resolves the configured endpoints,
-// mounts the routes, declares them open, and writes the start diagnostic.
+// message localizer, the optional route-declaration surface and the logger,
+// resolves the configured endpoints, mounts the routes, declares them open, and
+// writes the start diagnostic.
 //
 // The entry point is required: a command that mounts routes and has no entry
 // point has nothing to mount them on, and the failure names the module so the
@@ -265,6 +273,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.gate = gate
+	}
+	if localizer, found, err := optional[i18n.Localizer](reg, "the message localizer"); err != nil {
+		return err
+	} else if found {
+		p.localizer = localizer
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

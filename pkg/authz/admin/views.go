@@ -1,9 +1,11 @@
 package admin
 
 import (
+	"context"
 	"time"
 
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // The views the management routes answer with. Each is built field by field from
@@ -18,10 +20,25 @@ type AuthzAdminPermissionView struct {
 	_ struct{} `description:"One permission the catalog declares."`
 
 	Permission string `json:"permission" required:"true" description:"The permission name as the catalog declares it, for example authn.tenant.access. Only the authn.* permissions are the same vocabulary as authn.Action and carry its string; a permission outside it, such as authz.role.read, has no corresponding authn.Action."`
+
+	Description string `json:"description" required:"true" description:"The permission's description, rendered in the request's language from the key the declaring module gave it. Empty when the assembly delivers no message localizer or the module gave the permission no description key. A key no catalog carries comes back as the key itself, the i18n fallback; a client shows the text as received and does not resolve keys."`
 }
 
-func permissionViewOf(p authz.Permission) AuthzAdminPermissionView {
-	return AuthzAdminPermissionView{Permission: string(p)}
+// permissionViewOf builds one permission's view. The description is the key the
+// declaring module gave the permission, rendered through the optional message
+// localizer in the request's locale. With no localizer assembled there is no
+// text to render and the field is empty; a permission whose declaring module
+// gave no key has nothing to render either. A key no catalog carries is written
+// back as the key by the localizer itself, so the field never says "no
+// description" for a module that gave one.
+func (p *product) permissionViewOf(ctx context.Context, perm authz.Permission) AuthzAdminPermissionView {
+	view := AuthzAdminPermissionView{Permission: string(perm)}
+	key, ok := p.catalog.DescriptionKey(perm)
+	if !ok || key == "" || p.localizer == nil {
+		return view
+	}
+	view.Description = p.localizer.Localize(ctx, i18n.Key(key), nil)
+	return view
 }
 
 // AuthzAdminRoleView is one role as the role routes show it.

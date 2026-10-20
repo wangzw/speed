@@ -15,6 +15,7 @@ import (
 	"github.com/vislake/speed/pkg/authz/internal/translation"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 )
 
@@ -148,6 +149,7 @@ type stubCatalog struct {
 	mu    sync.Mutex
 	perms []authz.Permission
 	set   map[authz.Permission]bool
+	keys  map[authz.Permission]string
 	has   []authz.Permission
 }
 
@@ -156,7 +158,19 @@ func newStubCatalog(perms ...authz.Permission) *stubCatalog {
 	for _, p := range perms {
 		set[p] = true
 	}
-	return &stubCatalog{perms: append([]authz.Permission(nil), perms...), set: set}
+	return &stubCatalog{
+		perms: append([]authz.Permission(nil), perms...),
+		set:   set,
+		keys:  make(map[authz.Permission]string),
+	}
+}
+
+// describe gives one declared permission the description key a declaring module
+// would have put in its PermissionSpec.
+func (c *stubCatalog) describe(p authz.Permission, key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys[p] = key
 }
 
 func (c *stubCatalog) Declared() []authz.Permission {
@@ -184,6 +198,18 @@ func (c *stubCatalog) asked() []authz.Permission {
 // translation no decision is made by.
 func (c *stubCatalog) ObjectAction(p authz.Permission) (object, action string, ok bool) {
 	return translation.Lookup(p)
+}
+
+// DescriptionKey answers the key a case gave a declared permission. A declared
+// permission a case did not describe answers an empty key and true, which is the
+// shape a module that left one permission out of DescriptionKeys declares.
+func (c *stubCatalog) DescriptionKey(p authz.Permission) (key string, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.set[p] {
+		return "", false
+	}
+	return c.keys[p], true
 }
 
 // stubGuard is a stand-in guard.Guard. It records the permission every decision
@@ -432,6 +458,39 @@ func (c *capturedLogs) address(endpoint string) string {
 	}
 	return ""
 }
+
+// stubLocalizer renders a message from an in-memory index the way the engine
+// does: it reads the locale from the context, falls back to a default when the
+// context carries none or the locale misses the key, and writes the key itself
+// back for a key no locale carries. That last rule is the engine's fallback, and
+// a case holds the catalog route to it.
+type stubLocalizer struct {
+	index         map[i18n.Locale]map[i18n.Key]string
+	defaultLocale i18n.Locale
+}
+
+func (s stubLocalizer) Localize(ctx context.Context, key i18n.Key, _ i18n.Args) string {
+	locale, ok := i18n.FromContext(ctx)
+	if !ok {
+		locale = s.defaultLocale
+	}
+	if text, ok := s.index[locale][key]; ok {
+		return text
+	}
+	if locale != s.defaultLocale {
+		if text, ok := s.index[s.defaultLocale][key]; ok {
+			return text
+		}
+	}
+	return string(key)
+}
+
+func (s stubLocalizer) Translate(locale i18n.Locale, key i18n.Key, _ i18n.Args) (string, bool) {
+	text, ok := s.index[locale][key]
+	return text, ok
+}
+
+var _ i18n.Localizer = stubLocalizer{}
 
 // standIn is a module that delivers instance for the tokens named, the way
 // another module delivers its capability exclusively.

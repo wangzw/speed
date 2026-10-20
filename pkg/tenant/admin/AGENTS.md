@@ -60,7 +60,11 @@ this module declares the vocabulary it decides its routes on. It carries
 permissions, and the `tenant`/`read` and `tenant`/`manage` pair each translates to
 — so the process's catalog holds them and the process's translation expresses a
 decision on either. Without the translation the guard could not express a
-permission and every route would refuse its caller.
+permission and every route would refuse its caller. The module also declares an
+`i18n.Catalog` resource under `locales/`, one file per locale with the same key
+set, carrying the description of each permission it declares: the management
+surface renders those texts into the request's language instead of showing a bare
+key.
 
 ## Boundaries
 

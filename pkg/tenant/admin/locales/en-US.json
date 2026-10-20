@@ -1,0 +1,4 @@
+{
+  "tenant.permission.manage": "Manage tenants: register one, change its alias or change its status",
+  "tenant.permission.read": "Read the tenant roster: list every tenant or read one back"
+}

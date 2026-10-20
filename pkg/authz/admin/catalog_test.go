@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // TestTheCatalogRouteListsDeclaredPermissions drives GET /api/v1/system/permissions
@@ -49,9 +50,138 @@ func TestTheCatalogRouteListsDeclaredPermissions(t *testing.T) {
 		if named != string(want) {
 			t.Errorf("view %d names %q, want the declared permission %q in order", i, named, want)
 		}
-		if len(view) != 1 {
-			t.Errorf("view %d carries %d fields (%v), want the one field the route declares", i, len(view), view)
+		// The rig assembles no message localizer, so the description is the
+		// empty string rather than the key: with nothing to render through the
+		// route makes no claim about text it does not have.
+		if raw, ok := view["description"]; !ok {
+			t.Errorf("view %d carries no description field: %+v", i, view)
+		} else {
+			var description string
+			if err := json.Unmarshal(raw, &description); err != nil {
+				t.Errorf("view %d's description is not a string: %v", i, err)
+			} else if description != "" {
+				t.Errorf("view %d's description = %q with no localizer assembled, want the empty string", i, description)
+			}
 		}
+		if len(view) != 2 {
+			t.Errorf("view %d carries %d fields (%v), want the two fields the route declares", i, len(view), view)
+		}
+	}
+}
+
+// permissionViews decodes the catalog route's answer into one map per view.
+func permissionViews(t *testing.T, body string) []map[string]string {
+	t.Helper()
+	var got struct {
+		Permissions []map[string]string `json:"permissions"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("the answer %q is not a permissions object: %v", body, err)
+	}
+	return got.Permissions
+}
+
+// TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale drives the catalog
+// route with a localizer assembled and the same request in two languages: the
+// description is the text the declaring module gave the permission's key,
+// rendered in the locale the request carries. The route adds no text of its own,
+// so a permission in a language the catalogue carries comes back in that
+// language and not in another.
+func TestTheCatalogRouteRendersTheDescriptionInTheRequestLocale(t *testing.T) {
+	const (
+		readKey   = "authz.permission.authz-role-read"
+		manageKey = "authz.permission.authz-role-manage"
+	)
+	en := i18n.Locale("en-US")
+	zh := i18n.Locale("zh-CN")
+	messages := stubLocalizer{
+		defaultLocale: en,
+		index: map[i18n.Locale]map[i18n.Key]string{
+			en: {
+				readKey:   "Read roles",
+				manageKey: "Manage roles",
+			},
+			zh: {
+				readKey:   "读取角色",
+				manageKey: "管理角色",
+			},
+		},
+	}
+	want := map[i18n.Locale][]string{
+		en: {"Read roles", "Manage roles"},
+		zh: {"读取角色", "管理角色"},
+	}
+	for locale, texts := range want {
+		t.Run(string(locale), func(t *testing.T) {
+			r := newRig(t, authz.PermissionRoleRead, authz.PermissionRoleManage)
+			r.catalog.describe(authz.PermissionRoleRead, readKey)
+			r.catalog.describe(authz.PermissionRoleManage, manageKey)
+			r.localizeWith(messages, locale)
+			w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
+			if w.Code != http.StatusOK {
+				t.Fatalf("the catalog route answered %d, want 200", w.Code)
+			}
+			views := permissionViews(t, w.Body.String())
+			if len(views) != len(texts) {
+				t.Fatalf("the answer lists %d views, want %d", len(views), len(texts))
+			}
+			for i, text := range texts {
+				if got := views[i]["description"]; got != text {
+					t.Errorf("view %d's description = %q in %s, want the text the key carries %q", i, got, locale, text)
+				}
+			}
+		})
+	}
+}
+
+// TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender holds the
+// fallback rule for the two cases where the route has no text: the assembly
+// carries no localizer, and the declaring module gave the permission no key.
+// Both answer an empty description, never the key and never another
+// permission's text.
+func TestTheCatalogRouteAnswersNoDescriptionWhenThereIsNothingToRender(t *testing.T) {
+	t.Run("no localizer assembled", func(t *testing.T) {
+		r := newRig(t, authz.PermissionRoleRead)
+		r.catalog.describe(authz.PermissionRoleRead, "authz.permission.authz-role-read")
+		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
+		views := permissionViews(t, w.Body.String())
+		if len(views) != 1 || views[0]["description"] != "" {
+			t.Fatalf("the answer = %+v, want one view whose description is the empty string", views)
+		}
+	})
+	t.Run("the declared permission carries no description key", func(t *testing.T) {
+		r := newRig(t, authz.PermissionRoleRead)
+		r.localizeWith(stubLocalizer{
+			defaultLocale: "en-US",
+			index: map[i18n.Locale]map[i18n.Key]string{
+				"en-US": {"authz.permission.other": "Another permission"},
+			},
+		}, "en-US")
+		w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
+		views := permissionViews(t, w.Body.String())
+		if len(views) != 1 || views[0]["description"] != "" {
+			t.Fatalf("the answer = %+v, want one view whose description is the empty string", views)
+		}
+	})
+}
+
+// TestTheCatalogRouteWritesBackAKeyNoCatalogCarries holds the engine's fallback:
+// a declaring module gave the permission a key, no catalogue carries text for
+// it, and the localizer writes the key itself back, so the field says the text
+// is missing rather than claiming there is none. A client shows what it received
+// and does not resolve keys of its own.
+func TestTheCatalogRouteWritesBackAKeyNoCatalogCarries(t *testing.T) {
+	const key = "tenant.permission.untranslated"
+	r := newRig(t, authz.PermissionTenantAccess)
+	r.catalog.describe(authz.PermissionTenantAccess, key)
+	r.localizeWith(stubLocalizer{defaultLocale: "en-US"}, "en-US")
+	w := r.serve(readRoute(r.p, permissionListOperation.Handle(r.p.handlePermissionList)), http.MethodGet, "/api/v1/system/permissions", nil, nil)
+	views := permissionViews(t, w.Body.String())
+	if len(views) != 1 {
+		t.Fatalf("the answer lists %d views, want one", len(views))
+	}
+	if got := views[0]["description"]; got != key {
+		t.Fatalf("the description = %q for a key no catalogue carries, want the key itself %q", got, key)
 	}
 }
 

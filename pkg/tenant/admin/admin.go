@@ -141,7 +141,7 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
-			schema(), permissionSpec(), translationSpec(),
+			schema(), permissionSpec(), translationSpec(), messageCatalog,
 			tenantAdminSpec,
 			operations,
 			// The roster management surface: its routes are mounted whenever the

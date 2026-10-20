@@ -14,6 +14,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/i18n"
 )
 
 // roleBody is the request a role write's cases send: the description key alone.
@@ -52,6 +53,10 @@ type rig struct {
 	audit   *recordingAudit
 	router  *stubRouter
 	logs    *logBuffer
+	// locale is the request's language, written into the context of every
+	// request this rig serves. Empty leaves the context carrying none, which the
+	// stub localizer reads as its fallback.
+	locale i18n.Locale
 }
 
 // newRig builds the module over the stubs, with the permissions a case names
@@ -76,6 +81,15 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 		logger:  logs.logger(),
 		cfg:     resolved{endpoints: []string{"public"}},
 	}
+	return r
+}
+
+// localizeWith assembles the message localizer and the request's language, the
+// way an assembly that brings in the i18n engine does, so a case can hold what
+// the catalog route renders.
+func (r *rig) localizeWith(localizer i18n.Localizer, locale i18n.Locale) *rig {
+	r.p.localizer = localizer
+	r.locale = locale
 	return r
 }
 
@@ -133,7 +147,7 @@ func (r *rig) dispatch(handler gin.HandlerFunc, method, target string, params gi
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req = req.WithContext(withCtx(req.Context()))
+	req = req.WithContext(i18n.WithLocale(withCtx(req.Context()), r.locale))
 	c.Request = req
 	c.Params = params
 	// The mounted route puts the endpoint name on the request so the handler's
