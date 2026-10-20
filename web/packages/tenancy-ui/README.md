@@ -248,7 +248,7 @@ over auth-core's `TenantProvider` / `useCurrentTenant`.
 | Package | Kind | Why |
 |---|---|---|
 | `react`, `react-dom` | peer (required, ^18 or ^19) | the host owns the React tree |
-| `@mui/material` | peer (required, ^9) | the `Button`/`Menu`/`MenuItem` primitives and the ambient theme |
+| `@mui/material` | peer (required, ^9.5) | the `Button`/`Menu`/`MenuItem` primitives and the ambient theme |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
 | `@speed/i18n` | dependency | the namespace registration and the translation hook every string renders through |
 | `@speed/ui-kit` | dependency | the shared `visuallyHiddenSx` clip recipe, the MUI theme layer the host composes under, and the `ui-kit` namespace a host app registers |

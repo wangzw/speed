@@ -793,7 +793,7 @@ bilingual text of its states.
 | Package | Kind | Why |
 |---|---|---|
 | `react`, `react-dom` | peer (required, ^18 or ^19) | the host owns the React tree |
-| `@mui/material` | peer (required, ^9) | the `TextField`/`Button`/`Tabs`/`Alert` primitives and the ambient theme |
+| `@mui/material` | peer (required, ^9.5) | the `TextField`/`Button`/`Tabs`/`Alert` primitives and the ambient theme |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
 | `react-hook-form` | peer (required, ^7) | every form is a controlled react-hook-form flow; RHF is the host's single instance |
 | `@speed/auth-core` | dependency | the session every component drives, its flow operations, and the flow response models it re-exports from the generated surface |

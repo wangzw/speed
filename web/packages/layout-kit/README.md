@@ -287,7 +287,7 @@ text.
 | Package | Kind | Why |
 |---|---|---|
 | `react`, `react-dom` | peer (required, ^18 or ^19) | the host owns the React tree |
-| `@mui/material` | peer (required, ^9) | `AppBar`/`Drawer`/`CircularProgress` and the ambient theme (breakpoints, z-index) AppShell reads through `useTheme()` |
+| `@mui/material` | peer (required, ^9.5) | `AppBar`/`Drawer`/`CircularProgress` and the ambient theme (breakpoints, z-index) AppShell reads through `useTheme()` |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements |
 | `@speed/i18n` | dependency | the namespace registration and translation hook every component renders through |
 | `@speed/ui-kit` | dependency | `RouteGuard`'s default denied fallback (`EmptyState variant="noPermission"`) -- the package's only concrete coupling, sanctioned for chrome/primitives |

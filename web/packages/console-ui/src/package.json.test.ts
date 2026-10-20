@@ -45,7 +45,7 @@ describe('package manifest', () => {
   it('declares the framework peers the console renders over', () => {
     expect(manifest.peerDependencies?.['react']).toBe('^18.0.0 || ^19.0.0')
     expect(manifest.peerDependencies?.['react-dom']).toBe('^18.0.0 || ^19.0.0')
-    expect(manifest.peerDependencies?.['@mui/material']).toBe('^9.0.0')
+    expect(manifest.peerDependencies?.['@mui/material']).toBe('^9.5.0')
     expect(manifest.peerDependencies?.['@tanstack/react-query']).toBe('^5.0.0')
     // The account-create form flows through ui-kit's form family, so the
     // console drives react-hook-form directly and peers on it.

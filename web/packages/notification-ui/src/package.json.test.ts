@@ -40,7 +40,7 @@ describe('package manifest', () => {
   it('declares the framework peers the surfaces render over', () => {
     expect(manifest.peerDependencies?.['react']).toBe('^18.0.0 || ^19.0.0')
     expect(manifest.peerDependencies?.['react-dom']).toBe('^18.0.0 || ^19.0.0')
-    expect(manifest.peerDependencies?.['@mui/material']).toBe('^9.0.0')
+    expect(manifest.peerDependencies?.['@mui/material']).toBe('^9.5.0')
     expect(manifest.peerDependencies?.['@tanstack/react-query']).toBe('^5.0.0')
   })
 

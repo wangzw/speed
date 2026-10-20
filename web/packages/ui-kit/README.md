@@ -362,7 +362,7 @@ MUI's theme surface:
 | `typography.fontFamily.sans` | `typography.fontFamily` | direct; the stack ends in CJK-capable fallbacks |
 | `typography.fontFamily.mono` | `typography.fontFamilyMono` | module augmentation on MUI's typography surface (MUI has no monospace slot); read it like `fontFamily`, including from `sx` callbacks |
 | `typography` sizes/weights | `typography` variant roles | h1-h6 from 5xl..lg (tight line height, semibold); subtitle1/2 from md/sm (normal, medium); body1/2 from md/sm (normal, regular); button from sm (medium); caption from xs; overline from xs (semibold, wide spacing). Converted to rem on MUI's 16px default base; `fontWeight.light` has no token and keeps MUI's 300 |
-| `spacing.unit` | the theme spacing unit | the token unit IS the MUI unit (probe-verified against MUI 9.4.0: a numeric spacing option sets the base, so `theme.spacing(n) === n x unit`) |
+| `spacing.unit` | the theme spacing unit | the token unit IS the MUI unit (probe-verified against MUI 9.5.0: a numeric spacing option sets the base, so `theme.spacing(n) === n x unit`) |
 | `shape.borderRadius` | `shape.borderRadius` | direct |
 | `breakpoints.values` | `breakpoints.values` | direct (slot names are MUI's own) |
 | `zIndex.values` | `zIndex` | direct (slot names are MUI's own) |
@@ -1505,7 +1505,7 @@ same rationale documented here.
 | Package | Kind | Why |
 |---|---|---|
 | `react`, `react-dom` | peer (required, ^18 or ^19) | the host owns the React tree; one copy makes `useTranslation` and hooks inside shipped components safe. devDependencies pin the tested React 19 |
-| `@mui/material` | peer (required, ^9) | theme and components; two MUI copies would split the theme context. devDependency 9.4.0 is the tested point |
+| `@mui/material` | peer (required, ^9.5) | theme and components; two MUI copies would split the theme context. devDependency 9.5.0 is the tested point |
 | `@emotion/react`, `@emotion/styled` | peer (required, ^11) | MUI's own runtime requirements -- the emotion context must be shared with the host |
 | `react-hook-form` | peer (required, ^7) | the form family's `FormProvider`/`Controller` identity needs one RHF in the tree, and `FormLayout`'s `UseFormReturn` must be the host's own type. devDependency 7.87.0 is the tested point (the peer range is the ^7 API family) |
 | `zod` | peer (required, ^4) | the host builds the schema `zodFormResolver` consumes, so the schema instance and this package's `ZodType` must be one class -- one zod in the tree, exactly like `react-hook-form`. devDependency 4.6.7 is the tested point |

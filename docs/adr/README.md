@@ -123,6 +123,8 @@
 | [冒充期间由应用壳在应用栏之下显示可隐藏的横幅、应用栏常驻身份指示并提供结束入口，身份变更按会话边界处理依赖身份的状态](adr-web-impersonation-shell-2026-10-18.md) | 2026-10-18 | 已接受 |
 | [宿主可为平台命名空间补整套语言，注册期全覆盖规则不变](adr-web-host-language-sets-2026-10-19.md) | 2026-10-19 | 已接受 |
 | [通行密钥仪式下沉 auth-core，提权对话框由 account-ui 外导给宿主](adr-web-auth-seams-2026-10-19.md) | 2026-10-19 | 已接受 |
+| [界面表面由语义角色 token、主题映射与 SectionCard 原语共同承担](adr-web-surface-system-2026-10-20.md) | 2026-10-20 | 已接受 |
+| [浅色模式保留品牌主色，warning、info 与 success 的 contrastText 改为深色](adr-web-light-contrast-2026-10-20.md) | 2026-10-20 | 已接受 |
 
 ## 认证
 

@@ -456,7 +456,7 @@ for `errors.<code>`. A code nobody carries still resolves to
 | Package | Kind | Why |
 |---|---|---|
 | `react` | peer (required, ^18 or ^19) | the main entry installs `initReactI18next`, so the instance is the react-i18next instance hosts render with; react-i18next imports React at runtime. devDependency for the test suite. |
-| `@mui/material` | peer (optional, ^9) | only `./mui-locale` imports `@mui/material/locale`. Optional-peer means consumers without MUI never install or resolve it; consumers importing the mui-locale subpath must have MUI in their own dependencies. devDependency pins the tested version. |
+| `@mui/material` | peer (optional, ^9.5) | only `./mui-locale` imports `@mui/material/locale`. Optional-peer means consumers without MUI never install or resolve it; consumers importing the mui-locale subpath must have MUI in their own dependencies. devDependency pins the tested version. |
 | `i18next` / `react-i18next` | dependencies | the engine; pinned ranges are the tested compatibility window. |
 
 ## Error index
