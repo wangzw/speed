@@ -12,6 +12,8 @@ export { deepMerge } from './merge.js'
 
 export type { BreakpointKey, BreakpointTokens, BreakpointValues } from './breakpoints.js'
 export type {
+  CanvasGradientTokens,
+  CanvasTokens,
   ColorTokens,
   NeutralScale,
   NeutralTone,

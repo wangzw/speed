@@ -39,6 +39,18 @@ export type NeutralTone =
 /** The neutral ramp, darkest at 950. */
 export type NeutralScale = { readonly [Tone in NeutralTone]: string }
 
+/** One color mode's page canvas gradient stops. */
+export interface CanvasGradientTokens {
+  readonly from: string
+  readonly to: string
+}
+
+/** The page canvas gradient, one stop pair per color mode. */
+export interface CanvasTokens {
+  readonly light: CanvasGradientTokens
+  readonly dark: CanvasGradientTokens
+}
+
 /** The color section of the speed token tree (SpeedTokens["color"]). */
 export interface ColorTokens {
   readonly semantic: SemanticPalette
@@ -51,6 +63,12 @@ export interface ColorTokens {
   readonly background: {
     readonly default: string
     readonly paper: string
+    /**
+     * The page canvas gradient; absent means no gradient behind the page.
+     * Both modes carry their own stops because one pair cannot stay
+     * readable on both a light and a dark page.
+     */
+    readonly canvas?: CanvasTokens
   }
   readonly divider: string
 }

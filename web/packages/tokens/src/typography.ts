@@ -1,6 +1,6 @@
 /**
- * Typography tokens: font stacks, sizes, weights, line heights and letter
- * spacing.
+ * Typography tokens: font stacks, sizes, weights, line heights, letter
+ * spacing and an optional body text glow.
  *
  * The font stacks are Latin-first with CJK-capable fallbacks appended, so a
  * single family token serves both writing systems; a ui-kit theme adapter
@@ -36,6 +36,12 @@ export interface TypographyTokens {
     readonly normal: string
     readonly wide: string
   }
+  /**
+   * A CSS text-shadow value painted on the body text; absent means no
+   * glow. Like `surface.backdropFilter`, it is a design value the theme
+   * adapter maps, not a component override.
+   */
+  readonly textGlow?: string
 }
 
 export const typographyTokens: TypographyTokens = {

@@ -82,7 +82,10 @@ describe('defaultTokens', () => {
     for (const value of Object.values(defaultTokens.color.text)) {
       expect(HEX_COLOR.test(value)).toBe(true)
     }
-    for (const value of Object.values(defaultTokens.color.background)) {
+    for (const value of [
+      defaultTokens.color.background.default,
+      defaultTokens.color.background.paper,
+    ]) {
       expect(HEX_COLOR.test(value)).toBe(true)
     }
     expect(HEX_COLOR.test(defaultTokens.color.divider)).toBe(true)
@@ -222,6 +225,83 @@ describe('defaultTokens', () => {
     deepMerge(defaultTokens, { color: { divider: { main: '#000000' } } })
     // @ts-expect-error surface border widths are numbers, not CSS strings
     deepMerge(defaultTokens, { surface: { container: { borderWidth: '1px' } } })
+  })
+})
+
+describe('defaultTokens optional effect fields', () => {
+  it('leaves fill opacity, text glow and the canvas gradient absent by default', () => {
+    for (const role of Object.values(defaultTokens.surface)) {
+      expect('opacity' in role).toBe(false)
+    }
+    expect('textGlow' in defaultTokens.typography).toBe(false)
+    expect('canvas' in defaultTokens.color.background).toBe(false)
+  })
+
+  it('accepts the optional fields as deep overrides without replacing their sections', () => {
+    const glow = '0 0 6px rgba(74, 222, 128, 0.8)'
+    const merged = deepMerge(defaultTokens, {
+      surface: { overlay: { fill: '#101820', opacity: 0.6 } },
+      typography: { textGlow: glow },
+      color: {
+        background: {
+          canvas: {
+            light: { from: '#F8FAFC', to: '#DBEAFE' },
+            dark: { from: '#020617', to: '#0F172A' },
+          },
+        },
+      },
+    })
+    expect(merged.surface.overlay).toEqual({ fill: '#101820', opacity: 0.6 })
+    expect(merged.typography.textGlow).toBe(glow)
+    expect(merged.color.background.canvas).toEqual({
+      light: { from: '#F8FAFC', to: '#DBEAFE' },
+      dark: { from: '#020617', to: '#0F172A' },
+    })
+    expect(merged.color.background.default).toBe(defaultTokens.color.background.default)
+    expect(merged.surface.container.borderWidth).toBe(1)
+  })
+
+  it('rejects a partial canvas override at compile time', () => {
+    // The canvas is one fixed shape: both modes, both stops. A branch that
+    // recursed into the optional field would accept a missing stop, and the
+    // baseline would then emit `linear-gradient(..., ..., undefined)`, an
+    // invalid declaration the browser drops wholesale -- the page silently
+    // loses its background rather than failing loudly.
+    deepMerge(defaultTokens, {
+      color: {
+        background: {
+          // @ts-expect-error the canvas needs both modes
+          canvas: { light: { from: '#FFFFFF', to: '#FFFFFF' } },
+        },
+      },
+    })
+    deepMerge(defaultTokens, {
+      color: {
+        background: {
+          canvas: {
+            // @ts-expect-error every stop pair needs both ends
+            light: { from: '#FFFFFF' },
+            dark: { from: '#020617', to: '#0F172A' },
+          },
+        },
+      },
+    })
+    deepMerge(defaultTokens, {
+      // @ts-expect-error an absent canvas is valid; a partial one is not
+      color: { background: { canvas: { light: { from: '#FFFFFF' } } } },
+    })
+  })
+
+  it('enforces the optional fields at compile time', () => {
+    deepMerge(defaultTokens, { surface: { page: { opacity: 0.5 } } })
+    // @ts-expect-error opacity is a number, not a CSS string
+    deepMerge(defaultTokens, { surface: { page: { opacity: '0.5' } } })
+    // @ts-expect-error the glow is a CSS text-shadow string
+    deepMerge(defaultTokens, { typography: { textGlow: 1 } })
+    deepMerge(defaultTokens, {
+      // @ts-expect-error canvas stops are color strings
+      color: { background: { canvas: { light: { from: 1 } } } },
+    })
   })
 })
 
