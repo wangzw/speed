@@ -305,7 +305,7 @@ volume's `source` together.
 
 ```
 flyctl apps create vislake-speed-demo
-flyctl volumes create speed_demo_data --app vislake-speed-demo --region hkg --size 1
+flyctl volumes create speed_demo_data --app vislake-speed-demo --region sin --size 1
 flyctl secrets set --app vislake-speed-demo \
   DEMO_OPERATOR_EMAIL=operator@example.com \
   DEMO_OPERATOR_PASSWORD='...' \

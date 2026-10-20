@@ -13,7 +13,7 @@
 # region.
 
 app = "vislake-speed-demo"
-primary_region = "hkg"
+primary_region = "sin"
 
 [build]
   # Relative to this file. The build context is the repository root, which the
