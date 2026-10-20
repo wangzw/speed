@@ -239,10 +239,14 @@ func TestTheStartupRefusesThePlatformDomainTaken(t *testing.T) {
 // grant. Its absence here is the fix.
 func TestTheCatalogTranslatesWithoutTheGuardModule(t *testing.T) {
 	declared := authz.Permission("crm.deal.read")
+	const declaredKey = "crm.permission.deal-read"
 	translator := core.Module{
 		Name: "stand-in.translator",
 		Resources: []any{
-			authz.PermissionSpec{Permissions: []authz.Permission{declared}},
+			authz.PermissionSpec{
+				Permissions:     []authz.Permission{declared},
+				DescriptionKeys: map[authz.Permission]string{declared: declaredKey},
+			},
 			authz.TranslationSpec{Rows: map[authz.Permission]authz.Translation{
 				declared: {Object: "deal", Action: "read"},
 			}},
@@ -286,6 +290,16 @@ func TestTheCatalogTranslatesWithoutTheGuardModule(t *testing.T) {
 					t.Errorf("the catalog translates %q to (%q, %q, %t) with no guard module and no entry point, "+
 						"want (%q, %q, true)", tc.permission, object, action, ok, tc.object, tc.action)
 				}
+			}
+			// The key a declaring module gave a permission reaches a caller
+			// through the interface, not only through the concrete catalog: the
+			// management surface renders a description from it.
+			if key, ok := catalog.DescriptionKey(declared); !ok || key != declaredKey {
+				t.Errorf("DescriptionKey(%q) = (%q, %t) through the catalog interface, want (%q, true)",
+					declared, key, ok, declaredKey)
+			}
+			if key, ok := catalog.DescriptionKey("crm.undeclared"); ok || key != "" {
+				t.Errorf("DescriptionKey of an undeclared permission = (%q, %t), want (\"\", false)", key, ok)
 			}
 			return nil
 		},

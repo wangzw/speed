@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -223,4 +224,87 @@ func TestConcurrentReadsSeeOneWholeSnapshot(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+// heldFixture seeds a policy in which acc1 holds two roles in acme, both
+// granting account read and one granting role read, and acc2 holds one role in
+// globex.
+func heldFixture(t *testing.T) *gorm.DB {
+	t.Helper()
+	handle := openHandle(t)
+	statements := []string{
+		`INSERT INTO authz_grants (tenant_id, role, resource, action, created_at) VALUES
+			('acme', 'roleA', 'account', 'read', '2020-01-01T00:00:00Z'),
+			('acme', 'roleA', 'role', 'read', '2020-01-01T00:00:00Z'),
+			('acme', 'roleB', 'account', 'read', '2020-01-01T00:00:00Z'),
+			('globex', 'roleG', 'settings', 'write', '2020-01-01T00:00:00Z')`,
+		`INSERT INTO authz_bindings (tenant_id, account_id, role, granted_at) VALUES
+			('acme', 'acc1', 'roleA', '2020-01-01T00:00:00Z'),
+			('acme', 'acc1', 'roleB', '2020-01-01T00:00:00Z'),
+			('globex', 'acc2', 'roleG', '2020-01-01T00:00:00Z')`,
+	}
+	for _, statement := range statements {
+		if err := handle.Exec(statement).Error; err != nil {
+			t.Fatalf("seeding a held fixture: %v", err)
+		}
+	}
+	return handle
+}
+
+// Held answers the union over a subject's roles in one domain, keeps a pair two
+// roles share once, answers an unbound subject with nothing and leaves another
+// tenant's grant out.
+func TestHeldAnswersTheUnionInOneDomain(t *testing.T) {
+	snapshot, err := Load(t.Context(), heldFixture(t), authz.ModelText)
+	if err != nil {
+		t.Fatalf("loading the policy: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		subject string
+		domain  authz.Domain
+		want    [][2]string
+	}{
+		{
+			name:    "two roles are one union and a shared pair appears once",
+			subject: "acc1",
+			domain:  "acme",
+			want:    [][2]string{{"account", "read"}, {"role", "read"}},
+		},
+		{
+			name:    "a subject with no binding holds nothing",
+			subject: "acc3",
+			domain:  "acme",
+			want:    [][2]string{},
+		},
+		{
+			name:    "a binding in one tenant grants nothing in another",
+			subject: "acc2",
+			domain:  "acme",
+			want:    [][2]string{},
+		},
+		{
+			name:    "another tenant's grant is excluded from this tenant",
+			subject: "acc1",
+			domain:  "globex",
+			want:    [][2]string{},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := snapshot.Held(c.domain, c.subject)
+			if err != nil {
+				t.Fatalf("Held(%s, %s): %v", c.domain, c.subject, err)
+			}
+			if len(got) != len(c.want) {
+				t.Fatalf("Held(%s, %s) = %v, want %v", c.domain, c.subject, got, c.want)
+			}
+			for _, pair := range c.want {
+				if !slices.Contains(got, pair) {
+					t.Errorf("Held(%s, %s) = %v, missing %v", c.domain, c.subject, got, pair)
+				}
+			}
+		})
+	}
 }

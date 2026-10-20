@@ -6,15 +6,17 @@ imports; `pkg/authz/policy` — the module that owns the policy tables and their
 migrations, the thin store the engine reads and writes through, the permission
 catalog, the engine snapshot the decisions read, the manager that reads and
 writes the policy data, and the account lifecycle cleanup — `pkg/authz/guard`,
-the module that implements the authentication capability's decision seam, and
+the module that implements the authentication capability's decision seam,
+`pkg/authz/self`, the module that answers the caller's own permissions, and
 `pkg/authz/authztest`, the fixtures a test of this directory drives. The thin
 adapter the engine stores its policy through, the snapshot holder, and the one
 permission translation live under `pkg/authz/internal/`, which only this
 directory can import.
 
 The management surface's routes are this directory's third module,
-`authz.admin`: it mounts them under `/api/v1/system/*`, delivers nothing of its
-own, and is not built here yet.
+`authz.admin`: it mounts them under `/api/v1/system/*` and delivers nothing of
+its own. `authz.self` mounts the caller's permission read under
+`/api/v1/authz/me/permissions` and delivers nothing of its own either.
 
 The API is the package's godoc. Read the capability interfaces' comments
 before writing a consumer.
@@ -28,10 +30,12 @@ before writing a consumer.
   available set of every binary that touches any of them and occupy a module
   name.
 - **`pkg/authz/policy` registers `authz.policy`; `pkg/authz/guard` registers
-  `authz.guard`.** Each registering package exports its own `ModuleName`, and
-  that same value is its configuration and settings namespace; every segment of
-  the name is a lower-case letter, a digit or a dash. Each of the two carries
-  its own `AGENTS.md` beside it, stating that package's boundaries.
+  `authz.guard`; `pkg/authz/admin` registers `authz.admin`; `pkg/authz/self`
+  registers `authz.self`.** Each registering package exports its own
+  `ModuleName`, and that same value is its configuration and settings namespace;
+  every segment of the name is a lower-case letter, a digit or a dash. Each of
+  them carries its own `AGENTS.md` beside it, stating that package's
+  boundaries.
 - **`pkg/authz/internal/persist`, `pkg/authz/internal/policy` and
   `pkg/authz/authztest` register no module.** The two `internal` packages are
   the directory's library units and `authztest` is a test fixture.
@@ -42,7 +46,9 @@ before writing a consumer.
   item `authz.policy.load-timeout` and the setting
   `authz.policy.refresh-interval`. The enforcement module's namespace is
   `authz.guard`; it declares no input item yet, and the endpoint list and the
-  undeclared-route default arrive with its middleware.
+  undeclared-route default arrive with its middleware. `authz.self` declares the
+  input item `authz.self.endpoints`, the endpoints the permission read is mounted
+  on.
 
 ## Boundaries
 

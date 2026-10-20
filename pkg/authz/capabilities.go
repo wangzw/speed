@@ -16,6 +16,31 @@ type Enforcer interface {
 	Allowed(ctx context.Context, q Query) (bool, error)
 }
 
+// SubjectPermissions reads the permissions a subject effectively holds in one
+// policy domain. It is delivered exclusively by the policy subpackage, beside
+// the enforcement engine, and it reads the same in-memory policy snapshot, so a
+// read does no IO.
+//
+// It exists because a decision answers one query at a time: a host that has to
+// show a caller what it may do, rather than ask whether it may do one thing,
+// cannot derive the answer from the enforcement engine without enumerating a
+// catalog and asking one query per permission — and a permission's (object,
+// action) pair is not enough to tell a grant from a translation the process does
+// not carry.
+type SubjectPermissions interface {
+	// Held returns the permission names the subject effectively holds in
+	// domain: the union over the roles it is bound to there, mapped through the
+	// catalog's translation. A (object, action) pair no declared permission
+	// translates to is left out, and a permission reached through several roles
+	// appears once. The result is sorted by permission name, and an empty result
+	// is an empty slice, not nil.
+	//
+	// A non-nil error means the policy snapshot or its store is unavailable:
+	// the caller must treat it as a 503 and never as an empty permission set,
+	// the same rule Enforcer states for a decision it could not make.
+	Held(ctx context.Context, domain Domain, subject string) ([]Permission, error)
+}
+
 // Catalog is the set of permissions this capability declares, and what each of
 // them translates to. It is delivered exclusively by the policy subpackage and
 // read by whatever enumerates the permissions, such as a management surface's
@@ -44,6 +69,17 @@ type Catalog interface {
 	// does. A caller that writes policy data in a permission's name therefore
 	// reads the second result: one that is false means there is no pair to write.
 	ObjectAction(p Permission) (object, action string, ok bool)
+	// DescriptionKey returns the i18n key of the description the declaring
+	// module gave p, and whether p is declared at all. A declared permission may
+	// carry no key: a module that listed it in PermissionSpec.Permissions and
+	// left it out of DescriptionKeys is legal, and the second result is then true
+	// with an empty key, which a reader shows as no description. A permission no
+	// module declared answers ("", false).
+	//
+	// The catalog hands out the key, not the text: rendering it is the i18n
+	// engine's, and the descriptor a renderer needs is the one the management
+	// surface holds as an optional capability.
+	DescriptionKey(p Permission) (key string, ok bool)
 }
 
 // Gate is the route declaration surface: it records the permission one

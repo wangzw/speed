@@ -4,16 +4,22 @@ The authorization policy module `authz.policy`. It owns the policy tables and
 their migrations, the thin store the engine reads and writes through, the
 Casbin engine snapshot the decisions read, the permission catalog with the
 translation beside it, the management surface over the policy data, and the
-account lifecycle cleanup. It delivers `authz.Enforcer`, `authz.Catalog`,
-`authz.Manager` and `authz.Seeder`, each exclusively, and implements
-`authn.AccountLifecycle`.
+account lifecycle cleanup. It delivers `authz.Enforcer`,
+`authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager` and
+`authz.Seeder`, each exclusively, and implements `authn.AccountLifecycle`.
+`SubjectPermissions.Held` reads the same snapshot a decision reads and maps each
+held (object, action) pair back through the catalog's reverse lookup; a pair no
+declared permission translates to is left out of the answer.
 
 Resolving the process's permission translation belongs here as much as the
 catalog does: the two are built over the same registered modules, and a host
 command that writes policy data in a permission's name — a bootstrap that seeds
 a role — takes this module in and reads the (object, action) pair a permission
 translates to through `authz.Catalog.ObjectAction`, without the enforcement
-module and without the HTTP entry point that module requires.
+module and without the HTTP entry point that module requires. The description key
+each module gave a permission is kept beside the catalog and read through
+`authz.Catalog.DescriptionKey`; this module hands out the key, and rendering it
+is the i18n engine's.
 
 The Casbin engine and the database it reads live here and nowhere else, so a
 host that only guards routes carries no policy store. The thin adapter and the
@@ -128,9 +134,9 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   optional: a policy module with no roster checks no platform-domain conflict,
   one with no bus relies on the refresh interval, one with no settings carries
   no refresh, and one with no logger writes through the process default. The
-  database is the one hard dependency; the engine, the catalog and the manager
-  are delivered exclusively, so a second provider of any of them fails the
-  startup.
+  database is the one hard dependency; the engine, the subject-permission read,
+  the catalog and the manager are delivered exclusively, so a second provider of
+  any of them fails the startup.
 - **A secret, a credential and a policy value reach no log line and no error
   text.** An account key and a tenant may be logged; a grant's rules and a
   binding's role reach no log. A refusal names the row that failed and never

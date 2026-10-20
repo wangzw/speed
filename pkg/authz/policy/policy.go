@@ -3,9 +3,9 @@
 // permission catalog, the policy snapshot the enforcement path reads, the
 // management surface over the policy data, and the account lifecycle cleanup.
 //
-// It delivers the enforcement engine, the catalog and the manager, each
-// exclusively, and implements the authentication capability's account lifecycle
-// hook. The Casbin engine and the database it reads live here and nowhere else,
+// It delivers the enforcement engine, the subject-permission read, the catalog
+// and the manager, each exclusively, and implements the authentication
+// capability's account lifecycle hook. The Casbin engine and the database it reads live here and nowhere else,
 // so a host that only guards routes carries no policy store.
 package policy
 
@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -69,11 +70,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// It delivers the engine, the catalog, the manager and the seeding surface,
-// each exclusively: two engines would be two snapshots a decision could land in
-// with nothing to choose between them, two catalogs two answers to whether a
-// permission is declared, and two managers or two seeders two writers of one
-// table. A second provider of any of them fails the startup.
+// It delivers the engine, the subject-permission read, the catalog, the manager
+// and the seeding surface, each exclusively: two engines would be two snapshots
+// a decision could land in with nothing to choose between them, two
+// subject-permission reads two answers to what one subject holds, two catalogs
+// two answers to whether a permission is declared, and two managers or two
+// seeders two writers of one table. A second provider of any of them fails the
+// startup.
 //
 // The database is the one hard dependency: the policy lives in its own tables
 // and there is no engine without it. The roster, the bus, the settings store and
@@ -90,6 +93,7 @@ func Module() core.Module {
 		},
 		Provides: []core.Provision{
 			{Token: (*authz.Enforcer)(nil), Exclusive: true},
+			{Token: (*authz.SubjectPermissions)(nil), Exclusive: true},
 			{Token: (*authz.Catalog)(nil), Exclusive: true},
 			{Token: (*authz.Manager)(nil), Exclusive: true},
 			{Token: (*authz.Seeder)(nil), Exclusive: true},
@@ -171,11 +175,12 @@ func Module() core.Module {
 }
 
 var (
-	_ authz.Enforcer         = (*product)(nil)
-	_ authz.Catalog          = (*product)(nil)
-	_ authz.Manager          = (*product)(nil)
-	_ authz.Seeder           = (*product)(nil)
-	_ authn.AccountLifecycle = (*product)(nil)
+	_ authz.Enforcer           = (*product)(nil)
+	_ authz.SubjectPermissions = (*product)(nil)
+	_ authz.Catalog            = (*product)(nil)
+	_ authz.Manager            = (*product)(nil)
+	_ authz.Seeder             = (*product)(nil)
+	_ authn.AccountLifecycle   = (*product)(nil)
 )
 
 // product is this module's product and the implementation of the enforcement
@@ -230,6 +235,9 @@ func (p *product) wire(reg *core.Registry) error {
 	if err := translation.Resolve(reg); err != nil {
 		return err
 	}
+	// The reverse map is built from the process's translation, so it is
+	// rebuilt once that set holds every module's declared rows.
+	p.catalog.indexReverse()
 	if delivered, found, err := optional[log.Logger](reg, "the logger"); err != nil {
 		return err
 	} else if found {
@@ -317,6 +325,40 @@ func (p *product) Allowed(ctx context.Context, q authz.Query) (bool, error) {
 	return snapshot.Allowed(q)
 }
 
+// Held implements authz.SubjectPermissions. It reads the current snapshot the
+// same way Allowed does, maps each held (object, action) pair back through the
+// catalog, and answers the permission names once each, sorted. A pair no
+// declared permission translates to is left out; a snapshot that has not been
+// loaded and an engine failure are both unavailable rather than an empty set.
+func (p *product) Held(ctx context.Context, domain authz.Domain, subject string) ([]authz.Permission, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	snapshot := p.holder.Get()
+	if snapshot == nil {
+		return nil, fmt.Errorf("%w: the policy snapshot has not been loaded", authz.ErrPolicyUnavailable)
+	}
+	pairs, err := snapshot.Held(domain, subject)
+	if err != nil {
+		return nil, fmt.Errorf("%w: reading the subject's permissions: %w", authz.ErrPolicyUnavailable, err)
+	}
+	held := make([]authz.Permission, 0, len(pairs))
+	seen := make(map[authz.Permission]struct{}, len(pairs))
+	for _, pair := range pairs {
+		perm, ok := p.catalog.permissionOf(pair[0], pair[1])
+		if !ok {
+			continue
+		}
+		if _, duplicate := seen[perm]; duplicate {
+			continue
+		}
+		seen[perm] = struct{}{}
+		held = append(held, perm)
+	}
+	slices.Sort(held)
+	return held, nil
+}
+
 // Declared implements authz.Catalog.
 func (p *product) Declared() []authz.Permission { return p.catalog.Declared() }
 
@@ -326,6 +368,11 @@ func (p *product) Has(perm authz.Permission) bool { return p.catalog.Has(perm) }
 // ObjectAction answers the (object, action) pair a permission translates to.
 func (p *product) ObjectAction(perm authz.Permission) (object, action string, ok bool) {
 	return p.catalog.ObjectAction(perm)
+}
+
+// DescriptionKey implements authz.Catalog.
+func (p *product) DescriptionKey(perm authz.Permission) (key string, ok bool) {
+	return p.catalog.DescriptionKey(perm)
 }
 
 // swap reads the whole policy and installs it as the current snapshot. It is

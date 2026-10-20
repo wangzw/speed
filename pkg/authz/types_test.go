@@ -134,6 +134,7 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			interfaceMethods(t, (*Catalog)(nil)),
 			[]string{
 				"Declared func() []authz.Permission",
+				"DescriptionKey func(authz.Permission) (string, bool)",
 				"Has func(authz.Permission) bool",
 				"ObjectAction func(authz.Permission) (string, string, bool)",
 			},
@@ -169,6 +170,13 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			interfaceMethods(t, (*Seeder)(nil)),
 			[]string{
 				"SeedGrants func(context.Context, string, authz.Role, []authz.Grant) (int, error)",
+			},
+		},
+		{
+			"SubjectPermissions",
+			interfaceMethods(t, (*SubjectPermissions)(nil)),
+			[]string{
+				"Held func(context.Context, authz.Domain, string) ([]authz.Permission, error)",
 			},
 		},
 	}

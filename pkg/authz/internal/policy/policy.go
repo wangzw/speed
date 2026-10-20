@@ -58,6 +58,39 @@ func (s *Snapshot) Allowed(q authz.Query) (bool, error) {
 	return allowed, nil
 }
 
+// Held returns every (object, action) pair the subject holds in domain: the
+// union over the roles it is bound to there, read through the engine's implicit
+// permissions and with a pair reached through several roles kept once.
+//
+// The model's policy is (subject, domain, object, action), so a rule the engine
+// returns carries the object at index 2 and the action at index 3; the domain is
+// the one asked about, because the engine filters the rules to it. A subject
+// with no binding in the domain holds nothing and gets an empty result. The
+// result is a copy, so a caller sorting or trimming it does not disturb the
+// snapshot.
+//
+// A non-nil error is the engine failing, and not an empty permission set.
+func (s *Snapshot) Held(domain authz.Domain, subject string) ([][2]string, error) {
+	rules, err := s.enforcer.GetImplicitPermissionsForUser(subject, string(domain))
+	if err != nil {
+		return nil, fmt.Errorf("authz/policy: reading the subject's permissions: %w", err)
+	}
+	pairs := make([][2]string, 0, len(rules))
+	seen := make(map[[2]string]struct{}, len(rules))
+	for _, rule := range rules {
+		if len(rule) < 4 {
+			continue
+		}
+		pair := [2]string{rule[2], rule[3]}
+		if _, duplicate := seen[pair]; duplicate {
+			continue
+		}
+		seen[pair] = struct{}{}
+		pairs = append(pairs, pair)
+	}
+	return pairs, nil
+}
+
 // Holder holds the current snapshot behind an atomic pointer.
 //
 // The replacement happens on whichever goroutine triggered a reload — a

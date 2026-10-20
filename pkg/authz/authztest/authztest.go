@@ -150,6 +150,13 @@ func (c *Catalog) ObjectAction(p authz.Permission) (object, action string, ok bo
 	return translation.Lookup(p)
 }
 
+// DescriptionKey implements authz.Catalog. The stand-in carries no description
+// keys of its own: a case that wants one declares the PermissionSpec that holds
+// it and builds the real catalog, the way an assembly does.
+func (c *Catalog) DescriptionKey(p authz.Permission) (key string, ok bool) {
+	return "", c.set[p]
+}
+
 // routeKey is one (method, path) declaration's key.
 type routeKey struct{ method, path string }
 
