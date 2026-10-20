@@ -10,8 +10,8 @@
  * Every user-facing string any account-ui component renders by itself
  * lives here, in zh-CN and en-US with identical leaf key sets
  * (registration enforces that): the errors section, the code-level text
- * the error resolver and InlineError render; the preferences, sessions
- * and bindings surface keys; the bindingCallback keys; the mfa surface
+ * the error resolver and InlineError render; the appearance, preferences,
+ * sessions and bindings surface keys; the bindingCallback keys; the mfa surface
  * keys (the factor list, the enrollment wizard and the step-up dialog);
  * and the flowStep keys the shared step renderer reads. The
  * two language files are imported with the JSON import attribute so the

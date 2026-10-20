@@ -24,6 +24,7 @@ generated read or write on the shared access token.
 | `src/PhoneSection.tsx` | `PhoneSection`, `PhoneSectionProps` |
 | `src/IdentifiersSection.tsx` | `IdentifiersSection`, `IdentifiersSectionProps` |
 | `src/PreferencesSection.tsx` | `PreferencesSection`, `PreferencesSectionProps` |
+| `src/AppearanceSection.tsx` | `AppearanceSection`, `AppearanceSectionProps`, `ThemePresetChoice` |
 | `src/SessionsSection.tsx` | `SessionsSection` |
 | `src/SocialBindingsSection.tsx` | `SocialBindingsSection`, `SocialBindingsSectionProps` |
 | `src/BindingCallbackHandler.tsx` | `BindingCallbackHandler`, `BindingCallbackHandlerProps` |
@@ -56,6 +57,7 @@ import {
   PhoneSection,
   IdentifiersSection,
   PreferencesSection,
+  AppearanceSection,
   SessionsSection,
   SocialBindingsSection,
   BindingCallbackHandler,
@@ -238,6 +240,28 @@ sign in again.
 ```tsx
 interface PreferencesSectionProps {
   readonly session?: AuthSession
+}
+```
+
+## AppearanceSection
+
+The theme-preset picker. It is fully controlled: the host owns the shelf
+(each entry's stable id plus an already-translated label), the current id
+and the switch action. The section neither imports `@speed/theme-presets`
+nor reads a theme provider, so it renders the same whether the host's
+presets come from the shipped package or from the application's own
+tokens.
+
+```tsx
+interface ThemePresetChoice {
+  readonly id: string
+  readonly label: string
+}
+
+interface AppearanceSectionProps {
+  readonly presets: readonly ThemePresetChoice[]
+  readonly value: string
+  readonly onChange: (id: string) => void
 }
 ```
 

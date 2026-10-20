@@ -168,6 +168,13 @@
     "passkeyCancelled": "通行密钥提示已取消，请重试。",
     "passkeyFailed": "通行密钥仪式未能完成。"
   },
+  "appearance": {
+    "title": "外观",
+    "description": "选择界面的视觉主题。",
+    "theme": {
+      "label": "主题"
+    }
+  },
   "preferences": {
     "title": "偏好设置",
     "loading": "正在加载偏好设置",

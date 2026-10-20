@@ -168,6 +168,13 @@
     "passkeyCancelled": "The passkey prompt was dismissed. Try again.",
     "passkeyFailed": "The passkey ceremony did not complete."
   },
+  "appearance": {
+    "title": "Appearance",
+    "description": "Choose the visual theme for the interface.",
+    "theme": {
+      "label": "Theme"
+    }
+  },
   "preferences": {
     "title": "Preferences",
     "loading": "Loading preferences",

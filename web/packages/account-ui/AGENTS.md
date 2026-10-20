@@ -10,7 +10,9 @@ identifiers, its add face's `POST /api/v1/auth/identifiers` and
 `/api/v1/auth/identifiers/verify`, and `DELETE /api/v1/auth/identifiers/{id}`),
 `PreferencesSection`
 (the language-and-timezone selects over the profile's own `PATCH
-/api/v1/auth/me`), `SessionsSection` (the live-sessions list with per-session
+/api/v1/auth/me`), `AppearanceSection` (the controlled theme-preset
+picker: the host supplies the shelf and the labels, the section reports
+the pick and reads no theme provider), `SessionsSection` (the live-sessions list with per-session
 and bulk revocation), `SocialBindingsSection` plus
 `BindingCallbackHandler` (the social bindings surface and the callback
 route that completes a link flow), and `MfaSection` (the two-step

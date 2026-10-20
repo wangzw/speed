@@ -8,7 +8,9 @@
  * surface (the two-step POST /api/v1/auth/phone and /api/v1/auth/phone/verify), the
  * sign-in-identifiers surface (the profile's own identifiers and
  * DELETE /api/v1/auth/identifiers/{id}), the preferences surface (language and
- * time zone over the profile's own PATCH /api/v1/auth/me), the session list
+ * time zone over the profile's own PATCH /api/v1/auth/me), the appearance
+ * surface (a controlled theme-preset choice whose presets and labels the
+ * host supplies), the session list
  * (with per-session and bulk revocation), the social-binding surface and
  * its callback handler, and the step-up-gated two-step-verification setup
  * -- each rendering every built-in string from the bilingual account-ui
@@ -50,6 +52,11 @@ export {
   IdentifiersSection,
   type IdentifiersSectionProps,
 } from './IdentifiersSection.js'
+export {
+  AppearanceSection,
+  type AppearanceSectionProps,
+  type ThemePresetChoice,
+} from './AppearanceSection.js'
 export {
   PreferencesSection,
   type PreferencesSectionProps,
