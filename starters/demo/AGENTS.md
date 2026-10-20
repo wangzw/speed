@@ -115,7 +115,10 @@ to start from, and the token module itself neither generates nor rotates a key.
 
 ### Replace before serving real traffic
 
-The configuration under `server/testdata/` ships development values so a copy
+`server/defaults.yaml` holds the platform topology and nothing else: it carries
+no credential and no value that differs between deployments, so a copy deploys
+it unchanged. The configuration files under `server/testdata/` are override
+documents over it, and they ship the development values a copy replaces so it
 starts as it stands. Every one of them is marked `DEV` in the file it appears
 in; replace them all before a deployment serves real traffic:
 
@@ -140,11 +143,12 @@ in; replace them all before a deployment serves real traffic:
 | Path | What it is |
 |---|---|
 | `Makefile` | The product's own build entry point: `make help` lists it, `make check` runs it. What a copy uses; inside the repository the root Makefile is the entry point |
-| `server/main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, and `run()` |
-| `server/host.go` | The environment prefix, the host's own module (the `config.HostIdentity` resource), and the endpoint constants |
+| `server/main.go` | The command tree, the deployment-stack table, the baseline inclusion lists, the `gen` command, the placeholder command group, the embedded defaults document, and `run()` |
+| `server/host.go` | The environment prefix, the host's own module (the `config.HostIdentity` and defaults-document resources), and the endpoint constants |
+| `server/defaults.yaml` | The platform topology compiled into the binary, layered below every configuration file |
 | `server/signingkey.go` | The token signing key's path, and the first-run generation that puts a key there |
 | `server/modules/` | The slot for this product's business modules |
-| `server/testdata/` | One configuration per deployment stack |
+| `server/testdata/` | One override document per deployment stack: the deltas from `server/defaults.yaml` |
 | `server/dist/` | The frontend build output, embedded by the Go program |
 | `web/` | The frontend application's source and build; it writes into `server/dist` |
 | `compose.yaml` | The four external backends the non-memory stacks run on |
@@ -296,7 +300,8 @@ which class of traffic belongs where:
 
 The dispatch selects an endpoint by the path prefixes the configuration gives
 it under `http.endpoints.<name>.prefixes`; the registered routes take no part in
-the choice. `server/testdata/` declares the table:
+the choice. `server/defaults.yaml`, compiled into the binary, declares the
+table:
 
 | Endpoint | Claims |
 |---|---|
@@ -318,15 +323,54 @@ would receive that endpoint's answer instead of the entry document.
 
 Two tests hold the table. `server/claims_test.go` holds every operation of the
 served `/openapi.json` and of the committed `contracts/api.json` to it, so an
-operation whose namespace lost its claim is reported. `server/differential_test.go`
-removes routing modules from `baselineServe` one group at a time and compares
-every anonymous answer of the variant with the baseline's — byte for byte apart
-from `Date` — on both deployment topologies.
+operation whose namespace lost its claim is reported; it reads the table through
+the same loader the binary uses, so it checks the effective configuration —
+defaults document and file together — rather than a file's own copy.
+`server/differential_test.go` removes routing modules from `baselineServe` one
+group at a time and compares every anonymous answer of the variant with the
+baseline's — byte for byte apart from `Date` — on both deployment topologies.
 
-The five endpoints hang on two listeners, which the configuration under
-`server/testdata/` declares: `api`, `account`, `admin` and `web` share the
-`backend` listener, and `ops` has its own. A listener is one socket, so the
-frontend bundle and the API are same-origin and a browser reaches the API from
+### The defaults document and the override documents
+
+`server/defaults.yaml` is the platform topology: the endpoint table, the endpoint
+each capability mounts on, and the request list the journal records. It is
+embedded with `go:embed` and registered on the host module, so the loader layers
+it below the configuration file a run is pointed at and above each module's
+prototype defaults. What belongs in it is what every deployment of this binary
+shares; a credential, an address, an origin, a path on disk or a seed is a
+deployment value and lives in the configuration file.
+
+The configurations under `server/testdata/` (and `server/review/sqlite.yaml`)
+are therefore override documents: each carries the deltas from `defaults.yaml`,
+the values their deployment chooses, and the backend section at the bottom — not
+a second copy of the whole platform table. A copy of this skeleton changes the
+delta, not the table.
+
+One rule limits how far a file can shrink: a **required** input item is not
+satisfied by the defaults document. The document supplies a default, and a
+default is not somebody having given a value, so the loader reports a required
+item it finds only there as missing. The required keys — `webui.endpoint`,
+`feature.board.endpoint`, `tenant.resolve.endpoints`, `tenant.resolve.extractor`,
+`tenant.admission.endpoints`, `objectstore.fs.root`, and the `tenant.admin`,
+`authz.guard`, `authz.admin`, `authz.self`, `audit.admin` and `settings.admin`
+endpoint lists
+— are repeated in every configuration file, and so is `http.cors.endpoints`:
+the CORS module refuses an empty table when it resolves, rather than marking the
+item required in its declaration, and each policy it is given needs at least one
+allow-origin because the library refuses one that disables every origin.
+`http.endpoints`, the journal's
+captured endpoints and request list, the notification mounts,
+`objectstore.metadata.endpoints`, the rate limiter and the gateway's own guard
+list are not, because nothing requires them to be stated. A key in the document
+is overridden by the same key in the file, and a container leaf such as
+`http.endpoints` is replaced whole rather than merged:
+the split topology the differential case exercises writes the full table to move
+`web` onto a listener of its own.
+
+The five endpoints hang on two listeners, which each configuration file
+declares: `api`, `account`, `admin` and `web` share the `backend` listener, and
+`ops` has its own. A listener is one socket, so the frontend bundle and the API
+are same-origin and a browser reaches the API from
 the page without CORS. The `http.cors` policy the sample carries is therefore
 inert in this stack; it is kept as the starting point for a deployment that
 serves the frontend from an origin of its own.
@@ -341,8 +385,9 @@ reaches the api endpoint, not the bundle: with no credentials the gateway
 refuses it 401, and once admitted the api endpoint answers its own 404 (or its
 405 where the path exists but the method is not allowed).
 
-The baseline now ships the guards each endpoint carries, and the configuration
-under `server/testdata/` names them:
+The baseline now ships the guards each endpoint carries; `server/defaults.yaml`
+names the fixed part of that wiring, and each configuration file states the
+required lists again:
 
 - The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its own
   routes — login, session, registration, profile, the account-management routes,
@@ -362,7 +407,8 @@ under `server/testdata/` names them:
 - Tenant resolution (`tenant.resolve`) and admission (`tenant.admission`) guard
   `api`; the authorization guard (`authz.guard`) enforces `api`; the rate limiter
   (`ratelimit`) limits `api`. Resolution reads the tenant from the request's
-  `X-Tenant` header (`tenant.resolve.header-name` in the stack file), so an `api`
+  `X-Tenant` header (the header extractor `tenant.resolve.extractor` names; the
+  header name itself is the module's own default), so an `api`
   call without that header is refused 404 -- the tenant is not a claim of the
   access token, it is a request-time routing fact the caller must announce. The
   frontend does exactly that: the client built in `bootstrapSpeedApp` announces
@@ -376,7 +422,8 @@ under `server/testdata/` names them:
   and in the request's tenant, and the frontend attaches both sets to the
   session from that answer.
 - The feature document (`feature.board`) mounts `GET /api/v1/features` on the endpoint
-  `feature.board.endpoint` names — `account` in every `testdata/` file, which
+  `feature.board.endpoint` names — `account` in `defaults.yaml` and in every
+  configuration file, which
   the gateway guards, which resolves no tenant, and whose listener claims
   `/api/v1/features`. It publishes only to authenticated callers: a process with no
   authentication gateway fails to start rather than expose the document, and an

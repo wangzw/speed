@@ -197,7 +197,7 @@ beside the bundle:
 The app reaches every backend call at a single origin -- the client base URL,
 same-origin by default or the `runtime-config.json` origin -- but the demo's Go
 program mounts the API, account and admin surfaces on separate ports
-(`http.endpoints` in `testdata/sqlite.yaml`). The one origin the app talks to is
+(`http.endpoints` in `server/defaults.yaml`). The one origin the app talks to is
 therefore a **gateway** that routes each claimed namespace to the endpoint it
 belongs to (`backend-prefixes.json` lists them):
 
@@ -216,7 +216,8 @@ API endpoints -- and set `runtime-config.json`'s `apiOrigin` to that origin.
 ### The tenant on the wire
 
 The backend's `api` endpoint is tenant-scoped: `tenant.resolve` reads the tenant
-from the request's `X-Tenant` header (`server/testdata/*.yaml`) and looks the
+from the request's `X-Tenant` header (the header extractor the platform defaults
+select, whose header name is the module's own default) and looks the
 name up in the roster's **alias** column, so an `api` call that announces no
 tenant -- or a name the roster no longer holds -- is refused 404. The tenant is a
 request-time routing fact, not a claim of the access token (the token carries

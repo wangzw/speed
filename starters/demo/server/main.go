@@ -383,6 +383,22 @@ var (
 	}
 )
 
+//go:embed defaults.yaml
+var platformDefaultsYAML []byte
+
+// platformDefaults delivers the platform defaults document compiled into this
+// binary. The document is the host's own artifact — it describes this
+// assembly's topology — so it lives here rather than in pkg/config, which only
+// knows the layer it feeds. It is layered below the configuration file a run is
+// pointed at and above each module's prototype defaults; see defaults.yaml and
+// AGENTS.md for what belongs in it.
+type platformDefaults struct{}
+
+var _ config.Defaults = platformDefaults{}
+
+func (platformDefaults) Format() string { return "yaml" }
+func (platformDefaults) Data() []byte   { return platformDefaultsYAML }
+
 //go:embed dist
 var webBundle embed.FS
 

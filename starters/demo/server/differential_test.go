@@ -817,7 +817,31 @@ type topology struct {
 	split bool
 }
 
-// render writes the topology's configuration with the given ports.
+// splitEndpoints is the split topology's endpoint table. It is written whole
+// because http.endpoints is a container leaf: a file that gives the key
+// replaces the platform defaults document's whole table rather than merging
+// into it, so a partial table would drop the endpoints it left out.
+const splitEndpoints = `  endpoints:
+    api:
+      listener: backend
+      prefixes: ["/api"]
+    account:
+      listener: backend
+      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace", "/api/v1/tenants", "/api/v1/system/auth"]
+    admin:
+      listener: backend
+      prefixes: ["/api/v1/system/audit", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
+    ops:
+      listener: ops
+    web:
+      listener: frontend
+      prefixes: ["/"]
+`
+
+// render writes the topology's configuration with the given ports. The merged
+// topology takes the endpoint table from the platform defaults document; the
+// split one overrides the whole table to move the web endpoint onto a listener
+// of its own.
 func (topo topology) render(t *testing.T, ports []int) string {
 	t.Helper()
 	body := configBody(t, ports[:listenerCount], ":memory:")
@@ -827,8 +851,9 @@ func (topo topology) render(t *testing.T, ports []int) string {
 	listener := fmt.Sprintf("    frontend:\n      address: \"127.0.0.1:%d\"\n", ports[2])
 	opsListener := fmt.Sprintf("    ops:\n      address: \"127.0.0.1:%d\"\n", ports[opsListener])
 	body = strings.Replace(body, opsListener, opsListener+listener, 1)
-	body = strings.Replace(body, "    web:\n      listener: backend", "    web:\n      listener: frontend", 1)
-	if !strings.Contains(body, "    frontend:\n") || !strings.Contains(body, "    web:\n      listener: frontend") {
+	body = strings.Replace(body, "  cors:\n", splitEndpoints+"  cors:\n", 1)
+	if !strings.Contains(body, "    frontend:\n") ||
+		!strings.Contains(body, "    web:\n      listener: frontend") {
 		t.Fatalf("the split topology did not take:\n%s", body)
 	}
 	return body

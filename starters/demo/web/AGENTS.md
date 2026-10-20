@@ -59,7 +59,8 @@ program beside this directory embeds with `go:embed` and serves through
   from the no-direct-http rule.
 - **The tenant rides the transport, not the generated calls, and it rides it by
   its alias.** The backend's `api` endpoint resolves the tenant from the
-  `X-Tenant` header (`server/testdata/*.yaml`) and looks the name up in the
+  `X-Tenant` header (the header extractor the platform defaults select, whose
+  header name is the module's own default) and looks the name up in the
   roster's alias column, so the value announced is the current tenant's
   **alias**, never its id. The host keeps the two apart: the switcher keys on the
   tenant id (`getCurrentTenantId` in `src/chrome.tsx`; a switch goes through the

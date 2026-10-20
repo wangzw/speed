@@ -8,8 +8,16 @@
 #   go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory migrate
 #   go -C starters/demo/server run . --config file:testdata/sqlite-memory.yaml sqlite-memory serve
 #
-# The sections above the backend ones are the platform baseline and are the same
-# in all six stack files; only the backend section at the bottom differs.
+# This file is an override document. The platform topology — the endpoint table
+# and every capability's mounting — is compiled into the binary
+# (server/defaults.yaml) and layered below this file, so what is written here is
+# what a deployment chooses: addresses, origins, the export destination, the
+# seed and the backend section at the bottom. Only the backend section differs
+# between the six stack files.
+#
+# The mounting keys repeated below — webui.endpoint above all — are the ones the
+# loader requires somebody to give. A required item is not satisfied by the
+# defaults document, so every configuration states them; a copy edits them here.
 #
 # The values marked DEV in a comment are a development default this skeleton
 # ships so a copy starts as it stands. Replace every one of them before a
@@ -21,28 +29,6 @@ http:
       address: "127.0.0.1:8080"
     ops:
       address: "127.0.0.1:8083"
-  # Each endpoint claims the path prefixes it answers on its listener. The
-  # dispatch selects an endpoint by these claims alone, the longest claim
-  # winning, and a path under no non-root claim goes to the endpoint that
-  # claims "/". The table is the product's fixed namespace map: a capability
-  # dropped from a run, or from the imports, keeps its namespace claimed. See
-  # AGENTS.md.
-  endpoints:
-    api:
-      listener: backend
-      prefixes: ["/api"]
-    account:
-      listener: backend
-      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace", "/api/v1/tenants", "/api/v1/system/auth"]
-    admin:
-      listener: backend
-      prefixes: ["/api/v1/system/audit", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
-    ops:
-      # Alone on its listener, so it claims "/" by default.
-      listener: ops
-    web:
-      listener: backend
-      prefixes: ["/"]
   # The CORS layer guards the api endpoint. This stack serves the frontend
   # bundle from the same listener as the API, so a browser reaching the API from
   # the page needs no CORS headers and this policy is not exercised here. It is
@@ -55,36 +41,29 @@ http:
         allow-origins:
           - "https://app.demo.test"
 
-# The operations surface. Its routes are mounted on the endpoint named here,
-# which has to be one of the endpoints above.
+# The operations surface's document metadata. Its endpoint is part of the
+# platform topology and comes from defaults.yaml.
 ops:
-  endpoint: ops
   title: demo
   version: 0.1.0
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
   servers: ["http://localhost:8080"]
 
-# The frontend bundle's route covers this endpoint's whole path space, and it
-# has to carry no other route.
+# Required: the frontend bundle's endpoint, repeated from defaults.yaml.
 webui:
   endpoint: web
-
-log:
-  level: info
 
 observability:
   otel:
     service-name: demo
 
-# The identity system. The gateway guards the API, account and admin endpoints;
-# the capability's own routes — login, session, registration, profile, the
-# management routes — mount on the account endpoint, which the tenant layers do
-# not cover.
+# The identity system's deployment values: the origin this deployment is
+# reached at, the token signing key, and the relying party the step-up is bound
+# to. The gateway's endpoint list and the account mount are platform topology
+# and come from defaults.yaml.
 authn:
   gate:
-    endpoints: [api, account, admin]
     mount:
-      endpoint: account
       # The origin this deployment is reached at from outside: the origin a
       # browser signs in from, and the one the WebAuthn relying party is bound
       # to. It is the address the backend listener serves (http.listeners),
@@ -97,7 +76,6 @@ authn:
   # deployment serves real traffic. The issuer and audience default to the
   # gateway's public URL.
   token:
-    algorithm: ES256
     signing-key-file: var/token-signing-key.pem
   mfa:
     totp:
@@ -113,88 +91,57 @@ authn:
       origins:
         - "http://localhost:8080"
 
-# Tenant resolution and admission. Both guard the API endpoint and never the
-# account endpoint the authentication routes mount on.
+# Tenant resolution and admission. The endpoints below and the extractor are
+# required items, so they are stated here as well as in defaults.yaml.
 tenant:
   resolve:
     endpoints: [api]
     extractor: header
-    header-name: X-Tenant
   admission:
     endpoints: [api]
   admin:
     endpoints: [admin]
 
-# The authorization layer. The guard enforces the API endpoint; the management
-# routes mount on the admin endpoint.
+# The authorization layer. Both endpoint lists are required items.
 authz:
   guard:
     endpoints: [api]
-    undeclared: closed
   admin:
     endpoints: [admin]
   self:
     endpoints: [api]
 
-# The journal records the requests named below on the guarded endpoints, and
-# writes the audit trail the admin surface reads. Its route list is the routes
-# to capture, each a method and the path as the route was registered. A product
-# names the writes its operators initiate, here the object store's declaration
-# and delete: a read the frontend polls on its own would land a row per poll and
-# bury the changes worth finding, and an action a capability already records at
-# the seam — login, impersonation, the account-management actions — would be
-# recorded twice.
+# The journal's request list and captured endpoints are platform topology and
+# come from defaults.yaml; the management surface's endpoint list is required.
 audit:
-  journal:
-    endpoints: [api, account, admin]
-    requests:
-      - "POST /api/v1/objects"
-      - "DELETE /api/v1/objects/:id"
   admin:
     endpoints: [admin]
 
-ratelimit:
-  endpoints: [api]
-
+# Required: where the settings management routes mount.
 settings:
   admin:
     endpoints: [admin]
 
-# The feature document. It lists the features this process serves, with a
-# route the frontend reads. The endpoint named here has to be guarded by the
-# authentication gateway (authn.gate.endpoints above), has to claim /features
-# in its prefixes (http.endpoints above), and must not resolve a tenant: the
-# frontend reads the document before a tenant is chosen.
+# Required: where the feature document is served. The endpoint has to be
+# guarded by the authentication gateway, has to claim /features in its
+# prefixes, and must not resolve a tenant: the frontend reads the document
+# before a tenant is chosen.
 feature:
   board:
     endpoint: account
 
 # The host's own personal-tenant policy. Off by default: when on, an account
 # with no membership gets a personal tenant from POST /workspace/personal so a
-# registration can use the tenant area at once. The /workspace prefix above is
+# registration can use the tenant area at once. The /workspace prefix is
 # claimed either way; with the switch off that path answers 404.
 workspace:
   personal:
     enabled: false
 
-# The notification inbox, the live stream and the preference matrix mount on the
-# API endpoint. None of them names the web endpoint: the frontend bundle's
-# catch-all route covers that endpoint's whole path space.
-notification:
-  inbox:
-    endpoints: [api]
-  stream:
-    endpoints: [api]
-  preferences:
-    endpoints: [api]
-
-# The object store's bytes are kept under this directory (created on startup),
-# and its management routes mount on the API endpoint.
+# The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:
     root: "./var/objects"
-  metadata:
-    endpoints: [api]
 
 # The first account, the tenants this deployment serves, and the platform role
 # a copy starts with. The seed command is idempotent: an account, a tenant, a
@@ -204,7 +151,7 @@ objectstore:
 # seed writes is gone as soon as it exits, before a serve of this same stack
 # starts: seed the sqlite stack instead, which is this one with a database in a
 # file. This section is kept here so that every stack file carries the same
-# platform sections.
+# deployment values.
 seed:
   # DEV: the initial operator's login name and password, and whether it
   # administers the platform. Replace both before a deployment serves real
@@ -237,13 +184,3 @@ db:
   sqlite:
     dsn: ":memory:"
     encryption-key: "dev-only-change-me-0123456789abcdef"
-
-# Both in-process backends take one replica; a count above one is a deployment
-# they cannot serve and fails the startup.
-kv:
-  memory:
-    replicas: 1
-
-event:
-  memory:
-    replicas: 1

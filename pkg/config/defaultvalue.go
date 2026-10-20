@@ -137,9 +137,30 @@ func formatStringList(v reflect.Value) string {
 	}
 	parts := make([]string, v.Len())
 	for i := range v.Len() {
-		parts[i] = v.Index(i).String()
+		parts[i] = listElementText(v.Index(i))
 	}
 	return strings.Join(parts, listSeparator)
+}
+
+// listElementText renders one element of a list default.
+//
+// The element is read out of whatever interface it arrived in. A host defaults
+// document reaches the item as its parser gave it, and both parsers read a
+// sequence as a list of interface values; reflect's own text form of one is
+// "<interface {} Value>" rather than the value inside it. The declared type
+// still decides that the item is a list of strings, so an element that is not
+// one stays a value Decode refuses - rendering it here does not change what the
+// run does.
+func listElementText(v reflect.Value) string {
+	for v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			// The document wrote nothing where a string goes. There is no text
+			// to render, and Go's spelling of nil would read as one.
+			return ""
+		}
+		v = v.Elem()
+	}
+	return fmt.Sprint(v.Interface())
 }
 
 // formatScalarDefault renders a single value in the form the command line

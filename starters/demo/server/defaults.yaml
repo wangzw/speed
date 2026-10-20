@@ -1,0 +1,121 @@
+# The platform defaults document of this program.
+#
+# It is compiled into the binary and layered below the configuration file a run
+# is pointed at, and above each module's own prototype defaults. What belongs
+# here is the topology every deployment of this binary shares: which endpoint
+# claims which prefix, which endpoint each capability mounts on, which requests
+# the journal records. Nothing here may be a credential or a value that differs
+# between deployments — listener addresses, origins, paths on disk, database
+# locators and the seed all live in the configuration file, and a copy changes
+# those there.
+#
+# One rule shapes what a configuration file still has to say: a required input
+# item is not satisfied by this document. The document supplies a default, and
+# a default is not somebody having given a value; the loader reports a required
+# item it finds only here as missing. The required keys below are therefore
+# repeated in every sample configuration, and a copy edits them there. See
+# AGENTS.md.
+
+http:
+  # The product's fixed namespace map. The dispatch selects an endpoint by these
+  # claims alone, the longest claim winning, and a path under no non-root claim
+  # goes to the endpoint that claims "/". A capability dropped from a run, or
+  # from the imports, keeps its namespace claimed.
+  endpoints:
+    api:
+      listener: backend
+      prefixes: ["/api"]
+    account:
+      listener: backend
+      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace", "/api/v1/tenants", "/api/v1/system/auth"]
+    admin:
+      listener: backend
+      prefixes: ["/api/v1/system/audit", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
+    ops:
+      # Alone on its listener, so it claims "/" by default.
+      listener: ops
+    web:
+      listener: backend
+      prefixes: ["/"]
+
+# The operations surface mounts on the ops endpoint.
+ops:
+  endpoint: ops
+
+# The frontend bundle's route covers this endpoint's whole path space.
+webui:
+  endpoint: web
+
+# The identity system: the gateway guards the API, account and admin endpoints
+# and never the web endpoint, and the capability's own routes mount on the
+# account endpoint, which the tenant layers do not cover.
+authn:
+  gate:
+    endpoints: [api, account, admin]
+    mount:
+      endpoint: account
+
+# Tenant resolution and admission guard the API endpoint and never the account
+# endpoint the authentication routes mount on. The header extractor is this
+# assembly's tenant contract; the frontend writes the tenant name into it.
+tenant:
+  resolve:
+    endpoints: [api]
+    extractor: header
+  admission:
+    endpoints: [api]
+  admin:
+    endpoints: [admin]
+
+# The authorization layer: the guard enforces the API endpoint, and the
+# management routes mount on the admin endpoint.
+authz:
+  guard:
+    endpoints: [api]
+  admin:
+    endpoints: [admin]
+
+# The journal records the operator writes this product carries: the object
+# store's declaration and delete. A read the frontend polls on its own would
+# land a row per poll and bury the changes worth finding, and an action a
+# capability already records at the seam — login, impersonation, the
+# account-management actions — would be recorded twice.
+audit:
+  journal:
+    endpoints: [api, account, admin]
+    requests:
+      - "POST /api/v1/objects"
+      - "DELETE /api/v1/objects/:id"
+  admin:
+    endpoints: [admin]
+
+ratelimit:
+  endpoints: [api]
+
+settings:
+  admin:
+    endpoints: [admin]
+
+# The feature document's endpoint is guarded by the authentication gateway, and
+# must not resolve a tenant: the frontend reads the document before a tenant is
+# chosen.
+feature:
+  board:
+    endpoint: account
+
+# The notification surfaces mount on the API endpoint. None of them names the
+# web endpoint: the frontend bundle's catch-all route covers that endpoint's
+# whole path space.
+notification:
+  inbox:
+    endpoints: [api]
+  stream:
+    endpoints: [api]
+  preferences:
+    endpoints: [api]
+
+# The object store's management routes mount on the API endpoint; where its
+# bytes are kept is a deployment path and lives in the configuration file.
+objectstore:
+  metadata:
+    endpoints: [api]

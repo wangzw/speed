@@ -166,15 +166,22 @@ func (r *reader) leaf(path string, fv reflect.Value) error {
 	// A container leaf is read back from what the source wrote rather than
 	// from the layering tool, whose keys have been folded to lower case. Its
 	// inner keys are the user's own data: folding them rewrites the
-	// configuration instead of normalising a name this module owns. Only the
-	// primary source gives a container, so there is no layer above this one
-	// to consult.
+	// configuration instead of normalising a name this module owns. The
+	// primary source gives it as a whole and replaces the whole of whatever
+	// lay below; with no primary source, the host defaults document supplies
+	// the value the same way, and the prototype's own container is the last
+	// resort, reached through the default layer below.
+	//
 	// A value the source wrote as nothing is not a value it gave: every other
 	// leaf reaches the same conclusion by the nil below, and a container
 	// answering differently would make the meaning of an empty key depend on
 	// the type behind it.
 	if declared && item.kind == kindContainer {
-		if given, found := primaryValue(r.l.primary, path); found && given != nil {
+		for _, tree := range [...]map[string]any{r.l.primary, r.l.defaults} {
+			given, found := primaryValue(tree, path)
+			if !found || given == nil {
+				continue
+			}
 			if !fv.CanSet() {
 				return nil
 			}

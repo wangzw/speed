@@ -7,10 +7,20 @@
 #   go -C starters/demo/server run . --config file:testdata/postgres-nats-redis.yaml postgres-nats-redis migrate
 #   go -C starters/demo/server run . --config file:testdata/postgres-nats-redis.yaml postgres-nats-redis serve
 #
-# The platform baseline above the backend section is the same as in
-# sqlite-memory.yaml; only the backend section below differs between the six
-# stack files. The values marked DEV are development defaults a copy must
-# replace before serving real traffic (AGENTS.md lists them together).
+# This file is an override document. The platform topology — the endpoint table
+# and every capability's mounting — is compiled into the binary
+# (server/defaults.yaml) and layered below this file, so what is written here is
+# what a deployment chooses: addresses, origins, the export destination, the
+# seed and the backend section at the bottom. Only the backend section differs
+# between the six stack files.
+#
+# The mounting keys repeated below — the tenant, authorization, audit, settings
+# and feature endpoints, and webui.endpoint — are the ones the loader requires
+# somebody to give. A required item is not satisfied by the defaults document,
+# so every configuration states them; a copy edits them here.
+#
+# The values marked DEV are development defaults a copy must replace before
+# serving real traffic (AGENTS.md lists them together).
 
 http:
   listeners:
@@ -18,28 +28,6 @@ http:
       address: "127.0.0.1:8080"
     ops:
       address: "127.0.0.1:8083"
-  # Each endpoint claims the path prefixes it answers on its listener. The
-  # dispatch selects an endpoint by these claims alone, the longest claim
-  # winning, and a path under no non-root claim goes to the endpoint that
-  # claims "/". The table is the product's fixed namespace map: a capability
-  # dropped from a run, or from the imports, keeps its namespace claimed. See
-  # AGENTS.md.
-  endpoints:
-    api:
-      listener: backend
-      prefixes: ["/api"]
-    account:
-      listener: backend
-      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace", "/api/v1/tenants", "/api/v1/system/auth"]
-    admin:
-      listener: backend
-      prefixes: ["/api/v1/system/audit", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
-    ops:
-      # Alone on its listener, so it claims "/" by default.
-      listener: ops
-    web:
-      listener: backend
-      prefixes: ["/"]
   # The CORS layer guards the api endpoint. This stack serves the frontend
   # bundle from the same listener as the API, so a browser reaching the API from
   # the page needs no CORS headers and this policy is not exercised here. It is
@@ -52,125 +40,91 @@ http:
         allow-origins:
           - "https://app.demo.test"
 
+# The operations surface's document metadata. Its endpoint is part of the
+# platform topology and comes from defaults.yaml.
 ops:
-  endpoint: ops
   title: demo
   version: 0.1.0
   description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
   servers: ["http://localhost:8080"]
 
+# Required: the frontend bundle's endpoint, repeated from defaults.yaml.
 webui:
   endpoint: web
-
-log:
-  level: info
 
 observability:
   otel:
     service-name: demo
 
+# The identity system's deployment values: the origin this deployment is
+# reached at, the token signing key, and the relying party the step-up is bound
+# to. The gateway's endpoint list and the account mount are platform topology
+# and come from defaults.yaml.
 authn:
   gate:
-    endpoints: [api, account, admin]
     mount:
-      endpoint: account
-      # The origin this deployment is reached at from outside: the origin a
-      # browser signs in from, and the one the WebAuthn relying party is bound
-      # to. It is the address the backend listener serves (http.listeners),
-      # written by host name — a relying party id has to be a domain, so the
-      # loopback address is localhost.
       public-url: "http://localhost:8080"
-  # DEV: the token signing key. The program generates one at
-  # var/token-signing-key.pem, relative to the working directory, on the first
-  # run and keeps it afterwards. Replace it with your own key material before a
-  # deployment serves real traffic. The issuer and audience default to the
-  # gateway's public URL.
+  # DEV: the token signing key. Replace it with your own key material before a
+  # deployment serves real traffic.
   token:
-    algorithm: ES256
     signing-key-file: var/token-signing-key.pem
   mfa:
     totp:
       issuer: demo
-    # WebAuthn. The relying party is bound to the origin the deployment is
-    # reached at (authn.gate.mount.public-url above); naming it here makes the
-    # binding visible and is where a copy points it at its own domain. The id
-    # has to be a domain, so it is localhost and not the loopback address the
-    # listener names.
     webauthn:
       rp-id: localhost
       rp-name: demo
       origins:
         - "http://localhost:8080"
 
+# Tenant resolution and admission. The endpoints below and the extractor are
+# required items, so they are stated here as well as in defaults.yaml.
 tenant:
   resolve:
     endpoints: [api]
     extractor: header
-    header-name: X-Tenant
   admission:
     endpoints: [api]
   admin:
     endpoints: [admin]
 
+# The authorization layer. Both endpoint lists are required items.
 authz:
   guard:
     endpoints: [api]
-    undeclared: closed
   admin:
     endpoints: [admin]
   self:
     endpoints: [api]
 
+# The journal's request list and captured endpoints are platform topology and
+# come from defaults.yaml; the management surface's endpoint list is required.
 audit:
-  journal:
-    endpoints: [api, account, admin]
-    requests:
-      - "POST /api/v1/objects"
-      - "DELETE /api/v1/objects/:id"
   admin:
     endpoints: [admin]
 
-ratelimit:
-  endpoints: [api]
-
+# Required: where the settings management routes mount.
 settings:
   admin:
     endpoints: [admin]
 
-# The feature document. It lists the features this process serves, with a
-# route the frontend reads. The endpoint named here has to be guarded by the
-# authentication gateway (authn.gate.endpoints above), has to claim /features
-# in its prefixes (http.endpoints above), and must not resolve a tenant: the
-# frontend reads the document before a tenant is chosen.
+# Required: where the feature document is served.
 feature:
   board:
     endpoint: account
 
-# The host's own personal-tenant policy. Off by default: when on, an account
-# with no membership gets a personal tenant from POST /workspace/personal so a
-# registration can use the tenant area at once. The /workspace prefix above is
-# claimed either way; with the switch off that path answers 404.
+# The host's own personal-tenant policy; off in the baseline.
 workspace:
   personal:
     enabled: false
 
-notification:
-  inbox:
-    endpoints: [api]
-  stream:
-    endpoints: [api]
-  preferences:
-    endpoints: [api]
-
+# The object store's bytes are kept under this directory (created on startup).
 objectstore:
   fs:
     root: "./var/objects"
-  metadata:
-    endpoints: [api]
 
 # The first account, the tenants this deployment serves, and the platform role
-# a copy starts with. The seed command is idempotent: an account, a tenant, a
-# role, a grant or a binding already there is left as it stands.
+# a copy starts with. The seed command is idempotent.
 seed:
   # DEV: the initial operator's login name and password, and whether it
   # administers the platform. Replace both before a deployment serves real
@@ -180,10 +134,8 @@ seed:
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
-  # The tenants the deployment serves. Each is registered in the roster, and
-  # the operator above holds the platform-administrator role within each, so
-  # the console's tenant-addressed pages answer for them out of the box.
-  # DEV: replace with the tenants this deployment actually serves.
+  # The tenants the deployment serves. DEV: replace with the tenants this
+  # deployment actually serves.
   tenants:
     - acme
   # Lowered to the domain minimum for local demonstration: impersonation

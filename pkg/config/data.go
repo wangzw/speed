@@ -7,6 +7,10 @@ import (
 	"strings"
 )
 
+// primarySource names the primary config source in the errors a host-owned
+// document raises.
+const primarySource = "the primary config source"
+
 // validatePrimary refuses a key the primary config source is not allowed to
 // give, before any of it reaches the layering tool.
 //
@@ -28,13 +32,25 @@ import (
 // one and drop the other, so the pair is refused here, where both are still in
 // view.
 func validatePrimary(m *manifest, content map[string]any) error {
-	return validatePrimarySection(m, nil, content, make(map[string][]string))
+	return validateDocument(m, content, primarySource)
 }
 
-// validatePrimarySection checks one section. written is the keys that lead to
-// it as the source wrote them, and given records the keys that reached each
+// validateDocument refuses a key a host-owned document is not allowed to give,
+// before any of it takes effect. label names the document in the errors.
+//
+// The primary config source and the host defaults document are judged alike:
+// both travel with the binary and are written by hand in the host, so a key
+// neither may give is a mistake to stop for rather than one to drop. What the
+// document is called is the one thing that differs, and the reader has to know
+// which of the two to go and fix.
+func validateDocument(m *manifest, content map[string]any, label string) error {
+	return validateDocumentSection(m, nil, content, make(map[string][]string), label)
+}
+
+// validateDocumentSection checks one section. written is the keys that lead to
+// it as the document wrote them, and given records the keys that reached each
 // declared path.
-func validatePrimarySection(m *manifest, written []string, section map[string]any, given map[string][]string) error {
+func validateDocumentSection(m *manifest, written []string, section map[string]any, given map[string][]string, label string) error {
 	prefix := strings.Join(written, ".")
 	for _, key := range slices.Sorted(maps.Keys(section)) {
 		path := joinPath(prefix, key)
@@ -43,15 +59,15 @@ func validatePrimarySection(m *manifest, written []string, section map[string]an
 
 		if item, declared := m.byPath[path]; declared {
 			if !item.origins.has(OriginPrimary) {
-				return fmt.Errorf("%w: the primary config source gives %q, which module %q "+
+				return fmt.Errorf("%w: %s gives %q, which module %q "+
 					"declares but does not accept from the primary source: it reads %s. Letting "+
 					"it through would swallow a value written on purpose",
-					ErrUnknownKey, path, item.module, originNames(item.origins))
+					ErrUnknownKey, label, path, item.module, originNames(item.origins))
 			}
 			if earlier, twice := given[path]; twice {
-				return fmt.Errorf("%w: the primary config source gives %q twice, once written as "+
+				return fmt.Errorf("%w: %s gives %q twice, once written as "+
 					"the keys %q and once as %q, and only one of the two could take effect. Give "+
-					"it once", ErrMalformedConfig, path, earlier, spelled)
+					"it once", ErrMalformedConfig, label, path, earlier, spelled)
 			}
 			given[path] = spelled
 			// The keys inside a container leaf are not in the manifest and do
@@ -63,20 +79,20 @@ func validatePrimarySection(m *manifest, written []string, section map[string]an
 		if _, interior := m.interior[path]; interior {
 			child, isSection := raw.(map[string]any)
 			if !isSection {
-				return fmt.Errorf("%w: the primary config source gives a value at %q, which is a "+
+				return fmt.Errorf("%w: %s gives a value at %q, which is a "+
 					"section holding input items rather than an input item of its own",
-					ErrUnknownKey, path)
+					ErrUnknownKey, label, path)
 			}
-			if err := validatePrimarySection(m, spelled, child, given); err != nil {
+			if err := validateDocumentSection(m, spelled, child, given, label); err != nil {
 				return err
 			}
 			continue
 		}
 
-		return fmt.Errorf("%w: the primary config source gives %q, which no module declares. "+
+		return fmt.Errorf("%w: %s gives %q, which no module declares. "+
 			"Check the spelling, and check that the module owning it is imported: the manifest "+
 			"is collected from the modules this binary carries",
-			ErrUnknownKey, path)
+			ErrUnknownKey, label, path)
 	}
 	return nil
 }

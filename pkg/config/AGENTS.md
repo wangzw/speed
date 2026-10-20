@@ -5,9 +5,9 @@ needs, reads the primary source, applies the environment and command-line
 layers over it, and hands each module its own values back.
 
 The root package carries the declarations, the manifest and the layers,
-and defines the `Source` and `Format` extension points. Concrete
-transports and formats are subpackages: `source/file`, `format/json`,
-`format/yaml`.
+and defines the `Source` and `Format` extension points and the `Defaults`
+resource. Concrete transports and formats are subpackages: `source/file`,
+`format/json`, `format/yaml`.
 
 The API is the package's godoc, the root package's and each subpackage's.
 
@@ -51,6 +51,34 @@ import _ "github.com/vislake/speed/pkg/config/format/yaml"
   `Resources`.
 - **No value is interpreted on a module's behalf.** The declaring module
   gets its own values back and decides what they mean.
+
+## The host defaults document
+
+A host may compile one configuration document into its binary and deliver it
+as a `Defaults` resource on a module it registers. It is a second source for
+the default layer, below the primary source and above each module's prototype
+field values. It is not a second primary source: a run still has at most one
+primary config source.
+
+- **At most one per run.** Two declarations fail the startup with
+  `ErrConfigConflict`, naming both modules.
+- **Format.** `Defaults.Format` names a registered `Format`, matched exactly
+  after folding to lower case, the same way the primary source's name is
+  matched. There is no content sniffing; an empty or unknown name is
+  `ErrUnknownFormat`, and data the parser refuses is `ErrMalformedConfig`.
+- **Keys.** The document is judged like the primary source: a key no module
+  declares, or one the owning module does not accept from the primary source,
+  fails the startup. A container leaf it gives replaces the prototype's whole
+  value, and a primary source giving the same leaf replaces the document's
+  whole value; no layer merges inside a container.
+- **Required.** The document supplies defaults, so it never satisfies
+  `Required`.
+- **No new dependency.** The document arrives as bytes and leaves through a
+  registered `Format`. Adding this resource imports nothing, and the root
+  package still carries no third-party dependency of its own.
+- **The content is the host's business.** This module applies the document to
+  the keys the manifest carries. It does not know any module's topology, does
+  not interpret what a container holds, and names no module in the document.
 
 ## Running it
 

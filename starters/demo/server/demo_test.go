@@ -135,62 +135,43 @@ const demoSeedSection = `seed:
 
 // demoConfig is the sqlite-memory configuration a case writes: the two listener
 // addresses, the token signing key, the object store's root and the database
-// locator, with those filled in. Apart from the seed section, it is the file
-// testdata/sqlite-memory.yaml holds verbatim — the public address among it, so the
-// WebAuthn relying party the sample binds is the one a case runs on — so a case
-// exercises the same config a person runs by hand, and one account more: the case
-// that seeds signs in with two, one given a plaintext password and one given a
-// hash, and the sample files carry only the first shape so that a copy starts with
-// one operator to replace rather than two. The platform sections are the baseline
-// every stack carries; the case that reads the platform's own routes holds that
-// they are assembled, and the case that reads an undeclared route on a guarded
-// endpoint holds that it is not. A case of its own holds the template to the
-// sample's WebAuthn block, so the two do not drift apart again.
+// locator, with those filled in. It is an override document, the shape
+// testdata/sqlite-memory.yaml holds — the public address among it, so the
+// WebAuthn relying party the sample binds is the one a case runs on — and the
+// platform topology the sample leaves out arrives from the embedded defaults
+// document, exactly as it does for the binary a person runs. The seed section is
+// one account more than the sample's: the case that seeds signs in with two, one
+// given a plaintext password and one given a hash, and the sample files carry
+// only the first shape so that a copy starts with one operator to replace rather
+// than two. The mounting keys below are repeated because a required item is not
+// satisfied by the defaults document. A case of its own holds the template to
+// the sample's WebAuthn block, so the two do not drift apart.
 const demoConfig = `http:
   listeners:
     backend:
       address: "127.0.0.1:%d"
     ops:
       address: "127.0.0.1:%d"
-  endpoints:
-    api:
-      listener: backend
-      prefixes: ["/api"]
-    account:
-      listener: backend
-      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace", "/api/v1/tenants", "/api/v1/system/auth"]
-    admin:
-      listener: backend
-      prefixes: ["/api/v1/system/audit", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
-    ops:
-      listener: ops
-    web:
-      listener: backend
-      prefixes: ["/"]
   cors:
     endpoints:
       api:
         allow-origins:
           - "https://app.demo.test"
 ops:
-  endpoint: ops
   title: demo
   version: 0.1.0
+  description: "The demo assembly's API: every operation the modules named in this stack declare, merged from their OpenAPI fragments."
+  servers: ["http://localhost:8080"]
 webui:
   endpoint: web
-log:
-  level: info
 observability:
   otel:
     service-name: demo
 authn:
   gate:
-    endpoints: [api, account, admin]
     mount:
-      endpoint: account
       public-url: "http://localhost:8080"
   token:
-    algorithm: ES256
     signing-key-file: "%s"
   mfa:
     totp:
@@ -204,7 +185,6 @@ tenant:
   resolve:
     endpoints: [api]
     extractor: header
-    header-name: X-Tenant
   admission:
     endpoints: [api]
   admin:
@@ -212,21 +192,13 @@ tenant:
 authz:
   guard:
     endpoints: [api]
-    undeclared: closed
   admin:
     endpoints: [admin]
   self:
     endpoints: [api]
 audit:
-  journal:
-    endpoints: [api, account, admin]
-    requests:
-      - "POST /api/v1/objects"
-      - "DELETE /api/v1/objects/:id"
   admin:
     endpoints: [admin]
-ratelimit:
-  endpoints: [api]
 settings:
   admin:
     endpoints: [admin]
@@ -236,29 +208,14 @@ feature:
 workspace:
   personal:
     enabled: false
-notification:
-  inbox:
-    endpoints: [api]
-  stream:
-    endpoints: [api]
-  preferences:
-    endpoints: [api]
 objectstore:
   fs:
     root: "%s"
-  metadata:
-    endpoints: [api]
 %s
 db:
   sqlite:
     dsn: "%s"
     encryption-key: "dev-only-change-me-0123456789abcdef"
-kv:
-  memory:
-    replicas: 1
-event:
-  memory:
-    replicas: 1
 `
 
 // The two listeners the configuration declares. The backend listener carries

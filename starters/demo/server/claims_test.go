@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.yaml.in/yaml/v3"
+	"github.com/vislake/speed/pkg/config"
+	"github.com/vislake/speed/pkg/core"
 )
 
 // The dispatch selects an endpoint by the path prefixes the configuration
@@ -33,9 +34,10 @@ import (
 // module's directory (starters/demo/server).
 const platformContractPath = "../../../contracts/api.json"
 
-// testdataFiles are the six sample configurations. Every one of them carries
-// the same claim table; the cases below hold each of them to it rather than to
-// a value written in this file.
+// testdataFiles are the six sample configurations. They are override documents
+// over the platform defaults, so each one's effective claim table — the
+// compiled-in document plus whatever the file states — is held to the ownership
+// table rather than to a value written in this file.
 var testdataFiles = []string{
 	"sqlite-memory.yaml",
 	"sqlite.yaml",
@@ -52,30 +54,44 @@ type endpointClaim struct {
 	prefixes []string
 }
 
-// claimsDocument is the part of a configuration the claim cases read.
-type claimsDocument struct {
-	HTTP struct {
-		Endpoints map[string]struct {
-			Listener string   `yaml:"listener"`
-			Prefixes []string `yaml:"prefixes"`
-		} `yaml:"endpoints"`
-	} `yaml:"http"`
+// claimsCarrier is the part of the http section the claim cases read, decoded
+// through pkg/config so that the answer is the effective one: the host defaults
+// document folded under the configuration file the run is pointed at, the same
+// merge the binary performs.
+type claimsCarrier struct {
+	Endpoints map[string]struct {
+		Listener string   `config:"listener"`
+		Prefixes []string `config:"prefixes"`
+	} `config:"endpoints"`
 }
 
-// claimsFromConfig parses a configuration and answers its endpoints' claims. An
-// endpoint that omits prefixes claims "/", which is the same default pkg/http
-// applies.
-func claimsFromConfig(t *testing.T, name string, doc []byte) map[string]endpointClaim {
+// readEffective decodes one module's section as a run of this binary would see
+// it: the compiled-in defaults document below the file, the file above it, and
+// the module's own prototype last. It loads through the same pkg/config entry
+// point the binary uses, over the process registry, so a key that moved into
+// defaults.yaml and a key the file still states take one path.
+func readEffective(t *testing.T, name, locator, path string, target any) {
 	t.Helper()
-	var parsed claimsDocument
-	if err := yaml.Unmarshal(doc, &parsed); err != nil {
-		t.Fatalf("%s is not YAML: %v", name, err)
+	reader, err := config.Load(t.Context(), core.ProcessRegistry, []string{"--config", locator})
+	if err != nil {
+		t.Fatalf("loading the effective configuration of %s: %v", name, err)
 	}
-	if len(parsed.HTTP.Endpoints) == 0 {
-		t.Fatalf("%s declares no http.endpoints", name)
+	if err := reader.Decode(path, target); err != nil {
+		t.Fatalf("decoding %s from the effective configuration of %s: %v", path, name, err)
 	}
-	claims := make(map[string]endpointClaim, len(parsed.HTTP.Endpoints))
-	for endpoint, declared := range parsed.HTTP.Endpoints {
+}
+
+// claimsFromLocator answers the endpoints the run at locator would actually
+// serve, defaults document included.
+func claimsFromLocator(t *testing.T, name, locator string) map[string]endpointClaim {
+	t.Helper()
+	var parsed claimsCarrier
+	readEffective(t, name, locator, "http", &parsed)
+	if len(parsed.Endpoints) == 0 {
+		t.Fatalf("%s declares no http.endpoints, in the file or in the defaults document", name)
+	}
+	claims := make(map[string]endpointClaim, len(parsed.Endpoints))
+	for endpoint, declared := range parsed.Endpoints {
 		prefixes := declared.Prefixes
 		if prefixes == nil {
 			prefixes = []string{"/"}
@@ -85,7 +101,8 @@ func claimsFromConfig(t *testing.T, name string, doc []byte) map[string]endpoint
 	return claims
 }
 
-// claimsFromFile reads one configuration file and answers its claims.
+// claimsFromFile reads one configuration file and answers the claims of the run
+// it configures.
 func claimsFromFile(t *testing.T, path string) map[string]endpointClaim {
 	t.Helper()
 	doc, err := os.ReadFile(path)
@@ -93,6 +110,13 @@ func claimsFromFile(t *testing.T, path string) map[string]endpointClaim {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	return claimsFromConfig(t, path, doc)
+}
+
+// claimsFromConfig writes one configuration body and answers the claims of the
+// run it configures.
+func claimsFromConfig(t *testing.T, name string, doc []byte) map[string]endpointClaim {
+	t.Helper()
+	return claimsFromLocator(t, name, writeConfigFile(t, string(doc)))
 }
 
 // selectClaimedEndpoint is the request-time selection rule, written here so the
@@ -340,22 +364,20 @@ func configFilePath(locator string) string {
 	return strings.TrimPrefix(locator, "file://")
 }
 
-// guardedEndpointSet answers the endpoints the gateway guards, as the case's
-// configuration declares them.
+// guardedEndpointSet answers the endpoints the gateway guards in the case's
+// configuration, read the way the run reads it: the defaults document supplies
+// the endpoint list and the file need not repeat it.
 func guardedEndpointSet(t *testing.T) map[string]bool {
 	t.Helper()
 	var parsed struct {
-		Authn struct {
-			Gate struct {
-				Endpoints []string `yaml:"endpoints"`
-			} `yaml:"gate"`
-		} `yaml:"authn"`
+		Gate struct {
+			Endpoints []string `config:"endpoints"`
+		} `config:"gate"`
 	}
-	if err := yaml.Unmarshal([]byte(configBody(t, []int{8080, 8083}, ":memory:")), &parsed); err != nil {
-		t.Fatalf("reading the gateway's endpoint list from the configuration: %v", err)
-	}
+	locator := writeConfig(t, []int{8080, 8083})
+	readEffective(t, "the case's configuration", locator, "authn", &parsed)
 	guarded := map[string]bool{}
-	for _, endpoint := range parsed.Authn.Gate.Endpoints {
+	for _, endpoint := range parsed.Gate.Endpoints {
 		guarded[endpoint] = true
 	}
 	if len(guarded) == 0 {
@@ -381,83 +403,54 @@ var auditSampleRequests = []string{
 	"DELETE /api/v1/objects/:id",
 }
 
-// auditDocument is the part of a configuration the audit sample case reads.
-type auditDocument struct {
-	Audit struct {
-		Journal struct {
-			Requests []string `yaml:"requests"`
-		} `yaml:"journal"`
-	} `yaml:"audit"`
+// auditCarrier is the part of the audit section the sample case reads.
+type auditCarrier struct {
+	Journal struct {
+		Requests []string `config:"requests"`
+	} `config:"journal"`
 }
 
-// requestsBlock answers the audit journal's requests block as written: the
-// "requests:" line and its list entries, indentation included, so two files
-// that spell the same list differently are distinguishable.
-func requestsBlock(t *testing.T, name string, doc []byte) string {
-	t.Helper()
-	lines := strings.Split(string(doc), "\n")
-	start := -1
-	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), "requests:") {
-			start = i
-			break
-		}
-	}
-	if start < 0 {
-		t.Fatalf("%s carries no audit journal requests block", name)
-	}
-	end := start + 1
-	for end < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[end]), "- ") {
-		end++
-	}
-	return strings.Join(lines[start:end], "\n") + "\n"
+// namedConfig is one configuration body under the name a failure names it by.
+type namedConfig struct {
+	name string
+	body string
 }
 
-// checkAuditSamples holds every sample configuration's request-level audit
-// sample to the two operator writes, and the rendered template -- the
-// configuration the HTTP cases run -- to sqlite-memory.yaml's copy of the
-// block byte for byte. The hit case alone cannot do this: it runs the
-// rendered template, so a sample whose entries all name the wrong route
-// stays green there.
+// checkAuditSamples holds the effective request-level audit sample of every
+// sample configuration, and of the rendered template -- the configuration the
+// HTTP cases run -- to the two operator writes. The list is read through
+// pkg/config, so it is the list the run records: it may come from the host
+// defaults document, and a sample that changed it in the file would show here.
+// The hit case alone cannot do this: it runs the rendered template, so a
+// sample whose entries all name the wrong route stays green there.
 func checkAuditSamples(t *testing.T) {
 	t.Helper()
-	var reference string
+	configurations := []namedConfig{{
+		name: "the rendered template",
+		body: configBody(t, []int{8080, 8083}, ":memory:"),
+	}}
 	for _, sample := range testdataFiles {
 		path := filepath.Join("testdata", sample)
 		doc, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
 			t.Fatalf("reading %s: %v", path, err)
 		}
-		var parsed auditDocument
-		if err := yaml.Unmarshal(doc, &parsed); err != nil {
-			t.Fatalf("%s is not YAML: %v", sample, err)
-		}
-		requests := parsed.Audit.Journal.Requests
+		configurations = append(configurations, namedConfig{name: sample, body: string(doc)})
+	}
+	for _, configuration := range configurations {
+		var parsed auditCarrier
+		readEffective(t, configuration.name, writeConfigFile(t, configuration.body), "audit", &parsed)
+		requests := parsed.Journal.Requests
 		if len(requests) != len(auditSampleRequests) {
-			t.Fatalf("%s names %d audit requests, want %d: %v",
-				sample, len(requests), len(auditSampleRequests), requests)
+			t.Fatalf("%s records %d audit requests, want %d: %v",
+				configuration.name, len(requests), len(auditSampleRequests), requests)
 		}
 		for i, want := range auditSampleRequests {
 			if requests[i] != want {
-				t.Errorf("%s names audit request %q at position %d, want %q",
-					sample, requests[i], i, want)
+				t.Errorf("%s records audit request %q at position %d, want %q",
+					configuration.name, requests[i], i, want)
 			}
 		}
-		block := requestsBlock(t, sample, doc)
-		if sample == testdataFiles[0] {
-			reference = block
-			continue
-		}
-		if block != reference {
-			t.Errorf("%s's requests block differs from %s's:\n%s\nwant:\n%s",
-				sample, testdataFiles[0], block, reference)
-		}
-	}
-	rendered := requestsBlock(t, "the rendered template",
-		[]byte(configBody(t, []int{8080, 8083}, ":memory:")))
-	if rendered != reference {
-		t.Errorf("the rendered template's requests block differs from %s's:\n%s\nwant:\n%s",
-			testdataFiles[0], rendered, reference)
 	}
 }
 

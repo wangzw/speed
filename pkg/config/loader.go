@@ -48,7 +48,13 @@ type loader struct {
 	// inner keys are the user's own data and are not in the manifest, so
 	// folding them changes the configuration rather than normalising a name.
 	primary map[string]any
-	stderr  io.Writer
+	// defaults is the host defaults document, before the layering tool folded
+	// its keys. It is the primary source's counterpart one layer down: a
+	// container leaf whose prototype value the document replaces is read back
+	// from here for the same reason, and the scalars reach the default layer
+	// through the manifest instead (see applyDefaults).
+	defaults map[string]any
+	stderr   io.Writer
 }
 
 // newLoader collects the declarations of a registry and lays the base layer.
@@ -71,6 +77,10 @@ func newLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 	if err != nil {
 		return nil, err
 	}
+	d, dModule, hasDefaults, err := collectDefaults(reg)
+	if err != nil {
+		return nil, err
+	}
 	l := &loader{
 		reg:    reg,
 		m:      m,
@@ -79,6 +89,15 @@ func newLoader(reg *core.Registry, stderr io.Writer) (*loader, error) {
 		env:    environMap(os.Environ()),
 		bound:  make(map[string]*pflag.Flag),
 		stderr: stderr,
+	}
+	// The document is folded into the manifest before the base layer is laid:
+	// replacing the item's default makes Decode, the rendered default of the
+	// help output, meansUnset and container decoding agree on one value, with
+	// no second place that resolves a default.
+	if hasDefaults {
+		if err := l.applyDefaults(d, dModule); err != nil {
+			return nil, err
+		}
 	}
 	l.seedDefaults()
 	return l, nil
