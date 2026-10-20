@@ -98,6 +98,7 @@ function flowSession(): {
     startFlow: () => Promise.reject(new Error('unused')),
     logout: () => Promise.reject(new Error('unused')),
     restore: () => Promise.resolve(false),
+    beginIdentityTransition: () => () => undefined,
     refresh: () => Promise.resolve(false),
     retryFeatures: () => Promise.resolve(),
     setPermissionSet: () => undefined,

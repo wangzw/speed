@@ -111,6 +111,9 @@ export function createStepUpSession(
     startFlow: unused,
     logout: unused,
     restore: unused,
+    // Neither suite opens an identity transition; the window exists for a
+    // host that rotates its session credential (see @speed/auth-core).
+    beginIdentityTransition: () => () => undefined,
     refresh: unused,
     retryFeatures: () => Promise.resolve(),
     setPermissionSet: unused,

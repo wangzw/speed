@@ -327,6 +327,8 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 
 **载体挂接与事件不在 `Start` 里**，判据在于 `Start` 的返回值交不出令牌，`Start` 与 `End` 也都拿不到响应写出器：换出的会话令牌与冒充访问令牌只能由持有响应的处理器交给调用方。`authn.token` 撤销冒充令牌时调用的是 `Revoke`，那条路径没有 cookie，`Revoke` 同样不碰载体，不会误摘会话行上的标识。`started` 事件放在载体挂接之后，使一次挂接失败的开始不对外发出事件。
 
+**cookie 凭据下的开始换出会话令牌，旧令牌随即脱钩。** 换出发生在开始写入的应答里，而写入落定之前就已发出的、带旧令牌的请求会被拒为 401；这些请求之后的静默恢复（客户端在 401 上重读会话）若仍带着旧 cookie，就会读到「无人登录」。这不是会话结束，只是凭据被替换：客户端必须把开始写入整个窗口内的无人登录应答当作被换下凭据的应答丢弃，窗口结束后再读才落定（[web auth-core](../web/design-web-auth-core.md) 的 `beginIdentityTransition()`）。服务端不为这个窗口发信号，也不给旧令牌留宽限；窗口的边界由发起方自己掌握——它知道写入何时发出、何时落定。结束冒充不轮换令牌，没有这个窗口。
+
 **强制档审计先于动作，且在事务之外**，判据在于审计接缝的写入另占一条连接、不加入调用方的事务：在调用方事务开着时调用它，单写者的 SQLite 上等的是调用方自己占着的写锁，只开一条连接的库上等的是调用方占着的那条连接，等满界限后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功（[ADR-audit-failure-2026-09-21](../../../adr/adr-audit-failure-2026-09-21.md)）。同一次序适用于全部管理面写操作：先 `Decider`，再强制审计，再写，再事件，写失败补一条 `failed` 的审计行（[design-authn-admin](design-authn-admin.md)）。
 
 Bearer 凭据下开始而 `Tokens` 缺席时，处理器在调用 `Start` 之前以 `ErrUnavailable` 失败（503）：该路径没有载体可挂，不留下一行没有对应动作的 `granted` 审计。

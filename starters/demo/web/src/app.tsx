@@ -191,7 +191,8 @@ function AppFrame({
   // The host's identity-change action, handed to the console page so a
   // settled start or end re-reads the identity the way the tenant frame's
   // banner does, plus the start seam: the page calls it before it writes, so
-  // reads are held across the start's cookie rotation window.
+  // reads are held and the session's identity-transition guard is open
+  // across the start's cookie rotation window.
   const { applyIdentityChange, onImpersonationStarting } = useIdentityChange()
   // The desktop sidebar's collapse state, host-held and shared by both areas:
   // each frame renders the toggle (the collapse props are supplied) and reports

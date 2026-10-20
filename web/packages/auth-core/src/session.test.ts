@@ -1658,6 +1658,162 @@ describe('impersonating write rules', () => {
   })
 })
 
+describe('identity transitions', () => {
+  // The window an impersonation start opens: the server rotates the
+  // session cookie, and a read issued under the outgoing cookie answers
+  // anonymous while the transition runs. The guard keeps that answer from
+  // ending the local session.
+  const cookieLogin = {
+    [LOGIN_START]: () => completeFlow(),
+    [LOGIN_ANSWER]: () => sessionCompletion(),
+    [PROFILE_GET]: () => principal(),
+  }
+
+  async function signInCookie(harness: Harness): Promise<void> {
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 2, step: 'complete' })
+  }
+
+  it('discards a 401 answered during an open transition: the snapshot stays authenticated', async () => {
+    let rotating = false
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [SESSION_GET]: () => {
+        if (rotating) {
+          throw apiError(401, 'authn.session_expired')
+        }
+        return sessionView({ authenticated: true })
+      },
+    })
+    await signInCookie(harness)
+    const before = harness.session.getSnapshot()
+    const seen = snapshotLog(harness.session)
+    const release = harness.session.beginIdentityTransition()
+    rotating = true
+    // Without the guard this answer clears the snapshot: the silent-401
+    // leg would report a spurious sign-out mid-transition.
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toBe(before)
+    expect(seen).toHaveLength(0)
+    release()
+  })
+
+  it('settles the real state on the next read after the release', async () => {
+    let signedIn = true
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () =>
+        signedIn
+          ? sessionView({ authenticated: true })
+          : sessionView({ authenticated: false }),
+      [PROFILE_GET]: () => principal(),
+    })
+    await expect(harness.session.restore()).resolves.toBe(true)
+    const release = harness.session.beginIdentityTransition()
+    // The session genuinely ended during the window: the read is
+    // discarded while the transition runs...
+    signedIn = false
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot().state).toBe('authenticated')
+    // ...and the next read after the release settles it.
+    release()
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toEqual(ANONYMOUS)
+  })
+
+  it('discards the answer of a restore already in flight when the transition opened', async () => {
+    let releaseRead!: () => void
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve
+    })
+    let reading = false
+    const harness = makeCookieHarness({
+      [SESSION_GET]: () =>
+        reading
+          ? readGate.then(() => {
+              throw apiError(401, 'authn.session_expired')
+            })
+          : sessionView({ authenticated: true }),
+      [PROFILE_GET]: () => principal(),
+    })
+    await expect(harness.session.restore()).resolves.toBe(true)
+    reading = true
+    const inFlight = harness.session.restore()
+    const release = harness.session.beginIdentityTransition()
+    releaseRead()
+    await expect(inFlight).resolves.toBe(false)
+    expect(harness.session.getSnapshot().state).toBe('authenticated')
+    release()
+  })
+
+  it('discards a restore issued during the window when it settles after the release', async () => {
+    let releaseRead!: () => void
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve
+    })
+    let reading = false
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [SESSION_GET]: () =>
+        reading
+          ? readGate.then(() => {
+              throw apiError(401, 'authn.session_expired')
+            })
+          : sessionView({ authenticated: true }),
+    })
+    await signInCookie(harness)
+    const before = harness.session.getSnapshot()
+    const seen = snapshotLog(harness.session)
+    const release = harness.session.beginIdentityTransition()
+    reading = true
+    // Issued while the window is open, so it carries the outgoing
+    // credential. It outlives the release: the answer still speaks for the
+    // credential the window replaced and must not end the session.
+    const inFlight = harness.session.restore()
+    release()
+    releaseRead()
+    await expect(inFlight).resolves.toBe(false)
+    expect(harness.session.getSnapshot()).toBe(before)
+    expect(seen).toHaveLength(0)
+  })
+
+  it('counts open transitions: a release called twice does not close another window', async () => {
+    let rotating = false
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [SESSION_GET]: () => {
+        if (rotating) {
+          throw apiError(401, 'authn.session_expired')
+        }
+        return sessionView({ authenticated: true })
+      },
+    })
+    await signInCookie(harness)
+    const first = harness.session.beginIdentityTransition()
+    const second = harness.session.beginIdentityTransition()
+    first()
+    first()
+    rotating = true
+    await expect(harness.session.restore()).resolves.toBe(false)
+    expect(harness.session.getSnapshot().state).toBe('authenticated')
+    second()
+  })
+
+  it('rethrows a transport failure untouched while a transition is open', async () => {
+    const refused = apiError(503, 'authn.unavailable')
+    const harness = makeCookieHarness({
+      ...cookieLogin,
+      [SESSION_GET]: () => {
+        throw refused
+      },
+    })
+    await signInCookie(harness)
+    const release = harness.session.beginIdentityTransition()
+    await expect(harness.session.restore()).rejects.toBe(refused)
+    expect(harness.session.getSnapshot().state).toBe('authenticated')
+    release()
+  })
+})
+
 describe('with the real api-client', () => {
   it('retries a refused request with the freshly refreshed token', async () => {
     const store = createMemoryAccessTokenStore()
@@ -1739,6 +1895,96 @@ describe('with the real api-client', () => {
     expect(fetchCalls.filter((call) => call.path === '/api/v1/auth/token')).toHaveLength(
       1,
     )
+  })
+
+  it("keeps the refused request's 401 and the snapshot when a transition is open", async () => {
+    // A cookie session (no store): the silent-401 leg is restore(), and
+    // the window is the one an impersonation start opens by rotating the
+    // cookie.
+    const session = createAuthSession()
+    let phase: 'operator' | 'rotating' | 'target' = 'operator'
+    let sessionReads = 0
+    const warnings: string[] = []
+    const fetcher: typeof fetch = async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname === '/api/v1/auth/session') {
+        sessionReads += 1
+        if (phase === 'rotating') {
+          return jsonResponse(401, {
+            code: 'authn.session_expired',
+            params: {},
+          })
+        }
+        return jsonResponse(
+          200,
+          sessionView({
+            authenticated: true,
+            impersonating: phase === 'target',
+          }),
+        )
+      }
+      if (url.pathname === '/api/v1/auth/me') {
+        if (phase === 'rotating') {
+          return jsonResponse(401, {
+            code: 'authn.session_expired',
+            params: {},
+          })
+        }
+        return jsonResponse(
+          200,
+          principal({
+            account_id: phase === 'target' ? 'acct-target' : 'acct-operator',
+          }),
+        )
+      }
+      if (url.pathname === '/api/v1/features') {
+        return jsonResponse(200, { features: [] })
+      }
+      throw new Error(`unexpected fetch: ${url.pathname}`)
+    }
+    const client = createClient({
+      baseUrl: 'https://api.test',
+      fetch: fetcher,
+      credentials: 'same-origin',
+      refreshAccessToken: (issue) => session.restore(issue),
+      // The silent leg fails on purpose here; capture the transport's
+      // diagnostic instead of writing it to the test console.
+      reporter: {
+        error: () => undefined,
+        warn: (message) => {
+          warnings.push(message)
+        },
+      },
+    })
+    bindRequestFn(client)
+
+    await expect(session.restore()).resolves.toBe(true)
+    expect(session.getSnapshot().principal?.account_id).toBe('acct-operator')
+
+    const release = session.beginIdentityTransition()
+    phase = 'rotating'
+    const readsBefore = sessionReads
+    // The refused request runs the session's silent leg, whose read
+    // answers anonymous under the outgoing cookie. The guard discards it,
+    // so the caller keeps its 401 instead of being answered from an
+    // anonymous session the host would render as a sign-out.
+    const error = await captureRejection(authnProfileGet())
+    expect(isApiError(error)).toBe(true)
+    expect(isApiError(error) ? error.status : null).toBe(401)
+    expect(sessionReads).toBeGreaterThan(readsBefore)
+    // The transport reports the silent leg's failure -- the discard is a
+    // session-level answer, not a transport failure.
+    expect(warnings).toContain('access token refresh failed')
+    expect(session.getSnapshot().state).toBe('authenticated')
+    expect(session.getSnapshot().principal?.account_id).toBe('acct-operator')
+
+    // After the release the next read settles the identity the new
+    // credential names.
+    release()
+    phase = 'target'
+    await expect(session.restore()).resolves.toBe(true)
+    expect(session.getSnapshot().impersonating).toBe(true)
+    expect(session.getSnapshot().principal?.account_id).toBe('acct-target')
   })
 })
 

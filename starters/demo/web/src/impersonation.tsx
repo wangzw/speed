@@ -77,13 +77,17 @@
  * The console page reports that moment through the shell's
  * `onImpersonationStarting` seam (console-ui calls the host's hook
  * synchronously before it writes); this provider uses it, not the settled
- * write, to cut both halves of the window: the queries in flight are
+ * write, to cover the window. Three things close over it: the session's
+ * identity-transition guard is opened before the write goes out and closed
+ * with the hold, so an anonymous answer read under the outgoing cookie is
+ * discarded instead of ending the local session; the queries in flight are
  * cancelled (their generated query functions carry react-query's abort
- * signal into the transport, so no 401 answer reaches the session hook), and
- * new query fetches stay paused until applyIdentityChange finishes -- after
- * the eviction and the re-read, so the reads that follow carry the new
- * cookie. This is a mitigation of the start path's rotation window, not a
- * fix for the transport's old-token 401 handling.
+ * signal into the transport, so most of them never produce that 401 at all);
+ * and new query fetches stay paused until applyIdentityChange finishes --
+ * after the eviction and the re-read, so the reads that follow carry the new
+ * cookie. The guard is closed exactly once per attempt: by the release the
+ * page calls on a refused write, a step-up interception or a throw, and by
+ * applyIdentityChange's own finally for a write that lands.
  */
 
 import { onlineManager } from '@tanstack/react-query'
@@ -140,6 +144,10 @@ interface ReadHold {
   /** The client's online state when the hold began; a client that was
    * genuinely offline stays offline when the hold is released. */
   readonly resumeOnline: boolean
+  /** Closes the session's identity-transition guard. The hold opens it
+   * before the write goes out, so an anonymous answer read under the
+   * outgoing cookie cannot end the local session while the rotation runs. */
+  readonly releaseTransition: () => void
   /** Set once the hold was released, so a pause scheduled by the hold does
    * not land on an already-released window. */
   released: boolean
@@ -185,29 +193,38 @@ export function IdentityChangeProvider({
     }
     hold.released = true
     holdRef.current = null
+    hold.releaseTransition()
     if (hold.resumeOnline) {
       onlineManager.setOnline(true)
     }
   }, [])
 
   /**
-   * Cuts both halves of the start write's rotation window and returns the
-   * release for a write that does not land. This is the console shell's
-   * `onImpersonationStarting` hook: console-ui calls it synchronously before
-   * issuing the start write, and calls the returned release when that write
-   * is refused, blocked by step-up or throws. A write that lands releases
-   * through applyIdentityChange's own finally instead -- the identity change
-   * is what must settle before reads go out again.
+   * Covers the start write's rotation window and returns the release for a
+   * write that does not land: it opens the session's identity-transition
+   * guard (an anonymous answer read under the outgoing cookie is discarded,
+   * not committed), cancels the reads in flight and holds new ones. This is
+   * the console shell's `onImpersonationStarting` hook: console-ui calls it
+   * synchronously before issuing the start write, and calls the returned
+   * release when that write is refused, blocked by step-up or throws. A
+   * write that lands releases through applyIdentityChange's own finally
+   * instead -- the identity change is what must settle before reads go out
+   * again. Every path calls the release once, so the guard is closed once.
    */
   const holdReads = useCallback((): (() => void) => {
     let hold = holdRef.current
     if (hold === null) {
       // Every read in flight was issued under the session cookie the start
-      // write is about to replace. Cancel them before any 401 answer can run
-      // the transport's silent restore with the stale cookie.
+      // write is about to replace. Open the session's identity-transition
+      // guard first, so a 401 that does reach the transport's silent restore
+      // while the write runs cannot turn the local session anonymous; then
+      // cancel the reads in flight, so most of them never produce that 401
+      // at all.
+      const releaseTransition = session.beginIdentityTransition()
       void queryClient.cancelQueries()
       const created: ReadHold = {
         resumeOnline: onlineManager.isOnline(),
+        releaseTransition,
         released: false,
       }
       hold = created
@@ -235,7 +252,7 @@ export function IdentityChangeProvider({
         releaseReads()
       }
     }
-  }, [queryClient, releaseReads])
+  }, [queryClient, releaseReads, session])
 
   // A provider torn down mid-hold must not leave the shared client paused
   // for whatever renders next.

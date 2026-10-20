@@ -139,6 +139,9 @@ export function createTestSession(
     abandonFlow: rejecting,
     logout: rejecting,
     restore: rejecting,
+    // The rendering suites do not rotate credentials, so the identity
+    // transition is a window that never opens: the release is a no-op.
+    beginIdentityTransition: () => () => undefined,
     refresh: rejecting,
     retryFeatures: rejecting,
     isStepUpShortfall: () => false,

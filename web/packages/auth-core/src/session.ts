@@ -113,6 +113,23 @@
  * initiator identity; during an impersonation the principal is the
  * impersonated account.
  *
+ * Identity transitions: beginIdentityTransition() opens a short window
+ * in which the credential the session rides is being replaced
+ * server-side. The case it exists for is an impersonation start, which
+ * rotates the session cookie: a request issued under the old cookie can
+ * answer 401 before the start write's Set-Cookie reaches the browser,
+ * and the client's silent-401 leg then runs restore() with the cookie
+ * the server has already detached, so the read answers anonymous even
+ * though the session is not over -- a spurious sign-out in the middle
+ * of the transition. While a transition is open -- and for a restore
+ * that was already in flight when one opened -- an anonymous answer is
+ * discarded: restore() resolves false without changing the snapshot,
+ * the caller's request keeps its 401, and the next read after the
+ * release settles the true state. A genuinely expired session is
+ * therefore settled by that next read, not by the read issued under the
+ * outgoing credential. The guard is identity-generic; this package still
+ * never learns that an impersonation started or ended.
+ *
  * Feature state: the snapshot also carries the feature document the
  * process serves (GET /api/v1/features), as a closed `FeatureState` set. A
  * login completion and an anonymous-start restore read it in parallel
@@ -403,6 +420,14 @@ export interface AuthSession {
    * server-side failure rethrows the raw ApiError and leaves the local
    * snapshot in place.
    *
+   * An anonymous answer is discarded -- resolves false, snapshot
+   * untouched -- while an identity transition is open, or when one
+   * opened after this read was issued (see beginIdentityTransition):
+   * the answer describes a credential a transition is replacing, so it
+   * must not end the session. The refused request that ran this restore
+   * keeps its 401; the next read after the release settles the true
+   * state.
+   *
    * A token session is not rebuilt here. The read is answered from the
    * session cookie, and a token host sends none, so it answers nobody
    * signed in; `refresh()` is that session's silent leg, and a host that
@@ -416,6 +441,31 @@ export interface AuthSession {
    * synchronous-invocation marker no longer covers it. Absent, the
    * generated operations' bound request function serves both reads. */
   restore(issue?: RequestFn): Promise<boolean>
+  /** Opens an identity transition: a short window in which the
+   * credential the session rides is being replaced server-side. The
+   * case it exists for is an impersonation start, which rotates the
+   * session cookie; a host opens it before issuing that write and
+   * closes it (by calling the returned release) once the new identity
+   * has settled -- or at once when the write does not land.
+   *
+   * While the window is open (and for a restore that was already in
+   * flight when it opened), restore() discards an anonymous answer: it
+   * resolves false without changing the snapshot, so the refused
+   * request that ran it keeps its 401 and the host does not see a
+   * spurious sign-out. That discarded answer describes the credential
+   * the read carried -- one the transition is replacing -- not the
+   * session that is coming. The next read after the release settles the
+   * true state; a session that genuinely expired during the window is
+   * settled by that next read rather than by the stale one. An
+   * authenticated answer is never discarded: the host's own re-read
+   * under the new credential commits normally while the window is open.
+   *
+   * The returned release is idempotent, and concurrent windows are
+   * counted: the guard lifts only when every open release has been
+   * called. The guard is identity-generic -- it carries no
+   * impersonation knowledge, so a host covers any credential rotation
+   * with it. */
+  beginIdentityTransition(): () => void
   /** Re-reads the feature document for the current session. Only acts
    * while authenticated: the feature state turns `pending`, GET /api/v1/features
    * is read, and the result lands as `ready` or `failed` if the session
@@ -1074,6 +1124,13 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
   // commit applies only when the generation captured at its entry still
   // holds (see the file header).
   let generation = 0
+  // The identity-transition guard: how many transitions are open, and a
+  // sequence number bumped on every open. A restore discards an anonymous
+  // answer while a transition is open, and when one opened after the
+  // restore was issued -- that answer describes a credential the
+  // transition is replacing (see beginIdentityTransition).
+  let openTransitions = 0
+  let transitionSequence = 0
   // The purpose of the flow this session most recently advanced. The
   // server answers a cookie login and a cookie step-up with the same
   // session completion, so this is the only way to keep a step-up's
@@ -1517,6 +1574,14 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
 
     async restore(issue?: RequestFn): Promise<boolean> {
       const opGeneration = generation
+      // The transition guard as it stood when this read was issued: an
+      // anonymous answer is trustworthy only if no transition was open at
+      // entry and none opened while the read was in flight (see
+      // beginIdentityTransition). A read issued while a window was already
+      // open carries the credential that window replaces, so its answer is
+      // discarded whenever it settles -- including after the release.
+      const transitionAtEntry = openTransitions > 0
+      const transitionSequenceAtEntry = transitionSequence
       // Whether this restore begins from an authenticated snapshot: only
       // an anonymous start reads the feature document (the authenticated
       // path continues the same session and keeps the state).
@@ -1557,6 +1622,19 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
         return false
       }
       if (!view.authenticated) {
+        // An identity transition replaces the credential this read
+        // carried. An anonymous answer then speaks for the outgoing
+        // credential, not for the session that is coming, so it must not
+        // end anything: resolve without changing the snapshot (the
+        // refused request that ran this restore keeps its 401) and let the
+        // next read after the release settle the true state.
+        if (
+          transitionAtEntry ||
+          openTransitions > 0 ||
+          transitionSequence !== transitionSequenceAtEntry
+        ) {
+          return false
+        }
         if (snapshot.state !== 'anonymous') {
           clearLocal()
           notify()
@@ -1604,6 +1682,21 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
       }
       notify()
       return true
+    },
+
+    beginIdentityTransition(): () => void {
+      openTransitions += 1
+      transitionSequence += 1
+      let released = false
+      return () => {
+        // Idempotent per release: a caller that releases twice (or passes
+        // one release to two owners) must not close someone else's window.
+        if (released) {
+          return
+        }
+        released = true
+        openTransitions -= 1
+      }
     },
 
     refresh(): Promise<boolean> {

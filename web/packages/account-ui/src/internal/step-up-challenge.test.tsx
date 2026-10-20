@@ -281,6 +281,7 @@ function refusingStartSession(
     abandonFlow: () => Promise.resolve(),
     logout,
     restore: unused,
+    beginIdentityTransition: () => () => undefined,
     refresh: unused,
     retryFeatures: unused,
     setPermissionSet: unused,

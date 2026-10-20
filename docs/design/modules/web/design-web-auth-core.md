@@ -67,6 +67,7 @@ export interface AuthSession {
   abandonFlow(): Promise<void>
   logout(): Promise<void>
   restore(issue?: RequestFn): Promise<boolean>
+  beginIdentityTransition(): () => void
   refresh(): Promise<boolean>
   setPermissionSet(domain: AuthDomain, perms: readonly string[] | null): void
   retryFeatures(): Promise<void>
@@ -74,7 +75,8 @@ export interface AuthSession {
 ```
 
 - **流程操作接生成面；只有完成开启会话时改会话。** `startFlow`、`startAuthenticatedFlow`、`answerFlow`、`readFlow`、`abandonFlow` 把 `authn.login` 的流程操作转发给视图，交回该步的 `AuthnFlowState`。只有 `answerFlow` 落定一次完成时才改会话：一次 `purpose: 'login'` 的完成（`state: 'authenticated'`）建会话、转已认证；一次 `step-up` 的完成（`state: 'authenticated'`，服务端已轮换 cookie；令牌会话为 `state: 'elevated'`）更新凭据、主体不变；`purpose: 'link'` 与 `enroll` 的完成（`state: 'linked'`、`state: 'enrolled'`）不改登录态。`startFlow` 一律以 `delivery: 'session'` 开始（cookie 会话），故它从不产生令牌完成；令牌路径的登录流程由宿主以生成的 `authnLoginStart({ delivery: 'token' })` 自行开始，再把答复交给 `answerFlow`。`startAuthenticatedFlow` 的交付方式留给调用方（账户面不设，服务端取其缺省，即 cookie 会话），`useStepUp` 不设交付方式，故它开的也是 cookie 流程。
-- **`restore()` 从 cookie 重建会话。** 它读 `GET /api/v1/auth/session`：cookie 仍指向一个会话时，读 `GET /api/v1/auth/me` 取主体、转已认证并 resolve `true`，主体与 `impersonating` 一起提交，`impersonating` 取自 `GET /api/v1/auth/session` 应答的同名字段，缺省为 `false`——从匿名状态开始的恢复同时并行读 `GET /api/v1/features`，已认证状态下的恢复只读主体、保留特性态（见「特性态」）；无人登录（含读被 401 拒）时清本地并 resolve `false`；传输或服务端失败重抛原始 `ApiError`、本地快照不动。页面加载时调用一次即保持登录，同时也是 `@speed/api-client` 在被拒的带凭据请求上跑的那条静默腿。它接受可选的 `issue`——`@speed/api-client` 交给刷新钩子的轮作用域请求函数：两次读都经它发出，故其中任一次被拒即浮出给钩子，而不会加入正在 await 该调用的刷新轮；缺省时走生成的绑定请求函数。令牌会话不经它重建：该会话没有会话 cookie，`restore()` 只会读到无人登录；令牌会话的静默腿是 `refresh()`，要跨重载保持登录的宿主自行重建它。
+- **`restore()` 从 cookie 重建会话。** 它读 `GET /api/v1/auth/session`：cookie 仍指向一个会话时，读 `GET /api/v1/auth/me` 取主体、转已认证并 resolve `true`，主体与 `impersonating` 一起提交，`impersonating` 取自 `GET /api/v1/auth/session` 应答的同名字段，缺省为 `false`——从匿名状态开始的恢复同时并行读 `GET /api/v1/features`，已认证状态下的恢复只读主体、保留特性态（见「特性态」）；无人登录（含读被 401 拒）时清本地并 resolve `false`；传输或服务端失败重抛原始 `ApiError`、本地快照不动。页面加载时调用一次即保持登录，同时也是 `@speed/api-client` 在被拒的带凭据请求上跑的那条静默腿。**身份过渡窗口打开期间发出的恢复（无论应答何时落定），以及发出之后窗口才打开的那次恢复，无人登录的应答被丢弃**：resolve `false`、快照不动（见下一条）。它接受可选的 `issue`——`@speed/api-client` 交给刷新钩子的轮作用域请求函数：两次读都经它发出，故其中任一次被拒即浮出给钩子，而不会加入正在 await 该调用的刷新轮；缺省时走生成的绑定请求函数。令牌会话不经它重建：该会话没有会话 cookie，`restore()` 只会读到无人登录；令牌会话的静默腿是 `refresh()`，要跨重载保持登录的宿主自行重建它。
+- **`beginIdentityTransition()` 覆盖凭据被替换的那段短窗口。** 唯一会用到它的写入是开始冒充：服务端轮换会话 cookie，而会话本身继续。窗口内已发出的读带的是被换下的旧 cookie，可被 401 拒；传输层的静默腿随即用旧 cookie 跑 `restore()`，读到「无人登录」——会话并未结束，本地快照却翻成匿名，宿主看到一次假的登出。宿主在发出该写入之前调用 `beginIdentityTransition()`，在新身份落定之后（写入未落地时则立即）调用其返回的释放。窗口打开期间发出、或发出之后窗口才打开的恢复（无论应答何时落定）的无人登录应答被丢弃：`restore()` resolve `false`、快照不动，被拒的请求保留自己的 401；放行之后的下一次读落定真实状态——窗口内真的过期的会话也由那次读落定，不由带旧凭据的读落定。已认证的应答从不会被丢弃，故宿主在新凭据下的重读可在窗口内照常提交。释放按次幂等、窗口按次数计数：重叠的窗口要等每个释放都调用过才合上。**该守卫与身份无关，本包仍不知晓冒充的开始与结束**；它也不是世代守卫——轮换不是新会话，`restore()` 依旧不抬升世代。
 - **`refresh()` 用被持有的刷新令牌换新令牌对（令牌会话）。** 走 `POST /api/v1/auth/token` 的 `grant_type = refresh_token`，凭据为空（[api-client](design-web-api-client.md) 的凭据为空一档，即 `speedRequestCredentialless`）；其令牌的落地与世代守卫见「单飞刷新」与「世代守卫」。cookie 会话不持刷新令牌，`refresh()` 不发请求即 resolve `false`；其静默腿是 `restore()`。
 - **`listMethods` 读部署在场的登录方式发现文档。** 它转发 `GET /api/v1/auth/methods` 并解析成方法描述符文档（每个方法自报渲染类别、线协议、品牌标签、首步字段与是否可开户，连同注册开关与部署级因素种类），随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)、[ADR-authn-login-method-discovery-2026-10-16](../../../adr/adr-authn-login-method-discovery-2026-10-16.md)）。
 - **`discoverSso` 读一个邮箱域映射的企业提供方。** 它转发 `POST /api/v1/auth/sso/discover`，交回 `{id, name, protocol}` 列表；应答恒同形同长，无匹配时为空列表，故「无匹配」是一次成功的空读而非错误。企业提供方清单不多进发现文档：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)）。
@@ -140,7 +142,7 @@ export function isOperationSuperseded(value: unknown): value is OperationSuperse
 
 **冒充开始或结束都不重取。** 特性文档与调用者身份无关；冒充期间整页刷新时，从匿名状态开始的恢复照常读到它。
 
-**冒充开始与结束改变的是主体与 `impersonating`，auth-core 自己不得知这两个事件**（决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)）。冒充期间 `GET /api/v1/auth/me` 读的是被冒充账户，快照的 `principal` 因此是被冒充者；快照不携带发起者的标识，看着屏幕的就是发起者。开始或结束冒充的写入由宿主绑定的操作发出，宿主在它落定后调用 `restore()` 重读，快照随之改变。`restore()` 所读的 `GET /api/v1/auth/session` 与 `GET /api/v1/auth/me` 都登记为可冒充，冒充期间照常可读。
+**冒充开始与结束改变的是主体与 `impersonating`，auth-core 自己不得知这两个事件**（决策见 [ADR-web-impersonation-shell-2026-10-18](../../../adr/adr-web-impersonation-shell-2026-10-18.md)）。冒充期间 `GET /api/v1/auth/me` 读的是被冒充账户，快照的 `principal` 因此是被冒充者；快照不携带发起者的标识，看着屏幕的就是发起者。开始或结束冒充的写入由宿主绑定的操作发出，宿主在它落定后调用 `restore()` 重读，快照随之改变。`restore()` 所读的 `GET /api/v1/auth/session` 与 `GET /api/v1/auth/me` 都登记为可冒充，冒充期间照常可读。**开始冒充会轮换会话 cookie**，这是 `beginIdentityTransition()` 存在的理由（见「外部接口契约」的「会话」）：宿主在发出该写入之前打开窗口、在新身份落定后释放。窗口覆盖的只是凭据替换：本包仍只知道凭据在被换，不知道换的是冒充；结束冒充不轮换令牌，宿主不为它打开窗口。
 
 ### hook
 
@@ -240,7 +242,7 @@ export function evictTenantQueries(
 
 **`evictTenantQueries` 逐出离任租户的整棵子树**：按 `tenantQueryKey(tenantId)` 得到的键前缀移除。调用时机是宿主完成一次租户切换之后，用切换之前读到的离任租户 id——不用新租户 id，它什么都不命名。
 
-**对外接口面。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`AuthnMethodDescriptor`、`AuthnSsoProvider`、`TenantProvider`、`FeatureState`、`featurePresence`、`StepUpState`、`StepUpPhase`、`AuthnFlowAnswer`、`useStepUpGate`、`StepUpGate`、`isTenantAdmissionRefusal` 与各 hook（`attachSession`、`useAuthState`、`usePermission`、`useCurrentTenant`、`useFeature`、`useFeatureState`、`useStepUp`）的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是主入口的宿主可见面。`./webauthn` 子路径的 `runWebauthn`、`webauthnStepOf`、`WebauthnError`、`WebauthnStep`、`WebauthnFailure` 是同一层的另一处宿主可见面，只经该子路径取用。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`AuthSnapshot` 新增必选字段 `impersonating`：宿主构造的快照字面量与会话替身必须补上它，按本条是不兼容变更。
+**对外接口面。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`AuthnMethodDescriptor`、`AuthnSsoProvider`、`TenantProvider`、`FeatureState`、`featurePresence`、`StepUpState`、`StepUpPhase`、`AuthnFlowAnswer`、`useStepUpGate`、`StepUpGate`、`isTenantAdmissionRefusal` 与各 hook（`attachSession`、`useAuthState`、`usePermission`、`useCurrentTenant`、`useFeature`、`useFeatureState`、`useStepUp`）的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是主入口的宿主可见面。`./webauthn` 子路径的 `runWebauthn`、`webauthnStepOf`、`WebauthnError`、`WebauthnStep`、`WebauthnFailure` 是同一层的另一处宿主可见面，只经该子路径取用。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`AuthSnapshot` 新增必选字段 `impersonating`：宿主构造的快照字面量与会话替身必须补上它，按本条是不兼容变更。`AuthSession` 新增方法 `beginIdentityTransition(): () => void`：宿主自行构造的会话替身必须补上它，同样是源码不兼容变更；不打开窗口的宿主返回一个空释放即可。
 
 ## 依赖
 
@@ -255,7 +257,7 @@ peer（必需）：`react`（任何渲染 hook 的宿主本就渲染 React）。
 
 ## UML 图
 
-会话的一个状态机。图中画不出的约束：世代守卫与单飞刷新（见「并发与事务边界」）；权限表与特性态的存活规则（恢复、刷新与加强认证保留两域与特性态，登录清两域并重取特性态，转匿名清两域并把特性态清为 `none`）；恢复被拒、刷新被拒与登出都落到匿名，但只有登出抬升世代。
+会话的一个状态机。图中画不出的约束：世代守卫与单飞刷新（见「并发与事务边界」）；权限表与特性态的存活规则（恢复、刷新与加强认证保留两域与特性态，登录清两域并重取特性态，转匿名清两域并把特性态清为 `none`）；恢复被拒、刷新被拒与登出都落到匿名，但只有登出抬升世代；**身份过渡窗口内被丢弃的无人登录应答不产生这条「已认证 → 匿名」的边**，放行之后的下一次读才落定（见「外部接口契约」的「会话」）。
 
 ```mermaid
 stateDiagram-v2
@@ -362,6 +364,7 @@ stateDiagram-v2
 | `abandonFlow()` 的流程已不在（401） | `DELETE flows/current` 幂等，resolve |
 | 登录完成宣告已认证但读 `GET /api/v1/auth/me` 失败 | 令牌完成清空存储并拒绝该次提交的 `ApiError`，不转已认证；cookie 完成同样拒绝 |
 | `restore()` 无人登录（cookie 未指向会话，或读被 401 拒） | 本地清空并转匿名，resolve `false`，不拒绝 |
+| `restore()` 的无人登录应答落在身份过渡窗口内（恢复在窗口打开期间发出，或发出之后窗口才打开；无论应答何时落定） | 丢弃该应答：快照不动，resolve `false`，不拒绝；放行之后的下一次读落定真实状态 |
 | `restore()` 传输或服务端失败 | 重抛原始 `ApiError`，本地快照保持原样 |
 | `refresh()` 无令牌可刷（含 cookie 会话） | resolve `false`，不读存储，不改状态 |
 | `refresh()` 被持有令牌被拒（401 或违背契约的 2xx） | 本地清空并转匿名，resolve `false`，不拒绝 |
@@ -404,6 +407,7 @@ stateDiagram-v2
 | 生成响应模型的解析守卫（含特性文档的 `parseFeatureDocument`） | 部分实现 | `web/packages/auth-core/src/session.ts` `parseFlowState`、`parseStep`、`parsePrincipal`、`parseSessionView`、`parseIssuedTokens`、`parseMethodList`、`parseMethodDescriptor`、`parseSsoProviders`、`parseFeatureDocument` |
 | 会话 hook 与通知桥（含 `useFeature`、`useFeatureState` 与 `featurePresence`） | 部分实现 | `web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission`、`useFeature`、`useFeatureState`、`featurePresence` |
 | 快照的 `impersonating` 字段与 `restore()` 对它的写入 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSnapshot`、`restore` |
+| 身份过渡窗口（`beginIdentityTransition()`）与其期间无人登录应答的丢弃 | 已实现 | `web/packages/auth-core/src/session.ts` `beginIdentityTransition`、`restore` |
 | 步进认证的 hook | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | `useStepUp` 的 `method` 入参 | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | 租户上下文、租户作用域 query key 工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/hooks.ts` `TenantProvider`、`useCurrentTenant`；`web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |

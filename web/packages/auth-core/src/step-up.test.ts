@@ -57,6 +57,7 @@ function session(
     startFlow: unused,
     logout: unused,
     restore: unused,
+    beginIdentityTransition: () => () => undefined,
     refresh: unused,
     retryFeatures: unused,
     setPermissionSet: unused,

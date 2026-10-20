@@ -3,7 +3,8 @@
  * banner in the tenant frame, the console's redirect while impersonating,
  * the status read's bare-404 rule, the expiry timer, and the read cutover a
  * start write opens (its in-flight reads cancelled, new ones held until the
- * identity change settles).
+ * identity change settles, and the session's identity-transition guard
+ * opened once and released exactly once).
  *
  * The suites drive the real views over a scripted session and request
  * function: the session's restore() commits whatever identity the script
@@ -137,6 +138,40 @@ function scriptedSession(
       }
       return Promise.resolve(snapshot !== null)
     },
+  }
+}
+
+/**
+ * A session that counts the identity transitions the host opens and
+ * releases. The start hold opens one before the write goes out; every path
+ * that does not land must close it exactly once, and a landed write closes
+ * it through the identity change's own release.
+ */
+function transitionTrackingSession(initial: AuthSnapshot): {
+  readonly session: ReturnType<typeof createTestSession>
+  readonly opens: () => number
+  readonly releases: () => number
+} {
+  const base = createTestSession(initial)
+  let opens = 0
+  let releases = 0
+  return {
+    session: {
+      ...base,
+      beginIdentityTransition: () => {
+        opens += 1
+        let released = false
+        return () => {
+          if (released) {
+            return
+          }
+          released = true
+          releases += 1
+        }
+      },
+    },
+    opens: () => opens,
+    releases: () => releases,
   }
 }
 
@@ -1365,20 +1400,27 @@ describe('the impersonation shell', () => {
     const backend = makeBackend({ startRefused: true })
     bindRequestFn(backend.fn)
     const user = userEvent.setup()
+    const transitions = transitionTrackingSession(operatorSnapshot())
 
-    renderDemoApp({ session: createTestSession(operatorSnapshot()) })
+    renderDemoApp({ session: transitions.session })
 
     await screen.findByText(tConsole('impersonations.current.none'))
     await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
     await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
     await waitFor(() => expect(backend.postReads()).toBe(1))
 
-    // The write changed no identity, so the pause is released at once and
-    // the page's reads run again (its refresh control re-reads the status).
+    // The write changed no identity, so the session's identity-transition
+    // guard is closed exactly once (the returned release, not a second
+    // path) and the pause is released at once: the page's reads run again
+    // (its refresh control re-reads the status).
     await waitFor(() => expect(onlineManager.isOnline()).toBe(true))
+    expect(transitions.opens()).toBe(1)
+    expect(transitions.releases()).toBe(1)
     const readsBefore = backend.reads()
     await user.click(screen.getByRole('button', { name: tConsole('common.refresh') }))
     await waitFor(() => expect(backend.reads()).toBeGreaterThan(readsBefore))
+    expect(transitions.opens()).toBe(1)
+    expect(transitions.releases()).toBe(1)
   })
 
   it('holds no reads while an end settles: the hold belongs to the start path', async () => {

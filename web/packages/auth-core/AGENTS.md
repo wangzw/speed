@@ -109,7 +109,11 @@ it calls). Never import either of those from below this layer.
   `false` (never rejects) when nobody is signed in -- a snapshot that was
   authenticated goes anonymous, and a 401 from the read is treated the
   same -- and rethrows raw only for a transport/server failure with the
-  local snapshot in place. Its optional `issue` argument is the
+  local snapshot in place. While an identity transition is open (the next
+  rule), or for a restore already in flight when one opened or issued
+  while one was open (whenever it settles), an anonymous answer is
+  discarded instead: `false`, nothing changed. Its optional
+  `issue` argument is the
   round-scoped request function `@speed/api-client` hands the
   `refreshAccessToken` hook: both reads then travel through it, so a
   refusal among them surfaces instead of joining the refresh round that
@@ -123,6 +127,22 @@ it calls). Never import either of those from below this layer.
   or a contract-violating 2xx -- the token endpoint answers an unusable
   grant as `400`, not `401`. A cookie session holds no refresh token, so
   `refresh()` resolves `false` there without a request.
+- **An identity transition suppresses an anonymous restore answer.** A
+  host that replaces the credential the session rides -- an impersonation
+  start rotates the session cookie -- opens
+  `beginIdentityTransition()` before the write and calls the returned
+  release once the new identity has settled (or at once when the write
+  does not land). While the window is open, and for a restore already in
+  flight when it opened or issued while one was open (whenever it
+  settles), an anonymous answer resolves `false` and changes nothing: it
+  describes the credential the transition is replacing, so
+  the refused request keeps its 401 and no spurious sign-out is
+  committed. The next read after the release settles the true state, a
+  genuine expiry included. An authenticated answer still commits, which
+  is what lets the host's own re-read under the new credential land
+  mid-window. Releases are counted and idempotent. This is not the
+  generation guard: a rotation is not a new session, and `restore` still
+  never bumps it -- do not fold the two together.
 - **The generation guard is the concurrency invariant.** A
   session-establishing commit captures the generation at entry and bumps
   it only on commit; `restore` and `refresh` never bump, and a stale
@@ -247,7 +267,9 @@ tenant-scoped query-key convention (`tenantQueryKey`,
 `useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`). The
 `./webauthn` subpath exports its own surface (`runWebauthn(options,
 signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`,
-`WebauthnFailure`); those names are not on the main entry. Anything
+`WebauthnFailure`); those names are not on the main entry.
+`AuthSession` also carries `beginIdentityTransition()`, the
+credential-rotation guard documented above. Anything
 else that grows here stays unexported until a consumer proves it needs
 to be public.
 
@@ -280,7 +302,13 @@ to be public.
   every parser), the generation guard (a failed completion leaves an
   in-flight refresh intact; a logout cannot be resurrected by a refresh;
   a newer login is never overwritten; a pre-empted logout converges or
-  stands aside), single-flight refresh, the refresh refusal detection
+  stands aside), single-flight refresh, the identity-transition guard
+  (an anonymous answer during the window leaves the snapshot
+  authenticated and the refused request's 401 stands; a restore in
+  flight when the window opened is discarded too, as is one issued while
+  the window was open when it settles after the release; the next read after
+  the release settles the real state; a transport failure still
+  rethrows), the refresh refusal detection
   and the real-client composition (silent-401 refresh through
   `createClient`) each have dedicated tests. The hooks' fail-closed reads
   before attach, the tenant read-back from `TenantProvider`, the

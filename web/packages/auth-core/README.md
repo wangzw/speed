@@ -216,8 +216,10 @@ bootstrap so a reload stays logged in. The same read carries the
 session's `impersonating` flag into the snapshot (false when the answer
 omits it); only `restore()` writes that field, so a host that starts or
 ends an impersonation issues that write itself and re-reads the session
-once it settles. The snapshot carries no initiator identity: during an
-impersonation the principal is the impersonated account. It is also the
+once it settles -- covering the cookie rotation a start performs with
+`beginIdentityTransition()` (see "Identity transitions"). The snapshot
+carries no initiator identity: during an impersonation the principal is
+the impersonated account. It is also the
 client's silent leg
 for a refused request -- wire it as `refreshAccessToken` alongside
 `credentials`, forwarding the round-scoped request function the hook is
@@ -234,6 +236,51 @@ createClient({
   refreshAccessToken: (issue) => session.restore(issue),
 })
 ```
+
+## Identity transitions
+
+One host write replaces the credential the session rides while the
+session itself continues: starting an impersonation rotates the session
+cookie on the server. Requests issued under the outgoing cookie can
+answer 401 while that write is still in flight, and the silent-401 leg
+then runs `restore()` with a cookie the server has already detached --
+a read that answers anonymous even though the session is not over, which
+the host would render as a spurious sign-out in the middle of the
+transition. A host covers that window with `beginIdentityTransition()`:
+open it before the write goes out, and call the returned release once
+the new identity has settled -- or at once when the write does not land.
+
+While the window is open -- for a `restore()` that was already in
+flight when it opened, and for one issued while it was open, whenever it
+settles -- an anonymous answer is discarded: `restore()`
+resolves `false` without changing the snapshot, so the refused request
+keeps its 401 and no local sign-out is reported, and the next read after
+the release settles the true state. A session that genuinely expired
+during the window is settled by that next read, not by the read issued
+under the outgoing credential. An authenticated answer is never
+discarded, so the host's own re-read under the new credential commits
+normally while the window is open.
+
+```ts
+const release = session.beginIdentityTransition()
+try {
+  await startImpersonation()
+} catch (error) {
+  release() // the write did not land: the old identity still stands
+  throw error
+}
+try {
+  await session.restore() // reads the identity the new credential names
+} finally {
+  release()
+}
+```
+
+The guard is identity-generic and counted: overlapping windows stay
+open until every release has been called, and each release is
+idempotent (calling it twice does not close another window). The package
+never learns that an impersonation started or ended; it only knows that
+the credential was being replaced.
 
 ## React hooks
 
@@ -462,6 +509,11 @@ into the discriminated view a form renders.
   authenticated goes anonymous (the session is over), and a 401 from the
   read is treated the same -- and rethrows the raw `ApiError` for a
   transport or server-side failure, leaving the local snapshot in place.
+  An anonymous answer read while an identity transition is open, or by a
+  restore issued before one opened or while one was open (whenever it
+  settles), is discarded: it resolves `false` and changes nothing,
+  because it describes the credential the transition is replacing (see
+  "Identity transitions").
 - `refresh()` is the token session's silent path. It resolves `true`
   when the store holds a fresh token afterwards, `false` when there is
   nothing to refresh, the held token was refused (the session is over
