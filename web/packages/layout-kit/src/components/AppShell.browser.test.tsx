@@ -22,9 +22,12 @@ import { screen, waitFor } from '@testing-library/react'
 import { page, userEvent } from 'vitest/browser'
 import { drawerClasses } from '@mui/material/Drawer'
 import { toolbarClasses } from '@mui/material/Toolbar'
+import { SidePanel } from '@speed/ui-kit'
 import { AppShell } from './AppShell.js'
 import type { AppShellNavItem } from './AppShell.js'
+import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
+import type { LayoutKitRenderOptions } from '../../test-utils/render.js'
 import enUS from '../locales/en-US.json' with { type: 'json' }
 
 /** The shipped en-US app-shell strings the cases assert on. */
@@ -51,8 +54,11 @@ const NAV_ITEMS: readonly AppShellNavItem[] = [
 
 /** Render in en-US: the geometry stays Latin-only, so the pinned Arial /
  * Liberation Sans metrics are the only font participating. */
-function renderShell(ui: ReactElement) {
-  return renderWithProviders(ui, { language: 'en-US' })
+function renderShell(
+  ui: ReactElement,
+  options: Omit<LayoutKitRenderOptions, 'language' | 'i18n'> = {},
+) {
+  return renderWithProviders(ui, { language: 'en-US', ...options })
 }
 
 /** The banner slot's host content, with an explicit height: the head's
@@ -355,6 +361,331 @@ describe('AppShell drawer slots in Chromium', () => {
         screen.getByRole('button', { name: OPEN_NAV }),
       ).toHaveAttribute('aria-expanded', 'false')
     })
+  })
+})
+
+describe('AppShell sidebar layout in Chromium', () => {
+  const GLASS_FILTER = 'blur(18px) saturate(180%)'
+
+  /** Enough entries to overflow the nav's share of the drawer height. */
+  const SCROLLING_NAV_ITEMS: readonly AppShellNavItem[] = Array.from(
+    { length: 60 },
+    (_, index) => ({
+      id: `item-${index}`,
+      label: `Item ${index}`,
+      href: `/item-${index}`,
+    }),
+  )
+
+  /** The mounted drawer paper (one per shell render). */
+  function drawerPaper(): HTMLElement {
+    const paper = document.querySelector<HTMLElement>(
+      `.${drawerClasses.paper}`,
+    )
+    if (paper === null) {
+      throw new Error('AppShell: no drawer paper is mounted')
+    }
+    return paper
+  }
+
+  const SIDEBAR_CHROME = {
+    header: <span>Speed Admin</span>,
+    headerActions: <button type="button">Search</button>,
+    userMenu: <button type="button">Account</button>,
+  } as const
+
+  /** Icon-sized actions for the rail, whose inner width is 46px: a host
+   * control wider than the rail is the host's own layout concern (the
+   * slot stacks vertically but AppShell does not resize it). */
+  const RAIL_CHROME = {
+    // A role-bearing brand: the rail clips it visually, but a screen
+    // reader must still find it. `getByRole` filters hidden elements, so
+    // this fixture is what makes the visibility assertion discriminating.
+    header: <a href="/home">Speed Admin</a>,
+    headerActions: (
+      <button
+        type="button"
+        aria-label="Search"
+        style={{ width: 32, height: 32, padding: 0 }}
+      >
+        S
+      </button>
+    ),
+    userMenu: (
+      <button
+        type="button"
+        aria-label="Account"
+        style={{ width: 32, height: 32, padding: 0 }}
+      >
+        A
+      </button>
+    ),
+  } as const
+
+  it('starts main at the viewport top and keeps the sidebar in place while the content scrolls, with no banner', async () => {
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell shellLayout="sidebar" navItems={NAV_ITEMS} header={<span>Brand</span>}>
+        <div
+          data-testid="probe"
+          style={{ height: 2400, backgroundColor: '#40a0f0' }}
+        >
+          content
+        </div>
+      </AppShell>,
+    )
+
+    // No fixed head, so neither main nor its content is pushed down.
+    expect(screen.getByRole('main').getBoundingClientRect().top).toBeCloseTo(
+      0,
+      0,
+    )
+    expect(
+      screen.getByTestId('probe').getBoundingClientRect().top,
+    ).toBeCloseTo(0, 0)
+
+    const paper = drawerPaper()
+    const paperBefore = paper.getBoundingClientRect()
+    const brand = screen.getByText('Brand')
+    const brandBefore = brand.getBoundingClientRect()
+
+    window.scrollTo(0, 600)
+    await waitFor(() => {
+      expect(window.scrollY).toBeGreaterThan(0)
+    })
+
+    // The paper is position: fixed, so the content scroll leaves it --
+    // and the brand inside it -- exactly where it was.
+    const paperAfter = paper.getBoundingClientRect()
+    expect(paperAfter.top).toBeCloseTo(paperBefore.top, 0)
+    expect(paperAfter.left).toBeCloseTo(paperBefore.left, 0)
+    expect(brand.getBoundingClientRect().top).toBeCloseTo(brandBefore.top, 0)
+    window.scrollTo(0, 0)
+  })
+
+  for (const bannerHeight of [40, 120] as const) {
+    it(`reserves a ${bannerHeight}px banner at the top of both main and the drawer content`, async () => {
+      await page.viewport(1280, VIEWPORT_HEIGHT)
+      renderShell(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          header={<span>Brand</span>}
+          banner={<Banner height={bannerHeight} />}
+        >
+          <div data-testid="probe" style={{ height: 240 }}>
+            content
+          </div>
+        </AppShell>,
+      )
+
+      const bannerRect = screen.getByTestId('banner').getBoundingClientRect()
+      const mainSpacerElement = mainSpacer()
+      await waitForMeasuredSpacer(mainSpacerElement)
+
+      // The head holds the banner alone; its measured height is the
+      // banner's height, and both spacers reserve exactly that.
+      expect(bannerRect.top).toBeCloseTo(0, 0)
+      expect(
+        mainSpacerElement.getBoundingClientRect().height,
+      ).toBeCloseTo(bannerHeight, 0)
+      expect(drawerSpacer().getBoundingClientRect().height).toBeCloseTo(
+        bannerHeight,
+        0,
+      )
+
+      // Main's content starts exactly at the banner's bottom edge. The
+      // drawer's content starts there too, one pixel lower only because
+      // the drawer paper's own surface border sits inside its top edge --
+      // the spacer above the top row is exactly the head height.
+      expect(
+        screen.getByTestId('probe').getBoundingClientRect().top,
+      ).toBeCloseTo(bannerRect.bottom, 0)
+      const brand = screen.getByText('Brand')
+      const topRow = brand.parentElement?.parentElement ?? null
+      expect(topRow).not.toBeNull()
+      const topRowRect = (topRow as HTMLElement).getBoundingClientRect()
+      expect(topRowRect.top).toBeGreaterThanOrEqual(bannerRect.bottom - 0.5)
+      expect(topRowRect.top - bannerRect.bottom).toBeLessThanOrEqual(1.5)
+      expect(topRowRect.top).toBeCloseTo(
+        drawerSpacer().getBoundingClientRect().bottom,
+        0,
+      )
+    })
+  }
+
+  it('pins the bottom row to the paper bottom while the nav takes the rest and scrolls itself', async () => {
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={SCROLLING_NAV_ITEMS}
+        {...SIDEBAR_CHROME}
+      >
+        <div style={{ height: 240 }}>content</div>
+      </AppShell>,
+    )
+
+    const paper = drawerPaper()
+    const paperRect = paper.getBoundingClientRect()
+    const account = screen.getByRole('button', { name: 'Account' })
+    const bottomRow = account.parentElement as HTMLElement
+    const bottomRowRect = bottomRow.getBoundingClientRect()
+
+    // The bottom row's edge is the paper's edge (the row, not the
+    // button: the row carries the padding).
+    expect(Math.abs(bottomRowRect.bottom - paperRect.bottom)).toBeLessThanOrEqual(1)
+    expect(Math.abs(bottomRowRect.left - paperRect.left)).toBeLessThanOrEqual(1)
+    expect(Math.abs(bottomRowRect.right - paperRect.right)).toBeLessThanOrEqual(1)
+
+    // The nav fills everything between the top row and the bottom row,
+    // and its own overflow is what scrolls -- not the paper.
+    const nav = screen.getByRole('navigation', { name: NAV_LABEL })
+    expect(getComputedStyle(nav).overflowY).toBe('auto')
+    expect(nav.scrollHeight).toBeGreaterThan(nav.clientHeight)
+    expect(nav.getBoundingClientRect().bottom).toBeCloseTo(
+      bottomRowRect.top,
+      0,
+    )
+    nav.scrollTop = 200
+    expect(nav.scrollTop).toBeGreaterThan(0)
+    expect(paper.scrollTop).toBe(0)
+  })
+
+  it('keeps the collapsed rail free of horizontal overflow with its bottom actions inside the paper', async () => {
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={NAV_ITEMS}
+        sidebarCollapsed
+        onSidebarCollapsedChange={() => undefined}
+        {...RAIL_CHROME}
+      >
+        <div style={{ height: 240 }}>content</div>
+      </AppShell>,
+    )
+
+    const paper = drawerPaper()
+    const paperRect = paper.getBoundingClientRect()
+    // The rail is the theme's 56px (its 1px divider included), wide
+    // enough for a 40px control on either side of it.
+    expect(paper.scrollWidth).toBeLessThanOrEqual(paper.clientWidth)
+    expect(
+      screen.getByRole('button', { name: enUS.appShell.expandNav }),
+    ).toBeInTheDocument()
+    // The brand is clipped by `overflow: hidden`, not removed: it stays in
+    // the accessibility tree, so a screen-reader user can still identify
+    // the product from the rail. A display:none / visibility:hidden /
+    // aria-hidden implementation would drop it from `getByRole`.
+    expect(
+      screen.getByRole('link', { name: 'Speed Admin' }),
+    ).toBeInTheDocument()
+    for (const control of [
+      screen.getByRole('button', { name: 'Search' }),
+      screen.getByRole('button', { name: 'Account' }),
+    ]) {
+      const rect = control.getBoundingClientRect()
+      expect(rect.left).toBeGreaterThanOrEqual(paperRect.left - 0.5)
+      expect(rect.right).toBeLessThanOrEqual(paperRect.right + 0.5)
+    }
+  })
+
+  it('shows the brand once at 400px and pins the open drawer bottom row, with no accessibility violations', async () => {
+    await page.viewport(400, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={NAV_ITEMS}
+        {...SIDEBAR_CHROME}
+      >
+        <h1>Main content</h1>
+      </AppShell>,
+    )
+
+    // The minimal top bar carries the brand; the temporary drawer has no
+    // top row, so the brand appears exactly once.
+    expect(screen.getAllByText('Speed Admin')).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: OPEN_NAV }))
+    await waitFor(() => {
+      expect(drawerPaper().getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+
+    const paperRect = drawerPaper().getBoundingClientRect()
+    const bottomRow = screen.getByRole('button', { name: 'Account' })
+      .parentElement as HTMLElement
+    expect(
+      Math.abs(bottomRow.getBoundingClientRect().bottom - paperRect.bottom),
+    ).toBeLessThanOrEqual(1)
+
+    await expectNoAxeViolations()
+  })
+
+  it('anchors the fixed head, the drawer paper and a side panel under backdrop-filtered surfaces', async () => {
+    // The glass preset expresses its translucency through
+    // `surface.*.backdropFilter`; a backdrop filter makes its element a
+    // containing block for `position: fixed` descendants, so the shell's
+    // own fixed surfaces are measured here rather than assumed. The
+    // override writes the same token fields the preset does.
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={NAV_ITEMS}
+        header={<span>Brand</span>}
+        banner={<Banner height={40} />}
+      >
+        <SidePanel
+          open
+          title="Task"
+          onClose={() => undefined}
+          onExited={() => undefined}
+        >
+          panel body
+        </SidePanel>
+      </AppShell>,
+      {
+        projectTokens: {
+          surface: {
+            container: { backdropFilter: GLASS_FILTER, opacity: 0.36 },
+            overlay: { backdropFilter: GLASS_FILTER, opacity: 0.36 },
+            header: { backdropFilter: GLASS_FILTER, opacity: 0.3 },
+          },
+        },
+      },
+    )
+
+    // The fixed head stays pinned to the viewport's top edge at full
+    // width -- the banner slot is its only child in this layout.
+    const banner = screen.getByTestId('banner')
+    const head = banner.parentElement?.parentElement as HTMLElement
+    const headRect = head.getBoundingClientRect()
+    expect(headRect.top).toBeCloseTo(0, 0)
+    expect(headRect.left).toBeCloseTo(0, 0)
+    expect(headRect.right).toBeCloseTo(window.innerWidth, 0)
+
+    // The shell's permanent drawer paper is still anchored to the left
+    // edge at its declared width.
+    const paperRect = drawerPaper().getBoundingClientRect()
+    expect(paperRect.left).toBeCloseTo(0, 0)
+    expect(paperRect.width).toBeCloseTo(DEFAULT_SIDEBAR_WIDTH, 0)
+
+    // The side panel (a fixed, right-anchored overlay rendered inside
+    // main) still spans the viewport height and hugs the right edge.
+    const panelPaper = document.querySelector<HTMLElement>(
+      `.${drawerClasses.paper}[role="dialog"]`,
+    )
+    expect(panelPaper).not.toBeNull()
+    await waitFor(() => {
+      expect(
+        (panelPaper as HTMLElement).getBoundingClientRect().width,
+      ).toBeGreaterThan(0)
+    })
+    const panelRect = (panelPaper as HTMLElement).getBoundingClientRect()
+    expect(panelRect.top).toBeCloseTo(0, 0)
+    expect(panelRect.right).toBeCloseTo(window.innerWidth, 0)
+    expect(panelRect.height).toBeCloseTo(VIEWPORT_HEIGHT, 0)
   })
 })
 

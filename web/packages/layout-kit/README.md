@@ -20,7 +20,7 @@ same discipline `ui-kit` established, and the workspace's
 
 | Module | Exports |
 |---|---|
-| `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellNavItem`, `AppShellNavGroup`, `AppShellNavEntry`, `AppShellNavSlot`, `AppShellNavSlotState` |
+| `components/AppShell.tsx` | `AppShell`, `AppShellProps`, `AppShellShellLayout`, `AppShellNavItem`, `AppShellNavGroup`, `AppShellNavEntry`, `AppShellNavSlot`, `AppShellNavSlotState` |
 | `components/Avatar.tsx` | `Avatar`, `AvatarProps` |
 | `components/RouteGuard.tsx` | `RouteGuard`, `RouteGuardProps`, `RouteGuardStatus` |
 | `isPlainPrimaryClick.ts` | `isPlainPrimaryClick` |
@@ -87,11 +87,14 @@ from the API.
 
 ## AppShell
 
-The responsive app-chrome shell: a fixed `AppBar` (the `header`
-landmark), a nav `Drawer` (a labelled `nav` landmark: permanent at the
-`md` breakpoint and up, temporary and overlaid below it -- driven off
-`useMediaQuery(theme.breakpoints.up('md'))`, no new breakpoint
-introduced), and a `main` content landmark. A visually-hidden
+The responsive app-chrome shell: a nav `Drawer` (a labelled `nav`
+landmark: permanent at the `md` breakpoint and up, temporary and
+overlaid below it -- driven off `useMediaQuery(theme.breakpoints.up('md'))`,
+no new breakpoint introduced) and a `main` content landmark, arranged
+in one of two chrome forms selected by `shellLayout`: `'topbar'` (the
+default) places a fixed `AppBar` (the `header` landmark) above the
+content, while `'sidebar'` moves the app-bar content into the drawer
+paper and renders no app bar at `md` and up. A visually-hidden
 skip-to-content link is the first focusable element in the shell;
 activating it focuses the `main` landmark directly (never a fragment
 navigation, which would rewrite `location.hash` and lose a
@@ -116,19 +119,102 @@ rendered). Both levels reuse the leaf activation and the
 `AppShellNavItem[]` host that declares no groups and no children is
 byte-for-byte unchanged.
 
+### Shell layouts
+
+`shellLayout` is the one structural choice the shell accepts, and it is
+made at assembly time. It is an enum rather than a free slot because the
+landmark structure, focus order, head measurement and the drawer's two
+variants are this component's accessibility guarantees; content
+variation is what the slots already cover.
+
+At `md` and up:
+
+| Region | `topbar` (default) | `sidebar` |
+|---|---|---|
+| Fixed head | `AppBar` carrying `header`, `headerActions` and `userMenu` | no `AppBar`; a `banner`, when given, is the head's only child at the very top |
+| Drawer paper, top row | -- | `header` plus the desktop collapse toggle, when `onSidebarCollapsedChange` is supplied |
+| Drawer paper, middle | `navHeader` -> `nav` (the paper scrolls) -> `navFooter` | the same slots in the same order, with `nav` taking the remaining height and scrolling itself |
+| Drawer paper, bottom row | -- | `headerActions` then `userMenu`, pinned to the bottom |
+| Content | `main` below the fixed head | `main` below the fixed head when one renders (a desktop shell with no banner starts at the viewport top); otherwise unchanged |
+
+The sidebar paper is a fixed column: the paper itself stops scrolling
+(`overflow: hidden`), the `nav` between the two rows takes
+`flex: 1 1 auto` with `minHeight: 0` and scrolls vertically, and the
+bottom row stays put (`flexShrink: 0`). Those three declarations are
+added only to the `sidebar` layout -- giving the nav `flexGrow`
+unconditionally would push `navFooter` to the bottom of an
+always-scrolling paper in the `topbar` layout. The content region
+remains the page's one scrolling layer in both layouts, and
+`navHeader`/`navFooter` remain siblings of the `nav` landmark with the
+same accessible name and slot contract; `narrow` still reflects the
+mounted drawer.
+
+Below `md`, a `sidebar` shell renders a minimal top bar holding only the
+drawer trigger and `header`; `headerActions` and `userMenu` stay in the
+temporary drawer's bottom row, and the temporary drawer renders no top
+row -- the brand is already in the minimal bar, so it appears once per
+page. That minimal bar is the `banner` landmark. A desktop `sidebar`
+shell renders no app bar, so without a banner it has no `banner`
+landmark at all; with a banner, the banner is the head. This landmark
+difference between the layouts is deliberate.
+
+The fixed head is rendered only when it has content:
+`shellLayout === 'topbar'`, a `banner` is given, or the viewport is
+below `md`. Otherwise the shell renders no head container and its three
+offset placeholders (`spacer`) render `null`. Without that rule jsdom's
+unmeasured fallback would leave the theme toolbar height (56/64px) as a
+permanent gap above the content. When a head exists, one
+`ResizeObserver` measures it and every placeholder clears that height;
+switching layouts or crossing the breakpoint resets the measurement, so
+a height measured for one arrangement never survives into another.
+
+The collapsed rail's width is `max(theme.spacing(7), 44)`: at the
+default spacing base the result is unchanged, and the 44px floor keeps
+the rail at the touch-target minimum when a theme preset shrinks the
+spacing base (the `compact` preset is the shipped case). The collapse
+toggle sits in the AppBar in the `topbar` layout and at the end of the
+drawer paper's top row in the `sidebar` layout. The mobile drawer
+trigger sits in the AppBar (`topbar`) or the minimal top bar
+(`sidebar`), and both positions reuse the existing
+`appShell.openNav`/`closeNav` strings.
+
+The bottom row is a wrapping horizontal flex container; in the
+collapsed rail it stacks vertically and centers. The rail is only 280px
+wide by default, so a host stacking wide controls (a tenant switcher,
+say) arranges them in its own slot -- AppShell does not re-lay-out host
+content.
+
+### Adding a shell layout
+
+The `AppShellShellLayout` union is the registry of built-in forms. A new
+form is a platform change, not a host configuration: add the union
+member, give it a region mapping in `AppShell`, cover it in both the
+jsdom suite and the Chromium geometry suite, and update the design
+document and this package's docs in the same change. Hosts then select
+it through `shellLayout` alone, with no host-side change.
+
+A customer that changes the content of the chrome -- brand, actions,
+account menu -- but not its structure uses the existing slots and leaves
+`shellLayout` alone. A host shipping its own replacement `AppShell` is
+out of scope: it would duplicate the breakpoint split, landmarks, head
+measurement and drawer variants this component owns.
+
+### Props
+
 | Prop | Type | Notes |
 |---|---|---|
+| `shellLayout` | `'topbar' \| 'sidebar'` | the shell's chrome arrangement, chosen at assembly time; defaults to `'topbar'`, the arrangement every host had before the prop existed. `'sidebar'` moves the brand and the desktop collapse toggle to the drawer paper's top row and `headerActions`/`userMenu` to its bottom row; at `md` and up no app bar renders (see "Shell layouts") |
 | `navItems` | `readonly AppShellNavEntry[]` (required) | each element is an `AppShellNavItem` (`{ id, label, icon?, href?, onClick?, selected?, children? }`) or an `AppShellNavGroup` (`{ id, label, icon?, items, defaultCollapsed? }`); `href` renders a link, `onClick` fires regardless |
-| `header` | `ReactNode` | start-of-AppBar content (logo, product name) |
-| `headerActions` | `ReactNode` | end-of-AppBar content (search, notifications) |
-| `userMenu` | `ReactNode` | far end-of-AppBar content (account menu trigger) |
-| `banner` | `ReactNode` | a full-width banner below the app bar, host content and already translated. It is part of the fixed shell head: one fixed container holds the app bar first and the banner after it in normal flow, the two never overlap, and the content spacers reserve the head's measured height (each height counted once); it stays in view with the app bar when the page scrolls, at every breakpoint, and the head sits above page content but below modal panels and dialogs. The slot adds no padding, border or minimum height -- an empty node adds no height. It belongs to the shell, so a route change never unmounts it. It adds no landmark and no live region -- the node the host passes carries the roles it needs, and the banner landmark remains the app bar. Absent, `null` or `false` renders no slot container and adds no height |
+| `header` | `ReactNode` | start-of-AppBar content (logo, product name). The `sidebar` layout moves it to the drawer paper's top row, and to the minimal top bar below `md` |
+| `headerActions` | `ReactNode` | end-of-AppBar content (search, notifications). The `sidebar` layout moves it to the drawer paper's bottom row |
+| `userMenu` | `ReactNode` | far end-of-AppBar content (account menu trigger). The `sidebar` layout moves it after `headerActions` in the bottom row |
+| `banner` | `ReactNode` | a full-width banner below the app bar, host content and already translated. It is part of the fixed shell head: one fixed container holds the app bar first (where one renders) and the banner after it in normal flow, so the two never overlap; the content spacers reserve the head's measured height (each height counted once). A desktop `sidebar` shell renders no app bar, so there the banner is the head's only child, at the very top. The banner stays in view while the page scrolls, at every breakpoint, and the head sits above page content but below modal panels and dialogs. The slot adds no padding, border or minimum height -- an empty node adds no height. It belongs to the shell, so a route change never unmounts it. It adds no landmark and no live region -- the node the host passes carries the roles it needs, and the banner landmark remains the app bar (the minimal top bar below `md` in a sidebar shell; a desktop sidebar shell has no banner landmark). Absent, `null` or `false` renders no slot container and adds no height |
 | `navLabel` | `string` | the navigation landmark's accessible name (and the temporary drawer's dialog name); defaults to the `appShell.navLabel` string. A host mounting AppShell beside a second shell's navigation supplies a distinguishing name so the landmarks do not read alike |
 | `navHeader` | `ReactNode \| ((state: AppShellNavSlotState) => ReactNode)` | host content inside the drawer paper, immediately before the nav landmark, in both drawer variants. A render function receives `{ narrow, closeDrawer }`: `narrow` is true only in the collapsed rail (never in the temporary drawer), and `closeDrawer` closes an uncontrolled temporary drawer, reports `false` through `onMobileOpenChange` when the drawer is controlled, and is a no-op for the permanent drawer. The slot is a sibling of the landmark, so the landmark and its name are unchanged. Absent, `null` or `false` renders nothing and adds no height |
 | `navFooter` | `ReactNode \| ((state: AppShellNavSlotState) => ReactNode)` | host content inside the drawer paper, immediately after the nav landmark, with the same state and rendering contract as `navHeader` |
 | `children` | `ReactNode` (required) | the content region, rendered inside the `main` landmark |
 | `mobileOpen` / `onMobileOpenChange` | `boolean` / `(open: boolean) => void` | optional controlled pair for the mobile drawer; omit both to let AppShell manage the toggle itself (the one interaction-local exception, matching `ui-kit`'s `ConfirmDialog` double-confirm arm -- the same carve-out covers the uncontrolled temporary drawer closing itself when a nav item is activated; a controlled host keeps the existing contract, closing through its own next render) |
-| `sidebarCollapsed` / `onSidebarCollapsedChange` | `boolean` / `(collapsed: boolean) => void` | optional controlled pair for the desktop sidebar; omit both for the always-open permanent drawer (the drawer is what it was before the collapse existed; the one change that applies to every host is the touch-device floor on each nav entry, which follows the accessibility requirement rather than the collapse). Supplying `onSidebarCollapsedChange` renders the collapse/expand toggle in the AppBar. `sidebarCollapsed` (default `false`) is honored only at `md` and up -- the mobile drawer is unaffected -- and collapsing narrows the permanent drawer to the icon-only rail: it stays mounted and named, each entry keeps its icon with the label shown as a tooltip, and an icon-less entry keeps its (clipped) label rather than going blank |
+| `sidebarCollapsed` / `onSidebarCollapsedChange` | `boolean` / `(collapsed: boolean) => void` | optional controlled pair for the desktop sidebar; omit both for the always-open permanent drawer (the drawer is what it was before the collapse existed; the one change that applies to every host is the touch-device floor on each nav entry, which follows the accessibility requirement rather than the collapse). Supplying `onSidebarCollapsedChange` renders the collapse/expand toggle -- in the AppBar in the `topbar` layout, at the end of the drawer paper's top row in the `sidebar` layout. `sidebarCollapsed` (default `false`) is honored only at `md` and up -- the mobile drawer is unaffected -- and collapsing narrows the permanent drawer to the icon-only rail of `max(theme.spacing(7), 44)` px: it stays mounted and named, each entry keeps its icon with the label shown as a tooltip, and an icon-less entry keeps its (clipped) label rather than going blank |
 | `sidebarWidth` | `number` | drawer width in px, both variants; defaults to 280 |
 | `sx` | `SxProps<Theme>` | escape hatch, merged onto the root layout box |
 
@@ -204,11 +290,14 @@ consumer is visually unaffected outside the narrow-viewport cases
 these protections exist for. Because a wrapped header row is taller
 than the theme's single-row toolbar height, the fixed head container's
 rendered height is measured (one ResizeObserver on the container that holds
-the app bar and the banner, where the browser provides one) and the three
-offset placeholders that keep content clear of the fixed AppBar -- inside the
+the app bar or minimal top bar, where one renders, and the banner below it,
+where the browser provides one) and the three
+offset placeholders that keep content clear of that fixed head -- inside the
 drawer paper and inside `main`, for whichever drawer variant is mounted --
 derive their height from that measurement, so a wrapped header never covers
-the top of the content below it. jsdom has no ResizeObserver and no layout,
+the top of the content below it. The measurement is reset when the layout or
+the desktop/mobile split changes, so a height measured for one arrangement
+never survives into another. jsdom has no ResizeObserver and no layout,
 so the placeholders keep the theme toolbar height there and the
 measurement path is proven through a stubbed observer; the real
 browser round trip is what the mechanism exists for.
@@ -319,9 +408,12 @@ package -- see the AGENTS.md non-negotiable rules.
   inside the shell's children and feeding it a status it computes
   from the role lists it attached, exactly the host-injected-status
   contract this package's rules require.
-- **Browser-driving leg**: none ships in the tree. The package-level
-  proof (`src/usage-example.test.tsx`) is the in-form leg; no suite
-  drives the composed frame in a real browser against a real server.
+- **Browser-driving leg against a server**: no host ships in the tree.
+  The layout's real geometry, focus order and focusability are measured
+  in Chromium by `src/components/AppShell.browser.test.tsx` (the
+  workspace's `make web-browser` tier), and the package-level
+  `src/usage-example.test.tsx` is the in-form leg; nothing drives the
+  composed frame against a real backend.
 - **Storybook / browser-side visual verification**: no preview
   harness exists, the same deferral `ui-kit` carries; `color-contrast`
   stays axe-disabled for the same jsdom reason.
@@ -350,3 +442,9 @@ a real narrow viewport). Bilingual fixtures are the shipped
 locale files under `src/locales/`, imported by sources and tests;
 `src/usage-example.test.tsx` compiles and executes the Quick start
 composition above, so the documented usage cannot drift from the API.
+The Chromium tier lives beside the component
+(`src/components/AppShell.browser.test.tsx`, run by `make web-browser`):
+it measures the fixed head, the offset placeholders, the pinned sidebar
+bottom row and the collapsed rail in both layouts -- the geometry and
+focus invariants jsdom cannot evaluate. A new shell layout adds its
+cases there, and in the jsdom suite, in the same change.

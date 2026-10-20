@@ -57,6 +57,20 @@ afterEach(() => {
   window.location.hash = ''
 })
 
+/** The declarations emotion emitted for every `css-*` class on `element`. */
+function emittedDeclarations(element: Element): string {
+  const css = emittedStyleText()
+  return Array.from(element.classList)
+    .filter((name) => name.startsWith('css-'))
+    .map((name) => {
+      const rule = new RegExp(`\\.${name}\\{([^}]*)\\}`, 'g')
+      return Array.from(css.matchAll(rule))
+        .map((match) => match[1])
+        .join(';')
+    })
+    .join(';')
+}
+
 const NAV_ITEMS: readonly AppShellNavItem[] = [
   { id: 'home', label: 'Home', href: '/home', selected: true },
   { id: 'reports', label: 'Reports', href: '/reports' },
@@ -491,9 +505,13 @@ describe('AppShell', () => {
         position: 'absolute',
       })
       // ... and the rail is the fixed narrow width derived from the theme
-      // spacing base (7 x 8px = 56px), NOT the old zero-width hide.
+      // spacing base (7 x 8px = 56px), NOT the old zero-width hide. The
+      // width stays a CSS max() so a function-form spacing option keeps
+      // its own unit instead of being coerced to px.
       expect(emittedStyleText()).toMatch(
-        new RegExp(`\\.${drawerClasses.paper}\\{[^}]*width:56px`),
+        new RegExp(
+          `\\.${drawerClasses.paper}\\{[^}]*width:max\\(56px,\\s*44px\\)`,
+        ),
       )
       // The toggle now offers to expand.
       expect(
@@ -894,6 +912,406 @@ describe('AppShell', () => {
       // nothing at all -- an absent slot adds no container and no height.
       expect(nav.previousElementSibling).toHaveClass(toolbarClasses.root)
       expect(nav.nextElementSibling).toBeNull()
+    })
+  })
+
+  describe('sidebar shell layout', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    // The sidebar layout's region mapping: at md+ there is no app bar
+    // (hence no banner landmark), the brand and the collapse toggle sit
+    // in the drawer paper's top row, and headerActions/userMenu in its
+    // bottom row -- the brand and the rows stay siblings of the nav
+    // landmark. Below md a minimal top bar carries the drawer trigger and
+    // the brand only, so the brand appears exactly once.
+
+    /** The mounted drawer paper. */
+    const paper = (): HTMLElement => {
+      const element = document.querySelector<HTMLElement>(
+        `.${drawerClasses.paper}`,
+      )
+      if (element === null) {
+        throw new Error('expected a mounted drawer paper')
+      }
+      return element
+    }
+
+    it('renders no app bar and no banner landmark at md+, keeping the brand before and the actions after the nav landmark inside the drawer paper', () => {
+      mockMatchMedia(true)
+      const { queryByRole, getByRole, getByText } = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          header={<span>Speed Admin</span>}
+          headerActions={<button type="button">Search</button>}
+          userMenu={<button type="button">Account</button>}
+        >
+          content
+        </AppShell>,
+      )
+
+      // The desktop sidebar shell has no app bar, so no `banner`
+      // landmark exists -- the documented difference from the topbar
+      // layout.
+      expect(queryByRole('banner')).toBeNull()
+      expect(
+        getByRole('navigation', { name: zhCN.appShell.navLabel }),
+      ).toBeInTheDocument()
+      expect(getByRole('main')).toBeInTheDocument()
+
+      const nav = getByRole('navigation', { name: zhCN.appShell.navLabel })
+      const brand = getByText('Speed Admin')
+      const search = getByRole('button', { name: 'Search' })
+      const account = getByRole('button', { name: 'Account' })
+
+      // The whole chrome column is one named complementary landmark, so
+      // the brand and the bottom-row controls are reachable through the
+      // landmark list instead of floating outside every landmark (which a
+      // page-level axe scan rejects). The nav landmark stays a separate
+      // nested landmark: the brand is before it, the actions after it,
+      // and all of them are its siblings, not its content.
+      const region = getByRole('complementary', {
+        name: zhCN.appShell.sidebarRegionLabel,
+      })
+      expect(region).toContainElement(brand)
+      expect(region).toContainElement(search)
+      expect(region).toContainElement(account)
+      expect(paper()).toContainElement(region)
+      expect(nav.contains(brand)).toBe(false)
+      expect(
+        brand.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      expect(nav.contains(search)).toBe(false)
+      expect(nav.contains(account)).toBe(false)
+      expect(
+        search.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING,
+      ).toBeTruthy()
+      expect(
+        account.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_PRECEDING,
+      ).toBeTruthy()
+    })
+
+    it('renders no fixed head and no spacer when a desktop sidebar shell has no banner', () => {
+      mockMatchMedia(true)
+      const { container, getByRole } = renderWithProviders(
+        <AppShell shellLayout="sidebar" navItems={NAV_ITEMS}>
+          content
+        </AppShell>,
+      )
+
+      // No head container: the shell root holds the skip link, the
+      // sidebar column and main, and nothing pinned on top.
+      const root = container.firstElementChild
+      expect(root?.children).toHaveLength(3)
+
+      // With no head there is nothing to clear, so neither the drawer
+      // paper nor main carries a spacer. The jsdom fallback (no
+      // ResizeObserver) would otherwise leave the theme toolbar height
+      // (56/64px) as a permanent gap.
+      expect(paper().querySelector(`.${toolbarClasses.root}`)).toBeNull()
+      expect(
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
+      ).toBeNull()
+    })
+
+    it('keeps the banner in the fixed head and reserves its height in main and the drawer paper', () => {
+      mockMatchMedia(true)
+      const { queryByRole, getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+
+      const notice = getByTestId('notice')
+      const head = notice.parentElement?.parentElement ?? null
+      expect(head).not.toBeNull()
+      // The banner is the head's only child -- no app bar above it -- and
+      // the head is the one pinned container; the slot still adds no
+      // landmark of its own, and no app bar means no banner landmark.
+      expect((head as HTMLElement).children[0]).toBe(notice.parentElement)
+      expect(getComputedStyle(head as Element).position).toBe('fixed')
+      expect(queryByRole('banner')).toBeNull()
+
+      // Both spacers exist (and, in jsdom, keep the theme toolbar
+      // fallback until a real measurement arrives).
+      expect(
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
+      ).not.toBeNull()
+      expect(
+        paper().querySelector(`.${toolbarClasses.root}`),
+      ).not.toBeNull()
+    })
+
+    it('places the banner below the minimal top bar below md', () => {
+      mockMatchMedia(false)
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          header={<span>Speed Admin</span>}
+          banner={<p data-testid="notice">Impersonating</p>}
+        >
+          content
+        </AppShell>,
+      )
+      const notice = getByTestId('notice')
+      const bar = getByRole('banner')
+      // The minimal bar is the head's first child and the banner follows
+      // it in normal flow; both live in the one fixed head.
+      expect(
+        bar.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+      const head = notice.parentElement?.parentElement ?? null
+      expect(head).not.toBeNull()
+      expect((head as HTMLElement).children[0]).toBe(bar)
+      expect((head as HTMLElement).children[1]).toBe(notice.parentElement)
+    })
+
+    it('renders a minimal top bar below md with the trigger and the brand, and puts the actions in the open drawer, with the brand appearing once', async () => {
+      mockMatchMedia(false)
+      const user = userEvent.setup()
+      const { getByRole, queryByRole, getAllByText } = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          header={<span>Speed Admin</span>}
+          headerActions={<button type="button">Search</button>}
+          userMenu={<button type="button">Account</button>}
+        >
+          content
+        </AppShell>,
+      )
+
+      // The minimal bar is the banner landmark and carries the trigger.
+      expect(getByRole('banner')).toBeInTheDocument()
+      expect(getByRole('button', { name: zhCN.appShell.openNav })).toBeInTheDocument()
+      // The brand appears exactly once before the drawer opens.
+      expect(getAllByText('Speed Admin')).toHaveLength(1)
+      // The actions are not in the minimal bar: they live in the
+      // (closed, aria-hidden) temporary drawer, so the bar offers only
+      // the trigger.
+      expect(queryByRole('button', { name: 'Search' })).toBeNull()
+      expect(queryByRole('button', { name: 'Account' })).toBeNull()
+
+      await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
+
+      // The open temporary drawer carries the bottom row ...
+      const drawerPaper = paper()
+      expect(drawerPaper).toContainElement(
+        getByRole('button', { name: 'Search' }),
+      )
+      expect(drawerPaper).toContainElement(
+        getByRole('button', { name: 'Account' }),
+      )
+      // ... and no top row: the brand is not rendered a second time in
+      // the drawer (the minimal bar already shows it).
+      expect(getAllByText('Speed Admin')).toHaveLength(1)
+      expect(
+        getByRole('button', { name: zhCN.appShell.closeNav, hidden: true }),
+      ).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('keeps the collapse toggle and the bottom actions named in the collapsed rail', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          sidebarCollapsed
+          onSidebarCollapsedChange={() => undefined}
+          headerActions={<button type="button">Search</button>}
+          userMenu={<button type="button">Account</button>}
+        >
+          content
+        </AppShell>,
+      )
+      // The toggle moved from the app bar to the paper's top row; its
+      // state-derived accessible name is the same.
+      expect(
+        getByRole('button', { name: zhCN.appShell.expandNav }),
+      ).toBeInTheDocument()
+      // Clipped or not, the bottom-row controls keep their accessible
+      // names.
+      expect(getByRole('button', { name: 'Search' })).toBeInTheDocument()
+      expect(getByRole('button', { name: 'Account' })).toBeInTheDocument()
+    })
+
+    it('floors the collapsed rail at the 44px touch-target minimum under a smaller spacing base', () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          sidebarCollapsed
+          onSidebarCollapsedChange={() => undefined}
+        >
+          content
+        </AppShell>,
+        // A dense preset's spacing base: 7 x 6 = 42px, below the floor.
+        // The declaration keeps both operands: jsdom cannot evaluate the
+        // CSS max(), and a browser resolves it to the 44px floor.
+        { projectTokens: { spacing: { unit: 6 } } },
+      )
+      expect(emittedStyleText()).toMatch(
+        new RegExp(
+          `\\.${drawerClasses.paper}\\{[^}]*width:max\\(42px,\\s*44px\\)`,
+        ),
+      )
+    })
+
+    it('resets the measured head height when the layout changes, then re-measures the mounted head', () => {
+      mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const banner = <p data-testid="notice">Impersonating</p>
+      const { getByTestId, getByRole, rerender } = renderWithProviders(
+        <AppShell shellLayout="topbar" navItems={NAV_ITEMS} banner={banner}>
+          content
+        </AppShell>,
+      )
+      const head = getByTestId('notice').parentElement?.parentElement ?? null
+      expect(head).not.toBeNull()
+      resizeObserver.emitHeightFor(head as Element, 160)
+      expect(
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
+      ).toHaveStyle({ minHeight: '160px' })
+
+      // Switching to the sidebar layout (with the banner, so a head
+      // still mounts) discards the topbar-layout measurement instead of
+      // letting it become a permanent gap ...
+      rerender(
+        <AppShell shellLayout="sidebar" navItems={NAV_ITEMS} banner={banner}>
+          content
+        </AppShell>,
+      )
+      const mainSpacer = getByRole('main').querySelector<HTMLElement>(
+        `.${toolbarClasses.root}`,
+      )
+      expect(mainSpacer).not.toBeNull()
+      expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
+
+      // ... and the observer re-attaches to the same mounted head, so
+      // the next measurement lands again.
+      resizeObserver.emitHeightFor(head as Element, 96)
+      expect(
+        (
+          getByRole('main').querySelector<HTMLElement>(
+            `.${toolbarClasses.root}`,
+          ) as HTMLElement
+        ).style.minHeight,
+      ).toBe('96px')
+    })
+
+    it('resets the measured head height when the viewport crosses the desktop breakpoint', () => {
+      // The head's contents change with the breakpoint (the mobile branch
+      // loses the header actions, say), so a height measured on one side
+      // must not survive to the other. This drives the mounted shell
+      // across `md` through the same matchMedia subscription a real
+      // viewport resize uses; the ResizeObserver stub does not re-emit on
+      // re-observe, so only the reset can clear the stale height.
+      const media = mockMatchMedia(true)
+      const resizeObserver = stubResizeObserver()
+      const banner = <p data-testid="notice">Impersonating</p>
+      const { getByTestId, getByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS} banner={banner}>
+          content
+        </AppShell>,
+      )
+      const head = getByTestId('notice').parentElement?.parentElement ?? null
+      expect(head).not.toBeNull()
+      resizeObserver.emitHeightFor(head as Element, 160)
+      expect(
+        getByRole('main').querySelector(`.${toolbarClasses.root}`),
+      ).toHaveStyle({ minHeight: '160px' })
+
+      act(() => {
+        media.changeMatches(false)
+      })
+
+      const mainSpacer = getByRole('main').querySelector<HTMLElement>(
+        `.${toolbarClasses.root}`,
+      )
+      expect(mainSpacer).not.toBeNull()
+      expect((mainSpacer as HTMLElement).style.minHeight).toBe('')
+    })
+
+    it('has no axe violations on the desktop sidebar layout, with region enabled', async () => {
+      mockMatchMedia(true)
+      renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          header={<span>Speed Admin</span>}
+          headerActions={<button type="button">Search</button>}
+          userMenu={<button type="button">Account</button>}
+        >
+          <h1>Main content</h1>
+        </AppShell>,
+      )
+      // The desktop form is the one the narrow-viewport scan below never
+      // reaches: the brand row and the bottom action row are not the nav
+      // landmark nor main, so without a landmark around them the page tier
+      // fails `region`.
+      await expectNoAxeViolations()
+    })
+
+    it('has no axe violations on the open sidebar drawer below md', async () => {
+      mockMatchMedia(false)
+      const user = userEvent.setup()
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          header={<span>Speed Admin</span>}
+          headerActions={<button type="button">Search</button>}
+          userMenu={<button type="button">Account</button>}
+        >
+          <h1>Main content</h1>
+        </AppShell>,
+      )
+      await user.click(getByRole('button', { name: zhCN.appShell.openNav }))
+      await expectNoAxeViolations()
+    })
+  })
+
+  describe('topbar drawer scrolling', () => {
+    it('keeps the paper as the scrolling layer and the nav as a plain content column', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell
+          navItems={NAV_ITEMS}
+          navFooter={<span>Footer</span>}
+        >
+          content
+        </AppShell>,
+      )
+
+      // The three sidebar-only declarations (flexGrow, minHeight 0,
+      // overflowY auto) are what turn the nav into the paper's single
+      // scrolling layer and pin navFooter to the bottom. The topbar layout
+      // must not carry them: its paper scrolls as a whole. Asserting the
+      // emitted declarations -- not the DOM order -- is what tells the two
+      // apart, because making the nav flexible leaves every structural
+      // assertion intact.
+      const navDeclarations = emittedDeclarations(
+        getByRole('navigation', { name: zhCN.appShell.navLabel }),
+      )
+      expect(navDeclarations).not.toMatch(/flex:1 1 auto/)
+      expect(navDeclarations).not.toMatch(/min-height:0/)
+      expect(navDeclarations).not.toMatch(/overflow-y:auto/)
+
+      const paper = document.querySelector<HTMLElement>(
+        `.${drawerClasses.paper}`,
+      )
+      expect(paper).not.toBeNull()
+      expect(emittedDeclarations(paper as Element)).not.toMatch(
+        /overflow:hidden/,
+      )
     })
   })
 

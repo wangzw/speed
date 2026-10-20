@@ -5,7 +5,8 @@
     "openNav": "Open navigation menu",
     "closeNav": "Close navigation menu",
     "collapseNav": "Collapse sidebar",
-    "expandNav": "Expand sidebar"
+    "expandNav": "Expand sidebar",
+    "sidebarRegionLabel": "Sidebar"
   },
   "routeGuard": {
     "pending": "Checking access…"

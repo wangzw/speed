@@ -21,6 +21,7 @@ export {
   type AppShellNavSlot,
   type AppShellNavSlotState,
   type AppShellProps,
+  type AppShellShellLayout,
 } from './components/AppShell.js'
 export { Avatar, type AvatarProps } from './components/Avatar.js'
 export {

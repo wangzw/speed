@@ -3,9 +3,11 @@
 ## What this package is
 
 Shared app chrome at the same architectural tier as `@speed/ui-kit`:
-`AppShell` (a responsive header, nav drawer and content region, plus an
-opt-in host-controlled desktop sidebar collapse and host slots immediately
-before and after the drawer's nav landmark), `RouteGuard` (a
+`AppShell` (a responsive nav drawer and content region arranged as
+either a fixed top bar or a sidebar whose drawer paper carries the
+app-bar content, plus an opt-in host-controlled desktop sidebar collapse
+and host slots immediately before and after the drawer's nav landmark),
+`RouteGuard` (a
 route/content gate driven entirely by a host-injected status), `Avatar`
 (a presentational identity chip -- image or initials, off the accessibility
 tree on request) and `isPlainPrimaryClick` (the shared judgement in-app
@@ -59,6 +61,27 @@ rule. The public surface is `src/index.ts`; everything under
   temporary drawer is always false), and its `closeDrawer` closes an
   uncontrolled temporary drawer, reports through `onMobileOpenChange`
   when the drawer is controlled, and is a no-op for the permanent drawer.
+- **`shellLayout` is an enum over built-in forms, not a free slot.**
+  `AppShellShellLayout` (`'topbar' | 'sidebar'`) is the registry of
+  chrome arrangements; a host selects one and nothing else. The landmark
+  structure, focus order, fixed-head measurement and the drawer's two
+  variants are this component's accessibility guarantees and must not be
+  reassembled by a host. Adding a form is a platform change in one
+  commit: the union member, its region mapping in `AppShell`, jsdom
+  cases, Chromium geometry cases, the design document and this package's
+  docs. Content-only variation (brand, actions, account menu) uses the
+  existing slots and leaves `shellLayout` alone. Do not accept a host
+  element in place of a form, and do not branch on a string this package
+  does not enumerate.
+- **The `sidebar` form never changes the `topbar` form's behavior.**
+  Every deviation -- the paper's `overflow: hidden`, the nav's
+  `flex: 1 1 auto; minHeight: 0; overflowY: auto`, the pinned bottom
+  row, the absent app bar and head -- is conditional on
+  `shellLayout === 'sidebar'`. In particular, giving `nav` `flexGrow`
+  unconditionally would push `navFooter` to the bottom of an
+  always-scrolling paper for every `topbar` host. A change that cannot
+  be written as a sidebar-only condition does not belong in this
+  component.
 - **`isPlainPrimaryClick` is shared by convention, not by dependency.**
   `@speed/console-ui` consumes it; `@speed/route-kit` keeps a
   private variant because that package is independent of
@@ -77,10 +100,15 @@ rule. The public surface is `src/index.ts`; everything under
   behavior.** The mobile drawer's paper width cap (a CSS `min()`) and
   the AppBar Toolbar/`headerActions` `flexWrap: 'wrap'` are purely
   additive styling with no prop added or changed. The one non-CSS
-  piece is a ResizeObserver on the one fixed head container (the AppBar
-  plus the banner slot below it), whose measurement feeds the offset
-  placeholders that keep content clear of the fixed (wrap-capable) head --
-  internal-only, no prop and no host-visible behavior. Do not "fix" a narrow-viewport complaint by inventing an
+  piece is a ResizeObserver on the one fixed head container (the app bar
+  or minimal top bar, where one renders, plus the banner slot below it),
+  whose measurement feeds the offset placeholders that keep content
+  clear of the fixed (wrap-capable) head -- internal-only, no prop and no
+  host-visible behavior. A `sidebar` shell renders that container only
+  when it has a banner or the viewport is below `md`; without one it
+  renders no placeholder at all, because jsdom's unmeasured fallback
+  would otherwise leave the theme toolbar height as a permanent gap. The
+  measurement resets on a layout switch or a breakpoint crossing. Do not "fix" a narrow-viewport complaint by inventing an
   auto-collapsing overflow menu or similar new behavior here —
   AppShell renders only what the host gives it, and a genuine need
   for host-computed overflow behavior belongs to the host composing
@@ -89,10 +117,12 @@ rule. The public surface is `src/index.ts`; everything under
   (`sidebarCollapsed` / `onSidebarCollapsedChange`) a host opts into,
   never an implicit responsive behavior — omitting it keeps the
   always-open permanent drawer. Collapsing narrows that drawer to the
-  icon-only rail (a fixed width derived from the theme spacing base): the
-  drawer stays mounted, each entry keeps its icon with the label shown as
-  a tooltip, and an icon-less entry keeps its label rather than going
-  blank.
+  icon-only rail of `max(theme.spacing(7), 44)` px: the spacing base
+  derives the width, and the 44px floor keeps the rail at the touch-target
+  minimum under a theme preset that shrinks that base (the shipped
+  `compact` preset does). The drawer stays mounted, each entry keeps its
+  icon with the label shown as a tooltip, and an icon-less entry keeps
+  its label rather than going blank.
 - **This package makes zero HTTP calls.** There is no scope in which
   it legitimately needs to — if a change wants to fetch anything, that
   is a sign scope has drifted; stop and re-read the package README's
@@ -202,6 +232,15 @@ and executes the README's Quick start composition, so the documented
 usage cannot drift from the API; when that composition changes, this
 file changes with it.
 
+The Chromium tier lives beside the component in
+`src/components/AppShell.browser.test.tsx` and is run by the workspace's
+`make web-browser`, not by this package's `test` leg. It owns the
+invariants jsdom cannot evaluate -- the fixed head's real height, the
+offset placeholders in both layouts, the pinned sidebar bottom row and
+the collapsed rail -- so a new `shellLayout` form adds its geometry
+cases there (and its structural cases to the jsdom suite) in the same
+change.
+
 **Responsive sx assertions**: a plain, non-breakpoint-gated sx value
 (`flexWrap: 'wrap'` on the
 Toolbar and `headerActions` group) computes fine through jsdom's
@@ -229,9 +268,12 @@ at all (see the Storybook deferral below).
   composes the gate inside the shell's children, fed a status the
   fixture host computes from the role lists it attached, the exact
   host-injected shape this package's non-negotiable rules require.
-- **Browser-driving leg**: none ships in the tree. The package-level
-  proof (`src/usage-example.test.tsx`) is the in-form leg; no suite
-  drives the composed frame in a real browser against a real server.
+- **Browser-driving leg against a server**: no host ships in the tree.
+  The layout's geometry, focus order and focusability are measured in
+  real Chromium by `src/components/AppShell.browser.test.tsx` (the
+  workspace's `make web-browser` tier), and
+  `src/usage-example.test.tsx` is the in-form leg; nothing drives the
+  composed frame against a real server.
 - **Storybook**: no preview harness exists; components are covered by
   jsdom tests + axe, and color-contrast verification is not
   implemented, same as `ui-kit`.

@@ -17,6 +17,27 @@
  * (uncontrolled by default, like ConfirmDialog's double-confirm arm),
  * promotable to fully controlled via `mobileOpen` / `onMobileOpenChange`.
  *
+ * Two shell layouts share that frame. `shellLayout: 'topbar'` -- the
+ * default -- is the arrangement above: one fixed app bar carrying
+ * `header`, `headerActions` and `userMenu`. `shellLayout: 'sidebar'`
+ * renders no app bar at `md` and up: the brand and the desktop collapse
+ * toggle move to a row at the top of the drawer paper, and
+ * `headerActions`/`userMenu` to a row pinned at its bottom, so the
+ * drawer paper becomes a non-scrolling column whose `nav` takes the
+ * remaining height and scrolls itself. Below `md` a sidebar shell keeps
+ * a minimal top bar carrying only the drawer trigger and `header` (the
+ * banner landmark); `headerActions`/`userMenu` stay in the temporary
+ * drawer's bottom row, and the drawer renders no top row (the brand is
+ * already in the minimal bar, so it appears once per page). A desktop
+ * sidebar shell with no banner renders no fixed head at all -- hence no
+ * banner landmark -- and no spacers. The sidebar's drawer paper column
+ * carries a named complementary landmark around its chrome: the brand
+ * row, the host slots and the bottom action row are page content too, and
+ * without a landmark around them a page-level axe scan rejects the
+ * column (`region`); the `nav` landmark stays nested inside it.
+ * `navHeader`/`navFooter` remain siblings of the `nav` landmark in both
+ * layouts, and the content region is the one scrolling layer throughout.
+ *
  * Slots (`header`, `headerActions`, `userMenu`, `banner`, `navHeader`,
  * `navFooter`, `children`)
  * render exactly the host content passed in and nothing implicit -- an
@@ -35,10 +56,12 @@
  * the permanent drawer. An absent, `null` or `false` slot renders nothing
  * and adds no height.
  *
- * The `banner` slot is part of the shell's fixed head, below the AppBar:
- * the head is one fixed container pinned to the top of the viewport,
- * holding the AppBar first and the banner immediately after it in normal
- * flow. The whole head stays in the viewport while the page scrolls, the
+ * The `banner` slot is part of the shell's fixed head: the head is one
+ * fixed container pinned to the top of the viewport, holding the AppBar
+ * first (in the topbar layout, or the minimal top bar of a narrow
+ * sidebar shell) and the banner immediately after it in normal flow. A
+ * desktop sidebar shell has no app bar, so the banner is the head's only
+ * child and sits at the very top. The whole head stays in the viewport while the page scrolls, the
  * banner sits below the header visually and in DOM order, and the
  * spacers inside `main` and the drawer papers reserve the fixed head's
  * measured height, so neither the header nor the navigation covers
@@ -53,8 +76,10 @@
  * (wrapping is the host node's own concern) and belongs to the shell
  * rather than to `children`, so a host that swaps the content on a route
  * change never unmounts it. The slot adds no landmark and no live region
- * -- it is not the `banner` landmark, which is the AppBar -- so the
- * shell's landmark structure (header, nav, main) is unchanged. Absent,
+ * -- it is not the `banner` landmark, which is the app bar (the minimal
+ * top bar in a narrow sidebar shell, and absent entirely on a desktop
+ * sidebar shell without a banner) -- so the shell's landmark structure
+ * (header where an app bar renders, nav, main) is unchanged. Absent,
  * `null` or `false` renders no slot container and adds no height.
  *
  * The navigation has two optional levels beyond a flat list, both purely
@@ -247,7 +272,25 @@ export type AppShellNavSlot =
   | ReactNode
   | ((state: AppShellNavSlotState) => ReactNode)
 
+/**
+ * The shell's chrome arrangement. `'topbar'` keeps every piece of chrome
+ * in the fixed app bar; `'sidebar'` moves the brand, the header actions
+ * and the user menu into the drawer paper, leaving the content region the
+ * full width under a minimal top bar on narrow viewports.
+ */
+export type AppShellShellLayout = 'topbar' | 'sidebar'
+
 export interface AppShellProps {
+  /**
+   * The shell's chrome arrangement, chosen at assembly time. `'topbar'`
+   * (the default) is the arrangement every host had before this prop
+   * existed. `'sidebar'` is the region mapping described in the module
+   * doc comment: at `md` and up the brand and the desktop collapse
+   * toggle sit in a row at the top of the drawer paper and
+   * `headerActions`/`userMenu` in a row pinned at its bottom; below `md`
+   * a minimal top bar carries only the drawer trigger and `header`.
+   */
+  readonly shellLayout?: AppShellShellLayout
   /**
    * The navigation entries rendered in the drawer, in order. Each element
    * is either a plain entry (`AppShellNavItem`) or a titled collapsible
@@ -256,25 +299,40 @@ export interface AppShellProps {
    * entries is unchanged.
    */
   readonly navItems: readonly AppShellNavEntry[]
-  /** Start-of-AppBar content: typically a logo or product name. */
+  /**
+   * Start-of-AppBar content: typically a logo or product name. The
+   * sidebar layout moves it to the drawer paper's top row (and, below
+   * md, to the minimal top bar).
+   */
   readonly header?: ReactNode
-  /** End-of-AppBar content, before `userMenu`: search, notifications, and the like. */
+  /**
+   * End-of-AppBar content, before `userMenu`: search, notifications, and
+   * the like. The sidebar layout moves it to the drawer paper's bottom
+   * row.
+   */
   readonly headerActions?: ReactNode
-  /** Far end-of-AppBar content: typically an account/user menu trigger. */
+  /**
+   * Far end-of-AppBar content: typically an account/user menu trigger.
+   * The sidebar layout moves it to the drawer paper's bottom row, after
+   * `headerActions`.
+   */
   readonly userMenu?: ReactNode
   /**
    * A full-width banner below the app bar, host content and already
    * translated. It is part of the fixed shell head: the head is one
-   * fixed container holding the app bar first and the banner after it in
-   * normal flow, so the banner sits below the header in DOM order and on
-   * screen, and the content spacers reserve the head's measured height
-   * at every breakpoint. The slot adds no padding, border or minimum
-   * height -- its height is exactly what the host node renders, and an
-   * empty node adds none. The slot belongs to the shell, so a route
-   * change never unmounts it; it adds no landmark and no live region --
-   * the host node carries whatever roles it needs, and the banner
-   * landmark remains the app bar. Absent, `null` or `false` renders no
-   * slot container and adds no height.
+   * fixed container holding the app bar first (where one renders) and
+   * the banner after it in normal flow, so the banner sits below the
+   * header in DOM order and on screen, and the content spacers reserve
+   * the head's measured height at every breakpoint. A desktop sidebar
+   * shell renders no app bar, so there the banner is the head's only
+   * child and sits at the very top. The slot adds no padding, border or
+   * minimum height -- its height is exactly what the host node renders,
+   * and an empty node adds none. The slot belongs to the shell, so a
+   * route change never unmounts it; it adds no landmark and no live
+   * region -- the host node carries whatever roles it needs, and the
+   * banner landmark remains the app bar (there is none on a desktop
+   * sidebar shell). Absent, `null` or `false` renders no slot container
+   * and adds no height.
    */
   readonly banner?: ReactNode
   /**
@@ -334,7 +392,8 @@ export interface AppShellProps {
   readonly sidebarCollapsed?: boolean
   /**
    * Fired when the sidebar collapse state should change. Supplying it
-   * renders the desktop collapse/expand toggle button in the AppBar;
+   * renders the desktop collapse/expand toggle button -- in the AppBar,
+   * or at the end of the drawer paper's top row in the sidebar layout;
    * omitting it renders no toggle (a host that collapses its sidebar
    * programmatically reports nothing).
    */
@@ -356,6 +415,16 @@ const DEFAULT_SIDEBAR_WIDTH = 280
  * side is 24 + 2 x 16 = 56 = 7 x unit.
  */
 const COLLAPSED_SIDEBAR_SPACING_UNITS = 7
+
+/**
+ * The rail's floor, in px. The derived width is a multiple of the
+ * spacing base, so a theme that shrinks the base (a dense preset, say)
+ * would push the rail below the touch-target minimum the layout design
+ * requires of every clickable target. The rail therefore never renders
+ * narrower than this floor; at the default base the derived width is
+ * already above it, so the default rendering is unchanged.
+ */
+const COLLAPSED_SIDEBAR_MIN_WIDTH = 44
 
 /**
  * A collapsed rail entry that carries an icon: the icon is centered and
@@ -430,6 +499,11 @@ function RailTooltip({
 /** Narrows a declared entry to a grouped section. */
 function isNavGroup(entry: AppShellNavEntry): entry is AppShellNavGroup {
   return 'items' in entry
+}
+
+/** Whether a declared host slot renders anything: absent, null, false do not. */
+function hasSlotContent(value: ReactNode): boolean {
+  return value !== undefined && value !== null && value !== false
 }
 
 /**
@@ -726,6 +800,7 @@ function NavList({
  * contract.
  */
 export function AppShell({
+  shellLayout = 'topbar',
   navItems,
   header,
   headerActions,
@@ -747,9 +822,22 @@ export function AppShell({
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'))
   const mainContentId = useId()
 
+  // The chrome arrangement. `sidebarLayout` decides where the brand,
+  // actions and menu render (see the module doc comment); the content
+  // region, landmarks below the app bar and drawer variants do not change.
+  const sidebarLayout = shellLayout === 'sidebar'
+
   // The collapsed rail's fixed width, derived from the theme spacing base
-  // (the spacing token unit) -- see COLLAPSED_SIDEBAR_SPACING_UNITS.
-  const collapsedSidebarWidth = theme.spacing(COLLAPSED_SIDEBAR_SPACING_UNITS)
+  // (the spacing token unit) -- see COLLAPSED_SIDEBAR_SPACING_UNITS --
+  // and floored so a theme with a smaller spacing base cannot push the
+  // rail below the touch-target minimum (COLLAPSED_SIDEBAR_MIN_WIDTH).
+  // CSS max() keeps the theme's own unit: a function-form spacing option
+  // (for example rem) reaches the rail unchanged, and the floor still wins
+  // when the spacing base is small. Parsing the value to a number would
+  // silently drop the unit and pin every theme to px.
+  const collapsedSidebarWidth = `max(${theme.spacing(
+    COLLAPSED_SIDEBAR_SPACING_UNITS,
+  )}, ${COLLAPSED_SIDEBAR_MIN_WIDTH}px)`
 
   // The navigation landmark's name is host-suppliable (navLabel) so a
   // host mounting this frame beside a second shell's navigation can keep
@@ -827,7 +915,17 @@ export function AppShell({
   // Whether the host supplied a banner at all. An absent, null or false
   // slot renders no container; a truthy node -- including one that
   // renders as a zero-height live region -- keeps the slot in the head.
-  const hasBanner = banner !== undefined && banner !== null && banner !== false
+  const hasBanner = hasSlotContent(banner)
+
+  // Whether the shell renders a fixed head at all. The topbar layout
+  // always does (its app bar is the head); a sidebar shell does when it
+  // has a banner or is below md (where the minimal top bar stands in for
+  // the app bar). A desktop sidebar shell with no banner has no fixed
+  // head -- and therefore no banner landmark -- so it renders no head
+  // container and its spacers are absent rather than a zero-height or
+  // theme-height hole: the jsdom fallback (no measurement) would
+  // otherwise leave the theme toolbar's 56/64px as a permanent gap.
+  const hasFixedHead = !sidebarLayout || hasBanner || !isDesktop
 
   // The fixed head's rendered height is the number every spacer clears.
   // The header row wraps under real overflow pressure and the banner has
@@ -836,8 +934,18 @@ export function AppShell({
   // it without deriving an offset from either child. Without a
   // ResizeObserver (jsdom) the measurement never arrives and the
   // spacers keep the theme toolbar height, exactly as before.
+  //
+  // The measurement belongs to the mounted head: leaving a sidebar shell
+  // without a head (or changing layouts/breakpoints, which changes the
+  // head's contents) resets it and re-observes, so a height measured for
+  // one arrangement never survives into another. `observe()` reports the
+  // container's size on attach in a real browser, so a re-observe also
+  // re-measures a head whose height happened not to change.
   const [headHeight, setHeadHeight] = useState<number | null>(null)
   const headRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    setHeadHeight(null)
+  }, [shellLayout, isDesktop])
   useEffect(() => {
     if (typeof ResizeObserver === 'undefined') {
       return undefined
@@ -855,7 +963,7 @@ export function AppShell({
     })
     observer.observe(head)
     return () => observer.disconnect()
-  }, [])
+  }, [hasFixedHead, shellLayout, isDesktop])
 
   // The skip link's activation target. Kept in a ref rather than
   // resolved by id so the handler never touches the document: the
@@ -877,8 +985,26 @@ export function AppShell({
   // permanent variant passes no onNavigate (nothing to close); the
   // temporary variant passes the close transition -- see the module doc
   // comment for who owns it in which mode.
+  //
+  // In the sidebar layout the nav is the paper's one scrolling region:
+  // the paper itself stops scrolling (see its own sx) and the nav takes
+  // the height left between the top and bottom chrome rows. These three
+  // declarations are added only in that layout -- giving the nav
+  // `flexGrow` unconditionally would push `navFooter` to the bottom of an
+  // always-scrolling paper in the topbar layout, which is a behavior
+  // change no topbar host asked for.
   const navContent = (onNavigate?: () => void, narrow = false) => (
-    <Box component="nav" aria-label={resolvedNavLabel} sx={{ width: '100%', boxSizing: 'border-box' }}>
+    <Box
+      component="nav"
+      aria-label={resolvedNavLabel}
+      sx={{
+        width: '100%',
+        boxSizing: 'border-box',
+        ...(sidebarLayout
+          ? { flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }
+          : {}),
+      }}
+    >
       <NavList entries={navItems} onNavigate={onNavigate} narrow={narrow} />
     </Box>
   )
@@ -899,13 +1025,140 @@ export function AppShell({
   // top of content again. An inline style outranks every class rule,
   // so the measured height holds at every viewport width.
   const spacerMinHeight = headHeight
-  const spacer = (
+  const spacer = hasFixedHead ? (
     <Toolbar
       style={
         spacerMinHeight !== null ? { minHeight: spacerMinHeight } : undefined
       }
     />
-  )
+  ) : null
+
+  // The mobile drawer trigger: the shell's only navigation affordance
+  // below md in either layout. The topbar layout places it at the start
+  // of the app bar's toolbar, the sidebar layout in the minimal top bar
+  // -- the same control, the same strings, two positions.
+  const mobileNavToggle = !isDesktop ? (
+    <IconButton
+      color="inherit"
+      edge="start"
+      aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
+      aria-expanded={mobileOpen}
+      onClick={() => setMobileOpen(!mobileOpen)}
+      sx={{ marginRight: 2 }}
+    >
+      {mobileOpen ? <CloseIcon /> : <MenuIcon />}
+    </IconButton>
+  ) : null
+
+  // The desktop collapse toggle's state-derived label and activation,
+  // shared by its two positions (the app bar's start and the drawer
+  // paper's top row).
+  const collapseToggleLabel = sidebarCollapsed
+    ? t('appShell.expandNav')
+    : t('appShell.collapseNav')
+  const toggleCollapse = () => {
+    onSidebarCollapsedChange?.(!sidebarCollapsed)
+  }
+
+  // The sidebar layout's drawer-paper chrome. The top row carries the
+  // brand and the desktop collapse toggle; the brand's box is the flex
+  // item that shrinks (minWidth: 0, overflow: hidden), so the collapsed
+  // rail clips it instead of growing the paper, while the label stays in
+  // the accessibility tree. The bottom row carries the header actions and
+  // the user menu, pinned by `flexShrink: 0` while the nav above it
+  // scrolls, and stacks vertically and centered in the rail. Both rows
+  // render only when they have content: an absent slot adds no row and
+  // no height.
+  const sidebarTopRow =
+    hasSlotContent(header) || collapseToggleEnabled ? (
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: sidebarCollapsed ? 0 : 1,
+          flexShrink: 0,
+          // The rail is 56px, 55 of them inside its divider: 4px on
+          // each side still leaves the 40px an IconButton occupies. An
+          // expanded sidebar uses the drawer's own spacing (16px) so the
+          // brand lines up with the nav entries below it.
+          px: sidebarCollapsed ? 0.5 : 2,
+          py: 1,
+        }}
+      >
+        <Box
+          sx={{
+            flexGrow: 1,
+            display: 'flex',
+            alignItems: 'center',
+            minWidth: 0,
+            overflow: 'hidden',
+          }}
+        >
+          {header}
+        </Box>
+        {collapseToggleEnabled && (
+          <IconButton
+            color="inherit"
+            aria-label={collapseToggleLabel}
+            aria-expanded={!sidebarCollapsed}
+            onClick={toggleCollapse}
+            sx={{ flexShrink: 0 }}
+          >
+            {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+          </IconButton>
+        )}
+      </Box>
+    ) : null
+
+  const hasSidebarBottomRow =
+    hasSlotContent(headerActions) || hasSlotContent(userMenu)
+  const sidebarBottomRow = (narrow: boolean) =>
+    hasSidebarBottomRow ? (
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 1,
+          flexShrink: 0,
+          px: narrow ? 0.5 : 2,
+          py: 1,
+          ...(narrow
+            ? { flexDirection: 'column', justifyContent: 'center' }
+            : {}),
+        }}
+      >
+        {headerActions}
+        {userMenu}
+      </Box>
+    ) : null
+
+  // The sidebar layout's drawer paper is one chrome column, but only its
+  // centre is a navigation landmark. The brand row, the host slots and the
+  // bottom action row would otherwise sit outside every landmark -- a
+  // page-level axe scan rejects that (`region`), and the landmark list a
+  // screen reader offers cannot reach them. One named complementary
+  // landmark around the column gives that chrome a landmark home while
+  // leaving the `nav` landmark and the slots' sibling contract untouched.
+  // The topbar layout's paper renders exactly as it did before.
+  const drawerColumn = (contents: ReactNode): ReactNode =>
+    sidebarLayout ? (
+      <Box
+        component="aside"
+        aria-label={t('appShell.sidebarRegionLabel')}
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          height: '100%',
+          minHeight: 0,
+        }}
+      >
+        {contents}
+      </Box>
+    ) : (
+      contents
+    )
 
   return (
     <Box
@@ -965,94 +1218,126 @@ export function AppShell({
       >
         {t('appShell.skipToContent')}
       </Link>
-      {/* The fixed shell head: one pinned container holding the AppBar
+      {/* The fixed shell head: one pinned container holding the app bar
           first and the banner immediately after it, in normal flow. Its
           measured height is what every spacer reserves; keeping both
           children in one container means neither child's position
           derives from the other's measurement. The container carries the
-          layer the AppBar used to carry (drawer + 1): above page content
-          and the drawer papers, below modal panels and dialogs. The
-          banner slot adds no padding, border or minimum height -- its
-          height is exactly what the host node renders -- and no landmark
-          (the AppBar is the banner landmark) and no live region. */}
-      <Box
-        ref={headRef}
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: theme.zIndex.drawer + 1,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        {/* The header is the container surface, not the primary role: the
-            shell's brand color belongs to controls, and a saturated bar
-            would also read differently from the dark mode, where MUI's
-            primary fill is dropped and the surface shows through. The
-            theme's MuiAppBar mapping paints the fill and the bottom
-            divider that separates the bar from the page, so the shell
-            never re-declares them and a surface token override -- a glass
-            fill, say -- reaches the bar with no change here. */}
-        <AppBar
-          position="static"
-          color="inherit"
-          elevation={0}
-          sx={{ color: 'text.primary' }}
+          layer the app bar used to carry (drawer + 1): above page
+          content and the drawer papers, below modal panels and dialogs.
+          The banner slot adds no padding, border or minimum height --
+          its height is exactly what the host node renders -- and no
+          landmark (an app bar is the banner landmark) and no live
+          region.
+
+          A desktop sidebar shell renders no app bar, so if it has a
+          banner the head holds the banner alone at the very top; without
+          one it renders no head at all (see hasFixedHead). */}
+      {hasFixedHead && (
+        <Box
+          ref={headRef}
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: theme.zIndex.drawer + 1,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
         >
-          <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-            {!isDesktop && (
-              <IconButton
-                color="inherit"
-                edge="start"
-                aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
-                aria-expanded={mobileOpen}
-                onClick={() => setMobileOpen(!mobileOpen)}
-                sx={{ marginRight: 2 }}
-              >
-                {mobileOpen ? <CloseIcon /> : <MenuIcon />}
-              </IconButton>
-            )}
-            {isDesktop && collapseToggleEnabled && (
-              <IconButton
-                color="inherit"
-                edge="start"
-                aria-label={
-                  sidebarCollapsed
-                    ? t('appShell.expandNav')
-                    : t('appShell.collapseNav')
-                }
-                aria-expanded={!sidebarCollapsed}
-                onClick={() =>
-                  onSidebarCollapsedChange?.(!sidebarCollapsed)
-                }
-                sx={{ marginRight: 2 }}
-              >
-                {sidebarCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-              </IconButton>
-            )}
-            <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', minWidth: 0 }}>
-              {header}
-            </Box>
-            {headerActions !== undefined && (
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: 1,
-                  marginRight: userMenu !== undefined ? 2 : 0,
-                }}
-              >
-                {headerActions}
-              </Box>
-            )}
-            {userMenu}
-          </Toolbar>
-        </AppBar>
-        {hasBanner && <Box sx={{ width: '100%' }}>{banner}</Box>}
-      </Box>
+          {!sidebarLayout && (
+            // The header is the container surface, not the primary role:
+            // the shell's brand color belongs to controls, and a
+            // saturated bar would also read differently from the dark
+            // mode, where MUI's primary fill is dropped and the surface
+            // shows through. The theme's MuiAppBar mapping paints the
+            // fill and the bottom divider that separates the bar from
+            // the page, so the shell never re-declares them and a
+            // surface token override -- a glass fill, say -- reaches the
+            // bar with no change here.
+            <AppBar
+              position="static"
+              color="inherit"
+              elevation={0}
+              sx={{ color: 'text.primary' }}
+            >
+              <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                {mobileNavToggle}
+                {isDesktop && collapseToggleEnabled && (
+                  <IconButton
+                    color="inherit"
+                    edge="start"
+                    aria-label={collapseToggleLabel}
+                    aria-expanded={!sidebarCollapsed}
+                    onClick={toggleCollapse}
+                    sx={{ marginRight: 2 }}
+                  >
+                    {sidebarCollapsed ? (
+                      <ChevronRightIcon />
+                    ) : (
+                      <ChevronLeftIcon />
+                    )}
+                  </IconButton>
+                )}
+                <Box
+                  sx={{
+                    flexGrow: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    minWidth: 0,
+                  }}
+                >
+                  {header}
+                </Box>
+                {headerActions !== undefined && (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 1,
+                      marginRight: userMenu !== undefined ? 2 : 0,
+                    }}
+                  >
+                    {headerActions}
+                  </Box>
+                )}
+                {userMenu}
+              </Toolbar>
+            </AppBar>
+          )}
+          {sidebarLayout && !isDesktop && (
+            // The narrow sidebar shell's minimal top bar: the drawer
+            // trigger and the brand only. The header actions and the
+            // user menu live in the temporary drawer's bottom row, and
+            // the brand appears here exactly once -- the drawer has no
+            // top row below md. This bar is the banner landmark; a
+            // desktop sidebar shell has none.
+            <AppBar
+              position="static"
+              color="inherit"
+              elevation={0}
+              sx={{ color: 'text.primary' }}
+            >
+              <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                {mobileNavToggle}
+                <Box
+                  sx={{
+                    flexGrow: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    minWidth: 0,
+                  }}
+                >
+                  {header}
+                </Box>
+              </Toolbar>
+            </AppBar>
+          )}
+          {hasBanner && <Box sx={{ width: '100%' }}>{banner}</Box>}
+        </Box>
+      )}
       <Box
         sx={{
           width: {
@@ -1074,14 +1359,29 @@ export function AppShell({
               '& .MuiDrawer-paper': {
                 boxSizing: 'border-box',
                 width: sidebarCollapsed ? collapsedSidebarWidth : sidebarWidth,
-                ...(sidebarCollapsed ? { overflowX: 'hidden' } : {}),
+                // The sidebar layout turns the paper into a fixed
+                // column: the nav between the two chrome rows is the one
+                // scrolling region, so the paper itself stops scrolling.
+                // The topbar layout keeps the paper's own scrolling and
+                // only clips the rail's horizontal overflow.
+                ...(sidebarLayout
+                  ? { overflow: 'hidden' }
+                  : sidebarCollapsed
+                    ? { overflowX: 'hidden' }
+                    : {}),
               },
             }}
           >
-            {spacer}
-            {renderNavSlot(navHeader, permanentSlotState)}
-            {navContent(undefined, sidebarCollapsed)}
-            {renderNavSlot(navFooter, permanentSlotState)}
+            {drawerColumn(
+              <>
+                {spacer}
+                {sidebarLayout && sidebarTopRow}
+                {renderNavSlot(navHeader, permanentSlotState)}
+                {navContent(undefined, sidebarCollapsed)}
+                {renderNavSlot(navFooter, permanentSlotState)}
+                {sidebarLayout && sidebarBottomRow(sidebarCollapsed)}
+              </>,
+            )}
           </Drawer>
         ) : (
           <Drawer
@@ -1106,22 +1406,34 @@ export function AppShell({
                 // overflowing drawer; the permanent (desktop) Drawer
                 // above is untouched and keeps the plain sidebarWidth.
                 width: `min(${sidebarWidth}px, 85vw)`,
+                // Same fixed-column treatment as the permanent paper in
+                // the sidebar layout: the nav scrolls, the bottom row
+                // stays pinned.
+                ...(sidebarLayout ? { overflow: 'hidden' } : {}),
               },
             }}
           >
-            {spacer}
-            {renderNavSlot(navHeader, temporarySlotState)}
-            {navContent(() => {
-              // The temporary drawer owns the close-on-navigation
-              // transition when it owns the open state. In controlled
-              // mode this fires nothing and closes nothing: the host
-              // observes the navigation itself and closes through its
-              // own next render, the unchanged contract.
-              if (!isControlled) {
-                setUncontrolledOpen(false)
-              }
-            })}
-            {renderNavSlot(navFooter, temporarySlotState)}
+            {drawerColumn(
+              <>
+                {spacer}
+                {renderNavSlot(navHeader, temporarySlotState)}
+                {navContent(() => {
+                  // The temporary drawer owns the close-on-navigation
+                  // transition when it owns the open state. In controlled
+                  // mode this fires nothing and closes nothing: the host
+                  // observes the navigation itself and closes through its
+                  // own next render, the unchanged contract.
+                  if (!isControlled) {
+                    setUncontrolledOpen(false)
+                  }
+                })}
+                {renderNavSlot(navFooter, temporarySlotState)}
+                {/* Below md the brand already renders in the minimal top
+                    bar, so the temporary drawer has no top row -- the brand
+                    appears once per page. The bottom row renders as usual. */}
+                {sidebarLayout && sidebarBottomRow(false)}
+              </>,
+            )}
           </Drawer>
         )}
       </Box>
