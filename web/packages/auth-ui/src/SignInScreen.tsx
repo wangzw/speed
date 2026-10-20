@@ -543,7 +543,7 @@ export function SignInScreen({
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, width: '100%' }}>
       {activeMode === 'register' ? (
         <>
-          <Typography variant="h6" component={headingLevel}>
+          <Typography variant="h5" component={headingLevel}>
             {t('mode.registerTitle')}
           </Typography>
           <Typography variant="body2" color="text.secondary">

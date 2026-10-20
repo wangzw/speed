@@ -19,8 +19,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { alertClasses } from '@mui/material/Alert'
 import { I18nextProvider } from '@speed/i18n'
-import { AppThemeProvider, DisplayTimeZoneProvider } from '@speed/ui-kit'
+import {
+  AppThemeProvider,
+  createAppTheme,
+  DisplayTimeZoneProvider,
+} from '@speed/ui-kit'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import {
   ImpersonationBanner,
@@ -102,7 +107,7 @@ function messageSlotDeclaration(
       continue
     }
     const selector = rule.slice(0, open).trim()
-    const suffix = ' .MuiAlert-message'
+    const suffix = ` .${alertClasses.message}`
     if (!selector.endsWith(suffix)) {
       continue
     }
@@ -166,6 +171,26 @@ describe('ImpersonationBanner', () => {
     expect(
       screen.getByRole('button', { name: zhCN.impersonation.end }),
     ).toBeInTheDocument()
+  })
+
+  it('paints the notice with the warning role fill and its own label color', () => {
+    renderWithProviders(
+      <ImpersonationBanner
+        impersonation={{ subject: SUBJECT }}
+        onEnd={() => {}}
+      />,
+    )
+    const notice = screen.getByRole('region', {
+      name: zhCN.impersonation.regionLabel,
+    })
+    // The banner is the warning role's filled surface: the role's main is
+    // the fill and its contrastText is the label chosen to read on that
+    // fill in both modes. The pair only holds while the two stay together.
+    const { palette } = createAppTheme().theme
+    expect(notice).toHaveStyle({
+      backgroundColor: palette.warning.main,
+      color: palette.warning.contrastText,
+    })
   })
 
   it('render the expiry in the host’s display time zone', () => {

@@ -126,7 +126,9 @@ const bannerSx = {
   px: 1,
   py: 0.5,
   minHeight: 40,
-  backgroundColor: 'warning.dark',
+  // The role's own fill and label pair: contrastText is chosen to read on
+  // main in both modes. Painting main here is what makes that pair true.
+  backgroundColor: 'warning.main',
   color: 'warning.contrastText',
 } as const
 

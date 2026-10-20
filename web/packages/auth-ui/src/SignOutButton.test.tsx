@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { buttonClasses } from '@mui/material/Button'
 import { switchLanguage } from '@speed/i18n'
 import { createAppTheme } from '@speed/ui-kit'
 import { SignOutButton } from './SignOutButton.js'
@@ -84,8 +85,8 @@ describe('SignOutButton', () => {
     await signIn(harness)
     renderWithProviders(<SignOutButton session={harness.session} />)
     const button = screen.getByRole('button', { name: LABEL_ZH })
-    expect(button).toHaveClass('MuiButton-colorInherit')
-    expect(button).not.toHaveClass('MuiButton-colorPrimary')
+    expect(button).toHaveClass(buttonClasses.colorInherit)
+    expect(button).not.toHaveClass(buttonClasses.colorPrimary)
     // The token relationship the inheritance relies on, guarded here
     // because jsdom resolves no cascaded styles: while an AppBar keeps
     // painting primary.main, its own contrastText must stay at WCAG AA
