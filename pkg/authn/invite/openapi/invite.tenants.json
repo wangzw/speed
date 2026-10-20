@@ -225,6 +225,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "One page of a tenant's invitations"
       },
       "post": {
@@ -348,6 +356,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Issue an invitation to an address in a tenant"
       }
     },
@@ -441,6 +457,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Revoke a pending invitation"
       }
     }

@@ -56,6 +56,14 @@ member the declaration does not describe is refused rather than dropped. A
 an undeclared one is answered 500. `pkg/internal/openapigen` generates the
 fragment from the same descriptor.
 
+**An operation declares the level of caller identity its route admits.**
+`Operation.Access` (and a reply operation's) is `AccessRequired` at its zero
+value, `AccessOptional` or `AccessPublic`, set through the `Public()` and
+`Optional()` constructor options. The fragment publishes it as the operation's
+`security` requirement, and the authentication capability's mounter registers
+the route at the level the declaration names, so the two cannot disagree. A
+route that leaves the field out admits only an identified caller.
+
 **A request body is bound by its declared media type.**
 `Operation.Request` (and a reply operation's) is a `*RequestBody`, nil when the
 operation takes no body; its media type selects the reader:

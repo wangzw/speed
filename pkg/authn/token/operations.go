@@ -214,6 +214,7 @@ var jwksOperation = speedhttp.NewReplyOperation[struct{}](
 		},
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "The key set could not be written"),
 	},
+	speedhttp.Public(),
 )
 
 // tokenOperation declares POST /auth/token: the RFC 6749 token endpoint. Its
@@ -253,6 +254,7 @@ var tokenOperation = speedhttp.NewReplyOperation[tokenIssueInput](
 		invalidClientResponse,
 		oauthErrorResponse(http.StatusServiceUnavailable, "temporarily_unavailable"),
 	},
+	speedhttp.Public(),
 )
 
 // revokeOperation declares POST /auth/token/revoke: the RFC 7009 revocation
@@ -281,6 +283,7 @@ var revokeOperation = speedhttp.NewReplyOperation[revokeInput](
 		oauthErrorResponse(http.StatusServiceUnavailable,
 			"temporarily_unavailable — the token store could not answer"),
 	},
+	speedhttp.Public(),
 )
 
 // operations is this module's declaration of the API it serves. The fragment is

@@ -21,6 +21,8 @@
  *
  * `-o` is relative to the working directory `go -C` gives the child, which is
  * starters/demo/server, so the path climbs out of the module to reach the root.
+ * The document's description and servers come from the host's own defaults, so
+ * the command names neither.
  *
  * `gen` merges the OpenAPI fragments the platform modules declare into one
  * document (pkg/ops/openapi.Merge over every module's http.Spec resource),

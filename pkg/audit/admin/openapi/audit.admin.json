@@ -256,6 +256,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Page through the audit records, newest first"
       }
     },
@@ -337,6 +345,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Read one audit record by its row identifier"
       }
     }

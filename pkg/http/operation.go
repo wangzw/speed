@@ -56,6 +56,10 @@ type OperationDescriptor struct {
 	// because its handler builds each declared answer and that answer's
 	// declared headers are written on whatever status it names.
 	Simple bool
+	// Access is the level of caller identity the route admits. The generator
+	// publishes it as the operation's security requirement, and the
+	// authentication capability's mounter registers the route at this level.
+	Access Access
 	// Responses is the closed set of answers, the success one included.
 	Responses []Response
 }
@@ -82,6 +86,11 @@ type Operation[In, Out any] struct {
 	// application/octet-stream. An input carrying a body tag under an empty
 	// media type is a declaration defect and panics when the handler is built.
 	Request *RequestBody
+	// Access is the level of caller identity the route admits. A route mounted
+	// through the authentication capability's mounter is registered at this
+	// level, and the fragment declares it as the operation's security
+	// requirement. The zero value admits only an identified caller.
+	Access Access
 	// Responses is the closed set of answers. Exactly one must be 2xx, and
 	// that one's body is Out.
 	Responses []Response
@@ -110,7 +119,9 @@ func NewOperation[In, Out any](
 	id, method, path, summary, description string,
 	request *RequestBody,
 	responses []Response,
+	opts ...OperationOption,
 ) Operation[In, Out] {
+	options := resolveOptions(opts)
 	return Operation[In, Out]{
 		ID:          id,
 		Method:      method,
@@ -118,8 +129,25 @@ func NewOperation[In, Out any](
 		Summary:     summary,
 		Description: description,
 		Request:     request,
+		Access:      options.access,
 		Responses:   responses,
 	}
+}
+
+// OperationOption sets one thing about an operation beyond its shape: the
+// access level its route admits.
+type OperationOption func(*operationOptions)
+
+// resolveOptions folds the options into the values they set.
+func resolveOptions(opts []OperationOption) operationOptions {
+	var options operationOptions
+	for _, option := range opts {
+		option(&options)
+	}
+	if !options.access.Valid() {
+		panic(fmt.Sprintf("http: the operation declares the access level %d, which is not one of the declared levels", options.access))
+	}
+	return options
 }
 
 // Descriptor returns the operation's shape for the generator.
@@ -150,6 +178,7 @@ func (o Operation[In, Out]) Descriptor() OperationDescriptor {
 		SuccessStatus: status,
 		SuccessBody:   body,
 		Simple:        true,
+		Access:        o.Access,
 		Responses:     o.Responses,
 	}
 }
@@ -179,6 +208,11 @@ type ReplyOperation[In any] struct {
 	// Request is the declared request body, or nil when the operation takes
 	// no body.
 	Request *RequestBody
+	// Access is the level of caller identity the route admits. A route mounted
+	// through the authentication capability's mounter is registered at this
+	// level, and the fragment declares it as the operation's security
+	// requirement. The zero value admits only an identified caller.
+	Access Access
 	// Responses is the closed set of answers. The handler may answer any status
 	// it declares, and each reply is checked against that status's declaration.
 	Responses []Response
@@ -191,7 +225,9 @@ func NewReplyOperation[In any](
 	id, method, path, summary, description string,
 	request *RequestBody,
 	responses []Response,
+	opts ...OperationOption,
 ) ReplyOperation[In] {
+	options := resolveOptions(opts)
 	return ReplyOperation[In]{
 		ID:          id,
 		Method:      method,
@@ -199,6 +235,7 @@ func NewReplyOperation[In any](
 		Summary:     summary,
 		Description: description,
 		Request:     request,
+		Access:      options.access,
 		Responses:   responses,
 	}
 }
@@ -218,6 +255,7 @@ func (o ReplyOperation[In]) Descriptor() OperationDescriptor {
 		SuccessStatus: successStatus(o.Responses),
 		SuccessBody:   nil,
 		Simple:        false,
+		Access:        o.Access,
 		Responses:     o.Responses,
 	}
 }

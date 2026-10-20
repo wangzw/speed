@@ -333,6 +333,7 @@ var methodsOperation = speedhttp.NewReplyOperation[struct{}](
 			AuthnLoginMethods{}),
 		unavailableAnswer,
 	},
+	speedhttp.Public(),
 )
 
 // startOperation declares the route that starts a login flow.
@@ -367,6 +368,7 @@ var startOperation = speedhttp.NewReplyOperation[startInput](
 		tooManyAnswer,
 		dependencyAnswer,
 	},
+	speedhttp.Public(),
 )
 
 // startAuthenticatedOperation declares the route that starts a link, step-up or
@@ -437,6 +439,7 @@ var answerOperation = speedhttp.NewReplyOperation[answerInput](
 		tooManyAnswer,
 		dependencyAnswer,
 	},
+	speedhttp.Public(),
 )
 
 // currentOperation declares the read of the flow the request is bound to.
@@ -458,6 +461,7 @@ var currentOperation = speedhttp.NewReplyOperation[struct{}](
 		tooManyAnswer,
 		unavailableAnswer,
 	},
+	speedhttp.Public(),
 )
 
 // abandonOperation declares the removal of the flow the request is bound to.
@@ -477,6 +481,7 @@ var abandonOperation = speedhttp.NewReplyOperation[struct{}](
 		tooManyAnswer,
 		unavailableAnswer,
 	},
+	speedhttp.Public(),
 )
 
 // callbackResponses are the answers both callback methods share.
@@ -520,6 +525,7 @@ var callbackGetOperation = speedhttp.NewReplyOperation[callbackInput](
 		"with `GET /auth/flows/current` and complete with `POST /auth/flows/answer`.",
 	nil,
 	callbackResponses,
+	speedhttp.Public(),
 )
 
 // callbackPostOperation declares a callback delivered as a cross-site form post.
@@ -542,6 +548,7 @@ var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 		"enables it.",
 	nil,
 	callbackResponses,
+	speedhttp.Public(),
 )
 
 // loginOperations is the declaration of the engine's own routes. The account

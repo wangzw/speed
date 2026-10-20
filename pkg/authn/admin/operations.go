@@ -72,6 +72,7 @@ type accountListInput struct {
 // accountCreateInput is the create's body: a user account names at least one
 // login identifier; a service account is not held to that.
 type accountCreateInput struct {
+	_                struct{}          `description:"The account to create: a user account or a service account, with the login identifiers an administrator states."`
 	Kind             string            `json:"kind" required:"true" enum:"user,service" description:"user for a human account, service for a non-interactive API client."`
 	DisplayName      string            `json:"display_name" description:"The account's display name; absent writes an empty one."`
 	Username         string            `json:"username" description:"A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored."`
@@ -91,6 +92,7 @@ type accountIDInput struct {
 
 // accountPatchInput is a partial update: each field left out is left as it is.
 type accountPatchInput struct {
+	_           struct{}          `description:"A partial change to one account: a member left out is left as it is."`
 	ID          string            `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	DisplayName *string           `json:"display_name" description:"Absent leaves the display name as it is"`
 	Attributes  map[string]string `json:"attributes" description:"Absent leaves the attribute set as it is"`
@@ -99,16 +101,18 @@ type accountPatchInput struct {
 
 // accountStatusInput changes an account's status.
 type accountStatusInput struct {
-	ID     string `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
-	Status string `json:"status" required:"true" enum:"active,disabled" description:"The deleted state is reached only through the delete route"`
+	_      struct{} `description:"An account's new status."`
+	ID     string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
+	Status string   `json:"status" required:"true" enum:"active,disabled" description:"The deleted state is reached only through the delete route"`
 }
 
 // identifierAddInput adds one identifier to an account.
 type identifierAddInput struct {
-	ID          string `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
-	Kind        string `json:"kind" required:"true" enum:"username,email" description:"A phone number is added or changed only through an SMS code and is refused here"`
-	Value       string `json:"value" required:"true" description:"The identifier's text; it is normalized before it is stored, so a username is lower-cased and an email address is trimmed and lower-cased."`
-	VerifiedVia string `json:"verified_via" enum:",admin" description:"How the administrator states the identifier came to be verified"`
+	_           struct{} `description:"A login identifier to add to one account, with how the administrator states it was verified."`
+	ID          string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
+	Kind        string   `json:"kind" required:"true" enum:"username,email" description:"A phone number is added or changed only through an SMS code and is refused here"`
+	Value       string   `json:"value" required:"true" description:"The identifier's text; it is normalized before it is stored, so a username is lower-cased and an email address is trimmed and lower-cased."`
+	VerifiedVia string   `json:"verified_via" enum:",admin" description:"How the administrator states the identifier came to be verified"`
 }
 
 // identifierRemoveInput removes one identifier by the identifier row's own
@@ -120,18 +124,21 @@ type identifierRemoveInput struct {
 
 // passwordResetInput sets an administrator's temporary password.
 type passwordResetInput struct {
-	ID       string `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
-	Password string `json:"password" required:"true" description:"The temporary password, handed out once and never echoed, logged or audited"`
+	_        struct{} `description:"An administrator's temporary password for one account."`
+	ID       string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
+	Password string   `json:"password" required:"true" description:"The temporary password, handed out once and never echoed, logged or audited"`
 }
 
 // mfaFlagInput sets whether an account must register a factor.
 type mfaFlagInput struct {
-	ID       string `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
-	Required bool   `json:"required" required:"true" description:"True when the account must register a factor before it can sign in."`
+	_        struct{} `description:"Whether one account must register a factor before it can sign in."`
+	ID       string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
+	Required bool     `json:"required" required:"true" description:"True when the account must register a factor before it can sign in."`
 }
 
 // secretCreateInput mints a service secret for a service account.
 type secretCreateInput struct {
+	_         struct{}   `description:"A service secret to mint: its label and, optionally, its expiry."`
 	ID        string     `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Label     string     `json:"label" description:"The label for the administrator's own reference: at most 100 bytes of valid UTF-8 with no control character."`
 	ExpiresAt *time.Time `json:"expires_at" description:"Absent mints a secret with no expiry"`
@@ -152,11 +159,12 @@ type memberListInput struct {
 
 // memberWriteInput writes one account's membership in one tenant.
 type memberWriteInput struct {
-	Tenant    string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
-	Account   string `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
-	Active    bool   `json:"active" description:"True adds or resumes the membership; false suspends it, and a suspended membership reads as not a member."`
-	Source    string `json:"source" description:"Absent records the change as an administrator's"`
-	SSOExempt bool   `json:"sso_exempt" description:"True exempts the member from the tenant's enforced SSO requirement."`
+	_         struct{} `description:"A membership write: whether the account is an active member of the tenant and whether the tenant's SSO requirement exempts it."`
+	Tenant    string   `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
+	Account   string   `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
+	Active    bool     `json:"active" description:"True adds or resumes the membership; false suspends it, and a suspended membership reads as not a member."`
+	Source    string   `json:"source" description:"Absent records the change as an administrator's"`
+	SSOExempt bool     `json:"sso_exempt" description:"True exempts the member from the tenant's enforced SSO requirement."`
 }
 
 // memberAddressInput addresses one membership.
@@ -167,9 +175,10 @@ type memberAddressInput struct {
 
 // memberExemptInput sets a member's SSO exemption.
 type memberExemptInput struct {
-	Tenant    string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
-	Account   string `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
-	SSOExempt bool   `json:"sso_exempt" required:"true" description:"True exempts the member; false clears the exemption."`
+	_         struct{} `description:"A member's exemption from the tenant's enforced SSO requirement."`
+	Tenant    string   `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
+	Account   string   `path:"account" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
+	SSOExempt bool     `json:"sso_exempt" required:"true" description:"True exempts the member; false clears the exemption."`
 }
 
 // tenantInput addresses one tenant.
@@ -180,6 +189,7 @@ type tenantInput struct {
 // providerCreateInput creates a provider in a tenant. The path and the body must
 // agree on the tenant.
 type providerCreateInput struct {
+	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
 	Tenant            string                     `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
 	BodyTenant        string                     `json:"tenant" description:"Absent on a create takes the path's tenant; a value that names another is refused"`
 	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml. The set is closed."`
@@ -196,6 +206,7 @@ type providerCreateInput struct {
 
 // providerUpdateInput replaces a provider. The tenant is immutable.
 type providerUpdateInput struct {
+	_                 struct{}                   `description:"An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration."`
 	Tenant            string                     `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
 	ID                string                     `path:"id" description:"The provider's identifier."`
 	BodyTenant        string                     `json:"tenant" description:"Absent on a create takes the path's tenant; a value that names another is refused"`
@@ -219,9 +230,10 @@ type providerIDInput struct {
 
 // domainClaimInput claims a domain for a provider.
 type domainClaimInput struct {
-	Tenant string `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
-	ID     string `path:"id" description:"The provider's identifier."`
-	Domain string `json:"domain" required:"true" description:"The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored."`
+	_      struct{} `description:"A domain to claim for one identity provider."`
+	Tenant string   `path:"tenant" description:"The tenant's identifier (the tenant module's ID as a string), not an alias or a display name."`
+	ID     string   `path:"id" description:"The provider's identifier."`
+	Domain string   `json:"domain" required:"true" description:"The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored."`
 }
 
 // domainAddressInput addresses one claimed domain of one provider.

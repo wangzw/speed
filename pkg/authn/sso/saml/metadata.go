@@ -59,7 +59,7 @@ func (p *product) mountMetadata() {
 	if err != nil {
 		panic(diagnosticPrefix + ModuleName + ": " + err.Error())
 	}
-	p.mounter.Public(http.MethodGet, rel, metadataOperation.Handle(p.serveMetadata))
+	mount.Declared(p.mounter, metadataOperation, rel, metadataOperation.Handle(p.serveMetadata))
 }
 
 // serveMetadata answers one provider's service provider metadata. A provider

@@ -250,6 +250,14 @@
             "description": "The account store could not be reached"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "The caller's own profile"
       },
       "patch": {
@@ -369,6 +377,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Write the caller's own display name, attribute set, locale and time zone"
       }
     }

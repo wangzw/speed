@@ -40,15 +40,15 @@ func (p *product) mountRoutes() {
 	r := &routes{product: p, endpoint: p.mounter.Endpoint()}
 	m := p.mounter
 
-	m.Public(http.MethodGet, mountRel(methodsOperation.Path), withRequest(methodsOperation.Handle(r.methods)))
-	m.Public(http.MethodPost, mountRel(startOperation.Path),
+	mount.Declared(m, methodsOperation, mountRel(methodsOperation.Path), withRequest(methodsOperation.Handle(r.methods)))
+	mount.Declared(m, startOperation, mountRel(startOperation.Path),
 		withRequest(mount.GuardBody(nil, startOperation.Handle(r.startFlow))))
-	m.Guarded(http.MethodPost, mountRel(startAuthenticatedOperation.Path),
+	mount.Declared(m, startAuthenticatedOperation, mountRel(startAuthenticatedOperation.Path),
 		withRequest(mount.GuardBody(r.identityPrecheck, startAuthenticatedOperation.Handle(r.startAuthenticated))))
-	m.Public(http.MethodPost, mountRel(answerOperation.Path),
+	mount.Declared(m, answerOperation, mountRel(answerOperation.Path),
 		withRequest(mount.GuardBody(r.bindingPrecheck, answerOperation.Handle(r.answer))))
-	m.Public(http.MethodGet, mountRel(currentOperation.Path), withRequest(currentOperation.Handle(r.current)))
-	m.Public(http.MethodDelete, mountRel(abandonOperation.Path), withRequest(abandonOperation.Handle(r.abandon)))
+	mount.Declared(m, currentOperation, mountRel(currentOperation.Path), withRequest(currentOperation.Handle(r.current)))
+	mount.Declared(m, abandonOperation, mountRel(abandonOperation.Path), withRequest(abandonOperation.Handle(r.abandon)))
 	m.Callback([]string{http.MethodGet}, mountRel(callbackGetOperation.Path),
 		withRequest(callbackGetOperation.Handle(r.callbackGet)))
 	m.Callback([]string{http.MethodPost}, mountRel(callbackPostOperation.Path),

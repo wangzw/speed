@@ -79,6 +79,7 @@
             "description": "The provider register could not be reached"
           }
         },
+        "security": [],
         "summary": "The service provider metadata for one SAML provider"
       }
     }

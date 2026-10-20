@@ -3,6 +3,7 @@
     "schemas": {
       "AuthnAdminDomainClaim": {
         "additionalProperties": false,
+        "description": "A domain to claim for one identity provider.",
         "properties": {
           "domain": {
             "description": "The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored.",
@@ -141,6 +142,7 @@
       },
       "AuthnAdminMemberSSOExempt": {
         "additionalProperties": false,
+        "description": "A member's exemption from the tenant's enforced SSO requirement.",
         "properties": {
           "sso_exempt": {
             "description": "True exempts the member; false clears the exemption.",
@@ -154,6 +156,7 @@
       },
       "AuthnAdminMemberWrite": {
         "additionalProperties": false,
+        "description": "A membership write: whether the account is an active member of the tenant and whether the tenant's SSO requirement exempts it.",
         "properties": {
           "active": {
             "description": "True adds or resumes the membership; false suspends it, and a suspended membership reads as not a member.",
@@ -274,6 +277,7 @@
       },
       "AuthnAdminProviderWrite": {
         "additionalProperties": false,
+        "description": "An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration.",
         "properties": {
           "allow_idp_initiated": {
             "description": "Absent leaves the flag as it is (false on a create)",
@@ -470,6 +474,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List impersonation records, one page at a time"
       }
     },
@@ -543,6 +555,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Revoke an impersonation record"
       }
     },
@@ -637,6 +657,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List a tenant's members"
       }
     },
@@ -730,6 +758,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Remove an account's membership from a tenant"
       },
       "put": {
@@ -842,6 +878,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Write an account's membership in a tenant"
       }
     },
@@ -956,6 +1000,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Set an account's exemption from a tenant's SSO requirement"
       }
     },
@@ -1024,6 +1076,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List a tenant's SSO providers"
       },
       "post": {
@@ -1131,6 +1191,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Create an SSO provider in a tenant"
       }
     },
@@ -1204,6 +1272,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Delete an SSO provider"
       },
       "get": {
@@ -1282,6 +1358,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Read one SSO provider"
       },
       "put": {
@@ -1401,6 +1485,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Update an SSO provider"
       }
     },
@@ -1532,6 +1624,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Claim a domain for an SSO provider"
       }
     },
@@ -1614,6 +1714,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Remove a domain from an SSO provider"
       }
     },
@@ -1706,6 +1814,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Verify a claimed domain of an SSO provider"
       }
     },
@@ -1796,6 +1912,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Refresh an SSO provider's metadata"
       }
     },
@@ -1869,6 +1993,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Re-verify every claimed domain of an SSO provider"
       }
     }

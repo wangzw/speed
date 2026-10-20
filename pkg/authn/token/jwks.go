@@ -33,7 +33,7 @@ func (p *product) JWKS(_ context.Context) ([]byte, error) {
 // piece of the module mounts; the token and revocation endpoints are registered
 // by the piece that builds them.
 func (p *product) mountJWKS() {
-	p.mounter.Public(http.MethodGet, jwksPath, jwksOperation.Handle(p.handleJWKS))
+	mount.Declared(p.mounter, jwksOperation, jwksPath, jwksOperation.Handle(p.handleJWKS))
 }
 
 // handleJWKS writes the key set with the media type and public cache the

@@ -222,6 +222,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List every permission the catalog declares"
       }
     },
@@ -305,6 +313,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List every role binding of a tenant"
       }
     },
@@ -397,6 +413,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List every binding an account holds within a tenant"
       }
     },
@@ -478,6 +502,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Remove an account's binding to a role within a tenant"
       },
       "put": {
@@ -557,6 +589,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Bind a role to an account within a tenant"
       }
     },
@@ -640,6 +680,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List a tenant's roles"
       }
     },
@@ -722,6 +770,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Remove a role, revoking its grants and bindings with it"
       },
       "put": {
@@ -823,6 +879,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Create or rewrite a role"
       }
     },
@@ -915,6 +979,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List every permission grant a role holds"
       }
     },
@@ -1006,6 +1078,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Revoke a permission from a role"
       },
       "put": {
@@ -1095,6 +1175,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Grant a permission to a role"
       }
     }

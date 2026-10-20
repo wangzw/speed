@@ -12,15 +12,6 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// scopeOf is the scope a registration lands in: the one the caller named, or
-// the ordinary surface when none was named. The access level does not imply a
-// scope: a public route and a guarded one of the same module share the same
-// base unless the declaration says otherwise.
-func scopeOf(lvl level, spec mount.Spec) speedhttp.Scope {
-	_ = lvl
-	return spec.Scope
-}
-
 // level is the access level a registration asks the gateway to apply.
 type level uint8
 
@@ -88,7 +79,9 @@ func (p *product) register(call string, lvl level, methods []string, rel string,
 			"requirement on the route-mounting capability and register from the Init callback, "+
 			"which runs after this module's", ModuleName, call, strings.Join(methods, ", "), rel))
 	}
-	scope := scopeOf(lvl, spec)
+	// The access level does not imply a scope: a public route and a guarded one
+	// of the same module share one base unless the declaration says otherwise.
+	scope := spec.Scope
 	base := p.bases[scope]
 	if base == "" {
 		panic(fmt.Sprintf("%s: %s(%s, %q) was registered for the scope %q, which has no configured "+

@@ -152,6 +152,14 @@
             "description": "The record could not be ended"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "End the impersonation on the caller's session"
       },
       "get": {
@@ -200,6 +208,14 @@
             "description": "The record could not be read"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "The impersonation in force on the caller's session"
       },
       "post": {
@@ -330,6 +346,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Start impersonating another account"
       }
     }

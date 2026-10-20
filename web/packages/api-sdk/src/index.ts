@@ -707,6 +707,9 @@ export interface NotificationMessage {
   type_key: string;
 }
 
+/**
+ * A delivery channel the capability carries: in_app writes a row the inbox reads, email goes through the mail capability's sender, and sms goes through the SMS registry's sender. The set is closed.
+ */
 export type Channel = typeof Channel[keyof typeof Channel];
 
 
@@ -791,6 +794,9 @@ export interface ObjectstoreObject {
   updated_at: string;
 }
 
+/**
+ * An object to declare before its bytes are uploaded: the name, the exact size and media type, and the checksum the upload is held to.
+ */
 export interface ObjectstoreDeclaration {
   /** The declared SHA-256 as 64 hex digits; empty declares no checksum */
   checksum_sha256?: string;
@@ -945,6 +951,9 @@ export const AuthnAdminAccountCreatePhoneVerifiedVia = {
   'import-unverified': 'import-unverified',
 } as const;
 
+/**
+ * The account to create: a user account or a service account, with the login identifiers an administrator states.
+ */
 export interface AuthnAdminAccountCreate {
   /** Absent writes no attribute set */
   attributes?: AuthnAdminAccountCreateAttributes;
@@ -981,6 +990,9 @@ export interface AuthnAdminAccountEnvelope {
  */
 export type AuthnAdminAccountPatchAttributes = {[key: string]: string};
 
+/**
+ * A partial change to one account: a member left out is left as it is.
+ */
 export interface AuthnAdminAccountPatch {
   /** Absent leaves the attribute set as it is */
   attributes?: AuthnAdminAccountPatchAttributes;
@@ -1044,6 +1056,9 @@ export const AuthnAdminIdentifierWriteVerifiedVia = {
   admin: 'admin',
 } as const;
 
+/**
+ * A login identifier to add to one account, with how the administrator states it was verified.
+ */
 export interface AuthnAdminIdentifierWrite {
   /** A phone number is added or changed only through an SMS code and is refused here */
   kind: AuthnAdminIdentifierWriteKind;
@@ -1053,6 +1068,9 @@ export interface AuthnAdminIdentifierWrite {
   verified_via?: AuthnAdminIdentifierWriteVerifiedVia;
 }
 
+/**
+ * Whether one account must register a factor before it can sign in.
+ */
 export interface AuthnAdminMFARequired {
   /** True when the account must register a factor before it can sign in. */
   required: boolean;
@@ -1066,6 +1084,9 @@ export interface AuthnAdminRemoved {
   removed: number;
 }
 
+/**
+ * An administrator's temporary password for one account.
+ */
 export interface AuthnAdminPasswordReset {
   /** The temporary password, handed out once and never echoed, logged or audited */
   password: string;
@@ -1101,6 +1122,9 @@ export interface AuthnAdminSecretList {
   secrets: AuthnAdminSecret[];
 }
 
+/**
+ * A service secret to mint: its label and, optionally, its expiry.
+ */
 export interface AuthnAdminSecretCreate {
   /** Absent mints a secret with no expiry */
   expires_at?: string;
@@ -1170,6 +1194,9 @@ export const AuthnAdminAccountStatusStatus = {
   disabled: 'disabled',
 } as const;
 
+/**
+ * An account's new status.
+ */
 export interface AuthnAdminAccountStatus {
   /** The deleted state is reached only through the delete route */
   status: AuthnAdminAccountStatusStatus;
@@ -1253,6 +1280,9 @@ export interface SmsAdminTemplate {
  */
 export type SmsAdminRegisterCodes = {[key: string]: string};
 
+/**
+ * A template to take up by the vendor code the deployment already holds: its name, its parameters and the vendor code of each language.
+ */
 export interface SmsAdminRegister {
   /** The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled. */
   codes: SmsAdminRegisterCodes;
@@ -1262,6 +1292,9 @@ export interface SmsAdminRegister {
   params: string[];
 }
 
+/**
+ * A template submission to the vendor for one language: the body with its placeholders, what the template is for, and the note its reviewer reads.
+ */
 export interface SmsAdminSubmission {
   /** The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order. */
   content: string;
@@ -1300,6 +1333,9 @@ export interface TenantAdminTenant {
   status: TenantAdminTenantStatus;
 }
 
+/**
+ * The identifier and alias of a tenant to register. The state is not part of it, because a registered tenant starts active.
+ */
 export interface TenantAdminTenantRegistration {
   /** The alias to give the tenant; the roster refuses one another tenant already holds. */
   alias: string;
@@ -1440,6 +1476,9 @@ export interface AuthnAdminMemberList {
   members: AuthnAdminMember[];
 }
 
+/**
+ * A membership write: whether the account is an active member of the tenant and whether the tenant's SSO requirement exempts it.
+ */
 export interface AuthnAdminMemberWrite {
   /** True adds or resumes the membership; false suspends it, and a suspended membership reads as not a member. */
   active?: boolean;
@@ -1449,6 +1488,9 @@ export interface AuthnAdminMemberWrite {
   sso_exempt?: boolean;
 }
 
+/**
+ * A member's exemption from the tenant's enforced SSO requirement.
+ */
 export interface AuthnAdminMemberSSOExempt {
   /** True exempts the member; false clears the exemption. */
   sso_exempt: boolean;
@@ -1499,6 +1541,9 @@ export interface AuthnAdminProviderList {
  */
 export type AuthnAdminProviderWriteConfig = {[key: string]: unknown};
 
+/**
+ * An identity provider as an administrator creates or updates it: the protocol, the provisioning mode and the protocol's own configuration.
+ */
 export interface AuthnAdminProviderWrite {
   /** Absent leaves the flag as it is (false on a create) */
   allow_idp_initiated?: boolean;
@@ -1532,6 +1577,9 @@ export interface AuthnAdminProviderEnvelope {
   provider: AuthnAdminProvider;
 }
 
+/**
+ * A domain to claim for one identity provider.
+ */
 export interface AuthnAdminDomainClaim {
   /** The domain to claim, for example example.com; it is trimmed and lower-cased before it is stored. */
   domain: string;
@@ -9941,7 +9989,7 @@ export function useOpsHealth<TData = Awaited<ReturnType<typeof opsHealth>>, TErr
 
 
 /**
- * Serves the document itself rather than a wrapper, merged once at startup and never recomputed, so every request reads the same bytes. Every declared fragment is merged, including those of modules that do not run in this command, because the document states which API this binary provides. Its title and version come from ops.title and ops.version, and it carries top-level openapi, info, paths, components, x-fragments, and a per-operation x-endpoint naming the endpoint that serves each route.
+ * Serves the document itself rather than a wrapper, merged once at startup and never recomputed, so every request reads the same bytes. Every declared fragment is merged, including those of modules that do not run in this command, because the document states which API this binary provides. Its title, version, description and servers come from ops.title, ops.version, ops.description and ops.servers; it carries top-level openapi, info, servers, paths, components, tags and x-fragments; every operation is tagged with the module that declared it, names its security requirement, and carries an x-endpoint naming the endpoint that serves the route.
  * @summary The API document, merged from every module's fragment
  */
 export const opsDocument = (

@@ -70,12 +70,13 @@
             "description": "Alive"
           }
         },
+        "security": [],
         "summary": "The process is alive"
       }
     },
     "/openapi.json": {
       "get": {
-        "description": "Serves the document itself rather than a wrapper, merged once at startup and never recomputed, so every request reads the same bytes. Every declared fragment is merged, including those of modules that do not run in this command, because the document states which API this binary provides. Its title and version come from ops.title and ops.version, and it carries top-level openapi, info, paths, components, x-fragments, and a per-operation x-endpoint naming the endpoint that serves each route.",
+        "description": "Serves the document itself rather than a wrapper, merged once at startup and never recomputed, so every request reads the same bytes. Every declared fragment is merged, including those of modules that do not run in this command, because the document states which API this binary provides. Its title, version, description and servers come from ops.title, ops.version, ops.description and ops.servers; it carries top-level openapi, info, servers, paths, components, tags and x-fragments; every operation is tagged with the module that declared it, names its security requirement, and carries an x-endpoint naming the endpoint that serves the route.",
         "operationId": "ops.document",
         "responses": {
           "200": {
@@ -89,6 +90,7 @@
             "description": "The merged document"
           }
         },
+        "security": [],
         "summary": "The API document, merged from every module's fragment"
       }
     },
@@ -118,6 +120,7 @@
             "description": "Not ready, naming each part that failed"
           }
         },
+        "security": [],
         "summary": "Every declared endpoint accepts requests and the database answers"
       }
     }

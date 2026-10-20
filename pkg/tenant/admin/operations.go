@@ -51,8 +51,9 @@ type (
 // registration starts the tenant active. The type name is unexported, and the
 // declaration publishes the body under the name the hand-written fragment used.
 type createBody struct {
-	ID    string `json:"id" required:"true" description:"The identifier to register; the roster refuses one it already holds."`
-	Alias string `json:"alias" required:"true" description:"The alias to give the tenant; the roster refuses one another tenant already holds."`
+	_     struct{} `description:"The identifier and alias of a tenant to register. The state is not part of it, because a registered tenant starts active."`
+	ID    string   `json:"id" required:"true" description:"The identifier to register; the roster refuses one it already holds."`
+	Alias string   `json:"alias" required:"true" description:"The alias to give the tenant; the roster refuses one another tenant already holds."`
 }
 
 // getTenantInput is the request of a single-tenant read: the identifier in the

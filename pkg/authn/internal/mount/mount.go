@@ -103,6 +103,26 @@ type Mounter interface {
 	CSRF() *http.CrossOriginProtection
 }
 
+// Declared registers the route an operation declares, at the access level the
+// declaration names. The registration and the declaration are then one source:
+// a route cannot be mounted public while its operation says it is guarded, and
+// the fragment cannot publish a requirement the gateway does not apply.
+//
+// Callback is registered separately, because a callback is both public and
+// exempt from the cross-origin check, and only its own registrant knows which
+// methods arrive from another site.
+func Declared(m Mounter, operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...Option) {
+	descriptor := operation.Descriptor()
+	switch descriptor.Access {
+	case speedhttp.AccessPublic:
+		m.Public(descriptor.Method, rel, h, opts...)
+	case speedhttp.AccessOptional:
+		m.Optional(descriptor.Method, rel, h, opts...)
+	default:
+		m.Guarded(descriptor.Method, rel, h, opts...)
+	}
+}
+
 // Option qualifies one registration.
 type Option func(*routeSpec)
 

@@ -36,6 +36,7 @@ type ListTemplatesInput struct {
 // registerBody is the request of a registration: the template's logical name,
 // the parameter names it substitutes and the carrier code for each language.
 type registerBody struct {
+	_      struct{}          `description:"A template to take up by the vendor code the deployment already holds: its name, its parameters and the vendor code of each language."`
 	Name   string            `json:"name" required:"true" description:"The logical template name to take up; required and non-empty, and the name a caller will later send under. A language the name already holds is a 409."`
 	Params []string          `json:"params" required:"true" description:"The parameter names the template substitutes, in the order the vendor approved them."`
 	Codes  map[string]string `json:"codes" required:"true" description:"The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled."`
@@ -43,6 +44,7 @@ type registerBody struct {
 
 // offerBody is the request of a submission: the fields of a sms.Submission.
 type offerBody struct {
+	_       struct{} `description:"A template submission to the vendor for one language: the body with its placeholders, what the template is for, and the note its reviewer reads."`
 	Name    string   `json:"name" required:"true" description:"The logical template name the submission creates; required and non-empty."`
 	Content string   `json:"content" required:"true" description:"The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order."`
 	Kind    string   `json:"kind" required:"true" description:"What the template is for, in the shared vocabulary: verification, notification or marketing. The carrier maps it to the vendor's spelling."`

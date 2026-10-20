@@ -184,6 +184,14 @@
             "description": "The inbox could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "One page of the caller's messages"
       }
     },
@@ -233,6 +241,14 @@
             "description": "The inbox could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Mark every unread message of the caller read"
       }
     },
@@ -282,6 +298,14 @@
             "description": "The inbox could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "The number of the caller's unread, unexpired messages"
       }
     },
@@ -335,6 +359,14 @@
             "description": "The inbox could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Mark one message read"
       }
     }

@@ -60,6 +60,7 @@
       },
       "TenantAdminTenantRegistration": {
         "additionalProperties": false,
+        "description": "The identifier and alias of a tenant to register. The state is not part of it, because a registered tenant starts active.",
         "properties": {
           "alias": {
             "description": "The alias to give the tenant; the roster refuses one another tenant already holds.",
@@ -143,6 +144,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List every tenant the roster holds"
       },
       "post": {
@@ -241,6 +250,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Register an active tenant"
       }
     },
@@ -314,6 +331,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Read one tenant the roster holds"
       },
       "patch": {
@@ -419,6 +444,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Change one tenant's alias"
       }
     },
@@ -520,6 +553,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Change one tenant's state"
       }
     }

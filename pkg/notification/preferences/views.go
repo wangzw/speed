@@ -30,6 +30,13 @@ func (Channel) Enum() []interface{} {
 	return []interface{}{string(ChannelInApp), string(ChannelEmail), string(ChannelSMS)}
 }
 
+// Description publishes what the channel vocabulary means, so the fragment
+// describes the component rather than listing its values alone.
+func (Channel) Description() string {
+	return "A delivery channel the capability carries: in_app writes a row the inbox reads, email goes " +
+		"through the mail capability's sender, and sms goes through the SMS registry's sender. The set is closed."
+}
+
 // NotificationType is one taxonomy entry as GET /types shows it.
 type NotificationType struct {
 	_ struct{} `description:"One notification type as declared by the business module that owns it; the taxonomy is fixed at startup and read-only for the life of the process."`

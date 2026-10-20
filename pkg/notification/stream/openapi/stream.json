@@ -79,6 +79,14 @@
             "description": "The response writer cannot flush a stream"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Subscribe to the caller's in-app notifications as a server-sent event stream"
       }
     }

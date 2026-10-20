@@ -266,6 +266,7 @@ var acceptViewOperation = speedhttp.NewReplyOperation[acceptViewInput](
 		},
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, descriptionUnavailable),
 	},
+	speedhttp.Public(),
 )
 
 // acceptOperation declares the route that redeems an invitation. The route is
@@ -302,6 +303,7 @@ var acceptOperation = speedhttp.NewReplyOperation[acceptInput](
 			"The invitation is expired, revoked or already accepted"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, descriptionUnavailable),
 	},
+	speedhttp.Public(),
 )
 
 // operations is this module's declaration of the API it serves. The fragment is

@@ -59,6 +59,7 @@ var metadataOperation = speedhttp.NewReplyOperation[metadataInput](
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
 			"The provider register could not be reached"),
 	},
+	speedhttp.Public(),
 )
 
 // operations is this module's declaration of the API it serves. The fragment is

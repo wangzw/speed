@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "Channel": {
+        "description": "A delivery channel the capability carries: in_app writes a row the inbox reads, email goes through the mail capability's sender, and sms goes through the SMS registry's sender. The set is closed.",
         "enum": [
           "in_app",
           "email",
@@ -186,6 +187,14 @@
             }
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "The caller's preference matrix, one row per type in the taxonomy"
       }
     },
@@ -309,6 +318,14 @@
             "description": "The preference could not be read or written"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Turn one channel on or off for one type and return that type's effective set"
       }
     },
@@ -349,6 +366,14 @@
             }
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "The notification type taxonomy, one list every recipient shares"
       }
     }

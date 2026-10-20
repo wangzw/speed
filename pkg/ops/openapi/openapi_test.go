@@ -280,3 +280,97 @@ func TestMergeNullFragmentIsUnreadable(t *testing.T) {
 		t.Fatalf("a null fragment did not report ErrUnreadable: %v", err)
 	}
 }
+
+// TestMergeAddsGroupsSecurityAndSchemes pins what the merge owns on top of the
+// fragments: each operation is grouped under its declaring module, an
+// operation that declared no security requirement is published as guarded, one
+// that declared its own keeps it, and the document carries the top-level
+// metadata and the two carriers the requirements name.
+func TestMergeAddsGroupsSecurityAndSchemes(t *testing.T) {
+	merged, err := Merge([]core.Resource[speedhttp.Spec]{
+		spec("beta", "admin", `{"paths":{"/b":{"get":{"summary":"b","security":[{"bearerAuth":[]}]}}}}`),
+		spec("alpha", "api", `{"paths":{"/a":{"post":{"summary":"a"},"get":{"summary":"g","security":[]}}}}`),
+	}, Options{
+		Title:       "the platform",
+		Version:     "1.2.3",
+		Description: "what the document describes",
+		Servers:     []string{"https://api.example.com", "https://api.example.net"},
+	})
+	if err != nil {
+		t.Fatalf("merging two fragments failed: %v", err)
+	}
+	doc := parse(t, merged)
+
+	if got := nested(t, doc, "info")["description"]; got != "what the document describes" {
+		t.Errorf("info.description is %v, want the option's description", got)
+	}
+	servers, ok := doc["servers"].([]any)
+	if !ok || len(servers) != 2 {
+		t.Fatalf("servers is %v, want the two origins the option named", doc["servers"])
+	}
+	if got := servers[0].(map[string]any)["url"]; got != "https://api.example.com" {
+		t.Errorf("the first server is %v, want the first origin", got)
+	}
+
+	tags, ok := doc["tags"].([]any)
+	if !ok || len(tags) != 2 {
+		t.Fatalf("tags is %v, want one entry per declaring module", doc["tags"])
+	}
+	names := []string{tags[0].(map[string]any)["name"].(string), tags[1].(map[string]any)["name"].(string)}
+	if !slices.Equal(names, []string{"alpha", "beta"}) {
+		t.Errorf("tags name %v, want the declaring modules in order", names)
+	}
+
+	guarded := nested(t, doc, "paths", "/a", "post")
+	if got := slicesOfStrings(guarded["tags"]); !slices.Equal(got, []string{"alpha"}) {
+		t.Errorf("/a post is tagged %v, want its declaring module", got)
+	}
+	if got := guarded["security"]; !equalJSONValue(got, []any{
+		map[string]any{"bearerAuth": []any{}},
+		map[string]any{"sessionCookie": []any{}},
+	}) {
+		t.Errorf("/a post has security %v, want the guarded requirement", got)
+	}
+
+	// A fragment that declared its own requirement, or its own public array,
+	// keeps it.
+	if got := nested(t, doc, "paths", "/b", "get")["security"]; !equalJSONValue(got, []any{
+		map[string]any{"bearerAuth": []any{}},
+	}) {
+		t.Errorf("/b get has security %v, want the fragment's own requirement", got)
+	}
+	if got := nested(t, doc, "paths", "/a", "get")["security"]; !equalJSONValue(got, []any{}) {
+		t.Errorf("/a get has security %v, want the public array the fragment declared", got)
+	}
+
+	schemes := nested(t, doc, "components", "securitySchemes")
+	for _, name := range []string{"bearerAuth", "sessionCookie"} {
+		if _, ok := schemes[name]; !ok {
+			t.Errorf("components.securitySchemes carries no %s: %v", name, keysOf(schemes))
+		}
+	}
+}
+
+// slicesOfStrings reads a decoded JSON array of strings.
+func slicesOfStrings(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			return nil
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// equalJSONValue compares two decoded JSON values by their encoding.
+func equalJSONValue(a, b any) bool {
+	left, errLeft := json.Marshal(a)
+	right, errRight := json.Marshal(b)
+	return errLeft == nil && errRight == nil && string(left) == string(right)
+}

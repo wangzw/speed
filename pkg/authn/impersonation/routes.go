@@ -52,11 +52,11 @@ func authnFailure(status int, code string) error {
 // identity cannot begin a nested one, and the gateway refuses it before the
 // handler.
 func (m *product) mountRoutes() {
-	m.mounter.Guarded(http.MethodPost, mountRel(startOperation.Path),
+	mount.Declared(m.mounter, startOperation, mountRel(startOperation.Path),
 		prescreenStart(startOperation.Handle(m.handleStart)))
-	m.mounter.Guarded(http.MethodGet, mountRel(statusOperation.Path),
+	mount.Declared(m.mounter, statusOperation, mountRel(statusOperation.Path),
 		statusOperation.Handle(m.handleStatus), mount.Impersonable())
-	m.mounter.Guarded(http.MethodDelete, mountRel(endOperation.Path),
+	mount.Declared(m.mounter, endOperation, mountRel(endOperation.Path),
 		endOperation.Handle(m.handleEnd), mount.Impersonable())
 }
 

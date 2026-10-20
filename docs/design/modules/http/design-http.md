@@ -196,6 +196,8 @@ type Spec struct {
 
 **请求体按 `RequestMediaType` 绑定**：JSON 用 `json` tag、表单用 `form` tag、multipart 用 `form`/`file` tag、二进制用唯一的 `raw` tag 字段；未知成员按类别拒绝，`In` 的 `Validate()` 失败答 422。参数从 `path`/`query`/`header`/`cookie` tag 绑定，它们对每种媒体类型都生效。handler 因此拿不到请求本身，读不到声明没带的参数，也写不出声明没描述的字段。
 
+**访问级别是 operation 声明的一部分。** `Operation` 与 `ReplyOperation` 的 `Access` 取 `AccessRequired`（零值）、`AccessOptional` 或 `AccessPublic`；后两者经构造选项 `Public()`、`Optional()` 设置。生成器把它写为该 operation 的 `security` 要求：受保护的是 `bearerAuth` 与 `sessionCookie` 两个载体，可选的在它们之外再加一个空要求（不带凭据的请求），公开的是空数组（要求被移除）。认证能力的路由挂载按同一字段选级别（`mount.Declared` 读描述符分派到网关的豁免、可选与受保护三种登记），声明与挂载因而不是两份事实。**公开是显式声明，受保护是缺省**：合并时，片段里没有 `security` 的 operation 被补上受保护要求（[ADR-http-contract-metadata-2026-10-20](../../../adr/adr-http-contract-metadata-2026-10-20.md)）。
+
 **应答是封闭集，动态部分运行期核对。** 状态必须已声明；媒体类型必须与该状态的声明一致（声明 `*/*` 表示由 handler 在该状态内选择）；动态响应头的名字必须已声明；JSON 应答的 body 类型必须等于声明的结构；未声明或类型不符按内部错误答 500，不写出未声明的应答。这类拒绝在构建 handler 时也会对明显无法描述的声明生效：空媒体类型的 body、无结构的 JSON body、204/304 带 body、简单形态的多个 2xx。
 
 **错误应答由公共集加覆盖声明。** 模块把一组 `Response` 作为公共失败集，`Failures(common, specific...)` 按状态合并：operation 同名状态的应答覆盖公共应答，任一侧独有的状态被加入。`Fault` 承载状态、问题类型、标题与详情，handler 可以返回它，也可以 `panic` 它；入口模块只写出该 operation 声明过的状态，未声明的一律 500。恢复层把携带 Problem 的 panic 只在该状态已声明时当作拒绝写出，其余 panic 仍按缺陷处理。`Response` 携带可选的问题类型（`ProblemResponseOf` 声明它）：入口模块在 handler 运行之前以某个状态拒绝请求（请求体绑定失败）时，写出该状态声明的问题类型，一个能力的绑定拒绝与它的 handler 拒绝因而使用同一套问题代码。**错误体形状是一份声明**（`ErrorShape`）：默认是 RFC 9457 问题文档；宿主交付自定义 `ErrorResponder` 时，用同一个形状声明它的错误应答，片段因此描述真正会写出的内容（[ADR-http-failure-responses-2026-10-19](../../../adr/adr-http-failure-responses-2026-10-19.md)）。

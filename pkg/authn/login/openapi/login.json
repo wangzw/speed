@@ -530,6 +530,7 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [],
         "summary": "Handle a provider's callback as a browser navigation"
       },
       "post": {
@@ -645,6 +646,7 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [],
         "summary": "Handle a provider's callback as a cross-site form post"
       }
     },
@@ -810,6 +812,7 @@
             }
           }
         },
+        "security": [],
         "summary": "Start a login flow for one method"
       }
     },
@@ -963,6 +966,7 @@
             }
           }
         },
+        "security": [],
         "summary": "Answer the current step of the flow the request is bound to"
       }
     },
@@ -1128,6 +1132,14 @@
             }
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Start a flow on the identity already signed in"
       }
     },
@@ -1186,6 +1198,7 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [],
         "summary": "Abandon the flow the request is bound to"
       },
       "get": {
@@ -1249,6 +1262,7 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [],
         "summary": "The state of the flow the request is bound to"
       }
     },
@@ -1391,6 +1405,14 @@
             "description": "A dependency could not answer, or the deployment offers no email channel"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Add one of the caller's own login identifiers"
       }
     },
@@ -1528,6 +1550,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Verify the code sent to an email address being added"
       }
     },
@@ -1617,6 +1647,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Remove one of the caller's own identifiers"
       }
     },
@@ -1716,6 +1754,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Unbind one of the caller's own external identities"
       }
     },
@@ -1745,6 +1791,7 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [],
         "summary": "List the login methods this deployment offers"
       }
     },
@@ -1884,6 +1931,14 @@
             }
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Change the caller's password"
       }
     },
@@ -2008,6 +2063,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Send a code to a phone number being added to the account"
       }
     },
@@ -2138,6 +2201,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Verify the code sent to a phone number"
       }
     }

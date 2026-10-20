@@ -64,6 +64,41 @@ var (
 // not renamed.
 var problemDocumentType = reflect.TypeOf(speedhttp.ProblemDocument{})
 
+// The security scheme names the platform's fragments require an operation to
+// name. They are declared in the merged document's components, by the merge,
+// so a fragment names them and never defines them.
+const (
+	// bearerAuthName is the scheme of a credential in the Authorization header,
+	// written by the caller's own script.
+	bearerAuthName = "bearerAuth"
+	// sessionCookieName is the scheme of a credential in the session cookie,
+	// which a browser attaches by itself.
+	sessionCookieName = "sessionCookie"
+)
+
+// securityFor is the operation's security requirement: the alternative ways it
+// admits a caller. A required operation names both carriers and the gateway
+// reads either; an optional one adds the empty alternative, a request with no
+// credential; a public operation requires nothing and so carries the empty
+// array, which is the document's own way of saying the requirement is removed.
+func securityFor(access speedhttp.Access) []interface{} {
+	switch access {
+	case speedhttp.AccessPublic:
+		return []interface{}{}
+	case speedhttp.AccessOptional:
+		return []interface{}{
+			map[string]interface{}{},
+			map[string]interface{}{bearerAuthName: []interface{}{}},
+			map[string]interface{}{sessionCookieName: []interface{}{}},
+		}
+	default:
+		return []interface{}{
+			map[string]interface{}{bearerAuthName: []interface{}{}},
+			map[string]interface{}{sessionCookieName: []interface{}{}},
+		}
+	}
+}
+
 // Generate builds the OpenAPI fragment of one module from its declarations.
 // Title and Version become the fragment's info section; the fragment's paths
 // stay relative to the API root, as the platform's fragments are.
@@ -82,11 +117,13 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 	r.Spec.Info.WithTitle(title).WithVersion(version)
 
 	bodyNames := map[string]string{}
+	access := map[string]speedhttp.Access{}
 	for index, declared := range operations {
 		operation := declared.Descriptor()
 		if operation.Request != nil && operation.Request.Name != "" {
 			bodyNames[operation.ID] = operation.Request.Name
 		}
+		access[operation.ID] = operation.Access
 		// The simple form's writer answers the single declared success status;
 		// a declaration with two of them is refused when the handler is built,
 		// so publishing it would promise an operation that cannot start.
@@ -135,7 +172,7 @@ func Generate(title, version string, operations speedhttp.Operations) ([]byte, e
 	if err != nil {
 		return nil, fmt.Errorf("openapigen: writing the fragment: %w", err)
 	}
-	return normalise(raw, bodyNames)
+	return normalise(raw, bodyNames, access)
 }
 
 // addParameters publishes the request's parameters. They are added as a
@@ -1001,13 +1038,16 @@ func ginPathToOpenAPI(path string) string {
 // normalise brings the library's output to the shape the platform publishes:
 // no null in type unions, no duplicated parameter descriptions, and no default
 // header style. It keeps every media type and binary format as generated.
-func normalise(raw []byte, bodyNames map[string]string) ([]byte, error) {
+func normalise(raw []byte, bodyNames map[string]string, access map[string]speedhttp.Access) ([]byte, error) {
 	var doc map[string]interface{}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("openapigen: reading the generated fragment: %w", err)
 	}
 	walk(doc)
 	normaliseSurfaces(doc)
+	if err := applySecurity(doc, access); err != nil {
+		return nil, err
+	}
 	if err := nameRequestBodies(doc, bodyNames); err != nil {
 		return nil, err
 	}
@@ -1034,6 +1074,41 @@ func walk(value interface{}) {
 			walk(child)
 		}
 	}
+}
+
+// applySecurity publishes each operation's security requirement. The
+// requirement is the declaration's access level: the carriers a required
+// operation admits, those carriers plus an anonymous alternative for an
+// optional one, and the empty array for a public one.
+//
+// Every operation the fragment publishes must be one of the declarations: an
+// operation the map does not name would be published with no security
+// requirement at all, which a reader takes as admitting every caller. That is
+// a generator defect rather than a declaration's, so it stops the build.
+func applySecurity(doc map[string]interface{}, access map[string]speedhttp.Access) error {
+	paths, ok := doc["paths"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	for path, rawItem := range paths {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, method := range methodKeys {
+			operation, ok := item[method].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			id, _ := operation["operationId"].(string)
+			level, declared := access[id]
+			if !declared {
+				return fmt.Errorf("openapigen: the %s %s operation carries no declared access level", strings.ToUpper(method), path)
+			}
+			operation["security"] = securityFor(level)
+		}
+	}
+	return nil
 }
 
 // nameRequestBodies moves each named request body schema into the components

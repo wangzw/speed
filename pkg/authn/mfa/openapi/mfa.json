@@ -148,6 +148,14 @@
             "description": "The factors could not be listed: the factor store was unavailable. The cause is logged and not sent"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "List the caller's own registered factors"
       }
     },
@@ -229,6 +237,14 @@
             "description": "The factor could not be removed: the factor store or the account data it needs was unavailable. The cause is logged and not sent"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Remove one of the caller's own factors"
       }
     }

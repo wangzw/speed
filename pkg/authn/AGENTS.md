@@ -220,6 +220,13 @@ field comments before writing a backend.
   `mounttest` is the `Mounter` for the tests of those modules: it puts every
   registration through the real `Wrap`, records the kind of each, and gives a
   request the identity a test chose.
+- **A module mounts through `mount.Declared`, so the route's level is its
+  operation's declaration.** `Declared` reads the descriptor and registers the
+  route as public, optional or guarded according to `Operation.Access`; the
+  fragment publishes the same field as the operation's `security` requirement.
+  Calling `Public`, `Optional` or `Guarded` directly is for the tests of the
+  mounting machinery, not for a module's routes: a module that did would be the
+  one place where the contract and the gateway could disagree.
 - **A request to a URL an outside party chose goes through `internal/egress`.**
   The client it builds judges every connection attempt on the address actually
   connected to, speaks https only, follows no redirect, caps a response body,

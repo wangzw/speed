@@ -138,6 +138,14 @@
             "description": "A dependency could not answer; no part of the result is returned"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Ensure the caller's personal tenant exists and is complete"
       }
     }

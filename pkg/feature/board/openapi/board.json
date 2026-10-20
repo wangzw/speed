@@ -89,6 +89,14 @@
             "description": "The request carries no identity"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Read the feature document this process serves"
       }
     }

@@ -59,9 +59,11 @@ const (
 
 // The input items this module accepts, relative to its namespace.
 const (
-	endpointItem = "endpoint"
-	titleItem    = "title"
-	versionItem  = "version"
+	endpointItem    = "endpoint"
+	titleItem       = "title"
+	versionItem     = "version"
+	descriptionItem = "description"
+	serversItem     = "servers"
 )
 
 // ErrForeignInstance reports a lifecycle callback handed an instance this
@@ -120,6 +122,12 @@ type moduleConfig struct {
 	Title string `config:"title"`
 	// Version is the merged document's info.version.
 	Version string `config:"version"`
+	// Description is the merged document's info.description. Empty leaves the
+	// member out.
+	Description string `config:"description"`
+	// Servers are the origins the API is reached at, as the merged document's
+	// servers list. Empty leaves the member out.
+	Servers []string `config:"servers"`
 }
 
 // schema declares this module's input items, mounted under its own namespace.
@@ -129,9 +137,11 @@ func schema() config.Schema {
 		Namespace: ConfigNamespace,
 		Mounts:    []config.Mount{{Value: &moduleConfig{Endpoint: defaultEndpoint}}},
 		Items: map[string]config.Item{
-			endpointItem: {Origins: config.OriginPrimary},
-			titleItem:    {Origins: config.OriginPrimary},
-			versionItem:  {Origins: config.OriginPrimary},
+			endpointItem:    {Origins: config.OriginPrimary},
+			titleItem:       {Origins: config.OriginPrimary},
+			versionItem:     {Origins: config.OriginPrimary},
+			descriptionItem: {Origins: config.OriginPrimary},
+			serversItem:     {Origins: config.OriginPrimary},
 		},
 	}
 }
@@ -218,7 +228,12 @@ func initProduct(_ context.Context, reg *core.Registry, instance any) error {
 			specs[i].Value.Endpoint = p.config.Endpoint
 		}
 	}
-	document, err := openapi.Merge(specs, openapi.Options{Title: p.config.Title, Version: p.config.Version})
+	document, err := openapi.Merge(specs, openapi.Options{
+		Title:       p.config.Title,
+		Version:     p.config.Version,
+		Description: p.config.Description,
+		Servers:     p.config.Servers,
+	})
 	if err != nil {
 		return err
 	}

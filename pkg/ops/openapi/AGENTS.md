@@ -12,8 +12,10 @@ into an artifact without constructing any module.
 func Merge(specs []core.Resource[http.Spec], opts Options) ([]byte, error)
 
 type Options struct {
-	Title   string
-	Version string
+	Title       string
+	Version     string
+	Description string
+	Servers     []string
 }
 ```
 
@@ -37,20 +39,37 @@ Sentinels the errors carry, to test against with `errors.Is`:
 ## The document it produces
 
 Top level: `openapi` (the version the fragments are written against), `info`
-(title and version from `Options`), `paths`, `components`, and the extension key
-`x-fragments` — a list of each fragment's source, `{module, endpoint}`, in module
-order.
+(title, version and description from `Options`), `servers` (the origins from
+`Options`), `paths`, `components`, `tags`, and the extension key `x-fragments` —
+a list of each fragment's source, `{module, endpoint}`, in module order. A
+member whose `Options` value is empty is left out.
 
-**Each fragment path is resolved against its Spec's `Prefix` and `Version`
-before it reaches the document.** A fragment declares `/auth/me` relative to the
-API root; `Spec.ResolvePath` composes `/api/v1/auth/me`, and that absolute path
-is what the document holds, what a conflict is judged on, and what a client
-addresses. A Spec that serves at the root (both fields empty) carries absolute
-paths already.
+**Each fragment path is resolved against its Spec's `Prefix`, `Version` and
+`Scope` before it reaches the document.** A fragment declares `/auth/me`
+relative to the API root; `Spec.ResolvePath` composes `/api/v1/auth/me`, and a
+management surface's fragment composes `/api/v1/tenants/...` or
+`/api/v1/system/...`. That absolute path is what the document holds, what a
+conflict is judged on, and what a client addresses. A Spec that serves at the
+root (every field empty) carries absolute paths already.
 
-Each operation carries the extension key `x-endpoint`, naming the endpoint the
-operation is served on: one document describes several listening endpoints, and
-a path alone does not say which one answers it. These two keys are the
+Each operation gains three members the merge owns:
+
+- `x-endpoint`, naming the endpoint the operation is served on: one document
+  describes several listening endpoints, and a path alone does not say which one
+  answers it.
+- `tags`, carrying the name of the module that declared the fragment. The
+  document's top-level `tags` lists one entry per such module, sorted by name,
+  so a reader groups operations by the same vocabulary `x-fragments` uses.
+- `security`. A fragment that declares none gets the requirement of an
+  identified caller — `bearerAuth` or `sessionCookie` — because a route is
+  guarded unless it says otherwise; a fragment that declares one keeps it as
+  written, and the empty array is how a public operation says it admits every
+  caller.
+
+`components.securitySchemes` is written by the merge, once, from the platform's
+vocabulary: `bearerAuth` (an `Authorization: Bearer` header) and
+`sessionCookie` (the `sid` cookie). A fragment that declares either itself is
+held to the same content. These three members and the two schemes are the
 host-visible shape a gateway or a frontend reads; changing them is a breaking
 change.
 

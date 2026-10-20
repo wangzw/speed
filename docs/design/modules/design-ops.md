@@ -57,11 +57,11 @@ core.Module{
 func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 ```
 
-`Options` 载 `Title` 与 `Version`（对应 `ops.title` 与 `ops.version`，模块从配置取，`gen` 命令从命令行取）。
+`Options` 载 `Title`、`Version`、`Description` 与 `Servers`（分别对应 `ops.title`、`ops.version`、`ops.description` 与 `ops.servers`，模块从配置取，`gen` 命令从命令行取）。空值对应的顶层成员不写出。
 
 **它是纯函数**：输入是片段与选项，输出是文档或错误，没有别的输入。同一个二进制、同一组片段，模块在 `Init` 里合并的结果与 `gen` 写出的结果逐字节相同——两者的差别只在谁调用、把结果交付到哪里（一个挂在 `/openapi.json` 上，一个写进制品）。
 
-**片段里的 path 是相对写法**：合并时按声明它的 `Spec.Prefix` 与 `Spec.Version` 拼成完整路径，冲突也按拼出的路径判定（[ADR-http-spec-path-2026-10-18](../../adr/adr-http-spec-path-2026-10-18.md)）。本模块自己的片段两者皆空，三条探针路由因而保持根路径。
+**片段里的 path 是相对写法**：合并时按声明它的 `Spec.Prefix`、`Spec.Version` 与 `Spec.Scope` 拼成完整路径，冲突也按拼出的路径判定（[ADR-http-spec-path-2026-10-18](../../adr/adr-http-spec-path-2026-10-18.md)、[ADR-http-api-path-scopes-2026-10-19](../../adr/adr-http-api-path-scopes-2026-10-19.md)）。本模块自己的片段三者皆空，三条探针路由因而保持根路径。
 
 `pkg/ops/openapi` **不登记模块**：它没有生命周期、不交付功能、不声明资源。它是这一能力目录下供两个调用方共用的实现，也是本能力唯一需要被模块之外调用的面。
 
@@ -78,13 +78,13 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error)
 ### 宿主可见面
 
 - **模块名**：`ops`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
-- **配置命名空间与输入项**：`ops` 下的 `endpoint`（字符串，缺省 `ops`，取主配置源）——本模块挂路由、并写进自己 `Spec` 的端名；`title` 与 `version`（字符串，取主配置源）——写进合并文档 `info` 的标题与版本，与各片段的模块无关，`version` 缺省为空串。
+- **配置命名空间与输入项**：`ops` 下的 `endpoint`（字符串，缺省 `ops`，取主配置源）——本模块挂路由、并写进自己 `Spec` 的端名；`title` 与 `version`（字符串，取主配置源）——写进合并文档 `info` 的标题与版本，与各片段的模块无关，`version` 缺省为空串；`description`（字符串）与 `servers`（字符串列表）——写进合并文档的 `info.description` 与顶层 `servers`，空值不写出。
 - **探针端点**：`ops.endpoint` 点名的端上的 `/health`、`/ready`、`/openapi.json`。
-- **合并文档的形状**：顶层 `openapi`、`info`（标题与版本取自 `ops.title` 与 `ops.version` 两个输入项）、`paths`、`components`，以及扩展键 `x-fragments`（逐份片段的来源：模块与端）与每个 operation 上的 `x-endpoint`（这条 operation 服务在哪个端上）。
+- **合并文档的形状**：顶层 `openapi`、`info`（标题、版本与描述取自 `ops.title`、`ops.version` 与 `ops.description`）、`servers`（取自 `ops.servers`）、`paths`、`components`、`tags`（每个声明了片段的模块一条，按名字排序），以及扩展键 `x-fragments`（逐份片段的来源：模块与端）。每个 operation 带三个由合并写出的成员：`x-endpoint`（这条 operation 服务在哪个端上）、`tags`（声明它的模块名）与 `security`（它的访问级别；片段没写的一律补成受保护），`components.securitySchemes` 则由合并统一写出 `bearerAuth` 与 `sessionCookie` 两个载体。
 
 ### 对外接口面
 
-- 模块名 `ops`、配置键 `ops.endpoint`、`ops.title`、`ops.version`、路由的方法与路径、合并文档的扩展键 `x-fragments` 与 `x-endpoint`，是宿主与网关写下来、读进去的东西，改动它们是宿主可见的破坏性变更。
+- 模块名 `ops`、配置键 `ops.endpoint`、`ops.title`、`ops.version`、`ops.description`、`ops.servers`、路由的方法与路径、合并文档的扩展键 `x-fragments` 与 `x-endpoint`、operation 上的 `tags` 与 `security`、`components.securitySchemes` 的两个名字，是宿主与网关写下来、读进去的东西，改动它们是宿主可见的破坏性变更。
 - `Spec.Endpoint` 的语义：它是声明模块写下的端名，一个未被声明的端不是错误——资源是静态声明，`http` 只保存它（见 [http](http/design-http.md)）。
 
 ### 非保证
@@ -165,11 +165,13 @@ sequenceDiagram
 |---|---|---|
 | 片段来源 | `fragmentSource` | 一份片段由哪个模块声明、为哪个端声明：`Module` 与 `Endpoint` |
 | 片段 | `fragment` | 从一份 `Spec.Document` 读出的部分：`Paths`（路径到方法）与 `Components`（段到名字） |
-| 合并文档 | `mergedDocument` | 本模块交出的规格：`OpenAPI` 版本、`Info`、`Paths`、`Components`、`Fragments` |
+| 合并文档 | `mergedDocument` | 本模块交出的规格：`OpenAPI` 版本、`Info`、`Servers`、`Paths`、`Components`、`Tags`、`Fragments` |
 | 存活应答 | `health` | `{status}`；`/health` 的正文 |
 | 就绪应答 | `readiness` | `{status, failures}`；`failures` 逐项点名失败的那一半 |
 
 **合并文档带扩展键 `x-fragments` 与 `x-endpoint`。** `x-fragments` 列出参与合并的每份片段的来源（模块与端）；每个 operation 上的 `x-endpoint` 记下这条 operation 服务在哪个端上——一份文档描述多个端点，光凭路径说不出它由哪个端应答。
+
+**分组与鉴权也由合并写出。** 每个 operation 的 `tags` 带上声明它的模块名，顶层 `tags` 汇总这些名字并按序排列，读者因而按 `x-fragments` 用的同一套词汇分组。宿主写制品时可以把一个 operation 的模块标签换成它自己的所有者标签（`gen` 对应用所有的操作这么做，并从顶层 `tags` 里摘掉该模块名）：一个 operation 只带一个标签，按标签分组的读者不会把它列两次。`security` 来自 operation 自己的访问级别；片段没写 `security` 的 operation 被补成受保护要求，公开必须显式声明为 `[]`。`components.securitySchemes` 由合并统一写出 `bearerAuth`（`Authorization: Bearer`）与 `sessionCookie`（`sid` cookie 及其带前缀的写法），片段只引用名字、不自定义载体（[ADR-http-contract-metadata-2026-10-20](../../adr/adr-http-contract-metadata-2026-10-20.md)）。
 
 ## 核心算法与流程
 

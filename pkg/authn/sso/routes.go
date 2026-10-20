@@ -38,7 +38,7 @@ func (p *product) mountRoutes() {
 	if err != nil {
 		panic(diagnosticPrefix + ModuleName + ": " + err.Error())
 	}
-	p.mounter.Public(http.MethodPost, rel, capabilityDecoded(discoverOperation.Handle(p.handleDiscover)))
+	mount.Declared(p.mounter, discoverOperation, rel, capabilityDecoded(discoverOperation.Handle(p.handleDiscover)))
 }
 
 // capabilityDecoded answers a body the entry point's binding would refuse with

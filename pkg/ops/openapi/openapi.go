@@ -53,14 +53,21 @@ var (
 	ErrComponentConflict = errors.New("openapi: two fragments declare one component differently")
 )
 
-// Options carries the values the merged document's info section takes. They are
-// the module's ops.title and ops.version, or the values a build tool took from
-// its own command line.
+// Options carries the values the merged document's top level takes beside the
+// fragments themselves. The title and version are the module's ops.title and
+// ops.version, or the values a build tool took from its own command line; the
+// description and the servers are the same kind of input.
 type Options struct {
 	// Title is the document's info.title.
 	Title string
 	// Version is the document's info.version.
 	Version string
+	// Description is the document's info.description. Empty leaves the member
+	// out.
+	Description string
+	// Servers are the origins the API is reached at, in one string each, as
+	// the document's servers list. Empty leaves the member out.
+	Servers []string
 }
 
 // fragment is the part of a declared OpenAPI fragment the merge reads: the
@@ -79,8 +86,21 @@ type fragmentSource struct {
 
 // info is the merged document's info section.
 type info struct {
-	Title   string `json:"title"`
-	Version string `json:"version"`
+	Title       string `json:"title"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
+}
+
+// server is one origin the API is reached at.
+type server struct {
+	URL string `json:"url"`
+}
+
+// tag is one operation group. The merge derives it from the module that
+// declared the operations it names, so the document's groups and its
+// x-fragments sources are the same vocabulary.
+type tag struct {
+	Name string `json:"name"`
 }
 
 // document is the merged document. Its field order is the order the keys appear
@@ -88,9 +108,30 @@ type info struct {
 type document struct {
 	OpenAPI    string                                `json:"openapi"`
 	Info       info                                  `json:"info"`
+	Servers    []server                              `json:"servers,omitempty"`
 	Paths      map[string]map[string]json.RawMessage `json:"paths"`
 	Components map[string]map[string]json.RawMessage `json:"components"`
+	Tags       []tag                                 `json:"tags,omitempty"`
 	Fragments  []fragmentSource                      `json:"x-fragments"`
+}
+
+// The security schemes every operation's requirement names. They are declared
+// once, here, so a fragment names a carrier and never defines one; the two are
+// the carriers the authentication gateway reads, a credential in the
+// Authorization header written by the caller's script and the session cookie a
+// browser attaches by itself.
+var securitySchemes = map[string]any{
+	"bearerAuth": map[string]any{
+		"type":        "http",
+		"scheme":      "bearer",
+		"description": "A credential in the Authorization header, written by the caller. The gateway reads the scheme and hands the credential to the backend that declares it.",
+	},
+	"sessionCookie": map[string]any{
+		"type":        "apiKey",
+		"in":          "cookie",
+		"name":        "sid",
+		"description": "The session cookie a browser attaches by itself. Its name carries the __Host- or __Secure- prefix unless the deployment allows insecure use, in which case it is sid.",
+	},
 }
 
 // Merge combines every fragment into one document and reports a conflict
@@ -108,14 +149,18 @@ type document struct {
 func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error) {
 	doc := document{
 		OpenAPI: openAPIVersion,
-		// Options carries the same two fields info does, so it converts
-		// directly.
-		Info:       info(opts),
+		Info: info{
+			Title:       opts.Title,
+			Version:     opts.Version,
+			Description: opts.Description,
+		},
+		Servers:    serversOf(opts.Servers),
 		Paths:      map[string]map[string]json.RawMessage{},
 		Components: map[string]map[string]json.RawMessage{},
 		Fragments:  []fragmentSource{},
 	}
 	owners := map[string]fragmentSource{}
+	groups := map[string]bool{}
 	for _, res := range specs {
 		part, err := readFragment(res.Module, res.Value.Document)
 		if err != nil {
@@ -123,6 +168,7 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error) 
 		}
 		source := fragmentSource{Module: res.Module, Endpoint: res.Value.Endpoint}
 		doc.Fragments = append(doc.Fragments, source)
+		groups[res.Module] = true
 		if err := mergePaths(&doc, owners, source, res.Value, part); err != nil {
 			return nil, err
 		}
@@ -130,14 +176,18 @@ func Merge(specs []core.Resource[speedhttp.Spec], opts Options) ([]byte, error) 
 			return nil, err
 		}
 	}
+	if err := addSecuritySchemes(&doc); err != nil {
+		return nil, err
+	}
+	doc.Tags = tagsOf(groups)
 	slices.SortFunc(doc.Fragments, func(a, b fragmentSource) int {
 		return strings.Compare(a.Module+" "+a.Endpoint, b.Module+" "+b.Endpoint)
 	})
-	merged, err := json.Marshal(doc)
+	merged, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("openapi: writing the merged document: %w", err)
 	}
-	return merged, nil
+	return append(merged, '\n'), nil
 }
 
 // readFragment reads one declared fragment into its paths and components. It
@@ -194,7 +244,7 @@ func mergePaths(doc *document, owners map[string]fragmentSource, source fragment
 					other.Endpoint, source.Module, source.Endpoint)
 			}
 			owners[where] = source
-			tagged, err := withEndpoint(raw, source.Endpoint)
+			tagged, err := annotate(raw, source)
 			if err != nil {
 				return fmt.Errorf("%w: %s in the fragment module %q declares: %w",
 					ErrUnreadable, where, source.Module, err)
@@ -227,8 +277,17 @@ func mergeComponents(doc *document, module string, part fragment) error {
 	return nil
 }
 
-// withEndpoint adds the endpoint extension to one operation object.
-func withEndpoint(raw json.RawMessage, endpoint string) (json.RawMessage, error) {
+// annotate adds to one operation object what the merge knows and the fragment
+// leaves to it: the endpoint extension naming the endpoint that serves the
+// operation, the tag grouping it with the operations its declaring module
+// declares, and the security requirement of an operation that declared none.
+//
+// A fragment that names no security requirement declares an operation every
+// caller reaches, which is not a default this merge accepts: a route is
+// guarded unless it says otherwise, so an operation that left the requirement
+// out is published as one that admits an identified caller, and a route that
+// admits more says so in its own declaration.
+func annotate(raw json.RawMessage, source fragmentSource) (json.RawMessage, error) {
 	var operation map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &operation); err != nil {
 		return nil, err
@@ -236,12 +295,87 @@ func withEndpoint(raw json.RawMessage, endpoint string) (json.RawMessage, error)
 	if operation == nil {
 		return nil, errors.New("the operation is not a JSON object")
 	}
-	name, err := json.Marshal(endpoint)
+	endpoint, err := json.Marshal(source.Endpoint)
 	if err != nil {
 		return nil, err
 	}
-	operation[endpointExtension] = name
+	operation[endpointExtension] = endpoint
+	var tags []string
+	if declared, found := operation["tags"]; found {
+		if err = json.Unmarshal(declared, &tags); err != nil {
+			return nil, fmt.Errorf("its tags are not a string array: %w", err)
+		}
+	}
+	if !slices.Contains(tags, source.Module) {
+		tags = append(tags, source.Module)
+	}
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return nil, err
+	}
+	operation["tags"] = encoded
+	if _, found := operation["security"]; !found {
+		operation["security"] = requiredSecurity
+	}
 	return json.Marshal(operation)
+}
+
+// requiredSecurity is the requirement of an operation that admits only an
+// identified caller: either carrier the gateway reads.
+var requiredSecurity = json.RawMessage(`[{"bearerAuth":[]},{"sessionCookie":[]}]`)
+
+// addSecuritySchemes publishes the carriers every requirement names. A
+// fragment that declared one of them itself is held to the same content, so
+// two spellings of one scheme cannot reach the document.
+func addSecuritySchemes(doc *document) error {
+	section := doc.Components["securitySchemes"]
+	if section == nil {
+		section = map[string]json.RawMessage{}
+		doc.Components["securitySchemes"] = section
+	}
+	names := make([]string, 0, len(securitySchemes))
+	for name := range securitySchemes {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		encoded, err := json.Marshal(securitySchemes[name])
+		if err != nil {
+			return fmt.Errorf("openapi: writing the %s security scheme: %w", name, err)
+		}
+		if existing, taken := section[name]; taken && !jsonEqual(existing, encoded) {
+			return fmt.Errorf("%w: components.securitySchemes.%s is declared differently from the platform's",
+				ErrComponentConflict, name)
+		}
+		section[name] = encoded
+	}
+	return nil
+}
+
+// serversOf is the document's servers list, absent when no origin is named.
+func serversOf(urls []string) []server {
+	if len(urls) == 0 {
+		return nil
+	}
+	out := make([]server, 0, len(urls))
+	for _, url := range urls {
+		out = append(out, server{URL: url})
+	}
+	return out
+}
+
+// tagsOf is the document's tag list, one entry per module that declared a
+// fragment, sorted by name.
+func tagsOf(groups map[string]bool) []tag {
+	if len(groups) == 0 {
+		return nil
+	}
+	out := make([]tag, 0, len(groups))
+	for name := range groups {
+		out = append(out, tag{Name: name})
+	}
+	slices.SortFunc(out, func(a, b tag) int { return strings.Compare(a.Name, b.Name) })
+	return out
 }
 
 // jsonEqual compares two JSON values by content rather than by spelling, so the

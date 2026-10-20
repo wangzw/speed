@@ -1,8 +1,6 @@
 package profile
 
 import (
-	"net/http"
-
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
@@ -17,9 +15,9 @@ import (
 // again, and the typed handler refuses it a third time as the fallback for a
 // registration made wrongly.
 func (p *product) mountRoutes() {
-	p.mounter.Guarded(http.MethodGet, p.mountRel(getOperation.Path),
+	mount.Declared(p.mounter, getOperation, p.mountRel(getOperation.Path),
 		getOperation.Handle(p.handleGetMe), mount.Impersonable())
-	p.mounter.Guarded(http.MethodPatch, p.mountRel(patchOperation.Path), p.patchEntry())
+	mount.Declared(p.mounter, patchOperation, p.mountRel(patchOperation.Path), p.patchEntry())
 }
 
 // mountRel turns a declared route into the relative path the mounter joins to

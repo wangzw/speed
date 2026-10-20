@@ -34,9 +34,9 @@ const stepUpDescription = "A stronger or more recent authentication is required"
 // the operation that declares it, so the handler's input and answer types, the
 // fragment and the route are one source.
 func (m *product) mountRoutes() {
-	m.mounter.Guarded(http.MethodGet, mountRel(mfaSpec, factorsOperation.Path),
+	mount.Declared(m.mounter, factorsOperation, mountRel(mfaSpec, factorsOperation.Path),
 		factorsOperation.Handle(m.listFactors))
-	m.mounter.Guarded(http.MethodDelete, mountRel(mfaSpec, removeFactorOperation.Path),
+	mount.Declared(m.mounter, removeFactorOperation, mountRel(mfaSpec, removeFactorOperation.Path),
 		removeFactorOperation.Handle(m.deleteFactor))
 }
 

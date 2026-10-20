@@ -21,7 +21,6 @@ package selfservice
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -145,24 +144,25 @@ const (
 // credential never reaches a handler.
 func (s *Service) Mount(m mount.Mounter, rel func(string) string, post func(name string)) {
 	r := &routes{Service: s, endpoint: m.Endpoint()}
-	m.Guarded(http.MethodPut, rel(pathPassword),
+	mount.Declared(m, passwordOperation, rel(pathPassword),
 		withWriter(r.guardedBody(actionPasswordChange, passwordOperation.Handle(r.changePassword))))
 	if s.deps.SMSCodes != nil {
-		m.Guarded(http.MethodPost, rel(pathPhone),
+		mount.Declared(m, startPhoneOperation, rel(pathPhone),
 			withWriter(r.guardedBody("", startPhoneOperation.Handle(r.startPhone))))
-		m.Guarded(http.MethodPost, rel(pathPhoneVerify),
+		mount.Declared(m, verifyPhoneOperation, rel(pathPhoneVerify),
 			withWriter(r.guardedBody("", verifyPhoneOperation.Handle(r.verifyPhone))))
 		postFeature(post, FeaturePhone)
 	}
 	if s.deps.EmailSender != nil {
 		postFeature(post, FeatureEmail)
 	}
-	m.Guarded(http.MethodPost, rel(pathIdentifiers),
+	mount.Declared(m, addIdentifierOperation, rel(pathIdentifiers),
 		withWriter(r.guardedBody("", addIdentifierOperation.Handle(r.addIdentifier))))
-	m.Guarded(http.MethodPost, rel(pathIdentifiersVerify),
+	mount.Declared(m, verifyIdentifierOperation, rel(pathIdentifiersVerify),
 		withWriter(r.guardedBody("", verifyIdentifierOperation.Handle(r.verifyIdentifier))))
-	m.Guarded(http.MethodDelete, rel(pathIdentifier), withWriter(removeIdentifierOperation.Handle(r.removeIdentifier)))
-	m.Guarded(http.MethodDelete, rel(pathLink), withWriter(unlinkOperation.Handle(r.unlink)))
+	mount.Declared(m, removeIdentifierOperation, rel(pathIdentifier),
+		withWriter(removeIdentifierOperation.Handle(r.removeIdentifier)))
+	mount.Declared(m, unlinkOperation, rel(pathLink), withWriter(unlinkOperation.Handle(r.unlink)))
 }
 
 // guardedBody applies the capability's body rules before the entry point binds

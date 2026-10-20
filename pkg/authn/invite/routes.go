@@ -1,7 +1,6 @@
 package invite
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -20,16 +19,18 @@ import (
 // the same condition again. The acceptance routes are registered public: the
 // token is the whole credential and there is no identity to read.
 func (p *product) mountRoutes() {
-	g := func(method, rel string, h gin.HandlerFunc, opts ...mount.Option) {
-		p.mounter.Guarded(method, rel, h, append(opts, mount.InScope(speedhttp.ScopeTenants))...)
+	g := func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
+		mount.Declared(p.mounter, operation, rel, h, append(opts, mount.InScope(speedhttp.ScopeTenants))...)
 	}
-	g(http.MethodPost, p.route(issueOperation.Path), issueOperation.Handle(p.handleIssue))
-	g(http.MethodGet, p.route(listOperation.Path), listOperation.Handle(p.handleList))
-	g(http.MethodDelete, p.route(revokeOperation.Path), revokeOperation.Handle(p.handleRevoke))
+	g(issueOperation, p.route(issueOperation.Path), issueOperation.Handle(p.handleIssue))
+	g(listOperation, p.route(listOperation.Path), listOperation.Handle(p.handleList))
+	g(revokeOperation, p.route(revokeOperation.Path), revokeOperation.Handle(p.handleRevoke))
 
-	pub := p.mounter.Public
-	pub(http.MethodGet, p.route(acceptViewOperation.Path), acceptViewOperation.Handle(p.handleAcceptView))
-	pub(http.MethodPost, p.route(acceptOperation.Path), acceptOperation.Handle(p.handleAccept))
+	pub := func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
+		mount.Declared(p.mounter, operation, rel, h, opts...)
+	}
+	pub(acceptViewOperation, p.route(acceptViewOperation.Path), acceptViewOperation.Handle(p.handleAcceptView))
+	pub(acceptOperation, p.route(acceptOperation.Path), acceptOperation.Handle(p.handleAccept))
 }
 
 // route turns a route the declaration writes against the module's API root into

@@ -67,15 +67,15 @@ func (p *product) recordAudit(ctx context.Context, e audit.Entry) {
 // routes that list and revoke sessions are not registered for it: the gateway
 // refuses an impersonating identity there, and each handler refuses it again.
 func (p *product) mountRoutes() {
-	p.mounter.Optional(http.MethodGet, mountRel(sessionOperation.Path),
+	mount.Declared(p.mounter, sessionOperation, mountRel(sessionOperation.Path),
 		sessionOperation.Handle(p.handleSession), mount.Impersonable())
-	p.mounter.Guarded(http.MethodPost, mountRel(logoutOperation.Path),
+	mount.Declared(p.mounter, logoutOperation, mountRel(logoutOperation.Path),
 		logoutOperation.Handle(p.handleLogout), mount.Impersonable())
-	p.mounter.Guarded(http.MethodGet, mountRel(listOperation.Path),
+	mount.Declared(p.mounter, listOperation, mountRel(listOperation.Path),
 		listOperation.Handle(p.handleSessions))
-	p.mounter.Guarded(http.MethodDelete, mountRel(revokeOthersOperation.Path),
+	mount.Declared(p.mounter, revokeOthersOperation, mountRel(revokeOthersOperation.Path),
 		revokeOthersOperation.Handle(p.handleRevokeOthers))
-	p.mounter.Guarded(http.MethodDelete, mountRel(revokeOneOperation.Path),
+	mount.Declared(p.mounter, revokeOneOperation, mountRel(revokeOneOperation.Path),
 		revokeOneOperation.Handle(p.handleRevokeOne))
 }
 

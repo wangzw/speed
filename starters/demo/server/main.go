@@ -49,7 +49,6 @@ import (
 	"os/signal"
 	"reflect"
 	"runtime"
-	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -605,6 +604,19 @@ const genModuleName = "gen"
 // configuration file or the environment.
 const genNamespace = "gen"
 
+// The document metadata this program publishes unless the command line names
+// its own. They are the host's declaration about itself, so they live here
+// rather than in every caller's command line: the regeneration command and the
+// case that holds the committed artifact to what gen writes then name nothing
+// and still agree.
+const (
+	defaultContractDescription = "The platform API: every operation the assembled modules declare, " +
+		"merged from the OpenAPI fragment each module generates from its own operation declarations. " +
+		"Each operation is tagged with the module that declared it, and each names the security " +
+		"requirement its route admits."
+	defaultContractServer = "http://localhost:8080"
+)
+
 // genInput carries the gen command's inputs.
 type genInput struct {
 	// Output is the file the merged document is written to. Empty writes it to
@@ -617,6 +629,12 @@ type genInput struct {
 	Title string `config:"title"`
 	// Version is the document's info.version. Empty takes the program's version.
 	Version string `config:"version"`
+	// Description is the document's info.description. Empty leaves the member
+	// out.
+	Description string `config:"description"`
+	// Servers are the origins the API is reached at, one per flag. Empty leaves
+	// the member out.
+	Servers []string `config:"servers"`
 }
 
 // genSchema declares the gen command's input items as command-line flags.
@@ -643,6 +661,12 @@ func genSchema() config.Schema {
 				"the document's info.title; the program's own name by default"),
 			"version": flag("version", "", "VERSION",
 				"the document's info.version; the program's version by default"),
+			"description": flag("description", "", "TEXT",
+				"the document's info.description; this program's own default when none is given"),
+			"servers": flag("servers", "", "URL",
+				"an origin the API is reached at, as one entry of the document's servers "+
+					"list; repeat the flag to name more than one; this program's own default "+
+					"when none is given"),
 		},
 	}
 }
@@ -688,12 +712,23 @@ func genDocument(_ context.Context, reg *core.Registry) error {
 	if in.Version == "" {
 		in.Version = hostVersionNumber
 	}
+	if in.Description == "" {
+		in.Description = defaultContractDescription
+	}
+	if len(in.Servers) == 0 {
+		in.Servers = []string{defaultContractServer}
+	}
 	specs := core.Resources[speedhttp.Spec](reg)
 	appOperations, err := applicationOperations(reg, specs)
 	if err != nil {
 		return err
 	}
-	document, err := openapi.Merge(specs, openapi.Options{Title: in.Title, Version: in.Version})
+	document, err := openapi.Merge(specs, openapi.Options{
+		Title:       in.Title,
+		Version:     in.Version,
+		Description: in.Description,
+		Servers:     in.Servers,
+	})
 	if err != nil {
 		return err
 	}
@@ -895,66 +930,128 @@ func applicationOperations(reg *core.Registry, specs []core.Resource[speedhttp.S
 	return operations, nil
 }
 
-// markOperations adds the application-owner tag to the named operations of the
-// merged document. The document is read and written with the same field order
-// and the same value encodings openapi.Merge uses, so an operation the map does
-// not name keeps its exact bytes; only the named operations gain the tag.
+// markOperations gives the named operations of the merged document the
+// application-owner tag in place of the module tag the merge wrote. One
+// operation carries one tag: a reader that groups operations by tag would
+// otherwise list the operation once per group, and the application's own
+// operations belong to the application's group alone.
+//
+// The module tags it removes leave the document's tag list with them, and the
+// owner tag enters it, so the document's groups and its operations' tags stay
+// the same vocabulary. The document is read and written with the same field
+// order and the same value encodings openapi.Merge uses, so an operation the
+// map does not name keeps its exact bytes.
 func markOperations(document []byte, operations map[string]bool) ([]byte, error) {
 	var merged struct {
 		OpenAPI    string                                `json:"openapi"`
 		Info       json.RawMessage                       `json:"info"`
+		Servers    json.RawMessage                       `json:"servers,omitempty"`
 		Paths      map[string]map[string]json.RawMessage `json:"paths"`
 		Components map[string]map[string]json.RawMessage `json:"components"`
+		Tags       json.RawMessage                       `json:"tags,omitempty"`
 		Fragments  []json.RawMessage                     `json:"x-fragments"`
 	}
 	if err := json.Unmarshal(document, &merged); err != nil {
 		return nil, fmt.Errorf("%s: reading the merged document: %w", genModuleName, err)
 	}
+	replaced := map[string]bool{}
 	for path, methods := range merged.Paths {
 		for method, raw := range methods {
 			if !operations[strings.ToUpper(method)+" "+path] {
 				continue
 			}
-			tagged, err := withTag(raw, applicationOperationTag)
+			tagged, module, err := withOwnerTag(raw, applicationOperationTag)
 			if err != nil {
 				return nil, fmt.Errorf("%s: tagging %s %s: %w", genModuleName,
 					strings.ToUpper(method), path, err)
 			}
+			if module != "" {
+				replaced[module] = true
+			}
 			methods[method] = tagged
 		}
 	}
-	marked, err := json.Marshal(merged)
+	if len(replaced) > 0 {
+		tags, err := rewriteTags(merged.Tags, replaced, applicationOperationTag)
+		if err != nil {
+			return nil, fmt.Errorf("%s: rewriting the tag list: %w", genModuleName, err)
+		}
+		merged.Tags = tags
+	}
+	marked, err := json.MarshalIndent(merged, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("%s: writing the merged document: %w", genModuleName, err)
 	}
-	return marked, nil
+	return append(marked, '\n'), nil
 }
 
-// withTag appends tag to an operation's tags array, keeping any tags the
-// fragment declared and adding the mark once.
-func withTag(raw json.RawMessage, tag string) (json.RawMessage, error) {
+// withOwnerTag replaces an operation's tags with the owner tag and answers the
+// module tag it removed, which is the merge's own: every operation of a
+// module declared by one fragment carries that module's name and no other tag.
+func withOwnerTag(raw json.RawMessage, tag string) (json.RawMessage, string, error) {
 	var operation map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &operation); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if operation == nil {
-		return nil, fmt.Errorf("the operation is not a JSON object")
+		return nil, "", fmt.Errorf("the operation is not a JSON object")
 	}
 	var tags []string
 	if declared, found := operation["tags"]; found {
 		if err := json.Unmarshal(declared, &tags); err != nil {
-			return nil, fmt.Errorf("the operation's tags are not a string array: %w", err)
+			return nil, "", fmt.Errorf("the operation's tags are not a string array: %w", err)
 		}
 	}
-	if !slices.Contains(tags, tag) {
-		tags = append(tags, tag)
+	module := ""
+	if len(tags) > 0 {
+		module = tags[0]
 	}
-	encoded, err := json.Marshal(tags)
+	encoded, err := json.Marshal([]string{tag})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	operation["tags"] = encoded
-	return json.Marshal(operation)
+	tagged, err := json.Marshal(operation)
+	if err != nil {
+		return nil, "", err
+	}
+	return tagged, module, nil
+}
+
+// rewriteTags removes the named groups from the document's tag list and adds
+// the owner tag, which the marked operations now carry. The list stays sorted
+// by name, as the merge writes it.
+func rewriteTags(declared json.RawMessage, dropped map[string]bool, added string) (json.RawMessage, error) {
+	var entries []struct {
+		Name string `json:"name"`
+	}
+	if len(declared) > 0 {
+		if err := json.Unmarshal(declared, &entries); err != nil {
+			return nil, err
+		}
+	}
+	names := make([]string, 0, len(entries)+1)
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		if dropped[entry.Name] || seen[entry.Name] {
+			continue
+		}
+		seen[entry.Name] = true
+		names = append(names, entry.Name)
+	}
+	if !seen[added] {
+		names = append(names, added)
+	}
+	sort.Strings(names)
+	tags := make([]struct {
+		Name string `json:"name"`
+	}, 0, len(names))
+	for _, name := range names {
+		tags = append(tags, struct {
+			Name string `json:"name"`
+		}{Name: name})
+	}
+	return json.Marshal(tags)
 }
 
 // cliCommand is one leaf of a command group: the word, how far it drives the

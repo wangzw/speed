@@ -81,6 +81,7 @@ var discoverOperation = speedhttp.NewOperation[discoverRequest, discoverResponse
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 	},
+	speedhttp.Public(),
 )
 
 // operations is this module's declaration of the API it serves. The fragment is

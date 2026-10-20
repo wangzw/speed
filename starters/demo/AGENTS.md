@@ -562,7 +562,9 @@ Under every stack:
 - **`gen`** merges the OpenAPI fragments the modules declare into one document
   and writes it out, either to the file `-o` names or to standard output; the
   document's title and version come from `--title` and `--version`, defaulting to
-  the program's name and version. With `--features PATH` it also writes the
+  the program's name and version, and its description and servers come from
+  `--description` and the repeatable `--servers`, defaulting to this host's own
+  declaration of itself. With `--features PATH` it also writes the
   feature vocabulary — every `feature.Spec` the binary's imports reach, sorted by
   name, each with its name, declaring module and whether it is conditional — as
   `contracts/features.json`. It drives to `StagePrepare`, so it binds no port and

@@ -54,6 +54,7 @@ var healthOperation = speedhttp.NewOperation[struct{}, OpsHealth](
 		Description: "Alive",
 		Body:        &speedhttp.Body{MediaType: "application/json"},
 	}},
+	speedhttp.Public(),
 )
 
 // readinessOperation declares GET /ready. Its handler builds the answer because
@@ -81,6 +82,7 @@ var readinessOperation = speedhttp.NewReplyOperation[struct{}](
 			Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(OpsReadiness{})},
 		},
 	},
+	speedhttp.Public(),
 )
 
 // documentOperation declares GET /openapi.json. Its handler builds the answer
@@ -95,15 +97,18 @@ var documentOperation = speedhttp.NewReplyOperation[struct{}](
 	"Serves the document itself rather than a wrapper, merged once at startup and never recomputed, "+
 		"so every request reads the same bytes. Every declared fragment is merged, including those of "+
 		"modules that do not run in this command, because the document states which API this binary "+
-		"provides. Its title and version come from ops.title and ops.version, and it carries top-level "+
-		"openapi, info, paths, components, x-fragments, and a per-operation x-endpoint naming the "+
-		"endpoint that serves each route.",
+		"provides. Its title, version, description and servers come from ops.title, ops.version, "+
+		"ops.description and ops.servers; it carries top-level openapi, info, servers, paths, "+
+		"components, tags and x-fragments; every operation is tagged with the module that declared "+
+		"it, names its security requirement, and carries an x-endpoint naming the endpoint that "+
+		"serves the route.",
 	nil,
 	[]speedhttp.Response{{
 		Status:      http.StatusOK,
 		Description: "The merged document",
 		Body:        &speedhttp.Body{MediaType: "application/json", Structure: reflect.TypeOf(OpsDocument{})},
 	}},
+	speedhttp.Public(),
 )
 
 // operations is this module's declaration of the API it serves. The fragment is

@@ -154,6 +154,7 @@
             "description": "The provider register could not be reached"
           }
         },
+        "security": [],
         "summary": "The sign-in entries that exist for an email address's domain"
       }
     }

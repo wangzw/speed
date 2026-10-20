@@ -181,6 +181,7 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [],
         "summary": "Read the invitation a token points to"
       },
       "post": {
@@ -285,6 +286,7 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [],
         "summary": "Redeem an invitation, creating the account when the address has none"
       }
     }

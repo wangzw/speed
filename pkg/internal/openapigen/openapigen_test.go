@@ -1484,3 +1484,42 @@ func TestADynamicMediaTypeAnswerPublishesABinaryContentEntry(t *testing.T) {
 		t.Errorf("the dynamic body schema reads %v, want a binary string", schema)
 	}
 }
+
+// TestEachAccessLevelIsPublishedAsItsSecurityRequirement pins the mapping from
+// a declaration's Access to the fragment's security: a guarded operation names
+// both carriers, an optional one adds the alternative with no credential, and a
+// public one carries the empty array that removes the requirement.
+func TestEachAccessLevelIsPublishedAsItsSecurityRequirement(t *testing.T) {
+	answer := []speedhttp.Response{{Status: 200, Description: "The answer"}}
+	doc := generate(t, speedhttp.Operations{
+		speedhttp.NewOperation[struct{}, document](
+			"the.module.guarded", http.MethodGet, "/guarded", "", "", nil, answer),
+		speedhttp.NewOperation[struct{}, document](
+			"the.module.optional", http.MethodGet, "/optional", "", "", nil, answer, speedhttp.Optional()),
+		speedhttp.NewOperation[struct{}, document](
+			"the.module.public", http.MethodGet, "/public", "", "", nil, answer, speedhttp.Public()),
+	})
+
+	paths := doc["paths"].(map[string]interface{})
+	security := func(path string) interface{} {
+		t.Helper()
+		operation, ok := paths[path].(map[string]interface{})["get"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("the fragment carries no GET %s: %v", path, paths[path])
+		}
+		return operation["security"]
+	}
+
+	guarded, _ := json.Marshal(security("/guarded"))
+	if string(guarded) != `[{"bearerAuth":[]},{"sessionCookie":[]}]` {
+		t.Errorf("the guarded operation carries security %s, want both carriers", guarded)
+	}
+	optional, _ := json.Marshal(security("/optional"))
+	if string(optional) != `[{},{"bearerAuth":[]},{"sessionCookie":[]}]` {
+		t.Errorf("the optional operation carries security %s, want both carriers and the anonymous alternative", optional)
+	}
+	public, _ := json.Marshal(security("/public"))
+	if string(public) != `[]` {
+		t.Errorf("the public operation carries security %s, want the empty array", public)
+	}
+}

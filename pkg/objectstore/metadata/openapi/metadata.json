@@ -3,6 +3,7 @@
     "schemas": {
       "ObjectstoreDeclaration": {
         "additionalProperties": false,
+        "description": "An object to declare before its bytes are uploaded: the name, the exact size and media type, and the checksum the upload is held to.",
         "properties": {
           "checksum_sha256": {
             "description": "The declared SHA-256 as 64 hex digits; empty declares no checksum",
@@ -199,6 +200,14 @@
             "description": "The object store could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "One page of the tenant's undeleted objects"
       },
       "post": {
@@ -277,6 +286,14 @@
             "description": "The object store could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Declare an object and open its upload window"
       }
     },
@@ -320,6 +337,14 @@
             "description": "The object store could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Remove an object's bytes and tombstone its row"
       },
       "get": {
@@ -378,6 +403,14 @@
             "description": "The object store could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "One object's metadata"
       }
     },
@@ -448,6 +481,14 @@
             "description": "The object store could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Move an object to completed"
       }
     },
@@ -509,6 +550,14 @@
             "description": "The object store could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "The object's bytes, streamed with the object's recorded media type"
       },
       "put": {
@@ -602,6 +651,14 @@
             "description": "The object store could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Store the request body as the object's bytes"
       }
     }

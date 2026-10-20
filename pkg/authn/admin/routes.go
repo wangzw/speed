@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,9 +12,9 @@ import (
 // guardedIn is the group's registration primitive: every route of the group is
 // guarded and published under the group's scope, so a group's level is written
 // once rather than beside each route.
-func guardedIn(m mount.Mounter, scope speedhttp.Scope) func(string, string, gin.HandlerFunc, ...mount.Option) {
-	return func(method, rel string, h gin.HandlerFunc, opts ...mount.Option) {
-		m.Guarded(method, rel, h, append(opts, mount.InScope(scope))...)
+func guardedIn(m mount.Mounter, scope speedhttp.Scope) func(speedhttp.Declared, string, gin.HandlerFunc, ...mount.Option) {
+	return func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
+		mount.Declared(m, operation, rel, h, append(opts, mount.InScope(scope))...)
 	}
 }
 
@@ -45,7 +44,7 @@ func (m *product) mountRoutes() {
 		m.groups = append(m.groups, "sso-providers")
 		m.postFeature(featureSSO)
 		if len(m.refreshers) > 0 {
-			m.mounter.Guarded(http.MethodPost, mountRel(metadataRefreshOperation.Path),
+			mount.Declared(m.mounter, metadataRefreshOperation, mountRel(metadataRefreshOperation.Path),
 				metadataRefreshOperation.Handle(m.handleMetadataRefresh), mount.InScope(speedhttp.ScopeTenants))
 			m.groups = append(m.groups, "sso-metadata-refresh")
 			m.postFeature(featureSSOMetadata)
@@ -62,30 +61,30 @@ func (m *product) mountRoutes() {
 // account read and write surfaces are required.
 func (m *product) mountAccountRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
-	g(http.MethodGet, mountRel(accountListOperation.Path),
+	g(accountListOperation, mountRel(accountListOperation.Path),
 		closedQuery(accountListParams, accountListOperation.Handle(m.handleAccountList)))
-	g(http.MethodPost, mountRel(accountCreateOperation.Path),
+	g(accountCreateOperation, mountRel(accountCreateOperation.Path),
 		mount.GuardBody(nil, accountCreateOperation.Handle(m.handleAccountCreate)))
-	g(http.MethodGet, mountRel(accountGetOperation.Path), accountGetOperation.Handle(m.handleAccountGet))
-	g(http.MethodPatch, mountRel(accountPatchOperation.Path),
+	g(accountGetOperation, mountRel(accountGetOperation.Path), accountGetOperation.Handle(m.handleAccountGet))
+	g(accountPatchOperation, mountRel(accountPatchOperation.Path),
 		mount.GuardBody(nil, accountPatchOperation.Handle(m.handleAccountPatch)))
-	g(http.MethodDelete, mountRel(accountDeleteOperation.Path), accountDeleteOperation.Handle(m.handleAccountDelete))
-	g(http.MethodPost, mountRel(accountStatusOperation.Path),
+	g(accountDeleteOperation, mountRel(accountDeleteOperation.Path), accountDeleteOperation.Handle(m.handleAccountDelete))
+	g(accountStatusOperation, mountRel(accountStatusOperation.Path),
 		mount.GuardBody(nil, accountStatusOperation.Handle(m.handleAccountStatus)))
-	g(http.MethodPost, mountRel(identifierAddOperation.Path),
+	g(identifierAddOperation, mountRel(identifierAddOperation.Path),
 		mount.GuardBody(nil, identifierAddOperation.Handle(m.handleIdentifierAdd)))
-	g(http.MethodDelete, mountRel(identifierRemoveOperation.Path), identifierRemoveOperation.Handle(m.handleIdentifierRemove))
+	g(identifierRemoveOperation, mountRel(identifierRemoveOperation.Path), identifierRemoveOperation.Handle(m.handleIdentifierRemove))
 	m.groups = append(m.groups, "accounts")
 
 	if m.mfa != nil {
 		if m.passwords != nil {
-			g(http.MethodPost, mountRel(passwordResetOperation.Path),
+			g(passwordResetOperation, mountRel(passwordResetOperation.Path),
 				mount.GuardBody(nil, passwordResetOperation.Handle(m.handlePasswordReset)))
 		}
-		g(http.MethodGet, mountRel(factorListOperation.Path), factorListOperation.Handle(m.handleFactorList))
-		g(http.MethodPost, mountRel(mfaFlagOperation.Path),
+		g(factorListOperation, mountRel(factorListOperation.Path), factorListOperation.Handle(m.handleFactorList))
+		g(mfaFlagOperation, mountRel(mfaFlagOperation.Path),
 			mount.GuardBody(nil, mfaFlagOperation.Handle(m.handleMFARequired)))
-		g(http.MethodPost, mountRel(mfaResetOperation.Path), mfaResetOperation.Handle(m.handleMFAReset))
+		g(mfaResetOperation, mountRel(mfaResetOperation.Path), mfaResetOperation.Handle(m.handleMFAReset))
 		m.postFeature(featureFactors)
 	}
 }
@@ -94,30 +93,30 @@ func (m *product) mountAccountRoutes() {
 // store.
 func (m *product) mountSessionRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
-	g(http.MethodGet, mountRel(accountSessionsOperation.Path), accountSessionsOperation.Handle(m.handleAccountSessions))
-	g(http.MethodPost, mountRel(revokeSessionsOperation.Path), revokeSessionsOperation.Handle(m.handleRevokeAccountSessions))
-	g(http.MethodDelete, mountRel(sessionRevokeOperation.Path), sessionRevokeOperation.Handle(m.handleSessionRevoke))
+	g(accountSessionsOperation, mountRel(accountSessionsOperation.Path), accountSessionsOperation.Handle(m.handleAccountSessions))
+	g(revokeSessionsOperation, mountRel(revokeSessionsOperation.Path), revokeSessionsOperation.Handle(m.handleRevokeAccountSessions))
+	g(sessionRevokeOperation, mountRel(sessionRevokeOperation.Path), sessionRevokeOperation.Handle(m.handleSessionRevoke))
 }
 
 // mountSecretRoutes registers the service-secret group, mounted with the token
 // module.
 func (m *product) mountSecretRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
-	g(http.MethodGet, mountRel(secretListOperation.Path), secretListOperation.Handle(m.handleSecretList))
-	g(http.MethodPost, mountRel(secretCreateOperation.Path),
+	g(secretListOperation, mountRel(secretListOperation.Path), secretListOperation.Handle(m.handleSecretList))
+	g(secretCreateOperation, mountRel(secretCreateOperation.Path),
 		mount.GuardBody(nil, secretCreateOperation.Handle(m.handleSecretCreate)))
-	g(http.MethodDelete, mountRel(secretRevokeOperation.Path), secretRevokeOperation.Handle(m.handleSecretRevoke))
+	g(secretRevokeOperation, mountRel(secretRevokeOperation.Path), secretRevokeOperation.Handle(m.handleSecretRevoke))
 }
 
 // mountMembershipRoutes registers the membership group, which is always mounted:
 // the membership reads are required.
 func (m *product) mountMembershipRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
-	g(http.MethodGet, mountRel(memberListOperation.Path), memberListOperation.Handle(m.handleMemberList))
-	g(http.MethodPut, mountRel(memberWriteOperation.Path),
+	g(memberListOperation, mountRel(memberListOperation.Path), memberListOperation.Handle(m.handleMemberList))
+	g(memberWriteOperation, mountRel(memberWriteOperation.Path),
 		mount.GuardBody(nil, memberWriteOperation.Handle(m.handleMemberPut)))
-	g(http.MethodDelete, mountRel(memberRemoveOperation.Path), memberRemoveOperation.Handle(m.handleMemberRemove))
-	g(http.MethodPut, mountRel(memberExemptOperation.Path),
+	g(memberRemoveOperation, mountRel(memberRemoveOperation.Path), memberRemoveOperation.Handle(m.handleMemberRemove))
+	g(memberExemptOperation, mountRel(memberExemptOperation.Path),
 		mount.GuardBody(nil, memberExemptOperation.Handle(m.handleMemberSSOExempt)))
 	m.groups = append(m.groups, "memberships")
 }
@@ -125,18 +124,18 @@ func (m *product) mountMembershipRoutes() {
 // mountSSORoutes registers the SSO provider group, mounted with the SSO module.
 func (m *product) mountSSORoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
-	g(http.MethodGet, mountRel(providerListOperation.Path), providerListOperation.Handle(m.handleProviderList))
-	g(http.MethodPost, mountRel(providerCreateOperation.Path),
+	g(providerListOperation, mountRel(providerListOperation.Path), providerListOperation.Handle(m.handleProviderList))
+	g(providerCreateOperation, mountRel(providerCreateOperation.Path),
 		mount.GuardBody(nil, providerCreateOperation.Handle(m.handleProviderCreate)))
-	g(http.MethodGet, mountRel(providerGetOperation.Path), providerGetOperation.Handle(m.handleProviderGet))
-	g(http.MethodPut, mountRel(providerUpdateOperation.Path),
+	g(providerGetOperation, mountRel(providerGetOperation.Path), providerGetOperation.Handle(m.handleProviderGet))
+	g(providerUpdateOperation, mountRel(providerUpdateOperation.Path),
 		mount.GuardBody(nil, providerUpdateOperation.Handle(m.handleProviderUpdate)))
-	g(http.MethodDelete, mountRel(providerDeleteOperation.Path), providerDeleteOperation.Handle(m.handleProviderDelete))
-	g(http.MethodPost, mountRel(domainClaimOperation.Path),
+	g(providerDeleteOperation, mountRel(providerDeleteOperation.Path), providerDeleteOperation.Handle(m.handleProviderDelete))
+	g(domainClaimOperation, mountRel(domainClaimOperation.Path),
 		mount.GuardBody(nil, domainClaimOperation.Handle(m.handleDomainClaim)))
-	g(http.MethodDelete, mountRel(domainRemoveOperation.Path), domainRemoveOperation.Handle(m.handleDomainRemove))
-	g(http.MethodPost, mountRel(domainVerifyOperation.Path), domainVerifyOperation.Handle(m.handleDomainVerify))
-	g(http.MethodPost, mountRel(reverifyDomainsOperation.Path), reverifyDomainsOperation.Handle(m.handleReverifyDomains))
+	g(domainRemoveOperation, mountRel(domainRemoveOperation.Path), domainRemoveOperation.Handle(m.handleDomainRemove))
+	g(domainVerifyOperation, mountRel(domainVerifyOperation.Path), domainVerifyOperation.Handle(m.handleDomainVerify))
+	g(reverifyDomainsOperation, mountRel(reverifyDomainsOperation.Path), reverifyDomainsOperation.Handle(m.handleReverifyDomains))
 }
 
 // mountImpersonationRoutes registers the impersonation record group, mounted
@@ -144,8 +143,8 @@ func (m *product) mountSSORoutes() {
 // read a record through.
 func (m *product) mountImpersonationRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
-	g(http.MethodGet, mountRel(impersonationListOperation.Path), impersonationListOperation.Handle(m.handleImpersonationList))
-	g(http.MethodDelete, mountRel(impersonationRevokeOperation.Path), impersonationRevokeOperation.Handle(m.handleImpersonationRevoke))
+	g(impersonationListOperation, mountRel(impersonationListOperation.Path), impersonationListOperation.Handle(m.handleImpersonationList))
+	g(impersonationRevokeOperation, mountRel(impersonationRevokeOperation.Path), impersonationRevokeOperation.Handle(m.handleImpersonationRevoke))
 }
 
 // closedQuery refuses a query parameter outside the accepted set before the

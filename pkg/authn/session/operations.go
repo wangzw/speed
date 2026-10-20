@@ -128,6 +128,7 @@ var sessionOperation = speedhttp.NewOperation[struct{}, AuthnSessionView](
 			Body:        &speedhttp.Body{MediaType: "application/json"},
 		},
 	),
+	speedhttp.Optional(),
 )
 
 // logoutOperation declares the route that revokes the request's own session.

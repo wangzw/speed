@@ -166,7 +166,13 @@ type Mounter interface {
     PublicURL() string                                               // 对外基址
     CSRF() *http.CrossOriginProtection
 }
+
+// Declared 按 operation 声明的 Method 与 Access 登记：公开走 Public，可选走
+// Optional，受保护走 Guarded。
+func Declared(m Mounter, operation http.Declared, rel string, h gin.HandlerFunc, opts ...Option)
 ```
+
+**挂路由的模块经 `Declared` 登记，访问级别来自 operation 声明。** `http.Operation` 与 `http.ReplyOperation` 的 `Access` 字段（零值为受保护，`Public()` 与 `Optional()` 覆盖它）同时决定片段的 `security` 与本条路由在网关里的级别，模块不在这两处各写一次。`Callback` 仍单独登记：回调既公开又跳过跨源检查，只有登记方知道哪些方法来自别的站。
 
 每次登记在一处包好，宿主与子包因此没有「只挂路由、忘了登记」或「登记写错一个字符」的机会：
 

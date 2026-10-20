@@ -32,10 +32,11 @@ const fallbackContentType = "application/octet-stream"
 // objectstore.Declaration. It is both the handler's input and the JSON body the
 // fragment publishes.
 type CreateObjectInput struct {
-	Name           string `json:"name" description:"An optional label for the object; normalized before storing, and omitted or empty stores an empty name"`
-	Size           int    `json:"size" required:"true" description:"The object's size in bytes; must be positive, and the upload's byte count must equal it exactly. A declaration without a positive size is refused whole."`
-	ContentType    string `json:"content_type" required:"true" description:"The media type the bytes will carry; must be non-blank. The upload records it as the object's mime."`
-	ChecksumSHA256 string `json:"checksum_sha256" description:"The declared SHA-256 as 64 hex digits; empty declares no checksum"`
+	_              struct{} `description:"An object to declare before its bytes are uploaded: the name, the exact size and media type, and the checksum the upload is held to."`
+	Name           string   `json:"name" description:"An optional label for the object; normalized before storing, and omitted or empty stores an empty name"`
+	Size           int      `json:"size" required:"true" description:"The object's size in bytes; must be positive, and the upload's byte count must equal it exactly. A declaration without a positive size is refused whole."`
+	ContentType    string   `json:"content_type" required:"true" description:"The media type the bytes will carry; must be non-blank. The upload records it as the object's mime."`
+	ChecksumSHA256 string   `json:"checksum_sha256" description:"The declared SHA-256 as 64 hex digits; empty declares no checksum"`
 }
 
 // ListObjectsInput is the request of a page read: the cursor and the page cap.

@@ -50,6 +50,7 @@
       },
       "SmsAdminRegister": {
         "additionalProperties": false,
+        "description": "A template to take up by the vendor code the deployment already holds: its name, its parameters and the vendor code of each language.",
         "properties": {
           "codes": {
             "additionalProperties": {
@@ -79,6 +80,7 @@
       },
       "SmsAdminSubmission": {
         "additionalProperties": false,
+        "description": "A template submission to the vendor for one language: the body with its placeholders, what the template is for, and the note its reviewer reads.",
         "properties": {
           "content": {
             "description": "The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order.",
@@ -284,6 +286,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Page through the template set, configured templates included"
       },
       "post": {
@@ -395,6 +405,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Take up a template whose vendor code the operator already has"
       }
     },
@@ -508,6 +526,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Hand a template to the vendor for review and take up the code it answers with"
       }
     },
@@ -584,6 +610,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Drop a runtime template from this process, the vendor left alone"
       }
     },
@@ -701,6 +735,14 @@
             "description": "A dependency could not answer"
           }
         },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
         "summary": "Turn a runtime template's ability to send on or off"
       }
     }
