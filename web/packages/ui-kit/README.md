@@ -315,12 +315,22 @@ The third argument is the color mode (`'light' | 'dark'`, default
 `'light'`), which sets `palette.mode`. The token tree defines one set of
 surface colors (a light palette) and the neutral ramp is a full scale, so
 the dark mode reads the ramp from its dark end for background / text /
-divider rather than carrying a second palette; the six semantic roles are
-shared by both modes. `AppThemeProvider` holds the active mode in its own
-state (starting at its `defaultMode` prop, `'light'`) and exposes the mode
-with a setter and a toggle through `useAppThemeMode` -- a host renders its
-own mode control against that hook and the whole subtree re-renders with
-the new palette:
+divider rather than carrying a second palette. The semantic roles follow
+the same direction: each role's `main` tone is chosen for light surfaces
+and its `light` tone for dark ones, so in dark mode `main` maps to the
+role's `light` tone and `contrastText` to the dark end of the neutral ramp
+(neutral 900) -- a filled control keeps a readable label. MUI paints the
+hover background of its contained controls (Button, filled Chip, Fab) from
+the role's `dark` slot, where the token's deepest tone would drop that
+label below 4.5:1; dark mode therefore maps `dark` to the light tone mixed
+20% toward white, a visible hover step that keeps the label readable. A
+brand recolor names `main` (light surfaces) and `light` (dark surfaces):
+overriding only `main` leaves dark mode on the role's light tone.
+`AppThemeProvider` holds the active mode
+in its own state (starting at its `defaultMode` prop, `'light'`) and
+exposes the mode with a setter and a toggle through `useAppThemeMode` -- a
+host renders its own mode control against that hook and the whole subtree
+re-renders with the new palette:
 
 ```tsx
 import { useAppThemeMode } from '@speed/ui-kit'
@@ -346,7 +356,7 @@ MUI's theme surface:
 
 | Token section | MUI theme slot | Adapter decision |
 |---|---|---|
-| `color.semantic.<role>` | `palette.<role>` (main/light/dark/contrastText) | key-for-key |
+| `color.semantic.<role>` | `palette.<role>` (main/light/dark/contrastText) | light mode: key-for-key; dark mode: `main` and `light` map to the role's `light` tone, `contrastText` to neutral 900, and `dark` to that light tone mixed 20% toward white (MUI's hover fill under the neutral-900 label) |
 | `color.neutral` | `palette.grey` | steps 50-900 by number; A100/A200/A400/A700 alias the same-number steps (MUI's own grey aliasing); tone 950 has no MUI slot and stays token-only |
 | `color.text/background/divider` | same-named slots | direct |
 | `typography.fontFamily.sans` | `typography.fontFamily` | direct; the stack ends in CJK-capable fallbacks |
@@ -1414,9 +1424,13 @@ router intercepts link activation without per-surface props.
 
 ### Per-mode palette override
 
-The factory's dark mode reads the same neutral ramp from its dark end, and
-the six semantic roles stay shared between modes. A brand that needs a
-different primary on dark surfaces overrides that role for that mode only:
+The factory's dark mode reads the neutral ramp from its dark end and maps
+each semantic role's `main` to that role's `light` tone with a neutral-900
+label, deriving the hover fill from that same tone; the token tree carries
+no second palette for it. A brand whose dark-surface primary is not the
+token's light tone overrides that role for that mode only. A palette
+override supplied here replaces the factory's derived `dark` slot as well,
+so name it whenever the hover fill needs its own tone:
 
 ```tsx
 import type { Theme } from '@mui/material/styles'
@@ -1427,7 +1441,8 @@ function withBrandDarkSurface(outer: Theme): Theme {
       outer.palette.mode === 'dark'
         ? {
             primary: {
-              main: '#60A5FA',
+              main: '#93C5FD',
+              dark: '#BFDBFE',
               contrastText: '#0B1220',
             },
           }

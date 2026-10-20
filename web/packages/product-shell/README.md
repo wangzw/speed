@@ -225,7 +225,7 @@ of them behaves exactly as the shipped defaults describe.
 | `sessionEnded` | Replaces the shipped session-end action; the context hands over `evictAllQueries()` so an override can compose it. |
 | `baseUrl` | The client's base URL; defaults to `window.location.origin`. |
 | `client` | Options merged into `createClient`: `credentials` (`'same-origin'` — the default — or `'include'`), `reporter`, `retryPolicy`, `timeoutMs`, `fetch`, `tenantHeader`. |
-| `theme` | `projectTokens` and `defaultMode`, forwarded to the `AppThemeProvider` inside the stack. |
+| `theme` | `projectTokens` and `defaultMode`, forwarded to the `AppThemeProvider` inside the stack. `projectTokens` follows the token role tones: a role's `main` is its light-surface tone and `light` its dark-surface tone, so a brand recolor names both. |
 | `i18n` | Options merged into `createI18n`: `supportedLanguages`, `defaultLanguage`, `storageKey`, `urlParameterName`, `onMissingKey`, `profileLanguage`. |
 | `tenantProvider` | The tenant alias announced per request as the tenant header. See below for how it differs from the tenant id. |
 | `documentLanguage` | `false` disables the `<html lang>` binding. |

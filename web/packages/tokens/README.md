@@ -87,11 +87,22 @@ a React-bearing package just to override a palette. Semantics, all pinned in
 import { defaultTokens, deepMerge, type TokensOverride } from '@speed/tokens'
 
 const override: TokensOverride = {
-  color: { semantic: { primary: { main: '#0F766E' } } },
+  color: {
+    semantic: {
+      primary: { main: '#0F766E', light: '#5EEAD4', dark: '#115E59' },
+    },
+  },
   zIndex: { values: { drawer: 1400 } },
 }
 const tokens = deepMerge(defaultTokens, override)
 ```
+
+A role's three tones serve different surfaces: `main` is the tone for
+light surfaces, `light` the tone for dark ones, and `dark` the deepest
+step. The `ui-kit` theme factory maps them that way, so a brand recolor
+names the tone each mode reads -- overriding only `main` leaves dark mode
+on the role's light tone, and in dark mode the factory derives the hover
+fill from `light` (see the `ui-kit` README).
 
 Shape drift (an unknown section, a string where a hex belongs) is a
 **compile-time** error via `TokensOverride`; the acceptance test in

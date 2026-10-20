@@ -106,13 +106,15 @@ classDiagram
 
 | 段 | 形状 |
 |---|---|
-| `color` | `semantic` 为若干语义角色，每个角色带 `main`/`light`/`dark`/`contrastText`；`neutral` 为数值色阶；`text`/`background`/`divider` |
+| `color` | `semantic` 为若干语义角色，每个角色带 `main`/`light`/`dark`/`contrastText`：`main` 是浅色表面上的色调、`light` 是给深色表面的色调、`dark` 是最深的一档、`contrastText` 是落在 `main` 上的文字色；`neutral` 为数值色阶；`text`/`background`/`divider` |
 | `typography` | `fontFamily.sans`/`mono`（拉丁优先、附 CJK 回退）、`fontSize` 命名步、`fontWeight` 命名权重、`lineHeight`、`letterSpacing` |
 | `spacing` | `unit`，布局间隙为它的整数倍 |
 | `shape` | `borderRadius` 单一半径 |
 | `breakpoints` | `values`，若干命名断点 |
 | `zIndex` | `values`，槽名与 MUI 同名 |
 | `shadows` | 按高度槽名给出的完整 `box-shadow` 值 |
+
+**深色表面的角色色调来自 `light`。** ui-kit 的主题工厂在深色模式下把 `main` 与 `light` 都取角色的 `light` 色调，悬停填充由该色调向白色派生；因此给品牌换色只覆写 `main` 不会作用于深色模式，需同时设置 `light`。
 
 **颜色字面量按段各置一处**：`defaultTokens` 从各段模块装配，同一段里的十六进制值只在该段模块里拼写一次。
 

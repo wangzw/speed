@@ -858,17 +858,30 @@ describe('bootstrapSpeedApp', () => {
         <span data-testid="probe">{`${theme.palette.mode}:${theme.palette.primary.main}`}</span>
       )
     }
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    const boot = await mountApp(container, {
+    // A role's main tone is the light-surface tone and its light tone the
+    // dark-surface one, so a definition that recolors both reaches the
+    // provider in both modes. The token override names each tone the mode
+    // reads: light mode takes main, dark mode takes light.
+    const projectTokens = {
+      color: { semantic: { primary: { main: '#123456', light: '#89ABCD' } } },
+    }
+    const darkContainer = document.createElement('div')
+    document.body.appendChild(darkContainer)
+    const darkBoot = await mountApp(darkContainer, {
       view: <ThemeProbe />,
-      theme: {
-        projectTokens: { color: { semantic: { primary: { main: '#123456' } } } },
-        defaultMode: 'dark',
-      },
+      theme: { projectTokens, defaultMode: 'dark' },
     })
-    expect(container.textContent).toBe('dark:#123456')
-    await teardown(boot, container)
+    expect(darkContainer.textContent).toBe('dark:#89ABCD')
+    await teardown(darkBoot, darkContainer)
+
+    const lightContainer = document.createElement('div')
+    document.body.appendChild(lightContainer)
+    const lightBoot = await mountApp(lightContainer, {
+      view: <ThemeProbe />,
+      theme: { projectTokens },
+    })
+    expect(lightContainer.textContent).toBe('light:#123456')
+    await teardown(lightBoot, lightContainer)
   })
 
   it('keeps the shipped theme when the definition sets none', async () => {

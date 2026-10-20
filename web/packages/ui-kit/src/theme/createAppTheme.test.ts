@@ -18,6 +18,16 @@ const DEFAULT_BEFORE = JSON.stringify(defaultTokens)
 // merged result's consumer tries to write through them.
 const PRISTINE_ERROR_MAIN = defaultTokens.color.semantic.error.main
 
+/** The six semantic roles every color-mode assertion sweeps. */
+const SEMANTIC_ROLES = [
+  'primary',
+  'secondary',
+  'error',
+  'warning',
+  'info',
+  'success',
+] as const
+
 describe('createAppTheme token-to-theme mapping', () => {
   const { theme } = createAppTheme()
 
@@ -163,7 +173,7 @@ describe('createAppTheme color modes', () => {
     expect(theme.palette.text.primary).toBe(defaultTokens.color.text.primary)
   })
 
-  it('reads the neutral ramp for surfaces in dark mode, sharing the semantic roles', () => {
+  it('reads the neutral ramp for surfaces in dark mode and the light tones for roles', () => {
     const { theme } = createAppTheme(undefined, undefined, 'dark')
     const neutral = defaultTokens.color.neutral
     expect(theme.palette.mode).toBe('dark')
@@ -173,12 +183,71 @@ describe('createAppTheme color modes', () => {
     expect(theme.palette.text.secondary).toBe(neutral[300])
     expect(theme.palette.text.disabled).toBe(neutral[500])
     expect(theme.palette.divider).toBe(neutral[700])
-    // The semantic roles are the same tokens in both modes.
-    expect(theme.palette.primary.main).toBe(
-      defaultTokens.color.semantic.primary.main,
-    )
+    // The semantic roles read their tonal family from the other end in
+    // dark mode: main is the role's light tone (meant for dark surfaces)
+    // and the label flips to the neutral ramp's dark end.
+    for (const role of SEMANTIC_ROLES) {
+      expect(theme.palette[role].main).toBe(defaultTokens.color.semantic[role].light)
+      expect(theme.palette[role].contrastText).toBe(neutral[900])
+    }
     // The neutral ramp maps onto grey identically in both modes.
     expect(theme.palette.grey[100]).toBe(neutral[100])
+  })
+})
+
+/**
+ * WCAG 2 relative luminance of an sRGB hex color, per the WCAG definition
+ * (channels linearized, then weighted 0.2126/0.7152/0.0722).
+ */
+function relativeLuminance(hex: string): number {
+  const value = hex.slice(1)
+  const linear = (offset: number): number => {
+    const channel = Number.parseInt(value.slice(offset, offset + 2), 16) / 255
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * linear(0) + 0.7152 * linear(2) + 0.0722 * linear(4)
+}
+
+/** WCAG contrast ratio between two hex colors, from 1:1 to 21:1. */
+function contrastRatio(a: string, b: string): number {
+  const brighter = Math.max(relativeLuminance(a), relativeLuminance(b))
+  const darker = Math.min(relativeLuminance(a), relativeLuminance(b))
+  return (brighter + 0.05) / (darker + 0.05)
+}
+
+describe('createAppTheme dark-mode contrast', () => {
+  // Every semantic role, measured against the surfaces it actually lands
+  // on: a role's main is a fill/border/icon on the dark paper (non-text,
+  // 3:1 floor) and its contrastText is the label inside that fill (text,
+  // 4.5:1 floor).
+  const { theme } = createAppTheme(undefined, undefined, 'dark')
+  const paper = theme.palette.background.paper
+
+  it('keeps every role main at 3:1 or better against the dark paper', () => {
+    for (const role of SEMANTIC_ROLES) {
+      expect(contrastRatio(theme.palette[role].main, paper)).toBeGreaterThanOrEqual(3)
+    }
+  })
+
+  it('keeps every filled-control label at 4.5:1 or better against its fill', () => {
+    for (const role of SEMANTIC_ROLES) {
+      const { main, contrastText } = theme.palette[role]
+      expect(contrastRatio(contrastText, main)).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('keeps every filled-control label readable on the hover fill MUI paints', () => {
+    // MUI's contained controls (Button, filled Chip, Fab) swap the fill to
+    // palette[role].dark on hover while the same contrastText label stays
+    // on top, so the dark slot is measured too, not just main.
+    for (const role of SEMANTIC_ROLES) {
+      const { main, dark, contrastText } = theme.palette[role]
+      expect(contrastRatio(contrastText, dark)).toBeGreaterThanOrEqual(4.5)
+      // The hover fill still steps away from the resting fill.
+      expect(relativeLuminance(dark)).toBeGreaterThan(relativeLuminance(main))
+    }
   })
 })
 

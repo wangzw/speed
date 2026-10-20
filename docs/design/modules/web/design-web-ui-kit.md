@@ -53,7 +53,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **等宽字体走模块扩充。** MUI 的排版面没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
 
-**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板；六个语义角色两种模式共用（它们的色调自带 light/dark 变体）。缺省即原行为，未传该入参的宿主逐字节不受影响。
+**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
 
 **返回的主题无本地化，是有意的**：MUI 的内建文本随语言变化，故本地化合并发生在渲染期——`AppThemeProvider` 把活动语言的 MUI 本地化并到基础主题上，或宿主自行 `createTheme(appTheme.theme, muiLocaleFor(i18n.language))`。
 
@@ -204,7 +204,7 @@ sequenceDiagram
 
 | token 段 | MUI 主题槽 | 适配决策 |
 |---|---|---|
-| `color.semantic.<角色>` | `palette.<角色>` | 逐键：`main`/`light`/`dark`/`contrastText` |
+| `color.semantic.<角色>` | `palette.<角色>` | 浅色模式逐键：`main`/`light`/`dark`/`contrastText`；深色模式 `main` 与 `light` 取该角色的 `light` 色调、`contrastText` 取中性色阶 900、`dark` 取该色调向白色混入 20%（MUI 的悬停填充） |
 | `color.neutral` | `palette.grey` | 数值步按号映射；A 系列别名复用同号步；无 MUI 槽的色阶只在 token 里 |
 | `color.text`/`background`/`divider` | 同名槽 | 直接 |
 | `typography.fontFamily.sans` | `typography.fontFamily` | 直接 |

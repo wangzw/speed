@@ -14,8 +14,10 @@
  * rather than polluting the tree every tenant merge starts from. The
  * factory then maps the merged tree onto MUI's createTheme surface:
  *
- * - palette roles: each semantic role's main/light/dark/contrastText maps
- *   key for key; the neutral ramp aliases the MUI grey scale (steps 50-900
+ * - palette roles: in light mode each semantic role's
+ *   main/light/dark/contrastText maps key for key (dark mode remaps them,
+ *   see the color-mode paragraph); the neutral ramp aliases the MUI grey
+ *   scale (steps 50-900
  *   by number; A100/A200/A400/A700 alias the same-number steps, matching
  *   MUI's own grey aliasing). Tone 950 has no MUI slot and stays a token
  *   only. text/background/divider map directly.
@@ -57,10 +59,17 @@
  * neutral ramp's dark end -- the token tree carries one set of surface
  * colors (a light palette), while the neutral ramp is a full scale, so a
  * dark surface is the same tokens read from the other end rather than a
- * second hardcoded palette. The six semantic roles keep their tokens in
- * both modes (their tones carry explicit light/dark variants). The
- * default is 'light', so every existing caller that omits the argument
- * renders byte-for-byte as before.
+ * second hardcoded palette. The semantic roles follow the same discipline:
+ * each role's main tone is chosen for light surfaces and its light tone for
+ * dark ones, so the dark mode maps main to the role's light tone and flips
+ * contrastText to the dark end of the neutral ramp (neutral 900). MUI's
+ * filled controls paint their hover background from the role's dark slot
+ * (Button, filled Chip and Fab all read palette[role].dark), so keeping the
+ * token's darkest tone there would drop the neutral-900 label below 4.5:1.
+ * The dark mode therefore maps dark to the light tone mixed toward white:
+ * a hover step that stays readable on the same label. The default is
+ * 'light', so every existing caller that omits the argument renders
+ * byte-for-byte as before.
  *
  * MUI 9 notes verified against the installed 9.4.0 at implementation
  * time: css variables are off by default (theme.vars is absent), so no
@@ -174,7 +183,58 @@ function rem(px: number): string {
   return `${px / REM_BASE}rem`
 }
 
-function roleOptions(color: ColorTokens['semantic'][SemanticRole]): PaletteColorOptions {
+/**
+ * How far a dark-mode role's hover fill moves from its light tone toward
+ * white. MUI paints the hover background of contained controls (Button,
+ * filled Chip, Fab) from `palette[role].dark`, and in dark mode that fill
+ * carries the neutral-900 label. Mixing toward white raises the fill's
+ * luminance monotonically, so the label keeps 4.5:1 or better while the
+ * hover still steps visibly away from `main` (the same light tone).
+ */
+const DARK_HOVER_WHITE_MIX = 0.2
+
+/**
+ * Mix a #RRGGBB color toward white by `weight` (0..1). A value outside
+ * that shape is returned unchanged: tokens are hex by contract, and a host
+ * overriding with another CSS color keeps it rather than getting "NaN".
+ */
+function mixWithWhite(hex: string, weight: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return hex
+  }
+  const value = Number.parseInt(hex.slice(1), 16)
+  const channel = (offset: number): number => {
+    const base = (value >> offset) & 0xff
+    return Math.round(base + (255 - base) * weight)
+  }
+  const mixed = (channel(16) << 16) | (channel(8) << 8) | channel(0)
+  return `#${mixed.toString(16).padStart(6, '0').toUpperCase()}`
+}
+
+/**
+ * A semantic role's palette entries for a mode. The light mode maps the
+ * role key for key onto its tokens. The dark mode reads the same tonal
+ * family from its other end: `main` becomes the role's light tone (the
+ * tone meant for dark surfaces), `light` keeps that tone, and
+ * `contrastText` becomes the dark end of the neutral ramp (neutral 900).
+ * MUI's hover surfaces read `dark`; under that label the token's darkest
+ * tone is unreadable, so the dark slot is the light tone mixed toward
+ * white (see DARK_HOVER_WHITE_MIX) -- a lighter hover fill that keeps the
+ * label readable.
+ */
+function roleOptions(
+  color: ColorTokens['semantic'][SemanticRole],
+  mode: AppThemeMode,
+  neutral: NeutralScale,
+): PaletteColorOptions {
+  if (mode === 'dark') {
+    return {
+      main: color.light,
+      light: color.light,
+      dark: mixWithWhite(color.light, DARK_HOVER_WHITE_MIX),
+      contrastText: neutral[900],
+    }
+  }
   return {
     main: color.main,
     light: color.light,
@@ -232,7 +292,8 @@ function shadowRamp(shadows: ShadowTokens): ThemeOptions['shadows'] {
  * tree's own text/background/divider values directly; the dark mode reads
  * the same neutral ramp from its dark end (surfaces dark, text light),
  * because the token tree carries a single light palette while the ramp is
- * a full scale. The semantic roles are shared by both modes.
+ * a full scale. The semantic roles follow the same direction (see
+ * roleOptions).
  */
 function surfacePalette(
   tokens: SpeedTokens,
@@ -288,12 +349,12 @@ function tokensToThemeOptions(
   return {
     palette: {
       mode,
-      primary: roleOptions(tokens.color.semantic.primary),
-      secondary: roleOptions(tokens.color.semantic.secondary),
-      error: roleOptions(tokens.color.semantic.error),
-      warning: roleOptions(tokens.color.semantic.warning),
-      info: roleOptions(tokens.color.semantic.info),
-      success: roleOptions(tokens.color.semantic.success),
+      primary: roleOptions(tokens.color.semantic.primary, mode, tokens.color.neutral),
+      secondary: roleOptions(tokens.color.semantic.secondary, mode, tokens.color.neutral),
+      error: roleOptions(tokens.color.semantic.error, mode, tokens.color.neutral),
+      warning: roleOptions(tokens.color.semantic.warning, mode, tokens.color.neutral),
+      info: roleOptions(tokens.color.semantic.info, mode, tokens.color.neutral),
+      success: roleOptions(tokens.color.semantic.success, mode, tokens.color.neutral),
       grey: neutralAsGrey(tokens.color.neutral),
       ...surfacePalette(tokens, mode),
     },
