@@ -22,6 +22,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import MenuItem from '@mui/material/MenuItem'
+import { buttonClasses } from '@mui/material/Button'
 import { switchLanguage } from '@speed/i18n'
 import { createAppTheme } from '@speed/ui-kit'
 import { TenantSwitcher } from './TenantSwitcher.js'
@@ -114,8 +115,8 @@ describe('TenantSwitcher', () => {
     // surrounding text color on a plain surface.
     renderSwitcher()
     const trigger = screen.getByRole('button', { name: 'Sunshine Dental' })
-    expect(trigger).toHaveClass('MuiButton-colorInherit')
-    expect(trigger).not.toHaveClass('MuiButton-colorPrimary')
+    expect(trigger).toHaveClass(buttonClasses.colorInherit)
+    expect(trigger).not.toHaveClass(buttonClasses.colorPrimary)
     // The token relationship the inheritance relies on, guarded here
     // because jsdom resolves no cascaded styles: while an AppBar keeps
     // painting primary.main, its own contrastText must stay at WCAG AA
@@ -434,8 +435,8 @@ describe('TenantSwitcher', () => {
       },
     })
     const trigger = screen.getByRole('button', { name: 'Sunshine Dental' })
-    expect(trigger).toHaveClass('MuiButton-contained')
-    expect(trigger).toHaveClass('MuiButton-sizeSmall')
+    expect(trigger).toHaveClass(buttonClasses.contained)
+    expect(trigger).toHaveClass(buttonClasses.sizeSmall)
     expect(trigger).toContainElement(screen.getByTestId('tenant-icon'))
     expect(trigger).toHaveStyle({ textTransform: 'none' })
   })
