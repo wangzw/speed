@@ -102,13 +102,23 @@ const (
 // step asks for, being what Begin answers for a start that carries none, and is
 // empty for a method that does not open with a form. OpensAccount reports
 // whether the method may open an account for an identifier it does not yet know.
+//
+// BindingProviders is the provider values the method's link flow stores for the
+// identities it binds, so that a client can tell whether a method is already
+// bound without knowing the storage naming. Each entry is either the exact
+// value, as "google", or a namespace prefix the stored value continues after, as
+// "oidc:", "saml:" and "wechat-openid:". A stored provider value belongs to the
+// method when it equals an entry or begins with one. The field may be empty for
+// a method whose bindings land under Name: empty means the bindings land under
+// Name, and is also the value for a method that binds no external identity.
 type MethodDescriptor struct {
-	Name         string
-	Kind         MethodKind
-	Protocol     MethodProtocol
-	Label        string
-	Fields       []Field
-	OpensAccount bool
+	Name             string
+	Kind             MethodKind
+	Protocol         MethodProtocol
+	Label            string
+	Fields           []Field
+	OpensAccount     bool
+	BindingProviders []string
 }
 
 // LoginMethod is one kind of first factor: a password, an SMS code, a social or

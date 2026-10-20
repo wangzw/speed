@@ -278,7 +278,7 @@ sequenceDiagram
 | 概念 | 形状 | 说明 |
 |---|---|---|
 | 发现文档 | `AuthnMethodList` | auth-core 再导出的生成类型：`methods`（描述符数组）、`signup`、`mfa` |
-| 方法描述符 | `AuthnMethodDescriptor` | 一个方法自报的渲染类别（`kind`）、线协议、品牌标签、首步字段与是否可开户 |
+| 方法描述符 | `AuthnMethodDescriptor` | 一个方法自报的渲染类别（`kind`）、线协议、品牌标签、首步字段、是否可开户与绑定提供方（`binding_providers`） |
 | 登录渠道 | `SignInChannel` | `password`／`sms`；已弃用的窄化与选中口径 |
 | 呈现模式 | `SignInMode` | `sign-in`／`register`，纯呈现开关 |
 | 社交渠道 | `SocialProvider` | 方法名字符串，定义在 `web/packages/auth-ui/src/SocialSignInSection.tsx` |

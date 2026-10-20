@@ -125,7 +125,12 @@ describe('list methods', () => {
         methodList(
           [
             'password',
-            { name: 'wechat.web', kind: 'redirect', protocol: 'oauth2' },
+            {
+              name: 'wechat.web',
+              kind: 'redirect',
+              protocol: 'oauth2',
+              binding_providers: ['wechat', 'wechat-openid:'],
+            },
           ],
           { signup: true, mfaFactors: ['totp'] },
         ),
@@ -134,13 +139,35 @@ describe('list methods', () => {
     expect(methods).toEqual({
       methods: [
         { name: 'password', kind: 'form' },
-        { name: 'wechat.web', kind: 'redirect', protocol: 'oauth2' },
+        {
+          name: 'wechat.web',
+          kind: 'redirect',
+          protocol: 'oauth2',
+          binding_providers: ['wechat', 'wechat-openid:'],
+        },
       ],
       signup: { enabled: true },
       mfa: { factors: ['totp'] },
     })
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.path).toBe('/api/v1/auth/methods')
+  })
+
+  it('refuses a methods 2xx whose binding providers are not strings', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [
+          {
+            name: 'wechat.web',
+            kind: 'redirect',
+            binding_providers: ['wechat', 1],
+          },
+        ],
+        signup: { enabled: true },
+        mfa: { factors: [] },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
   })
 
   it('refuses a methods 2xx whose body is not the documented shape', async () => {

@@ -21,7 +21,7 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 	}}
 	google := &fakeMethod{name: "google", desc: authn.MethodDescriptor{
 		Name: "google", Kind: authn.MethodKindRedirect, Protocol: authn.MethodProtocolOIDC,
-		Label: "Google", OpensAccount: true,
+		Label: "Google", OpensAccount: true, BindingProviders: []string{"google"},
 	}}
 	r := newRigMethods(t, password, google)
 	r.p.signup = true
@@ -49,12 +49,18 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 	if g["kind"] != "redirect" || g["protocol"] != "oidc" || g["label"] != "Google" || g["opens_account"] != true {
 		t.Errorf("the google descriptor = %v, want a redirect oidc Google that opens an account", g)
 	}
+	if got := g["binding_providers"]; !reflect.DeepEqual(got, []any{"google"}) {
+		t.Errorf("the google descriptor binding_providers = %v, want [google]", got)
+	}
 	p := methods[1].(map[string]any)
 	if p["kind"] != "form" {
 		t.Errorf("the password descriptor kind = %v, want form", p["kind"])
 	}
 	if v, present := p["opens_account"]; present {
 		t.Errorf("the password descriptor carries opens_account = %v, want it absent", v)
+	}
+	if v, present := p["binding_providers"]; present {
+		t.Errorf("the password descriptor carries binding_providers = %v, want it absent", v)
 	}
 	fields, ok := p["fields"].([]any)
 	if !ok || len(fields) != 2 ||

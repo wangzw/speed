@@ -223,11 +223,12 @@ func (m *method) Name() string { return methodName }
 // and opens an account for a GitHub identity no account holds yet.
 func (m *method) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
-		Name:         methodName,
-		Kind:         authn.MethodKindRedirect,
-		Protocol:     authn.MethodProtocolOAuth2,
-		Label:        "GitHub",
-		OpensAccount: true,
+		Name:             methodName,
+		Kind:             authn.MethodKindRedirect,
+		Protocol:         authn.MethodProtocolOAuth2,
+		Label:            "GitHub",
+		OpensAccount:     true,
+		BindingProviders: []string{methodName},
 	}
 }
 

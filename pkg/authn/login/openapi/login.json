@@ -342,8 +342,15 @@
         "type": "object"
       },
       "AuthnMethodDescriptor": {
-        "description": "One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, and the inputs its first step asks for.",
+        "description": "One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, the provider values its bindings appear under, and the inputs its first step asks for.",
         "properties": {
+          "binding_providers": {
+            "description": "The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "fields": {
             "description": "The inputs the method's first step asks for, empty for a method that does not open with a form",
             "items": {

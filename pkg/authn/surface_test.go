@@ -338,6 +338,7 @@ var exportedSurface = []string{
 	"field MembershipChanged.AccountID",
 	"field MembershipChanged.Change",
 	"field MembershipChanged.Source",
+	"field MethodDescriptor.BindingProviders",
 	"field MethodDescriptor.Fields",
 	"field MethodDescriptor.Kind",
 	"field MethodDescriptor.Label",

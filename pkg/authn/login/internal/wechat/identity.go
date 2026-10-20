@@ -66,3 +66,11 @@ func (c *Client) Proof(id Identity) authn.Proof {
 func ExternalKey(appID, openID string) authn.ExternalLink {
 	return authn.ExternalLink{Provider: openIDNamespace + appID, Subject: openID}
 }
+
+// BindingProviders are the provider values, or the namespace prefixes, that a
+// WeChat identity is bound under: the union-id namespace and the open-id prefix.
+// A WeChat login method reports them so that a client can match a stored binding
+// back to the method without knowing this naming.
+func BindingProviders() []string {
+	return []string{providerName, openIDNamespace}
+}

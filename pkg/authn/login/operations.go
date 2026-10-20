@@ -48,14 +48,15 @@ type AuthnLoginMethods struct {
 // AuthnMethodDescriptor is one login method as the discovery document reports
 // it.
 type AuthnMethodDescriptor struct {
-	_ struct{} `description:"One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, and the inputs its first step asks for."`
+	_ struct{} `description:"One login method as the discovery document reports it: its stable name, how a client renders it, the protocol a redirect or enterprise method speaks, its brand label, whether it can open an account, the provider values its bindings appear under, and the inputs its first step asks for."`
 
-	Name         string            `json:"name" required:"true" description:"The method's stable name"`
-	Kind         string            `json:"kind" required:"true" description:"How a client renders the method: form, redirect, enterprise or webauthn"`
-	Protocol     string            `json:"protocol,omitempty" description:"The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"`
-	Label        string            `json:"label,omitempty" description:"The method's brand name where it has one, otherwise empty for a name-keyed translation"`
-	OpensAccount bool              `json:"opens_account,omitempty" description:"Whether the method may open an account for an identifier it does not yet know"`
-	Fields       []AuthnLoginField `json:"fields,omitempty" description:"The inputs the method's first step asks for, empty for a method that does not open with a form"`
+	Name             string            `json:"name" required:"true" description:"The method's stable name"`
+	Kind             string            `json:"kind" required:"true" description:"How a client renders the method: form, redirect, enterprise or webauthn"`
+	Protocol         string            `json:"protocol,omitempty" description:"The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"`
+	Label            string            `json:"label,omitempty" description:"The method's brand name where it has one, otherwise empty for a name-keyed translation"`
+	OpensAccount     bool              `json:"opens_account,omitempty" description:"Whether the method may open an account for an identifier it does not yet know"`
+	BindingProviders []string          `json:"binding_providers,omitempty" description:"The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name"`
+	Fields           []AuthnLoginField `json:"fields,omitempty" description:"The inputs the method's first step asks for, empty for a method that does not open with a form"`
 }
 
 // AuthnLoginSignup says whether a first login may open an account.

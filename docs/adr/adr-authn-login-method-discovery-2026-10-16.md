@@ -50,7 +50,7 @@
 采纳：登录渠道的来源是后端发现端点 `GET B/methods`，它发布每个方法自报的描述符，外加注册开关与部署级可用因素种类。
 
 - `LoginMethod` 增 `Describe() MethodDescriptor`，方法自报其描述符。它是纯常量：不读存储、不读配置，不携带任何一次登录会带的值。
-- 描述符的取值域：`kind` 是渲染类别闭集（`form`、`redirect`、`enterprise`、`webauthn`）；`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`、`oidc`、`saml`）；`label` 是品牌名，缺失时前端按方法名查 i18n 回退；`fields` 是首步字段预览，取自 `Begin` 以空字段调用时所答的首个 prompt，仅 `form` 类给出；`opens_account` 是该法能否在首登为未知标识开户。
+- 描述符的取值域：`kind` 是渲染类别闭集（`form`、`redirect`、`enterprise`、`webauthn`）；`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`、`oidc`、`saml`）；`label` 是品牌名，缺失时前端按方法名查 i18n 回退；`fields` 是首步字段预览，取自 `Begin` 以空字段调用时所答的首个 prompt，仅 `form` 类给出；`opens_account` 是该法能否在首登为未知标识开户；`binding_providers` 是该方法 link 流程把绑定存下的提供方取值或命名空间前缀（`google`、`github`、`wechat`、`wechat-openid:`、`oidc:`、`saml:`），为空表示绑定落在方法名下。
 - 字段知识留在各方法模块，不在引擎层重抄。
 - 应答并发布注册开关（由 `authn.account.signup` 派生）与可用因素种类（装配收到的 `MFA.Kinds()`）。前者是部署级闭集开关，后者是部署级可选因素，与账户级 `GET B/factors` 语义不同。
 - 企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`；oidc 与 saml 只作 `enterprise` 类别的方法描述符。

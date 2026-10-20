@@ -178,11 +178,12 @@ type Proof struct {
 
 请求体一律 `application/json`，否则 415；拒绝未知字段；体上限 64 KiB（SAML 回跳例外），超过上限归 400 `bad-request`（与体不合法同答，不为超限另立码）。开始请求的 `input`（`Start.Fields`）至多 8 个字段、每个至多 512 字符；答复的 `input`（`StepInput.Fields`）至多 8 个字段，每个的上界更大——通行密钥的凭据 JSON 超过 1 KiB——且仍远小于 64 KiB 的体上限；两者越界一律归 400 `bad-request`。经 `Mounter` 登记的处理器所写的响应带 `Cache-Control: no-store`：`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它（如密钥集自带缓存头）。网关在处理器之前自产的 401/503，以及入口模块对 panic 的缺陷响应，不在这一范围内：前者不经 `Wrap`，后者由入口模块按它自己的缺陷应答形状处置，会删去 `Cache-Control` 一类表示性头。
 
-`GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, fields}], "signup":{"enabled"}, "mfa":{"factors":[...]}}`。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 由账户模块的注册开关 `authn.account.signup` 派生；`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
+`GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, binding_providers, fields}], "signup":{"enabled"}, "mfa":{"factors":[...]}}`。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`binding_providers` 是该方法 link 流程把绑定存下的提供方取值或命名空间前缀——`google`、`github`、`wechat` 与 `wechat-openid:`（微信无 union id 时按应用标识存）、`oidc:` 与 `saml:` 之后接提供方标识——为空表示绑定落在方法名下；它是方法的常量命名，不表示任何账户是否已绑定，客户端据此把一条已绑定的 `links` 取值归到方法，`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 由账户模块的注册开关 `authn.account.signup` 派生；`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
 
 **`GET B/methods` 是认证的匿名发现面，只承载登录前就要用的认证事实**：方法描述符、注册开关与可登记的因素种类。进此应答的事实满足匿名发现面的准入判据（[architecture](../../architecture.md#特性与前端定制)）；往此应答加字段是本模块对外接口面的变更。此应答的边界由该准入判据与下列规则一起划定，这些规则是穷举的：
 
 - **登录后才需要的存在性事实不进此应答。** 手机号自助与自助添加邮箱是否成立经[特性文档](../../../glossary.md)发布（见「声明的特性」），特性文档只对已认证调用者可读（[feature](../design-feature.md)）。
+- **描述符发布的是方法的常量，不是账户状态。** `binding_providers` 只说该方法把绑定存在哪些提供方取值下，不说任何账户是否已绑定；某个账户已绑定什么仍只经 `GET B/me` 的 `links` 读。
 - **同一事实只有一个发布点。** 可登记的因素种类只在 `mfa.factors` 里；特性文档里只有多因素的自助面是否存在（`authn.mfa`，[authn-mfa](design-authn-mfa.md)），不按因素种类分出特性名（[ADR-feature-ownership-2026-10-17](../../../adr/adr-feature-ownership-2026-10-17.md)）。
 - **只是参数、经流程应答送达或会暴露租户、IdP、账户维度的事实不发布。** 例：`authn.account.auto-link` 的结果经 401 `link-required` 送达，`authn.sms.allowed-prefixes` 的违反答 400 `unsupported-region`，全局强制 MFA（`authn.mfa.global-required`）经登录流程的登记步送达。
 - **别的模块的登录前事实不进此应答。** 它们经拥有该事实的模块自己的匿名发现面发布。
@@ -353,6 +354,7 @@ classDiagram
         +Label string
         +Fields Field
         +OpensAccount bool
+        +BindingProviders string
     }
     class Start {
         +Purpose string

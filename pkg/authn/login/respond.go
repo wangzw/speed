@@ -172,12 +172,13 @@ func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 // descriptorView copies a method's descriptor into the wire shape.
 func descriptorView(d authn.MethodDescriptor) methodDescriptorView {
 	return methodDescriptorView{
-		Name:         d.Name,
-		Kind:         string(d.Kind),
-		Protocol:     string(d.Protocol),
-		Label:        d.Label,
-		OpensAccount: d.OpensAccount,
-		Fields:       fieldViews(d.Fields),
+		Name:             d.Name,
+		Kind:             string(d.Kind),
+		Protocol:         string(d.Protocol),
+		Label:            d.Label,
+		OpensAccount:     d.OpensAccount,
+		BindingProviders: d.BindingProviders,
+		Fields:           fieldViews(d.Fields),
 	}
 }
 

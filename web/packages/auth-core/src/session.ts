@@ -287,8 +287,10 @@ export type AuthnMethodList = AuthnLoginMethods
  * GET /api/v1/auth/methods' `methods`): the generated descriptor. `kind` names
  * the rendering class (form, redirect, enterprise or webauthn), `label`
  * the method's brand name where it has one, `fields` the inputs a form
- * method's first step asks for, and `opens_account` whether the method
- * may open an account for an identifier it does not yet know. */
+ * method's first step asks for, `opens_account` whether the method may
+ * open an account for an identifier it does not yet know, and
+ * `binding_providers` the provider values (or namespace prefixes) the
+ * method's bindings appear under. */
 export type AuthnMethodDescriptor = AuthnMethodDescriptorModel
 
 /** One enterprise sign-in entry the email-domain discovery answers
@@ -953,7 +955,9 @@ function parseIssuedTokens(
 
 /** Validates one method descriptor of the GET /api/v1/auth/methods body. `name`
  * and `kind` are the required fields; the rest are carried as the wire
- * sends them (a method that opens with a form carries its `fields`). */
+ * sends them (a method that opens with a form carries its `fields`, one
+ * whose bindings land under known provider values carries
+ * `binding_providers`). */
 function parseMethodDescriptor(value: unknown): AuthnMethodDescriptorModel {
   const rec = asObject(value, 'methods entry is not an object')
   const descriptor: AuthnMethodDescriptorModel = {
@@ -971,6 +975,14 @@ function parseMethodDescriptor(value: unknown): AuthnMethodDescriptorModel {
   }
   if (Array.isArray(rec.fields)) {
     descriptor.fields = rec.fields.map((entry) => parseField(entry))
+  }
+  if (Array.isArray(rec.binding_providers)) {
+    descriptor.binding_providers = rec.binding_providers.map((entry) =>
+      requireString(
+        entry,
+        'method descriptor carries a non-string binding provider',
+      ),
+    )
   }
   return descriptor
 }

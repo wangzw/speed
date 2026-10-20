@@ -68,9 +68,10 @@ func (p *product) Name() string { return methodName }
 // provider's trust settings and the account resolution decide that.
 func (p *product) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
-		Name:     methodName,
-		Kind:     authn.MethodKindEnterprise,
-		Protocol: authn.MethodProtocolOIDC,
+		Name:             methodName,
+		Kind:             authn.MethodKindEnterprise,
+		Protocol:         authn.MethodProtocolOIDC,
+		BindingProviders: []string{namespaceOIDC},
 	}
 }
 

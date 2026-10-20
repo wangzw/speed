@@ -62,11 +62,12 @@ func (p *product) Name() string { return methodName }
 // opens an account for a Google identity no account holds yet.
 func (p *product) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
-		Name:         methodName,
-		Kind:         authn.MethodKindRedirect,
-		Protocol:     authn.MethodProtocolOIDC,
-		Label:        "Google",
-		OpensAccount: true,
+		Name:             methodName,
+		Kind:             authn.MethodKindRedirect,
+		Protocol:         authn.MethodProtocolOIDC,
+		Label:            "Google",
+		OpensAccount:     true,
+		BindingProviders: []string{providerName},
 	}
 }
 

@@ -145,11 +145,12 @@ func (m *method) Name() string { return methodName }
 // 2.0 and opens an account for a WeChat identity no account holds yet.
 func (m *method) Describe() authn.MethodDescriptor {
 	return authn.MethodDescriptor{
-		Name:         methodName,
-		Kind:         authn.MethodKindRedirect,
-		Protocol:     authn.MethodProtocolOAuth2,
-		Label:        "WeChat",
-		OpensAccount: true,
+		Name:             methodName,
+		Kind:             authn.MethodKindRedirect,
+		Protocol:         authn.MethodProtocolOAuth2,
+		Label:            "WeChat",
+		OpensAccount:     true,
+		BindingProviders: wechat.BindingProviders(),
 	}
 }
 
