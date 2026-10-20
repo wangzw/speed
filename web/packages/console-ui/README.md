@@ -24,7 +24,9 @@ frame, the console root being a dashboard:
   a tenant's records (the read takes the tenant as a required query
   argument) and terminate one;
 - the **authorization surface** over `/api/v1/system` -- a tenant's roles,
-  their grants, the permission catalog and the account bindings;
+  their grants, the permission catalog (each permission shows the
+  server-rendered description beneath its code, both in the catalog and
+  in the grant picker) and the account bindings;
 - the **invitation and membership surface** over
   `/api/v1/tenants/:tenant/invitations` and `/members` -- a tenant's
   invitations and members;

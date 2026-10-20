@@ -26,7 +26,7 @@
 - **不拥有查询客户端。** 每次读经 `@speed/api-sdk` 的生成 react-query 钩子，跑在宿主拥有的 QueryClient 上；本包从不自造 QueryClient，也不手写查询键，失效一律用导出的查询键构造器。
 - **不读存储、不 attach 会话、不导航、不直接触网。** 会话只在一条生在流程之上、由本包节驱动的会话操作存在时以属性传入——绑定添加区起一条 `purpose: 'link'` 流程（`session.startAuthenticatedFlow`），两步验证挑战与自助写的提权门控各起一条 `purpose: 'step-up'` 流程（同）。`PreferencesSection` 的会话属性是可选的：只有提权门控需要它，不给时被拒的写只渲染失败横幅。没有会话操作要驱动的节不接会话属性（会话列表节就不接）。
 - **不发明规格没有的操作。** 认证的因素面只提供列出与删除（`GET`/`DELETE /api/v1/auth/factors`），登记的入口是流程；故 `MfaSection` 的状态经读发现，登记走流程，不声明一个不存在的启用端点。
-- **不 import `@speed/auth-ui`。** 同层包互不 import。社交渠道是部署的登录方法名，取自已发现文档；本包不再持有宿主传入的渠道表，也不外导渠道配置类型。已绑定行上的提供方取值经发现文档描述符解析，匹配不到时回落到本包自己的封闭词表（五个社交名、企业 SSO 族前缀与通用「其它」）。
+- **不 import `@speed/auth-ui`。** 同层包互不 import。社交渠道是部署的登录方法名，取自已发现文档；本包不再持有宿主传入的渠道表，也不外导渠道配置类型。已绑定行上的提供方取值按方法描述符的 `binding_providers` 解析：取值等于其中一项或以一项为命名空间前缀即归到该方法，描述符没有该项时按方法名匹配；仍匹配不到时回落到本包自己的封闭词表（五个社交名、企业 SSO 族前缀与通用「其它」）。
 - **不做服务端判定的替代。** 权限、租户隔离与账户归属都由服务端判定；本包只渲染应答。
 
 ## 外部接口契约
@@ -85,7 +85,7 @@ interface MfaSectionProps {
 
 自助写节（`ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`）的 `session` 属性必选，`PreferencesSection` 的可选；它们的 `session` 都只为提权门控的对话框服务：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
 
-`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。已绑定行的提供方取值也经同一份描述符解析。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑是走共享访问令牌的生成调用，不经会话操作。`SessionsSection` 不接属性：它显示谁的会话，来自调用方绑定的客户端与它的访问令牌。
+`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑是走共享访问令牌的生成调用，不经会话操作。`SessionsSection` 不接属性：它显示谁的会话，来自调用方绑定的客户端与它的访问令牌。
 
 **查询键构造器是公开面。** 失效用本包导出的查询键构造器（如 `getAuthnSessionListQueryKey`），不经手写键。账户自己的标识与绑定读自 `GET /api/v1/auth/me`（其 `identifiers` 与 `links` 字段），无独立的清单端点，故无对应查询键。
 
@@ -131,7 +131,7 @@ sequenceDiagram
 | 概念 | 形状 | 说明 |
 |---|---|---|
 | 时区链 | `resolveTimeZone` + ui-kit 上下文 | 存下的偏好优先，否则 ui-kit 的显示时区上下文（只替换「设备」一级），否则设备时区，否则 UTC；每个时间渲染都显式传 `timeZone` |
-| 渠道词表 | 发现文档的描述符 | 添加区取 `kind=redirect` 的方法名与 `label`；已绑定行按方法名匹配描述符，匹配不到回落到本包自己的封闭词表 |
+| 渠道词表 | 发现文档的描述符 | 添加区取 `kind=redirect` 的方法名与 `label`，并以描述符的 `binding_providers` 判定方法是否已绑定；已绑定行按同一组 `binding_providers` 匹配（相等或以一项为前缀），缺该项时按方法名，仍匹配不到回落到本包自己的封闭词表 |
 | 加强认证流程 | `StepUpFlow` | 一条 `purpose: 'step-up'` 流程的驱动；成功后重跑被门控的动作 |
 | 命名空间 | `accountUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同 |
 
@@ -244,6 +244,7 @@ sequenceDiagram
 | 步进对话框对没有因素的账户以带 `method` 的步进重新证明第一因素 | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/account-ui/src/internal/queries.ts` `useSessionViewQuery` |
 | 社交绑定的 link 流程以顶层 `return_to` 发出回跳地址 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
 | 绑定添加区的渠道取自发现文档，`SocialBindingsSectionProps` 不含 `providers` | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
+| 已绑定行按描述符的 `binding_providers` 归到方法 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
 | 两步验证登记入口按 `mfa.factors` 逐个生成（含 `sms` 与未知种类的通用入口） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
 | 口令节的可选 `withoutLoginName`（`'form'` 缺省、`'explain'` 先说明） | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`、`PasswordSectionProps` |
 | 标识节的可选 `offerUsername` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |

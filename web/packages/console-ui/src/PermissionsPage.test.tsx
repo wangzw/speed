@@ -83,8 +83,8 @@ function grant(overrides: Partial<ConsoleGrant> = {}): ConsoleGrant {
   }
 }
 
-function permission(value: string): ConsolePermission {
-  return { permission: value }
+function permission(value: string, description = ''): ConsolePermission {
+  return { permission: value, description }
 }
 
 /** A searchable account row: a display name beside an opaque id. */
@@ -526,6 +526,88 @@ describe('PermissionsPage', () => {
       await within(catalogSection as HTMLElement).findByText('crm.deal.read')
     ).textContent
     expect(grantText).toEqual(catalogText)
+  })
+
+  it('shows the permission description under the code in the catalog and the grant picker', async () => {
+    const user = userEvent.setup()
+    const described = 'Read the tenant deal pipeline'
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listPermissions: () =>
+        Promise.resolve([
+          permission('crm.deal.read', described),
+          permission('crm.deal.write'),
+        ]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+
+    // The directory keeps the code as its primary text and renders the
+    // server-rendered description as a second line in the same cell.
+    const catalog = section(zhCN.permissions.catalog.title)
+    const code = await within(catalog).findByText('crm.deal.read')
+    const cell = code.closest('td')
+    expect(cell).not.toBeNull()
+    expect(within(cell as HTMLElement).getByText(described)).toBeInTheDocument()
+
+    // The grant picker's options carry the same pair; the closed control
+    // shows the chosen code alone, so the code stays primary there too.
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    await user.click(
+      screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
+    )
+    const option = await screen.findByRole('option', {
+      name: contains('crm.deal.read'),
+    })
+    expect(within(option).getByText(described)).toBeInTheDocument()
+    await user.click(option)
+    const picker = screen.getByLabelText(zhCN.permissions.grants.permissionLabel)
+    expect(picker).toHaveTextContent('crm.deal.read')
+    expect(picker).not.toHaveTextContent(described)
+  })
+
+  it('renders a permission with an empty description as its code alone', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+      listPermissions: () => Promise.resolve([permission('crm.deal.read')]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+
+    // No second line: the code's own container holds the code and nothing
+    // else, and neither the cell nor the option carries a caption element.
+    const catalog = section(zhCN.permissions.catalog.title)
+    const code = await within(catalog).findByText('crm.deal.read')
+    const cell = code.closest('td')
+    expect(cell).not.toBeNull()
+    expect(code.parentElement?.children).toHaveLength(1)
+    expect(
+      (cell as HTMLElement).querySelector('.MuiTypography-caption'),
+    ).toBeNull()
+
+    // The picker option is the bare code, and so is the closed control.
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.roles.manageGrantsAria, { role: 'editor' }),
+      }),
+    )
+    await user.click(
+      screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
+    )
+    const option = await screen.findByRole('option', {
+      name: 'crm.deal.read',
+    })
+    expect(option.querySelector('.MuiTypography-caption')).toBeNull()
+    expect(option.textContent).toBe('crm.deal.read')
+    await user.click(option)
+    expect(
+      screen.getByLabelText(zhCN.permissions.grants.permissionLabel),
+    ).toHaveTextContent(/^crm\.deal\.read$/)
   })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {

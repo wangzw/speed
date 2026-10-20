@@ -160,9 +160,12 @@ session as a required prop; `PreferencesSection` takes it optionally
    import each other. Social channels are the deployment's login-method
    names, read from the discovery document (`session.listMethods()`,
    `kind: 'redirect'`); the package carries no host-supplied channel list
-   and exports no channel-config type. A bound row resolves its provider
-   through the same document; a value no descriptor matches falls back to
-   the package's closed vocabulary. `StepUpDialog` is exported for the
+   and exports no channel-config type. A stored binding and a method's
+   already-bound state both resolve through the descriptor's
+   `binding_providers` (an exact entry or a namespace prefix; a
+   descriptor that declares none matches by its name); a value no
+   descriptor claims falls back to the package's closed vocabulary.
+   `StepUpDialog` is exported for the
    host only — `@speed/console-ui` and `@speed/auth-ui` must not import
    it (the former keeps its own copy).
 8. **The README's quick start is executed, not aspirational.**

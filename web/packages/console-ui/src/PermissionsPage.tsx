@@ -35,7 +35,12 @@
  * A role row carries the host's description key, never text this package
  * ships: the shell's `describeRole` resolver renders it, and without one the
  * raw key stands so the row is never blank. The permission catalog keeps the
- * full permission code as its primary text.
+ * full permission code as its primary text and shows the permission's
+ * server-rendered description as a secondary line beneath it; the grant
+ * picker's options carry the same pair, while the closed control shows the
+ * chosen code alone. An empty description leaves the code as the only text,
+ * and the authorization table keeps the same permission code the catalog
+ * spells as its primary text.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key. A failed list
@@ -122,6 +127,32 @@ function SectionHeading({ children }: { readonly children: string }) {
     <Typography component="h2" variant="h2" sx={{ fontSize: '1.25rem', mb: 1 }}>
       {children}
     </Typography>
+  )
+}
+
+/**
+ * One permission's code with its server-rendered description beneath it.
+ * The code stays the primary text: it is the vocabulary the grant routes
+ * name a permission by, and the one the catalog and the authorization
+ * table share. The description arrives already rendered in the request's
+ * language and is shown as received; an empty one leaves the code alone.
+ */
+function PermissionLabel({ entry }: { readonly entry: ConsolePermission }) {
+  return (
+    <Box>
+      <Typography variant="body2" noWrap>
+        {entry.permission}
+      </Typography>
+      {entry.description !== '' && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: 'block', whiteSpace: 'normal' }}
+        >
+          {entry.description}
+        </Typography>
+      )}
+    </Box>
   )
 }
 
@@ -761,9 +792,11 @@ export function PermissionsPage({
     {
       id: 'permission',
       header: t('permissions.catalog.column.permission'),
+      // The code is the column's unbroken primary text; the description
+      // beneath it wraps, so the cell's nowrap policy stops at the code.
       cellWrap: 'nowrap',
       cellFullValue: (entry) => entry.permission,
-      cell: (entry) => entry.permission,
+      cell: (entry) => <PermissionLabel entry={entry} />,
     },
   ]
 
@@ -1003,10 +1036,19 @@ export function PermissionsPage({
                       onChange={(event) => setGrantPermission(event.target.value)}
                       label={t('permissions.grants.permissionLabel')}
                       sx={{ minWidth: 240 }}
+                      slotProps={{
+                        select: {
+                          // The options carry the description beneath the
+                          // code; the closed control shows the chosen code
+                          // alone, so the field keeps its single-line height
+                          // and the code stays the primary text.
+                          renderValue: (value) => value as string,
+                        },
+                      }}
                     >
                       {permissions.map((entry) => (
                         <MenuItem key={entry.permission} value={entry.permission}>
-                          {entry.permission}
+                          <PermissionLabel entry={entry} />
                         </MenuItem>
                       ))}
                     </TextField>

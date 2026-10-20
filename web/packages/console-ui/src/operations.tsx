@@ -111,6 +111,7 @@ import {
   getAuthzAdminBindingsOfQueryOptions,
   getAuthzAdminGrantsListQueryKey,
   getAuthzAdminGrantsListQueryOptions,
+  getAuthzAdminPermissionsListQueryKey,
   getAuthzAdminPermissionsListQueryOptions,
   getAuthzAdminRolesListQueryKey,
   getAuthzAdminRolesListQueryOptions,
@@ -176,6 +177,7 @@ import type {
   TenantAdminTenant,
   TenantAdminTenantStatus,
 } from '@speed/api-sdk'
+import { useConsoleUiTranslation } from './internal/translation.js'
 
 /** The settings layer the console operates on: the global (platform)
  * layer, whose rows only platform staff may read and write. */
@@ -1077,11 +1079,24 @@ export const consoleOperations: ConsoleOperations = {
 
   // --- Authorization surface (/api/v1/system, tenant-scoped) --------------
 
-  usePermissions: () =>
-    useQuery({
-      ...getAuthzAdminPermissionsListQueryOptions(),
+  usePermissions: () => {
+    // The catalog's descriptions are rendered by the server in the request's
+    // language, so the language is part of what the answer is: keying the
+    // read on it makes a language switch re-read the catalog instead of
+    // leaving the previous language's text cached under the same key.
+    const { i18n } = useConsoleUiTranslation()
+    return useQuery({
+      ...getAuthzAdminPermissionsListQueryOptions({
+        query: {
+          queryKey: [
+            ...getAuthzAdminPermissionsListQueryKey(),
+            i18n.language,
+          ],
+        },
+      }),
       select: (page) => page.permissions,
-    }),
+    })
+  },
 
   useRoles: (tenant) =>
     useQuery({

@@ -275,12 +275,17 @@ The channels come from the deployment's discovery document
 (`session.listMethods()`, `GET /api/v1/auth/methods`): every method whose
 `kind` is `redirect` and that is not already bound gets one button,
 labelled with the descriptor's own `label` (the method name when it
-carries none). A deployment with no redirect method -- or whose
-discovery read failed -- shows no add area (fail closed): the section
-never offers a channel the deployment cannot finish. A bound row resolves
-its provider through the same document; a value no descriptor matches
-falls back to the family's closed vocabulary (the five social names, the
-enterprise-SSO family prefix and the generic other label).
+carries none). A method is already bound when any provider value it
+declares in `binding_providers` matches a stored link's provider -- an
+exact entry, or a stored value continuing the entry as a namespace prefix
+-- and a descriptor that declares none matches by its name. A deployment
+with no redirect method -- or whose discovery read failed -- shows no add
+area (fail closed): the section never offers a channel the deployment
+cannot finish. A bound row resolves its provider through the same
+declaration: the descriptor that claims the value supplies its `label`,
+and a value no descriptor claims falls back to the family's closed
+vocabulary (the five social names, the enterprise-SSO family prefix and
+the generic other label).
 
 Clicking a button starts a `purpose: 'link'` flow on the session
 (`session.startAuthenticatedFlow`) whose request carries `returnTo` as

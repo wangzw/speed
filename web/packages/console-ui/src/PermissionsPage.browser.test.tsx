@@ -41,8 +41,8 @@ const ROLES: readonly ConsoleRole[] = [
 ]
 
 const PERMISSIONS: readonly ConsolePermission[] = [
-  { permission: 'deal.read' },
-  { permission: 'deal.write' },
+  { permission: 'deal.read', description: '' },
+  { permission: 'deal.write', description: '' },
 ]
 
 const GRANTS: readonly ConsoleGrant[] = [

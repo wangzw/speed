@@ -5,9 +5,11 @@
  * (GET /api/v1/auth/methods) and the add area's `purpose: 'link'` flow
  * start (POST /api/v1/auth/flows/authenticated).
  *
- * What this suite pins: the links render with the provider label the
- * discovery descriptor supplies (falling back to the family's closed
- * vocabulary for a value no descriptor matches) and the add area offers
+ * What this suite pins: the links render with the provider label of the
+ * discovery descriptor that claims the value through its
+ * `binding_providers` (an exact entry or a namespace prefix; a descriptor
+ * declaring none matches by name), falling back to the family's closed
+ * vocabulary for a value no descriptor claims -- and the add area offers
  * only the deployment's unbound redirect methods, labelled by their
  * descriptors; an unlink DELETE-s the link and refetches the profile; a
  * refused unlink (the account's last sign-in method) renders its code
@@ -39,13 +41,20 @@ const ACCOUNT_CALLBACK = '/account/callback'
 
 /** The deployment's discovery document, carrying redirect methods. */
 function methodsDoc(
-  methods: readonly { name: string; label?: string }[],
+  methods: readonly {
+    name: string
+    label?: string
+    bindingProviders?: readonly string[]
+  }[],
 ): Record<string, unknown> {
   return {
     methods: methods.map((method) => ({
       name: method.name,
       kind: 'redirect',
       ...(method.label === undefined ? {} : { label: method.label }),
+      ...(method.bindingProviders === undefined
+        ? {}
+        : { binding_providers: [...method.bindingProviders] }),
     })),
     signup: { enabled: false },
     mfa: { factors: [] },
@@ -85,11 +94,16 @@ describe('SocialBindingsSection', () => {
         return jsonResponse(
           200,
           methodsDoc([
-            // The bound provider's descriptor label deliberately differs
-            // from the closed vocabulary's own word for "github": the row
-            // must show what the descriptor says, not what the fallback
-            // table would have said.
-            { name: 'github', label: 'GitHub Org' },
+            // The bound provider resolves through the descriptor's
+            // binding_providers, not through a matching method name: the
+            // method is called "github-org", and a section that matched by
+            // name alone would render the closed vocabulary's "GitHub" on
+            // the row and offer the channel again in the add area.
+            {
+              name: 'github-org',
+              label: 'GitHub Org',
+              bindingProviders: ['github'],
+            },
             { name: 'wechat', label: 'WeChat' },
           ]),
         )
@@ -124,6 +138,108 @@ describe('SocialBindingsSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('attributes a stored open-id value to the method through its namespace prefix', async () => {
+    // A WeChat identity without a union id is stored under
+    // "wechat-openid:<app id>". The method declares that namespace as a
+    // binding-provider prefix, so the value resolves to it without the
+    // client knowing the storage naming.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile([{ id: 'wechat-1', provider: 'wechat-openid:wx-app-1' }]),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([
+            {
+              name: 'wechat.web',
+              label: 'WeChat',
+              bindingProviders: ['wechat', 'wechat-openid:'],
+            },
+          ]),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+
+    // The descriptor's own label names the row; the stored value is not a
+    // sign-in mode's name, so no mode-keyed wording applies.
+    expect(await screen.findByText('WeChat')).toBeTruthy()
+    // The method is already bound through the prefix, so the add area does
+    // not offer it again (the mode-keyed label names the button it would
+    // have carried).
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.bindings.provider.wechatWeb,
+      }),
+    ).toBeNull()
+    await expectNoAxeViolations()
+  })
+
+  it('treats a declared binding-provider list as authoritative and a missing one as the method name', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile([
+            { id: 'gh-1', provider: 'github' },
+            { id: 'gl-1', provider: 'gitlab' },
+          ]),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([
+            // Declaring a namespace replaces the name default: a
+            // "github" value is not this method's binding even though the
+            // method is called "github".
+            {
+              name: 'github',
+              label: 'GitHub Enterprise',
+              bindingProviders: ['gh:'],
+            },
+            // No declaration: the method's name is its binding provider.
+            { name: 'gitlab', label: 'GitLab' },
+          ]),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+
+    // The uncovered "github" value falls back to the closed vocabulary.
+    expect(
+      await screen.findByText(zhCN.bindings.provider.github),
+    ).toBeTruthy()
+    // The undeclared method claims its own name, so its row carries the
+    // descriptor label and its channel is withheld.
+    expect(screen.getByText('GitLab')).toBeTruthy()
+    expect(
+      screen.getByRole('button', { name: 'GitHub Enterprise' }),
+    ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'GitLab' })).toBeNull()
+    await expectNoAxeViolations()
+  })
+
   it('gives two sign-in modes that share a descriptor label distinct accessible names', async () => {
     // Both WeChat methods describe themselves as "WeChat". The package's
     // mode-keyed wording must outrank the descriptor label, or the two
@@ -136,8 +252,16 @@ describe('SocialBindingsSection', () => {
         return jsonResponse(
           200,
           methodsDoc([
-            { name: 'wechat.web', label: 'WeChat' },
-            { name: 'wechat.mp', label: 'WeChat' },
+            {
+              name: 'wechat.web',
+              label: 'WeChat',
+              bindingProviders: ['wechat', 'wechat-openid:'],
+            },
+            {
+              name: 'wechat.mp',
+              label: 'WeChat',
+              bindingProviders: ['wechat', 'wechat-openid:'],
+            },
           ]),
         )
       }

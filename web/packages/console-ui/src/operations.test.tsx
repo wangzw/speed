@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { switchLanguage } from '@speed/i18n'
 import {
   consoleOperations,
   settingKeyRest,
@@ -67,6 +68,43 @@ describe('consoleOperations', () => {
     renderWithProviders(<Roster />, { operations: consoleOperations })
     expect(await screen.findByText('roster:Acme')).toBeInTheDocument()
     expect(calls).toContainEqual({ method: 'GET', path: '/api/v1/system/tenants' })
+  })
+
+  it('re-reads the permission catalog when the interface language changes', async () => {
+    // The catalog's descriptions are rendered by the server in the request's
+    // language, so a language switch must reissue the read rather than leave
+    // the previous language's text cached under the same key.
+    let answers = 0
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/api/v1/system/permissions') {
+        answers += 1
+        return {
+          permissions: [
+            { permission: `catalog.${answers}`, description: `d${answers}` },
+          ],
+        }
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    function Catalog() {
+      const { data } = consoleOperations.usePermissions()
+      return <p>{data ? data.map((p) => p.permission).join(',') : 'loading'}</p>
+    }
+    const { i18n } = renderWithProviders(<Catalog />, {
+      operations: consoleOperations,
+    })
+    const reads = () =>
+      calls.filter((call) => call.path === '/api/v1/system/permissions').length
+    expect(await screen.findByText('catalog.1')).toBeInTheDocument()
+    expect(reads()).toBe(1)
+
+    await act(async () => {
+      await switchLanguage(i18n, 'en-US')
+    })
+
+    // The new key is a new read: the second answer replaces the first.
+    expect(await screen.findByText('catalog.2')).toBeInTheDocument()
+    expect(reads()).toBe(2)
   })
 
   it('writes a new tenant to the generated registration endpoint', async () => {

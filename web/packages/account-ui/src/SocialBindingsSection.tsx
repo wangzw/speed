@@ -8,17 +8,20 @@
  * no separate list endpoint, so the section reads the same profile query
  * the preferences and sessions surfaces read. Each row resolves its
  * provider through the deployment's discovery document
- * (session.listMethods(), GET /api/v1/auth/methods): for a brand served
- * through several sign-in modes whose descriptors carry the same brand
- * label (WeChat's web and official-account methods), the package's
- * mode-keyed wording wins so the modes stay distinguishable; otherwise a
- * descriptor whose name matches the row's provider value supplies the
- * method's own label. A value no descriptor matches falls back to the
- * family's closed vocabulary (the five social names it has wording for,
- * the enterprise-SSO family prefix and the generic "other" label), whose
- * live oidc values are the dynamic per-tenant names "oidc:<tenant>" --
- * the raw value renders as the row's reference line so one tenant's
- * binding never reads as another's. A row whose link carries an id has a row-end
+ * (session.listMethods(), GET /api/v1/auth/methods): a stored provider
+ * value belongs to the method whose descriptor declares it through
+ * `binding_providers` -- the value equals an entry or continues one as a
+ * namespace prefix, as "wechat" and "wechat-openid:" do for both WeChat
+ * methods -- and a descriptor that declares none matches by its name. A
+ * method's own `label` names the row, except that the package's
+ * mode-keyed wording wins where a value is itself a sign-in mode's name,
+ * keeping the modes distinguishable. A value no descriptor claims falls
+ * back to the family's closed vocabulary (the five social names it has
+ * wording for, the enterprise-SSO family prefix and the generic "other"
+ * label), whose live oidc values are the dynamic per-tenant names
+ * "oidc:<tenant>" -- the raw value renders as the row's reference line so
+ * one tenant's binding never reads as another's. A row whose link carries
+ * an id has a row-end
  * "unlink" action that sits behind the ui-kit danger ConfirmDialog:
  * unbinding is irreversible (the binding is re-established only by
  * walking the provider's flow again), so the row asks once before the
@@ -30,8 +33,9 @@
  * through the whitelist.
  *
  * The add area's channels come from the same discovery document: every
- * method whose kind is `redirect` and that is not already bound gets one
- * button, labelled with the package's mode-keyed wording for a brand's
+ * method whose kind is `redirect` and that is not already bound -- none
+ * of its binding providers matches a stored link's provider value -- gets
+ * one button, labelled with the package's mode-keyed wording for a brand's
  * several sign-in modes, otherwise the descriptor's own `label`,
  * defaulting to the method name. A deployment that configures no redirect
  * method -- or
@@ -183,6 +187,39 @@ const METHOD_MODE_LABEL_KEYS: Readonly<Record<string, string>> = {
   'wechat.web': 'bindings.provider.wechatWeb',
 }
 
+/**
+ * The provider values a method's stored bindings appear under: the
+ * discovery descriptor's own `binding_providers`, each entry either an
+ * exact value (as "google") or a namespace prefix the stored value
+ * continues after (as "oidc:", "saml:" and "wechat-openid:"), and the
+ * method's name for a descriptor that declares none -- the contract's
+ * default for bindings that land under the method's own name.
+ */
+function methodBindingProviders(
+  method: AuthnMethodDescriptor,
+): readonly string[] {
+  const declared = method.binding_providers
+  return declared !== undefined && declared.length > 0
+    ? declared
+    : [method.name]
+}
+
+/**
+ * Whether a stored provider value belongs to a method: it equals one of
+ * the method's binding providers or continues one of them as a namespace
+ * prefix. An empty entry is skipped, because as a prefix it would claim
+ * every value.
+ */
+function methodOwnsProvider(
+  method: AuthnMethodDescriptor,
+  provider: string,
+): boolean {
+  return methodBindingProviders(method).some(
+    (entry) =>
+      entry !== '' && (provider === entry || provider.startsWith(entry)),
+  )
+}
+
 /** A method's add-area display name: the mode-keyed wording for a brand
  * served through several modes, otherwise the descriptor's own label,
  * defaulting to the method name. */
@@ -290,14 +327,10 @@ export function SocialBindingsSection({
   const pending = isPending && data === undefined
   const rows = !pending && links !== undefined ? links : undefined
 
-  const methodsByName = new Map<string, AuthnMethodDescriptor>(
-    (methods ?? []).map((method) => [method.name, method]),
-  )
-
   /**
-   * A binding's provider display label: the mode-keyed wording for a
-   * brand served through several sign-in modes, otherwise the discovery
-   * descriptor's own label when a method of that name carries one, else
+   * A binding's provider display label: the mode-keyed wording where the
+   * stored value is itself a sign-in mode's name, otherwise the label of
+   * the method that claims the value through its binding providers, else
    * the family's closed-set wording (a social name, the enterprise-SSO
    * family), else the generic other label -- never a raw bundle key.
    */
@@ -309,7 +342,9 @@ export function SocialBindingsSection({
     if (modeKey !== undefined) {
       return t(modeKey)
     }
-    const descriptor = methodsByName.get(provider)
+    const descriptor = (methods ?? []).find((method) =>
+      methodOwnsProvider(method, provider),
+    )
     if (descriptor?.label !== undefined && descriptor.label !== '') {
       return descriptor.label
     }
@@ -324,18 +359,23 @@ export function SocialBindingsSection({
 
   const boundProviders =
     rows === undefined
-      ? new Set<string>()
-      : new Set(
-          rows
-            .map((link) => link.provider)
-            .filter((provider): provider is string => provider != null),
-        )
+      ? []
+      : rows
+          .map((link) => link.provider)
+          .filter((provider): provider is string => provider != null)
   // The add area offers only the deployment's redirect methods, minus the
-  // ones already bound. A method whose kind is not redirect cannot start a
-  // `link` flow, and one the deployment does not configure is absent from
-  // the document entirely.
+  // ones already bound. A method counts as bound when any provider value
+  // it declares is a stored link's -- so a WeChat identity stored as
+  // "wechat" or "wechat-openid:<app>" withholds both WeChat methods. A
+  // method whose kind is not redirect cannot start a `link` flow, and one
+  // the deployment does not configure is absent from the document
+  // entirely.
   const available = (methods ?? []).filter(
-    (method) => method.kind === 'redirect' && !boundProviders.has(method.name),
+    (method) =>
+      method.kind === 'redirect' &&
+      !boundProviders.some((provider) =>
+        methodOwnsProvider(method, provider),
+      ),
   )
   const hasAddArea = rows !== undefined && available.length > 0
   // Empty list with nothing to offer: the EmptyState's own empty placeholder
