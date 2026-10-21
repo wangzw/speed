@@ -44,7 +44,6 @@ import type { ReactNode } from 'react'
 import { focusManager, onlineManager } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
 import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import {
@@ -148,7 +147,13 @@ function useHealthWindow(): {
   return { since, advance }
 }
 
-/** One KPI card: a label and a large count. */
+/**
+ * One KPI tile: a label and a large count on a bordered inset. It is not
+ * a second surface: a card here would stack another translucent layer
+ * inside the section's own, and in a glass theme the inner tile would go
+ * almost opaque. The divider border and the shared radius keep the tile
+ * distinct without introducing a surface.
+ */
 export function KpiCard({
   label,
   value,
@@ -157,10 +162,16 @@ export function KpiCard({
   readonly value: ReactNode
 }) {
   return (
-    <Card
+    <Box
       component="li"
-      variant="outlined"
-      sx={{ p: 2, flex: '1 1 12rem', minWidth: 0 }}
+      sx={{
+        p: 2,
+        flex: '1 1 12rem',
+        minWidth: 0,
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 1,
+      }}
     >
       <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
         {label}
@@ -168,7 +179,7 @@ export function KpiCard({
       <Typography variant="h4" component="p" sx={{ margin: 0 }}>
         {value}
       </Typography>
-    </Card>
+    </Box>
   )
 }
 
