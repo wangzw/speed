@@ -320,8 +320,16 @@ describe('glass', () => {
     }
   })
 
-  it('ships both stops of the canvas gradient for both modes', () => {
-    const canvas = glassThemePreset.tokens.color?.background?.canvas
+  it('gives the raised surfaces a border that reads on either page', () => {
+    for (const role of ['container', 'overlay'] as const) {
+      const surface = glassThemePreset.tokens.surface?.[role]
+      expect(surface?.borderColor, role).toBeTruthy()
+      expect(surface?.borderColorDark, role).toBeTruthy()
+      expect(surface?.borderColor, role).not.toBe(surface?.borderColorDark)
+    }
+  })
+
+  it('ships both stops of the canvas gradient for both modes', () => {    const canvas = glassThemePreset.tokens.color?.background?.canvas
     for (const mode of ['light', 'dark'] as const) {
       expect(canvas?.[mode]?.from, mode).toMatch(/^#[0-9a-fA-F]{6}$/)
       expect(canvas?.[mode]?.to, mode).toMatch(/^#[0-9a-fA-F]{6}$/)

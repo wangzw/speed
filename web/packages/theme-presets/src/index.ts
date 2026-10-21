@@ -247,14 +247,16 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
     // raised surfaces below, over each mode's own paper tone.
     container: {
       opacity: 0.55,
-      borderColor: 'rgba(255, 255, 255, 0.55)',
+      borderColor: 'rgba(15, 23, 42, 0.22)',
+      borderColorDark: 'rgba(255, 255, 255, 0.55)',
       borderWidth: 1,
       backdropFilter: 'blur(22px) saturate(180%)',
       elevation: 2,
     },
     overlay: {
       opacity: 0.58,
-      borderColor: 'rgba(255, 255, 255, 0.62)',
+      borderColor: 'rgba(15, 23, 42, 0.26)',
+      borderColorDark: 'rgba(255, 255, 255, 0.62)',
       borderWidth: 1,
       backdropFilter: 'blur(32px) saturate(180%)',
       elevation: 8,
@@ -267,7 +269,8 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
       // panel's own blur -- the filter samples the wrong backdrop and the
       // row reads as a darker strip.
       fill: 'transparent',
-      borderColor: 'rgba(255, 255, 255, 0.5)',
+      borderColor: 'rgba(15, 23, 42, 0.22)',
+      borderColorDark: 'rgba(255, 255, 255, 0.5)',
       borderWidth: 1,
     },
   },
