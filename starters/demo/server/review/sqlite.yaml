@@ -57,10 +57,6 @@ observability:
     service-name: demo
 
 authn:
-  # REVIEW: signup open, so a first login through SMS can open an account and
-  # the methods listing reports signup.enabled.
-  account:
-    signup: open
   gate:
     mount:
       public-url: "http://localhost:8080"
@@ -139,6 +135,10 @@ seed:
   tenants:
     - acme
   settings:
+    # REVIEW: signup open, so a first login through SMS can open an account and
+    # the methods listing reports signup.enabled.
+    - key: "authn.account.signup"
+      value: "open"
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"
     # REVIEW: the official-account entry is assembled but not offered. The
