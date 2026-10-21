@@ -33,7 +33,7 @@ token 树只有两级背景（`background.default` 与 `background.paper`），�
 采纳：**表面是 token 的语义段，经主题工厂解析为 `theme.surface` 并经 `theme.components` 应用，内容节由 ui-kit 的 `SectionCard` 承担。**
 
 - **语义角色。** token 的 `surface` 段给出 `page`（页面底）、`container`（内容容器）、`overlay`（浮层）与 `header`（表头）四个角色。每个角色的 `fill`、`borderColor`、`borderWidth`、`elevation`、`backdropFilter` 全部可选，缺省表示继承主题本来就读取的槽，而不是写死一个颜色。
-- **解析到主题。** ui-kit 主题工厂把继承关系解析成具体的 `theme.surface.<角色>`（经 `@mui/material/styles` 的模块扩充），并产出读该值的 `theme.components` 覆写：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 container；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。
+- **解析到主题。** ui-kit 主题工厂把继承关系解析成具体的 `theme.surface.<角色>`（经 `@mui/material/styles` 的模块扩充），并产出读该值的 `theme.components` 覆写：`MuiCard` 的 `variant="outlined"` 取 container；`MuiDialog`、`MuiMenu`、`MuiPopover` 的 paper、`MuiTooltip` 的 tooltip 与 temporary `MuiDrawer` 的 paper 取 overlay；permanent 与 persistent 抽屉的 paper 取 nav（`nav` 缺席时随 `container`）；`MuiTableCell.head` 取 header。`MuiPaper.root` 不设覆写，`MuiTableContainer` 不设表面。
 - **内容节原语。** `SectionCard` 以 `Card variant="outlined" component="section"` 渲染一个带标题的内容节，是内容容器的唯一原语；表格节以 `flushContent` 让表格贴边，由卡片的裁切收住圆角。
 - **风格是一次 token 覆写。** 玻璃效果由 `surface` 角色上的 `fill`、`backdropFilter` 与 `borderColor` 表达，页面代码不参与。
 

@@ -287,12 +287,33 @@ describe('surface component overrides', () => {
     ).toBe(true)
   })
 
-  it('gives a permanent drawer the container surface and a temporary one the overlay surface', () => {
-    const containerFill = '#345678'
+  it('follows the container when no navigation role is declared', () => {
+    const { theme } = createAppTheme({
+      surface: {
+        container: { fill: '#112233', borderColor: '#445566', borderWidth: 2 },
+      },
+    })
+    expect(theme.surface.nav).toEqual(theme.surface.container)
+  })
+
+  it('takes a declared navigation role over the container', () => {
+    const { theme } = createAppTheme({
+      surface: {
+        container: { fill: '#112233', borderWidth: 2 },
+        nav: { fill: '#334455', opacity: 0.5, borderWidth: 1 },
+      },
+    })
+    expect(theme.surface.nav.fill).toBe('rgba(51, 68, 85, 0.5)')
+    expect(theme.surface.nav.borderWidth).toBe(1)
+    expect(theme.surface.container.fill).toBe('#112233')
+  })
+
+  it('gives a permanent drawer the navigation surface and a temporary one the overlay surface', () => {
+    const navFill = '#345678'
     const overlayFill = '#456789'
     const { theme } = createAppTheme({
       surface: {
-        container: { fill: containerFill },
+        nav: { fill: navFill },
         overlay: { fill: overlayFill },
       },
     })
@@ -306,7 +327,7 @@ describe('surface component overrides', () => {
     const permanentPaper = document.querySelector(`.${drawerClasses.paper}`) as Element
     const css = emittedStyleText()
     expect(
-      classesDeclaringBackground(css, containerFill).some((name) =>
+      classesDeclaringBackground(css, navFill).some((name) =>
         permanentPaper.classList.contains(name),
       ),
     ).toBe(true)
@@ -332,10 +353,52 @@ describe('surface component overrides', () => {
       ),
     ).toBe(true)
     expect(
-      classesDeclaringBackground(temporaryCss, containerFill).some((name) =>
+      classesDeclaringBackground(temporaryCss, navFill).some((name) =>
         temporaryPaper.classList.contains(name),
       ),
     ).toBe(false)
+  })
+
+  it('runs a standing drawer edge to edge with one divider, not a card rim', () => {
+    const { theme } = createAppTheme({
+      surface: {
+        container: { fill: '#345678', borderColor: '#abcdef', borderWidth: 2 },
+        overlay: { fill: '#456789', borderWidth: 1 },
+      },
+    })
+    const { unmount } = render(
+      <ThemeProvider theme={theme}>
+        <Drawer variant="permanent" open>
+          permanent drawer
+        </Drawer>
+      </ThemeProvider>,
+    )
+    const permanent = getComputedStyle(
+      document.querySelector(`.${drawerClasses.paper}`) as Element,
+    )
+    // Chrome, not a card: square, divided from the content on the right,
+    // flush with the viewport on the other three edges.
+    expect(permanent.borderRadius).toBe('0px')
+    expect(permanent.borderRightWidth).toBe('2px')
+    expect(permanent.borderTopWidth).toBe('0px')
+    expect(permanent.borderLeftWidth).toBe('0px')
+    expect(permanent.borderBottomWidth).toBe('0px')
+    unmount()
+
+    render(
+      <ThemeProvider theme={theme}>
+        <Drawer variant="temporary" open>
+          temporary drawer
+        </Drawer>
+      </ThemeProvider>,
+    )
+    const temporary = getComputedStyle(
+      document.querySelector(`.${drawerClasses.paper}`) as Element,
+    )
+    // The floating drawer keeps the overlay treatment: a border on every
+    // side rather than the standing column's single divider.
+    expect(temporary.borderTopWidth).toBe('1px')
+    expect(temporary.borderRightWidth).toBe('1px')
   })
 })
 

@@ -36,7 +36,7 @@ import type { ThemePresetTokens } from './index'
 
 type ColorMode = 'light' | 'dark'
 
-const ROLES = ['page', 'container', 'overlay', 'header'] as const
+const ROLES = ['page', 'container', 'overlay', 'header', 'nav'] as const
 
 // The type forbids the layout and stacking contracts; these assignments
 // fail to compile, which is what the typecheck leg pins. Runtime objects
@@ -159,7 +159,8 @@ function surfaceBodies(tokens: SpeedTokens, mode: ColorMode, role: (typeof ROLES
   if (role === 'page' && canvas !== undefined) {
     return [parseHex(canvas[mode].from), parseHex(canvas[mode].to)]
   }
-  const surface = tokens.surface[role]
+  // The navigation role is optional; absent, it follows the container.
+  const surface = tokens.surface[role] ?? tokens.surface.container
   // A transparent fill shows whatever sits behind the role. The table
   // header sits on the container surface, so its text is measured there.
   if (surface.fill === 'transparent') {
@@ -320,8 +321,13 @@ describe('glass', () => {
     }
   })
 
-  it('gives the raised surfaces a border that reads on either page', () => {
-    for (const role of ['container', 'overlay'] as const) {
+  it('keeps the navigation column more transparent than the cards', () => {
+    expect(glassThemePreset.tokens.surface?.nav?.opacity).toBeLessThan(
+      glassThemePreset.tokens.surface?.container?.opacity ?? 1,
+    )
+  })
+
+  it('gives the raised surfaces a border that reads on either page', () => {    for (const role of ['container', 'overlay'] as const) {
       const surface = glassThemePreset.tokens.surface?.[role]
       expect(surface?.borderColor, role).toBeTruthy()
       expect(surface?.borderColorDark, role).toBeTruthy()
@@ -355,7 +361,7 @@ describe('ascii', () => {
   })
 
   it('gives every surface role a hard green rule and inherits its fill', () => {
-    for (const role of ROLES) {
+    for (const role of ['page', 'container', 'overlay', 'header'] as const) {
       const surface = ascii.surface[role]
       expect(surface.fill, role).toBeUndefined()
       expect(surface.borderWidth, role).toBe(1)

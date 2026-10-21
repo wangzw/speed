@@ -261,6 +261,16 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
       backdropFilter: 'blur(32px) saturate(180%)',
       elevation: 8,
     },
+    // The standing navigation column is chrome, not a card: it stays more
+    // transparent than the content surfaces, so the canvas colour -- not a
+    // washed white -- carries the column and it reads as part of the page.
+    nav: {
+      opacity: 0.25,
+      borderColor: 'rgba(15, 23, 42, 0.22)',
+      borderColorDark: 'rgba(255, 255, 255, 0.55)',
+      borderWidth: 1,
+      backdropFilter: 'blur(22px) saturate(180%)',
+    },
     header: {
       // The table header is the panel's own glass, not a tinted band: a
       // transparent fill lets the card show through, and the header's
