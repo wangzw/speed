@@ -158,7 +158,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { MouseEvent, MouseEventHandler, ReactElement, ReactNode } from 'react'
 import type { SxProps, Theme } from '@mui/material/styles'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
 import Drawer from '@mui/material/Drawer'
@@ -1003,6 +1003,21 @@ export function AppShell({
         ...(sidebarLayout
           ? { flex: '1 1 auto', minHeight: 0, overflowY: 'auto' }
           : {}),
+        // The rows' pointer and selection states are tinted with the
+        // primary color instead of MUI's neutral overlay: a neutral wash
+        // turns grey on the shell's own tinted surface (and on a glass
+        // sidebar's gradient), while the accent keeps a row reading as
+        // part of the chrome. One rule on the landmark reaches every row
+        // -- leaves, expandable parents and group headers alike.
+        '& .MuiListItemButton-root:hover': {
+          backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.08),
+        },
+        '& .MuiListItemButton-root.Mui-selected': {
+          backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.14),
+        },
+        '& .MuiListItemButton-root.Mui-selected:hover': {
+          backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.18),
+        },
       }}
     >
       <NavList entries={navItems} onNavigate={onNavigate} narrow={narrow} />

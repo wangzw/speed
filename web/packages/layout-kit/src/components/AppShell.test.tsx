@@ -153,6 +153,22 @@ describe('AppShell', () => {
       expect(reportsLink).not.toHaveAttribute('aria-current')
     })
 
+    it('tints the navigation states with the theme primary instead of a neutral wash', () => {
+      mockMatchMedia(true)
+      const { getByRole } = renderWithProviders(
+        <AppShell navItems={NAV_ITEMS}>content</AppShell>,
+      )
+      const css = emittedStyleText()
+      // Hover, selection and selected-hover each read the accent; the
+      // default primary is #2563EB, so the three alphas are explicit.
+      expect(css).toContain('rgba(37, 99, 235, 0.08)')
+      expect(css).toContain('rgba(37, 99, 235, 0.14)')
+      expect(css).toContain('rgba(37, 99, 235, 0.18)')
+      expect(
+        getComputedStyle(getByRole('link', { name: 'Home' })).backgroundColor,
+      ).toBe('rgba(37, 99, 235, 0.14)')
+    })
+
     it('renders an item without href as a button and fires onClick', async () => {
       const onClick = vi.fn()
       const user = userEvent.setup()
