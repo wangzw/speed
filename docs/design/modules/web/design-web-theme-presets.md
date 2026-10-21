@@ -51,7 +51,7 @@ export const themePresets: readonly ThemePreset[]
 | `classic` | 圆角 4；行高 1.15 / 1.4 / 1.6；主色更深（`#1D4ED8`）；分隔线与阴影更硬 |
 | `modern` | 圆角 14；行高 1.35 / 1.65 / 1.9；主色更亮（`#4F46E5`）；阴影更柔更大 |
 | `compact` | 字号阶整体缩小；行高 1.15 / 1.35 / 1.5；间距基数 `spacing.unit` 为 6 |
-| `glass` | 圆角 20；`container`/`overlay`/`header` 半透明（不写填充，按模式继承纸色）加背景模糊与饱和；画布渐变的明暗两套止色；浅色 error 主色加深以保证文字对比度 |
+| `glass` | 圆角 24；`container`/`overlay` 半透明（不写填充，按模式继承纸色）加背景模糊与饱和；`header` 填充透明且不加模糊，表头随卡片本身玻璃、由分隔线区分；画布渐变的明暗两套止色；浅色 error 主色加深以保证文字对比度 |
 | `ascii` | 全站等宽字体栈（末尾补 CJK 回退）；圆角 0；近黑表面配硬绿描边；绿/琥珀语义色；阴影全为 `none`；正文辉光 |
 
 **对外接口面。** `ThemePreset`、`ThemePresetTokens`、`defaultThemePreset`、`classicThemePreset`、`modernThemePreset`、`compactThemePreset`、`glassThemePreset`、`asciiThemePreset` 与 `themePresets` 的类型与形状，是宿主与 [ui-kit](design-web-ui-kit.md) 据以编写的接口面。新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名是不兼容变更。随包预设的 `id` 是宿主的语言资源键与设备存储值，改名同样是不兼容变更。

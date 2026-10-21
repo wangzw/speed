@@ -160,6 +160,11 @@ function surfaceBodies(tokens: SpeedTokens, mode: ColorMode, role: (typeof ROLES
     return [parseHex(canvas[mode].from), parseHex(canvas[mode].to)]
   }
   const surface = tokens.surface[role]
+  // A transparent fill shows whatever sits behind the role. The table
+  // header sits on the container surface, so its text is measured there.
+  if (surface.fill === 'transparent') {
+    return surfaceBodies(tokens, mode, role === 'header' ? 'container' : 'page')
+  }
   const fill = parseHex(surface.fill ?? inheritedFill(tokens, mode, role))
   const opacity = surface.opacity
   return opacity === undefined || opacity >= 1

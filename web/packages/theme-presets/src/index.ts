@@ -260,10 +260,15 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
       elevation: 8,
     },
     header: {
-      opacity: 0.5,
+      // The table header is the panel's own glass, not a tinted band: a
+      // transparent fill lets the card show through, and the header's
+      // weight plus the row divider separate it from the body. A fill or
+      // a backdrop filter here would stack a second layer inside the
+      // panel's own blur -- the filter samples the wrong backdrop and the
+      // row reads as a darker strip.
+      fill: 'transparent',
       borderColor: 'rgba(255, 255, 255, 0.5)',
       borderWidth: 1,
-      backdropFilter: 'blur(22px) saturate(160%)',
     },
   },
   shadows: {
