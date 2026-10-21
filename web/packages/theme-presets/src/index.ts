@@ -246,7 +246,7 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
     // gradient. The translucency that makes the glass read lives on the
     // raised surfaces below, over each mode's own paper tone.
     container: {
-      opacity: 0.55,
+      opacity: 0.4,
       borderColor: 'rgba(15, 23, 42, 0.22)',
       borderColorDark: 'rgba(255, 255, 255, 0.55)',
       borderWidth: 1,
@@ -254,7 +254,7 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
       elevation: 2,
     },
     overlay: {
-      opacity: 0.58,
+      opacity: 0.44,
       borderColor: 'rgba(15, 23, 42, 0.26)',
       borderColorDark: 'rgba(255, 255, 255, 0.62)',
       borderWidth: 1,
