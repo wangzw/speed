@@ -317,7 +317,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | kv 只存流程记录；`kv.memory` 只用于单副本 | 丢键使进行中的登录流程失败；`kv.memory` 在 `replicas>1` 时启动失败（见 [design-kv](../design-kv.md)） |
 | `public-url` 与实际对外地址一致，用 https | `__Host-` cookie、WebAuthn 的 RP、SAML 的 ACS 与 OIDC 的回调这些依赖它的流程失败 |
 | 需要运行期调参或租户层策略的宿主纳入 `settings`（带 `db` 与 `event`） | 全部设置键取声明的默认值，调参与租户层策略不生效 |
-| 入口模块没有可信代理的输入项，`c.ClientIP()` 在代理之后恒为代理地址，所以按来源地址的限流需宿主显式开启、会话列表里的地址仅供展示 | 开启按来源地址的限流会使代理之后的全站共用一个桶 |
+| 入口模块默认不信任任何代理，端及其继承的模块级默认未列出可信代理时 `c.ClientIP()` 在代理之后是代理地址，所以按来源地址的限流需宿主显式开启、会话列表里的地址仅供展示 | 未配置可信代理时，开启按来源地址的限流会使代理之后的全站共用一个桶 |
 
 ### 本机制不作的保证
 

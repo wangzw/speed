@@ -47,7 +47,7 @@ type Credential struct {
     Scheme string // 来自 Authorization 头时是 scheme，小写；来自 cookie 时为空
     Value  string // 头里 scheme 之后的取值，或 cookie 的值
     Cookie string // 来自 cookie 时是 cookie 名，否则为空
-    Peer   string // 入口模块报出的对端地址（c.ClientIP()，位于代理之后时是代理地址）；只供后端记日志与节流，不作判定依据
+    Peer   string // 入口模块报出的对端地址（c.ClientIP()；未配置可信代理而位于代理之后时是代理地址）；只供后端记日志与节流，不作判定依据
 }
 
 // Accepts 声明一个后端整条认领哪些载体，以及它可交出什么样的身份。每个载体键只属于一个后端。
