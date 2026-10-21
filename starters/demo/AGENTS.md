@@ -332,6 +332,12 @@ The origin is derived from `FLY_APP_NAME` (`https://<app>.fly.dev`). A custom
 domain sets `DEMO_PUBLIC_URL` to its https origin, which is what the WebAuthn
 relying party and the gateway's trusted origins are bound to.
 
+Every request reaches the Machine through Fly's proxy, which is the one peer
+whose forwarded headers the deployment believes: the template names
+`172.16.0.0/16` as the trusted network and reads the client address from
+`Fly-Client-IP`. "Behind a reverse proxy" below states the same two settings for
+other deployments.
+
 **What a start does.** `deploy/entrypoint.sh` renders
 `deploy/fly.yaml.tmpl` into `/data/config.yaml`, replacing the public origin,
 its domain and the operator credential; it takes ownership of the volume and
@@ -576,6 +582,50 @@ journal's requests — is a decision to revisit as a product's own routes grow.
 `pkg/http` is where the endpoints and their chains are declared and configured;
 the operations surface is `pkg/ops`, which mounts its three routes on the
 endpoint `ops.endpoint` names and expects no guard there.
+
+### Behind a reverse proxy
+
+A deployment reached through a reverse proxy reads the client address from a
+forwarded header, and does so only when the peer is a network the configuration
+names. `http.trusted-proxies` and `http.remote-ip-headers` are module-level
+defaults: every endpoint inherits both, and an endpoint overrides either by
+naming its own under `http.endpoints.<name>`, an explicit empty list included:
+
+```
+http:
+  trusted-proxies: ["127.0.0.1/32", "::1/128"]
+  remote-ip-headers: ["X-Forwarded-For", "X-Real-IP"]
+```
+
+Both are empty by default, which trusts nobody: the client address is then the
+connected peer, so no client can choose its own reported address with a header.
+The setting decides which addresses are believed; it is not an authentication
+boundary.
+
+The shape is the same for every proxy, and only the values differ:
+
+- **A proxy on the same host**, nginx included: trust `127.0.0.1/32` and
+  `::1/128`. `remote-ip-headers` may be left out: the default order, which the
+  snippet above writes explicitly, reads `X-Forwarded-For` and then
+  `X-Real-IP`, the two headers nginx writes
+  (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` or
+  `proxy_set_header X-Real-IP $remote_addr;`).
+- **An AWS ALB**: trust the CIDRs of the subnets the load balancer's nodes sit
+  in, never the whole VPC — every host in a trusted CIDR may write the header.
+  Read `X-Forwarded-For`, which the load balancer appends the client address
+  to. An entry is skipped from the right while it is a trusted address, so the
+  first untrusted one from the right is the client.
+- **Cloudflare**: trust the ranges Cloudflare currently publishes — take them
+  from Cloudflare's own list, which changes — and read `CF-Connecting-IP`. The
+  origin must also restrict ingress to those ranges, or the trusted list only
+  reaches as far as the host's firewall.
+- **A container**: trust the network the proxy container is on. A default
+  bridge shared with unrelated containers is a network those containers occupy
+  too.
+
+Trusting a range another workload also occupies hands the header to that
+workload: each host in the range can claim any client address. List only
+networks the proxy alone occupies, and take the narrowest one that covers it.
 
 ### Re-authentication and impersonation on a fresh copy
 

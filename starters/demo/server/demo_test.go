@@ -1574,6 +1574,53 @@ func TestTheConfigTemplateMirrorsTheSampleFile(t *testing.T) {
 	}
 }
 
+// flyProxyCarrier is the part of the deployment template's http section this
+// case reads: the module-level proxy settings, which every endpoint inherits.
+type flyProxyCarrier struct {
+	TrustedProxies  []string `config:"trusted-proxies"`
+	RemoteIPHeaders []string `config:"remote-ip-headers"`
+}
+
+// TestTheFlyTemplateTrustsTheFlyProxy holds the deployment template, not a
+// test-local copy of it, to the one proxy a Fly Machine is reached through.
+// Fly's proxy is the only peer whose forwarded headers are believed, and the
+// client address is read from Fly-Client-IP because Fly appends the app's own
+// Anycast address as the rightmost X-Forwarded-For entry. The template is
+// rendered the way deploy/entrypoint.sh renders it and loaded through the same
+// pkg/config entry point the binary uses, so a deployment that runs the
+// template carries the trust settings this case asserts.
+func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "deploy", "fly.yaml.tmpl"))
+	if err != nil {
+		t.Fatalf("reading the deployment template: %v", err)
+	}
+	rendered := string(raw)
+	for placeholder, value := range map[string]string{
+		"__PUBLIC_ORIGIN__":     "https://demo.example.test",
+		"__PUBLIC_DOMAIN__":     "demo.example.test",
+		"__OPERATOR_EMAIL__":    "operator@demo.example.test",
+		"__OPERATOR_PASSWORD__": "operator-test-secret",
+		"__ENCRYPTION_KEY__":    "test-only-encryption-key-0123456789",
+	} {
+		if !strings.Contains(rendered, placeholder) {
+			t.Fatalf("the deployment template carries no %s placeholder to render", placeholder)
+		}
+		rendered = strings.ReplaceAll(rendered, placeholder, value)
+	}
+
+	var carrier flyProxyCarrier
+	readEffective(t, "deploy/fly.yaml.tmpl", writeConfigFile(t, rendered), "http", &carrier)
+
+	if want := []string{"172.16.0.0/16"}; !slices.Equal(carrier.TrustedProxies, want) {
+		t.Errorf("the template's http.trusted-proxies resolved to %v, want the Fly proxy network %v",
+			carrier.TrustedProxies, want)
+	}
+	if want := []string{"Fly-Client-IP"}; !slices.Equal(carrier.RemoteIPHeaders, want) {
+		t.Errorf("the template's http.remote-ip-headers resolved to %v, want %v",
+			carrier.RemoteIPHeaders, want)
+	}
+}
+
 // yamlBlock answers the block a key opens: the key's own line and every
 // following line indented more deeply than it, which is the mapping or sequence
 // beneath that key. The key is matched on its trimmed text, so the caller passes

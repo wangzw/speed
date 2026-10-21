@@ -27,6 +27,13 @@ http:
       address: "0.0.0.0:8080"
     ops:
       address: "0.0.0.0:8083"
+  # Fly's proxy is the only peer whose forwarded headers are believed. Fly
+  # appends the app's own Anycast address as the rightmost X-Forwarded-For
+  # entry, so the client address is read from Fly-Client-IP instead. The
+  # trusted network is the proxy's hop into the Machine, not 6PN (fdaa::/16):
+  # a peer arriving over 6PN is another Machine, not the proxy.
+  trusted-proxies: ["172.16.0.0/16"]
+  remote-ip-headers: ["Fly-Client-IP"]
   # The api endpoint's CORS policy. The frontend and the API share one origin
   # here, so no cross-origin request is expected; the public origin is named
   # as the starting point for a deployment that splits the two.
