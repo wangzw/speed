@@ -131,7 +131,13 @@ export function resolveSurfaceTheme(
     fill: string,
   ): SurfaceThemeRole => ({
     fill: withOpacity(role.fill ?? fill, role.opacity),
-    borderColor: role.borderColor ?? palette.divider,
+    // A role may name a separate dark border: one rim color cannot read
+    // on both a light and a dark surface. Absent, the light border serves
+    // both modes; absent both, the divider inherits.
+    borderColor:
+      (mode === 'dark' ? role.borderColorDark : undefined) ??
+      role.borderColor ??
+      palette.divider,
     borderWidth: role.borderWidth ?? 0,
     ...(role.elevation === undefined ? {} : { elevation: role.elevation }),
     ...(role.backdropFilter === undefined

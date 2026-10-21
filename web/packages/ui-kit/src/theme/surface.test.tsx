@@ -94,6 +94,26 @@ describe('theme.surface resolution', () => {
     expect(theme.surface.container.backdropFilter).toBeUndefined()
   })
 
+  it('takes the dark border from borderColorDark when one is given', () => {
+    const tokens = {
+      surface: {
+        container: { borderColor: '#111111', borderColorDark: '#EEEEEE' },
+      },
+    }
+    const light = createAppTheme(tokens)
+    const dark = createAppTheme(tokens, undefined, 'dark')
+    expect(light.theme.surface.container.borderColor).toBe('#111111')
+    expect(dark.theme.surface.container.borderColor).toBe('#EEEEEE')
+  })
+
+  it('serves both modes from borderColor when no dark border is given', () => {
+    const tokens = { surface: { container: { borderColor: '#222222' } } }
+    expect(createAppTheme(tokens).theme.surface.container.borderColor).toBe('#222222')
+    expect(
+      createAppTheme(tokens, undefined, 'dark').theme.surface.container.borderColor,
+    ).toBe('#222222')
+  })
+
   it('survives the locale merge AppThemeProvider performs', () => {
     const { theme } = createAppTheme()
     const localized = createTheme(theme, enUS)

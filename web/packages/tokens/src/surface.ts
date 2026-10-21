@@ -31,6 +31,13 @@ export interface SurfaceRoleTokens {
    */
   readonly opacity?: number
   readonly borderColor?: string
+  /**
+   * The border color in dark mode, when one color cannot read on both
+   * pages (a white rim reads on the dark canvas but disappears on a light
+   * one). Absent, `borderColor` serves both modes. The resolved border
+   * falls back to `color.divider` when neither is given.
+   */
+  readonly borderColorDark?: string
   readonly borderWidth?: number
   readonly elevation?: number
   readonly backdropFilter?: string
