@@ -390,7 +390,7 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 
 普通令牌的 `Provider` 取自会话行，`Attributes` 取账户快照并上会话载荷里的 `idp.*`。冒充令牌与会话端的规则对称（[design-authn-impersonation](design-authn-impersonation.md)）：取 `grant := Impersonation.Active(imp)`，核对 `grant.Actor == act.sub`、`grant.Target == sub`、管理员会话的账户等于 `act.sub`，任一不符判 `Denied`。
 
-**`check-session` 放宽开关。** `authn.token.check-session` 是配置项，只取自主配置源，缺省为真。设为假时关闭整个会话步骤：不再读 `Sessions.Status`，也随之跳过 service 种令牌的 `sid` 须指向 `service` 种行这一核对。成为「对普通令牌无状态」的模式：撤销最晚到令牌 `exp` 才生效；此时普通令牌的方式集、等级与认证时刻取自令牌自己的 `amr`、`acr`、`auth_time`（这几个值是本模块自己签的），`Provider` 为空、`IDPAssured` 为假（令牌不携带这两项）；冒充令牌的方式集同样取令牌的 `amr`，等级仍封顶单因素。**不受开关影响、永远执行的**：账户快照步骤（账户状态与 `valid_after`）；`imp` 非空时的 `Impersonation.Active(imp)`，使冒充的结束、管理员或目标被停用、成员关系被移除、记录被管理面撤销照常即时生效，冒充令牌不因该开关而无法撤销（该性质是假设，守住它的测试见 [ADR-authn-token-2026-10-10](../../../adr/adr-authn-token-2026-10-10.md) 的失效条件）；「能力缺席而令牌带 `imp` 判 `Denied`」。这是显式的放宽开关：缺省不开，开时在启动诊断里以单独一行 `Warn` 写出。开关取主配置源的理由见 [ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)，开关与别的配置项的取值域见 [design-authn-config](design-authn-config.md)。
+**`check-session` 放宽开关。** `authn.token.check-session` 是设置项，缺省为真，在每次令牌校验、会话步骤之前读取当前值。设为假时关闭整个会话步骤：不再读 `Sessions.Status`，也随之跳过 service 种令牌的 `sid` 须指向 `service` 种行这一核对。成为「对普通令牌无状态」的模式：撤销最晚到令牌 `exp` 才生效；此时普通令牌的方式集、等级与认证时刻取自令牌自己的 `amr`、`acr`、`auth_time`（这几个值是本模块自己签的），`Provider` 为空、`IDPAssured` 为假（令牌不携带这两项）；冒充令牌的方式集同样取令牌的 `amr`，等级仍封顶单因素。**不受开关影响、永远执行的**：账户快照步骤（账户状态与 `valid_after`）；`imp` 非空时的 `Impersonation.Active(imp)`，使冒充的结束、管理员或目标被停用、成员关系被移除、记录被管理面撤销照常即时生效，冒充令牌不因该开关而无法撤销（该性质是假设，守住它的测试见 [ADR-authn-token-2026-10-10](../../../adr/adr-authn-token-2026-10-10.md) 的失效条件）；「能力缺席而令牌带 `imp` 判 `Denied`」。这是显式的放宽开关：缺省不开；运行期设为假时写一行 `Warn` 并记 `authn.settings.relaxed`，启动时已是假时写同一行 `Warn`。开关是设置的理由见 [ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)，开关与别的设置项的取值域见 [design-authn-config](design-authn-config.md)。
 
 ### 签发
 
@@ -589,7 +589,7 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 | 模块 `authn.token` 的登记与交付 | 已实现 | `pkg/authn/token/module.go`、`pkg/authn/token/product.go`；`Tokens` 与 `Verifier` 均已交付，`Requires`、`Provides`、配置与设置 schema、迁移、JWKS 路由与令牌端点都已交付 |
 | 访问令牌签发与声明集 | 已实现 | `pkg/authn/token/issue.go`（`Issue`、`signAccess`、`contributorClaims`） |
 | 校验后端与校验次序（含冒充令牌与 `check-session`） | 已实现 | `pkg/authn/token/verify.go`（`Name`、`Accepts`、`Verify`、`checkRequiredClaims`、`authenticate`） |
-| `check-session` 放宽开关与启动诊断 | 已实现 | `pkg/authn/token/config.go`（`checkSession`）、`pkg/authn/token/product.go`（`diagnose`） |
+| `check-session` 放宽开关与启动诊断 | 已实现 | `pkg/authn/token/settings.go`（`settingsSchema`）、`pkg/authn/token/relax.go`、`pkg/authn/token/product.go`（`diagnose`） |
 | 签名与验证密钥集的装入、启动校验与 `token.GenerateKey` | 已实现 | `pkg/authn/token/keys.go`（`loadKeySet`、`GenerateKey`） |
 | JWKS 发布 | 已实现 | `pkg/authn/token/jwks.go`（`JWKS`、`mountJWKS`） |
 | 令牌端点 `POST B/token` 与 OAuth 错误形状 | 已实现 | `pkg/authn/token/routes.go`（`mountTokenRoutes`、`handleToken`、`oauthError`、`classifyGrantError`） |

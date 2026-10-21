@@ -53,7 +53,7 @@
 | 退避被用来锁住受害者 | 退避只针对口令方式，其他方式照常；上限与窗口是设置；标识级与账户级退避并存；运维主体（口令表）另有进程内退避 | [design-authn-login](design-authn-login.md)、[design-authn-account](design-authn-account.md) | 匿名攻击者对任一已知标识连续失败，可使其口令登录在 `throttle-max-delay` 之内不可用；换标识拼写不是缓解，账户级静默计数按账户计；受害者可改用短信、社交、SSO 与通行密钥登录。**接受** |
 | SIM 劫持与号码携转 | 短信是受限认证器：不计入管理面动作的强认证；冒充发起与重置他人因素、口令不接受仅短信 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-impersonation](design-authn-impersonation.md) | 以短信作登录或第二因素的普通账户仍受影响，短信登录与短信因素是本功能目录提供的方式；发送前的风险信号检查不做；号码被回收后，新持有者可用短信登录旧账户。**接受** |
 | 预占抢注：先用受害者的邮箱建号，等受害者经 SSO 或社交登录并入 | 库里没有未验证的标识；`admin` 与 `import-unverified` 来源的邮箱不作自动关联与 JIT 并入的依据；并入成功即撤销既有会话并删除口令凭据；JIT 缺省只新建 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | `preprovisioned` 匹配时采信管理员断言的邮箱，管理员写错邮箱即错配；迁移导入的邮箱不经验证，由导入方负责标成 `import-unverified`。**接受** |
-| 社交与 SSO 的账户关联接管 | 键永远是（提供方，主体）；`auto-link` 缺省 `never`，是只取主配置源的放宽开关；邮箱变化不更新账户；解绑与关联要求新鲜的本地多因素；`link-required` 只对提供方已证明邮箱的调用者给出 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | `auto-link` 开启时信任提供方的邮箱验证：Google Workspace 管理员可改邮箱，邮箱地址可被回收。**接受** |
+| 社交与 SSO 的账户关联接管 | 键永远是（提供方，主体）；`auto-link` 是设置项，缺省 `never`，只有全局一档；邮箱变化不更新账户；解绑与关联要求新鲜的本地多因素；`link-required` 只对提供方已证明邮箱的调用者给出 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | `auto-link` 开启时信任提供方的邮箱验证：Google Workspace 管理员可改邮箱，邮箱地址可被回收。**接受** |
 | 租户 IdP 对跨租户的全局账户的权限边界 | 企业 SSO 的 JIT 缺省只新建、不并入（`merge_existing` 缺省为假）；并入只限「全部成员关系都在该租户内、没有别的登录方式」的账户；成员关系只在建绑定的同一事务里新建，已有绑定的登录不读不写成员关系，被暂停或移除的成员不会被复活；IdP 声明的多因素只在该提供方所属租户内算数，账户安全类操作不采信；IdP 行的变更是强制审计的管理动作 | [design-authn-sso](design-authn-sso.md)、[design-authn-account](design-authn-account.md) | 租户的 IdP 管理员对自己租户新建的账户有登录控制权，这是企业 SSO 的本质；`merge_existing` 开启时，被并入账户的既有会话与口令被清除，但并入后该 IdP 对它有永久的登录能力，直到绑定被解除。**接受** |
 | 租户 A 的 IdP 声明的多因素被租户 B 的 `require-mfa` 采信，或覆盖账户自己的因素 | `idp_assured` 记在会话上，只在该提供方所属的租户内算数；账户有因素时 IdP 的声明盖不过；账户安全类操作与冒充发起不采信 | [design-authn-mfa](design-authn-mfa.md)、[design-authn-sso](design-authn-sso.md) | 租户 A 的 IdP 管理员对自己租户内请求的 MFA 判定有话语权，这是企业 SSO 的信任边界。**接受** |
 | 首次登记的因素被抢先：持口令者先于真用户登记自己的因素 | 登录期间登记的因素不计入本次保障等级；账户安全类操作要求本地验证过的因素；冒充发起与管理员重置要求启用已满规定时长的因素（`MFA.Seasoned`） | [design-authn-mfa](design-authn-mfa.md) | 账户尚无因素时，持口令者与真用户不可区分：抢先登记者得到一个普通的多因素会话，真用户被锁在外，要靠管理员重置；首次登记没有带外证明（没有邮件通道）。**接受** |
@@ -145,7 +145,7 @@
 | 跨租户访问：持合法凭据的调用方指名另一个租户 | `tenant.admission` 默认拒绝，非成员的应答与不存在的租户同形（404） | [design-tenant-admission](../tenant/design-tenant-admission.md) | 准入层的拒绝落在审计与限流之内：准入层在授权阶段，该阶段在记录与限流之内；装配后的真实次序未经运行核对（见[依赖未核实行为的假设](#依赖未核实行为的假设)） |
 | 端点漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：声明在鉴别阶段之外各阶段的层、阶段内被 `After`、`Before` 或 `Order` 排到网关之外的层，以及入口模块内建的请求上下文、访问日志与兜底层，都在网关之前；宿主仍可显式放宽 |
 | 管理面被远程滥用 | 默认不可用：`authn.admin` 要宿主纳入并交付 `Decider` 与审计；强制审计 | [design-authn-admin](design-authn-admin.md) | 宿主交付的 `Decider` 有缺陷，则管理面有缺陷 |
-| 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`auto-link`、`check-session`）只取主配置源；其余可在运行期修改的安全项，由 authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings](../settings/design-settings.md) | 事后可见、不能事前阻止；拿到设置写权限的主体仍能把 `throttle-*` 与短信预算调松。**接受** |
+| 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`auto-link`、`check-session`）是设置项，与其余可在运行期修改的安全项走同一控制：经 `settings.admin` 管理面写全局层时由平台域 `settings.write` 判定，管理面在每次写之前落强制档审计；宿主自建的写入口由宿主鉴权；authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings-admin](../settings/design-settings-admin.md) | 事后可见、不能事前阻止；设置没有按键的写控制，拿到全局写权限的主体仍能把放宽开关、`throttle-*` 与短信预算调松。**接受** |
 | 预认证请求使表无界增长 | 每张会增长的表有持有者与清扫协程；`authn_throttles` 的行数上界是失败请求速率乘 `throttle-decay` | [design-authn-account](design-authn-account.md) | 匿名洪泛期间表会变大；缓解是来源地址层的前置减负（缺省关）与入口层限流。**接受** |
 | 供应链：依赖库的漏洞 | 固定版本；go-jose 与 goxmldsig 设版本下限；每个库隔在叶子包；升级走专门的变更 | [design-authn-token](design-authn-token.md)、[design-authn-sso](design-authn-sso.md) | 新漏洞出现到升级之间的窗口 |
 | 时钟偏差 | 容差有界且可调；撤销不依赖时钟 | [design-authn-failure](design-authn-failure.md) | 偏差超过容差时零星拒绝 |
@@ -163,7 +163,7 @@
 | 签名私钥文件的权限与部署的秘密管理由宿主负责；db 根密钥与数据库分开保管 | 令牌的签名私钥不在库里；加密列 | 文件与部署的秘密管理失守即全部令牌可伪造；根密钥与库一起失守则加密列全失 |
 | 各副本使用 NTP 或等价的时间同步 | 期限类判断；撤销以账户状态与 `valid_after` 为准，不依赖时钟 | 期限类判断偏移，偏差超过容差时零星拒绝；撤销不受影响 |
 | 宿主交付的 `Decider` 对授权范围的判断正确 | 管理面与冒充的判定接缝 | `Decider` 过宽则管理面与冒充过宽；缺席时他人账户与租户级资源的管理面动作、冒充一律拒绝 |
-| `authn.*` 与 `tenant.admission.*` 设置不对租户或普通管理员开放写权限 | 放宽方向的开关只取主配置源；其余安全项的变更由订阅 `settings.changed` 写 Warn 与审计 | 拿到设置写权限的主体可把 `throttle-*` 与短信预算调松；变更事后可见、不能事前阻止 |
+| `authn.*` 与 `tenant.admission.*` 设置不对租户或普通管理员开放写权限 | 放宽方向的开关是设置项，其变更与其余安全项一样由订阅 `settings.changed` 写 Warn 与审计；经 `settings.admin` 管理面写全局层时另由平台域判定并留强制档审计，宿主自建的写入口由宿主鉴权 | 拿到全局写权限的主体可把放宽开关、`throttle-*` 与短信预算调松；变更事后可见、不能事前阻止 |
 | 管理员重置因素与口令之前，宿主有自己的核验流程 | 找回路径不绕过 MFA | 重置依赖宿主流程的质量，社会工程是风险 |
 | 迁移导入的邮箱由导入方标成 `import-unverified` | 预占抢注的对策 | 未标记的导入邮箱被当作已验证标识，可成为自动关联的依据 |
 | 外部资源服务器读 `imp_tenant`，并按 JWKS 的缓存期刷新密钥 | 冒充范围对外部校验方成立；密钥撤销对外部校验方生效 | 外部资源服务器不受冒充范围约束；撤销的密钥在其缓存期内仍被接受 |
@@ -364,7 +364,7 @@ flowchart LR
 - **新增的状态**按丢失的方向放置：丢失会放宽校验的进 db，丢失只会让流程失败的进 kv。
 - **新增的秘密**同时登记脱敏（键名、值形状或字面量），并以哈希、带密钥的摘要或加密列存放。
 - **新增的一次性凭据或流程**以原子的条件写消费，败者一律拒绝。
-- **新增的放宽项**是只取主配置源的显式开关，缺省取最严，并在启动诊断里占一行 Warn。
+- **新增的放宽项**是设置项，缺省取最严，运行期改动到放宽方向时写 Warn 与审计，启动时已是放宽值也写一行 Warn。
 - **新增的出站请求**走受限客户端，或写明为什么不需要。
 - **新增的会增长的表**有持有者与清扫协程，行数上界可由已有速率与衰减窗口得出。
 - **新增的响应**对已登记与未登记的标识同形等时，带 `Cache-Control: no-store`。

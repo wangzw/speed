@@ -363,7 +363,7 @@ sequenceDiagram
 - **服务端强制由请求层承担**：按（端、方法、路径）登记特性名，对被收窄的特性答出与无匹配路由逐字节相同的 404。
 - **应答形状不变。** 契约描述写明内容可能随调用者与租户不同，应答带 `no-store`，外层是对象。前端一侧只扩缓存键（[auth-core](web/design-web-auth-core.md)），route-kit、各能力 UI 包与路由声明的 `requires` 都不变。
 
-authn 的登录前事实不按租户取值：登录不认识租户（[authn-login](authn/design-authn-login.md) 的非职责），放宽开关只取主配置源（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。收窄因而只作用于特性文档。
+authn 的登录前事实不按租户取值：登录不认识租户（[authn-login](authn/design-authn-login.md) 的非职责），放宽开关是只读全局层的设置项，读取时取全局行或声明默认值（[ADR-authn-settings-and-secrets-2026-10-10](../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。收窄因而只作用于特性文档。
 
 ### 应用模块的特性
 

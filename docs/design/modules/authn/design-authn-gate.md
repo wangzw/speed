@@ -206,7 +206,7 @@ var ErrMalformedHash error
 
 ### 配置
 
-网关的输入项挂在 `authn.gate` 下，口令表的挂在 `authn.static` 下；全部配置键与设置键的类型、缺省与取值域见 [design-authn-config](design-authn-config.md)，本节只写各键的语义。命令行、环境变量与主配置源的取舍同样见该文档；决定守护面的清单（`endpoints`、`trusted-origins`）与放宽开关（`mount.allow-insecure`）只取主配置源。
+网关的输入项挂在 `authn.gate` 下，口令表的挂在 `authn.static` 下；全部配置键与设置键的类型、缺省与取值域见 [design-authn-config](design-authn-config.md)，本节只写各键的语义。命令行、环境变量与主配置源的取舍同样见该文档；决定守护面的清单（`endpoints`、`trusted-origins`）与仅开发用的 `mount.allow-insecure` 只取主配置源。
 
 | 键 | 语义 |
 |---|---|

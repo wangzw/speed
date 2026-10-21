@@ -95,7 +95,7 @@ starters/demo/
 
 审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。`server/review.go` 的 `reviewModules` 给 `serve` 的点名集加上基线判据排除在外的登录方式：社交登录方法（`authn.login.google`、`authn.login.github`、`authn.login.wechat-mp`、`authn.login.wechat-web`）与短信家族（`authn.sms`、`sms.registry`、`authn.login.sms`），外加载体 `sms.review`。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这些模块的代码路径；基线的判据与点名集不因它改变。
 
-**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、`authn.account.signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
+**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
 
 **验证码由短信模块生成，不写死。** `sms.review` 经 `sms.NewModule` 提供载体的发送与模板两条接缝，不读任何配置项；短信模块把消息的 `code` 参数交给它，它把这一行写进进程日志的 `verification_code` 字段。该字段不叫 `code`，因为 `code` 是进程已登记的敏感键名，日志层会把值打码。号码仍经过真实的预算、挑战行与校验，流程跑的是产品自己的状态机。
 
@@ -332,7 +332,7 @@ flowchart TD
 - **注册模式下经短信渠道登录成功后，示范按个人租户是否启用决定落点。** `SignInView` 的 `onSignedIn` 收到登录上下文，`mode` 为 `register` 且 `channel` 为 `sms` 时，个人租户启用则去租户区首页，未启用则导航到完成设置页（见「个人租户」；一次完成设置的提示由 ensure 的 `created` 决定，不由落点携带）；这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、控制台会话门的登录屏登录之后留在原地址；其余情形（口令、通行密钥、重定向类与企业类登录，以及登录模式下的短信登录）照常进入应用。注册模式下用已登记的手机号登录得到的是一次普通登录，完成设置页此时反映账户当前状态。
 - **完成设置页由 account-ui 的两个节组成，用户名先于口令。** `IdentifiersSection` 添加用户名；`PasswordSection` 只在账户已有可作登录名的标识（用户名或已验证邮箱）之后可用，在此之前渲染说明：口令登录要有登录名，请先添加用户名。账户已经有登录名与口令时，页面陈述账户设置已完成并给出回到首页的链接。页面带一个回到首页的「稍后设置」链接；跳过不撤销已建的账户，账户仍可经短信登录。
 - **注册建立账户，不建立成员关系。** 开户不建任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），启用个人租户时，示范为没有成员关系的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建；未启用时新账户访问任何租户资源得 404，成员关系仍由管理员或邀请授予。
-- **注册的可用性随装配。** 它需要 `authn.sms` 在场并配了可用的短信载体，且 `authn.account.signup` 为 `open`；基线配置里两者都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
+- **注册的可用性随装配。** 它需要 `authn.sms` 在场并配了可用的短信载体，且 `authn.account.signup` 为 `open`；基线的装配与种子设置里两者都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
 
 ### 宿主侧的特性读取
 
