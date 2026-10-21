@@ -26,7 +26,6 @@
 import type { ReactElement } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
@@ -231,7 +230,19 @@ function StartCardView({
   const { t } = useTranslation(DEMO_NAMESPACE)
   const link = useRouteLinkProps(card.path)
   return (
-    <Card variant="outlined">
+    // A bordered inset, not a second surface: the grid already sits on a
+    // SectionCard, and a card here would stack a second translucent layer
+    // inside it (the dashboard KPI tiles follow the same rule). The rim is
+    // the card's own border color, so a theme that gives containers a
+    // visible edge gives the tiles the same one.
+    <Box
+      sx={{
+        border: 1,
+        borderColor: (theme) => theme.surface.container.borderColor,
+        borderRadius: 1,
+        overflow: 'hidden',
+      }}
+    >
       <CardActionArea
         component="a"
         href={link.href}
@@ -252,6 +263,6 @@ function StartCardView({
           {t(`home.cards.${card.key}.description`)}
         </Typography>
       </CardActionArea>
-    </Card>
+    </Box>
   )
 }

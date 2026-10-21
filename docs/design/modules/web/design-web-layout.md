@@ -67,7 +67,7 @@
 - **标题层级。** 页面的 `h1` 是 `PageHeader`；内容节的标题由 `SectionCard` 渲染为 `h2`，节内再分的块为 `h3`，依次向下。
 - **表格节贴边。** 表格所在的内容节用 `flushContent`，表格到达卡片的边缘，圆角由卡片裁切收住；表头底色取 `header` 表面。
 - **浮层不叠卡片。** 对话框、菜单、工具提示与临时抽屉取 `overlay` 表面；侧边面板本身是浮层表面，面板内不叠 `SectionCard`，用标题与分隔线分节。
-- **节内不叠第二个表面。** 仪表盘的指标块（`DashboardPage` 的 `KpiCard`）是节内的描边内嵌块：取 `divider` 描边与 `shape.borderRadius` 圆角，不另起一层容器表面。两层半透明表面叠加会在玻璃主题里叠加不透明度，内层因此接近不透明，与外围卡片脱节。
+- **节内不叠第二个表面。** 仪表盘的指标块（`DashboardPage` 的 `KpiCard`）与起始页的能力卡（`HomePage` 的 `StartCardView`）是节内的描边内嵌块：取卡片表面的描边色（`surface.container.borderColor`）与 `shape.borderRadius` 圆角，不另起一层容器表面。两层半透明表面叠加会在玻璃主题里叠加不透明度，内层因此接近不透明，与外围卡片脱节。
 - **表面不引入宽度上限。** `SectionCard` 占满所在的内容列；控制台仍没有受限宽的内容区容器（见「内容区的宽度」）。
 
 表面取值与组件映射见 [ui-kit](design-web-ui-kit.md)，决策见 [ADR-web-surface-system-2026-10-20](../../../adr/adr-web-surface-system-2026-10-20.md)。

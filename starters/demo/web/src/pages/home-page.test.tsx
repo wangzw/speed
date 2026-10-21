@@ -14,7 +14,6 @@
 import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { cardClasses } from '@mui/material/Card'
 import { emittedStyleText } from '../test-utils/emitted-css.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { renderDemoApp } from '../test-utils/render.js'
@@ -178,7 +177,12 @@ describe('the start page', () => {
     })
 
     const card = cardFor(demoEnUS.home.cards.account.title)
-    const grid = card.closest(`.${cardClasses.root}`)?.parentElement
+    // The tile is a bordered inset inside the surface that wraps the
+    // grid, so the grid is the nearest ancestor that lays out as a grid.
+    let grid: HTMLElement | null = card.parentElement
+    while (grid !== null && getComputedStyle(grid).display !== 'grid') {
+      grid = grid.parentElement
+    }
     expect(grid).not.toBeNull()
     expect(grid).toHaveStyle({ display: 'grid' })
 
