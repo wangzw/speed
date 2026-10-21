@@ -47,7 +47,10 @@ func TestABelowFloorCombinationFallsBackAndIsReported(t *testing.T) {
 		set := h.withSettings()
 		set.set(argonMemoryPath, 1)
 		set.set(argonIterationPath, 1)
-		got := h.p.hashParams()
+		got, err := h.p.hashParams()
+		if err != nil {
+			t.Fatalf("reading the hash parameters: %v", err)
+		}
 		if got != password.DefaultParams() {
 			t.Errorf("the hash parameters are %+v, want the default combination %+v", got, password.DefaultParams())
 		}

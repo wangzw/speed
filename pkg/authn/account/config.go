@@ -10,15 +10,15 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The keys this module accepts, relative to its namespace. The first three are
-// configuration, which a startup needs before a database is reachable or which
-// fix what is allocated at construction; the rest are settings, read from the
-// settings store while the process runs.
+// The keys this module accepts, relative to its namespace. The two remaining
+// configuration items fix what is allocated at construction, so a change to one
+// requires a restart; the rest are settings, read from the settings store while
+// the process runs.
 const (
-	algorithmItem    = "password-algorithm"
 	concurrencyItem  = "password-concurrency"
 	memoryBudgetItem = "password-memory-budget-mib"
 
+	algorithmKey      = "password-algorithm"
 	signupKey         = "signup"
 	autoLinkKey       = "auto-link"
 	minLengthKey      = "password-min-length"
@@ -31,6 +31,7 @@ const (
 	decayKey          = "throttle-decay"
 	retentionKey      = "secret-retention"
 
+	algorithmPath      = ConfigNamespace + "." + algorithmKey
 	signupPath         = ConfigNamespace + "." + signupKey
 	autoLinkPath       = ConfigNamespace + "." + autoLinkKey
 	minLengthPath      = ConfigNamespace + "." + minLengthKey
@@ -77,10 +78,6 @@ const (
 
 // moduleConfig is the set of input items this module accepts.
 type moduleConfig struct {
-	// PasswordAlgorithm is the algorithm a new password hash is written with:
-	// argon2id, or pbkdf2-sha256 for a deployment that has to run in FIPS 140
-	// mode.
-	PasswordAlgorithm string `config:"password-algorithm"`
 	// PasswordConcurrency is how many password derivations run at once, fixed
 	// when the module is built.
 	PasswordConcurrency int `config:"password-concurrency"`
@@ -91,13 +88,13 @@ type moduleConfig struct {
 
 // configDefaults is what this module is worth without a configuration file.
 var configDefaults = moduleConfig{
-	PasswordAlgorithm:       string(password.Argon2id),
 	PasswordConcurrency:     password.DefaultConcurrency(),
 	PasswordMemoryBudgetMiB: password.DefaultMemoryBudgetKiB / 1024,
 }
 
-// options carries the eleven settings items and their declared defaults.
+// options carries the twelve settings items and their declared defaults.
 type options struct {
+	PasswordAlgorithm        string        `config:"password-algorithm"`
 	Signup                   string        `config:"signup"`
 	AutoLink                 string        `config:"auto-link"`
 	PasswordMinLength        int           `config:"password-min-length"`
@@ -112,11 +109,13 @@ type options struct {
 }
 
 // defaults is the prototype the settings module reads the declared defaults off.
-// It never receives a value. The Argon2id numbers are the least OWASP
-// combination that costs the least memory; the password minimum is the
-// domain's floor, which a deployment raises when its own credential policy
-// asks for more; the rest are the strictest value of each range's usual end.
+// It never receives a value. The algorithm is Argon2id, the stronger of the two;
+// the Argon2id numbers are the least OWASP combination that costs the least
+// memory; the password minimum is the domain's floor, which a deployment raises
+// when its own credential policy asks for more; the rest are the strictest value
+// of each range's usual end.
 var defaults = options{
+	PasswordAlgorithm:        string(password.Argon2id),
 	Signup:                   signupClosed,
 	AutoLink:                 autoLinkNever,
 	PasswordMinLength:        8,
@@ -134,6 +133,10 @@ var defaults = options{
 // store holds a write to it, and a read is judged against it again, since a
 // value stored before the domain was declared, or written around the store, is
 // served as it is.
+func algorithmInDomain(v string) bool {
+	return v == string(password.Argon2id) || v == string(password.PBKDF2SHA256)
+}
+
 func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
 
 func autoLinkInDomain(v string) bool { return v == autoLinkNever || v == autoLinkVerified }
@@ -162,7 +165,6 @@ func retentionInDomain(d time.Duration) bool { return d >= minRetention && d <= 
 
 // resolved is the configuration this module actually runs on.
 type resolved struct {
-	algorithm    password.Algorithm
 	concurrency  int
 	memoryBudget int64 // KiB
 }
@@ -171,13 +173,6 @@ type resolved struct {
 // which item to correct.
 func (c moduleConfig) resolve() (resolved, error) {
 	var r resolved
-	switch password.Algorithm(c.PasswordAlgorithm) {
-	case password.Argon2id, password.PBKDF2SHA256:
-		r.algorithm = password.Algorithm(c.PasswordAlgorithm)
-	default:
-		return resolved{}, fmt.Errorf("%w: %s.%s is not argon2id or pbkdf2-sha256",
-			authn.ErrInvalidConfig, ConfigNamespace, algorithmItem)
-	}
 	if c.PasswordConcurrency < 1 || c.PasswordConcurrency > maxConcurrency {
 		return resolved{}, fmt.Errorf("%w: %s.%s is %d, and derivations run from 1 to %d at once",
 			authn.ErrInvalidConfig, ConfigNamespace, concurrencyItem, c.PasswordConcurrency, maxConcurrency)
@@ -199,10 +194,6 @@ func schema() config.Schema {
 		Namespace: ConfigNamespace,
 		Mounts:    []config.Mount{{Value: &configDefaults}},
 		Items: map[string]config.Item{
-			algorithmItem: {
-				Description: "the algorithm a new password hash is written with, argon2id or " +
-					"pbkdf2-sha256; a deployment that has to run in FIPS 140 mode takes the second",
-			},
 			concurrencyItem: {
 				Description: "how many password derivations of the account store run at once before " +
 					"one waits for a free place",
@@ -222,6 +213,11 @@ func settingsSchema() settings.Schema {
 		Namespace: ConfigNamespace,
 		Mounts:    []settings.Mount{{Value: &defaults}},
 		Items: map[string]settings.Item{
+			algorithmKey: {
+				Description: "the algorithm a new password hash is written with, argon2id or " +
+					"pbkdf2-sha256; a deployment that has to run in FIPS 140 mode takes the second",
+				Domain: settings.DomainOf("argon2id or pbkdf2-sha256", algorithmInDomain),
+			},
 			signupKey: {
 				Description: "whether a first login through a social provider or an SMS code makes an " +
 					"account, closed or open; open relaxes a check",

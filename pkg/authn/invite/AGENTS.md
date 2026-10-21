@@ -121,10 +121,16 @@ Without the variable the same test is the drift gate; `make check` runs it.
 
 ## Configuration
 
-- **`authn.invite.ttl`** (a duration, primary source only): how long an
-  invitation lives from the moment it is issued, when the issue call states no
-  deadline. The declared default is `168h`, and the domain is one hour to
-  `2160h`; a value outside it is `authn.ErrInvalidConfig` at startup.
+- **`authn.invite.ttl`** is a setting, declared here: how long an invitation
+  lives from the moment it is issued, when the issue call states no deadline.
+  The declared default is `168h`, and the domain is one hour to `2160h`. It is
+  read at each such issue; with no settings store the declared default applies,
+  and a read that fails or lands outside the domain applies the default and
+  writes one `Error` naming the key. A longer lifetime is a relaxation, so the
+  `settings.changed` subscriber writes a `Warn` and a best-effort
+  `authn.settings.relaxed` audit row with direction `increase`, naming the key
+  and never the value. The config schema no longer carries the item: a config
+  file naming it fails startup as an unknown key.
 
 ## Running it
 

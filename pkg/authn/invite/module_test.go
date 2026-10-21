@@ -53,13 +53,13 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 }
 
-func TestTheConfiguredLifetimeHasADomain(t *testing.T) {
-	if _, err := (moduleConfig{TTL: DefaultTTL}).resolve(); err != nil {
-		t.Errorf("the declared default %s is refused: %v", DefaultTTL, err)
+func TestTheLifetimeSettingHasADomain(t *testing.T) {
+	if !ttlInDomain(DefaultTTL) {
+		t.Errorf("the declared default %s is outside the domain", DefaultTTL)
 	}
 	for _, bad := range []time.Duration{0, -time.Second, minTTL - time.Second, maxTTL + time.Second} {
-		if _, err := (moduleConfig{TTL: bad}).resolve(); !errors.Is(err, authn.ErrInvalidConfig) {
-			t.Errorf("lifetime %s gave %v, want ErrInvalidConfig", bad, err)
+		if ttlInDomain(bad) {
+			t.Errorf("lifetime %s reads as inside the domain", bad)
 		}
 	}
 }
@@ -113,8 +113,8 @@ func TestNormalizeEmailBounds(t *testing.T) {
 	}
 }
 
-func TestTheConfigSchemaDeclaresTheOneKey(t *testing.T) {
-	s := schema()
+func TestTheSettingsSchemaDeclaresTheOneKey(t *testing.T) {
+	s := settingsSchema()
 	if s.Namespace != ConfigNamespace {
 		t.Errorf("namespace = %q, want %q", s.Namespace, ConfigNamespace)
 	}

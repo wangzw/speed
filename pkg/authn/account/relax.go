@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn/internal/password"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -15,7 +16,9 @@ import (
 // be shorter, a hash that costs less, a back-off that is shorter or starts later,
 // a switch moved to the value that checks less: each lets a guess, a weak
 // password or a first login through that the declared default would have
-// refused.
+// refused. A hash algorithm moved from the stronger one to the weaker one is a
+// downgrade: it does not change how a check is made, but it makes every entry
+// written afterwards cheaper to attack.
 const (
 	moveDown = "decrease"
 	moveUp   = "increase"
@@ -24,6 +27,9 @@ const (
 	// switches, whose value set also includes to-false, to-zero, add-member and
 	// remove-member.
 	moveRelaxed = "relax"
+	// moveDowngrade is the direction of the password algorithm moved from
+	// argon2id to pbkdf2-sha256.
+	moveDowngrade = "downgrade"
 )
 
 // relaxing is, for each setting of this module that relaxes a check when it
@@ -45,6 +51,13 @@ var relaxing = map[string]string{
 var relaxingSwitch = map[string]string{
 	signupPath:   signupOpen,
 	autoLinkPath: autoLinkVerified,
+}
+
+// downgradingSwitch is, for each setting of this module whose value set is
+// ordered strongest to weakest, the value that is a downgrade. A move to it from
+// any other one is reported; a move back to the stronger value is not.
+var downgradingSwitch = map[string]string{
+	algorithmPath: string(password.PBKDF2SHA256),
 }
 
 // relaxedAction is the name of the audit record of a setting moved to a more
@@ -78,6 +91,12 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	if target, watched := relaxingSwitch[change.Key]; watched {
 		if change.New == target && change.Old != target {
 			p.reportRelaxation(ctx, change.Key, moveRelaxed)
+		}
+		return nil
+	}
+	if target, watched := downgradingSwitch[change.Key]; watched {
+		if change.New == target && change.Old != target {
+			p.reportRelaxation(ctx, change.Key, moveDowngrade)
 		}
 		return nil
 	}

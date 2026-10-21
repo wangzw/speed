@@ -99,8 +99,8 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // The settings store, the event bus, the outbox, the audit capability, the
 // metric capability and the logging capability are taken up in Init, where every
-// instance exists, and none is required: without the settings the nine settings
-// read as their declared defaults, without a bus or an outbox no event is
+// instance exists, and none is required: without the settings every setting
+// reads as its declared default, without a bus or an outbox no event is
 // published, and without the rest nothing is recorded where it would have been.
 // Every AccountLifecycle implementation is taken in the same stage and is not a
 // requirement, so an assembly without a session, a factor or an SMS module still

@@ -6,7 +6,6 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
-	"github.com/vislake/speed/pkg/authn/internal/password"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -100,7 +99,6 @@ func TestPrepareStatesTheModuleRunsOrRefusesTheConfiguration(t *testing.T) {
 		ok   bool
 	}{
 		{"nothing configured", `{}`, true},
-		{"an algorithm that is neither", `{"authn":{"account":{"password-algorithm":"scrypt"}}}`, false},
 		{"a concurrency of zero", `{"authn":{"account":{"password-concurrency":0}}}`, false},
 		{"a budget below the floor", `{"authn":{"account":{"password-memory-budget-mib":1}}}`, false},
 	} {
@@ -127,9 +125,6 @@ func TestTheSizesAreHeldToTheirDomains(t *testing.T) {
 		ok     bool
 	}{
 		{"the default", func(*moduleConfig) {}, true},
-		{"argon2id", func(c *moduleConfig) { c.PasswordAlgorithm = string(password.Argon2id) }, true},
-		{"pbkdf2-sha256", func(c *moduleConfig) { c.PasswordAlgorithm = string(password.PBKDF2SHA256) }, true},
-		{"an algorithm that is not one of the two", func(c *moduleConfig) { c.PasswordAlgorithm = "bcrypt" }, false},
 		{"a concurrency of one", func(c *moduleConfig) { c.PasswordConcurrency = 1 }, true},
 		{"a concurrency past the ceiling", func(c *moduleConfig) { c.PasswordConcurrency = maxConcurrency + 1 }, false},
 		{"a concurrency below one", func(c *moduleConfig) { c.PasswordConcurrency = 0 }, false},
@@ -149,28 +144,28 @@ func TestTheSizesAreHeldToTheirDomains(t *testing.T) {
 	}
 }
 
-// The sizes and the algorithm are configuration a host states anywhere; the two
+// The sizes are configuration a host states anywhere; the algorithm and the two
 // relaxation switches are settings, not configuration.
-func TestTheConfigurationItemsAreTheSizesAndTheAlgorithm(t *testing.T) {
+func TestTheConfigurationItemsAreTheSizes(t *testing.T) {
 	s := schema()
-	for _, key := range []string{algorithmItem, concurrencyItem, memoryBudgetItem} {
+	for _, key := range []string{concurrencyItem, memoryBudgetItem} {
 		if got := s.Items[key].Origins; got != 0 {
 			t.Errorf("%s takes the origins %v, want every source", key, got)
 		}
 	}
-	for _, key := range []string{signupKey, autoLinkKey} {
+	for _, key := range []string{algorithmKey, signupKey, autoLinkKey} {
 		if _, ok := s.Items[key]; ok {
 			t.Errorf("the configuration declares %s, want it declared as a setting alone", key)
 		}
 	}
 }
 
-// The eleven settings are declared with a domain, so that a write is judged when
+// The twelve settings are declared with a domain, so that a write is judged when
 // it is made and again when it is read.
-func TestTheElevenSettingsAreDeclaredWithADomain(t *testing.T) {
+func TestTheTwelveSettingsAreDeclaredWithADomain(t *testing.T) {
 	s := settingsSchema()
 	for _, key := range []string{
-		signupKey, autoLinkKey,
+		algorithmKey, signupKey, autoLinkKey,
 		minLengthKey, argonMemoryKey, argonIterationKey, argonLanesKey, pbkdf2IterKey,
 		freeAttemptsKey, maxDelayKey, decayKey, retentionKey,
 	} {
@@ -178,8 +173,8 @@ func TestTheElevenSettingsAreDeclaredWithADomain(t *testing.T) {
 			t.Errorf("the setting %s is not declared", key)
 		}
 	}
-	if len(s.Items) != 11 {
-		t.Errorf("the section declares %d settings, want eleven", len(s.Items))
+	if len(s.Items) != 12 {
+		t.Errorf("the section declares %d settings, want twelve", len(s.Items))
 	}
 	if !signupInDomain(defaults.Signup) || !autoLinkInDomain(defaults.AutoLink) {
 		t.Errorf("a declared default lies outside its domain: %q, %q", defaults.Signup, defaults.AutoLink)

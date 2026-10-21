@@ -47,7 +47,7 @@ func (p *product) Issue(ctx context.Context, in IssueInvite) (Issued, error) {
 	now := p.at()
 	deadline := in.ExpiresAt
 	if deadline.IsZero() {
-		deadline = now.Add(p.cfg.ttl)
+		deadline = now.Add(p.ttl())
 	} else if !utc(deadline).After(now) {
 		return Issued{}, fmt.Errorf("%w: the deadline is not later than now", authn.ErrInvalidArgument)
 	}

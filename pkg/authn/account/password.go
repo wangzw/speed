@@ -92,9 +92,13 @@ func (p *product) verifyEntry(ctx context.Context, e password.Entry, plaintext s
 }
 
 // hashPassword derives the PHC text of a normalized password under the current
-// parameters.
+// parameters. A parameter that cannot be read is the error of the call: the
+// algorithm is not replaced by its declared default.
 func (p *product) hashPassword(ctx context.Context, plaintext string) (string, error) {
-	params := p.hashParams()
+	params, err := p.hashParams()
+	if err != nil {
+		return "", err
+	}
 	started := time.Now()
 	phc, err := p.gov.Hash(ctx, params, plaintext, p.wait)
 	if err != nil {
@@ -243,7 +247,7 @@ func (p *product) entryFor(row credentialRow, usable bool) (password.Entry, erro
 			"a password until it is written again",
 			slog.String("account", row.AccountID))
 	}
-	entry, err := p.decoy.For(p.hashParams())
+	entry, err := p.decoy.For(p.decoyParams())
 	if err != nil {
 		return password.Entry{}, fmt.Errorf("%w: making the decoy entry: %w", authn.ErrUnavailable, err)
 	}
@@ -298,7 +302,13 @@ func (p *product) fail(ctx context.Context, scope authn.ThrottleScope, key strin
 // weak write it once, and a failure of any step is a line in the log and nothing
 // to the login that triggered it.
 func (p *product) upgrade(ctx context.Context, id authn.AccountID, stored string, entry password.Entry, plaintext string) {
-	params := p.hashParams()
+	params, err := p.hashParams()
+	if err != nil {
+		// The algorithm setting cannot be read, so this entry is left as it is.
+		// The read reported the fault; the login that triggered the upgrade
+		// still succeeds.
+		return
+	}
 	if !entry.Legacy() && !entry.Params().Weaker(params) {
 		return
 	}

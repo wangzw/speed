@@ -64,6 +64,21 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   settings too, read on every use and judged against their declared domain when
   read as well as when written. The config schema no longer carries the two
   switches: a config file naming them fails startup as an unknown key.
+- **`password-algorithm` is a setting, declared here and read at every hash
+  write.** It is `argon2id` (the default) or `pbkdf2-sha256`; enrollment and the
+  post-login upgrade both read the current value. A read that fails or lands
+  outside the domain does not fall back to another algorithm: enrollment and a
+  password change answer `authn.ErrUnavailable`, and the post-login upgrade is
+  skipped with one `Error` naming the key while the login itself still succeeds.
+  The one exception is a key no declaration covers: the store reserves that
+  answer for a defect in this module's own schema, so the declared default is
+  written and the defect is reported at `Error` rather than blocking every
+  password write.
+  A move to `pbkdf2-sha256` is a downgrade, so the `settings.changed` subscriber
+  writes a `Warn` and a best-effort `authn.settings.relaxed` audit row with
+  direction `downgrade`; a move back to `argon2id` writes nothing. The config
+  schema no longer carries the item: a config file naming it fails startup as an
+  unknown key.
 
 ## How to run it
 

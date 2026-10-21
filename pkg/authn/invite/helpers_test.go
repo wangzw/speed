@@ -272,7 +272,6 @@ func newHarness(t *testing.T) *harness {
 	}
 	p := &product{
 		handle:      handle,
-		cfg:         resolved{ttl: DefaultTTL},
 		accounts:    h.accounts,
 		accountAdm:  h.admin,
 		memberships: h.members,

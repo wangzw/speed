@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/password"
 )
 
 // The sweeps of the two tables this module owns that grow without bound, and how
@@ -92,8 +93,12 @@ func (p *product) probe() error {
 // that relaxes a check, and what an assembly without an outbox or a bus does not
 // have. A relaxation is a line of its own, so that it can be found in the log.
 func (p *product) diagnose() {
+	algorithm, err := p.passwordAlgorithm()
+	if err != nil {
+		algorithm = password.Algorithm(defaults.PasswordAlgorithm)
+	}
 	p.logger.Info(diagnosticPrefix+"the account store is running",
-		slog.String("algorithm", string(p.cfg.algorithm)))
+		slog.String("algorithm", string(algorithm)))
 	if p.signup() == signupOpen {
 		p.warnRelaxation(signupPath, moveRelaxed)
 	}
@@ -111,8 +116,9 @@ func (p *product) diagnose() {
 			"modules is not guaranteed to finish when the process stops between the commit and the cleanup")
 	}
 	// Judging the combination of the cost settings reports a combination below
-	// what OWASP recommends at Error, so the startup says so as well.
-	p.hashParams()
+	// what OWASP recommends at Error, so the startup says so as well. A read
+	// fault is reported by that same call and needs no separate handling here.
+	_, _ = p.hashParams()
 }
 
 // sweepLoop runs one sweep at the start and again every interval until the

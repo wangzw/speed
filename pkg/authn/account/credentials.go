@@ -139,7 +139,7 @@ func (p *product) confirm(ctx context.Context, id authn.AccountID, entry passwor
 	case !has || tooLong:
 		// Nothing to confirm against, or nothing that could match: the check
 		// derives against the decoy so that the two cost the same.
-		decoy, derr := p.decoy.For(p.hashParams())
+		decoy, derr := p.decoy.For(p.decoyParams())
 		if derr != nil {
 			return false, fmt.Errorf("%w: making the decoy entry: %w", authn.ErrUnavailable, derr)
 		}

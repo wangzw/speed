@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -35,12 +36,13 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/clock"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
-	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
+	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -123,8 +125,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // takes this one in does not pull them in: the host writes them down. The audit
 // capability being required is what makes an assembly without one fail before
 // any instance is built, rather than at the first write. The decision seam, the
-// throttle and the logger are taken up in Init: the absence of a Decider is a
-// legal assembly in which every management request is refused.
+// settings store, the event bus and the logger are taken up in Init and none is
+// required: the absence of a Decider is a legal assembly in which every
+// management request is refused, and without the settings the lifetime reads as
+// its declared default.
 //
 // The stance is StateEnabled and never StateAuto: whether to mount the
 // invitation routes is a decision on the command tree, not a conclusion a
@@ -143,7 +147,8 @@ func Module() core.Module {
 		},
 		Provides: []core.Provision{{Token: (*Invites)(nil), Exclusive: true}},
 		Resources: []any{
-			schema(),
+			configSchema(),
+			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
 			inviteSpec,
 			inviteTenantsSpec,
@@ -154,14 +159,9 @@ func Module() core.Module {
 			feature.Spec{Name: "authn.invitations"},
 		},
 
-		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
-			reader, err := readerOf(reg)
-			if err != nil {
-				return core.Enablement{}, err
-			}
-			if _, err := readConfig(reader); err != nil {
-				return core.Enablement{}, err
-			}
+		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
+			// The module has no configuration items of its own; the lifetime it
+			// issues with is a setting, read when an invitation is issued.
 			return core.Enablement{State: core.StateEnabled}, nil
 		},
 
@@ -191,17 +191,6 @@ func Module() core.Module {
 	}
 }
 
-// readerOf takes up the configuration reader. Its absence means the host never
-// handed one to the registry, which is core's own failure and is carried out as
-// it stands.
-func readerOf(reg *core.Registry) (config.Reader, error) {
-	reader, err := core.Resolve[config.Reader](reg)
-	if err != nil {
-		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
-	}
-	return reader, nil
-}
-
 // productOf narrows an instance to this module's product. An instance of
 // another shape is one the host supplied for this module, and the callbacks
 // leave it alone.
@@ -214,7 +203,6 @@ func productOf(instance any) (*product, bool) {
 // optional ones taken up in Init.
 type product struct {
 	handle *gorm.DB
-	cfg    resolved
 	// now is the clock every time written to the database or bound to a query
 	// is read from, in UTC.
 	now clock.Source
@@ -227,9 +215,17 @@ type product struct {
 	audit   audit.Audit
 
 	// The optional capabilities. Each is nil when absent: a missing Decider
-	// refuses every management request.
+	// refuses every management request, and without the settings the lifetime
+	// reads as its declared default.
+	store   settings.Store
+	bus     event.Bus
 	decider authn.Decider
 	logger  *slog.Logger
+
+	// mu guards reported, which holds for each fault the one last written, so
+	// that a setting read on every issuance is reported once and not on each.
+	mu       sync.Mutex
+	reported map[string]string
 }
 
 // newProduct takes up what the descriptor requires.
@@ -258,23 +254,15 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the audit capability: %w", ModuleName, err)
 	}
-	reader, err := readerOf(reg)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := readConfig(reader)
-	if err != nil {
-		return nil, err
-	}
 	return &product{
 		handle:      database.DB(),
-		cfg:         cfg,
 		accounts:    accounts,
 		accountAdm:  accountAdm,
 		memberships: memberships,
 		mounter:     mounter,
 		audit:       auditor,
 		logger:      log.Default(),
+		reported:    make(map[string]string),
 	}, nil
 }
 
@@ -303,6 +291,15 @@ func (p *product) wire(reg *core.Registry) error {
 	var err error
 	if p.decider, err = optional[authn.Decider](reg, "the decision seam"); err != nil {
 		return err
+	}
+	if p.store, err = optional[settings.Store](reg, "the settings store"); err != nil {
+		return err
+	}
+	if p.bus, err = optional[event.Bus](reg, "the event bus"); err != nil {
+		return err
+	}
+	if p.bus != nil && p.store != nil {
+		p.bus.Subscribe(settings.ChangedEventType, ModuleName, p.onSettingsChanged)
 	}
 	p.mountRoutes()
 	return nil

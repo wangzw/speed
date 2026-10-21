@@ -36,7 +36,6 @@ func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
 
 		p := &product{
 			handle:      handle,
-			cfg:         resolved{ttl: DefaultTTL},
 			accounts:    accounts,
 			accountAdm:  admin,
 			memberships: memberships,

@@ -1,6 +1,7 @@
 package account
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -70,14 +71,50 @@ func (p *product) minLength() int {
 	return readSetting(p, minLengthPath, minLengthInDomain, defaults.PasswordMinLength)
 }
 
+// passwordAlgorithm is the algorithm a new password hash is written with, read
+// from the settings store. The store answers the declared default when no layer
+// holds a row, so an absent row does not reach this function as an error. A read
+// fault, or a value outside the domain, is not replaced by another algorithm: the
+// read returns the fault, and the write that asked for it fails instead. A fault
+// is reported at Error once. ErrUnknownKey is the store's answer for a key no
+// declaration covers, which is a defect in this module's own schema: the declared
+// algorithm is used so the write can proceed, and the defect is reported rather
+// than hidden.
+func (p *product) passwordAlgorithm() (password.Algorithm, error) {
+	fallback := password.Algorithm(defaults.PasswordAlgorithm)
+	if p.store == nil {
+		return fallback, nil
+	}
+	value, err := settings.Get[string](p.store, settings.Global(), algorithmPath)
+	switch {
+	case errors.Is(err, settings.ErrUnknownKey):
+		p.report(algorithmPath, "the setting is not declared, so its declared default is used", err.Error())
+		return fallback, nil
+	case err != nil:
+		p.report(algorithmPath, "the setting cannot be read, so a password cannot be written", err.Error())
+		return "", err
+	case !algorithmInDomain(value):
+		p.report(algorithmPath, "the setting holds a value outside its domain, so a password cannot be written", value)
+		return "", fmt.Errorf("the password algorithm setting %s is outside its domain", algorithmPath)
+	}
+	p.report(algorithmPath, "", "")
+	return password.Algorithm(value), nil
+}
+
 // hashParams is what a new password hash is written with: the algorithm the
-// configuration states and the cost the settings state for it. The three
-// Argon2id settings are each judged in their own range, and the OWASP floor is
-// judged on the three together, so a combination that is below it, or that an
-// entry cannot state, is the default combination instead, and says so at Error.
-func (p *product) hashParams() password.Params {
+// settings state and the cost the settings state for it. The three Argon2id
+// settings are each judged in their own range, and the OWASP floor is judged on
+// the three together, so a combination that is below it, or that an entry cannot
+// state, is the default combination instead, and says so at Error. The algorithm
+// is never substituted: an unreadable one is a fault the caller does not write
+// through.
+func (p *product) hashParams() (password.Params, error) {
+	algorithm, err := p.passwordAlgorithm()
+	if err != nil {
+		return password.Params{}, err
+	}
 	var want password.Params
-	if p.cfg.algorithm == password.PBKDF2SHA256 {
+	if algorithm == password.PBKDF2SHA256 {
 		want = password.Params{
 			Algorithm:        password.PBKDF2SHA256,
 			PBKDF2Iterations: readSetting(p, pbkdf2IterPath, pbkdf2IterationsInDomain, defaults.PasswordPBKDF2Iterations),
@@ -100,7 +137,19 @@ func (p *product) hashParams() password.Params {
 	} else {
 		p.report("password-params", "", "")
 	}
-	return effective
+	return effective, nil
+}
+
+// decoyParams is what a decoy entry is made with: the current write parameters
+// when they can be read, and the declared combination when the algorithm cannot
+// be. A decoy is never stored, so the fault the read already reported is not a
+// refusal here: the check still costs one derivation.
+func (p *product) decoyParams() password.Params {
+	params, err := p.hashParams()
+	if err != nil {
+		return password.DefaultParams()
+	}
+	return params
 }
 
 // throttleParams are the three numbers of the back-off, each as the setting says
