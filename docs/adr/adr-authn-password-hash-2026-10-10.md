@@ -25,7 +25,7 @@ Argon2id 一次派生分配条目自带的 `m` KiB。库里导入的条目或口
 
 沿用现行算法，新条目缺省写 PBKDF2-SHA256，Argon2id 作为可选项。
 
-**否决**：现行选 PBKDF2 的理由是留在 FIPS 140 范围内，这一理由只对需要 FIPS 的部署成立，而 OWASP 的首选是 Argon2id。对全部部署把缺省定在只有一部分部署需要的算法上，其余部署得到的是纯计算型的派生，GPU 与专用硬件上的猜测成本更低。需要 FIPS 的部署经配置项 `authn.account.password-algorithm` 选 PBKDF2-SHA256，缺省取 Argon2id 不剥夺这条路。
+**否决**：现行选 PBKDF2 的理由是留在 FIPS 140 范围内，这一理由只对需要 FIPS 的部署成立，而 OWASP 的首选是 Argon2id。对全部部署把缺省定在只有一部分部署需要的算法上，其余部署得到的是纯计算型的派生，GPU 与专用硬件上的猜测成本更低。需要 FIPS 的部署经设置项 `authn.account.password-algorithm` 选 PBKDF2-SHA256，缺省取 Argon2id 不剥夺这条路。
 
 ### 口令条目的读写全部交给第三方 PHC 库
 
@@ -69,7 +69,7 @@ Argon2id 一次派生分配条目自带的 `m` KiB。库里导入的条目或口
 
 ## 决策
 
-采纳：口令条目用 PHC 字符串存放，Argon2id 为新条目的缺省，PBKDF2-SHA256 经配置项 `authn.account.password-algorithm` 可用，不带前导 `$` 的旧写法只读。数值与完整的界限表见 authn 账户设计文档的口令凭据一节，配置键见 authn 配置设计文档。下列各项以粗体句首指明它约束的主体。
+采纳：口令条目用 PHC 字符串存放，Argon2id 为新条目的缺省，PBKDF2-SHA256 经设置项 `authn.account.password-algorithm` 可用，不带前导 `$` 的旧写法只读。数值与完整的界限表见 authn 账户设计文档的口令凭据一节，设置键见 authn 配置设计文档。下列各项以粗体句首指明它约束的主体。
 
 **写法与分派。** 账户库的口令凭据行与口令表里的每个条目用同一套写法。条目以 `$` 起头时，按第一段分派到 `argon2id` 或 `pbkdf2-sha256`；不以 `$` 起头时，按旧写法读。旧写法只在口令表里读，库里的哈希从不是旧写法；宿主要把旧条目转成 PHC 时，盐与密钥的字节不变，只改外壳。
 

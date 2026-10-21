@@ -180,12 +180,13 @@
 
 **放宽监视行的日志字段**是下列封闭集合：`setting`（被改动的设置键名）、`direction`（放宽的方向，取值见下）。持有放宽方向设置项的模块，在设置被改到更宽松时各写一行 `Warn`，只写键名与方向，不写值；这一行与审计 `authn.settings.relaxed` 的 `Detail` 取同一份键名与方向（明细键 `change` 的值即方向）。`setting` 与口令表后端行的 `setting` 同名同义（都是设置键名），一个模块同时写这两种记录时用同一个名字。
 
-**放宽方向的取值**是下列封闭集合，也是 `authn.settings.relaxed` 明细键 `change` 的取值集：`increase`、`decrease`、`add-member`、`remove-member`、`to-false`、`to-zero`、`relax`。判据按「键是否在放宽开关表里」分成互斥的两类，一个键只取一个方向。
+**放宽方向的取值**是下列封闭集合，也是 `authn.settings.relaxed` 明细键 `change` 的取值集：`increase`、`decrease`、`add-member`、`remove-member`、`to-false`、`to-zero`、`downgrade`、`relax`。判据把键按移动的性质分成互斥的几类，一个键只取一个方向。
 
 - **放宽开关表里的键一律用 `relax`，与取值类型无关。** 表见 [design-authn-config](design-authn-config.md) 的放宽开关一节；表里的键是 `authn.account.signup`、`authn.account.auto-link` 与 `authn.token.check-session`，`relax` 表示「一个声明为放宽开关的键被移到该键的放宽取值」。单列这一取值有两个理由。其一，前两个键的取值域是无序枚举（`closed`/`open`、`never`/`verified-email`），既不是数值也不是布尔，机械类的六个取值没有一个能表达它们的移动；为每个枚举各造一个取值（如 `to-open`）会让取值集随开关增加而增长，而按类型分派又要求运维先知道每个键的类型。其二，三者要表达的是同一件事：一个显式放宽开关被打开。运维的告警规则据此按类别匹配一条规则即可，不必按每个键的取值类型各配一条。`authn.token.check-session` 虽是布尔、其移动本可写成 `to-false`，但把它拆出去会让同一类开关分散在两个取值上，正与上一条理由相反，所以它随类别取 `relax`。
 - **不属放宽开关表的设置按值的机械移动定。** 取值变大即放宽的用 `increase`，变小即放宽的用 `decrease`，列表加入成员即放宽的用 `add-member`，列表移除成员即放宽的用 `remove-member`，数值改为 0 即放宽（0 表示关闭）的用 `to-zero`；布尔设置中不属放宽开关表的（如 `authn.mfa` 与 `tenant.admission` 的 `require-*`）由 `true` 改 `false` 即放宽的用 `to-false`。
+- **取值有强弱次序而无数值次序、移动即降级的设置用 `downgrade`。** `authn.account.password-algorithm` 的取值域是 `argon2id` 与 `pbkdf2-sha256`，两者是无序枚举：移到 `pbkdf2-sha256` 降低哈希的计算成本，是一次降级，而它既不是更大的数也不是更小的数，机械类的六个取值没有一个能表达这次移动。为它单列 `downgrade`，方向说的是「换成了更弱的一档」，与数值移动无关；改回 `argon2id` 不放宽，不写记录。
 
-方向由设置项的语义给出，新增放宽项时按同一判据补列：先判它是否归入放宽开关表，归入的用 `relax`，其余按值的机械移动选一个。
+方向由设置项的语义给出，新增放宽项时按同一判据补列：先判它是否归入放宽开关表，归入的用 `relax`；取值有强弱次序而无数值次序的算法选择用 `downgrade`；其余按值的机械移动选一个。
 
 **网关的收口行、取凭据的拒绝行与启动诊断行**另写下表的字段。下表是网关日志字段的封闭集合，按对外接口面对待，网关新增字段先登记在这里；字段的值只含形状、计数、名字与成因文本，从不含凭据、令牌或口令。
 

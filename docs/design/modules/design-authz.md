@@ -284,11 +284,11 @@ const (
 - **`authz.guard.endpoints`**（配置，字符串列表）：中间件所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`。** 清单的形状同 `tenant.admission.endpoints`；重复的端名并入 `authn.ErrInvalidConfig`——本模块的哨兵表是封闭集，不为配置另立一项（`tenant.admission` 对重复端名用的是它自己的哨兵，那是它的事）。端名在入口模块里不存在时，`authz.guard` 在 `Init` 以 `ErrUnknownEndpoint` 终止启动。
 - **`authz.guard.undeclared`**（配置，取值 `closed`/`open`）：未声明路由的缺省处置。**缺省 `closed`**（答 403），取 `open` 时放行并写一行启动 `Warn`。只取主配置源，环境变量与命令行覆盖不改写它：把缺省安全态放到配置的覆盖层一侧，会让一条命令行参数改变哪些路由不需要权限。
 - **`authz.policy.load-timeout`**（配置，时长，缺省 `5s`）：启动期全量装载策略的时限。超时即启动失败（`ErrPolicyUnavailable`），不带着半份快照开始服务。
-- **`authz.policy.refresh-interval`**（设置，时长，缺省 `0s`）：无事件总线时的周期重载间隔。`0` 表示不重载。**它归设置而非配置，因为它是运行期可变的参数；本模块只在 `Start` 读它一次**，运行期改值要重启进程才生效。
+- **`authz.policy.refresh-interval`**（配置，时长，缺省 `0s`）：无事件总线时的周期重载间隔。`0` 表示不重载，负值在启动期以 `authn.ErrInvalidConfig` 拒绝。**它归配置，因为它设定 `Start` 建立的 ticker，改值要重启进程才生效**；周期性重载因此不依赖设置存储，一个只有数据库、没有事件总线也没有设置存储的装配可以直接配置它。它曾经是设置项：升级后旧设置表里的行不再被声明，经设置存储写它被拒为未知键，运行期也不再读它，宿主要把非零间隔写进配置文件。
 - **`authz.admin.endpoints`**（配置，字符串列表）：管理面路由所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——把管理面路由挂到每个端会挂到公开端上，那里没有网关守它们；只取主配置源。本模块没有自己的失败哨兵，一个跑不了的形状——空清单、空名、`*`、重名——是 `authn.ErrInvalidConfig`；入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
 - **`authz.self.endpoints`**（配置，字符串列表）：调用方自身权限读取所挂的端，按入口模块自身配置给它们的名字。**必填、无缺省、不接受 `*`**——这条读取属于已认证调用方，挂在没有网关的端上就只剩 handler 自己写的 401；只取主配置源。形状失败与 `authz.admin.endpoints` 同口径：空清单、空名、`*`、重名是 `authn.ErrInvalidConfig`，入口模块不声明的端名是启动期 `ErrUnknownEndpoint`。
 
-**配置承载启动必须项，设置承载运行期参数**（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）：`endpoints` 与 `load-timeout` 在装配期就要读出来，`refresh-interval` 是运行期参数——尽管本模块只在 `Start` 读它一次，改值要重启进程才生效。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
+**配置承载启动必须项与改值要重启才生效的项，其余能在运行期生效的值一律归设置**（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）：`endpoints`、`load-timeout` 与 `refresh-interval` 都属配置——`endpoints` 与 `load-timeout` 在装配期或启动装载时就要读出来，`refresh-interval` 设定 `Start` 建立的 ticker，改值要重启进程才生效。**本模块没有设置型的放宽开关**：唯一会放宽的方向是 `undeclared`，它是配置项，改它要重启。
 
 ### 对宿主的要求
 
@@ -364,7 +364,7 @@ const (
 - `ModelText` 的模型文本，与动作到查询的翻译：内置行（本能力自己携带的行），各模块经 `authz.TranslationSpec` 声明自有翻译行的机制，以及「未被任何行覆盖的权限即拒、模块声明的行与既有行分歧即启动失败」这两条语义；一个模块新声明的行是这份翻译的扩展，不是对已有行的破坏。
 - 平台域的保留值 `"system"`。
 - 中间件在链上代表的功能标识：描述符的 `Provides` 与中间件的 `Provides` 同为 `(*authz.Gate)(nil)`——链上锚点住在根包（别的模块为排序 import 的是接口包，不是实现子包），而 handler 内判定 API `Guard` 因签名取 `*gin.Context` 落在 `pkg/authz/guard`，它不作为锚点。别的模块据这个标识排序，取值与它所属的阶段属于对外接口面，改动它是破坏性变更。
-- 配置键 `authz.guard.endpoints`、`authz.guard.undeclared`、`authz.policy.load-timeout`、`authz.admin.endpoints`、`authz.self.endpoints`，设置键 `authz.policy.refresh-interval`，以及 `Endpoints` 的必填与不接受 `*`。
+- 配置键 `authz.guard.endpoints`、`authz.guard.undeclared`、`authz.policy.load-timeout`、`authz.policy.refresh-interval`、`authz.admin.endpoints`、`authz.self.endpoints`，以及 `Endpoints` 的必填与不接受 `*`。
 - 管理面路由的路径与每条路由询问的权限（读 `authz.role.read`、写 `authz.role.manage`）；路由集本身随模块是否被点名变化，不在对外接口面内。
 - 调用方自身权限的读取路径 `GET /api/v1/authz/me/permissions`、它的应答成员 `platform` 与 `tenant` 及其含义、`[]` 而非 `null` 的空结果写法，以及它要求已认证、不要求权限这一条；前端与生成的客户端据这些取值分支。
 - `authz.admin` 声明的特性名 `authz.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
@@ -376,7 +376,7 @@ const (
 
 | 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
 |---|---|---|---|---|---|---|
-| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`settings.Store` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
+| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/api/v1/system/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit` | `http.Router`、`authz.Gate` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
 | `authz/self` | `authz.self` | 无（只挂 `/api/v1/authz/me/permissions`） | — | `SubjectPermissions` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
@@ -390,7 +390,7 @@ const (
 - **本模块 import `pkg/authn` 根包并交付其中的接缝，认证不 import 本模块**（[ADR-authn-scope-2026-10-10](../../adr/adr-authn-scope-2026-10-10.md)）。`authz/guard` 实现 `authn.Decider`，读 `Identity` 的方法集；方向是授权指向认证。
 - **本模块 import `pkg/tenant` 根包取 `tenant.FromContext` 与 `tenant.CrossTenant`，不 import 它的子包。** 准入层交付的 `(*tenant.Admission)(nil)` 是授权阶段内的定序锚点，本模块的中间件用 `After` 指向它（[tenant-admission](tenant/design-tenant-admission.md)）。
 - **`authz.admin` import `pkg/feature` 根包以声明特性，`feature.board` import 本模块的根包以登记开放路由。** `pkg/feature` 根包只依赖标准库，不扩大 `authz.admin` 的闭包；本模块的任何包都不 import `pkg/feature/board`（[feature](design-feature.md)）。
-- 方向满足架构不变量（[architecture](../architecture.md)）：本模块位于 `core`、`config`、`log`、`http`、`observability`、`db`、`event`、`settings`、`authn`、`tenant` 之上，不被其中任何一个 import。
+- 方向满足架构不变量（[architecture](../architecture.md)）：本模块位于 `core`、`config`、`log`、`http`、`observability`、`db`、`event`、`authn`、`tenant` 之上，不被其中任何一个 import。本模块不 import `pkg/settings`：策略参数中塑造启动结构的部分在配置一侧，判定与装载不读设置存储。
 
 ## UML 图
 
@@ -674,7 +674,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 - **装载：** `policy.Start` 在全量读策略之后构造快照，受配置 `authz.policy.load-timeout` 约束；超时即启动失败，不带着半份快照提供服务。
 - **请求期：** `Enforcer` 读当前原子指针指向的快照，只读、不加锁、不查库。
 - **写路径：** 写库并提交 → 本地换指针（以新快照替换旧快照）→ 发 `authz.policy.changed` 事件。本地那次写入的生效不依赖事件：换指针在提交之后立即发生。
-- **跨副本失效：** 别的副本订阅 `authz.policy.changed`，收到的副本重载快照。没有 `event.Bus` 的装配靠设置 `authz.policy.refresh-interval` 周期重载兜底；间隔为 `0` 时不重载，撤销的生效延迟以别的副本的进程寿命为界。
+- **跨副本失效：** 别的副本订阅 `authz.policy.changed`，收到的副本重载快照。没有 `event.Bus` 的装配靠配置 `authz.policy.refresh-interval` 周期重载兜底；间隔为 `0` 时不重载，撤销的生效延迟以别的副本的进程寿命为界。
 
 **撤销的生效延迟由本模块的换指针窗口与准入层的缓存分别界定**（[ADR-authz-cache-2026-10-12](../../adr/adr-authz-cache-2026-10-12.md)）：
 
@@ -806,8 +806,8 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).DeleteBinding`（接口在 `pkg/authz/capabilities.go`） |
 | 种入面 `Seeder`：幂等、只增、可写 builtin 角色的授权集 | 已实现 | `pkg/authz/policy/manager.go` `(*product).SeedGrants`、`grantsHeld`（接口在 `pkg/authz/capabilities.go`） |
 | `AccountLifecycle` 清理（账户删除与停用钩子） | 已实现 | `pkg/authz/policy/lifecycle.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked` |
-| `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 已实现 | `pkg/authz/policy/policy.go` `wire`（订阅）、`publish`、`reload` |
-| 配置 `load-timeout` 与设置 `refresh-interval` 的声明与读取 | 已实现 | `pkg/authz/policy/config.go` |
+| `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 已实现 | `pkg/authz/policy/policy.go` `wire`（订阅）、`publish`、`reload`、`startRefresh` |
+| 配置 `load-timeout` 与 `refresh-interval` 的声明与读取 | 已实现 | `pkg/authz/policy/config.go` |
 | 配置 `endpoints`、`undeclared` 的声明与读取 | 已实现 | `pkg/authz/guard/config.go` `schema`、`resolve`、`readConfig` |
 | 模块 `authz.guard` 的登记（排他交付 `authn.Decider`） | 已实现 | `pkg/authz/guard/guard.go` `Module`、`ModuleName` |
 | 请求期中间件与授权阶段登记 | 已实现 | `pkg/authz/guard/guard.go` `wire`、`middlewareFor`、`handle`、`enforce` |

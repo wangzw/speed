@@ -21,7 +21,7 @@
 
 - **不做授权判定，从不写 403。** 本模块回答"这条请求、这条语句属于哪个租户"，准入层另回答"这个账户是不是这个租户的成员"；"这个租户或这个调用方能不能做这件事"归授权，它另立（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)）。准入层的拒绝应答由 [design-tenant-admission](design-tenant-admission.md) 规定，本模块不写 403。
 - **不认定调用方是谁，不读 `Authorization`；解析层与名册不读身份。** 认定是认证模块的事，本模块不改动 `Identity`。身份与租户的对照只发生在准入层：它读认证写进上下文的身份与解析层写进上下文的租户，不改写其中任何一个（[ADR-tenant-resolution-2026-09-21](../../../adr/adr-tenant-resolution-2026-09-21.md)、[design-tenant-admission](design-tenant-admission.md)）。
-- **不承载运行期可变的参数。** 判据是该值是否在数据库可用之前就被需要；取法与端点清单在其列，租户的增删不在（[ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md)）。
+- **不承载运行期可变的参数。** 判据见 [ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md)：数据库可用之前被需要，或塑造启动结构、改变要重启；取法与端点清单在其列，租户的增删不在。
 - **不管理租户内的账户、成员关系、角色与组织结构。** 账户全局、可属多个租户，账户与成员关系归认证（成员关系是认证的一张表，准入层只读它，见 [design-authn-account](../authn/design-authn-account.md)），角色归授权；一个租户的存在，与它内部有哪些成员，是两件事（[ADR-tenant-scope-2026-09-21](../../../adr/adr-tenant-scope-2026-09-21.md)）。
 - **不做配额、计费与限流。**
 - **不提供配置式的租户清单。** 租户的增删是运行期动作，配置是启动时的快照（[ADR-config-lifecycle-2026-09-13](../../../adr/adr-config-lifecycle-2026-09-13.md)）。

@@ -271,7 +271,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | kv | 开始与继续登录流程、WebAuthn 仪式 | 503 | 拒 |
 | kv | 已建立的会话、访问令牌、刷新令牌 | 不受影响（在 db） | — |
 | kv | 按来源地址的前置减负（若开） | 跳过该层，写 Warn 与计数 | 放：权威退避在 db，上界是退避的自由次数 |
-| settings | 请求期读取 | 内存快照，不会失败；强制类开关读不出按拒绝，调参类取声明的默认值并记 Error，同一种故障只记一次，不逐请求记 | — |
+| settings | 请求期读取 | 内存快照，不会失败；强制类开关读不出按拒绝，调参类取声明的默认值并记 Error，决定写出产物的写路径设置（`authn.account.password-algorithm`）出错或越域时令写失败，键没有任何声明覆盖时按声明默认值写出并记一行 Error，同一种故障只记一次，不逐请求记 | — |
 | settings | 变更的传播 | 最终一致 | 有界放：设置变更的传播 |
 | event | 发布 | 记 Warn，不阻塞业务 | 放：事件是提示 |
 | outbox | 发件箱路径的 `Stage` | `Stage` 失败令该动作失败 | 拒 |

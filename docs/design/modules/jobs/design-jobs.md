@@ -142,7 +142,7 @@ var (
 | `pkg/jobs/db` | `jobs.db` | `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)` | 两者都排他 |
 | `pkg/jobs/scheduler` | `jobs.scheduler` | 不交付功能接口，只 tick 并入队 | — |
 
-模块名照顶层能力：裸名 `jobs`，叶子 `jobs.<名>`，配置命名空间取同一个取值（对照 `kv`/`kv.redis`、`event`/`event.nats`）。`jobs.db` 同时排他交付提交面与登记面，使一个进程里恰好一个队列后端生效；`jobs.scheduler` 不交付任何功能接口，取用 `Queue`（入队）、`Handlers`（`Start` 经 `Registered` 校验声明类型）与 `tenant.Catalog`（按名册逐租户展开）。
+模块名照顶层能力：裸名 `jobs`，叶子 `jobs.<名>`，配置与设置的命名空间取同一个取值（对照 `kv`/`kv.redis`、`event`/`event.nats`）。`jobs.db` 同时排他交付提交面与登记面，使一个进程里恰好一个队列后端生效；`jobs.scheduler` 不交付任何功能接口，取用 `Queue`（入队）、`Handlers`（`Start` 经 `Registered` 校验声明类型）与 `tenant.Catalog`（按名册逐租户展开）。
 
 ### 周期声明与取材域
 
@@ -155,7 +155,7 @@ var (
 - `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status` 及其闭集与 `Terminal`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption` 与 `NewEnqueueOptions` 及 `With*` 构造函数的字段与方法集，以及本能力的全部哨兵，是对调用方的接口面。加方法、改签名或改字段名对实现了接缝的队列模块与取用它们的调用方都是不兼容变更。
 - `Task` 的字段语义：`Type` 对应某个已登记 `Handler` 的 `Type()`，`Payload` 对 `pkg/jobs` 不透明，`IdempotencyKey` 非空时使 `Enqueue` 幂等。`Job` 的字段语义、`Status` 的闭集与 `Terminal` 的判定同属接口面。
 - **`Schedule` 的形状**：`Key` 全局唯一、`Type` 必须与某个已登记 handler 的 `Type()` 相同、`Interval > 0`；改这些字段使既有声明成为坏声明。
-- **宿主可见面**：模块名 `jobs.db`、`jobs.scheduler`，配置命名空间 `jobs.db`、`jobs.scheduler` 及其输入项，表名 `jobs`。改动它们是宿主可见的破坏性变更。
+- **宿主可见面**：模块名 `jobs.db`、`jobs.scheduler`，配置与设置的命名空间 `jobs.db`、`jobs.scheduler` 及其输入项，表名 `jobs`。改动它们是宿主可见的破坏性变更。
 - **`jobs.db` 可被替换**：另一个队列后端实现同一对 `Queue` 与 `Handlers` 接缝、各排他交付，调用方的代码不必改变。
 
 ### 哨兵错误
@@ -178,6 +178,7 @@ var (
 | `pkg/db` | `jobs.db`：作业表 `jobs` 与它自带的迁移集 |
 | `pkg/tenant` | `jobs.db`：作业行的租户作用域与执行前进入；`jobs.scheduler`：每条周期声明经名册逐租户展开 |
 | `pkg/event` | `jobs.db`（可选）：终态事件 `jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled` |
+| `pkg/settings` | `jobs.db`（可选）：运行期可调的轮询间隔、认领批量、认领期限与两个退避边界 |
 | `pkg/log` | `jobs.db` 与 `jobs.scheduler`（可选）：诊断 |
 
 **根包不 import 任何上层功能目录。** 它只依赖标准库，位置与 `pkg/kv`、`pkg/event` 同级，任何要交活的模块都能只依赖 `pkg/jobs` 的提交面而不背上存储与租户。方向是调用方 import `pkg/jobs` 根包，根包不 import 调用方。**本能力不引入新的第三方依赖**：根包只用标准库，`jobs.db` 经 `pkg/db` 触达存储、经 `pkg/tenant` 取租户作用域，两者都是仓库既有的依赖。`jobs.scheduler` 只经 `Queue` 接缝入队，不 import `jobs.db` 的实现。
@@ -342,5 +343,5 @@ stateDiagram-v2
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 接缝与根包类型（`Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`Schedule`、`EnqueueOption`、`NewEnqueueOptions` 与 `With*` 构造函数、常量与哨兵） | 已实现 | `pkg/jobs/jobs.go` `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`JobID`、`Status`、`Priority`、`Result`、`ProgressFn`、`EnqueueOption`、`NewEnqueueOptions`、`WithPriority`、`WithDelay`、`WithScheduledAt`、`WithMaxRetries`、`WithTimeout` 及哨兵；`pkg/jobs/schedule.go` `Schedule` |
-| 作业队列与登记面 `jobs.db` | 已实现 | `pkg/jobs/db/jobs.go` `Module`、`ModuleName`、`Register`、`Registered`；`pkg/jobs/db/store.go` `Enqueue`、`Get`、`Cancel`；`pkg/jobs/db/loop.go` `pass`、`claim`、`execute`、`settle`；`pkg/jobs/db/config.go` `schema`、`readSettings`、`retryAfter`；`pkg/jobs/db/migrations` |
+| 作业队列与登记面 `jobs.db` | 已实现 | `pkg/jobs/db/jobs.go` `Module`、`ModuleName`、`Register`、`Registered`；`pkg/jobs/db/store.go` `Enqueue`、`Get`、`Cancel`；`pkg/jobs/db/loop.go` `pass`、`claim`、`execute`、`settle`；`pkg/jobs/db/config.go` `schema`、`readSettings`；`pkg/jobs/db/tunables.go` `settingsSchema`、`retryAfter`；`pkg/jobs/db/migrations` |
 | 周期调度 `jobs.scheduler` | 已实现 | `pkg/jobs/scheduler/scheduler.go` `Module`、`ModuleName`、`collectSchedules`、`validate`、`tickOnce`、`windowStart`、`windowKey`；`pkg/jobs/scheduler/config.go` `schema`、`readSettings` |

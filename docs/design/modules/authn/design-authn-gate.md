@@ -25,7 +25,7 @@
 - **不读入口模块的路由表。** 登记面只列出端名，不枚举路由（见 [design-http](../http/design-http.md)）；网关无从核对一条登记是否对应一条已挂的路由。
 - **不规定其他层的位置。** 网关只给出自己的层、它所属的阶段与锚点 `(*authn.Gate)(nil)`；同处鉴别阶段的层用 `After`、`Before` 指向它，链上次序见 [design-authn](design-authn.md)。
 - **不决定哪条命令纳入网关。** 模块无从知道自己出现在哪条命令下（[ADR-command-tree-2026-09-20](../../../adr/adr-command-tree-2026-09-20.md)）。
-- **不承载运行期可变的参数。** 判据是该值是否在数据库可用之前就被需要（[ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md)）；网关守哪些端在其列，口令表的退避参数不在。
+- **不承载运行期可变的参数。** 判据见 [ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md)：在数据库可用之前被需要、或塑造启动结构且改变要重启的值归配置。网关守哪些端在其列；调用预算也归配置，因为它受网关的生产闭包约束（见下文 `authn.gate.call-budget`）；口令表的退避参数不在。
 
 ## 外部接口契约
 
@@ -211,7 +211,7 @@ var ErrMalformedHash error
 | 键 | 语义 |
 |---|---|
 | `authn.gate.endpoints` | 网关守的端。缺省守入口模块声明的每一个端；保留端名 `*` 表示全部，写具体端名即收窄。具体端名必须存在（`ErrUnknownEndpoint`），不得为空名或重名；写成空清单，或把 `*` 与具体端名混写，都是 `ErrInvalidConfig`。空清单不表示关闭：守不住任何端的网关是配置错误，不想要网关就不纳入 `authn.gate`。清单之外的端没有认证层 |
-| `authn.gate.call-budget` | 一次后端调用的期限；超出之后交回的答案一律作废为 503 |
+| `authn.gate.call-budget` | 一次后端调用的期限；超出之后交回的答案一律作废为 503。它归配置而非设置，尽管它每次后端调用都要读：网关的生产闭包不含 `pkg/settings`（`pkg/authn/gate/deps_test.go` 的 `forbidden` 断言），读设置会把设置存储及其下层拖进闭包，网关就不再是存储不可用时作答的那一层 |
 | `authn.gate.in-flight` | 同时在飞的后端调用数；满则 503，不排队 |
 | `authn.gate.mount.endpoint` | authn 自己的路由挂在哪个端。空且入口模块恰好声明了一个端时取那一个，否则 `ErrRoutesUnconfigured`；这一条由 `authn.mount` 在 `Init` 里判，因为入口模块的端要等路由器实例存在才读得到，网关在 `Start` 对同一规则再判一次；必须是网关所守的端（`ErrRoutesUnguarded`；缺省的唯一端必然受守，受守集合是入口声明端的非空子集）；不得是准入层所守的端（`ScopeGuard.Covers` 为真即 `ErrInvalidConfig`）；不得出现在 `tenant.resolve.endpoints` 里：全局账户的请求不带租户名，被解析层所守的端对它们答 404。网关在 `Start` 核对，读得出该清单且挂载端在其中时 `ErrInvalidConfig`，读不出解码形状时只写一行 `Warn`，不终止启动 |
 | `authn.gate.mount.bases.default`、`.tenants`、`.system` | 各作用域的路由基路径 `B`；须是 gin 规整后的写法，以 `/` 起头、不以 `/` 结尾、无通配 |

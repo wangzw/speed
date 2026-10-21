@@ -25,7 +25,7 @@
 | 登记单元 | 模块名 | 交付 | 排他 | 构造期依赖 |
 |---|---|---|---|---|
 | 接口包 `pkg/jobs` | 不登记 | `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`Result`、`Schedule`、`Status`、`Priority`、`ProgressFn`、`EnqueueOption` 及哨兵 | — | — |
-| 子包 `pkg/jobs/db` | `jobs.db` | `(*jobs.Queue)(nil)` 与 `(*jobs.Handlers)(nil)` | 两者都排他 | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*event.Bus)(nil)`、`(*log.Logger)(nil)` |
+| 子包 `pkg/jobs/db` | `jobs.db` | `(*jobs.Queue)(nil)` 与 `(*jobs.Handlers)(nil)` | 两者都排他 | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*event.Bus)(nil)`、`(*settings.Store)(nil)`、`(*log.Logger)(nil)` |
 
 ### 交付的功能
 
@@ -70,15 +70,18 @@ type Handler interface {
 
 ### 宿主可见面
 
-以下是宿主写进配置文件、或在命令树与订阅方配置里点名的面。
+以下是宿主写进配置文件或设置存储、或在命令树与订阅方配置里点名的面。
 
 | 项 | 值 |
 |---|---|
 | 模块名 | `jobs.db` |
-| 配置命名空间 | `jobs.db` |
-| 输入项 | `poll-interval`（时长，缺省 `1s`）、`workers`（整数，缺省 `4`）、`claim-batch`（整数，缺省 `16`）、`lease`（时长，缺省 `2m`）、`shutdown-grace`（时长，缺省 `10s`）、`retry-base`（时长，缺省 `1s`）、`retry-max`（时长，缺省 `1m`） |
-| 取源 | 全部取主配置源 |
+| 命名空间 | `jobs.db` |
+| 配置输入项 | `workers`（整数，缺省 `4`）、`shutdown-grace`（时长，缺省 `10s`）；两项在构造期定下执行协程池与 `Stop` 的等待上限，改变要重启 |
+| 设置输入项 | `poll-interval`（时长，缺省 `1s`）、`claim-batch`（整数，缺省 `16`）、`lease`（时长，缺省 `2m`）、`retry-base`（时长，缺省 `1s`）、`retry-max`（时长，缺省 `1m`）；`poll-interval` 与 `claim-batch` 须为正，`lease`、`retry-base`、`retry-max` 以毫秒存读，还须至少 1 毫秒；在每轮循环、每次认领与每次失败结算时读取 |
+| 取源 | 配置项取主配置源；设置项取设置存储，缺席时取声明默认值 |
 | 事件（发出） | `jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled`（终态）；可选依赖 `event.Bus` 缺席时不发，作业照常跑 |
+
+设置项读取失败或取值越出取值域时取声明默认值并记一行 `Error`，那一轮照常进行。`retry-max` 小于 `retry-base` 不是启动期的跨键不变量：两个值都收下，队列照常运行，退避在使用处以 `retry-max` 为上限（见「退避与死信」）。配置不再承载这五项：旧配置里仍写着它们的宿主在启动时按未知键失败。
 
 各输入项的用途见「认领的常数与取值」；`jobs.db` 是排他交付 `Queue` 与 `Handlers` 的唯一模块，宿主在命令树上点名它或为它预置实例，依赖闭包不替它挑（排他交付的提供者不被依赖闭包自动纳入）。
 
@@ -86,7 +89,7 @@ type Handler interface {
 
 - `Queue`、`Handlers`、`Handler`、`Task`、`Job`、`Result`、`Schedule`、`Status`、`Priority`、`ProgressFn`、`EnqueueOption` 与根包的哨兵是根包对调用方的接口面，本模块交付的实现的语义与之一致。加方法、改签名或改字段名，对实现这些接缝的模块与取用它们的调用方都是不兼容变更。
 - **表 `jobs` 属于本模块，宿主不读写它。** 它的列供运维查看积压、重试与死信，不在对外接口面内。
-- **宿主可见面**：模块名 `jobs.db`、配置命名空间 `jobs.db` 与其中的输入项，改动它们是宿主可见的破坏性变更。
+- **宿主可见面**：模块名 `jobs.db`、配置与设置的命名空间 `jobs.db` 与其中的输入项与设置项，改动它们是宿主可见的破坏性变更。设置项是 `poll-interval`、`claim-batch`、`lease`、`retry-base`、`retry-max`；配置项是 `workers`、`shutdown-grace`。
 - **事件类型名**：`jobs.job.succeeded`、`jobs.job.dead_letter`、`jobs.job.cancelled` 是发布方与订阅方之间的接口面，改名改变订阅方的配置。
 
 ### 哨兵错误
@@ -97,7 +100,7 @@ type Handler interface {
 | `ErrInvalidTask` | `pkg/jobs` | `Task` 的形状不合法（`Type` 为空） |
 | `ErrNoHandler` | `pkg/jobs` | `Enqueue` 遇一个没有已登记 handler 的 `Type`，拒绝且不写行 |
 | `ErrNotRunning` | `pkg/jobs` | 队列未在运行：`Start` 之前或 `Stop` 之后 |
-| `ErrInvalidConfig` | `pkg/jobs/db` | 本模块的某个输入项取值超出队列可运行的范围，`Prepare` 拒绝并点名那一项 |
+| `ErrInvalidConfig` | `pkg/jobs/db` | 本模块的某个配置项取值超出队列可运行的范围，`Prepare` 拒绝并点名那一项 |
 | `ErrInvalidHandler` | `pkg/jobs/db` | `Register` 收到 `nil` 或 `Type()` 为空的 handler |
 | `ErrDuplicateHandler` | `pkg/jobs/db` | `Register` 遇一个已被别的 handler 登记的类型 |
 | `ErrHandlerSetFrozen` | `pkg/jobs/db` | `Register` 在队列 `Start` 之后到来，handler 集已冻结 |
@@ -110,7 +113,8 @@ type Handler interface {
 | 依赖 | 用途 |
 |---|---|
 | `pkg/core` | 登记描述符、交付功能 |
-| `pkg/config` | 声明本模块的输入项 |
+| `pkg/config` | 声明本模块的配置项 |
+| `pkg/settings` | 可选：声明并读取五个运行期调参 |
 | `pkg/jobs` | 根包：接缝、公共类型与哨兵 |
 | `pkg/db` | 作业表所在之处、迁移集、方言与交付句柄 |
 | `pkg/tenant` | 租户列（`tenant.Model`）、`Catalog.Enter`、`Catalog` 的进入方法、`FromContext` |
@@ -243,7 +247,7 @@ stateDiagram-v2
 
 ### 认领的常数与取值
 
-常数全部取自本模块的配置项（命名空间与缺省见「宿主可见面」）：`poll-interval` 是无到期作业时读表的间隔，`workers` 是执行协程数，`claim-batch` 是一次认领取的行数上限，`lease` 是一次认领的有效期，`shutdown-grace` 是 `Stop` 等在飞作业的上限，`retry-base` 与 `retry-max` 是退避的起点与上限。退避自 `retry-base` 起，每次失败翻倍，至多 `retry-max`，形态照 `pkg/event/outbox/relay` 的 `timing.retryAfter`。
+常数取自本模块的输入项（命名空间与缺省见「宿主可见面」）：`workers` 与 `shutdown-grace` 是配置项，在构造期定下执行协程数与 `Stop` 等在飞作业的上限；`poll-interval`、`claim-batch`、`lease`、`retry-base` 与 `retry-max` 是设置项，在每轮循环、每次认领与每次失败结算时读取当前值。`poll-interval` 是无到期作业时读表的间隔，`claim-batch` 是一次认领取的行数上限，`lease` 是一次认领的有效期，`retry-base` 与 `retry-max` 是退避的起点与上限。退避自 `retry-base` 起，每次失败翻倍，至多 `retry-max`，形态照 `pkg/event/outbox/relay` 的 `timing.retryAfter`。
 
 ### 并发认领
 
@@ -255,7 +259,7 @@ stateDiagram-v2
 
 ### 退避与死信
 
-handler 返回错误、或执行上下文到期，都是本次执行失败：`attempts` 加一，`error` 记下失败文本，`available_at` 置为数据库当前时刻加退避。退避自 `retry-base` 起，每次失败翻倍，至多 `retry-max`。`attempts` 超过 `max_retries` 时不退避，`status` 置为 `dead_letter`（终态）。`attempts` 超过 `max_retries` 即 `max_retries` 次重试之后又失败一次，`DefaultMaxRetries` 取 `3`，因而默认下一条作业至多执行四次。
+handler 返回错误、或执行上下文到期，都是本次执行失败：`attempts` 加一，`error` 记下失败文本，`available_at` 置为数据库当前时刻加退避。退避的两个界限在本次结算读取：退避自 `retry-base` 起，每次失败翻倍，至多 `retry-max`；`retry-max` 小于 `retry-base` 时以 `retry-max` 为界，不因此拒绝启动。`attempts` 超过 `max_retries` 时不退避，`status` 置为 `dead_letter`（终态）。`attempts` 超过 `max_retries` 即 `max_retries` 次重试之后又失败一次，`DefaultMaxRetries` 取 `3`，因而默认下一条作业至多执行四次。
 
 ### 取消
 
@@ -333,6 +337,6 @@ handler 返回错误、或执行上下文到期，都是本次执行失败：`at
 | `Handlers` 登记面与 handler 集 | 已实现 | `pkg/jobs/db/jobs.go` `Register`、`Registered`、`handlerOf` |
 | 作业表、迁移集与幂等唯一索引 | 已实现 | `pkg/jobs/db/statements.go` `tableName`、`build`；`pkg/jobs/db/migrations` |
 | 一轮认领、执行、结清 | 已实现 | `pkg/jobs/db/loop.go` `pass`、`claim`、`execute`、`settle` |
-| 退避、死信与取消 | 已实现 | `pkg/jobs/db/config.go` `retryAfter`；`pkg/jobs/db/loop.go` `settleFailure`、`cancelCheck` |
+| 退避、死信与取消 | 已实现 | `pkg/jobs/db/tunables.go` `retryAfter`；`pkg/jobs/db/loop.go` `settleFailure`、`cancelCheck` |
 | 终态事件、发布义务与补发 | 已实现 | `pkg/jobs/db/loop.go` `publishTerminal`、`terminalEventType`、`republish`、`owing` |
 | 各方言的认领语句 | 已实现 | `pkg/jobs/db/statements.go` `statementsFor`、`build` |

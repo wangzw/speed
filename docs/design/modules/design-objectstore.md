@@ -182,14 +182,15 @@ const (
 
 `objectstore.metadata` 以资源 `feature.Spec{Name: "objectstore.objects"}` 声明静态[特性](../../glossary.md) `objectstore.objects`：它在场，表示本进程挂出「路由全表」里的对象路由（[feature](design-feature.md)）。路由能力在场时 `objectstore.metadata.endpoints` 必填、空清单即启动失败，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。纳入的是哪一个字节后端不影响这个特性：`metadata` 对 `Store` 的依赖是必需的，没有后端的装配不启动。
 
-上传窗口、对象有效期与清扫间隔是参数，不经特性文档发布；超出上传窗口的上传由服务端逐次以 `ErrStateConflict` 拒绝（[ADR-feature-ownership-2026-10-17](../../adr/adr-feature-ownership-2026-10-17.md)）。
+上传窗口、对象有效期与清扫间隔是参数，不经特性文档发布：前两项是设置，清扫间隔是配置（[ADR-config-scope-2026-09-13](../../adr/adr-config-scope-2026-09-13.md)）；超出上传窗口的上传由服务端逐次以 `ErrStateConflict` 拒绝（[ADR-feature-ownership-2026-10-17](../../adr/adr-feature-ownership-2026-10-17.md)）。
 
 ### 宿主可见面
 
-以下是宿主写进配置文件、或在命令树上点名的面。
+以下是宿主写进配置文件或设置存储、或在命令树上点名的面。
 
-- **模块名**：`objectstore.metadata`、`objectstore.fs`、`objectstore.s3`。宿主的命令树点模块名纳入，配置命名空间取同一取值；`fs` 与 `s3` 二选一纳入（都排他）。
-- **配置命名空间与输入项**：`objectstore.metadata` 下的 `endpoints`（字符串列表，只收具体端名、不收 `*`，取主配置源；**路由能力在场时必填**——`Init` 见到路由能力在场而这份清单为空即以启动失败拒绝，不静默不挂路由；**路由能力缺席时这份清单不被读取**）、`upload-window`（时长，缺省 `15m`，取主配置源）、`object-ttl`（时长，缺省 `0` 即完成后的对象不过期，取主配置源）、`sweep-interval`（时长，缺省 `1m`，`≤0` 即关闭清扫，取主配置源）；`objectstore.fs` 下的 `root`（字符串，必填，本地目录，取主配置源）；`objectstore.s3` 下的 `endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`（布尔）。
+- **模块名**：`objectstore.metadata`、`objectstore.fs`、`objectstore.s3`。宿主的命令树点模块名纳入，配置与设置的命名空间取同一取值；`fs` 与 `s3` 二选一纳入（都排他）。
+- **配置命名空间与输入项**：`objectstore.metadata` 下的 `endpoints`（字符串列表，只收具体端名、不收 `*`，取主配置源；**路由能力在场时必填**——`Init` 见到路由能力在场而这份清单为空即以启动失败拒绝，不静默不挂路由；**路由能力缺席时这份清单不被读取**）、`sweep-interval`（时长，缺省 `1m`，`≤0` 即关闭清扫，取主配置源；它设定 `Start` 起的清扫 ticker 的间隔，改变要重启）；`objectstore.fs` 下的 `root`（字符串，必填，本地目录，取主配置源）；`objectstore.s3` 下的 `endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`（布尔）。
+- **设置命名空间与输入项**：`objectstore.metadata` 下的 `upload-window`（时长，缺省 `15m`，须至少 1 毫秒）与 `object-ttl`（时长，缺省 `0` 即完成后的对象不过期，须为 0 或至少 1 毫秒），由本模块声明。两项以毫秒存读，更短的正值会截断为零。`upload-window` 在每次 `Create` 读取，`object-ttl` 在每次 `Complete` 读取。设置缺席时取声明默认值；读取失败或取值越出取值域时取声明默认值并记一行 `Error`。两项是普通调参，没有放宽监视。配置不再承载这两项：旧配置里仍写着它们的宿主在启动时按未知键失败。
 - **路由与权限**：基路径 `/api/v1/objects` 下的路由（见「路由全表」），读路由要 `objectstore.object.read`、写路由要 `objectstore.object.write`。
 - **审计动作的类型名**：`objectstore.object.created`、`objectstore.object.completed`、`objectstore.object.deleted`，由宿主发上总线、由审计模块的 `events` 配置项点名。
 - **装配约束**：`metadata` 对 `(*objectstore.Store)(nil)` 的依赖是必需的，装配里恰好一个 `Store` 实现。
@@ -199,7 +200,7 @@ const (
 - `Store`、`Objects`、`State`、`Object`、`Declaration`、`ListQuery` 的字段与方法集，以及本能力的全部哨兵，是与调用方之间的接口面。加方法、改签名或改字段名对实现了接缝的后端、对取用它们的调用方都是不兼容变更。
 - `Object` 的字段语义：`ID` 是对象标识、`Key` 是内部键、`State` 取 `pending`／`uploaded`／`completed`／`deleted` 之一、`Size` 与 `Checksum` 是上传后记录的实际值、`MIME` 是内容类型、`ExpiresAt` 可空。
 - **内部键从不经 API 暴露。** `Object.Key` 是模块的内部字段（导出，但不进任何对外面）：它不进任何 HTTP 视图，不进错误文本，日志里也不记它（日志只记对象标识）。改键的语法是内部变更，不影响调用方。`Store` 的 `key` 参数同样是内部键，接口不规定它的语法，实现只按自身后端把它映射到位。
-- **宿主可见面**：模块名 `objectstore.metadata`、`objectstore.fs`、`objectstore.s3`；配置键 `objectstore.metadata.{endpoints,upload-window,object-ttl,sweep-interval}`、`objectstore.fs.root`、`objectstore.s3.{endpoint,region,bucket,access-key,secret-key,use-path-style}`；路由的路径与每条路由的权限；权限常量 `objectstore.object.read`、`objectstore.object.write`；`Problem.Type` 前缀 `urn:speed:objectstore:` 及其下的码（`bad-request`、`not-found`、`conflict`）；审计动作的类型名。改动它们是宿主可见的破坏性变更。
+- **宿主可见面**：模块名 `objectstore.metadata`、`objectstore.fs`、`objectstore.s3`；配置键 `objectstore.metadata.{endpoints,sweep-interval}`、`objectstore.fs.root`、`objectstore.s3.{endpoint,region,bucket,access-key,secret-key,use-path-style}`；设置键 `objectstore.metadata.{upload-window,object-ttl}`；路由的路径与每条路由的权限；权限常量 `objectstore.object.read`、`objectstore.object.write`；`Problem.Type` 前缀 `urn:speed:objectstore:` 及其下的码（`bad-request`、`not-found`、`conflict`）；审计动作的类型名。改动它们是宿主可见的破坏性变更。
 - 特性名 `objectstore.objects`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 单个 `Store` 实现、`metadata` 模块各自可替换、可撤掉，不改变调用方的代码。
 
@@ -222,6 +223,7 @@ const (
 |---|---|
 | `pkg/core` | 登记描述符、交付功能、声明资源 |
 | `pkg/config` | 声明各模块的输入项 |
+| `pkg/settings` | `objectstore.metadata`：可选，声明并读取设置项 `upload-window` 与 `object-ttl` |
 | `pkg/db` | `objectstore.metadata`：`objects` 表与迁移 |
 | `pkg/tenant` | `objectstore.metadata`：租户上下文、内嵌的 `tenant.Model` 与语句过滤插件 |
 | `pkg/log` | 可选：工厂在 `New` 里登记各后端凭据的字面量脱敏匹配器；`metadata` 记诊断 |
@@ -413,6 +415,7 @@ type Spec[C any] struct {
 | 清扫时删字节失败 | 记 `Warn`，行不动，下一个 pass 重试 |
 | 缺配置项（`fs.root`、`s3.bucket` 等）、配置跑不起来 | `ErrInvalidConfig`，`Prepare` 或 `New` 阶段失败即启动失败，错误点名缺的是哪一项 |
 | 路由能力在场而端名清单为空 | `ErrInvalidConfig`，`Init` 阶段失败即启动失败，错误点名 `objectstore.metadata.endpoints` |
+| 读取 `upload-window` 或 `object-ttl` 失败，或取值越出取值域 | 取声明默认值，记一行 `Error` 点名声明的键，本次 `Create` 或 `Complete` 照常进行 |
 
 **本模块不重试、不降级。** 后端不可达即那次调用失败，不回落到本地、不返回上一份字节；是否重试归调用方。
 

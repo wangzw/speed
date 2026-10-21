@@ -51,14 +51,14 @@
 | `authn.sso` | [design-authn-sso](design-authn-sso.md) | 配置与设置 |
 | `authn.sso.saml` | [design-authn-sso](design-authn-sso.md) | 配置 |
 | `authn.impersonation` | [design-authn-impersonation](design-authn-impersonation.md) | 设置 |
-| `authn.invite` | [design-authn-invite](design-authn-invite.md) | 配置 |
+| `authn.invite` | [design-authn-invite](design-authn-invite.md) | 设置 |
 | `tenant.admission` | [design-tenant-admission](../tenant/design-tenant-admission.md) | 配置与设置 |
 
 命名空间之间的冲突按全部已登记模块判：两个模块不得声明同一路径，也不得一个路径是某模块的叶子、另一个模块的内部节点。因此 `authn` 本身不得是任何模块的叶子，也不能让所有 authn 模块共用一个 `authn.*` 平铺命名空间；叶子名与同前缀模块的下一段同名的限制见 [design-authn](design-authn.md) 的外部接口契约。
 
 ### 配置项
 
-配置项是启动必须项：在数据库可用之前就被需要的值，加构造时分配的大小。键表的约定：
+配置项是启动期的值：在数据库可用之前就被需要的值，与塑造启动结构、改变要重启才生效的值（[ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md)）。键表的约定：
 
 - **来源**列：「主」是仅取主配置源，环境变量与命令行都改不了；「默认」是 `Origins` 的零值，即主配置源加环境变量，不含命令行。
 - **标记**列：「敏」是 `Sensitive: true`，必带 `Description`；「必填」是 `Required: true`。必填项只对这次运行级纳入的模块判定，缺项时 `Decode` 失败，错误点名缺的那一项且不带秘密（[design-config](../design-config.md)）。
@@ -87,7 +87,6 @@
 
 | 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
 |---|---|---|---|---|---|
-| `authn.account.password-algorithm` | 字符串 | `argon2id` | 默认 | | `argon2id` 或 `pbkdf2-sha256`；要求 FIPS 140 的部署取后者 |
 | `authn.account.password-concurrency` | 整数 | `min(GOMAXPROCS,8)` | 默认 | | 口令派生的并发上限 |
 | `authn.account.password-memory-budget-mib` | 整数 | `512` | 默认 | | 账户后端的口令派生内存预算，启动时分配（口令表后端另持自己的一份缺省预算，不设键）；至少是 `authn.account.password-argon2-memory-kib` 取值域上限的两倍，否则 `ErrInvalidConfig` |
 | `authn.session.cookie-domain` | 字符串 | 空 | 默认 | | 非空则 cookie 名改为 `__Secure-sid` 并写出 `Domain` 属性 |
@@ -131,12 +130,6 @@
 | `authn.sso.saml.sp-next-cert-file` | 字符串，文件路径 | 无 | 默认 | | 先发布的下一张证书，轮换时用 |
 | `tenant.admission.endpoints` | 字符串列表 | 无 | 主 | 必填 | 准入层所守的端；与 `tenant.resolve.endpoints` 同形，一般相同；空是 `ErrInvalidConfig`，不接受 `*`，不得含 authn 的挂载端 |
 
-下表是邀请的配置项（封闭集合）。
-
-| 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
-|---|---|---|---|---|---|
-| `authn.invite.ttl` | `time.Duration` | `168h` | 主 | | 一次邀请自签发时起的存活期，签发调用自带期限时以调用为准；取值 1h 到 2160h，越界即 `ErrInvalidConfig` |
-
 短信厂商适配的配置键（`sms.aliyun.*`、`sms.tencent.*`）不在本文：发送能力是顶层能力模块 `pkg/sms`，其配置随能力归 [design-sms](../design-sms.md)。必填判定只对运行级纳入的模块做，没有被纳入的模块的必填项不参与判定。
 
 ### 设置项
@@ -171,6 +164,7 @@
 
 | 键 | 类型 | 缺省 | 取值域 | 租 | 放宽方向 |
 |---|---|---|---|---|---|
+| `authn.account.password-algorithm` | 字符串 | `argon2id` | `argon2id` 或 `pbkdf2-sha256` | | 改为 `pbkdf2-sha256`（降级） |
 | `authn.static.free-attempts` | 整数 | `5` | 1 到 20 | | 增大 |
 | `authn.static.fail-window` | `time.Duration` | `15m` | 1m 到 24h | | 减小 |
 | `authn.static.max-backoff` | `time.Duration` | `15m` | 10s 到 24h | | 减小 |
@@ -190,6 +184,16 @@
 `cache-ttl` 是绝对期限：自一次真实派生通过起算，命中不续期，0 关闭缓存。`fail-window` 与 `max-backoff` 的取值域各自独立，所以 `max-backoff` 大于 `fail-window` 的组合合法。失败计数在窗口已过、且这些失败赚得的等待也已走完之后才归零，窗口不会在锁定期结束之前把计数清掉；缺省值下两者相等，行为与按窗口归零相同。账户的 `throttle-decay` 与 `throttle-max-delay` 同判（[design-authn-account](design-authn-account.md)）。
 
 Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项取值域内判，而 OWASP 最低组合按（m, t, p）的组合判：各自合法而组合低于下限时，写入不被拒绝，使用处回落到默认组合并记 `Error`（回落与内存预算的口径见 [design-authn-account](design-authn-account.md)）。`secret-retention` 是服务密钥到期或撤销之后行的保留期。
+
+`authn.account.password-algorithm` 在每次写哈希时读取：登记账户与改口令，以及登录成功后的再哈希。它是设置项，但读取没有回落：设置缺席时取声明默认值 `argon2id`；读取失败或取值越出取值域时，哈希写入失败而不是改用另一个算法——登记账户与改口令答不可用，登录后的再哈希跳过、记一行 `Error`，登录本身仍成功。键没有任何声明覆盖（本模块自身 schema 的缺陷）是唯一的例外：按声明默认值 `argon2id` 写出并记一行 `Error`，不令写失败。理由是回落到另一个算法会让宿主以为选定的算法在生效，而实际写下的条目用了别的算法。
+
+下表是邀请的设置项（封闭集合）。
+
+| 键 | 类型 | 缺省 | 取值域 | 租 | 放宽方向 |
+|---|---|---|---|---|---|
+| `authn.invite.ttl` | `time.Duration` | `168h` | 1h 到 2160h | | 增大 |
+
+`authn.invite.ttl` 在每次不带期限的 `Issue` 读取；签发调用自带期限时以调用为准，不读它。设置缺席时取声明默认值；读取失败或取值越出取值域时取声明默认值并记一行 `Error`，签发照常进行（调参类方向）。
 
 下表是登录、短信与多因素的设置项（封闭集合）。
 
@@ -247,7 +251,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 - **设置对 authn 的各模块是可选依赖。** `settings.Store` 缺席时，各模块对每个设置项取声明的默认值，行为与默认值下的设置完全一致，只是不可调整。只使用口令表的宿主因此不必为几个退避参数运行数据库与事件总线（`settings` 模块自己要求 `db` 与 `event.Bus`）。这是 [ADR-config-scope-2026-09-13](../../../adr/adr-config-scope-2026-09-13.md) 接受的降级，不是配置。
 - **在自己的 `Init` 里读设置的模块，对设置写 `Optional` 的依赖声明**；不写则读取报 `ErrNotLoaded`（快照在设置模块的 `Init` 装载）。请求路径上的读取不受此限。
-- **读设置出错的方向由设置项的类别定**：强制类开关读不出来时按拒绝，应答 503；其余取值读不出来时取声明默认值并记 `Error`。类别的定义与流程见[读取设置的方向](#读取设置的方向)。放宽开关属后者：声明默认值就是严格一侧（`closed`、`never`、`true`），读不出来按它取值。
+- **读设置出错的方向由设置项的类别定**：强制类开关读不出来时按拒绝，应答 503；其余取值读不出来时取声明默认值并记 `Error`；决定写出产物的写路径设置（`authn.account.password-algorithm`）读不出来或越域时令写失败，不替换为默认值；键没有任何声明覆盖时按声明默认值写出并记一行 `Error`。类别的定义与流程见[读取设置的方向](#读取设置的方向)。放宽开关属调参类：声明默认值就是严格一侧（`closed`、`never`、`true`），读不出来按它取值。
 - **安全参数的缺省取最严的取值，并声明取值域**：写入时判下限，使宿主无法经设置把口令哈希参数配到最低要求之下。
 - **读取走内存快照**，不发起 IO、不收上下文；变更经 `settings.changed` 事件与周期刷新传播，最坏延迟是刷新间隔（缺省 5 分钟）。凡安全上需要立刻生效的变更（撤销）不走设置，走 db 的撤销面。
 
@@ -263,7 +267,9 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 三项都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次做出决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.auto-link` 在每次账户解析时读，`authn.token.check-session` 在每次令牌校验、会话步骤之前读。声明模块（`pkg/authn/account` 与 `pkg/authn/token`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这三项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
 
-仅开发用的 `authn.gate.mount.allow-insecure` 与 `authn.sso.allow-private-egress` 留在配置，不属于上表：它们在启动期决定基址校验、cookie 名称与出站客户端，改动要重启才生效，按构造期的判据落在配置，启动诊断各写一行 `Warn`。
+`authn.invite.ttl` 与 `authn.account.password-algorithm` 也是设置项、也在放宽方向上受监视，但不在上表：上表的判据是「一个开关，声明默认值取严的一端」，而这两项的取值本身有强弱次序，没有「打开」这一动作。前者变长扩大邀请的可用窗口，方向取 `increase`；后者改为 `pbkdf2-sha256` 降低哈希成本，方向取 `downgrade`（[design-authn-events](design-authn-events.md) 的放宽方向取值）。
+
+仅开发用的 `authn.gate.mount.allow-insecure` 与 `authn.sso.allow-private-egress` 留在配置，不属于上表：它们在启动期决定基址校验、cookie 名称与出站客户端，改动要重启才生效，按 (b) 落在配置，启动诊断各写一行 `Warn`。
 
 决定守护面的清单（`authn.gate.endpoints`、`authn.gate.trusted-origins`、`tenant.admission.endpoints`）同样只取主配置源：它们在装配期决定路由挂到哪个端、跨源检查信谁。
 
@@ -383,7 +389,9 @@ flowchart TD
     Q0 -- 是 --> SEC["不进设置，按秘密存放表落位"]
     Q0 -- 否 --> Q1{"数据库可用之前是否被需要"}
     Q1 -- 是 --> C["配置"]
-    Q1 -- 否 --> Q2{"数目是否在运行期才确定"}
+    Q1 -- 否 --> Q1B{"是否塑造启动结构、改变要重启"}
+    Q1B -- 是 --> C
+    Q1B -- 否 --> Q2{"数目是否在运行期才确定"}
     Q2 -- 是 --> D["表里的数据"]
     Q2 -- 否 --> Q3{"安全变更是否需要立刻生效"}
     Q3 -- 是 --> R["db 的撤销面"]
@@ -393,8 +401,8 @@ flowchart TD
     Q5 -- 否 --> O["配置，默认来源"]
 ```
 
-- **数据库可用之前就被需要**的值是配置：网关的参数、口令表的表本身与构造时分配的大小（缓存容量、并发信号量、口令内存预算）、凭据提供方的客户端标识与密钥、签名密钥与 SAML 私钥的文件、对外基址、依赖方标识、短信厂商密钥、cookie 的域与 `SameSite`。这份名单是判据的例举，不是封闭集。
-- **按租户或按运行时场景取不同值**的值落在设置一侧，这是「数据库可用之前就被需要」这条判据的推论：会话时长、令牌时长、口令策略与退避（含口令表的缓存时长与退避参数）、短信的位数与有效期与节流、多因素的策略、冒充的时限、SSO 的出站超时、租户的强制策略。放宽开关（`authn.account.signup`、`authn.account.auto-link`、`authn.token.check-session`）同样落在设置，声明默认值取严的一端。这份名单同样是例举。
+- **数据库可用之前就被需要、或塑造启动结构且改变要重启**的值是配置：网关的参数、口令表的表本身与构造时分配的大小（缓存容量、并发信号量、口令内存预算）、凭据提供方的客户端标识与密钥、签名密钥与 SAML 私钥的文件、对外基址、依赖方标识、短信厂商密钥、cookie 的域与 `SameSite`。这份名单是判据的例举，不是封闭集。
+- **按租户或按运行时场景取不同值**的值落在设置一侧，这是判据的推论：这些值在数据库可用之后才被需要，也能在不重启时生效。会话时长、令牌时长、口令策略与退避（含口令表的缓存时长与退避参数）、短信的位数与有效期与节流、多因素的策略、冒充的时限、SSO 的出站超时、租户的强制策略。放宽开关（`authn.account.signup`、`authn.account.auto-link`、`authn.token.check-session`）同样落在设置，声明默认值取严的一端。这份名单同样是例举。
 - **数目在运行期才确定的实体**既不是配置也不是设置，是表里的数据：每租户的 IdP、账户、会话、签名之外的密钥。
 - **分界在值本身，不在模块。** 同一个模块里，构造时分配的缓存容量是配置，缓存时长是设置。
 - 需要立刻生效的安全变更（撤销）不走设置，因为设置的最坏传播延迟是刷新间隔。
@@ -407,12 +415,14 @@ flowchart TD
     A -- 否 --> D["取声明默认值，行为与默认值下的设置一致"]
     A -- 是 --> E{"读取成功"}
     E -- 是 --> V["使用读到的值"]
-    E -- 否 --> K{"声明默认值落在放行一侧"}
+    E -- 否 --> W{"决定写出产物的写路径"}
+    W -- 是 --> XW["令写失败，不替换为默认值"]
+    W -- 否 --> K{"声明默认值落在放行一侧"}
     K -- 是 --> X["按拒绝，503"]
     K -- 否 --> F["取声明默认值并记 Error"]
 ```
 
-强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类（含缺省为 0 即关闭的 `authn.login.ip-limit`）回落到默认值只是用了起点。请求期的读取走内存快照，读取出错只在编程错误时出现，所以 `Error` 日志指向代码缺陷，不指向运维。
+强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类（含缺省为 0 即关闭的 `authn.login.ip-limit`）回落到默认值只是用了起点。**第三类是决定写出产物的写路径设置**（当前为 `authn.account.password-algorithm`）：它读不出来，或取值越出取值域时，不替换为默认值，而令这次写失败——登记账户与改口令答不可用，登录后的再哈希跳过并记 `Error`。键没有任何声明覆盖时按声明默认值写出并记一行 `Error`，这是本模块自身 schema 的缺陷，不令写失败。回落到另一个值会让宿主以为选定的值在生效，而实际写下的产物用了别的值。请求期的读取走内存快照；读取本身只在未知键、类型不符这类编程错误时出错，域外的行由各读取分支按上表处置并记 `Error`。因此 `Error` 日志多半指向代码缺陷，域外的行则指向一次绕过写入面的写入。
 
 设置缺席是合法的装配，不是读取出错：缺席时全部取声明默认值，不记 `Error`，也不按拒绝。
 
@@ -495,6 +505,7 @@ flowchart TD
 | `settings.Store` 缺席 | 各设置项取声明默认值 | 无；行为与默认值下的设置一致 |
 | 强制类开关读设置出错 | 拒绝 | 503 |
 | 调参类设置读出错 | 取声明默认值，记 `Error` | 无；`Error` 指向编程错误 |
+| 写路径设置（`authn.account.password-algorithm`）读出错或越域 | 令写失败，不替换为默认值；键没有任何声明覆盖时按声明默认值写出并记 `Error` | 登记账户与改口令 503；登录后再哈希跳过并记 `Error`，登录本身成功 |
 | 放宽变更的尽力档审计记录写入失败 | 业务继续，记 `Error` 与 `authn.audit.write-failures` 计数 | 无 |
 | 加密列读写时 `db` 根密钥不可用 | 拒绝 | 503；启动时即缺失的情形已被启动期自检拦下 |
 
@@ -522,7 +533,7 @@ flowchart TD
 - 新取值按[落位判定](#落位判定)的次序落点；命名空间取模块名，键名只含小写字母、数字与短横线，不得与同前缀模块的下一段同名。
 - 秘密类取值只能归入[秘密的存放](#秘密的存放)里已有的存放形态，不得新增；秘密类配置项标 `Sensitive`、带 `Description`、取 `Origins` 的零值，持有它的模块在 `New` 里登记日志的字面量匹配器。
 - 新的放宽开关声明为设置项，缺省取严的一端并声明取值域，在启动诊断与 `settings.changed` 监视里各留一行 `Warn`，并入[放宽开关](#放宽开关)一节。
-- 新的设置项声明取值域与默认值，安全参数的默认值取最严的取值；按判据判定放宽方向并补列；声明默认值落在放行一侧的开关，读不出来按拒绝。
+- 新的设置项声明取值域与默认值，安全参数的默认值取最严的取值；按判据判定放宽方向并补列；声明默认值落在放行一侧的开关，读不出来按拒绝；决定写出产物的写路径设置，出错或越域时不得替换为默认值，须令写失败。
 - 带加密列的模块在 `Start` 里做加密列往返自检。
 - 在自己的 `Init` 里读设置的模块对设置写 `Optional` 的依赖声明。
 

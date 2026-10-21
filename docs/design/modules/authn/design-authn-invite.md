@@ -50,7 +50,7 @@ type Invites interface {
 type IssueInvite struct {
     Tenant    string    // 字符串形式的租户标识
     Email     string    // 被邀请人的地址，规范化前的原值
-    ExpiresAt time.Time // 绝对期限；零值取配置的时长
+    ExpiresAt time.Time // 绝对期限；零值取设置的时长
 }
 
 type Issued struct {
@@ -112,7 +112,7 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 |---|---|---|---|
 | `pkg/authn/invite` | `authn.invite` | `Invites`，以及 `Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 与哨兵 | 排他 |
 
-模块名照顶层能力：嵌套子包取 `authn.<功能>`，本模块取 `authn.invite`（[design-authn](design-authn.md)）。配置命名空间取同一取值。
+模块名照顶层能力：嵌套子包取 `authn.<功能>`，本模块取 `authn.invite`（[design-authn](design-authn.md)）。设置命名空间取同一取值；模块仍声明一个没有输入项的配置节，使旧配置里的 `authn.invite.ttl` 按完整路径报未知键。
 
 ### 路由
 
@@ -142,14 +142,14 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 ### 声明的特性
 
-**`authn.invite` 以[静态特性](../../../glossary.md) `authn.invitations` 声明邀请面。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.invitations"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程挂出「路由」一节的全部路由：管理面的签发、列表与撤销，以及接受面的读取与接受。路由无条件挂出：`mount.Mounter` 是必需依赖，模块进入启用集即挂出它们，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。邀请的存活期 `authn.invite.ttl` 是参数，不发布。
+**`authn.invite` 以[静态特性](../../../glossary.md) `authn.invitations` 声明邀请面。** 描述符的 `Resources` 带 `feature.Spec{Name: "authn.invitations"}`（[feature](../design-feature.md)）。这个特性在场，表示本进程挂出「路由」一节的全部路由：管理面的签发、列表与撤销，以及接受面的读取与接受。路由无条件挂出：`mount.Mounter` 是必需依赖，模块进入启用集即挂出它们，挂与不挂不另取决于配置或装配，所以声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。邀请的存活期 `authn.invite.ttl` 是设置项，不发布。
 
 特性文档只对已认证调用者可读；接受面路由是 `Public`，但邀请是否装配不经任何匿名发现面发布。
 
 ### 宿主可见面
 
-- **模块名**：`authn.invite`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
-- **配置输入项**：`authn.invite.ttl`（时长，缺省取声明的邀请存活期，取主配置源）。键的名字、取值域与缺省在 [design-authn-config](design-authn-config.md)。
+- **模块名**：`authn.invite`。宿主的命令树点模块名纳入，设置命名空间取同一取值。
+- **设置输入项**：`authn.invite.ttl`（时长，缺省 `168h`，取值域 1h 到 2160h）。每次不带期限的签发读它；设置缺席时取声明默认值，读取失败或取值越界时取声明默认值并记一行 `Error`，签发照常。存活期变长即放宽：本模块订阅 `settings.changed`，改到更长时写一行 `Warn` 并经审计接缝记 `authn.settings.relaxed`，方向 `increase`。键的名字、取值域与缺省在 [design-authn-config](design-authn-config.md)。
 - **路由**：`Bt/:tenant/invitations` 下的签发、列表与撤销，以及 `B/invitations/:token` 下的读取与接受；询问的动作 `authn.membership.manage`。
 - **令牌前缀**：接受令牌以 `spd_inv_` 起头，供日志脱敏识别（对照 `spd_rt_`、`spd_cs_` 两条既有前缀，见 [design-authn-token](design-authn-token.md)）。
 - **特性名**：`authn.invitations`，静态特性（见「声明的特性」）。
@@ -158,7 +158,7 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 - `Invites` 的方法集，`Invitation`、`InvitationStatus`、`Issued`、`IssueInvite`、`AcceptInvite` 的字段与方法集，以及本模块的全部哨兵，属于对外接口面。
 - 路由路径与每条管理面路由询问的动作属于对外接口面；`InvitationStatus` 的存量列与「已过期由时钟推出、不落列」同属接口面。
-- 成员行的 `Source = invite`、令牌前缀 `spd_inv_`、配置键 `authn.invite.ttl` 与特性名 `authn.invitations` 是宿主可见面的一部分，改名即破坏性变更；前端经生成的特性名类型引用特性名，撤去它或改变它所指的面同样是破坏性变更。
+- 成员行的 `Source = invite`、令牌前缀 `spd_inv_`、设置键 `authn.invite.ttl` 与特性名 `authn.invitations` 是宿主可见面的一部分，改名即破坏性变更；前端经生成的特性名类型引用特性名，撤去它或改变它所指的面同样是破坏性变更。配置不再承载 `authn.invite.ttl`：旧配置里仍写着它的宿主在启动时按未知键失败。
 
 ### 哨兵错误
 
@@ -179,7 +179,8 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 | 依赖 | 用途 |
 |---|---|
 | `pkg/core` | 模块描述符与交付功能 |
-| `pkg/config` | 声明 `authn.invite.ttl` |
+| `pkg/config` | 一个没有输入项的配置节：旧配置里的 `authn.invite.ttl` 因而按完整路径报未知键 |
+| `pkg/settings` | `Optional`：声明并读取设置项 `authn.invite.ttl`，订阅 `settings.changed` 监视放宽方向 |
 | `pkg/db` | `authn_invitations` 表与迁移 |
 | `pkg/authn`（根包） | `Membership`、`AccountID`；`Invites` 与值类型取自本子包 |
 | `AccountAdmin`（根包声明，由 `authn.account` 交付） | 接受时建账户 |
@@ -339,6 +340,8 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 | 管理面判定接缝缺席，或 `Decide` 返回假 | 403 `forbidden` |
 | 管理面强制档审计写不进 | 503，动作不执行 |
 | 接受面依赖不可用 | 503 |
+| 签发读取存活期设置失败或取值越界 | 取声明默认值并记一行 `Error`，签发照常进行 |
+| 配置里仍写着 `authn.invite.ttl` | 启动失败，按未知键点名该键 |
 
 **管理面的回绝映射是封闭的。** 400（`Problem.Type` 为 `urn:speed:authn:bad-request`）：地址不成形、正文形状不可读与其余参数错误。403（`urn:speed:authn:forbidden`）：判定接缝的拒绝。404：邀请标识不指向任何一条邀请。409（`urn:speed:authn:conflict`）：`ErrInvitationAlreadyAccepted`。503（`urn:speed:authn:unavailable`）：其余失败，以及没落地的强制档审计，成因只进日志。`Problem.Type` 前缀与码集归 `pkg/authn/internal/mount`。
 

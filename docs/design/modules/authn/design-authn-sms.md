@@ -98,7 +98,7 @@ type SMSCodes interface {
 
 ### 输入项的语义
 
-输入项的完整表（取值、缺省、范围、敏感标记）只在 [design-authn-config](design-authn-config.md) 给出，本节写语义。分界判据是该值是否在数据库可用之前就被需要（[ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
+输入项的完整表（取值、缺省、范围、敏感标记）只在 [design-authn-config](design-authn-config.md) 给出，本节写语义。分界判据是该值是否在数据库可用之前就被需要，或塑造启动结构、改变要重启（[ADR-authn-settings-and-secrets-2026-10-10](../../../adr/adr-authn-settings-and-secrets-2026-10-10.md)）。
 
 | 归属 | 项 | 语义 |
 |---|---|---|
