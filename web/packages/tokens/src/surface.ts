@@ -2,21 +2,16 @@
  * Surface tokens: the semantic layers the interface paints its chrome on.
  *
  * A role names where a piece of chrome sits -- page, container, overlay,
- * header, and the standing navigation column -- and carries only the fields
- * a project may sharpen: fill, fill opacity, border color (per mode), border
- * width, elevation and backdrop filter. Every field is optional on purpose.
- * An omitted field means "inherit the slot the theme already reads", never a
- * color of its own:
+ * header -- and carries only the fields a project may sharpen: fill, fill
+ * opacity, border color (per mode), border width, elevation and backdrop
+ * filter. Every field is optional on purpose. An omitted field means
+ * "inherit the slot the theme already reads", never a color of its own:
  *
  * - page    -> color.background.default
- * - container, overlay, nav -> color.background.paper
+ * - container, overlay -> color.background.paper
  * - any border -> color.divider
  * - header  -> the neutral ramp (the theme takes 50 in light mode and 900
  *              in dark mode)
- *
- * `nav` is optional as a role too: absent, the standing navigation column
- * follows `container` exactly, so a style that says nothing about it is
- * unchanged.
  *
  * This section therefore carries no surface color literals, and an
  * override that only changes color.background.paper keeps every surface
@@ -48,18 +43,12 @@ export interface SurfaceRoleTokens {
   readonly backdropFilter?: string
 }
 
-/** The four semantic surface roles, plus the standing navigation column. */
+/** The four semantic surface roles: page, container, overlay and header. */
 export interface SurfaceTokens {
   readonly page: SurfaceRoleTokens
   readonly container: SurfaceRoleTokens
   readonly overlay: SurfaceRoleTokens
   readonly header: SurfaceRoleTokens
-  /**
-   * The standing navigation column. It is its own role so a style can
-   * tune the sidebar's density apart from the content cards; absent, it
-   * follows `container` exactly.
-   */
-  readonly nav?: SurfaceRoleTokens
 }
 
 export const surfaceTokens: SurfaceTokens = {

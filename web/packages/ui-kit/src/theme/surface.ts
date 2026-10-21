@@ -62,8 +62,6 @@ export interface SurfaceTheme {
   readonly container: SurfaceThemeRole
   readonly overlay: SurfaceThemeRole
   readonly header: SurfaceThemeRole
-  /** The standing navigation column; follows `container` when unset. */
-  readonly nav: SurfaceThemeRole
 }
 
 /**
@@ -153,13 +151,6 @@ export function resolveSurfaceTheme(
     header: resolve(
       tokens.surface.header,
       tokens.color.neutral[mode === 'dark' ? 900 : 50],
-    ),
-    // The navigation column is its own role so a style can tune its
-    // density apart from the content cards; a style that names none
-    // follows the container exactly.
-    nav: resolve(
-      tokens.surface.nav ?? tokens.surface.container,
-      palette.background.paper,
     ),
   }
 }
@@ -256,13 +247,12 @@ export const surfaceComponents: ThemeOptions['components'] = {
           return overlayStyle(theme)
         }
         // A standing navigation column is chrome, not a card: it keeps
-        // the navigation role's fill and blur (which follows the
-        // container unless a style tunes it), but runs edge to edge (no
-        // radius) and divides from the content on its right edge, the
-        // way the AppBar divides on its bottom edge. Its other three
-        // edges sit on the viewport boundary. No elevation: a card shadow
-        // would lift the column off the page it belongs to.
-        const role = theme.surface.nav
+        // the container fill and blur, but runs edge to edge (no radius)
+        // and divides from the content on its right edge, the way the
+        // AppBar divides on its bottom edge. Its other three edges sit on
+        // the viewport boundary. No elevation: a card shadow would lift
+        // the column off the page it belongs to.
+        const role = theme.surface.container
         return {
           backgroundColor: role.fill,
           borderRightColor: role.borderColor,

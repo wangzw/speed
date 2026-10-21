@@ -287,33 +287,12 @@ describe('surface component overrides', () => {
     ).toBe(true)
   })
 
-  it('follows the container when no navigation role is declared', () => {
-    const { theme } = createAppTheme({
-      surface: {
-        container: { fill: '#112233', borderColor: '#445566', borderWidth: 2 },
-      },
-    })
-    expect(theme.surface.nav).toEqual(theme.surface.container)
-  })
-
-  it('takes a declared navigation role over the container', () => {
-    const { theme } = createAppTheme({
-      surface: {
-        container: { fill: '#112233', borderWidth: 2 },
-        nav: { fill: '#334455', opacity: 0.5, borderWidth: 1 },
-      },
-    })
-    expect(theme.surface.nav.fill).toBe('rgba(51, 68, 85, 0.5)')
-    expect(theme.surface.nav.borderWidth).toBe(1)
-    expect(theme.surface.container.fill).toBe('#112233')
-  })
-
-  it('gives a permanent drawer the navigation surface and a temporary one the overlay surface', () => {
-    const navFill = '#345678'
+  it('gives a permanent drawer the container surface and a temporary one the overlay surface', () => {
+    const containerFill = '#345678'
     const overlayFill = '#456789'
     const { theme } = createAppTheme({
       surface: {
-        nav: { fill: navFill },
+        container: { fill: containerFill },
         overlay: { fill: overlayFill },
       },
     })
@@ -327,7 +306,7 @@ describe('surface component overrides', () => {
     const permanentPaper = document.querySelector(`.${drawerClasses.paper}`) as Element
     const css = emittedStyleText()
     expect(
-      classesDeclaringBackground(css, navFill).some((name) =>
+      classesDeclaringBackground(css, containerFill).some((name) =>
         permanentPaper.classList.contains(name),
       ),
     ).toBe(true)
@@ -353,7 +332,7 @@ describe('surface component overrides', () => {
       ),
     ).toBe(true)
     expect(
-      classesDeclaringBackground(temporaryCss, navFill).some((name) =>
+      classesDeclaringBackground(temporaryCss, containerFill).some((name) =>
         temporaryPaper.classList.contains(name),
       ),
     ).toBe(false)

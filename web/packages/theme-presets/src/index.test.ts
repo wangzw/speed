@@ -36,7 +36,7 @@ import type { ThemePresetTokens } from './index'
 
 type ColorMode = 'light' | 'dark'
 
-const ROLES = ['page', 'container', 'overlay', 'header', 'nav'] as const
+const ROLES = ['page', 'container', 'overlay', 'header'] as const
 
 // The type forbids the layout and stacking contracts; these assignments
 // fail to compile, which is what the typecheck leg pins. Runtime objects
@@ -159,8 +159,7 @@ function surfaceBodies(tokens: SpeedTokens, mode: ColorMode, role: (typeof ROLES
   if (role === 'page' && canvas !== undefined) {
     return [parseHex(canvas[mode].from), parseHex(canvas[mode].to)]
   }
-  // The navigation role is optional; absent, it follows the container.
-  const surface = tokens.surface[role] ?? tokens.surface.container
+  const surface = tokens.surface[role]
   // A transparent fill shows whatever sits behind the role. The table
   // header sits on the container surface, so its text is measured there.
   if (surface.fill === 'transparent') {
@@ -319,12 +318,6 @@ describe('glass', () => {
       expect(surface?.backdropFilter, role).toBeTruthy()
       expect(surface?.opacity, role).toBeLessThan(1)
     }
-  })
-
-  it('keeps the navigation column more transparent than the cards', () => {
-    expect(glassThemePreset.tokens.surface?.nav?.opacity).toBeLessThan(
-      glassThemePreset.tokens.surface?.container?.opacity ?? 1,
-    )
   })
 
   it('gives the raised surfaces a border that reads on either page', () => {    for (const role of ['container', 'overlay'] as const) {
