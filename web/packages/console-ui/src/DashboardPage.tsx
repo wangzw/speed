@@ -169,7 +169,10 @@ export function KpiCard({
         flex: '1 1 12rem',
         minWidth: 0,
         border: 1,
-        borderColor: 'divider',
+        // The tile shares the card's own rim, so a theme that gives its
+        // containers a visible border (glass does, per mode) gives the
+        // tiles the same edge.
+        borderColor: (theme) => theme.surface.container.borderColor,
         borderRadius: 1,
       }}
     >
