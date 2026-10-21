@@ -52,17 +52,24 @@ function createPreset(id: string, tokens: ThemePresetTokens): ThemePreset {
 export const defaultThemePreset: ThemePreset = createPreset('default', {})
 
 /**
- * Classic: the traditional admin-console look -- small radii, hard rules
- * and shadows, tighter leading, a deeper primary.
+ * Classic: the traditional admin-console look -- nearly square corners, a
+ * denser spacing base, hard rules and shadows, tighter leading, a navy
+ * primary on a steel secondary.
  */
 export const classicThemePreset: ThemePreset = createPreset('classic', {
   color: {
-    divider: '#CBD5E1',
+    divider: '#94A3B8',
     semantic: {
       primary: {
-        main: '#1D4ED8',
-        light: '#3B82F6',
-        dark: '#1E3A8A',
+        main: '#1E3A8A',
+        light: '#60A5FA',
+        dark: '#172554',
+        contrastText: '#FFFFFF',
+      },
+      secondary: {
+        main: '#475569',
+        light: '#94A3B8',
+        dark: '#334155',
         contrastText: '#FFFFFF',
       },
     },
@@ -74,8 +81,11 @@ export const classicThemePreset: ThemePreset = createPreset('classic', {
       relaxed: 1.6,
     },
   },
+  spacing: {
+    unit: 7,
+  },
   shape: {
-    borderRadius: 4,
+    borderRadius: 2,
   },
   shadows: {
     1: '0 1px 0 0 rgba(15, 23, 42, 0.18)',
@@ -88,16 +98,23 @@ export const classicThemePreset: ThemePreset = createPreset('classic', {
 })
 
 /**
- * Modern: the fashion-forward product look -- large radii, soft wide
- * shadows, looser leading, a brighter accent.
+ * Modern: the fashion-forward product look -- large radii, an airier
+ * spacing base, soft wide shadows, looser leading, a violet primary on a
+ * rose secondary.
  */
 export const modernThemePreset: ThemePreset = createPreset('modern', {
   color: {
     semantic: {
       primary: {
-        main: '#4F46E5',
-        light: '#818CF8',
-        dark: '#4338CA',
+        main: '#7C3AED',
+        light: '#A78BFA',
+        dark: '#6D28D9',
+        contrastText: '#FFFFFF',
+      },
+      secondary: {
+        main: '#BE185D',
+        light: '#F472B6',
+        dark: '#9D174D',
         contrastText: '#FFFFFF',
       },
     },
@@ -105,12 +122,15 @@ export const modernThemePreset: ThemePreset = createPreset('modern', {
   typography: {
     lineHeight: {
       tight: 1.35,
-      normal: 1.65,
-      relaxed: 1.9,
+      normal: 1.7,
+      relaxed: 1.95,
     },
   },
+  spacing: {
+    unit: 9,
+  },
   shape: {
-    borderRadius: 14,
+    borderRadius: 20,
   },
   shadows: {
     1: '0 2px 8px 0 rgba(15, 23, 42, 0.06)',
@@ -163,30 +183,64 @@ export const compactThemePreset: ThemePreset = createPreset('compact', {
 export const glassThemePreset: ThemePreset = createPreset('glass', {
   color: {
     background: {
+      // A saturated backdrop is what makes the translucency read: a pale
+      // gradient behind a translucent card looks like a slightly tinted
+      // card. The stops stay light enough in light mode for the dark text
+      // and dark enough in dark mode for the light text (the contrast test
+      // pins the composite on both stops).
       canvas: {
-        light: { from: '#EEF2FF', to: '#FCE7F3' },
-        dark: { from: '#0B1020', to: '#151033' },
+        light: { from: '#818CF8', to: '#F472B6' },
+        dark: { from: '#1E1B4B', to: '#3B0764' },
       },
     },
+    text: {
+      // The saturated canvas leaves the default secondary ink too light.
+      secondary: '#1E293B',
+    },
     semantic: {
-      // The pastel canvas is slightly darker than white, which costs the
-      // link tone the last of its text headroom; the error tone loses more.
+      // The saturated canvas costs every role most of its headroom, so the
+      // light palette uses the deepest tone of each family as main; dark
+      // mode paints the light tone instead and keeps the vivid accents.
       primary: {
-        main: '#1D4ED8',
+        main: '#1E1B4B',
         light: '#60A5FA',
-        dark: '#1E40AF',
+        dark: '#0F0A2E',
+        contrastText: '#FFFFFF',
+      },
+      secondary: {
+        main: '#2E1065',
+        light: '#A78BFA',
+        dark: '#1E0B45',
         contrastText: '#FFFFFF',
       },
       error: {
-        main: '#B91C1C',
+        main: '#450A0A',
         light: '#F87171',
-        dark: '#991B1B',
+        dark: '#2A0606',
+        contrastText: '#FFFFFF',
+      },
+      info: {
+        main: '#041C2C',
+        light: '#38BDF8',
+        dark: '#02121C',
+        contrastText: '#FFFFFF',
+      },
+      success: {
+        main: '#052E16',
+        light: '#4ADE80',
+        dark: '#022C22',
+        contrastText: '#FFFFFF',
+      },
+      warning: {
+        main: '#451A03',
+        light: '#FBBF24',
+        dark: '#2A1002',
         contrastText: '#FFFFFF',
       },
     },
   },
   shape: {
-    borderRadius: 20,
+    borderRadius: 24,
   },
   surface: {
     // The canvas is the page background: it paints above the body's
@@ -194,24 +248,24 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
     // gradient. The translucency that makes the glass read lives on the
     // raised surfaces below, over each mode's own paper tone.
     container: {
-      opacity: 0.36,
-      borderColor: 'rgba(255, 255, 255, 0.65)',
+      opacity: 0.3,
+      borderColor: 'rgba(255, 255, 255, 0.55)',
       borderWidth: 1,
-      backdropFilter: 'blur(18px) saturate(180%)',
+      backdropFilter: 'blur(22px) saturate(180%)',
       elevation: 2,
     },
     overlay: {
-      opacity: 0.36,
-      borderColor: 'rgba(255, 255, 255, 0.72)',
+      opacity: 0.32,
+      borderColor: 'rgba(255, 255, 255, 0.62)',
       borderWidth: 1,
-      backdropFilter: 'blur(28px) saturate(180%)',
+      backdropFilter: 'blur(32px) saturate(180%)',
       elevation: 8,
     },
     header: {
-      opacity: 0.3,
-      borderColor: 'rgba(255, 255, 255, 0.6)',
+      opacity: 0.26,
+      borderColor: 'rgba(255, 255, 255, 0.5)',
       borderWidth: 1,
-      backdropFilter: 'blur(18px) saturate(160%)',
+      backdropFilter: 'blur(22px) saturate(160%)',
     },
   },
   shadows: {
@@ -234,61 +288,80 @@ const ASCII_FONT_STACK =
 
 /**
  * ASCII: the terminal look -- one monospaced face everywhere, no radii,
- * near-black surfaces with hard green rules, green and amber semantic
- * roles, no shadows, and a green text glow.
+ * hard green rules, green and amber semantic roles, no shadows and a
+ * green text glow. The two color modes are the two terminal papers: a
+ * pale green sheet with dark green ink in light mode, a near-black
+ * screen with pale green ink in dark mode. The surface roles declare no
+ * fill, so each mode inherits its own paper and header tone.
  */
 export const asciiThemePreset: ThemePreset = createPreset('ascii', {
   color: {
     background: {
-      default: '#050A06',
-      paper: '#08120B',
+      default: '#F0FDF4',
+      paper: '#DCFCE7',
     },
     text: {
-      primary: '#D1FAE5',
-      secondary: '#86EFAC',
-      disabled: '#4ADE80',
+      primary: '#052E16',
+      secondary: '#166534',
+      disabled: '#4D7C0F',
     },
-    divider: '#166534',
+    divider: '#16A34A',
+    // The ramp carries the dark terminal: dark mode paints its surfaces
+    // from its dark end and its text from its light end, so the same
+    // green family serves both modes. Light mode's header surface reads
+    // neutral 50 as well, which keeps it on the same sheet.
+    neutral: {
+      50: '#DCFCE7',
+      100: '#BBF7D0',
+      200: '#86EFAC',
+      300: '#86EFAC',
+      400: '#4ADE80',
+      500: '#22C55E',
+      600: '#16A34A',
+      700: '#166534',
+      800: '#08120B',
+      900: '#050A06',
+      950: '#020403',
+    },
     semantic: {
+      // Each family carries both papers: `main` reads on the light
+      // sheet, and dark mode paints `light` as its main on the black
+      // screen.
       primary: {
-        main: '#22C55E',
+        main: '#15803D',
         light: '#4ADE80',
-        dark: '#15803D',
-        contrastText: '#020617',
+        dark: '#166534',
+        contrastText: '#F0FDF4',
       },
       secondary: {
-        main: '#F59E0B',
+        main: '#B45309',
         light: '#FBBF24',
-        dark: '#B45309',
-        contrastText: '#020617',
+        dark: '#92400E',
+        contrastText: '#F0FDF4',
       },
-      // The near-black surfaces turn the default light-mode error and info
-      // tones into unreadable text. The bright terminal tones below keep
-      // both roles at 4.5:1 or better on every surface role (the light
-      // tone is what dark mode paints as its main).
       error: {
-        main: '#F87171',
+        main: '#B91C1C',
         light: '#FCA5A5',
-        dark: '#EF4444',
-        contrastText: '#020617',
+        dark: '#991B1B',
+        contrastText: '#F0FDF4',
       },
       info: {
-        main: '#38BDF8',
+        main: '#0369A1',
         light: '#7DD3FC',
-        dark: '#0EA5E9',
-        contrastText: '#020617',
+        dark: '#075985',
+        contrastText: '#F0FDF4',
       },
       success: {
-        main: '#22C55E',
+        main: '#15803D',
         light: '#4ADE80',
-        dark: '#15803D',
-        contrastText: '#020617',
+        dark: '#166534',
+        contrastText: '#F0FDF4',
       },
       warning: {
-        main: '#F59E0B',
+        main: '#B45309',
         light: '#FBBF24',
-        dark: '#B45309',
-        contrastText: '#020617',
+        dark: '#92400E',
+        contrastText: '#F0FDF4',
       },
     },
   },
@@ -296,30 +369,26 @@ export const asciiThemePreset: ThemePreset = createPreset('ascii', {
     fontFamily: {
       sans: ASCII_FONT_STACK,
     },
-    textGlow: '0 0 6px rgba(74, 222, 128, 0.65)',
+    textGlow: '0 0 4px rgba(34, 197, 94, 0.45)',
   },
   shape: {
     borderRadius: 0,
   },
   surface: {
     page: {
-      fill: '#050A06',
-      borderColor: '#22C55E',
+      borderColor: '#16A34A',
       borderWidth: 1,
     },
     container: {
-      fill: '#08120B',
-      borderColor: '#22C55E',
+      borderColor: '#16A34A',
       borderWidth: 1,
     },
     overlay: {
-      fill: '#0B1A0F',
-      borderColor: '#22C55E',
+      borderColor: '#16A34A',
       borderWidth: 1,
     },
     header: {
-      fill: '#050A06',
-      borderColor: '#22C55E',
+      borderColor: '#16A34A',
       borderWidth: 1,
     },
   },

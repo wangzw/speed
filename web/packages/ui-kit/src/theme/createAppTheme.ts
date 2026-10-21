@@ -118,6 +118,7 @@ import {
   type TokensOverride,
 } from '@speed/tokens'
 import { baselineComponents } from './baseline.js'
+import { controlBorderComponents } from './control-borders.js'
 import { focusRingComponents } from './focus-ring.js'
 import { reducedMotionComponents } from './reduced-motion.js'
 import { touchFloorComponents } from './touch-floor.js'
@@ -421,6 +422,7 @@ function tokensToThemeOptions(
       touchFloorComponents,
       surfaceComponents,
       focusRingComponents,
+      controlBorderComponents,
       reducedMotionComponents,
       baselineComponents(tokens, mode),
     ),

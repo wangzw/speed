@@ -63,7 +63,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 
 **等宽字体走模块扩充。** MUI 的排版面没有等宽槽，而 token 树有 `typography.fontFamily.mono`；工厂经 `declare module '@mui/material/styles'` 给它加一个 `fontFamilyMono` 槽并总是填入合并后的取值（主题选项里该字段可选，宿主自行组合主题时不强制）。取值方式与 `fontFamily` 相同，含 `sx` 回调。
 
-**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下 warning、info 与 success 的 `contrastText` 取中性色阶 950，这三个角色的白色标签在该底色上达不到 AA（[ADR-web-light-contrast-2026-10-20](../../../adr/adr-web-light-contrast-2026-10-20.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
+**颜色模式是第三个入参，缺省 `'light'`。** 它设定 `palette.mode`；`'dark'` 时把背景、文本与分隔线改从中性色阶的深端取值——token 树只带一套表面色（浅色），而中性色阶是完整标度，故深色表面是同一套 token 换个方向读，而非第二份写死的调色板。六个语义角色同守这条纪律：`main` 是浅色表面上的色调，`light` 是给深色表面的色调，故 `'dark'` 时每个角色的 `main` 取它的 `light` 色调、`contrastText` 取中性色阶的深端（900），使填充控件的标签在该底色上仍可读（对比度判据由测试钉住）。浅色模式下六个角色统一用 token 的 `contrastText`（白色）；warning、info、success 的 `main` 因此取各自的 700 调，使同一个值既作填充底色、又作提示与状态文案的文字色时都满足 4.5:1（[ADR-web-light-contrast-2026-10-20](../../../adr/adr-web-light-contrast-2026-10-20.md)）。MUI 的悬停填充读角色的 `dark` 槽，token 的最深一档在该标签下不足 4.5:1，故 `'dark'` 时的 `dark` 取 `light` 向白色混入 20% 的色调，既保留悬停步进又守住标签对比度。只覆写 `main` 不会作用于深色模式：给品牌换色需同时给出 `light`。缺省即原行为，未传该入参的宿主逐字节不受影响。
 
 **返回的主题无本地化，是有意的**：MUI 的内建文本随语言变化，故本地化合并发生在渲染期——`AppThemeProvider` 把活动语言的 MUI 本地化并到基础主题上，或宿主自行 `createTheme(appTheme.theme, muiLocaleFor(i18n.language))`。
 
@@ -223,7 +223,7 @@ sequenceDiagram
 
 | token 段 | MUI 主题槽 | 适配决策 |
 |---|---|---|
-| `color.semantic.<角色>` | `palette.<角色>` | 浅色模式逐键：`main`/`light`/`dark` 取 token 值；`contrastText` 逐角色取 token 值，warning、info 与 success 改取中性色阶 950（[ADR-web-light-contrast-2026-10-20](../../../adr/adr-web-light-contrast-2026-10-20.md)）；深色模式 `main` 与 `light` 取该角色的 `light` 色调、`contrastText` 取中性色阶 900、`dark` 取该色调向白色混入 20%（MUI 的悬停填充） |
+| `color.semantic.<角色>` | `palette.<角色>` | 浅色模式逐键：`main`/`light`/`dark`/`contrastText` 取 token 值；深色模式 `main` 与 `light` 取该角色的 `light` 色调、`contrastText` 取中性色阶 900、`dark` 取该色调向白色混入 20%（MUI 的悬停填充） |
 | `color.neutral` | `palette.grey` | 数值步按号映射；A 系列别名复用同号步；无 MUI 槽的色阶只在 token 里 |
 | `color.text`/`background`/`divider` | 同名槽 | 直接 |
 | `typography.fontFamily.sans` | `typography.fontFamily` | 直接 |
@@ -271,6 +271,8 @@ sequenceDiagram
 ### 焦点环与降级动效
 
 **统一焦点环。** 键盘焦点落在基础控件上时显示 2px 实线轮廓、向外偏移 2px，颜色取 `palette.primary.main`；轮廓只在键盘焦点成立时出现，指针点击不显示。实现落在文档化的 `styleOverrides` 槽里（`&.Mui-focusVisible`），不使用未文档化的 `theme.focusVisible`。以 `ButtonBase` 等基础控件为根的控件继承该环；自有的可聚焦元素若不以它们为根，需在自己的槽里加上同一规则。贴在被裁切表面边缘的控件，其焦点环由内容内边距留出的空间容纳，不被 `Card` 的 `overflow: hidden` 裁掉。
+
+**输入框的静止描边取 `palette.text.secondary`。** MUI 默认以 23% 的前景色画描边，在本主题的表面上约为 2:1，低于 WCAG 1.4.11 对「标识控件的边界」要求的 3:1。静止态因此改取 `palette.text.secondary`，在两种模式的每个表面角色上都超过 3:1；悬停与聚焦态分别由 MUI 改取 `text.primary` 与 `primary.main`，不受影响。项目覆写文字色时描边随之移动。
 
 **降级动效。** 主题设 `motion.reducedMotion: 'system'`，MUI 自己的过渡（Collapse、Fade、Grow、Slide、Zoom 与菜单、抽屉等）按操作系统的减少动态偏好关闭或缩短。以写死关键帧实现的动画不在该设置的作用范围内（`Skeleton` 的 pulse 与 wave），它们在同样的媒体查询条件下停止动画。既有的 JS 滚动位置判断保持不变：它们读的是滚动位置而不是动画时长。
 
@@ -416,9 +418,10 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 |---|---|---|
 | 主题工厂与分层合并（含颜色模式） | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`、`AppTheme`、`AppThemeMode` |
 | 表面解析与主题组件映射 | 已实现 | `web/packages/ui-kit/src/theme/surface.ts` `resolveSurfaceTheme`、`surfaceComponents`、`mergeThemeComponents`、`SurfaceTheme`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
-| 浅色模式 warning、info、success 的深色 `contrastText` | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`；`web/packages/tokens/src/color.ts` `colorTokens.semantic` |
+| 浅色模式 warning、info、success 的 700 调 `main` 与白色标签 | 已实现 | `web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme`；`web/packages/tokens/src/color.ts` `colorTokens.semantic` |
 | 内容节表面 `SectionCard` | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`、`SectionCardProps` |
 | 统一焦点环 | 已实现 | `web/packages/ui-kit/src/theme/focus-ring.ts` `focusRingComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
+| 输入框静止描边取 `text.secondary`（非文本 3:1） | 已实现 | `web/packages/ui-kit/src/theme/control-borders.ts` `controlBorderComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 降级动效 | 已实现 | `web/packages/ui-kit/src/theme/reduced-motion.ts` `reducedMotionComponents`、`REDUCED_MOTION_QUERY`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 主题provider、本地化联动与颜色模式 | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`useAppThemeMode`、`AppThemeModeControl` |
 | 主题预设层与切换（`presets`/`defaultPreset`、`useAppThemePreset`） | 已实现 | `web/packages/ui-kit/src/theme/AppThemeProvider.tsx` `AppThemeProvider`、`AppThemePresetControl`、`useAppThemePreset` |

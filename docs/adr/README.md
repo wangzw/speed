@@ -124,7 +124,7 @@
 | [宿主可为平台命名空间补整套语言，注册期全覆盖规则不变](adr-web-host-language-sets-2026-10-19.md) | 2026-10-19 | 已接受 |
 | [通行密钥仪式下沉 auth-core，提权对话框由 account-ui 外导给宿主](adr-web-auth-seams-2026-10-19.md) | 2026-10-19 | 已接受 |
 | [界面表面由语义角色 token、主题映射与 SectionCard 原语共同承担](adr-web-surface-system-2026-10-20.md) | 2026-10-20 | 已接受 |
-| [浅色模式保留品牌主色，warning、info 与 success 的 contrastText 改为深色](adr-web-light-contrast-2026-10-20.md) | 2026-10-20 | 已接受 |
+| [浅色模式的 warning、info 与 success 取 700 调，使 main 同时满足文字与填充两种读法](adr-web-light-contrast-2026-10-20.md) | 2026-10-20 | 已接受 |
 | [应用外壳的形态在装配期选定并由一组内置变体表达，不交给宿主自由拼装](adr-web-shell-layout-variant-2026-10-20.md) | 2026-10-20 | 已接受 |
 | [主题预设是纯数据的 token 覆写，效果由 ui-kit 映射，预设不承载组件覆盖](adr-web-theme-presets-2026-10-20.md) | 2026-10-20 | 已接受 |
 

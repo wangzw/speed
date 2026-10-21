@@ -283,6 +283,15 @@ describe('classic and modern are visibly distinct', () => {
     expect(classic.typography.lineHeight).not.toEqual(defaultTokens.typography.lineHeight)
     expect(modern.typography.lineHeight).not.toEqual(defaultTokens.typography.lineHeight)
     expect(classic.typography.lineHeight).not.toEqual(modern.typography.lineHeight)
+
+    // Density and accent are the two other levers a viewer notices first:
+    // classic is the denser console, modern the airier product, and their
+    // accents come from different families.
+    expect(classic.spacing.unit).toBeLessThan(defaultTokens.spacing.unit)
+    expect(modern.spacing.unit).toBeGreaterThan(defaultTokens.spacing.unit)
+    expect(classic.color.semantic.primary.main).not.toBe(
+      modern.color.semantic.primary.main,
+    )
   })
 })
 
@@ -332,14 +341,25 @@ describe('ascii', () => {
     expect(Object.values(ascii.shadows)).toEqual(['none', 'none', 'none', 'none', 'none', 'none'])
   })
 
-  it('paints every surface role near black with a hard green rule', () => {
+  it('gives every surface role a hard green rule and inherits its fill', () => {
     for (const role of ROLES) {
       const surface = ascii.surface[role]
-      expect(surface.fill, role).toBeDefined()
-      expect(luminance(parseHex(surface.fill!)), role).toBeLessThan(0.02)
+      expect(surface.fill, role).toBeUndefined()
       expect(surface.borderWidth, role).toBe(1)
-      expect(surface.borderColor, role).toBe('#22C55E')
+      expect(surface.borderColor, role).toBe('#16A34A')
     }
+  })
+
+  it('paints the two modes as different terminal papers', () => {
+    const lightPage = parseHex(inheritedFill(ascii, 'light', 'page'))
+    const darkPage = parseHex(inheritedFill(ascii, 'dark', 'page'))
+    // Light mode is a pale green sheet, dark mode the black screen.
+    expect(luminance(lightPage)).toBeGreaterThan(0.8)
+    expect(luminance(darkPage)).toBeLessThan(0.02)
+    // The ink flips with the paper: dark green on the sheet, pale green
+    // on the screen.
+    expect(luminance(parseHex(ascii.color.text.primary))).toBeLessThan(0.05)
+    expect(luminance(parseHex(ascii.color.neutral[50]))).toBeGreaterThan(0.7)
   })
 
   it('carries a legal text glow', () => {
@@ -389,32 +409,44 @@ describe('contrast', () => {
       }
     })
 
-    if (preset.id === 'glass' || preset.id === 'ascii') {
-      it(`${preset.id} keeps semantic text roles readable in both modes`, () => {
-        // These two presets replace the surface colors the platform
-        // palette was tuned against (translucent paper over a canvas;
-        // near-black terminal fills), so every semantic role the app
-        // paints as text -- links, error helper text, status labels -- is
-        // measured on the actual surface. The other presets leave the
-        // platform surfaces alone; the plan holds their body text to the
-        // same floor, which the case above measures.
-        const tokens = deepMerge(defaultTokens, preset.tokens)
-        for (const mode of ['light', 'dark'] as const) {
-          // Light mode paints primary and error as text; warning, info and
-          // success are fill roles whose labels use contrastText. Dark
-          // mode maps every main to its light tone, which is what the
-          // platform paints on a dark surface.
-          const roles =
-            mode === 'dark' ? SEMANTIC_ROLES : (['primary', 'error'] as const)
-          for (const role of roles) {
-            expect(
-              worstOn(tokens, mode, semanticText(tokens, mode, role)),
-              `${preset.id}: ${mode} mode, ${role} text`,
-            ).toBeGreaterThanOrEqual(4.5)
-          }
+    it(`${preset.id} keeps semantic text roles readable in both modes`, () => {
+      // Every semantic role can be painted as text -- links, error helper
+      // text, status labels -- so each is measured on the surfaces the
+      // preset actually produces, not only on the platform's defaults.
+      const tokens = deepMerge(defaultTokens, preset.tokens)
+      for (const mode of ['light', 'dark'] as const) {
+        for (const role of SEMANTIC_ROLES) {
+          expect(
+            worstOn(tokens, mode, semanticText(tokens, mode, role)),
+            `${preset.id}: ${mode} mode, ${role} text`,
+          ).toBeGreaterThanOrEqual(4.5)
         }
-      })
-    }
+      }
+    })
+
+    it(`${preset.id} keeps filled-control labels at 4.5:1`, () => {
+      // WCAG 1.4.3 also governs the label painted on a filled control:
+      // light mode uses the role's own contrastText, dark mode paints the
+      // neutral ramp's dark end on the role's light tone (the factory's
+      // mapping).
+      const tokens = deepMerge(defaultTokens, preset.tokens)
+      for (const role of SEMANTIC_ROLES) {
+        expect(
+          contrastRatio(
+            parseHex(tokens.color.semantic[role].contrastText),
+            parseHex(semanticText(tokens, 'light', role)),
+          ),
+          `${preset.id}: light mode, ${role} filled label`,
+        ).toBeGreaterThanOrEqual(4.5)
+        expect(
+          contrastRatio(
+            parseHex(tokens.color.neutral[900]),
+            parseHex(semanticText(tokens, 'dark', role)),
+          ),
+          `${preset.id}: dark mode, ${role} filled label`,
+        ).toBeGreaterThanOrEqual(4.5)
+      }
+    })
 
     it(`${preset.id} keeps the focus ring at 3:1 on every surface`, () => {
       // The theme's focus indicator is a 2px primary outline: a non-text

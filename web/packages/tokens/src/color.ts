@@ -75,15 +75,17 @@ export interface ColorTokens {
 
 export const colorTokens: ColorTokens = {
   semantic: {
-    // White labels clear 4.5:1 on the primary, secondary and error mains.
-    // The warning, info and success mains are too light for white, so their
-    // labels use the neutral ramp's darkest tone (6.33, 4.93 and 6.12:1).
+    // Every main carries a white label at 4.5:1 or better, and every main
+    // also clears 4.5:1 as text on the light surfaces (background.default,
+    // background.paper and the header tone). MUI paints Alert and status
+    // copy in the role's main, so the main has to serve both readings; the
+    // warning, info and success mains are the 700 tones for that reason.
     primary: { main: '#2563EB', light: '#60A5FA', dark: '#1D4ED8', contrastText: '#FFFFFF' },
     secondary: { main: '#7C3AED', light: '#A78BFA', dark: '#6D28D9', contrastText: '#FFFFFF' },
     error: { main: '#DC2626', light: '#F87171', dark: '#B91C1C', contrastText: '#FFFFFF' },
-    warning: { main: '#D97706', light: '#FBBF24', dark: '#B45309', contrastText: '#020617' },
-    info: { main: '#0284C7', light: '#38BDF8', dark: '#0369A1', contrastText: '#020617' },
-    success: { main: '#16A34A', light: '#4ADE80', dark: '#15803D', contrastText: '#020617' },
+    warning: { main: '#B45309', light: '#FBBF24', dark: '#92400E', contrastText: '#FFFFFF' },
+    info: { main: '#0369A1', light: '#38BDF8', dark: '#075985', contrastText: '#FFFFFF' },
+    success: { main: '#15803D', light: '#4ADE80', dark: '#166534', contrastText: '#FFFFFF' },
   },
   neutral: {
     50: '#F8FAFC',
