@@ -133,6 +133,45 @@ func TestUnknownKeyNotInManifest(t *testing.T) {
 	}
 }
 
+// TestUnknownKeyUnderAnItemLessNamespaceIsRefusedByItsFullPath pins that a
+// namespace a module declares stays a section even when no input item sits under
+// it: a source that still writes a key there is refused by that key's full path,
+// not by the namespace alone. A module whose items have all moved to the
+// settings store is the case this exists for.
+func TestUnknownKeyUnderAnItemLessNamespaceIsRefusedByItsFullPath(t *testing.T) {
+	l := loadOver(t, declaring("cache", Schema{Namespace: "cache.sub"}))
+	err := givePrimary(t, l, map[string]any{
+		"cache": map[string]any{"sub": map[string]any{"ttl": "5m"}},
+	})
+	if !errors.Is(err, ErrUnknownKey) {
+		t.Fatalf("a key under a declared namespace returned %v, want ErrUnknownKey", err)
+	}
+	if !strings.Contains(err.Error(), "cache.sub.ttl") {
+		t.Fatalf("the rejection reads %q, which does not name the key", err)
+	}
+}
+
+// TestAValueAtAnItemLessNamespaceIsRefused holds the other shape at an item-less
+// section: a source that puts a scalar on the declared namespace itself is
+// refused, because the namespace is a section holding input items rather than an
+// input item of its own. The branch is separate from the interior-scalar one, so
+// it is pinned on its own.
+func TestAValueAtAnItemLessNamespaceIsRefused(t *testing.T) {
+	l := loadOver(t, declaring("cache", Schema{Namespace: "cache.sub"}))
+	err := givePrimary(t, l, map[string]any{
+		"cache": map[string]any{"sub": "just a string"},
+	})
+	if !errors.Is(err, ErrUnknownKey) {
+		t.Fatalf("a value on a declared namespace returned %v, want ErrUnknownKey", err)
+	}
+	if !strings.Contains(err.Error(), "cache.sub") {
+		t.Fatalf("the rejection reads %q, which does not name the path", err)
+	}
+	if !strings.Contains(err.Error(), "section") {
+		t.Fatalf("the rejection reads %q, which does not say the path is a section", err)
+	}
+}
+
 // TestKeyNotAcceptedFromPrimary is the second kind of unknown key, and the
 // error text has to tell it from the first: the manifest has this key, and the
 // item does not take the primary source. Letting it through would swallow a

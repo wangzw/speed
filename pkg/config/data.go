@@ -89,6 +89,19 @@ func validateDocumentSection(m *manifest, written []string, section map[string]a
 			continue
 		}
 
+		if module, section := m.sections[path]; section {
+			child, isSection := raw.(map[string]any)
+			if !isSection {
+				return fmt.Errorf("%w: %s gives a value at %q, which module %q declares as a "+
+					"section holding input items rather than an input item of its own",
+					ErrUnknownKey, label, path, module)
+			}
+			if err := validateDocumentSection(m, spelled, child, given, label); err != nil {
+				return err
+			}
+			continue
+		}
+
 		return fmt.Errorf("%w: %s gives %q, which no module declares. "+
 			"Check the spelling, and check that the module owning it is imported: the manifest "+
 			"is collected from the modules this binary carries",

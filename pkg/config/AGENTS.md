@@ -51,6 +51,13 @@ import _ "github.com/vislake/speed/pkg/config/format/yaml"
   `Resources`.
 - **No value is interpreted on a module's behalf.** The declaring module
   gets its own values back and decides what they mean.
+- **A declared namespace is a section even with no input items under it.** A
+  module whose items have all moved to the settings store still owns its
+  namespace: a source that writes a key under it is refused by that key's full
+  path, not by the namespace alone. A section and another module's input item
+  may not share a path, since no source can read one path as a value on one
+  side and a section on the other; two modules sharing a namespace may, since
+  that only divides paths between them.
 
 ## The host defaults document
 

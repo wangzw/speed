@@ -37,6 +37,11 @@ type manifest struct {
 	// put it there, which is what makes a path that is a leaf for one module
 	// and an interior node for another detectable.
 	interior map[string]*manifestItem
+	// sections maps every namespace a module declares, and its ancestors, to the
+	// module that declared it. A namespace is a section even when it carries no
+	// input items, which is what lets a source that still writes a key under it
+	// be refused by that key's full path rather than by the namespace.
+	sections map[string]string
 	// host is the declared host identity, zero when no module declared one.
 	host HostIdentity
 	// hasHost records whether a host identity was declared at all, which
@@ -58,11 +63,15 @@ func newManifest(reg *core.Registry) (*manifest, error) {
 		byShort:  make(map[string]*manifestItem),
 		byEnv:    make(map[string]*manifestItem),
 		interior: make(map[string]*manifestItem),
+		sections: make(map[string]string),
 	}
 	if err := m.collectHost(reg); err != nil {
 		return nil, err
 	}
 	for _, declared := range core.Resources[Schema](reg) {
+		if err := m.declareSections(declared.Module, declared.Value.Namespace); err != nil {
+			return nil, err
+		}
 		items, err := expandSchema(declared.Module, declared.Value, m.host.Prefix)
 		if err != nil {
 			return nil, err
@@ -93,6 +102,31 @@ func (m *manifest) collectHost(reg *core.Registry) error {
 				ErrInvalidSchema, declared[0].Module, declared[0].Value.Prefix, d)
 		}
 		m.host, m.hasHost = declared[0].Value, true
+	}
+	return nil
+}
+
+// declareSections records a module's namespace, and its ancestors, as sections
+// of the config data. A namespace is a section whether or not any item sits
+// under it: a module whose items have all moved elsewhere still owns the
+// section, and a source that writes a key under it is refused by that key's full
+// path.
+//
+// A section and an input item may not share a path: the same path would be a
+// value for one module and a section for the other, and no primary source can
+// express both. Two modules sharing a namespace is not a conflict, so a section
+// meeting a section is allowed; a section meeting a leaf is not.
+func (m *manifest) declareSections(module, namespace string) error {
+	if namespace == "" {
+		return nil
+	}
+	for _, path := range append(ancestors(namespace), namespace) {
+		if item, taken := m.byPath[path]; taken {
+			return sectionLeafConflict(item.module, item.path, module, path)
+		}
+		if _, taken := m.sections[path]; !taken {
+			m.sections[path] = module
+		}
 	}
 	return nil
 }
@@ -141,6 +175,9 @@ func (m *manifest) checkPath(item *manifestItem) error {
 			"between them",
 			ErrConfigConflict, other.module, item.module, item.path)
 	}
+	if section, taken := m.sections[item.path]; taken {
+		return sectionLeafConflict(section, item.path, item.module, item.path)
+	}
 	if other, taken := m.interior[item.path]; taken {
 		return pathIntersects(other, other.path, item, item.path)
 	}
@@ -157,6 +194,20 @@ func pathIntersects(first *manifestItem, firstPath string, second *manifestItem,
 		"one path is a prefix of the other, so the same path is a value for one of them and a "+
 		"section for the other. Give the two declarations separate namespaces or prefixes",
 		ErrConfigConflict, first.module, firstPath, second.module, secondPath)
+}
+
+// sectionLeafConflict refuses a path one module declares as a section and
+// another as an input item. The two parties are named in module-name order so
+// that the message reads the same however the modules were registered.
+func sectionLeafConflict(sectionModule, sectionPath, itemModule, itemPath string) error {
+	first, second := sectionModule, itemModule
+	if second < first {
+		first, second = second, first
+	}
+	return fmt.Errorf("%w: modules %q and %q both claim %q, one as a section and the other as an "+
+		"input item, so the same path is a value for one of them and a section for the other. "+
+		"Give the two declarations separate namespaces or prefixes",
+		ErrConfigConflict, first, second, sectionPath)
 }
 
 // checkFlagNames refuses a command-line name that is taken, or reserved. The

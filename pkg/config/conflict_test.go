@@ -385,6 +385,37 @@ func TestConflictMessageStableAcrossRegistrationOrders(t *testing.T) {
 	}
 }
 
+// TestASectionAndAnInputItemMayNotShareAPath holds that a namespace one module
+// declares and an input item another declares cannot land on the same path: the
+// source would have to read one path as a value for one module and a section for
+// the other. A module whose items have all moved to the settings store still
+// declares its namespace, so its section can meet another module's leaf.
+func TestASectionAndAnInputItemMayNotShareAPath(t *testing.T) {
+	item := struct{ Sub string }{}
+	collectRejects(t, []string{"alpha", "beta", "cache.sub"},
+		declaring("alpha", Schema{Namespace: "cache.sub"}),
+		declaring("beta", Schema{Namespace: "cache", Mounts: []Mount{{Value: &item}}}),
+	)
+}
+
+// TestASectionAndAnInputItemConflictEitherWayRound puts the item in the module
+// that sorts first, so the collision is found when the section is declared
+// rather than when the item is added.
+func TestASectionAndAnInputItemConflictEitherWayRound(t *testing.T) {
+	item := struct{ Sub string }{}
+	first := collectRejects(t, []string{"alpha", "zeta", "cache.sub"},
+		declaring("alpha", Schema{Namespace: "cache", Mounts: []Mount{{Value: &item}}}),
+		declaring("zeta", Schema{Namespace: "cache.sub"}),
+	)
+	second := collectRejects(t, []string{"alpha", "zeta", "cache.sub"},
+		declaring("zeta", Schema{Namespace: "cache.sub"}),
+		declaring("alpha", Schema{Namespace: "cache", Mounts: []Mount{{Value: &item}}}),
+	)
+	if first.Error() != second.Error() {
+		t.Fatalf("registration order changed the conflict message:\n%v\n%v", first, second)
+	}
+}
+
 func envNames(m *manifest) []string {
 	out := make([]string, 0, len(m.byEnv))
 	for name := range m.byEnv {
