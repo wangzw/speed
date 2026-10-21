@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/vislake/speed/pkg/event/memory"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
@@ -46,8 +48,9 @@ var engines = []engine{
 	},
 }
 
-// quickJobs is the configuration the cases run the queue by: the module's own
-// shape, on a scale a case can wait out.
+// quickJobs is what the cases run the queue by: the construction values the
+// configuration file carries, and the runtime tunables the harness seeds into a
+// settings store, on a scale a case can wait out.
 func quickJobs() map[string]any {
 	return map[string]any{
 		pollIntervalItem:  "15ms",
@@ -66,6 +69,131 @@ func withJobs(overrides map[string]any) map[string]any {
 	maps.Copy(out, overrides)
 	return out
 }
+
+// constructionSection keeps the items the queue is constructed with, which are
+// the ones the configuration file carries.
+func constructionSection(items map[string]any) map[string]any {
+	out := map[string]any{}
+	for item, value := range items {
+		switch item {
+		case workersItem, shutdownGraceItem:
+			out[item] = value
+		}
+	}
+	return out
+}
+
+// runtimeRows turns the runtime tunables a case names into the rows a settings
+// store holds, keyed by their full paths.
+func runtimeRows(t *testing.T, items map[string]any) map[string]any {
+	t.Helper()
+	rows := map[string]any{}
+	for item, value := range items {
+		switch item {
+		case pollIntervalItem, leaseItem, retryBaseItem, retryMaxItem:
+			text, ok := value.(string)
+			if !ok {
+				t.Fatalf("the runtime tunable %s is a %T, and a case writes a duration as a string",
+					item, value)
+			}
+			parsed, err := time.ParseDuration(text)
+			if err != nil {
+				t.Fatalf("parsing the runtime tunable %s = %q: %v", item, text, err)
+			}
+			rows[ConfigNamespace+"."+item] = parsed
+		case claimBatchItem:
+			rows[ConfigNamespace+"."+item] = value
+		}
+	}
+	return rows
+}
+
+// deliversSettings reports whether the assembly already supplies a settings
+// store.
+func deliversSettings(modules []core.Module) bool {
+	for _, module := range modules {
+		for _, provision := range module.Provides {
+			if provision.Token == (*settings.Store)(nil) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// standIn is a module supplying one instance under the given capabilities.
+func standIn(name string, instance any, tokens ...core.Token) core.Module {
+	provides := make([]core.Provision, len(tokens))
+	for i, token := range tokens {
+		provides[i] = core.Provision{Token: token, Exclusive: true}
+	}
+	return core.Module{
+		Name:     name,
+		Provides: provides,
+		New:      func(context.Context, *core.Registry) (any, error) { return instance, nil },
+	}
+}
+
+// queueStore is the settings store a case runs the queue against: it holds the
+// runtime values the case named as written rows, so the loop reads them the way
+// it reads a deployment's.
+type queueStore struct {
+	mu     sync.Mutex
+	values map[string]any
+}
+
+func newQueueStore(values map[string]any) *queueStore {
+	if values == nil {
+		values = map[string]any{}
+	}
+	return &queueStore{values: values}
+}
+
+// Get decodes one stored row into the caller's target. A key with no row is
+// ErrUnknownKey, and a row of another type is ErrTypeMismatch.
+func (s *queueStore) Get(_ settings.Layer, key string, target any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, ok := s.values[key]
+	if !ok {
+		return settings.ErrUnknownKey
+	}
+	out := reflect.ValueOf(target)
+	if out.Kind() != reflect.Pointer || out.IsNil() {
+		panic("jobs.db tests: a settings read target has to be a non-nil pointer")
+	}
+	stored := reflect.ValueOf(value)
+	if stored.Type() != out.Elem().Type() {
+		return settings.ErrTypeMismatch
+	}
+	out.Elem().Set(stored)
+	return nil
+}
+
+// Set stores the written value, so a case may change a tunable while the queue
+// runs.
+func (s *queueStore) Set(_ context.Context, w settings.Write) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.values[w.Key] = w.Value
+	return nil
+}
+
+// Delete removes a stored row; a row that is not there is not an error.
+func (s *queueStore) Delete(_ context.Context, _ settings.Layer, key, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.values, key)
+	return nil
+}
+
+// List reports nothing: this store is a source of values rather than a
+// surface over them.
+func (s *queueStore) List(context.Context, settings.Layer) ([]settings.Entry, error) { return nil, nil }
+
+// Declared reports nothing for the same reason; a declaration is the module's
+// own schema.
+func (s *queueStore) Declared() []settings.DeclaredItem { return nil }
 
 // host is one assembled run of this module: the engine and the database it sits
 // on, whether an event bus takes part, the configuration section of jobs.db,
@@ -103,7 +231,7 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 		"log": map[string]any{"outputs": []any{
 			map[string]any{"to": "file", "format": "json", "path": filepath.Join(dir, "log.json")},
 		}},
-		"jobs": map[string]any{"db": h.jobs},
+		"jobs": map[string]any{"db": constructionSection(h.jobs)},
 	}
 	body, err := json.Marshal(document)
 	if err != nil {
@@ -119,6 +247,14 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 		modules = append(modules, memory.Module())
 	}
 	modules = append(modules, h.extra...)
+	// A run with no settings store of its own gets one holding the runtime
+	// tunables the case names, so the loop reads the values the case wrote
+	// rather than the declared defaults. A run that assembles the real module
+	// gets no stand-in: its cases write the values they want.
+	if !deliversSettings(modules) {
+		modules = append(modules, standIn("stand-in.settings",
+			newQueueStore(runtimeRows(t, h.jobs)), (*settings.Store)(nil)))
+	}
 
 	loading := core.New()
 	loading.Register(jsonformat.Module())

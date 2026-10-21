@@ -82,7 +82,7 @@ Take them up with `core.Resolve[jobs.Queue](reg)` and
 | Stage | What this module does |
 |---|---|
 | `Prepare` | Reads its configuration; checks the values are ones the loop can run on. A bad value fails the startup with `ErrInvalidConfig`. |
-| `New` | Takes up the database, the tenant roster, and the optional bus and logger; builds the statements for the running dialect. A dialect with no statements written fails the startup here. Reads no table: the migrations have not run yet. |
+| `New` | Takes up the database, the tenant roster, and the optional bus, logger and settings store; builds the statements for the running dialect. A dialect with no statements written fails the startup here. Reads no table: the migrations have not run yet. |
 | `Migrate` | The database module applies this module's migration set, which creates the `jobs` table. |
 | `Init` | Nothing here; this is where a consumer module registers its handler through the `Handlers` face. |
 | `Start` | The executors begin, reading the table at once, which is how a start takes over the due jobs a previous run left behind. |
@@ -182,19 +182,38 @@ than being marked; the jobs run and settle exactly as they otherwise would.
 
 ## Configuration
 
-Namespace `jobs.db`. Every item takes its value from the primary configuration
-source alone: an environment variable or a command-line argument under one of
-these paths is not read, and the loader reports it as unused.
+Namespace `jobs.db`. `workers` and `shutdown-grace` are configuration items,
+taken from the primary configuration source alone: an environment variable or a
+command-line argument under those paths is not read, and the loader reports it
+as unused. They size the worker pool at construction and the stop stage, so a
+change needs a restart.
 
 | Item | Kind | Default | Meaning |
 |---|---|---|---|
-| `poll-interval` | duration | `1s` | How often an executor reads the table when it found no due job, and the longest it sleeps before reading again. |
 | `workers` | integer | `4` | How many jobs this process executes at once. |
+| `shutdown-grace` | duration | `10s` | How long the stop stage waits for an execution under way before cancelling it. |
+
+The poll interval, the claim batch, the lease and the retry bounds are settings,
+declared here and read while the process runs — per loop iteration, per claim
+and per failure settle:
+
+| Setting | Kind | Default | Meaning |
+|---|---|---|---|
+| `poll-interval` | duration | `1s` | How often an executor reads the table when it found no due job, and the longest it sleeps before reading again. |
 | `claim-batch` | integer | `16` | How many due jobs one claim takes. |
 | `lease` | duration | `2m` | How long one claim holds the jobs it took, and so how long a job held by a replica that died waits before another replica takes it over. |
-| `shutdown-grace` | duration | `10s` | How long the stop stage waits for an execution under way before cancelling it. |
 | `retry-base` | duration | `1s` | The delay after a job's first failure, doubled with each further failure. |
 | `retry-max` | duration | `1m` | The cap on that doubling. |
+
+All five must be positive. `lease`, `retry-base` and `retry-max` are stored and
+read in whole milliseconds, so each must also be at least one millisecond; a
+shorter value would truncate to zero and expire a claim at once or retry a job
+immediately. With no settings store the declared defaults apply;
+a read that fails or lands outside the domain applies the default and writes one
+`Error` naming the key. A `retry-max` below `retry-base` is not a startup
+invariant: both are accepted and the retry is capped at `retry-max` when it is
+settled. The config schema no longer carries the five: a config file naming any
+of them fails startup as an unknown key.
 
 Set `lease` to at least the longest `Timeout` you enqueue with: a job whose
 execution outlasts its claim may be taken over and run a second time.

@@ -103,7 +103,7 @@ func (q *queue) runWorker(w *worker) {
 			// A table that cannot be read is read less often, so a database
 			// that is down is not asked every poll and the record of it is not
 			// written every poll either.
-			delay = min(q.set.poll<<min(w.failures-1, 6), q.set.retryMax)
+			delay = min(q.tuned.poll(q.logger)<<min(w.failures-1, 6), q.tuned.retryMax(q.logger))
 		} else {
 			w.failures = 0
 		}
@@ -114,7 +114,11 @@ func (q *queue) runWorker(w *worker) {
 // pass runs one round: it republishes what still owes an event, then claims and
 // settles the due jobs until none is left. It reports how long until the next
 // read, and whether a read failed.
+//
+// The poll interval is read here, at each round, so a value written while the
+// process runs is what the next round waits.
 func (q *queue) pass(w *worker) (time.Duration, bool) {
+	poll := q.tuned.poll(q.logger)
 	q.republish(w)
 	for {
 		if q.isStopping() {
@@ -124,26 +128,26 @@ func (q *queue) pass(w *worker) (time.Duration, bool) {
 		if err != nil {
 			q.logger.Error("jobs.db: reading when the next job falls due failed; the rows are left where they are",
 				"error", err)
-			return q.set.poll, true
+			return poll, true
 		}
 		switch {
 		case !staged:
-			return q.set.poll, false
+			return poll, false
 		case wait > 0:
 			// The earliest job is not due yet; read again then, and never
 			// sleep longer than the poll interval, so a job enqueued with an
 			// earlier time is noticed.
-			return min(wait, q.set.poll), false
+			return min(wait, poll), false
 		}
 		rows, err := q.claim(w)
 		if err != nil {
 			q.logger.Error("jobs.db: claiming the due jobs failed; the rows are left where they are", "error", err)
-			return q.set.poll, true
+			return poll, true
 		}
 		if len(rows) == 0 {
 			// Every due row is claimed by another executor at this moment, or
 			// was claimed between the two statements.
-			return q.set.poll, false
+			return poll, false
 		}
 		q.runBatch(w, rows)
 	}
@@ -167,12 +171,15 @@ func (q *queue) dueNext() (time.Duration, bool, error) {
 // claim takes up to one batch of due jobs for one executor, in the order the
 // sort keys give, and advances the executor's rotation past the last tenant it
 // took.
+//
+// The batch size and the lease are read here, at each claim, so a value written
+// while the process runs is what the next claim takes and holds.
 func (q *queue) claim(w *worker) ([]claimed, error) {
 	ctx, cancel := context.WithTimeout(q.work, statementTimeout)
 	defer cancel()
-	lease := q.set.lease.Milliseconds()
+	lease := q.tuned.lease(q.logger).Milliseconds()
 	rows, err := q.handle.WithContext(ctx).
-		Raw(q.sql.claim, w.token, lease, lease, w.pivot, q.set.batch).Rows()
+		Raw(q.sql.claim, w.token, lease, lease, w.pivot, q.tuned.batch(q.logger)).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("claiming the due jobs: %w", err)
 	}
@@ -323,6 +330,10 @@ func (q *queue) settleCancelled(w *worker, row claimed) {
 // settleFailure settles a job whose execution failed: it is put back to run
 // again after a backoff, or, once its attempts pass its retry limit, sent to
 // dead_letter.
+//
+// The two retry bounds are read here, at the settlement, so a value written
+// while the process runs is what the next backoff is computed from. A cap below
+// the base delays the retry by the cap.
 func (q *queue) settleFailure(w *worker, row claimed, cause error) {
 	attempts := row.Attempts + 1
 	text := truncate(cause.Error(), errorLimit)
@@ -336,7 +347,7 @@ func (q *queue) settleFailure(w *worker, row claimed, cause error) {
 		q.publishTerminal(row, jobs.StatusDeadLetter)
 		return
 	}
-	backoff := q.set.retryAfter(attempts)
+	backoff := retryAfter(q.tuned.retryBase(q.logger), q.tuned.retryMax(q.logger), attempts)
 	if err := q.settle(q.sql.fail, text, attempts, backoff.Milliseconds(), row.ID, w.token); err != nil {
 		q.settleMissed("retrying", row.ID, err)
 		return
@@ -426,12 +437,13 @@ func (q *queue) republish(w *worker) {
 	}
 }
 
-// owing lists the terminal rows whose event has not been published.
+// owing lists the terminal rows whose event has not been published. Its page is
+// the claim batch, read here so it follows the same stored value a claim uses.
 func (q *queue) owing() ([]published, error) {
 	ctx, cancel := context.WithTimeout(q.work, statementTimeout)
 	defer cancel()
 	var rows []published
-	err := q.handle.WithContext(ctx).Raw(q.sql.pendingPublish, q.set.batch).
+	err := q.handle.WithContext(ctx).Raw(q.sql.pendingPublish, q.tuned.batch(q.logger)).
 		Scan(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("reading the jobs owing a terminal event: %w", err)

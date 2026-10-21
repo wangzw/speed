@@ -38,6 +38,7 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -116,10 +117,11 @@ var (
 // The database and the tenant roster are hard requirements: the table lives in
 // the delivered database, and every job row belongs to a tenant whose roster
 // carries it, which is also what installs the statement filter the scoped reads
-// and writes go through. The event bus and the logging capability are optional;
-// without a bus no terminal event is published while the jobs run exactly as
-// they otherwise would, and without logging the records reach the process
-// default logger.
+// and writes go through. The event bus, the logging capability and the settings
+// store are optional; without a bus no terminal event is published while the
+// jobs run exactly as they otherwise would, without logging the records reach
+// the process default logger, and without a settings store the loop's tunables
+// read as their declared defaults.
 //
 // Both capabilities are delivered exclusively. A process has exactly one queue,
 // and two of them would be two answers to which row a job went into, so a
@@ -136,12 +138,13 @@ func Module() core.Module {
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*event.Bus)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
+			{Token: (*settings.Store)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*jobs.Queue)(nil), Exclusive: true},
 			{Token: (*jobs.Handlers)(nil), Exclusive: true},
 		},
-		Resources: []any{schema(), db.Migrations{FS: migrationsFS}},
+		Resources: []any{schema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)
@@ -234,12 +237,17 @@ func newQueue(reg *core.Registry) (*queue, error) {
 		// module is refused here rather than coming up and doing nothing.
 		return nil, fmt.Errorf("%s: %w", ModuleName, err)
 	}
+	store, err := takeSettings(reg)
+	if err != nil {
+		return nil, err
+	}
 	q := &queue{
 		handle:   database.DB(),
 		sql:      stmts,
 		catalog:  catalog,
 		logger:   log.Default(),
 		set:      set,
+		tuned:    newSettingsReader(store),
 		handlers: map[string]jobs.Handler{},
 		stopping: make(chan struct{}),
 		done:     make(chan struct{}),
@@ -271,6 +279,22 @@ func (q *queue) takeBus(reg *core.Registry) {
 	q.bus = delivered
 }
 
+// takeSettings picks up the settings store if the assembly has one. A store
+// that is not there is a legal assembly: the loop's tunables then read as their
+// declared defaults. Any other failure to take it up ends the start, because a
+// capability that is there and cannot be taken up is not an absence.
+func takeSettings(reg *core.Registry) (settings.Store, error) {
+	store, err := core.Resolve[settings.Store](reg)
+	switch {
+	case err == nil:
+		return store, nil
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("%s: taking up the settings store: %w", ModuleName, err)
+	}
+}
+
 // queue is the module's product. It delivers jobs.Queue and jobs.Handlers, and
 // runs the executions.
 type queue struct {
@@ -279,7 +303,12 @@ type queue struct {
 	catalog tenant.Catalog
 	bus     event.Bus
 	logger  *slog.Logger
-	set     settings
+	// set is what the queue is constructed with: the worker count and the stop
+	// grace.
+	set construction
+	// tuned reads the loop's runtime tunables at each use; with no settings
+	// store assembled, every read is the declared default.
+	tuned *settingsReader
 
 	mu       sync.Mutex
 	handlers map[string]jobs.Handler
