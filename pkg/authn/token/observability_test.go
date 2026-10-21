@@ -156,7 +156,7 @@ func TestADetectedReuseWritesOneEventAndOneAudit(t *testing.T) {
 // writers.
 func TestTheStartupDiagnosticNamesTheRelaxationSwitch(t *testing.T) {
 	r := newRig(t)
-	r.p.cfg.checkSession = false
+	r.settings.setBool(checkSessionPath, false)
 	r.p.diagnose()
 
 	logs := r.logs.String()
@@ -166,9 +166,8 @@ func TestTheStartupDiagnosticNamesTheRelaxationSwitch(t *testing.T) {
 	if !strings.Contains(logs, diagnosticPrefix) {
 		t.Errorf("the diagnostic line does not start with %q:\n%s", diagnosticPrefix, logs)
 	}
-	if !strings.Contains(logs, ConfigNamespace+"."+checkSessionItem) {
-		t.Errorf("the Warn line does not name the setting %s.%s:\n%s",
-			ConfigNamespace, checkSessionItem, logs)
+	if !strings.Contains(logs, checkSessionPath) {
+		t.Errorf("the Warn line does not name the setting %s:\n%s", checkSessionPath, logs)
 	}
 }
 

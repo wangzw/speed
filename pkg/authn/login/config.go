@@ -67,10 +67,24 @@ const (
 	maxReturnToBytes = 2048
 )
 
-// signupOpen is the account module's registration-switch value that lets a first
-// login open an account. The switch's other value, and any other, reads as
-// closed.
-const signupOpen = "open"
+// The two relaxation switches the account module declares and this module reads.
+// A value outside the set the account module declares reads as the strict one.
+const (
+	signupPath   = "authn.account.signup"
+	autoLinkPath = "authn.account.auto-link"
+
+	signupClosed = "closed"
+	signupOpen   = "open"
+
+	autoLinkNever         = "never"
+	autoLinkVerifiedEmail = "verified-email"
+)
+
+func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
+
+func autoLinkInDomain(v string) bool {
+	return v == autoLinkNever || v == autoLinkVerifiedEmail
+}
 
 // options carries the settings this module declares and their defaults, which
 // the settings module reads off it and which it never receives a value for. The
@@ -293,6 +307,18 @@ func (r *reader) ipLimit() int {
 	return readTuned(r, ModuleName+"."+ipLimitKey, defaults.IPLimit, ipLimitInDomain)
 }
 
+// signup reads the account module's registration switch. A read that fails or a
+// value outside the declared set reads as closed.
+func (r *reader) signup() string {
+	return readTuned(r, signupPath, signupClosed, signupInDomain)
+}
+
+// autoLink reads the account module's linking switch. A read that fails or a
+// value outside the declared set reads as never.
+func (r *reader) autoLink() string {
+	return readTuned(r, autoLinkPath, autoLinkNever, autoLinkInDomain)
+}
+
 // recentWindow reads the multi-factor module's recent-window setting, which one
 // step of this module's completion review uses and only reads. A failed read and
 // a value outside its domain read as the declared default.
@@ -386,13 +412,6 @@ type gateConfig struct {
 	TrustedOrigins []string `config:"trusted-origins"`
 }
 
-// accountConfig is the part of the account module's configuration this module
-// reads to hand the resolver its two relaxation switches.
-type accountConfig struct {
-	Signup   string `config:"signup"`
-	AutoLink string `config:"auto-link"`
-}
-
 // resolveConfig is the part of the tenant resolution module's configuration the
 // startup check reads: which endpoints it guards. The shape is read as a list of
 // names; a value of any other shape reads as unreadable and only a Warn is
@@ -412,20 +431,6 @@ func readGate(reader config.Reader) (gateConfig, error) {
 		return gateConfig{}, err
 	}
 	return g, nil
-}
-
-// readAccount reads the two relaxation switches from the account module's
-// configuration. It reads the main configuration source only, as the switches
-// are decisions of the deployment and not of a tenant.
-func readAccount(reader config.Reader) (accountConfig, error) {
-	var a accountConfig
-	if reader == nil {
-		return a, nil
-	}
-	if err := reader.Decode("authn.account", &a); err != nil {
-		return accountConfig{}, err
-	}
-	return a, nil
 }
 
 // readResolveEndpoints reads the endpoints the tenant resolution layer guards.

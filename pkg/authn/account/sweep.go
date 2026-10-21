@@ -94,13 +94,11 @@ func (p *product) probe() error {
 func (p *product) diagnose() {
 	p.logger.Info(diagnosticPrefix+"the account store is running",
 		slog.String("algorithm", string(p.cfg.algorithm)))
-	if p.cfg.signupOpen {
-		p.logger.Warn(diagnosticPrefix + ConfigNamespace + "." + signupItem + " is open: a first login through a " +
-			"social provider or an SMS code makes an account")
+	if p.signup() == signupOpen {
+		p.warnRelaxation(signupPath, moveRelaxed)
 	}
-	if p.cfg.autoLink {
-		p.logger.Warn(diagnosticPrefix + ConfigNamespace + "." + autoLinkItem + " is verified-email: a first social " +
-			"login whose provider proved an email address is bound to the account that holds it")
+	if p.autoLink() == autoLinkVerified {
+		p.warnRelaxation(autoLinkPath, moveRelaxed)
 	}
 	switch {
 	case p.outbox == nil && p.bus == nil:

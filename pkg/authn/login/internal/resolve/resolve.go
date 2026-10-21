@@ -73,10 +73,15 @@ type Config struct {
 	// Provisioner is the host's hook before an account is created; nil means no
 	// hook.
 	Provisioner authn.Provisioner
-	// Signup and AutoLink are the two relaxation switches; their zero values are
-	// the closed ones.
+	// Signup and AutoLink are the two relaxation switches, read when Switches is
+	// not set; their zero values are the closed ones.
 	Signup   Signup
 	AutoLink AutoLink
+	// Switches, when it is set, is read at each resolution and is what Signup
+	// and AutoLink then mean. It is how a caller whose switches change while the
+	// process runs reads the value current at the moment of the decision. A value
+	// it returns outside the switch's set reads as the closed one.
+	Switches func() (Signup, AutoLink)
 }
 
 // Resolver resolves proofs to accounts. It is safe for concurrent use.
@@ -89,6 +94,7 @@ type Resolver struct {
 	provisioner authn.Provisioner
 	signup      Signup
 	autoLink    AutoLink
+	switches    func() (Signup, AutoLink)
 }
 
 // New builds a Resolver. A missing required dependency and a value of Signup or
@@ -121,7 +127,32 @@ func New(c Config) (*Resolver, error) {
 		provisioner: c.Provisioner,
 		signup:      c.Signup,
 		autoLink:    c.AutoLink,
+		switches:    c.Switches,
 	}, nil
+}
+
+// currentSwitches is the two relaxation switches as they stand at this
+// resolution: read from the provider when one was given, and the configured
+// values otherwise.
+func (r *Resolver) currentSwitches() (Signup, AutoLink) {
+	if r.switches != nil {
+		return r.switches()
+	}
+	return r.signup, r.autoLink
+}
+
+// signupOpen reports whether a first login may open an account, as the switch
+// stands at this decision.
+func (r *Resolver) signupOpen() bool {
+	signup, _ := r.currentSwitches()
+	return signup == SignupOpen
+}
+
+// autoLinkVerifiedEmail reports whether a first social login may be linked by a
+// verified email, as the switch stands at this decision.
+func (r *Resolver) autoLinkVerifiedEmail() bool {
+	_, autoLink := r.currentSwitches()
+	return autoLink == AutoLinkVerifiedEmail
 }
 
 // Request is one resolution.

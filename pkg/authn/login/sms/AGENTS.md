@@ -11,9 +11,10 @@ delivers `authn.SMSCodes`, and an account module.
 The method is this package's whole surface. It holds no challenge state: the
 allowed-prefix table, the budgets, the challenge row and the check of a code are
 the SMS module's, taken through `authn.SMSCodes`. It touches no HTTP, session,
-token or flow record and writes no log line; the engine logs the cause of an
-answer. It reads the account module's registration switch from the configuration
-to decide whether an unknown number is sent a real code.
+token or flow record; the engine logs the cause of an answer, and the method
+writes one Error when the registration switch cannot be read or is outside its
+domain. It reads the account module's registration switch by path from the
+optional settings store to decide whether an unknown number is sent a real code.
 
 The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
 `StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
@@ -43,8 +44,11 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   create an account for it. Every other number — an unknown one with registration
   closed, one a disabled or deleted account holds — gets a suppressed send that
   is counted and answered as a real one, so the answer tells nobody whether a
-  number is registered. The switch is read from `authn.account` through the
-  configuration reader; a reader that is not there reads as closed.
+  number is registered. The switch is read by path from the optional settings
+  store (the account module declares it); a store that is not there, a read
+  that fails and a value outside the declared domain all read as closed, and a
+  failed read or an out-of-domain value is reported at Error once for as long as
+  the same fault stands.
 - **The per-flow send budget is checked before every send.** A flow whose
   `SendsLeft` is not positive is answered `StepThrottled(0)` without a send. Each
   call makes at most one send and reports it with `Step.WithSends`, and a
@@ -66,12 +70,13 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   flow of another purpose is refused before the method reads or sends anything.
   A purpose a code can prove is a first factor for a login and for a step-up
   that falls back to a fresh first factor.
-- **The module requires the three capabilities it uses and nothing else.**
-  `SMSCodes`, `Throttle` and `Accounts` are each delivered exclusively by
-  another module, so a command that names this method without an SMS module and
-  an account module fails before anything is built. The login-method capability
-  is delivered without being claimed, which is what lets several methods stand
-  side by side.
+- **The module requires the three mandatory capabilities and two optional
+  ones.** `SMSCodes`, `Throttle` and `Accounts` are each delivered exclusively
+  by another module, so a command that names this method without an SMS module
+  and an account module fails before anything is built. The settings store and
+  the logging capability are optional and declared so that both are constructed
+  first; either may be absent. The login-method capability is delivered without
+  being claimed, which is what lets several methods stand side by side.
 
 ## How to run it
 
@@ -91,4 +96,4 @@ The cases need no HTTP and no store: they build the method over a fake
 `SMSCodes`, a fake `Throttle` and a fake `Accounts` whose answers a case chooses
 and reads back, and drive `Begin` and `Answer` directly. `assembly_test.go` drives
 a real registry through the descriptor with stand-ins for the three exclusive
-capabilities and the configuration reader.
+capabilities and the settings store.

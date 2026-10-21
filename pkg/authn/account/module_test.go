@@ -103,8 +103,6 @@ func TestPrepareStatesTheModuleRunsOrRefusesTheConfiguration(t *testing.T) {
 		{"an algorithm that is neither", `{"authn":{"account":{"password-algorithm":"scrypt"}}}`, false},
 		{"a concurrency of zero", `{"authn":{"account":{"password-concurrency":0}}}`, false},
 		{"a budget below the floor", `{"authn":{"account":{"password-memory-budget-mib":1}}}`, false},
-		{"signup that is neither", `{"authn":{"account":{"signup":"maybe"}}}`, false},
-		{"auto-link that is neither", `{"authn":{"account":{"auto-link":"always"}}}`, false},
 	} {
 		reader := authntest.ConfigReader(t, Module(), c.body)
 		reg := core.New()
@@ -120,9 +118,8 @@ func TestPrepareStatesTheModuleRunsOrRefusesTheConfiguration(t *testing.T) {
 	}
 }
 
-// The bounds of the two sizes and the two switches are judged when the module is
-// built and again when a value is read.
-func TestTheTwoSwitchesAndTheSizesAreHeldToTheirDomains(t *testing.T) {
+// The bounds of the sizes are judged when the module is built.
+func TestTheSizesAreHeldToTheirDomains(t *testing.T) {
 	base := configDefaults
 	cases := []struct {
 		name   string
@@ -138,11 +135,6 @@ func TestTheTwoSwitchesAndTheSizesAreHeldToTheirDomains(t *testing.T) {
 		{"a concurrency below one", func(c *moduleConfig) { c.PasswordConcurrency = 0 }, false},
 		{"a budget at the floor", func(c *moduleConfig) { c.PasswordMemoryBudgetMiB = memoryBudgetFloorMiB }, true},
 		{"a budget past the ceiling", func(c *moduleConfig) { c.PasswordMemoryBudgetMiB = maxMemoryBudgetMiB + 1 }, false},
-		{"signup open", func(c *moduleConfig) { c.Signup = signupOpen }, true},
-		{"signup closed", func(c *moduleConfig) { c.Signup = signupClosed }, true},
-		{"signup neither", func(c *moduleConfig) { c.Signup = "on" }, false},
-		{"auto-link verified-email", func(c *moduleConfig) { c.AutoLink = autoLinkVerified }, true},
-		{"auto-link neither", func(c *moduleConfig) { c.AutoLink = "email" }, false},
 	}
 	for _, item := range cases {
 		c := base
@@ -157,27 +149,28 @@ func TestTheTwoSwitchesAndTheSizesAreHeldToTheirDomains(t *testing.T) {
 	}
 }
 
-// The two switches that relax a check take the primary source alone; the sizes
-// and the algorithm are configuration a host states anywhere.
-func TestTheRelaxingSwitchesTakeThePrimarySourceAlone(t *testing.T) {
+// The sizes and the algorithm are configuration a host states anywhere; the two
+// relaxation switches are settings, not configuration.
+func TestTheConfigurationItemsAreTheSizesAndTheAlgorithm(t *testing.T) {
 	s := schema()
 	for _, key := range []string{algorithmItem, concurrencyItem, memoryBudgetItem} {
 		if got := s.Items[key].Origins; got != 0 {
 			t.Errorf("%s takes the origins %v, want every source", key, got)
 		}
 	}
-	for _, key := range []string{signupItem, autoLinkItem} {
-		if got := s.Items[key].Origins; got != config.OriginPrimary {
-			t.Errorf("%s takes the origins %v, want the primary source alone", key, got)
+	for _, key := range []string{signupKey, autoLinkKey} {
+		if _, ok := s.Items[key]; ok {
+			t.Errorf("the configuration declares %s, want it declared as a setting alone", key)
 		}
 	}
 }
 
-// The nine settings are declared with a domain, so that a write is judged when
+// The eleven settings are declared with a domain, so that a write is judged when
 // it is made and again when it is read.
-func TestTheNineSettingsAreDeclaredWithADomain(t *testing.T) {
+func TestTheElevenSettingsAreDeclaredWithADomain(t *testing.T) {
 	s := settingsSchema()
 	for _, key := range []string{
+		signupKey, autoLinkKey,
 		minLengthKey, argonMemoryKey, argonIterationKey, argonLanesKey, pbkdf2IterKey,
 		freeAttemptsKey, maxDelayKey, decayKey, retentionKey,
 	} {
@@ -185,7 +178,13 @@ func TestTheNineSettingsAreDeclaredWithADomain(t *testing.T) {
 			t.Errorf("the setting %s is not declared", key)
 		}
 	}
-	if len(s.Items) != 9 {
-		t.Errorf("the section declares %d settings, want nine", len(s.Items))
+	if len(s.Items) != 11 {
+		t.Errorf("the section declares %d settings, want eleven", len(s.Items))
+	}
+	if !signupInDomain(defaults.Signup) || !autoLinkInDomain(defaults.AutoLink) {
+		t.Errorf("a declared default lies outside its domain: %q, %q", defaults.Signup, defaults.AutoLink)
+	}
+	if defaults.Signup != signupClosed || defaults.AutoLink != autoLinkNever {
+		t.Errorf("the declared defaults are %q and %q, want the strict values", defaults.Signup, defaults.AutoLink)
 	}
 }

@@ -3,7 +3,6 @@ package account
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -129,22 +128,23 @@ func TestARelaxedSettingIsAWarnAndAnAuditRecord(t *testing.T) {
 // The startup diagnostics name every value that relaxes a check and the absence
 // of an outbox or a bus.
 func TestTheStartupDiagnosticsNameWhatRelaxes(t *testing.T) {
-	c := configDefaults
-	c.Signup = signupOpen
-	c.AutoLink = autoLinkVerified
-	cfg := mustResolve(t, c)
-	logs := &logBuffer{}
-	p := newProduct(stubDatabase{dialect: db.SQLite}, cfg)
-	p.logger = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	p.diagnose()
+	h := newHarness(t, db.SQLite)
+	h.withSettings()
+	h.set.set(signupPath, signupOpen)
+	h.set.set(autoLinkPath, autoLinkVerified)
+	h.p.diagnose()
+
 	for _, fragment := range []string{
 		"the account store is running",
-		signupItem + " is open",
-		autoLinkItem + " is verified-email",
-		"no outbox and no event bus",
+		"setting=" + signupPath,
+		"setting=" + autoLinkPath,
+		"no outbox",
 	} {
-		if len(logs.lines(fragment)) == 0 {
-			t.Errorf("the diagnostics carry no line naming %q: %s", fragment, logs.String())
+		if len(h.logs.lines(fragment)) == 0 {
+			t.Errorf("the diagnostics carry no line naming %q: %s", fragment, h.logs.String())
 		}
+	}
+	if lines := h.logs.lines(signupOpen); len(lines) != 0 {
+		t.Errorf("the diagnostics name the value %q:\n%s", signupOpen, h.logs.String())
 	}
 }

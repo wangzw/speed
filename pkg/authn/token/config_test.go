@@ -23,7 +23,7 @@ const envPrefix = "SPEEDTOKENTEST"
 // baseConfig is a configuration that resolves, so that a case can change one
 // item and still reach the check it means to exercise.
 func baseConfig() moduleConfig {
-	return moduleConfig{ClientID: clientIDDefault, Algorithm: algES256, CheckSession: true}
+	return moduleConfig{ClientID: clientIDDefault, Algorithm: algES256}
 }
 
 func TestAnEmptyAudienceIsRefused(t *testing.T) {
@@ -75,13 +75,21 @@ func TestAnUnsupportedAlgorithmIsRefused(t *testing.T) {
 	}
 }
 
-func TestTheRelaxationSwitchTakesThePrimarySourceAlone(t *testing.T) {
-	item, ok := schema().Items[checkSessionItem]
-	if !ok {
-		t.Fatalf("the schema does not declare %s", checkSessionItem)
+// The session check is a setting, not a configuration item: its declaration
+// carries a domain and the strict value as its default.
+func TestTheRelaxationSwitchIsASettingAndNotAConfigurationItem(t *testing.T) {
+	if _, ok := schema().Items[checkSessionKey]; ok {
+		t.Errorf("the configuration declares %s, want it declared as a setting alone", checkSessionKey)
 	}
-	if item.Origins != config.OriginPrimary {
-		t.Errorf("the %s item takes the origins %v, want the primary source alone", checkSessionItem, item.Origins)
+	item, ok := settingsSchema().Items[checkSessionKey]
+	if !ok {
+		t.Fatalf("the settings schema does not declare %s", checkSessionKey)
+	}
+	if item.Domain.Rule() == "" {
+		t.Errorf("the %s setting carries no domain", checkSessionKey)
+	}
+	if !defaults.CheckSession {
+		t.Errorf("the declared default of %s is false, want the strict value true", checkSessionKey)
 	}
 }
 
@@ -128,10 +136,10 @@ func loadConfig(t *testing.T, body string, args ...string) (resolved, error) {
 	return readConfig(reader)
 }
 
-// TestAnEnvironmentVariableCannotTurnTheSessionCheckOff holds that check-session
-// takes no value from the environment. A variable on an item that does read the
-// environment is the control: without it a variable name that was never going to
-// be read would pass the case.
+// TestAnEnvironmentVariableCannotTurnTheSessionCheckOff holds that the session
+// check takes no value from the environment. A variable on an item that does
+// read the environment is the control: without it a variable name that was
+// never going to be read would pass the case.
 func TestAnEnvironmentVariableCannotTurnTheSessionCheckOff(t *testing.T) {
 	const issuerBody = `{"authn":{"token":{"issuer":"https://auth.example.com"}}}`
 
@@ -149,40 +157,26 @@ func TestAnEnvironmentVariableCannotTurnTheSessionCheckOff(t *testing.T) {
 
 	t.Run("the session check", func(t *testing.T) {
 		t.Setenv(envPrefix+"_AUTHN__TOKEN__CHECK_SESSION", "false")
-		cfg, err := loadConfig(t, issuerBody)
-		if err != nil {
+		if _, err := loadConfig(t, issuerBody); err != nil {
 			t.Fatalf("loading: %v", err)
 		}
-		if !cfg.checkSession {
+		if !defaults.CheckSession {
 			t.Error("a variable turned the session check off")
 		}
 	})
 }
 
-// TestACommandLineArgumentCannotTurnTheSessionCheckOff holds the same item
-// against the command line. The item takes no flag, so the loader refuses the
-// argument or ignores it; either way the session check stays on.
+// TestACommandLineArgumentCannotTurnTheSessionCheckOff holds the same setting
+// against the command line. It is not a configuration item, so the loader
+// refuses the argument as a key no module declares.
 func TestACommandLineArgumentCannotTurnTheSessionCheckOff(t *testing.T) {
-	cfg, err := loadConfig(t, `{"authn":{"token":{"issuer":"https://auth.example.com"}}}`,
+	_, err := loadConfig(t, `{"authn":{"token":{"issuer":"https://auth.example.com"}}}`,
 		"--authn.token.check-session=false")
-	if err == nil && !cfg.checkSession {
-		t.Fatal("the argument turned the session check off")
+	if !errors.Is(err, config.ErrUnknownKey) {
+		t.Fatalf("the argument loaded with %v, want config.ErrUnknownKey", err)
 	}
-	if err != nil && !strings.Contains(err.Error(), checkSessionItem) {
-		t.Errorf("loading failed with %q, which does not say the argument was the problem", err)
-	}
-}
-
-// TestTheMainSourceCanTurnTheSessionCheckOff is the control: the item does take a
-// value from the primary source, so the refusals above are of the other origins
-// and not of the item.
-func TestTheMainSourceCanTurnTheSessionCheckOff(t *testing.T) {
-	cfg, err := loadConfig(t, `{"authn":{"token":{"issuer":"https://auth.example.com","check-session":false}}}`)
-	if err != nil {
-		t.Fatalf("loading: %v", err)
-	}
-	if cfg.checkSession {
-		t.Error("the primary source set check-session false and the module still checks the session")
+	if !strings.Contains(err.Error(), checkSessionPath) {
+		t.Errorf("loading failed with %q, which does not name %s", err, checkSessionPath)
 	}
 }
 

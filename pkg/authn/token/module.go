@@ -30,6 +30,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // ModuleName is this module's name in the registry. A host writes it into the
@@ -92,9 +93,11 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // The required capabilities are the database the refresh-token table is in, the
 // mounter the routes are registered through, and the account, session, password
 // and throttle stores the tokens are judged against. A command that names this
-// module without one of them fails at resolution, naming it. The impersonation
-// capability, the settings store, the event bus, the audit capability, the
-// metric capability, the logging capability and every ClaimsContributor are
+// module without one of them fails at resolution, naming it. The settings store
+// and the logging capability are required as optional only so that both are
+// constructed first: the store's snapshot is loaded in its Init, and Init reads
+// the check-session switch from it. The impersonation capability, the event bus,
+// the audit capability, the metric capability and every ClaimsContributor are
 // taken up in Init: each has a stated behaviour for its absence, so none is
 // declared.
 //
@@ -112,6 +115,7 @@ func Module() core.Module {
 			{Token: (*authn.Sessions)(nil)},
 			{Token: (*authn.Passwords)(nil)},
 			{Token: (*authn.Throttle)(nil)},
+			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{

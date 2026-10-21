@@ -241,7 +241,7 @@ func (p *product) authenticate(ctx context.Context, vc verifyClaims, sub authn.A
 
 	var status authn.SessionStatus
 	haveSession := false
-	if p.cfg.checkSession {
+	if p.settings.checkSession() {
 		if p.sessions == nil {
 			return p.deny(ctx, slog.LevelError, "the session check is on and no session capability is present")
 		}

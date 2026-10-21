@@ -110,6 +110,7 @@ type vfy struct {
 	t    *testing.T
 	p    *product
 	set  *keySet
+	st   *fakeSettings
 	clk  *vfyClock
 	acct *vfyAccounts
 	sess *vfySessions
@@ -136,13 +137,13 @@ func newVfyWithSet(t *testing.T, set *keySet) *vfy {
 		AuthTime:  vfyNow,
 	}}
 	imp := &vfyImpersonation{}
+	store := newFakeSettings()
 	p := &product{
 		cfg: resolved{
-			issuer:       vfyIssuer,
-			audience:     []string{vfyAudience},
-			clientID:     clientIDDefault,
-			algorithm:    set.algorithms[0],
-			checkSession: true,
+			issuer:    vfyIssuer,
+			audience:  []string{vfyAudience},
+			clientID:  clientIDDefault,
+			algorithm: set.algorithms[0],
 		},
 		keys:          set,
 		logger:        logger,
@@ -152,7 +153,8 @@ func newVfyWithSet(t *testing.T, set *keySet) *vfy {
 		impersonation: imp,
 	}
 	p.settings = newSettingReader(logger)
-	return &vfy{t: t, p: p, set: set, clk: clk, acct: acct, sess: sess, imp: imp}
+	p.settings.store = store
+	return &vfy{t: t, p: p, set: set, st: store, clk: clk, acct: acct, sess: sess, imp: imp}
 }
 
 func activeAccount(id authn.AccountID) authn.Account {
@@ -607,7 +609,7 @@ func TestTheStatelessModeOnlyDropsTheSessionCheck(t *testing.T) {
 	// A revoked session no longer refuses a normal token: its facts come from the
 	// token itself.
 	v := newVfy(t)
-	v.p.cfg.checkSession = false
+	v.st.setBool(checkSessionPath, false)
 	v.sess.status.Active = false
 	v.sess.status.Methods = nil
 	got := principalOf(v.verify(v.good()))
@@ -622,20 +624,20 @@ func TestTheStatelessModeOnlyDropsTheSessionCheck(t *testing.T) {
 	// impersonation token still authenticates, and a record that has already
 	// ended still refuses it.
 	v = newVfy(t)
-	v.p.cfg.checkSession = false
+	v.st.setBool(checkSessionPath, false)
 	if got := outcomeOf(v.verify(v.impersonationToken())); got != verdict.Authenticated {
 		t.Errorf("a valid impersonation token under the switch is %s, want authenticated", got)
 	}
 
 	v = newVfy(t)
-	v.p.cfg.checkSession = false
+	v.st.setBool(checkSessionPath, false)
 	tok := v.impersonationToken()
 	v.imp.active = false
 	requireDenied(t, v.verify(tok))
 
 	// The account snapshot still runs: a disabled account refuses at once.
 	v = newVfy(t)
-	v.p.cfg.checkSession = false
+	v.st.setBool(checkSessionPath, false)
 	a := v.acct.accounts[vfyAlice]
 	a.Status = authn.StatusDisabled
 	v.acct.accounts[vfyAlice] = a
@@ -904,7 +906,7 @@ func TestAnImpersonationTakesItsMethodsFromTheSession(t *testing.T) {
 // set would come from the token's amr or from an empty session.
 func TestATokenWithNoAuthenticationMethodIsRefused(t *testing.T) {
 	v := newVfy(t)
-	v.p.cfg.checkSession = false
+	v.st.setBool(checkSessionPath, false)
 	c := vfyClaims()
 	c["amr"] = []string{}
 	requireDenied(t, v.verify(v.sign(c, v.header())))
@@ -919,7 +921,7 @@ func TestATokenWithNoAuthenticationMethodIsRefused(t *testing.T) {
 // single, when the session check is off.
 func TestTheStatelessModeReadsTheAssuranceFromTheToken(t *testing.T) {
 	v := newVfy(t)
-	v.p.cfg.checkSession = false
+	v.st.setBool(checkSessionPath, false)
 	c := vfyClaims()
 	c["acr"] = "2"
 	if got := principalOf(v.verify(v.sign(c, v.header()))); got.Assurance != authn.AssuranceMulti {

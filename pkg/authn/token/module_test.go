@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // requirementTokens are the capability tokens a module requires, in order.
@@ -47,13 +48,20 @@ func TestTheModuleDeclaresWhatTheDesignSays(t *testing.T) {
 		(*authn.Sessions)(nil),
 		(*authn.Passwords)(nil),
 		(*authn.Throttle)(nil),
+		(*settings.Store)(nil),
 		(*log.Logger)(nil),
 	}
 	if got := requirementTokens(m.Requires); !reflect.DeepEqual(got, wantRequires) {
 		t.Errorf("Requires is %v, want %v", got, wantRequires)
 	}
 	for _, r := range m.Requires {
-		if r.Token == core.Token((*log.Logger)(nil)) {
+		switch r.Token {
+		case core.Token((*settings.Store)(nil)):
+			if !r.Optional {
+				t.Errorf("the settings requirement is not optional; a command that names no settings module has to still start")
+			}
+			continue
+		case core.Token((*log.Logger)(nil)):
 			if !r.Optional {
 				t.Errorf("the logging requirement is not optional; a command that names no logging module has to still start")
 			}

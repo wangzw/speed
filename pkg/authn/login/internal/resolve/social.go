@@ -32,7 +32,7 @@ func (r *Resolver) socialUnbound(ctx context.Context, l authn.ExternalLink, ext 
 			return Result{}, err
 		}
 	}
-	if r.signup != SignupOpen {
+	if !r.signupOpen() {
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrSignupClosed)
 	}
 	return r.createSocial(ctx, l, ext, email)
@@ -64,7 +64,7 @@ func (r *Resolver) socialKnownEmail(ctx context.Context, id authn.AccountID, l a
 // linked this way. A failure of the register of SSO domains is a failure of the
 // login: without the answer the last condition cannot be shown to hold.
 func (r *Resolver) autoLinkAllowed(ctx context.Context, id authn.AccountID, ext *authn.External) (bool, error) {
-	if r.autoLink != AutoLinkVerifiedEmail || !ext.EmailVerified || isWeChat(ext.Provider) {
+	if !r.autoLinkVerifiedEmail() || !ext.EmailVerified || isWeChat(ext.Provider) {
 		return false, nil
 	}
 	domain := emailDomain(ext.Email)

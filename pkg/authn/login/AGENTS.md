@@ -80,6 +80,12 @@ does.
   tree.** It depends on the root package, its own inner packages and the
   capability interfaces only. A tenant is never read here: the login request
   carries no tenant name, and the account is global.
+- **The account module's relaxation switches are read by path, never declared
+  here.** `authn.account.signup` and `authn.account.auto-link` belong to
+  `pkg/authn/account`; this package reads them through its optional settings
+  store on every methods request and every account resolution, and a read error
+  reads as the strict value (`closed`, `never`). Declaring the same key here is
+  the shape to reject: two modules must not declare one path.
 - **The routes are mounted through `mount.Mounter` with their access level in one
   call, and the callback bypasses the cross-origin check.** The base path is
   `authn.gate.mount.base-path` on the endpoint `authn.gate.mount.endpoint`; the

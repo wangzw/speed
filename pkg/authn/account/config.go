@@ -10,18 +10,17 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The keys this module accepts, relative to its namespace. The first five are
+// The keys this module accepts, relative to its namespace. The first three are
 // configuration, which a startup needs before a database is reachable or which
-// fix what is allocated at construction, and the two switches that relax a
-// check, which only the primary source may set; the rest are settings, read from
-// the settings store while the process runs.
+// fix what is allocated at construction; the rest are settings, read from the
+// settings store while the process runs.
 const (
 	algorithmItem    = "password-algorithm"
 	concurrencyItem  = "password-concurrency"
 	memoryBudgetItem = "password-memory-budget-mib"
-	signupItem       = "signup"
-	autoLinkItem     = "auto-link"
 
+	signupKey         = "signup"
+	autoLinkKey       = "auto-link"
 	minLengthKey      = "password-min-length"
 	argonMemoryKey    = "password-argon2-memory-kib"
 	argonIterationKey = "password-argon2-iterations"
@@ -32,6 +31,8 @@ const (
 	decayKey          = "throttle-decay"
 	retentionKey      = "secret-retention"
 
+	signupPath         = ConfigNamespace + "." + signupKey
+	autoLinkPath       = ConfigNamespace + "." + autoLinkKey
 	minLengthPath      = ConfigNamespace + "." + minLengthKey
 	argonMemoryPath    = ConfigNamespace + "." + argonMemoryKey
 	argonIterationPath = ConfigNamespace + "." + argonIterationKey
@@ -86,13 +87,6 @@ type moduleConfig struct {
 	// PasswordMemoryBudgetMiB is the memory the derivations of this module may
 	// hold at once, fixed when the module is built.
 	PasswordMemoryBudgetMiB int `config:"password-memory-budget-mib"`
-	// Signup says whether a first login through a social provider or an SMS code
-	// makes an account. It is the login engine's to act on and this module's to
-	// validate and to say at startup.
-	Signup string `config:"signup"`
-	// AutoLink says whether a first social login whose provider proved an email
-	// address is bound to the account that holds it.
-	AutoLink string `config:"auto-link"`
 }
 
 // configDefaults is what this module is worth without a configuration file.
@@ -100,12 +94,12 @@ var configDefaults = moduleConfig{
 	PasswordAlgorithm:       string(password.Argon2id),
 	PasswordConcurrency:     password.DefaultConcurrency(),
 	PasswordMemoryBudgetMiB: password.DefaultMemoryBudgetKiB / 1024,
-	Signup:                  signupClosed,
-	AutoLink:                autoLinkNever,
 }
 
-// options carries the nine settings items and their declared defaults.
+// options carries the eleven settings items and their declared defaults.
 type options struct {
+	Signup                   string        `config:"signup"`
+	AutoLink                 string        `config:"auto-link"`
 	PasswordMinLength        int           `config:"password-min-length"`
 	PasswordArgon2Memory     int           `config:"password-argon2-memory-kib"`
 	PasswordArgon2Iterations int           `config:"password-argon2-iterations"`
@@ -123,6 +117,8 @@ type options struct {
 // domain's floor, which a deployment raises when its own credential policy
 // asks for more; the rest are the strictest value of each range's usual end.
 var defaults = options{
+	Signup:                   signupClosed,
+	AutoLink:                 autoLinkNever,
 	PasswordMinLength:        8,
 	PasswordArgon2Memory:     int(password.DefaultParams().MemoryKiB),
 	PasswordArgon2Iterations: int(password.DefaultParams().Iterations),
@@ -138,6 +134,10 @@ var defaults = options{
 // store holds a write to it, and a read is judged against it again, since a
 // value stored before the domain was declared, or written around the store, is
 // served as it is.
+func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
+
+func autoLinkInDomain(v string) bool { return v == autoLinkNever || v == autoLinkVerified }
+
 func minLengthInDomain(n int) bool {
 	return n >= minPasswordLengthFloor && n <= minPasswordLengthCeil
 }
@@ -165,8 +165,6 @@ type resolved struct {
 	algorithm    password.Algorithm
 	concurrency  int
 	memoryBudget int64 // KiB
-	signupOpen   bool
-	autoLink     bool
 }
 
 // resolve turns decoded configuration into what the module runs on, or says
@@ -192,29 +190,10 @@ func (c moduleConfig) resolve() (resolved, error) {
 			memoryBudgetFloorMiB, maxMemoryBudgetMiB)
 	}
 	r.memoryBudget = int64(c.PasswordMemoryBudgetMiB) * 1024
-	switch c.Signup {
-	case signupClosed:
-	case signupOpen:
-		r.signupOpen = true
-	default:
-		return resolved{}, fmt.Errorf("%w: %s.%s is not %s or %s",
-			authn.ErrInvalidConfig, ConfigNamespace, signupItem, signupClosed, signupOpen)
-	}
-	switch c.AutoLink {
-	case autoLinkNever:
-	case autoLinkVerified:
-		r.autoLink = true
-	default:
-		return resolved{}, fmt.Errorf("%w: %s.%s is not %s or %s",
-			authn.ErrInvalidConfig, ConfigNamespace, autoLinkItem, autoLinkNever, autoLinkVerified)
-	}
 	return r, nil
 }
 
-// schema declares this module's input items. The two switches that relax a check
-// take the primary source alone: neither the environment nor the command line may
-// open them, and they are not settings, whose write surface has no access
-// control.
+// schema declares this module's input items.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -232,18 +211,6 @@ func schema() config.Schema {
 				Description: "the memory in MiB the password derivations of the account store may " +
 					"hold at once, at least twice the largest memory one derivation may take",
 			},
-			signupItem: {
-				Origins: config.OriginPrimary,
-				Description: "whether a first login through a social provider or an SMS code makes " +
-					"an account, closed or open; open relaxes a check and is read from the primary " +
-					"configuration source alone",
-			},
-			autoLinkItem: {
-				Origins: config.OriginPrimary,
-				Description: "whether a first social login whose provider proved an email address is " +
-					"bound to the account that holds it, never or verified-email; verified-email " +
-					"relaxes a check and is read from the primary configuration source alone",
-			},
 		},
 	}
 }
@@ -255,6 +222,17 @@ func settingsSchema() settings.Schema {
 		Namespace: ConfigNamespace,
 		Mounts:    []settings.Mount{{Value: &defaults}},
 		Items: map[string]settings.Item{
+			signupKey: {
+				Description: "whether a first login through a social provider or an SMS code makes an " +
+					"account, closed or open; open relaxes a check",
+				Domain: settings.DomainOf("closed or open", signupInDomain),
+			},
+			autoLinkKey: {
+				Description: "whether a first social login whose provider proved an email address is " +
+					"bound to the account that holds it, never or verified-email; verified-email " +
+					"relaxes a check",
+				Domain: settings.DomainOf("never or verified-email", autoLinkInDomain),
+			},
 			minLengthKey: {
 				Description: "the fewest characters a password of the account store has",
 				Domain:      settings.DomainOf("whole numbers from 8 to 64", minLengthInDomain),

@@ -57,16 +57,17 @@ func (c *fakeClock) advance(d time.Duration) {
 type fakeSettings struct {
 	settings.Store
 	mu     sync.Mutex
-	values map[string]time.Duration
+	values map[string]any
 }
 
 func newFakeSettings() *fakeSettings {
-	return &fakeSettings{values: map[string]time.Duration{
+	return &fakeSettings{values: map[string]any{
 		accessTTLPath:      defaults.AccessTTL,
 		leewayPath:         defaults.Leeway,
 		refreshIdleTTLPath: defaults.RefreshIdleTTL,
 		refreshGracePath:   defaults.RefreshGrace,
 		checkTTLPath:       defaultCheckTTL,
+		checkSessionPath:   defaults.CheckSession,
 	}}
 }
 
@@ -76,18 +77,37 @@ func (f *fakeSettings) set(key string, d time.Duration) {
 	f.values[key] = d
 }
 
+// setBool writes a boolean setting, which is how a case turns the session check
+// off.
+func (f *fakeSettings) setBool(key string, b bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.values[key] = b
+}
+
 func (f *fakeSettings) Get(_ settings.Layer, key string, target any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	d, ok := f.values[key]
+	value, ok := f.values[key]
 	if !ok {
 		return settings.ErrUnknownKey
 	}
-	ptr, ok := target.(*time.Duration)
-	if !ok {
+	switch ptr := target.(type) {
+	case *time.Duration:
+		d, ok := value.(time.Duration)
+		if !ok {
+			return fmt.Errorf("token test: the setting %q holds a %T, not a duration", key, value)
+		}
+		*ptr = d
+	case *bool:
+		b, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("token test: the setting %q holds a %T, not a boolean", key, value)
+		}
+		*ptr = b
+	default:
 		return fmt.Errorf("token test: the setting %q was read into a %T", key, target)
 	}
-	*ptr = d
 	return nil
 }
 
@@ -405,11 +425,10 @@ func newRig(t *testing.T) *rig {
 		logs:      &logBuffer{},
 	}
 	cfg := resolved{
-		issuer:       issuer,
-		audience:     []string{issuer},
-		clientID:     clientIDDefault,
-		algorithm:    algES256,
-		checkSession: true,
+		issuer:    issuer,
+		audience:  []string{issuer},
+		clientID:  clientIDDefault,
+		algorithm: algES256,
 	}
 	p := newProduct(cfg, r.keys, database, mounttest.New(t), &fakeAccounts{}, r.sessions, r.passwords, r.throttle)
 	p.clock = r.clock.Now
@@ -864,7 +883,7 @@ func TestARotationCarriesAMultiFactorSessionAsMulti(t *testing.T) {
 func TestRefreshVerifiesTheSessionEvenInTheStatelessMode(t *testing.T) {
 	r := newRig(t)
 	id, first := r.issueRefresh()
-	r.p.cfg.checkSession = false
+	r.settings.setBool(checkSessionPath, false)
 	r.sessions.put(id, authn.SessionStatus{Active: false, Account: account, Kind: authn.SessionToken})
 	if _, _, err := r.p.Refresh(context.Background(), first.Value); !errors.Is(err, authn.ErrInvalidGrant) {
 		t.Fatalf("a refresh over an inactive session in the stateless mode gave %v, want ErrInvalidGrant", err)

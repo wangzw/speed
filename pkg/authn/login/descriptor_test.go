@@ -8,6 +8,15 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// signupStore is a settings store whose registration switch is open and whose
+// other declared switch, the disabled methods, names none.
+func signupStore() *fakeStore {
+	return &fakeStore{values: map[string]string{
+		signupPath:          signupOpen,
+		disabledMethodsPath: "[]",
+	}}
+}
+
 // TestTheMethodsListingPublishesMethodDescriptors holds GET B/methods: it
 // answers a descriptor per method taking part, in name order, next to the
 // registration switch and the kinds of second factor the deployment offers.
@@ -24,7 +33,7 @@ func TestTheMethodsListingPublishesMethodDescriptors(t *testing.T) {
 		Label: "Google", OpensAccount: true, BindingProviders: []string{"google"},
 	}}
 	r := newRigMethods(t, password, google)
-	r.p.signup = true
+	r.p.settings = newReader(signupStore(), r.p.logger)
 	r.mfa.kinds = []authn.FactorKind{authn.FactorSMS, authn.FactorTOTP, authn.FactorWebAuthn}
 
 	rec := r.send(http.MethodGet, "/api/v1/auth/methods", "")
@@ -104,7 +113,7 @@ func TestTheMethodsListingFollowsTheAssembly(t *testing.T) {
 		t.Errorf("mfa.factors with one kind = %v, want [totp]", got)
 	}
 
-	r.p.signup = true
+	r.p.settings = newReader(signupStore(), r.p.logger)
 	r.mfa.kinds = []authn.FactorKind{authn.FactorTOTP, authn.FactorWebAuthn}
 	open := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
 	if got := open["signup"].(map[string]any)["enabled"]; got != true {

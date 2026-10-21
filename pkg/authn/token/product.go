@@ -232,10 +232,8 @@ func (p *product) diagnose() {
 	for _, d := range p.diagnostics {
 		p.logger.Warn(diagnosticPrefix+ModuleName+": "+d.reason, slog.String("file", d.file))
 	}
-	if !p.cfg.checkSession {
-		p.logger.Warn(diagnosticPrefix+ModuleName+": the session check is off, so a revocation reaches a normal "+
-			"token only at its expiry. This is for a deployment that runs the token backend stateless",
-			slog.String("setting", ConfigNamespace+"."+checkSessionItem))
+	if !p.settings.checkSession() {
+		p.warnRelaxation(checkSessionPath, dirRelaxed)
 	}
 	if p.keys.signing == nil {
 		p.logger.Info(diagnosticPrefix + ModuleName + ": no signing key is configured, so the module verifies " +

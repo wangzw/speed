@@ -6,9 +6,11 @@
 // the method takes through authn.SMSCodes; the method answers a Step and does
 // nothing else. It reads the number's back-off before it checks a code, counts
 // the outcome against the same key, and says what the login engine is to do
-// next. It touches no HTTP, session, token or flow record, and it writes no log
-// line: the engine logs the cause of an answer, and no cause here names a phone
-// number or a code.
+// next. It touches no HTTP, session, token or flow record. The engine logs the
+// cause of an answer; the method itself writes one Error when the registration
+// switch cannot be read or holds a value outside its domain, so a fault is
+// distinguishable from registration being closed, and no record here names a
+// phone number or a code.
 //
 // A code is sent to a number registered to an enabled account, or to any number
 // while registration is open; every other number gets a suppressed challenge,
@@ -28,11 +30,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
+	"sync"
 
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // ModuleName is this module's name in the registry.
@@ -62,16 +67,30 @@ var phoneShape = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
 // code and the step that answers it.
 const stateVersion = 1
 
-// signupOpen is the value of the account module's registration switch that lets a
-// first login create an account.
-const signupOpen = "open"
+// signupPath is the account module's registration switch, which this method
+// reads and does not declare. signupOpen is the value that lets a first login
+// create an account, and signupClosed the strict one; any other value is outside
+// the declared domain.
+const (
+	signupPath   = "authn.account.signup"
+	signupOpen   = "open"
+	signupClosed = "closed"
+)
 
 // method is this module's product.
 type method struct {
-	codes      authn.SMSCodes
-	throttle   authn.Throttle
-	accounts   authn.Accounts
-	signupOpen bool
+	codes    authn.SMSCodes
+	throttle authn.Throttle
+	accounts authn.Accounts
+	// store is the settings store the registration switch is read from, nil
+	// when the assembly carries none.
+	store settings.Store
+	// logger writes the one record this method makes: a read of the switch that
+	// failed, reported once for as long as the same fault stands.
+	logger *slog.Logger
+
+	mu       sync.Mutex
+	reported string
 }
 
 // method must satisfy the capability it delivers.
@@ -84,12 +103,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // SMSCodes, Throttle and Accounts are required: each is delivered exclusively by
 // another module, so a command that took this method in without an SMS module
-// and an account module fails before anything is built. The login method
-// capability is delivered without being claimed, which is what lets several
-// methods stand side by side. The module declares no input item. It reads the
-// account module's registration switch from the configuration to decide whether
-// an unknown number is sent a real code; without a configuration reader the
-// switch reads as closed.
+// and an account module fails before anything is built. The settings store is
+// optional and only read, which is where the account module's registration
+// switch lives; without one the switch reads as closed. The logging capability
+// is optional and declared so that it is constructed first; without one the
+// method logs through the process default. The login method capability is
+// delivered without being claimed, which is what lets several methods stand side
+// by side. The module declares no input item.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -97,6 +117,8 @@ func Module() core.Module {
 			{Token: (*authn.SMSCodes)(nil)},
 			{Token: (*authn.Throttle)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
 
@@ -117,12 +139,43 @@ func Module() core.Module {
 			if err != nil {
 				return nil, fmt.Errorf("%s: taking up the account read capability: %w", ModuleName, err)
 			}
-			open, err := signupIsOpen(reg)
+			store, err := optionalStore(reg)
 			if err != nil {
 				return nil, err
 			}
-			return &method{codes: codes, throttle: throttle, accounts: accounts, signupOpen: open}, nil
+			logger, err := optionalLogger(reg)
+			if err != nil {
+				return nil, err
+			}
+			return &method{codes: codes, throttle: throttle, accounts: accounts, store: store, logger: logger}, nil
 		},
+	}
+}
+
+// optionalLogger takes up the logging capability, whose absence is a legal
+// assembly; the process default stands in for it.
+func optionalLogger(reg *core.Registry) (*slog.Logger, error) {
+	delivered, err := core.Resolve[log.Logger](reg)
+	switch {
+	case err == nil:
+		return delivered.Named(ModuleName), nil
+	case errors.Is(err, core.ErrMissingProvider):
+		return log.Default(), nil
+	default:
+		return nil, fmt.Errorf("%s: taking up the logging capability: %w", ModuleName, err)
+	}
+}
+
+// optionalStore takes up the settings store, whose absence is a legal assembly.
+func optionalStore(reg *core.Registry) (settings.Store, error) {
+	store, err := core.Resolve[settings.Store](reg)
+	switch {
+	case err == nil:
+		return store, nil
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("%s: taking up the settings store: %w", ModuleName, err)
 	}
 }
 
@@ -309,19 +362,68 @@ func (m *method) deliver(ctx context.Context, phone string) (bool, error) {
 	switch {
 	case err == nil:
 	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrInvalidIdentifier):
-		return m.signupOpen, nil
+		return m.signupOpen(), nil
 	default:
 		return false, err
 	}
 	account, err := m.accounts.Get(ctx, id)
 	switch {
 	case err == nil:
-		return account.Status == authn.StatusActive || m.signupOpen, nil
+		return account.Status == authn.StatusActive || m.signupOpen(), nil
 	case errors.Is(err, authn.ErrAccountNotFound):
-		return m.signupOpen, nil
+		return m.signupOpen(), nil
 	default:
 		return false, err
 	}
+}
+
+// signupOpen reports whether the account module's registration switch is open at
+// this decision. A store that cannot be read, and an assembly without one, read
+// as closed: a method that cannot tell whether registration is open sends a code
+// to a known number only.
+func (m *method) signupOpen() bool {
+	if m.store == nil {
+		return false
+	}
+	var value string
+	if err := m.store.Get(settings.Global(), signupPath, &value); err != nil {
+		m.reportFault("the setting cannot be read, so it is read as closed", err.Error())
+		return false
+	}
+	if value != signupOpen && value != signupClosed {
+		m.reportFault("the setting holds a value outside its domain, so it is read as closed", value)
+		return false
+	}
+	m.clearFault()
+	return value == signupOpen
+}
+
+// reportFault writes one Error for a switch that read as something other than
+// its value, and again only when the fault changes; clearFault drops the record
+// once a read comes back clean. An assembly without a settings store is a legal
+// one and is not a fault.
+func (m *method) reportFault(problem, detail string) {
+	fault := problem + ": " + detail
+	m.mu.Lock()
+	if m.reported == fault {
+		m.mu.Unlock()
+		return
+	}
+	m.reported = fault
+	m.mu.Unlock()
+
+	logger := m.logger
+	if logger == nil {
+		logger = log.Default()
+	}
+	logger.Error(ModuleName+": "+problem,
+		slog.String("setting", signupPath), slog.String("cause", detail))
+}
+
+func (m *method) clearFault() {
+	m.mu.Lock()
+	m.reported = ""
+	m.mu.Unlock()
 }
 
 // unavailable answers that the method cannot say now. The dependency's error
@@ -389,30 +491,4 @@ func readState(private []byte) (state, bool) {
 		return state{}, false
 	}
 	return s, true
-}
-
-// accountConfig is the part of the account module's configuration this method
-// reads: the switch that lets a first login create an account.
-type accountConfig struct {
-	Signup string `config:"signup"`
-}
-
-// signupIsOpen reads the account module's registration switch. A reader that is
-// not there and a switch that is neither value read as closed: a method that
-// cannot tell whether registration is open sends a code to a known number only.
-// Only the value open opens it.
-func signupIsOpen(reg *core.Registry) (bool, error) {
-	reader, err := core.Resolve[config.Reader](reg)
-	switch {
-	case err == nil:
-	case errors.Is(err, core.ErrMissingProvider):
-		return false, nil
-	default:
-		return false, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
-	}
-	var a accountConfig
-	if err := reader.Decode("authn.account", &a); err != nil {
-		return false, fmt.Errorf("%s: reading the account switches: %w", ModuleName, err)
-	}
-	return a.Signup == signupOpen, nil
 }

@@ -7,16 +7,17 @@ import (
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/step"
-	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // The stand-ins a driven registry is built from: one module that delivers the
 // three capabilities this method uses, each exclusively as its own module does,
-// and one that delivers the configuration reader.
+// and one that delivers the settings store.
 const (
-	smsModule    = "stand-in.sms"
-	configModule = "stand-in.config"
+	smsModule      = "stand-in.sms"
+	settingsModule = "stand-in.settings"
 )
 
 // standInSMS declares the three capabilities the way the SMS module and the
@@ -32,12 +33,11 @@ func standInSMS() core.Module {
 	}
 }
 
-// standInConfig declares the configuration reader the way the config module
-// does.
-func standInConfig() core.Module {
+// standInSettings declares the settings store the way the settings module does.
+func standInSettings() core.Module {
 	return core.Module{
-		Name:     configModule,
-		Provides: []core.Provision{{Token: (*config.Reader)(nil)}},
+		Name:     settingsModule,
+		Provides: []core.Provision{{Token: (*settings.Store)(nil)}},
 	}
 }
 
@@ -57,34 +57,37 @@ func newProvider() *provider {
 	}
 }
 
-// fakeReader is a configuration reader whose account switches a case chooses.
-type fakeReader struct {
+// fakeSettings is a settings store whose account registration switch a case
+// chooses. Any other key is undeclared.
+type fakeSettings struct {
+	settings.Store
 	signup string
 	err    error
 }
 
-func (f *fakeReader) Decode(path string, target any) error {
+func (f *fakeSettings) Get(_ settings.Layer, key string, target any) error {
 	if f.err != nil {
 		return f.err
 	}
-	if path == "authn.account" {
-		if c, ok := target.(*accountConfig); ok {
-			c.Signup = f.signup
-		}
+	if key != signupPath {
+		return settings.ErrUnknownKey
+	}
+	if p, ok := target.(*string); ok {
+		*p = f.signup
 	}
 	return nil
 }
 
 // buildRegistry registers this module beside the stand-ins and supplies the
-// provider and reader under their modules.
-func buildRegistry(reader config.Reader) (*core.Registry, *provider) {
+// provider and store under their modules.
+func buildRegistry(store settings.Store) (*core.Registry, *provider) {
 	p := newProvider()
 	reg := core.New()
 	reg.Register(Module())
 	reg.Register(standInSMS())
-	reg.Register(standInConfig())
+	reg.Register(standInSettings())
 	reg.Supply(p, smsModule)
-	reg.Supply(reader, configModule)
+	reg.Supply(store, settingsModule)
 	return reg, p
 }
 
@@ -99,13 +102,19 @@ func TestTheDescriptorDeliversTheLoginMethodWithoutClaimingIt(t *testing.T) {
 	if p := m.Provides[0]; p.Token != core.Token((*authn.LoginMethod)(nil)) || p.Exclusive {
 		t.Errorf("Provides[0] = %+v, want authn.LoginMethod, not exclusive: several methods stand side by side", p)
 	}
-	want := []core.Token{(*authn.SMSCodes)(nil), (*authn.Throttle)(nil), (*authn.Accounts)(nil)}
+	want := []core.Requirement{
+		{Token: (*authn.SMSCodes)(nil)},
+		{Token: (*authn.Throttle)(nil)},
+		{Token: (*authn.Accounts)(nil)},
+		{Token: (*settings.Store)(nil), Optional: true},
+		{Token: (*log.Logger)(nil), Optional: true},
+	}
 	if len(m.Requires) != len(want) {
-		t.Fatalf("Requires = %+v, want the SMS, back-off and account capabilities", m.Requires)
+		t.Fatalf("Requires = %+v, want the SMS, back-off and account capabilities and the optional settings and logging capabilities", m.Requires)
 	}
 	for i, r := range m.Requires {
-		if r.Token != want[i] || r.Optional {
-			t.Errorf("Requires[%d] = %+v, want %v and not optional: an SMS method with no such module cannot run", i, r, want[i])
+		if r.Token != want[i].Token || r.Optional != want[i].Optional {
+			t.Errorf("Requires[%d] = %+v, want %+v", i, r, want[i])
 		}
 	}
 	if len(m.Resources) != 0 {
@@ -124,11 +133,11 @@ func TestPrepareStatesEnabledAndNothingElse(t *testing.T) {
 }
 
 func TestARealRegistryDeliversTheSMSMethodOnTheOtherModulesCapabilities(t *testing.T) {
-	reg, p := buildRegistry(&fakeReader{})
+	reg, p := buildRegistry(&fakeSettings{signup: "x"})
 	var methods []authn.LoginMethod
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageInit,
-		Participants: []string{ModuleName, smsModule, configModule},
+		Participants: []string{ModuleName, smsModule, settingsModule},
 		Action: func(_ context.Context, reg *core.Registry) error {
 			methods = core.ResolveAll[authn.LoginMethod](reg)
 			return nil
@@ -153,25 +162,26 @@ func TestARealRegistryDeliversTheSMSMethodOnTheOtherModulesCapabilities(t *testi
 	}
 }
 
-// TestTheRegistrationSwitchIsReadFromTheConfiguration checks that an unknown
+// TestTheRegistrationSwitchIsReadFromTheSettingsStore checks that an unknown
 // number is delivered only while the account module's registration switch reads
 // open, and that any other value, or an unreadable one, reads as closed.
-func TestTheRegistrationSwitchIsReadFromTheConfiguration(t *testing.T) {
+func TestTheRegistrationSwitchIsReadFromTheSettingsStore(t *testing.T) {
 	cases := []struct {
-		name   string
-		reader config.Reader
-		want   bool
+		name  string
+		store settings.Store
+		want  bool
 	}{
-		{"open", &fakeReader{signup: "open"}, true},
-		{"closed", &fakeReader{signup: "closed"}, false},
-		{"neither", &fakeReader{signup: "maybe"}, false},
+		{"open", &fakeSettings{signup: "open"}, true},
+		{"closed", &fakeSettings{signup: "closed"}, false},
+		{"neither", &fakeSettings{signup: "maybe"}, false},
+		{"unreadable", &fakeSettings{err: errors.New("the store is down")}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			reg, p := buildRegistry(tc.reader)
+			reg, p := buildRegistry(tc.store)
 			err := reg.Drive(t.Context(), core.Drive{
 				Depth:        core.StageInit,
-				Participants: []string{ModuleName, smsModule, configModule},
+				Participants: []string{ModuleName, smsModule, settingsModule},
 				Action: func(_ context.Context, reg *core.Registry) error {
 					m := core.ResolveAll[authn.LoginMethod](reg)[0]
 					if got, _ := m.Begin(t.Context(), loginStart(phoneFields(unknownPhone))); step.KindOf(got) != step.KindPrompt {
@@ -193,10 +203,10 @@ func TestTheRegistrationSwitchIsReadFromTheConfiguration(t *testing.T) {
 	}
 }
 
-// TestAnAbsentConfigurationReaderClosesTheRegistration checks that a registry
-// with no configuration reader still builds the method, and that an unknown
-// number is then suppressed.
-func TestAnAbsentConfigurationReaderClosesTheRegistration(t *testing.T) {
+// TestAnAbsentSettingsStoreClosesTheRegistration checks that a registry with no
+// settings store still builds the method, and that an unknown number is then
+// suppressed.
+func TestAnAbsentSettingsStoreClosesTheRegistration(t *testing.T) {
 	p := newProvider()
 	reg := core.New()
 	reg.Register(Module())
@@ -217,7 +227,7 @@ func TestAnAbsentConfigurationReaderClosesTheRegistration(t *testing.T) {
 		t.Fatalf("drive: %v", err)
 	}
 	if len(p.sends) != 1 || p.sends[0].Deliver {
-		t.Fatalf("the fake saw %+v, want one suppressed send: no reader closes registration", p.sends)
+		t.Fatalf("the fake saw %+v, want one suppressed send: no settings store closes registration", p.sends)
 	}
 }
 

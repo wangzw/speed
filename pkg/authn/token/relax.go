@@ -11,11 +11,19 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// dirIncrease is the direction this module's settings relax in. Every setting it
-// watches is a duration whose larger value admits a token or a retry the
-// declared default would have refused: a longer-lived access token, a wider
-// clock-skew allowance, a longer idle refresh lifetime, a longer reuse window.
-const dirIncrease = "increase"
+// The directions this module's settings relax in. A duration relaxes in
+// dirIncrease, where a larger value admits a token or a retry the declared
+// default would have refused: a longer-lived access token, a wider clock-skew
+// allowance, a longer idle refresh lifetime, a longer reuse window. A switch
+// relaxes by moving to the value it names in relaxingSwitch.
+const (
+	dirIncrease = "increase"
+	// dirRelaxed is the direction of a switch moved to the value that checks
+	// less. It is the authn events contract's direction for the relaxation
+	// switches, whose value set also includes to-false, to-zero, add-member and
+	// remove-member.
+	dirRelaxed = "relax"
+)
 
 // relaxing is, for each setting of this module whose move relaxes a check, the
 // direction it relaxes in. A setting absent from the table relaxes nothing and
@@ -25,6 +33,13 @@ var relaxing = map[string]string{
 	leewayPath:         dirIncrease,
 	refreshIdleTTLPath: dirIncrease,
 	refreshGracePath:   dirIncrease,
+}
+
+// relaxingSwitch is, for each switch of this module that relaxes a check, the
+// value it relaxes at. A change to that value from any other one is a
+// relaxation; a change back to the strict value is not watched.
+var relaxingSwitch = map[string]string{
+	checkSessionPath: "false",
 }
 
 // The name and outcome of the audit record of a setting moved to a more
@@ -46,30 +61,58 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	if err := event.DecodePayload(evt.Payload, &change); err != nil {
 		return nil
 	}
+	if change.Sensitive {
+		return nil
+	}
+	// Every setting this module watches is read from the global layer alone, so
+	// a row written at a tenant layer leaves the effective value unchanged and
+	// is not a relaxation.
+	if evt.TenantID != "" {
+		return nil
+	}
+	if target, watched := relaxingSwitch[change.Key]; watched {
+		if change.New == target && change.Old != target {
+			p.reportRelaxation(ctx, change.Key, dirRelaxed)
+		}
+		return nil
+	}
 	direction, watched := relaxing[change.Key]
-	if !watched || change.Sensitive {
+	if !watched {
 		return nil
 	}
 	if !relaxes(direction, change.Key, change.Old, change.Old == "", change.New, change.Deleted || change.New == "") {
 		return nil
 	}
-	p.logger.Warn(diagnosticPrefix+ModuleName+": a setting was moved to a value that checks less than before",
-		slog.String("setting", change.Key), slog.String("direction", direction))
+	p.reportRelaxation(ctx, change.Key, direction)
+	return nil
+}
+
+// warnRelaxation writes the Warn a removed check is visible by: the key and the
+// direction, never the value. The startup diagnostics write it when the value is
+// already relaxed, and the change handler writes it when a value is moved there.
+func (p *product) warnRelaxation(key, direction string) {
+	p.logger.Warn(diagnosticPrefix+ModuleName+": a setting is at a value that checks less than before",
+		slog.String("setting", key), slog.String("direction", direction))
+}
+
+// reportRelaxation writes the Warn and the best-effort audit record of one
+// relaxation.
+func (p *product) reportRelaxation(ctx context.Context, key, direction string) {
+	p.warnRelaxation(key, direction)
 	if p.audit == nil {
-		return nil
+		return
 	}
 	err := p.audit.Record(ctx, audit.Entry{
 		Action:  relaxedAction,
-		Object:  change.Key,
+		Object:  key,
 		Outcome: relaxedOutcome,
 		Detail:  map[string]string{"change": direction},
 	})
 	if err != nil {
 		p.recordAuditFailure(ctx)
 		p.logger.Error(diagnosticPrefix+ModuleName+": the audit record of a relaxed setting could not be written",
-			slog.String("setting", change.Key), slog.String("cause", err.Error()))
+			slog.String("setting", key), slog.String("cause", err.Error()))
 	}
-	return nil
 }
 
 // relaxes reports whether the change moved the key in its relaxing direction. A

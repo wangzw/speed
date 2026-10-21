@@ -163,7 +163,7 @@ func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 	}
 	c.json(http.StatusOK, methodsReply{
 		Methods: out,
-		Signup:  signupView{Enabled: r.signup},
+		Signup:  signupView{Enabled: r.signupEnabled()},
 		MFA:     mfaView{Factors: r.factorKinds()},
 	})
 	return c.result()

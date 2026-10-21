@@ -1,11 +1,14 @@
 package sms
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,12 +111,13 @@ func (f *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account
 	return f.accounts[id], f.getErr
 }
 
-// rig is one method with its three fakes.
+// rig is one method with its three fakes and the settings store.
 type rig struct {
 	m  *method
 	sm *fakeSMSCodes
 	th *fakeThrottle
 	ac *fakeAccounts
+	st *fakeSettings
 }
 
 // newRig builds a method whose Send mints sentinelChallenge and whose Verify
@@ -123,7 +127,8 @@ func newRig() *rig {
 	sm := &fakeSMSCodes{sendChallenge: challengeID}
 	th := &fakeThrottle{}
 	ac := &fakeAccounts{}
-	return &rig{m: &method{codes: sm, throttle: th, accounts: ac}, sm: sm, th: th, ac: ac}
+	st := &fakeSettings{signup: "closed"}
+	return &rig{m: &method{codes: sm, throttle: th, accounts: ac, store: st}, sm: sm, th: th, ac: ac, st: st}
 }
 
 // registerActive makes the store answer phoneNumber with an enabled account.
@@ -418,7 +423,7 @@ func TestADisabledAccountIsNotDelivered(t *testing.T) {
 func TestRegistrationOpenDeliversEveryNumber(t *testing.T) {
 	r := newRig()
 	r.unregistered()
-	r.m.signupOpen = true
+	r.st.signup = "open"
 	got, _ := r.m.Begin(t.Context(), loginStart(phoneFields(unknownPhone)))
 	if step.KindOf(got) != step.KindPrompt || step.SendsOf(got) != 1 {
 		t.Fatalf("an unknown number with registration open = %s, want a prompt", describe(got))
@@ -736,7 +741,9 @@ func TestAReadFailureOfTheAccountIsNotASuppressedSend(t *testing.T) {
 	t.Run("a vanished account follows the registration switch", func(t *testing.T) {
 		for _, open := range []bool{true, false} {
 			r := newRig()
-			r.m.signupOpen = open
+			if open {
+				r.st.signup = "open"
+			}
 			r.ac.lookupID = testAccount
 			r.ac.getErr = authn.ErrAccountNotFound
 			got, _ := r.m.Begin(t.Context(), loginStart(phoneFields(phoneNumber)))
@@ -829,6 +836,105 @@ func TestAnAnswerCarryingAnUnknownStateFieldIsRefused(t *testing.T) {
 	if len(r.sm.verifies) != 0 {
 		t.Errorf("a state with an unknown field reached Verify %d times, want none", len(r.sm.verifies))
 	}
+}
+
+// TestAReadFailureOfTheRegistrationSwitchIsLoggedAndReadAsClosed holds the
+// observability the design promises for a relaxation switch: a read that fails
+// is reported at Error, once for as long as the same fault stands, and the
+// switch reads as closed. An assembly without a settings store is a legal one
+// and is not a fault.
+func TestAReadFailureOfTheRegistrationSwitchIsLoggedAndReadAsClosed(t *testing.T) {
+	t.Run("a failing read is logged once", func(t *testing.T) {
+		r := newRig()
+		logs := &logBuffer{}
+		r.m.logger = logs.logger()
+		r.unregistered()
+		r.st.err = errors.New("the settings store is down")
+
+		for range 2 {
+			got, _ := r.m.Begin(t.Context(), loginStart(phoneFields(unknownPhone)))
+			if step.KindOf(got) != step.KindPrompt {
+				t.Fatalf("Begin with an unreadable switch = %s, want a prompt", describe(got))
+			}
+		}
+		if len(r.sm.sends) != 2 {
+			t.Fatalf("the method reached Send %d times, want twice", len(r.sm.sends))
+		}
+		for i, send := range r.sm.sends {
+			if send.Deliver {
+				t.Errorf("send %d delivered a code while the switch read as closed", i)
+			}
+		}
+		out := logs.String()
+		if n := strings.Count(out, "level=ERROR"); n != 1 {
+			t.Fatalf("the log holds %d Error lines, want one:\n%s", n, out)
+		}
+		if !strings.Contains(out, "setting="+signupPath) || !strings.Contains(out, "cause=") {
+			t.Errorf("the Error line does not name the setting and the cause:\n%s", out)
+		}
+	})
+
+	t.Run("a value outside the domain is logged once", func(t *testing.T) {
+		r := newRig()
+		logs := &logBuffer{}
+		r.m.logger = logs.logger()
+		r.unregistered()
+		r.st.signup = "perhaps"
+
+		for range 2 {
+			got, _ := r.m.Begin(t.Context(), loginStart(phoneFields(unknownPhone)))
+			if step.KindOf(got) != step.KindPrompt {
+				t.Fatalf("Begin with an out-of-domain switch = %s, want a prompt", describe(got))
+			}
+		}
+		for i, send := range r.sm.sends {
+			if send.Deliver {
+				t.Errorf("send %d delivered a code with an out-of-domain switch", i)
+			}
+		}
+		out := logs.String()
+		if n := strings.Count(out, "level=ERROR"); n != 1 {
+			t.Fatalf("the log holds %d Error lines, want one:\n%s", n, out)
+		}
+		if !strings.Contains(out, "outside its domain") || !strings.Contains(out, "setting="+signupPath) {
+			t.Errorf("the Error line does not report the domain fault on the setting:\n%s", out)
+		}
+	})
+
+	t.Run("an absent store is not a fault", func(t *testing.T) {
+		r := newRig()
+		logs := &logBuffer{}
+		r.m.logger = logs.logger()
+		r.m.store = nil
+		r.unregistered()
+
+		if got, _ := r.m.Begin(t.Context(), loginStart(phoneFields(unknownPhone))); step.KindOf(got) != step.KindPrompt {
+			t.Fatalf("Begin without a settings store = %s, want a prompt", describe(got))
+		}
+		if out := logs.String(); strings.Contains(out, "level=ERROR") {
+			t.Errorf("an absent settings store wrote an Error:\n%s", out)
+		}
+	})
+}
+
+// logBuffer collects the records a method writes.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *logBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *logBuffer) logger() *slog.Logger { return slog.New(slog.NewTextHandler(l, nil)) }
+
+func (l *logBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
 func badCodeForTest() string { return "000000" }

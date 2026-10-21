@@ -53,11 +53,17 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   run is the command's decision. `Start` probes every table and refuses with
   `ErrNotMigrated` when one is missing, which is what tells a host to take the
   module in statically in the command that migrates.
-- **The two switches that relax a check take the primary source alone.** `signup`
-  and `auto-link` are configuration, not settings: the settings write surface has
-  no access control, so a value that can open a check is not writable there. The
-  cost settings and the nine runtime parameters are settings, read on every use
-  and judged against their declared domain when read as well as when written.
+- **`signup` and `auto-link` are settings, declared here and read on every
+  decision.** Both default to the strict value (`closed`, `never`); a move toward
+  `open` or `verified-email` is a relaxation, so the `settings.changed`
+  subscriber writes a `Warn` and a best-effort `authn.settings.relaxed` audit row
+  naming the key and the direction (`relax.go`). A process that starts with the
+  switch already relaxed writes the same `Warn`. The login engine reads
+  `authn.account.*` by path through its optional settings store; this module is
+  the only declarer. The cost settings and the remaining runtime parameters are
+  settings too, read on every use and judged against their declared domain when
+  read as well as when written. The config schema no longer carries the two
+  switches: a config file naming them fails startup as an unknown key.
 
 ## How to run it
 

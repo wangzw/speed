@@ -18,7 +18,6 @@ const (
 	algorithmItem      = "algorithm"
 	signingKeyFileItem = "signing-key-file"
 	verifyKeyFilesItem = "verify-key-files"
-	checkSessionItem   = "check-session"
 )
 
 // gateNamespace and gatePublicURLItem are the gateway's, read here because the
@@ -50,18 +49,14 @@ type moduleConfig struct {
 	SigningKeyFile string `config:"signing-key-file"`
 	// VerifyKeyFiles are PEM files of keys used only to verify and to publish.
 	VerifyKeyFiles []string `config:"verify-key-files"`
-	// CheckSession turns the session check of the verifying backend off. Only
-	// the primary source may set it.
-	CheckSession bool `config:"check-session"`
 }
 
 // configDefaults is what this module is worth without a configuration file. The
 // issuer and the audience default off the gateway's public address, so they are
 // resolved rather than held here.
 var configDefaults = moduleConfig{
-	ClientID:     clientIDDefault,
-	Algorithm:    algES256,
-	CheckSession: true,
+	ClientID:  clientIDDefault,
+	Algorithm: algES256,
 }
 
 // gateMount is the part of the gateway's configuration this module reads.
@@ -71,13 +66,12 @@ type gateMount struct {
 
 // resolved is the configuration this module actually runs on.
 type resolved struct {
-	issuer       string
-	audience     []string
-	clientID     string
-	algorithm    string
-	signingFile  string
-	verifyFiles  []string
-	checkSession bool
+	issuer      string
+	audience    []string
+	clientID    string
+	algorithm   string
+	signingFile string
+	verifyFiles []string
 }
 
 // resolve turns decoded configuration into what the module runs on, or says
@@ -86,10 +80,9 @@ type resolved struct {
 // issues tokens with an "iss" and an "aud" that a verifier can compare.
 func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 	r := resolved{
-		clientID:     strings.TrimSpace(c.ClientID),
-		algorithm:    strings.TrimSpace(c.Algorithm),
-		signingFile:  strings.TrimSpace(c.SigningKeyFile),
-		checkSession: c.CheckSession,
+		clientID:    strings.TrimSpace(c.ClientID),
+		algorithm:   strings.TrimSpace(c.Algorithm),
+		signingFile: strings.TrimSpace(c.SigningKeyFile),
 	}
 
 	r.issuer = strings.TrimSpace(c.Issuer)
@@ -135,9 +128,7 @@ func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 }
 
 // schema declares this module's input items. The signing key file is a secret
-// and takes the ordinary origins; the relaxation switch takes the primary source
-// alone, since neither the environment nor the command line may turn the session
-// check off.
+// and takes the ordinary origins.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -165,12 +156,6 @@ func schema() config.Schema {
 			},
 			verifyKeyFilesItem: {
 				Description: "PEM files of keys used only to verify and to publish, for the halves of a key rotation",
-			},
-			checkSessionItem: {
-				Origins: config.OriginPrimary,
-				Description: "whether the verifying backend checks the session a token names; false is the " +
-					"stateless mode where a revocation takes effect only at the token's expiry, and is read " +
-					"from the primary configuration source alone",
 			},
 		},
 	}

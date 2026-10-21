@@ -55,10 +55,14 @@ The API is the package's godoc.
   `authn.gate.mount.public-url` and the audience takes the issuer, so an
   assembly that names neither still issues tokens a verifier can compare. An
   audience that resolves empty is `ErrInvalidConfig`.
-- **The relaxation switch takes the primary source alone.** `check-session`
-  is `config.OriginPrimary`, so neither the environment nor the command line
-  can turn the session check off; the signing key file is `Sensitive` and
-  carries no command-line flag. A switch that is off is a `Warn` startup line.
+- **`check-session` is a setting, declared here and read before the session
+  step of every verification.** It defaults to `true`; `false` is the relaxing
+  value, so the `settings.changed` subscriber writes a `Warn` and a best-effort
+  `authn.settings.relaxed` audit row naming the key and the direction
+  (`relax.go`). A process that starts with the switch already off writes the
+  same `Warn`. The signing key file is `Sensitive` and carries no command-line
+  flag. The config schema no longer carries `check-session`: a config file naming
+  it fails startup as an unknown key.
 - **The routes are declared as HTTP operations, and the fragment is generated
   from the declarations.** `operations.go` declares the key set, the token
   endpoint and the revocation endpoint — method, path relative to the API root,

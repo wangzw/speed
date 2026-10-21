@@ -24,7 +24,7 @@ func (r *Resolver) fromIdentifier(ctx context.Context, req Request) (Result, err
 		return Result{}, err
 	case req.Purpose != authn.PurposeLogin:
 		return Result{}, credentialsFailure("the phone is not the flow's account's", nil)
-	case r.signup != SignupOpen:
+	case !r.signupOpen():
 		return Result{}, fmt.Errorf("resolve: %w", authn.ErrSignupClosed)
 	}
 	return r.createPhone(ctx, idf.Value)

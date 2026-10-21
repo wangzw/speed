@@ -178,15 +178,21 @@ field comments before writing a backend.
   clash before it is added, and each module carries a compile-time
   `var _ authn.X = (*product)(nil)` assertion for everything it delivers.
 - **A setting of `authn.*` or `tenant.admission.*` is never writable through a
-  surface a tenant or an ordinary administrator can reach.** A holder of a
-  settings write permission could relax a back-off, a budget, a prefix list or a
-  session period at runtime, and `authn` offers only the retrospective `Warn`
-  and audit row, never a block; the requirement is therefore on the host's own
-  management surface, and `authn` does not check that a host honours it. The
-  switches that open a check rather than tighten it are configuration, read from
-  the primary source alone and not settings for the same reason: the account
-  module's `signup` and `auto-link`, the gateway's `endpoints` and
-  `mount.allow-insecure`, and the admission layer's `endpoints`.
+  surface a tenant or an ordinary administrator can reach.** A holder of the
+  global `settings.write` permission could relax a back-off, a budget, a prefix
+  list, a session period or a relaxation switch at runtime. A global write
+  through the settings admin surface is decided in the platform domain and lands
+  a mandatory audit row; a host's own write path (a seed command, for one) is
+  authenticated by the host and neither happens there. `authn` adds the
+  retrospective `Warn` and `authn.settings.relaxed` row for a move toward a
+  relaxed value, never a block.
+  What the surface lacks is per-key write control, so the requirement is on the
+  host's own management surface, and `authn` does not check that a host honours
+  it. The relaxation switches are settings: `signup` and `auto-link` declared by
+  the account module, `check-session` by the token module. The developer
+  switches `mount.allow-insecure` and `sso.allow-private-egress`, and the
+  guard-list keys `endpoints` and `trusted-origins`, are configuration read from
+  the primary source alone, because they are decided at construction.
 - **Which endpoint the routes go on and which origins the cross-origin check
   trusts are each decided in one place.** `internal/mount` holds `Endpoint` and
   `TrustedOrigins` with `CrossOrigin`. The gateway and the module that mounts

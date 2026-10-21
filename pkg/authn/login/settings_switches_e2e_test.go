@@ -1,0 +1,180 @@
+package login_test
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/settings"
+)
+
+// The two account switches this package reads as settings. They are written out
+// here rather than read from the account module so that the cases name the keys
+// the design lists.
+const (
+	testSignupKey   = "authn.account.signup"
+	testAutoLinkKey = "authn.account.auto-link"
+)
+
+// writeASetting writes one value into the settings store the assembly
+// delivered. A failure is fatal: the key being undeclared is the whole point of
+// the case that follows it.
+func writeASetting(t *testing.T, ctx context.Context, store settings.Store, key string, value any) {
+	t.Helper()
+	if store == nil {
+		t.Fatal("the assembly delivered no settings store")
+	}
+	write := settings.Write{Layer: settings.Global(), Key: key, Value: value, Actor: "test"}
+	if err := store.Set(ctx, write); err != nil {
+		t.Fatalf("writing %s: %v, want it declared as a setting", key, err)
+	}
+}
+
+// signupEnabled reads the registration switch from the methods listing.
+func (h *harness) signupEnabled() bool {
+	h.t.Helper()
+	r := h.get("/api/v1/auth/methods")
+	if r.status != http.StatusOK {
+		h.t.Fatalf("GET methods answered %d: %s", r.status, r.body)
+	}
+	signup, ok := r.json(h.t)["signup"].(map[string]any)
+	if !ok {
+		h.t.Fatalf("the methods listing carries no signup member: %s", r.body)
+	}
+	enabled, ok := signup["enabled"].(bool)
+	if !ok {
+		h.t.Fatalf("signup.enabled is %v, want a boolean", signup["enabled"])
+	}
+	return enabled
+}
+
+// TestASignupSettingThatIsOpenTurnsTheMethodsListingOn holds that the
+// registration switch is read at run time from the settings store the
+// deployment holds: the listing is closed with no row and offers signup once
+// authn.account.signup is written open, without a restart.
+func TestASignupSettingThatIsOpenTurnsTheMethodsListingOn(t *testing.T) {
+	assemble(t, func(h *harness) {
+		if got := h.signupEnabled(); got {
+			t.Fatalf("signup.enabled with no settings row = %v, want false", got)
+		}
+
+		writeASetting(t, h.ctx, h.store, testSignupKey, "open")
+
+		if got := h.signupEnabled(); !got {
+			t.Errorf("signup.enabled after authn.account.signup is open = %v, want true", got)
+		}
+	})
+}
+
+// TestAnAutoLinkSettingLinksAFirstSocialLogin holds that the auto-link switch is
+// read at each account resolution: with authn.account.auto-link written
+// verified-email, a first social login whose provider proved the address of an
+// existing account links that identity to the account instead of refusing the
+// login as link-required.
+func TestAnAutoLinkSettingLinksAFirstSocialLogin(t *testing.T) {
+	assembleWith(t, []core.Module{socialModule()}, func(h *harness) {
+		acct, err := h.admin.Create(h.ctx, authn.CreateAccount{
+			Kind:     authn.KindUser,
+			Username: "ann",
+			Email:    "ann@x.org",
+			EmailVerifiedVia: authn.Verification{
+				Via: authn.VerifiedViaIDPPrefix + "google",
+			},
+			Via: "admin",
+		})
+		if err != nil {
+			t.Fatalf("creating the account the login should link to: %v", err)
+		}
+
+		// The negative control: under the declared default the same first login
+		// is refused as link-required and binds nothing. A method that linked
+		// regardless of the switch would already fail here.
+		refused := h.socialLogin()
+		if refused.status != http.StatusUnauthorized || !strings.Contains(refused.body, "link-required") {
+			t.Fatalf("a first social login with auto-link at its default answered %d: %s, want 401 link-required",
+				refused.status, refused.body)
+		}
+		if bound, lookupErr := h.accounts.ByExternal(h.ctx, "google", "g1"); lookupErr == nil {
+			t.Fatalf("a first social login bound the identity to %q with auto-link at its default", bound)
+		}
+
+		writeASetting(t, h.ctx, h.store, testAutoLinkKey, "verified-email")
+
+		done := h.socialLogin()
+		if done.status != http.StatusOK {
+			t.Fatalf("the first social login answered %d: %s", done.status, done.body)
+		}
+
+		bound, err := h.accounts.ByExternal(h.ctx, "google", "g1")
+		if err != nil {
+			t.Fatalf("the first social login did not link the external identity: %v", err)
+		}
+		if bound != acct.ID {
+			t.Errorf("the external identity is bound to %q, want the account holding the address %q", bound, acct.ID)
+		}
+	})
+}
+
+// socialLogin runs one first social login through the stand-in method and
+// returns the reply that settled it: the start itself when the engine resolved
+// the proven step there, the answer otherwise.
+func (h *harness) socialLogin() reply {
+	h.t.Helper()
+	start := h.post("/api/v1/auth/flows", map[string]any{"method": "google"})
+	if start.status != http.StatusOK {
+		return start
+	}
+	seq := int(start.json(h.t)["seq"].(float64))
+	return h.post("/api/v1/auth/flows/answer", map[string]any{"seq": seq, "step": "complete"})
+}
+
+// socialMethod is a stand-in social provider's login method: its first step is
+// already a proof of a verified external identity, so a case reaches the
+// resolution the auto-link switch governs without an outside provider.
+type socialMethod struct{}
+
+var errNoSocialAnswer = errors.New("the stand-in social method has no answer step")
+
+func (socialMethod) Name() string { return "google" }
+
+func (socialMethod) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{
+		Name:             "google",
+		Kind:             authn.MethodKindRedirect,
+		Protocol:         authn.MethodProtocolOIDC,
+		Label:            "Google",
+		OpensAccount:     true,
+		BindingProviders: []string{"google"},
+	}
+}
+
+func (socialMethod) Begin(context.Context, authn.Start) (authn.Step, error) {
+	return authn.StepProven(authn.Proof{
+		External: &authn.External{
+			Provider:      "google",
+			Subject:       "g1",
+			Email:         "ann@x.org",
+			EmailVerified: true,
+		},
+		Methods: []authn.Method{authn.MethodOIDC},
+	}), nil
+}
+
+func (socialMethod) Answer(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+	return authn.Step{}, errNoSocialAnswer
+}
+
+// socialModule registers the stand-in method in an assembly.
+func socialModule() core.Module {
+	return core.Module{
+		Name:     "stand-in.google",
+		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return socialMethod{}, nil
+		},
+	}
+}

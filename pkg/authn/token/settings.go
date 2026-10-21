@@ -18,11 +18,13 @@ const (
 	leewayKey         = "leeway"
 	refreshIdleTTLKey = "refresh-idle-ttl"
 	refreshGraceKey   = "refresh-grace"
+	checkSessionKey   = "check-session"
 
 	accessTTLPath      = ConfigNamespace + "." + accessTTLKey
 	leewayPath         = ConfigNamespace + "." + leewayKey
 	refreshIdleTTLPath = ConfigNamespace + "." + refreshIdleTTLKey
 	refreshGracePath   = ConfigNamespace + "." + refreshGraceKey
+	checkSessionPath   = ConfigNamespace + "." + checkSessionKey
 )
 
 // checkTTLPath is the session module's setting the verifying backend's own
@@ -64,6 +66,7 @@ type options struct {
 	Leeway         time.Duration `config:"leeway"`
 	RefreshIdleTTL time.Duration `config:"refresh-idle-ttl"`
 	RefreshGrace   time.Duration `config:"refresh-grace"`
+	CheckSession   bool          `config:"check-session"`
 }
 
 // defaults is the declared default of every setting, and what each reads as when
@@ -73,6 +76,7 @@ var defaults = options{
 	Leeway:         30 * time.Second,
 	RefreshIdleTTL: 168 * time.Hour,
 	RefreshGrace:   0,
+	CheckSession:   true,
 }
 
 func inRange(d, lo, hi time.Duration) bool { return d >= lo && d <= hi }
@@ -88,6 +92,10 @@ func refreshGraceInDomain(d time.Duration) bool {
 }
 
 func checkTTLInDomain(d time.Duration) bool { return inRange(d, 0, checkTTLMax) }
+
+// checkSessionInDomain admits both booleans: the setting's domain is its whole
+// type, and the strict value is its declared default.
+func checkSessionInDomain(bool) bool { return true }
 
 // settingsSchema declares this module's runtime parameters, each with the domain
 // the code acts on.
@@ -115,6 +123,11 @@ func settingsSchema() settings.Schema {
 				Description: "how long after a refresh token was used a second presentation is read as a retry " +
 					"rather than a reuse; 0 is strict",
 				Domain: settings.DomainOf("durations from 0 to 60s", refreshGraceInDomain),
+			},
+			checkSessionKey: {
+				Description: "whether the verifying backend checks the session a token names; false is the " +
+					"stateless mode where a revocation takes effect only at the token's expiry",
+				Domain: settings.DomainOf("true or false", checkSessionInDomain),
 			},
 		},
 	}
@@ -190,6 +203,12 @@ func (r *settingReader) refreshIdleTTL() time.Duration {
 
 func (r *settingReader) refreshGrace() time.Duration {
 	return readSetting(r, refreshGracePath, defaults.RefreshGrace, refreshGraceInDomain)
+}
+
+// checkSession is whether the verifying backend runs its session step. A read
+// that fails reads as the declared default, which is the strict value.
+func (r *settingReader) checkSession() bool {
+	return readSetting(r, checkSessionPath, defaults.CheckSession, checkSessionInDomain)
 }
 
 // checkTTL is the lifetime of the verifying backend's own caches, read from the

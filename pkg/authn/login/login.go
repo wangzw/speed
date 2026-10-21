@@ -199,11 +199,10 @@ type product struct {
 
 	// Configuration read once, in Init: the trusted origins a return_to may
 	// name, whether the flow cookie keeps its __host- prefix and Secure
-	// attribute, the origin the deployment is reached at, and whether a first
-	// login may open an account.
+	// attribute, and the origin the deployment is reached at. The registration
+	// and linking switches are settings, read at each use.
 	trustedOrigins []string
 	allowInsecure  bool
-	signup         bool
 
 	clock clock.Source
 }
@@ -289,7 +288,7 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 
-	if err = p.buildResolver(reader); err != nil {
+	if err = p.buildResolver(); err != nil {
 		return err
 	}
 	if err = p.buildSelfservice(); err != nil {
@@ -385,13 +384,9 @@ func (p *product) readConfig(reader config.Reader) error {
 }
 
 // buildResolver builds the account-resolution step from the membership, factor
-// and provider capabilities and the two relaxation switches.
-func (p *product) buildResolver(reader config.Reader) error {
-	account, err := readAccount(reader)
-	if err != nil {
-		return fmt.Errorf("%s%s: reading the account switches: %w", diagnosticPrefix, ModuleName, err)
-	}
-	p.signup = account.Signup == signupOpen
+// and provider capabilities. The two relaxation switches are read through the
+// settings store at each resolution, so a change takes effect without a restart.
+func (p *product) buildResolver() error {
 	r, err := resolve.New(resolve.Config{
 		Accounts:    p.accounts,
 		Admin:       p.admin,
@@ -399,14 +394,21 @@ func (p *product) buildResolver(reader config.Reader) error {
 		Factors:     p.mfa,
 		SSO:         p.sso,
 		Provisioner: p.provisioner,
-		Signup:      resolve.Signup(account.Signup),
-		AutoLink:    resolve.AutoLink(account.AutoLink),
+		Switches: func() (resolve.Signup, resolve.AutoLink) {
+			return resolve.Signup(p.settings.signup()), resolve.AutoLink(p.settings.autoLink())
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("%s%s: %w", diagnosticPrefix, ModuleName, err)
 	}
 	p.resolver = r
 	return nil
+}
+
+// signupEnabled is whether a first login may open an account, as the settings
+// state it now.
+func (p *product) signupEnabled() bool {
+	return p.settings.signup() == signupOpen
 }
 
 // buildSelfservice builds the account self-service routes.
@@ -449,9 +451,6 @@ func readerOf(reg *core.Registry) (config.Reader, error) {
 func checkConfig(reader config.Reader) error {
 	if _, err := readGate(reader); err != nil {
 		return fmt.Errorf("%s%s: reading the gateway keys: %w", diagnosticPrefix, ModuleName, err)
-	}
-	if _, err := readAccount(reader); err != nil {
-		return fmt.Errorf("%s%s: reading the account switches: %w", diagnosticPrefix, ModuleName, err)
 	}
 	return nil
 }

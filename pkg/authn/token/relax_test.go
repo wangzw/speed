@@ -30,9 +30,16 @@ var watched = []struct {
 // feedChange hands a settings.ChangedEventType event carrying the change to the
 // module's subscription, as a bus delivery would.
 func feedChange(r *rig, change settings.Change) {
+	feedChangeAt(r, "", change)
+}
+
+// feedChangeAt hands a settings.changed event carrying the change and the tenant
+// it belongs to to the module's subscription, as a bus delivery would.
+func feedChangeAt(r *rig, tenant string, change settings.Change) {
 	_ = r.p.onSettingsChanged(context.Background(), event.Event{
-		Type:    settings.ChangedEventType,
-		Payload: change,
+		Type:     settings.ChangedEventType,
+		TenantID: tenant,
+		Payload:  change,
 	})
 }
 

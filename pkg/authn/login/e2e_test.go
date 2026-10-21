@@ -106,6 +106,7 @@ type harness struct {
 	admin    authn.AccountAdmin
 	mfa      authn.MFA
 	accounts authn.Accounts
+	store    settings.Store
 }
 
 // reply is what a client got back.
@@ -126,6 +127,13 @@ func (r reply) json(t *testing.T) map[string]any {
 
 // assemble drives the real stack to Serve and runs use against it.
 func assemble(t *testing.T, use func(h *harness)) {
+	t.Helper()
+	assembleWith(t, nil, use)
+}
+
+// assembleWith is assemble with extra modules in the assembly, for a case that
+// needs a login method or a capability the default stack does not carry.
+func assembleWith(t *testing.T, extra []core.Module, use func(h *harness)) {
 	t.Helper()
 
 	dsn := filepath.Join(t.TempDir(), "authn.db")
@@ -163,6 +171,7 @@ func assemble(t *testing.T, use func(h *harness)) {
 		eventmemory.Module(), settings.Module(), mount.Module(), gate.Module(),
 		account.Module(), session.Module(), mfa.Module(), login.Module(), password.Module(),
 	}
+	modules = append(modules, extra...)
 	reader := loadConfig(t, string(body), modules...)
 
 	reg := core.New()
@@ -201,6 +210,11 @@ func assemble(t *testing.T, use func(h *harness)) {
 			if h.accounts, err = core.Resolve[authn.Accounts](reg); err != nil {
 				return err
 			}
+			settingsStore, resolveErr := core.Resolve[settings.Store](reg)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			h.store = settingsStore
 			use(h)
 			return nil
 		},
