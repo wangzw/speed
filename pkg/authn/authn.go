@@ -95,9 +95,10 @@ type Credential struct {
 	// Cookie is the name of the cookie the credential came from, and empty
 	// when it came from the Authorization header.
 	Cookie string
-	// Peer is the remote address the entry point reported, which is the
-	// proxy's address behind one. It is for a backend's log and its
-	// throttling and is no ground for a judgement.
+	// Peer is the client address the entry point reported: the connected
+	// peer, or the address a trusted proxy forwarded when the endpoint trusts
+	// it. It is for a backend's log and its throttling and is no ground for a
+	// judgement.
 	Peer string
 }
 

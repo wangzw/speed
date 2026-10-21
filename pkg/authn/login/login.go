@@ -495,7 +495,8 @@ func (p *product) diagnose(reg *core.Registry) {
 			slog.String("setting", ModuleName+"."+ipLimitKey))
 	} else {
 		p.logger.Warn(diagnosticPrefix + ModuleName + ": the source-address pre-throttle is on; behind a proxy " +
-			"every caller shares one bucket, because the entry point does not trust forwarded headers")
+			"whose peers are not configured as trusted proxies, every caller shares one bucket, " +
+			"because the client address is then the proxy's")
 	}
 	p.checkResolutionEndpoints(reg)
 }

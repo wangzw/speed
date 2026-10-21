@@ -24,7 +24,7 @@ func (k SessionKind) Valid() bool {
 // ClientInfo describes where a request came from, for logs and for showing to
 // the user. It is no ground for a judgement or a binding.
 type ClientInfo struct {
-	IP        string // the peer address; behind a proxy, the proxy's
+	IP        string // the address the entry point reported; behind a proxy that is not configured as trusted, the proxy's
 	UserAgent string // cut to 200 characters
 }
 
