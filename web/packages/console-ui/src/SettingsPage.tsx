@@ -548,7 +548,13 @@ export function SettingsPage() {
                     }}
                   />
 
-                  {/* The sticky save bar: one write per changed item. */}
+                  {/* The sticky save bar: one write per changed item. It
+                      paints the card's own surface rather than an opaque
+                      palette color, so a glass theme keeps the bar on the
+                      same material as the table; the backdrop filter keeps
+                      the rows that scroll underneath from showing through
+                      crisply. Outside a glass theme the container fill is
+                      the opaque paper color, unchanged. */}
                   <Box
                     component="div"
                     sx={{
@@ -561,7 +567,11 @@ export function SettingsPage() {
                       paddingY: 2,
                       borderTop: 1,
                       borderColor: 'divider',
-                      backgroundColor: 'background.paper',
+                      backgroundColor: (theme) => theme.surface.container.fill,
+                      backdropFilter: (theme) =>
+                        theme.surface.container.backdropFilter ?? 'none',
+                      WebkitBackdropFilter: (theme) =>
+                        theme.surface.container.backdropFilter ?? 'none',
                     }}
                   >
                     {changed.length > 0 && (
