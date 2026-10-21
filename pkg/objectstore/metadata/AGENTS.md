@@ -20,10 +20,12 @@ statement this module issues; the byte seam is required because it is where
 bytes land, so an assembly that installs no backend fails resolution rather
 than at the first upload.
 
-The HTTP entry point (`(*http.Router)(nil)`) and the logging capability
-(`(*log.Logger)(nil)`) are optional. With no entry point the routes are not
-mounted, the `endpoints` list is not read and the module still delivers `Objects`
-for a command that reaches it through `core.Resolve`. The message localizer is taken up in `Init` when one is
+The HTTP entry point (`(*http.Router)(nil)`), the logging capability
+(`(*log.Logger)(nil)`) and the settings store (`settings.Store`) are optional.
+With no entry point the routes are not mounted, the `endpoints` list is not read
+and the module still delivers `Objects` for a command that reaches it through
+`core.Resolve`. With no settings store the upload window and the object TTL read
+as their declared defaults. The message localizer is taken up in `Init` when one is
 assembled.
 
 ## The lifecycle
@@ -103,14 +105,25 @@ sweep turned off, the first read is the first request.
 
 ## Configuration
 
-Under the namespace `objectstore.metadata`, from the primary config source:
+Under the namespace `objectstore.metadata`. `endpoints` and `sweep-interval` are
+configuration items, from the primary config source:
 
 | Item | Meaning |
 |---|---|
 | `endpoints` | The listening endpoints the routes are mounted on, by the entry point's own names. Required of a run that assembles an entry point — `Init` refuses a run that mounts the routes with the list empty rather than mounting nothing silently — and unread by a run that assembles none, where an empty list is legal. Concrete names only, never `*`. |
-| `upload-window` | How long a declared object stays open for upload. Default `15m`; must be positive. |
-| `object-ttl` | How long a completed object lives before the sweep tombstones it. Default `0` (no expiry). |
-| `sweep-interval` | How often the sweep runs. Default `1m`; `0` or negative turns the sweep off. |
+| `sweep-interval` | How often the sweep runs. Default `1m`; `0` or negative turns the sweep off. It sizes the ticker `Start` raises, so a change needs a restart. |
+
+`upload-window` and `object-ttl` are settings, declared here and read per call:
+
+| Setting | Meaning |
+|---|---|
+| `upload-window` | How long a declared object stays open for upload, read at each `Create`. Default `15m`; must be at least one millisecond, since it is stored and read in whole milliseconds. |
+| `object-ttl` | How long a completed object lives before the sweep tombstones it, read at each `Complete`. Default `0` (no expiry); zero or at least one millisecond, since a positive value is stored and read in whole milliseconds. |
+
+With no settings store the declared defaults apply; a read that fails or lands
+outside the domain applies the default and writes one `Error` naming the key.
+Neither is watched for relaxation. The config schema no longer carries the two
+items: a config file naming either fails startup as an unknown key.
 
 ## Routes and permissions
 

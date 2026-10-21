@@ -12,13 +12,9 @@ import (
 // failure names.
 const (
 	endpointsItem = "endpoints"
-	windowItem    = "upload-window"
-	ttlItem       = "object-ttl"
 	sweepItem     = "sweep-interval"
 
 	endpointsKey = ConfigNamespace + "." + endpointsItem
-	windowKey    = ConfigNamespace + "." + windowItem
-	ttlKey       = ConfigNamespace + "." + ttlItem
 	sweepKey     = ConfigNamespace + "." + sweepItem
 )
 
@@ -28,14 +24,9 @@ const (
 // them.
 const allEndpoints = "*"
 
-// The defaults this module is worth without a configuration file: a fifteen
-// minute upload window, no expiry on a completed object, and a sweep every
+// The default this module is worth without a configuration file: a sweep every
 // minute. There is no default for the endpoint list — see configDefaults.
-const (
-	defaultUploadWindow  = 15 * time.Minute
-	defaultObjectTTL     = time.Duration(0)
-	defaultSweepInterval = time.Minute
-)
+const defaultSweepInterval = time.Minute
 
 // configDefaults is what this module is worth without a configuration file.
 //
@@ -44,8 +35,6 @@ const (
 // guess about what is exposed. A run that mounts the routes and cannot answer
 // fails the startup, naming the key.
 var configDefaults = moduleConfig{
-	UploadWindow:  defaultUploadWindow,
-	ObjectTTL:     defaultObjectTTL,
 	SweepInterval: defaultSweepInterval,
 }
 
@@ -57,48 +46,27 @@ type moduleConfig struct {
 	// mounted, so a run that assembles no entry point mounts nothing and leaves it
 	// unread.
 	Endpoints []string `config:"endpoints"`
-	// UploadWindow is how long a declared object stays open for upload. It is
-	// written into upload_expires_at at declaration, and an upload past it is
-	// refused.
-	UploadWindow time.Duration `config:"upload-window"`
-	// ObjectTTL is how long a completed object lives before the sweep tombstones
-	// it. Zero, or negative, means a completed object does not expire.
-	ObjectTTL time.Duration `config:"object-ttl"`
 	// SweepInterval is how often the background sweep runs. Zero, or negative,
-	// turns the sweep off.
+	// turns the sweep off. It sets a startup ticker, so a change requires a
+	// restart: it is a configuration item, not a setting.
 	SweepInterval time.Duration `config:"sweep-interval"`
 }
 
 // resolved is the configuration this module runs on.
 type resolved struct {
 	endpoints     []string
-	uploadWindow  time.Duration
-	objectTTL     time.Duration
 	sweepInterval time.Duration
 }
 
-// resolve turns decoded configuration into what the module runs on, refusing
-// what cannot be run on. A refusal names the key. The module's own failure
-// sentinel for a configuration it cannot run on is objectstore.ErrInvalidConfig.
+// resolve turns decoded configuration into what the module runs on.
 //
-// The endpoint list is left to validateEndpoints: it says where the routes are
-// mounted, so it is judged where the mounting happens, and only when there is an
-// entry point to mount on.
+// Nothing here is refused: the sweep interval's sign turns the sweep off rather
+// than making the run unrunnable. The endpoint list is left to
+// validateEndpoints: it says where the routes are mounted, so it is judged where
+// the mounting happens, and only when there is an entry point to mount on.
 func (c moduleConfig) resolve() (resolved, error) {
-	if c.UploadWindow <= 0 {
-		return resolved{}, fmt.Errorf("%w: %s is %s, and an upload window has to be positive: a "+
-			"declaration with no window open would refuse every upload",
-			objectstore.ErrInvalidConfig, windowKey, c.UploadWindow)
-	}
-	if c.ObjectTTL < 0 {
-		return resolved{}, fmt.Errorf("%w: %s is %s, and an object lifetime cannot be negative; set it "+
-			"to zero for a completed object that does not expire",
-			objectstore.ErrInvalidConfig, ttlKey, c.ObjectTTL)
-	}
 	return resolved{
 		endpoints:     c.Endpoints,
-		uploadWindow:  c.UploadWindow,
-		objectTTL:     c.ObjectTTL,
 		sweepInterval: c.SweepInterval,
 	}, nil
 }
@@ -145,10 +113,12 @@ func validateEndpoints(names []string) error {
 // name, as it is for every registering module.
 //
 // Every item takes the primary source alone. The endpoint list decides where the
-// routes are mounted, and the three durations are the object store's own
-// policy, so an environment variable or a command-line argument that could
-// rewrite any of them would be a way to change what the process exposes from
-// outside the configuration file.
+// routes are mounted and the sweep interval sets a startup ticker, so both are
+// what the process exposes and how it runs from the moment it starts: an
+// environment variable or a command-line argument that could rewrite either
+// would be a way to change that from outside the configuration file. The
+// upload window and the object lifetime are runtime tunables and are declared
+// as settings instead.
 func schema() config.Schema {
 	return config.Schema{
 		Namespace: ConfigNamespace,
@@ -159,16 +129,6 @@ func schema() config.Schema {
 				Description: "the listening endpoints the object store routes are mounted on, by the " +
 					"names the entry point's own configuration gives them; concrete names only, never *. " +
 					"Required of a run that mounts the routes, and unread by a run that assembles no entry point",
-			},
-			windowItem: {
-				Origins: config.OriginPrimary,
-				Description: "how long a declared object stays open for upload; an upload past this " +
-					"window is refused, and the sweep tombstones a pending object whose window has closed",
-			},
-			ttlItem: {
-				Origins: config.OriginPrimary,
-				Description: "how long a completed object lives before the sweep tombstones it; zero " +
-					"means a completed object does not expire",
 			},
 			sweepItem: {
 				Origins: config.OriginPrimary,

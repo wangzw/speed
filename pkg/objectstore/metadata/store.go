@@ -37,6 +37,9 @@ var (
 // fails validation is refused and lands no row. The tenant column is filled
 // from the context by the model's own filter, and a context carrying no tenant
 // is refused before the key is minted, because the key needs the tenant.
+//
+// The upload window is read from the settings store here, at each declaration,
+// so a value written while the process runs is what the next object records.
 func (p *product) Create(ctx context.Context, d objectstore.Declaration) (objectstore.Object, error) {
 	if err := validateDeclaration(d); err != nil {
 		return objectstore.Object{}, err
@@ -59,7 +62,7 @@ func (p *product) Create(ctx context.Context, d objectstore.Declaration) (object
 		DeclaredSize:     d.Size,
 		DeclaredType:     d.ContentType,
 		DeclaredChecksum: d.ChecksumSHA256,
-		UploadExpiresAt:  now + p.uploadWindow.Milliseconds(),
+		UploadExpiresAt:  now + p.tuned.uploadWindow(p.logger).Milliseconds(),
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -127,7 +130,9 @@ func (p *product) Upload(ctx context.Context, id string, r io.Reader, size int64
 // rather than in a state this call could move it out of. A completed row is
 // returned unchanged, its expiry left as it was. An uploaded row is advanced to
 // completed with an expiry taken from the object lifetime when one is set, in
-// one conditional statement.
+// one conditional statement. The lifetime is read from the settings store here,
+// at each completion, so a value written while the process runs is what the
+// next completion records.
 func (p *product) Complete(ctx context.Context, id string) (objectstore.Object, error) {
 	row, err := p.load(ctx, id)
 	if err != nil {
@@ -144,8 +149,8 @@ func (p *product) Complete(ctx context.Context, id string) (objectstore.Object, 
 	}
 	now := time.Now().UnixMilli()
 	var expires *int64
-	if p.objectTTL > 0 {
-		at := now + p.objectTTL.Milliseconds()
+	if ttl := p.tuned.objectTTL(p.logger); ttl > 0 {
+		at := now + ttl.Milliseconds()
 		expires = &at
 	}
 	advanced := p.handle.WithContext(ctx).Model(&object{}).

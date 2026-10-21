@@ -48,6 +48,7 @@ import (
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/objectstore"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -113,12 +114,13 @@ var _ objectstore.Objects = (*product)(nil)
 // upload. The byte seam is delivered exclusively by whichever backend the host
 // names, so a command installs exactly one.
 //
-// The HTTP entry point, the logging capability and the message localizer are
-// optional. With no entry point the routes are not mounted: the module still
-// delivers Objects, which a command with no gateway reaches through Resolve, and
-// the endpoint list, which says where the routes go, is not read. The capability
-// is delivered exclusively: one process has exactly one metadata surface, so a
-// second provider fails the startup.
+// The HTTP entry point, the logging capability, the message localizer and the
+// settings store are optional. With no entry point the routes are not mounted:
+// the module still delivers Objects, which a command with no gateway reaches
+// through Resolve, and the endpoint list, which says where the routes go, is not
+// read. With no settings store the upload window and the object lifetime read as
+// their declared defaults. The capability is delivered exclusively: one process
+// has exactly one metadata surface, so a second provider fails the startup.
 //
 // The descriptor also declares this module's own http.Spec, carrying the OpenAPI
 // fragment that describes the /api/v1/objects surface; the operations module
@@ -130,12 +132,14 @@ func Module() core.Module {
 			{Token: (*db.Database)(nil)},
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*objectstore.Store)(nil)},
+			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*speedhttp.Router)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{{Token: (*objectstore.Objects)(nil), Exclusive: true}},
 		Resources: []any{
 			schema(),
+			settingsSchema(),
 			db.Migrations{FS: migrationsFS},
 			permissionSpec(),
 			translationSpec(),
@@ -213,8 +217,10 @@ type product struct {
 	stmts   statements
 	bytes   objectstore.Store
 
-	uploadWindow  time.Duration
-	objectTTL     time.Duration
+	// tuned reads the upload window and the object lifetime from the settings
+	// store at each call; with no store assembled, both read as their declared
+	// defaults.
+	tuned         *settingsReader
 	sweepInterval time.Duration
 	endpoints     []string
 
@@ -262,13 +268,16 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ModuleName, err)
 	}
+	store, _, err := optional[settings.Store](reg, "the settings store")
+	if err != nil {
+		return nil, err
+	}
 	return &product{
 		handle:        database.DB(),
 		dialect:       database.Dialect(),
 		stmts:         stmts,
 		bytes:         bytes,
-		uploadWindow:  cfg.uploadWindow,
-		objectTTL:     cfg.objectTTL,
+		tuned:         newSettingsReader(store),
 		sweepInterval: cfg.sweepInterval,
 		endpoints:     cfg.endpoints,
 		logger:        log.Default(),

@@ -22,9 +22,11 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
+	"github.com/vislake/speed/pkg/event/memory"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/objectstore"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
 )
@@ -68,18 +70,20 @@ type harness struct {
 	store      *fakeStore
 	withRouter bool
 	withGate   bool
-	router     *stubRouter
-	gate       *authztest.Gate
-	depth      core.Stage
+	// withSettings assembles the settings module and its event bus, so a case
+	// can write a runtime tunable and watch the next call read it.
+	withSettings bool
+	router       *stubRouter
+	gate         *authztest.Gate
+	depth        core.Stage
 }
 
 // metadataBody is the module's default configuration: one endpoint named
-// "public", a fifteen minute upload window and the sweep turned off.
+// "public" and the sweep turned off. The upload window and the object lifetime
+// are settings and are not configuration items.
 func metadataBody(overrides map[string]any) map[string]any {
 	body := map[string]any{
 		"endpoints":      []string{"public"},
-		"upload-window":  "15m",
-		"object-ttl":     "0s",
 		"sweep-interval": "0s",
 	}
 	for k, v := range overrides {
@@ -141,6 +145,9 @@ func (h harness) assemble(t *testing.T) (*core.Registry, []string) {
 			gate = authztest.NewGate()
 		}
 		modules = append(modules, standIn("stand-in.gate", gate, (*authz.Gate)(nil)))
+	}
+	if h.withSettings {
+		modules = append(modules, memory.Module(), settings.Module())
 	}
 
 	loading := core.New()
