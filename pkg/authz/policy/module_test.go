@@ -16,7 +16,7 @@ import (
 func TestAWritePublishesTheChangeEvent(t *testing.T) {
 	p := newProductOver(t)
 	bus := newRecordingBus()
-	wireProduct(t, p, bus, nil)
+	wireProduct(t, p, bus)
 	if err := p.begin(t.Context()); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestAWritePublishesTheChangeEvent(t *testing.T) {
 func TestADeliveredChangeReloadsTheSnapshot(t *testing.T) {
 	p := newProductOver(t)
 	bus := newRecordingBus()
-	wireProduct(t, p, bus, nil)
+	wireProduct(t, p, bus)
 	ctx := t.Context()
 	if err := p.begin(ctx); err != nil {
 		t.Fatalf("begin: %v", err)
@@ -65,7 +65,8 @@ func TestTheRefreshIntervalControlsThePeriodicReload(t *testing.T) {
 	ctx := t.Context()
 
 	off := newProductOver(t)
-	wireProduct(t, off, nil, stubStore{interval: 0})
+	off.refreshInterval = 0
+	wireProduct(t, off, nil)
 	if err := off.begin(ctx); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
@@ -74,7 +75,8 @@ func TestTheRefreshIntervalControlsThePeriodicReload(t *testing.T) {
 	}
 
 	on := newProductOver(t)
-	wireProduct(t, on, nil, stubStore{interval: time.Millisecond})
+	on.refreshInterval = time.Millisecond
+	wireProduct(t, on, nil)
 	if err := on.begin(ctx); err != nil {
 		t.Fatalf("begin: %v", err)
 	}

@@ -10,8 +10,9 @@ import (
 )
 
 // The configuration cases hold the load-timeout's default and its refusal of a
-// non-positive value, and the refresh interval's range. They drive the real
-// loader over a real body, so the item reads as an assembly reads it.
+// non-positive value, and the refresh interval's default of zero and its
+// refusal of a negative value. They drive the real loader over a real body, so
+// the items read as an assembly reads them.
 
 // With no configuration the load timeout is the declared default, and a
 // non-positive value is refused: no load finishes in zero time, and a negative
@@ -35,19 +36,22 @@ func TestTheLoadTimeoutDefaultsAndRefusesNonPositive(t *testing.T) {
 	}
 }
 
-// The refresh interval is a duration: zero is legal (it is the "off" value the
-// design gives it) and a negative one is not.
-func TestTheRefreshIntervalDomain(t *testing.T) {
-	if !refreshInDomain(0) {
-		t.Errorf("a zero refresh interval was refused, want it legal: zero is the off value")
+// The refresh interval is configuration: with no configuration it is zero,
+// which turns the periodic reload off, and a negative value names no duration
+// and is refused.
+func TestTheRefreshIntervalDefaultsOffAndRefusesNegative(t *testing.T) {
+	reader := authztest.ConfigReader(t, Module(), "{}")
+	res, err := readConfig(reader)
+	if err != nil {
+		t.Fatalf("readConfig with no configuration: %v", err)
 	}
-	if !refreshInDomain(time.Minute) {
-		t.Errorf("a positive refresh interval was refused")
+	if res.refreshInterval != 0 {
+		t.Errorf("the refresh interval without configuration is %s, want the declared default zero (off)",
+			res.refreshInterval)
 	}
-	if refreshInDomain(-time.Second) {
-		t.Errorf("a negative refresh interval was accepted, want it refused")
-	}
-	if settingsDefaults.RefreshInterval != 0 {
-		t.Errorf("the refresh interval's declared default is %s, want zero (off)", settingsDefaults.RefreshInterval)
+
+	reader = authztest.ConfigReader(t, Module(), `{"authz":{"policy":{"refresh-interval":"-1s"}}}`)
+	if _, err := readConfig(reader); !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Errorf("readConfig with refresh-interval -1s gave %v, want ErrInvalidConfig", err)
 	}
 }

@@ -124,19 +124,22 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   cleanup again is no work and no error. A binding row that outlives the
   deletion names an account the authentication side can no longer produce, so
   the account is unusable there whether or not the row arrived.
-- **The input items are split by when they are read.** `authz.policy.load-timeout`
-  is configuration: it bounds the startup load and is read before the snapshot
-  exists. `authz.policy.refresh-interval` is a setting: it is the periodic
-  reload this module falls back on with no event bus, read at runtime, and zero
-  turns it off. The module declares no runtime switch that loosens a judgement.
+- **Both input items are configuration.** `authz.policy.load-timeout` bounds the
+  startup load and is read before the snapshot exists.
+  `authz.policy.refresh-interval` sizes the ticker `Start` raises and is read at
+  construction; zero turns the periodic reload off, and a negative value is
+  refused at startup. The module declares no runtime switch that loosens a
+  judgement. `authz.policy.refresh-interval` was a setting before: a deployment
+  upgrading from that version must copy a non-zero interval into the
+  configuration, because the settings key is no longer declared — writing it
+  through the settings store is refused, and the module does not read it.
 - **The optional capabilities are taken up in `Init` and their absence is
-  legal.** The roster, the bus, the settings store and the logger are each
-  optional: a policy module with no roster checks no platform-domain conflict,
-  one with no bus relies on the refresh interval, one with no settings carries
-  no refresh, and one with no logger writes through the process default. The
-  database is the one hard dependency; the engine, the subject-permission read,
-  the catalog and the manager are delivered exclusively, so a second provider of
-  any of them fails the startup.
+  legal.** The roster, the bus and the logger are each optional: a policy module
+  with no roster checks no platform-domain conflict, one with no bus relies on
+  the configured refresh interval, and one with no logger writes through the
+  process default. The database is the one hard dependency; the engine, the
+  subject-permission read, the catalog and the manager are delivered
+  exclusively, so a second provider of any of them fails the startup.
 - **A secret, a credential and a policy value reach no log line and no error
   text.** An account key and a tenant may be logged; a grant's rules and a
   binding's role reach no log. A refusal names the row that failed and never

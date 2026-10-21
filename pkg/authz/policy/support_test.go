@@ -2,7 +2,6 @@ package policy
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/log"
-	"github.com/vislake/speed/pkg/settings"
 )
 
 // applyMigration runs one of this module's own migration files, so the tables a
@@ -62,18 +60,14 @@ func newProductOver(t *testing.T) *product {
 }
 
 // wireProduct supplies the given optional capabilities to a registry and wires
-// the product against it, so that the subscription and the refresh read them
-// the way an assembly delivers them.
-func wireProduct(t *testing.T, p *product, bus event.Bus, store settings.Store) {
+// the product against it, so that the subscription reads them the way an
+// assembly delivers them.
+func wireProduct(t *testing.T, p *product, bus event.Bus) {
 	t.Helper()
 	reg := core.New()
 	if bus != nil {
 		reg.Register(core.Module{Name: "stand-in.bus", Provides: []core.Provision{{Token: (*event.Bus)(nil)}}})
 		reg.Supply(bus, "stand-in.bus")
-	}
-	if store != nil {
-		reg.Register(core.Module{Name: "stand-in.settings", Provides: []core.Provision{{Token: (*settings.Store)(nil)}}})
-		reg.Supply(store, "stand-in.settings")
 	}
 	if err := p.wire(reg); err != nil {
 		t.Fatalf("wiring the product: %v", err)
@@ -184,34 +178,3 @@ func (b *recordingBus) deliver(t *testing.T, eventType string, evt event.Event) 
 		}
 	}
 }
-
-// stubStore is a settings store that reports a fixed refresh interval and
-// nothing else. The policy module reads this one setting, so the rest of the
-// surface is present to satisfy the interface and is never reached.
-type stubStore struct {
-	interval time.Duration
-}
-
-// errUnexpectedUse reports a settings method the policy module has no business
-// reaching.
-var errUnexpectedUse = errors.New("authz/policy: the settings store was reached beyond the refresh interval")
-
-func (s stubStore) Get(_ settings.Layer, key string, target any) error {
-	if key != refreshIntervalKey {
-		return errUnexpectedUse
-	}
-	if d, ok := target.(*time.Duration); ok {
-		*d = s.interval
-	}
-	return nil
-}
-
-func (stubStore) Set(context.Context, settings.Write) error { return errUnexpectedUse }
-func (stubStore) Delete(context.Context, settings.Layer, string, string) error {
-	return errUnexpectedUse
-}
-
-func (stubStore) List(context.Context, settings.Layer) ([]settings.Entry, error) {
-	return nil, errUnexpectedUse
-}
-func (stubStore) Declared() []settings.DeclaredItem { return nil }

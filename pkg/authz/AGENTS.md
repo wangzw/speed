@@ -43,8 +43,8 @@ before writing a consumer.
   under this directory may not declare one input-item path, and no module's path
   may be a leaf of another's interior; `authz` itself is no module's leaf name.
 - **What the namespaces hold today.** `authz.policy` declares the configuration
-  item `authz.policy.load-timeout` and the setting
-  `authz.policy.refresh-interval`. The enforcement module's namespace is
+  items `authz.policy.load-timeout` and `authz.policy.refresh-interval`. The
+  enforcement module's namespace is
   `authz.guard`; it declares no input item yet, and the endpoint list and the
   undeclared-route default arrive with its middleware. `authz.self` declares the
   input item `authz.self.endpoints`, the endpoints the permission read is mounted
