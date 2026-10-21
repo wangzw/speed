@@ -13,7 +13,12 @@ layer's constraints point at. The root package registers the module, named
 The configuration declares two sets: **listeners**, one socket each, and
 **endpoints**, one middleware chain and route table each, hung on a listener by
 name. A registrant takes an endpoint up by name and binds its routes and layers
-there; several endpoints may share one listener's socket. Each endpoint claims
+there; several endpoints may share one listener's socket. Two module-level items,
+`http.trusted-proxies` and `http.remote-ip-headers`, name the networks in front
+of the deployment and the headers a trusted proxy writes the client address
+into; an endpoint that omits either inherits the module-level list, and one that
+writes it — an explicit `[]` included — overrides it. Both are empty by default,
+which trusts no proxy and leaves gin's own header order. Each endpoint claims
 the path prefixes it answers under `http.endpoints.<name>.prefixes`; omitting
 the key claims `/`, which makes the endpoint its listener's fallback — the one
 that answers the paths no other endpoint claims. A listener's dispatch selects

@@ -168,16 +168,17 @@ func setReleaseMode() {
 // answered through Fail.
 //
 // The engine trusts no proxy unless the endpoint's configuration names the
-// networks in front of it, in which case the client address Context.ClientIP
-// reports is taken from the forwarded-address headers named there. The default
-// is no trust: gin's own default trusts any peer, which lets a client put
-// whatever address it likes in X-Forwarded-For and choose the address the rate
-// limiter and the audit trail are keyed by. The trusted networks are handed to
-// gin's SetTrustedProxies and the header names to its RemoteIPHeaders, so this
-// module reads no forwarded header itself; configuration has already refused a
-// network gin cannot parse, which is why SetTrustedProxies cannot fail here.
-// Context falls back to the request's context, so a logger put there is
-// reachable from the gin context as well.
+// networks in front of it, on the endpoint itself or in the module-level default
+// it inherits when it writes none, in which case the client address
+// Context.ClientIP reports is taken from the forwarded-address headers named
+// there. The default is no trust: gin's own default trusts any peer, which lets
+// a client put whatever address it likes in X-Forwarded-For and choose the
+// address the rate limiter keys its buckets by and a session records. The
+// trusted networks are handed to gin's SetTrustedProxies and the header names
+// to its RemoteIPHeaders, so this module reads no forwarded header itself;
+// configuration has already refused a network gin cannot parse, which is why
+// SetTrustedProxies cannot fail here. Context falls back to the request's
+// context, so a logger put there is reachable from the gin context as well.
 //
 // gin writes the Allow header of a 405 into the response before it runs any
 // layer, so a layer that refuses such a request — authentication with a 401,

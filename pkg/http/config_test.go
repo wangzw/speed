@@ -639,10 +639,11 @@ func TestTrustedProxiesAndRemoteIPHeadersDecodeAndResolve(t *testing.T) {
 	}
 }
 
-// TestNoTrustedProxyIsTheDefault pins the safe default: with the items absent no
-// proxy is trusted, so a client cannot choose the address Context.ClientIP
-// reports by writing a forwarded header. The behaviour that follows is pinned
-// over a request in TestClientIPDoesNotTakeForwardingHeaders.
+// TestNoTrustedProxyIsTheDefault pins the safe default: with neither the
+// module-level nor the endpoint-level items written, no proxy is trusted, so a
+// client cannot choose the address Context.ClientIP reports by writing a
+// forwarded header. The behaviour that follows is pinned over a request in
+// TestClientIPDoesNotTakeForwardingHeaders.
 func TestNoTrustedProxyIsTheDefault(t *testing.T) {
 	_, endpoints, err := moduleConfig{
 		Listeners: map[string]listenerConfig{"backend": {Address: ":8080"}},
@@ -672,6 +673,166 @@ func TestAnInvalidTrustedProxyIsStartupFailure(t *testing.T) {
 	}
 	mustContain(t, err.Error(), "trusted-proxies", "the key that was written")
 	mustContain(t, err.Error(), `"public"`, "the endpoint it was written on")
+	mustContain(t, err.Error(), "not-a-network", "the value that is not a network")
+}
+
+// TestModuleLevelProxySettingsAreInheritedByEveryEndpoint pins where a
+// deployment names the networks in front of it: once, at the module level, for
+// every endpoint to take as it stands. Both endpoints here write neither key,
+// and both resolve to the module-level values.
+func TestModuleLevelProxySettingsAreInheritedByEveryEndpoint(t *testing.T) {
+	got, decodeErr, runErr := readThrough(t, `{
+		"http": {
+			"listeners": {"backend": {"address": ":8080"}},
+			"trusted-proxies": ["10.0.0.0/8", "192.0.2.7"],
+			"remote-ip-headers": ["X-Forwarded-For", "X-Real-IP"],
+			"endpoints": {
+				"public": {"listener": "backend"},
+				"admin": {"listener": "backend", "prefixes": ["/admin"]}
+			}
+		}
+	}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+
+	_, endpoints, err := got.resolve()
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	if len(endpoints) != 2 {
+		t.Fatalf("the document declares two endpoints and %d resolved: %+v", len(endpoints), endpoints)
+	}
+	proxies := []string{"10.0.0.0/8", "192.0.2.7"}
+	headers := []string{"X-Forwarded-For", "X-Real-IP"}
+	for _, e := range endpoints {
+		if !slices.Equal(e.trustedProxies, proxies) {
+			t.Errorf("the endpoint %q resolved to trusted-proxies %v, want the module-level %v",
+				e.name, e.trustedProxies, proxies)
+		}
+		if !slices.Equal(e.remoteIPHeaders, headers) {
+			t.Errorf("the endpoint %q resolved to remote-ip-headers %v, want the module-level %v",
+				e.name, e.remoteIPHeaders, headers)
+		}
+	}
+}
+
+// TestEndpointProxySettingsOverrideTheModuleLevelOnes pins the other half of
+// the inheritance: an endpoint that writes either key takes its own value and
+// leaves the module-level one alone, while a sibling that writes neither still
+// inherits it.
+func TestEndpointProxySettingsOverrideTheModuleLevelOnes(t *testing.T) {
+	got, decodeErr, runErr := readThrough(t, `{
+		"http": {
+			"listeners": {"backend": {"address": ":8080"}},
+			"trusted-proxies": ["10.0.0.0/8"],
+			"remote-ip-headers": ["X-Forwarded-For"],
+			"endpoints": {
+				"custom": {
+					"listener": "backend",
+					"prefixes": ["/custom"],
+					"trusted-proxies": ["192.0.2.0/24"],
+					"remote-ip-headers": ["Fly-Client-IP"]
+				},
+				"inheriting": {"listener": "backend", "prefixes": ["/inheriting"]}
+			}
+		}
+	}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+
+	_, endpoints, err := got.resolve()
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	byName := make(map[string]endpointSettings, len(endpoints))
+	for _, e := range endpoints {
+		byName[e.name] = e
+	}
+	if want := []string{"192.0.2.0/24"}; !slices.Equal(byName["custom"].trustedProxies, want) {
+		t.Errorf("the endpoint naming its own trusted-proxies resolved to %v, want %v",
+			byName["custom"].trustedProxies, want)
+	}
+	if want := []string{"Fly-Client-IP"}; !slices.Equal(byName["custom"].remoteIPHeaders, want) {
+		t.Errorf("the endpoint naming its own remote-ip-headers resolved to %v, want %v",
+			byName["custom"].remoteIPHeaders, want)
+	}
+	if want := []string{"10.0.0.0/8"}; !slices.Equal(byName["inheriting"].trustedProxies, want) {
+		t.Errorf("the endpoint omitting trusted-proxies resolved to %v, want the module-level %v",
+			byName["inheriting"].trustedProxies, want)
+	}
+	if want := []string{"X-Forwarded-For"}; !slices.Equal(byName["inheriting"].remoteIPHeaders, want) {
+		t.Errorf("the endpoint omitting remote-ip-headers resolved to %v, want the module-level %v",
+			byName["inheriting"].remoteIPHeaders, want)
+	}
+}
+
+// TestAnExplicitEmptyEndpointTrustedProxiesOverridesTheModuleLevel pins the
+// difference between omitting the key and writing an empty list through the
+// real configuration path. An omitted key inherits the module-level networks;
+// an explicit [] names none, which is how one endpoint returns to trusting no
+// proxy at all while its siblings keep the deployment's setting.
+func TestAnExplicitEmptyEndpointTrustedProxiesOverridesTheModuleLevel(t *testing.T) {
+	got, decodeErr, runErr := readThrough(t, `{
+		"http": {
+			"listeners": {"backend": {"address": ":8080"}},
+			"trusted-proxies": ["10.0.0.0/8"],
+			"endpoints": {
+				"untrusting": {
+					"listener": "backend",
+					"prefixes": ["/untrusting"],
+					"trusted-proxies": []
+				},
+				"inheriting": {"listener": "backend", "prefixes": ["/inheriting"]}
+			}
+		}
+	}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+
+	_, endpoints, err := got.resolve()
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	byName := make(map[string]endpointSettings, len(endpoints))
+	for _, e := range endpoints {
+		byName[e.name] = e
+	}
+	untrusting := byName["untrusting"].trustedProxies
+	if untrusting == nil {
+		t.Error("an endpoint writing trusted-proxies [] resolved to a nil list, which is how an omitted key reads")
+	}
+	if len(untrusting) != 0 {
+		t.Errorf("an endpoint writing trusted-proxies [] resolved to %v, want none", untrusting)
+	}
+	if want := []string{"10.0.0.0/8"}; !slices.Equal(byName["inheriting"].trustedProxies, want) {
+		t.Errorf("the sibling omitting trusted-proxies resolved to %v, want the module-level %v",
+			byName["inheriting"].trustedProxies, want)
+	}
+}
+
+// TestAnInvalidModuleLevelTrustedProxyIsStartupFailure pins the validation of
+// the module-level networks: a mistyped one is refused while the configuration
+// is resolved, naming the module-level key rather than surfacing as gin's parse
+// error from inside an engine.
+func TestAnInvalidModuleLevelTrustedProxyIsStartupFailure(t *testing.T) {
+	got, decodeErr, runErr := readThrough(t, `{
+		"http": {
+			"listeners": {"backend": {"address": ":8080"}},
+			"trusted-proxies": ["10.0.0.0/8", "not-a-network"],
+			"endpoints": {"public": {"listener": "backend"}}
+		}
+	}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+	_, _, err := got.resolve()
+	if err == nil {
+		t.Fatal("a module-level trusted-proxies entry that is not an address or a block was accepted")
+	}
+	mustContain(t, err.Error(), "http.trusted-proxies", "the module-level key that was written")
 	mustContain(t, err.Error(), "not-a-network", "the value that is not a network")
 }
 

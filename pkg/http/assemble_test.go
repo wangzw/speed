@@ -914,6 +914,56 @@ func TestATrustedProxyMakesClientIPTakeTheForwardedHeader(t *testing.T) {
 	}
 }
 
+// TestFlyClientIPIsTakenFromATrustedFlyProxy pins the deployment this
+// repository's demo runs on: the networks in front of the app and the header
+// Fly's proxy writes the client address into are declared once at the module
+// level and inherited by the endpoint. X-Forwarded-For cannot answer here —
+// Fly's proxy appends the app's own Anycast address as its rightmost entry, so
+// the request below carries one and the assertion is the header Fly writes.
+//
+// The endpoint writes neither key, so the address reported below is read only
+// because the module-level list reached both SetTrustedProxies and
+// RemoteIPHeaders. gin's default header order, which would look at the
+// X-Forwarded-For ending in the trusted hop, gives a different answer.
+func TestFlyClientIPIsTakenFromATrustedFlyProxy(t *testing.T) {
+	got, decodeErr, runErr := readThrough(t, `{
+		"http": {
+			"listeners": {"backend": {"address": ":8080"}},
+			"trusted-proxies": ["172.16.0.0/16"],
+			"remote-ip-headers": ["Fly-Client-IP"],
+			"endpoints": {"public": {"listener": "backend"}}
+		}
+	}`, schema())
+	if runErr != nil || decodeErr != nil {
+		t.Fatalf("the section did not decode: %v", errors.Join(runErr, decodeErr))
+	}
+
+	_, endpoints, err := got.resolve()
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+	if len(endpoints) != 1 {
+		t.Fatalf("the document declares one endpoint and %d resolved: %+v", len(endpoints), endpoints)
+	}
+
+	var reported string
+	logger, _ := newRecordingLogger()
+	handler := mustAssemble(t, endpoints[0], nil, logger, func(e Endpoint) {
+		e.Route("GET", "/things", func(c *gin.Context) { reported = c.ClientIP() })
+	})
+
+	request := httptest.NewRequest(nethttp.MethodGet, "/things", nil)
+	request.RemoteAddr = "172.16.4.20:4711"
+	request.Header.Set("Fly-Client-IP", "203.0.113.7")
+	request.Header.Set("X-Forwarded-For", "198.51.100.4, 172.16.4.20")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	if reported != "203.0.113.7" {
+		t.Errorf("ClientIP reported %q for a request from Fly's proxy carrying Fly-Client-IP, "+
+			"want the address in that header", reported)
+	}
+}
+
 // equalStrings compares two sequences element by element.
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {

@@ -32,6 +32,14 @@ const listenersItem = "listeners"
 // endpointsItem is the key of the endpoint set, relative to the namespace.
 const endpointsItem = "endpoints"
 
+// trustedProxiesItem is the key of the module-level proxy networks every
+// endpoint inherits when it writes none of its own.
+const trustedProxiesItem = "trusted-proxies"
+
+// remoteIPHeadersItem is the key of the module-level forwarded-address headers
+// every endpoint inherits when it writes none of its own.
+const remoteIPHeadersItem = "remote-ip-headers"
+
 // reservedEndpointName is the endpoint name configuration cannot declare. A
 // list of endpoint names elsewhere writes it to mean every declared endpoint,
 // and an endpoint of that name would be indistinguishable from the wildcard.
@@ -48,6 +56,19 @@ type moduleConfig struct {
 	// Endpoints is one entry per routing endpoint, keyed by the endpoint name
 	// registrants use.
 	Endpoints map[string]endpointConfig `config:"endpoints"`
+
+	// TrustedProxies are the networks in front of this deployment, each an IP
+	// address or a CIDR block. An endpoint that writes no trusted-proxies of
+	// its own inherits this list; an endpoint that writes one, an explicit
+	// empty list included, overrides it. Empty trusts nobody, which is the
+	// safe default.
+	TrustedProxies []string `config:"trusted-proxies"`
+	// RemoteIPHeaders name the headers a trusted proxy writes the client
+	// address into, in the order they are read. An endpoint that writes no
+	// remote-ip-headers of its own inherits this list; an endpoint that writes
+	// one, an explicit empty list included, overrides it. Empty leaves gin's
+	// default.
+	RemoteIPHeaders []string `config:"remote-ip-headers"`
 }
 
 // listenerConfig is one listening socket as configuration gives it.
@@ -126,12 +147,14 @@ type endpointConfig struct {
 
 	// TrustedProxies are the networks in front of this endpoint, each an IP
 	// address or a CIDR block, whose forwarded-address headers are believed
-	// when the client address is worked out. Empty trusts nobody, which is the
+	// when the client address is worked out. An omitted key inherits the
+	// module-level list; an explicit empty list trusts nobody, which is the
 	// safe default: with nobody trusted, a client cannot choose the address
 	// Context.ClientIP reports by writing a header.
 	TrustedProxies []string `config:"trusted-proxies"`
 	// RemoteIPHeaders name the headers a trusted proxy writes the client
-	// address into, in the order they are read. Empty leaves gin's default
+	// address into, in the order they are read. An omitted key inherits the
+	// module-level list; an explicit empty list leaves gin's default
 	// (X-Forwarded-For then X-Real-IP), which is only consulted for a request
 	// whose peer is one of TrustedProxies.
 	RemoteIPHeaders []string `config:"remote-ip-headers"`
@@ -183,6 +206,14 @@ func schema() config.Schema {
 				Origins:     config.OriginPrimary,
 				Description: "the routing endpoints, each hanging on a listener and carrying its chain settings",
 			},
+			trustedProxiesItem: {
+				Origins:     config.OriginPrimary,
+				Description: "the networks in front of this deployment, whose forwarded-address headers every endpoint inherits unless it writes its own",
+			},
+			remoteIPHeadersItem: {
+				Origins:     config.OriginPrimary,
+				Description: "the forwarded-address headers a trusted proxy writes, inherited by every endpoint unless it writes its own",
+			},
 		},
 	}
 }
@@ -231,6 +262,13 @@ type endpointSettings struct {
 // listener reference is checked here, against the listeners the same
 // configuration declared.
 func (c moduleConfig) resolve() ([]listenerSettings, []endpointSettings, error) {
+	// The module-level networks are validated once here, before any endpoint
+	// inherits them. The message names the module-level key and the offending
+	// entry, because the value is written once and is not any one endpoint's.
+	if err := validateTrustedProxies(configNamespace+"."+trustedProxiesItem, c.TrustedProxies); err != nil {
+		return nil, nil, err
+	}
+
 	listeners := make([]listenerSettings, 0, len(c.Listeners))
 	listenerNames := make(map[string]struct{}, len(c.Listeners))
 	for _, name := range slices.Sorted(maps.Keys(c.Listeners)) {
@@ -244,7 +282,8 @@ func (c moduleConfig) resolve() ([]listenerSettings, []endpointSettings, error) 
 
 	endpoints := make([]endpointSettings, 0, len(c.Endpoints))
 	for _, name := range slices.Sorted(maps.Keys(c.Endpoints)) {
-		resolved, err := c.Endpoints[name].resolve(name, listenerNames, slices.Sorted(maps.Keys(c.Listeners)))
+		resolved, err := c.Endpoints[name].resolve(name, listenerNames,
+			slices.Sorted(maps.Keys(c.Listeners)), c.TrustedProxies, c.RemoteIPHeaders)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -401,7 +440,14 @@ func (l listenerConfig) resolve(name string) (listenerSettings, error) {
 // to change, and an endpoint naming a listener the configuration never declared
 // is refused here, naming the endpoint and the listeners that do exist, because
 // picking one of them is the fixing action.
-func (e endpointConfig) resolve(name string, listeners map[string]struct{}, listenerNames []string) (endpointSettings, error) {
+//
+// moduleTrustedProxies and moduleRemoteIPHeaders are the module-level defaults.
+// The endpoint's own list is taken when it is non-nil — an explicit empty list
+// included, which is how one endpoint returns to trusting no proxy — and the
+// module-level list is taken when the endpoint's is nil.
+func (e endpointConfig) resolve(name string, listeners map[string]struct{}, listenerNames []string,
+	moduleTrustedProxies, moduleRemoteIPHeaders []string,
+) (endpointSettings, error) {
 	if name == reservedEndpointName {
 		return endpointSettings{}, fmt.Errorf(
 			"%w: endpoint %q carries a name this module reserves: a list of endpoint names "+
@@ -449,8 +495,9 @@ func (e endpointConfig) resolve(name string, listeners map[string]struct{}, list
 		return endpointSettings{}, fmt.Errorf(
 			"%w: endpoint %q gives trusted-proxies[%d] the value %q, which is neither an IP "+
 				"address nor a CIDR block. Write each entry as an address or a block, for example "+
-				"\"10.0.0.0/8\", or drop the key to trust no proxy",
-			ErrInvalidConfig, name, i, network)
+				"\"10.0.0.0/8\"; an explicit [] trusts no proxy, and dropping the key inherits "+
+				"%s.%s",
+			ErrInvalidConfig, name, i, network, configNamespace, trustedProxiesItem)
 	}
 
 	prefixes, err := e.claimPrefixes(name)
@@ -458,14 +505,41 @@ func (e endpointConfig) resolve(name string, listeners map[string]struct{}, list
 		return endpointSettings{}, err
 	}
 
+	trustedProxies := e.TrustedProxies
+	if trustedProxies == nil {
+		trustedProxies = moduleTrustedProxies
+	}
+	remoteIPHeaders := e.RemoteIPHeaders
+	if remoteIPHeaders == nil {
+		remoteIPHeaders = moduleRemoteIPHeaders
+	}
+
 	return endpointSettings{
 		name:            name,
 		listenerName:    e.Listener,
 		prefixes:        prefixes,
 		maxBodyBytes:    valueOrDefault(e.MaxBodyBytes, defaultMaxBodyBytes),
-		trustedProxies:  e.TrustedProxies,
-		remoteIPHeaders: e.RemoteIPHeaders,
+		trustedProxies:  trustedProxies,
+		remoteIPHeaders: remoteIPHeaders,
 	}, nil
+}
+
+// validateTrustedProxies refuses every entry of a trusted-proxy list that is
+// neither an IP address nor a CIDR block, naming the complete key path of the
+// entry and the value. The rule is gin's own, through validTrustedProxy, so a
+// value refused here is exactly one SetTrustedProxies would refuse.
+func validateTrustedProxies(key string, networks []string) error {
+	for i, network := range networks {
+		if validTrustedProxy(network) {
+			continue
+		}
+		return fmt.Errorf(
+			"%w: %s[%d] gives the value %q, which is neither an IP address nor a CIDR block. "+
+				"Write each entry as an address or a block, for example \"10.0.0.0/8\", or drop "+
+				"the key to trust no proxy",
+			ErrInvalidConfig, key, i, network)
+	}
+	return nil
 }
 
 // claimPrefixes validates and completes one endpoint's claim list. An omitted
