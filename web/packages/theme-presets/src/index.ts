@@ -183,14 +183,12 @@ export const compactThemePreset: ThemePreset = createPreset('compact', {
 export const glassThemePreset: ThemePreset = createPreset('glass', {
   color: {
     background: {
-      // A saturated backdrop is what makes the translucency read: a pale
-      // gradient behind a translucent card looks like a slightly tinted
-      // card. The stops stay light enough in light mode for the dark text
-      // and dark enough in dark mode for the light text (the contrast test
-      // pins the composite on both stops).
+      // The light stops stay pastel so the page itself reads light; the
+      // dark stops stay vivid so the raised surfaces have a visible tint
+      // to show through. The composite is what the contrast test pins.
       canvas: {
-        light: { from: '#818CF8', to: '#F472B6' },
-        dark: { from: '#1E1B4B', to: '#3B0764' },
+        light: { from: '#C7D2FE', to: '#FBCFE8' },
+        dark: { from: '#4338CA', to: '#9D174D' },
       },
     },
     text: {
@@ -203,37 +201,37 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
       // mode paints the light tone instead and keeps the vivid accents.
       primary: {
         main: '#1E1B4B',
-        light: '#60A5FA',
+        light: '#C7D2FE',
         dark: '#0F0A2E',
         contrastText: '#FFFFFF',
       },
       secondary: {
         main: '#2E1065',
-        light: '#A78BFA',
+        light: '#DDD6FE',
         dark: '#1E0B45',
         contrastText: '#FFFFFF',
       },
       error: {
         main: '#450A0A',
-        light: '#F87171',
+        light: '#FECACA',
         dark: '#2A0606',
         contrastText: '#FFFFFF',
       },
       info: {
         main: '#041C2C',
-        light: '#38BDF8',
+        light: '#BAE6FD',
         dark: '#02121C',
         contrastText: '#FFFFFF',
       },
       success: {
         main: '#052E16',
-        light: '#4ADE80',
+        light: '#BBF7D0',
         dark: '#022C22',
         contrastText: '#FFFFFF',
       },
       warning: {
         main: '#451A03',
-        light: '#FBBF24',
+        light: '#FDE68A',
         dark: '#2A1002',
         contrastText: '#FFFFFF',
       },
@@ -248,21 +246,21 @@ export const glassThemePreset: ThemePreset = createPreset('glass', {
     // gradient. The translucency that makes the glass read lives on the
     // raised surfaces below, over each mode's own paper tone.
     container: {
-      opacity: 0.3,
+      opacity: 0.55,
       borderColor: 'rgba(255, 255, 255, 0.55)',
       borderWidth: 1,
       backdropFilter: 'blur(22px) saturate(180%)',
       elevation: 2,
     },
     overlay: {
-      opacity: 0.32,
+      opacity: 0.58,
       borderColor: 'rgba(255, 255, 255, 0.62)',
       borderWidth: 1,
       backdropFilter: 'blur(32px) saturate(180%)',
       elevation: 8,
     },
     header: {
-      opacity: 0.26,
+      opacity: 0.5,
       borderColor: 'rgba(255, 255, 255, 0.5)',
       borderWidth: 1,
       backdropFilter: 'blur(22px) saturate(160%)',
