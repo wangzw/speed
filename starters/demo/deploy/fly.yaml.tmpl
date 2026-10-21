@@ -92,14 +92,6 @@ seed:
       platform-admin: true
   tenants:
     - acme
-  # The account store's password policy. The declared default asks for twelve
-  # characters; this deployment accepts the domain's floor of eight, so the
-  # operator credential set from the Fly secret only has to meet that. The seed
-  # writes the setting before it creates the account, which is what makes the
-  # policy bind this run.
-  settings:
-    - key: "authn.account.password-min-length"
-      value: "8"
 
 # The engine. The database file is on the volume; the encryption key seals the
 # columns a module encrypts at rest. The key is a secret and must stay the same

@@ -148,7 +148,7 @@ func TestCreateRefusesWhatItAdmitsNot(t *testing.T) {
 		{"a password on a service account", authn.CreateAccount{Kind: authn.KindService, Username: "svc1", Password: "correct horse battery"}, authn.ErrInvalidArgument},
 		{"a password with no login name", authn.CreateAccount{Phone: "+8613812345678", PhoneVerifiedVia: admin, Password: "correct horse battery"}, authn.ErrIdentifierRequired},
 		{"a hash with no login name", authn.CreateAccount{PasswordHash: "$argon2id$x"}, authn.ErrIdentifierRequired},
-		{"a password shorter than twelve", authn.CreateAccount{Username: "alice1", Password: "short pw"}, authn.ErrPasswordPolicy},
+		{"a password shorter than eight", authn.CreateAccount{Username: "alice1", Password: "short"}, authn.ErrPasswordPolicy},
 		{"a password that is the username", authn.CreateAccount{Username: "alice-the-user", Password: "ALICE-the-user"}, authn.ErrPasswordPolicy},
 		{"a password that is the email address", authn.CreateAccount{Email: "alice@example.com", EmailVerifiedVia: admin, Password: "Alice@Example.com"}, authn.ErrPasswordPolicy},
 		{"a password past 128 bytes", authn.CreateAccount{Username: "alice1", Password: strings.Repeat("p", 129)}, authn.ErrPasswordPolicy},

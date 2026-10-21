@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 )
 
@@ -214,11 +215,11 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 	}
 }
 
-// A deployment may lower the account store's password policy through
-// seed.settings. The setting has to be in force when the seeded accounts are
-// written, so the seed writes the settings before the accounts: an
-// eight-character password is refused under the declared minimum of twelve and
-// accepted once the deployment's value lands first.
+// The settings have to be in force when the seeded accounts are written, so
+// the seed writes them before the accounts. The declared minimum is the
+// domain's floor, so the proof raises it: with twelve in force the seeded
+// eight-character password is refused, where writing the account first would
+// have accepted it under the default.
 func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
 	t.Parallel()
 	body := configBody(t, freePorts(t, listenerCount), ":memory:")
@@ -228,14 +229,17 @@ func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
       value: "1h"`, `    - key: "authn.mfa.sensitive-min-age"
       value: "1h"
     - key: "authn.account.password-min-length"
-      value: "8"`, 1)
+      value: "12"`, 1)
 	config := writeConfigFile(t, body)
 
 	res := runCommand(t, config, "sqlite", "seed")
-	if res.err != nil {
-		t.Fatalf("seed with a lowered password policy failed: %v\n%s", res.err, res.combined())
+	if res.err == nil {
+		t.Fatalf("seed succeeded under the raised policy; the settings were not in force before the accounts:\n%s", res.combined())
 	}
-	if !strings.Contains(res.stdout, "seeded: account operator@demo.test") {
-		t.Errorf("the account with the eight-character password was not seeded:\n%s", res.stdout)
+	if !strings.Contains(res.combined(), authn.ErrPasswordPolicy.Error()) {
+		t.Errorf("seed failed for a reason other than the password policy: %v\n%s", res.err, res.combined())
+	}
+	if strings.Contains(res.stdout, "seeded: account operator@demo.test") {
+		t.Errorf("the account was seeded despite the raised policy:\n%s", res.stdout)
 	}
 }

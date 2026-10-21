@@ -318,11 +318,11 @@ gh secret set FLY_API_TOKEN --body "$(flyctl tokens create deploy --app vislake-
 The deployment carries no development credential. The entrypoint refuses to
 start without the three secrets, so the DEV values the sample configurations
 ship cannot reach a Machine. `DEMO_OPERATOR_PASSWORD` is held to the account
-store's password policy: the deployment's configuration lowers
-`authn.account.password-min-length` to the domain's floor of eight through
-`seed.settings`, and the seed writes that setting before it creates the
-account, so the policy binds the run that writes the credential. The declared
-default is twelve; a deployment that wants it back removes the entry. A value
+store's password policy: the declared minimum is the domain's floor of eight
+characters, so the operator credential only has to meet that. A deployment
+that raises `authn.account.password-min-length` through `seed.settings` must
+also raise the credential; the seed writes the setting before it creates the
+account, so the policy binds the run that writes the credential. A value
 outside the policy fails the seed on the first start. `DEMO_DB_ENCRYPTION_KEY`
 is at least 14 bytes and must stay the same for the life of the volume: it
 seals columns at rest, and a different key on an existing database makes them

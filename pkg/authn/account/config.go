@@ -119,10 +119,11 @@ type options struct {
 
 // defaults is the prototype the settings module reads the declared defaults off.
 // It never receives a value. The Argon2id numbers are the least OWASP
-// combination that costs the least memory, and the rest are the strictest
-// value of each range's usual end.
+// combination that costs the least memory; the password minimum is the
+// domain's floor, which a deployment raises when its own credential policy
+// asks for more; the rest are the strictest value of each range's usual end.
 var defaults = options{
-	PasswordMinLength:        12,
+	PasswordMinLength:        8,
 	PasswordArgon2Memory:     int(password.DefaultParams().MemoryKiB),
 	PasswordArgon2Iterations: int(password.DefaultParams().Iterations),
 	PasswordArgon2Lanes:      int(password.DefaultParams().Parallelism),

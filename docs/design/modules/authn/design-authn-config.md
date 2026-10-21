@@ -177,7 +177,7 @@
 | `authn.static.fail-window` | `time.Duration` | `15m` | 1m 到 24h | | 减小 |
 | `authn.static.max-backoff` | `time.Duration` | `15m` | 10s 到 24h | | 减小 |
 | `authn.static.cache-ttl` | `time.Duration` | `60s` | 0 到 5m；0 关闭缓存 | | |
-| `authn.account.password-min-length` | 整数 | `12` | 8 到 64 | | 减小 |
+| `authn.account.password-min-length` | 整数 | `8` | 8 到 64 | | 减小 |
 | `authn.account.password-argon2-memory-kib` | 整数 | `19456` | 正整数，至多 262144 | | 减小 |
 | `authn.account.password-argon2-iterations` | 整数 | `2` | 正整数，至多 10 | | 减小 |
 | `authn.account.password-argon2-parallelism` | 整数 | `1` | 正整数，至多 16 | | |
