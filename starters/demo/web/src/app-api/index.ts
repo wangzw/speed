@@ -911,29 +911,39 @@ export interface AuthnMethodDescriptor {
   label?: string;
   /** The method's stable name */
   name: string;
-  /** Whether the method may open an account for an identifier it does not yet know */
+  /** Whether the method may open an account for an identifier it does not yet know; false for the phone and social methods when `authn.account.signup` is closed */
   opens_account?: boolean;
   /** The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise */
   protocol?: string;
 }
 
 /**
- * Whether a first login may open an account on this deployment, derived from the account module's signup switch. A closed switch does not remove a method; it only makes a first login for an unknown identifier fail.
+ * Whether the anonymous name-and-password register route is open, reported on its own because it is independent of a first login opening an account.
  */
-export interface AuthnLoginSignup {
-  /** Whether a first login may open an account */
+export interface AuthnLoginSignupPassword {
+  /** Whether POST /auth/register is open */
   enabled: boolean;
 }
 
 /**
- * The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether a first login may open an account, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.
+ * Whether anonymous self-registration is available on this deployment: either a first login may open an account, or the name-and-password register route is open. The two switches are independent; each member below reports its own.
+ */
+export interface AuthnLoginSignup {
+  /** Whether anonymous self-registration is available: true when either a first login may open an account or the name-and-password register route is open */
+  enabled: boolean;
+  /** Whether the name-and-password register route is open. */
+  password: AuthnLoginSignupPassword;
+}
+
+/**
+ * The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.
  */
 export interface AuthnLoginMethods {
   /** The methods taking part that are not turned off, one descriptor each, sorted by name */
   methods: AuthnMethodDescriptor[];
   /** The second-factor kinds the deployment takes in. */
   mfa: AuthnLoginMFA;
-  /** Whether a first login may open an account on this deployment. */
+  /** Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`. */
   signup: AuthnLoginSignup;
 }
 
@@ -945,6 +955,48 @@ export interface AuthnLoginPhoneChallenge {
   expires_in: number;
   /** How soon another code may be asked for, in seconds */
   resend_after: number;
+}
+
+/**
+ * The literal `registered`, marking that an account was opened
+ */
+export type AuthnLoginRegistrationState = typeof AuthnLoginRegistrationState[keyof typeof AuthnLoginRegistrationState];
+
+
+export const AuthnLoginRegistrationState = {
+  registered: 'registered',
+} as const;
+
+/**
+ * The verification state of the email address: `pending` until the address is proved after signing in
+ */
+export type AuthnLoginRegistrationContactState = typeof AuthnLoginRegistrationContactState[keyof typeof AuthnLoginRegistrationContactState];
+
+
+export const AuthnLoginRegistrationContactState = {
+  pending: 'pending',
+} as const;
+
+/**
+ * The contact a new registration has to prove: the pending state of the email address the caller gave, which is not yet a login name.
+ */
+export interface AuthnLoginRegistrationContact {
+  /** The email address the caller gave, awaiting verification */
+  email: string;
+  /** The verification state of the email address: `pending` until the address is proved after signing in */
+  state: AuthnLoginRegistrationContactState;
+}
+
+/**
+ * The answer of an anonymous self-registration: the state name `registered`, the account that was opened, and the email address awaiting verification. No session is made and no email is sent.
+ */
+export interface AuthnLoginRegistration {
+  /** The identifier of the account that was opened */
+  account_id: string;
+  /** The literal `registered`, marking that an account was opened */
+  state: AuthnLoginRegistrationState;
+  /** The contact awaiting verification. */
+  verification: AuthnLoginRegistrationContact;
 }
 
 /**
@@ -1931,6 +1983,24 @@ export type AuthnLoginStartPhoneBody = {
 export type AuthnLoginVerifyPhoneBody = {
   /** The code as the SMS channel sent it. Empty or longer than 32 bytes is a 400 bad-request before any comparison; a wrong code is a 401 login-failed and counts against the number. */
   code: string;
+};
+
+/**
+ * The anonymous registration request: a username, an email address and a password are required; a display name, a language and a time zone are optional. The email address is only a contact awaiting verification, not a login name.
+ */
+export type AuthnLoginRegisterBody = {
+  /** The display name, optional: valid text of at most 100 characters. */
+  display_name?: string;
+  /** The email address, required. It is only a contact awaiting verification, not a login name yet, and it is never checked for being taken: a conflict surfaces only after a code proves control of the address, once the account is signed in. */
+  email?: string;
+  /** The account's language preference, optional, written to the i18n.locale attribute; a value outside the accepted language domain is a 400 bad-request. */
+  locale?: string;
+  /** The password, required, held to the deployment's password policy; a password that violates it is a 400 bad-request. */
+  password?: string;
+  /** The account's time-zone preference, optional, written to the i18n.tz attribute; a value outside the accepted time-zone domain is a 400 bad-request. */
+  time_zone?: string;
+  /** The login name, required. A name already taken is a 409 username-taken; a name that cannot be normalized is a 400 bad-request. */
+  username?: string;
 };
 
 /**
@@ -4034,7 +4104,7 @@ export const useAuthnProfilePatch = <TError = Problem,
     }
 
 /**
- * Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by method name, together with whether a first login may open an account and the second-factor kinds the deployment takes in. It reads no credential and no request body, so every caller gets the same document. A method turned off by the deployment is left out rather than reported with a flag, and the call answers 503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are not listed here; they are discovered through the SSO module.
+ * Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by method name, together with whether registration is open and the second-factor kinds the deployment takes in. It reads no credential and no request body, so every caller gets the same document. A method turned off by the deployment is left out rather than reported with a flag, and the call answers 503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are not listed here; they are discovered through the SSO module.
  * @summary List the login methods this deployment offers
  */
 export const authnLoginMethods = (
@@ -4320,6 +4390,71 @@ export const useAuthnLoginVerifyPhone = <TError = Problem,
         TContext
       > => {
       return useMutation(getAuthnLoginVerifyPhoneMutationOptions(options), queryClient);
+    }
+
+/**
+ * Opens one enabled account in one transaction from a username, an email address and a password, without a session and without sending an email. The email address is only a contact awaiting verification: it is not a login name until it is proved, which happens after the client signs in through `POST /auth/flows` and adds the address through the account self-service routes. The route reads no cookie and keeps no flow, so it has no binding and no sequence number. It passes the cross-origin check and refuses a body that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken is a 409 username-taken; and the per-source and deployment-wide budgets answer 429 with `Retry-After` when they are exhausted. The email address is never checked for being taken and is never echoed as a conflict: a clash surfaces only after a code proves control of the address.
+ * @summary Register an account with a username, an email address and a password
+ */
+export const authnLoginRegister = (
+    authnLoginRegisterBody: AuthnLoginRegisterBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnLoginRegistration>(
+      {url: `/api/v1/auth/register`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnLoginRegisterBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginRegisterMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginRegister>>, TError,{data: AuthnLoginRegisterBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginRegister>>, TError,{data: AuthnLoginRegisterBody}, TContext> => {
+
+const mutationKey = ['authnLoginRegister'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginRegister>>, {data: AuthnLoginRegisterBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authnLoginRegister(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginRegisterMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginRegister>>>
+    export type AuthnLoginRegisterMutationBody = AuthnLoginRegisterBody
+    export type AuthnLoginRegisterMutationError = Problem
+
+    /**
+ * @summary Register an account with a username, an email address and a password
+ */
+export const useAuthnLoginRegister = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginRegister>>, TError,{data: AuthnLoginRegisterBody}, TContext>, }
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginRegister>>,
+        TError,
+        {data: AuthnLoginRegisterBody},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginRegisterMutationOptions(options), queryClient);
     }
 
 /**
