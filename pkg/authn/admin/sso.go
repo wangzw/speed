@@ -168,7 +168,7 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 	if in.Protocol == "" || in.Name == "" || in.Provisioning == "" {
 		return nil, m.bad()
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: in.Tenant}); err != nil {
@@ -211,7 +211,7 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 	if in.BodyTenant != "" && in.BodyTenant != existing.Tenant {
 		return nil, m.bad()
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: existing.Tenant, Target: in.ID}); err != nil {
@@ -265,7 +265,7 @@ func (m *product) handleDomainClaim(ctx context.Context, in domainClaimInput, _ 
 	if in.Domain == "" {
 		return nil, m.bad()
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: provider.Tenant, Target: provider.ID}); err != nil {
@@ -399,7 +399,7 @@ func (m *product) handleMetadataRefresh(ctx context.Context, in providerIDInput,
 		// asks for an operation nothing delivers.
 		return nil, m.bad()
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: provider.Tenant, Target: provider.ID}); err != nil {

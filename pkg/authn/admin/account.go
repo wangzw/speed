@@ -145,7 +145,7 @@ func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput
 	if kind == authn.KindUser && in.Username == "" && in.Email == "" && in.Phone == "" {
 		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return AuthnAdminAccountEnvelope{}, err
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionAccountCreate, Actor: id}); err != nil {
@@ -197,7 +197,7 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{
@@ -328,7 +328,7 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{
@@ -378,7 +378,7 @@ func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{

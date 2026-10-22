@@ -32,7 +32,8 @@ import (
 // this case exists to hold.
 func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
-		verification authn.SignupVerification, memberships authn.Memberships) {
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
 		// This module's own migrations go onto the same handle the account module
 		// built its tables on.
 		applyMigrations(t, handle)
@@ -302,8 +303,8 @@ func TestAcceptDoesNotGuessBetweenPendingOwners(t *testing.T) {
 		if err != nil {
 			t.Fatalf("registering the second pending account: %v", err)
 		}
-		if owner, ok, err := verification.PendingAccountByContact(ctx, string(authn.IdentifierEmail), "clash@example.com"); err != nil || ok {
-			t.Fatalf("PendingAccountByContact = (%q, %v, %v) with two owners, want a miss and no error", owner, ok, err)
+		if owner, ok, missErr := verification.PendingAccountByContact(ctx, string(authn.IdentifierEmail), "clash@example.com"); missErr != nil || ok {
+			t.Fatalf("PendingAccountByContact = (%q, %v, %v) with two owners, want a miss and no error", owner, ok, missErr)
 		}
 
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))

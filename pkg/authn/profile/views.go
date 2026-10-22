@@ -83,7 +83,8 @@ type AuthnProfilePatch struct {
 
 // profileViewOf builds the read view from the account module's read surface.
 func profileViewOf(account authn.Account, identifiers []authn.Identifier, links []authn.ExternalBinding,
-	signup authn.SignupStatus) AuthnProfileProfile {
+	signup authn.SignupStatus,
+) AuthnProfileProfile {
 	attributes := copyAttributes(account.Attributes)
 	view := AuthnProfileProfile{
 		AccountID:    string(account.ID),

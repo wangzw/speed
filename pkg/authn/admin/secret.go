@@ -66,7 +66,7 @@ func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, 
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
 	}
-	if err := m.gateSignup(ctx, id); err != nil {
+	if err = m.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{
