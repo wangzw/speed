@@ -103,6 +103,12 @@ function SectionCardInner(
             flexWrap: 'wrap',
             px: 3,
             pt: 3,
+            // A flush child starts at the card's edge, so the heading block
+            // has to carry the separation itself: otherwise the gap is only
+            // the line box's slack, which a denser type scale (a preset with
+            // tighter line heights) shrinks to nothing and the child's first
+            // row -- a table's header band -- sits on the title's descenders.
+            ...(flushContent ? { pb: 3 } : {}),
           }}
         >
           <Box sx={{ minWidth: 0 }}>
