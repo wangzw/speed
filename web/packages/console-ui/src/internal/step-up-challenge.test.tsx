@@ -91,7 +91,7 @@ function flowSession(): {
     listMethods: () =>
       Promise.resolve({
         methods: [{ name: 'password', kind: 'form' }],
-        signup: { enabled: false },
+        signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
       }),
     discoverSso: () => Promise.resolve([]),

@@ -101,18 +101,22 @@ export function methodList(
   methods: readonly (string | MethodDescriptorBody)[],
   overrides: {
     signup?: boolean
+    signupPassword?: boolean
     mfaFactors?: readonly string[]
   } = {},
 ): {
   methods: MethodDescriptorBody[]
-  signup: { enabled: boolean }
+  signup: { enabled: boolean; password: { enabled: boolean } }
   mfa: { factors: string[] }
 } {
   return {
     methods: methods.map((entry) =>
       typeof entry === 'string' ? { name: entry, kind: 'form' } : entry,
     ),
-    signup: { enabled: overrides.signup ?? false },
+    signup: {
+      enabled: overrides.signup ?? false,
+      password: { enabled: overrides.signupPassword ?? false },
+    },
     mfa: { factors: [...(overrides.mfaFactors ?? [])] },
   }
 }

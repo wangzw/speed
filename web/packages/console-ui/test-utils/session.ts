@@ -52,7 +52,7 @@ export const ANONYMOUS_SNAPSHOT: AuthSnapshot = {
 
 const METHODS: AuthnMethodList = {
   methods: [{ name: 'password', kind: 'form' }],
-  signup: { enabled: false },
+  signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
 }
 

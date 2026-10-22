@@ -25,7 +25,7 @@ import { FEATURE_NAMES } from '@speed/api-sdk/features'
  * password channel, the only one the skeleton offers. */
 const FORM_METHODS: AuthnMethodList = {
   methods: [{ name: 'password', kind: 'form' }],
-  signup: { enabled: false },
+  signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
 }
 

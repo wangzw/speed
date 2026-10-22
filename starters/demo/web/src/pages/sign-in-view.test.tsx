@@ -47,7 +47,7 @@ const METHODS: AuthnMethodList = {
     { name: 'password', kind: 'form' },
     { name: 'github', kind: 'redirect', protocol: 'oauth2', label: 'GitHub' },
   ],
-  signup: { enabled: false },
+  signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
 }
 
@@ -118,7 +118,7 @@ describe('the sign-in surface', () => {
       listMethods: (): Promise<AuthnMethodList> =>
         Promise.resolve({
           methods: [{ name: 'password', kind: 'form', opens_account: true }],
-          signup: { enabled: true },
+          signup: { enabled: true, password: { enabled: false } },
           mfa: { factors: [] },
         }),
     })

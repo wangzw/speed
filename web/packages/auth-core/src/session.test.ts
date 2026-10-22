@@ -132,7 +132,7 @@ describe('list methods', () => {
               binding_providers: ['wechat', 'wechat-openid:'],
             },
           ],
-          { signup: true, mfaFactors: ['totp'] },
+          { signup: true, signupPassword: true, mfaFactors: ['totp'] },
         ),
     })
     const methods = await harness.session.listMethods()
@@ -146,7 +146,7 @@ describe('list methods', () => {
           binding_providers: ['wechat', 'wechat-openid:'],
         },
       ],
-      signup: { enabled: true },
+      signup: { enabled: true, password: { enabled: true } },
       mfa: { factors: ['totp'] },
     })
     expect(harness.calls).toHaveLength(1)
@@ -163,7 +163,7 @@ describe('list methods', () => {
             binding_providers: ['wechat', 1],
           },
         ],
-        signup: { enabled: true },
+        signup: { enabled: true, password: { enabled: false } },
         mfa: { factors: [] },
       }),
     })
@@ -181,7 +181,7 @@ describe('list methods', () => {
     const harness = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [{ name: 'password' }],
-        signup: { enabled: true },
+        signup: { enabled: true, password: { enabled: false } },
         mfa: { factors: [] },
       }),
     })
@@ -199,10 +199,21 @@ describe('list methods', () => {
     const missingMFA = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [],
-        signup: { enabled: false },
+        signup: { enabled: false, password: { enabled: false } },
       }),
     })
     await expectProtocolViolation(missingMFA.session.listMethods(), missingMFA)
+  })
+
+  it('refuses a methods 2xx whose signup password switch is not a boolean', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: true, password: { enabled: 'yes' } },
+        mfa: { factors: [] },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
   })
 })
 

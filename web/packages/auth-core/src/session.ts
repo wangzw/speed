@@ -996,13 +996,23 @@ function parseMethodList(body: unknown): AuthnMethodList {
   if (typeof signup.enabled !== 'boolean') {
     throw protocolViolation('methods signup carries no enabled boolean')
   }
+  const signupPassword = asObject(
+    signup.password,
+    'methods signup carries no password document',
+  )
+  if (typeof signupPassword.enabled !== 'boolean') {
+    throw protocolViolation('methods signup password carries no enabled boolean')
+  }
   const mfa = asObject(rec.mfa, 'methods 2xx carries no mfa document')
   if (!Array.isArray(mfa.factors)) {
     throw protocolViolation('methods mfa carries no factors array')
   }
   return {
     methods: rec.methods.map((entry) => parseMethodDescriptor(entry)),
-    signup: { enabled: signup.enabled },
+    signup: {
+      enabled: signup.enabled,
+      password: { enabled: signupPassword.enabled },
+    },
     mfa: {
       factors: mfa.factors.map((entry) =>
         requireString(entry, 'mfa factor is not a string'),
