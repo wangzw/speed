@@ -58,7 +58,11 @@ WORKDIR /src/starters/demo/server
 # runtime image with no libc of its own to carry. go.work.sum is not committed
 # -- it is a workspace-mode artifact -- and the Go toolchain writes it during
 # this build.
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/demo .
+# The deployment assembly adds the SMTP carrier and the email verification
+# code sender beside the baseline; a default build keeps registration closed
+# and carries no mail path. The relay's values are rendered by the entrypoint
+# from Fly secrets, never baked into this layer.
+RUN CGO_ENABLED=0 go build -tags deploy -trimpath -ldflags="-s -w" -o /out/demo .
 
 FROM alpine:3.22
 

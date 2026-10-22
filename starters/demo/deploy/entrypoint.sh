@@ -93,6 +93,28 @@ check_scalar DEMO_OPERATOR_EMAIL "$DEMO_OPERATOR_EMAIL"
 check_scalar DEMO_OPERATOR_PASSWORD "$DEMO_OPERATOR_PASSWORD"
 check_scalar DEMO_DB_ENCRYPTION_KEY "$DEMO_DB_ENCRYPTION_KEY"
 
+# The deployment build adds mail.smtp and authn.emailcode, so registration
+# cannot start without a relay. The host and the sender are required; the
+# port and the TLS posture have defaults, and an empty username or password
+# means the relay is used without AUTH.
+require DEMO_SMTP_HOST "${DEMO_SMTP_HOST:-}"
+require DEMO_SMTP_FROM "${DEMO_SMTP_FROM:-}"
+
+check_scalar DEMO_SMTP_HOST "$DEMO_SMTP_HOST"
+check_scalar DEMO_SMTP_FROM "$DEMO_SMTP_FROM"
+check_scalar DEMO_SMTP_USERNAME "${DEMO_SMTP_USERNAME:-}"
+check_scalar DEMO_SMTP_PASSWORD "${DEMO_SMTP_PASSWORD:-}"
+
+smtp_port=${DEMO_SMTP_PORT:-587}
+smtp_tls=${DEMO_SMTP_TLS:-starttls}
+case $smtp_port in
+    '' | *[!0-9]*) die "DEMO_SMTP_PORT must be a whole number" ;;
+esac
+case $smtp_tls in
+    starttls | implicit | none) ;;
+    *) die "DEMO_SMTP_TLS must be starttls, implicit or none" ;;
+esac
+
 mkdir -p /data/var /data/objects
 
 # The replacement is literal. awk's gsub is not used because "&" in a
@@ -101,7 +123,13 @@ awk -v origin="$public_origin" \
     -v domain="$public_domain" \
     -v email="$DEMO_OPERATOR_EMAIL" \
     -v password="$DEMO_OPERATOR_PASSWORD" \
-    -v key="$DEMO_DB_ENCRYPTION_KEY" '
+    -v key="$DEMO_DB_ENCRYPTION_KEY" \
+    -v smtp_host="$DEMO_SMTP_HOST" \
+    -v smtp_port="$smtp_port" \
+    -v smtp_tls="$smtp_tls" \
+    -v smtp_username="${DEMO_SMTP_USERNAME:-}" \
+    -v smtp_password="${DEMO_SMTP_PASSWORD:-}" \
+    -v smtp_from="$DEMO_SMTP_FROM" '
     function replace(line, needle, repl,   out, i) {
         out = ""
         while ((i = index(line, needle)) > 0) {
@@ -117,6 +145,12 @@ awk -v origin="$public_origin" \
         line = replace(line, "__OPERATOR_EMAIL__", email)
         line = replace(line, "__OPERATOR_PASSWORD__", password)
         line = replace(line, "__ENCRYPTION_KEY__", key)
+        line = replace(line, "__SMTP_HOST__", smtp_host)
+        line = replace(line, "__SMTP_PORT__", smtp_port)
+        line = replace(line, "__SMTP_TLS__", smtp_tls)
+        line = replace(line, "__SMTP_USERNAME__", smtp_username)
+        line = replace(line, "__SMTP_PASSWORD__", smtp_password)
+        line = replace(line, "__SMTP_FROM__", smtp_from)
         print line
     }
 ' "$template" >"$config.new"
@@ -130,7 +164,8 @@ chmod 0600 "$config"
 # These are template inputs, not configuration items: the program reports any
 # variable under its prefix that no item reads, and these four would each earn
 # a diagnostic on every start.
-unset DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL
+unset DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL \
+    DEMO_SMTP_HOST DEMO_SMTP_PORT DEMO_SMTP_TLS DEMO_SMTP_USERNAME DEMO_SMTP_PASSWORD DEMO_SMTP_FROM
 
 su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite seed
 exec su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite serve

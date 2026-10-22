@@ -76,12 +76,26 @@ authn:
       origins:
         - "__PUBLIC_ORIGIN__"
 
-# The host's own personal-tenant policy. Off, as in the baseline: this
-# deployment serves the seeded tenant, and a registration with no membership
-# reaches no tenant area.
+# The mail carrier the registration flow sends verification codes through.
+# The image is built with the deploy tag, which adds mail.smtp and
+# authn.emailcode to the baseline. Every value is a Fly secret rendered by the
+# entrypoint; the carrier is real, so a registration sends a real message.
+mail:
+  smtp:
+    host: "__SMTP_HOST__"
+    port: __SMTP_PORT__
+    tls: "__SMTP_TLS__"
+    username: "__SMTP_USERNAME__"
+    password: "__SMTP_PASSWORD__"
+    from: "__SMTP_FROM__"
+
+# The host's own personal-tenant policy. On for this deployment: self-service
+# registration is open, so an account that proves its email address gets a
+# personal tenant instead of landing in an area it cannot enter. The seeded
+# operator keeps the tenant the seed names.
 workspace:
   personal:
-    enabled: false
+    enabled: true
 
 # The object store's bytes, under the volume.
 objectstore:
@@ -99,6 +113,11 @@ seed:
       platform-admin: true
   tenants:
     - acme
+  settings:
+    # The anonymous username-and-password registration is open; the account
+    # is usable immediately and proves its email address afterwards.
+    - key: "authn.account.password-signup"
+      value: "open"
 
 # The engine. The database file is on the volume; the encryption key seals the
 # columns a module encrypts at rest. The key is a secret and must stay the same

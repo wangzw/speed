@@ -502,6 +502,11 @@ func addStack(root *config.Command, s stack) {
 	// review_off.go. The configuration the review build reads is the copy under
 	// server/review, never one of testdata/.
 	serve.Include(reviewModules...)
+	// The deployment assembly's additions: the SMTP carrier and the email
+	// verification code sender over it. The list is empty in a default build;
+	// the Fly image is built with the deploy tag. See deploy.go and
+	// deploy_off.go.
+	serve.Include(deployModules...)
 	serve.Include(s.kv, s.event, log.ModuleName, otel.ModuleName, s.exporter)
 	serve.Do(core.StageServe, untilCancelled(serveCommand))
 

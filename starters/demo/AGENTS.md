@@ -349,7 +349,12 @@ flyctl volumes create speed_demo_data --app vislake-speed-demo --region sin --si
 flyctl secrets set --app vislake-speed-demo \
   DEMO_OPERATOR_EMAIL=operator@example.com \
   DEMO_OPERATOR_PASSWORD='...' \
-  DEMO_DB_ENCRYPTION_KEY='...'
+  DEMO_DB_ENCRYPTION_KEY='...' \
+  DEMO_SMTP_HOST=smtp.example.com \
+  DEMO_SMTP_FROM='Demo <no-reply@example.com>' \
+  DEMO_SMTP_USERNAME='...' \
+  DEMO_SMTP_PASSWORD='...'
+# optional: DEMO_SMTP_PORT (default 587), DEMO_SMTP_TLS (starttls, implicit, none)
 
 # the repository secret the deploy workflow reads
 gh secret set FLY_API_TOKEN --body "$(flyctl tokens create deploy --app vislake-speed-demo)"
@@ -367,6 +372,21 @@ outside the policy fails the seed on the first start. `DEMO_DB_ENCRYPTION_KEY`
 is at least 14 bytes and must stay the same for the life of the volume: it
 seals columns at rest, and a different key on an existing database makes them
 unreadable.
+
+**Registration is open on this deployment.** The image is built with
+`-tags deploy`, which adds `mail.smtp` and `authn.emailcode` to the baseline;
+`seed.settings` opens `authn.account.password-signup`; and
+`workspace.personal.enabled` is on, so an account that proves its email address
+gets a personal tenant. The email loop needs a real relay: the entrypoint
+requires `DEMO_SMTP_HOST` and `DEMO_SMTP_FROM`, and treats
+`DEMO_SMTP_USERNAME` and `DEMO_SMTP_PASSWORD` as optional (empty means no
+AUTH). `DEMO_SMTP_PORT` defaults to 587 and `DEMO_SMTP_TLS` to `starttls`. The
+entrypoint refuses a value carrying a double quote, a backslash, a line break
+or a control character, because the value is rendered inside a YAML scalar.
+The mail budgets are the declared defaults: a walk-through may need to wait
+out the per-address window. A default build has no mail path and leaves
+registration closed, so the baseline testdata and the review build keep their
+own assemblies.
 
 The origin is derived from `FLY_APP_NAME` (`https://<app>.fly.dev`). A custom
 domain sets `DEMO_PUBLIC_URL` to its https origin, which is what the WebAuthn
