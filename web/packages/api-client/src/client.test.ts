@@ -1763,6 +1763,45 @@ describe('transient retries (idempotent methods only)', () => {
     }
   })
 
+  it('carries a 429 Retry-After wait onto the ApiError', async () => {
+    // A retry-ineligible method (registration is a POST) reaches the
+    // caller with the refusal itself; the header's ask must survive so
+    // the surface can hold its control instead of guessing.
+    const standin = scriptedStandin(
+      jsonResponse(
+        429,
+        { type: 'urn:speed:authn:throttled' },
+        { 'retry-after': '3' },
+      ),
+    )
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      retryPolicy: zeroDelay(1),
+    })
+    const error = await expectApiError(
+      api<{ ok: boolean }>('/auth/register', { method: 'POST', body: {} }),
+    )
+    expect(error.code).toBe('authn.throttled')
+    expect(error.retryAfterMs).toBe(3000)
+  })
+
+  it('leaves retryAfterMs undefined when the refusal states no wait', async () => {
+    // The same 429 without a header, and with no envelope either: the
+    // bare-HTTP fallback carries no invented wait.
+    const standin = scriptedStandin(textResponse(429, 'rate limited'))
+    const api = createClient({
+      baseUrl: BASE_URL,
+      fetch: standin.fetch,
+      retryPolicy: zeroDelay(1),
+    })
+    const error = await expectApiError(
+      api<{ ok: boolean }>('/auth/register', { method: 'POST', body: {} }),
+    )
+    expect(error.code).toBe('client.http.429')
+    expect(error.retryAfterMs).toBeUndefined()
+  })
+
   it('releases the discarded response body before retrying a retryable status', async () => {
     // A 429 (or any retryable status) whose body is not wanted is
     // retried from the headers alone -- but the unread response must

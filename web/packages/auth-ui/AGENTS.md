@@ -9,11 +9,13 @@ resumes its flow, the enterprise email-first entry, the passkey ceremony
 `SessionEndedScreen` placeholder. The package sits at the same
 auth-agnostic tier as `@speed/ui-kit` and `@speed/layout-kit`: it depends
 on nothing auth- or routing-shaped beyond auth-core's session and hooks,
-and it never decides what happens after a sign-in. There is no
-registration form -- an account is created inside a login flow's
-account-resolution step (or by invite, or by an administrator), so a
-"registration" is a login flow's outcome this package presents an entry
-for, not a form it ships.
+and it never decides what happens after a sign-in. It ships one
+registration form: `PasswordRegisterForm` opens an account through
+`session.register` and then signs in with the same credentials. Like
+every other component here it never touches HTTP directly, reads no
+storage and navigates nowhere; registration remains an account-opening
+the server performs, and a login flow can still open one as its
+account-resolution outcome where the deployment enables that.
 
 ## What this package is
 
@@ -83,13 +85,35 @@ for, not a form it ships.
   channel's first step.
 - **Headless logic lives in `@speed/auth-core`.** `startFlow`,
   `answerFlow`, `startAuthenticatedFlow`, `readFlow`, `abandonFlow`,
-  `listMethods`, `discoverSso`, `logout`, `refresh` -- the session
-  contract this family renders -- are auth-core's, along with the flow
-  response and discovery models (`AuthnFlowState`, `AuthnStep`,
+  `register`, `listMethods`, `discoverSso`, `logout`, `refresh` -- the
+  session contract this family renders -- are auth-core's, along with the
+  flow response and discovery models (`AuthnFlowState`, `AuthnStep`,
   `AuthnField`, `AuthnMethodList`, `AuthnMethodDescriptor`,
-  `AuthnSsoProvider`, ...) it re-exports from the generated surface. If an
-  operation does not exist on the session, the right home for it is
-  auth-core's contract, not a fetch in this package.
+  `AuthnSsoProvider`, `AuthnLoginRegistration`, ...) it re-exports from
+  the generated surface. If an operation does not exist on the session,
+  the right home for it is auth-core's contract, not a fetch in this
+  package.
+- **Registration is a one-request account opening followed by a login.**
+  `PasswordRegisterForm` calls `session.register` (which establishes no
+  session and writes no credential), then drives the ordinary
+  `method: 'password'` flow with the same credentials. The register call
+  reports no callback: only a settled auto-login fires `onSignedIn` once.
+  A refused auto-login is not a registration failure -- the account
+  exists -- so it renders the account-created notice, keeps the username
+  and offers a retry of the login alone; a host that supplies
+  `onSignInRequired` takes the username and shows its own sign-in
+  surface. A settled auto-login, the first or the retry, replaces the
+  fields and both notices with the signed-in line, so a mounted surface
+  never shows "please sign in" over an authenticated session. The
+  confirmation field is compared in the form and never travels. A taken
+  username is the username field's error; the other mapped refusals
+  (closed signup, throttle, unavailable) render their register-section
+  text in one banner, and every other code -- a 400 included -- through
+  the family's error-code banner. A 429 carrying `Retry-After` holds
+  the submit for the stated wait (the ApiError shape is read
+  structurally; this package does not import `@speed/api-client`) and
+  re-enables it when the wait elapses; a 429 without the header leaves
+  the submit available at once.
 - **Every built-in string is bilingual and bundled.** All text renders
   from the `auth-ui` namespace (`AUTH_UI_NAMESPACE`, one `zh-CN.json` and
   one `en-US.json` under `src/locales/`, identical leaf key sets),
@@ -171,8 +195,9 @@ for, not a form it ships.
 Everything in `src/index.ts` is public: `SignInScreen` (with
 `SignInScreenProps`, `SignInContext`, `SignInChannel`, `SignInMode`,
 `SignInGroup`, `SignInScreenSlots`, `SignInBeforeStart`, `SignInStartContext`
-and `SocialSignInOptions`), the two channel
-components (`PasswordSignInForm`, `SMSSignInForm`), the social pair
+and `SocialSignInOptions`), the channel
+components (`PasswordSignInForm`, `PasswordRegisterForm`,
+`SMSSignInForm`), the social pair
 (`SocialSignInSection` with `SocialProvider` -- a method-name `string`,
 not a closed set -- and `SocialProviderConfig`, `SocialCallbackHandler`),
 `SignOutButton`, `SignOutMenuItem`, `SessionEndedScreen`,
@@ -216,10 +241,11 @@ callback route). Every component test asserts axe
 ## Known limitations
 
 Recorded, with the current disposition, in the README's Known limitations
-and Deferrals sections. The load-bearing ones for a contributor: a
-registration is a login flow's outcome the surface presents an entry for,
-not a form here; the authenticated-purpose surfaces (binding, step-up,
-factor enrollment) live in `@speed/account-ui`; the login channels are the
-deployment's, read from the discovery document, so the family renders
-exactly the methods the running deployment enables; and session state does
-not survive a page load (auth-core's limit, inherited).
+and Deferrals sections. The load-bearing ones for a contributor: the
+password registration form opens an account but establishes no session
+itself, so the viewer is signed in only if the auto-login succeeds; the
+authenticated-purpose surfaces (binding, step-up, factor enrollment) live
+in `@speed/account-ui`; the login channels are the deployment's, read
+from the discovery document, so the family renders exactly the methods
+the running deployment enables; and session state does not survive a page
+load (auth-core's limit, inherited).

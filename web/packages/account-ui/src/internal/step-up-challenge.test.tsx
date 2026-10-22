@@ -274,6 +274,7 @@ function refusingStartSession(
       AUTHENTICATED_SNAPSHOT.state === 'authenticated',
     listMethods: unused,
     discoverSso: unused,
+    register: unused,
     startFlow: unused,
     startAuthenticatedFlow: () => Promise.reject(refusal),
     answerFlow: unused,

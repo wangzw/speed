@@ -54,6 +54,7 @@ function session(
     readFlow: () => Promise.resolve(null),
     listMethods: unused,
     discoverSso: unused,
+    register: unused,
     startFlow: unused,
     logout: unused,
     restore: unused,

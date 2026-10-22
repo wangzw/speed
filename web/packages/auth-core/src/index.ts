@@ -5,9 +5,9 @@
  *
  * createAuthSession wires the generated flows (login start / answer /
  * current / abandon, the authenticated-purpose start for link, step-up
- * and enroll, the methods listing, the email-domain SSO discovery, the
- * session read that restores a page load and the logout that ends it)
- * into one observable session. The session is delivered as a cookie:
+ * and enroll, the anonymous registration operation, the methods listing,
+ * the email-domain SSO discovery, the session read that restores a page
+ * load and the logout that ends it) into one observable session. The session is delivered as a cookie:
  * the login flow is started with `delivery: 'session'`, so a completion
  * answers `{state: 'authenticated', session: {id, expires_at}}` and the
  * server sets its httpOnly cookie on the same response, which the
@@ -118,6 +118,8 @@ export type {
   AuthnFlowState,
   AuthnIdentifier,
   AuthnLink,
+  AuthnLoginRegisterBody,
+  AuthnLoginRegistration,
   AuthnMethodDescriptor,
   AuthnMethodList,
   AuthnPrincipal,

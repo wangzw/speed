@@ -1,9 +1,10 @@
 /**
  * The browser session state machine: createAuthSession wires the
  * generated authn flow surface of @speed/api-sdk (the login / link /
- * step-up / enroll flow operations, the methods listing, the session
- * read that restores a page load, logout, and the token endpoint a
- * token-delivered refresh uses) into one observable session.
+ * step-up / enroll flow operations, the anonymous registration
+ * operation, the methods listing, the session read that restores a page
+ * load, logout, and the token endpoint a token-delivered refresh uses)
+ * into one observable session.
  *
  * The session is delivered as a cookie. The login flow is started with
  * `delivery: 'session'`, so a completion answers `{state:
@@ -154,6 +155,7 @@ import {
   authnLoginAnswer,
   authnLoginCurrent,
   authnLoginMethods,
+  authnLoginRegister,
   authnLoginStart,
   authnLoginStartAuthenticated,
   authnProfileGet,
@@ -170,6 +172,8 @@ import type {
   AuthnLoginField,
   AuthnLoginFlow,
   AuthnLoginMethods,
+  AuthnLoginRegisterBody,
+  AuthnLoginRegistration,
   AuthnLoginSession,
   AuthnLoginStartAuthenticatedBody,
   AuthnLoginStartBody,
@@ -183,6 +187,8 @@ import type {
   AuthnSsoProvider as AuthnSsoProviderModel,
   FeatureBoardDocument,
 } from '@speed/api-sdk'
+
+export type { AuthnLoginRegisterBody, AuthnLoginRegistration } from '@speed/api-sdk'
 
 /** The permission domain a host-attached permission set belongs to.
  * 'tenant' names the permissions the principal holds inside the tenant
@@ -363,6 +369,20 @@ export interface AuthSession {
    * ApiError on failure, or a `client.protocol` error if the 2xx body is
    * not the documented shape. */
   discoverSso(email: string): Promise<AuthnSsoProvider[]>
+  /** Opens an account with a username, an email address and a password
+   * (POST /api/v1/auth/register). Registration is not a login: it
+   * establishes no session, writes no credential and no storage, and
+   * leaves the snapshot, the permission sets and the feature state
+   * untouched. The answer is the generated registration model (`state:
+   * 'registered'`, the new `account_id`, and the email address awaiting
+   * verification); a 2xx that is not that shape rejects with
+   * `client.protocol` before anything happens. A refusal (a taken
+   * username, closed signup, an exhausted budget, an unavailable
+   * dependency, a password the policy rejects) rejects the raw ApiError.
+   * The session that follows is opened by the ordinary login flow. */
+  register(
+    request: AuthnLoginRegisterBody,
+  ): Promise<AuthnLoginRegistration>
   /** Starts a `purpose: 'login'` flow and returns its first step. The
    * flow is always started as a cookie-delivered session, whatever
    * `delivery` the request carries, so this method never yields a token
@@ -1049,6 +1069,41 @@ function parseSsoProviders(body: unknown): AuthnSsoProviderModel[] {
   })
 }
 
+/** Validates the POST /api/v1/auth/register body into the generated
+ * registration model. A general-purpose self-registration always answers
+ * the same outcome -- the literal `state: 'registered'`, the account it
+ * opened, and the email address awaiting verification -- so anything
+ * else is a contract violation, never a successful registration: the
+ * account was not verifiably opened, and a caller must not proceed to a
+ * login as if it had been. */
+function parseRegistration(body: unknown): AuthnLoginRegistration {
+  const rec = asObject(body, 'registration 2xx carries no body document')
+  if (rec.state !== 'registered') {
+    throw protocolViolation('registration 2xx carries no registered state')
+  }
+  const verification = asObject(
+    rec.verification,
+    'registration carries no verification document',
+  )
+  if (verification.state !== 'pending') {
+    throw protocolViolation('registration verification is not pending')
+  }
+  return {
+    state: 'registered',
+    account_id: requireString(
+      rec.account_id,
+      'registration carries no account_id string',
+    ),
+    verification: {
+      state: 'pending',
+      email: requireString(
+        verification.email,
+        'registration verification carries no email string',
+      ),
+    },
+  }
+}
+
 /** The permission-set shape that carries nothing: every anonymous
  * snapshot and every login transition uses it. */
 const NO_PERMISSION_SETS: AuthPermissionSets = {
@@ -1478,6 +1533,15 @@ export function createAuthSession(store?: AccessTokenStore): AuthSession {
 
     async discoverSso(email: string): Promise<AuthnSsoProviderModel[]> {
       return parseSsoProviders(await authnSsoDiscover({ email }))
+    },
+
+    async register(
+      request: AuthnLoginRegisterBody,
+    ): Promise<AuthnLoginRegistration> {
+      // A one-request account opening: parsed and handed back, changing
+      // nothing. No snapshot write, no store write, no notify -- the
+      // session still belongs to whoever it belonged to before.
+      return parseRegistration(await authnLoginRegister(request))
     },
 
     async startFlow(request: AuthnLoginStartBody): Promise<AuthnFlowState> {

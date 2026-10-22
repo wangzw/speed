@@ -47,6 +47,23 @@ describe('ApiError', () => {
     expect(error.attempts).toBe(1)
   })
 
+  it('carries the Retry-After wait, and leaves it undefined without one', () => {
+    const throttled = new ApiError({
+      status: 429,
+      code: 'authn.throttled',
+      retryAfterMs: 3000,
+      attempts: 1,
+    })
+    expect(throttled.retryAfterMs).toBe(3000)
+
+    const unstated = new ApiError({
+      status: 429,
+      code: 'authn.throttled',
+      attempts: 1,
+    })
+    expect(unstated.retryAfterMs).toBeUndefined()
+  })
+
   it('marks exactly HTTP 401 as auth', () => {
     const refused = new ApiError({
       status: 401,

@@ -37,6 +37,10 @@ describe('entry surface', () => {
     expect(entry.isTenantAdmissionRefusal).toBeTypeOf('function')
   })
 
+  it('creates a session carrying the anonymous registration operation', () => {
+    expect(entry.createAuthSession().register).toBeTypeOf('function')
+  })
+
   it('keeps the browser-credential driver off the main entry', () => {
     expect('runWebauthn' in entry).toBe(false)
     expect('webauthnStepOf' in entry).toBe(false)

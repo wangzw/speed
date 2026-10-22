@@ -132,6 +132,7 @@ export function createTestSession(
     // scope for a rendering suite, so every flow operation rejects.
     listMethods: () => Promise.resolve(FORM_METHODS),
     discoverSso: () => Promise.resolve([]),
+    register: rejecting,
     startFlow: rejecting,
     startAuthenticatedFlow: rejecting,
     answerFlow: rejecting,

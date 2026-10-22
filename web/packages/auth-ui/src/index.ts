@@ -15,12 +15,16 @@
  * a session or touches the network directly. Helpers shared between the
  * components live in src/internal/ and are deliberately not exported.
  *
- * There is no separate registration form: an account is created inside a
- * login flow's account-resolution step (or by invite, or by an
- * administrator), so a "registration" is a login flow's outcome under the
- * deployment's signup setting, not a form of its own. SignInScreen
- * presents a "register" entry over the one flow where the deployment lets
- * a first login open an account; the account still opens server-side.
+ * Registration has two channels. An account can be opened inside a login
+ * flow's account-resolution step (or by invite, or by an administrator),
+ * and where the deployment enables password registration a dedicated
+ * form opens one with `session.register`. PasswordRegisterForm drives
+ * that single request and then signs in with the same credentials
+ * through the ordinary password flow; the account always opens
+ * server-side and the form neither establishes a session itself nor
+ * writes storage. SignInScreen presents a "register" entry over both
+ * channels, adding the password-registration channel when the discovery
+ * document enables it.
  *
  * The session surface sits beside the sign-in family: SignOutButton
  * drives session.logout() from a click (a failed logout renders the
@@ -41,6 +45,10 @@ export {
   PasswordSignInForm,
   type PasswordSignInFormProps,
 } from './PasswordSignInForm.js'
+export {
+  PasswordRegisterForm,
+  type PasswordRegisterFormProps,
+} from './PasswordRegisterForm.js'
 export {
   SMSSignInForm,
   type SMSSignInFormProps,

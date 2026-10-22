@@ -10,7 +10,7 @@
 - **静默的 401 单飞刷新。** 配了刷新钩子时，一次**带了凭据**（bearer 令牌，或凭据模式声明了 cookie 时会带的同源 cookie）的 401 触发一次刷新（并发的 401 共享同一次在飞刷新），随后原请求重试恰一次；凭据为空的 401 不经刷新路径，原样抛出。
 - **仅幂等、仅瞬时的重试。** `GET`／`HEAD`／`OPTIONS` 上的 429（honour `Retry-After`）、502／503／504、网络失败与超时按策略重试，其余一律不重试。
 - **每次交换一条超时，调用方取消原样透传。** `timeoutMs` 界定一次 HTTP 交换（一次发送加其正文读取）；调用方传入的 `AbortSignal` 取消时以原生 `AbortError` 拒绝，不包裹、不重试。
-- **`ApiError` 归一。** 后端以 RFC 9457 问题对象出行（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。
+- **`ApiError` 归一。** 后端以 RFC 9457 问题对象出行（机器可读的类在 `type`，取值 `urn:speed:<模块>:<码>`，正文不带 `code` 成员），本包从 `type` 推得模块码 `<模块>.<码>`（码段里的连字符归一为下划线，`urn:speed:objectstore:not-found` → `objectstore.not_found`），并保留后端给了的 `traceId`／`params`／`message`／`details`；带 `code` 成员的信封以 `code` 为准；两者都没有的应答取本包保留的 `client.*` 码。429 或 503 应答带 `Retry-After`（秒数或 HTTP 日期）时，解析出的等待毫秒数作为 `retryAfterMs` 落在 `ApiError` 上，解析失败或缺头时为 `undefined`。
 - **语言按尝试播报。** 宿主交来一个语言提供者，本包每次尝试读一次，接成 `accept-language`，是传输通道而非响应本地化开关。
 - **结构化上报。** 本包自身只在刷新失败时经 `Reporter` 报一条警告；终态失败以 `ApiError` 拒绝，由调用方决定是否上报。
 - **服务端事件流。** `createClient` 除请求函数外交出 `openEventStream`：经同一组接缝（fetch、令牌存储、租户与语言提供者及租户头名、凭据模式、静默刷新）打开一条 `text/event-stream` 长连接，把 SSE 帧解析成事件交给调用方。它与请求函数分开承载，因为它不是一次请求/响应交换——无每次交换的超时、无幂等重试预算，也不重连。
@@ -61,7 +61,7 @@ export interface EventStreamHandle { close(): void }
 
 export function createMemoryAccessTokenStore(): AccessTokenStore
 
-export class ApiError extends Error { /* status, code, traceId, params, details, attempts, auth */ }
+export class ApiError extends Error { /* status, code, traceId, params, details, retryAfterMs, attempts, auth */ }
 export const ERROR_CODE_NETWORK: 'client.network'
 export const ERROR_CODE_TIMEOUT: 'client.timeout'
 export const ERROR_CODE_PROTOCOL: 'client.protocol'
@@ -182,13 +182,13 @@ sequenceDiagram
 | 请求函数 | `RequestFn` | `createClient` 的产物；泛型于解析结果类型 |
 | 客户端选项 | `ClientOptions` | 基地址、fetch、可选的令牌存储、凭据模式、刷新钩子、超时、重试策略、上报端、语言提供者、租户提供者与租户头名 |
 | 单次请求选项 | `RequestOptions` | 方法、头、`omitAccessToken`、查询、正文（JSON 或二进制）、`responseType`、`requireJsonBody`、取消信号 |
-| 归一错误 | `ApiError` | `status`、`code`、`traceId`、`params`、`details`、`attempts`、`auth`（`status === 401`） |
+| 归一错误 | `ApiError` | `status`、`code`、`traceId`、`params`、`details`、`retryAfterMs`（429/503 的 `Retry-After` 等待，毫秒）、`attempts`、`auth`（`status === 401`） |
 | 令牌存储 | `AccessTokenStore` | 同步的 `get`/`set`，仅内存；`set(null)` 即登出 |
 | 重试策略 | `RetryPolicy` | `maxAttempts`、`initialDelayMs`、`maxDelayMs` |
 | 上报端 | `Reporter` | `error`/`warn` 通道，固定消息加 snake_case 属性 |
 | 信封（内部） | `Envelope` | 结构校验后的响应错误体：码由正文的 `code` 或问题对象 `type`（`urn:speed:<模块>:<码>`）推得，可选的 `traceId`/`params`/`message`/`details` |
 
-**`ApiError` 的 `auth` 恰在 HTTP 401 时为真**，不论信封说了什么；配了刷新钩子的宿主只在刷新失败或重试后的请求再被拒时才见到它。
+**`ApiError` 的 `auth` 恰在 HTTP 401 时为真**，不论信封说了什么；配了刷新钩子的宿主只在刷新失败或重试后的请求再被拒时才见到它。`retryAfterMs` 只在 429/503 且应答带可解析的 `Retry-After` 时有值，调用方据此把自己的重试控件按住到该时刻。
 
 ## 核心算法与流程
 

@@ -28,21 +28,28 @@
  * ./internal/labels), so the screen never crashes on a server-side method
  * it has never seen.
  *
- * `mode` is a pure presentational switch over the one sign-in flow: the
+ * `mode` is a pure presentational switch over the sign-in surface: the
  * component presents a "register" entry where the deployment allows a
- * first login to open an account (`discovery.signup.enabled` and at least
- * one visible method carries `opens_account`). In register mode every
- * channel on the screen -- the form strip, the social buttons, the
- * enterprise entry and the passkey entry -- narrows to the methods that
- * open an account, and the form strip selects the first of them; the
- * screen names itself "Create an account" and offers the way back as
- * "Already have an account? Sign in". In sign-in mode, where that entry is
- * offered and the screen has an SMS channel that opens an account, one
- * sentence below the channels says an unregistered phone number creates an
- * account, the same sentence for every number; the sentence names a phone
- * number, so it is absent where no such channel is on screen. Registration
- * is not a separate form -- it is a login flow's account-resolution outcome
- * under the deployment's signup setting.
+ * first login to open an account (`discovery.signup.enabled` and either
+ * `discovery.signup.password.enabled` or at least one rendered method
+ * carrying `opens_account`). In register mode every channel on the screen
+ * -- the form strip, the social buttons, the enterprise entry and the
+ * passkey entry -- narrows to the methods that open an account, and the
+ * form strip starts on its own default; a channel picked on the other
+ * side of the switch does not carry over. The screen names itself "Create
+ * an account" and offers the way back as "Already have an account? Sign
+ * in". When `discovery.signup.password.enabled` is true, register mode
+ * adds a synthetic "password registration" channel ahead of the narrowed
+ * ones and selects it by default: it is not a discovery method, renders
+ * `PasswordRegisterForm`, and reports its completion as
+ * `channel: 'password'` -- the password descriptor still carries no
+ * `opens_account`. In sign-in mode, where that entry is offered and the
+ * screen has an SMS channel that opens an account, one sentence below the
+ * channels says an unregistered phone number creates an account, the same
+ * sentence for every number; the sentence names a phone number, so it is
+ * absent where no such channel is on screen. Registration through a
+ * login flow is one channel class; the password registration form is the
+ * other.
  * A successful sign-in on a channel the screen drives itself fires
  * onSignedIn once, with the mode the screen was in and that channel's
  * method name (see SignInContext): a host can tell a registration from an
@@ -84,6 +91,7 @@ import type {
   AuthnMethodList,
 } from '@speed/auth-core'
 import { PasswordSignInForm } from './PasswordSignInForm.js'
+import { PasswordRegisterForm } from './PasswordRegisterForm.js'
 import { SMSSignInForm } from './SMSSignInForm.js'
 import { SocialSignInSection } from './SocialSignInSection.js'
 import type {
@@ -110,6 +118,11 @@ import type {
 
 /** The form-channel names the deprecated override recognises. */
 export type SignInChannel = 'password' | 'sms'
+
+/** The synthetic form channel register mode adds when password
+ * registration is enabled. It is not a discovery method: the password
+ * descriptor keeps its sign-in meaning (and no `opens_account`). */
+const PASSWORD_REGISTER_CHANNEL = 'password-register'
 
 export type { SignInBeforeStart, SignInMode, SignInStartContext }
 
@@ -267,6 +280,20 @@ export function SignInScreen({
   // mounted form, unmounted on switch -- answers through aria-labelledby.
   const channelId = useId()
   const [channel, setChannel] = useState<string | null>(null)
+  // The mode the viewer picked `channel` in. A selection belongs to the
+  // surface it was made on: the register side's default must win over a
+  // channel picked on the sign-in side (and the sign-in side keeps its
+  // own default when the viewer comes back).
+  const [channelMode, setChannelMode] = useState<SignInMode | null>(null)
+  const pickChannel = (name: string, forMode: SignInMode = activeMode): void => {
+    setChannel(name)
+    setChannelMode(forMode)
+  }
+  // The username a registration handed over after its auto-login was
+  // refused; the sign-in form it returns to starts with it.
+  const [prefillUsername, setPrefillUsername] = useState<string | undefined>(
+    undefined,
+  )
 
   if (state.status === 'loading') {
     return (
@@ -324,13 +351,27 @@ export function SignInScreen({
   ): readonly AuthnMethodDescriptor[] =>
     activeMode === 'register' ? methods.filter(opensAccount) : methods
 
-  const visibleForms = inMode(formMethods)
+  // Register mode's synthetic password-registration channel: not a
+  // discovery method, so it sits ahead of the narrowed form methods only
+  // while password registration is enabled.
+  const passwordRegister: AuthnMethodDescriptor | null =
+    activeMode === 'register' && doc.signup?.password?.enabled === true
+      ? {
+          name: PASSWORD_REGISTER_CHANNEL,
+          kind: 'form',
+          label: t('register.title'),
+        }
+      : null
+  const visibleForms =
+    passwordRegister === null
+      ? inMode(formMethods)
+      : [passwordRegister, ...inMode(formMethods)]
   const visibleRedirects = inMode(redirectMethods)
   const visibleEnterprise = inMode(enterpriseMethods)
   const visibleWebauthn = inMode(webauthnMethods)
   const formNames = visibleForms.map((method) => method.name)
   const selected =
-    channel !== null && formNames.includes(channel)
+    channel !== null && channelMode === activeMode && formNames.includes(channel)
       ? channel
       : activeMode === 'register'
         ? (formNames[0] ?? '')
@@ -361,10 +402,13 @@ export function SignInScreen({
     ...webauthnMethods,
   ]
 
-  // The register entry and the register-mode channel sets share one
-  // criterion: a method opens an account when it carries `opens_account`.
+  // The register entry appears where signup is on and either a rendered
+  // method opens an account or the deployment offers password
+  // registration, which brings its own form.
   const registerVisible =
-    doc.signup?.enabled === true && renderedMethods.some(opensAccount)
+    doc.signup?.enabled === true &&
+    (renderedMethods.some(opensAccount) ||
+      doc.signup.password.enabled === true)
 
   // The sign-in mode's account sentence names a phone number, so it is
   // offered only where signup is on and an SMS channel that opens an
@@ -405,11 +449,28 @@ export function SignInScreen({
 
   const renderForm = (method: AuthnMethodDescriptor): ReactNode => {
     switch (method.name) {
+      case PASSWORD_REGISTER_CHANNEL:
+        return (
+          <PasswordRegisterForm
+            session={session}
+            beforeStart={startGate}
+            onSignedIn={onSignedIn}
+            onSignInRequired={(username) => {
+              // The account exists; the viewer is handed to the sign-in
+              // form with the username the registration used. The
+              // selection belongs to the sign-in side this handoff picks.
+              setPrefillUsername(username)
+              pickChannel('password', 'sign-in')
+              requestMode('sign-in')
+            }}
+          />
+        )
       case 'password':
         return (
           <PasswordSignInForm
             session={session}
             beforeStart={startGate}
+            defaultUsername={prefillUsername}
             onSignedIn={() => completed('password')}
           />
         )
@@ -442,7 +503,7 @@ export function SignInScreen({
       {visibleForms.length > 1 ? (
         <Tabs
           value={selected}
-          onChange={(_event, value: string) => setChannel(value)}
+          onChange={(_event, value: string) => pickChannel(value)}
           variant="fullWidth"
         >
           {visibleForms.map((method) => (

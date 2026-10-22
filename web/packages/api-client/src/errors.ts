@@ -151,6 +151,14 @@ export interface ApiErrorInit {
   readonly params?: Readonly<Record<string, unknown>>
   /** Field-level validation failures, when the envelope carried them. */
   readonly details?: readonly FieldError[]
+  /**
+   * The delay a 429 or 503 response's `Retry-After` header asked for,
+   * in milliseconds (delta-seconds or an HTTP-date, `Date.now()` at
+   * parse time as the reference). Absent when the response carried no
+   * such header, carried a status other than 429/503, or carried a
+   * header that does not parse.
+   */
+  readonly retryAfterMs?: number
   /** HTTP attempts made for this request (1 = no retry happened). */
   readonly attempts: number
   /** The underlying error for network/timeout/protocol failures. */
@@ -185,7 +193,9 @@ function defaultMessage(code: string, status: number): string {
  * `client.` codes for API-layer failures. `auth` is true exactly for
  * HTTP 401, whatever the envelope said; hosts that configured a
  * refreshAccessToken hook see it only when refresh failed or the
- * retried request was refused again.
+ * retried request was refused again. `retryAfterMs` carries the wait a
+ * 429/503 response's `Retry-After` header asked for, so a caller can
+ * hold its retry control until then instead of guessing.
  */
 export class ApiError extends Error {
   readonly status: number
@@ -193,6 +203,7 @@ export class ApiError extends Error {
   readonly traceId: string | undefined
   readonly params: Readonly<Record<string, unknown>> | undefined
   readonly details: readonly FieldError[] | undefined
+  readonly retryAfterMs: number | undefined
   readonly attempts: number
   readonly auth: boolean
 
@@ -206,6 +217,7 @@ export class ApiError extends Error {
     this.traceId = init.traceId
     this.params = init.params
     this.details = init.details
+    this.retryAfterMs = init.retryAfterMs
     this.attempts = init.attempts
     this.auth = init.status === 401
   }

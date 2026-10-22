@@ -11,11 +11,13 @@ The session lifecycle of a browser client: `createAuthSession(store?)`
 in `src/session.ts` turns the generated authn operations of
 `@speed/api-sdk` into one observable state machine -- the login flow
 (start, answer, current, abandon), the authenticated-purpose start for
-`link`, `step-up` and `enroll`, the methods listing, the session read
-`restore()` makes, logout, and the token endpoint a token-delivered
-refresh uses. A login is a server-side flow the view drives step by step;
-the flow operations never change the session, and only `answerFlow`
-commits, and only when a step settles the session.
+`link`, `step-up` and `enroll`, the anonymous registration operation, the
+methods listing, the session read `restore()` makes, logout, and the
+token endpoint a token-delivered refresh uses. A login is a server-side
+flow the view drives step by step; the flow operations never change the
+session, and only `answerFlow` commits, and only when a step settles the
+session. `register` is not a login: it opens an account in one request
+and changes nothing in the session.
 
 The session is delivered as a cookie by default. `startFlow` is always
 started as a cookie session (`delivery: 'session'`), so a completion
@@ -76,9 +78,13 @@ it calls). Never import either of those from below this layer.
   *before* the first property access -- a native `TypeError` is not an
   ApiError and would escape the whole error contract. `parseFlowState`,
   `parseStep`, `parsePrincipal`, `parseSessionView`, `parseIssuedTokens`,
-  `parseMethodList`, `parseMethodDescriptor`, `parseSsoProviders` and
-  `parseFeatureDocument` are the guards; every one of their refusal
-  branches is pinned by a test.
+  `parseMethodList`, `parseMethodDescriptor`, `parseSsoProviders`,
+  `parseRegistration` and `parseFeatureDocument` are the guards; every one
+  of their refusal branches is pinned by a test. `parseRegistration`
+  additionally requires the literal outcomes the contract promises --
+  `state: 'registered'` and a `verification` whose state is `pending` --
+  so a body that reports anything else is never treated as an opened
+  account.
 - **The session never writes storage, and (on the cookie path) holds no
   credential at all.** The credential is the server's httpOnly session
   cookie, which the browser manages and scripts cannot read; this package
@@ -257,7 +263,8 @@ plus `AuthDomain` and `AuthPermissionSets`, the two names that
 parameterise the host-attached permission lists); the response models
 (`AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`,
 `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`,
-`AuthnSessionView`); the supersession rejection pair
+`AuthnSessionView`, `AuthnLoginRegisterBody`, `AuthnLoginRegistration`);
+the supersession rejection pair
 (`OperationSupersededError` and its `isOperationSuperseded` guard -- the
 one non-`ApiError` rejection of the session-establishing commits); the
 hooks (`attachSession`, `useAuthState`, `usePermission`, `useFeature`,
@@ -299,7 +306,8 @@ to be public.
   API and assert observable state (store contents, snapshots,
   notification order, request bodies).
 - The failure contract, the response guards (every refusal branch of
-  every parser), the generation guard (a failed completion leaves an
+  every parser, the registration's literal-outcome guard included), the
+  generation guard (a failed completion leaves an
   in-flight refresh intact; a logout cannot be resurrected by a refresh;
   a newer login is never overwritten; a pre-empted logout converges or
   stands aside), single-flight refresh, the identity-transition guard

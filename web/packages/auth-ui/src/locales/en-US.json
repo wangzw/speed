@@ -65,6 +65,25 @@
     "title": "or sign in with a passkey",
     "titleFirst": "Sign in with a passkey"
   },
+  "register": {
+    "title": "Password registration",
+    "description": "Create an account with a username, an email address and a password. You will verify your email address after signing in.",
+    "usernameLabel": "Username",
+    "emailLabel": "Email",
+    "passwordLabel": "Password",
+    "confirmPasswordLabel": "Confirm password",
+    "submit": "Create account",
+    "created": "Account created.",
+    "signInRequired": "Your account was created. Please sign in.",
+    "signedIn": "You are signed in.",
+    "retrySignIn": "Sign in again",
+    "usernameTaken": "That username is already taken. Choose another one.",
+    "signupClosed": "Registration is closed on this deployment. Ask an administrator for an account.",
+    "throttled": "Too many registration attempts. Please try again later.",
+    "retryAfter": "Too many registration attempts. Try again in {{seconds}} seconds.",
+    "unavailable": "Registration is temporarily unavailable. Please try again later.",
+    "passwordMismatch": "The two passwords do not match."
+  },
   "social": {
     "title": "or continue with a social account",
     "titleFirst": "Continue with a social account",

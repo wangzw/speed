@@ -265,6 +265,107 @@ describe('discover sso', () => {
   })
 })
 
+describe('register', () => {
+  const REGISTER = 'POST /api/v1/auth/register'
+  const registration = {
+    state: 'registered',
+    account_id: 'account-1',
+    verification: { email: 'ada@example.com', state: 'pending' },
+  } as const
+
+  it('opens an account in one request and changes nothing in the session', async () => {
+    const harness = makeHarness({
+      [REGISTER]: (call) => {
+        expect(call.options?.body).toEqual({
+          username: 'ada',
+          email: 'ada@example.com',
+          password: 's3cret-pass',
+        })
+        return registration
+      },
+    })
+    const log = snapshotLog(harness.session)
+    const result = await harness.session.register({
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 's3cret-pass',
+    })
+    expect(result).toEqual(registration)
+    expect(harness.calls).toHaveLength(1)
+    expect(harness.calls[0]?.path).toBe('/api/v1/auth/register')
+    // Registration is not a login: no snapshot transition, no token.
+    expect(log).toEqual([])
+    expect(harness.session.getSnapshot()).toEqual({
+      state: 'anonymous',
+      principal: null,
+      impersonating: false,
+      permissionSets: { tenant: null, system: null },
+      features: { state: 'none' },
+    })
+    expect(harness.store.get()).toBeNull()
+  })
+
+  it('leaves an authenticated session and its credential untouched', async () => {
+    const harness = makeHarness({
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+      [REGISTER]: () => registration,
+    })
+    await harness.session.startFlow({ method: 'password' })
+    await harness.session.answerFlow({ seq: 1, step: 'complete', input: {} })
+    const before = harness.session.getSnapshot()
+    const tokenBefore = harness.store.get()
+    const log = snapshotLog(harness.session)
+
+    await harness.session.register({
+      username: 'ada',
+      email: 'ada@example.com',
+      password: 's3cret-pass',
+    })
+
+    // Same snapshot object, same token, no notification: nothing about the
+    // session moved.
+    expect(harness.session.getSnapshot()).toBe(before)
+    expect(harness.store.get()).toBe(tokenBefore)
+    expect(log).toEqual([])
+  })
+
+  it.each([
+    ['an empty 2xx', undefined],
+    ['a non-object body', 'registered'],
+    ['a state other than registered', { ...registration, state: 'done' }],
+    ['no account id', { state: 'registered', verification: registration.verification }],
+    ['no verification document', { state: 'registered', account_id: 'account-1' }],
+    [
+      'a verification that is not pending',
+      {
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { email: 'ada@example.com', state: 'verified' },
+      },
+    ],
+    [
+      'no verification email',
+      {
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending' },
+      },
+    ],
+  ])('refuses %s as client.protocol', async (_label, body) => {
+    const harness = makeHarness({ [REGISTER]: () => body })
+    await expectProtocolViolation(
+      harness.session.register({
+        username: 'ada',
+        email: 'ada@example.com',
+        password: 's3cret-pass',
+      }),
+      harness,
+    )
+  })
+})
+
 describe('start flow', () => {
   it('returns the parsed first step and changes nothing', async () => {
     const harness = makeHarness({

@@ -95,6 +95,7 @@ function flowSession(): {
         mfa: { factors: [] },
       }),
     discoverSso: () => Promise.resolve([]),
+    register: () => Promise.reject(new Error('unused')),
     startFlow: () => Promise.reject(new Error('unused')),
     logout: () => Promise.reject(new Error('unused')),
     restore: () => Promise.resolve(false),

@@ -1668,6 +1668,225 @@ describe('SignInScreen', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+  it('offer the register entry where password registration is enabled, even with no account-opening method', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: true, signupPassword: true },
+        )}
+      />,
+    )
+    // The password descriptor carries no opens_account; the deployment's
+    // password-registration switch alone brings the entry.
+    expect(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    ).toBeInTheDocument()
+  })
+
+  it('select the synthetic password-registration channel by default in register mode', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            { name: 'sms', kind: 'form', opens_account: true },
+          ],
+          { signup: true, signupPassword: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    // The synthetic channel heads the strip and is selected; the password
+    // sign-in channel is not an account-opening method and is narrowed
+    // away, while the SMS channel stays.
+    expect(
+      screen.getByRole('tab', { name: zhCN.register.title }),
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(
+      screen.queryByRole('tab', { name: zhCN.passwordSignIn.title }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
+    ).toBeInTheDocument()
+    // The password-registration form renders its own fields, never the
+    // sign-in form's.
+    expect(
+      screen.getByLabelText(zhCN.register.usernameLabel),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).not.toBeInTheDocument()
+  })
+
+  it('start register mode on the password-registration channel after an SMS pick in sign-in mode', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [
+            { name: 'password', kind: 'form' },
+            { name: 'sms', kind: 'form', opens_account: true },
+          ],
+          { signup: true, signupPassword: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    // The sign-in side selects the SMS channel; that selection belongs to
+    // the sign-in surface, so switching to register lands on its own
+    // default -- the synthetic password-registration channel.
+    await user.click(screen.getByRole('tab', { name: zhCN.smsSignIn.title }))
+    expect(
+      screen.getByRole('tab', { name: zhCN.smsSignIn.title }),
+    ).toHaveAttribute('aria-selected', 'true')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    expect(
+      screen.getByRole('tab', { name: zhCN.register.title }),
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(
+      screen.getByLabelText(zhCN.register.usernameLabel),
+    ).toBeInTheDocument()
+  })
+
+  it('report the register mode and the password channel after a registration', async () => {
+    const harness = makeHarness({
+      'POST /api/v1/auth/register': () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: MAIL },
+      }),
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: true, signupPassword: true },
+        )}
+        onSignedIn={onSignedIn}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    await user.type(screen.getByLabelText(zhCN.register.usernameLabel), 'ada')
+    await user.type(screen.getByLabelText(zhCN.register.emailLabel), MAIL)
+    await user.type(screen.getByLabelText(zhCN.register.passwordLabel), PASS)
+    await user.type(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+      PASS,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.register.submit }),
+    )
+
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(onSignedIn).toHaveBeenCalledWith({
+      mode: 'register',
+      channel: 'password',
+    })
+    expect(harness.store.get()).toBe('access-1')
+  })
+
+  it('return to the sign-in form with the registered username after a refused auto-login', async () => {
+    const harness = makeHarness({
+      'POST /api/v1/auth/register': () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: MAIL },
+      }),
+      [LOGIN_START]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: true, signupPassword: true },
+        )}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    await user.type(screen.getByLabelText(zhCN.register.usernameLabel), 'ada')
+    await user.type(screen.getByLabelText(zhCN.register.emailLabel), MAIL)
+    await user.type(screen.getByLabelText(zhCN.register.passwordLabel), PASS)
+    await user.type(
+      screen.getByLabelText(zhCN.register.confirmPasswordLabel),
+      PASS,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.register.submit }),
+    )
+
+    // The account exists; the screen hands the viewer to the sign-in form
+    // with the username the registration used.
+    const identifier = await screen.findByLabelText(
+      zhCN.passwordSignIn.identifierLabel,
+    )
+    expect(identifier).toHaveValue('ada')
+    expect(
+      screen.queryByRole('heading', { name: zhCN.mode.registerTitle }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keep the register entry hidden when password registration and account-opening methods are both off', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: true, signupPassword: false },
+        )}
+      />,
+    )
+    // The password descriptor carries no opens_account, so there is no
+    // channel that could open an account and no entry.
+    expect(
+      screen.queryByRole('button', { name: zhCN.mode.registerEntry }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keep the register entry hidden when signup itself is closed', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }],
+          { signup: false, signupPassword: true },
+        )}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: zhCN.mode.registerEntry }),
+    ).not.toBeInTheDocument()
+  })
+
   it('keep an enterprise provider disabled while an async start gate is pending', async () => {
     const harness = makeHarness({
       [SSO_DISCOVER]: () =>

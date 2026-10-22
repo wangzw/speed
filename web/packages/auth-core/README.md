@@ -5,9 +5,9 @@ generated authn flow surface of `@speed/api-sdk`, carried by the
 server's session cookie. `createAuthSession` wires the generated
 operations -- the login flow (start, answer, current, abandon), the
 authenticated-purpose start for `link`, `step-up` and `enroll`, the
-methods listing, the session read a reload restores from, logout, and
-the token endpoint a token-delivered refresh uses -- to one observable
-session.
+anonymous registration operation, the methods listing, the session read a
+reload restores from, logout, and the token endpoint a token-delivered
+refresh uses -- to one observable session.
 
 The session is delivered as a cookie. The login flow is started with
 `delivery: 'session'`, so a completion answers `{state: 'authenticated',
@@ -45,7 +45,7 @@ guards".
 
 | File | Exports |
 |---|---|
-| `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `OperationSupersededError`, `isOperationSuperseded` |
+| `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `AuthnLoginRegisterBody`, `AuthnLoginRegistration`, `OperationSupersededError`, `isOperationSuperseded` |
 | `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `useFeature(name)`, `useFeatureState()`, `featurePresence(state)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 | `step-up-gate.ts` | `useStepUpGate(onRetry, isShortfall?)`, `StepUpGate` |
@@ -131,6 +131,36 @@ one), and `link`/`enroll` completions leave the login state alone:
 // Enroll a second factor: start with purpose 'enroll', drive the steps.
 const enrollment = await session.startAuthenticatedFlow({ purpose: 'enroll' })
 ```
+
+## Anonymous registration
+
+Registration is not a login. `session.register` opens one account with a
+single `POST /api/v1/auth/register` request and answers the generated
+registration model: the literal `state: 'registered'`, the new
+`account_id`, and the email address awaiting verification. It
+establishes no session, writes no credential and no storage, and leaves
+the snapshot, the permission sets and the feature state untouched. A
+2xx that does not carry that shape rejects with `client.protocol`; a
+refusal (a taken username, closed signup, an exhausted budget, an
+unavailable dependency, a password the policy rejects) rejects the raw
+`ApiError`.
+
+```ts
+const registration = await session.register({
+  username: 'ada',
+  email: 'ada@example.com',
+  password: 's3cret-pass',
+})
+// registration.state === 'registered'
+// registration.verification.state === 'pending'
+
+// The account exists but nobody is signed in: the ordinary login flow
+// opens the session.
+const step = await session.startFlow({ method: 'password', purpose: 'login' })
+```
+
+The username is a login name; the email address is only the pending
+contact a verification proves after signing in.
 
 ## The token path
 
@@ -450,8 +480,9 @@ executed by the package suite (`src/usage-example.test.tsx`).
 The authn fragments declare their 2xx response schemas, so orval emits
 the response models. This package re-exports them --
 `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`,
-`AuthnPrincipal`, `AuthnMethodList` -- rather than hand-writing a
-parallel copy, and guards every body-carrying 2xx at runtime: the guard
+`AuthnPrincipal`, `AuthnMethodList`, `AuthnLoginRegisterBody`,
+`AuthnLoginRegistration` -- rather than hand-writing a parallel copy,
+and guards every body-carrying 2xx at runtime: the guard
 checks that the body is an object and that it carries the required
 fields, and refuses anything else as a `status: 200`, `code:
 client.protocol` ApiError. The same guard covers the feature document:

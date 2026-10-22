@@ -52,6 +52,7 @@ describe('auth-ui resources', () => {
       'mode',
       'passkey',
       'passwordSignIn',
+      'register',
       'sessionEnded',
       'signInFlow',
       'signOut',

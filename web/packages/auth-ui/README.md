@@ -25,11 +25,14 @@ the bilingual `auth-ui` namespace registered through `@speed/i18n`, and
 the form fields render through `ui-kit`'s `FormField`/`FormLayout`, the
 same discipline the other packages established.
 
-There is no registration form. An account has no signup endpoint of its
-own: it is created inside a login flow's account-resolution step (under the
-deployment's signup setting), or by an invitation, or by an administrator.
-A "registration" is therefore a login flow's outcome, not a form this
-package ships.
+Registration has two channels. An account can be opened inside a login
+flow's account-resolution step (under the deployment's signup setting), by
+an invitation, or by an administrator -- and where the deployment enables
+password registration, `PasswordRegisterForm` opens one with a single
+`session.register` request and then signs in with the same credentials
+through the ordinary password flow. The account always opens
+server-side; the form never establishes a session itself, reads no
+storage and navigates nowhere.
 
 ## What ships
 
@@ -37,6 +40,7 @@ package ships.
 |---|---|
 | `SignInScreen.tsx` | `SignInScreen`, `SignInScreenProps`, `SignInContext`, `SignInChannel`, `SignInMode`, `SignInGroup`, `SignInScreenSlots`, `SignInBeforeStart`, `SignInStartContext`, `SocialSignInOptions` |
 | `PasswordSignInForm.tsx` | `PasswordSignInForm`, `PasswordSignInFormProps` |
+| `PasswordRegisterForm.tsx` | `PasswordRegisterForm`, `PasswordRegisterFormProps` |
 | `SMSSignInForm.tsx` | `SMSSignInForm`, `SMSSignInFormProps` |
 | `SocialSignInSection.tsx` | `SocialSignInSection`, `SocialSignInSectionProps`, `SocialProvider`, `SocialProviderConfig` |
 | `SocialCallbackHandler.tsx` | `SocialCallbackHandler`, `SocialCallbackHandlerProps` |
@@ -251,12 +255,17 @@ hands their authorization URLs to the host and fires no `onSignedIn`. The
 page above (branding, the heading) is host content; the screen adds no
 heading of its own in sign-in mode, and in register mode it renders the
 mode's own title ("Create an account"). `mode` is a presentational switch
-over the one flow: a "register" entry appears where the deployment lets a
-first login open an account, but it runs the one sign-in flow -- the
-account opens server-side. Register mode narrows every channel on the
-screen -- the form strip, the social buttons, the enterprise entry and the
-passkey entry -- to the methods that carry `opens_account`, and the form
-strip selects the first of them; it states its title, offers the way back
+over the sign-in surface: a "register" entry appears where the deployment
+lets an account open (`signup.enabled` with either `signup.password.enabled`
+or a rendered method that carries `opens_account`). Register mode narrows
+every channel on the screen -- the form strip, the social buttons, the
+enterprise entry and the passkey entry -- to the methods that carry
+`opens_account`; where `signup.password.enabled` is true it also inserts a
+synthetic password-registration channel ahead of them and selects it by
+default, which renders `PasswordRegisterForm` and reports `channel:
+'password'` (the password descriptor still carries no `opens_account`).
+Without that channel the form strip selects the first narrowed method; the
+screen states its title, offers the way back
 as "Already have an account? Sign in", and its hint names the listed
 methods without conditioning on whether each one can create an account.
 No two buttons on the surface share an accessible name in either mode. In
@@ -371,6 +380,39 @@ refusal lands. Every other code renders through the whole-attempt banner.
 | `session` | `AuthSession` (required) | the session the password login drives |
 | `onSignedIn` | `() => void` | fired once after a password login commits |
 | `beforeStart` | `(context) => boolean \| Promise<boolean>` | gates the flow's start; a false answer starts nothing and shows no error |
+| `defaultUsername` | `string` | the identifier the form starts with, e.g. the username a registration used before its auto-login was refused |
+
+### PasswordRegisterForm
+
+Username, email, password and confirmation fields. A submit calls
+`session.register` once, then starts the ordinary `method: 'password'`
+flow with the same credentials; only a settled auto-login fires
+`onSignedIn({mode: 'register', channel: 'password'})`. A settled
+auto-login -- the first one or the retry -- puts the signed-in line in
+place of the registration fields and the account-created / sign-in
+notices, so a host that does not navigate never leaves a "please sign
+in" prompt over an authenticated session. The confirmation is compared
+in the form and never travels. A taken username
+(`authn.username_taken`) is the username field's message and focus;
+closed signup, a throttle and an unavailable dependency render their
+`register.*` text in one banner, and every other code -- a 400 with a
+malformed body included -- resolves through the shared banner's
+`errors.*` text instead of being recast as a password-policy refusal.
+A 429 carrying `Retry-After` disables the submit for the stated wait
+(the banner counts the seconds) and re-enables it on its own; a 429
+without the header keeps the submit available at once. A refused
+auto-login is not a registration failure: the account exists, so the form
+shows the account-created notice, keeps the username and retries only the
+login -- or reports the username through `onSignInRequired` for a host
+that shows its own sign-in surface. The heading above the form is host
+content.
+
+| Prop | Type | Notes |
+|---|---|---|
+| `session` | `AuthSession` (required) | the session that opens the account and signs in |
+| `onSignedIn` | `(context: SignInContext) => void` | fired once after the auto-login commits, with `{mode: 'register', channel: 'password'}` |
+| `onSignInRequired` | `(username: string) => void` | fired when the account opened but the auto-login was refused; the host moves the viewer to its own sign-in surface |
+| `beforeStart` | `(context) => boolean \| Promise<boolean>` | gates the registration's start (`{method: 'password', mode: 'register'}`); a false answer opens nothing and shows no error. The auto-login that follows is not gated again |
 
 ### SMSSignInForm
 
@@ -670,6 +712,7 @@ enforced by registration):
 | Section | Purpose |
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
+| `register.*` | the password registration form: title (also the synthetic channel's label), description, username/email/password/confirmation labels, submit, the account-created and account-created-sign-in notices, the signed-in line, the sign-in retry, the taken username, the closed/throttled/unavailable refusals, and the throttle wait |
 | `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the code step's own refusal, the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
 | `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt for a login and for a registration, the waiting/cancel/retry controls, and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |
@@ -812,13 +855,18 @@ namespace discipline over `src/` the same way it does in every package.
 
 ## Known limitations
 
-- **No registration form.** An account has no signup endpoint of its own
-  and is created inside a login flow's account-resolution step (or by an
-  invite, or by an administrator), so a "registration" is a login flow's
-  outcome under the deployment's signup setting. `SignInScreen` presents a
-  register entry over the one flow where the deployment lets a first login
-  open an account; a host that wants more composes it from the same
-  sign-in surface.
+- **The registration form opens an account but does not open a session.**
+  `PasswordRegisterForm` drives `session.register` and then the ordinary
+  password login; if that auto-login is refused the account still exists,
+  so the form never re-submits the registration. It shows the
+  account-created notice, keeps the username and offers a retry of the
+  login alone, or hands the username to a host that supplies
+  `onSignInRequired`. The form carries no password policy of its own: the
+  deployment's rule and its refusal text are the server's.
+- **Registration by a login flow and by invitation is host-side
+  elsewhere.** The form is one channel; the account-resolution outcome of
+  a login flow, the invitation surface and administrator-created accounts
+  are the other paths this package presents pieces of.
 - **Account binding, step-up and factor enrollment are not this
   package's.** This family drives the login purpose; the authenticated
   purposes (`link`, `step-up`, `enroll`) and their screens live in

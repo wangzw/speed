@@ -65,6 +65,25 @@
     "title": "或使用通行密钥登录",
     "titleFirst": "使用通行密钥登录"
   },
+  "register": {
+    "title": "口令注册",
+    "description": "用用户名、邮箱和口令创建账户。登录后再验证邮箱地址。",
+    "usernameLabel": "用户名",
+    "emailLabel": "邮箱",
+    "passwordLabel": "口令",
+    "confirmPasswordLabel": "确认口令",
+    "submit": "创建账户",
+    "created": "账户已创建。",
+    "signInRequired": "账户已创建，请登录。",
+    "signedIn": "已登录。",
+    "retrySignIn": "重新登录",
+    "usernameTaken": "该用户名已被占用，请换一个。",
+    "signupClosed": "本部署已关闭注册，请联系管理员获取账户。",
+    "throttled": "注册尝试次数过多，请稍后再试。",
+    "retryAfter": "注册尝试次数过多，请在 {{seconds}} 秒后重试。",
+    "unavailable": "注册服务暂时不可用，请稍后重试。",
+    "passwordMismatch": "两次输入的口令不一致。"
+  },
   "social": {
     "title": "或使用社交账号登录",
     "titleFirst": "使用社交账号登录",

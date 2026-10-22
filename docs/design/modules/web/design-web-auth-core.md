@@ -19,7 +19,7 @@
 - **不手写后端调用。** 每个请求都经 `@speed/api-sdk` 生成的操作，走单一 `bindRequestFn` 绑定；本包没有 `fetch`、没有以字符串写死的端点路径。
 - **不求值权限。** 会话只携带宿主附上的按域列表并施加存活规则；集合归属由 hook 与外壳决定，绝不在本包内求值。这些检查是用户体验层面的示能，不是安全边界——服务端授权。
 - **不把流程驱动成一幕。** 一次登录的步进由视图经本包的流程操作逐步驱动：要哪些字段、跳去哪、要不要第二因素由每一步的应答决定，本包不代视图决定渠道与步序。
-- **不把注册当登录。** 匿名注册是 `register` 的一次请求，交回 `AuthnRegisterResponse`；它不建立会话、不写任何凭据、不改快照，随后的登录仍是一条流程。
+- **不把注册当登录。** 匿名注册是 `register` 的一次请求，交回 `AuthnLoginRegistration`；它不建立会话、不写任何凭据、不改快照，随后的登录仍是一条流程。
 - **不在本表面做身份绑定承诺。** 绑定是流程（`POST /api/v1/auth/flows/authenticated` 目的 `link`），其终态是 `state: 'linked'`；本包把生成调用转发给视图，不把它当登录操作，也不改登录态。
 - **不登记第二因素、不做加强认证。** 因素登记是 `POST /api/v1/auth/flows/authenticated` 目的 `enroll`，加强认证是目的 `step-up`（[authn-mfa](../authn/design-authn-mfa.md)）；两者由消费视图经本包的流程操作驱动，本包不自己发起。
 - **不门控界面。** 本包持有特性态，交出读它的 hook 与 `featurePresence`；据它收窄路由、隐藏导航项与控件归宿主与 [route-kit](design-web-route-kit.md)。本包不认识任何特性名的含义，也不据特性态改变会话的任何其他部分。
@@ -60,7 +60,7 @@ export interface AuthSession {
   getSnapshot(): AuthSnapshot
   subscribe(listener: AuthSessionListener): () => void
   listMethods(): Promise<AuthnMethodList>
-  register(request: AuthnRegisterBody): Promise<AuthnRegisterResponse>
+  register(request: AuthnLoginRegisterBody): Promise<AuthnLoginRegistration>
   discoverSso(email: string): Promise<AuthnSsoProvider[]>
   startFlow(request: AuthnLoginStartBody): Promise<AuthnFlowState>
   startAuthenticatedFlow(request: AuthnLoginStartAuthenticatedBody): Promise<AuthnFlowState>
@@ -81,7 +81,7 @@ export interface AuthSession {
 - **`beginIdentityTransition()` 覆盖凭据被替换的那段短窗口。** 唯一会用到它的写入是开始冒充：服务端轮换会话 cookie，而会话本身继续。窗口内已发出的读带的是被换下的旧 cookie，可被 401 拒；传输层的静默腿随即用旧 cookie 跑 `restore()`，读到「无人登录」——会话并未结束，本地快照却翻成匿名，宿主看到一次假的登出。宿主在发出该写入之前调用 `beginIdentityTransition()`，在新身份落定之后（写入未落地时则立即）调用其返回的释放。窗口打开期间发出、或发出之后窗口才打开的恢复（无论应答何时落定）的无人登录应答被丢弃：`restore()` resolve `false`、快照不动，被拒的请求保留自己的 401；放行之后的下一次读落定真实状态——窗口内真的过期的会话也由那次读落定，不由带旧凭据的读落定。已认证的应答从不会被丢弃，故宿主在新凭据下的重读可在窗口内照常提交。释放按次幂等、窗口按次数计数：重叠的窗口要等每个释放都调用过才合上。**该守卫与身份无关，本包仍不知晓冒充的开始与结束**；它也不是世代守卫——轮换不是新会话，`restore()` 依旧不抬升世代。
 - **`refresh()` 用被持有的刷新令牌换新令牌对（令牌会话）。** 走 `POST /api/v1/auth/token` 的 `grant_type = refresh_token`，凭据为空（[api-client](design-web-api-client.md) 的凭据为空一档，即 `speedRequestCredentialless`）；其令牌的落地与世代守卫见「单飞刷新」与「世代守卫」。cookie 会话不持刷新令牌，`refresh()` 不发请求即 resolve `false`；其静默腿是 `restore()`。
 - **`listMethods` 读部署在场的登录方式发现文档。** 它转发 `GET /api/v1/auth/methods` 并解析成方法描述符文档（每个方法自报渲染类别、线协议、品牌标签、首步字段、是否可开户与绑定提供方，连同注册开关 `signup.enabled` 与 `signup.password.enabled` 以及部署级因素种类），随部署的 `authn.login.disabled-methods` 设置与在场模块而变，前端不写死；消费视图用它渲染渠道（[ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)、[ADR-authn-login-method-discovery-2026-10-16](../../../adr/adr-authn-login-method-discovery-2026-10-16.md)）。
-- **`register` 建号，不开启会话。** 它转发匿名注册操作 `POST /api/v1/auth/register`，请求体要求用户名、邮箱与口令，另可带显示名、语言与时区；交回 `AuthnRegisterResponse`（`state: 'registered'`、账户标识与待验证联系方式 `{state: 'pending', email}`）。快照、权限表与特性态都不变——注册不是登录，会话仍由随后的 `startFlow`／`answerFlow` 建立。自动登录被拒时账户已经建成，调用方退回登录表单。
+- **`register` 建号，不开启会话。** 它转发匿名注册操作 `POST /api/v1/auth/register`，请求体要求用户名、邮箱与口令，另可带显示名、语言与时区；交回 `AuthnLoginRegistration`（`state: 'registered'`、账户标识与待验证联系方式 `{state: 'pending', email}`）。快照、权限表与特性态都不变——注册不是登录，会话仍由随后的 `startFlow`／`answerFlow` 建立。自动登录被拒时账户已经建成，调用方退回登录表单。
 - **`discoverSso` 读一个邮箱域映射的企业提供方。** 它转发 `POST /api/v1/auth/sso/discover`，交回 `{id, name, protocol}` 列表；应答恒同形同长，无匹配时为空列表，故「无匹配」是一次成功的空读而非错误。企业提供方清单不多进发现文档：它按域发现，不泄露账户存在性（[authn-sso](../authn/design-authn-sso.md)）。
 - **`logout` 结束会话。** 它调 `POST /api/v1/auth/logout`（服务端撤销请求带来的会话并清 cookie），清本地令牌与主体、抬升世代、转匿名。
 - **`setPermissionSet` 存防御性副本。** 传入的数组事后被改动不影响快照；`null` 清空该域。列表由宿主从它自己的来源取得——`GET /api/v1/auth/me` 的主体不带权限；宿主应在每次登录与主体变更后重取并重附，而不是复用更早提交下取的列表。**平台发布调用方自身持有的权限读**（`GET /api/v1/authz/me/permissions`，[design-authz](../design-authz.md)）：应答按平台域与请求解析到的租户域各交一份权限名，宿主按登录、主体变更与当前租户变更重取（租户域那一份是在请求解析到的租户里持有的集合），并分别以 `setPermissionSet('system', …)` 与 `setPermissionSet('tenant', …)` 附上；本包的接缝不变。
@@ -89,7 +89,7 @@ export interface AuthSession {
 
 ### 生成的响应模型与解析守卫
 
-authn 片段在契约里宣告各自的 2xx 响应 schema，orval 因而把它们的返回类型生成为具名模型：流程态（`AuthnLoginFlow`、`AuthnLoginToken`、`AuthnLoginActionResult`）、一步（`AuthnLoginStep`）、`AuthnLoginField`、`AuthnLoginFactor`、`AuthnPrincipal`、`AuthnLoginMethods`（连同每种方法的描述符、注册开关 `signup.enabled` 与 `signup.password.enabled` 与部署级因素种类）、注册操作 `register` 的请求体 `AuthnRegisterBody` 与应答 `AuthnRegisterResponse`，以及 `AuthnSsoProvider`。本包从生成面取用这些模型，并在其上为每个「2xx 必须携带文档」的操作配一个运行时解析守卫：守卫先校验体是对象、再校验其必需字段，任一项不过即拒为 `status: 200`、`code: client.protocol` 的 `ApiError`——一个契约违背的 2xx 不是成功。
+authn 片段在契约里宣告各自的 2xx 响应 schema，orval 因而把它们的返回类型生成为具名模型：流程态（`AuthnLoginFlow`、`AuthnLoginToken`、`AuthnLoginActionResult`）、一步（`AuthnLoginStep`）、`AuthnLoginField`、`AuthnLoginFactor`、`AuthnPrincipal`、`AuthnLoginMethods`（连同每种方法的描述符、注册开关 `signup.enabled` 与 `signup.password.enabled` 与部署级因素种类）、注册操作 `register` 的请求体 `AuthnLoginRegisterBody` 与应答 `AuthnLoginRegistration`，以及 `AuthnSsoProvider`。本包从生成面取用这些模型，并在其上为每个「2xx 必须携带文档」的操作配一个运行时解析守卫：守卫先校验体是对象、再校验其必需字段，任一项不过即拒为 `status: 200`、`code: client.protocol` 的 `ApiError`——一个契约违背的 2xx 不是成功。
 
 本包把生成的 `AuthnLoginStep` 按 `kind` 收窄成一个判别联合 `AuthnStep`，使视图只读它自己那一步携带的字段；`AuthnFlowState` 把生成的流程应答按 `state` 收窄成开放流程（带 `seq` 与 `next`）与三类完成（`authenticated`、`elevated`、`linked`／`enrolled`）：
 
@@ -245,7 +245,7 @@ export function evictTenantQueries(
 
 **`evictTenantQueries` 逐出离任租户的整棵子树**：按 `tenantQueryKey(tenantId)` 得到的键前缀移除。调用时机是宿主完成一次租户切换之后，用切换之前读到的离任租户 id——不用新租户 id，它什么都不命名。
 
-**对外接口面。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`AuthnMethodDescriptor`、`AuthnSsoProvider`、`AuthnRegisterResponse`、`TenantProvider`、`FeatureState`、`featurePresence`、`StepUpState`、`StepUpPhase`、`AuthnFlowAnswer`、`useStepUpGate`、`StepUpGate`、`isTenantAdmissionRefusal` 与各 hook（`attachSession`、`useAuthState`、`usePermission`、`useCurrentTenant`、`useFeature`、`useFeatureState`、`useStepUp`）的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是主入口的宿主可见面。`./webauthn` 子路径的 `runWebauthn`、`webauthnStepOf`、`WebauthnError`、`WebauthnStep`、`WebauthnFailure` 是同一层的另一处宿主可见面，只经该子路径取用。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`AuthSnapshot` 新增必选字段 `impersonating`：宿主构造的快照字面量与会话替身必须补上它，按本条是不兼容变更。`AuthSession` 新增方法 `beginIdentityTransition(): () => void`：宿主自行构造的会话替身必须补上它，同样是源码不兼容变更；不打开窗口的宿主返回一个空释放即可。`AuthSession` 还新增 `register(request: AuthnRegisterBody): Promise<AuthnRegisterResponse>`，生成模型 `AuthnRegisterResponse` 随本包再导出：宿主自行构造的会话替身必须补上 `register`，同属源码不兼容变更；注册不改变会话快照，替身转发给真实会话或返回一次成功应答即可。
+**对外接口面。** `createAuthSession`、`AuthSession`、`AuthSnapshot`、`AuthSessionListener`、`AuthDomain`、`AuthPermissionSets`、`OperationSupersededError`、`isOperationSuperseded`、`AuthnFlowState`、`AuthnStep`、`AuthnPrincipal`、`AuthnMethodList`、`AuthnMethodDescriptor`、`AuthnSsoProvider`、`AuthnLoginRegistration`、`TenantProvider`、`FeatureState`、`featurePresence`、`StepUpState`、`StepUpPhase`、`AuthnFlowAnswer`、`useStepUpGate`、`StepUpGate`、`isTenantAdmissionRefusal` 与各 hook（`attachSession`、`useAuthState`、`usePermission`、`useCurrentTenant`、`useFeature`、`useFeatureState`、`useStepUp`）的名称与签名，以及本项的 `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries`，是主入口的宿主可见面。`./webauthn` 子路径的 `runWebauthn`、`webauthnStepOf`、`WebauthnError`、`WebauthnStep`、`WebauthnFailure` 是同一层的另一处宿主可见面，只经该子路径取用。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。`AuthSnapshot` 新增必选字段 `impersonating`：宿主构造的快照字面量与会话替身必须补上它，按本条是不兼容变更。`AuthSession` 新增方法 `beginIdentityTransition(): () => void`：宿主自行构造的会话替身必须补上它，同样是源码不兼容变更；不打开窗口的宿主返回一个空释放即可。`AuthSession` 还新增 `register(request: AuthnLoginRegisterBody): Promise<AuthnLoginRegistration>`，生成模型 `AuthnLoginRegistration` 随本包再导出：宿主自行构造的会话替身必须补上 `register`，同属源码不兼容变更；注册不改变会话快照，替身转发给真实会话或返回一次成功应答即可。
 
 ## 依赖
 
@@ -297,7 +297,7 @@ stateDiagram-v2
 | 一步 | `AuthnStep` | `next` 的判别联合：`challenge`／`redirect`／`factor`／`enroll`／`complete`／`webauthn` |
 | 主体 | `AuthnPrincipal` | 生成模型，逐字段取自 `GET /api/v1/auth/me` |
 | 发现文档 | `AuthnMethodList` | 生成模型：方法描述符数组，外加注册开关（`signup.enabled` 与 `signup.password.enabled`）与部署级因素种类 |
-| 注册应答 | `AuthnRegisterResponse` | 生成模型：`state: 'registered'`、账户标识与待验证联系方式 `{state: 'pending', email}`；注册不改变会话快照 |
+| 注册应答 | `AuthnLoginRegistration` | 生成模型：`state: 'registered'`、账户标识与待验证联系方式 `{state: 'pending', email}`；注册不改变会话快照 |
 | 企业提供方 | `AuthnSsoProvider` | 生成模型：`id`、`name`、`protocol`（oidc 或 saml） |
 | 已校验的签发应答 | `IssuedTokens`（内部） | `accessToken`、`refreshToken`（未铸造时为 null）、`principal` |
 | 落败的竞态 | `OperationSupersededError` | 带当前（胜者）快照的拒绝 |
@@ -418,4 +418,4 @@ stateDiagram-v2
 | 泛型步进门控 | 已实现 | `web/packages/auth-core/src/step-up-gate.ts` `useStepUpGate` |
 | 租户准入拒绝判定 | 已实现 | `web/packages/auth-core/src/tenant-refusal.ts` `isTenantAdmissionRefusal` |
 | 通行密钥仪式驱动（`./webauthn` 子路径） | 已实现 | `web/packages/auth-core/src/webauthn.ts` `runWebauthn`、`webauthnStepOf`、`WebauthnError` |
-| 匿名注册操作 `register` 与 `AuthnRegisterResponse` 的解析守卫 | 未实现 | — |
+| 匿名注册操作 `register` 与 `AuthnLoginRegistration` 的解析守卫 | 已实现 | `web/packages/auth-core/src/session.ts` `AuthSession.register`、`parseRegistration`；`web/packages/auth-core/src/index.ts` 的 `AuthnLoginRegisterBody`、`AuthnLoginRegistration` 导出 |

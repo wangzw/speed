@@ -750,9 +750,24 @@ async function readEnvelope(
   return undefined
 }
 
+/** The wait a 429/503 response's Retry-After header asks for, in
+ * milliseconds; undefined on any other status, a missing header or an
+ * unparseable one. The value survives onto the ApiError a caller
+ * receives once retries are exhausted or were never eligible, so a
+ * surface can hold its retry control for exactly the server's ask. */
+function retryAfterOf(outcome: HttpOutcome): number | undefined {
+  if (outcome.status !== 429 && outcome.status !== 503) {
+    return undefined
+  }
+  return (
+    retryAfterDelayMs(outcome.response.headers.get('retry-after')) ?? undefined
+  )
+}
+
 /** The final ApiError for an HTTP failure from an envelope that was
  * already read: the envelope error when one is present,
- * client.http.<status> otherwise. */
+ * client.http.<status> otherwise. Both carry the response's
+ * Retry-After wait when it stated one. */
 function envelopeError(
   outcome: HttpOutcome,
   envelope: Envelope | undefined,
@@ -766,12 +781,14 @@ function envelopeError(
       message: envelope.message,
       params: envelope.params,
       details: envelope.details,
+      retryAfterMs: retryAfterOf(outcome),
       attempts,
     })
   }
   return new ApiError({
     status: outcome.status,
     code: httpErrorCode(outcome.status),
+    retryAfterMs: retryAfterOf(outcome),
     attempts,
   })
 }

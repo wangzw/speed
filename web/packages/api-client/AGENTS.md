@@ -62,8 +62,9 @@ this one may issue HTTP requests itself.
   `<module>.<code>`, each dash of the code part normalized to an
   underscore) -- plus its traceId/params/message/details whenever the
   backend sent them (`parseEnvelope` must never demand `traceId`, which
-  no backend sends); a body with neither a `code` nor a `urn:speed:`
-  `type` synthesizes a reserved `client.*` code (`client.network`,
+  no backend sends), and a 429/503 `Retry-After` header lands as
+  `retryAfterMs` on the ApiError; a body with neither a `code` nor a
+  `urn:speed:` `type` synthesizes a reserved `client.*` code (`client.network`,
   `client.timeout`, `client.protocol`, `client.html`,
   `client.http.<status>`). The
   reservation is a parse-time mechanism, not a convention: server codes

@@ -64,6 +64,12 @@ export interface PasswordSignInFormProps {
    * nothing and renders no error; only the first step is gated.
    */
   readonly beforeStart?: SignInBeforeStart
+  /**
+   * The identifier the form starts with. A host handing the viewer over
+   * after a registration whose auto-login was refused prefills the
+   * username the account was opened with.
+   */
+  readonly defaultUsername?: string
 }
 
 interface PasswordFields {
@@ -79,10 +85,11 @@ export function PasswordSignInForm({
   session,
   onSignedIn,
   beforeStart,
+  defaultUsername,
 }: PasswordSignInFormProps) {
   const { t } = useAuthUiTranslation()
   const form = useForm<PasswordFields>({
-    defaultValues: { identifier: '', password: '' },
+    defaultValues: { identifier: defaultUsername ?? '', password: '' },
   })
   const [errorCode, setErrorCode] = useState<string | null>(null)
   // Whether this form's own fields are the mounted surface: a refusal of a

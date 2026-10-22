@@ -108,6 +108,7 @@ export function createStepUpSession(
     readFlow: () => Promise.resolve(null),
     listMethods: () => Promise.resolve(METHODS),
     discoverSso: () => Promise.resolve([]),
+    register: unused,
     startFlow: unused,
     logout: unused,
     restore: unused,
