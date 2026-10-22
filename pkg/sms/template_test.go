@@ -72,9 +72,9 @@ func TestNewDeclarationRejectsAnInconsistentSet(t *testing.T) {
 			Bodies: map[string]string{"zh-CN": "your code is ${code"},
 		}}, "unclosed"},
 		{"a kind outside the closed set", map[string]TemplateSpec{tpl: {
-			Kind:  Kind("promo"),
+			Kind:   Kind("promo"),
 			Params: []string{"code"},
-			Codes: map[string]string{"zh-CN": "SMS_ZH"},
+			Codes:  map[string]string{"zh-CN": "SMS_ZH"},
 		}}, "promo"},
 	}
 	for _, c := range cases {
