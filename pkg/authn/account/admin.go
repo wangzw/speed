@@ -439,6 +439,12 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 // email address returns a verified self-registration to pending: the instant it
 // first reached verified is kept, and no pending contact is made up in place of
 // the address that was removed.
+//
+// An account that holds a password credential keeps at least one login name:
+// removing its last username or email address is authn.ErrIdentifierRequired,
+// since the password would then authenticate nothing. An account with no
+// password credential loses its last login name freely, and removing a phone
+// number never reaches this rule.
 func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, identifierID string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -457,7 +463,26 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 		if err = tx.Where("id = ? AND account_id = ?", identifierID, id.String()).Delete(&identifierRow{}).Error; err != nil {
 			return err
 		}
-		if authn.IdentifierKind(row.Kind) == authn.IdentifierEmail &&
+		kind := authn.IdentifierKind(row.Kind)
+		if kind == authn.IdentifierUsername || kind == authn.IdentifierEmail {
+			var hasPassword bool
+			if hasPassword, err = hasCredential(tx, id.String()); err != nil {
+				return err
+			}
+			if hasPassword {
+				var left []identifierRow
+				if err = tx.Where("account_id = ? AND kind IN ?", id.String(),
+					[]string{string(authn.IdentifierUsername), string(authn.IdentifierEmail)}).
+					Find(&left).Error; err != nil {
+					return err
+				}
+				if len(left) == 0 {
+					return fmt.Errorf("%w: removing the identifier would leave the account with no username or "+
+						"email address to log in with", authn.ErrIdentifierRequired)
+				}
+			}
+		}
+		if kind == authn.IdentifierEmail &&
 			(authn.Verification{Via: row.VerifiedVia}).Proves() &&
 			signupStateOf(account.SignupState) == authn.SignupVerified {
 			var left []identifierRow

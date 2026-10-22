@@ -46,18 +46,19 @@ func TestAnIdentifierThatIsNotTheCallersIsNotRemoved(t *testing.T) {
 }
 
 // TestRemovingAnIdentifierMapsTheAccountModulesAnswers holds each answer the
-// removal can give. The route does not check whether the identifier is the
-// account's last way to log in, and the account module's removal does not
-// answer that refusal: it belongs to unbinding an external identity, so the
-// route declares no 409 and an answer it does not declare becomes the defect
-// answer the entry point gives.
+// removal can give. The refusal to leave a password account with no login name
+// is a 409 login-identifier-required. The route declares 409, so a sentinel it
+// does not expect on this path but that maps to the same status, such as the
+// unbinding rule ErrLastLoginMethod, is answered as 409 conflict rather than
+// turned into the defect answer.
 func TestRemovingAnIdentifierMapsTheAccountModulesAnswers(t *testing.T) {
 	for _, c := range []struct {
 		err  error
 		code int
 		kind string
 	}{
-		{authn.ErrLastLoginMethod, http.StatusInternalServerError, ""},
+		{authn.ErrIdentifierRequired, http.StatusConflict, "login-identifier-required"},
+		{authn.ErrLastLoginMethod, http.StatusConflict, "conflict"},
 		{authn.ErrUnavailable, http.StatusServiceUnavailable, "unavailable"},
 		{errors.New("driver: down"), http.StatusServiceUnavailable, "unavailable"},
 	} {

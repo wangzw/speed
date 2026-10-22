@@ -3186,7 +3186,7 @@ export const useAuthnLoginVerifyIdentifier = <TError = Problem,
     }
 
 /**
- * Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity. The route does not check whether the identifier is the account's last way to sign in, so the last one can be removed; that rule belongs to unbinding an external identity. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.
+ * Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.
  * @summary Remove one of the caller's own identifiers
  */
 export const authnLoginRemoveIdentifier = (
@@ -3984,7 +3984,7 @@ export function useAuthnLoginMethods<TData = Awaited<ReturnType<typeof authnLogi
 
 
 /**
- * Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor a verified email is refused with 409 login-identifier-required.
+ * Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor an email address is refused with 409 login-identifier-required.
  * @summary Change the caller's password
  */
 export const authnLoginChangePassword = (
@@ -6157,7 +6157,7 @@ export function useAuthnAdminAccountsList<TData = Awaited<ReturnType<typeof auth
 
 
 /**
- * Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a service account signs in with a service secret and is not held to that. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.
+ * Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a user account that states a password additionally needs a username or email address, since a phone number is not a password login name and one without either is a 409 login-identifier-required. A service account signs in with a service secret and is not held to either rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.
  * @summary Create an account
  */
 export const authnAdminAccountsCreate = (
@@ -6557,7 +6557,7 @@ export const useAuthnAdminAccountsAddIdentifier = <TError = Problem | void,
     }
 
 /**
- * Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. Requires account.update.
+ * Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. A password account cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. Requires account.update.
  * @summary Remove an identifier from an account
  */
 export const authnAdminAccountsRemoveIdentifier = (
@@ -6750,7 +6750,7 @@ export const useAuthnAdminAccountsResetMFA = <TError = Problem | void,
     }
 
 /**
- * Sets a temporary password that the account must change at its next sign-in, then revokes every session of the account. The revocation runs after the password write, so its failure is logged and does not undo the reset. The password is never echoed, logged or audited. Requires account.update, a fresh local non-SMS multi-factor authentication and a seasoned factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
+ * Sets a temporary password that the account must change at its next sign-in, then revokes every session of the account. The revocation runs after the password write, so its failure is logged and does not undo the reset. The password is never echoed, logged or audited. An account with no username or email address has nothing to log in with, so setting a password is a 409 login-identifier-required. Requires account.update, a fresh local non-SMS multi-factor authentication and a seasoned factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
  * @summary Reset an account's password
  */
 export const authnAdminAccountsResetPassword = (

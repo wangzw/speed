@@ -1635,7 +1635,7 @@
     },
     "/auth/identifiers/{id}": {
       "delete": {
-        "description": "Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity. The route does not check whether the identifier is the account's last way to sign in, so the last one can be removed; that rule belongs to unbinding an external identity. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.",
+        "description": "Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.",
         "operationId": "authn.login.removeIdentifier",
         "parameters": [
           {
@@ -1689,6 +1689,16 @@
               }
             },
             "description": "The identity is impersonating, which the route refuses"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The removal would leave a password account with no login name"
           },
           "429": {
             "content": {
@@ -1869,7 +1879,7 @@
     },
     "/auth/password": {
       "put": {
-        "description": "Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor a verified email is refused with 409 login-identifier-required.",
+        "description": "Changes the caller's password. The call requires the fresh authentication every change of what proves the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The current password may be empty for an account that signed up through a provider and holds no password; a wrong one is a 401 login-failed, and a new password outside the password module's policy is a 400 bad-request. On success the current session is rotated to a new token, the account's other sessions are revoked, and the answer is 204 with the new session cookie set. An account that has neither a username nor an email address is refused with 409 login-identifier-required.",
         "operationId": "authn.login.changePassword",
         "requestBody": {
           "content": {

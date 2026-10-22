@@ -126,6 +126,13 @@ does.
   write proves control. The verify route answers a missing record under the same
   login-failed code as a wrong code, so the two addresses stay indistinguishable
   there too. A lookup that fails is a 503, never "nobody holds it".
+- **Removing a login identifier is refused when it would strand a password
+  account.** `DELETE /auth/identifiers/:id` maps the account module's
+  `ErrIdentifierRequired` to 409 `login-identifier-required`: an account holding a
+  password credential keeps its last username or email address. An account with no
+  password credential may lose its last login name, and removing a phone number is
+  always allowed. The identifier is checked against the caller's own before the
+  write, and the route revokes no session and publishes no event of its own.
 - **The account module's signup verification read is required beside `Signups`.**
   `authn.SignupVerification` is declared in `Requires` and resolved in `New`, so an
   assembly that names this module supplies the account module that delivers it,

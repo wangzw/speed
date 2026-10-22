@@ -476,7 +476,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		{"invalid identifier", authn.ErrInvalidIdentifier, http.StatusBadRequest, mount.CodeBadRequest},
 		{"password policy", authn.ErrPasswordPolicy, http.StatusBadRequest, mount.CodeBadRequest},
 		{"invalid config", authn.ErrInvalidConfig, http.StatusBadRequest, mount.CodeBadRequest},
-		{"identifier required", authn.ErrIdentifierRequired, http.StatusBadRequest, mount.CodeBadRequest},
+		{"identifier required", authn.ErrIdentifierRequired, http.StatusConflict, mount.CodeLoginIdentifierRequired},
 		{"account exists", authn.ErrAccountExists, http.StatusConflict, mount.CodeConflict},
 		{"binding conflict", authn.ErrBindingConflict, http.StatusConflict, mount.CodeConflict},
 		{"domain claimed", authn.ErrDomainClaimed, http.StatusConflict, mount.CodeConflict},
@@ -498,6 +498,53 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 				t.Errorf("problem code = %q, want %q", got, tc.code)
 			}
 		})
+	}
+}
+
+// TestCreatingAPasswordAccountWithOnlyAPhoneIsA409 holds the create route's
+// refusal of a user account whose only identifier is a phone number: a phone is
+// not a password login name, so the account would hold a credential that
+// authenticates nothing. The account module enforces the rule and this case
+// drives the route to its answer, with the fake applying that rule to the input
+// the route hands over. The rule itself is held by the account package over a
+// migrated database (TestCreateRefusesWhatItAdmitsNot); a case that assembled
+// the whole program here would repeat that fixture to observe the same two
+// facts.
+func TestCreatingAPasswordAccountWithOnlyAPhoneIsA409(t *testing.T) {
+	r := newRig(t)
+	r.accountAdm.createNeedsLoginName = true
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts", map[string]any{
+		"kind":               "user",
+		"phone":              "+8613800000001",
+		"phone_verified_via": "admin",
+		"password":           "correct horse battery",
+	}, fresh()...)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body %s", rec.Code, rec.Body.String())
+	}
+	if got := problemCode(t, rec.Body.String()); got != mount.CodeLoginIdentifierRequired {
+		t.Errorf("problem code = %q, want %q", got, mount.CodeLoginIdentifierRequired)
+	}
+	if n := r.accountAdm.count("create"); n != 1 {
+		t.Errorf("Create ran %d times, want once", n)
+	}
+}
+
+// TestRemovingTheLastLoginNameIsA409 holds that the management route answers the
+// account module's refusal with the same 409 login-identifier-required the
+// self-service route uses, so a client can tell it from a malformed identifier.
+func TestRemovingTheLastLoginNameIsA409(t *testing.T) {
+	r := newRig(t)
+	r.accountAdm.err = authn.ErrIdentifierRequired
+	rec := r.do(http.MethodDelete, "/api/v1/system/auth/accounts/"+string(userID)+"/identifiers/"+identifier, nil, fresh()...)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body %s", rec.Code, rec.Body.String())
+	}
+	if got := problemCode(t, rec.Body.String()); got != mount.CodeLoginIdentifierRequired {
+		t.Errorf("problem code = %q, want %q", got, mount.CodeLoginIdentifierRequired)
+	}
+	if n := r.accountAdm.count("remove-identifier"); n != 1 {
+		t.Errorf("RemoveIdentifier ran %d times, want once", n)
 	}
 }
 

@@ -84,9 +84,13 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   proving phone deletes the same-value contact and changes no state; `admin`,
   `import-unverified` and `self` change neither. `RemoveIdentifier` of the last
   proved email returns the account to pending, keeps the instant and rebuilds no
-  contact. `Create` always writes `signup_state` 0 and writes only verified
-  identifiers; the way a username came about is `UsernameVerifiedVia`, whose zero
-  value is `admin`.
+  contact. An account holding a password credential cannot lose its last username
+  or email address: that removal answers `authn.ErrIdentifierRequired` and the
+  transaction rolls back, since the password would then authenticate nothing. An
+  account with no password credential may lose its last login name, and removing a
+  phone number never triggers the rule. `Create` always writes `signup_state` 0 and
+  writes only verified identifiers; the way a username came about is
+  `UsernameVerifiedVia`, whose zero value is `admin`.
 - **The unverified-account sweep has its own switch and interval.** It deletes
   only an account with `signup_state` 1, no `signup_verified_at`, no email
   identifier written through a proving channel, and `COALESCE(last_login_at,

@@ -191,6 +191,11 @@ type fakeAccountAdmin struct {
 	addedKind  authn.IdentifierKind
 	addedValue string
 	addedVia   authn.Verification
+	// createNeedsLoginName makes Create apply the account module's rule that a
+	// password credential needs a username or email address to authenticate
+	// anything. It is off by default, because most cases drive the route's own
+	// checks rather than the capability's.
+	createNeedsLoginName bool
 }
 
 func newAccountAdmin() *fakeAccountAdmin { return &fakeAccountAdmin{calls: map[string]int{}} }
@@ -214,7 +219,12 @@ func (a *fakeAccountAdmin) Create(_ context.Context, in authn.CreateAccount) (au
 	}
 	a.mu.Lock()
 	a.created = in
+	needsLoginName := a.createNeedsLoginName
 	a.mu.Unlock()
+	if needsLoginName && in.Kind == authn.KindUser && in.Username == "" && in.Email == "" &&
+		(in.Password != "" || in.PasswordHash != "") {
+		return authn.Account{}, authn.ErrIdentifierRequired
+	}
 	return authn.Account{ID: userID, Kind: in.Kind, Status: authn.StatusActive}, nil
 }
 

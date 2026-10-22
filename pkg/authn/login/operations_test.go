@@ -3,6 +3,8 @@ package login
 import (
 	"net/http"
 	"testing"
+
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
 // TestOnlyTheRoutesThatCanRefuseForCapacityDeclareRetryAfter holds each 503
@@ -37,11 +39,10 @@ func TestOnlyTheRoutesThatCanRefuseForCapacityDeclareRetryAfter(t *testing.T) {
 	}
 }
 
-// TestTheIdentifierRemovalDeclaresNoConflict holds that the route declares no
-// 409: the account module's identifier removal never answers the
-// last-login-method refusal, which belongs to unbinding an external identity.
-// The route's own description says the last identifier can be removed.
-func TestTheIdentifierRemovalDeclaresNoConflict(t *testing.T) {
+// TestTheIdentifierRemovalDeclaresTheLoginNameConflict holds that the route
+// declares the 409 login-identifier-required its account-module call answers
+// when the removal would leave a password account with no login name.
+func TestTheIdentifierRemovalDeclaresTheLoginNameConflict(t *testing.T) {
 	found := false
 	for _, operation := range operations {
 		descriptor := operation.Descriptor()
@@ -49,10 +50,14 @@ func TestTheIdentifierRemovalDeclaresNoConflict(t *testing.T) {
 			continue
 		}
 		found = true
+		declared := false
 		for _, response := range descriptor.Responses {
-			if response.Status == http.StatusConflict {
-				t.Error("authn.login.removeIdentifier declares a 409 its account-module call cannot produce")
+			if response.Status == http.StatusConflict && response.ProblemType == typePrefix+mount.CodeLoginIdentifierRequired {
+				declared = true
 			}
+		}
+		if !declared {
+			t.Error("authn.login.removeIdentifier does not declare the 409 login-identifier-required of a password account's last login name")
 		}
 	}
 	if !found {

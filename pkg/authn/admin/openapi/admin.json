@@ -675,7 +675,7 @@
         "summary": "List accounts, one page at a time"
       },
       "post": {
-        "description": "Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a service account signs in with a service secret and is not held to that. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
+        "description": "Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a user account that states a password additionally needs a username or email address, since a phone number is not a password login name and one without either is a 409 login-identifier-required. A service account signs in with a service secret and is not held to either rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
         "operationId": "authn.admin.accounts.create",
         "requestBody": {
           "content": {
@@ -745,7 +745,7 @@
                 }
               }
             },
-            "description": "An account with that identifier already exists"
+            "description": "An account with that identifier already exists, or a password account would have no username or email address to log in with (login-identifier-required)"
           },
           "413": {
             "content": {
@@ -1260,7 +1260,7 @@
     },
     "/auth/accounts/{id}/identifiers/{identifier}": {
       "delete": {
-        "description": "Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. Requires account.update.",
+        "description": "Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. A password account cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. Requires account.update.",
         "operationId": "authn.admin.accounts.removeIdentifier",
         "parameters": [
           {
@@ -1316,6 +1316,16 @@
           },
           "404": {
             "description": "No such account; an identifier the account does not hold is already unbound and answers 204"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The removal would leave a password account with no login name"
           },
           "503": {
             "content": {
@@ -1533,7 +1543,7 @@
     },
     "/auth/accounts/{id}/password": {
       "post": {
-        "description": "Sets a temporary password that the account must change at its next sign-in, then revokes every session of the account. The revocation runs after the password write, so its failure is logged and does not undo the reset. The password is never echoed, logged or audited. Requires account.update, a fresh local non-SMS multi-factor authentication and a seasoned factor of the caller's own; a caller without one gets 403 factor-not-seasoned.",
+        "description": "Sets a temporary password that the account must change at its next sign-in, then revokes every session of the account. The revocation runs after the password write, so its failure is logged and does not undo the reset. The password is never echoed, logged or audited. An account with no username or email address has nothing to log in with, so setting a password is a 409 login-identifier-required. Requires account.update, a fresh local non-SMS multi-factor authentication and a seasoned factor of the caller's own; a caller without one gets 403 factor-not-seasoned.",
         "operationId": "authn.admin.accounts.resetPassword",
         "parameters": [
           {
@@ -1601,6 +1611,16 @@
           },
           "404": {
             "description": "No such account"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The account has no username or email address to log in with"
           },
           "413": {
             "content": {

@@ -14,6 +14,17 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/password"
 )
 
+// hasCredential reports whether the account holds a password credential. It is
+// the row's presence: an entry this module cannot read still means the account
+// signs in with a password.
+func hasCredential(tx *gorm.DB, id string) (bool, error) {
+	var n int64
+	if err := tx.Raw("SELECT COUNT(*) FROM "+tableCredentials+" WHERE account_id = ?", id).Scan(&n).Error; err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // storedEntry is the credential an account has, read and bounded: ok is false when
 // the account has none or when what it has cannot be read, which no check can use
 // and which is reported without the entry's text.

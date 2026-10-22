@@ -228,9 +228,10 @@ func (m *product) answer(op string, err error) error {
 		errors.Is(err, authn.ErrProviderNotFound), errors.Is(err, authn.ErrNotImpersonating):
 		return errNotFound
 	case errors.Is(err, authn.ErrInvalidArgument), errors.Is(err, authn.ErrInvalidIdentifier),
-		errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidConfig),
-		errors.Is(err, authn.ErrIdentifierRequired):
+		errors.Is(err, authn.ErrPasswordPolicy), errors.Is(err, authn.ErrInvalidConfig):
 		return authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
+	case errors.Is(err, authn.ErrIdentifierRequired):
+		return authnFailure(http.StatusConflict, mount.CodeLoginIdentifierRequired)
 	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),
 		errors.Is(err, authn.ErrDomainClaimed), errors.Is(err, authn.ErrLastLoginMethod),
 		errors.Is(err, authn.ErrFactorLimit), errors.Is(err, authn.ErrLastFactor):

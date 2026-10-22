@@ -44,6 +44,45 @@ func TestTheResetsDeclareTheUnseasonedRefusal(t *testing.T) {
 	}
 }
 
+// TestTheAccountCreateDeclaresBothConflictCauses holds the fragment's 409 of
+// POST /auth/accounts. The operation conflicts for two reasons — the identifier
+// is already held, or a password account has no username or email address to
+// log in with — and a document carries one response per status, so the single
+// declaration names both. The second cause is the login-identifier-required
+// refusal a generated client would otherwise never learn from the contract.
+func TestTheAccountCreateDeclaresBothConflictCauses(t *testing.T) {
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Description string `json:"description"`
+			} `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(adminFragment, &doc); err != nil {
+		t.Fatalf("the fragment is not JSON: %v", err)
+	}
+	op, ok := doc.Paths["/auth/accounts"]["post"]
+	if !ok {
+		t.Fatal("the fragment declares no POST /auth/accounts")
+	}
+	conflict, ok := op.Responses["409"]
+	if !ok {
+		t.Fatal("POST /auth/accounts declares no 409")
+	}
+	for _, cause := range []struct {
+		name string
+		text string
+	}{
+		{"the identifier is already held", "already exists"},
+		{"the password account has no login name", "no username or email address"},
+		{"the login-identifier-required code", "login-identifier-required"},
+	} {
+		if !strings.Contains(conflict.Description, cause.text) {
+			t.Errorf("the 409 reads %q, want it to name %s (%q)", conflict.Description, cause.name, cause.text)
+		}
+	}
+}
+
 // TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
 // the OpenAPI fragment and the registrations have to agree on: the fragment is
 // the only source a generated client is built from, and the design leaves the

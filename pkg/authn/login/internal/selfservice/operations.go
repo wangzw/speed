@@ -192,7 +192,7 @@ var passwordOperation = speedhttp.NewReplyOperation[changePasswordInput](
 		"password; a wrong one is a 401 login-failed, and a new password outside the password module's policy "+
 		"is a 400 bad-request. On success the current session is rotated to a new token, the account's other "+
 		"sessions are revoked, and the answer is 204 with the new session cookie set. An account that has "+
-		"neither a username nor a verified email is refused with 409 login-identifier-required.",
+		"neither a username nor an email address is refused with 409 login-identifier-required.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The current and new passwords. `new_password` is required and `current_password` may be empty. The body must be `application/json` and refuses unknown members.",
@@ -283,16 +283,19 @@ var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput]
 		"that does not exist and one that belongs to another account are answered identically as a 400 "+
 		"bad-request, so the route discloses nothing about what another account holds. The call requires the "+
 		"fresh authentication every change of what proves the account asks for and refuses an impersonating "+
-		"identity. The route does not check whether the identifier is the account's last way to sign in, so "+
-		"the last one can be removed; that rule belongs to unbinding an external identity. Unlike the routes "+
-		"that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of "+
-		"its own: `authn.identifier.changed` is published by the account module on the removal.",
+		"identity. An account that holds a password credential cannot lose its last username or email address: "+
+		"that removal is a 409 login-identifier-required and changes nothing. An account without a password "+
+		"credential may lose its last login name, and removing a phone number is always allowed. Unlike the "+
+		"routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no "+
+		"event of its own: `authn.identifier.changed` is published by the account module on the removal.",
 	nil,
 	[]speedhttp.Response{
 		{Status: http.StatusNoContent, Description: "The identifier was removed"},
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The identifier cannot be removed"),
 		unauthorized("No usable credential"),
 		impersonation(),
+		speedhttp.ProblemResponseOf(http.StatusConflict,
+			"The removal would leave a password account with no login name", typePrefix+mount.CodeLoginIdentifierRequired),
 		tooMany(),
 		unavailable("A dependency could not answer"),
 	},

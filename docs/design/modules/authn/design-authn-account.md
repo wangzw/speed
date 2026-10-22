@@ -111,7 +111,7 @@ type AccountAdmin interface {
 | `SetDisplayName` | 至多 100 个字符。 |
 | `SetAttributes` | 受[属性集的限制](#扩展点)约束；经 `Identity.Attribute` 只读到达所有层。 |
 | `SetProtected` | 为真的账户不得被冒充，不依赖 `Decider`（[design-authn-impersonation](design-authn-impersonation.md)）。 |
-| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合的形态，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下（[design-authn-login](design-authn-login.md)），`invite` 由邀请接受的兑现写下（[design-authn-invite](design-authn-invite.md)）。`AddIdentifier` 写入任何一条 `Proves` 为真的邮箱标识时——`email-code`、`idp:<提供方标识>`，或命中同一待验证邮箱的 `invite`——都在同一事务里删掉同值的待验证联系方式、把 `signup_state` 从 `1` 置 `2`（`0` 与 `2` 不变）并在首次进入时写 `signup_verified_at`；写入手机标识（`sms-code`）时同样删掉同值的待验证联系方式，但不改变 `signup_state`；`admin`、`import-unverified` 与 `self` 既不改变 `signup_state`，也不删除待验证联系方式。`RemoveIdentifier` 删除最后一个 `Proves` 为真的邮箱时，若 `signup_state` 为 2 则回到 1，但保留 `signup_verified_at`，也不重建待验证联系方式；写入手机从不把它拉回 2。 |
+| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合的形态，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下（[design-authn-login](design-authn-login.md)），`invite` 由邀请接受的兑现写下（[design-authn-invite](design-authn-invite.md)）。`AddIdentifier` 写入任何一条 `Proves` 为真的邮箱标识时——`email-code`、`idp:<提供方标识>`，或命中同一待验证邮箱的 `invite`——都在同一事务里删掉同值的待验证联系方式、把 `signup_state` 从 `1` 置 `2`（`0` 与 `2` 不变）并在首次进入时写 `signup_verified_at`；写入手机标识（`sms-code`）时同样删掉同值的待验证联系方式，但不改变 `signup_state`；`admin`、`import-unverified` 与 `self` 既不改变 `signup_state`，也不删除待验证联系方式。`RemoveIdentifier` 删除最后一个 `Proves` 为真的邮箱时，若 `signup_state` 为 2 则回到 1，但保留 `signup_verified_at`，也不重建待验证联系方式；写入手机从不把它拉回 2。带口令凭据的账户删除最后一个 username 或 email 标识时，`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired` 并回滚；没有口令凭据的账户不受此限，删除手机永不触发该规则。 |
 | `LinkExternal` | 该（提供方，主体）已被别的账户占用返回 `ErrBindingConflict`。 |
 | `UnlinkExternal` | 解绑之后账户至少还剩一种可用登录方式，否则返回 `ErrLastLoginMethod`。 |
 | `CreateServiceSecret` | 密钥是 256 位随机数，前缀 `spd_cs_`，库里只存 SHA-256；明文只在返回值里出现一次。 |
@@ -717,7 +717,8 @@ flowchart TD
 - 显示名取提供方给的名字，截断到 100 个字符，不当作任何判定依据。
 - 企业 SSO 按提供方的 `provisioning` 开户（A5）。
 - `Provisioner` 在场则先调用，宿主可改写拟创建的账户或拒绝开户（[扩展点](#扩展点)）。
-- 没有可作登录名的标识的账户（没有用户名、也没有已验证邮箱，典型是只绑了微信或手机的账户）设口令得到 409 `login-identifier-required`：口令登录要有登录名，登录名是用户名或邮箱标识，用户名由管理员经管理面添加，或由本人经自助路由添加。
+- 没有可作登录名的标识的账户（没有用户名、也没有邮箱标识，典型是只绑了微信或手机的账户）设口令得到 409 `login-identifier-required`：口令登录要有登录名，登录名是用户名或邮箱标识，邮箱标识的证明渠道只决定它是否 `proven`；用户名由管理员经管理面添加，或由本人经自助路由添加。
+- 带口令凭据的账户不能删除最后一个可作登录名的标识：`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired`，删除不生效；无口令凭据的账户（短信或通行密钥账户）不受此限，删除手机从不触发该规则。换用户名要先有另一个登录名，通常先验证邮箱（[ADR-authn-login-identifier-2026-10-22](../../../adr/adr-authn-login-identifier-2026-10-22.md)）。
 
 自助注册不经过首登开户：它由 `Signups.Register` 一次建号，见下一节。首登开户的 `closed` 取值不影响 `authn.account.password-signup`，反之亦然。
 
@@ -873,7 +874,7 @@ flowchart TD
 | `ErrPasswordPolicy` | 口令不合策略：过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同 | 400 `bad-request` |
 | `ErrInvalidIdentifier` | 标识规范化失败：用户名、邮箱、手机格式不合 | 400 `bad-request` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界（条目数、键值形状、总字节）、显示名过长、`via` 不在接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；也会在会话载荷的 `idp.*` 越界处出现，那时是写载荷一方的缺陷，503 |
-| `ErrIdentifierRequired` | 账户没有可作登录名的标识而要设口令 | 409 `login-identifier-required` |
+| `ErrIdentifierRequired` | 账户没有可作登录名的标识而要设口令；或带口令凭据的账户删除后不再剩下可作登录名的标识 | 409 `login-identifier-required` |
 | `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效，而某个 `AccountLifecycle` 钩子失败；重试同一调用幂等地补完 | 503 |
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 标识级退避中；注册的 `signup-username` 退避中 | 429 `throttled`，带 `Retry-After` |
 | `ErrBindingConflict` | 外部身份已被别的账户占用 | 409 |
