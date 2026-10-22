@@ -115,6 +115,8 @@ func driveWithBoard(t *testing.T, sms, email bool) (*mounttest.Mounter, []string
 	register(standIn("stand-in.kv", &stubKV{}, true, (*kv.KV)(nil)))
 	register(standIn("stand-in.accounts", &stubAccounts{}, true, (*authn.Accounts)(nil)))
 	register(standIn("stand-in.admin", &stubAdmin{}, true, (*authn.AccountAdmin)(nil)))
+	register(standIn("stand-in.signups", &stubSignups{}, true, (*authn.Signups)(nil)))
+	register(standIn("stand-in.signup-state", &stubSignupState{}, true, (*authn.SignupVerification)(nil)))
 	register(standIn("stand-in.memberships", &stubMemberships{}, true, (*authn.Memberships)(nil)))
 	register(standIn("stand-in.passwords", &stubPasswords{}, true, (*authn.Passwords)(nil)))
 	register(standIn("stand-in.throttle", &stubThrottle{}, true, (*authn.Throttle)(nil)))

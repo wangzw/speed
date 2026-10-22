@@ -82,6 +82,8 @@ func (Backend) Verify(context.Context, authn.Credential) authn.Verdict {
 type (
 	accounts         struct{ authn.Accounts }
 	accountAdmin     struct{ authn.AccountAdmin }
+	signups          struct{ authn.Signups }
+	signupState      struct{ authn.SignupVerification }
 	passwords        struct{ authn.Passwords }
 	memberships      struct{ authn.Memberships }
 	sessions         struct{ authn.Sessions }
@@ -162,6 +164,8 @@ func (ssoProviders) RememberAssertion(context.Context, string, string, time.Time
 var standIns = map[core.Token]func() core.Module{
 	(*authn.Accounts)(nil):             func() core.Module { return standIn("accounts", &accounts{}, (*authn.Accounts)(nil)) },
 	(*authn.AccountAdmin)(nil):         func() core.Module { return standIn("account-admin", &accountAdmin{}, (*authn.AccountAdmin)(nil)) },
+	(*authn.Signups)(nil):              func() core.Module { return standIn("signups", &signups{}, (*authn.Signups)(nil)) },
+	(*authn.SignupVerification)(nil):   func() core.Module { return standIn("signup-state", &signupState{}, (*authn.SignupVerification)(nil)) },
 	(*authn.Passwords)(nil):            func() core.Module { return standIn("passwords", &passwords{}, (*authn.Passwords)(nil)) },
 	(*authn.Memberships)(nil):          func() core.Module { return standIn("memberships", &memberships{}, (*authn.Memberships)(nil)) },
 	(*authn.Sessions)(nil):             func() core.Module { return standIn("sessions", &sessions{}, (*authn.Sessions)(nil)) },

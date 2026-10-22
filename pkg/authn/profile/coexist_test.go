@@ -23,6 +23,8 @@ type (
 	stubKV          struct{ kv.KV }
 	stubMemberships struct{ authn.Memberships }
 	stubPasswords   struct{ authn.Passwords }
+	stubSignups     struct{ authn.Signups }
+	stubSignupState struct{ authn.SignupVerification }
 	stubThrottle    struct{ authn.Throttle }
 	stubSessions    struct{ authn.Sessions }
 	stubReader      struct{}
@@ -69,6 +71,8 @@ func driveCoexist(t *testing.T, m *mounttest.Mounter) (err error) {
 		standIn("stand-in.kv", stubKV{}, (*kv.KV)(nil)),
 		standIn("stand-in.accounts", newAccounts(), (*authn.Accounts)(nil)),
 		standIn("stand-in.account-admin", newAccountAdmin(), (*authn.AccountAdmin)(nil)),
+		standIn("stand-in.signups", stubSignups{}, (*authn.Signups)(nil)),
+		standIn("stand-in.signup-state", stubSignupState{}, (*authn.SignupVerification)(nil)),
 		standIn("stand-in.memberships", stubMemberships{}, (*authn.Memberships)(nil)),
 		standIn("stand-in.passwords", stubPasswords{}, (*authn.Passwords)(nil)),
 		standIn("stand-in.throttle", stubThrottle{}, (*authn.Throttle)(nil)),

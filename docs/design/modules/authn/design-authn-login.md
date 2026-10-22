@@ -755,6 +755,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | kv 不可用 | 开始与继续流程、通行密钥的仪式 | 503 | 拒 |
 | kv 不可用 | 已建立的会话、访问令牌、刷新令牌 | 不受影响，它们在 db | — |
 | kv 不可用 | 来源地址前置减负（若开启） | 跳过该层，写 Warn 与计数 | 放，上界是自由次数：权威退避在 db |
+| kv 计数失败 | `POST B/register` 的来源地址分钟预算 | 跳过该前置减负层，写 Warn 与计数 | 放，与来源地址前置减负同向：这层只是粗粒度减负，权威是 `Signups.Register` |
+| kv 计数失败 | `POST B/register` 的全局小时预算 | 503 `unavailable`，不开户 | 拒 |
 | db 不可用 | 全部登录方式、因素校验 | 503，不校验 | 拒 |
 | db 不可用 | `POST B/register` 的 `Signups.Register` | 503 | 拒 |
 | 注册派生容量已满 | `POST B/register` | `ErrBusy`，503 带 `Retry-After: 1` | 拒 |
@@ -844,5 +846,5 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 微信方法 `authn.login.wechat-web`、`authn.login.wechat-mp` 与共用客户端 | 已实现 | `pkg/authn/login/wechatweb/wechatweb.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/wechatmp/wechatmp.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/internal/wechat/client.go` `Client`、`Exchange`、`AuthorizeURL`；`pkg/authn/login/internal/wechat/identity.go`、`state.go` |
 | operation 声明与对外契约片段生成：`openapi/login.json` | 已实现 | `pkg/authn/login/operations.go`；`pkg/authn/login/openapi_generated_test.go`；片段 `pkg/authn/login/openapi/login.json` |
 | 条件特性 `authn.phone`、`authn.identifiers.email` 的声明与报告 | 已实现 | `pkg/authn/login/login.go` `Module`、`takeBoard`、`postFeature`；`pkg/authn/login/routes.go` `mountRoutes`；`pkg/authn/login/internal/selfservice/selfservice.go` `FeaturePhone`、`FeatureEmail`、`Mount`；`pkg/authn/login/feature_test.go` `TestThePhoneSurfaceAndItsFeatureShareOneJudgement` |
-| 匿名注册路由 `POST B/register` 与 `signup.password.enabled` 发现面 | 未实现 | — |
+| 匿名注册路由 `POST B/register` 与 `signup.password.enabled` 发现面 | 已实现 | `pkg/authn/login/register.go` `(*routes).register`、`signupSourceAllow`、`signupGlobalAllow`、`failRegister`；`pkg/authn/login/operations.go` `registerOperation`、`AuthnLoginRegistration`、`AuthnLoginSignupPassword`；`pkg/authn/login/respond.go` `(*routes).methods`、`descriptorView`；`pkg/authn/login/config.go` `passwordSignupPath`、`signupIPLimitPath`、`signupGlobalHourlyPath`、`(*reader).passwordSignup`、`signupIPLimit`、`signupGlobalHourly`；`pkg/authn/login/login.go` `Module`（`authn.Signups`）、`diagnoseSignup` |
 | 未验证账户的 `purpose=link` 门控（`signup_state=1` 时 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 未实现 | — |

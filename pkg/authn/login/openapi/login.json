@@ -153,7 +153,7 @@
         "type": "object"
       },
       "AuthnLoginMethods": {
-        "description": "The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether a first login may open an account, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.",
+        "description": "The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.",
         "properties": {
           "methods": {
             "description": "The methods taking part that are not turned off, one descriptor each, sorted by name",
@@ -168,7 +168,7 @@
           },
           "signup": {
             "$ref": "#/components/schemas/AuthnLoginSignup",
-            "description": "Whether a first login may open an account on this deployment."
+            "description": "Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`."
           }
         },
         "required": [
@@ -193,6 +193,53 @@
         "required": [
           "expires_in",
           "resend_after"
+        ],
+        "type": "object"
+      },
+      "AuthnLoginRegistration": {
+        "description": "The answer of an anonymous self-registration: the state name `registered`, the account that was opened, and the email address awaiting verification. No session is made and no email is sent.",
+        "properties": {
+          "account_id": {
+            "description": "The identifier of the account that was opened",
+            "type": "string"
+          },
+          "state": {
+            "description": "The literal `registered`, marking that an account was opened",
+            "enum": [
+              "registered"
+            ],
+            "type": "string"
+          },
+          "verification": {
+            "$ref": "#/components/schemas/AuthnLoginRegistrationContact",
+            "description": "The contact awaiting verification."
+          }
+        },
+        "required": [
+          "state",
+          "account_id",
+          "verification"
+        ],
+        "type": "object"
+      },
+      "AuthnLoginRegistrationContact": {
+        "description": "The contact a new registration has to prove: the pending state of the email address the caller gave, which is not yet a login name.",
+        "properties": {
+          "email": {
+            "description": "The email address the caller gave, awaiting verification",
+            "type": "string"
+          },
+          "state": {
+            "description": "The verification state of the email address: `pending` until the address is proved after signing in",
+            "enum": [
+              "pending"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "email"
         ],
         "type": "object"
       },
@@ -236,10 +283,28 @@
         "type": "object"
       },
       "AuthnLoginSignup": {
-        "description": "Whether a first login may open an account on this deployment, derived from the account module's signup switch. A closed switch does not remove a method; it only makes a first login for an unknown identifier fail.",
+        "description": "Whether anonymous self-registration is available on this deployment: either a first login may open an account, or the name-and-password register route is open. The two switches are independent; each member below reports its own.",
         "properties": {
           "enabled": {
-            "description": "Whether a first login may open an account",
+            "description": "Whether anonymous self-registration is available: true when either a first login may open an account or the name-and-password register route is open",
+            "type": "boolean"
+          },
+          "password": {
+            "$ref": "#/components/schemas/AuthnLoginSignupPassword",
+            "description": "Whether the name-and-password register route is open."
+          }
+        },
+        "required": [
+          "enabled",
+          "password"
+        ],
+        "type": "object"
+      },
+      "AuthnLoginSignupPassword": {
+        "description": "Whether the anonymous name-and-password register route is open, reported on its own because it is independent of a first login opening an account.",
+        "properties": {
+          "enabled": {
+            "description": "Whether POST /auth/register is open",
             "type": "boolean"
           }
         },
@@ -371,7 +436,7 @@
             "type": "string"
           },
           "opens_account": {
-            "description": "Whether the method may open an account for an identifier it does not yet know",
+            "description": "Whether the method may open an account for an identifier it does not yet know; false for the phone and social methods when `authn.account.signup` is closed",
             "type": "boolean"
           },
           "protocol": {
@@ -1774,7 +1839,7 @@
     },
     "/auth/methods": {
       "get": {
-        "description": "Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by method name, together with whether a first login may open an account and the second-factor kinds the deployment takes in. It reads no credential and no request body, so every caller gets the same document. A method turned off by the deployment is left out rather than reported with a flag, and the call answers 503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are not listed here; they are discovered through the SSO module.",
+        "description": "Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by method name, together with whether registration is open and the second-factor kinds the deployment takes in. It reads no credential and no request body, so every caller gets the same document. A method turned off by the deployment is left out rather than reported with a flag, and the call answers 503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are not listed here; they are discovered through the SSO module.",
         "operationId": "authn.login.methods",
         "responses": {
           "200": {
@@ -2217,6 +2282,151 @@
           }
         ],
         "summary": "Verify the code sent to a phone number"
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "description": "Opens one enabled account in one transaction from a username, an email address and a password, without a session and without sending an email. The email address is only a contact awaiting verification: it is not a login name until it is proved, which happens after the client signs in through `POST /auth/flows` and adds the address through the account self-service routes. The route reads no cookie and keeps no flow, so it has no binding and no sequence number. It passes the cross-origin check and refuses a body that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken is a 409 username-taken; and the per-source and deployment-wide budgets answer 429 with `Retry-After` when they are exhausted. The email address is never checked for being taken and is never echoed as a conflict: a clash surfaces only after a code proves control of the address.",
+        "operationId": "authn.login.register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "The anonymous registration request: a username, an email address and a password are required; a display name, a language and a time zone are optional. The email address is only a contact awaiting verification, not a login name.",
+                "properties": {
+                  "display_name": {
+                    "description": "The display name, optional: valid text of at most 100 characters.",
+                    "type": "string"
+                  },
+                  "email": {
+                    "description": "The email address, required. It is only a contact awaiting verification, not a login name yet, and it is never checked for being taken: a conflict surfaces only after a code proves control of the address, once the account is signed in.",
+                    "type": "string"
+                  },
+                  "locale": {
+                    "description": "The account's language preference, optional, written to the i18n.locale attribute; a value outside the accepted language domain is a 400 bad-request.",
+                    "type": "string"
+                  },
+                  "password": {
+                    "description": "The password, required, held to the deployment's password policy; a password that violates it is a 400 bad-request.",
+                    "type": "string"
+                  },
+                  "time_zone": {
+                    "description": "The account's time-zone preference, optional, written to the i18n.tz attribute; a value outside the accepted time-zone domain is a 400 bad-request.",
+                    "type": "string"
+                  },
+                  "username": {
+                    "description": "The login name, required. A name already taken is a 409 username-taken; a name that cannot be normalized is a 400 bad-request.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "description": "The registration request: the username, email address and password the account is opened with, and optionally a display name, a language and a time zone. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnLoginRegistration"
+                }
+              }
+            },
+            "description": "The account was opened; the email address awaits verification"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A required member is missing, the body carries an unknown member or a value outside its domain, or the password does not meet the policy"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Self-registration is closed on this deployment"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The username is already taken"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is not application/json"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The per-source or deployment-wide registration budget is exhausted; retry after the stated delay",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying, when the back-off states a delay; absent otherwise.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying, when the back-off states a delay; absent otherwise.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "summary": "Register an account with a username, an email address and a password"
       }
     }
   }

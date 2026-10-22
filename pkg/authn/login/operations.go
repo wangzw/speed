@@ -25,6 +25,7 @@ const (
 // string.
 const (
 	pathMethods      = "/auth/methods"
+	pathRegister     = "/auth/register"
 	pathFlows        = "/auth/flows"
 	pathFlowsAuth    = "/auth/flows/authenticated"
 	pathFlowsAnswer  = "/auth/flows/answer"
@@ -38,10 +39,10 @@ const (
 // taking part and not turned off, whether registration is open, and the kinds of
 // second factor the deployment offers.
 type AuthnLoginMethods struct {
-	_ struct{} `description:"The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether a first login may open an account, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module."`
+	_ struct{} `description:"The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module."`
 
 	Methods []AuthnMethodDescriptor `json:"methods" required:"true" description:"The methods taking part that are not turned off, one descriptor each, sorted by name"`
-	Signup  AuthnLoginSignup        `json:"signup" required:"true" description:"Whether a first login may open an account on this deployment."`
+	Signup  AuthnLoginSignup        "json:\"signup\" required:\"true\" description:\"Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`.\""
 	MFA     AuthnLoginMFA           `json:"mfa" required:"true" description:"The second-factor kinds the deployment takes in."`
 }
 
@@ -54,16 +55,26 @@ type AuthnMethodDescriptor struct {
 	Kind             string            `json:"kind" required:"true" description:"How a client renders the method: form, redirect, enterprise or webauthn"`
 	Protocol         string            `json:"protocol,omitempty" description:"The wire protocol a redirect or enterprise method speaks: oauth2, oidc or saml; empty otherwise"`
 	Label            string            `json:"label,omitempty" description:"The method's brand name where it has one, otherwise empty for a name-keyed translation"`
-	OpensAccount     bool              `json:"opens_account,omitempty" description:"Whether the method may open an account for an identifier it does not yet know"`
+	OpensAccount     bool              "json:\"opens_account,omitempty\" description:\"Whether the method may open an account for an identifier it does not yet know; false for the phone and social methods when `authn.account.signup` is closed\""
 	BindingProviders []string          `json:"binding_providers,omitempty" description:"The stored provider values, or namespace prefixes, the method's bindings appear under; absent means the method's name"`
 	Fields           []AuthnLoginField `json:"fields,omitempty" description:"The inputs the method's first step asks for, empty for a method that does not open with a form"`
 }
 
-// AuthnLoginSignup says whether a first login may open an account.
+// AuthnLoginSignup says whether anonymous self-registration is available: either
+// a first login may open an account, or the name-and-password register route is
+// open.
 type AuthnLoginSignup struct {
-	_ struct{} `description:"Whether a first login may open an account on this deployment, derived from the account module's signup switch. A closed switch does not remove a method; it only makes a first login for an unknown identifier fail."`
+	_ struct{} `description:"Whether anonymous self-registration is available on this deployment: either a first login may open an account, or the name-and-password register route is open. The two switches are independent; each member below reports its own."`
 
-	Enabled bool `json:"enabled" required:"true" description:"Whether a first login may open an account"`
+	Enabled  bool                     `json:"enabled" required:"true" description:"Whether anonymous self-registration is available: true when either a first login may open an account or the name-and-password register route is open"`
+	Password AuthnLoginSignupPassword `json:"password" required:"true" description:"Whether the name-and-password register route is open."`
+}
+
+// AuthnLoginSignupPassword is the name-and-password register route's own switch.
+type AuthnLoginSignupPassword struct {
+	_ struct{} `description:"Whether the anonymous name-and-password register route is open, reported on its own because it is independent of a first login opening an account."`
+
+	Enabled bool `json:"enabled" required:"true" description:"Whether POST /auth/register is open"`
 }
 
 // AuthnLoginMFA is the second-factor kinds the deployment takes in.
@@ -155,6 +166,24 @@ type AuthnLoginActionResult struct {
 	State string `json:"state" required:"true" enum:"linked,enrolled" description:"linked when the flow bound an external identity; enrolled when it registered a factor"`
 }
 
+// AuthnLoginRegistration is the answer of an anonymous self-registration: the
+// account that was opened and the email address awaiting verification.
+type AuthnLoginRegistration struct {
+	_ struct{} "description:\"The answer of an anonymous self-registration: the state name `registered`, the account that was opened, and the email address awaiting verification. No session is made and no email is sent.\""
+
+	State        string                        "json:\"state\" required:\"true\" enum:\"registered\" description:\"The literal `registered`, marking that an account was opened\""
+	AccountID    string                        `json:"account_id" required:"true" description:"The identifier of the account that was opened"`
+	Verification AuthnLoginRegistrationContact `json:"verification" required:"true" description:"The contact awaiting verification."`
+}
+
+// AuthnLoginRegistrationContact is the contact a new account has to prove.
+type AuthnLoginRegistrationContact struct {
+	_ struct{} "description:\"The contact a new registration has to prove: the pending state of the email address the caller gave, which is not yet a login name.\""
+
+	State string "json:\"state\" required:\"true\" enum:\"pending\" description:\"The verification state of the email address: `pending` until the address is proved after signing in\""
+	Email string `json:"email" required:"true" description:"The email address the caller gave, awaiting verification"`
+}
+
 // AuthnLoginAnswer is the body of the answer route, whose shape is the closed
 // union of the four answers a step can produce. It carries a value and writes it
 // as it is; the union describes the set the entry point checks the answer
@@ -188,7 +217,10 @@ type (
 	methodsReply         = AuthnLoginMethods
 	methodDescriptorView = AuthnMethodDescriptor
 	signupView           = AuthnLoginSignup
+	passwordSignupView   = AuthnLoginSignupPassword
 	mfaView              = AuthnLoginMFA
+	registrationReply    = AuthnLoginRegistration
+	verificationView     = AuthnLoginRegistrationContact
 )
 
 // startInput is the body of POST flows.
@@ -213,6 +245,18 @@ type startAuthenticatedInput struct {
 	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string "json:\"input\" description:\"The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.\""
+}
+
+// registerInput is the body of POST register.
+type registerInput struct {
+	_ struct{} "description:\"The anonymous registration request: a username, an email address and a password are required; a display name, a language and a time zone are optional. The email address is only a contact awaiting verification, not a login name.\""
+
+	Username    string "json:\"username\" description:\"The login name, required. A name already taken is a 409 username-taken; a name that cannot be normalized is a 400 bad-request.\""
+	Email       string `json:"email" description:"The email address, required. It is only a contact awaiting verification, not a login name yet, and it is never checked for being taken: a conflict surfaces only after a code proves control of the address, once the account is signed in."`
+	Password    string `json:"password" description:"The password, required, held to the deployment's password policy; a password that violates it is a 400 bad-request."`
+	DisplayName string `json:"display_name" description:"The display name, optional: valid text of at most 100 characters."`
+	Locale      string `json:"locale" description:"The account's language preference, optional, written to the i18n.locale attribute; a value outside the accepted language domain is a 400 bad-request."`
+	TimeZone    string `json:"time_zone" description:"The account's time-zone preference, optional, written to the i18n.tz attribute; a value outside the accepted time-zone domain is a 400 bad-request."`
 }
 
 // answerInput is the body of POST flows/answer.
@@ -322,7 +366,7 @@ var methodsOperation = speedhttp.NewReplyOperation[struct{}](
 	pathMethods,
 	"List the login methods this deployment offers",
 	"Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by "+
-		"method name, together with whether a first login may open an account and the second-factor kinds the "+
+		"method name, together with whether registration is open and the second-factor kinds the "+
 		"deployment takes in. It reads no credential and no request body, so every caller gets the same document. "+
 		"A method turned off by the deployment is left out rather than reported with a flag, and the call answers "+
 		"503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are "+
@@ -333,6 +377,46 @@ var methodsOperation = speedhttp.NewReplyOperation[struct{}](
 			"A descriptor per method taking part, whether registration is open, and the factor kinds the deployment offers",
 			AuthnLoginMethods{}),
 		unavailableAnswer,
+	},
+	speedhttp.Public(),
+)
+
+// registerOperation declares the anonymous self-registration route.
+var registerOperation = speedhttp.NewReplyOperation[registerInput](
+	"authn.login.register",
+	http.MethodPost,
+	pathRegister,
+	"Register an account with a username, an email address and a password",
+	"Opens one enabled account in one transaction from a username, an email address and a password, without a "+
+		"session and without sending an email. The email address is only a contact awaiting verification: it is "+
+		"not a login name until it is proved, which happens after the client signs in through `POST /auth/flows` "+
+		"and adds the address through the account self-service routes. The route reads no cookie and keeps no "+
+		"flow, so it has no binding and no sequence number. It passes the cross-origin check and refuses a body "+
+		"that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password "+
+		"the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a "+
+		"pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken "+
+		"is a 409 username-taken; and the per-source and deployment-wide budgets answer 429 with `Retry-After` "+
+		"when they are exhausted. The email address is never checked for being taken and is never echoed as a "+
+		"conflict: a clash surfaces only after a code proves control of the address.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The registration request: the username, email address and password the account is opened with, and optionally a display name, a language and a time zone. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+		Required:    true,
+	},
+	[]speedhttp.Response{
+		jsonAnswer(http.StatusCreated,
+			"The account was opened; the email address awaits verification",
+			AuthnLoginRegistration{}),
+		capabilityProblem(http.StatusBadRequest, mount.CodeBadRequest,
+			"A required member is missing, the body carries an unknown member or a value outside its domain, or the password does not meet the policy"),
+		bodyOverLimit,
+		capabilityProblem(http.StatusForbidden, mount.CodeSignupClosed,
+			"Self-registration is closed on this deployment"),
+		capabilityProblem(http.StatusConflict, mount.CodeUsernameTaken,
+			"The username is already taken"),
+		mediaTypeAnswer,
+		throttled("The per-source or deployment-wide registration budget is exhausted; retry after the stated delay"),
+		dependencyAnswer,
 	},
 	speedhttp.Public(),
 )
@@ -563,6 +647,7 @@ var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 // from one list.
 var loginOperations = speedhttp.Operations{
 	methodsOperation,
+	registerOperation,
 	startOperation,
 	startAuthenticatedOperation,
 	answerOperation,

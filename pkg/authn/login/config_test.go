@@ -66,6 +66,58 @@ func TestAnEmptyReturnTargetFallsBack(t *testing.T) {
 	}
 }
 
+// TestTheRegistrationReadsFallBackToTheirStrictSide holds the three reads of the
+// account module's registration settings at their two fallbacks. A read that
+// fails, and a value outside the declared domain, read as the strict side: the
+// password switch as closed, the per-source budget as zero (off), and the
+// deployment-wide budget as its declared default. The in-domain values are read
+// back as written, so a case that always answered the fallback could not pass.
+func TestTheRegistrationReadsFallBackToTheirStrictSide(t *testing.T) {
+	failing := readerWith(nil) // every key the map does not carry fails to read
+
+	if got := failing.passwordSignup(); got != signupClosed {
+		t.Errorf("a failed read of the password switch = %q, want %q", got, signupClosed)
+	}
+	if got := failing.signupIPLimit(); got != signupIPLimitDefault {
+		t.Errorf("a failed read of the per-source budget = %d, want %d off", got, signupIPLimitDefault)
+	}
+	if got := failing.signupGlobalHourly(); got != signupGlobalHourlyDefault {
+		t.Errorf("a failed read of the deployment-wide budget = %d, want the declared default %d",
+			got, signupGlobalHourlyDefault)
+	}
+
+	cases := []struct {
+		name     string
+		values   map[string]string
+		password string
+		ipLimit  int
+		global   int
+	}{
+		{"the password switch outside its set", map[string]string{passwordSignupPath: "on"}, signupClosed, signupIPLimitDefault, signupGlobalHourlyDefault},
+		{"the per-source budget below zero", map[string]string{signupIPLimitPath: "-1"}, signupClosed, signupIPLimitDefault, signupGlobalHourlyDefault},
+		{"the per-source budget above its ceiling", map[string]string{signupIPLimitPath: "10001"}, signupClosed, signupIPLimitDefault, signupGlobalHourlyDefault},
+		{"the deployment-wide budget below its floor", map[string]string{signupGlobalHourlyPath: "0"}, signupClosed, signupIPLimitDefault, signupGlobalHourlyDefault},
+		{"the deployment-wide budget above its ceiling", map[string]string{signupGlobalHourlyPath: "1000001"}, signupClosed, signupIPLimitDefault, signupGlobalHourlyDefault},
+		{"the in-domain values", map[string]string{
+			passwordSignupPath: signupOpen, signupIPLimitPath: "10000", signupGlobalHourlyPath: "1",
+		}, signupOpen, 10000, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := readerWith(c.values)
+			if got := r.passwordSignup(); got != c.password {
+				t.Errorf("passwordSignup = %q, want %q", got, c.password)
+			}
+			if got := r.signupIPLimit(); got != c.ipLimit {
+				t.Errorf("signupIPLimit = %d, want %d", got, c.ipLimit)
+			}
+			if got := r.signupGlobalHourly(); got != c.global {
+				t.Errorf("signupGlobalHourly = %d, want %d", got, c.global)
+			}
+		})
+	}
+}
+
 // TestThePerFlowSendLimitHoldsItsDomain holds the domain of the per-flow send
 // limit this module only reads: a value at a bound is used, and one outside reads
 // as the declared default.

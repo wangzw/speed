@@ -123,3 +123,69 @@ func TestTheMethodsListingFollowsTheAssembly(t *testing.T) {
 		t.Errorf("mfa.factors with two kinds = %v, want [totp webauthn]", got)
 	}
 }
+
+// TestTheMethodsListingReportsBothRegistrationSwitches holds the two members of
+// the discovery document that carry registration: signup.enabled is true when
+// either the first-login switch or the register route's switch is open, and
+// signup.password.enabled reports the register route alone. A method that could
+// open an account is not shown as able to while the first-login switch is closed,
+// and the password descriptor never carries opens_account at all.
+func TestTheMethodsListingReportsBothRegistrationSwitches(t *testing.T) {
+	cases := []struct {
+		name            string
+		signup          string
+		password        string
+		enabled         bool
+		passwordEnabled bool
+	}{
+		{"both closed", signupClosed, signupClosed, false, false},
+		{"a first login may open an account", signupOpen, signupClosed, true, false},
+		{"the register route alone", signupClosed, signupOpen, true, true},
+		{"both open", signupOpen, signupOpen, true, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			password := &fakeMethod{name: "password", desc: authn.MethodDescriptor{
+				Name: "password", Kind: authn.MethodKindForm,
+			}}
+			google := &fakeMethod{name: "google", desc: authn.MethodDescriptor{
+				Name: "google", Kind: authn.MethodKindRedirect, Protocol: authn.MethodProtocolOIDC,
+				Label: "Google", OpensAccount: true,
+			}}
+			r := newRigMethods(t, password, google)
+			r.p.settings = readerWith(map[string]string{
+				signupPath:         c.signup,
+				passwordSignupPath: c.password,
+			})
+
+			body := decode(t, r.send(http.MethodGet, "/api/v1/auth/methods", "").Body.String())
+			signup, ok := body["signup"].(map[string]any)
+			if !ok {
+				t.Fatalf("the listing carries no signup member: %v", body)
+			}
+			if got := signup["enabled"]; got != c.enabled {
+				t.Errorf("signup.enabled = %v, want %v", got, c.enabled)
+			}
+			published, ok := signup["password"].(map[string]any)
+			if !ok {
+				t.Fatalf("signup.password is %v, want an object", signup["password"])
+			}
+			if got := published["enabled"]; got != c.passwordEnabled {
+				t.Errorf("signup.password.enabled = %v, want %v", got, c.passwordEnabled)
+			}
+
+			methods := body["methods"].([]any)
+			// Name order: google sorts before password.
+			googleView := methods[0].(map[string]any)
+			opens, present := googleView["opens_account"]
+			if want := c.signup == signupOpen; present != want || (present && opens != true) {
+				t.Errorf("the google descriptor carries opens_account = %v, present %v, want present %v and true",
+					opens, present, want)
+			}
+			passwordView := methods[1].(map[string]any)
+			if v, present := passwordView["opens_account"]; present {
+				t.Errorf("the password descriptor carries opens_account = %v, want it absent", v)
+			}
+		})
+	}
+}

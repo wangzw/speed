@@ -15,6 +15,7 @@ func TestOnlyTheRoutesThatCanRefuseForCapacityDeclareRetryAfter(t *testing.T) {
 		"authn.login.startAuthenticated": true,
 		"authn.login.answer":             true,
 		"authn.login.changePassword":     true,
+		"authn.login.register":           true,
 	}
 	for _, operation := range operations {
 		descriptor := operation.Descriptor()

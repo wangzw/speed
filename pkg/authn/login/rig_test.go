@@ -30,6 +30,10 @@ type fakeKV struct {
 	m       map[string][]byte
 	exp     map[string]time.Time
 	failing bool
+	// failIncrPrefix arms a failure of IncrByFloatWithTTL for the keys under one
+	// prefix only, so a case can make one budget's counter fail while the other
+	// succeeds.
+	failIncrPrefix string
 }
 
 func newKV() *fakeKV {
@@ -130,10 +134,26 @@ func (k *fakeKV) IncrByFloat(_ context.Context, key string, delta float64) (floa
 	return k.IncrByFloatWithTTL(context.Background(), key, delta, 0)
 }
 
+// keys lists the live keys the store holds, so a case can assert what a route
+// wrote and what it did not.
+func (k *fakeKV) keys() []string {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	out := make([]string, 0, len(k.m))
+	for key := range k.m {
+		out = append(out, key)
+	}
+	slices.Sort(out)
+	return out
+}
+
 func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64, ttl time.Duration) (float64, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.failing {
+		return 0, errKV
+	}
+	if k.failIncrPrefix != "" && strings.HasPrefix(key, k.failIncrPrefix) {
 		return 0, errKV
 	}
 	var cur float64
@@ -376,6 +396,27 @@ type (
 	stubThrottle    struct{ authn.Throttle }
 )
 
+// fakeSignups records the registrations made and answers the account or the error
+// a case scripts.
+type fakeSignups struct {
+	authn.Signups
+	registered []authn.RegisterAccount
+	acct       authn.AccountID
+	err        error
+}
+
+func (s *fakeSignups) Register(_ context.Context, in authn.RegisterAccount) (authn.Account, error) {
+	s.registered = append(s.registered, in)
+	if s.err != nil {
+		return authn.Account{}, s.err
+	}
+	id := s.acct
+	if id == "" {
+		id = "acct-new"
+	}
+	return authn.Account{ID: id, Kind: authn.KindUser, Status: authn.StatusActive}, nil
+}
+
 // rig is a login product wired to fakes and mounted through the test mounter.
 type rig struct {
 	t        *testing.T
@@ -385,6 +426,7 @@ type rig struct {
 	sessions *fakeSessions
 	accounts *fakeAccounts
 	admin    *fakeAdmin
+	signups  *fakeSignups
 	p        *product
 
 	// watchCtx arms the request-context probe and leaked records what it saw. A
@@ -422,6 +464,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 	}
 	sessions := &fakeSessions{}
 	admin := &fakeAdmin{}
+	signups := &fakeSignups{}
 	mounter := mounttest.New(t)
 
 	p := &product{
@@ -429,6 +472,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		kv:             kv,
 		accounts:       accounts,
 		admin:          admin,
+		signups:        signups,
 		passwords:      stubPasswords{},
 		memberships:    stubMemberships{},
 		throttle:       stubThrottle{},
@@ -451,7 +495,17 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 	}
 	p.resolver = r
 
-	rig := &rig{t: t, m: mounter, kv: kv, mfa: mfa, sessions: sessions, accounts: accounts, admin: admin, p: p}
+	rig := &rig{
+		t:        t,
+		m:        mounter,
+		kv:       kv,
+		mfa:      mfa,
+		sessions: sessions,
+		accounts: accounts,
+		admin:    admin,
+		signups:  signups,
+		p:        p,
+	}
 	// The probe goes in before the routes are mounted, so it runs inside every
 	// route's chain and sees the request's own context after the handler.
 	mounter.Engine().Use(rig.watchRequestContext)

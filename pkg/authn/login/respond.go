@@ -143,6 +143,13 @@ func rfc3339(t time.Time) string {
 // methods answers GET flows with the descriptors of the methods taking part
 // that are not turned off, in the order of their names, together with whether
 // registration is open and the kinds of second factor the deployment offers.
+//
+// The two registration switches are reported separately. signup.enabled is true
+// when either a first login may open an account or the name-and-password register
+// route is open, and signup.password.enabled publishes the register route's own
+// switch. A method's opens_account is cleared when a first login may not open an
+// account, so that a closed signup is not shown as a way in; the password method
+// carries no opens_account at all, because it never opens one.
 func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	disabled, err := r.settings.disabledMethods()
@@ -154,29 +161,36 @@ func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 	for _, name := range disabled {
 		off[name] = true
 	}
+	signup := r.signupEnabled()
+	password := r.passwordSignupEnabled()
 	out := make([]methodDescriptorView, 0, len(r.methodNames))
 	for _, name := range r.methodNames {
 		if off[name] {
 			continue
 		}
-		out = append(out, descriptorView(r.product.methods[name].Describe()))
+		out = append(out, descriptorView(r.product.methods[name].Describe(), signup))
 	}
 	c.json(http.StatusOK, methodsReply{
 		Methods: out,
-		Signup:  signupView{Enabled: r.signupEnabled()},
-		MFA:     mfaView{Factors: r.factorKinds()},
+		Signup: signupView{
+			Enabled:  signup || password,
+			Password: passwordSignupView{Enabled: password},
+		},
+		MFA: mfaView{Factors: r.factorKinds()},
 	})
 	return c.result()
 }
 
-// descriptorView copies a method's descriptor into the wire shape.
-func descriptorView(d authn.MethodDescriptor) methodDescriptorView {
+// descriptorView copies a method's descriptor into the wire shape. opensAccount
+// is whether a first login may open an account on this deployment; a method that
+// could open one is not shown as able to while the switch is closed.
+func descriptorView(d authn.MethodDescriptor, opensAccount bool) methodDescriptorView {
 	return methodDescriptorView{
 		Name:             d.Name,
 		Kind:             string(d.Kind),
 		Protocol:         string(d.Protocol),
 		Label:            d.Label,
-		OpensAccount:     d.OpensAccount,
+		OpensAccount:     d.OpensAccount && opensAccount,
 		BindingProviders: d.BindingProviders,
 		Fields:           fieldViews(d.Fields),
 	}

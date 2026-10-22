@@ -30,6 +30,11 @@ step-up refusal carries, because a typed handler returns a fault and has no
 response writer. This package builds the first two and calls them, and uses
 `stepup` for its own refusals; none is reachable from another module.
 
+The anonymous register route `POST /auth/register` is the one place this package
+takes part in opening an account rather than reading one, and it opens none
+itself: `authn.Signups.Register` owns the one transaction, this route owns the
+request's shape and the two budgets in front of it.
+
 The API is the package's godoc. Read `Module`'s comment before changing the
 descriptor and `migrateFirst`/`resolveAndDecide` before changing what a state
 does.
@@ -81,11 +86,43 @@ does.
   capability interfaces only. A tenant is never read here: the login request
   carries no tenant name, and the account is global.
 - **The account module's relaxation switches are read by path, never declared
-  here.** `authn.account.signup` and `authn.account.auto-link` belong to
-  `pkg/authn/account`; this package reads them through its optional settings
-  store on every methods request and every account resolution, and a read error
-  reads as the strict value (`closed`, `never`). Declaring the same key here is
-  the shape to reject: two modules must not declare one path.
+  here.** `authn.account.signup`, `authn.account.password-signup` and
+  `authn.account.auto-link` belong to `pkg/authn/account`; this package reads them
+  through its optional settings store at each use — both signup switches on every
+  methods request, the password one again on every registration, and `signup` and
+  `auto-link` at each account resolution — and a read error reads as the strict
+  value (`closed`, `never`). The two registration budgets
+  (`authn.account.signup-ip-limit`, `authn.account.signup-global-hourly`) are read
+  the same way, into their declared domains. Declaring the same key here is the
+  shape to reject: two modules must not declare one path.
+- **The register route opens an account through `Signups.Register` and counts
+  before it.** The switch is checked here first only so a closed deployment
+  refuses before any count; `Signups.Register` reads it again as the authority and
+  answers the same `403 signup-closed`. The per-source minute bucket and the
+  deployment-wide hour bucket are key-value increments; both answer `429
+  throttled` with a `Retry-After` that ends with the bucket. A source bucket that
+  cannot be written is skipped with a `Warn` — it is a coarse pre-throttle, the
+  same direction as the login route's `ip-limit` — while the deployment-wide
+  bucket that cannot be written answers `503`, because it is the only bound on an
+  open registration. The route reads no cookie, keeps no flow record, makes no
+  session and sends no email.
+- **The account module's signup verification read is required beside `Signups`.**
+  `authn.SignupVerification` is declared in `Requires` and resolved in `New`, so an
+  assembly that names this module supplies the account module that delivers it,
+  which is also where `Signups`, `Accounts` and `AccountAdmin` come from. The
+  `purpose=link` gate that refuses an unverified account reads it; that gate is
+  not mounted here yet.
+- **A registration's 409 is `username-taken`, not `conflict`.** The username is
+  the only explicit conflict, and only `Signups.Register`'s `ErrAccountExists`
+  produces it. The email address is never checked for being taken and never
+  echoed as a conflict: a clash surfaces only after a code proves control of the
+  address.
+- **The discovery document publishes the two registration switches separately.**
+  `signup.enabled` is true when either `authn.account.signup` or
+  `authn.account.password-signup` is open, and `signup.password.enabled` reports
+  the register route's own switch. A method's `opens_account` is cleared when
+  `authn.account.signup` is closed; the password method never carries
+  `opens_account`, because it never opens an account.
 - **The routes are mounted through `mount.Mounter` with their access level in one
   call, and the callback bypasses the cross-origin check.** The base path is
   `authn.gate.mount.base-path` on the endpoint `authn.gate.mount.endpoint`; the

@@ -71,8 +71,11 @@ var codeTable = []struct {
 	{"impersonation-restricted", 403},
 	{"factor-not-seasoned", 403},
 	{"forbidden", 403},
+	{"signup-closed", 403},
+	{"contact-required", 403},
 	{"conflict", 409},
 	{"login-identifier-required", 409},
+	{"username-taken", 409},
 	{"unsupported-media-type", 415},
 	{"throttled", 429},
 	{"unavailable", 503},
@@ -96,6 +99,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	for _, code := range []string{
 		"", "Bad-Request", "bad_request", "bad-request ", "login_failed", "not-found", "internal",
 		"insufficient-user-authentication", "urn:speed:authn:bad-request", "payload-too-large", "unauthorized",
+		"signup_closed", "username_taken", "contact_required",
 	} {
 		if ValidCode(code) {
 			t.Errorf("ValidCode(%q) = true", code)
@@ -108,8 +112,9 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	consts := []string{
 		CodeBadRequest, CodeUnsupportedRegion, CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired,
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
-		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeConflict,
-		CodeLoginIdentifierRequired, CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
+		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
+		CodeContactRequired, CodeConflict, CodeLoginIdentifierRequired, CodeUsernameTaken,
+		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
 	for i, c := range codeTable {
 		if consts[i] != c.code {
@@ -123,7 +128,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 // that is nothing but the problem's own members, and the headers the handler set
 // before the call.
 func TestFailWritesTheCodeAsAProblemWithNoCause(t *testing.T) {
-	for _, code := range []string{CodeBadRequest, CodeUnsupportedRegion, CodeConflict, CodeLoginIdentifierRequired, CodeUnsupportedMediaType} {
+	for _, code := range []string{CodeBadRequest, CodeUnsupportedRegion, CodeConflict, CodeLoginIdentifierRequired, CodeUsernameTaken, CodeUnsupportedMediaType} {
 		t.Run(code, func(t *testing.T) {
 			w := serve(func(c *gin.Context) {
 				c.Header("X-Kept", "yes")
@@ -204,10 +209,13 @@ func TestAWrongCodeIsADefectOfTheHandlerAndPanics(t *testing.T) {
 	}
 }
 
-// TestForbiddenWritesOnlyTheFourCodes holds the 403 codes this capability's
+// TestForbiddenWritesThe403CodesItOwns holds the 403 codes this capability's
 // handlers may answer with.
-func TestForbiddenWritesOnlyTheFourCodes(t *testing.T) {
-	for _, code := range []string{CodeMethodDisabled, CodeAccountUnavailable, CodeImpersonationRestricted, CodeForbidden} {
+func TestForbiddenWritesThe403CodesItOwns(t *testing.T) {
+	for _, code := range []string{
+		CodeMethodDisabled, CodeAccountUnavailable, CodeImpersonationRestricted,
+		CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed, CodeContactRequired,
+	} {
 		w := serve(func(c *gin.Context) { Forbidden(c, code) }, http.MethodGet, nil, nil)
 		if w.Code != http.StatusForbidden {
 			t.Errorf("%s: status = %d, want 403", code, w.Code)

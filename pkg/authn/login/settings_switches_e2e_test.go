@@ -52,6 +52,27 @@ func (h *harness) signupEnabled() bool {
 	return enabled
 }
 
+// signupFlags reads both registration switches from the methods listing: the
+// union the two report and the register route's own.
+func (h *harness) signupFlags() (enabled, password bool) {
+	h.t.Helper()
+	r := h.get("/api/v1/auth/methods")
+	if r.status != http.StatusOK {
+		h.t.Fatalf("GET methods answered %d: %s", r.status, r.body)
+	}
+	signup, ok := r.json(h.t)["signup"].(map[string]any)
+	if !ok {
+		h.t.Fatalf("the methods listing carries no signup member: %s", r.body)
+	}
+	enabled, _ = signup["enabled"].(bool)
+	own, ok := signup["password"].(map[string]any)
+	if !ok {
+		h.t.Fatalf("signup.password is %v, want an object", signup["password"])
+	}
+	password, _ = own["enabled"].(bool)
+	return enabled, password
+}
+
 // TestASignupSettingThatIsOpenTurnsTheMethodsListingOn holds that the
 // registration switch is read at run time from the settings store the
 // deployment holds: the listing is closed with no row and offers signup once
@@ -68,6 +89,52 @@ func TestASignupSettingThatIsOpenTurnsTheMethodsListingOn(t *testing.T) {
 			t.Errorf("signup.enabled after authn.account.signup is open = %v, want true", got)
 		}
 	})
+}
+
+// TestTheTwoSignupSwitchesAreReportedOnTheirOwn holds the discovery document and
+// the register route against the real settings store in all four combinations of
+// the two switches: signup.enabled is the union, signup.password.enabled reports
+// the register route's own switch, and the route is open only when that switch
+// is.
+func TestTheTwoSignupSwitchesAreReportedOnTheirOwn(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		signup     string
+		password   string
+		enabled    bool
+		passwordOK bool
+		route      int
+	}{
+		{"both closed", "closed", "closed", false, false, http.StatusForbidden},
+		{"the first-login switch alone", "open", "closed", true, false, http.StatusForbidden},
+		{"the register switch alone", "closed", "open", true, true, http.StatusCreated},
+		{"both open", "open", "open", true, true, http.StatusCreated},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			assemble(t, func(h *harness) {
+				writeASetting(t, h.ctx, h.store, testSignupKey, c.signup)
+				writeASetting(t, h.ctx, h.store, testPasswordSignupKey, c.password)
+
+				enabled, password := h.signupFlags()
+				if enabled != c.enabled {
+					t.Errorf("signup.enabled = %v, want %v", enabled, c.enabled)
+				}
+				if password != c.passwordOK {
+					t.Errorf("signup.password.enabled = %v, want %v", password, c.passwordOK)
+				}
+
+				rec := h.registerOne("alice", "alice@example.com", "alice-password")
+				if rec.status != c.route {
+					t.Fatalf("POST register answered %d, want %d: %s", rec.status, c.route, rec.body)
+				}
+				if c.route == http.StatusForbidden {
+					if got := rec.json(t)["type"]; got != "urn:speed:authn:signup-closed" {
+						t.Errorf("the refusal's type = %v, want urn:speed:authn:signup-closed", got)
+					}
+				}
+			})
+		})
+	}
 }
 
 // TestAnAutoLinkSettingLinksAFirstSocialLogin holds that the auto-link switch is

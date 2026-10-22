@@ -33,8 +33,11 @@ const (
 	CodeImpersonationRestricted        = "impersonation-restricted"         // 403
 	CodeFactorNotSeasoned              = "factor-not-seasoned"              // 403
 	CodeForbidden                      = "forbidden"                        // 403
+	CodeSignupClosed                   = "signup-closed"                    // 403
+	CodeContactRequired                = "contact-required"                 // 403
 	CodeConflict                       = "conflict"                         // 409
 	CodeLoginIdentifierRequired        = "login-identifier-required"        // 409
+	CodeUsernameTaken                  = "username-taken"                   // 409
 	CodeUnsupportedMediaType           = "unsupported-media-type"           // 415
 	CodeThrottled                      = "throttled"                        // 429
 	CodeUnavailable                    = "unavailable"                      // 503
@@ -52,8 +55,11 @@ var statusOf = map[string]int{
 	CodeImpersonationRestricted:        http.StatusForbidden,
 	CodeFactorNotSeasoned:              http.StatusForbidden,
 	CodeForbidden:                      http.StatusForbidden,
+	CodeSignupClosed:                   http.StatusForbidden,
+	CodeContactRequired:                http.StatusForbidden,
 	CodeConflict:                       http.StatusConflict,
 	CodeLoginIdentifierRequired:        http.StatusConflict,
+	CodeUsernameTaken:                  http.StatusConflict,
 	CodeUnsupportedMediaType:           http.StatusUnsupportedMediaType,
 	CodeThrottled:                      http.StatusTooManyRequests,
 	CodeUnavailable:                    http.StatusServiceUnavailable,
@@ -169,9 +175,9 @@ func StepUpRequired(c *gin.Context, id authn.Identity, r authn.Requirement) {
 }
 
 // Forbidden writes a 403. code is method-disabled, account-unavailable,
-// impersonation-restricted, factor-not-seasoned or forbidden, the five that
-// this capability's own handlers may answer: the gateway and the admission
-// layer never write a 403. Any other code panics.
+// impersonation-restricted, factor-not-seasoned, forbidden, signup-closed or
+// contact-required, the seven that this capability's own handlers may answer: the
+// gateway and the admission layer never write a 403. Any other code panics.
 func Forbidden(c *gin.Context, code string) {
 	problem(c, mustCode("Forbidden", code, http.StatusForbidden), code)
 }

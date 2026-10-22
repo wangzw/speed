@@ -38,6 +38,8 @@ type (
 	stubKV          struct{ kv.KV }
 	stubAccounts    struct{ authn.Accounts }
 	stubAdmin       struct{ authn.AccountAdmin }
+	stubSignups     struct{ authn.Signups }
+	stubSignupState struct{ authn.SignupVerification }
 	stubPasswords   struct{ authn.Passwords }
 	stubMemberships struct{ authn.Memberships }
 	stubThrottle    struct{ authn.Throttle }
@@ -84,6 +86,8 @@ func driveEngine(t *testing.T, mounter *mounttest.Mounter, names []string, metho
 	register(standIn("stand-in.kv", &stubKV{}, true, (*kv.KV)(nil)))
 	register(standIn("stand-in.accounts", &stubAccounts{}, true, (*authn.Accounts)(nil)))
 	register(standIn("stand-in.admin", &stubAdmin{}, true, (*authn.AccountAdmin)(nil)))
+	register(standIn("stand-in.signups", &stubSignups{}, true, (*authn.Signups)(nil)))
+	register(standIn("stand-in.signup-state", &stubSignupState{}, true, (*authn.SignupVerification)(nil)))
 	register(standIn("stand-in.memberships", &stubMemberships{}, true, (*authn.Memberships)(nil)))
 	register(standIn("stand-in.passwords", &stubPasswords{}, true, (*authn.Passwords)(nil)))
 	register(standIn("stand-in.throttle", &stubThrottle{}, true, (*authn.Throttle)(nil)))
@@ -133,6 +137,7 @@ func TestOneMethodRegistersTheRoutes(t *testing.T) {
 	}
 	want := map[string]bool{
 		"GET /api/v1/auth/methods":              true,
+		"POST /api/v1/auth/register":            true,
 		"POST /api/v1/auth/flows":               true,
 		"POST /api/v1/auth/flows/answer":        true,
 		"POST /api/v1/auth/flows/authenticated": true,
@@ -171,7 +176,8 @@ func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 	}
 	for _, tk := range []core.Token{
 		(*mount.Mounter)(nil), (*kv.KV)(nil), (*authn.Accounts)(nil), (*authn.AccountAdmin)(nil),
-		(*authn.Passwords)(nil), (*authn.Memberships)(nil), (*authn.Throttle)(nil),
+		(*authn.Signups)(nil), (*authn.SignupVerification)(nil), (*authn.Passwords)(nil),
+		(*authn.Memberships)(nil), (*authn.Throttle)(nil),
 		(*authn.Sessions)(nil), (*authn.MFA)(nil),
 	} {
 		if !required[tk] {

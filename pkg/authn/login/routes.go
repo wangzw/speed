@@ -41,6 +41,8 @@ func (p *product) mountRoutes() {
 	m := p.mounter
 
 	mount.Declared(m, methodsOperation, mountRel(methodsOperation.Path), withRequest(methodsOperation.Handle(r.methods)))
+	mount.Declared(m, registerOperation, mountRel(registerOperation.Path),
+		withRequest(mount.GuardBody(nil, registerOperation.Handle(r.register))))
 	mount.Declared(m, startOperation, mountRel(startOperation.Path),
 		withRequest(mount.GuardBody(nil, startOperation.Handle(r.startFlow))))
 	mount.Declared(m, startAuthenticatedOperation, mountRel(startAuthenticatedOperation.Path),

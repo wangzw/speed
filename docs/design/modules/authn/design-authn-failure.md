@@ -160,7 +160,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 设置变更的传播 | 设置模块的刷新间隔（见 [design-settings](../settings/design-settings.md)） | 变更在各副本上的生效最晚到刷新间隔，含租户刚开启强制 MFA 与 SSO 刚开启时 | 凡安全上需要立刻生效的变更不走设置，走 db 的撤销面 |
 | IdP 元数据的证书陈旧 | 管理员触发的刷新 | 元数据不自动刷新；刷新失败保留上一份有效配置并记 Warn，被 IdP 撤销的旧证书继续被接受，直到管理员更新成功。上界由管理员的动作而不是时间给出，没有自动到期 | 其余 IdP 与其余检查不受影响 |
 
-**不越过权威状态的缺口另列，各自声明方向，不算放宽。** 下列是缺口的全部情形（封闭集合）：事件发布失败、尽力档动作的审计写失败、kv 上按来源地址的前置减负层不可用。它们在下文的方向表里逐行写出。
+**不越过权威状态的缺口另列，各自声明方向，不算放宽。** 下列是缺口的全部情形（封闭集合）：事件发布失败、尽力档动作的审计写失败、kv 上按来源地址的前置减负层不可用（含登录与匿名注册的来源分钟预算）、匿名注册的全局小时预算不可用。它们在下文的方向表里逐行写出。
 
 ### 方向的判定次序
 
@@ -274,7 +274,8 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | db | 失败退避（`Throttle`），含登录路径与匿名注册的 `signup-username` 范围 | 503，不校验；注册答 `unavailable` 而不是放过 | 拒 |
 | kv | 开始与继续登录流程、WebAuthn 仪式 | 503 | 拒 |
 | kv | 已建立的会话、访问令牌、刷新令牌 | 不受影响（在 db） | — |
-| kv | 按来源地址的前置减负（若开） | 跳过该层，写 Warn 与计数 | 放：权威退避在 db，上界是退避的自由次数 |
+| kv | 按来源地址的前置减负（若开；含登录与匿名注册的来源分钟预算） | 跳过该层，写 Warn 与计数 | 放：权威退避在 db 或 `Signups.Register`，上界是退避的自由次数 |
+| kv | 匿名注册的全局小时预算（若开） | 503 `unavailable`，不开户 | 拒：全局预算是这条路径唯一的全局上界 |
 | settings | 请求期读取 | 内存快照，不会失败；强制类开关读不出按拒绝，调参类取声明的默认值并记 Error，决定写出产物的写路径设置（`authn.account.password-algorithm`）出错或越域时令写失败，键没有任何声明覆盖时按声明默认值写出并记一行 Error，同一种故障只记一次，不逐请求记 | — |
 | settings | 变更的传播 | 最终一致 | 有界放：设置变更的传播 |
 | settings | 自助注册开关 `authn.account.password-signup` 的读取 | 读内存快照；没有声明覆盖时按缺省 `closed`，注册答 403 `signup-closed`，发现面的入口为假。权威检查在 `Signups.Register`，路由与发现面的读取是预检查 | 拒 |
@@ -372,4 +373,6 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `New` 不读写自己的表、`Start` 里自检与清扫 | 已实现 | `pkg/authn/account/account.go` `Start`、`pkg/authn/account/sweep.go`；`pkg/authn/session/session.go`、`pkg/authn/session/sweep.go`；`pkg/authn/mfa/mfa.go`、`pkg/authn/mfa/sweep.go`；`pkg/authn/token/module.go` `Start`、`pkg/authn/token/sweep.go`；`pkg/authn/sms/start.go`、`pkg/authn/sms/sweep.go`；`pkg/authn/mfa/totp/totp.go` `(*factor).start`、`pkg/authn/mfa/webauthn/webauthn.go` `(*product).start` |
 | 哨兵归类的装配测试与按依赖注入故障的方向测试 | 已实现 | `pkg/authn/summary_failure_test.go`；`pkg/authn/account/assembly_test.go`；`pkg/authn/session/assembly_test.go`；`pkg/authn/mfa/assembly_test.go`；`pkg/authn/login/e2e_test.go` |
 | 自助注册与待验证账户的失败哨兵 `ErrSignupClosed`、`ErrContactRequired`、`ErrBusy`（注册派生名额已满） | 已实现 | `pkg/authn/errors.go` `ErrSignupClosed`、`ErrContactRequired`、`ErrBusy`；`pkg/authn/account/signup.go` `(*product).Register` |
-| 自助注册与待验证账户的问题码 `signup-closed`、`username-taken`、`contact-required` 与运行时映射 | 未实现 | — |
+| 自助注册的问题码 `signup-closed`、`username-taken` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeSignupClosed`、`CodeUsernameTaken`、`statusOf`、`Forbidden`；`pkg/authn/login/register.go` `(*routes).failRegister` |
+| 待验证账户的问题码 `contact-required` 与状态映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeContactRequired`、`statusOf` |
+| 待验证账户的 `contact-required` 运行时映射（要求已验证邮箱的门控） | 未实现 | — |

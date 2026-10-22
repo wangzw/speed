@@ -34,6 +34,20 @@ const (
 	deliveryModesPath   = ModuleName + "." + deliveryModesKey
 	flowTTLPath         = ModuleName + "." + flowTTLKey
 	ipLimitPath         = ModuleName + "." + ipLimitKey
+
+	// The self-registration settings the account module declares and this
+	// module only reads: the registration switch is the authority in
+	// Signups.Register and a pre-check here; the two budgets bound the
+	// anonymous route before an account is written. Each path is the account
+	// namespace joined to the key name its owner declares.
+	passwordSignupKey     = "password-signup"
+	signupIPLimitKey      = "signup-ip-limit"
+	signupGlobalHourlyKey = "signup-global-hourly"
+	accountNamespace      = "authn.account"
+
+	passwordSignupPath     = accountNamespace + "." + passwordSignupKey
+	signupIPLimitPath      = accountNamespace + "." + signupIPLimitKey
+	signupGlobalHourlyPath = accountNamespace + "." + signupGlobalHourlyKey
 )
 
 // The domains of the settings this module declares.
@@ -84,6 +98,23 @@ func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen
 
 func autoLinkInDomain(v string) bool {
 	return v == autoLinkNever || v == autoLinkVerifiedEmail
+}
+
+// The domain and the declared default of the two registration budgets, repeated
+// here because this module only reads the values the account module declares: one
+// source address may register at most signupIPLimitCeil times a minute, and the
+// whole deployment at most signupHourlyCeil times an hour.
+const (
+	signupIPLimitCeil         = 10000
+	signupGlobalHourlyFloor   = 1
+	signupGlobalHourlyCeil    = 1000000
+	signupIPLimitDefault      = 0
+	signupGlobalHourlyDefault = 100
+)
+
+func signupIPLimitInDomain(n int) bool { return n >= 0 && n <= signupIPLimitCeil }
+func signupGlobalHourlyInDomain(n int) bool {
+	return n >= signupGlobalHourlyFloor && n <= signupGlobalHourlyCeil
 }
 
 // options carries the settings this module declares and their defaults, which
@@ -311,6 +342,28 @@ func (r *reader) ipLimit() int {
 // value outside the declared set reads as closed.
 func (r *reader) signup() string {
 	return readTuned(r, signupPath, signupClosed, signupInDomain)
+}
+
+// passwordSignup reads the account module's switch of name-and-password
+// self-registration. It is the authority in Signups.Register; the register route
+// reads it only as a pre-check, so a read that fails or a value outside the
+// declared set reads as closed and the route answers signup-closed.
+func (r *reader) passwordSignup() string {
+	return readTuned(r, passwordSignupPath, signupClosed, signupInDomain)
+}
+
+// signupIPLimit reads the account module's per-source registration budget, in
+// registrations a minute; zero turns the budget off. A read that fails or a value
+// outside the declared domain reads as the declared default.
+func (r *reader) signupIPLimit() int {
+	return readTuned(r, signupIPLimitPath, signupIPLimitDefault, signupIPLimitInDomain)
+}
+
+// signupGlobalHourly reads the account module's deployment-wide registration
+// budget, in registrations an hour. A read that fails or a value outside the
+// declared domain reads as the declared default.
+func (r *reader) signupGlobalHourly() int {
+	return readTuned(r, signupGlobalHourlyPath, signupGlobalHourlyDefault, signupGlobalHourlyInDomain)
 }
 
 // autoLink reads the account module's linking switch. A read that fails or a

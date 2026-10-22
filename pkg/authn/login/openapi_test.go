@@ -24,6 +24,8 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 	stubs = append(stubs, routefixture.Seams(
 		(*authn.Accounts)(nil),
 		(*authn.AccountAdmin)(nil),
+		(*authn.Signups)(nil),
+		(*authn.SignupVerification)(nil),
 		(*authn.Passwords)(nil),
 		(*authn.Memberships)(nil),
 		(*authn.Throttle)(nil),

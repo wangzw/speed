@@ -34,7 +34,7 @@
 
 ### 命名空间
 
-`config.Schema` 的命名空间与模块名同值，设置键的路径是命名空间加键名。下表是 authn 与 `tenant.admission` 声明输入项的命名空间的全集（封闭集合）；不在表内的 authn 模块不声明输入项。`authn.mount` 需要的挂载键由 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读取这几个键，这是已有的跨模块读法，不是重复声明。`authn.login` 按路径读取账户模块声明的 `authn.account.signup`、`authn.account.password-signup` 与 `authn.account.auto-link`，`authn.login.sms` 按路径读取其中的 `authn.account.signup`，都不重复声明。
+`config.Schema` 的命名空间与模块名同值，设置键的路径是命名空间加键名。下表是 authn 与 `tenant.admission` 声明输入项的命名空间的全集（封闭集合）；不在表内的 authn 模块不声明输入项。`authn.mount` 需要的挂载键由 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读取这几个键，这是已有的跨模块读法，不是重复声明。`authn.login` 按路径读取账户模块声明的 `authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link` 与两个注册预算 `authn.account.signup-ip-limit`、`authn.account.signup-global-hourly`，`authn.login.sms` 按路径读取其中的 `authn.account.signup`，都不重复声明。
 
 | 命名空间 | 持有它的文档 | 声明的输入项 |
 |---|---|---|
@@ -571,5 +571,6 @@ flowchart TD
 | 秘密的存放 | 已实现 | `pkg/authn/static/hash.go` `Hash`、`HashPBKDF2`、`ParseHash`；`pkg/authn/internal/password/phc.go` `Parse`；`pkg/authn/token/keys.go` `loadKeySet`；`pkg/authn/sso/saml/config.go` `loadKey` |
 | `AGENTS.md` 对设置写权限的硬要求 | 已实现 | `pkg/authn/AGENTS.md` |
 | 注册开关 `authn.account.password-signup`、注册预算与未验证账户清理期限的设置项 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`（`password-signup`、`signup-ip-limit`、`signup-global-hourly`、`unverified-ttl`、`unverified-sweep-interval`）、`signupIPLimitInDomain`、`signupHourlyInDomain`、`unverifiedTTLInDomain`、`unverifiedSweepInDomain`；`pkg/authn/account/params.go` `passwordSignup`、`unverifiedTTL`、`unverifiedSweepInterval`；`pkg/authn/account/relax.go` `relaxing`、`relaxedMove` |
+| 登录路由按路径读取注册开关与两个注册预算（不重复声明） | 已实现 | `pkg/authn/login/config.go` `passwordSignupPath`、`signupIPLimitPath`、`signupGlobalHourlyPath`、`signupIPLimitInDomain`、`signupGlobalHourlyInDomain`、`(*reader).passwordSignup`、`signupIPLimit`、`signupGlobalHourly`；`pkg/authn/login/register.go` `signupSourceAllow`、`signupGlobalAllow`；`pkg/authn/login/respond.go` `(*routes).methods` |
 | 邮箱验证码的按地址、按账户与全局预算的设置项 | 未实现 | — |
 | `authn.account.signup-concurrency` 配置项 | 已实现 | `pkg/authn/account/config.go` `signupConcurrencyItem`、`configDefaults`、`(moduleConfig).resolve`；`pkg/authn/account/account.go` `newProduct`（`signupGov`） |

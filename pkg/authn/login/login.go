@@ -95,12 +95,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // It delivers nothing: the engine is a process and a set of routes, and every
 // capability it uses comes from another module. The route mounter, the
-// key-value store, the account reads and writes, the password capability, the
-// member reads, the failure back-off, the session store and the multi-factor
-// module are required, and each is delivered exclusively by another module, so a
-// command that names this one fails before anything is built unless it names
-// them too. The settings store is required as optional only so that it is
-// initialised first and its snapshot is loaded when Init reads a setting.
+// key-value store, the account reads and writes, the self-registration and its
+// verification read, the password capability, the member reads, the failure
+// back-off, the session store and the multi-factor module are required, and each
+// is delivered exclusively by another module, so a command that names this one
+// fails before anything is built unless it names them too. The settings store is
+// required as optional only so that it is initialised first and its snapshot is
+// loaded when Init reads a setting.
 //
 // The stance is StateEnabled and never StateAuto: the module is taken in at run
 // level, so it has no way to stand itself down.
@@ -112,6 +113,8 @@ func Module() core.Module {
 			{Token: (*kv.KV)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
+			{Token: (*authn.Signups)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*authn.Passwords)(nil)},
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*authn.Throttle)(nil)},
@@ -167,15 +170,17 @@ func productOf(instance any) (*product, bool) {
 // product is the module's instance.
 type product struct {
 	// Required capabilities, taken up by New.
-	mounter     mount.Mounter
-	kv          kv.KV
-	accounts    authn.Accounts
-	admin       authn.AccountAdmin
-	passwords   authn.Passwords
-	memberships authn.Memberships
-	throttle    authn.Throttle
-	sessions    authn.Sessions
-	mfa         authn.MFA
+	mounter      mount.Mounter
+	kv           kv.KV
+	accounts     authn.Accounts
+	admin        authn.AccountAdmin
+	signups      authn.Signups
+	verification authn.SignupVerification
+	passwords    authn.Passwords
+	memberships  authn.Memberships
+	throttle     authn.Throttle
+	sessions     authn.Sessions
+	mfa          authn.MFA
 
 	// Optional capabilities, taken up by Init and read-only afterwards.
 	tokens      authn.Tokens
@@ -225,6 +230,11 @@ func newProduct(reg *core.Registry) (*product, error) {
 		{"the key-value store", func() (err error) { p.kv, err = core.Resolve[kv.KV](reg); return }},
 		{"the account reads", func() (err error) { p.accounts, err = core.Resolve[authn.Accounts](reg); return }},
 		{"the account writes", func() (err error) { p.admin, err = core.Resolve[authn.AccountAdmin](reg); return }},
+		{"the self-registration", func() (err error) { p.signups, err = core.Resolve[authn.Signups](reg); return }},
+		{"the signup verification reads", func() (err error) {
+			p.verification, err = core.Resolve[authn.SignupVerification](reg)
+			return
+		}},
 		{"the password capability", func() (err error) { p.passwords, err = core.Resolve[authn.Passwords](reg); return }},
 		{"the member reads", func() (err error) { p.memberships, err = core.Resolve[authn.Memberships](reg); return }},
 		{"the failure back-off", func() (err error) { p.throttle, err = core.Resolve[authn.Throttle](reg); return }},
@@ -411,6 +421,13 @@ func (p *product) signupEnabled() bool {
 	return p.settings.signup() == signupOpen
 }
 
+// passwordSignupEnabled is whether the anonymous name-and-password registration
+// route is open, as the settings state it now. It is a pre-check only: the
+// authority is Signups.Register, which reads the same key.
+func (p *product) passwordSignupEnabled() bool {
+	return p.settings.passwordSignup() == signupOpen
+}
+
 // buildSelfservice builds the account self-service routes.
 func (p *product) buildSelfservice() error {
 	svc, err := selfservice.New(selfservice.Deps{
@@ -497,7 +514,28 @@ func (p *product) diagnose(reg *core.Registry) {
 			"whose peers are not configured as trusted proxies, every caller shares one bucket, " +
 			"because the client address is then the proxy's")
 	}
+	p.diagnoseSignup()
 	p.checkResolutionEndpoints(reg)
+}
+
+// diagnoseSignup writes the startup lines of anonymous self-registration: whether
+// the route is open, and whether the per-source budget that bounds it is off. The
+// switch itself is the account module's, read here only to report it.
+func (p *product) diagnoseSignup() {
+	if !p.passwordSignupEnabled() {
+		p.logger.Info(diagnosticPrefix + "name-and-password self-registration is closed, so the register route " +
+			"answers 403 signup-closed, because " + passwordSignupPath + " is not open")
+	} else {
+		p.logger.Info(diagnosticPrefix + "name-and-password self-registration is open")
+	}
+	if p.settings.signupIPLimit() == 0 {
+		p.logger.Warn(diagnosticPrefix+ModuleName+": the per-source budget of a registration is off, because "+
+			signupIPLimitPath+" is 0", slog.String("setting", signupIPLimitPath))
+	} else {
+		p.logger.Warn(diagnosticPrefix + ModuleName + ": the per-source budget of a registration is on; behind " +
+			"a proxy whose peers are not configured as trusted proxies, every caller shares one bucket, because " +
+			"the client address is then the proxy's")
+	}
 }
 
 // checkResolutionEndpoints checks that the end the routes are mounted on is not
