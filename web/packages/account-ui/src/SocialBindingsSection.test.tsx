@@ -56,7 +56,7 @@ function methodsDoc(
         ? {}
         : { binding_providers: [...method.bindingProviders] }),
     })),
-    signup: { enabled: false },
+    signup: { enabled: false, password: { enabled: false } },
     mfa: { factors: [] },
   }
 }

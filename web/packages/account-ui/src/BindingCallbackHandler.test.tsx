@@ -164,7 +164,7 @@ describe('BindingCallbackHandler', () => {
     function methodsDoc(kinds: readonly string[]): Record<string, unknown> {
       return {
         methods: kinds.map((kind) => ({ name: kind, kind })),
-        signup: { enabled: false },
+        signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
       }
     }

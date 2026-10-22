@@ -46,7 +46,7 @@ const OTPAUTH_URI = 'otpauth://totp/speed:ada?issuer=speed'
 function methodsDoc(factors: readonly string[]): Record<string, unknown> {
   return {
     methods: [],
-    signup: { enabled: false },
+    signup: { enabled: false, password: { enabled: false } },
     mfa: { factors: [...factors] },
   }
 }

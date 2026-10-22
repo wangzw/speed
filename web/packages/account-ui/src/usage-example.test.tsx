@@ -157,7 +157,7 @@ describe('the README quick start, exercised over a real api-client', () => {
               { name: 'github', kind: 'redirect', label: 'GitHub' },
               { name: 'wechat', kind: 'redirect', label: 'WeChat' },
             ],
-            signup: { enabled: false },
+            signup: { enabled: false, password: { enabled: false } },
             mfa: { factors: ['totp'] },
           })
       }
