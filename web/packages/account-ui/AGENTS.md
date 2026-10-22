@@ -122,15 +122,19 @@ session as a required prop; `PreferencesSection` takes it optionally
   refuses shapes this face does not restate (the reserved static-credential
   prefix, a UUID-shaped name). Closing the add face clears the failure
   banner, the field error, the success notice and the sent-code step.
-- **A username carries no verification chip; an identifier's chip reads
-  `proven`, never `verified_at`.** A username is a login name with no
-  ownership to prove, so its row renders no verified/unverified chip; email
-  and phone rows read `proven`, the server's derivation of whether the way
-  the identifier was established proves ownership (`email-code`, `sms-code`,
-  `invite`, `idp:<provider>`) rather than merely records an assertion
-  (`admin`, `import-unverified`, `self`). Every stored identifier carries a
-  `verified_at`, including a username written at registration as `self`, so
-  `verified_at` cannot answer the question for the rows that show one. An
+- **A username carries no ownership chip; an email or phone chip names the
+  way it was established, reading `proven` and `verified_via`, never
+  `verified_at`.** A username is a login name with no ownership to prove, so
+  its row renders no ownership chip. A proved channel (`email-code`,
+  `sms-code`, `invite`, `idp:<provider>`) reads `identifiers.verified`; an
+  `admin` address reads `identifiers.addedByAdmin`; an `import-unverified`
+  address reads `identifiers.importedUnverified`; every other unproven
+  channel reads `identifiers.unverified`. A provisioned account is
+  deliberately usable without the user proving the address, so its row must
+  not promise a verification the account neither needs nor offers. Every
+  stored identifier carries a `verified_at`, including a username written at
+  registration as `self`, so `verified_at` cannot answer the ownership
+  question for the rows that show one. An
   account with a password signs in with a username or an email address:
   while the profile lists exactly one of those, that row's remove
   action gives way to a note (`identifiers.lastLoginName`) telling the user

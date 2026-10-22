@@ -186,14 +186,19 @@ route revokes the account's other sessions) and reports the addition.
 Lists the account's sign-in identifiers -- read off the profile's
 `identifiers` field (`GET /api/v1/auth/me`), because the spec ships no dedicated
 list route -- each with its kind (email, phone or username). A username is a
-login name with no ownership to prove, so its row shows no verified/unverified
-state; email and phone rows show the server's `proven` state. `proven` is true
+login name with no ownership to prove, so its row shows no ownership state;
+email and phone rows name how the identifier was established. `proven` is true
 only for the ways of establishing an identifier that prove ownership
 (`email-code`, `sms-code`, `invite`, `idp:<provider>`); `admin`,
 `import-unverified` and `self` only record an assertion, so `proven` is false
-for them. A username row renders no state at all, so these values never show
-for it. `verified_at` cannot answer that question -- every stored identifier
-carries one. A row's remove action sits behind the ui-kit danger confirm and
+for them. The chip therefore also reads `verified_via`: a proved channel shows
+Verified, `admin` shows Added by an administrator (not self-verified),
+`import-unverified` shows Imported (not self-verified), and any other unproven
+channel shows Not verified. A provisioned account is usable without the user
+proving the address, so its row must not promise a verification it does not
+offer. A username row renders no state at all, so these values never show for
+it. `verified_at` cannot answer the ownership question -- every stored
+identifier carries one. A row's remove action sits behind the ui-kit danger confirm and
 sends `DELETE /api/v1/auth/identifiers/{id}`; a refusal (removing a password
 account's last username or email address is the 409
 `login-identifier-required`) renders its code text and re-reads the profile,

@@ -14,7 +14,13 @@
  * self). `verified_at` cannot answer that question: every stored identifier
  * carries one, including a username written at registration as `self`.
  * A username is a login name with no ownership to prove, so its row carries
- * no verified/unverified chip; email and phone rows keep the chip.
+ * no ownership chip. An email or phone row names the way it was established:
+ * proved ownership reads `verified`, an administrator-asserted address reads
+ * `addedByAdmin`, an unverified import reads `importedUnverified`, and every
+ * other unproven channel reads `unverified`. The four are distinct because an
+ * administrator-provisioned account is deliberately usable without the user
+ * proving the address, so calling that row unverified would promise a
+ * verification the account neither needs nor offers.
  *
  * A row whose identifier carries an id has a row-end remove action that
  * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
@@ -471,6 +477,20 @@ export function IdentifiersSection({
                 // written at registration as `self`), so it cannot answer that
                 // question.
                 const verified = identifier.proven === true
+                // The unproven channels are not one state: an administrator
+                // asserted the address and the account is deliberately usable
+                // without the user proving it, while an unverified import and a
+                // self-asserted value are unproven in the ordinary sense. Naming
+                // the channel keeps the row from promising a verification the
+                // account neither needs nor offers.
+                const via = identifier.verified_via ?? ''
+                const stateLabel = verified
+                  ? t('identifiers.verified')
+                  : via === 'admin'
+                    ? t('identifiers.addedByAdmin')
+                    : via === 'import-unverified'
+                      ? t('identifiers.importedUnverified')
+                      : t('identifiers.unverified')
                 // A username proves no ownership, so it has no verification
                 // state to show.
                 const showChip = kind !== 'username'
@@ -520,11 +540,7 @@ export function IdentifiersSection({
                             size="small"
                             variant="outlined"
                             color={verified ? 'primary' : 'default'}
-                            label={
-                              verified
-                                ? t('identifiers.verified')
-                                : t('identifiers.unverified')
-                            }
+                            label={stateLabel}
                           />
                         ) : null}
                         {id !== null && !lastLoginName && (

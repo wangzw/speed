@@ -85,6 +85,44 @@ describe('IdentifiersSection', () => {
     await expectNoAxeViolations()
   })
 
+  it('names an administrator-asserted or imported address by its channel', async () => {
+    // A provisioned account is usable without the user proving the address, so
+    // the row must not promise a verification the account neither needs nor
+    // offers; an unverified import says what it is instead.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-admin',
+                kind: 'email',
+                value: 'operator@demo.test',
+                proven: false,
+                verified_via: 'admin',
+              }),
+              identifier({
+                id: 'id-import',
+                kind: 'email',
+                value: 'imported@demo.test',
+                proven: false,
+                verified_via: 'import-unverified',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('operator@demo.test')).toBeTruthy()
+    expect(screen.getByText(zhCN.identifiers.addedByAdmin)).toBeTruthy()
+    expect(screen.getByText(zhCN.identifiers.importedUnverified)).toBeTruthy()
+    expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
+  })
+
   it('renders no verification chip for a username', async () => {
     // A username is a login name with no ownership to prove, so its row has
     // no verified state at all -- not even one read off `proven`.

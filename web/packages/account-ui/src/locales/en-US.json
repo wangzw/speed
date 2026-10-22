@@ -301,6 +301,8 @@
     },
     "verified": "Verified",
     "unverified": "Not verified",
+    "addedByAdmin": "Added by an administrator (not self-verified)",
+    "importedUnverified": "Imported (not self-verified)",
     "lastLoginName": "This is your only sign-in name. Add another username or email address before removing it.",
     "remove": "Remove",
     "removeAria": "Remove this sign-in identifier: {{value}}",
