@@ -124,6 +124,11 @@ func declare(name string, spec TemplateSpec) (declaredTemplate, error) {
 	if kind == "" {
 		kind = KindNotification
 	}
+	if !kind.known() {
+		return declaredTemplate{}, fmt.Errorf("%w: the template %q is for the kind %q, and the kinds are "+
+			"%q, %q and %q", ErrInvalidConfig, name, string(kind), KindVerification, KindNotification,
+			KindMarketing)
+	}
 
 	seen := make(map[string]bool, len(spec.Params))
 	params := make([]string, 0, len(spec.Params))

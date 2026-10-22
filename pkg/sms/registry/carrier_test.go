@@ -57,6 +57,26 @@ func TestSnapshotLoadRefusesARowTheCarrierCannotCarry(t *testing.T) {
 	}
 }
 
+// TestSnapshotLoadRefusesARowWithAnUnknownKind covers the declaration check the
+// load repeats over every row. A row reaches the table only through a write that
+// already checked it, but the table is also a thing people edit, and a kind
+// outside the closed set would otherwise fall through to the carrier's default
+// spelling at the first send.
+func TestSnapshotLoadRefusesARowWithAnUnknownKind(t *testing.T) {
+	r := newRig(t, openDialect(t, sqliteDialect), newModelProvider(textCarrier()), settingsOf(t, nil, 0))
+	r.plantRow(r.provider.Name(), "promo", sms.Kind("promo"), []string{"code"}, nil,
+		map[string]string{"en": "hi ${code}"}, nil,
+		map[string]sms.Approval{"en": {State: sms.ApprovalNotRequired}}, true, base)
+
+	err := r.s.load(context.Background())
+	if !errors.Is(err, sms.ErrInvalidConfig) {
+		t.Fatalf("loading a row with an unknown kind returned %v, want ErrInvalidConfig", err)
+	}
+	if !strings.Contains(err.Error(), "promo") {
+		t.Errorf("the failure does not name the template: %v", err)
+	}
+}
+
 // TestWritesRefuseATemplateTheCarrierCannotCarry covers the third shape check,
 // over Register and Offer, and that nothing reaches the vendor or the table.
 func TestWritesRefuseATemplateTheCarrierCannotCarry(t *testing.T) {

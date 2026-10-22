@@ -36,6 +36,22 @@ const (
 	KindMarketing Kind = "marketing"
 )
 
+// known reports whether the kind is one of the declared three.
+//
+// The set is closed because a carrier maps it to a vendor field that changes
+// what may be sent and how it is billed: a kind the declaration does not name
+// would fall through to a carrier's default, which for a marketing message is
+// the transactional spelling. A declaration is refused instead, at the same
+// point every other self-consistency defect is.
+func (k Kind) known() bool {
+	switch k {
+	case KindVerification, KindNotification, KindMarketing:
+		return true
+	default:
+		return false
+	}
+}
+
 // ApprovalState is the vendor's review verdict, in a vocabulary of this
 // package's own.
 //

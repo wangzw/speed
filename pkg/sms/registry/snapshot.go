@@ -165,6 +165,14 @@ func loadSnapshot(ctx context.Context, handle *gorm.DB, configured map[string]st
 			return nil, fmt.Errorf("sms.registry: the template %q in the %s table does not fit the "+
 				"mounted carrier: %w", rec.name, tableName, err)
 		}
+		// A row reaches the table only through a write that already checked it, but
+		// the table is also a thing people edit. The declaration check runs again
+		// here so a hand-edited row fails the load rather than the first send under
+		// it.
+		if _, err := sms.NewDeclaration(map[string]sms.TemplateSpec{rec.name: spec}); err != nil {
+			return nil, fmt.Errorf("sms.registry: the template %q in the %s table is not self-consistent: %w",
+				rec.name, tableName, err)
+		}
 		loaded.byName[r.Name] = rec
 	}
 	return loaded, nil
