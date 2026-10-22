@@ -22,9 +22,11 @@ the seam does.
   package turns one `SendCode` call into one `mail.Message`. It holds no budget,
   no record, no attempt count and no retry, because those belong to the consumer
   that owns the code.
-- **The code reaches no log, no error text and no metric.** Neither the message
-  nor this package logs anything; the error a caller receives is the carrier's
-  and carries no code. A test pins the two paths that could leak it.
+- **The code, the recipient and the bodies reach no log, no error text and no
+  metric.** Each send logs one outcome line with the carrier's receipt and its
+  duration; the line carries neither the code nor the address nor the message.
+  The error a caller receives is the carrier's and carries no code. A test pins
+  the two paths that could leak it and the two outcome lines.
 - **A carrier error is passed through exactly as classified.** `mail.ErrThrottled`,
   `mail.ErrRejected` and `mail.ErrUncertain` reach the caller unchanged, and the
   caller collapses all of them into one 503 so a client cannot tell whether the

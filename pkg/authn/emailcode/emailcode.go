@@ -9,13 +9,16 @@
 // registered as authn.emailcode and delivers EmailCodeSender exclusively, so a
 // command tree names it or leaves the email self-service face unavailable.
 //
-// The code reaches no log line, no error text and no metric. A carrier failure
-// is passed through exactly as the mail capability classified it, so the caller
-// answers one 503 whatever happened.
+// The code, the recipient and the message bodies reach no log line, no error
+// text and no metric. Each send is logged once with its outcome, the carrier's
+// receipt and its duration, so a failed or silently dropped delivery can be
+// traced; a carrier failure is passed through exactly as the mail capability
+// classified it, so the caller answers one 503 whatever happened.
 package emailcode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -23,6 +26,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/i18n"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 )
 
@@ -129,13 +133,44 @@ func (p *product) SendCode(ctx context.Context, to, code string, ttl time.Durati
 	if err != nil {
 		return err
 	}
-	_, err = p.sender.Send(ctx, mail.Message{
+	started := time.Now()
+	receipt, err := p.sender.Send(ctx, mail.Message{
 		To:      []string{to},
 		Subject: subject,
 		Text:    text,
 		HTML:    html,
 	})
-	return err
+	logger := log.FromContext(ctx)
+	elapsed := time.Since(started).Milliseconds()
+	if err != nil {
+		logger.Error(ModuleName+": sending a verification code failed",
+			"outcome", outcomeOf(err),
+			"provider_id", receipt.ProviderID,
+			"duration_ms", elapsed,
+			"cause", err.Error())
+		return err
+	}
+	logger.Info(ModuleName+": a verification code was sent",
+		"outcome", "sent",
+		"provider_id", receipt.ProviderID,
+		"duration_ms", elapsed)
+	return nil
+}
+
+// outcomeOf names the carrier answer the mail capability classified, so a
+// failure log says whether the relay throttled, rejected or left the send
+// unknown. The code, the recipient and the message bodies never reach the log.
+func outcomeOf(err error) string {
+	switch {
+	case errors.Is(err, mail.ErrThrottled):
+		return "throttled"
+	case errors.Is(err, mail.ErrRejected):
+		return "rejected"
+	case errors.Is(err, mail.ErrUncertain):
+		return "uncertain"
+	default:
+		return "failed"
+	}
 }
 
 // render draws the three messages for a code in the language the caller asked

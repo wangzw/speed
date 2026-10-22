@@ -1,10 +1,12 @@
 package emailcode
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/i18n/catalog"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 )
 
@@ -94,6 +97,53 @@ func driveEmailcode(t *testing.T, sender mail.Sender) (authn.EmailCodeSender, er
 		},
 	})
 	return got, err
+}
+
+// TestASendLogsOneOutcomeLine holds the external-call rule: each send records
+// its success or failure, the carrier's receipt and its duration, and the line
+// carries neither the code nor the address.
+func TestASendLogsOneOutcomeLine(t *testing.T) {
+	var out bytes.Buffer
+	ctx := log.WithLogger(context.Background(),
+		slog.New(slog.NewTextHandler(&out, nil)))
+
+	sender := &recordingSender{}
+	channel, err := driveEmailcode(t, sender)
+	if err != nil {
+		t.Fatalf("driving the email channel: %v", err)
+	}
+	if err := channel.SendCode(ctx, address, testCode, 10*time.Minute, "en-US"); err != nil {
+		t.Fatalf("sending the code: %v", err)
+	}
+	success := out.String()
+	for _, want := range []string{"outcome=sent", "provider_id=recording", "duration_ms="} {
+		if !strings.Contains(success, want) {
+			t.Errorf("the success line lacks %q: %s", want, success)
+		}
+	}
+	for _, leak := range []string{testCode, address} {
+		if strings.Contains(success, leak) {
+			t.Errorf("the success line carries %q: %s", leak, success)
+		}
+	}
+
+	out.Reset()
+	sender.err = fmt.Errorf("%w: the relay refused it", mail.ErrRejected)
+	err = channel.SendCode(ctx, address, testCode, 10*time.Minute, "en-US")
+	if !errors.Is(err, mail.ErrRejected) {
+		t.Fatalf("the failed send returned %v, want one wrapping ErrRejected", err)
+	}
+	failure := out.String()
+	for _, want := range []string{"outcome=rejected", "cause=", "duration_ms="} {
+		if !strings.Contains(failure, want) {
+			t.Errorf("the failure line lacks %q: %s", want, failure)
+		}
+	}
+	for _, leak := range []string{testCode, address} {
+		if strings.Contains(failure, leak) {
+			t.Errorf("the failure line carries %q: %s", leak, failure)
+		}
+	}
 }
 
 // TestTheDescriptorNamesWhatItDeliversAndRequires holds the shape a command
