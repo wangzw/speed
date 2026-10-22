@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/sms"
 )
@@ -189,6 +190,47 @@ func TestTheRequestCarriesTheContentTemplateAndOrderedVariables(t *testing.T) {
 	}
 	if receipt.ProviderID != "SM00000000000000000000000000000001" {
 		t.Errorf("ProviderID = %q, want the message SID", receipt.ProviderID)
+	}
+}
+
+// TestARequestedLifetimeBecomesTheValidityPeriod holds the lifetime mapping: a
+// resolved ValidFor reaches the vendor as whole seconds, a lifetime under a
+// second becomes one second rather than the zero that would mean the vendor's
+// default, a lifetime past the vendor's bound is clamped to it, and a message
+// that names no lifetime sends no parameter at all.
+func TestARequestedLifetimeBecomesTheValidityPeriod(t *testing.T) {
+	cases := []struct {
+		name     string
+		validFor time.Duration
+		want     string
+	}{
+		{"no lifetime", 0, ""},
+		{"in range", 90 * time.Second, "90"},
+		{"under a second", 500 * time.Millisecond, "1"},
+		{"past the vendor's bound", 48 * time.Hour, "36000"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var got string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				got = r.PostFormValue("ValidityPeriod")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = io.WriteString(w, `{"sid":"SM00000000000000000000000000000002","status":"queued"}`)
+			}))
+			defer server.Close()
+
+			s := senderOver(t, server.URL, server.URL)
+			resolved := oneResolved()
+			resolved.ValidFor = c.validFor
+			if _, err := s.Send(t.Context(), resolved); err != nil {
+				t.Fatalf("Send: %v", err)
+			}
+			if got != c.want {
+				t.Errorf("ValidityPeriod = %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 

@@ -330,6 +330,9 @@ func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, erro
 		}
 		params.SetContentVariables(string(variables))
 	}
+	if r.ValidFor > 0 {
+		params.SetValidityPeriod(validityPeriod(r.ValidFor))
+	}
 
 	message, err := s.messages.CreateMessage(params)
 	if err != nil {
@@ -340,6 +343,29 @@ func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, erro
 			sms.ErrUncertain, carrierName)
 	}
 	return sms.Receipt{ProviderID: *message.Sid}, nil
+}
+
+// maxValiditySeconds is the largest lifetime the vendor accepts.
+const maxValiditySeconds = 36000
+
+// validityPeriod reads a requested lifetime as the whole seconds the vendor
+// accepts.
+//
+// The vendor's field counts seconds and takes 1 to 36000; a lifetime below a
+// second becomes one second rather than the zero that would mean the vendor's
+// own default, and one beyond the bound is clamped to it rather than wrapping or
+// being refused. The direction matches the AWS carrier's TimeToLive handling, so
+// the same request means the same lifetime on either deployment.
+func validityPeriod(validFor time.Duration) int {
+	seconds := int64(validFor / time.Second)
+	switch {
+	case seconds < 1:
+		return 1
+	case seconds > maxValiditySeconds:
+		return maxValiditySeconds
+	default:
+		return int(seconds)
+	}
 }
 
 // identityFor reads the identity a message goes out from: the one it names, or

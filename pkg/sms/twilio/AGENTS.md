@@ -29,7 +29,10 @@ sentinels in `pkg/sms`.
   A `sms.Resolved` carries the destination, the content SID and the ordered
   values; this carrier puts `Code` in `ContentSid`, numbers `Ordered` into
   `ContentVariables` as `"1"`, `"2"`, … and sends no `Body` beside the content
-  template. A resolved message with no code is `sms.ErrRejected`: this carrier
+  template. A non-zero `ValidFor` becomes `ValidityPeriod` as whole seconds,
+  raised to one below a second and clamped to the vendor's 36000-second bound,
+  the same direction the AWS carrier takes for `TimeToLive`, so one request means
+  one lifetime on either deployment. A resolved message with no code is `sms.ErrRejected`: this carrier
   declares `Content{TemplateCode}` and cannot send a body-only template, and the
   registry refuses such a template for this carrier before a message is built. A
   message the registry would refuse never reaches here, so an uncovered template
