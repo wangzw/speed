@@ -82,7 +82,7 @@ interface ConsoleShellProps {
   readonly navGroups?: readonly ConsoleNavGroup[]
   readonly children: ReactNode
   readonly title?: ReactNode
-  readonly headerActions?: ReactNode
+  readonly headerActions?: AppShellNavSlot   // 横幅标题之后的宿主内容；同外壳的槽形态，可给渲染函数取窄栏状态
   // 导航地标的可及名；不给时取本包的 `shell.navLabel`。
   readonly navLabel?: string
   // 帧内导航的点击回调：给了它即把被激活条目的路径交回调（宿主的路由器

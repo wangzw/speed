@@ -75,6 +75,7 @@ import { AppShell, isPlainPrimaryClick } from '@speed/layout-kit'
 import type {
   AppShellNavEntry,
   AppShellNavItem,
+  AppShellNavSlot,
   AppShellProps,
 } from '@speed/layout-kit'
 import type { ConsoleNavGroup, ConsoleRoute } from './route.js'
@@ -136,8 +137,10 @@ export interface ConsoleShellProps extends AppShellPassthroughProps {
   readonly children: ReactNode
   /** The console title, rendered in the banner (host content). */
   readonly title?: ReactNode
-  /** Banner content after the title, typically the account menu (host content). */
-  readonly headerActions?: ReactNode
+  /** Banner content after the title, typically the account menu (host
+   * content). Takes the shell's slot form, so a control too wide for the
+   * collapsed sidebar rail can render its icon form there. */
+  readonly headerActions?: AppShellNavSlot
   /**
    * The navigation landmark's accessible name. Absent, the console names
    * it from its own namespace (`shell.navLabel`), keeping the platform
