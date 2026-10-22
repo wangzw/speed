@@ -22,6 +22,12 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test-utils/setup.ts'],
+    // The same per-case budget the workspace preset gives every package
+    // (web/vitest.shared.ts). These cases drive the assembled program --
+    // route changes, settles and announcements -- and vitest's 5s default
+    // fails them on the clock when the workspace's suites run in parallel,
+    // not on an assertion.
+    testTimeout: 20_000,
     // Vitest's own defaults are restated because naming `exclude` replaces
     // them rather than extending them. src/a11y/** (the route-level
     // accessibility sweep) is excluded here and run by its own config

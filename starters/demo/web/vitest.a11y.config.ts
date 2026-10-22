@@ -26,6 +26,10 @@ export default defineConfig({
     // Vitest's own defaults are restated because naming `exclude` replaces
     // them rather than extending them.
     exclude: ['**/node_modules/**', '**/dist/**', '**/*.browser.test.tsx'],
+    // The workspace preset's per-case budget (web/vitest.shared.ts): a sweep
+    // renders every route of the area it scans, so vitest's 5s default would
+    // fail it on the clock under parallel load.
+    testTimeout: 20_000,
     // The verbose reporter is deliberate: the default reporter emits a test's
     // console output (the gate's advisory warnings and its closing report)
     // only when that test failed, so a green run would hide the registered
