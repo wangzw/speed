@@ -210,50 +210,70 @@ func usernameTaken(conn *gorm.DB, username string) (bool, error) {
 	return len(ids) > 0, nil
 }
 
-// SignupStateOf reads how far an account's self-registration has got. The state
-// is read from the account row on every call; the address is the earliest-proved
-// email identifier for Verified (ties broken by identifier), the unproved email
-// reservation for Pending, and empty when there is nothing to report.
+// SignupStateOf reads how far an account's email verification has got. The
+// state is judged from the identifiers and the contact reservations on every
+// call; the signup_state column is not read. An account of a kind other than
+// user has nothing to verify and reads SignupNone.
+//
+// Verified is a user account that holds at least one email identifier whose way
+// of verification proves ownership. Its address is the one proved earliest,
+// ties broken by identifier, and Since is signup_verified_at, or that
+// identifier's own instant when the column is empty.
+//
+// Pending is a user account with no proved email address but with something to
+// prove: an email identifier written through a channel that does not prove
+// ownership (admin, import-unverified, self), or a contact reservation its
+// registration left awaiting verification. Its address is the earliest of those
+// two by creation instant, ties broken by identifier, and Since is
+// signup_verified_at, which is the zero time for an account that never reached
+// Verified.
+//
+// SignupNone is a user account with no email address at all, proved or
+// unproved. There is nothing to verify, so nothing gates on it; Since is the
+// zero time.
 func (p *product) SignupStateOf(ctx context.Context, id authn.AccountID) (authn.SignupStatus, error) {
 	conn := p.conn(ctx)
 	row, err := loadAccount(conn, id)
 	if err != nil {
 		return authn.SignupStatus{}, failed("reading an account", err)
 	}
-	status := authn.SignupStatus{
-		State: signupStateOf(row.SignupState),
-		Since: timeOf(row.SignupVerifiedAt),
+	if authn.AccountKind(row.Kind) != authn.KindUser {
+		return authn.SignupStatus{}, nil
 	}
-	switch status.State {
-	case authn.SignupVerified:
-		email, readErr := earliestProvedEmail(conn, id.String())
-		if readErr != nil {
-			return authn.SignupStatus{}, failed("reading an account's identifiers", readErr)
-		}
-		status.Email = email
-	case authn.SignupPending:
-		var contacts []pendingContactRow
-		if err = conn.Where("account_id = ? AND kind = ? AND verified_at IS NULL", id.String(),
-			string(authn.IdentifierEmail)).Order("created_at, id").Limit(1).Find(&contacts).Error; err != nil {
-			return authn.SignupStatus{}, failed("reading a pending contact", err)
-		}
-		if len(contacts) > 0 {
-			status.Email = contacts[0].Value
-		}
+	emails, err := emailIdentifiersOf(conn, id.String())
+	if err != nil {
+		return authn.SignupStatus{}, failed("reading an account's identifiers", err)
 	}
-	return status, nil
+	if verified := earliestProvedEmail(emails); verified != nil {
+		since := timeOf(row.SignupVerifiedAt)
+		if since.IsZero() {
+			since = verified.VerifiedAt
+		}
+		return authn.SignupStatus{State: authn.SignupVerified, Email: verified.Value, Since: since}, nil
+	}
+	email, found, err := earliestUnprovedEmail(conn, id.String(), emails)
+	if err != nil {
+		return authn.SignupStatus{}, failed("reading a pending contact", err)
+	}
+	if !found {
+		// No email address at all is nothing to verify: the account is not held
+		// to a proof it has no target for.
+		return authn.SignupStatus{}, nil
+	}
+	return authn.SignupStatus{State: authn.SignupPending, Email: email, Since: timeOf(row.SignupVerifiedAt)}, nil
 }
 
-// earliestProvedEmail is the email identifier a verified registration reports:
-// the one proved earliest, and among those verified at the same instant the one
-// whose identifier sorts first. No such identifier is the empty string.
-func earliestProvedEmail(conn *gorm.DB, account string) (string, error) {
+// emailIdentifiersOf reads every email identifier one account holds.
+func emailIdentifiersOf(conn *gorm.DB, account string) ([]identifierRow, error) {
 	var rows []identifierRow
-	err := conn.Where("account_id = ? AND kind = ?", account, string(authn.IdentifierEmail)).
-		Find(&rows).Error
-	if err != nil {
-		return "", err
-	}
+	err := conn.Where("account_id = ? AND kind = ?", account, string(authn.IdentifierEmail)).Find(&rows).Error
+	return rows, err
+}
+
+// earliestProvedEmail is the email identifier a verified account reports: the
+// one proved earliest, and among those verified at the same instant the one
+// whose identifier sorts first. No proved identifier is nil.
+func earliestProvedEmail(rows []identifierRow) *identifierRow {
 	var earliest *identifierRow
 	for i := range rows {
 		r := &rows[i]
@@ -269,10 +289,54 @@ func earliestProvedEmail(conn *gorm.DB, account string) (string, error) {
 			earliest = r
 		}
 	}
-	if earliest == nil {
-		return "", nil
+	return earliest
+}
+
+// unprovedEmail is one address a pending account may report, with the ordering
+// key that decides which one it is: the instant it was written and its
+// identifier.
+type unprovedEmail struct {
+	value string
+	at    time.Time
+	id    string
+}
+
+// earliestUnprovedEmail is the address a pending account reports: the earliest
+// of its unproved email identifiers and its reservations still awaiting
+// verification, by creation instant, ties broken by identifier. found is false
+// when the account has no email address at all.
+func earliestUnprovedEmail(conn *gorm.DB, account string, emails []identifierRow) (string, bool, error) {
+	candidates := make([]unprovedEmail, 0, len(emails))
+	for _, row := range emails {
+		if (authn.Verification{Via: row.VerifiedVia}).Proves() {
+			continue
+		}
+		candidates = append(candidates, unprovedEmail{value: row.Value, at: timeOf(&row.CreatedAt), id: row.ID})
 	}
-	return earliest.Value, nil
+	var contacts []pendingContactRow
+	if err := conn.Where("account_id = ? AND kind = ? AND verified_at IS NULL", account,
+		string(authn.IdentifierEmail)).Find(&contacts).Error; err != nil {
+		return "", false, err
+	}
+	for _, row := range contacts {
+		candidates = append(candidates, unprovedEmail{value: row.Value, at: timeOf(&row.CreatedAt), id: row.ID})
+	}
+	var earliest *unprovedEmail
+	for i := range candidates {
+		c := &candidates[i]
+		switch {
+		case earliest == nil:
+			earliest = c
+		case c.at.Before(earliest.at):
+			earliest = c
+		case c.at.Equal(earliest.at) && c.id < earliest.id:
+			earliest = c
+		}
+	}
+	if earliest == nil {
+		return "", false, nil
+	}
+	return earliest.value, true, nil
 }
 
 // PendingAccountByContact finds the one pending account a contact belongs to.
@@ -281,7 +345,8 @@ func earliestProvedEmail(conn *gorm.DB, account string) (string, error) {
 // read from authn_pending_contacts only, never from the identifier table. Only
 // an unproved reservation belongs to a pending account: a row whose verified_at
 // is set is a contact an account already holds, and that account is answered by
-// the identifier table, not here.
+// the identifier table, not here. The account's stored signup state is not
+// read, because an unproved reservation is what makes the contact pending.
 func (p *product) PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error) {
 	identifierKind := authn.IdentifierKind(kind)
 	if identifierKind != authn.IdentifierEmail && identifierKind != authn.IdentifierPhone {
@@ -293,8 +358,8 @@ func (p *product) PendingAccountByContact(ctx context.Context, kind string, valu
 	}
 	var ids []string
 	err = p.conn(ctx).Raw("SELECT a.id FROM "+tablePending+" c JOIN "+tableAccounts+" a ON a.id = c.account_id "+
-		"WHERE c.kind = ? AND c.value = ? AND c.verified_at IS NULL AND a.signup_state = ? AND a.status <> ?",
-		string(identifierKind), normalized, signupPending, statusDeleted).Scan(&ids).Error
+		"WHERE c.kind = ? AND c.value = ? AND c.verified_at IS NULL AND a.status <> ?",
+		string(identifierKind), normalized, statusDeleted).Scan(&ids).Error
 	if err != nil {
 		return "", false, failed("reading a pending contact", err)
 	}

@@ -120,28 +120,27 @@ func (v Verification) Proves() bool {
 		v.Via != VerifiedViaSelf
 }
 
-// SignupState is how far the self-registration of an account has got. It is
-// independent of AccountStatus: a pending registration is an enabled account
-// that has not proved an email address yet. The numbers are the signup_state
-// column's.
+// SignupState is how far an account's email verification has got. It is
+// independent of AccountStatus: a pending account is an enabled account that
+// holds an unproved email address. The numbers are the signup_state column's.
 type SignupState uint8
 
-// The states of a self-registration.
+// The states of an account's email verification.
 const (
-	SignupNone     SignupState = iota // the zero value: not a self-registration
-	SignupPending                     // self-registered, no email address proved yet
-	SignupVerified                    // an email address has been proved
+	SignupNone     SignupState = iota // the zero value: no email address to verify
+	SignupPending                     // holds an email address that has not been proved
+	SignupVerified                    // holds an email address whose ownership was proved
 )
 
 // Valid reports whether s is one of the constants above.
 func (s SignupState) Valid() bool { return s <= SignupVerified }
 
-// SignupStatus is the self-registration state as a request reads it. State is
+// SignupStatus is the email-verification state as a request reads it. State is
 // None, Pending or Verified; Email is the address of that state — the proved
-// one that was verified first for Verified, the pending contact for Pending,
-// and empty when there is no such address; Since is when the account first
-// reached Verified, the zero time while it never did, and is kept when a
-// removal of the last proved address returns the account to Pending.
+// one that was verified first for Verified, the unproved one that was written
+// first for Pending, and empty when there is no email address at all; Since is
+// when the account first reached Verified, the zero time while it never did,
+// and the zero time for None.
 type SignupStatus struct {
 	State SignupState
 	Email string

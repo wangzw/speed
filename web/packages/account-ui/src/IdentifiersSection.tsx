@@ -14,13 +14,11 @@
  * self). `verified_at` cannot answer that question: every stored identifier
  * carries one, including a username written at registration as `self`.
  * A username is a login name with no ownership to prove, so its row carries
- * no ownership chip. An email or phone row names the way it was established:
- * proved ownership reads `verified`, an administrator-asserted address reads
- * `addedByAdmin`, an unverified import reads `importedUnverified`, and every
- * other unproven channel reads `unverified`. The four are distinct because an
- * administrator-provisioned account is deliberately usable without the user
- * proving the address, so calling that row unverified would promise a
- * verification the account neither needs nor offers.
+ * no ownership chip. An email or phone row carries a two-value ownership
+ * chip: `proven` true reads `verified`, false reads `unverified`, whatever
+ * channel established the identifier. An address an administrator asserted or
+ * an import recorded is not a third state -- it is an address its holder has
+ * not proved, and the account's pending verification blocks it like any other.
  *
  * A row whose identifier carries an id has a row-end remove action that
  * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
@@ -38,6 +36,20 @@
  * counted -- they sign in through their own code route. The server remains
  * the authority on the last way in; the note states the one case the
  * profile can reveal.
+ *
+ * An unverified email row carries a verify action beside its remove action
+ * (the remove action is withheld while the row is the password account's only
+ * login name; the verify action is not). The action proves the address the row
+ * already shows: POST /api/v1/auth/identifiers re-sends a code to that same
+ * address -- the route accepts the account's own address as a re-add of its
+ * proof -- and POST /api/v1/auth/identifiers/verify submits the code. The write
+ * is idempotent, so the refetched row flips to `verified`. The address stays
+ * fixed in this flow: a row's value is not editable here, and choosing another
+ * address belongs to the add face or the verification section. The action is
+ * withheld while the profile's `verification.state` is `pending`, because that
+ * section and the host's banner already offer the same code and two concurrent
+ * requests would overwrite the one pending record. It is also withheld on a
+ * deployment with no email channel, which could not send the code.
  *
  * Below the list is the add face: POST /api/v1/auth/identifiers
  * (authn.login.addIdentifier) with a kind and a value. An account holds at
@@ -80,16 +92,16 @@
  * exactly once. A successful write refetches the profile so the rows
  * converge on the server's answer.
  *
- * The section has one failure slot: removal, add and verification share
- * it, so a failure renders exactly one role="alert" banner (it sits above
- * the add face, after the list).
+ * The section has one failure slot: removal, add, row verification and the
+ * code's verification share it, so a failure renders exactly one role="alert"
+ * banner (it sits above the add face, after the list).
  *
  * The section takes the session (the step-up dialog drives it) and the two
  * optional add-face flags, while the profile read and the writes travel on
  * the shared access token through the generated calls.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -121,6 +133,7 @@ import {
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
+import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
@@ -161,12 +174,25 @@ const KNOWN_IDENTIFIER_KINDS = new Set<string>([
 type AddKind = 'email' | 'username'
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
- * exactly it: a removal, the add that sends the code, or the code's
- * verification. */
+ * exactly it: a removal, the add that sends the code, the code's
+ * verification, or the same pair on an existing row's address. */
 type SectionAction =
   | { readonly step: 'remove'; readonly id: string }
   | { readonly step: 'add'; readonly kind: AddKind; readonly value: string }
   | { readonly step: 'verify'; readonly code: string }
+  | { readonly step: 'rowSend'; readonly value: string }
+  | { readonly step: 'rowVerify'; readonly code: string }
+
+/** The section's one failure slot: the server's code, plus an optional copy
+ * key that states the failure more precisely than the code's general text. */
+type SectionFailure = {
+  readonly code: string
+  readonly textKey?: string
+}
+
+/** The resend note's id, referenced by the row flow's resend control while it
+ * counts down. */
+const ROW_RESEND_NOTE_ID = 'identifiers-row-resend-note'
 
 /** The pending-state placeholder, read aloud as one loading announcement. */
 function IdentifierListSkeleton({ label }: { readonly label: string }) {
@@ -200,11 +226,10 @@ export function IdentifiersSection({
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
-  const [failureCode, setFailureCode] = useState<string | null>(null)
-  // The kind an add failure belongs to, so a 409 on a username renders the
-  // taken-name sentence instead of the generic account-state one. Null for
-  // a removal's failure, which keeps the generic text.
-  const [addFailureKind, setAddFailureKind] = useState<AddKind | null>(null)
+  // The section's one failure slot. `textKey` names a failure the server's
+  // code text describes too broadly (a taken username, an address another
+  // account proved in between).
+  const [failure, setFailure] = useState<SectionFailure | null>(null)
 
   // The add face's own state. addOpen shows the form; addKind picks the
   // kind; addValue holds the entry; sentTo is the address a code went to,
@@ -223,9 +248,41 @@ export function IdentifiersSection({
   const [added, setAdded] = useState(false)
   const [fieldErrorKey, setFieldErrorKey] = useState<string | null>(null)
 
+  // The row flow's own state. rowVerify is the address whose row verification
+  // is open (null when none is); rowSentTo is that address once its code has
+  // been requested; rowCode is the answer; rowCodeInvalid marks a refused
+  // code in the field; rowNotice fills the live region once the row flips.
+  // rowResendUntil / rowNow drive the resend countdown.
+  const [rowVerify, setRowVerify] = useState<string | null>(null)
+  const [rowSentTo, setRowSentTo] = useState<string | null>(null)
+  const [rowCode, setRowCode] = useState('')
+  const [rowCodeInvalid, setRowCodeInvalid] = useState(false)
+  const [rowNotice, setRowNotice] = useState('')
+  const [rowResendUntil, setRowResendUntil] = useState(0)
+  const [rowNow, setRowNow] = useState(() => Date.now())
+
   const addBusy =
     addIdentifier.isPending || verifyIdentifier.isPending
   const writeBusy = removeIdentifier.isPending
+
+  // Tick the row flow's countdown only while one is running, and stop the
+  // timer at its own expiry rather than leaving it ticking for the rest of
+  // the mount.
+  useEffect(() => {
+    if (rowResendUntil <= Date.now()) {
+      return undefined
+    }
+    const timer = setInterval(() => {
+      const current = Date.now()
+      setRowNow(current)
+      if (current >= rowResendUntil) {
+        clearInterval(timer)
+      }
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [rowResendUntil])
 
   const gate = useStepUpGate<SectionAction>((action) => {
     switch (action.step) {
@@ -237,6 +294,12 @@ export function IdentifiersSection({
         return
       case 'verify':
         void verify(action.code)
+        return
+      case 'rowSend':
+        void rowSend(action.value)
+        return
+      case 'rowVerify':
+        void rowVerifyCode(action.code)
         return
     }
   })
@@ -259,11 +322,21 @@ export function IdentifiersSection({
   // the client never sends a write whose refusal the copy cannot describe.
   const usernamePresent =
     rows !== undefined && rows.some((row) => row.kind === 'username')
-  // A pending self-registration carries one contact awaiting proof, managed by
+  // A pending account carries one contact awaiting proof, managed by
   // ContactVerificationSection. Offering an email add here as well would put a
   // second pending address on the account, so the kind leaves this face until
-  // the registration is verified.
+  // the account is verified.
   const verificationPending = data?.verification?.state === 'pending'
+  // A row's verify action is offered only where it can work: an unverified
+  // email row, on a deployment with an email channel, while the account as a
+  // whole is not pending. A pending account's code flow belongs to the
+  // verification section and the host's banner; a second concurrent request
+  // would overwrite the one pending record.
+  const rowVerifyAvailable = emailAvailable && !verificationPending
+  const rowRemainingSeconds = Math.max(
+    0,
+    Math.ceil((rowResendUntil - rowNow) / 1000),
+  )
   /** The kinds the add face offers in this deployment and profile. */
   const addKinds: AddKind[] = []
   if (emailAvailable && !verificationPending) {
@@ -298,10 +371,9 @@ export function IdentifiersSection({
     ])
   }
 
-  /** Clear the failure banner and the add failure's kind together. */
+  /** Clear the section's one failure slot. */
   function clearFailure(): void {
-    setFailureCode(null)
-    setAddFailureKind(null)
+    setFailure(null)
   }
 
   /** Settle the add face back to closed with no trace of the attempt: the
@@ -330,7 +402,7 @@ export function IdentifiersSection({
         gate.arm({ step: 'remove', id })
         return
       }
-      setFailureCode(failure)
+      setFailure({ code: failure })
       // The refusal is the server's judgement on the current state, which
       // this mount's guard may have read stale (another session removed a
       // login name first): re-read so the list and the withheld-removal
@@ -381,8 +453,15 @@ export function IdentifiersSection({
         )
         return
       }
-      setAddFailureKind(kind)
-      setFailureCode(failure)
+      setFailure({
+        code: failure,
+        // An existing username is the expected 409 of the one write this
+        // face exists for, and the account-state sentence sends the viewer
+        // to refresh, which can never free the name.
+        ...(kind === 'username' && failure === 'authn.conflict'
+          ? { textKey: 'identifiers.add.usernameTaken' }
+          : {}),
+      })
     }
   }
 
@@ -410,7 +489,108 @@ export function IdentifiersSection({
         setFieldErrorKey('identifiers.add.emailTaken')
         return
       }
-      setFailureCode(failure)
+      setFailure({ code: failure })
+    }
+  }
+
+  /** Open a row's verification flow on the address the row already shows.
+   * The add face closes, because one code flow runs at a time on this
+   * section. */
+  function openRowVerify(value: string): void {
+    closeAdd()
+    clearFailure()
+    setRowNotice('')
+    setRowCodeInvalid(false)
+    setRowCode('')
+    setRowSentTo(null)
+    setRowResendUntil(0)
+    setRowVerify(value)
+  }
+
+  /** Settle the row flow back to closed with no trace of the attempt. */
+  function closeRowVerify(): void {
+    setRowVerify(null)
+    setRowSentTo(null)
+    setRowCode('')
+    setRowCodeInvalid(false)
+    setRowResendUntil(0)
+    clearFailure()
+  }
+
+  /** Re-send a code to the row's fixed address. The route accepts the
+   * account's own address as a re-add of its proof, so this is the same
+   * write the add face makes, with the value already known. */
+  async function rowSend(address: string): Promise<void> {
+    clearFailure()
+    setRowCodeInvalid(false)
+    setRowNotice('')
+    try {
+      const result = await addIdentifier.mutateAsync({
+        data: { kind: 'email', value: address },
+      })
+      const interval =
+        typeof result.resend_after === 'number' ? result.resend_after : 0
+      setRowResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
+      setRowNow(Date.now())
+      setRowSentTo(address)
+      setRowCode('')
+    } catch (error) {
+      const failure = errorCodeOf(error)
+      if (failure === STEP_UP_REQUIRED) {
+        gate.arm({ step: 'rowSend', value: address })
+        return
+      }
+      setFailure({ code: failure })
+      const retryAfter = retryAfterMsOf(error)
+      if (retryAfter !== undefined) {
+        setRowResendUntil(Date.now() + retryAfter)
+        setRowNow(Date.now())
+      }
+    }
+  }
+
+  /** Submit the row flow's code. The write proves the address the send just
+   * named, so the refetched row loses its unverified chip. */
+  async function rowVerifyCode(nextCode: string): Promise<void> {
+    clearFailure()
+    setRowCodeInvalid(false)
+    setRowNotice('')
+    const address = rowSentTo ?? rowVerify ?? ''
+    try {
+      await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+      setRowVerify(null)
+      setRowSentTo(null)
+      setRowCode('')
+      setRowResendUntil(0)
+      setRowNotice(
+        t('verification.verifiedDescription', {
+          email: address,
+          interpolation: { escapeValue: false },
+        }),
+      )
+      await invalidateAfterWrite()
+    } catch (error) {
+      const failure = errorCodeOf(error)
+      if (failure === STEP_UP_REQUIRED) {
+        gate.arm({ step: 'rowVerify', code: nextCode })
+        return
+      }
+      if (failure === 'authn.login_failed') {
+        // The code is the one value this flow can change: state the refusal
+        // in its field instead of the section's banner.
+        setRowCodeInvalid(true)
+        setRowCode('')
+        return
+      }
+      setFailure({
+        code: failure,
+        // The address cannot be edited in this flow; the address-taken
+        // answer means another account proved it in between, and naming
+        // that is clearer than the code's account-state sentence.
+        ...(failure === 'authn.email_taken'
+          ? { textKey: 'verification.addressTaken' }
+          : {}),
+      })
     }
   }
 
@@ -423,19 +603,14 @@ export function IdentifiersSection({
       ? t('identifiers.add.value.helperEmail')
       : t('identifiers.add.value.helperUsername')
 
-  // A username is the one add whose taken-name 409 the server can answer
-  // with that exact meaning (an email's conflict is reported under the same
-  // code but means the address belongs to another account), so that case
-  // renders its own sentence; every other failure keeps the code's text.
-  const usernameTaken =
-    failureCode === 'authn.conflict' && addFailureKind === 'username'
-  const failureBanner = usernameTaken ? (
-    <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-      {t('identifiers.add.usernameTaken')}
-    </Alert>
-  ) : (
-    <InlineError code={failureCode} />
-  )
+  const failureBanner =
+    failure === null ? null : failure.textKey === undefined ? (
+      <InlineError code={failure.code} />
+    ) : (
+      <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+        {t(failure.textKey)}
+      </Alert>
+    )
 
   return (
     <>
@@ -477,23 +652,22 @@ export function IdentifiersSection({
                 // written at registration as `self`), so it cannot answer that
                 // question.
                 const verified = identifier.proven === true
-                // The unproven channels are not one state: an administrator
-                // asserted the address and the account is deliberately usable
-                // without the user proving it, while an unverified import and a
-                // self-asserted value are unproven in the ordinary sense. Naming
-                // the channel keeps the row from promising a verification the
-                // account neither needs nor offers.
-                const via = identifier.verified_via ?? ''
+                // The chip answers one question: has ownership of this
+                // identifier been proved? Every unproven channel reads the
+                // same way -- an administrator-asserted or imported address
+                // is an address its holder has not proved, not a third state.
                 const stateLabel = verified
                   ? t('identifiers.verified')
-                  : via === 'admin'
-                    ? t('identifiers.addedByAdmin')
-                    : via === 'import-unverified'
-                      ? t('identifiers.importedUnverified')
-                      : t('identifiers.unverified')
+                  : t('identifiers.unverified')
                 // A username proves no ownership, so it has no verification
                 // state to show.
                 const showChip = kind !== 'username'
+                // An unverified email is provable from its own row, unless
+                // the account-wide flow already owns that code (pending) or
+                // the deployment has no channel to send it.
+                const canVerifyRow =
+                  rowVerifyAvailable && kind === 'email' && !verified
+                const rowFlowOpen = canVerifyRow && rowVerify === value
                 const lastLoginName =
                   passwordSet &&
                   loginNameCount === 1 &&
@@ -543,6 +717,20 @@ export function IdentifiersSection({
                             label={stateLabel}
                           />
                         ) : null}
+                        {canVerifyRow ? (
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            disabled={writeBusy || addBusy || rowFlowOpen}
+                            aria-label={t('identifiers.verifyAria', {
+                              value,
+                              interpolation: { escapeValue: false },
+                            })}
+                            onClick={() => openRowVerify(value)}
+                          >
+                            {t('identifiers.verify')}
+                          </Button>
+                        ) : null}
                         {id !== null && !lastLoginName && (
                           <Button
                             variant="outlined"
@@ -566,6 +754,126 @@ export function IdentifiersSection({
                         )}
                       </Box>
                     </Box>
+                    {rowFlowOpen ? (
+                      <Box
+                        component="form"
+                        noValidate
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          if (rowSentTo === null) {
+                            void rowSend(value)
+                            return
+                          }
+                          if (rowCode.trim() !== '') {
+                            void rowVerifyCode(rowCode)
+                          }
+                        }}
+                        sx={{ mt: 1.5, maxWidth: FORM_MAX_WIDTH }}
+                      >
+                        <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
+                          <TextField
+                            fullWidth
+                            type="email"
+                            label={t('identifiers.add.value.labelEmail')}
+                            value={value}
+                            helperText={t('identifiers.add.value.helperEmail')}
+                            slotProps={{ htmlInput: { readOnly: true } }}
+                            disabled={addBusy}
+                          />
+                          {rowSentTo === null ? null : (
+                            <TextField
+                              fullWidth
+                              autoFocus
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              label={t('identifiers.add.code.label')}
+                              value={rowCode}
+                              error={rowCodeInvalid}
+                              helperText={
+                                rowCodeInvalid
+                                  ? t('identifiers.verifyCodeInvalid')
+                                  : undefined
+                              }
+                              slotProps={{
+                                htmlInput: {
+                                  'aria-invalid': rowCodeInvalid,
+                                },
+                              }}
+                              disabled={addBusy}
+                              onChange={(event) => {
+                                setRowCode(event.target.value)
+                                if (rowCodeInvalid) {
+                                  setRowCodeInvalid(false)
+                                }
+                              }}
+                            />
+                          )}
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            sx={{ flexWrap: 'wrap' }}
+                          >
+                            {rowSentTo === null ? (
+                              <Button
+                                type="submit"
+                                variant="contained"
+                                size="small"
+                                disabled={addBusy}
+                                loading={addIdentifier.isPending}
+                              >
+                                {t('identifiers.add.submitEmail')}
+                              </Button>
+                            ) : (
+                              <>
+                                <Button
+                                  type="submit"
+                                  variant="contained"
+                                  size="small"
+                                  disabled={addBusy || rowCode.trim() === ''}
+                                  loading={verifyIdentifier.isPending}
+                                >
+                                  {t('identifiers.add.verify')}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outlined"
+                                  size="small"
+                                  disabled={addBusy || rowRemainingSeconds > 0}
+                                  loading={addIdentifier.isPending}
+                                  aria-describedby={
+                                    rowRemainingSeconds > 0
+                                      ? ROW_RESEND_NOTE_ID
+                                      : undefined
+                                  }
+                                  onClick={() => void rowSend(value)}
+                                >
+                                  {t('verification.resend')}
+                                </Button>
+                              </>
+                            )}
+                            <Button
+                              type="button"
+                              size="small"
+                              disabled={addBusy}
+                              onClick={closeRowVerify}
+                            >
+                              {t('identifiers.add.cancel')}
+                            </Button>
+                          </Stack>
+                          {rowSentTo !== null && rowRemainingSeconds > 0 ? (
+                            <Typography
+                              id={ROW_RESEND_NOTE_ID}
+                              variant="body2"
+                              color="text.secondary"
+                            >
+                              {t('verification.resendIn', {
+                                seconds: rowRemainingSeconds,
+                              })}
+                            </Typography>
+                          ) : null}
+                        </Stack>
+                      </Box>
+                    ) : null}
                   </Box>
                 )
               })}
@@ -574,8 +882,9 @@ export function IdentifiersSection({
         )}
       </AsyncSection>
 
-      {/* The section's one failure slot: removal, add and verification
-          render through it, so a failure is exactly one role="alert". */}
+      {/* The section's one failure slot: removal, add, row verification and
+          the code's verification render through it, so a failure is exactly
+          one role="alert". */}
       {failureBanner}
 
       <Box sx={{ mt: 2 }}>
@@ -587,13 +896,22 @@ export function IdentifiersSection({
           {added ? t('identifiers.add.added') : ''}
         </Alert>
 
+        <Alert
+          severity="success"
+          role="status"
+          sx={rowNotice === '' ? visuallyHiddenSx : { mb: 1 }}
+        >
+          {rowNotice}
+        </Alert>
+
         {addKinds.length === 0 ? null : !addOpen ? (
           <Button
             variant="outlined"
             size="small"
             disabled={writeBusy || addBusy}
             onClick={() => {
-              clearFailure()
+              closeRowVerify()
+              setRowNotice('')
               setAdded(false)
               setFieldErrorKey(null)
               setAddOpen(true)

@@ -91,17 +91,41 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   a reservation another account holds answers `authn.ErrContactTaken`. A proving
   phone deletes the same-value pending target and changes no state; `admin`,
   `import-unverified` and `self` no longer leave an email reservation unproved.
+  An email address the account already holds as an identifier is brought up to
+  proved by a proving way in place: the row's `verified_at` and `verified_via`
+  are rewritten, no second row is inserted and no identifier-changed event is
+  published. A way that does not prove ownership never downgrades or replaces
+  that row and answers `authn.ErrAccountExists`.
   `RemoveIdentifier` of an email deletes this account's reservation, releasing the
-  address; removing the last proved email returns the account to pending, keeps
-  the instant and rebuilds no reservation. An account holding a password
-  credential cannot lose its last username or email address: that removal answers
-  `authn.ErrIdentifierRequired` and the transaction rolls back, since the password
-  would then authenticate nothing. An account with no password credential may lose
-  its last login name, and removing a phone number never triggers the rule.
-  `Create` always writes `signup_state` 0 and writes only verified identifiers; an
-  email address also writes a proved reservation, and a reservation another
-  account holds answers `authn.ErrContactTaken`. The way a username came about is
+  address; removing the last proved email of a self-registration moves
+  `signup_state` back to 1, keeps the instant and rebuilds no reservation. The
+  verification read then reports pending only while another unproved address
+  remains, and none once the account holds no email at all. An account holding a
+  password credential cannot lose its last username or email address: that
+  removal answers `authn.ErrIdentifierRequired` and the transaction rolls back,
+  since the password would then authenticate nothing. An account with no password
+  credential may lose its last login name, and removing a phone number never
+  triggers the rule.
+  `Create` always writes `signup_state` 0 and writes only identifiers; an email
+  address also writes a proved reservation, and a reservation another account
+  holds answers `authn.ErrContactTaken`. The way a username came about is
   `UsernameVerifiedVia`, whose zero value is `admin`.
+- **The verification read is judged from the identifiers, not the column.**
+  `SignupStateOf` reports Verified when a user account holds an email identifier
+  whose way of verification proves ownership (the earliest `verified_at`, ties
+  broken by identifier; `Since` is `signup_verified_at`, or that identifier's
+  instant when the column is empty). It reports Pending when no email is proved
+  but the account has an unproved email identifier (`admin`, `import-unverified`
+  or `self`) or a reservation with `verified_at` empty (the earliest by
+  `created_at`, ties broken by identifier, across both). It reports None when the
+  account has no email address at all, and for every kind but user. None is
+  therefore "nothing to verify", not "not a self-registration": an account an
+  administrator created with an email address reads Pending until that address is
+  proved, and one with no email address is not gated. The column is still
+  maintained for the sweep, which deletes only `signup_state` 1 accounts and
+  never an administrator-created one. Proving an email writes `signup_verified_at`
+  the first time, on any account, so `Since` is available without a
+  self-registration.
 - **The unverified-account sweep has its own switch and interval.** It deletes
   only an account with `signup_state` 1, no `signup_verified_at`, no email
   identifier written through a proving channel, and `COALESCE(last_login_at,

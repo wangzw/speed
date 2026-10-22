@@ -1,10 +1,10 @@
 /**
- * The persistent registration-verification notice under the app bar.
+ * The persistent email-verification notice under the app bar.
  *
  * It renders while GET /api/v1/auth/me's `verification.state` is pending,
  * names the target address, links to the verification page for both the
- * verify and change actions, and carries no dismiss control. A verified or
- * non-self-registered account shows no notice.
+ * verify and change actions, and carries no dismiss control. A verified
+ * account, and an account with no unproved email, shows no notice.
  */
 
 import { act, screen, waitFor, within } from '@testing-library/react'
@@ -137,7 +137,7 @@ describe('ContactVerificationBanner', () => {
     )
   })
 
-  it('renders nothing for an account that never self-registered', async () => {
+  it('renders nothing for an account with no unproved email', async () => {
     bindProfile(profileWithVerification('none', ''))
     renderFrame()
 

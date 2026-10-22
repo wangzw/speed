@@ -8,7 +8,7 @@
 - **身份取自上下文。** 路由经 `authn.FromContext` 取发起者的身份，账户由身份给出，不由路径或正文里的标识给出。授权依据是「发起者就是这个账户」这条无须策略的事实，自助范围的判据见 [authn-admin](design-authn-admin.md)。
 - **自写字段集。** 可自写的字段是一个封闭集：显示名、属性、语言、时区；其余字段不可自写。
 - **复用既有写面。** 写经根包接缝 `authn.AccountAdmin` 的 `SetDisplayName` 与 `SetAttributes` 落到账户模块；语言与时区是账户属性集里的具名用法，键由 `i18n.LocaleAttributeKey`、`i18n.TimeZoneAttributeKey` 命名，由 [i18n](../design-i18n.md) 的账户桥接读回，其存储归账户属性集的通用界面（[ADR-i18n-preferences-storage-2026-10-13](../../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。本模块不另造写面、不新持状态、不新增存储。
-- **注册验证状态的只读面。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`，`identifiers` 的每一项带 `proven`（由 `Verification.Proves` 派生）。本模块不写注册验证状态；它由 `Proves` 为真的邮箱的写入派生（[authn-account](design-authn-account.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
+- **注册验证状态的只读面。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`，`identifiers` 的每一项带 `proven`（由 `Verification.Proves` 派生）。本模块不写注册验证状态；它由账户持有的邮箱标识与未证明预留派生，判定不区分账户是自助注册、管理员预置还是导入写出的（[authn-account](design-authn-account.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
 - **不交付功能接口。** 本模块只挂路由，仿 `authn.admin`。
 
 ### 非职责
@@ -41,8 +41,8 @@
 `GET B/me` 应答 200 与一份档案视图，逐字段从账户模块的读面构造，从不把值原样交出：`account_id`、`kind`、`display_name`、`mfa_required`、`password_set`、`created_at`、`attributes`、`locale`、`time_zone`、`identifiers`、`verification`、`links`。
 
 - `attributes` 是账户的属性集；`locale` 与 `time_zone` 从它的 `i18n.locale`、`i18n.tz` 键解出，各自没有时为空。
-- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 的每一项带 `proven`，由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假。待验证邮箱不在 `identifiers` 里，只经 `verification.email` 出现。
-- `verification` 是 `{state, email, since}`：`state` 取 `none`、`pending`、`verified`，对应 `SignupState` 的 `0`、`1`、`2`。`email` 的取值是确定的：`verified` 取 `Proves` 为真、`verified_at` 最早的邮箱，同一时刻按标识 ID 排序取第一个；`pending` 取未证明预留里的邮箱（按创建时刻、再按行标识取第一条），账户没有未证明预留时为空——删除最后一个已验证邮箱会把账户从 `verified` 拉回 `pending` 而不重建预留，空值是合法状态，界面据此给出添加邮箱的入口，不假设未验证账户总有地址；`none` 为空。`since` 是 `signup_verified_at`，只在账户第一次进入 `verified` 时写入，之后再验证其他邮箱不更新，`verified` 回到 `pending` 时保留；未验证时为空串。它由 `SignupVerification.SignupStateOf` 请求期活读，不进会话、身份或访问令牌。
+- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 的每一项带 `proven`，由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假。`proven` 是二值的，不按渠道细分：经管理员或导入写下的邮箱标识在列表里就是一条未证明的邮箱标识，没有第三态。未证明的邮箱预留不在 `identifiers` 里——它不是标识——但经 `verification.email` 出现。
+- `verification` 是 `{state, email, since}`：`state` 取 `none`、`pending`、`verified`，对应 `SignupState` 的 `0`、`1`、`2`。判据是二值的：账户持有至少一条 `proven` 为真的邮箱标识即 `verified`；否则持有任何邮箱——一条 `proven` 为假的邮箱标识，或一条未证明预留——即 `pending`；一条邮箱也没有即 `none`，本规则不拦截它。`email` 的取值是确定的：`verified` 取 `Proves` 为真、`verified_at` 最早的邮箱，同一时刻按标识 ID 排序取第一个；`pending` 取未证明邮箱标识与未证明预留中创建时刻最早的一条，同一时刻按行标识排序取第一个，账户因此可能有一个目标地址，也可能在删掉最后一条邮箱标识后什么也没有（那时读作 `none`）；`none` 为空。`since` 是 `signup_verified_at`，在任一账户第一次证明邮箱时写入，之后再验证其他邮箱不更新，`verified` 回到 `pending` 时保留；`verified` 而该列为空时取最早那条证明标识的 `VerifiedAt`；从未证明过邮箱时为空串。它由 `SignupVerification.SignupStateOf` 请求期活读，不进会话、身份或访问令牌。
 - 时间按 UTC 以 RFC 3339 写出，零时间写空串。
 
 ### 写的请求与应答
@@ -91,7 +91,7 @@
 - 路由路径 `GET B/me`、`PATCH B/me` 与访问级别 `Required` 是宿主可见面；`GET B/me` 登记为可冒充，`PATCH B/me` 不登记为可冒充。
 - 模块名 `authn.profile` 是宿主可见面。
 - 自写字段集的字段名（`display_name`、`attributes`、`locale`、`time_zone`）与应答字段名是宿主可见面；请求体的字段集是封闭集，新增可自写字段要有新的决定。
-- `GET B/me` 应答的 `verification.state`、`verification.email`、`verification.since` 与 `identifiers[].proven` 是宿主可见面；`state` 的取值是封闭集 `none`、`pending`、`verified`。
+- `GET B/me` 应答的 `verification.state`、`verification.email`、`verification.since` 与 `identifiers[].proven` 是宿主可见面；`state` 的取值是封闭集 `none`、`pending`、`verified`——`pending` 是「有邮箱而没有一条已证明的」，`none` 是「没有邮箱」，没有第四种取值。
 - 不可自写字段集同属接口面：不在集合里的字段，本面永不写。
 
 ## 依赖

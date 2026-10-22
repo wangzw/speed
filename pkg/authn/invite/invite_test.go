@@ -95,6 +95,31 @@ func TestAcceptWithAnExistingAccountAddsAMembershipOnly(t *testing.T) {
 	}
 }
 
+// TestAcceptProvesAnExistingUnprovedAddress holds that the token proves the
+// address it was delivered to: an account that holds it without proof is
+// brought up to invite, and the membership follows.
+func TestAcceptProvesAnExistingUnprovedAddress(t *testing.T) {
+	h := newHarness(t)
+	h.accounts.put("alice@example.com", "acct-alice")
+	h.accounts.via = authn.VerifiedViaAdmin
+	issued := h.issue(tenant, "alice@example.com")
+
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); err != nil {
+		t.Fatalf("accepting: %v", err)
+	}
+	if h.admin.creates != 0 {
+		t.Errorf("an account was created for an address that has one (%d creates)", h.admin.creates)
+	}
+	if len(h.admin.added) != 1 {
+		t.Fatalf("AddIdentifier was called %d times, want once", len(h.admin.added))
+	}
+	got := h.admin.added[0]
+	if got.Account != "acct-alice" || got.Kind != authn.IdentifierEmail ||
+		got.Value != "alice@example.com" || got.Via.Via != VerifiedViaInvite {
+		t.Errorf("AddIdentifier(%+v), want the address proved through invite", got)
+	}
+}
+
 func TestAcceptCreatesAnAccountWhenTheAddressHasNone(t *testing.T) {
 	h := newHarness(t)
 	h.admin.newID = "acct-new"

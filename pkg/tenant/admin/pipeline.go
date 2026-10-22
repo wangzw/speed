@@ -125,18 +125,18 @@ func (p *product) guardRoute(method string, perm authz.Permission, next gin.Hand
 	}
 }
 
-// requireVerifiedAccount refuses a management write an unverified
-// self-registration makes. It sits after the caller is read and before the
+// requireVerifiedAccount refuses a management write an account with an
+// unproved email address makes. It sits after the caller is read and before the
 // permission decision, the body, the mandatory audit and the roster: a refused
 // request asks no guard, lands no audit row and changes no tenant.
 //
 // The subject it reads is the request's actor, not the account the request is
 // taken to be from: under an impersonation the actor is whose hands are on the
-// request and the target's self-registration does not participate, which is the
+// request and the target's verification state does not participate, which is the
 // design's rule for this gate on every capability's management face. A given
-// actor is exempt — one created outside self-registration, a service account,
-// and a static-table subject, which has no account row and never a
-// self-registration — and a read route does not consult it at all.
+// actor is exempt — one with no email address to verify, a service account, and
+// a static-table subject, which has no account row and no email address — and a
+// read route does not consult it at all.
 //
 // A state that cannot be read is a 503 and is never read as verified: a
 // dependency that cannot answer must not widen what a caller may do.
@@ -148,8 +148,8 @@ func (p *product) requireVerifiedAccount(c *gin.Context, id authn.Identity) bool
 	status, err := p.verification.SignupStateOf(c.Request.Context(), actor)
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
-		// No account row is no self-registration; the rest of the pipeline
-		// answers for it.
+		// No account row holds no email address; the rest of the pipeline answers
+		// for it.
 		return true
 	case err != nil:
 		p.logger.Error(ModuleName+": the signup state could not be read, so the write was not carried out",

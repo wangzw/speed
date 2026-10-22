@@ -129,8 +129,7 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 			"The identifier or the alias is outside the identifier domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no tenant.manage in the platform domain, or the caller's "+
-				"self-registration has not proved an email address (contact-required)"),
+			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The identifier or the alias is already taken"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
@@ -194,8 +193,7 @@ var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
 			"The identifier or the alias is outside the identifier domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no tenant.manage in the platform domain, or the caller's "+
-				"self-registration has not proved an email address (contact-required)"),
+			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
 		{
 			Status:      http.StatusNotFound,
 			Description: "No tenant carries the identifier",
@@ -231,8 +229,7 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 			"The identifier is outside the identifier domain or the status is outside the closed set active/disabled"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no tenant.manage in the platform domain, or the caller's "+
-				"self-registration has not proved an email address (contact-required)"),
+			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
 		{
 			Status:      http.StatusNotFound,
 			Description: "No tenant carries the identifier",

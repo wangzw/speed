@@ -10,9 +10,9 @@
 //
 // Every route is declared open on the authorization middleware, so the
 // middleware lets a request through and the handler makes the decision itself:
-// it reads the caller from the request, reads the acting account's
-// self-registration state on a write and refuses one that has not proved an email
-// address with 403 contact-required, then asks the handler-internal authz.guard
+// it reads the caller from the request, reads the acting account's email
+// verification state on a write and refuses one whose email address is not
+// proved with 403 contact-required, then asks the handler-internal authz.guard
 // API for tenant.read on a read or tenant.manage on a write, in the platform
 // domain, and answers a shortfall before anything else runs. A read that is
 // allowed ends there; a write lands a mandatory audit row outside any
@@ -111,12 +111,12 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Module is the descriptor a host registers.
 //
 // The roster, the handler-internal guard, the audit capability and the
-// registration-verification read are required. That the guard is required is
+// email-verification read are required. That the guard is required is
 // what makes the per-request decision available; that the audit capability is
 // required is what makes an assembly without one fail before any instance is
 // built, rather than at the first write; the verification read is what lets a
-// write refuse an account whose self-registration has not proved an email
-// address. The roster is delivered exclusively by the roster module and the
+// write refuse an account whose email address is not proved. The roster is
+// delivered exclusively by the roster module and the
 // guard by the enforcement module, so the closure of a command that takes this
 // one in does not pull them in: the host writes them down. The logger is the one
 // optional requirement, taken up so that it is initialised first.
@@ -200,9 +200,9 @@ type product struct {
 	catalog tenant.Catalog
 	guard   guard.Guard
 	audit   audit.Audit
-	// verification reads how far the acting account's self-registration has
+	// verification reads how far the acting account's email verification has
 	// got. A write route reads it before the permission decision, so an account
-	// that has not proved an email address cannot change the roster.
+	// whose email address is not proved cannot change the roster.
 	verification authn.SignupVerification
 
 	// gate is the route-declaration surface, nil when the assembly delivers

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -641,6 +642,89 @@ func TestStartAuthenticatedAcceptsTheDeliveryMember(t *testing.T) {
 			t.Errorf("the authenticated start with a delivery member answered %d: %s", rec.status, rec.body)
 		}
 	})
+}
+
+// TestTheLinkGateReadsTheAccountsRealEmailState holds the gate against the real
+// account store: an account an administrator created with an email address is
+// refused 403 contact-required until the holder proves that address, and an
+// account with no email address at all is not gated. A stub method that serves
+// the link purpose stands in for an external provider, so the gate is reached
+// without leaving the process.
+func TestTheLinkGateReadsTheAccountsRealEmailState(t *testing.T) {
+	linkStart := func(h *harness) reply {
+		return h.post("/api/v1/auth/flows/authenticated", map[string]any{
+			"purpose": "link", "method": linkStubName,
+		})
+	}
+	assembleWith(t, []core.Module{linkStubModule()}, func(h *harness) {
+		unproved, err := h.admin.Create(h.ctx, authn.CreateAccount{
+			Kind: authn.KindUser, Username: "erin", Email: "erin@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
+			Password:         "erin-password", Via: "admin",
+		})
+		if err != nil {
+			t.Fatalf("creating the account: %v", err)
+		}
+		if done := h.loginFlow("erin", "erin-password"); done.status != http.StatusOK {
+			t.Fatalf("the login answered %d: %s", done.status, done.body)
+		}
+		if got := linkStart(h); got.status != http.StatusForbidden || got.json(t)["type"] != "urn:speed:authn:contact-required" {
+			t.Fatalf("the link start of an unproved account answered %d %s, want 403 contact-required", got.status, got.body)
+		}
+
+		// The holder proves the address through the account surface, and the
+		// same request is then allowed.
+		if err = h.admin.AddIdentifier(h.ctx, unproved.ID, authn.IdentifierEmail, "erin@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the address: %v", err)
+		}
+		if got := linkStart(h); got.status != http.StatusOK {
+			t.Errorf("the link start after the proof answered %d %s, want 200", got.status, got.body)
+		}
+	})
+	assembleWith(t, []core.Module{linkStubModule()}, func(h *harness) {
+		h.createAccount("frank", "frank-password")
+		if done := h.loginFlow("frank", "frank-password"); done.status != http.StatusOK {
+			t.Fatalf("the login answered %d: %s", done.status, done.body)
+		}
+		if got := linkStart(h); got.status != http.StatusOK {
+			t.Errorf("the link start of an account with no email answered %d %s, want 200", got.status, got.body)
+		}
+	})
+}
+
+// linkStubName is the name the stub link method reports.
+const linkStubName = "test-link"
+
+// linkStub is a login method that serves the link purpose and nothing else, so
+// that a case can reach the link gate without an external provider.
+type linkStub struct{}
+
+func (linkStub) Name() string { return linkStubName }
+
+func (linkStub) Describe() authn.MethodDescriptor {
+	return authn.MethodDescriptor{Name: linkStubName, Kind: authn.MethodKindForm}
+}
+
+func (linkStub) Begin(context.Context, authn.Start) (authn.Step, error) {
+	return authn.StepPrompt("link", nil), nil
+}
+
+func (linkStub) Answer(context.Context, authn.FlowState, authn.StepInput) (authn.Step, error) {
+	return authn.StepRefused(errors.New("authn.login.test: the stub link method answers no step")), nil
+}
+
+// linkStubModule delivers the stub link method without claiming it, as a real
+// method does.
+func linkStubModule() core.Module {
+	return core.Module{
+		Name:     "test.authn.login.link",
+		Provides: []core.Provision{{Token: (*authn.LoginMethod)(nil)}},
+		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
+			return core.Enablement{State: core.StateEnabled}, nil
+		},
+		New: func(context.Context, *core.Registry) (any, error) { return linkStub{}, nil },
+	}
 }
 
 // TestTheFirstFactorNeedsNoCookieAndAStaleOneDoesNotBlock holds that POST flows

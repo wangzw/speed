@@ -443,7 +443,7 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 
 ### 服务账户与 `client_credentials`
 
-服务账户（`kind=service`）由管理面创建，`Decider` 动作是 `authn.client.manage`（[design-authn-admin](design-authn-admin.md)）。服务密钥的创建与撤销是管理面路由：发起者是 `signup_state = 1` 的账户时，管理面的注册验证状态门控答 403 `contact-required`，判定与豁免在 [design-authn-admin](design-authn-admin.md)，本模块不读注册验证状态；只读的密钥列表不受限。创建时发放一个密钥：`spd_cs_` 加 32 字节随机数的 base64url，**只在创建应答里出现一次**，库里只存 SHA-256（[design-authn-account](design-authn-account.md)）。一个账户可同时持有多个有效密钥，新增、给旧密钥设 `expires_at` 或撤销，使客户端无停机切换。
+服务账户（`kind=service`）由管理面创建，`Decider` 动作是 `authn.client.manage`（[design-authn-admin](design-authn-admin.md)）。服务密钥的创建与撤销是管理面路由：发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时，管理面的注册验证状态门控答 403 `contact-required`，判定与豁免在 [design-authn-admin](design-authn-admin.md)，本模块不读注册验证状态；只读的密钥列表不受限。创建时发放一个密钥：`spd_cs_` 加 32 字节随机数的 base64url，**只在创建应答里出现一次**，库里只存 SHA-256（[design-authn-account](design-authn-account.md)）。一个账户可同时持有多个有效密钥，新增、给旧密钥设 `expires_at` 或撤销，使客户端无停机切换。
 
 `grant_type=client_credentials` 的处理：
 

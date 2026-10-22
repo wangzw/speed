@@ -158,14 +158,13 @@ func quietRefusal(err error) bool {
 	return errors.Is(err, authn.ErrContactRequired) || errors.Is(err, errSignupUnavailable)
 }
 
-// checkSignup refuses an initiator whose self-registration has not proved an
-// email address yet. The state is read on every start and never cached; a
-// service account and an account created outside self-registration are exempt,
-// having no self-registration to be pending.
+// checkSignup refuses an initiator whose email address has not been proved. The
+// state is read on every start and never cached; a service account and an
+// account with no email address are exempt, having nothing to verify.
 //
 // The initiator is Actor(), not Account(): an impersonating identity's Account()
-// is the target, and the target's signup state never takes part in whether the
-// administrator may start. Start is a host-visible seam, so it judges the
+// is the target, and the target's verification state never takes part in whether
+// the administrator may start. Start is a host-visible seam, so it judges the
 // initiator itself rather than relying on the handler having refused the
 // impersonating identity first.
 func (m *product) checkSignup(ctx context.Context, actor authn.Identity) error {

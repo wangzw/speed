@@ -64,18 +64,19 @@ func (m *product) admit(id authn.Identity) error {
 	return nil
 }
 
-// gateSignup refuses a management write an unverified self-registration makes.
-// It sits after the caller and the object's ownership are known and before the
-// Decider, the strength requirement and the mandatory audit: a refused request
-// asks no Decider, asks for no strength, writes no audit row and calls no
-// capability. A service account and an account created outside self-registration
-// are exempt; a state that cannot be read is a 503 and is never read as verified.
+// gateSignup refuses a management write an account with an unproved email
+// address makes. It sits after the caller and the object's ownership are known
+// and before the Decider, the strength requirement and the mandatory audit: a
+// refused request asks no Decider, asks for no strength, writes no audit row and
+// calls no capability. A service account and an account with no email address
+// are exempt, having nothing to verify; a state that cannot be read is a 503 and
+// is never read as verified.
 func (m *product) gateSignup(ctx context.Context, id authn.Identity) error {
 	account, err := m.accounts.Get(ctx, id.Account())
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
-		// A static password-table subject is no account row and never a
-		// self-registration; the rest of the pipeline answers for it.
+		// A static password-table subject is no account row and holds no email
+		// address; the rest of the pipeline answers for it.
 		return nil
 	case err != nil:
 		return m.unavailable("reading the acting account", fmt.Errorf("%w: %w", authn.ErrUnavailable, err))

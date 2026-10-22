@@ -144,8 +144,8 @@ var (
 	// between concurrent ensure calls and between replicas, and it is
 	// retryable.
 	errRosterLagging = errors.New("the roster's snapshot has not caught up with the tenant row")
-	// errVerificationRequired refuses an account whose self-registration has not
-	// proved an email address. The workspace is opened once it has.
+	// errVerificationRequired refuses an account that holds an unproved email
+	// address. The workspace is opened once it has been proved.
 	errVerificationRequired = errors.New("the account has not verified an email address")
 )
 
@@ -189,8 +189,8 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 	"Creates the caller's personal tenant on first call and reads it back afterwards, completing its "+
 		"owner role and binding and converging the role's grants to the host's allowlist on every "+
 		"call. A membership row that exists is left as it stands, and a tenant that is not enabled is "+
-		"refused without a write. An account whose self-registration has not proved an email address "+
-		"is refused without a write too; the workspace opens once it has. The tenant identifier and "+
+		"refused without a write. An account that holds an unproved email address is refused without a "+
+		"write too; the workspace opens once it has been proved. The tenant identifier and "+
 		"alias are derived from the account identifier; the answer names the tenant and whether this "+
 		"call created it.",
 	nil,
@@ -206,8 +206,8 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 			"The caller is impersonating, is a service account, or is a static-table subject that "+
 				"cannot own a tenant"),
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The caller cannot have a personal tenant: its self-registration has not proved an email "+
-				"address (urn:speed:workspace:verification-required), it belongs"+
+			"The caller cannot have a personal tenant: it holds an unproved email address "+
+				"(urn:speed:workspace:verification-required), it belongs"+
 				"to another tenant while holding none of its own (already-member), its personal tenant "+
 				"exists and is not enabled (tenant-unavailable), or the derived identifier or alias is "+
 				"unavailable (identifier-unavailable). The type field names which. The verification-required"+
@@ -231,8 +231,8 @@ func init() { core.ProcessRegistry.Register(personalModule()) }
 //
 // The roster, the memberships, the policy manager, the seeding surface, the
 // permission catalog and the registration-verification read are required: the
-// ensure writes all five pieces and refuses an account whose self-registration
-// has not proved an email address, and an assembly that names this module without
+// ensure writes all five pieces and refuses an account that holds an unproved
+// email address, and an assembly that names this module without
 // one of them cannot run it. The HTTP entry point, the feature board, the
 // route-declaration surface and the logger are optional: without an entry point
 // the routes are not mounted, without a board the conditional feature is simply
@@ -478,8 +478,8 @@ type personalResult struct {
 // The caller has to be authenticated; the gateway has usually settled that, and
 // the check here is what answers a run whose account endpoint is unguarded. An
 // impersonating identity is a 403, a service account is a 403, a static-table
-// subject is not an account and is a 403, and an account whose self-registration
-// has not proved an email address is the 409 verification-required with no
+// subject is not an account and is a 403, and an account that holds an unproved
+// email address is the 409 verification-required with no
 // tenant created. An account that belongs to another tenant is the 409
 // already-member. An account whose personal tenant is not enabled is the 409
 // tenant-unavailable, and an identifier or alias the tenant cannot take is the
@@ -569,8 +569,8 @@ func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (Workspa
 // its state, and a tenant row that is not enabled is answered with a refusal
 // before anything is written.
 //
-// The eligibility check runs first. An account whose self-registration has not
-// proved an email address is refused and nothing is written: the workspace opens
+// The eligibility check runs first. An account that holds an unproved email
+// address is refused and nothing is written: the workspace opens
 // after verification. An account that already holds a membership in its personal
 // tenant reads that tenant back, whether or not it belongs to other tenants too.
 // An account with no personal membership and a membership elsewhere is refused
@@ -580,12 +580,12 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 	if err != nil {
 		// Every failure here is the 503 the handler writes, authn.ErrAccountNotFound
 		// included. The management faces of the capabilities read that sentinel as
-		// "no self-registration" and let the rest of their pipeline answer, because
-		// they only gate a request that already names a real target. This ensure is
-		// an authenticated account's own provisioning: an account row that is not
-		// there is an anomaly, not a state to read past, and writing the tenant for
-		// it would register a workspace for an account the account store does not
-		// hold.
+		// "no account row to verify" and let the rest of their pipeline answer,
+		// because they only gate a request that already names a real target. This
+		// ensure is an authenticated account's own provisioning: an account row that
+		// is not there is an anomaly, not a state to read past, and writing the
+		// tenant for it would register a workspace for an account the account store
+		// does not hold.
 		return personalResult{}, fmt.Errorf("reading the account's signup state: %w", err)
 	}
 	if status.State == authn.SignupPending {

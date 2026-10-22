@@ -114,11 +114,11 @@ func childEnv() []string {
 // plaintext password, so one case covers both credential forms.
 const demoSeedSection = `seed:
   accounts:
-    - identifier: "operator@demo.test"
+    - identifier: "operator"
       password: "operator-dev-secret"
       display-name: "Demo Operator"
       platform-admin: true
-    - identifier: "ops@demo.test"
+    - identifier: "ops"
       password-hash: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
       display-name: "Demo Ops"
   tenants:
@@ -1056,13 +1056,13 @@ func TestMarkOperationsWithNoOwnedOperationIsIdentity(t *testing.T) {
 
 // The credentials the seed writes and this case signs in with.
 const (
-	seedIdentifier = "operator@demo.test"
+	seedIdentifier = "operator"
 	seedPassword   = "operator-dev-secret"
 	// hashIdentifier is the account the configuration gives as a hash instead
 	// of as a plaintext password. It signs in with the same password, because
 	// the entry the configuration carries is that password's — the same entry
 	// the static credential table holds.
-	hashIdentifier = "ops@demo.test"
+	hashIdentifier = "ops"
 	// demoTenant is the tenant the configuration under test names, the one the
 	// seed registers and binds the administrator in.
 	demoTenant = "demo"
@@ -1226,6 +1226,48 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 // binding for the whole run leaves a deployment with a configured tenant whose
 // administration pages are refused with 403. The reads below are exactly those
 // pages, one request per tenant the configuration names.
+// TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot holds the gate in the
+// assembled program: the seeded operator has no email and writes freely, while
+// an account created with an administrator-asserted address reads pending and
+// is refused every management write with 403 contact-required until its holder
+// proves the address.
+func TestAnUnprovedEmailIsGatedAndAnAccountWithoutOneIsNot(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	serve := start(t, config, "sqlite", serveCommand)
+	serve.waitReady(t)
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	operator := signIn(t, base, seedIdentifier, seedPassword)
+	headers := map[string]string{"Authorization": "Bearer " + operator}
+
+	created := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+		base+"/api/v1/system/auth/accounts", map[string]any{
+			"kind":               "user",
+			"username":           "unproved",
+			"email":              "unproved@demo.test",
+			"email_verified_via": "admin",
+			"password":           "unproved-password",
+		}, headers)
+	if created.status != http.StatusCreated {
+		t.Fatalf("the operator with no email was refused a management write: %d\n%s",
+			created.status, created.body)
+	}
+
+	gated := signIn(t, base, "unproved@demo.test", "unproved-password")
+	refused := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodPost,
+		base+"/api/v1/system/auth/accounts", map[string]any{
+			"kind": "user", "username": "another",
+		}, map[string]string{"Authorization": "Bearer " + gated})
+	if refused.status != http.StatusForbidden || !strings.Contains(string(refused.body), "contact-required") {
+		t.Fatalf("a management write from an unproved email answered %d, want 403 contact-required:\n%s",
+			refused.status, refused.body)
+	}
+}
+
 func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 	ports := freePorts(t, listenerCount)
 	// Two tenants, so a seed that binds the first one it reads is

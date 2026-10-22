@@ -10,7 +10,7 @@
 - **校验后端的接缝与身份的形状**：凭据的形状、判决的形状、后端声明自己认领的载体与可交出的账户命名空间的途径，以及身份的类型化字段。
 - **路由访问级别的登记面**：豁免、可选认证与可冒充的登记，与请求期的命中判定。
 - **账户存储**：账户、已验证标识、联系方式预留、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避。
-- **自助注册**：匿名的用户名加口令注册路由一次写入账户、用户名标识、口令凭据与邮箱未证明预留；预留的插入以 `(kind, value)` 唯一索引仲裁地址占用，账户立即可登录，邮箱的验证在登录之后完成，未验证账户的敏感能力受限。
+- **自助注册**：匿名的用户名加口令注册路由一次写入账户、用户名标识、口令凭据与邮箱未证明预留；预留的插入以 `(kind, value)` 唯一索引仲裁地址占用，账户立即可登录，邮箱的验证在登录之后完成，未验证账户的敏感能力受限。未验证的判定对管理员预置与导入写出的账户同样成立，判定与创建路径无关。
 - **登录**：多种登录方式共用的多步引擎，终态是登录会话或令牌。
 - **登录会话、访问令牌与刷新令牌**：签发、校验、轮换与撤销。
 - **多因素、企业 SSO 与短信验证码**。
@@ -96,9 +96,9 @@
 | 责任键 | accountability key | `Identity.Key()` 的取值，恒为 `string(Actor())`；限流、审计与设置的 `actor` 参数按它归责。 |
 | 冒充 | impersonation | 管理员在限定的租户内、有期限、被审计地以另一个账户的身份行事；身份上 `Actor()` 不等于 `Account()`。 |
 | 访问级别 | access | 网关对一次请求命中的路由登记的归类：`Open`、`Optional`、`Required`，以及网关没有作过决定的 `Unknown`。 |
-| 注册验证状态 | signup state | 账户上的 `signup_state`：`0` 非自助注册、`1` 自助注册且尚无已验证邮箱、`2` 已有已验证邮箱。它是账户上的独立事实，与账户状态是两件事，不进入会话、身份或访问令牌；进入 `2` 只由邮箱的证明产生。 |
+| 注册验证状态 | signup state | 账户的邮箱验证状态，二值：持有至少一条已证明归属的邮箱标识即已验证，持有邮箱而没有一条已证明的即未验证，没有邮箱则不适用本规则。`SignupVerification.SignupStateOf` 从标识与联系方式预留现算，与账户的创建路径无关；`signup_state` 列只记账户怎么来（`0` 非自助注册、`1` 自助注册、`2` 曾证明过），不参与判定。它是账户上的独立事实，与账户状态是两件事，不进入会话、身份或访问令牌。 |
 | 联系方式预留 | contact claim | `authn_pending_contacts` 的一行：账户对一个邮箱地址的预留，`(kind, value)` 全局唯一。`verified_at` 为空是注册写下的未证明预留，非空是账户已持有的联系方式。注册以插入预留原子仲裁占用；它不是登录名，也不参与任何账户查找。 |
-| 未验证账户 | unverified account | 注册验证状态为 `signup_state=1` 的账户：自助注册、尚无已验证邮箱。它可以登录，但依赖已验证邮箱的能力被拒；邮箱被证明之后不再是未验证账户。 |
+| 未验证账户 | unverified account | 持有邮箱而没有已证明邮箱的账户，即 `SignupStateOf` 读作 `SignupPending` 的账户；管理员预置、导入与自助注册写出的账户都按同一判据算。它可以登录，但依赖已验证邮箱的能力被拒；邮箱被证明之后不再是未验证账户。没有邮箱的账户不是未验证账户，不受这条限制。 |
 | 判定接缝 | decision seam | 根包接口 `Decider`：回答某个发起者能否做认证范围内的某件事；缺席即全拒，由宿主或 `authz.guard` 实现。 |
 
 ## 外部接口契约
@@ -308,7 +308,7 @@ type Requirement struct {
 | `authn/profile` | `authn.profile` | 无（只挂 `B/me` 的两条路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`MFA`、`SignupVerification` | `settings.Store` ○、`audit.Audit` ○ | 无 |
 | `authn/invite` | `authn.invite` | `Invites` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit`、`SignupVerification` | `Decider` ○（缺席即全拒）、`Throttle` ○、`settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○ | `authn_invitations` |
 
-**注册、账户存储与验证回路的职责分工。** 匿名注册路由与登录方式的发现面归 `authn.login`：路由只做预算、参数校验与调用，不经过登录流程引擎；`purpose=link` 的门控也由它在开始流程时执行，因为流程路由归它。账户、用户名标识、口令凭据、注册验证状态与联系方式预留归 `authn.account`：`Signups.Register` 以 `RegisterAccount` 为输入，一次事务写入全部事实；`SignupVerification.SignupStateOf` 回答当前状态，`SignupVerification.PendingAccountByContact` 只服务 `authn.invite` 接受时按已证明控制权的地址反查未证明预留。邮箱的验证回路由 `authn.login` 的账户自助面完成；写已验证标识经 `AccountAdmin.AddIdentifier`，同一事务把该地址的预留置为已持有并把 `signup_state` 置 `2` 是 `authn.account` 的副作用。短信验证手机只写已验证的手机标识，不改变注册验证状态。
+**注册、账户存储与验证回路的职责分工。** 匿名注册路由与登录方式的发现面归 `authn.login`：路由只做预算、参数校验与调用，不经过登录流程引擎；`purpose=link` 的门控也由它在开始流程时执行，因为流程路由归它。账户、用户名标识、口令凭据、注册验证状态与联系方式预留归 `authn.account`：`Signups.Register` 以 `RegisterAccount` 为输入，一次事务写入全部事实；`SignupVerification.SignupStateOf` 回答当前状态（从标识与预留现算，管理员预置与导入的账户同样读得出未验证），`SignupVerification.PendingAccountByContact` 只服务 `authn.invite` 接受时按已证明控制权的地址反查未证明预留。邮箱的验证回路由 `authn.login` 的账户自助面完成；写已证明标识经 `AccountAdmin.AddIdentifier`，同一事务把该地址的预留置为已持有、写首次证明时刻、把自助注册账户的 `signup_state` 置 `2`（账户已持有同值未证明标识时就地提升该行）是 `authn.account` 的副作用。短信验证手机只写已验证的手机标识，不改变注册验证状态。
 
 `authn/guard` 与 `authn/authntest` 不登记模块：`guard.Require` 返回加强认证的 gin 处理器，`authntest` 是测试构造口。
 
@@ -564,7 +564,7 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 
 ### 注册验证状态的门控
 
-要求已验证邮箱的能力在请求期按 `SignupVerification.SignupStateOf` 活读账户的注册验证状态，`signup_state = 1` 时答 403 `contact-required`。门控在身份确定之后、授权与强度判定之前执行；它只收紧不放行，因此不构成越权。判定接缝缺席时按既有语义先拒绝，门控不改变该结果。读状态失败答 503，不按放行处理；服务账户与 `signup_state = 0` 的账户不受门控约束。状态不进身份、会话与访问令牌，所以每次判定都当场读取。
+要求已验证邮箱的能力在请求期按 `SignupVerification.SignupStateOf` 活读账户的注册验证状态，读作未验证（`SignupPending`：持有邮箱而没有一条已证明的）时答 403 `contact-required`。判据与账户怎么创建无关：自助注册、管理员预置、导入、首登开户与企业 SSO 写出的用户账户一视同仁。门控在身份确定之后、授权与强度判定之前执行；它只收紧不放行，因此不构成越权。判定接缝缺席时按既有语义先拒绝，门控不改变该结果。读状态失败答 503，不按放行处理；服务账户与读作 `SignupNone`（没有任何邮箱）的账户不受门控约束。状态不进身份、会话与访问令牌，所以每次判定都当场读取。
 
 **平台强制门控的是身份与运营面，集合封闭**：管理面的人类写、冒充发起、`purpose=link` 的外部身份绑定、授权策略的写面、设置的写面、租户的创建与变更、服务密钥的创建、邀请的签发与撤销。各条的判定、豁免与门控所在模块由承载它的文档给出（[design-authn-admin](design-authn-admin.md)、[design-authn-impersonation](design-authn-impersonation.md)、[design-authn-login](design-authn-login.md)、[design-authn-invite](design-authn-invite.md)，以及[授权](../design-authz.md)、[设置](../settings/design-settings.md)、[租户](../tenant/design-tenant.md)的设计文档）。**业务写面不在平台门控之内**：`objectstore`、`notification`、`jobs` 一类能力的写是否要求已验证邮箱，由宿主决定，authn 不为它们统一拦截。
 

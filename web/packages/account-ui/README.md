@@ -191,18 +191,20 @@ Lists the account's sign-in identifiers -- read off the profile's
 `identifiers` field (`GET /api/v1/auth/me`), because the spec ships no dedicated
 list route -- each with its kind (email, phone or username). A username is a
 login name with no ownership to prove, so its row shows no ownership state;
-email and phone rows name how the identifier was established. `proven` is true
-only for the ways of establishing an identifier that prove ownership
-(`email-code`, `sms-code`, `invite`, `idp:<provider>`); `admin`,
-`import-unverified` and `self` only record an assertion, so `proven` is false
-for them. The chip therefore also reads `verified_via`: a proved channel shows
-Verified, `admin` shows Added by an administrator (not self-verified),
-`import-unverified` shows Imported (not self-verified), and any other unproven
-channel shows Not verified. A provisioned account is usable without the user
-proving the address, so its row must not promise a verification it does not
-offer. A username row renders no state at all, so these values never show for
-it. `verified_at` cannot answer the ownership question -- every stored
-identifier carries one. A row's remove action sits behind the ui-kit danger confirm and
+email and phone rows carry a two-value chip read off `proven`: true shows
+Verified, false shows Not verified. The chip answers only whether ownership has
+been proved, so `verified_via` does not change the answer -- an address an
+administrator asserted or an import recorded is an unproved address, not a
+third state. `verified_at` cannot answer the ownership question -- every stored
+identifier carries one. An unverified email row carries a verify action beside
+its remove action, even when the remove action is withheld as the only login
+name: the flow shows the row's address in a read-only field, sends a code to
+that same address through `POST /api/v1/auth/identifiers`, submits it through
+`POST /api/v1/auth/identifiers/verify`, and the refetched row's chip flips to
+Verified. The action is withheld while the account's `verification.state` is
+`pending`, because that section's flow owns the one pending code, and on a
+deployment that serves no email channel. A row's remove action sits behind the
+ui-kit danger confirm and
 sends `DELETE /api/v1/auth/identifiers/{id}`; a refusal (removing a password
 account's last username or email address is the 409
 `login-identifier-required`) renders its code text and re-reads the profile,

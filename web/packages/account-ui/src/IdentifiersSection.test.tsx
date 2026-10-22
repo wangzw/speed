@@ -3,8 +3,9 @@
  * profile (GET /api/v1/auth/me) and the removal write
  * (DELETE /api/v1/auth/identifiers/{id}).
  *
- * What this suite pins: each identifier renders with its kind and value
- * and its verified/unverified state; a row's remove sends
+ * What this suite pins: each identifier renders with its kind and value and
+ * its one-of-two verified/unverified state; an unverified email row proves its
+ * own address through the code flow and flips its chip; a row's remove sends
  * DELETE /api/v1/auth/identifiers/{id} behind the danger confirm and refetches
  * the profile so the row drops off; a last-way-in refusal (409) renders
  * its code text, and the server's last-login-name code renders its own text
@@ -85,10 +86,10 @@ describe('IdentifiersSection', () => {
     await expectNoAxeViolations()
   })
 
-  it('names an administrator-asserted or imported address by its channel', async () => {
-    // A provisioned account is usable without the user proving the address, so
-    // the row must not promise a verification the account neither needs nor
-    // offers; an unverified import says what it is instead.
+  it('renders every unproved address as Not verified, whatever established it', async () => {
+    // The chip answers one question -- has ownership been proved? An address
+    // an administrator asserted and an unverified import are both unproved,
+    // so they read Not verified like any other; there is no third state.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -118,9 +119,220 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findByText('operator@demo.test')).toBeTruthy()
-    expect(screen.getByText(zhCN.identifiers.addedByAdmin)).toBeTruthy()
-    expect(screen.getByText(zhCN.identifiers.importedUnverified)).toBeTruthy()
+    expect(screen.getAllByText(zhCN.identifiers.unverified)).toHaveLength(2)
+    expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
+    // The binary vocabulary has no channel labels left.
+    expect(zhCN.identifiers).not.toHaveProperty('addedByAdmin')
+    expect(zhCN.identifiers).not.toHaveProperty('importedUnverified')
+  })
+
+  it('offers a verify action on an unverified email row of a verified account', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            identifiers: [
+              identifier({ id: 'id-primary', kind: 'email', value: 'ada@x.test' }),
+              identifier({
+                id: 'id-secondary',
+                kind: 'email',
+                value: 'second@x.test',
+                proven: false,
+                verified_via: 'admin',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('second@x.test')).toBeTruthy()
+    // The account as a whole is verified, so the banner offers no entry for
+    // this row; the row itself must.
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
+      }),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    ).toBeNull()
+  })
+
+  it('keeps the verify action when the row is the only login name', async () => {
+    // The remove action is withheld on a password account's only login name;
+    // the verify action must still appear, or the unverified row would have
+    // no entry at all.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: true,
+            identifiers: [
+              identifier({
+                id: 'id-only',
+                kind: 'email',
+                value: 'only@x.test',
+                proven: false,
+                verified_via: 'self',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('only@x.test')).toBeTruthy()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'only@x.test'),
+      }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'only@x.test'),
+      }),
+    ).toBeTruthy()
+  })
+
+  it('proves an unverified row through its own address and flips the chip', async () => {
+    let proven = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: { state: 'verified', email: 'ada@x.test', since: '' },
+            identifiers: [
+              identifier({ id: 'id-primary', kind: 'email', value: 'ada@x.test' }),
+              identifier({
+                id: 'id-secondary',
+                kind: 'email',
+                value: 'second@x.test',
+                proven,
+                verified_via: proven ? 'email-code' : 'admin',
+              }),
+            ],
+          }),
+        )
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify'
+      ) {
+        proven = true
+        return jsonResponse(200, { state: 'added' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
+      }),
+    )
+
+    // The flow shows the row's address and does not let it change.
+    const valueField = screen.getByLabelText(
+      zhCN.identifiers.add.value.labelEmail,
+    )
+    expect(valueField).toHaveValue('second@x.test')
+    expect(valueField).toHaveAttribute('readonly')
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    await screen.findByLabelText(zhCN.identifiers.add.code.label)
+    await expectNoAxeViolations()
+    const sends = rig.calls.filter(
+      (call) =>
+        call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
+    )
+    expect(sends).toHaveLength(1)
+    expect(sends[0]?.body).toEqual({ kind: 'email', value: 'second@x.test' })
+
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+    )
+
+    const verifies = rig.calls.filter(
+      (call) =>
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify',
+    )
+    expect(verifies).toHaveLength(1)
+    expect(verifies[0]?.body).toEqual({ code: '123456' })
+    // The refetched profile flips the row's chip; both rows are proved now.
+    await waitFor(() =>
+      expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
+    )
     expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
+
+    await expectNoAxeViolations()
+  })
+
+  it('does not offer the row verify action while the account is pending', async () => {
+    // The pending state's one code record belongs to the verification
+    // section and the host's banner; a second concurrent request from a row
+    // would overwrite it.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            verification: {
+              state: 'pending',
+              email: 'pending@x.test',
+              since: '',
+            },
+            identifiers: [
+              identifier({
+                id: 'id-pending',
+                kind: 'email',
+                value: 'pending@x.test',
+                proven: false,
+                verified_via: 'admin',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('pending@x.test')).toBeTruthy()
+    expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace(
+          '{{value}}',
+          'pending@x.test',
+        ),
+      }),
+    ).toBeNull()
   })
 
   it('renders no verification chip for a username', async () => {

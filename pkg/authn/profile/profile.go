@@ -10,7 +10,7 @@
 // identity with no account, is answered 401.
 //
 // The module holds no data, no rule and no store of its own. It reads the
-// account, its identifiers, its external bindings and its self-registration
+// account, its identifiers, its external bindings and its email verification
 // state through the Accounts and SignupVerification interfaces, and writes the
 // display name and the attribute set through AccountAdmin, mapping what those
 // return to responses. The writable set is

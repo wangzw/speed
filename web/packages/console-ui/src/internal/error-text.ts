@@ -83,13 +83,15 @@ export const ERROR_TEXT_CODES = [
   // the 409 an account, domain or factor collision is answered with, the
   // 409 an email address another account has reserved or proved is
   // answered with, the 409 a password write is refused with when the
-  // account has no login name, and the 403 a denied or
+  // account has no login name, the 403 a write with an unproved email
+  // address is answered with, and the 403 a denied or
   // impersonation-restricted write is answered with.
   'authn.bad_request',
   'authn.unsupported_region',
   'authn.conflict',
   'authn.email_taken',
   'authn.login_identifier_required',
+  'authn.contact_required',
   'authn.forbidden',
   'authn.impersonation_restricted',
   // authn's highest-privilege refused writes: the 403 of an initiator with no

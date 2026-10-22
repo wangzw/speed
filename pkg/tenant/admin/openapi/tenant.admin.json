@@ -217,7 +217,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -408,7 +408,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "No tenant carries the identifier"
@@ -527,7 +527,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "No tenant carries the identifier"

@@ -110,13 +110,16 @@ func (b *logBuffer) logger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(b, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
-// fakeAccounts is the account read surface. Only Lookup is exercised; the rest
-// of the interface is embedded nil, which a case must not reach.
+// fakeAccounts is the account read surface. Lookup and Identifiers are
+// exercised; the rest of the interface is embedded nil, which a case must not
+// reach. via is the way the held address was established, email-code unless a
+// case says otherwise.
 type fakeAccounts struct {
 	authn.Accounts
 	mu       sync.Mutex
 	byEmail  map[string]authn.AccountID
 	kinds    map[authn.AccountID]authn.AccountKind
+	via      string
 	lookupEr error
 	getEr    error
 }
@@ -157,6 +160,29 @@ func (a *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value s
 		return "", authn.ErrAccountNotFound
 	}
 	return id, nil
+}
+
+// Identifiers answers the email identifiers the account holds. The way each was
+// established is the case's via, email-code by default, so an existing account
+// in the ordinary case already proves the address and acceptance adds only the
+// membership.
+func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.lookupEr != nil {
+		return nil, a.lookupEr
+	}
+	via := a.via
+	if via == "" {
+		via = authn.VerifiedViaEmailCode
+	}
+	var out []authn.Identifier
+	for email, account := range a.byEmail {
+		if account == id {
+			out = append(out, authn.Identifier{Kind: authn.IdentifierEmail, Value: email, VerifiedVia: via})
+		}
+	}
+	return out, nil
 }
 
 // fakeAccountAdmin is the account write surface, counting each call and

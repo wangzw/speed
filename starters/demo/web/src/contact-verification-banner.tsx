@@ -1,16 +1,18 @@
 /**
- * The persistent registration-verification notice under the app bar.
+ * The persistent email-verification notice under the app bar.
  *
- * A self-registration whose email address is not proved reads `pending` on
- * GET /api/v1/auth/me's `verification`. While that holds, the tenant frame
- * shows this notice below the app bar: the target address, a link to the
- * verification page and, when there is a target, a link to change it. The two
- * actions land on the same page with different intent: the verify link opens
- * the code step, the change link carries `?change=email` so the page starts in
- * the change-address form. The notice is a region, not a live region, and it
- * carries no close control: it stays until the address is proved, independent
- * of the once-only "finish account setup" notice (a password registration can
- * have setup complete while verification is still pending).
+ * An account with an email address but no proved one reads `pending` on
+ * GET /api/v1/auth/me's `verification`, however the address arrived
+ * (self-registration, administrator provisioning or an import). While that
+ * holds, the tenant frame shows this notice below the app bar: the target
+ * address, a link to the verification page and, when there is a target, a
+ * link to change it. The two actions land on the same page with different
+ * intent: the verify link opens the code step, the change link carries
+ * `?change=email` so the page starts in the change-address form. The notice
+ * is a region, not a live region, and it carries no close control: it stays
+ * until the address is proved, independent of the once-only "finish account
+ * setup" notice (password setup can be complete while email verification is
+ * still pending).
  *
  * The read is the same profile query the account surfaces make, so a
  * successful verification (which invalidates it) also clears this notice.

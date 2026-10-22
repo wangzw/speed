@@ -86,7 +86,7 @@
             "type": "string"
           },
           "email_verified_via": {
-            "description": "How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400.",
+            "description": "How the administrator states the email was established: admin or import-unverified. It is required whenever email is present. The value records the administrator's assertion, not proof of ownership: an account with no proved email address is gated until the address is proved; empty or absent is refused with 400.",
             "enum": [
               "",
               "admin",
@@ -115,7 +115,7 @@
             "type": "string"
           },
           "phone_verified_via": {
-            "description": "How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400.",
+            "description": "How the administrator states the phone was established: admin or import-unverified. It is required whenever phone is present. The value records the administrator's assertion, not proof of ownership; empty or absent is refused with 400.",
             "enum": [
               "",
               "admin",
@@ -253,7 +253,7 @@
       },
       "AuthnAdminIdentifierWrite": {
         "additionalProperties": false,
-        "description": "A login identifier to add to one account, with how the administrator states it was verified.",
+        "description": "A login identifier to add to one account, with how the administrator states it was established.",
         "properties": {
           "kind": {
             "description": "A phone number is added or changed only through an SMS code and is refused here",
@@ -268,7 +268,7 @@
             "type": "string"
           },
           "verified_via": {
-            "description": "How the administrator states the identifier came to be verified",
+            "description": "How the administrator states the identifier was established: admin records an assertion, not proof of ownership",
             "enum": [
               "",
               "admin"

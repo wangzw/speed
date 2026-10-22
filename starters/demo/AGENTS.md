@@ -169,7 +169,29 @@ in; replace them all before a deployment serves real traffic:
   not carry that gives a `password-hash` instead — a PHC entry, the form
   `pkg/authn/static`'s `Hash` helper writes. A seeded account signs in through
   the login flow (`authn.login.password`) and the session cookie it hands out,
-  not through an Authorization scheme.
+  not through an Authorization scheme. An identifier without an `@` is a
+  username, which needs no proof; the baseline `testdata/` files name one,
+  because an email address the host writes is an administrator's assertion
+  rather than the holder's proof, and the baseline ships no mail channel. A
+  stack that can deliver a code (the review build, the Fly image) may name an
+  email address instead.
+
+  **The review build's and the Fly image's operator starts unverified.** The
+  review build's configuration (`server/review/sqlite.yaml`) names an email
+  address for the operator, and so does the Fly image's rendered configuration
+  (`deploy/fly.yaml.tmpl` fills `seed.accounts` from `DEMO_OPERATOR_EMAIL`).
+  That address is the host's assertion, so the account reads
+  `verification.state = pending` and every management human write answers 403
+  `contact-required` until its holder proves it. The first sign-in after a
+  deployment upgrade therefore has to prove the address: open the account
+  verification page, send a code to the operator's address, read it from the
+  review build's `review mail:` line or from the mailbox the Fly image's SMTP
+  relay delivers to, and submit it. Management actions are allowed from then
+  on. This is the expected state of an administrator-provisioned email, not a
+  fault: the rule treats a provisioned address, an imported one and a
+  self-registered one alike. A deployment therefore has to point
+  `DEMO_OPERATOR_EMAIL` at an address that can receive mail, since no other
+  path proves it.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
 - **The lowered factor age** (`seed.settings`:
@@ -612,7 +634,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   requires an authenticated caller, refuses an impersonating one 403 (it is
   registered `Impersonable` so the handler, not the gateway's default 401,
   answers), refuses a service account or a static-credential principal 403,
-  refuses an account whose self-registration has not proved an email address 409
+  refuses an account that holds an email address it has not proved 409
   `urn:speed:workspace:verification-required`, without writing anything (its state is read
   through `authn.SignupVerification`, which the module requires); the
   verification check runs before the eligibility checks, so a pending caller that

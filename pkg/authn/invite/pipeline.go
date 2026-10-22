@@ -60,18 +60,18 @@ func (p *product) admit(id authn.Identity) error {
 	return nil
 }
 
-// gateSignup refuses a management write an unverified self-registration makes.
-// It runs after the caller is known and before the Decider and the mandatory
-// audit, so a refused request asks no seam, writes no row and calls no
-// Invites method. A service account and an account created outside
-// self-registration are exempt; a state that cannot be read is a 503 and never
-// read as verified.
+// gateSignup refuses a management write an account with an unproved email
+// address makes. It runs after the caller is known and before the Decider and
+// the mandatory audit, so a refused request asks no seam, writes no row and
+// calls no Invites method. A service account and an account with no email
+// address are exempt, having nothing to verify; a state that cannot be read is a
+// 503 and never read as verified.
 func (p *product) gateSignup(ctx context.Context, id authn.Identity) error {
 	account, err := p.accounts.Get(ctx, id.Account())
 	switch {
 	case errors.Is(err, authn.ErrAccountNotFound):
-		// A static password-table subject is no account row and never a
-		// self-registration.
+		// A static password-table subject is no account row and holds no email
+		// address.
 		return nil
 	case err != nil:
 		return p.cause("reading the acting account", fmt.Errorf("%w: %w", authn.ErrUnavailable, err))

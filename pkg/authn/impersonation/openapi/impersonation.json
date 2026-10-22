@@ -303,7 +303,7 @@
                 }
               }
             },
-            "description": "Impersonation is refused for this caller or target, the caller has no seasoned non-SMS factor (factor-not-seasoned), or the caller's self-registration has not verified an email address (contact-required)"
+            "description": "Impersonation is refused for this caller or target, the caller has no seasoned non-SMS factor (factor-not-seasoned), or the caller has an email address that is not proved (contact-required)"
           },
           "409": {
             "content": {

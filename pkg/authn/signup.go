@@ -6,20 +6,21 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/model"
 )
 
-// SignupState is how far the self-registration of an account has got. It is
-// independent of AccountStatus: a pending registration is an enabled account
-// that has not proved an email address yet. The zero value is SignupNone, and
-// Valid reports whether a value is one of the three.
+// SignupState is how far an account's email verification has got. It is
+// independent of AccountStatus: a pending account is an enabled account that
+// holds an unproved email address. The zero value is SignupNone, which means
+// the account has no email address to verify, and Valid reports whether a value
+// is one of the three.
 type SignupState = model.SignupState
 
-// The states of a self-registration.
+// The states of an account's email verification.
 const (
-	SignupNone     = model.SignupNone     // the zero value: not a self-registration
-	SignupPending  = model.SignupPending  // self-registered, no email address proved yet
-	SignupVerified = model.SignupVerified // an email address has been proved
+	SignupNone     = model.SignupNone     // the zero value: no email address to verify
+	SignupPending  = model.SignupPending  // holds an email address that has not been proved
+	SignupVerified = model.SignupVerified // holds an email address whose ownership was proved
 )
 
-// SignupStatus is the self-registration state as a request reads it: State,
+// SignupStatus is the email-verification state as a request reads it: State,
 // the Email of that state, and Since, when the account first reached Verified.
 type SignupStatus = model.SignupStatus
 
@@ -51,18 +52,23 @@ type Signups interface {
 	Register(ctx context.Context, in RegisterAccount) (Account, error)
 }
 
-// SignupVerification is the read surface of the self-registration state. The
-// account module delivers it exclusively. Every method reads the database on
+// SignupVerification is the read surface of an account's email verification.
+// The account module delivers it exclusively. Every method reads the database on
 // the request: the state is in no account snapshot, session or token.
 type SignupVerification interface {
-	// SignupStateOf reports how far the account's self-registration has got.
-	// State is SignupNone, SignupPending or SignupVerified; Email is the
-	// earliest-proved address for Verified (the identifier first verified, ties
-	// broken by identifier), the pending contact for Pending, and empty when
-	// there is none; Since is the first instant the account reached Verified,
-	// the zero time while it never did. An account that does not exist is
-	// ErrAccountNotFound, and an unavailable database is ErrUnavailable: a read
-	// failure is never answered as SignupNone.
+	// SignupStateOf reports how far the account's email verification has got.
+	// State is SignupVerified when the account holds an email identifier whose
+	// way of verification proves ownership, SignupPending when it holds an email
+	// address that has not been proved (an identifier written through admin,
+	// import-unverified or self, or a reservation awaiting verification), and
+	// SignupNone when it has no email address at all. A kind other than user
+	// reads SignupNone. Email is the earliest-proved address for Verified (ties
+	// broken by identifier), the earliest unproved address for Pending (ties
+	// broken by identifier), and empty for None. Since is the first instant the
+	// account reached Verified, the zero time while it never did, and the zero
+	// time for None. An account that does not exist is ErrAccountNotFound, and
+	// an unavailable database is ErrUnavailable: a read failure is never
+	// answered as SignupNone.
 	SignupStateOf(ctx context.Context, id AccountID) (SignupStatus, error)
 	// PendingAccountByContact finds the one account an unproved contact
 	// reservation belongs to. kind is email or phone, value is normalized first

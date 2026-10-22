@@ -121,8 +121,11 @@ does.
   answered `409 email-taken`, with no message, no resend window and no budget
   spent. A read that fails is a 503, never "nobody holds it". The verify route
   answers a missing record under the same login-failed code as a wrong code; a
-  conflict at the identifier write, where the address was taken after the code
-  went out or an old row still holds it, is `409 email-taken` as well.
+  conflict at the identifier write, where another account took the address after
+  the code went out, is `409 email-taken` as well. Proving an address the account
+  already holds as an unproved identifier brings that row up to proved in place,
+  so re-adding the account's own address after its code comes back succeeds
+  rather than conflicting.
 - **Removing a login identifier is refused when it would strand a password
   account.** `DELETE /auth/identifiers/:id` maps the account module's
   `ErrIdentifierRequired` to 409 `login-identifier-required`: an account holding a
@@ -134,9 +137,12 @@ does.
   `authn.SignupVerification` is declared in `Requires` and resolved in `New`, so an
   assembly that names this module supplies the account module that delivers it,
   which is also where `Signups`, `Accounts` and `AccountAdmin` come from. The
-  `purpose=link` gate that refuses a pending self-registration (`signup_state=1`)
-  reads it: a link answers `403 contact-required` before any flow record is
+  `purpose=link` gate that refuses an account whose email address has not been
+  proved reads it: a link answers `403 contact-required` before any flow record is
   written, `step-up` and `enroll` are not gated, and a read that fails is a 503.
+  An account with no email address at all reads none and is not gated, and a
+  pending account still signs in: only its non-verification actions are
+  restricted.
 - **A registration's 409s are `username-taken` and `email-taken`, not
   `conflict`.** Only `Signups.Register`'s `ErrAccountExists` produces the first.
   The email address is reserved by the transaction that opens the account, and a

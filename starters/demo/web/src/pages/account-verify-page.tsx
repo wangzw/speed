@@ -1,19 +1,19 @@
 /**
- * The account verification page: where a password registration lands after
- * its automatic sign-in.
+ * The account verification page: the host's frame around account-ui's
+ * ContactVerificationSection.
  *
- * The page is the host's frame around account-ui's
- * ContactVerificationSection: the page heading belongs to the host, the
- * section reads GET /api/v1/auth/me's `verification` and drives the send and
- * verify writes (POST /api/v1/auth/identifiers and /identifiers/verify). It
- * is a completion point rather than a navigation destination, so the route
- * carries no navigation entry; the persistent banner below the app bar and
- * the registration landing both point at it. The page is the one host of the
- * section that sets `autoSend`, and only for a plain verify landing: a pending
- * account arriving that way gets one code on its way without having to press
- * anything, while the same section on the account page stays quiet until
- * asked. A change landing (`?change=email`) passes no `autoSend`, so it never
- * sends on its own, not even after the change form is closed.
+ * The page heading belongs to the host; the section reads GET
+ * /api/v1/auth/me's `verification` and drives the send and verify writes
+ * (POST /api/v1/auth/identifiers and /identifiers/verify). It is a
+ * completion point rather than a navigation destination, so the route carries
+ * no navigation entry; the persistent banner below the app bar and the
+ * landing that follows an unverified sign-in both point at it. The page is the
+ * one host of the section that sets `autoSend`, and only for a plain verify
+ * landing: a pending account arriving that way gets one code on its way
+ * without having to press anything, while the same section on the account
+ * page stays quiet until asked. A change landing (`?change=email`) passes no
+ * `autoSend`, so it never sends on its own, not even after the change form is
+ * closed.
  *
  * The URL's `change=email` flag says the visitor arrived through the banner's
  * change action rather than its verify action: the section then starts in the

@@ -1135,7 +1135,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller's self-registration has not verified an email address (contact-required)"
+            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required)"
           },
           "409": {
             "content": {

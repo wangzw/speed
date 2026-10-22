@@ -194,12 +194,12 @@ type ScopeGuard interface {
 
 ### 注册验证状态的门控
 
-注册验证状态是账户上的独立事实：`signup_state` 取 `0`（非自助注册）、`1`（自助注册且尚无已验证邮箱）、`2`（已有已验证邮箱），邮箱被证明时置 `2`。它不是账户状态，账户状态仍只有启用、停用、删除，`signup_state=1` 的账户是启用账户，会话照常建立，管理面的列表、读取与过滤照常看得见它。
+注册验证状态是账户上的独立事实，判定二值：账户持有至少一条已证明归属的邮箱标识即已验证；持有邮箱而没有一条已证明的即未验证；一条邮箱也没有即不适用本规则。它不是账户状态，账户状态仍只有启用、停用、删除；未验证账户是启用账户，会话照常建立，管理面的列表、读取与过滤照常看得见它。判定从标识与联系方式预留现算（`SignupVerification.SignupStateOf`），与账户怎么创建无关：管理员预置的账户、导入的账户与自助注册的账户读同一套状态。`signup_state` 列只记账户怎么来，`0` 的账户一样可能读作未验证。
 
-- **判据与应答。** 发起者是用户账户且 `signup_state=1` 时，管理面的人类写答 403 `contact-required`（`ErrContactRequired`）；冒充发起按同一判据拒绝，它的路由在 `authn.impersonation`。读路由不受影响。
-- **豁免。** 服务账户（`AccountKind` 为 `service`）与 `signup_state=0` 的账户不受门控约束；管理面创建、首登开户、企业 SSO 与导入写出的账户都是 `0`。
+- **判据与应答。** 发起者是用户账户且状态读作未验证（`SignupPending`）时，管理面的人类写答 403 `contact-required`（`ErrContactRequired`）；冒充发起按同一判据拒绝，它的路由在 `authn.impersonation`。读路由不受影响。
+- **豁免。** 服务账户（`AccountKind` 为 `service`）与没有任何邮箱的账户（`SignupNone`）不受门控约束。管理员预置、导入、首登开户与企业 SSO 写出的账户不豁免：它们带着邮箱而未证明时照样被拦，直到本人经验证页证明该地址。
 - **位置。** 门控在身份确定之后、`Decider` 与强度核验之前；它只收紧不放行。被拦下的请求既不询问 `Decider`，也不询问强度，也不写强制档审计。状态经 `SignupVerification.SignupStateOf` 读当前值，读失败答 503，不按放行处理。
-- **与冒充的关系。** 冒充发起要求发起者是有会话的用户账户，未验证账户的发起被同一条判据拒；`authn.impersonation` 在它的结构性限制里、强度类条件与 `Decider` 之前答同一个 403 `contact-required`（[design-authn-impersonation](design-authn-impersonation.md)）。被冒充的目标账户的 `signup_state` 不参与判定。
+- **与冒充的关系。** 冒充发起要求发起者是有会话的用户账户，未验证账户的发起被同一条判据拒；`authn.impersonation` 在它的结构性限制里、强度类条件与 `Decider` 之前答同一个 403 `contact-required`（[design-authn-impersonation](design-authn-impersonation.md)）。被冒充的目标账户的验证状态不参与判定。
 
 门控的状态由 `authn.account` 持有，本文只写管理面这一侧的判定位置与应答；其余面的门控由各能力的文档承载。
 
@@ -329,7 +329,7 @@ flowchart TD
 - **冒充检查在最前。** 所有管理动作都不得在冒充中执行。网关因这些路由没有登记 `Impersonable` 而对冒充身份答 401；处理器自己仍检查 `Actor` 的冒充状态，答 403 `impersonation-restricted`，不询问 `Decider`。
 - **`Decider` 缺席先于任何查询。** 缺提供者时答 403 `forbidden`，不解析对象，使默认部署不泄露对象是否存在。
 - **归属解析先于 `Decide`。** `Decision` 要带归属，所以解析必须在询问之前（见「`Decision` 的填法」）。
-- **注册验证状态的门控在身份确定之后、`Decide` 与强度核验之前。** 发起者是未验证账户时，管理面人类写答 403 `contact-required`，不询问 `Decider`、不询问强度、不写审计；门控只收紧不放行。读路由与服务账户不受影响。冒充发起的路由在 `authn.impersonation`，按同一判据拒绝（见「注册验证状态的门控」）。
+- **注册验证状态的门控在身份确定之后、`Decide` 与强度核验之前。** 发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时，管理面人类写答 403 `contact-required`，不询问 `Decider`、不询问强度、不写审计；门控只收紧不放行。读路由、服务账户与没有邮箱的账户不受影响。冒充发起的路由在 `authn.impersonation`，按同一判据拒绝（见「注册验证状态的门控」）。
 - **强度核验在 `Decide` 之后、审计之前。** 强度要求按路由表的「额外要求」列，核验失败答 401 加强认证挑战，不写审计，不执行动作。
 - **强制审计在事务之外、动作之前。** 管理面路由里只有撤销冒充记录不适用：它的审计是尽力档，由 `Impersonation.Revoke` 自己写，处理器跳过强制审计与补行（路由表）。接缝级的审计写入另占一条连接、不加入调用方的事务；在调用方事务开着时调用它，SQLite 上等调用方占着的写锁，单连接库上等调用方占着的那条连接，等待超时后 `Record` 以 `ErrWriteFailed` 失败，强制档因此永远写不成功。处理器因此不在任何事务里调用 `audit.Record`，事务内只暂存发件箱事件，不调 `Bus.Publish`。
 - **写失败逐对象补一条 `failed` 行。** 审计与动作不在同一事务里，动作失败时审计里留一条已写而未生效的行，随后为每个已写出的对象补一条 `outcome=failed` 的行，用动作标识关联。
@@ -397,7 +397,7 @@ flowchart TD
 | `Decide` 返回 error 或 panic | 503 `urn:speed:authn:unavailable`（`ErrUnavailable`），成因只进日志，动作不执行 | 拒 |
 | 租户在路径、请求体与已存记录之间不一致 | 400，不询问 `Decider` | 拒 |
 | 对象不存在（`ErrAccountNotFound`、`ErrSessionNotFound` 及对应的提供方、冒充记录） | 404 | 拒 |
-| 发起者是未验证账户（`signup_state=1`），而这是管理面人类写 | 403 `contact-required`（`ErrContactRequired`） | 拒 |
+| 发起者读作未验证（`SignupPending`），而这是管理面人类写 | 403 `contact-required`（`ErrContactRequired`） | 拒 |
 | 读取发起者的注册验证状态失败 | 503 `urn:speed:authn:unavailable`（`ErrUnavailable`），动作不执行 | 拒 |
 | 发起者的强度不足 | 401 `insufficient_user_authentication`（`ErrStepUpRequired`） | 拒 |
 | 管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素（`Seasoned` 为假），在强度判定通过之后判定 | 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 拒 |
@@ -432,7 +432,7 @@ flowchart TD
 | 撤销冒充记录的审计档 | 审计接缝返回 `ErrWriteFailed` 时，`DELETE Bt/:tenant/impersonations/:id` 仍撤销成功，只记 Error；已结束的记录再撤销得到相同应答；记录不存在回 404；`GET Bt/:tenant/impersonations` 缺 `tenant` 回 400，`Decider` 的调用计数为零。 |
 | 强制审计不在调用方事务里 | 处理器全程不开事务，`audit.Record` 在能力接口的写之前调用；SQLite 文件库（单写者）上管理写操作成功且审计行存在——处理器若把审计与写包进一条事务，该库上会因写锁自等而失败。 |
 | 冒充中拒绝 | 冒充身份直达处理器时，每条管理路由回 403 `impersonation-restricted`，`Decider` 的调用计数为零。 |
-| 注册验证状态的门控 | 表驱动：发起者 `signup_state=1` 时，每条管理写路由与冒充发起回 403 `contact-required`，`Decider` 与强度询问的调用计数为零，能力接口的写调用计数为零，审计写入计数为零；同一发起者的读路由照常成功；服务账户与 `signup_state=0` 的发起者不受影响；状态读取返回错误时回 503 且动作不执行。 |
+| 注册验证状态的门控 | 表驱动：发起者读作 `SignupPending` 时，每条管理写路由与冒充发起回 403 `contact-required`，`Decider` 与强度询问的调用计数为零，能力接口的写调用计数为零，审计写入计数为零；同一发起者的读路由照常成功；服务账户与读作 `SignupNone`（没有任何邮箱）的发起者不受影响，读作 `SignupVerified` 的发起者也不受影响；管理员预置的账户（`signup_state=0`）带着未证明邮箱时同样被拦；状态读取返回错误时回 503 且动作不执行。 |
 | 路由组随能力挂 | 逐个去掉 `Sessions`、`MFA`、`Tokens`、`SSOProviders`、`SSOMetadataRefresher`、`Impersonation`，对应组的路由是路由引擎的未命中，其余组不受影响；启动诊断列出实际挂出的组。 |
 | 特性与路由组同源 | 用真实的 `feature.board` 驱动到 `Start`，表驱动逐组断言：功能在场，当且仅当报告该组的特性名，当且仅当该组路由已登记；`authn.admin` 在每一种组合下都在特性文档里。 |
 | 缺席不放行 | `Decide` 返回 error 回 503，panic 同样回 503，两种情形下能力接口的写调用计数都为零。 |

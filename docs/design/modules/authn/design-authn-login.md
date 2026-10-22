@@ -237,7 +237,7 @@ type Proof struct {
 | 401 | `flow-invalid` | 流程过期、已用、绑定不符、步序不符、被并发消费 |
 | 401 | `link-required` | 社交登录无绑定而已验证邮箱命中现有账户 |
 | 401 | `insufficient_user_authentication` | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
-| 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是待验证账户调用了要求已验证邮箱的能力 |
+| 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力 |
 | 409 | `conflict`、`login-identifier-required`、`username-taken`、`email-taken` | 外部身份冲突、解绑最后一种登录方式、删最后一个因素、某种因素已达上限；账户没有可作登录名的标识而设口令，或删除带口令凭据账户的最后一个登录名；自助注册的用户名已被占用；邮箱地址已被别的账户预留或持有 |
 | 415、429、503 | `unsupported-media-type`、`throttled`（带 `Retry-After`）、`unavailable` | `unavailable` 对外不区分是哪个依赖不可用 |
 
@@ -500,7 +500,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 1. 按「校验顺序与 return_to」校验。身份在冒充中，403 `impersonation-restricted`。
 2. 取 `purpose`：`link`、`step-up`、`enroll` 之外一律 `bad-request`。
-3. `purpose=link` 而发起者是未验证账户（`signup_state = 1`）时，403 `contact-required`，不写记录。外部身份绑定是平台强制门控的身份面，门控由本模块执行；`step-up` 与 `enroll` 不受此限。判定读 `SignupVerification.SignupStateOf`，读失败答 503，不按放行处理。
+3. `purpose=link` 而发起者是未验证账户（`SignupStateOf` 为 `SignupPending`：有邮箱而没有一条已证明的）时，403 `contact-required`，不写记录。没有邮箱的账户读作 `SignupNone`，不受这条门控约束，`step-up` 与 `enroll` 也不受。外部身份绑定是平台强制门控的身份面，门控由本模块执行。判定读 `SignupVerification.SignupStateOf`，读失败答 503，不按放行处理。
 4. `Sessions.StatusFresh(身份的会话)` 须有效，账户与身份一致。
 5. 按下表确定记录的 `method`、起始状态与起始要求；起始要求不满足，401 `insufficient_user_authentication`。
 6. 写记录：`account` 与 `session` 取身份的账户与会话，`delivery` 取会话的种类（`browser` 种为 `session`，`token` 种为 `token`），`binding` 与 `return_to` 取自请求，`answers` 与 `sends` 从零起。
@@ -510,7 +510,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 | 目的 | 请求里带 | 记录的 `method` | 起始状态 | 起始要求 |
 |---|---|---|---|---|
-| `link` | `method`、`input` | 请求的 `method` | `first` | 账户安全类动作的要求；发起者须不是未验证账户，`signup_state = 1` 时在写记录之前即 403 `contact-required` |
+| `link` | `method`、`input` | 请求的 `method` | `first` | 账户安全类动作的要求；发起者须不是未验证账户，`SignupStateOf` 为 `SignupPending` 时在写记录之前即 403 `contact-required` |
 | `step-up`，账户有可用因素 | 不带 `method` | 空 | `second` | 无附加要求 |
 | `step-up`，账户没有因素 | `method` | 请求的 `method` | `first` | 无附加要求 |
 | `enroll` | `input.kind` | 空；因素种类交给 `MFA.Enroll` | `enroll` | 账户安全类动作的要求 |
@@ -724,8 +724,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 |---|---|
 | `PUT B/password` | 改口令；请求体的当前口令可空（经提供方开户的账户没有口令），经 `SetPasswordOptions.Current` 交给 `Passwords.Set`，由账户模块校验当前口令与策略、失败即 `ErrPasswordPolicy`（400）或 `ErrInvalidCredentials`（401），本路由不单独计数退避；成功后处理器调 `Sessions.Rotate` 与 `Sessions.RevokeAccount(except = 当前会话)`；账户没有可作登录名的标识（没有用户名也没有邮箱标识）时 409 `login-identifier-required` |
 | `POST B/phone`、`POST B/phone/verify` | 添加或更换手机，经短信验证新号码（`verified_via = sms-code`）；成功后撤销其余会话；服务端状态与步骤见「手机号验证」 |
-| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被其他账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503；对同一归一化地址、间隔内的重发答 429 `throttled`（窗口按地址持有，跨会话与账户共享，一个地址在一次窗口内只发一条码）；成功写入撤销其余会话。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier-2026-10-16](../../../adr/adr-authn-selfservice-identifier-2026-10-16.md) |
-| `POST B/identifiers/verify` | 提交自助邮箱验证码，体 `{code}`：读会话的待验证记录，比对码；不符计数、用尽五次即废、记录过期靠键的生存期；通过才以 `verified_via = email-code` 调 `AccountAdmin.AddIdentifier` 写标识、删记录并撤销其余会话；写标识是权威的占用判定，地址在发码之后被别的账户取得时 `ErrContactTaken` 与 `ErrAccountExists` 都答 409 `email-taken`；没有待验证记录（或记录不属于本账户）与错码同答 401 `login-failed` |
+| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被**其他**账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503。账户自己已经持有的地址不在此列：它是一次重发到该地址的证明请求，发码照常，兑现后由账户模块就地证明那一行。对同一归一化地址、间隔内的重发答 429 `throttled`（窗口按地址持有，跨会话与账户共享，一个地址在一次窗口内只发一条码）；成功写入撤销其余会话。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier-2026-10-16](../../../adr/adr-authn-selfservice-identifier-2026-10-16.md) |
+| `POST B/identifiers/verify` | 提交自助邮箱验证码，体 `{code}`：读会话的待验证记录，比对码；不符计数、用尽五次即废、记录过期靠键的生存期；通过才以 `verified_via = email-code` 调 `AccountAdmin.AddIdentifier` 证明该地址、删记录并撤销其余会话。写标识是权威的占用判定：账户自己已经持有的同值邮箱标识由 `AddIdentifier` 就地提升为已证明（幂等，不新增第二行），所以对注册时留下的未证明地址或管理员预置的地址兑现验证码会成功；地址在发码之后被**别的**账户取得时 `ErrContactTaken` 答 409 `email-taken`，`ErrAccountExists` 只在绕过预留表的重复行上出现，同样答 409；没有待验证记录（或记录不属于本账户）与错码同答 401 `login-failed` |
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；带口令凭据的账户删除最后一个用户名或邮箱时答 409 `login-identifier-required`，删除不生效；无口令凭据的账户可删最后一个登录名，删手机从不触发该规则；不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |
 | `DELETE B/links/:id` | 解绑外部身份；账户有因素时，IdP 声明的多因素不算；解绑后账户至少还剩一种可用登录方式，否则 409 `conflict`；成功后撤销其余会话并发 `authn.binding.changed` |
 
@@ -849,4 +849,5 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | operation 声明与对外契约片段生成：`openapi/login.json` | 已实现 | `pkg/authn/login/operations.go`；`pkg/authn/login/openapi_generated_test.go`；片段 `pkg/authn/login/openapi/login.json` |
 | 条件特性 `authn.phone`、`authn.identifiers.email` 的声明与报告 | 已实现 | `pkg/authn/login/login.go` `Module`、`takeBoard`、`postFeature`；`pkg/authn/login/routes.go` `mountRoutes`；`pkg/authn/login/internal/selfservice/selfservice.go` `FeaturePhone`、`FeatureEmail`、`Mount`；`pkg/authn/login/feature_test.go` `TestThePhoneSurfaceAndItsFeatureShareOneJudgement` |
 | 匿名注册路由 `POST B/register` 与 `signup.password.enabled` 发现面 | 已实现 | `pkg/authn/login/register.go` `(*routes).register`、`signupSourceAllow`、`signupGlobalAllow`、`failRegister`；`pkg/authn/login/operations.go` `registerOperation`、`AuthnLoginRegistration`、`AuthnLoginSignupPassword`；`pkg/authn/login/respond.go` `(*routes).methods`、`descriptorView`；`pkg/authn/login/config.go` `passwordSignupPath`、`signupIPLimitPath`、`signupGlobalHourlyPath`、`(*reader).passwordSignup`、`signupIPLimit`、`signupGlobalHourly`；`pkg/authn/login/login.go` `Module`（`authn.Signups`）、`diagnoseSignup` |
-| 未验证账户的 `purpose=link` 门控（`signup_state=1` 时 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/authn/login/start.go` `(*routes).startAuthenticated` |
+| 未验证账户的 `purpose=link` 门控（`SignupStateOf` 为 `SignupPending` 时 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取；没有邮箱的 `SignupNone` 不受限） | 已实现 | `pkg/authn/login/start.go` `(*routes).startAuthenticated` |
+| 证明账户自己已持有的未证明邮箱标识（`POST B/identifiers` 重发到本账户地址、`POST B/identifiers/verify` 兑现后由 `AddIdentifier` 就地提升） | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).addEmail`、`(*routes).verifyIdentifier`；`pkg/authn/account/admin.go` `(*product).AddIdentifier` |

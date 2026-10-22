@@ -68,12 +68,12 @@
   },
   "accountVerify": {
     "title": "Verify your email address",
-    "description": "Confirm your email address to finish registration and lift the limits on your account."
+    "description": "Confirm your email address to lift the restrictions on your account."
   },
   "verificationBanner": {
     "region": "Email verification",
-    "pending": "Verify {{email}} to finish registration.",
-    "pendingNoEmail": "Add an email address to finish registration.",
+    "pending": "Verify {{email}} to lift the restrictions on your account.",
+    "pendingNoEmail": "Add an email address to lift the restrictions on your account.",
     "verify": "Verify now",
     "add": "Add an email address",
     "change": "Change email"

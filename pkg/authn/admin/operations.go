@@ -77,9 +77,9 @@ type accountCreateInput struct {
 	DisplayName      string            `json:"display_name" description:"The account's display name; absent writes an empty one."`
 	Username         string            `json:"username" description:"A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored."`
 	Email            string            `json:"email" description:"An email address to add, asserted by the administrator. It is trimmed and lower-cased before it is stored, and it needs email_verified_via."`
-	EmailVerifiedVia string            `json:"email_verified_via" enum:",admin,import-unverified" description:"How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400."`
+	EmailVerifiedVia string            `json:"email_verified_via" enum:",admin,import-unverified" description:"How the administrator states the email was established: admin or import-unverified. It is required whenever email is present. The value records the administrator's assertion, not proof of ownership: an account with no proved email address is gated until the address is proved; empty or absent is refused with 400."`
 	Phone            string            `json:"phone" description:"A phone number to add, in E.164 with a leading plus sign and 7 to 15 digits; it needs phone_verified_via."`
-	PhoneVerifiedVia string            `json:"phone_verified_via" enum:",admin,import-unverified" description:"How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400."`
+	PhoneVerifiedVia string            `json:"phone_verified_via" enum:",admin,import-unverified" description:"How the administrator states the phone was established: admin or import-unverified. It is required whenever phone is present. The value records the administrator's assertion, not proof of ownership; empty or absent is refused with 400."`
 	Password         string            `json:"password" description:"An initial password; absent leaves the account without one. It must pass the password policy."`
 	Attributes       map[string]string `json:"attributes" description:"Absent writes no attribute set"`
 	MFARequired      bool              `json:"mfa_required" description:"True when the account must register a factor before it can sign in."`
@@ -108,11 +108,11 @@ type accountStatusInput struct {
 
 // identifierAddInput adds one identifier to an account.
 type identifierAddInput struct {
-	_           struct{} `description:"A login identifier to add to one account, with how the administrator states it was verified."`
+	_           struct{} `description:"A login identifier to add to one account, with how the administrator states it was established."`
 	ID          string   `path:"id" description:"The account's identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
 	Kind        string   `json:"kind" required:"true" enum:"username,email" description:"A phone number is added or changed only through an SMS code and is refused here"`
 	Value       string   `json:"value" required:"true" description:"The identifier's text; it is normalized before it is stored, so a username is lower-cased and an email address is trimmed and lower-cased."`
-	VerifiedVia string   `json:"verified_via" enum:",admin" description:"How the administrator states the identifier came to be verified"`
+	VerifiedVia string   `json:"verified_via" enum:",admin" description:"How the administrator states the identifier was established: admin records an assertion, not proof of ownership"`
 }
 
 // identifierRemoveInput removes one identifier by the identifier row's own

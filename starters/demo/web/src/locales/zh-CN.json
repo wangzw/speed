@@ -68,12 +68,12 @@
   },
   "accountVerify": {
     "title": "验证邮箱地址",
-    "description": "确认你的邮箱地址以完成注册，并解除账户上的限制。"
+    "description": "确认你的邮箱地址以解除账户上的限制。"
   },
   "verificationBanner": {
     "region": "邮箱验证",
-    "pending": "验证 {{email}} 以完成注册。",
-    "pendingNoEmail": "添加邮箱地址以完成注册。",
+    "pending": "验证 {{email}} 以解除账户上的限制。",
+    "pendingNoEmail": "添加邮箱地址以解除账户上的限制。",
     "verify": "去验证",
     "add": "添加邮箱地址",
     "change": "更换邮箱"

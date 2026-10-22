@@ -356,7 +356,7 @@ var (
 	// beside the refusal shared with the other routes.
 	signedInForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable, or a `purpose=link` flow is refused because the "+
-			"caller's self-registration has not verified an email address (contact-required)")
+			"caller has an email address that is not proved (contact-required)")
 	conflictAnswer = speedhttp.ProblemResponse(http.StatusConflict,
 		"The request conflicts with the account's state")
 	mediaTypeAnswer = capabilityProblem(http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType,

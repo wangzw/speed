@@ -156,10 +156,12 @@ const (
 	signupVerified int16 = 2
 )
 
-// signupStateOf is the self-registration state a row states, held to the three
-// the column is allowed. One written around the check reads as none, the zero
-// value, so that a broken row is not taken for a registration that proved an
-// address.
+// signupStateOf is the stored self-registration state a row carries, held to
+// the three the column allows. The state a request reads is computed from the
+// identifiers and reservations; this column still decides which unattended
+// self-registrations the unverified-account sweep deletes. One written around
+// the check reads as none, the zero value, so that a broken row is not taken
+// for a registration that proved an address.
 func signupStateOf(n int16) authn.SignupState {
 	if n < signupNone || n > signupVerified {
 		return authn.SignupNone

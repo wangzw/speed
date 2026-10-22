@@ -1,14 +1,15 @@
 /**
- * ContactVerificationSection: the registration contact-verification surface.
+ * ContactVerificationSection: the account's email-verification surface.
  *
- * A self-registration opens an account whose email address is only a contact
- * until it is proved. The account reads as `pending` on GET
- * /api/v1/auth/me's `verification` until an email address is proved, and the
- * server keeps the account's restricted capabilities closed until then. This
- * section is that state's face: it reads the same profile query the other
- * account surfaces read and renders one of four states.
+ * An account with an email address but no proved email address reads as
+ * `pending` on GET /api/v1/auth/me's `verification` until an address is
+ * proved, and the server keeps the account's restricted capabilities closed
+ * until then -- however the address arrived (self-registration, administrator
+ * provisioning or an import). This section is that state's face: it reads the
+ * same profile query the other account surfaces read and renders one of four
+ * states.
  *
- *   - `none` (an account that never self-registered) renders nothing.
+ *   - `none` (an account with no unproved email address) renders nothing.
  *   - `verified` renders the completion state, naming the proved address.
  *   - `pending` with an address renders the target address, a send/resend
  *     action, the code field and the change-address action.
@@ -91,6 +92,7 @@ import {
 } from '@speed/ui-kit'
 import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
+import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 
@@ -123,16 +125,6 @@ export interface ContactVerificationSectionProps {
 type VerificationAction =
   | { readonly step: 'send'; readonly email: string }
   | { readonly step: 'verify'; readonly code: string }
-
-/** The Retry-After a 429 carried, in milliseconds, read structurally so this
- * package stays independent of @speed/api-client's concrete error class. */
-function retryAfterMsOf(error: unknown): number | undefined {
-  if (typeof error !== 'object' || error === null) {
-    return undefined
-  }
-  const value = (error as { retryAfterMs?: unknown }).retryAfterMs
-  return typeof value === 'number' && value > 0 ? value : undefined
-}
 
 export function ContactVerificationSection({
   session,

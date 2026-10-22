@@ -149,7 +149,7 @@ type Impersonation interface {
 | `MFA` | `Requires` | `Seasoned` 判定发起者名下有启用已满一段时间的非短信因素。没有因素编排的装配里没有任何账户满足发起者的强认证要求，所以必需。 |
 | `audit.Audit` | `Requires` | 接缝级审计写入。没有审计落点就不能冒充，所以必需。 |
 | `ScopeGuard`（`tenant.admission` 排他交付） | `Requires` | 租户范围的装配期保证：缺准入层的装配以 `core.ErrMissingProvider` 在任何实例构造之前失败。 |
-| `SignupVerification`（`authn.account` 排他交付） | `Requires` | 读发起者的注册验证状态；`signup_state = 1` 时拒绝发起，读失败答 503。 |
+| `SignupVerification`（`authn.account` 排他交付） | `Requires` | 读发起者的注册验证状态；读作未验证（`SignupPending`）时拒绝发起，读失败答 503。 |
 | `Decider` | `Init` 取用，○ | 询问「谁有权冒充谁」。缺席即全拒。 |
 | `Tokens` | `Init` 取用，○ | Bearer 凭据下的开始签发冒充访问令牌。缺席时只有 cookie 凭据下的开始可用。 |
 | `settings.Store` | `Init` 取用，○ | 读 `authn.impersonation.*` 设置；缺席取声明的缺省值。 |
@@ -306,13 +306,13 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 
 | 组 | 条件 | 守住的性质 |
 |---|---|---|
-| a 发起者 | 注册验证状态不是 `1`（未验证账户不能发起冒充，单独答 403 `contact-required`，见下）；身份不是冒充身份，不得链式；账户不是静态口令表主体，种类是 `user`，状态启用；有会话可绑，否则 `ErrImpersonationNeedsSession`（口令表主体与客户端凭据没有会话可绑）；`Identity.Satisfies(Requirement{Assurance: AssuranceMulti, MaxAge: authn.impersonation.max-auth-age, Local: true})`，即本地验证过的多因素，IdP 声明的不算；那次认证的方式集含 `otp` 或 `webauthn`，不接受只靠短信的多因素；`MFA.Seasoned(actor)` 为真，即名下有启用已满 `authn.mfa.sensitive-min-age` 的非短信因素。`Satisfies` 与方式集不满足时答 401 `insufficient_user_authentication`，管理员先做加强认证；`Seasoned` 不满足时答 403 `factor-not-seasoned`，加强认证解不了，要等因素启用满规定时长。 | 冒充只在发起者的强认证之下发生：发起者是已验证邮箱、有会话、可审计到人的用户账户，认证是本地验证过的新鲜多因素，且不只靠短信、不靠抢先登记的因素（[design-authn-mfa](design-authn-mfa.md)）。没有登记任何因素的账户因此永远不能冒充别人，这是设计内的结果。 |
+| a 发起者 | 注册验证状态不是未验证（有邮箱而没有一条已证明的账户不能发起冒充，单独答 403 `contact-required`，见下；没有邮箱的账户不受此限）；身份不是冒充身份，不得链式；账户不是静态口令表主体，种类是 `user`，状态启用；有会话可绑，否则 `ErrImpersonationNeedsSession`（口令表主体与客户端凭据没有会话可绑）；`Identity.Satisfies(Requirement{Assurance: AssuranceMulti, MaxAge: authn.impersonation.max-auth-age, Local: true})`，即本地验证过的多因素，IdP 声明的不算；那次认证的方式集含 `otp` 或 `webauthn`，不接受只靠短信的多因素；`MFA.Seasoned(actor)` 为真，即名下有启用已满 `authn.mfa.sensitive-min-age` 的非短信因素。`Satisfies` 与方式集不满足时答 401 `insufficient_user_authentication`，管理员先做加强认证；`Seasoned` 不满足时答 403 `factor-not-seasoned`，加强认证解不了，要等因素启用满规定时长。 | 冒充只在发起者的强认证之下发生：发起者是已证明邮箱、有会话、可审计到人的用户账户，认证是本地验证过的新鲜多因素，且不只靠短信、不靠抢先登记的因素（[design-authn-mfa](design-authn-mfa.md)）。没有登记任何因素的账户因此永远不能冒充别人，这是设计内的结果。 |
 | b 目标 | 账户存在、状态启用、种类是 `user`；不是发起者自己，不是静态主体，`protected` 不为真；是 `Tenant` 的有效成员，读 `authn_memberships`，不经缓存。 | 影响面是「该租户里的这个成员」：目标是启用的人类用户账户，不是服务账户、静态主体、已停用或已删除的账户，不是发起者自己。`protected` 是宿主打在要保护的账户上的人工标记；authn 不认识超级管理员，那是授权的概念。 |
 | c 参数 | `Tenant` 非空且形状合法；`Reason` 去空白后 1 到 500 个字符；有效期取下列各项的最小值：请求的 TTL（零表示由设置决定）、设置 `authn.impersonation.max-ttl`、发起者会话的剩余寿命，且有效期不超过 1 小时。这个 1 小时是硬上限，独立于 `max-ttl` 的取值域（`max-ttl` 的上界当前也取 1 小时，与这个硬上限指向同一个秒数）。 | 没有全局冒充；理由是审计的一部分；冒充的期限有硬上限。 |
 | d 并发 | 同一个发起者会话任一时刻至多一条未结束的记录：先检是读 `authn_imp_session` 取该会话上未结束的记录，经 `Active` 求值仍有效即 `ErrImpersonationActive`；插入处的部分唯一索引是并发竞态的兜底。 | 同一会话上的冒充不并存。 |
 
 - **发起者、目标、参数三组的违反一律答 403 `impersonation-restricted`，且不区分是哪一条**，避免向发起者泄露目标账户的状态。例外只涉及发起者自己的状态与并发：强认证类条件（保障等级、新鲜度、`Local`、认证方式集）不满足答 401；发起者名下没有启用已满规定时长的非短信因素答 403 `factor-not-seasoned`；没有会话可绑是 `ErrImpersonationNeedsSession`，对外同样是 403 `impersonation-restricted`；并发组的先检失败是 `ErrImpersonationActive`（409）。
-- **注册验证状态单独判定，排在任一授权与强度判定之前。** 发起者的 `signup_state = 1` 时不能发起冒充，答 403 `contact-required`（`ErrContactRequired`），与结构性限制的 403 `impersonation-restricted` 不同码，以便界面把用户引到验证邮箱的入口。它在身份确定之后、`Decider` 询问与保障等级、新鲜度、认证方式集、`Seasoned` 之前判定，只收紧不放行；否则未验证账户通常先撞上 `factor-not-seasoned`，拿不到解除限制的指引。服务账户不是发起者的候选（种类必须是 `user`），`signup_state = 0` 的既有账户不受此限。状态经 `SignupVerification.SignupStateOf` 读取，读失败答 503，不按放行处理。
+- **注册验证状态单独判定，排在任一授权与强度判定之前。** 发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时不能发起冒充，答 403 `contact-required`（`ErrContactRequired`），与结构性限制的 403 `impersonation-restricted` 不同码，以便界面把用户引到验证邮箱的入口。它在身份确定之后、`Decider` 询问与保障等级、新鲜度、认证方式集、`Seasoned` 之前判定，只收紧不放行；否则未验证账户通常先撞上 `factor-not-seasoned`，拿不到解除限制的指引。服务账户不是发起者的候选（种类必须是 `user`），没有邮箱的账户读作 `SignupNone`、不受此限。状态经 `SignupVerification.SignupStateOf` 读取，读失败答 503，不按放行处理。
 - **并发组有两道关口。** 先检在强制档审计之前，属于本表的拒绝，审计写 `denied`；两个并发的开始同时通过先检时，由记录事务插入处的部分唯一索引裁决，败者按「记录事务失败」处置：409，审计补一行 `failed`，见「开始失败的处置」。
 - **被拒的尝试尽力写一行结果为 `denied` 的接缝级审计**，并计入指标的 `denied`；写不成不改变拒绝。
 - **设置读取。** `authn.impersonation.max-ttl` 与 `authn.impersonation.max-auth-age` 读自设置的内存快照，不产生 IO；读不出时取声明的缺省值并记 Error（键、取值域与缺省值见 [design-authn-config](design-authn-config.md)）。
@@ -512,7 +512,7 @@ flowchart TD
 | `ErrStepUpRequired` | 发起者的保障等级、新鲜度、`Local` 或认证方式集不满足 | 401 `insufficient_user_authentication` | 拒 |
 | `ErrFactorNotSeasoned` | 发起者名下没有启用已满 `sensitive-min-age` 的非短信因素（`Seasoned` 为假），在上一行的各项都满足之后判定 | 403 `factor-not-seasoned` | 拒 |
 | `ErrForbidden` | `Decider` 判否；`Decider` 缺席 | 403 `forbidden` | 拒 |
-| `ErrContactRequired` | 发起者是未验证账户（`signup_state = 1`） | 403 `contact-required` | 拒 |
+| `ErrContactRequired` | 发起者是未验证账户（`SignupStateOf` 为 `SignupPending`：有邮箱而没有一条已证明的） | 403 `contact-required` | 拒 |
 | `ErrAuditRequired` | 开始时强制档审计写失败，含 `ErrNotAccepting` | 503 | 拒 |
 | `ErrUnavailable` | db、`Decider`、`Sessions`、`Tokens` 不可用或返回错误；Bearer 凭据下开始而 `Tokens` 缺席 | 503 | 拒 |
 | `core.ErrMissingProvider` | 装配里缺 `ScopeGuard`、`MFA`、`audit.Audit` 等必需功能 | 启动失败，早于迁移与实例构造 | 拒 |

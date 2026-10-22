@@ -537,8 +537,8 @@ func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput,
 		// The address was taken between the code going out and its answer. The
 		// reservation row is written in the same transaction as the identifier,
 		// so an address another account proved or reserved answers ErrContactTaken
-		// and is the caller's to replace. ErrAccountExists is the identifier
-		// table's own duplicate, either this account's or a row written around the
+		// and is the caller's to replace. Proving the account's own unproved row
+		// succeeds in place, so ErrAccountExists is only a row written around the
 		// reservation table, and stays the conflict it was before reservations
 		// existed.
 		if errors.Is(bindErr, authn.ErrContactTaken) {

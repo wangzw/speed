@@ -7,7 +7,7 @@ import (
 )
 
 // ContactRequiredProblemType is the Problem.Type a surface writes when it
-// refuses an account whose self-registration has not proved an email address.
+// refuses an account that holds an email address it has not proved.
 // It is the authentication capability's code, exported so the management faces
 // of other capabilities and a host's own surfaces answer with one value rather
 // than a copy each. A surface pairs it with its own status — the capability's
@@ -246,11 +246,10 @@ var (
 	// signup-closed on the registration route, and the cause goes to the log.
 	ErrSignupClosed = errors.New("authn: sign-up is closed")
 
-	// ErrContactRequired reports an account whose self-registration has not
-	// proved an email address being used for a capability that requires one.
-	// No method of the account module returns it: a caller reads
-	// SignupVerification.SignupStateOf and raises it itself. Outwardly it is a
-	// 403 contact-required.
+	// ErrContactRequired reports an account that holds an unproved email address
+	// being used for a capability that requires one. No method of the account
+	// module returns it: a caller reads SignupVerification.SignupStateOf and
+	// raises it itself. Outwardly it is a 403 contact-required.
 	ErrContactRequired = errors.New("authn: the account has not verified an email address")
 
 	// ErrDomainMismatch reports an enterprise sign-in whose email address is in a

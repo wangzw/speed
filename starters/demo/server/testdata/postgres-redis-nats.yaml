@@ -95,7 +95,7 @@ seed:
   # administers the platform. Replace both before a deployment serves real
   # traffic.
   accounts:
-    - identifier: operator@demo.test
+    - identifier: operator
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true

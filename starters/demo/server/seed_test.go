@@ -239,7 +239,7 @@ func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
 	if !strings.Contains(res.combined(), authn.ErrPasswordPolicy.Error()) {
 		t.Errorf("seed failed for a reason other than the password policy: %v\n%s", res.err, res.combined())
 	}
-	if strings.Contains(res.stdout, "seeded: account operator@demo.test") {
+	if strings.Contains(res.stdout, "seeded: account operator") {
 		t.Errorf("the account was seeded despite the raised policy:\n%s", res.stdout)
 	}
 }

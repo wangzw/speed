@@ -111,6 +111,27 @@ func (p *product) redeem(ctx context.Context, held invitationRow, in AcceptInvit
 	id, err := p.accounts.Lookup(ctx, authn.IdentifierEmail, held.Email)
 	switch {
 	case err == nil:
+		// The token was delivered to the address and presented by its holder,
+		// so it proves the address. An account that holds the address as an
+		// unproved identifier is brought up to proved; one that already proves
+		// it keeps the proof it has.
+		identifiers, readErr := p.accounts.Identifiers(ctx, id)
+		if readErr != nil {
+			return "", failed("reading the account's identifiers", readErr)
+		}
+		for _, identifier := range identifiers {
+			if identifier.Kind != authn.IdentifierEmail || identifier.Value != held.Email {
+				continue
+			}
+			if (authn.Verification{Via: identifier.VerifiedVia}).Proves() {
+				break
+			}
+			if addErr := p.accountAdm.AddIdentifier(ctx, id, authn.IdentifierEmail, held.Email,
+				authn.Verification{Via: VerifiedViaInvite}); addErr != nil {
+				return "", failed("proving the invitation's address", addErr)
+			}
+			break
+		}
 		return p.putMembership(ctx, id, held.TenantID)
 	case errors.Is(err, authn.ErrAccountNotFound):
 		// No account holds the address as an identifier. It may still be the

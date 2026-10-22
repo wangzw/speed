@@ -300,6 +300,72 @@ func TestRemovingAnEmailReleasesItsContact(t *testing.T) {
 	})
 }
 
+// A second email written without proof does not change the account's verified
+// state, and proving it later brings that row up to email-code without adding a
+// second row.
+func TestASecondEmailIsProvedInPlace(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		h.openSelfRegistration()
+		account := h.mustRegister("alice", "alice@example.com", "password123")
+		if err := h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "alice@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the first address: %v", err)
+		}
+		if err := h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "second@example.com",
+			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
+			t.Fatalf("adding a second address asserted by an administrator: %v", err)
+		}
+		status, err := h.p.SignupStateOf(ctx, account.ID)
+		if err != nil {
+			t.Fatalf("reading the state after the second add: %v", err)
+		}
+		if status.State != authn.SignupVerified {
+			t.Fatalf("the account reads %v with one proved address, want verified", status.State)
+		}
+		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "second@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the second address: %v", err)
+		}
+		if n := h.count(tableIdentifiers, "account_id = ? AND value = ?", account.ID.String(), "second@example.com"); n != 1 {
+			t.Errorf("the second address is %d identifier(s), want one", n)
+		}
+		identifiers, err := h.p.Identifiers(ctx, account.ID)
+		if err != nil {
+			t.Fatalf("reading the identifiers: %v", err)
+		}
+		for _, identifier := range identifiers {
+			if identifier.Value == "second@example.com" && identifier.VerifiedVia != authn.VerifiedViaEmailCode {
+				t.Errorf("the second address reads via %q, want %q", identifier.VerifiedVia, authn.VerifiedViaEmailCode)
+			}
+		}
+	})
+}
+
+// PendingAccountByContact reads an unproved reservation whichever stored signup
+// state the account carries: the reservation, not the column, is what makes the
+// contact pending.
+func TestPendingAccountByContactDoesNotReadTheStoredSignupState(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("stored", "")
+		if err := h.handle.Exec("UPDATE "+tablePending+" SET verified_at = NULL WHERE account_id = ?",
+			id.String()).Error; err != nil {
+			t.Fatalf("leaving an unproved reservation on the account: %v", err)
+		}
+		if n := h.count(tableAccounts, "id = ? AND signup_state = ?", id.String(), signupNone); n != 1 {
+			t.Fatalf("the account's stored state is not none; the case no longer covers the column")
+		}
+		owner, ok, err := h.p.PendingAccountByContact(ctx, string(authn.IdentifierEmail), "stored@example.com")
+		if err != nil {
+			t.Fatalf("reading the pending owner: %v", err)
+		}
+		if !ok || owner != id.String() {
+			t.Errorf("PendingAccountByContact = %q, %v; want the account holding the unproved reservation", owner, ok)
+		}
+	})
+}
+
 // A proving email address ends the pending state, keeps the contact row with its
 // proof instant, and records the instant once. A phone number and an unproven email change
 // neither. Removing the last proved address returns the account to pending and
@@ -385,8 +451,9 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 			t.Errorf("a proved phone moved the state to %+v, want verified and the same instant", status)
 		}
 
-		// Removing the last proved address returns the account to pending and
-		// keeps the instant; no pending contact is made up in its place.
+		// Removing the last proved address leaves the unproved admin address as
+		// the one to verify: the state is pending on it, the instant is kept and
+		// no pending contact is made up.
 		for _, address := range []string{"later@example.com", "alice@example.com"} {
 			if err = h.p.RemoveIdentifier(ctx, account.ID, h.identifierIDOf(account.ID, address)); err != nil {
 				t.Fatalf("removing %s: %v", address, err)
@@ -396,8 +463,9 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading the signup state: %v", err)
 		}
-		if status.State != authn.SignupPending || status.Email != "" || !status.Since.Equal(provedAt) {
-			t.Errorf("removing the last proved address reads %+v, want pending with no email and the kept instant", status)
+		if status.State != authn.SignupPending || status.Email != "admin@example.com" || !status.Since.Equal(provedAt) {
+			t.Errorf("removing the last proved address reads %+v, want pending on admin@example.com and the kept instant",
+				status)
 		}
 		if n := h.count(tablePending, "account_id = ? AND verified_at IS NULL", account.ID.String()); n != 0 {
 			t.Errorf("removing the last proved address rebuilt %d unproved reservation(s), want none", n)
@@ -569,6 +637,166 @@ func TestSignupStateOfReportsAMissingAccount(t *testing.T) {
 			t.Errorf("an unreadable pending contact gave %v, want ErrUnavailable", err)
 		}
 	})
+}
+
+// An account an administrator creates with an email address reads pending until
+// the holder proves that address, and proving it turns the account verified
+// without a second identifier.
+func TestAnAdministratorCreatedEmailMustBeProved(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		account, err := h.p.Create(ctx, authn.CreateAccount{
+			Username: "bob", Email: "bob@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin}, Via: "admin",
+		})
+		if err != nil {
+			t.Fatalf("creating an account: %v", err)
+		}
+		status, err := h.p.SignupStateOf(ctx, account.ID)
+		if err != nil {
+			t.Fatalf("reading the state of a fresh account: %v", err)
+		}
+		if status.State != authn.SignupPending || status.Email != "bob@example.com" || !status.Since.IsZero() {
+			t.Fatalf("the administrator-created account reads %+v, want pending on bob@example.com and no instant", status)
+		}
+
+		provedAt := h.clock.read()
+		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "bob@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the address: %v", err)
+		}
+		status, err = h.p.SignupStateOf(ctx, account.ID)
+		if err != nil {
+			t.Fatalf("reading the proved state: %v", err)
+		}
+		if status.State != authn.SignupVerified || status.Email != "bob@example.com" || !status.Since.Equal(provedAt) {
+			t.Errorf("the proved account reads %+v, want verified on bob@example.com since %v", status, provedAt)
+		}
+		if n := h.count(tableIdentifiers, "account_id = ? AND kind = ?", account.ID.String(), string(authn.IdentifierEmail)); n != 1 {
+			t.Errorf("the account holds %d email identifier(s), want the one written by Create", n)
+		}
+		var via []string
+		if err = h.handle.Raw("SELECT verified_via FROM "+tableIdentifiers+" WHERE account_id = ? AND kind = ?",
+			account.ID.String(), string(authn.IdentifierEmail)).Scan(&via).Error; err != nil {
+			t.Fatalf("reading the way of verification: %v", err)
+		}
+		if len(via) != 1 || via[0] != authn.VerifiedViaEmailCode {
+			t.Errorf("the identifier was verified via %v, want email-code", via)
+		}
+		// The account was never a self-registration, so the state column stays
+		// where Create put it while the instant Since reads is written.
+		if state, at := h.signupRow(account.ID); state != signupNone || at == nil || !at.Equal(provedAt) {
+			t.Errorf("proving wrote signup_state %d and verified_at %v, want 0 and %v", state, at, provedAt)
+		}
+	})
+}
+
+// An account with no email address at all reads none: there is nothing to
+// verify, so nothing to gate.
+func TestAnAccountWithoutAnEmailReadsNone(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		account, err := h.p.Create(ctx, authn.CreateAccount{Username: "solo", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without an email: %v", err)
+		}
+		status, err := h.p.SignupStateOf(ctx, account.ID)
+		if err != nil {
+			t.Fatalf("reading the state: %v", err)
+		}
+		if status.State != authn.SignupNone || status.Email != "" || !status.Since.IsZero() {
+			t.Errorf("an account with no email reads %+v, want none with no address and no instant", status)
+		}
+	})
+}
+
+// Proving the account's own unproved address brings its identifier up to proved
+// in place, and doing it again changes nothing. A way that does not prove never
+// takes the proof away, and another account's address is the contact conflict.
+func TestProvingTheAccountsOwnEmailIsIdempotent(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		account, err := h.p.Create(ctx, authn.CreateAccount{
+			Username: "bob", Email: "bob@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin}, Via: "admin",
+		})
+		if err != nil {
+			t.Fatalf("creating an account: %v", err)
+		}
+		before := len(h.bus.of(authn.EventIdentifierChanged))
+		codeVia := authn.Verification{Via: authn.VerifiedViaEmailCode}
+		for i := range 2 {
+			if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "bob@example.com", codeVia); err != nil {
+				t.Fatalf("proof %d of the account's own address: %v", i+1, err)
+			}
+		}
+		if n := h.count(tableIdentifiers, "account_id = ? AND kind = ?", account.ID.String(), string(authn.IdentifierEmail)); n != 1 {
+			t.Errorf("proving twice left %d email identifier(s), want one", n)
+		}
+		for _, row := range h.identifierRows(account.ID) {
+			if row.Kind != string(authn.IdentifierEmail) {
+				continue
+			}
+			if row.VerifiedVia != authn.VerifiedViaEmailCode || !(authn.Verification{Via: row.VerifiedVia}).Proves() {
+				t.Errorf("the proved identifier is %+v, want an email-code proof", row)
+			}
+		}
+		if got := len(h.bus.of(authn.EventIdentifierChanged)); got != before {
+			t.Errorf("proving the account's own address published %d identifier event(s), want none", got-before)
+		}
+
+		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "bob@example.com",
+			authn.Verification{Via: authn.VerifiedViaAdmin}); !errors.Is(err, authn.ErrAccountExists) {
+			t.Errorf("an unproved way for a proved address gave %v, want ErrAccountExists", err)
+		}
+		for _, row := range h.identifierRows(account.ID) {
+			if row.Kind == string(authn.IdentifierEmail) && row.VerifiedVia != authn.VerifiedViaEmailCode {
+				t.Errorf("an unproved way downgraded the identifier to %q", row.VerifiedVia)
+			}
+		}
+
+		other, err := h.p.Create(ctx, authn.CreateAccount{Username: "rival", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating another account: %v", err)
+		}
+		if err = h.p.AddIdentifier(ctx, other.ID, authn.IdentifierEmail, "BOB@example.com", codeVia); !errors.Is(err, authn.ErrContactTaken) {
+			t.Errorf("another account naming the held address gave %v, want ErrContactTaken", err)
+		}
+	})
+}
+
+// Removing the last proved address of an account that holds no other email
+// leaves it with nothing to verify, which reads none rather than pending.
+func TestRemovingTheLastEmailReadsNone(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		h.openSelfRegistration()
+		account := h.mustRegister("alice", "alice@example.com", "password123")
+		if err := h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "alice@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the address: %v", err)
+		}
+		if err := h.p.RemoveIdentifier(ctx, account.ID, h.identifierIDOf(account.ID, "alice@example.com")); err != nil {
+			t.Fatalf("removing the address: %v", err)
+		}
+		status, err := h.p.SignupStateOf(ctx, account.ID)
+		if err != nil {
+			t.Fatalf("reading the state: %v", err)
+		}
+		if status.State != authn.SignupNone || status.Email != "" || !status.Since.IsZero() {
+			t.Errorf("an account that lost its last email reads %+v, want none with no address and no instant", status)
+		}
+	})
+}
+
+// identifierRows reads the identifier table rows of one account.
+func (h *harness) identifierRows(id authn.AccountID) []identifierRow {
+	h.t.Helper()
+	var rows []identifierRow
+	if err := h.handle.Where("account_id = ?", id.String()).Find(&rows).Error; err != nil {
+		h.t.Fatalf("reading the identifiers: %v", err)
+	}
+	return rows
 }
 
 // Create writes signup_state 0 whatever the account, and the way a username came
@@ -976,6 +1204,9 @@ func TestTheSignupMigrationUpgradesAnExistingDatabase(t *testing.T) {
 			if len(rows) != 1 || rows[0].SignupState != signupNone || rows[0].SignupVerifiedAt != nil {
 				t.Errorf("the row that was there reads %+v, want signup_state 0 and no instant", rows)
 			}
+			// The verification read is served over the current reservation table,
+			// so the later migration comes on before it is asked.
+			applyMigrationFile(t, handle, dialect, "0003_contact_claim.sql")
 			cfg, err := configDefaults.resolve()
 			if err != nil {
 				t.Fatalf("resolving the default configuration: %v", err)

@@ -422,14 +422,14 @@ export interface AuthnProfileLink {
 }
 
 /**
- * The self-registration state of the account, read on this request: none for an account that never self-registered, pending for one that has not proved an email address, verified for one that has.
+ * How far the account's email verification has got, read on this request: none when it has no email address to verify, pending when it holds an address that has not been proved, verified when it holds one whose ownership was proved.
  */
 export interface AuthnProfileVerification {
-  /** The address of the state: for verified the email identifier proved earliest, ties broken by identifier; for pending the email contact awaiting verification; empty when there is none, which includes a pending registration whose last proved address was removed and which then has no target */
+  /** The address of the state: for verified the proved address verified earliest, ties broken by identifier; for pending the earliest unproved address or reservation awaiting verification, ties broken by identifier; empty for none */
   email: string;
-  /** RFC 3339 in UTC, the first instant the account reached verified; kept when a removal of the last proved address returns it to pending; empty while it never reached verified */
+  /** RFC 3339 in UTC, the first instant the account reached verified; empty while it never did, and for none */
   since: string;
-  /** none, pending or verified. none is a registration that never began; pending is a self-registration with no proved email address; verified is a self-registration whose email address has been proved */
+  /** none, pending or verified. none means the account has no email address to verify; pending means it has an email address that has not been proved, whether the account itself, an administrator or an import wrote it; verified means an email address whose ownership was proved */
   state: string;
 }
 
@@ -445,7 +445,7 @@ export interface AuthnProfileProfile {
   created_at: string;
   /** The account's display name, empty when it carries none */
   display_name: string;
-  /** The account's identifiers; always an array, never null, and empty when the account has none. A pending email contact is not among them: it is not an identifier until an email proof writes it */
+  /** The account's identifiers; always an array, never null, and empty when the account has none. An email the account holds is among them even while it is unproved; a pending reservation is not an identifier and is not listed */
   identifiers: AuthnProfileIdentifier[];
   /** The account's kind: user or service, a service being a non-interactive API client. */
   kind: string;
@@ -459,7 +459,7 @@ export interface AuthnProfileProfile {
   password_set: boolean;
   /** Read out of the attribute set, empty when it carries none */
   time_zone: string;
-  /** How far the account's self-registration has got, read at request time and never stored in a session or an access token */
+  /** How far the account's email verification has got, read at request time and never stored in a session or an access token */
   verification: AuthnProfileVerification;
 }
 
@@ -987,7 +987,7 @@ export interface AuthnAdminAccountList {
 export type AuthnAdminAccountCreateAttributes = {[key: string]: string};
 
 /**
- * How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400.
+ * How the administrator states the email was established: admin or import-unverified. It is required whenever email is present. The value records the administrator's assertion, not proof of ownership: an account with no proved email address is gated until the address is proved; empty or absent is refused with 400.
  */
 export type AuthnAdminAccountCreateEmailVerifiedVia = typeof AuthnAdminAccountCreateEmailVerifiedVia[keyof typeof AuthnAdminAccountCreateEmailVerifiedVia];
 
@@ -1010,7 +1010,7 @@ export const AuthnAdminAccountCreateKind = {
 } as const;
 
 /**
- * How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400.
+ * How the administrator states the phone was established: admin or import-unverified. It is required whenever phone is present. The value records the administrator's assertion, not proof of ownership; empty or absent is refused with 400.
  */
 export type AuthnAdminAccountCreatePhoneVerifiedVia = typeof AuthnAdminAccountCreatePhoneVerifiedVia[keyof typeof AuthnAdminAccountCreatePhoneVerifiedVia];
 
@@ -1031,7 +1031,7 @@ export interface AuthnAdminAccountCreate {
   display_name?: string;
   /** An email address to add, asserted by the administrator. It is trimmed and lower-cased before it is stored, and it needs email_verified_via. */
   email?: string;
-  /** How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400. */
+  /** How the administrator states the email was established: admin or import-unverified. It is required whenever email is present. The value records the administrator's assertion, not proof of ownership: an account with no proved email address is gated until the address is proved; empty or absent is refused with 400. */
   email_verified_via?: AuthnAdminAccountCreateEmailVerifiedVia;
   /** user for a human account, service for a non-interactive API client. */
   kind: AuthnAdminAccountCreateKind;
@@ -1041,7 +1041,7 @@ export interface AuthnAdminAccountCreate {
   password?: string;
   /** A phone number to add, in E.164 with a leading plus sign and 7 to 15 digits; it needs phone_verified_via. */
   phone?: string;
-  /** How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400. */
+  /** How the administrator states the phone was established: admin or import-unverified. It is required whenever phone is present. The value records the administrator's assertion, not proof of ownership; empty or absent is refused with 400. */
   phone_verified_via?: AuthnAdminAccountCreatePhoneVerifiedVia;
   /** A login name to add. At least one of username, email and phone is required for a user account; a username is lower-cased before it is stored. */
   username?: string;
@@ -1116,7 +1116,7 @@ export const AuthnAdminIdentifierWriteKind = {
 } as const;
 
 /**
- * How the administrator states the identifier came to be verified
+ * How the administrator states the identifier was established: admin records an assertion, not proof of ownership
  */
 export type AuthnAdminIdentifierWriteVerifiedVia = typeof AuthnAdminIdentifierWriteVerifiedVia[keyof typeof AuthnAdminIdentifierWriteVerifiedVia];
 
@@ -1127,14 +1127,14 @@ export const AuthnAdminIdentifierWriteVerifiedVia = {
 } as const;
 
 /**
- * A login identifier to add to one account, with how the administrator states it was verified.
+ * A login identifier to add to one account, with how the administrator states it was established.
  */
 export interface AuthnAdminIdentifierWrite {
   /** A phone number is added or changed only through an SMS code and is refused here */
   kind: AuthnAdminIdentifierWriteKind;
   /** The identifier's text; it is normalized before it is stored, so a username is lower-cased and an email address is trimmed and lower-cased. */
   value: string;
-  /** How the administrator states the identifier came to be verified */
+  /** How the administrator states the identifier was established: admin records an assertion, not proof of ownership */
   verified_via?: AuthnAdminIdentifierWriteVerifiedVia;
 }
 
@@ -3779,7 +3779,7 @@ export const useAuthnSessionLogout = <TError = Problem,
     }
 
 /**
- * The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's self-registration state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.
+ * The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's email verification state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.
  * @summary The caller's own profile
  */
 export const authnProfileGet = (

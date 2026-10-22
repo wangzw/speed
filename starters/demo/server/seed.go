@@ -449,8 +449,11 @@ func seedOneAccount(ctx context.Context, accounts authn.Accounts, admin authn.Ac
 }
 
 // seedCreateAccount is the library's creation request for one configured
-// account. The identifier is written verified: the host wrote it, so the account
-// does not have to prove a mailbox this skeleton ships it with.
+// account. A username is a login name and needs no proof. An email address
+// written here is an administrator's assertion, not a proof of ownership, so the
+// account reads pending until its holder proves the address; the baseline ships
+// no mail channel and therefore seeds usernames, while a stack that can deliver
+// a code may seed the address.
 func seedCreateAccount(kind authn.IdentifierKind, name string, a seedAccount) authn.CreateAccount {
 	in := authn.CreateAccount{
 		Kind:         authn.KindUser,

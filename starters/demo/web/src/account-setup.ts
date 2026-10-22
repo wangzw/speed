@@ -57,11 +57,10 @@ export function setupIncomplete(profile: SetupProfile): boolean {
 }
 
 /**
- * Whether the account's self-registration still awaits email verification.
- * `none` (an account that never self-registered) and `verified` answer false;
- * only `pending` answers true. This is independent of `setupIncomplete`: the
- * verification notice stays until the address is proved, whatever the login
- * name and password state.
+ * Whether the account still awaits email verification. `none` (an account with
+ * no email address at all) and `verified` answer false; only `pending` answers
+ * true. This is independent of `setupIncomplete`: the verification notice stays
+ * until the address is proved, whatever the login name and password state.
  */
 export function contactVerificationPending(
   profile: VerificationProfile,

@@ -78,6 +78,65 @@ func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
 	})
 }
 
+// TestAcceptProvesAnAdministratorAssertedAddress holds that an invitation is a
+// proof for an address an administrator wrote without proof: accepting the
+// token brings the existing identifier up to invite, and the account stops
+// reading pending.
+func TestAcceptProvesAnAdministratorAssertedAddress(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+
+		ctx := context.Background()
+		created, err := admin.Create(ctx, authn.CreateAccount{
+			Kind:             authn.KindUser,
+			Email:            "Preprovisioned@Example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin},
+			Via:              authn.ReasonAdmin,
+		})
+		if err != nil {
+			t.Fatalf("creating a provisioned account: %v", err)
+		}
+		status, err := verification.SignupStateOf(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("reading the provisioned account's state: %v", err)
+		}
+		if status.State != authn.SignupPending {
+			t.Fatalf("the provisioned account reads %v, want pending until its email is proved", status.State)
+		}
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "preprovisioned@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation for the provisioned address: %v", err)
+		}
+		if _, err = p.Accept(ctx, AcceptInvite{Token: issued.Token}); err != nil {
+			t.Fatalf("accepting the invitation: %v", err)
+		}
+
+		status, err = verification.SignupStateOf(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("reading the account's state after acceptance: %v", err)
+		}
+		if status.State != authn.SignupVerified {
+			t.Errorf("the account reads %v after the invitation proved its address, want verified", status.State)
+		}
+		identifiers, err := accounts.Identifiers(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("reading the account's identifiers: %v", err)
+		}
+		for _, identifier := range identifiers {
+			if identifier.Kind == authn.IdentifierEmail && identifier.Value == "preprovisioned@example.com" {
+				if identifier.VerifiedVia != VerifiedViaInvite {
+					t.Errorf("the address reads via %q, want %q", identifier.VerifiedVia, VerifiedViaInvite)
+				}
+			}
+		}
+	})
+}
+
 // newRealProduct builds this module's product over the account module's own
 // capabilities and the database both modules' tables stand on.
 func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, accounts authn.Accounts,

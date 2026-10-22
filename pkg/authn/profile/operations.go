@@ -58,8 +58,8 @@ var getOperation = speedhttp.NewOperation[struct{}, AuthnProfileProfile](
 	"The caller's own profile",
 	"The caller's own account, read from the identity the gateway left on the request; no path "+
 		"parameter or body names an account. An impersonating identity may reach this route and then "+
-		"reads the account it is impersonating. The answer also carries the account's self-registration "+
-		"state, read on this request and never stored in a session or an access token, and each "+
+		"reads the account it is impersonating. The answer also carries the account's email "+
+		"verification state, read on this request and never stored in a session or an access token, and each "+
 		"identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a "+
 		"zero instant in a time field other than last_login_at is the empty string; last_login_at is "+
 		"instead absent when the binding has never been used to sign in. The identity's own account "+

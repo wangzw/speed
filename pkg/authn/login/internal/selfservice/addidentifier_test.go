@@ -147,11 +147,13 @@ func TestAnEmailIsAddedOnlyAfterItsCodeComesBack(t *testing.T) {
 	}
 }
 
-// TestReaddingTheAccountsOwnEmailStaysAConflict holds that the identifier
-// table's duplicate for an address this account already holds stays the conflict
-// it was before reservations existed, not the email-taken answer reserved for an
-// address another account owns.
-func TestReaddingTheAccountsOwnEmailStaysAConflict(t *testing.T) {
+// TestProvingTheAccountsOwnUnprovedEmailSucceeds holds that an address the
+// account already holds as an unproved identifier is proved by its own code:
+// the verify answers added and the account module's in-place proof is what
+// follows. The identifier table's own duplicate is no longer this account's
+// answer, which TestARepeatedIdentifierRowStaysAConflict covers for a row
+// written around the reservation table.
+func TestProvingTheAccountsOwnUnprovedEmailSucceeds(t *testing.T) {
 	h := emailHarness(t)
 	h.accounts.lookup["ada@example.com"] = account
 	w := h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -161,8 +163,31 @@ func TestReaddingTheAccountsOwnEmailStaysAConflict(t *testing.T) {
 	if len(h.email.sent) != 1 {
 		t.Fatalf("SendCode was called %d times, want once", len(h.email.sent))
 	}
-	h.admin.addErr = authn.ErrAccountExists
 	w = h.post("/identifiers/verify", verifyBody(h.email.sent[0].code))
+	if w.Code != http.StatusOK {
+		t.Fatalf("the verify answered %d %s, want 200", w.Code, w.Body)
+	}
+	if got := problemState(t, w); got != "added" {
+		t.Errorf("state = %q, want added", got)
+	}
+	if len(h.admin.added) != 1 {
+		t.Fatalf("AddIdentifier was called %d times, want once", len(h.admin.added))
+	}
+	got := h.admin.added[0]
+	if got.kind != authn.IdentifierEmail || got.value != "ada@example.com" ||
+		got.via != (authn.Verification{Via: authn.VerifiedViaEmailCode}) {
+		t.Errorf("AddIdentifier(%+v), want the address with the email-code proof", got)
+	}
+}
+
+// TestARepeatedIdentifierRowStaysAConflict holds the defensive mapping: a row
+// the identifier table refuses as a duplicate, written around the reservation
+// table, still answers 409 conflict rather than email-taken.
+func TestARepeatedIdentifierRowStaysAConflict(t *testing.T) {
+	h := emailHarness(t)
+	h.post("/identifiers", addBody("email", "ada@example.com"))
+	h.admin.addErr = authn.ErrAccountExists
+	w := h.post("/identifiers/verify", verifyBody(h.email.sent[0].code))
 	if w.Code != http.StatusConflict || problemType(t, w) != "conflict" {
 		t.Fatalf("the verify answered %d %s, want 409 conflict", w.Code, w.Body)
 	}

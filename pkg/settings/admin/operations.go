@@ -188,8 +188,7 @@ var setOperation = speedhttp.NewReplyOperation[setInput](
 			"The layer selection is unreadable, the tenant identifier is outside its value domain, or the body is not one object"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no settings.write in the layer's domain, or the caller's "+
-				"self-registration has not proved an email address (contact-required)"),
+			"The caller holds no settings.write in the layer's domain, or the caller has not proved an email address (contact-required)"),
 		{Status: http.StatusNotFound, Description: "The full key has no declaration"},
 		speedhttp.ProblemResponse(http.StatusUnsupportedMediaType,
 			"The request body is not application/json"),
@@ -222,8 +221,7 @@ var removeOperation = speedhttp.NewReplyOperation[removeInput](
 			"The layer selection is unreadable, or the tenant identifier is outside its value domain"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no settings.write in the layer's domain, or the caller's "+
-				"self-registration has not proved an email address (contact-required)"),
+			"The caller holds no settings.write in the layer's domain, or the caller has not proved an email address (contact-required)"),
 		{Status: http.StatusNotFound, Description: "The full key has no declaration"},
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},

@@ -377,6 +377,14 @@ func (p *product) updateAccount(ctx context.Context, id authn.AccountID, columns
 // AddIdentifier binds an identifier to an account, normalized first. A phone
 // number replaces the one the account has, since an account has one; the same
 // number again changes nothing but the proof it was written with.
+//
+// An email address the account already holds as an identifier is brought up to
+// proved by a proving way instead of being added again: the row's instant and
+// way are rewritten, no identifier-changed event is published, and the call is
+// nil. A way that does not prove ownership never takes a proof away from an
+// existing row, and is authn.ErrAccountExists. An address another account holds
+// is authn.ErrContactTaken, which the contact reservation's unique index
+// arbitrates.
 func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind authn.IdentifierKind, value string,
 	via authn.Verification,
 ) error {
@@ -409,21 +417,28 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 			if err = writeEmailClaim(tx, id.String(), normalized, now); err != nil {
 				return err
 			}
+			// The address may already be an identifier of this account, written
+			// by an administrator, an import or the account itself. A proof
+			// brings that row up to proved and keeps it single; an unproved way
+			// never takes a proof away.
+			var held []identifierRow
+			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(), string(kind), normalized).
+				Find(&held).Error; err != nil {
+				return err
+			}
+			if len(held) > 0 {
+				if !via.Proves() {
+					return fmt.Errorf("%w", authn.ErrAccountExists)
+				}
+				if err = tx.Model(&identifierRow{}).Where("id = ?", held[0].ID).
+					Updates(map[string]any{"verified_at": now, "verified_via": verified}).Error; err != nil {
+					return err
+				}
+				return noteEmailProved(tx, account, now)
+			}
 		} else if kind == authn.IdentifierPhone && via.Proves() {
 			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(), string(kind), normalized).
 				Delete(&pendingContactRow{}).Error; err != nil {
-				return err
-			}
-		}
-		// A proved email address ends the pending state of a self-registration.
-		// The first time it does, the instant is written and kept afterwards,
-		// even when the last proved address is later removed.
-		if kind == authn.IdentifierEmail && via.Proves() && signupStateOf(account.SignupState) == authn.SignupPending {
-			update := map[string]any{"signup_state": signupVerified, "updated_at": now}
-			if account.SignupVerifiedAt == nil {
-				update["signup_verified_at"] = now
-			}
-			if err = tx.Model(&accountRow{}).Where("id = ?", id.String()).Updates(update).Error; err != nil {
 				return err
 			}
 		}
@@ -454,6 +469,11 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 		if err = tx.Create(&row).Error; err != nil {
 			return err
 		}
+		if kind == authn.IdentifierEmail && via.Proves() {
+			if err = noteEmailProved(tx, account, now); err != nil {
+				return err
+			}
+		}
 		return p.emit(tx, b, identifierChanged(id, kind, changeAdded), false)
 	})
 	switch {
@@ -464,6 +484,26 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 	}
 	p.publish(ctx, b)
 	return nil
+}
+
+// noteEmailProved records that the account now holds a proved email address: a
+// pending row is moved to verified, and the first instant the account reached
+// verified is written once and kept afterwards. An account that was never a
+// self-registration keeps its state and gains the instant all the same, which is
+// what Since reads.
+func noteEmailProved(tx *gorm.DB, account accountRow, now time.Time) error {
+	update := map[string]any{}
+	if signupStateOf(account.SignupState) == authn.SignupPending {
+		update["signup_state"] = signupVerified
+	}
+	if account.SignupVerifiedAt == nil {
+		update["signup_verified_at"] = now
+	}
+	if len(update) == 0 {
+		return nil
+	}
+	update["updated_at"] = now
+	return tx.Model(&accountRow{}).Where("id = ?", account.ID).Updates(update).Error
 }
 
 // writeEmailClaim records that an account owns an email address as a contact.

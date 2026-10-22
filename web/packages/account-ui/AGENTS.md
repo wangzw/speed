@@ -122,19 +122,16 @@ session as a required prop; `PreferencesSection` takes it optionally
   refuses shapes this face does not restate (the reserved static-credential
   prefix, a UUID-shaped name). Closing the add face clears the failure
   banner, the field error, the success notice and the sent-code step.
-- **A username carries no ownership chip; an email or phone chip names the
-  way it was established, reading `proven` and `verified_via`, never
-  `verified_at`.** A username is a login name with no ownership to prove, so
-  its row renders no ownership chip. A proved channel (`email-code`,
-  `sms-code`, `invite`, `idp:<provider>`) reads `identifiers.verified`; an
-  `admin` address reads `identifiers.addedByAdmin`; an `import-unverified`
-  address reads `identifiers.importedUnverified`; every other unproven
-  channel reads `identifiers.unverified`. A provisioned account is
-  deliberately usable without the user proving the address, so its row must
-  not promise a verification the account neither needs nor offers. Every
-  stored identifier carries a `verified_at`, including a username written at
-  registration as `self`, so `verified_at` cannot answer the ownership
-  question for the rows that show one. An
+- **A username carries no ownership chip; an email or phone chip is one of
+  two values, reading `proven` and never `verified_at`.** A username is a
+  login name with no ownership to prove, so its row renders no ownership
+  chip. An email or phone row reads `identifiers.verified` when `proven` is
+  true and `identifiers.unverified` otherwise, whatever `verified_via` says:
+  the chip answers only whether ownership has been proved, so an address an
+  administrator asserted or an import recorded is an unproved address, not a
+  third state. Every stored identifier carries a `verified_at`, including a
+  username written at registration as `self`, so `verified_at` cannot answer
+  the ownership question for the rows that show one. An
   account with a password signs in with a username or an email address:
   while the profile lists exactly one of those, that row's remove
   action gives way to a note (`identifiers.lastLoginName`) telling the user
@@ -146,9 +143,26 @@ session as a required prop; `PreferencesSection` takes it optionally
   `verification.state` is `pending`, the identifiers add face does not offer
   the email kind: the pending contact is
   the verification section's, and a second pending address must not exist on
-  one account. A phone is a sign-in method and an additional security factor;
-  verifying it never lifts the registration restriction -- only a proved email
-  address does.
+  one account.
+- **An unverified email row carries its own verify action.** The action
+  (`identifiers.verify`, named per address by `identifiers.verifyAria`) opens
+  an inline flow on the address the row already shows: the value field is
+  read-only, the send is `POST /api/v1/auth/identifiers` with that same
+  address (the route accepts the account's own address as a re-add of its
+  proof), and the code is submitted through
+  `/api/v1/auth/identifiers/verify`; the landed write refetches the profile
+  and the row's chip flips to `identifiers.verified`. The action appears even
+  when the row's remove action is withheld as the only login name, and it is
+  withheld while `verification.state` is `pending` (that state's single code
+  record belongs to the verification section and the host's banner) and on a
+  deployment with no email channel. The flow reuses the add face's sent-code
+  step, failure slot, field-error and resend-countdown rules rather than a
+  second mechanism; a refused code renders
+  `identifiers.verifyCodeInvalid` in its field, and an address another account
+  proved in between renders `verification.addressTaken` in the section's one
+  banner. A phone is a sign-in method and an additional security factor;
+  verifying it never lifts the account's verification restriction -- only a
+  proved email address does.
 - **The error surface is a code whitelist with guarded vocabulary.**
   Every failure path resolves to one error code rendered in one
   `role="alert"` banner; codes outside the whitelist render

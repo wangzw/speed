@@ -28,20 +28,20 @@ type AuthnProfileProfile struct {
 	Attributes   map[string]string        `json:"attributes" required:"true" description:"Never null; the empty object when the account carries none"`
 	Locale       string                   `json:"locale" required:"true" description:"Read out of the attribute set, empty when it carries none"`
 	TimeZone     string                   `json:"time_zone" required:"true" description:"Read out of the attribute set, empty when it carries none"`
-	Identifiers  []AuthnProfileIdentifier `json:"identifiers" required:"true" description:"The account's identifiers; always an array, never null, and empty when the account has none. A pending email contact is not among them: it is not an identifier until an email proof writes it"`
-	Verification AuthnProfileVerification `json:"verification" required:"true" description:"How far the account's self-registration has got, read at request time and never stored in a session or an access token"`
+	Identifiers  []AuthnProfileIdentifier `json:"identifiers" required:"true" description:"The account's identifiers; always an array, never null, and empty when the account has none. An email the account holds is among them even while it is unproved; a pending reservation is not an identifier and is not listed"`
+	Verification AuthnProfileVerification `json:"verification" required:"true" description:"How far the account's email verification has got, read at request time and never stored in a session or an access token"`
 	Links        []AuthnProfileLink       `json:"links" required:"true" description:"The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included"`
 }
 
-// AuthnProfileVerification is the self-registration state as the profile shows
+// AuthnProfileVerification is the email-verification state as the profile shows
 // it: the state, the address that state reports, and when the account first
 // reached verified.
 type AuthnProfileVerification struct {
-	_ struct{} `description:"The self-registration state of the account, read on this request: none for an account that never self-registered, pending for one that has not proved an email address, verified for one that has."`
+	_ struct{} `description:"How far the account's email verification has got, read on this request: none when it has no email address to verify, pending when it holds an address that has not been proved, verified when it holds one whose ownership was proved."`
 
-	State string `json:"state" required:"true" description:"none, pending or verified. none is a registration that never began; pending is a self-registration with no proved email address; verified is a self-registration whose email address has been proved"`
-	Email string `json:"email" required:"true" description:"The address of the state: for verified the email identifier proved earliest, ties broken by identifier; for pending the email contact awaiting verification; empty when there is none, which includes a pending registration whose last proved address was removed and which then has no target"`
-	Since string `json:"since" required:"true" description:"RFC 3339 in UTC, the first instant the account reached verified; kept when a removal of the last proved address returns it to pending; empty while it never reached verified"`
+	State string `json:"state" required:"true" description:"none, pending or verified. none means the account has no email address to verify; pending means it has an email address that has not been proved, whether the account itself, an administrator or an import wrote it; verified means an email address whose ownership was proved"`
+	Email string `json:"email" required:"true" description:"The address of the state: for verified the proved address verified earliest, ties broken by identifier; for pending the earliest unproved address or reservation awaiting verification, ties broken by identifier; empty for none"`
+	Since string `json:"since" required:"true" description:"RFC 3339 in UTC, the first instant the account reached verified; empty while it never did, and for none"`
 }
 
 // AuthnProfileIdentifier is one identifier of the caller's account.
@@ -142,9 +142,9 @@ func copyAttributes(attributes map[string]string) map[string]string {
 	return out
 }
 
-// signupStateName is the name the view writes for a self-registration state:
-// none, pending or verified. A value outside the declared set reads none, which
-// is the zero state.
+// signupStateName is the name the view writes for an account's email
+// verification state: none, pending or verified. A value outside the declared
+// set reads none, which is the zero state.
 func signupStateName(s authn.SignupState) string {
 	switch s {
 	case authn.SignupPending:

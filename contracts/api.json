@@ -826,7 +826,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller's self-registration has not verified an email address (contact-required)"
+            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required)"
           },
           "409": {
             "content": {
@@ -1654,7 +1654,7 @@
                 }
               }
             },
-            "description": "Impersonation is refused for this caller or target, the caller has no seasoned non-SMS factor (factor-not-seasoned), or the caller's self-registration has not verified an email address (contact-required)"
+            "description": "Impersonation is refused for this caller or target, the caller has no seasoned non-SMS factor (factor-not-seasoned), or the caller has an email address that is not proved (contact-required)"
           },
           "409": {
             "content": {
@@ -2086,7 +2086,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's self-registration state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.",
+        "description": "The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's email verification state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.",
         "operationId": "authn.profile.get",
         "responses": {
           "200": {
@@ -7164,7 +7164,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.write in the layer's domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no settings.write in the layer's domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "The full key has no declaration"
@@ -7290,7 +7290,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.write in the layer's domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no settings.write in the layer's domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "The full key has no declaration"
@@ -8121,7 +8121,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -8320,7 +8320,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "No tenant carries the identifier"
@@ -8635,7 +8635,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "503": {
             "content": {
@@ -8726,7 +8726,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "503": {
             "content": {
@@ -8905,7 +8905,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -9008,7 +9008,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -9225,7 +9225,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -9326,7 +9326,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -9436,7 +9436,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
           },
           "404": {
             "description": "No tenant carries the identifier"
@@ -11510,7 +11510,7 @@
     },
     "/api/v1/workspace/personal": {
       "post": {
-        "description": "Creates the caller's personal tenant on first call and reads it back afterwards, completing its owner role and binding and converging the role's grants to the host's allowlist on every call. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. An account whose self-registration has not proved an email address is refused without a write too; the workspace opens once it has. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
+        "description": "Creates the caller's personal tenant on first call and reads it back afterwards, completing its owner role and binding and converging the role's grants to the host's allowlist on every call. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. An account that holds an unproved email address is refused without a write too; the workspace opens once it has been proved. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
         "operationId": "workspace.personal.ensure",
         "responses": {
           "200": {
@@ -11551,7 +11551,7 @@
                 }
               }
             },
-            "description": "The caller cannot have a personal tenant: its self-registration has not proved an email address (urn:speed:workspace:verification-required), it belongsto another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. The verification-requiredrefusal changes once the account verifies an email address, already-member changes if the other membership is removed, and tenant-unavailable changes if an operator enables the tenant; identifier-unavailable does not change on retry"
+            "description": "The caller cannot have a personal tenant: it holds an unproved email address (urn:speed:workspace:verification-required), it belongsto another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. The verification-requiredrefusal changes once the account verifies an email address, already-member changes if the other membership is removed, and tenant-unavailable changes if an operator enables the tenant; identifier-unavailable does not change on retry"
           },
           "503": {
             "content": {
@@ -11832,7 +11832,7 @@
             "type": "string"
           },
           "email_verified_via": {
-            "description": "How the administrator states the email came to be verified: admin or import-unverified. It is required whenever email is present, because an address written here is always recorded as verified; empty or absent is refused with 400.",
+            "description": "How the administrator states the email was established: admin or import-unverified. It is required whenever email is present. The value records the administrator's assertion, not proof of ownership: an account with no proved email address is gated until the address is proved; empty or absent is refused with 400.",
             "enum": [
               "",
               "admin",
@@ -11861,7 +11861,7 @@
             "type": "string"
           },
           "phone_verified_via": {
-            "description": "How the administrator states the phone came to be verified: admin or import-unverified. It is required whenever phone is present, because a number written here is always recorded as verified; empty or absent is refused with 400.",
+            "description": "How the administrator states the phone was established: admin or import-unverified. It is required whenever phone is present. The value records the administrator's assertion, not proof of ownership; empty or absent is refused with 400.",
             "enum": [
               "",
               "admin",
@@ -12013,7 +12013,7 @@
       },
       "AuthnAdminIdentifierWrite": {
         "additionalProperties": false,
-        "description": "A login identifier to add to one account, with how the administrator states it was verified.",
+        "description": "A login identifier to add to one account, with how the administrator states it was established.",
         "properties": {
           "kind": {
             "description": "A phone number is added or changed only through an SMS code and is refused here",
@@ -12028,7 +12028,7 @@
             "type": "string"
           },
           "verified_via": {
-            "description": "How the administrator states the identifier came to be verified",
+            "description": "How the administrator states the identifier was established: admin records an assertion, not proof of ownership",
             "enum": [
               "",
               "admin"
@@ -13445,7 +13445,7 @@
             "type": "string"
           },
           "identifiers": {
-            "description": "The account's identifiers; always an array, never null, and empty when the account has none. A pending email contact is not among them: it is not an identifier until an email proof writes it",
+            "description": "The account's identifiers; always an array, never null, and empty when the account has none. An email the account holds is among them even while it is unproved; a pending reservation is not an identifier and is not listed",
             "items": {
               "$ref": "#/components/schemas/AuthnProfileIdentifier"
             },
@@ -13480,7 +13480,7 @@
           },
           "verification": {
             "$ref": "#/components/schemas/AuthnProfileVerification",
-            "description": "How far the account's self-registration has got, read at request time and never stored in a session or an access token"
+            "description": "How far the account's email verification has got, read at request time and never stored in a session or an access token"
           }
         },
         "required": [
@@ -13500,18 +13500,18 @@
         "type": "object"
       },
       "AuthnProfileVerification": {
-        "description": "The self-registration state of the account, read on this request: none for an account that never self-registered, pending for one that has not proved an email address, verified for one that has.",
+        "description": "How far the account's email verification has got, read on this request: none when it has no email address to verify, pending when it holds an address that has not been proved, verified when it holds one whose ownership was proved.",
         "properties": {
           "email": {
-            "description": "The address of the state: for verified the email identifier proved earliest, ties broken by identifier; for pending the email contact awaiting verification; empty when there is none, which includes a pending registration whose last proved address was removed and which then has no target",
+            "description": "The address of the state: for verified the proved address verified earliest, ties broken by identifier; for pending the earliest unproved address or reservation awaiting verification, ties broken by identifier; empty for none",
             "type": "string"
           },
           "since": {
-            "description": "RFC 3339 in UTC, the first instant the account reached verified; kept when a removal of the last proved address returns it to pending; empty while it never reached verified",
+            "description": "RFC 3339 in UTC, the first instant the account reached verified; empty while it never did, and for none",
             "type": "string"
           },
           "state": {
-            "description": "none, pending or verified. none is a registration that never began; pending is a self-registration with no proved email address; verified is a self-registration whose email address has been proved",
+            "description": "none, pending or verified. none means the account has no email address to verify; pending means it has an email address that has not been proved, whether the account itself, an administrator or an import wrote it; verified means an email address whose ownership was proved",
             "type": "string"
           }
         },
