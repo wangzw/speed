@@ -656,7 +656,7 @@ status.
 | Provider / consumer | Props | Notes |
 |---|---|---|
 | `ImpersonationNoticeProvider` | `impersonation`, `identityKey?`, `onEnd`, `pending?`, `failureCode?`, `successMessage?`, `children` | holds the dismissal and the region id; a new grant id between two known values, an identity change, an end or a failed attempt resets the dismissal |
-| `ImpersonationIndicator` | `impersonation`, `expanded`, `controls?`, `onToggle`, `ref?` | the header chip; its visible "Impersonating" text is its accessible name (the tooltip is a description) |
+| `ImpersonationIndicator` | `impersonation`, `expanded`, `controls?`, `onToggle`, `ref?`, `compact?` | the header chip; its visible "Impersonating" text is its accessible name (the tooltip is a description). `compact` renders it icon-only for narrow chrome and moves the label onto `aria-label` |
 | `ImpersonationEndMenuItem` | `onActivate?`, `divider?` | the account menu's end entry; renders nothing outside an impersonation or the provider |
 | `ImpersonationNoticeBanner` | `dismissible?` | the banner bound to the provider: its impersonation, shared attempt, dismissal state and region id. `dismissible` defaults to true and renders the close control; renders nothing outside the provider |
 | `ImpersonationNoticeIndicator` | — | the header chip bound to the provider's disclosure state, region id and focus ref; renders nothing outside the provider |

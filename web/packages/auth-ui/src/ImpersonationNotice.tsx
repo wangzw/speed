@@ -251,6 +251,11 @@ export interface ImpersonationIndicatorProps {
   readonly onToggle: () => void
   /** The chip's element, so the host can move focus to it on dismissal. */
   readonly ref?: Ref<HTMLDivElement>
+  /** Renders the chip as an icon-only control for chrome too narrow for its
+   * label, such as a collapsed navigation rail. The accessible name stays
+   * the label the text chip shows, and `aria-expanded` / `aria-controls`
+   * behave the same. */
+  readonly compact?: boolean
 }
 
 /**
@@ -260,21 +265,48 @@ export interface ImpersonationIndicatorProps {
  * its visible text; `aria-expanded` makes the notice's state explicit and
  * `aria-controls` names the visible region while it exists.
  */
+/**
+ * The compact chip's glyph: a person seeing through a frame, drawn
+ * decorative -- the chip's accessible name is the impersonating label.
+ */
+function ImpersonatingGlyph() {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={16}
+      height={16}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M3.5 12s3.1-5.2 8.5-5.2S20.5 12 20.5 12 17.4 17.2 12 17.2 3.5 12 3.5 12z" />
+      <circle cx="12" cy="12" r="2.4" />
+    </svg>
+  )
+}
+
 export function ImpersonationIndicator({
   impersonation,
   expanded,
   controls,
   onToggle,
   ref,
+  compact = false,
 }: ImpersonationIndicatorProps): ReactElement | null {
   const { t } = useAuthUiTranslation()
   if (impersonation === null) {
     return null
   }
+  const label = t('impersonation.impersonating')
   // describeChild: the tooltip becomes the chip's description, not its
   // accessible name. The name is the visible "Impersonating" text, as
   // WCAG 2.5.3 requires; MUI would otherwise put the hint into aria-label
-  // and replace it.
+  // and replace it. The compact form has no visible text, so there the
+  // label becomes the name and the tooltip stays the description.
   return (
     <Tooltip
       describeChild
@@ -288,7 +320,9 @@ export function ImpersonationIndicator({
         ref={ref}
         color="warning"
         size="small"
-        label={t('impersonation.impersonating')}
+        label={compact ? undefined : label}
+        aria-label={compact ? label : undefined}
+        icon={compact ? <ImpersonatingGlyph /> : undefined}
         aria-expanded={expanded}
         aria-controls={expanded ? controls : undefined}
         onClick={onToggle}

@@ -45,6 +45,8 @@ interface HostProps {
   readonly pending?: boolean
   readonly failureCode?: string | null
   readonly onEnd?: () => void
+  /** Renders the indicator in its icon-only form. */
+  readonly compact?: boolean
 }
 
 /** A probe that exposes the region id and a dismissal action, so the
@@ -65,7 +67,11 @@ function Probe(): ReactElement {
 }
 
 /** The host's chip wiring: the controlled indicator over one provider. */
-function Chip(): ReactElement | null {
+function Chip({
+  compact = false,
+}: {
+  readonly compact?: boolean
+} = {}): ReactElement | null {
   const notice = useImpersonationNotice()
   if (notice === null) {
     return null
@@ -77,6 +83,7 @@ function Chip(): ReactElement | null {
       controls={notice.regionId}
       onToggle={notice.toggle}
       ref={notice.indicatorRef}
+      compact={compact}
     />
   )
 }
@@ -87,6 +94,7 @@ function Host({
   pending,
   failureCode = null,
   onEnd = () => {},
+  compact = false,
 }: HostProps) {
   return (
     <ImpersonationNoticeProvider
@@ -97,7 +105,7 @@ function Host({
       onEnd={onEnd}
     >
       <h1>Page</h1>
-      <Chip />
+      <Chip compact={compact} />
       <MenuList>
         <ImpersonationEndMenuItem />
       </MenuList>
@@ -135,6 +143,19 @@ describe('ImpersonationIndicator', () => {
     expect(controls).not.toBeNull()
     // The id the chip names is the visible notice's own region id.
     expect(document.getElementById(controls as string)).not.toBeNull()
+  })
+
+  it('renders the compact chip with the label as its name and no visible text', () => {
+    renderHost({ impersonation: IMPERSONATION, compact: true })
+    const chip = screen.getByRole('button', {
+      name: zhCN.impersonation.impersonating,
+    })
+    // The rail has no room for the label; the name and the disclosure
+    // attributes stay, so the control reads the same either way.
+    expect(chip.textContent?.trim()).toBe('')
+    expect(chip.querySelector('svg')).not.toBeNull()
+    expect(chip).toHaveAttribute('aria-expanded', 'true')
+    expect(chip).toHaveAttribute('aria-controls')
   })
 
   it('toggles the notice on activation and keeps focus on the chip', async () => {

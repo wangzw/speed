@@ -186,6 +186,7 @@ interface ImpersonationIndicatorProps {
   readonly controls?: string                               // 横幅本体的 id，显示时作 aria-controls
   readonly onToggle: () => void                            // 显示或隐藏横幅，焦点留在指示上
   readonly ref?: Ref<HTMLDivElement>
+  readonly compact?: boolean                               // 仅图标形态，供窄 chrome（收起侧栏）用；可及名仍为冒充标签
 }
 
 // ImpersonationEndMenuItem：账户菜单里的「结束冒充」项；提供者之外或没有冒充时不渲染。
