@@ -206,6 +206,14 @@ python-version:
 # happens to exist -- and the guard that every test-running package spreads the
 # shared test preset (web/scripts/workspace-test-config.test.mjs) would not run
 # at all.
+#
+# The build leg runs its package scripts one at a time. Each package's script
+# rebuilds the workspace siblings it imports before compiling itself, so a
+# concurrent -r run has several packages writing the same sibling's dist/ at
+# once, and a compiler that reads a half-written declaration file fails with
+# "is not a module". The redundancy is the package scripts' own (a standalone
+# package build has to bring its dependencies along); serialising the run is
+# what makes the gate repeatable.
 web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule tests, test, a11y, build)
 	@pnpm -C web install --frozen-lockfile
 	@pnpm -C web -r lint
@@ -213,7 +221,7 @@ web-check: ## Run the frontend checks (pnpm install + lint, typecheck, rule test
 	@pnpm -C web exec vitest run eslint-rules/ scripts/
 	@pnpm -C web -r test
 	@$(MAKE) web-a11y
-	@pnpm -C web -r build
+	@pnpm -C web -r --workspace-concurrency=1 build
 
 web-a11y: ## Run the frontend's route-level accessibility sweep
 	@pnpm -C web --filter demo-web run test:a11y
