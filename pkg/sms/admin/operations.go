@@ -24,6 +24,7 @@ const (
 	relSubmissions   = "/sms/templates/submissions"
 	relTemplate      = "/sms/templates/:name"
 	relTemplateState = "/sms/templates/:name/enabled"
+	relCarrier       = "/sms/carrier"
 )
 
 // ListTemplatesInput is the request of the page read: the cursor and the page
@@ -34,23 +35,29 @@ type ListTemplatesInput struct {
 }
 
 // registerBody is the request of a registration: the template's logical name,
-// the parameter names it substitutes and the carrier code for each language.
+// what it is for, the parameter names it substitutes, the vendor code and the
+// locally rendered body for each language it has one of, and the vendor
+// registration identifiers it carries.
 type registerBody struct {
-	_      struct{}          `description:"A template to take up by the vendor code the deployment already holds: its name, its parameters and the vendor code of each language."`
-	Name   string            `json:"name" required:"true" description:"The logical template name to take up; required and non-empty, and the name a caller will later send under. A language the name already holds is a 409."`
-	Params []string          `json:"params" required:"true" description:"The parameter names the template substitutes, in the order the vendor approved them."`
-	Codes  map[string]string `json:"codes" required:"true" description:"The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled."`
+	_          struct{}          `description:"A template to take up by the vendor code the deployment already holds: its name, what it is for, its parameters, the vendor code and the body of each language, and its registration identifiers."`
+	Name       string            `json:"name" required:"true" description:"The logical template name to take up; required and non-empty, and the name a caller will later send under. A language the name already holds is a 409."`
+	Kind       string            `json:"kind" description:"What the template is for: verification, notification or marketing. Optional; an unset value means notification."`
+	Params     []string          `json:"params" description:"The parameter names the template substitutes, in the order the vendor approved them. May be empty."`
+	Codes      map[string]string `json:"codes" description:"The vendor's template code per language, keyed by locale. Optional; every language named needs a non-empty code, and each language needs a code, a body, or both."`
+	Bodies     map[string]string `json:"bodies" description:"The locally rendered body per language, keyed by locale. Optional; every language named needs a non-empty body whose ${name} placeholders all name declared parameters, and each language needs a code, a body, or both."`
+	Attributes map[string]string `json:"attributes" description:"The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional."`
 }
 
 // offerBody is the request of a submission: the fields of a sms.Submission.
 type offerBody struct {
-	_       struct{} `description:"A template submission to the vendor for one language: the body with its placeholders, what the template is for, and the note its reviewer reads."`
-	Name    string   `json:"name" required:"true" description:"The logical template name the submission creates; required and non-empty."`
-	Content string   `json:"content" required:"true" description:"The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order."`
-	Kind    string   `json:"kind" required:"true" description:"What the template is for, in the shared vocabulary: verification, notification or marketing. The carrier maps it to the vendor's spelling."`
-	Locale  string   `json:"locale" required:"true" description:"The language this submission is for, opaque to the capability. A vendor approves per language, so one submission yields one code for one language."`
-	Params  []string `json:"params" required:"true" description:"The parameter names content substitutes, in the order the template expects them."`
-	Remark  string   `json:"remark" required:"true" description:"A note for the vendor's reviewer; may be empty."`
+	_          struct{}          `description:"A template submission to the vendor for one language: the body with its placeholders, what the template is for, and the note its reviewer reads."`
+	Name       string            `json:"name" required:"true" description:"The logical template name the submission creates; required and non-empty."`
+	Content    string            `json:"content" required:"true" description:"The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order."`
+	Kind       string            `json:"kind" required:"true" description:"What the template is for, in the shared vocabulary: verification, notification or marketing. The carrier maps it to the vendor's spelling."`
+	Locale     string            `json:"locale" required:"true" description:"The language this submission is for, opaque to the capability. A vendor approves per language, so one submission yields one code for one language."`
+	Params     []string          `json:"params" description:"The parameter names content substitutes, in the order the template expects them. May be empty."`
+	Attributes map[string]string `json:"attributes" description:"The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional."`
+	Remark     string            `json:"remark" required:"true" description:"A note for the vendor's reviewer; may be empty."`
 }
 
 // enabledBody is the request of an enable or a disable. The target state is a
@@ -74,21 +81,27 @@ type setEnabledInput struct {
 }
 
 // SmsAdminTemplate is one template as the management surface reports it: its
-// logical name, its source, its ordered parameter names, the languages it holds
-// a code for, the vendor's review per language, whether sends are allowed, and
-// its write counters. It carries no vendor code.
+// logical name, the carrier it belongs to, what it is for, its source, its
+// ordered parameter names, the languages it holds a code or a body for, the
+// bodies and registration identifiers it carries, the vendor's review per
+// language, whether sends are allowed, and its write counters. It carries no
+// vendor code.
 type SmsAdminTemplate struct {
-	_ struct{} `description:"One template as the management surface reports it: its logical name, its source, its ordered parameter names, the languages it holds a code for, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code."`
+	_ struct{} `description:"One template as the management surface reports it: its logical name, its carrier, what it is for, its source, its ordered parameter names, the languages it holds a code or a body for, its bodies and registration identifiers, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code."`
 
-	Name      string                      `json:"name" required:"true" description:"The logical template name a caller sends under; the management routes address a template by it."`
-	Source    string                      `json:"source" required:"true" description:"Where the template came from: config for one read from the configuration, runtime for one this process created. A config template is read-only at runtime, always enabled, and carries no approvals and no version."`
-	Params    []string                    `json:"params" required:"true" description:"The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order."`
-	Locales   []string                    `json:"locales" required:"true" description:"The languages the template holds a vendor code for. A code is what a send needs but not the whole of what it needs: a runtime template sends only while it is enabled and the language's vendor review is approved, and every language a runtime template names starts pending review whether the template was registered or submitted, so this list normally includes languages that cannot be sent in yet. A configured template is always enabled and its review is not tracked, so each language it holds a code for can be sent in."`
-	Approvals map[string]SmsAdminApproval `json:"approvals" required:"true" description:"The vendor's review verdict per language, keyed by locale; a vendor approves a template per language. A configured template carries an empty object because this process does not track its review."`
-	Enabled   bool                        `json:"enabled" required:"true" description:"Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review."`
-	Version   int64                       `json:"version" required:"true" description:"The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version."`
-	CreatedAt time.Time                   `json:"created_at" required:"true" description:"When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template."`
-	UpdatedAt time.Time                   `json:"updated_at" required:"true" description:"When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template."`
+	Name       string                      `json:"name" required:"true" description:"The logical template name a caller sends under; the management routes address a template by it."`
+	Carrier    string                      `json:"carrier" required:"true" description:"The carrier this template belongs to. A database serves one carrier, and every record in it names that one."`
+	Kind       string                      `json:"kind" required:"true" description:"What the template is for: verification, notification or marketing. A template that named none when it was declared is a notification."`
+	Source     string                      `json:"source" required:"true" description:"Where the template came from: config for one read from the configuration, runtime for one this process created. A config template is read-only at runtime, always enabled, and carries no approvals and no version."`
+	Params     []string                    `json:"params" required:"true" description:"The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order. May be empty."`
+	Locales    []string                    `json:"locales" required:"true" description:"The effective language set: the languages the template holds a vendor code for, a body for, or both. Whether a language can be sent in follows the mounted carrier's declared review: a carrier that reviews each template sends only while the vendor's review for that language is approved, while a carrier with no per-template review holds every language it has a code or a body for as sendable. A configured template's review is not tracked, so each language it holds can be sent in."`
+	Bodies     map[string]string           `json:"bodies" required:"true" description:"The locally rendered bodies, keyed by locale. A template that sends only by vendor code carries an empty object."`
+	Attributes map[string]string           `json:"attributes" required:"true" description:"The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Empty when it carries none."`
+	Approvals  map[string]SmsAdminApproval `json:"approvals" required:"true" description:"The vendor's review verdict per language, keyed by locale. A carrier that reviews each template approves per language; one with no such review answers not-required per language. A configured template carries an empty object because this process does not track its review."`
+	Enabled    bool                        `json:"enabled" required:"true" description:"Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review."`
+	Version    int64                       `json:"version" required:"true" description:"The number of writes this runtime record has taken, used as the optimistic-concurrency condition; 0 for a configured template, which has no version."`
+	CreatedAt  time.Time                   `json:"created_at" required:"true" description:"When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template."`
+	UpdatedAt  time.Time                   `json:"updated_at" required:"true" description:"When the record was last written, in UTC and RFC 3339 format; the zero time for a configured template."`
 }
 
 // SmsAdminApproval is the vendor's review verdict on one template in one
@@ -96,8 +109,53 @@ type SmsAdminTemplate struct {
 type SmsAdminApproval struct {
 	_ struct{} `description:"The vendor's review verdict on one template in one language."`
 
-	State  string `json:"state" required:"true" description:"The verdict in this capability's own vocabulary: pending, approved, rejected or withdrawn; an empty string means a review this process does not track. The vendor's raw status numbers are never exposed."`
+	State  string `json:"state" required:"true" description:"The verdict in this capability's own vocabulary: pending, approved, rejected, withdrawn or not-required; an empty string means a review this process does not track. Not-required means the mounted carrier has no per-template review, which is not the same as a review this process does not follow. The vendor's raw status numbers are never exposed."`
 	Reason string `json:"reason,omitempty" description:"The vendor's own explanation, present when it turned the template down and it gave one; omitted otherwise."`
+}
+
+// SmsAdminCarrier is the mounted carrier's declaration of what it can carry:
+// its name, its content and review support, the sending identities this
+// deployment has, the countries it reaches, the template attribute keys it
+// accepts, its body bound and whether its receipts are asynchronous.
+type SmsAdminCarrier struct {
+	_ struct{} `description:"The mounted carrier's declaration of what it can carry."`
+
+	Name          string                 `json:"name" required:"true" description:"The carrier this process mounted; one process sends through exactly one carrier."`
+	Content       SmsAdminContentSupport `json:"content" required:"true" description:"Which template shape the carrier sends under: the vendor's template code, the body the declaration rendered, or both."`
+	Review        SmsAdminReviewSupport  `json:"review" required:"true" description:"How the vendor reviews a template, and whether a send may pick its identity."`
+	Identities    []SmsAdminIdentity     `json:"identities" required:"true" description:"The sending identities this deployment has, each with the countries it can serve. Empty for a carrier that sends from one fixed account."`
+	Countries     []string               `json:"countries" required:"true" description:"The countries this carrier can reach. Empty means it declares no restriction of its own."`
+	AttributeKeys []string               `json:"attribute_keys" required:"true" description:"The template attribute keys this carrier accepts: the vendor registration identifiers a template may carry. An attribute under any other key is refused at declaration, load or write."`
+	MaxBodyRunes  int                    `json:"max_body_runes" required:"true" description:"The bound on a rendered body, in runes. Zero means the capability sets no bound of its own."`
+	AsyncReceipt  bool                   `json:"async_receipt" required:"true" description:"Whether the vendor's final delivery state arrives asynchronously: a synchronous answer carries only the vendor's message identifier, and acceptance is not delivery."`
+}
+
+// SmsAdminContentSupport is which template shape a carrier sends under.
+type SmsAdminContentSupport struct {
+	_ struct{} `description:"Which template shape a carrier sends under."`
+
+	TemplateCode bool `json:"template_code" required:"true" description:"Whether the carrier sends by the vendor's template code."`
+	TextBody     bool `json:"text_body" required:"true" description:"Whether the carrier sends the body the declaration rendered."`
+}
+
+// SmsAdminReviewSupport is how a vendor reviews a template and whether a send
+// may pick its identity.
+type SmsAdminReviewSupport struct {
+	_ struct{} `description:"How a vendor reviews a template and whether a send may pick its identity."`
+
+	PerTemplate bool `json:"per_template" required:"true" description:"Whether the vendor reviews each template, so a template is only sendable once the review has come back approved. False means there is no such review and every language starts not-required."`
+	Originator  bool `json:"originator" required:"true" description:"Whether a send may name the identity it goes out from. False means the carrier has one fixed sending identity."`
+}
+
+// SmsAdminIdentity is one sending identity this deployment has.
+type SmsAdminIdentity struct {
+	_ struct{} `description:"One sending identity this deployment has, and the countries it can serve."`
+
+	Name       string            `json:"name" required:"true" description:"What a message names the identity by."`
+	Kind       string            `json:"kind" required:"true" description:"What sort of identity it is: sign-name, sender-id, long-code, short-code, toll-free, pool or messaging-service."`
+	Value      string            `json:"value" required:"true" description:"The vendor's own value for it: a signature, a number, a service identifier."`
+	Countries  []string          `json:"countries" required:"true" description:"The countries it can serve. Empty means it serves every country the carrier reaches."`
+	Attributes map[string]string `json:"attributes" required:"true" description:"Vendor-specific values the identity needs, such as a sender address that lives beside a messaging service. Empty when it needs none."`
 }
 
 // The success bodies. Each is an alias of an anonymous struct, so the fragment
@@ -122,7 +180,7 @@ type (
 	offeredTemplateBody = struct {
 		_ struct{} `description:"The template the submission created."`
 
-		Template SmsAdminTemplate `json:"template" required:"true" description:"The created template, with its language starting pending review."`
+		Template SmsAdminTemplate `json:"template" required:"true" description:"The created template, with its language in the review state the mounted carrier declares."`
 	}
 )
 
@@ -203,15 +261,19 @@ var registerOperation = speedhttp.NewReplyOperation[registerBody](
 	http.MethodPost,
 	relTemplates,
 	"Take up a template whose vendor code the operator already has",
-	"Takes up a runtime template whose vendor code the operator already has. Every language named "+
-		"starts pending and the template starts enabled: enablement is independent of the vendor's "+
-		"review, which the registry reads back per language from then on. A name that is empty or only "+
-		"whitespace is a 400 before the registry is called, and a language the name already holds is a "+
-		"409. The mandatory audit row is written before the action and outside any transaction, so an "+
-		"audit failure answers 503 and takes nothing up.",
+	"Takes up a runtime template whose vendor code the operator already has. The body carries the name, an "+
+		"optional kind that defaults to notification, the parameter names (which may be empty), a vendor code "+
+		"and a locally rendered body per language, and the registration identifiers the carrier accepts. Every "+
+		"language named needs a non-empty code, a non-empty body, or both, and every ${name} placeholder in a "+
+		"body must name a declared parameter; a shape that does not fit the mounted carrier is a 400. Each "+
+		"language starts in the review state the carrier declares: pending where the vendor reviews each "+
+		"template, not-required where it has no such review. The template starts enabled, independently of "+
+		"the review. A name that is empty or only whitespace is a 400 before the registry is called, and a "+
+		"language the name already holds is a 409. The mandatory audit row is written before the action and "+
+		"outside any transaction, so an audit failure answers 503 and takes nothing up.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The template to take up: its logical name, the parameter names it substitutes in order, and the vendor code for each language.",
+		Description: "The template to take up: its logical name, what it is for, the parameter names it substitutes in order, the vendor code and the body of each language, and its registration identifiers.",
 		Required:    true,
 		Name:        "SmsAdminRegister",
 	},
@@ -235,15 +297,18 @@ var offerOperation = speedhttp.NewReplyOperation[offerBody](
 	relSubmissions,
 	"Hand a template to the vendor for review and take up the code it answers with",
 	"Hands a template to the vendor for review through the vendor's own API and takes up the code the "+
-		"vendor answers with; the submission's language starts pending. Content is written with "+
-		"${name} placeholders naming the entries of params, and a carrier whose vendor takes positional "+
-		"placeholders rewrites them in params order. An empty or whitespace-only name is a 400 before "+
-		"the vendor is called; a submission the vendor or the registry refuses is a 400, and a language "+
-		"the name already holds is a 409. The mandatory audit row is written before the action and "+
-		"outside any transaction, so an audit failure answers 503 and submits nothing.",
+		"vendor answers with. A carrier whose declaration has no per-template review records the body "+
+		"locally, calls no vendor, and files the template under the code it mints. The submission's "+
+		"language starts in the review state the carrier declares: pending where the vendor reviews each "+
+		"template, not-required where it has no such review. Content is written with ${name} placeholders "+
+		"naming the entries of params, and a carrier whose vendor takes positional placeholders rewrites "+
+		"them in params order. An empty or whitespace-only name is a 400 before the vendor is called; a "+
+		"submission the vendor or the registry refuses is a 400, and a language the name already holds is "+
+		"a 409. The mandatory audit row is written before the action and outside any transaction, so an "+
+		"audit failure answers 503 and submits nothing.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
-		Description: "The template to submit: its logical name, the body with ${name} placeholders, what the template is for, its language, the parameter names in order, and a note for the reviewer.",
+		Description: "The template to submit: its logical name, the body with ${name} placeholders, what the template is for, its language, the parameter names in order, its registration identifiers, and a note for the reviewer.",
 		Required:    true,
 		Name:        "SmsAdminSubmission",
 	},
@@ -305,6 +370,32 @@ var removeOperation = speedhttp.NewReplyOperation[templateNameInput](
 	}),
 )
 
+// carrierOperation declares GET /sms/carrier: the mounted carrier's declaration
+// of what it can carry. It reads the model through Provider.Model() and holds no
+// state of its own.
+var carrierOperation = speedhttp.NewOperation[struct{}, SmsAdminCarrier](
+	"sms.admin.carrier.read",
+	http.MethodGet,
+	relCarrier,
+	"Read the mounted carrier's declaration",
+	"Reads what the mounted carrier can carry: its content support, its review support, the sending "+
+		"identities this deployment has with their kinds, values, countries and attributes, the countries "+
+		"it reaches, the template attribute keys it accepts, its body bound and whether its receipts are "+
+		"asynchronous. One process mounts exactly one carrier, so the answer is that carrier's model and "+
+		"the model is fixed for the life of the process. The decision is made in the platform domain on "+
+		"sms.template.read. Reads write no audit row.",
+	nil,
+	speedhttp.Failures(
+		[]speedhttp.Response{unauthorizedAnswer, readForbidden},
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+		speedhttp.Response{
+			Status:      http.StatusOK,
+			Description: "The mounted carrier's declaration",
+			Body:        &speedhttp.Body{MediaType: "application/json"},
+		},
+	),
+)
+
 // operations is this module's declaration of the API it serves. The fragment is
 // generated from it; the routes are mounted from the same declarations.
 var operations = speedhttp.Operations{
@@ -313,4 +404,5 @@ var operations = speedhttp.Operations{
 	offerOperation,
 	setEnabledOperation,
 	removeOperation,
+	carrierOperation,
 }

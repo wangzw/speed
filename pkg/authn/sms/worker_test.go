@@ -13,7 +13,7 @@ import (
 )
 
 // TestTheWorkerRecordsEachCarrierOutcome holds the carrier classification: the
-// three sentinels a carrier returns map to their outcome, and a success maps to
+// four sentinels a carrier returns map to their outcome, and a success maps to
 // sent.
 func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 	cases := []struct {
@@ -25,6 +25,7 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 		{"uncertain", sms.ErrUncertain, outcomeUncertain},
 		{"throttled", sms.ErrThrottled, outcomeThrottled},
 		{"rejected", sms.ErrRejected, outcomeRejected},
+		{"unroutable", sms.ErrUnroutable, outcomeUnroutable},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -39,7 +40,7 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 }
 
 // TestACarrierErrorOutsideTheClosedSetIsUncertain holds the defect direction: an
-// error that is none of the three sentinels is read as uncertain, never as a
+// error that is none of the four sentinels is read as uncertain, never as a
 // delivery and never as a retry.
 func TestACarrierErrorOutsideTheClosedSetIsUncertain(t *testing.T) {
 	r := newRigSQLite(t)
@@ -104,15 +105,16 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 		t.Fatalf("the budget-exhausted send returned %v", err)
 	}
 
-	// The four carrier outcomes, driven directly.
-	for _, res := range []error{nil, sms.ErrUncertain, sms.ErrThrottled, sms.ErrRejected} {
+	// The five carrier outcomes, driven directly.
+	for _, res := range []error{nil, sms.ErrUncertain, sms.ErrThrottled, sms.ErrRejected, sms.ErrUnroutable} {
 		r.sender.setResult(res)
 		r.p.deliverOne(ctx, sms.Resolved{To: phone})
 	}
 
 	for _, outcome := range []string{
-		outcomeSent, outcomeUncertain, outcomeThrottled, outcomeRejected, outcomeNotSendable,
-		outcomeUnsupportedRegion, outcomeBudgetExhausted, outcomeSuppressed, outcomeDropped,
+		outcomeSent, outcomeUncertain, outcomeThrottled, outcomeRejected, outcomeUnroutable,
+		outcomeNotSendable, outcomeUnsupportedRegion, outcomeBudgetExhausted, outcomeSuppressed,
+		outcomeDropped,
 	} {
 		if got := r.counter(sendsName, attribute.String(outcomeAttribute, outcome)); got < 1 {
 			t.Errorf("outcome %s was never recorded", outcome)

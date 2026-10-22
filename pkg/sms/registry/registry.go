@@ -29,12 +29,14 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"sort"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
 )
 
@@ -101,9 +103,12 @@ var _ sms.Registry = (*registryStore)(nil)
 // no logging still gets a working registry whose failures reach the process
 // default logger. Logging is declared, optionally, so that an assembly that has
 // it orders this module after the logging module and the records reach the
-// configured logger rather than the process default. The configuration reader is
-// not declared here — the host supplies it before the drive begins, the way
-// every module that reads its own section takes it up.
+// configured logger rather than the process default. The settings store is
+// declared optionally and taken up in New: the single sending switch is read on
+// every Resolve, and a host with no settings still gets a working registry whose
+// switch answers its declared default. The configuration reader is not declared
+// here — the host supplies it before the drive begins, the way every module that
+// reads its own section takes it up.
 //
 // The capability is delivered exclusively: the set in force is one
 // process-wide surface, and two registries would be two answers to which
@@ -114,6 +119,11 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*sms.Provider)(nil)},
 			{Token: (*db.Database)(nil)},
+			// Optional, because a host that assembles no settings still gets a
+			// working registry whose sending switch answers its declared default;
+			// declared, because the switch has to be read without a restart, and a
+			// declared requirement orders this module after the settings module.
+			{Token: (*settings.Store)(nil), Optional: true},
 			// Optional, because a host that assembles no logging still gets a working
 			// registry; declared, because a declared requirement orders this module after
 			// the logging module, so an assembly that has one builds this module after it
@@ -121,7 +131,7 @@ func Module() core.Module {
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides:  []core.Provision{{Token: (*sms.Registry)(nil), Exclusive: true}},
-		Resources: []any{schema(), db.Migrations{FS: migrationsFS}},
+		Resources: []any{schema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)
@@ -136,17 +146,29 @@ func Module() core.Module {
 
 		// New builds the product and reads no table of its own: this stage runs
 		// before the migrations are applied, so on a first start the runtime
-		// table is not there yet. The table is first read in Init.
+		// table is not there yet. The table is first read in Init. The configured
+		// templates are validated against the mounted carrier's CarrierModel here,
+		// which is the first stage the provider is reachable and the last before a
+		// message could be sent under them.
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
-			return newStore(reg)
+			s, err := newStore(reg)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.validateConfigured(); err != nil {
+				return nil, err
+			}
+			return s, nil
 		},
 
-		// Init subscribes, loads and starts the poller. The subscription belongs
-		// to this stage: a bus freezes its subscription table when it starts, so
-		// a subscriber that arrived later would miss every event published before
-		// it. The load is here rather than in New because the migrations have run
-		// by now, and the poller starts here because its first pass needs the
-		// table and the loaded snapshot.
+		// Init subscribes, adopts any legacy rows, loads and starts the poller. The
+		// subscription belongs to this stage: a bus freezes its subscription table
+		// when it starts, so a subscriber that arrived later would miss every event
+		// published before it. The load is here rather than in New because the
+		// migrations have run by now, and the poller starts here because its first
+		// pass needs the table and the loaded snapshot. The adoption runs before the
+		// load, because it is what gives the legacy rows the carrier the load reads
+		// them by.
 		Init: func(ctx context.Context, reg *core.Registry, instance any) error {
 			s, ok := productOf(instance)
 			if !ok {
@@ -155,6 +177,9 @@ func Module() core.Module {
 			s.takeLogger(reg)
 			s.takeBus(reg)
 			s.subscribe()
+			if err := s.adopt(ctx); err != nil {
+				return err
+			}
 			if err := s.load(ctx); err != nil {
 				return err
 			}
@@ -215,12 +240,54 @@ func newStore(reg *core.Registry) (*registryStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the template-management seam: %w", ModuleName, err)
 	}
+	store, err := optionalSettings(reg)
+	if err != nil {
+		return nil, err
+	}
 	return &registryStore{
 		handle:   database.DB(),
 		provider: provider,
 		config:   settings,
+		tuned:    newSettingsReader(store, nil),
 		logger:   log.Default(),
 	}, nil
+}
+
+// optionalSettings takes up the settings store if the assembly has one. A
+// capability that is not there is a legal assembly and leaves the sending switch
+// answering its declared default; a capability that is there and cannot be taken
+// up is not an absence and ends the start.
+func optionalSettings(reg *core.Registry) (settings.Store, error) {
+	store, err := core.Resolve[settings.Store](reg)
+	switch {
+	case err == nil:
+		return store, nil
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("%s: taking up the settings store: %w", ModuleName, err)
+	}
+}
+
+// validateConfigured holds the configuration template set to the mounted
+// carrier's CarrierModel. It runs in New, where the provider is reachable and
+// before any message could be sent under a template this carrier cannot carry.
+func (s *registryStore) validateConfigured() error {
+	if len(s.config.specs) == 0 {
+		return nil
+	}
+	model := s.provider.Model()
+	names := make([]string, 0, len(s.config.specs))
+	for name := range s.config.specs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if err := validateAgainstModel(name, s.config.specs[name], model, model.Review.PerTemplate); err != nil {
+			return fmt.Errorf("%s.%s: %w", ConfigNamespace, templatesItem, err)
+		}
+	}
+	return nil
 }
 
 // takeLogger picks up the logging capability if the assembly has one.
@@ -235,6 +302,7 @@ func (s *registryStore) takeLogger(reg *core.Registry) {
 		return
 	}
 	s.logger = delivered.Named(ModuleName)
+	s.tuned.logger = s.logger
 }
 
 // takeBus picks up the event bus if the assembly has one. Without it the

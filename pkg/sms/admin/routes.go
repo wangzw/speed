@@ -21,12 +21,14 @@ const (
 
 	pathTemplates   = basePath + "/templates"
 	pathSubmissions = basePath + "/templates/submissions"
+	pathCarrier     = basePath + "/carrier"
 )
 
 // managementGroups names the route groups in the order the start diagnostic
-// writes them. The whole surface is one group, and it is always mounted, because
-// the registry it reads and writes is required.
-var managementGroups = []string{"templates"}
+// writes them. Both groups are always mounted: the registry the template routes
+// read and write is required, and so is the provider the carrier route reads its
+// declaration from.
+var managementGroups = []string{"templates", "carrier"}
 
 // realmKey is where the name of the endpoint a management route was mounted on
 // is put for the handler to read back. A route that answers 401 itself writes
@@ -85,6 +87,11 @@ func (p *product) routes() []route {
 			removeOperation.Method,
 			adminSpec.ResolvePath(removeOperation.Path),
 			p.permitted(PermissionTemplateManage, removeOperation.Handle(p.handleTemplateRemove)),
+		},
+		{
+			carrierOperation.Method,
+			adminSpec.ResolvePath(carrierOperation.Path),
+			p.permitted(PermissionTemplateRead, carrierOperation.Handle(p.handleCarrier)),
 		},
 	}
 }

@@ -151,6 +151,12 @@ type fakeRegistry struct {
 	mu         sync.Mutex
 	declared   []sms.Template
 	resolveErr error
+	// declaration, when heldAsDeclaration is set, is the set Resolve answers from
+	// and Declared reports. It lets a case drive a template set whose languages
+	// come from bodies rather than vendor codes, the shape a body-sending
+	// carrier is configured with.
+	declaration       sms.Declaration
+	heldAsDeclaration bool
 }
 
 func newRegistry() *fakeRegistry { return &fakeRegistry{declared: declaredTemplates()} }
@@ -161,7 +167,20 @@ func newRegistry() *fakeRegistry { return &fakeRegistry{declared: declaredTempla
 func (f *fakeRegistry) Declared() []sms.Template {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.heldAsDeclaration {
+		return f.declaration.Declared()
+	}
 	return f.declared
+}
+
+// setDeclaration makes the registry report, and resolve against, the declaration
+// a case built. It is how a case drives a set whose languages come from bodies
+// instead of vendor codes.
+func (f *fakeRegistry) setDeclaration(declaration sms.Declaration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.declaration = declaration
+	f.heldAsDeclaration = true
 }
 
 // setDeclared replaces the templates the registry holds.
@@ -169,6 +188,7 @@ func (f *fakeRegistry) setDeclared(declared []sms.Template) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.declared = declared
+	f.heldAsDeclaration = false
 }
 
 // setResolveErr makes Resolve answer err, for a case that drives a message the
@@ -185,9 +205,14 @@ func (f *fakeRegistry) Resolve(m sms.Message) (sms.Resolved, error) {
 	f.mu.Lock()
 	err := f.resolveErr
 	declared := append([]sms.Template(nil), f.declared...)
+	heldAsDeclaration := f.heldAsDeclaration
+	declaration := f.declaration
 	f.mu.Unlock()
 	if err != nil {
 		return sms.Resolved{}, err
+	}
+	if heldAsDeclaration {
+		return declaration.Resolve(m)
 	}
 	d, derr := declarationFrom(declared)
 	if derr != nil {

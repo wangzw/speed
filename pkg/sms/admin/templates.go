@@ -85,11 +85,14 @@ func paginate(records []sms.Record, q listQuery) ([]sms.Record, string) {
 // handleTemplateRegister answers POST /sms/templates: it takes up a
 // template whose vendor code the operator already has. It is a write, so the
 // action is template.manage. The mandatory audit row lands before the registry
-// is called; a name the registry already holds is a 409, and a template set the
-// registry cannot run on is a 400.
+// is called; a name the registry already holds is a 409, and a template shape the
+// mounted carrier cannot carry is a 400.
 //
 // An empty name is refused on shape before the registry is called: the route
-// addresses a template by its name, and the empty name names no row.
+// addresses a template by its name, and the empty name names no row. Everything
+// else the request names — the kind, the parameters, the code and body of each
+// language and the registration identifiers — is passed on as it stands, because
+// the registry is what holds the mounted carrier's shape rules.
 func (p *product) handleTemplateRegister(ctx context.Context, in registerBody, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	if strings.TrimSpace(in.Name) == "" {
 		return nil, speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
@@ -102,8 +105,11 @@ func (p *product) handleTemplateRegister(ctx context.Context, in registerBody, _
 		return nil, err
 	}
 	record, err := p.registry.Register(ctx, in.Name, sms.TemplateSpec{
-		Params: in.Params,
-		Codes:  in.Codes,
+		Kind:       sms.Kind(in.Kind),
+		Params:     in.Params,
+		Codes:      in.Codes,
+		Bodies:     in.Bodies,
+		Attributes: in.Attributes,
 	})
 	if err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTemplateRegister, in.Name, actionID))
@@ -125,12 +131,13 @@ func (p *product) handleTemplateOffer(ctx context.Context, in offerBody, _ *spee
 		return nil, speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 	}
 	submission := sms.Submission{
-		Name:    in.Name,
-		Content: in.Content,
-		Kind:    sms.Kind(in.Kind),
-		Locale:  in.Locale,
-		Params:  in.Params,
-		Remark:  in.Remark,
+		Name:       in.Name,
+		Content:    in.Content,
+		Kind:       sms.Kind(in.Kind),
+		Locale:     in.Locale,
+		Params:     in.Params,
+		Attributes: in.Attributes,
+		Remark:     in.Remark,
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionTemplateOffer, in.Name, map[string]string{

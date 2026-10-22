@@ -141,9 +141,13 @@ const SETTING: SettingsAdminSetting = {
 
 const SMS_TEMPLATE: SmsAdminTemplatesList200['templates'][number] = {
   name: 'example',
+  carrier: 'review',
+  kind: 'notification',
   source: 'runtime',
   params: ['code'],
   locales: ['en-US'],
+  bodies: {},
+  attributes: {},
   approvals: {},
   enabled: true,
   version: 1,

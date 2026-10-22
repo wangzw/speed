@@ -24,7 +24,7 @@ const (
 // Kind is what a template is for, in the vocabulary the vendors share. Each
 // vendor spells these its own way — a number here, a string there — so the
 // mapping belongs to the carrier, which is the only layer that knows its own
-// vendor's spelling.
+// vendor's spelling. A declaration that names none gets KindNotification.
 type Kind string
 
 const (
@@ -50,7 +50,10 @@ const (
 	// ApprovalUnknown is a state this process does not track. It is the zero
 	// value, and it is what a template declared in the configuration carries: the
 	// operator who wrote it attested to it, and its review is not this process's
-	// business.
+	// business. It is not ApprovalNotRequired: here a review exists and this
+	// process does not follow it, while there the vendor has no such review at
+	// all. A message is sent under neither; only ApprovalApproved and
+	// ApprovalNotRequired are sendable.
 	ApprovalUnknown ApprovalState = ""
 	// ApprovalPending is a template the vendor has not finished reviewing, or has
 	// approved but not yet brought into force. Neither may a message go out under.
@@ -62,7 +65,21 @@ const (
 	// ApprovalWithdrawn is a template whose review the vendor cancelled, or that
 	// the vendor no longer holds.
 	ApprovalWithdrawn ApprovalState = "withdrawn"
+	// ApprovalNotRequired is a template the vendor has no per-template review for,
+	// so there is nothing to wait on and it is sendable. It belongs to a carrier
+	// whose CarrierModel.Review.PerTemplate is false, and it is not
+	// ApprovalUnknown — that one says a review exists and this process does not
+	// track it.
+	ApprovalNotRequired ApprovalState = "not-required"
 )
+
+// sendable reports whether a message may go out under a template in this state.
+// Only an approved review or the absence of any review qualifies; every state
+// that says the vendor has not settled the template, or that this process does
+// not follow it, does not.
+func sendable(state ApprovalState) bool {
+	return state == ApprovalApproved || state == ApprovalNotRequired
+}
 
 // Approval is the vendor's verdict on one template, with the vendor's own words
 // when it turned the template down.
@@ -80,7 +97,8 @@ type Approval struct {
 // parameters in Params. A vendor that takes its placeholders positionally is the
 // carrier's problem, not the caller's: the carrier renders ${name} into whatever
 // its vendor's approved syntax is, in the order Params gives, so an operator
-// writes one submission and not one per vendor.
+// writes one submission and not one per vendor. A carrier with no per-template
+// review records the body locally instead of creating anything at the vendor.
 type Submission struct {
 	// Name is the name the vendor shows the template under.
 	Name string
@@ -94,6 +112,9 @@ type Submission struct {
 	// Params are the parameter names Content substitutes, in the order the
 	// template expects them.
 	Params []string
+	// Attributes are the vendor registration identifiers the template carries,
+	// bounded by the carrier's CarrierModel.AttributeKeys.
+	Attributes map[string]string
 	// Remark is a note for the vendor's reviewer.
 	Remark string
 }
@@ -106,17 +127,29 @@ type Submission struct {
 type Record struct {
 	// Name is the logical template name a caller sends under.
 	Name string
+	// Carrier is the carrier this record belongs to. A database serves one
+	// carrier, and every record in it names that one.
+	Carrier string
+	// Kind is what the template is for.
+	Kind Kind
 	// Source says whether the template came from the configuration or was created
 	// at runtime, which is also what decides whether it may be changed.
 	Source Source
 	// Params are the parameter names the template substitutes, in order.
 	Params []string
-	// Locales are the languages the template has a code for.
+	// Locales are the effective language set: the languages the template has a
+	// code for and the languages it has a body for, together.
 	Locales []string
+	// Bodies are the locally rendered bodies, keyed by locale. A template that
+	// sends only by vendor code has none.
+	Bodies map[string]string
+	// Attributes are the vendor registration identifiers the template carries.
+	Attributes map[string]string
 	// Approvals is the vendor's verdict per language, keyed by locale: a vendor
 	// approves a template per language, so one record carries one verdict per
 	// language it holds a code for. A configured template carries none: this
-	// process does not track its review.
+	// process does not track its review. A carrier with no per-template review
+	// carries ApprovalNotRequired per language.
 	Approvals map[string]Approval
 	// Enabled reports whether a message may be sent under it. A configured
 	// template is always enabled.
@@ -145,27 +178,35 @@ type Registry interface {
 	Declared() []Template
 	// Resolve turns a message into what a carrier needs, refusing one this
 	// registry may not send under. An empty locale, an unknown template, a
-	// language with no code and a parameter the template does not declare are
-	// ErrRejected. A runtime template that is disabled, or whose vendor review has
-	// not come back approved for the message's own language, is ErrNotSendable:
-	// the review is per language, so a template approved in one language and
-	// still waiting in another sends in the approved one.
+	// language the template has neither a code nor a body for, a missing declared
+	// parameter and a surplus parameter are ErrRejected. A runtime template that
+	// is disabled, or whose vendor review has not come back approved for the
+	// message's own language while the vendor reviews per template, is
+	// ErrNotSendable: the review is per language, so a template approved in one
+	// language and still waiting in another sends in the approved one. Approved
+	// and NotRequired are the sendable states. Originator is not checked here: a
+	// declaration holds no identities, and the carrier checks the name in Send.
 	Resolve(m Message) (Resolved, error)
 	// List reports every template the registry holds, configured ones included,
 	// in a stable order.
 	List(ctx context.Context) ([]Record, error)
 	// Register takes up a template whose vendor code the operator already has,
-	// with the parameter names it substitutes and the code for each language it
-	// has one for. Every language it names starts pending and the template starts
-	// enabled: nothing is known to be wrong with a template the operator vouches
-	// for, and the review state of each language is read from the vendor from then
-	// on. Registering a language a name already holds is ErrTemplateExists;
-	// registering a new language for a name the process already holds merges it
-	// in, leaving the languages already there untouched.
+	// with the kind it is for, the parameter names it substitutes, the code and
+	// the body for each language it has one for, and the vendor registration
+	// identifiers it carries. Every language it names starts pending — or
+	// NotRequired when the carrier does not review per template — and the template
+	// starts enabled: nothing is known to be wrong with a template the operator
+	// vouches for, and the review state of each language is read from the vendor
+	// from then on. Registering a language a name already holds is
+	// ErrTemplateExists; registering a new language for a name the process already
+	// holds merges it in, leaving the languages already there untouched. A shape
+	// the mounted carrier's CarrierModel does not accept is ErrInvalidConfig.
 	Register(ctx context.Context, name string, spec TemplateSpec) (Record, error)
 	// Offer hands a template to the vendor for review, under the vendor's own
-	// API, and takes up the code it answers with. Every language it names starts
-	// pending. Offering a language a name already holds is ErrTemplateExists;
+	// API, and takes up the code it answers with. A carrier with no per-template
+	// review records the body locally and calls no vendor. Every language it names
+	// starts pending — or NotRequired when the carrier does not review per
+	// template. Offering a language a name already holds is ErrTemplateExists;
 	// offering a new language for a name the process already holds merges it in.
 	Offer(ctx context.Context, s Submission) (Record, error)
 	// SetEnabled turns a message's ability to go out under a runtime template on

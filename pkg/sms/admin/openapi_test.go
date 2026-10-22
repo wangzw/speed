@@ -10,14 +10,20 @@ import (
 	"github.com/vislake/speed/pkg/sms"
 )
 
-// seams satisfies the capabilities this module holds without implementing any
-// of them: Init resolves each and stores it, and no method is called on one
-// before a request arrives.
+// seams satisfies the template, guard and audit capabilities this module holds
+// without implementing any of them: Init resolves each and stores it, and no
+// method is called on one before a request arrives.
+//
+// The provider is a stand-in of its own: sms.Registry and sms.Provider both
+// carry an Offer, with different signatures, so one Go type cannot embed both.
 type seams struct {
 	sms.Registry
 	guard.Guard
 	audit.Audit
 }
+
+// providerSeam satisfies the carrier provider capability the same way.
+type providerSeam struct{ sms.Provider }
 
 // TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
 // the OpenAPI fragment and the registrations have to agree on: the fragment is
@@ -32,6 +38,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Stubs: []core.Module{
 			routecontract.StandIn("stand-in.seams", &seams{},
 				(*sms.Registry)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil)),
+			routecontract.StandIn("stand-in.provider", &providerSeam{}, (*sms.Provider)(nil)),
 		},
 		Config: map[string]any{
 			ConfigNamespace: map[string]any{"endpoints": []string{"admin"}},

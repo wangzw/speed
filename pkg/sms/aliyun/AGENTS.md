@@ -23,6 +23,12 @@ and `sms.Approval` types and the sending sentinels in `pkg/sms`.
 
 ## Boundaries
 
+- **The model declaration is the deployment's shape.** `Model` answers
+  `Content{TemplateCode}`, `Review{PerTemplate}` and one `sign-name` identity
+  whose name and value are the configured signature. It declares no originator
+  choice, no attribute keys, no body bound and no asynchronous receipt. What the
+  vendor can carry is stated here and held by `TestTheCarrierDeclaresItsModel`,
+  which changes with it.
 - **`Send` lays out what it is handed, and decides nothing about the template.** A
   `sms.Resolved` carries the destination, the vendor code and the parameters; this
   carrier serializes `Params` into the JSON object Aliyun takes (the keyed form,

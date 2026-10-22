@@ -198,8 +198,8 @@ func loopbackAddress(address string) bool {
 
 // reviewSender is the carrier the review build sends through. It reaches no
 // vendor: Send writes the message it was handed to the process log and answers
-// success, and the template-management calls answer as a vendor whose templates
-// are all approved would.
+// success, and the template-management calls answer as a vendor with no
+// per-template review would.
 type reviewSender struct{}
 
 // reviewSender must deliver both seams the carrier module provides.
@@ -207,6 +207,17 @@ var _ sms.Product = reviewSender{}
 
 // Name is the carrier's own name.
 func (reviewSender) Name() string { return reviewCarrierName }
+
+// Model declares what this carrier can carry. It writes whatever the registry
+// resolved to the process log, so it accepts both a vendor code and a rendered
+// body; it holds no template at a vendor and therefore reviews none per
+// template, which makes its Approval answer NotRequired. It names no identity:
+// every message goes to the process log, so there is nothing to choose between.
+func (reviewSender) Model() sms.CarrierModel {
+	return sms.CarrierModel{
+		Content: sms.ContentSupport{TemplateCode: true, TextBody: true},
+	}
+}
 
 // Send writes the resolved message to the process log. The code is the SMS
 // module's own, handed over as the message's declared parameter; this line is
@@ -226,16 +237,17 @@ func (reviewSender) Send(_ context.Context, r sms.Resolved) (sms.Receipt, error)
 
 // Offer answers with a template code derived from the submission's name. The
 // review configuration declares its templates in configuration, which this
-// process holds as already approved, so nothing calls this in the assembly; it
-// exists because a carrier delivers the whole Provider seam.
+// process holds as admitted without a vendor review, so nothing calls this in the
+// assembly; it exists because a carrier delivers the whole Provider seam.
 func (reviewSender) Offer(_ context.Context, s sms.Submission) (string, error) {
 	return reviewCarrierName + "-" + strings.ReplaceAll(s.Name, " ", "-"), nil
 }
 
-// Approval answers every template as approved, the state a locally held set
-// would be in.
+// Approval answers every template as not required: this carrier holds nothing at
+// a vendor, so there is no review to wait on — which is the state a carrier with
+// Review.PerTemplate false reports, and the one a message may be sent under.
 func (reviewSender) Approval(context.Context, string) (sms.Approval, error) {
-	return sms.Approval{State: sms.ApprovalApproved}, nil
+	return sms.Approval{State: sms.ApprovalNotRequired}, nil
 }
 
 // Retire accepts the removal of a template, which this process never holds at a

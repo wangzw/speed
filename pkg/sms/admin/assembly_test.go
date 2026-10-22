@@ -56,13 +56,14 @@ func recordingModule(record *any) core.Module {
 type managementAssembly struct {
 	// body is the configuration. The zero value uses managementBody.
 	body string
-	// noRegistry, noGuard and noAudit leave out the stand-in for the required
-	// capability named, so the drive reaches resolution without it.
-	noRegistry, noGuard, noAudit bool
+	// noRegistry, noProvider, noGuard and noAudit leave out the stand-in for the
+	// required capability named, so the drive reaches resolution without it.
+	noRegistry, noProvider, noGuard, noAudit bool
 	// noRouter leaves the entry point out, which fails Init.
 	noRouter bool
-	// registry is the registry stand-in delivered as that capability.
+	// registry and provider are the stand-ins delivered as those capabilities.
 	registry sms.Registry
+	provider sms.Provider
 	// router is the entry point stand-in; nil uses one that declares "public".
 	router speedhttp.Router
 	// gate is the optional route-declaration surface, taken up in Init when set.
@@ -99,6 +100,14 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 		}
 		reg.Register(standIn("stand-in.registry", r, (*sms.Registry)(nil)))
 		names = append(names, "stand-in.registry")
+	}
+	if !a.noProvider {
+		p := a.provider
+		if p == nil {
+			p = &stubProvider{name: "stub-carrier"}
+		}
+		reg.Register(standIn("stand-in.provider", p, (*sms.Provider)(nil)))
+		names = append(names, "stand-in.provider")
 	}
 	if !a.noGuard {
 		reg.Register(standIn("stand-in.guard", &stubGuard{allow: true}, (*guard.Guard)(nil)))
@@ -150,13 +159,14 @@ func TestThisModuleDeliversNothing(t *testing.T) {
 	}
 }
 
-// The three required capabilities are each another module's to deliver: a
-// command that brings this one in without the registry, the guard or the audit
-// capability fails resolution with ErrMissingProvider, before New builds
-// anything.
+// The four required capabilities are each another module's to deliver: a
+// command that brings this one in without the registry, the carrier provider, the
+// guard or the audit capability fails resolution with ErrMissingProvider, before
+// New builds anything.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
 		"no registry": {noRegistry: true},
+		"no provider": {noProvider: true},
 		"no guard":    {noGuard: true},
 		"no audit":    {noAudit: true},
 	} {
@@ -208,14 +218,18 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	logger := (&logBuffer{}).logger()
 
 	t.Run("New takes the required capabilities up", func(t *testing.T) {
+		provider := &stubProvider{name: "stub-carrier"}
 		var instance any
-		err := managementAssembly{registry: registry, record: &instance}.drive(t, core.StageNew, nil)
+		err := managementAssembly{registry: registry, provider: provider, record: &instance}.drive(t, core.StageNew, nil)
 		if err != nil {
 			t.Fatalf("the drive failed: %v", err)
 		}
 		p := productOfAssembly(t, instance)
 		if any(p.registry) != any(registry) {
 			t.Errorf("New took up registry %v, want the delivered %v", p.registry, registry)
+		}
+		if any(p.provider) != any(provider) {
+			t.Errorf("New took up provider %v, want the delivered %v", p.provider, provider)
 		}
 		if p.audit == nil || p.guard == nil {
 			t.Error("New did not take up the guard or the audit capability")
@@ -256,6 +270,7 @@ func TestARealRegistryMountsEveryRouteAndDeclaresThemOpen(t *testing.T) {
 		{http.MethodPost, "/api/v1/system/sms/templates/submissions"}:   true,
 		{http.MethodPost, "/api/v1/system/sms/templates/:name/enabled"}: true,
 		{http.MethodDelete, "/api/v1/system/sms/templates/:name"}:       true,
+		{http.MethodGet, "/api/v1/system/sms/carrier"}:                  true,
 	}
 	got := router.endpoint("public").registered()
 	if len(got) != len(want) {
@@ -367,6 +382,7 @@ func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
 		{"stand-in.enforcer", enforcer, (*authz.Enforcer)(nil)},
 		{"stand-in.catalog", catalog, (*authz.Catalog)(nil)},
 		{"stand-in.registry", &stubRegistry{}, (*sms.Registry)(nil)},
+		{"stand-in.provider", &stubProvider{name: "stub-carrier"}, (*sms.Provider)(nil)},
 		{"stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)},
 		{"stand-in.router", newStubRouter("public"), (*speedhttp.Router)(nil)},
 		{"stand-in.logger", loggerStub{logger: (&logBuffer{}).logger()}, (*log.Logger)(nil)},

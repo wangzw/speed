@@ -1,12 +1,13 @@
 // Package admin is the SMS capability's management module: it mounts the
-// template-management routes under /api/v1/system/sms/* and delivers no capability of
-// its own.
+// template-management and carrier-declaration routes under
+// /api/v1/system/sms/* and delivers no capability of its own.
 //
-// The module holds no data and no rule. Every route's action is a call on the
-// template registry — reached through the sms.Registry capability — so the
-// registry owns what a template is, which of them are in force and what the
-// vendor answered, and this module only decides who may ask and how the answer
-// is shaped.
+// The module holds no data and no rule. Every template route's action is a call
+// on the template registry — reached through the sms.Registry capability — so
+// the registry owns what a template is, which of them are in force and what the
+// vendor answered; the carrier route reads the mounted carrier's declaration
+// through sms.Provider.Model(). This module only decides who may ask and how the
+// answer is shaped.
 //
 // Every route is declared open on the authorization middleware, so the
 // middleware lets a request through and the handler makes the decision itself:
@@ -99,14 +100,17 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The template registry, the handler-internal guard and the audit capability are
-// required. That the guard is required is what makes the per-request decision
-// available; that the audit capability is required is what makes an assembly
-// without one fail before any instance is built, rather than at the first write.
-// The registry is delivered exclusively by the registry module, and the guard by
-// the enforcement module, so the closure of a command that takes this one in
-// does not pull them in: the host writes them down. The logger is the one
-// optional requirement, taken up so that it is initialised first.
+// The template registry, the carrier provider, the handler-internal guard and
+// the audit capability are required. That the guard is required is what makes
+// the per-request decision available; that the audit capability is required is
+// what makes an assembly without one fail before any instance is built, rather
+// than at the first write; and that the provider is required is what makes the
+// carrier declaration reachable, since the registry seam does not carry it. The
+// registry is delivered exclusively by the registry module, the provider by the
+// one carrier module, and the guard by the enforcement module, so the closure of
+// a command that takes this one in does not pull them in: the host writes them
+// down. The logger is the one optional requirement, taken up so that it is
+// initialised first.
 //
 // The HTTP entry point and the route-declaration surface are taken up in Init
 // rather than declared: a command that mounts routes and has no entry point is a
@@ -127,6 +131,7 @@ func Module() core.Module {
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*sms.Registry)(nil)},
+			{Token: (*sms.Provider)(nil)},
 			{Token: (*guard.Guard)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
@@ -183,6 +188,7 @@ func productOf(instance any) (*product, bool) {
 // optional route-declaration surface taken up in Init.
 type product struct {
 	registry sms.Registry
+	provider sms.Provider
 	guard    guard.Guard
 	audit    audit.Audit
 
@@ -202,6 +208,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the template registry: %w", ModuleName, err)
 	}
+	provider, err := core.Resolve[sms.Provider](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the carrier provider: %w", ModuleName, err)
+	}
 	guardAPI, err := core.Resolve[guard.Guard](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the handler-internal guard: %w", ModuleName, err)
@@ -220,6 +230,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}
 	return &product{
 		registry: registry,
+		provider: provider,
 		guard:    guardAPI,
 		audit:    auditor,
 		logger:   log.Default(),

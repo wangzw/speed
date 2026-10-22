@@ -28,16 +28,20 @@ different owners:
   while it runs. Each carries the vendor's review state **per language** — a
   vendor approves a template per language, so a logical name approved in one
   language and still under review in another is the ordinary case — which the
-  poller reads back.
+  poller reads back. A carrier whose `Model.Review.PerTemplate` is false has no
+  review to read: its runtime templates carry `ApprovalNotRequired` in every
+  language, which is not the same as `ApprovalUnknown`.
 
 `Resolve` tries the configuration source first and delegates a configured
 message to its declaration, which holds the structural checks; a runtime message
-is checked against the row's parameter list and code table, against the review
-state **of the message's own language**. `Declared` reports the configuration
-templates and the runtime ones that are enabled and approved in every language
-they name. `List` reports both, configured ones marked `SourceConfig` and always
-enabled with no review tracked, runtime ones carrying their per-language review
-and bookkeeping.
+is checked against the row's parameter list and its code-or-body table, against
+the review state **of the message's own language**, which must be `Approved` or
+`ApprovalNotRequired`. Before either source it reads the `sms.registry.sending-enabled`
+setting; a false value answers `ErrNotSendable`. `Declared` reports the
+configuration templates and the runtime ones that are enabled and sendable in
+every language they name. `List` reports both, configured ones marked
+`SourceConfig` and always enabled with no review tracked, runtime ones carrying
+their per-language review and bookkeeping.
 
 ## Boundaries
 
@@ -59,24 +63,32 @@ and bookkeeping.
 - **A write is conditional and reports itself through the affected rows.**
   `Register` and `Offer` both land their codes through one merge path `upsert`:
   it reads the row, merges into it and writes it back inside a transaction, the
-  write conditional on the version it read (`WHERE name = ? AND version = ?`), so
-  two concurrent writers cannot overwrite each other — a write that matched no
-  row means the row changed and the merge is retried (`upsertAttempts`, a bounded
-  number). A name the row does not hold is inserted with `ON CONFLICT (name) DO
-  NOTHING RETURNING version`, so two concurrent inserts of one name leave one row;
-  a name it does hold is merged, and **the languages already there are left
-  untouched, their review states included**. A merge on a name whose parameters
-  differ is `ErrInvalidConfig` (a logical name describes one message shape); a
-  language the name already holds is `ErrTemplateExists` naming it.
+  write conditional on the carrier and the version it read (`WHERE carrier = ?
+  AND name = ? AND version = ?`), so two concurrent writers cannot overwrite each
+  other — a write that matched no row means the row changed and the merge is
+  retried (`upsertAttempts`, a bounded number). A name the row does not hold is
+  inserted with `ON CONFLICT (carrier, name) DO NOTHING RETURNING version`, so
+  two concurrent inserts of one name leave one row; a name it does hold is
+  merged, and **the languages already there are left untouched, their review
+  states included**. A merge on a name whose parameters differ is
+  `ErrInvalidConfig` (a logical name describes one message shape); a language the
+  name already holds is `ErrTemplateExists` naming it. Every read and write is
+  filtered by the mounted provider's name: one database serves one carrier.
   `SetEnabled` updates `WHERE ... enabled <> ?`, so a call whose target state
   equals the current one matches nothing and succeeds without a version bump or
   an event; `Remove` treats a delete that touched no row as `ErrNoTemplate`.
-- **Offer calls the vendor before it writes.** A vendor call that fails leaves no
-  row, so this process never holds a template the vendor did not accept and could
-  never settle. The submission's shape is validated before the vendor call, and a
-  language the name already holds, or a shape that disagrees with the one the name
-  already describes, is refused before it too, so none reaches the vendor. A new
-  language for a name already held is a legal merge and does reach the vendor.
+- **Offer calls the vendor only when the carrier has a vendor-side resource.**
+  A carrier that sends by vendor code (`Content.TemplateCode`) creates or obtains
+  a code at `Offer`; a carrier that only sends a rendered body records the body
+  locally and `Retire` is a no-op. A vendor call that fails leaves no row, so
+  this process never holds a template the vendor did not accept and could never
+  settle. The submission's shape is validated against the carrier model before
+  the vendor call, and a language the name already holds, or a shape that
+  disagrees with the one the name already describes, is refused before it too, so
+  none reaches the vendor. A new language for a name already held is a legal
+  merge and does reach the vendor. A carrier with `Review.PerTemplate` false
+  answers `Approval` with `ApprovalNotRequired`; one that reviews per template reads the
+  vendor as before.
 - **A successful write reloads this replica's snapshot and publishes a change
   event.** The reload is the replica's own read of what it just wrote; the event
   (`sms.registry.changed`) tells the others to reload. Neither failing undoes the
@@ -88,7 +100,8 @@ and bookkeeping.
   or worse, approve one it does not — while a sibling language that could be read
   is still written back. Each pending language is read on its own and its verdict
   written back on its own, so a language approved in one release does not wait for
-  another still running; an untracked state is never polled. A verdict equal to
+  another still running; an untracked state (`Unknown`) and a state without a
+  review (`ApprovalNotRequired`) are never polled. A verdict equal to
   the stored one writes nothing, so a review still running does not churn the row
   each interval. The poller starts in `Init` (the table is ready by then, where
   `New` would find it missing) and its first pass runs at once. A zero interval
@@ -98,22 +111,35 @@ and bookkeeping.
   snapshot — which is safe to run at any time, including on the publisher's own
   goroutine and for this replica's own events.
 - **It reaches the vendor only through `sms.Provider` and never imports a
-  carrier.** `pkg/sms/aliyun` and `pkg/sms/tencent` are not in this package's
-  imports: importing one would close a cycle through the root package and break
-  the carrier seal. This module takes up `(*sms.Provider)(nil)` and
-  `(*db.Database)(nil)` as hard requirements, delivers `(*sms.Registry)(nil)`
-  exclusively, takes the configuration reader up from what the host supplies, and
-  takes the event bus and the logging capability optionally.
-- **The table name is one constant in three places.** `tableName`, the two
-  migration files and the statements all have to agree. The statements here are
-  native SQL, so nothing resolves the name for them the way the model path would.
-  The migration files carry no semicolon in their comments: the statement
-  splitter severs a comment at one, which turns the tail into a syntax error.
-- **It is deliberately not built on `pkg/settings`.** The settings key set is
-  fixed at assembly time — an operator cannot add an undeclared key without a
-  release — and a container value never enters the settings tree at all, so a set
-  of templates that grows and shrinks at runtime is the case a declarative store
-  cannot express. This module holds its own table instead.
+  carrier.** `pkg/sms/aliyun`, `pkg/sms/tencent`, `pkg/sms/aws` and
+  `pkg/sms/twilio` are not in this package's imports: importing one would close a
+  cycle through the root package and break the carrier seal. This module takes up
+  `(*sms.Provider)(nil)` and `(*db.Database)(nil)` as hard requirements, delivers
+  `(*sms.Registry)(nil)` exclusively, takes the configuration reader up from what
+  the host supplies, and takes the event bus and the logging capability
+  optionally. It reads `Provider.Model()` for the carrier's shape and
+  `Provider.Name()` for the storage column; it calls no vendor API itself.
+- **The table name is one constant in four places.** `tableName`, the two
+  `0001` migration files, the two `0002` migration files and the statements all
+  have to agree. `0002` adds the `carrier`, `kind`, `bodies` and `attributes`
+  columns and changes the primary key to `(carrier, name)`; it runs on both
+  SQLite and PostgreSQL. The statements here are native SQL, so nothing resolves
+  the name for them the way the model path would. The migration files carry no
+  semicolon in their comments: the statement splitter severs a comment at one,
+  which turns the tail into a syntax error.
+- **Legacy rows are adopted once, under an ownership marker.** The first carrier
+  to start against a database whose rows carry `carrier = ''` rewrites them to
+  its own name and writes a one-row marker in the same transaction. A later
+  process mounting a different carrier fails the startup instead of silently
+  taking those rows over; the same carrier starting again finds the marker and
+  the adopted rows already in place.
+- **The template set is deliberately not built on `pkg/settings`.** The settings
+  key set is fixed at assembly time — an operator cannot add an undeclared key
+  without a release — and a container value never enters the settings tree at
+  all, so a set of templates that grows and shrinks at runtime is the case a
+  declarative store cannot express. This module holds its own table instead. The
+  one scalar it does take from settings is `sms.registry.sending-enabled`, read
+  on every `Resolve`; that is a switch over the whole set, not a template.
 
 ## Configuration
 
@@ -122,17 +148,27 @@ This module's input items are mounted under its own namespace, `sms.registry`
 
 - **`templates`** (a map of template name to `sms.TemplateSpec`): the
   configuration source — the templates the operator wrote and had the vendor
-  approve. It is a container leaf, so it takes the primary source alone. An
-  empty map is legal: a registry whose templates all arrive at runtime declares
-  none.
+  approve. A spec carries a kind (default `notification`), an optional ordered
+  parameter list, a language-to-code map, a language-to-body map and bounded
+  registration attributes. It is a container leaf, so it takes the primary
+  source alone. An empty map is legal: a registry whose templates all arrive at
+  runtime declares none.
 - **`poll-interval`** (a duration, default one minute): how often the background
   pass reloads the runtime set and reads the vendor's review state for the
   templates still pending. Zero accepts convergence through change events alone.
   A negative value is `sms.ErrInvalidConfig`.
 
-The configuration templates are checked with `sms.NewDeclaration` at startup: a
-template with no parameter, a repeated parameter name or a language with no code
-is `sms.ErrInvalidConfig` naming the template.
+It also reads one setting, **`sms.registry.sending-enabled`** (a boolean,
+default true): false answers every `Resolve` with `sms.ErrNotSendable` until an
+operator turns it back on, with no restart. It is read on every call.
+
+The configuration templates are checked with `sms.NewDeclaration` and against
+the mounted carrier's `CarrierModel` at startup: a template with a repeated
+parameter name, a language with neither a code nor a body, a placeholder naming
+an undeclared parameter, a code the carrier does not send by, a code missing
+where the vendor reviews per template, an attribute key the carrier does not
+declare, or a body over `MaxBodyRunes` is `sms.ErrInvalidConfig` naming the
+template.
 
 ## Running it
 

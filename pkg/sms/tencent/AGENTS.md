@@ -18,6 +18,12 @@ sending sentinels and the `sms.Provider` seam in `pkg/sms`.
 
 ## Boundaries
 
+- **The model declaration is the deployment's shape.** `Model` answers
+  `Content{TemplateCode}`, `Review{PerTemplate}` and one `sign-name` identity
+  whose name and value are the configured signature. It declares no originator
+  choice, no attribute keys, no body bound and no asynchronous receipt. What the
+  vendor can carry is stated here and held by `TestTheCarrierDeclaresItsModel`,
+  which changes with it.
 - **The carrier holds no template set.** Which template a message goes out under
   is decided by the template registry, and this package is handed the vendor
   number and the already-ordered values in an `sms.Resolved`. Its whole part in

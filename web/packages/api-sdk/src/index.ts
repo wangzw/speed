@@ -1241,35 +1241,116 @@ export interface SettingsAdminSetting {
 }
 
 /**
+ * Which template shape a carrier sends under.
+ */
+export interface SmsAdminContentSupport {
+  /** Whether the carrier sends by the vendor's template code. */
+  template_code: boolean;
+  /** Whether the carrier sends the body the declaration rendered. */
+  text_body: boolean;
+}
+
+/**
+ * Vendor-specific values the identity needs, such as a sender address that lives beside a messaging service. Empty when it needs none.
+ */
+export type SmsAdminIdentityAttributes = {[key: string]: string};
+
+/**
+ * One sending identity this deployment has, and the countries it can serve.
+ */
+export interface SmsAdminIdentity {
+  /** Vendor-specific values the identity needs, such as a sender address that lives beside a messaging service. Empty when it needs none. */
+  attributes: SmsAdminIdentityAttributes;
+  /** The countries it can serve. Empty means it serves every country the carrier reaches. */
+  countries: string[];
+  /** What sort of identity it is: sign-name, sender-id, long-code, short-code, toll-free, pool or messaging-service. */
+  kind: string;
+  /** What a message names the identity by. */
+  name: string;
+  /** The vendor's own value for it: a signature, a number, a service identifier. */
+  value: string;
+}
+
+/**
+ * How a vendor reviews a template and whether a send may pick its identity.
+ */
+export interface SmsAdminReviewSupport {
+  /** Whether a send may name the identity it goes out from. False means the carrier has one fixed sending identity. */
+  originator: boolean;
+  /** Whether the vendor reviews each template, so a template is only sendable once the review has come back approved. False means there is no such review and every language starts not-required. */
+  per_template: boolean;
+}
+
+/**
+ * The mounted carrier's declaration of what it can carry.
+ */
+export interface SmsAdminCarrier {
+  /** Whether the vendor's final delivery state arrives asynchronously: a synchronous answer carries only the vendor's message identifier, and acceptance is not delivery. */
+  async_receipt: boolean;
+  /** The template attribute keys this carrier accepts: the vendor registration identifiers a template may carry. An attribute under any other key is refused at declaration, load or write. */
+  attribute_keys: string[];
+  /** Which template shape the carrier sends under: the vendor's template code, the body the declaration rendered, or both. */
+  content: SmsAdminContentSupport;
+  /** The countries this carrier can reach. Empty means it declares no restriction of its own. */
+  countries: string[];
+  /** The sending identities this deployment has, each with the countries it can serve. Empty for a carrier that sends from one fixed account. */
+  identities: SmsAdminIdentity[];
+  /** The bound on a rendered body, in runes. Zero means the capability sets no bound of its own. */
+  max_body_runes: number;
+  /** The carrier this process mounted; one process sends through exactly one carrier. */
+  name: string;
+  /** How the vendor reviews a template, and whether a send may pick its identity. */
+  review: SmsAdminReviewSupport;
+}
+
+/**
  * The vendor's review verdict on one template in one language.
  */
 export interface SmsAdminApproval {
   /** The vendor's own explanation, present when it turned the template down and it gave one; omitted otherwise. */
   reason?: string;
-  /** The verdict in this capability's own vocabulary: pending, approved, rejected or withdrawn; an empty string means a review this process does not track. The vendor's raw status numbers are never exposed. */
+  /** The verdict in this capability's own vocabulary: pending, approved, rejected, withdrawn or not-required; an empty string means a review this process does not track. Not-required means the mounted carrier has no per-template review, which is not the same as a review this process does not follow. The vendor's raw status numbers are never exposed. */
   state: string;
 }
 
 /**
- * The vendor's review verdict per language, keyed by locale; a vendor approves a template per language. A configured template carries an empty object because this process does not track its review.
+ * The vendor's review verdict per language, keyed by locale. A carrier that reviews each template approves per language; one with no such review answers not-required per language. A configured template carries an empty object because this process does not track its review.
  */
 export type SmsAdminTemplateApprovals = {[key: string]: SmsAdminApproval};
 
 /**
- * One template as the management surface reports it: its logical name, its source, its ordered parameter names, the languages it holds a code for, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code.
+ * The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Empty when it carries none.
+ */
+export type SmsAdminTemplateAttributes = {[key: string]: string};
+
+/**
+ * The locally rendered bodies, keyed by locale. A template that sends only by vendor code carries an empty object.
+ */
+export type SmsAdminTemplateBodies = {[key: string]: string};
+
+/**
+ * One template as the management surface reports it: its logical name, its carrier, what it is for, its source, its ordered parameter names, the languages it holds a code or a body for, its bodies and registration identifiers, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code.
  */
 export interface SmsAdminTemplate {
-  /** The vendor's review verdict per language, keyed by locale; a vendor approves a template per language. A configured template carries an empty object because this process does not track its review. */
+  /** The vendor's review verdict per language, keyed by locale. A carrier that reviews each template approves per language; one with no such review answers not-required per language. A configured template carries an empty object because this process does not track its review. */
   approvals: SmsAdminTemplateApprovals;
+  /** The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Empty when it carries none. */
+  attributes: SmsAdminTemplateAttributes;
+  /** The locally rendered bodies, keyed by locale. A template that sends only by vendor code carries an empty object. */
+  bodies: SmsAdminTemplateBodies;
+  /** The carrier this template belongs to. A database serves one carrier, and every record in it names that one. */
+  carrier: string;
   /** When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template. */
   created_at: string;
   /** Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review. */
   enabled: boolean;
-  /** The languages the template holds a vendor code for. A code is what a send needs but not the whole of what it needs: a runtime template sends only while it is enabled and the language's vendor review is approved, and every language a runtime template names starts pending review whether the template was registered or submitted, so this list normally includes languages that cannot be sent in yet. A configured template is always enabled and its review is not tracked, so each language it holds a code for can be sent in. */
+  /** What the template is for: verification, notification or marketing. A template that named none when it was declared is a notification. */
+  kind: string;
+  /** The effective language set: the languages the template holds a vendor code for, a body for, or both. Whether a language can be sent in follows the mounted carrier's declared review: a carrier that reviews each template sends only while the vendor's review for that language is approved, while a carrier with no per-template review holds every language it has a code or a body for as sendable. A configured template's review is not tracked, so each language it holds can be sent in. */
   locales: string[];
   /** The logical template name a caller sends under; the management routes address a template by it. */
   name: string;
-  /** The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order. */
+  /** The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order. May be empty. */
   params: string[];
   /** Where the template came from: config for one read from the configuration, runtime for one this process created. A config template is read-only at runtime, always enabled, and carries no approvals and no version. */
   source: string;
@@ -1280,26 +1361,49 @@ export interface SmsAdminTemplate {
 }
 
 /**
- * The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled.
+ * The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional.
+ */
+export type SmsAdminRegisterAttributes = {[key: string]: string};
+
+/**
+ * The locally rendered body per language, keyed by locale. Optional; every language named needs a non-empty body whose ${name} placeholders all name declared parameters, and each language needs a code, a body, or both.
+ */
+export type SmsAdminRegisterBodies = {[key: string]: string};
+
+/**
+ * The vendor's template code per language, keyed by locale. Optional; every language named needs a non-empty code, and each language needs a code, a body, or both.
  */
 export type SmsAdminRegisterCodes = {[key: string]: string};
 
 /**
- * A template to take up by the vendor code the deployment already holds: its name, its parameters and the vendor code of each language.
+ * A template to take up by the vendor code the deployment already holds: its name, what it is for, its parameters, the vendor code and the body of each language, and its registration identifiers.
  */
 export interface SmsAdminRegister {
-  /** The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled. */
-  codes: SmsAdminRegisterCodes;
+  /** The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional. */
+  attributes?: SmsAdminRegisterAttributes;
+  /** The locally rendered body per language, keyed by locale. Optional; every language named needs a non-empty body whose ${name} placeholders all name declared parameters, and each language needs a code, a body, or both. */
+  bodies?: SmsAdminRegisterBodies;
+  /** The vendor's template code per language, keyed by locale. Optional; every language named needs a non-empty code, and each language needs a code, a body, or both. */
+  codes?: SmsAdminRegisterCodes;
+  /** What the template is for: verification, notification or marketing. Optional; an unset value means notification. */
+  kind?: string;
   /** The logical template name to take up; required and non-empty, and the name a caller will later send under. A language the name already holds is a 409. */
   name: string;
-  /** The parameter names the template substitutes, in the order the vendor approved them. */
-  params: string[];
+  /** The parameter names the template substitutes, in the order the vendor approved them. May be empty. */
+  params?: string[];
 }
+
+/**
+ * The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional.
+ */
+export type SmsAdminSubmissionAttributes = {[key: string]: string};
 
 /**
  * A template submission to the vendor for one language: the body with its placeholders, what the template is for, and the note its reviewer reads.
  */
 export interface SmsAdminSubmission {
+  /** The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional. */
+  attributes?: SmsAdminSubmissionAttributes;
   /** The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order. */
   content: string;
   /** What the template is for, in the shared vocabulary: verification, notification or marketing. The carrier maps it to the vendor's spelling. */
@@ -1308,8 +1412,8 @@ export interface SmsAdminSubmission {
   locale: string;
   /** The logical template name the submission creates; required and non-empty. */
   name: string;
-  /** The parameter names content substitutes, in the order the template expects them. */
-  params: string[];
+  /** The parameter names content substitutes, in the order the template expects them. May be empty. */
+  params?: string[];
   /** A note for the vendor's reviewer; may be empty. */
   remark: string;
 }
@@ -2142,7 +2246,7 @@ export type SmsAdminTemplatesRegister201 = {
  * The template the submission created.
  */
 export type SmsAdminTemplatesOffer201 = {
-  /** The created template, with its language starting pending review. */
+  /** The created template, with its language in the review state the mounted carrier declares. */
   template: SmsAdminTemplate;
 };
 
@@ -7374,6 +7478,76 @@ export const useSettingsAdminSettingsSet = <TError = Problem | void,
     }
 
 /**
+ * Reads what the mounted carrier can carry: its content support, its review support, the sending identities this deployment has with their kinds, values, countries and attributes, the countries it reaches, the template attribute keys it accepts, its body bound and whether its receipts are asynchronous. One process mounts exactly one carrier, so the answer is that carrier's model and the model is fixed for the life of the process. The decision is made in the platform domain on sms.template.read. Reads write no audit row.
+ * @summary Read the mounted carrier's declaration
+ */
+export const smsAdminCarrierRead = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<SmsAdminCarrier>(
+      {url: `/api/v1/system/sms/carrier`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getSmsAdminCarrierReadQueryKey = () => {
+    return [
+    `/api/v1/system/sms/carrier`
+    ] as const;
+    }
+
+
+export const getSmsAdminCarrierReadQueryOptions = <TData = Awaited<ReturnType<typeof smsAdminCarrierRead>>, TError = Problem>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof smsAdminCarrierRead>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSmsAdminCarrierReadQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof smsAdminCarrierRead>>> = ({ signal }) => smsAdminCarrierRead(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof smsAdminCarrierRead>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SmsAdminCarrierReadQueryResult = NonNullable<Awaited<ReturnType<typeof smsAdminCarrierRead>>>
+export type SmsAdminCarrierReadQueryError = Problem
+
+
+/**
+ * @summary Read the mounted carrier's declaration
+ */
+
+export function useSmsAdminCarrierRead<TData = Awaited<ReturnType<typeof smsAdminCarrierRead>>, TError = Problem>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof smsAdminCarrierRead>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSmsAdminCarrierReadQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
  * Returns one page of every template the registry holds, configured ones included, ordered by template name. A page holds 50 entries when the request names no limit; a limit of 0 reads the same way, and a limit above 200 is capped at 200. The decision is made in the platform domain on sms.template.read, so a grant in a tenant does not reach this set.
  * @summary Page through the template set, configured templates included
  */
@@ -7445,7 +7619,7 @@ export function useSmsAdminTemplatesList<TData = Awaited<ReturnType<typeof smsAd
 
 
 /**
- * Takes up a runtime template whose vendor code the operator already has. Every language named starts pending and the template starts enabled: enablement is independent of the vendor's review, which the registry reads back per language from then on. A name that is empty or only whitespace is a 400 before the registry is called, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and takes nothing up.
+ * Takes up a runtime template whose vendor code the operator already has. The body carries the name, an optional kind that defaults to notification, the parameter names (which may be empty), a vendor code and a locally rendered body per language, and the registration identifiers the carrier accepts. Every language named needs a non-empty code, a non-empty body, or both, and every ${name} placeholder in a body must name a declared parameter; a shape that does not fit the mounted carrier is a 400. Each language starts in the review state the carrier declares: pending where the vendor reviews each template, not-required where it has no such review. The template starts enabled, independently of the review. A name that is empty or only whitespace is a 400 before the registry is called, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and takes nothing up.
  * @summary Take up a template whose vendor code the operator already has
  */
 export const smsAdminTemplatesRegister = (
@@ -7510,7 +7684,7 @@ export const useSmsAdminTemplatesRegister = <TError = Problem | void,
     }
 
 /**
- * Hands a template to the vendor for review through the vendor's own API and takes up the code the vendor answers with; the submission's language starts pending. Content is written with ${name} placeholders naming the entries of params, and a carrier whose vendor takes positional placeholders rewrites them in params order. An empty or whitespace-only name is a 400 before the vendor is called; a submission the vendor or the registry refuses is a 400, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and submits nothing.
+ * Hands a template to the vendor for review through the vendor's own API and takes up the code the vendor answers with. A carrier whose declaration has no per-template review records the body locally, calls no vendor, and files the template under the code it mints. The submission's language starts in the review state the carrier declares: pending where the vendor reviews each template, not-required where it has no such review. Content is written with ${name} placeholders naming the entries of params, and a carrier whose vendor takes positional placeholders rewrites them in params order. An empty or whitespace-only name is a 400 before the vendor is called; a submission the vendor or the registry refuses is a 400, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and submits nothing.
  * @summary Hand a template to the vendor for review and take up the code it answers with
  */
 export const smsAdminTemplatesOffer = (

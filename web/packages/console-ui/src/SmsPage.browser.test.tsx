@@ -16,9 +16,13 @@ const FLOOR_WIDTHS = [600, 900, 1200] as const
 const TEMPLATES: readonly ConsoleSmsTemplate[] = [
   {
     name: 'authn-login-code',
+    carrier: 'review',
+    kind: 'notification',
     source: 'runtime',
     params: ['code'],
     locales: ['zh-CN', 'en-US'],
+    bodies: {},
+    attributes: {},
     approvals: {
       'zh-CN': { state: 'approved' },
       'en-US': { state: 'approved' },

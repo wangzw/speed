@@ -7,10 +7,12 @@ import "fmt"
 // is carried into the text; it is the carrier's own word and holds no credential
 // and no message code.
 //
-// The table is empty until a code is verified against the carrier's list, and
-// the empty-table direction is deliberate: a code not known to mean throttled or
-// refused is uncertain, which counts at most one more budget rather than
-// treating an unconfirmed failure as a definite one, and never resends.
+// The table maps a code to the sentinel the carrier has verified it means:
+// ErrThrottled, ErrRejected or ErrUnroutable. It is empty until a code is
+// verified against the carrier's list, and the empty-table direction is
+// deliberate: a code not known to mean any of the three is uncertain, which
+// counts at most one more budget rather than treating an unconfirmed failure as
+// a definite one, and never resends.
 func Classify(table map[string]error, carrier, code string) error {
 	sentinel, verified := table[code]
 	if !verified {

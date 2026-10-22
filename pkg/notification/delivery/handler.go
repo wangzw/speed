@@ -134,6 +134,11 @@ func (p *pipeline) sendInApp(ctx context.Context, d notification.Dispatch, spec 
 // the channel; a dispatch that names no destination is this module's own failure,
 // recorded with this module's own reason and never reaching the carrier.
 //
+// A receipt is acceptance, not delivery: the carrier took the message and named
+// it, and the ledger's succeeded says that much and no more. Whether the
+// recipient received it is the carrier's to report, and this module follows no
+// such report.
+//
 // Every error a carrier answers with is one terminal failure of the channel: the
 // mail sentinels tell a throttled call, a refusal and an uncertain outcome apart,
 // and all three are the same thing here — this module retries none of them
@@ -164,6 +169,12 @@ func (p *pipeline) sendEmail(ctx context.Context, d notification.Dispatch, spec 
 // destination and a type that declares no template are this module's own
 // failures, recorded with this module's own reason and never reaching the
 // vendor.
+//
+// A receipt is acceptance, not delivery: a carrier whose receipts are
+// asynchronous answers a send with the vendor's message identifier alone, so the
+// ledger's succeeded says the vendor took the message, not that the recipient
+// received it. The final state arrives through the vendor's own channel, which
+// this module does not follow.
 func (p *pipeline) sendSMS(ctx context.Context, d notification.Dispatch, spec notification.TypeSpec, row sendRow) (sendRow, error) {
 	if !p.seams.smsReady() {
 		row.Status = statusSkipped

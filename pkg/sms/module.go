@@ -17,7 +17,10 @@ import (
 // The sending seam and the template-management seam are one value and not two
 // because they reach the same vendor account through the same client, and the
 // module constructs its instance once. A carrier module delivers both,
-// exclusively, so a command still names exactly one carrier.
+// exclusively, so a command still names exactly one carrier. Product is Sender
+// plus Provider, so it carries Provider.Model transitively: a caller holding a
+// Product can read the carrier's capability declaration as well as send through
+// it.
 type Product interface {
 	Sender
 	Provider

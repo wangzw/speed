@@ -10,11 +10,16 @@ import (
 // exact-code helper: a code the table names becomes its sentinel, and any other
 // code becomes the uncertain sentinel, with the code carried into the text.
 func TestClassifyUsesTheTableAndDefaultsToUncertain(t *testing.T) {
-	table := map[string]error{"Rejected": ErrRejected, "Throttled": ErrThrottled}
+	table := map[string]error{
+		"Rejected":   ErrRejected,
+		"Throttled":  ErrThrottled,
+		"Unroutable": ErrUnroutable,
+	}
 
 	for code, want := range map[string]error{
 		"Rejected":       ErrRejected,
 		"Throttled":      ErrThrottled,
+		"Unroutable":     ErrUnroutable,
 		"SomethingNoOne": ErrUncertain,
 		"":               ErrUncertain,
 	} {

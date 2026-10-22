@@ -18,6 +18,10 @@ type templateView = SmsAdminTemplate
 // vocabulary.
 type approvalView = SmsAdminApproval
 
+// carrierView is the type of the mounted carrier's declaration in the module's
+// own vocabulary.
+type carrierView = SmsAdminCarrier
+
 // templateViewOf builds the view of one record.
 func templateViewOf(r sms.Record) templateView {
 	approvals := make(map[string]approvalView, len(r.Approvals))
@@ -25,14 +29,18 @@ func templateViewOf(r sms.Record) templateView {
 		approvals[locale] = approvalView{State: string(approval.State), Reason: approval.Reason}
 	}
 	return templateView{
-		Name:      r.Name,
-		Source:    string(r.Source),
-		Params:    append([]string(nil), r.Params...),
-		Locales:   append([]string(nil), r.Locales...),
-		Approvals: approvals,
-		Enabled:   r.Enabled,
-		Version:   r.Version,
-		CreatedAt: r.CreatedAt.UTC(),
-		UpdatedAt: r.UpdatedAt.UTC(),
+		Name:       r.Name,
+		Carrier:    r.Carrier,
+		Kind:       string(r.Kind),
+		Source:     string(r.Source),
+		Params:     append([]string(nil), r.Params...),
+		Locales:    append([]string(nil), r.Locales...),
+		Bodies:     copyStrings(r.Bodies),
+		Attributes: copyStrings(r.Attributes),
+		Approvals:  approvals,
+		Enabled:    r.Enabled,
+		Version:    r.Version,
+		CreatedAt:  r.CreatedAt.UTC(),
+		UpdatedAt:  r.UpdatedAt.UTC(),
 	}
 }

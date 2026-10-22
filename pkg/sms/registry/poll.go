@@ -97,9 +97,10 @@ func (s *registryStore) pollOnce(ctx context.Context) {
 	}
 }
 
-// hasPendingLanguage reports whether any language a template holds a code for is
-// still awaiting the vendor's verdict. An untracked state is not pending: the
-// process does not read back a review it never took up.
+// hasPendingLanguage reports whether any language a template names is still
+// awaiting the vendor's verdict. An untracked state is not pending: the process
+// does not read back a review it never took up. NotRequired is not pending
+// either: the vendor has no such review, so there is nothing to read.
 func hasPendingLanguage(rec runtimeTemplate) bool {
 	for _, locale := range rec.locales {
 		if rec.approvals[locale].State == sms.ApprovalPending {
@@ -172,7 +173,8 @@ func (s *registryStore) recordVerdictsOnce(ctx context.Context, name string, ver
 	err = s.handle.WithContext(landed(ctx)).Transaction(func(tx *gorm.DB) error {
 		tx = tx.WithContext(ctx)
 		var rows []row
-		if readErr := tx.Raw("SELECT "+runtimeColumns+" FROM "+tableName+" WHERE name = ?", name).Scan(&rows).Error; readErr != nil {
+		if readErr := tx.Raw("SELECT "+runtimeColumns+" FROM "+tableName+
+			" WHERE carrier = ? AND name = ?", s.provider.Name(), name).Scan(&rows).Error; readErr != nil {
 			return readErr
 		}
 		if len(rows) == 0 {
@@ -185,7 +187,9 @@ func (s *registryStore) recordVerdictsOnce(ctx context.Context, name string, ver
 		}
 		merged := cloneApprovals(rec.approvals)
 		for locale, verdict := range verdicts {
-			if _, held := rec.codes[locale]; !held {
+			_, hasCode := rec.codes[locale]
+			_, hasBody := rec.bodies[locale]
+			if !hasCode && !hasBody {
 				// The language was not there when the verdict was read.
 				continue
 			}
@@ -200,8 +204,9 @@ func (s *registryStore) recordVerdictsOnce(ctx context.Context, name string, ver
 		}
 		now := time.Now().UTC()
 		sql := "UPDATE " + tableName + " SET approvals = ?, version = version + 1, updated_at = ? " +
-			"WHERE name = ? AND version = ? RETURNING version"
-		_, written, writeErr := insertVersion(tx, sql, encodeApprovals(merged), now, name, rec.version)
+			"WHERE carrier = ? AND name = ? AND version = ? RETURNING version"
+		_, written, writeErr := insertVersion(tx, sql, encodeApprovals(merged), now, s.provider.Name(), name,
+			rec.version)
 		if writeErr != nil {
 			return writeErr
 		}

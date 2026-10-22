@@ -60,9 +60,13 @@ func (b *logBuffer) lines(with ...string) []string {
 // fakeProvider is the template-management seam a case scripts. It answers the
 // approval state a case set for each vendor code, records every code it was
 // asked about and every submission it was handed, and fails the calls a case
-// told it to.
+// told it to. Its carrier model defaults to one that sends by code and reviews
+// every template, which is the shape the pre-carrier cases were written
+// against.
 type fakeProvider struct {
 	mu            sync.Mutex
+	name          string
+	model         sms.CarrierModel
 	offerCode     string
 	offerErr      error
 	offered       []sms.Submission
@@ -71,15 +75,65 @@ type fakeProvider struct {
 	approvalCalls []string
 }
 
+// codeCarrier is a carrier that sends by vendor code and reviews every template,
+// the shape aliyun and tencent declare.
+func codeCarrier() sms.CarrierModel {
+	return sms.CarrierModel{
+		Content: sms.ContentSupport{TemplateCode: true},
+		Review:  sms.ReviewSupport{PerTemplate: true},
+	}
+}
+
+// textCarrier is a carrier that sends a rendered body and has no per-template
+// review, the shape aws declares.
+func textCarrier() sms.CarrierModel {
+	return sms.CarrierModel{
+		Content:       sms.ContentSupport{TextBody: true},
+		Review:        sms.ReviewSupport{PerTemplate: false, Originator: true},
+		AttributeKeys: []string{"IN_TEMPLATE_ID"},
+		MaxBodyRunes:  1600,
+		AsyncReceipt:  true,
+	}
+}
+
+// contentCarrier is a carrier that sends by vendor code, has no per-template
+// review and creates a content resource on offer, the shape twilio declares.
+func contentCarrier() sms.CarrierModel {
+	return sms.CarrierModel{
+		Content:      sms.ContentSupport{TemplateCode: true},
+		Review:       sms.ReviewSupport{PerTemplate: false, Originator: true},
+		AsyncReceipt: true,
+	}
+}
+
 func newProvider() *fakeProvider {
 	return &fakeProvider{
+		name:        "fake",
+		model:       codeCarrier(),
 		offerCode:   "vendor-code",
 		approvals:   map[string]sms.Approval{},
 		approvalErr: map[string]error{},
 	}
 }
 
-func (p *fakeProvider) Name() string { return "fake" }
+// newNamedProvider is the same seam answering another carrier name, so a case
+// can mount two carriers over one database.
+func newNamedProvider(name string) *fakeProvider {
+	p := newProvider()
+	p.name = name
+	return p
+}
+
+// newModelProvider is the same seam declaring another carrier shape.
+func newModelProvider(model sms.CarrierModel) *fakeProvider {
+	p := newProvider()
+	p.model = model
+	return p
+}
+
+func (p *fakeProvider) Name() string { return p.name }
+
+func (p *fakeProvider) Model() sms.CarrierModel { return p.model }
 
 func (p *fakeProvider) Offer(_ context.Context, s sms.Submission) (string, error) {
 	p.mu.Lock()
@@ -197,7 +251,6 @@ type rig struct {
 	t        *testing.T
 	s        *registryStore
 	h        *gorm.DB
-	database db.Database
 	provider *fakeProvider
 	bus      *recordingBus
 	logs     *logBuffer
@@ -210,6 +263,13 @@ func newRig(t *testing.T, database db.Database, provider *fakeProvider, cfg modu
 	t.Helper()
 	h := database.DB().Session(&gorm.Session{Logger: logger.Discard})
 	applyMigrations(t, h, string(database.Dialect()))
+	return newRigOn(t, h, provider, cfg)
+}
+
+// newRigOn builds the module over a handle whose table is already there, which
+// is how a case mounts a second carrier on a database the first one built.
+func newRigOn(t *testing.T, h *gorm.DB, provider *fakeProvider, cfg moduleSettings) *rig {
+	t.Helper()
 	logs := &logBuffer{}
 	bus := newBus()
 	s := &registryStore{
@@ -218,8 +278,9 @@ func newRig(t *testing.T, database db.Database, provider *fakeProvider, cfg modu
 		bus:      bus,
 		logger:   logs.logger(),
 		config:   cfg,
+		tuned:    newSettingsReader(nil, logs.logger()),
 	}
-	return &rig{t: t, s: s, h: h, database: database, provider: provider, bus: bus, logs: logs}
+	return &rig{t: t, s: s, h: h, provider: provider, bus: bus, logs: logs}
 }
 
 // load replaces the snapshot, which is the state Init leaves.
@@ -230,25 +291,46 @@ func (r *rig) load() {
 	}
 }
 
-// rowCount counts the rows in the runtime table.
-func (r *rig) rowCount() int64 {
+// rowCount counts the rows the mounted carrier holds in the runtime table.
+func (r *rig) rowCount() int64 { return r.rowCountFor(r.provider.Name()) }
+
+// rowCountFor counts the rows one carrier holds in the runtime table.
+func (r *rig) rowCountFor(carrier string) int64 {
 	r.t.Helper()
 	var n int64
-	if err := r.h.Table(tableName).Count(&n).Error; err != nil {
+	if err := r.h.Table(tableName).Where("carrier = ?", carrier).Count(&n).Error; err != nil {
 		r.t.Fatalf("counting the runtime rows: %v", err)
 	}
 	return n
 }
 
-// plant writes a runtime row directly, the way another replica would. The
-// approvals are keyed by language, as the column holds them.
+// plant writes a runtime row of the mounted carrier directly, the way another
+// replica would. The approvals are keyed by language, as the column holds them.
 func (r *rig) plant(name string, params []string, codes map[string]string, approvals map[string]sms.Approval, enabled bool, at time.Time) {
 	r.t.Helper()
+	r.plantRow(r.provider.Name(), name, sms.KindNotification, params, codes, nil, nil, approvals, enabled, at)
+}
+
+// plantLegacy writes a row with no carrier, the shape a database written before
+// the carrier column holds.
+func (r *rig) plantLegacy(name string, params []string, codes map[string]string, approvals map[string]sms.Approval, enabled bool, at time.Time) {
+	r.t.Helper()
+	r.plantRow("", name, sms.KindNotification, params, codes, nil, nil, approvals, enabled, at)
+}
+
+// plantRow writes one complete row.
+func (r *rig) plantRow(carrier, name string, kind sms.Kind, params []string, codes, bodies,
+	attributes map[string]string, approvals map[string]sms.Approval, enabled bool, at time.Time,
+) {
+	r.t.Helper()
 	pj, _ := json.Marshal(params)
-	cj, _ := json.Marshal(codes)
-	err := r.h.Exec("INSERT INTO "+tableName+" (name, params, codes, approvals, enabled, "+
-		"version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
-		name, string(pj), string(cj), encodeApprovals(approvals), enabled, at, at).Error
+	cj, _ := json.Marshal(orEmpty(codes))
+	bj, _ := json.Marshal(orEmpty(bodies))
+	aj, _ := json.Marshal(orEmpty(attributes))
+	err := r.h.Exec("INSERT INTO "+tableName+" (carrier, name, kind, params, codes, bodies, attributes, "+
+		"approvals, enabled, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+		carrier, name, string(normalizedKind(kind)), string(pj), string(cj), string(bj), string(aj),
+		encodeApprovals(approvals), enabled, at, at).Error
 	if err != nil {
 		r.t.Fatalf("planting the row %q: %v", name, err)
 	}
@@ -260,7 +342,8 @@ func (r *rig) approvalsOf(name string) map[string]sms.Approval {
 	var rows []struct {
 		Approvals string
 	}
-	if err := r.h.Table(tableName).Select("approvals").Where("name = ?", name).Scan(&rows).Error; err != nil {
+	if err := r.h.Table(tableName).Select("approvals").
+		Where("carrier = ? AND name = ?", r.provider.Name(), name).Scan(&rows).Error; err != nil {
 		r.t.Fatalf("reading the row %q: %v", name, err)
 	}
 	if len(rows) == 0 {
@@ -271,6 +354,37 @@ func (r *rig) approvalsOf(name string) map[string]sms.Approval {
 		r.t.Fatalf("decoding the approvals of %q: %v", name, err)
 	}
 	return approvals
+}
+
+// carrierOf reads the carrier column of the row under a name, whatever carrier
+// it names.
+func (r *rig) carrierOf(name string) string {
+	r.t.Helper()
+	var rows []struct {
+		Carrier string
+	}
+	if err := r.h.Table(tableName).Select("carrier").Where("name = ?", name).Scan(&rows).Error; err != nil {
+		r.t.Fatalf("reading the carrier of %q: %v", name, err)
+	}
+	if len(rows) == 0 {
+		r.t.Fatalf("no row named %q", name)
+	}
+	return rows[0].Carrier
+}
+
+// ownerOf reads the ownership marker, and whether it is there at all.
+func (r *rig) ownerOf() (string, bool) {
+	r.t.Helper()
+	var rows []struct {
+		Carrier string
+	}
+	if err := r.h.Table(ownershipTable).Select("carrier").Scan(&rows).Error; err != nil {
+		r.t.Fatalf("reading the ownership marker: %v", err)
+	}
+	if len(rows) == 0 {
+		return "", false
+	}
+	return rows[0].Carrier, true
 }
 
 // approvalOf reads one row's review state for one language.
@@ -285,7 +399,8 @@ func (r *rig) versionOf(name string) int64 {
 	var rows []struct {
 		Version int64
 	}
-	if err := r.h.Table(tableName).Select("version").Where("name = ?", name).Scan(&rows).Error; err != nil {
+	if err := r.h.Table(tableName).Select("version").
+		Where("carrier = ? AND name = ?", r.provider.Name(), name).Scan(&rows).Error; err != nil {
 		r.t.Fatalf("reading the row %q: %v", name, err)
 	}
 	if len(rows) == 0 {

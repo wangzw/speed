@@ -106,9 +106,14 @@ job through the queue's own `(tenant_id, idempotency_key)` uniqueness.
 ## The ledger and at-least-once delivery
 
 `notification_sends` is this module's own table; no other module reads or writes
-it, and its columns are an operations view of what went out, not a contract face.
-One row is one channel's terminal state: `succeeded`, `failed` or `skipped`. The
-unique index `(tenant_id, idempotency_key)` is what makes the ledger idempotent.
+it, and its columns are an operations view of what each channel's send ended
+with, not a contract face. One row is one channel's terminal state: `succeeded`,
+`failed` or `skipped`. **A `succeeded` row means the carrier accepted the
+message — a receipt, not a delivery.** A carrier whose receipts are asynchronous
+answers a send with the vendor's message identifier alone; whether the recipient
+received it arrives through the vendor's own channel, which this module does not
+follow. For `in_app`, `succeeded` means the inbox row was written. The unique
+index `(tenant_id, idempotency_key)` is what makes the ledger idempotent.
 
 Before a channel is attempted its key is looked up. A channel already settled —
 `succeeded` or `skipped` — is not attempted again: a success is final, and a

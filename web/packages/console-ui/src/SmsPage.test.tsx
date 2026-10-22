@@ -51,9 +51,13 @@ const APPROVAL_LABEL = 'sms-approval-approved'
 function template(overrides: Partial<ConsoleSmsTemplate> = {}): ConsoleSmsTemplate {
   return {
     name: 'login-code',
+    carrier: 'review',
+    kind: 'notification',
     source: 'runtime',
     params: ['code'],
     locales: ['zh-CN'],
+    bodies: {},
+    attributes: {},
     approvals: { 'zh-CN': { state: 'approved' } },
     enabled: true,
     version: 1,

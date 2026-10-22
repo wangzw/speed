@@ -161,6 +161,15 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 	case errors.Is(err, sms.ErrRejected):
 		p.meters.sent(ctx, outcomeRejected)
 		p.warnNotSent(ctx, outcomeRejected, err)
+	case errors.Is(err, sms.ErrUnroutable):
+		// A message this carrier cannot carry to this destination is a definite
+		// failure, like a rejection and unlike an uncertain outcome: the message is
+		// not defective, but nothing the caller changes about it makes this
+		// deployment carry it. It is recorded under its own outcome so an operator
+		// reads a deployment limit rather than a refusal they can send themselves
+		// around.
+		p.meters.sent(ctx, outcomeUnroutable)
+		p.warnNotSent(ctx, outcomeUnroutable, err)
 	default:
 		// An error outside the closed set is a defect of the carrier. It is read
 		// as uncertain — never as a delivery and never as a retry — which is the

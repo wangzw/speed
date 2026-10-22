@@ -30,6 +30,7 @@ import (
 // cannot drift apart without failing the build.
 var (
 	_ sms.Registry       = (*stubRegistry)(nil)
+	_ sms.Provider       = (*stubProvider)(nil)
 	_ guard.Guard        = (*stubGuard)(nil)
 	_ audit.Audit        = (*recordingAudit)(nil)
 	_ speedhttp.Router   = (*stubRouter)(nil)
@@ -119,6 +120,44 @@ func (s *stubRegistry) Remove(_ context.Context, name string) error {
 	s.record(registryCall{op: "Remove", name: name})
 	return s.errNow()
 }
+
+// stubProvider is a stand-in sms.Provider. It answers the name and the carrier
+// model a case set, which is what the carrier route reads; the template
+// operations are never called from the management surface, so they answer
+// nothing and succeed.
+type stubProvider struct {
+	mu    sync.Mutex
+	name  string
+	model sms.CarrierModel
+	calls int
+}
+
+func (s *stubProvider) Name() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.name
+}
+
+func (s *stubProvider) Model() sms.CarrierModel {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	return s.model
+}
+
+func (s *stubProvider) modeled() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+func (*stubProvider) Offer(context.Context, sms.Submission) (string, error) { return "", nil }
+
+func (*stubProvider) Approval(context.Context, string) (sms.Approval, error) {
+	return sms.Approval{}, nil
+}
+
+func (*stubProvider) Retire(context.Context, string) error { return nil }
 
 // stubGuard is a stand-in guard.Guard. It records the permission every decision
 // asked about, and the domain it decided in, and answers from one setting:
@@ -359,6 +398,7 @@ type rig struct {
 	t        *testing.T
 	p        *product
 	registry *stubRegistry
+	provider *stubProvider
 	guard    *stubGuard
 	audit    *recordingAudit
 	router   *stubRouter
@@ -374,6 +414,7 @@ func newRig(t *testing.T) *rig {
 	r := &rig{
 		t:        t,
 		registry: &stubRegistry{},
+		provider: &stubProvider{name: "stub-carrier"},
 		guard:    &stubGuard{allow: true},
 		audit:    &recordingAudit{},
 		router:   newStubRouter("public"),
@@ -381,6 +422,7 @@ func newRig(t *testing.T) *rig {
 	}
 	r.p = &product{
 		registry: r.registry,
+		provider: r.provider,
 		guard:    r.guard,
 		audit:    r.audit,
 		logger:   logs.logger(),

@@ -73,17 +73,21 @@ func TestRegisterRefusesDuplicateName(t *testing.T) {
 	})
 }
 
-// TestRegisterValidatesSpec covers ErrInvalidConfig: a spec with no parameter or
-// a language with no code is refused, and nothing is written.
+// TestRegisterValidatesSpec covers ErrInvalidConfig: a spec with no language, an
+// empty code and a body naming an undeclared placeholder are each refused, and
+// nothing is written.
 func TestRegisterValidatesSpec(t *testing.T) {
 	r := newSQLiteRig(t)
-	if _, err := r.s.Register(context.Background(), "bad",
-		sms.TemplateSpec{Codes: map[string]string{"en": "c"}}); !errors.Is(err, sms.ErrInvalidConfig) {
-		t.Errorf("a spec with no parameter returned %v, want ErrInvalidConfig", err)
+	if _, err := r.s.Register(context.Background(), "bad", sms.TemplateSpec{}); !errors.Is(err, sms.ErrInvalidConfig) {
+		t.Errorf("a spec with no language returned %v, want ErrInvalidConfig", err)
 	}
 	if _, err := r.s.Register(context.Background(), "bad",
 		sms.TemplateSpec{Params: []string{"a"}, Codes: map[string]string{"en": ""}}); !errors.Is(err, sms.ErrInvalidConfig) {
 		t.Errorf("a spec with an empty code returned %v, want ErrInvalidConfig", err)
+	}
+	if _, err := r.s.Register(context.Background(), "bad",
+		sms.TemplateSpec{Params: []string{"a"}, Bodies: map[string]string{"en": "hi ${b}"}}); !errors.Is(err, sms.ErrInvalidConfig) {
+		t.Errorf("a body naming an undeclared placeholder returned %v, want ErrInvalidConfig", err)
 	}
 	if r.rowCount() != 0 {
 		t.Errorf("a refused registration wrote %d rows", r.rowCount())
@@ -241,6 +245,7 @@ func TestOfferRefusesImmutableAndDuplicate(t *testing.T) {
 		t.Fatalf("registering: %v", err)
 	}
 	sub.Name = "otp"
+	sub.Content = "code ${code}"
 	sub.Params = []string{"code"}
 	if _, err := r.s.Offer(context.Background(), sub); !errors.Is(err, sms.ErrTemplateExists) {
 		t.Errorf("offering a duplicate name returned %v, want ErrTemplateExists", err)

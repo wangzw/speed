@@ -19,13 +19,17 @@ func TestTheListAnswersOnePageWithItsSourceAndApproval(t *testing.T) {
 	r := newRig(t)
 	r.registry.records = []sms.Record{
 		{
-			Name: "order-shipped", Source: sms.SourceRuntime, Params: []string{"code"},
+			Name: "order-shipped", Carrier: "stub-carrier", Kind: sms.KindMarketing,
+			Source: sms.SourceRuntime, Params: []string{"code"},
 			Locales: []string{"en-US"}, Enabled: true, Version: 3,
-			Approvals: map[string]sms.Approval{"en-US": {State: sms.ApprovalApproved}},
-			CreatedAt: time.Unix(100, 0), UpdatedAt: time.Unix(200, 0),
+			Bodies:     map[string]string{"en-US": "your order ${code} shipped"},
+			Attributes: map[string]string{"IN_TEMPLATE_ID": "tpl-1"},
+			Approvals:  map[string]sms.Approval{"en-US": {State: sms.ApprovalApproved}},
+			CreatedAt:  time.Unix(100, 0), UpdatedAt: time.Unix(200, 0),
 		},
 		{
-			Name: "login-code", Source: sms.SourceConfig, Params: []string{"code"},
+			Name: "login-code", Carrier: "stub-carrier", Kind: sms.KindNotification,
+			Source: sms.SourceConfig, Params: []string{"code"},
 			Locales: []string{"zh-CN"}, Enabled: true,
 		},
 	}
@@ -53,6 +57,18 @@ func TestTheListAnswersOnePageWithItsSourceAndApproval(t *testing.T) {
 	if got.Templates[1].Approvals["en-US"].State != string(sms.ApprovalApproved) {
 		t.Errorf("the English review = %q, want approved", got.Templates[1].Approvals["en-US"].State)
 	}
+	if got.Templates[1].Carrier != "stub-carrier" {
+		t.Errorf("carrier = %q, want stub-carrier", got.Templates[1].Carrier)
+	}
+	if got.Templates[0].Kind != string(sms.KindNotification) || got.Templates[1].Kind != string(sms.KindMarketing) {
+		t.Errorf("kinds = %q, %q; want notification, marketing", got.Templates[0].Kind, got.Templates[1].Kind)
+	}
+	if got.Templates[1].Bodies["en-US"] != "your order ${code} shipped" {
+		t.Errorf("bodies = %+v, want the record's body", got.Templates[1].Bodies)
+	}
+	if got.Templates[1].Attributes["IN_TEMPLATE_ID"] != "tpl-1" {
+		t.Errorf("attributes = %+v, want the record's registration identifier", got.Templates[1].Attributes)
+	}
 }
 
 func TestTheRegisterRouteAnswersCreatedAndPassesTheSpecOn(t *testing.T) {
@@ -60,7 +76,10 @@ func TestTheRegisterRouteAnswersCreatedAndPassesTheSpecOn(t *testing.T) {
 	r.registry.register = sms.Record{Name: "login-code", Source: sms.SourceRuntime, Version: 1}
 
 	w := r.do(http.MethodPost, pathTemplates, registerBody{
-		Name: "login-code", Params: []string{"code"}, Codes: map[string]string{"zh-CN": "SMS_1"},
+		Name: "login-code", Kind: "verification", Params: []string{"code"},
+		Codes:      map[string]string{"zh-CN": "SMS_1"},
+		Bodies:     map[string]string{"zh-CN": "your code is ${code}"},
+		Attributes: map[string]string{"IN_TEMPLATE_ID": "tpl-1"},
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (body %s)", w.Code, w.Body.String())
@@ -69,8 +88,38 @@ func TestTheRegisterRouteAnswersCreatedAndPassesTheSpecOn(t *testing.T) {
 	if len(calls) != 1 || calls[0].op != "Register" || calls[0].name != "login-code" {
 		t.Fatalf("registry calls = %+v, want one Register of login-code", calls)
 	}
-	if len(calls[0].spec.Params) != 1 || calls[0].spec.Params[0] != "code" || calls[0].spec.Codes["zh-CN"] != "SMS_1" {
-		t.Errorf("spec = %+v, want the params and codes the body named", calls[0].spec)
+	spec := calls[0].spec
+	if spec.Kind != sms.KindVerification || len(spec.Params) != 1 || spec.Params[0] != "code" ||
+		spec.Codes["zh-CN"] != "SMS_1" || spec.Bodies["zh-CN"] != "your code is ${code}" ||
+		spec.Attributes["IN_TEMPLATE_ID"] != "tpl-1" {
+		t.Errorf("spec = %+v, want every field the body named", spec)
+	}
+}
+
+// A registration names no vendor code and no parameter either: a carrier that
+// sends by rendered body takes a template with only a body, and the handler
+// passes the empty tables on rather than refusing them on shape. Whether the
+// shape fits is the registry's check against the mounted carrier.
+func TestARegistrationNeedsNoCodeOrParameter(t *testing.T) {
+	r := newRig(t)
+	r.registry.register = sms.Record{Name: "welcome", Source: sms.SourceRuntime, Version: 1}
+
+	w := r.do(http.MethodPost, pathTemplates, registerBody{
+		Name: "welcome", Bodies: map[string]string{"en-US": "hello"},
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body %s)", w.Code, w.Body.String())
+	}
+	calls := r.registry.recorded()
+	if len(calls) != 1 || calls[0].op != "Register" {
+		t.Fatalf("registry calls = %+v, want one Register", calls)
+	}
+	spec := calls[0].spec
+	if len(spec.Codes) != 0 || len(spec.Params) != 0 || spec.Bodies["en-US"] != "hello" {
+		t.Errorf("spec = %+v, want the body and no code or parameter", spec)
+	}
+	if spec.Kind != "" {
+		t.Errorf("spec.Kind = %q, want empty so the registry applies its notification default", spec.Kind)
 	}
 }
 
@@ -80,7 +129,8 @@ func TestTheSubmissionRouteAnswersCreatedAndPassesTheSubmissionOn(t *testing.T) 
 
 	w := r.do(http.MethodPost, pathSubmissions, offerBody{
 		Name: "login-code", Content: "your code is ${code}", Kind: "verification",
-		Locale: "zh-CN", Params: []string{"code"}, Remark: "login",
+		Locale: "zh-CN", Params: []string{"code"}, Attributes: map[string]string{"IN_TEMPLATE_ID": "tpl-1"},
+		Remark: "login",
 	})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201 (body %s)", w.Code, w.Body.String())
@@ -91,7 +141,8 @@ func TestTheSubmissionRouteAnswersCreatedAndPassesTheSubmissionOn(t *testing.T) 
 	}
 	got := calls[0].offer
 	if got.Name != "login-code" || got.Content != "your code is ${code}" || got.Kind != sms.KindVerification ||
-		got.Locale != "zh-CN" || len(got.Params) != 1 || got.Params[0] != "code" || got.Remark != "login" {
+		got.Locale != "zh-CN" || len(got.Params) != 1 || got.Params[0] != "code" ||
+		got.Attributes["IN_TEMPLATE_ID"] != "tpl-1" || got.Remark != "login" {
 		t.Errorf("submission = %+v, want the fields the body named", got)
 	}
 }
@@ -131,6 +182,7 @@ func TestTheDecisionIsAskedPerMethodInThePlatformDomain(t *testing.T) {
 		want   authz.Permission
 	}{
 		"list":       {http.MethodGet, pathTemplates, nil, PermissionTemplateRead},
+		"carrier":    {http.MethodGet, pathCarrier, nil, PermissionTemplateRead},
 		"register":   {http.MethodPost, pathTemplates, registerBody{Name: "t", Params: []string{"p"}, Codes: map[string]string{"l": "c"}}, PermissionTemplateManage},
 		"submission": {http.MethodPost, pathSubmissions, offerBody{Name: "t"}, PermissionTemplateManage},
 		"enable":     {http.MethodPost, "/api/v1/system/sms/templates/t/enabled", enabledBody{Enabled: ptr(false)}, PermissionTemplateManage},
@@ -162,6 +214,7 @@ func TestARequestWithNoIdentityIsA401(t *testing.T) {
 		body   any
 	}{
 		"list":       {http.MethodGet, pathTemplates, nil},
+		"carrier":    {http.MethodGet, pathCarrier, nil},
 		"register":   {http.MethodPost, pathTemplates, registerBody{Name: "t"}},
 		"submission": {http.MethodPost, pathSubmissions, offerBody{Name: "t"}},
 		"enable":     {http.MethodPost, "/api/v1/system/sms/templates/t/enabled", enabledBody{Enabled: ptr(true)}},
@@ -487,7 +540,9 @@ func TestAnIllegalLimitIsABadRequest(t *testing.T) {
 func TestTheViewCarriesNoVendorCode(t *testing.T) {
 	r := newRig(t)
 	r.registry.records = []sms.Record{{
-		Name: "login-code", Source: sms.SourceRuntime, Params: []string{"code"}, Locales: []string{"zh-CN"},
+		Name: "login-code", Carrier: "stub-carrier", Kind: sms.KindVerification,
+		Source: sms.SourceRuntime, Params: []string{"code"}, Locales: []string{"zh-CN"},
+		Bodies: map[string]string{"zh-CN": "code ${code}"}, Attributes: map[string]string{"IN_TEMPLATE_ID": "tpl-1"},
 		Enabled: true, Version: 2, Approvals: map[string]sms.Approval{"zh-CN": {State: sms.ApprovalApproved}},
 		CreatedAt: time.Unix(100, 0), UpdatedAt: time.Unix(200, 0),
 	}}
@@ -505,7 +560,10 @@ func TestTheViewCarriesNoVendorCode(t *testing.T) {
 			t.Errorf("the view carries %q, which leaks the vendor's numbering", banned)
 		}
 	}
-	for _, want := range []string{"name", "source", "params", "locales", "approvals", "enabled", "version", "created_at", "updated_at"} {
+	for _, want := range []string{
+		"name", "carrier", "kind", "source", "params", "locales", "bodies", "attributes",
+		"approvals", "enabled", "version", "created_at", "updated_at",
+	} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("the view is missing %q", want)
 		}

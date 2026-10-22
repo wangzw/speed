@@ -149,6 +149,28 @@ func newSender(cfg resolved, opts options) (*sender, error) {
 // Name reports the carrier this sender is, as the command tree named it.
 func (s *sender) Name() string { return backendName }
 
+// Model reports what this carrier can carry.
+//
+// Tencent sends by the vendor's approved template number and reviews every
+// template, so a template is sendable only once the review has come back
+// approved. The deployment's one sending identity is the configured signature:
+// this process sends under exactly one, so the identity's name and value are
+// that signature, and a message cannot pick another — the vendor has no way to
+// choose one (Review.Originator is false, so Message.Originator has no effect).
+// It declares no attribute keys, no body bound of its own and no asynchronous
+// receipt: the synchronous answer is the whole outcome this carrier reports.
+func (s *sender) Model() sms.CarrierModel {
+	return sms.CarrierModel{
+		Content: sms.ContentSupport{TemplateCode: true},
+		Review:  sms.ReviewSupport{PerTemplate: true},
+		Identities: []sms.Identity{{
+			Name:  s.signName,
+			Kind:  sms.IdentitySignName,
+			Value: s.signName,
+		}},
+	}
+}
+
 // Send hands one resolved message to the carrier.
 //
 // A message whose identifier was seen before is not sent again: the caller is

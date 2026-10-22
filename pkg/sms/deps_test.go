@@ -29,7 +29,7 @@ const smsRootPath = moduleImportPath + "/sms"
 // authentication tree.
 const authnPrefix = moduleImportPath + "/authn"
 
-// The two carrier SDKs, each confined to its own leaf package and pinned to the
+// The carrier SDKs, each confined to its own leaf package and pinned to the
 // table version. They are the libraries a host carries only when it deploys on
 // that carrier, so each must appear in its leaf's own files and nowhere else.
 const (
@@ -40,6 +40,14 @@ const (
 	tencentSDKPath     = "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sms"
 	tencentSDKVersion  = "v1.3.172"
 	tencentCarrierLeaf = smsRootPath + "/tencent"
+
+	awsSDKPath     = "github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoicev2"
+	awsSDKVersion  = "v1.42.1"
+	awsCarrierLeaf = smsRootPath + "/aws"
+
+	twilioSDKPath     = "github.com/twilio/twilio-go"
+	twilioSDKVersion  = "v1.32.0"
+	twilioCarrierLeaf = smsRootPath + "/twilio"
 )
 
 // TestRootClosureHoldsNoAuthnAndNoVendorSDK is the executable form of the
@@ -100,6 +108,8 @@ type carrierSDK struct {
 var carrierSDKs = []carrierSDK{
 	{path: aliyunSDKPath, leaf: aliyunCarrierLeaf},
 	{path: tencentSDKPath, leaf: tencentCarrierLeaf},
+	{path: awsSDKPath, leaf: awsCarrierLeaf},
+	{path: twilioSDKPath, leaf: twilioCarrierLeaf},
 }
 
 // TestEachCarrierSDKIsConfinedToItsLeaf is the executable form of the design's
@@ -142,6 +152,8 @@ type carrierPin struct {
 var carrierPins = []carrierPin{
 	{path: aliyunSDKPath, version: aliyunSDKVersion},
 	{path: tencentSDKPath, version: tencentSDKVersion},
+	{path: awsSDKPath, version: awsSDKVersion},
+	{path: twilioSDKPath, version: twilioSDKVersion},
 }
 
 // TestEachCarrierSDKIsPinnedToTheTableVersion holds that pkg/go.mod states the

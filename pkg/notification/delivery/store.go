@@ -12,10 +12,12 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// The closed set of ledger statuses. A row is exactly one of these: a channel
-// that sent, a channel that was available and whose send failed terminally, and
-// a channel whose seam is not in this assembly. The set matches the CHECK the
-// migration declares.
+// The closed set of ledger statuses. A row is exactly one of these: a channel a
+// carrier accepted, a channel that was available and whose send failed
+// terminally, and a channel whose seam is not in this assembly. A carrier's
+// receipt is acceptance, not delivery — a vendor with asynchronous receipts
+// answers only with a message identifier, and the final state is not on this
+// ledger. The set matches the CHECK the migration declares.
 const (
 	statusSucceeded = "succeeded"
 	statusFailed    = "failed"

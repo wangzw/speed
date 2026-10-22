@@ -22,6 +22,11 @@
 // what makes a repeated consumption skip the channels already settled and make
 // up only the ones that are not.
 //
+// A settled external channel means the carrier accepted the message and returned
+// a receipt; it does not mean the recipient received it. A carrier whose receipts
+// are asynchronous answers only with a message identifier, and the final delivery
+// state is the carrier's to report, not this module's to record.
+//
 // The module declares no configuration namespace and reads no input item: the
 // parameters of a delivery job are fixed by this module at enqueue time, not
 // taken from configuration.

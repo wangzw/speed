@@ -171,9 +171,9 @@ func TestPrepareRefusesAnInconsistentConfiguration(t *testing.T) {
 	reg := core.New()
 	reg.Register(config.Module())
 	reg.Supply(configWith{templates: map[string]sms.TemplateSpec{
-		// No parameter: a template that substitutes nothing is not one this
+		// No language: a template no message could be sent under is not one this
 		// capability can resolve.
-		"bad": {Codes: map[string]string{"en": "c"}},
+		"bad": {Params: []string{"code"}, Codes: map[string]string{}},
 	}}, config.ModuleName)
 	reg.Register(providingDB(openHandle(t)))
 	reg.Register(providingProvider(newProvider()))

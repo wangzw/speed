@@ -368,7 +368,7 @@ sequenceDiagram
 
 **投递账是租户作用域，不设平台行。** 一次投递的收件人要么是一个账户（`recipient_class = user`），要么是后置的外部联系人（`external`，本轮无生产者）；两种收件人都属于一个租户，因此每一行总有一个租户。平台级广播与平台级黑名单需要一个不属于任何租户的收件人，本能力在设计上排除了它们（见非职责）。
 
-**`notification_sends.status` 是闭集** `succeeded`、`failed`、`skipped`：成功投递、尝试后失败、因渠道接缝缺席而跳过。`duration_ms` 是一次渠道调用的耗时，`provider_receipt_id` 是外部载体返回的回执标识（站内信为空），`error` 是失败原因文本，都不进上行的用户可见文本。
+**`notification_sends.status` 是闭集** `succeeded`、`failed`、`skipped`：载体已受理、尝试后失败、因渠道接缝缺席而跳过。`succeeded` 表示外部载体受理了这条消息并回了回执标识，**不表示收件人已收到**：带异步回执的载体在同步应答里只给消息标识，最终投递状态由厂商另行报告，本模块不跟踪它；站内信的 `succeeded` 则表示那行已写进收件箱。`duration_ms` 是一次渠道调用的耗时，`provider_receipt_id` 是外部载体返回的回执标识（站内信为空），`error` 是失败原因文本，都不进上行的用户可见文本。
 
 **去重键的派生式（逐渠道各一个）：**
 

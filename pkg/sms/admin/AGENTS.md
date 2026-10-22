@@ -1,9 +1,11 @@
 # pkg/sms/admin
 
-The SMS capability's management module. It mounts the template-management routes
-under `/api/v1/system/sms/*` and delivers no capability of its own: every route's action
-is a call on the template registry, reached through the `sms.Registry`
-capability, and the module holds no template, no rule and no data of its own.
+The SMS capability's management module. It mounts the template-management and
+carrier-declaration routes under `/api/v1/system/sms/*` and delivers no
+capability of its own: every template route's action is a call on the registry,
+reached through the `sms.Registry` capability, and the carrier route reads
+`sms.Provider.Model()`; the module holds no template, no rule and no data of its
+own.
 
 The descriptor declares the static feature `sms.admin`, present whenever the
 module is in force.
@@ -20,15 +22,16 @@ through the registry's own Go interface, and the host's own commands carry their
 access control.
 
 The API is the package's godoc, plus the `Registry`, `Record`, `TemplateSpec`,
-`Submission`, `ApprovalState` and sentinel types in `pkg/sms`.
+`Submission`, `ApprovalState`, `CarrierModel` and sentinel types in `pkg/sms`.
 
 ## Routes and the permissions they are held to
 
 Every route is mounted under the base path `/api/v1/system/sms`, on the endpoints the
-module's configuration lists. A route is addressed by a natural key — a template
-name — so no opaque row identifier ever appears in a path. The whole surface is
-one group, `templates`, and it is always mounted, because the registry it reads
-and writes is required. This set is the module's whole route surface.
+module's configuration lists. A template route is addressed by a natural key — a
+template name — so no opaque row identifier ever appears in a path. The template
+surface is one group, `templates`; the carrier declaration is a second group of
+one route. Both are always mounted, because the registry and the carrier are
+required. This set is the module's whole route surface.
 
 | Group | Method and path | Permission |
 |---|---|---|
@@ -37,11 +40,15 @@ and writes is required. This set is the module's whole route surface.
 | Templates | `POST /api/v1/system/sms/templates/submissions` | `sms.template.manage` |
 | Templates | `POST /api/v1/system/sms/templates/:name/enabled` | `sms.template.manage` |
 | Templates | `DELETE /api/v1/system/sms/templates/:name` | `sms.template.manage` |
+| Carrier | `GET /api/v1/system/sms/carrier` | `sms.template.read` |
 
 A read route is held to `sms.template.read` and a write route to
-`sms.template.manage`. A read answers 200; a write that creates a record
-(register, submit) answers 201 with the record's view, and a write that lands
-without one (enable, remove) answers 204 and no body.
+`sms.template.manage`. The carrier route is a read of the mounted carrier's
+`CarrierModel`: content support, review support, identities with their kinds,
+values, countries and attributes, reachable countries, allowed attribute keys,
+the body bound and whether receipts are asynchronous. A read answers 200; a write
+that creates a record (register, submit) answers 201 with the record's view, and
+a write that lands without one (enable, remove) answers 204 and no body.
 
 The two permissions are this module's own: the sending capability names no
 permission, so this module declares the vocabulary it decides its routes on. It
@@ -79,14 +86,15 @@ express a permission and every route would refuse its caller.
   write route, and a read writes no audit row of its own.
 - **The refusal mapping is closed and fail-closed.** A template that came from
   the configuration is a 409; a template the registry does not hold is a 404; a
-  name the registry already holds is a 409; a configuration or a message the
-  registry refuses is a 400; any other failure is a 503. A 404 and a 503 carry no
-  problem type — they say something is not there or a dependency could not answer
-  and not which refusal it was — while a 400 and a 409 carry the capability's type
-  prefix `urn:speed:sms:`. The cause of a 409 and a 503 stays in the log and never
-  reaches the caller. `sms.ErrNotSendable` is not mapped: it is the sending path's
-  sentinel, and a registry that answers it here is answering the wrong question,
-  so it falls to the same 503 an unknown failure gets.
+  name the registry already holds is a 409; a configuration, a carrier shape or a
+  message the registry refuses is a 400; any other failure is a 503. A 404 and a
+  503 carry no problem type — they say something is not there or a dependency
+  could not answer and not which refusal it was — while a 400 and a 409 carry the
+  capability's type prefix `urn:speed:sms:`. The cause of a 409 and a 503 stays
+  in the log and never reaches the caller. `sms.ErrNotSendable` and
+  `sms.ErrUnroutable` are not mapped: they are the sending path's sentinels, and
+  a registry that answers one here is answering the wrong question, so they fall
+  to the same 503 an unknown failure gets.
 - **The configuration-sourced refusal names its source.** A write the registry
   refuses with `sms.ErrImmutable` — a template that came from the configuration —
   is answered with the problem type `urn:speed:sms:config-template`, distinct from
@@ -109,21 +117,27 @@ express a permission and every route would refuse its caller.
   product another module resolves; it is taken in only to mount the routes. It
   states `StateEnabled` and never `StateAuto`: whether the management routes exist
   is a decision of the command tree, not a conclusion a configuration infers.
-- **It requires the template registry, the handler-internal guard and the audit
-  capability.** A command that brings this one in without the registry to act on,
-  the guard to decide with, or the audit to record through fails the startup
-  before any route is mounted, rather than answering every route with a refusal or
-  a write that cannot land. The HTTP entry point is taken up in `Init` and is
-  required — a command that mounts the management routes and has no entry point
-  has nothing to mount on, which is `authz.ErrNoRouter`. The logger is the one
-  optional requirement, and the route-declaration surface is taken up optionally
-  in `Init`.
+- **It requires the template registry, the carrier provider, the
+  handler-internal guard and the audit capability.** A command that brings this
+  one in without the registry to act on, the carrier provider to read the
+  capability declaration from, the guard to decide with, or the audit to record
+  through fails the startup before any route is mounted, rather than answering
+  every route with a refusal or a write that cannot land. The HTTP entry point is
+  taken up in `Init` and is required — a command that mounts the management
+  routes and has no entry point has nothing to mount on, which is
+  `authz.ErrNoRouter`. The logger is the one optional requirement, and the
+  route-declaration surface is taken up optionally in `Init`.
 - **The answer is a view, built field by field.** Every route answers with a view
-  assembled from a `sms.Record` and never the record as it stands, so a field
-  added to a record later does not reach a client by being there. The view carries
-  no vendor code: a code is the registry's own bookkeeping, and an operator
+  assembled from a `sms.Record` or a `sms.CarrierModel` and never the value as it
+  stands, so a field added later does not reach a client by being there. The
+  template view carries `name`, `carrier`, `kind`, `source`, `params`, the
+  effective locale set (`codes` ∪ `bodies`), `bodies`, `attributes`, the
+  per-language `approvals`, `enabled`, `version` and the timestamps; it carries
+  no vendor code — a code is the registry's own bookkeeping, and an operator
   reading which templates are in force needs to know that one is, not what number
-  the vendor filed it under.
+  the vendor filed it under. The carrier view carries `name`, `content`,
+  `review`, `identities`, `countries`, `attribute_keys`, `max_body_runes` and
+  `async_receipt`.
 - **A credential and a vendor code reach no log line, no error text and no
   metric.** The audit detail names a template by its logical name and, for an
   enable, the state it set; it never names the carrier code behind a template.

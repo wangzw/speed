@@ -161,6 +161,25 @@ func TestPollVendorFailureLeavesOneLanguageAlone(t *testing.T) {
 	}
 }
 
+// TestPollNeverAsksAboutALanguageWithNoReview covers a carrier whose vendor has
+// no per-template review: its languages are recorded NotRequired, which is not
+// pending, so the pass never reads a review that does not exist.
+func TestPollNeverAsksAboutALanguageWithNoReview(t *testing.T) {
+	r := newRig(t, openDialect(t, sqliteDialect), newModelProvider(textCarrier()), settingsOf(t, nil, 0))
+	r.plantRow("fake", "no-review", sms.KindNotification, nil, nil, map[string]string{"en": "hello"}, nil,
+		map[string]sms.Approval{"en": {State: sms.ApprovalNotRequired}}, true, base)
+	r.load()
+
+	r.s.pollOnce(context.Background())
+
+	if calls := r.provider.calls(); len(calls) != 0 {
+		t.Errorf("the poller asked the vendor about %v, want none for a language with no review", calls)
+	}
+	if r.versionOf("no-review") != 1 {
+		t.Errorf("the poller changed the row to version %d, want 1", r.versionOf("no-review"))
+	}
+}
+
 // TestPollRunsOnStartAndStops covers the ticker: StartPoll runs a first pass at
 // once, and StopPoll waits for the goroutine to return.
 func TestPollRunsOnStartAndStops(t *testing.T) {

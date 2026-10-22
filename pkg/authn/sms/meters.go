@@ -26,6 +26,7 @@ const (
 	outcomeUncertain         = "uncertain"
 	outcomeThrottled         = "throttled"
 	outcomeRejected          = "rejected"
+	outcomeUnroutable        = "unroutable"
 	outcomeNotSendable       = "not-sendable"
 	outcomeUnsupportedRegion = "unsupported-region"
 	outcomeBudgetExhausted   = "budget-exhausted"

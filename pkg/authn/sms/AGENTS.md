@@ -58,12 +58,15 @@ compatibility break for a dashboard written against it.
 - **The failure direction is closed.** A database that cannot be read is
   `ErrUnavailable` in `Send` and `Verify`; a carrier that cannot send, and a
   registry that will not resolve a message, are a `Warn`, a metric and a dropped
-  message the user resends. An error from the carrier that is none of the three
+  message the user resends. An error from the carrier that is none of the four
   sentinels is read as uncertain, never as a delivery (`deliverOne`, `send.go`).
+  `sms.ErrUnroutable` is a definite failure recorded under its own `unroutable`
+  outcome: the message is not defective, but this deployment cannot carry it to
+  that destination, so it is never read as an unknown outcome and never retried.
 - **The worker pool is bounded and its outcomes are a closed set.** `Send`
   resolves the message against the registry, writes the row and returns without
   waiting for the carrier; the pool sends the resolved message off the request
-  path and records one of the nine outcomes. `Stop` drains the queue
+  path and records one of the ten outcomes. `Stop` drains the queue
   within its own bound (`pool`, `TestTheWorkersDrainQueuedMessagesOffTheRequestPath`,
   `TestStopDrainsTheQueueWithinItsBound`, `TestEveryOutcomeIsRecorded`). The one
   `dropped` path that is reached after the row is written — the queue filling
@@ -95,10 +98,15 @@ compatibility break for a dashboard written against it.
   registry is resolved in `newProduct` that every template is present, carries
   exactly the `code` and `ttl_minutes` parameters, has at least one language, and
   covers the configured default language. The parameter names are compared for
-  equality, not containment. A mismatch — a missing template, a stray parameter,
-  or a template without the default language — stops the startup with
-  `ErrInvalidConfig` naming it, ahead of any code. `Prepare` runs before `New` and
-  has no instance, so the check lives in `New` (`templates.go`, `newProduct`).
+  equality, not containment. A template's language set is its effective one —
+  the languages it has a vendor code for and the languages it has a body for,
+  together — so the same three templates serve a carrier that sends by code and
+  one that sends by rendered body. The body text is a configuration value, not
+  something this module writes: it carries no carrier-specific copy. A mismatch —
+  a missing template, a stray parameter, or a template without the default
+  language — stops the startup with `ErrInvalidConfig` naming it, ahead of any
+  code. `Prepare` runs before `New` and has no instance, so the check lives in
+  `New` (`templates.go`, `newProduct`).
 - **The set of languages is derived, and a requested language is resolved, never
   refused.** The languages a message may be sent in are the ones the template its
   purpose maps to declares, taken from the registry's declaration, not a set

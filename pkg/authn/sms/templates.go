@@ -11,10 +11,11 @@ import (
 
 // The template names this module sends its codes under, one per purpose. They
 // are the configuration contract a host writes into its carrier's templates:
-// the carrier maps each name, with a language, to a template number it holds, so
-// the name is what this module needs covered and the number is the carrier's
-// own. A carrier that does not declare one of them stops the startup, before any
-// code is sent.
+// the carrier maps each name, with a language, to a template number it holds or
+// to a body this module's message is rendered into, so the name is what this
+// module needs covered and the number or the body is the carrier's own. A
+// carrier that does not declare one of them stops the startup, before any code
+// is sent.
 const (
 	templateLogin  = "authn.code.login"
 	templateMFA    = "authn.code.mfa"
@@ -26,8 +27,9 @@ const (
 var templateParams = []string{"code", "ttl_minutes"}
 
 // requiredTemplates are the template names this module sends its codes under,
-// one per purpose. A carrier that declares no code for one of them cannot carry
-// this module's messages and stops the startup.
+// one per purpose. A carrier that does not declare one of them — neither a
+// vendor code nor a body for any language — cannot carry this module's messages
+// and stops the startup.
 var requiredTemplates = []string{templateLogin, templateMFA, templateEnroll}
 
 // purposeTemplate maps a purpose to the template name its message carries. The
@@ -51,9 +53,12 @@ func purposeTemplate(purpose string) string {
 // language of the template its purpose maps to, not of the registry's whole set:
 // a registry whose templates declare different languages is valid, and the
 // languages a message may be sent in are the ones of the template it carries.
-// checkSender runs first and refuses a registry that leaves any required template
-// with no languages or without the configured default, so every entry read here
-// is a set a message can actually go out in.
+// The set is the template's effective one — a language it has a vendor code for
+// or a body for, together — so a carrier that sends only rendered bodies is
+// covered the same way as one that sends only by code. checkSender runs first
+// and refuses a registry that leaves any required template with no languages or
+// without the configured default, so every entry read here is a set a message
+// can actually go out in.
 func templateLocales(declared []sms.Template) map[string][]string {
 	held := make(map[string]sms.Template, len(declared))
 	for _, t := range declared {
@@ -107,9 +112,13 @@ func primarySubtag(tag string) string {
 //
 // The languages are not a set this module holds: they are the registry's, taken
 // from what it declares. What the module does require is that every template
-// carry the configured default language, because every fallback — an empty
-// request, and a request no declared language matches — resolves to it, and a
-// template without it could not send a message the module falls back to.
+// carry the configured default language in its effective set — the languages it
+// has a vendor code for and the languages it has a body for, together — because
+// every fallback — an empty request, and a request no declared language matches
+// — resolves to it, and a template without it could not send a message the
+// module falls back to. A carrier that sends by rendered body declares the
+// languages in the body table; the text itself is the host's configuration, so
+// this module carries no carrier-specific body of its own.
 //
 // The check runs where the need is known: the registry reports what it holds
 // through Registry.Declared and knows nothing of which consumer needs what, so
@@ -127,12 +136,12 @@ func checkSender(declared []sms.Template, defaultLocale string) error {
 			return fmt.Errorf("%w: the carrier declares no template %q", authn.ErrInvalidConfig, name)
 		}
 		if len(t.Locales) == 0 {
-			return fmt.Errorf("%w: the carrier's template %q has no code for any language",
+			return fmt.Errorf("%w: the carrier's template %q has neither a code nor a body for any language",
 				authn.ErrInvalidConfig, name)
 		}
 		if !slices.Contains(t.Locales, defaultLocale) {
-			return fmt.Errorf("%w: the carrier's template %q has no code for the default language %q",
-				authn.ErrInvalidConfig, name, defaultLocale)
+			return fmt.Errorf("%w: the carrier's template %q has neither a code nor a body for the default "+
+				"language %q", authn.ErrInvalidConfig, name, defaultLocale)
 		}
 		for _, param := range templateParams {
 			if !slices.Contains(t.Params, param) {

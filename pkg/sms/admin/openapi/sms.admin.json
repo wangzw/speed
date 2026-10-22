@@ -39,7 +39,7 @@
             "type": "string"
           },
           "state": {
-            "description": "The verdict in this capability's own vocabulary: pending, approved, rejected or withdrawn; an empty string means a review this process does not track. The vendor's raw status numbers are never exposed.",
+            "description": "The verdict in this capability's own vocabulary: pending, approved, rejected, withdrawn or not-required; an empty string means a review this process does not track. Not-required means the mounted carrier has no per-template review, which is not the same as a review this process does not follow. The vendor's raw status numbers are never exposed.",
             "type": "string"
           }
         },
@@ -48,23 +48,155 @@
         ],
         "type": "object"
       },
+      "SmsAdminCarrier": {
+        "description": "The mounted carrier's declaration of what it can carry.",
+        "properties": {
+          "async_receipt": {
+            "description": "Whether the vendor's final delivery state arrives asynchronously: a synchronous answer carries only the vendor's message identifier, and acceptance is not delivery.",
+            "type": "boolean"
+          },
+          "attribute_keys": {
+            "description": "The template attribute keys this carrier accepts: the vendor registration identifiers a template may carry. An attribute under any other key is refused at declaration, load or write.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "content": {
+            "$ref": "#/components/schemas/SmsAdminContentSupport",
+            "description": "Which template shape the carrier sends under: the vendor's template code, the body the declaration rendered, or both."
+          },
+          "countries": {
+            "description": "The countries this carrier can reach. Empty means it declares no restriction of its own.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "identities": {
+            "description": "The sending identities this deployment has, each with the countries it can serve. Empty for a carrier that sends from one fixed account.",
+            "items": {
+              "$ref": "#/components/schemas/SmsAdminIdentity"
+            },
+            "type": "array"
+          },
+          "max_body_runes": {
+            "description": "The bound on a rendered body, in runes. Zero means the capability sets no bound of its own.",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The carrier this process mounted; one process sends through exactly one carrier.",
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/SmsAdminReviewSupport",
+            "description": "How the vendor reviews a template, and whether a send may pick its identity."
+          }
+        },
+        "required": [
+          "name",
+          "content",
+          "review",
+          "identities",
+          "countries",
+          "attribute_keys",
+          "max_body_runes",
+          "async_receipt"
+        ],
+        "type": "object"
+      },
+      "SmsAdminContentSupport": {
+        "description": "Which template shape a carrier sends under.",
+        "properties": {
+          "template_code": {
+            "description": "Whether the carrier sends by the vendor's template code.",
+            "type": "boolean"
+          },
+          "text_body": {
+            "description": "Whether the carrier sends the body the declaration rendered.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "template_code",
+          "text_body"
+        ],
+        "type": "object"
+      },
+      "SmsAdminIdentity": {
+        "description": "One sending identity this deployment has, and the countries it can serve.",
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Vendor-specific values the identity needs, such as a sender address that lives beside a messaging service. Empty when it needs none.",
+            "type": "object"
+          },
+          "countries": {
+            "description": "The countries it can serve. Empty means it serves every country the carrier reaches.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "What sort of identity it is: sign-name, sender-id, long-code, short-code, toll-free, pool or messaging-service.",
+            "type": "string"
+          },
+          "name": {
+            "description": "What a message names the identity by.",
+            "type": "string"
+          },
+          "value": {
+            "description": "The vendor's own value for it: a signature, a number, a service identifier.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "value",
+          "countries",
+          "attributes"
+        ],
+        "type": "object"
+      },
       "SmsAdminRegister": {
         "additionalProperties": false,
-        "description": "A template to take up by the vendor code the deployment already holds: its name, its parameters and the vendor code of each language.",
+        "description": "A template to take up by the vendor code the deployment already holds: its name, what it is for, its parameters, the vendor code and the body of each language, and its registration identifiers.",
         "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional.",
+            "type": "object"
+          },
+          "bodies": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The locally rendered body per language, keyed by locale. Optional; every language named needs a non-empty body whose ${name} placeholders all name declared parameters, and each language needs a code, a body, or both.",
+            "type": "object"
+          },
           "codes": {
             "additionalProperties": {
               "type": "string"
             },
-            "description": "The vendor's template code per language, keyed by locale. Every language named starts pending, and the template starts enabled.",
+            "description": "The vendor's template code per language, keyed by locale. Optional; every language named needs a non-empty code, and each language needs a code, a body, or both.",
             "type": "object"
+          },
+          "kind": {
+            "description": "What the template is for: verification, notification or marketing. Optional; an unset value means notification.",
+            "type": "string"
           },
           "name": {
             "description": "The logical template name to take up; required and non-empty, and the name a caller will later send under. A language the name already holds is a 409.",
             "type": "string"
           },
           "params": {
-            "description": "The parameter names the template substitutes, in the order the vendor approved them.",
+            "description": "The parameter names the template substitutes, in the order the vendor approved them. May be empty.",
             "items": {
               "type": "string"
             },
@@ -72,9 +204,25 @@
           }
         },
         "required": [
-          "name",
-          "params",
-          "codes"
+          "name"
+        ],
+        "type": "object"
+      },
+      "SmsAdminReviewSupport": {
+        "description": "How a vendor reviews a template and whether a send may pick its identity.",
+        "properties": {
+          "originator": {
+            "description": "Whether a send may name the identity it goes out from. False means the carrier has one fixed sending identity.",
+            "type": "boolean"
+          },
+          "per_template": {
+            "description": "Whether the vendor reviews each template, so a template is only sendable once the review has come back approved. False means there is no such review and every language starts not-required.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "per_template",
+          "originator"
         ],
         "type": "object"
       },
@@ -82,6 +230,13 @@
         "additionalProperties": false,
         "description": "A template submission to the vendor for one language: the body with its placeholders, what the template is for, and the note its reviewer reads.",
         "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Optional.",
+            "type": "object"
+          },
           "content": {
             "description": "The template body, written with ${name} placeholders naming the entries of params. The carrier rewrites them into the vendor's own syntax, in params order.",
             "type": "string"
@@ -99,7 +254,7 @@
             "type": "string"
           },
           "params": {
-            "description": "The parameter names content substitutes, in the order the template expects them.",
+            "description": "The parameter names content substitutes, in the order the template expects them. May be empty.",
             "items": {
               "type": "string"
             },
@@ -115,20 +270,37 @@
           "content",
           "kind",
           "locale",
-          "params",
           "remark"
         ],
         "type": "object"
       },
       "SmsAdminTemplate": {
-        "description": "One template as the management surface reports it: its logical name, its source, its ordered parameter names, the languages it holds a code for, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code.",
+        "description": "One template as the management surface reports it: its logical name, its carrier, what it is for, its source, its ordered parameter names, the languages it holds a code or a body for, its bodies and registration identifiers, the vendor's review per language, whether sends are allowed, and its write counters. It carries no vendor code.",
         "properties": {
           "approvals": {
             "additionalProperties": {
               "$ref": "#/components/schemas/SmsAdminApproval"
             },
-            "description": "The vendor's review verdict per language, keyed by locale; a vendor approves a template per language. A configured template carries an empty object because this process does not track its review.",
+            "description": "The vendor's review verdict per language, keyed by locale. A carrier that reviews each template approves per language; one with no such review answers not-required per language. A configured template carries an empty object because this process does not track its review.",
             "type": "object"
+          },
+          "attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The vendor registration identifiers the template carries, keyed by the keys the mounted carrier accepts. Empty when it carries none.",
+            "type": "object"
+          },
+          "bodies": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The locally rendered bodies, keyed by locale. A template that sends only by vendor code carries an empty object.",
+            "type": "object"
+          },
+          "carrier": {
+            "description": "The carrier this template belongs to. A database serves one carrier, and every record in it names that one.",
+            "type": "string"
           },
           "created_at": {
             "description": "When the record was first written, in UTC and RFC 3339 format; the zero time for a configured template.",
@@ -139,8 +311,12 @@
             "description": "Whether a message may go out under the template. A configured template is always enabled; a runtime template's value is set by the enable route and is independent of the vendor's review.",
             "type": "boolean"
           },
+          "kind": {
+            "description": "What the template is for: verification, notification or marketing. A template that named none when it was declared is a notification.",
+            "type": "string"
+          },
           "locales": {
-            "description": "The languages the template holds a vendor code for. A code is what a send needs but not the whole of what it needs: a runtime template sends only while it is enabled and the language's vendor review is approved, and every language a runtime template names starts pending review whether the template was registered or submitted, so this list normally includes languages that cannot be sent in yet. A configured template is always enabled and its review is not tracked, so each language it holds a code for can be sent in.",
+            "description": "The effective language set: the languages the template holds a vendor code for, a body for, or both. Whether a language can be sent in follows the mounted carrier's declared review: a carrier that reviews each template sends only while the vendor's review for that language is approved, while a carrier with no per-template review holds every language it has a code or a body for as sendable. A configured template's review is not tracked, so each language it holds can be sent in.",
             "items": {
               "type": "string"
             },
@@ -151,7 +327,7 @@
             "type": "string"
           },
           "params": {
-            "description": "The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order.",
+            "description": "The parameter names the template substitutes, in the order the vendor approved them; a positional vendor lays values out in this order. May be empty.",
             "items": {
               "type": "string"
             },
@@ -174,9 +350,13 @@
         },
         "required": [
           "name",
+          "carrier",
+          "kind",
           "source",
           "params",
           "locales",
+          "bodies",
+          "attributes",
           "approvals",
           "enabled",
           "version",
@@ -193,6 +373,63 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/sms/carrier": {
+      "get": {
+        "description": "Reads what the mounted carrier can carry: its content support, its review support, the sending identities this deployment has with their kinds, values, countries and attributes, the countries it reaches, the template attribute keys it accepts, its body bound and whether its receipts are asynchronous. One process mounts exactly one carrier, so the answer is that carrier's model and the model is fixed for the life of the process. The decision is made in the platform domain on sms.template.read. Reads write no audit row.",
+        "operationId": "sms.admin.carrier.read",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmsAdminCarrier"
+                }
+              }
+            },
+            "description": "The mounted carrier's declaration"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no sms.template.read in the platform domain"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read the mounted carrier's declaration"
+      }
+    },
     "/sms/templates": {
       "get": {
         "description": "Returns one page of every template the registry holds, configured ones included, ordered by template name. A page holds 50 entries when the request names no limit; a limit of 0 reads the same way, and a limit above 200 is capped at 200. The decision is made in the platform domain on sms.template.read, so a grant in a tenant does not reach this set.",
@@ -297,7 +534,7 @@
         "summary": "Page through the template set, configured templates included"
       },
       "post": {
-        "description": "Takes up a runtime template whose vendor code the operator already has. Every language named starts pending and the template starts enabled: enablement is independent of the vendor's review, which the registry reads back per language from then on. A name that is empty or only whitespace is a 400 before the registry is called, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and takes nothing up.",
+        "description": "Takes up a runtime template whose vendor code the operator already has. The body carries the name, an optional kind that defaults to notification, the parameter names (which may be empty), a vendor code and a locally rendered body per language, and the registration identifiers the carrier accepts. Every language named needs a non-empty code, a non-empty body, or both, and every ${name} placeholder in a body must name a declared parameter; a shape that does not fit the mounted carrier is a 400. Each language starts in the review state the carrier declares: pending where the vendor reviews each template, not-required where it has no such review. The template starts enabled, independently of the review. A name that is empty or only whitespace is a 400 before the registry is called, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and takes nothing up.",
         "operationId": "sms.admin.templates.register",
         "requestBody": {
           "content": {
@@ -307,7 +544,7 @@
               }
             }
           },
-          "description": "The template to take up: its logical name, the parameter names it substitutes in order, and the vendor code for each language.",
+          "description": "The template to take up: its logical name, what it is for, the parameter names it substitutes in order, the vendor code and the body of each language, and its registration identifiers.",
           "required": true
         },
         "responses": {
@@ -418,7 +655,7 @@
     },
     "/sms/templates/submissions": {
       "post": {
-        "description": "Hands a template to the vendor for review through the vendor's own API and takes up the code the vendor answers with; the submission's language starts pending. Content is written with ${name} placeholders naming the entries of params, and a carrier whose vendor takes positional placeholders rewrites them in params order. An empty or whitespace-only name is a 400 before the vendor is called; a submission the vendor or the registry refuses is a 400, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and submits nothing.",
+        "description": "Hands a template to the vendor for review through the vendor's own API and takes up the code the vendor answers with. A carrier whose declaration has no per-template review records the body locally, calls no vendor, and files the template under the code it mints. The submission's language starts in the review state the carrier declares: pending where the vendor reviews each template, not-required where it has no such review. Content is written with ${name} placeholders naming the entries of params, and a carrier whose vendor takes positional placeholders rewrites them in params order. An empty or whitespace-only name is a 400 before the vendor is called; a submission the vendor or the registry refuses is a 400, and a language the name already holds is a 409. The mandatory audit row is written before the action and outside any transaction, so an audit failure answers 503 and submits nothing.",
         "operationId": "sms.admin.templates.offer",
         "requestBody": {
           "content": {
@@ -428,7 +665,7 @@
               }
             }
           },
-          "description": "The template to submit: its logical name, the body with ${name} placeholders, what the template is for, its language, the parameter names in order, and a note for the reviewer.",
+          "description": "The template to submit: its logical name, the body with ${name} placeholders, what the template is for, its language, the parameter names in order, its registration identifiers, and a note for the reviewer.",
           "required": true
         },
         "responses": {
@@ -440,7 +677,7 @@
                   "properties": {
                     "template": {
                       "$ref": "#/components/schemas/SmsAdminTemplate",
-                      "description": "The created template, with its language starting pending review."
+                      "description": "The created template, with its language in the review state the mounted carrier declares."
                     }
                   },
                   "required": [
