@@ -1158,6 +1158,43 @@ describe('AppShell', () => {
       expect(getByRole('button', { name: 'Account' })).toBeInTheDocument()
     })
 
+    it('tells the header actions and the user menu whether they render in the collapsed rail', () => {
+      mockMatchMedia(true)
+      const slotState = (state: { readonly narrow: boolean }) => (
+        <button type="button">{state.narrow ? 'icon form' : 'text form'}</button>
+      )
+      const collapsed = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          sidebarCollapsed
+          onSidebarCollapsedChange={() => undefined}
+          headerActions={slotState}
+          userMenu={slotState}
+        >
+          content
+        </AppShell>,
+      )
+      // Both slots resolve against the rail they render in, so a host
+      // control wider than the rail can hand over its icon form.
+      expect(collapsed.getAllByRole('button', { name: 'icon form' })).toHaveLength(2)
+      collapsed.unmount()
+
+      const expanded = renderWithProviders(
+        <AppShell
+          shellLayout="sidebar"
+          navItems={NAV_ITEMS}
+          sidebarCollapsed={false}
+          onSidebarCollapsedChange={() => undefined}
+          headerActions={slotState}
+          userMenu={slotState}
+        >
+          content
+        </AppShell>,
+      )
+      expect(expanded.getAllByRole('button', { name: 'text form' })).toHaveLength(2)
+    })
+
     it('floors the collapsed rail at the width its contents need under a smaller spacing base', () => {
       mockMatchMedia(true)
       renderWithProviders(

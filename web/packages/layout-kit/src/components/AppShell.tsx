@@ -54,7 +54,10 @@
  * temporary uncontrolled drawer, reports `false` through
  * `onMobileOpenChange` when the drawer is controlled, and is a no-op for
  * the permanent drawer. An absent, `null` or `false` slot renders nothing
- * and adds no height.
+ * and adds no height. `headerActions` and `userMenu` take the same state,
+ * with `narrow` true for the controls the sidebar layout puts in the
+ * collapsed rail's bottom row: a host control too wide for the rail
+ * renders its icon form there rather than being clipped by the paper.
  *
  * The `banner` slot is part of the shell's fixed head: the head is one
  * fixed container pinned to the top of the viewport, holding the AppBar
@@ -308,15 +311,18 @@ export interface AppShellProps {
   /**
    * End-of-AppBar content, before `userMenu`: search, notifications, and
    * the like. The sidebar layout moves it to the drawer paper's bottom
-   * row.
+   * row. Takes the same render-function state as `navHeader`, so a host
+   * control that cannot fit the collapsed rail's width renders an icon
+   * form there instead of being clipped.
    */
-  readonly headerActions?: ReactNode
+  readonly headerActions?: AppShellNavSlot
   /**
    * Far end-of-AppBar content: typically an account/user menu trigger.
    * The sidebar layout moves it to the drawer paper's bottom row, after
+   * `headerActions`. Takes the same render-function state as
    * `headerActions`.
    */
-  readonly userMenu?: ReactNode
+  readonly userMenu?: AppShellNavSlot
   /**
    * A full-width banner below the app bar, host content and already
    * translated. It is part of the fixed shell head: the head is one
@@ -511,13 +517,13 @@ function isNavGroup(entry: AppShellNavEntry): entry is AppShellNavGroup {
 }
 
 /** Whether a declared host slot renders anything: absent, null, false do not. */
-function hasSlotContent(value: ReactNode): boolean {
+function hasSlotContent(value: AppShellNavSlot | undefined): boolean {
   return value !== undefined && value !== null && value !== false
 }
 
 /**
- * Renders a drawer slot: host content as given, or a render function
- * resolved against the mounted drawer's state. An absent or explicitly
+ * Renders a slot: host content as given, or a render function resolved
+ * against the shell state at the place it renders. An absent or explicitly
  * empty slot renders nothing.
  */
 function renderNavSlot(
@@ -1137,7 +1143,7 @@ export function AppShell({
 
   const hasSidebarBottomRow =
     hasSlotContent(headerActions) || hasSlotContent(userMenu)
-  const sidebarBottomRow = (narrow: boolean) =>
+  const sidebarBottomRow = (state: AppShellNavSlotState) =>
     hasSidebarBottomRow ? (
       <Box
         sx={{
@@ -1146,15 +1152,15 @@ export function AppShell({
           flexWrap: 'wrap',
           gap: 1,
           flexShrink: 0,
-          px: narrow ? `${RAIL_ROW_INSET_PX}px` : 2,
+          px: state.narrow ? `${RAIL_ROW_INSET_PX}px` : 2,
           py: 1,
-          ...(narrow
+          ...(state.narrow
             ? { flexDirection: 'column', justifyContent: 'center' }
             : {}),
         }}
       >
-        {headerActions}
-        {userMenu}
+        {renderNavSlot(headerActions, state)}
+        {renderNavSlot(userMenu, state)}
       </Box>
     ) : null
 
@@ -1325,10 +1331,10 @@ export function AppShell({
                       marginRight: userMenu !== undefined ? 2 : 0,
                     }}
                   >
-                    {headerActions}
+                    {renderNavSlot(headerActions, temporarySlotState)}
                   </Box>
                 )}
-                {userMenu}
+                {renderNavSlot(userMenu, temporarySlotState)}
               </Toolbar>
             </AppBar>
           )}
@@ -1404,7 +1410,7 @@ export function AppShell({
                 {renderNavSlot(navHeader, permanentSlotState)}
                 {navContent(undefined, sidebarCollapsed)}
                 {renderNavSlot(navFooter, permanentSlotState)}
-                {sidebarLayout && sidebarBottomRow(sidebarCollapsed)}
+                {sidebarLayout && sidebarBottomRow(permanentSlotState)}
               </>,
             )}
           </Drawer>
@@ -1456,7 +1462,7 @@ export function AppShell({
                 {/* Below md the brand already renders in the minimal top
                     bar, so the temporary drawer has no top row -- the brand
                     appears once per page. The bottom row renders as usual. */}
-                {sidebarLayout && sidebarBottomRow(false)}
+                {sidebarLayout && sidebarBottomRow(temporarySlotState)}
               </>,
             )}
           </Drawer>
