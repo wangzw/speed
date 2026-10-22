@@ -26,7 +26,6 @@
  */
 
 import { useCallback } from 'react'
-import Box from '@mui/material/Box'
 import Link from '@mui/material/Link'
 import type {
   ConsoleImpersonationStarting,
@@ -165,7 +164,7 @@ function ConsoleHeaderActions(): ReactElement {
   // the history without a page load.
   const { href, onClick } = useRouteLinkProps(TENANT_HOME_PATH)
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+    <>
       <Link
         href={href}
         underline="hover"
@@ -176,6 +175,6 @@ function ConsoleHeaderActions(): ReactElement {
       </Link>
       <HeaderActions />
       <UserMenu />
-    </Box>
+    </>
   )
 }

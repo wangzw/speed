@@ -36,6 +36,7 @@ import {
   DEMO_TENANTS,
   getCurrentTenantAlias,
   getCurrentTenantId,
+  HeaderActions,
   initialColorMode,
   LanguageSwitcher,
   readStoredColorMode,
@@ -267,6 +268,35 @@ describe('the colour mode choice', () => {
     } finally {
       window.matchMedia = original
     }
+  })
+
+  it('keeps the header action controls as siblings, so a collapsed rail can stack them', () => {
+    const i18n = createSpeedI18n({
+      supportedLanguages: ['zh-CN', 'en-US'],
+      defaultLanguage: 'en-US',
+      storage: null,
+      urlParameterName: null,
+      navigatorLanguages: [],
+      namespaces: [{ namespace: DEMO_NAMESPACE, resources: demoResources }],
+    })
+    render(
+      <SpeedAppProviders i18n={i18n} queryClient={createQueryClient()}>
+        <div data-testid="slot">
+          <HeaderActions />
+        </div>
+      </SpeedAppProviders>,
+    )
+
+    // The sidebar rail lays a slot's children out in a column; a wrapper
+    // around the pair would keep them in one row wider than the rail, which
+    // pushes the second control out of the paper. Two top-level nodes, no
+    // wrapper between them, is what lets the rail stack them.
+    const t = i18n.getFixedT('en-US', DEMO_NAMESPACE)
+    expect(screen.getByRole('button', { name: t('languageSwitcher.label') }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('colorMode.toDark') }))
+      .toBeInTheDocument()
+    expect(screen.getByTestId('slot').children).toHaveLength(2)
   })
 
   it('writes the flipped mode to the device from the header control', async () => {

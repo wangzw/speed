@@ -289,13 +289,18 @@ export function AppBrand(): ReactElement {
  * color-mode toggle. Both shells -- the tenant frame and the console
  * banner -- render these; they are the same chrome in either area, so a
  * switch is available wherever the viewer is.
+ *
+ * The two controls are siblings, not a group: every slot container lays
+ * its children out in a row, and the collapsed sidebar rail lays them out
+ * in a column, so a wrapper around the pair keeps them side by side in a
+ * rail too narrow to hold the row.
  */
 export function HeaderActions(): ReactElement {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <>
       <LanguageSwitcher />
       <ColorModeToggle />
-    </Box>
+    </>
   )
 }
 

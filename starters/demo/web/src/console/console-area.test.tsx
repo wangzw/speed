@@ -13,6 +13,7 @@
  */
 
 import { QueryClientProvider } from '@tanstack/react-query'
+import { toolbarClasses } from '@mui/material/Toolbar'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -125,6 +126,22 @@ describe('ConsoleArea', () => {
     renderConsoleArea()
     expect(screen.getByText(demoEnUS.app.title)).toBeInTheDocument()
     expect(screen.getByText('console page')).toBeInTheDocument()
+  })
+
+  it('hands the console header controls to the shell as siblings, so a collapsed rail can stack them', () => {
+    renderConsoleArea()
+    const back = screen.getByRole('link', {
+      name: demoEnUS.console.backToApp,
+    })
+    const toolbar = screen
+      .getByRole('banner')
+      .querySelector(`.${toolbarClasses.root}`)
+    expect(toolbar).not.toBeNull()
+    // The controls are the actions slot's own children, not a wrapper's: the
+    // shell lays a slot's children out in a row on the top bar and in a
+    // column in the collapsed rail, so a wrapper would leave the rail one
+    // row of controls wider than the paper.
+    expect(back.parentElement?.parentElement).toBe(toolbar)
   })
 
   it('groups the platform navigation by the console group table', () => {
