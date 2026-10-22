@@ -1601,11 +1601,23 @@ func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
 		"__OPERATOR_EMAIL__":    "operator@demo.example.test",
 		"__OPERATOR_PASSWORD__": "operator-test-secret",
 		"__ENCRYPTION_KEY__":    "test-only-encryption-key-0123456789",
+		"__SMTP_HOST__":         "smtp.example.test",
+		"__SMTP_PORT__":         "587",
+		"__SMTP_TLS__":          "starttls",
+		"__SMTP_USERNAME__":     "review",
+		"__SMTP_PASSWORD__":     "review-secret",
+		"__SMTP_FROM__":         "Demo <no-reply@demo.example.test>",
 	} {
 		if !strings.Contains(rendered, placeholder) {
 			t.Fatalf("the deployment template carries no %s placeholder to render", placeholder)
 		}
 		rendered = strings.ReplaceAll(rendered, placeholder, value)
+	}
+	// The default binary carries no mail module, so the deployment-only section
+	// would be an unknown key to it. The deploy build keeps the section and
+	// validates it; the proxy settings are the same either way.
+	if len(deployModules) == 0 {
+		rendered = strings.Replace(rendered, yamlBlock(rendered, "mail:"), "", 1)
 	}
 
 	var carrier flyProxyCarrier
