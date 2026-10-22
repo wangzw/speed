@@ -78,6 +78,7 @@ const (
 	byAdmin  = "admin"
 	bySelf   = "self"
 	byImport = "import"
+	bySignup = "signup"
 )
 
 func accountCreated(id authn.AccountID, kind authn.AccountKind, via string) event.Event {

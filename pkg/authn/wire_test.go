@@ -17,6 +17,9 @@ func TestTheNewValueTypesAreTheModelsOwn(t *testing.T) {
 		{reflect.TypeFor[Account](), reflect.TypeFor[model.Account]()},
 		{reflect.TypeFor[CreateAccount](), reflect.TypeFor[model.CreateAccount]()},
 		{reflect.TypeFor[Verification](), reflect.TypeFor[model.Verification]()},
+		{reflect.TypeFor[SignupState](), reflect.TypeFor[model.SignupState]()},
+		{reflect.TypeFor[SignupStatus](), reflect.TypeFor[model.SignupStatus]()},
+		{reflect.TypeFor[RegisterAccount](), reflect.TypeFor[model.RegisterAccount]()},
 		{reflect.TypeFor[AccountQuery](), reflect.TypeFor[model.AccountQuery]()},
 		{reflect.TypeFor[ExternalBinding](), reflect.TypeFor[model.ExternalBinding]()},
 		{reflect.TypeFor[ServiceSecretInfo](), reflect.TypeFor[model.ServiceSecretInfo]()},
@@ -62,6 +65,10 @@ func TestTheWireValuesOfTheNewConstantsAreFrozen(t *testing.T) {
 	}
 	if MFANone != 0 || MFAFactor != 1 || MFAEnroll != 2 {
 		t.Errorf("MFA outcomes read %d, %d, %d, want 0, 1, 2", MFANone, MFAFactor, MFAEnroll)
+	}
+	if SignupNone != 0 || SignupPending != 1 || SignupVerified != 2 {
+		t.Errorf("signup states read %d, %d, %d, want 0, 1, 2 (the signup_state column)",
+			SignupNone, SignupPending, SignupVerified)
 	}
 	for _, c := range [][2]string{
 		{string(KindUser), "user"},

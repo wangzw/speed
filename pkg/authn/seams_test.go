@@ -61,6 +61,13 @@ var seamSignatures = map[string][]string{
 		"VerifyServiceSecret(ctx context.Context, clientID, secret string) (account AccountID, secretID string, expires time.Time, err error)",
 		"Clear(ctx context.Context, id AccountID) error",
 	},
+	"Signups": {
+		"Register(ctx context.Context, in RegisterAccount) (Account, error)",
+	},
+	"SignupVerification": {
+		"SignupStateOf(ctx context.Context, id AccountID) (SignupStatus, error)",
+		"PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error)",
+	},
 	"Memberships": {
 		"IsMember(ctx context.Context, id AccountID, tenant string) (bool, error)",
 		"Membership(ctx context.Context, tenant string, id AccountID) (Membership, bool, error)",
@@ -313,8 +320,9 @@ type Seam interface {
 // signatures leaves no type that is all of them.
 var moduleDeliveries = map[string][]reflect.Type{
 	"account": {
-		reflect.TypeFor[Accounts](), reflect.TypeFor[AccountAdmin](), reflect.TypeFor[Passwords](),
-		reflect.TypeFor[Memberships](), reflect.TypeFor[Throttle](),
+		reflect.TypeFor[Accounts](), reflect.TypeFor[AccountAdmin](),
+		reflect.TypeFor[Signups](), reflect.TypeFor[SignupVerification](),
+		reflect.TypeFor[Passwords](), reflect.TypeFor[Memberships](), reflect.TypeFor[Throttle](),
 	},
 	"session": {
 		reflect.TypeFor[Sessions](), reflect.TypeFor[Verifier](), reflect.TypeFor[CookieClearer](),

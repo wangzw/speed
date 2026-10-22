@@ -570,6 +570,6 @@ flowchart TD
 | 启动诊断 | 已实现 | `pkg/authn/gate/gate.go` `diagnose`、`freeze`；`pkg/authn/mount/mount.go`；`pkg/authn/token/product.go` `diagnose`；`pkg/tenant/admission/admission.go`；`pkg/authn/mfa/mfa.go` |
 | 秘密的存放 | 已实现 | `pkg/authn/static/hash.go` `Hash`、`HashPBKDF2`、`ParseHash`；`pkg/authn/internal/password/phc.go` `Parse`；`pkg/authn/token/keys.go` `loadKeySet`；`pkg/authn/sso/saml/config.go` `loadKey` |
 | `AGENTS.md` 对设置写权限的硬要求 | 已实现 | `pkg/authn/AGENTS.md` |
-| 注册开关 `authn.account.password-signup`、注册预算与未验证账户清理期限的设置项 | 未实现 | — |
+| 注册开关 `authn.account.password-signup`、注册预算与未验证账户清理期限的设置项 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`（`password-signup`、`signup-ip-limit`、`signup-global-hourly`、`unverified-ttl`、`unverified-sweep-interval`）、`signupIPLimitInDomain`、`signupHourlyInDomain`、`unverifiedTTLInDomain`、`unverifiedSweepInDomain`；`pkg/authn/account/params.go` `passwordSignup`、`unverifiedTTL`、`unverifiedSweepInterval`；`pkg/authn/account/relax.go` `relaxing`、`relaxedMove` |
 | 邮箱验证码的按地址、按账户与全局预算的设置项 | 未实现 | — |
-| `authn.account.signup-concurrency` 配置项 | 未实现 | — |
+| `authn.account.signup-concurrency` 配置项 | 已实现 | `pkg/authn/account/config.go` `signupConcurrencyItem`、`configDefaults`、`(moduleConfig).resolve`；`pkg/authn/account/account.go` `newProduct`（`signupGov`） |

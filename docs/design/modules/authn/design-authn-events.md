@@ -83,7 +83,7 @@
 | `methods` | `authn.login.succeeded` | `Method` 的取值，逗号连接 |
 | `delivery` | `authn.login.succeeded` | `session`、`token` |
 | `assurance` | `authn.login.succeeded` | 保障等级的字符串形式，不用数值 |
-| `scope` | `authn.throttle.engaged` | `identifier`、`account`、`factor`、`phone`、`client`，与 `authn.throttle.engagements` 的 `scope` 同一集合 |
+| `scope` | `authn.throttle.engaged` | `identifier`、`account`、`factor`、`phone`、`client`、`signup-username`，与 `authn.throttle.engagements` 的 `scope` 同一集合 |
 
 `reason_class` 是类别名，不是自由文本；它的取值是下列封闭集合，调用方传入的 `reason` 取自这个集合，集合外的值不得传入。
 
@@ -237,7 +237,7 @@
 | `authn.mfa.verifications` | `{verification}` | `factor`：`totp`、`sms`、`webauthn`；`outcome`：`ok`、`bad`、`replay`、`throttled`、`unavailable` |
 | `authn.session.operations` | `{operation}` | `operation`：`created`、`elevated`、`revoked`、`revoked-all`、`purged` |
 | `authn.token.operations` | `{operation}` | `operation`：`issued`、`refreshed`、`revoked`、`client-credentials`；`outcome`：`ok`、`invalid`、`reuse-detected`、`unavailable` |
-| `authn.throttle.engagements` | `{engagement}` | `scope`：`identifier`、`account`、`factor`、`phone`、`client` |
+| `authn.throttle.engagements` | `{engagement}` | `scope`：`identifier`、`account`、`factor`、`phone`、`client`、`signup-username` |
 | `authn.sms.sends` | `{message}` | `outcome`：`sent`、`uncertain`、`throttled`、`rejected`、`not-sendable`（模板被禁用或审核未过，未发）、`unsupported-region`、`budget-exhausted`、`suppressed`（号码未登记且注册关闭，未发）、`dropped`（队列满） |
 | `authn.sso.assertions` | `{assertion}` | `protocol`：`saml`、`oidc`；`outcome`：`accepted`、`signature`、`audience`、`time`、`replay`、`in-response-to`、`issuer`、`destination`、`other` |
 | `authn.impersonation.sessions` | `{session}` | `outcome`：`started`、`denied`、`ended` |
@@ -442,6 +442,7 @@ audit.Entry{
 | 指标 `authn.gate.conclusions` | 已实现 | `pkg/authn/gate/metrics.go` `takeMeter`、`bucketName` |
 | 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 已实现 | `pkg/authn/login/metrics.go`；`pkg/authn/mfa/mfa.go`；`pkg/authn/session/session.go`；`pkg/authn/token/product.go` `takeMeter`；`pkg/authn/account/meters.go`；`pkg/authn/sms/meters.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/sso/oidc/metrics.go`、`pkg/authn/sso/saml/reject.go`；`pkg/authn/impersonation/signal.go` |
 | 守住外部行为假设与纪律的测试 | 已实现 | `pkg/authn/summary_test.go`；`pkg/authn/account/audit_test.go`；`pkg/authn/session/observability_test.go`；`pkg/tenant/admission/decide_test.go` |
-| 匿名注册的尽力档审计 `authn.signup` 与 `via=signup` 的账户创建事件 | 未实现 | — |
+| 匿名注册的账户创建事件（`authn.account.created` 的 `via=signup`） | 已实现 | `pkg/authn/account/signup.go` `(*product).Register`、`pkg/authn/account/events.go` `accountCreated`、`bySignup` |
+| 匿名注册的尽力档审计 `authn.signup` | 未实现 | — |
 
 事件、审计与指标在各模块里的发出点，随各模块的实现状态由 [design-authn-session](design-authn-session.md) 等文档承载。

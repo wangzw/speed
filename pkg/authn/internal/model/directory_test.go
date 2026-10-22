@@ -67,6 +67,25 @@ func TestAccountStatusReadsOneWayEveryWay(t *testing.T) {
 	}
 }
 
+// TestSignupStateValidIsTheClosedSet holds the three values the signup_state
+// column admits: none, pending and verified, and nothing above them.
+func TestSignupStateValidIsTheClosedSet(t *testing.T) {
+	for _, c := range []struct {
+		s     SignupState
+		valid bool
+	}{
+		{SignupNone, true},
+		{SignupPending, true},
+		{SignupVerified, true},
+		{SignupState(3), false},
+		{SignupState(255), false},
+	} {
+		if c.s.Valid() != c.valid {
+			t.Errorf("SignupState(%d).Valid() = %v, want %v", c.s, c.s.Valid(), c.valid)
+		}
+	}
+}
+
 // TestTheKindsAreClosedSets holds the texts of the kinds, which the tables'
 // CHECK constraints carry, and that Valid accepts them and nothing near them.
 func TestTheKindsAreClosedSets(t *testing.T) {
@@ -254,7 +273,8 @@ func fullAccount() Account {
 
 func fullCreateAccount() CreateAccount {
 	return CreateAccount{
-		ID: "a", Kind: KindUser, DisplayName: "n", Username: "u", Email: "e@x", EmailVerifiedVia: Verification{Via: "admin"},
+		ID: "a", Kind: KindUser, DisplayName: "n", Username: "u", UsernameVerifiedVia: Verification{Via: "admin"},
+		Email: "e@x", EmailVerifiedVia: Verification{Via: "admin"},
 		Phone: "+8613800000000", PhoneVerifiedVia: Verification{Via: "sms-code"}, Password: "p", PasswordHash: "h",
 		MustChangePassword: true, MFARequired: true, Attributes: map[string]string{"k": "v"}, Via: "admin",
 	}
@@ -495,6 +515,7 @@ func hasReference(t reflect.Type) bool {
 func TestEveryTypeWithAReferenceHasAClone(t *testing.T) {
 	for _, typ := range []reflect.Type{
 		reflect.TypeFor[Account](), reflect.TypeFor[CreateAccount](), reflect.TypeFor[Verification](),
+		reflect.TypeFor[SignupStatus](), reflect.TypeFor[RegisterAccount](),
 		reflect.TypeFor[AccountQuery](), reflect.TypeFor[ExternalBinding](), reflect.TypeFor[ServiceSecretInfo](),
 		reflect.TypeFor[Membership](), reflect.TypeFor[Page](), reflect.TypeFor[VerifyResult](),
 		reflect.TypeFor[SetPasswordOptions](), reflect.TypeFor[ClientInfo](), reflect.TypeFor[NewSession](),

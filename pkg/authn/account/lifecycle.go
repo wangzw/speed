@@ -111,9 +111,10 @@ func laterOf(a, b time.Time) time.Time {
 // Delete ends an account for good.
 //
 // The row stays as a tombstone that holds the identifier, the kind, the status,
-// the time of creation and the time of deletion, and every identifier, external
-// identity, credential, secret and membership of the account is deleted in the
-// same transaction, together with the personal data of the row itself. The
+// the time of creation and the time of deletion, and every identifier, pending
+// contact, external identity, credential, secret and membership of the account
+// is deleted in the same transaction, together with the personal data of the row
+// itself. The
 // instant before which no session is valid moves on, as a disabling moves it.
 // Calling again on a tombstone finishes the cleanup the hooks did not.
 func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string) error {
@@ -139,43 +140,7 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 		if row.Status == statusDeleted {
 			return nil
 		}
-		now := p.at()
-		var memberships []membershipRow
-		if err := tx.Where("account_id = ?", id.String()).Order("tenant_id").Find(&memberships).Error; err != nil {
-			return err
-		}
-		erase := map[string]any{
-			"status":        statusDeleted,
-			"display_name":  "",
-			"attributes":    "{}",
-			"mfa_required":  false,
-			"protected":     false,
-			"valid_after":   laterOf(utc(row.ValidAfter), ceilSecond(now)),
-			"updated_at":    now,
-			"last_login_at": nil,
-			"disabled_at":   nil,
-			"deleted_at":    now,
-		}
-		if err := tx.Model(&accountRow{}).Where("id = ?", id.String()).Updates(erase).Error; err != nil {
-			return err
-		}
-		for _, table := range []any{&identifierRow{}, &externalRow{}, &secretRow{}, &membershipRow{}} {
-			if err := tx.Where("account_id = ?", id.String()).Delete(table).Error; err != nil {
-				return err
-			}
-		}
-		if err := tx.Exec("DELETE FROM "+tableCredentials+" WHERE account_id = ?", id.String()).Error; err != nil {
-			return err
-		}
-		if err := p.emit(tx, b, accountDeleted(id), true); err != nil {
-			return err
-		}
-		for _, m := range memberships {
-			if err := p.emit(tx, b, membershipChanged(id, m.TenantID, changeRemoved, m.Source), true); err != nil {
-				return err
-			}
-		}
-		return nil
+		return p.eraseAccount(tx, row, b)
 	})
 	if err != nil {
 		return failed("deleting an account", err)
@@ -184,6 +149,55 @@ func (p *product) Delete(ctx context.Context, id authn.AccountID, reason string)
 	return p.callHooks(ctx, id, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
 		return h.AccountDeleted(hookCtx, id)
 	})
+}
+
+// eraseAccount writes the tombstone of a live account in tx and deletes what
+// this module holds of it: every identifier, pending contact, external identity,
+// credential, secret and membership, and the personal columns of the row. The
+// events are kept in b, and the caller publishes them once the transaction has
+// committed. The caller has locked the row and hands in the account it read, so
+// the memberships read here cannot change under the erase.
+func (p *product) eraseAccount(tx *gorm.DB, row accountRow, b *batch) error {
+	id := authn.AccountID(row.ID)
+	now := p.at()
+	var memberships []membershipRow
+	if err := tx.Where("account_id = ?", id.String()).Order("tenant_id").Find(&memberships).Error; err != nil {
+		return err
+	}
+	erase := map[string]any{
+		"status":             statusDeleted,
+		"signup_state":       signupNone,
+		"signup_verified_at": nil,
+		"display_name":       "",
+		"attributes":         "{}",
+		"mfa_required":       false,
+		"protected":          false,
+		"valid_after":        laterOf(utc(row.ValidAfter), ceilSecond(now)),
+		"updated_at":         now,
+		"last_login_at":      nil,
+		"disabled_at":        nil,
+		"deleted_at":         now,
+	}
+	if err := tx.Model(&accountRow{}).Where("id = ?", id.String()).Updates(erase).Error; err != nil {
+		return err
+	}
+	for _, table := range []any{&identifierRow{}, &pendingContactRow{}, &externalRow{}, &secretRow{}, &membershipRow{}} {
+		if err := tx.Where("account_id = ?", id.String()).Delete(table).Error; err != nil {
+			return err
+		}
+	}
+	if err := tx.Exec("DELETE FROM "+tableCredentials+" WHERE account_id = ?", id.String()).Error; err != nil {
+		return err
+	}
+	if err := p.emit(tx, b, accountDeleted(id), true); err != nil {
+		return err
+	}
+	for _, m := range memberships {
+		if err := p.emit(tx, b, membershipChanged(id, m.TenantID, changeRemoved, m.Source), true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // callHooks calls one method of every lifecycle hook once the state it cleans up

@@ -71,6 +71,25 @@ func applyMigrations(t testing.TB, handle *gorm.DB, dialect db.Dialect) {
 	}
 }
 
+// applyMigrationFile applies one migration file of a dialect, statement by
+// statement, and leaves the others alone. The upgrade case drives the earlier
+// declaration and then the newer file over the same database.
+func applyMigrationFile(t testing.TB, handle *gorm.DB, dialect db.Dialect, name string) {
+	t.Helper()
+	text, err := fs.ReadFile(migrationsFS, string(dialect)+"/"+name)
+	if err != nil {
+		t.Fatalf("reading %s: %v", name, err)
+	}
+	for statement := range strings.SplitSeq(string(text), ";") {
+		if strings.TrimSpace(statement) == "" {
+			continue
+		}
+		if err := handle.Exec(statement).Error; err != nil {
+			t.Fatalf("applying %s: %v", name, err)
+		}
+	}
+}
+
 // dialectsUnderTest lists the engines this build's cases run on, each named as
 // its subtest is. PostgreSQL is appended by the integration build; see
 // account_integration_test.go.

@@ -15,38 +15,49 @@ import (
 // requires a restart; the rest are settings, read from the settings store while
 // the process runs.
 const (
-	concurrencyItem  = "password-concurrency"
-	memoryBudgetItem = "password-memory-budget-mib"
+	concurrencyItem       = "password-concurrency"
+	signupConcurrencyItem = "signup-concurrency"
+	memoryBudgetItem      = "password-memory-budget-mib"
 
-	algorithmKey      = "password-algorithm"
-	signupKey         = "signup"
-	autoLinkKey       = "auto-link"
-	minLengthKey      = "password-min-length"
-	argonMemoryKey    = "password-argon2-memory-kib"
-	argonIterationKey = "password-argon2-iterations"
-	argonLanesKey     = "password-argon2-parallelism"
-	pbkdf2IterKey     = "password-pbkdf2-iterations"
-	freeAttemptsKey   = "throttle-free-attempts"
-	maxDelayKey       = "throttle-max-delay"
-	decayKey          = "throttle-decay"
-	retentionKey      = "secret-retention"
+	algorithmKey       = "password-algorithm"
+	signupKey          = "signup"
+	passwordSignupKey  = "password-signup"
+	signupIPLimitKey   = "signup-ip-limit"
+	signupHourlyKey    = "signup-global-hourly"
+	unverifiedTTLKey   = "unverified-ttl"
+	unverifiedSweepKey = "unverified-sweep-interval"
+	autoLinkKey        = "auto-link"
+	minLengthKey       = "password-min-length"
+	argonMemoryKey     = "password-argon2-memory-kib"
+	argonIterationKey  = "password-argon2-iterations"
+	argonLanesKey      = "password-argon2-parallelism"
+	pbkdf2IterKey      = "password-pbkdf2-iterations"
+	freeAttemptsKey    = "throttle-free-attempts"
+	maxDelayKey        = "throttle-max-delay"
+	decayKey           = "throttle-decay"
+	retentionKey       = "secret-retention"
 
-	algorithmPath      = ConfigNamespace + "." + algorithmKey
-	signupPath         = ConfigNamespace + "." + signupKey
-	autoLinkPath       = ConfigNamespace + "." + autoLinkKey
-	minLengthPath      = ConfigNamespace + "." + minLengthKey
-	argonMemoryPath    = ConfigNamespace + "." + argonMemoryKey
-	argonIterationPath = ConfigNamespace + "." + argonIterationKey
-	argonLanesPath     = ConfigNamespace + "." + argonLanesKey
-	pbkdf2IterPath     = ConfigNamespace + "." + pbkdf2IterKey
-	freeAttemptsPath   = ConfigNamespace + "." + freeAttemptsKey
-	maxDelayPath       = ConfigNamespace + "." + maxDelayKey
-	decayPath          = ConfigNamespace + "." + decayKey
-	retentionPath      = ConfigNamespace + "." + retentionKey
+	algorithmPath       = ConfigNamespace + "." + algorithmKey
+	signupPath          = ConfigNamespace + "." + signupKey
+	passwordSignupPath  = ConfigNamespace + "." + passwordSignupKey
+	signupIPLimitPath   = ConfigNamespace + "." + signupIPLimitKey
+	signupHourlyPath    = ConfigNamespace + "." + signupHourlyKey
+	unverifiedTTLPath   = ConfigNamespace + "." + unverifiedTTLKey
+	unverifiedSweepPath = ConfigNamespace + "." + unverifiedSweepKey
+	autoLinkPath        = ConfigNamespace + "." + autoLinkKey
+	minLengthPath       = ConfigNamespace + "." + minLengthKey
+	argonMemoryPath     = ConfigNamespace + "." + argonMemoryKey
+	argonIterationPath  = ConfigNamespace + "." + argonIterationKey
+	argonLanesPath      = ConfigNamespace + "." + argonLanesKey
+	pbkdf2IterPath      = ConfigNamespace + "." + pbkdf2IterKey
+	freeAttemptsPath    = ConfigNamespace + "." + freeAttemptsKey
+	maxDelayPath        = ConfigNamespace + "." + maxDelayKey
+	decayPath           = ConfigNamespace + "." + decayKey
+	retentionPath       = ConfigNamespace + "." + retentionKey
 )
 
-// The values the two switches that relax a check take. The strict one is the
-// default of each.
+// The values the switches that relax a check take. The strict one is the default
+// of each.
 const (
 	signupClosed     = "closed"
 	signupOpen       = "open"
@@ -54,7 +65,7 @@ const (
 	autoLinkVerified = "verified-email"
 )
 
-// The sanity bounds on the two sizes configuration states. A derivation width of
+// The sanity bounds on the sizes configuration states. A derivation width of
 // 256 is beyond any machine this runs on, and a budget past a tebibyte is a
 // typing mistake that is better refused than allocated.
 const (
@@ -74,6 +85,18 @@ const (
 	minThrottleDelay, maxThrottleDelay            = 10 * time.Second, 24 * time.Hour
 	minThrottleDecay, maxThrottleDecay            = time.Minute, 24 * time.Hour
 	minRetention, maxRetention                    = time.Hour, 8760 * time.Hour
+
+	// signupIPLimitCeil is how many registrations one source address may make in
+	// a minute, at most; the minute is the setting's own unit, not its value.
+	signupIPLimitCeil = 10000
+	// signupHourlyFloor and signupHourlyCeil bound the registrations of the whole
+	// deployment in an hour.
+	signupHourlyFloor, signupHourlyCeil = 1, 1000000
+	// unverifiedTTLCeil is how long a self-registered account may stay without a
+	// proved address; zero turns the sweep off.
+	unverifiedTTLCeil = 8760 * time.Hour
+	// minUnverifiedSweep and maxUnverifiedSweep bound how often that sweep runs.
+	minUnverifiedSweep, maxUnverifiedSweep = time.Minute, 24 * time.Hour
 )
 
 // moduleConfig is the set of input items this module accepts.
@@ -81,6 +104,10 @@ type moduleConfig struct {
 	// PasswordConcurrency is how many password derivations run at once, fixed
 	// when the module is built.
 	PasswordConcurrency int `config:"password-concurrency"`
+	// SignupConcurrency is how many self-registration derivations run at once,
+	// a capacity of its own that never takes a place from a password login and
+	// carries no memory budget, fixed when the module is built.
+	SignupConcurrency int `config:"signup-concurrency"`
 	// PasswordMemoryBudgetMiB is the memory the derivations of this module may
 	// hold at once, fixed when the module is built.
 	PasswordMemoryBudgetMiB int `config:"password-memory-budget-mib"`
@@ -89,13 +116,19 @@ type moduleConfig struct {
 // configDefaults is what this module is worth without a configuration file.
 var configDefaults = moduleConfig{
 	PasswordConcurrency:     password.DefaultConcurrency(),
+	SignupConcurrency:       password.DefaultConcurrency(),
 	PasswordMemoryBudgetMiB: password.DefaultMemoryBudgetKiB / 1024,
 }
 
-// options carries the twelve settings items and their declared defaults.
+// options carries the settings items and their declared defaults.
 type options struct {
 	PasswordAlgorithm        string        `config:"password-algorithm"`
 	Signup                   string        `config:"signup"`
+	PasswordSignup           string        `config:"password-signup"`
+	SignupIPLimit            int           `config:"signup-ip-limit"`
+	SignupGlobalHourly       int           `config:"signup-global-hourly"`
+	UnverifiedTTL            time.Duration `config:"unverified-ttl"`
+	UnverifiedSweepInterval  time.Duration `config:"unverified-sweep-interval"`
 	AutoLink                 string        `config:"auto-link"`
 	PasswordMinLength        int           `config:"password-min-length"`
 	PasswordArgon2Memory     int           `config:"password-argon2-memory-kib"`
@@ -117,6 +150,11 @@ type options struct {
 var defaults = options{
 	PasswordAlgorithm:        string(password.Argon2id),
 	Signup:                   signupClosed,
+	PasswordSignup:           signupClosed,
+	SignupIPLimit:            0,
+	SignupGlobalHourly:       100,
+	UnverifiedTTL:            720 * time.Hour,
+	UnverifiedSweepInterval:  time.Hour,
 	AutoLink:                 autoLinkNever,
 	PasswordMinLength:        8,
 	PasswordArgon2Memory:     int(password.DefaultParams().MemoryKiB),
@@ -138,6 +176,18 @@ func algorithmInDomain(v string) bool {
 }
 
 func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
+
+func passwordSignupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
+
+func signupIPLimitInDomain(n int) bool { return n >= 0 && n <= signupIPLimitCeil }
+
+func signupHourlyInDomain(n int) bool { return n >= signupHourlyFloor && n <= signupHourlyCeil }
+
+func unverifiedTTLInDomain(d time.Duration) bool { return d >= 0 && d <= unverifiedTTLCeil }
+
+func unverifiedSweepInDomain(d time.Duration) bool {
+	return d >= minUnverifiedSweep && d <= maxUnverifiedSweep
+}
 
 func autoLinkInDomain(v string) bool { return v == autoLinkNever || v == autoLinkVerified }
 
@@ -165,8 +215,9 @@ func retentionInDomain(d time.Duration) bool { return d >= minRetention && d <= 
 
 // resolved is the configuration this module actually runs on.
 type resolved struct {
-	concurrency  int
-	memoryBudget int64 // KiB
+	concurrency       int
+	signupConcurrency int
+	memoryBudget      int64 // KiB
 }
 
 // resolve turns decoded configuration into what the module runs on, or says
@@ -178,6 +229,11 @@ func (c moduleConfig) resolve() (resolved, error) {
 			authn.ErrInvalidConfig, ConfigNamespace, concurrencyItem, c.PasswordConcurrency, maxConcurrency)
 	}
 	r.concurrency = c.PasswordConcurrency
+	if c.SignupConcurrency < 1 || c.SignupConcurrency > maxConcurrency {
+		return resolved{}, fmt.Errorf("%w: %s.%s is %d, and self-registration derivations run from 1 to %d at once",
+			authn.ErrInvalidConfig, ConfigNamespace, signupConcurrencyItem, c.SignupConcurrency, maxConcurrency)
+	}
+	r.signupConcurrency = c.SignupConcurrency
 	if c.PasswordMemoryBudgetMiB < memoryBudgetFloorMiB || c.PasswordMemoryBudgetMiB > maxMemoryBudgetMiB {
 		return resolved{}, fmt.Errorf("%w: %s.%s is %d MiB, and the budget is from %d MiB, twice the most "+
 			"memory one derivation may take, to %d MiB",
@@ -197,6 +253,11 @@ func schema() config.Schema {
 			concurrencyItem: {
 				Description: "how many password derivations of the account store run at once before " +
 					"one waits for a free place",
+			},
+			signupConcurrencyItem: {
+				Description: "how many password derivations of anonymous self-registration run at once, " +
+					"a capacity of its own that takes no place from a password login and carries no " +
+					"memory budget",
 			},
 			memoryBudgetItem: {
 				Description: "the memory in MiB the password derivations of the account store may " +
@@ -222,6 +283,30 @@ func settingsSchema() settings.Schema {
 				Description: "whether a first login through a social provider or an SMS code makes an " +
 					"account, closed or open; open relaxes a check",
 				Domain: settings.DomainOf("closed or open", signupInDomain),
+			},
+			passwordSignupKey: {
+				Description: "whether an anonymous username-and-password self-registration opens an " +
+					"account, closed or open; open relaxes a check",
+				Domain: settings.DomainOf("closed or open", passwordSignupInDomain),
+			},
+			signupIPLimitKey: {
+				Description: "how many self-registrations one source address may make in a minute, zero " +
+					"turning the budget off",
+				Domain: settings.DomainOf("whole numbers from 0 to 10000", signupIPLimitInDomain),
+			},
+			signupHourlyKey: {
+				Description: "how many self-registrations the whole deployment may make in an hour",
+				Domain:      settings.DomainOf("whole numbers from 1 to 1000000", signupHourlyInDomain),
+			},
+			unverifiedTTLKey: {
+				Description: "how long a self-registered account that proved no email address may stay " +
+					"before it is deleted, zero turning the sweep off",
+				Domain: settings.DomainOf("durations from 0s to "+unverifiedTTLCeil.String(), unverifiedTTLInDomain),
+			},
+			unverifiedSweepKey: {
+				Description: "how often the sweep of self-registered accounts without a proved address runs",
+				Domain: settings.DomainOf("durations from "+minUnverifiedSweep.String()+" to "+
+					maxUnverifiedSweep.String(), unverifiedSweepInDomain),
 			},
 			autoLinkKey: {
 				Description: "whether a first social login whose provider proved an email address is " +

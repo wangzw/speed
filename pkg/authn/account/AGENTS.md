@@ -2,27 +2,28 @@
 
 The account store of the authentication capability, registered as
 `authn.account`. It owns the tables for the accounts, the identifiers they are
-found by, their external identities and tenant memberships, their password
-credentials, the secrets of service accounts, and the failure back-off; it
-delivers five capabilities exclusively — `Accounts`, `AccountAdmin`,
+found by, the contacts they list as awaiting verification, their external
+identities and tenant memberships, their password credentials, the secrets of
+service accounts, and the failure back-off; it delivers seven capabilities
+exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
 `Passwords`, `Memberships` and `Throttle` — and it moves an account between
 disabled, enabled and deleted, calling every `AccountLifecycle` hook after the
 change is committed.
 
 No other module reads these tables. Every module that needs an account, a
-credential, a membership or a back-off takes one of the five interfaces from the
+credential, a membership or a back-off takes one of the seven interfaces from the
 registry; the `*gorm.DB` stays inside this package, and so do the migrations.
 
 The API is the package's godoc and the interface comments in `pkg/authn`.
 
 ## Boundaries
 
-- **The five interfaces are one instance.** The method names of `Accounts`,
-  `AccountAdmin`, `Passwords`, `Memberships` and `Throttle` are pairwise
-  disjoint, which is what lets the one `*product` satisfy all of them.
-  `Memberships` reads one membership as `Membership` and writes as `Put`, never
-  `Get` or `Set`, so that a name never collides with `Accounts.Get` or
-  `Passwords.Set`. A new method must not reuse a name another of the five
+- **The seven interfaces are one instance.** The method names of `Accounts`,
+  `AccountAdmin`, `Signups`, `SignupVerification`, `Passwords`, `Memberships` and
+  `Throttle` are pairwise disjoint, which is what lets the one `*product` satisfy
+  all of them. `Memberships` reads one membership as `Membership` and writes as
+  `Put`, never `Get` or `Set`, so that a name never collides with `Accounts.Get`
+  or `Passwords.Set`. A new method must not reuse a name another of the seven
   already has.
 - **A table's name is one constant in three places.** A migration file, the
   model's `TableName` and the `table…` constant in `rows.go` all name the same
@@ -53,17 +54,50 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   run is the command's decision. `Start` probes every table and refuses with
   `ErrNotMigrated` when one is missing, which is what tells a host to take the
   module in statically in the command that migrates.
-- **`signup` and `auto-link` are settings, declared here and read on every
-  decision.** Both default to the strict value (`closed`, `never`); a move toward
-  `open` or `verified-email` is a relaxation, so the `settings.changed`
-  subscriber writes a `Warn` and a best-effort `authn.settings.relaxed` audit row
-  naming the key and the direction (`relax.go`). A process that starts with the
-  switch already relaxed writes the same `Warn`. The login engine reads
-  `authn.account.*` by path through its optional settings store; this module is
-  the only declarer. The cost settings and the remaining runtime parameters are
-  settings too, read on every use and judged against their declared domain when
-  read as well as when written. The config schema no longer carries the two
-  switches: a config file naming them fails startup as an unknown key.
+- **`signup`, `password-signup` and `auto-link` are settings, declared here and
+  read on every decision.** All three default to the strict value (`closed`,
+  `closed`, `never`); a move toward `open` or `verified-email` is a relaxation,
+  so the `settings.changed` subscriber writes a `Warn` and a best-effort
+  `authn.settings.relaxed` audit row naming the key and the direction
+  (`relax.go`). A process that starts with a switch already relaxed writes the
+  same `Warn`. `Signups.Register` reads `password-signup` itself and is its
+  authority; a caller that reads the same key before validating its input is
+  only pre-checking, never deciding. The login engine reads `authn.account.*` by
+  path through its optional settings store; this module is the only declarer.
+  The cost settings, the registration budgets (`signup-ip-limit`,
+  `signup-global-hourly`) and the remaining runtime parameters are settings too,
+  read on every use and judged against their declared domain when read as well as
+  when written. Their moves are watched by the same subscriber: a smaller cost or
+  wait, a larger free-attempt count, and a budget raised are relaxations, and
+  `signup-ip-limit` is not monotone — zero turns it off, so a positive value moved
+  to zero is `to-zero` and a positive value raised is `increase`, while a positive
+  value lowered is a tightening. The config schema does not carry the three
+  switches: a config file naming one fails startup as an unknown key.
+- **Self-registration is one transaction and one state machine.**
+  `Signups.Register` derives the password under `signup-concurrency`, a width of
+  its own with no memory budget that never takes a place from a password login,
+  and then writes in one transaction the enabled account with `signup_state` 1, a
+  username identifier written through `self`, the credential and one email
+  contact in `authn_pending_contacts`. It sends no email and creates no session.
+  A proving email written by `AddIdentifier` deletes the same-value pending
+  contact and moves a pending account to verified, recording the instant once; a
+  proving phone deletes the same-value contact and changes no state; `admin`,
+  `import-unverified` and `self` change neither. `RemoveIdentifier` of the last
+  proved email returns the account to pending, keeps the instant and rebuilds no
+  contact. `Create` always writes `signup_state` 0 and writes only verified
+  identifiers; the way a username came about is `UsernameVerifiedVia`, whose zero
+  value is `admin`.
+- **The unverified-account sweep has its own switch and interval.** It deletes
+  only an account with `signup_state` 1, no `signup_verified_at`, no email
+  identifier written through a proving channel, and `COALESCE(last_login_at,
+  created_at)` older than `unverified-ttl`. The conditions are read once to pick
+  a batch and re-judged in each deletion's own transaction under a lock of the
+  account row, so an account that proved an address or logged in in between is
+  skipped; a deletion erases the identifiers, credential and pending contact with
+  the row, through the same body `Delete` uses. `unverified-ttl` of
+  zero turns it off, and `unverified-sweep-interval` is read before every pass,
+  so a change needs no restart. `authn_pending_contacts` has no sweep of its own:
+  its rows go with the account.
 - **`password-algorithm` is a setting, declared here and read at every hash
   write.** It is `argon2id` (the default) or `pbkdf2-sha256`; enrollment and the
   post-login upgrade both read the current value. A read that fails or lands

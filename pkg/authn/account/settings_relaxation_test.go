@@ -24,12 +24,15 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// The two switches this module owns, as the settings paths a deployment writes.
-// They are written out here rather than read from a constant so that the cases
-// name the keys the design lists.
+// The three switches this module owns, as the settings paths a deployment
+// writes. They are written out here rather than read from a constant so that the
+// cases name the keys the design lists.
 const (
-	testSignupKey   = "authn.account.signup"
-	testAutoLinkKey = "authn.account.auto-link"
+	testSignupKey         = "authn.account.signup"
+	testPasswordSignupKey = "authn.account.password-signup"
+	testAutoLinkKey       = "authn.account.auto-link"
+	testSignupIPLimitKey  = "authn.account.signup-ip-limit"
+	testSignupHourlyKey   = "authn.account.signup-global-hourly"
 )
 
 // TestRelaxingAnAccountSwitchWritesAWarnAndAnAuditRecord holds the visibility of
@@ -42,6 +45,7 @@ func TestRelaxingAnAccountSwitchWritesAWarnAndAnAuditRecord(t *testing.T) {
 		key, relaxing, strict string
 	}{
 		{testSignupKey, "open", "closed"},
+		{testPasswordSignupKey, "open", "closed"},
 		{testAutoLinkKey, "verified-email", "never"},
 	} {
 		t.Run(c.key, func(t *testing.T) {
@@ -91,6 +95,83 @@ func TestRelaxingAnAccountSwitchWritesAWarnAndAnAuditRecord(t *testing.T) {
 	}
 }
 
+// TestRelaxingARegistrationBudgetWritesAWarnAndAnAuditRecord holds the two
+// registration budgets. A larger hourly budget relaxes the deployment's limit.
+// The per-address budget is not monotone: zero turns it off, so a positive value
+// moved to zero is to-zero and a positive value raised is an increase.
+func TestRelaxingARegistrationBudgetWritesAWarnAndAnAuditRecord(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		key           string
+		before, after int
+		direction     string
+	}{
+		{"the address budget turned off", testSignupIPLimitKey, 120, 0, moveToZero},
+		{"the address budget raised", testSignupIPLimitKey, 120, 240, moveUp},
+		{"the hourly budget raised", testSignupHourlyKey, 100, 200, moveUp},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			store, bus := deliveredSettings(t)
+			h := newHarness(t, db.SQLite)
+			h.p.store = store
+			audit := h.withAudit()
+
+			writeDeliveredSetting(t, store, c.key, c.before)
+			writeDeliveredSetting(t, store, c.key, c.after)
+			deliverChange(t, h, bus.lastChange(t))
+
+			logs := h.logs.String()
+			lines := h.logs.lines("level=WARN", "setting="+c.key)
+			if len(lines) != 1 {
+				t.Fatalf("the log holds %d Warn line(s) for %s, want 1:\n%s", len(lines), c.key, logs)
+			}
+			if !strings.Contains(lines[0], "direction="+c.direction) {
+				t.Errorf("the Warn line does not carry direction %s:\n%s", c.direction, lines[0])
+			}
+			entries := audit.written()
+			if len(entries) != 1 {
+				t.Fatalf("the audit holds %d rows, want 1", len(entries))
+			}
+			if entries[0].Object != c.key || entries[0].Detail["change"] != c.direction {
+				t.Errorf("audit row = %+v, want the relaxed action on %s with change %s", entries[0], c.key, c.direction)
+			}
+		})
+	}
+}
+
+// TestTighteningARegistrationBudgetWritesNothing holds the other direction of the
+// same two budgets, the per-address one included: a positive value lowered and a
+// budget that is off being switched on both check more, so neither is reported.
+func TestTighteningARegistrationBudgetWritesNothing(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		key           string
+		before, after int
+	}{
+		{"the address budget lowered", testSignupIPLimitKey, 240, 120},
+		{"the address budget switched on", testSignupIPLimitKey, 0, 120},
+		{"the hourly budget lowered", testSignupHourlyKey, 100, 50},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			store, bus := deliveredSettings(t)
+			h := newHarness(t, db.SQLite)
+			h.p.store = store
+			audit := h.withAudit()
+
+			writeDeliveredSetting(t, store, c.key, c.before)
+			writeDeliveredSetting(t, store, c.key, c.after)
+			deliverChange(t, h, bus.lastChange(t))
+
+			if n := strings.Count(h.logs.String(), "level=WARN"); n != 0 {
+				t.Errorf("a tightening write left %d Warn lines, want none:\n%s", n, h.logs.String())
+			}
+			if entries := audit.written(); len(entries) != 0 {
+				t.Errorf("a tightening write wrote %d audit rows, want none: %+v", len(entries), entries)
+			}
+		})
+	}
+}
+
 // TestATenantLayerWriteIsNotARelaxation holds that a write at a tenant layer is
 // not reported: both switches are read from the global layer alone, so a tenant
 // row leaves the effective value unchanged and must not manufacture a
@@ -123,6 +204,7 @@ func TestAConfigurationCarryingARemovedAccountSwitchFailsStartup(t *testing.T) {
 		key, value string
 	}{
 		{testSignupKey, "open"},
+		{testPasswordSignupKey, "open"},
 		{testAutoLinkKey, "verified-email"},
 	} {
 		t.Run(c.key, func(t *testing.T) {

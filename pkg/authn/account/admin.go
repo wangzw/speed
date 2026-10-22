@@ -193,8 +193,9 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 
 	now := p.at()
 	plan.row = accountRow{
-		ID: id.String(), Kind: string(kind), Status: statusActive, DisplayName: in.DisplayName,
-		Attributes: attrs, MFARequired: in.MFARequired, ValidAfter: now, CreatedAt: now, UpdatedAt: now,
+		ID: id.String(), Kind: string(kind), Status: statusActive, SignupState: signupNone,
+		DisplayName: in.DisplayName, Attributes: attrs, MFARequired: in.MFARequired,
+		ValidAfter: now, CreatedAt: now, UpdatedAt: now,
 	}
 
 	add := func(k authn.IdentifierKind, value string, via string) error {
@@ -212,7 +213,19 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		return nil
 	}
 	if in.Username != "" {
-		if err = add(authn.IdentifierUsername, in.Username, authn.VerifiedViaAdmin); err != nil {
+		// The way the username came about is the caller's to state, since a host
+		// importing users and a first login land here too; the zero value means
+		// an administrator wrote it. Create never writes a self-registered
+		// account: Signups.Register is the only writer of signup_state.
+		usernameVia := in.UsernameVerifiedVia
+		if usernameVia == (authn.Verification{}) {
+			usernameVia = authn.Verification{Via: authn.VerifiedViaAdmin}
+		}
+		verified, err := viaOf(usernameVia)
+		if err != nil {
+			return plan, err
+		}
+		if err = add(authn.IdentifierUsername, in.Username, verified); err != nil {
 			return plan, err
 		}
 	}
@@ -356,10 +369,32 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 	}
 	b := &batch{}
 	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err = p.lock(tx, id); err != nil {
-			return err
+		account, lockErr := p.lock(tx, id)
+		if lockErr != nil {
+			return lockErr
 		}
 		now := p.at()
+		// A proving identifier consumes the pending contact with the same value:
+		// the address is now proved, so there is nothing left to verify. An
+		// unproven channel (admin, import-unverified, self) leaves it alone.
+		if via.Proves() {
+			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(), string(kind), normalized).
+				Delete(&pendingContactRow{}).Error; err != nil {
+				return err
+			}
+		}
+		// A proved email address ends the pending state of a self-registration.
+		// The first time it does, the instant is written and kept afterwards,
+		// even when the last proved address is later removed.
+		if kind == authn.IdentifierEmail && via.Proves() && signupStateOf(account.SignupState) == authn.SignupPending {
+			update := map[string]any{"signup_state": signupVerified, "updated_at": now}
+			if account.SignupVerifiedAt == nil {
+				update["signup_verified_at"] = now
+			}
+			if err = tx.Model(&accountRow{}).Where("id = ?", id.String()).Updates(update).Error; err != nil {
+				return err
+			}
+		}
 		if kind == authn.IdentifierPhone {
 			var held []identifierRow
 			if err = tx.Where("account_id = ? AND kind = ?", id.String(), string(kind)).Find(&held).Error; err != nil {
@@ -400,15 +435,19 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 }
 
 // RemoveIdentifier unbinds one identifier by its identifier. One the account does
-// not have is already unbound, and the call is nil.
+// not have is already unbound, and the call is nil. Removing the last proved
+// email address returns a verified self-registration to pending: the instant it
+// first reached verified is kept, and no pending contact is made up in place of
+// the address that was removed.
 func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, identifierID string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := p.lock(tx, id); err != nil {
+		account, err := p.lock(tx, id)
+		if err != nil {
 			return err
 		}
 		var row identifierRow
-		err := tx.Where("id = ? AND account_id = ?", identifierID, id.String()).Take(&row).Error
+		err = tx.Where("id = ? AND account_id = ?", identifierID, id.String()).Take(&row).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
@@ -417,6 +456,24 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 		}
 		if err = tx.Where("id = ? AND account_id = ?", identifierID, id.String()).Delete(&identifierRow{}).Error; err != nil {
 			return err
+		}
+		if authn.IdentifierKind(row.Kind) == authn.IdentifierEmail &&
+			(authn.Verification{Via: row.VerifiedVia}).Proves() &&
+			signupStateOf(account.SignupState) == authn.SignupVerified {
+			var left []identifierRow
+			if err = tx.Where("account_id = ? AND kind = ?", id.String(), string(authn.IdentifierEmail)).
+				Find(&left).Error; err != nil {
+				return err
+			}
+			proved := slices.ContainsFunc(left, func(r identifierRow) bool {
+				return authn.Verification{Via: r.VerifiedVia}.Proves()
+			})
+			if !proved {
+				if err = tx.Model(&accountRow{}).Where("id = ?", id.String()).
+					Updates(map[string]any{"signup_state": signupPending, "updated_at": p.at()}).Error; err != nil {
+					return err
+				}
+			}
 		}
 		return p.emit(tx, b, identifierChanged(id, authn.IdentifierKind(row.Kind), changeRemoved), false)
 	})

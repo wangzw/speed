@@ -13,7 +13,7 @@ import (
 )
 
 // The descriptor states what the design states: the database is required and is
-// the one thing the module stands on, the five capabilities are each delivered
+// the one thing the module stands on, the seven capabilities are each delivered
 // exclusively and by nothing else, and the module declares its own section, its
 // settings and its migrations as resources.
 func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
@@ -30,19 +30,21 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 	want := []core.Token{
 		core.Token((*authn.Accounts)(nil)),
 		core.Token((*authn.AccountAdmin)(nil)),
+		core.Token((*authn.Signups)(nil)),
+		core.Token((*authn.SignupVerification)(nil)),
 		core.Token((*authn.Passwords)(nil)),
 		core.Token((*authn.Memberships)(nil)),
 		core.Token((*authn.Throttle)(nil)),
 	}
 	if len(m.Provides) != len(want) {
-		t.Fatalf("Provides has %d entries, want the five capabilities", len(m.Provides))
+		t.Fatalf("Provides has %d entries, want the seven capabilities", len(m.Provides))
 	}
 	for _, provision := range m.Provides {
 		if !provision.Exclusive {
 			t.Errorf("the capability %v is not delivered exclusively", provision.Token)
 		}
 		if !containsToken(want, provision.Token) {
-			t.Errorf("the capability %v is not one of the five", provision.Token)
+			t.Errorf("the capability %v is not one of the seven", provision.Token)
 		}
 	}
 	if len(m.Resources) != 3 {
@@ -59,7 +61,7 @@ func containsToken(tokens []core.Token, want core.Token) bool {
 	return false
 }
 
-// Every product satisfies all five capabilities, which the package asserts at
+// Every product satisfies all seven capabilities, which the package asserts at
 // compile time; a case holds that the instance the descriptor builds is the one
 // product they are asserted for.
 func TestTheProductSatisfiesEachCapability(t *testing.T) {
@@ -69,6 +71,12 @@ func TestTheProductSatisfiesEachCapability(t *testing.T) {
 	}
 	if _, ok := p.(authn.AccountAdmin); !ok {
 		t.Error("the product is not an AccountAdmin")
+	}
+	if _, ok := p.(authn.Signups); !ok {
+		t.Error("the product is not a Signups")
+	}
+	if _, ok := p.(authn.SignupVerification); !ok {
+		t.Error("the product is not a SignupVerification")
 	}
 	if _, ok := p.(authn.Passwords); !ok {
 		t.Error("the product is not a Passwords")
@@ -128,6 +136,9 @@ func TestTheSizesAreHeldToTheirDomains(t *testing.T) {
 		{"a concurrency of one", func(c *moduleConfig) { c.PasswordConcurrency = 1 }, true},
 		{"a concurrency past the ceiling", func(c *moduleConfig) { c.PasswordConcurrency = maxConcurrency + 1 }, false},
 		{"a concurrency below one", func(c *moduleConfig) { c.PasswordConcurrency = 0 }, false},
+		{"a signup concurrency of one", func(c *moduleConfig) { c.SignupConcurrency = 1 }, true},
+		{"a signup concurrency past the ceiling", func(c *moduleConfig) { c.SignupConcurrency = maxConcurrency + 1 }, false},
+		{"a signup concurrency below one", func(c *moduleConfig) { c.SignupConcurrency = 0 }, false},
 		{"a budget at the floor", func(c *moduleConfig) { c.PasswordMemoryBudgetMiB = memoryBudgetFloorMiB }, true},
 		{"a budget past the ceiling", func(c *moduleConfig) { c.PasswordMemoryBudgetMiB = maxMemoryBudgetMiB + 1 }, false},
 	}
@@ -144,42 +155,46 @@ func TestTheSizesAreHeldToTheirDomains(t *testing.T) {
 	}
 }
 
-// The sizes are configuration a host states anywhere; the algorithm and the two
-// relaxation switches are settings, not configuration.
+// The sizes are configuration a host states anywhere; the algorithm, the
+// relaxation switches and the registration parameters are settings, not
+// configuration.
 func TestTheConfigurationItemsAreTheSizes(t *testing.T) {
 	s := schema()
-	for _, key := range []string{concurrencyItem, memoryBudgetItem} {
+	for _, key := range []string{concurrencyItem, signupConcurrencyItem, memoryBudgetItem} {
 		if got := s.Items[key].Origins; got != 0 {
 			t.Errorf("%s takes the origins %v, want every source", key, got)
 		}
 	}
-	for _, key := range []string{algorithmKey, signupKey, autoLinkKey} {
+	for _, key := range []string{algorithmKey, signupKey, passwordSignupKey, autoLinkKey} {
 		if _, ok := s.Items[key]; ok {
 			t.Errorf("the configuration declares %s, want it declared as a setting alone", key)
 		}
 	}
 }
 
-// The twelve settings are declared with a domain, so that a write is judged when
-// it is made and again when it is read.
-func TestTheTwelveSettingsAreDeclaredWithADomain(t *testing.T) {
+// The settings are declared with a domain, so that a write is judged when it is
+// made and again when it is read.
+func TestTheSettingsAreDeclaredWithADomain(t *testing.T) {
 	s := settingsSchema()
-	for _, key := range []string{
-		algorithmKey, signupKey, autoLinkKey,
+	want := []string{
+		algorithmKey, signupKey, passwordSignupKey, autoLinkKey,
+		signupIPLimitKey, signupHourlyKey, unverifiedTTLKey, unverifiedSweepKey,
 		minLengthKey, argonMemoryKey, argonIterationKey, argonLanesKey, pbkdf2IterKey,
 		freeAttemptsKey, maxDelayKey, decayKey, retentionKey,
-	} {
+	}
+	for _, key := range want {
 		if _, ok := s.Items[key]; !ok {
 			t.Errorf("the setting %s is not declared", key)
 		}
 	}
-	if len(s.Items) != 12 {
-		t.Errorf("the section declares %d settings, want twelve", len(s.Items))
+	if len(s.Items) != len(want) {
+		t.Errorf("the section declares %d settings, want %d", len(s.Items), len(want))
 	}
 	if !signupInDomain(defaults.Signup) || !autoLinkInDomain(defaults.AutoLink) {
 		t.Errorf("a declared default lies outside its domain: %q, %q", defaults.Signup, defaults.AutoLink)
 	}
-	if defaults.Signup != signupClosed || defaults.AutoLink != autoLinkNever {
-		t.Errorf("the declared defaults are %q and %q, want the strict values", defaults.Signup, defaults.AutoLink)
+	if defaults.Signup != signupClosed || defaults.AutoLink != autoLinkNever || defaults.PasswordSignup != signupClosed {
+		t.Errorf("the declared defaults are %q, %q and %q, want the strict values",
+			defaults.Signup, defaults.AutoLink, defaults.PasswordSignup)
 	}
 }

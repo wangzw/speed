@@ -59,6 +59,25 @@ func (p *product) signup() string {
 	return readSetting(p, signupPath, signupInDomain, defaults.Signup)
 }
 
+// passwordSignup is the self-registration switch. Signups.Register reads it on
+// every call, and it is the authority there; a read that fails reads as closed,
+// which is the strict value.
+func (p *product) passwordSignup() string {
+	return readSetting(p, passwordSignupPath, passwordSignupInDomain, defaults.PasswordSignup)
+}
+
+// unverifiedTTL is how long a self-registered account that proved no email
+// address may stay. Zero turns the sweep off.
+func (p *product) unverifiedTTL() time.Duration {
+	return readSetting(p, unverifiedTTLPath, unverifiedTTLInDomain, defaults.UnverifiedTTL)
+}
+
+// unverifiedSweepInterval is how often the sweep of those accounts runs. It is
+// read before every pass, so a change takes effect without a restart.
+func (p *product) unverifiedSweepInterval() time.Duration {
+	return readSetting(p, unverifiedSweepPath, unverifiedSweepInDomain, defaults.UnverifiedSweepInterval)
+}
+
 // autoLink is the linking switch: whether a first social login whose provider
 // proved an email address is bound to the account that holds it. A read that
 // fails reads as never.

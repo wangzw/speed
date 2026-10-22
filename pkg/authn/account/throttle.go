@@ -16,11 +16,12 @@ import (
 // for the field, and only a log line carries it.
 const reasonClassThrottled = authn.ReasonThrottled
 
-// validScope reports whether the scope is one of the five. The set is closed, and
+// validScope reports whether the scope is one of the six. The set is closed, and
 // counters of different scopes never share a key space.
 func validScope(scope authn.ThrottleScope) bool {
 	switch scope {
-	case authn.ScopeIdentifier, authn.ScopeAccount, authn.ScopeFactor, authn.ScopePhone, authn.ScopeClient:
+	case authn.ScopeIdentifier, authn.ScopeAccount, authn.ScopeFactor, authn.ScopePhone, authn.ScopeClient,
+		authn.ScopeSignupUsername:
 		return true
 	}
 	return false

@@ -351,16 +351,17 @@ func TestAThrottledErrorReadsAsTheSentinelAndCarriesItsWait(t *testing.T) {
 	}
 }
 
-// TestTheThrottleScopesAreTheClosedSetUnderTheseNames pins the five values.
+// TestTheThrottleScopesAreTheClosedSetUnderTheseNames pins the six values.
 // They are the first half of the key a back-off is stored under, so renaming
 // one orphans every counter kept under the old name.
 func TestTheThrottleScopesAreTheClosedSetUnderTheseNames(t *testing.T) {
 	want := map[ThrottleScope]string{
-		ScopeIdentifier: "identifier",
-		ScopeAccount:    "account",
-		ScopeFactor:     "factor",
-		ScopePhone:      "phone",
-		ScopeClient:     "client",
+		ScopeIdentifier:     "identifier",
+		ScopeAccount:        "account",
+		ScopeFactor:         "factor",
+		ScopePhone:          "phone",
+		ScopeClient:         "client",
+		ScopeSignupUsername: "signup-username",
 	}
 	for scope, text := range want {
 		if string(scope) != text {

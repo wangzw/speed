@@ -223,9 +223,18 @@ var (
 	// goes to the log.
 	ErrNotProvisioned = errors.New("authn: no account was provisioned for this identity")
 
-	// ErrSignupClosed reports a first login at a provider while sign-up is closed.
-	// Outwardly it is a 401 login-failed, and the cause goes to the log.
+	// ErrSignupClosed reports a first login at a provider while sign-up is closed,
+	// or an anonymous password self-registration while its switch is not open.
+	// Outwardly it is a 401 login-failed on a first login and a 403
+	// signup-closed on the registration route, and the cause goes to the log.
 	ErrSignupClosed = errors.New("authn: sign-up is closed")
+
+	// ErrContactRequired reports an account whose self-registration has not
+	// proved an email address being used for a capability that requires one.
+	// No method of the account module returns it: a caller reads
+	// SignupVerification.SignupStateOf and raises it itself. Outwardly it is a
+	// 403 contact-required.
+	ErrContactRequired = errors.New("authn: the account has not verified an email address")
 
 	// ErrDomainMismatch reports an enterprise sign-in whose email address is in a
 	// domain the tenant has not verified. Outwardly it is a 401 login-failed, and

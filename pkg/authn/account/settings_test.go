@@ -134,12 +134,14 @@ func TestTheStartupDiagnosticsNameWhatRelaxes(t *testing.T) {
 	h := newHarness(t, db.SQLite)
 	h.withSettings()
 	h.set.set(signupPath, signupOpen)
+	h.set.set(passwordSignupPath, signupOpen)
 	h.set.set(autoLinkPath, autoLinkVerified)
 	h.p.diagnose()
 
 	for _, fragment := range []string{
 		"the account store is running",
 		"setting=" + signupPath,
+		"setting=" + passwordSignupPath,
 		"setting=" + autoLinkPath,
 		"no outbox",
 	} {

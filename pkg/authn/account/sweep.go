@@ -2,18 +2,23 @@ package account
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/password"
 )
 
-// The sweeps of the two tables this module owns that grow without bound, and how
-// long Stop waits for them. Every replica runs both and the deletions are
-// conditional, so two sweeps never conflict.
+// The sweeps this module runs and how long Stop waits for them. Every replica
+// runs all of them and the deletions are conditional, so two sweeps never
+// conflict. The throttles and service secrets sweep on a fixed interval; the
+// unverified accounts sweep reads its interval from the settings before every
+// pass.
 const (
 	throttleSweepEvery = 10 * time.Minute
 	secretSweepEvery   = time.Hour
@@ -45,9 +50,13 @@ func (p *product) start(ctx context.Context) error {
 
 	sweepCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	p.sweepers.cancel = cancel
-	p.sweepers.wg.Add(2)
-	go p.sweepLoop(sweepCtx, cancel, p.sweepThrottlesEvery, "throttles", p.sweepThrottles)
-	go p.sweepLoop(sweepCtx, cancel, p.sweepSecretsEvery, "service secrets", p.sweepSecrets)
+	p.sweepers.wg.Add(3)
+	go p.sweepLoop(sweepCtx, cancel, func() time.Duration { return p.sweepThrottlesEvery },
+		"throttles", p.sweepThrottles)
+	go p.sweepLoop(sweepCtx, cancel, func() time.Duration { return p.sweepSecretsEvery },
+		"service secrets", p.sweepSecrets)
+	go p.sweepLoop(sweepCtx, cancel, p.unverifiedSweepInterval,
+		"unverified accounts", p.sweepUnverified)
 	return nil
 }
 
@@ -102,6 +111,9 @@ func (p *product) diagnose() {
 	if p.signup() == signupOpen {
 		p.warnRelaxation(signupPath, moveRelaxed)
 	}
+	if p.passwordSignup() == signupOpen {
+		p.warnRelaxation(passwordSignupPath, moveRelaxed)
+	}
 	if p.autoLink() == autoLinkVerified {
 		p.warnRelaxation(autoLinkPath, moveRelaxed)
 	}
@@ -122,10 +134,12 @@ func (p *product) diagnose() {
 }
 
 // sweepLoop runs one sweep at the start and again every interval until the
-// context ends. It cancels the shared context as it returns, so the resources the
-// sweeps were made with are released whether Stop cancelled them or the caller's
-// own context ended first; the second goroutine's cancel is a no-op.
-func (p *product) sweepLoop(ctx context.Context, cancel context.CancelFunc, every time.Duration, what string,
+// context ends. The interval is read before every pass, so a setting that
+// states it takes effect without a restart. It cancels the shared context as it
+// returns, so the resources the sweeps were made with are released whether Stop
+// cancelled them or the caller's own context ended first; the other goroutines'
+// cancel is a no-op.
+func (p *product) sweepLoop(ctx context.Context, cancel context.CancelFunc, every func() time.Duration, what string,
 	sweep func(context.Context) (int64, error),
 ) {
 	defer p.sweepers.wg.Done()
@@ -138,14 +152,15 @@ func (p *product) sweepLoop(ctx context.Context, cancel context.CancelFunc, ever
 		p.report("sweep "+what, "", "")
 	}
 	run()
-	ticker := time.NewTicker(every)
-	defer ticker.Stop()
+	timer := time.NewTimer(every())
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			run()
+			timer.Reset(every())
 		}
 	}
 }
@@ -167,6 +182,137 @@ func (p *product) sweepSecrets(ctx context.Context) (int64, error) {
 	return p.sweep(ctx, "DELETE FROM "+tableServiceKeys+" WHERE id IN (SELECT id FROM "+tableServiceKeys+
 		" WHERE (expires_at IS NOT NULL AND expires_at < ?) OR (revoked_at IS NOT NULL AND revoked_at < ?) LIMIT ?)",
 		cutoff, cutoff, sweepBatch)
+}
+
+// sweepUnverified deletes self-registered accounts that never proved an email
+// address, a batch of accounts at a time. A candidate is an account whose
+// signup_state is pending, whose signup_verified_at is empty, that holds no email
+// identifier written through a proving channel, and that has neither logged in
+// nor been created within unverified-ttl; the conditions are read once to pick
+// the batch and again inside each deletion, so an account that proved an address
+// or logged in in between is skipped rather than deleted. An account that is not
+// a self-registration and one whose registration is verified are never selected.
+// A ttl of zero turns the sweep off.
+func (p *product) sweepUnverified(ctx context.Context) (int64, error) {
+	ttl := p.unverifiedTTL()
+	if ttl <= 0 {
+		return 0, nil
+	}
+	horizon := p.now.Now().Add(-ttl).Truncate(time.Microsecond)
+	var total int64
+	var firstErr error
+	for range sweepBatches {
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+		var ids []string
+		err := p.conn(ctx).Raw("SELECT a.id FROM "+tableAccounts+" a WHERE a.signup_state = ?"+
+			" AND a.signup_verified_at IS NULL AND a.status <> ? AND COALESCE(a.last_login_at, a.created_at) < ?"+
+			" AND NOT EXISTS (SELECT 1 FROM "+tableIdentifiers+" i WHERE i.account_id = a.id AND i.kind = ?"+
+			" AND (i.verified_via IN (?, ?, ?) OR i.verified_via LIKE ?)) LIMIT ?",
+			signupPending, statusDeleted, horizon, string(authn.IdentifierEmail),
+			authn.VerifiedViaSMSCode, authn.VerifiedViaEmailCode, authn.VerifiedViaInvite,
+			authn.VerifiedViaIDPPrefix+"%", sweepBatch).Scan(&ids).Error
+		if err != nil {
+			return total, err
+		}
+		for _, id := range ids {
+			deleted, err := p.deleteUnverified(ctx, authn.AccountID(id), horizon)
+			if err != nil {
+				// The account is tombstoned even when a lifecycle hook failed;
+				// the next sweep does not select it again. The failure is
+				// reported and the rest of the batch goes on.
+				if firstErr == nil {
+					firstErr = err
+				}
+				p.report("sweep unverified accounts", "an unverified account could not be cleaned up fully: "+
+					describe(err), describe(err))
+				continue
+			}
+			if deleted {
+				total++
+			}
+		}
+		if len(ids) < sweepBatch {
+			break
+		}
+	}
+	return total, firstErr
+}
+
+// deleteUnverified deletes one account the sweep selected, after re-judging in
+// its own transaction that it is still an unverified registration that has been
+// idle past the horizon. The conditions were judged when the batch was read, and
+// the account may have proved an address or logged in since: the row is locked
+// first, so the re-judgement sees whatever committed before the deletion and a
+// write that comes after it waits for the lock, and an account that changed state
+// is skipped. It reports whether an account was deleted.
+func (p *product) deleteUnverified(ctx context.Context, id authn.AccountID, horizon time.Time) (bool, error) {
+	b := &batch{}
+	deleted := false
+	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
+		row, err := p.lock(tx, id)
+		if errors.Is(err, authn.ErrAccountNotFound) {
+			// The account is gone, or another pass tombstoned it: nothing is
+			// left to skip or to delete.
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		still, err := p.unverified(tx, row, horizon)
+		if err != nil {
+			return err
+		}
+		if !still {
+			return nil
+		}
+		if err = p.eraseAccount(tx, row, b); err != nil {
+			return err
+		}
+		deleted = true
+		return nil
+	})
+	if err != nil {
+		return false, failed("deleting an unverified account", err)
+	}
+	p.publish(ctx, b)
+	if !deleted {
+		return false, nil
+	}
+	return true, p.callHooks(ctx, id, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
+		return h.AccountDeleted(hookCtx, id)
+	})
+}
+
+// unverified reports whether a locked account is still a registration the sweep
+// may delete: pending, never proved an address, and idle since before the
+// horizon. The proof is judged on every email identifier the account holds, with
+// the same rule the identifier write uses, so a channel this module does not
+// count as a proof does not keep the account alive either.
+func (p *product) unverified(tx *gorm.DB, row accountRow, horizon time.Time) (bool, error) {
+	if signupStateOf(row.SignupState) != authn.SignupPending || row.SignupVerifiedAt != nil {
+		return false, nil
+	}
+	idle := utc(row.CreatedAt)
+	if row.LastLoginAt != nil {
+		if at := utc(*row.LastLoginAt); at.After(idle) {
+			idle = at
+		}
+	}
+	if !idle.Before(horizon) {
+		return false, nil
+	}
+	var identifiers []identifierRow
+	if err := tx.Where("account_id = ? AND kind = ?", row.ID, string(authn.IdentifierEmail)).Find(&identifiers).Error; err != nil {
+		return false, err
+	}
+	for _, i := range identifiers {
+		if (authn.Verification{Via: i.VerifiedVia}).Proves() {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // sweep runs a bounded delete until a statement deletes less than a batch, or the

@@ -125,7 +125,7 @@ type SessionRevoked struct {
 // ThrottleEngaged is the payload of EventThrottleEngaged, published by the
 // caller of Throttle.Fail that learned the failure started a back-off.
 type ThrottleEngaged struct {
-	Scope     string `json:"scope"`                // a ThrottleScope: identifier, account, factor, phone or client
+	Scope     string `json:"scope"`                // a ThrottleScope: identifier, account, factor, phone, client or signup-username
 	AccountID string `json:"account_id,omitempty"` // only for the scopes account and factor
 }
 

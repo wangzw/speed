@@ -749,7 +749,7 @@ flowchart TD
 
 待验证邮箱不是登录名。它不在 `authn_identifiers` 里，所以 `Lookup`、口令登录名、社交自动关联与企业 JIT 并入都看不到它；`AddIdentifier` 把它写成邮箱标识之后，邮箱才是口令登录名，证明渠道只决定它的 `proven`，不改变它作为标识这一事实。手机验证不解除限制，手机仍可作为登录方式或额外安全因素。
 
-**清理。** 删除只针对 `signup_state = 1`、`signup_verified_at IS NULL`、没有任何 `Proves` 为真的邮箱且长期未登录的自助注册账户（闲置期以 `COALESCE(last_login_at, created_at)` 计，从未登录的账户从创建时刻起算）；删除走 `Delete`，连带清掉标识、口令凭据、待验证联系方式与会话。`signup_state = 0` 与 `signup_state = 2` 的账户永不因未验证被清理。期限与周期的设置项见 [design-authn-config](design-authn-config.md)。
+**清理。** 删除只针对 `signup_state = 1`、`signup_verified_at IS NULL`、没有任何 `Proves` 为真的邮箱且长期未登录的自助注册账户（闲置期以 `COALESCE(last_login_at, created_at)` 计，从未登录的账户从创建时刻起算）。这些条件在挑选批次时判一次，在每次删除自己的事务里锁住账户行后重判一次：窗口内账户被证明了邮箱或登录过，删除跳过该账户。删除在本模块的事务里抹除账户，连带清掉标识、口令凭据、待验证联系方式与会话。`signup_state = 0` 与 `signup_state = 2` 的账户永不因未验证被清理。期限与周期的设置项见 [design-authn-config](design-authn-config.md)。
 
 ### 账户状态与生命周期
 
@@ -846,7 +846,7 @@ flowchart TD
 |---|---|---|---|
 | `authn_throttles` | `authn.account` | `last_failure_at < now - throttle-decay` 且（`locked_until` 为空或已过） | 10 分钟 |
 | `authn_service_secrets` | `authn.account` | `expires_at` 或 `revoked_at` 早于 `now - secret-retention` | 1 小时 |
-| `authn_accounts`（未验证的自助注册账户） | `authn.account` | `signup_state = 1`、`signup_verified_at IS NULL`、没有任何 `Proves` 为真的邮箱、`COALESCE(last_login_at, created_at)` 早于 `now - unverified-ttl`；删除走 `Delete`，连带清掉标识、凭据与待验证联系方式。`signup_state = 0` 与 `2` 的账户不在此列 | `authn.account.unverified-sweep-interval` |
+| `authn_accounts`（未验证的自助注册账户） | `authn.account` | `signup_state = 1`、`signup_verified_at IS NULL`、没有任何 `Proves` 为真的邮箱、`COALESCE(last_login_at, created_at)` 早于 `now - unverified-ttl`；删除自己的事务里重判同一组条件，状态已变则跳过，删除连带清掉标识、凭据与待验证联系方式。`signup_state = 0` 与 `2` 的账户不在此列 | `authn.account.unverified-sweep-interval` |
 | `authn_idp_domains`（未验证的声明） | `authn.sso` | `verified_at` 为空且 `created_at` 早于 7 天 | 1 小时 |
 | `authn_saml_assertions` | `authn.sso` | `not_on_or_after < now` | 10 分钟 |
 | `authn_challenges` | `authn.sms` | `created_at < now - 25 小时`（预算统计窗口最长一天，留一小时余量） | 10 分钟 |
@@ -1010,5 +1010,5 @@ type Provisioner interface {
 | 服务密钥的创建、校验与撤销 | 已实现 | `pkg/authn/account/admin.go` `CreateServiceSecret`；`pkg/authn/account/credentials.go` `VerifyServiceSecret`；`pkg/authn/account/lifecycle.go` `RevokeServiceSecret` |
 | `Provisioner` 钩子与账户属性集 | 已实现 | `pkg/authn/account/admin.go` `SetAttributes`；`pkg/authn/provision.go` `Provisioner`；`pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`AccountAttributesMax` |
 | 账户与口令的配置项、设置声明与启动自检 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/account/params.go`；`pkg/authn/account/relax.go` |
-| 自助注册开户、注册验证状态与待验证联系方式：`Signups.Register`、`SignupVerification.SignupStateOf`、`SignupVerification.PendingAccountByContact`、`authn_pending_contacts` 表、`signup_state` 与 `signup_verified_at` 列、按用户名的注册退避、未验证账户的清理 | 未实现 | — |
-| 根包类型 `SignupState`、`SignupStatus`、`RegisterAccount`、`CreateAccount.UsernameVerifiedVia`、`ThrottleScope` 的 `signup-username` 取值与哨兵 `ErrContactRequired` | 未实现 | — |
+| 自助注册开户、注册验证状态与待验证联系方式：`Signups.Register`、`SignupVerification.SignupStateOf`、`SignupVerification.PendingAccountByContact`、`authn_pending_contacts` 表、`signup_state` 与 `signup_verified_at` 列、按用户名的注册退避、未验证账户的清理 | 已实现 | `pkg/authn/account/signup.go` `(*product).Register`、`(*product).SignupStateOf`、`(*product).PendingAccountByContact`；`pkg/authn/account/admin.go` `(*product).AddIdentifier`、`(*product).RemoveIdentifier`；`pkg/authn/account/migrations/postgres/0002_authn_signup.sql`、`pkg/authn/account/migrations/sqlite/0002_authn_signup.sql`；`pkg/authn/account/sweep.go` `(*product).sweepUnverified`、`(*product).deleteUnverified`、`(*product).unverified`；`pkg/authn/account/config.go` `settingsSchema`（`signup-ip-limit`、`signup-global-hourly`、`unverified-ttl`、`unverified-sweep-interval`）；`pkg/authn/account/relax.go` `relaxing`；`pkg/authn/account/throttle.go` `validScope` |
+| 根包类型 `SignupState`、`SignupStatus`、`RegisterAccount`、`CreateAccount.UsernameVerifiedVia`、`ThrottleScope` 的 `signup-username` 取值与哨兵 `ErrContactRequired` | 已实现 | `pkg/authn/signup.go` `SignupState`、`SignupStatus`、`RegisterAccount`、`Signups`、`SignupVerification`；`pkg/authn/internal/model/directory.go` `SignupState.Valid`、`CreateAccount.UsernameVerifiedVia`；`pkg/authn/throttle.go` `ScopeSignupUsername`；`pkg/authn/errors.go` `ErrContactRequired` |

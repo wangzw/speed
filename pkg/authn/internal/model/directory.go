@@ -120,24 +120,64 @@ func (v Verification) Proves() bool {
 		v.Via != VerifiedViaSelf
 }
 
+// SignupState is how far the self-registration of an account has got. It is
+// independent of AccountStatus: a pending registration is an enabled account
+// that has not proved an email address yet. The numbers are the signup_state
+// column's.
+type SignupState uint8
+
+// The states of a self-registration.
+const (
+	SignupNone     SignupState = iota // the zero value: not a self-registration
+	SignupPending                     // self-registered, no email address proved yet
+	SignupVerified                    // an email address has been proved
+)
+
+// Valid reports whether s is one of the constants above.
+func (s SignupState) Valid() bool { return s <= SignupVerified }
+
+// SignupStatus is the self-registration state as a request reads it. State is
+// None, Pending or Verified; Email is the address of that state — the proved
+// one that was verified first for Verified, the pending contact for Pending,
+// and empty when there is no such address; Since is when the account first
+// reached Verified, the zero time while it never did, and is kept when a
+// removal of the last proved address returns the account to Pending.
+type SignupStatus struct {
+	State SignupState
+	Email string
+	Since time.Time
+}
+
+// RegisterAccount is the input of an anonymous self-registration. The email
+// address is only a contact awaiting verification; it is not a login name.
+type RegisterAccount struct {
+	Username    string
+	Email       string // required; written to authn_pending_contacts once normalized
+	Password    string
+	DisplayName string
+	Locale      string // written to the i18n.locale attribute
+	TimeZone    string // written to the i18n.tz attribute
+}
+
 // CreateAccount is what creating an account takes. An email and a phone must
 // already be verified, so each carries the way it was; there is no row awaiting
 // verification. Password and PasswordHash are alternatives.
 type CreateAccount struct {
-	ID                 AccountID // for an import only; empty generates one
-	Kind               AccountKind
-	DisplayName        string
-	Username           string
-	Email              string // must have been verified
-	EmailVerifiedVia   Verification
-	Phone              string // must have been verified
-	PhoneVerifiedVia   Verification
-	Password           string // an alternative to PasswordHash
-	PasswordHash       string // PHC or legacy form, for an import
-	MustChangePassword bool
-	MFARequired        bool
-	Attributes         map[string]string
-	Via                string // admin, jit, signup or import: written into the event payload
+	ID                  AccountID // for an import only; empty generates one
+	Kind                AccountKind
+	DisplayName         string
+	Username            string
+	UsernameVerifiedVia Verification // the way the username came about; the zero value is admin
+	Email               string       // must have been verified
+	EmailVerifiedVia    Verification
+	Phone               string // must have been verified
+	PhoneVerifiedVia    Verification
+	Password            string // an alternative to PasswordHash
+	PasswordHash        string // PHC or legacy form, for an import
+	MustChangePassword  bool
+	MFARequired         bool
+	Attributes          map[string]string
+	Via                 string // admin, jit, signup or import: written into the event payload
 }
 
 // Clone returns a copy that shares no map with c.

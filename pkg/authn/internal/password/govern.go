@@ -56,6 +56,14 @@ func NewGovernor(concurrency int, memoryKiB int64) *Governor {
 	}
 }
 
+// NewWidthGovernor makes a Governor that bounds only how many derivations run
+// at once, with no memory budget: a caller whose capacity is the only bound it
+// states, such as anonymous self-registration, uses this one. A value below one
+// is raised to one.
+func NewWidthGovernor(concurrency int) *Governor {
+	return &Governor{slots: semaphore.NewWeighted(int64(max(concurrency, 1)))}
+}
+
 // acquire takes a slot and, when memoryKiB is positive, a share of the memory
 // budget, waiting for each at most wait, and returns what releases them. The
 // error is authn.ErrBusy when the wait ran out, which is also the answer at once
@@ -63,7 +71,7 @@ func NewGovernor(concurrency int, memoryKiB int64) *Governor {
 // and can therefore never be had; and the context's own error when it is the
 // caller's context that ended, which is not the Governor being full.
 func (g *Governor) acquire(ctx context.Context, memoryKiB int64, wait time.Duration) (release func(), err error) {
-	if memoryKiB > g.memoryTotal {
+	if g.memory != nil && memoryKiB > g.memoryTotal {
 		return nil, fmt.Errorf("%w: a derivation needs %d KiB and the budget is %d KiB in all",
 			authn.ErrBusy, memoryKiB, g.memoryTotal)
 	}
@@ -92,14 +100,14 @@ func (g *Governor) acquire(ctx context.Context, memoryKiB int64, wait time.Durat
 	if err := take(g.slots, 1); err != nil {
 		return nil, err
 	}
-	if memoryKiB > 0 {
+	if memoryKiB > 0 && g.memory != nil {
 		if err := take(g.memory, memoryKiB); err != nil {
 			g.slots.Release(1)
 			return nil, err
 		}
 	}
 	return func() {
-		if memoryKiB > 0 {
+		if memoryKiB > 0 && g.memory != nil {
 			g.memory.Release(memoryKiB)
 		}
 		g.slots.Release(1)

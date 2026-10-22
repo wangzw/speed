@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,23 @@ func TestStartRefusesAMissingTable(t *testing.T) {
 		}
 		if err := h.p.start(t.Context()); !errors.Is(err, authn.ErrNotMigrated) {
 			t.Errorf("Start over a missing table gave %v, want ErrNotMigrated", err)
+		}
+	})
+}
+
+// The probe covers every table the module owns, the pending contacts among them:
+// a database migrated before that table existed refuses the startup and names it.
+func TestStartRefusesAMissingPendingContactTable(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		if err := h.handle.Exec("DROP TABLE " + tablePending).Error; err != nil {
+			t.Fatalf("dropping a table: %v", err)
+		}
+		err := h.p.start(t.Context())
+		if !errors.Is(err, authn.ErrNotMigrated) {
+			t.Fatalf("Start over a missing pending-contact table gave %v, want ErrNotMigrated", err)
+		}
+		if !strings.Contains(err.Error(), tablePending) {
+			t.Errorf("the refusal %q does not name %s", err, tablePending)
 		}
 	})
 }

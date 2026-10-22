@@ -17,6 +17,10 @@ const (
 	ScopeFactor     ThrottleScope = "factor"     // a second factor
 	ScopePhone      ThrottleScope = "phone"      // a phone number
 	ScopeClient     ThrottleScope = "client"     // an API client
+	// ScopeSignupUsername counts anonymous registrations under the digest of a
+	// normalized username, so that a name being taken and a name being free
+	// reach the same threshold on the same key.
+	ScopeSignupUsername ThrottleScope = "signup-username"
 )
 
 // ErrThrottled reports that an attempt was refused because earlier failures put

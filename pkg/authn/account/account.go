@@ -3,8 +3,10 @@
 // their tenant memberships, the password credentials and the secrets of service
 // accounts, and the back-off that keeps guessing in check.
 //
-// One module, authn.account, owns the tables and delivers five capabilities
+// One module, authn.account, owns the tables and delivers seven capabilities
 // exclusively: Accounts and AccountAdmin, which read and write the store;
+// Signups, which opens an account for anonymous self-registration, and
+// SignupVerification, which reads how far that registration has got;
 // Passwords, which checks and writes every credential of the password class;
 // Memberships, which says which tenants an account belongs to; and Throttle, the
 // database form of the failure back-off. The root package declares the
@@ -72,14 +74,16 @@ var migrationsFS = func() fs.FS {
 }()
 
 // The capabilities this module delivers, each of which the product has to
-// satisfy. The method names of the five interfaces are pairwise disjoint, which
-// is what lets one instance satisfy all of them.
+// satisfy. The method names of the interfaces this capability provides are
+// pairwise disjoint, which is what lets one instance satisfy all of them.
 var (
-	_ authn.Accounts     = (*product)(nil)
-	_ authn.AccountAdmin = (*product)(nil)
-	_ authn.Passwords    = (*product)(nil)
-	_ authn.Memberships  = (*product)(nil)
-	_ authn.Throttle     = (*product)(nil)
+	_ authn.Accounts           = (*product)(nil)
+	_ authn.AccountAdmin       = (*product)(nil)
+	_ authn.Signups            = (*product)(nil)
+	_ authn.SignupVerification = (*product)(nil)
+	_ authn.Passwords          = (*product)(nil)
+	_ authn.Memberships        = (*product)(nil)
+	_ authn.Throttle           = (*product)(nil)
 )
 
 // init registers this module with the process registry.
@@ -89,7 +93,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 //
 // The database is required and is the one exclusive capability the module
 // stands on: a command without a database has no account store, and the module
-// that finds none stops the startup before anything is built. The five
+// that finds none stops the startup before anything is built. The seven
 // capabilities are each delivered exclusively, so two providers of any of them
 // is a startup failure and not two stores a read could land in.
 //
@@ -115,6 +119,8 @@ func Module() core.Module {
 		Provides: []core.Provision{
 			{Token: (*authn.Accounts)(nil), Exclusive: true},
 			{Token: (*authn.AccountAdmin)(nil), Exclusive: true},
+			{Token: (*authn.Signups)(nil), Exclusive: true},
+			{Token: (*authn.SignupVerification)(nil), Exclusive: true},
 			{Token: (*authn.Passwords)(nil), Exclusive: true},
 			{Token: (*authn.Memberships)(nil), Exclusive: true},
 			{Token: (*authn.Throttle)(nil), Exclusive: true},
@@ -202,6 +208,12 @@ type product struct {
 
 	gov   *password.Governor
 	decoy password.Decoy
+	// signupGov is the capacity of the self-registration derivation: a width of
+	// its own and no memory budget, so that registering never takes a place
+	// from a password login and one derivation's memory is bounded by the
+	// width. signupWait is how long a derivation that finds it full waits.
+	signupGov  *password.Governor
+	signupWait time.Duration
 	// wait is how long a derivation that finds no capacity waits for it. It is a
 	// field so that a case need not wait the second a real refusal takes.
 	wait time.Duration
@@ -237,6 +249,8 @@ func newProduct(database db.Database, cfg resolved) *product {
 		dialect:             database.Dialect(),
 		cfg:                 cfg,
 		gov:                 password.NewGovernor(cfg.concurrency, cfg.memoryBudget),
+		signupGov:           password.NewWidthGovernor(cfg.signupConcurrency),
+		signupWait:          password.DefaultWait,
 		wait:                password.DefaultWait,
 		stopWait:            stopWait,
 		sweepThrottlesEvery: throttleSweepEvery,

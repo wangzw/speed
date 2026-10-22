@@ -171,9 +171,9 @@ func TestConcurrentFailuresAreAllCounted(t *testing.T) {
 	})
 }
 
-// A scope that is not one of the five is refused, so that counters never share a
+// A scope that is not one of the six is refused, so that counters never share a
 // key space.
-func TestAScopeOutsideTheFiveIsRefused(t *testing.T) {
+func TestAScopeOutsideTheSixIsRefused(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		bad := authn.ThrottleScope("tenant")

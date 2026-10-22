@@ -14,14 +14,17 @@ import (
 
 // The directions a setting is moved in that relax a check. A password that has to
 // be shorter, a hash that costs less, a back-off that is shorter or starts later,
-// a switch moved to the value that checks less: each lets a guess, a weak
-// password or a first login through that the declared default would have
-// refused. A hash algorithm moved from the stronger one to the weaker one is a
-// downgrade: it does not change how a check is made, but it makes every entry
-// written afterwards cheaper to attack.
+// a registration budget that is turned off or raised, a switch moved to the value
+// that checks less: each lets a guess, a weak password or a first login through
+// that the declared default would have refused. A hash algorithm moved from the
+// stronger one to the weaker one is a downgrade: it does not change how a check
+// is made, but it makes every entry written afterwards cheaper to attack.
 const (
 	moveDown = "decrease"
 	moveUp   = "increase"
+	// moveToZero is the direction of a numeric setting whose zero turns it off:
+	// zero is the widest value, not the smallest count.
+	moveToZero = "to-zero"
 	// moveRelaxed is the direction of a switch moved to the value that checks
 	// less. It is the authn events contract's direction for the relaxation
 	// switches, whose value set also includes to-false, to-zero, add-member and
@@ -32,25 +35,44 @@ const (
 	moveDowngrade = "downgrade"
 )
 
-// relaxing is, for each setting of this module that relaxes a check when it
-// moves, the direction it relaxes in. A setting that is not in the table is one
-// whose change relaxes nothing and is not watched.
-var relaxing = map[string]string{
-	minLengthPath:      moveDown,
-	argonMemoryPath:    moveDown,
-	argonIterationPath: moveDown,
-	pbkdf2IterPath:     moveDown,
-	freeAttemptsPath:   moveUp,
-	maxDelayPath:       moveDown,
-	decayPath:          moveDown,
+// relaxWhen is how a numeric setting of this module loosens a check when it
+// moves.
+type relaxWhen int
+
+const (
+	// relaxWhenLarger: a larger value relaxes, a smaller one tightens.
+	relaxWhenLarger relaxWhen = iota
+	// relaxWhenSmaller: a smaller value relaxes, a larger one tightens.
+	relaxWhenSmaller
+	// relaxWhenOff: zero turns the budget off and is the widest value; from a
+	// positive value, zero and any larger value both relax, and a smaller
+	// positive value tightens. It is not one direction, because zero is not the
+	// smallest budget but the absence of one.
+	relaxWhenOff
+)
+
+// relaxing is, for each numeric setting of this module that relaxes a check when
+// it moves, how it relaxes. A setting that is not in the table is one whose
+// change relaxes nothing and is not watched.
+var relaxing = map[string]relaxWhen{
+	minLengthPath:      relaxWhenSmaller,
+	argonMemoryPath:    relaxWhenSmaller,
+	argonIterationPath: relaxWhenSmaller,
+	pbkdf2IterPath:     relaxWhenSmaller,
+	freeAttemptsPath:   relaxWhenLarger,
+	maxDelayPath:       relaxWhenSmaller,
+	decayPath:          relaxWhenSmaller,
+	signupIPLimitPath:  relaxWhenOff,
+	signupHourlyPath:   relaxWhenLarger,
 }
 
 // relaxingSwitch is, for each switch of this module that relaxes a check, the
 // value it relaxes at. A change to that value from any other one is a
 // relaxation; a change back to the strict value is not watched.
 var relaxingSwitch = map[string]string{
-	signupPath:   signupOpen,
-	autoLinkPath: autoLinkVerified,
+	signupPath:         signupOpen,
+	passwordSignupPath: signupOpen,
+	autoLinkPath:       autoLinkVerified,
 }
 
 // downgradingSwitch is, for each setting of this module whose value set is
@@ -100,7 +122,7 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 		}
 		return nil
 	}
-	direction, watched := relaxing[change.Key]
+	rule, watched := relaxing[change.Key]
 	if !watched {
 		return nil
 	}
@@ -109,12 +131,38 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 	if !okBefore || !okAfter {
 		return nil
 	}
-	loosens := (direction == moveDown && after < before) || (direction == moveUp && after > before)
+	direction, loosens := relaxedMove(rule, before, after)
 	if !loosens {
 		return nil
 	}
 	p.reportRelaxation(ctx, change.Key, direction)
 	return nil
+}
+
+// relaxedMove says whether a move of a numeric setting relaxes it, and which
+// direction the record takes. The direction is the event contract's name for the
+// move: a smaller wait or count is decrease, a larger one increase, and a budget
+// turned off is to-zero. A budget that is off at both ends, and a positive value
+// that shrinks, loosen nothing.
+func relaxedMove(rule relaxWhen, before, after int64) (string, bool) {
+	switch rule {
+	case relaxWhenSmaller:
+		return moveDown, after < before
+	case relaxWhenLarger:
+		return moveUp, after > before
+	case relaxWhenOff:
+		switch {
+		case after == 0 && before != 0:
+			return moveToZero, true
+		case before == 0:
+			// Zero is the budget off, the widest value: a count that starts there
+			// can only tighten.
+			return "", false
+		case after > before:
+			return moveUp, true
+		}
+	}
+	return "", false
 }
 
 // warnRelaxation writes the Warn a removed check is visible by: the key and the
@@ -177,6 +225,10 @@ func declaredNumber(key string) (int64, bool) {
 		return int64(defaults.ThrottleMaxDelay), true
 	case decayPath:
 		return int64(defaults.ThrottleDecay), true
+	case signupIPLimitPath:
+		return int64(defaults.SignupIPLimit), true
+	case signupHourlyPath:
+		return int64(defaults.SignupGlobalHourly), true
 	}
 	return 0, false
 }

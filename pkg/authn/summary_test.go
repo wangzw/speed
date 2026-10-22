@@ -63,7 +63,7 @@ var metricAttributeValues = map[string][]string{
 	},
 	"method":    {"pwd", "sms", "otp", "webauthn", "oauth", "oidc", "saml", "static", "client-secret"},
 	"factor":    {"totp", "sms", "webauthn"},
-	"scope":     {"identifier", "account", "factor", "phone", "client"},
+	"scope":     {"identifier", "account", "factor", "phone", "client", "signup-username"},
 	"operation": {"created", "elevated", "revoked", "revoked-all", "purged", "issued", "refreshed", "client-credentials"},
 	"protocol":  {"saml", "oidc"},
 	"algorithm": {"argon2id", "pbkdf2-sha256"},

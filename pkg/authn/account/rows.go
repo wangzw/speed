@@ -11,6 +11,7 @@ import (
 const (
 	tableAccounts    = "authn_accounts"
 	tableIdentifiers = "authn_identifiers"
+	tablePending     = "authn_pending_contacts"
 	tableExternals   = "authn_external_identities"
 	tableMemberships = "authn_memberships"
 	tableCredentials = "authn_password_credentials"
@@ -20,7 +21,7 @@ const (
 
 // tables is every table this module owns, in the order Start looks for them.
 var tables = []string{
-	tableAccounts, tableIdentifiers, tableExternals, tableMemberships,
+	tableAccounts, tableIdentifiers, tablePending, tableExternals, tableMemberships,
 	tableCredentials, tableServiceKeys, tableThrottles,
 }
 
@@ -34,22 +35,37 @@ var tables = []string{
 // something, and every other column that is not the validity instant or the time
 // of the last write is empty.
 type accountRow struct {
-	ID          string     `gorm:"column:id;primaryKey"`
-	Kind        string     `gorm:"column:kind"`
-	Status      int16      `gorm:"column:status"`
-	DisplayName string     `gorm:"column:display_name"`
-	Attributes  string     `gorm:"column:attributes"`
-	MFARequired bool       `gorm:"column:mfa_required"`
-	Protected   bool       `gorm:"column:protected"`
-	ValidAfter  time.Time  `gorm:"column:valid_after"`
-	CreatedAt   time.Time  `gorm:"column:created_at;autoCreateTime:false"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
-	LastLoginAt *time.Time `gorm:"column:last_login_at"`
-	DisabledAt  *time.Time `gorm:"column:disabled_at"`
-	DeletedAt   *time.Time `gorm:"column:deleted_at"`
+	ID               string     `gorm:"column:id;primaryKey"`
+	Kind             string     `gorm:"column:kind"`
+	Status           int16      `gorm:"column:status"`
+	SignupState      int16      `gorm:"column:signup_state"`
+	SignupVerifiedAt *time.Time `gorm:"column:signup_verified_at"`
+	DisplayName      string     `gorm:"column:display_name"`
+	Attributes       string     `gorm:"column:attributes"`
+	MFARequired      bool       `gorm:"column:mfa_required"`
+	Protected        bool       `gorm:"column:protected"`
+	ValidAfter       time.Time  `gorm:"column:valid_after"`
+	CreatedAt        time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
+	LastLoginAt      *time.Time `gorm:"column:last_login_at"`
+	DisabledAt       *time.Time `gorm:"column:disabled_at"`
+	DeletedAt        *time.Time `gorm:"column:deleted_at"`
 }
 
 func (accountRow) TableName() string { return tableAccounts }
+
+// pendingContactRow is one row of authn_pending_contacts: a contact awaiting
+// verification, which is not an identifier and is read by no login path.
+type pendingContactRow struct {
+	ID        string    `gorm:"column:id;primaryKey"`
+	AccountID string    `gorm:"column:account_id"`
+	Kind      string    `gorm:"column:kind"`
+	Value     string    `gorm:"column:value"`
+	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime:false"`
+}
+
+func (pendingContactRow) TableName() string { return tablePending }
 
 // identifierRow is one row of authn_identifiers.
 type identifierRow struct {
@@ -128,4 +144,22 @@ func statusOf(n int16) authn.AccountStatus {
 		return authn.StatusDisabled
 	}
 	return authn.AccountStatus(n)
+}
+
+// The signup_state column's numbers, which are authn.SignupState's.
+const (
+	signupNone     int16 = 0
+	signupPending  int16 = 1
+	signupVerified int16 = 2
+)
+
+// signupStateOf is the self-registration state a row states, held to the three
+// the column is allowed. One written around the check reads as none, the zero
+// value, so that a broken row is not taken for a registration that proved an
+// address.
+func signupStateOf(n int16) authn.SignupState {
+	if n < signupNone || n > signupVerified {
+		return authn.SignupNone
+	}
+	return authn.SignupState(n)
 }
