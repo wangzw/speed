@@ -13,12 +13,16 @@
  * the shared step renderer, exactly as it does for the sign-in form.
  *
  * The confirmation field is client-only: the two passwords are compared
- * in the form and the confirmation never travels. Everything else --
- * username normalization, the password policy, a taken username, the
- * pending contact -- is the server's; a refusal renders its own mapped
- * text and never restates the policy's numbers. A taken username is the
- * username field's error (invalid, described by the message, focused);
- * every other mapped refusal is one whole-attempt banner.
+ * in the form and the confirmation never travels. The email field is
+ * checked against the server's address rule before it is sent -- trimmed,
+ * printable ASCII, exactly one @ with a part on each side, at most 254
+ * bytes -- so a malformed address is refused in the field rather than
+ * answered with the generic bad-request. Everything else -- username
+ * normalization, the password policy, a taken username, the pending
+ * contact -- is the server's; a refusal renders its own mapped text and
+ * never restates the policy's numbers. A taken username is the username
+ * field's error (invalid, described by the message, focused); every other
+ * mapped refusal is one whole-attempt banner.
  *
  * An account that was opened but whose auto-login was refused is not a
  * registration failure: the account exists, so the form must never
@@ -52,7 +56,13 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
-import { FormField, FormLayout, errorCodeOf, visuallyHiddenSx } from '@speed/ui-kit'
+import {
+  FormField,
+  FormLayout,
+  errorCodeOf,
+  parseEmailAddress,
+  visuallyHiddenSx,
+} from '@speed/ui-kit'
 import type { AuthSession } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
@@ -329,6 +339,14 @@ export function PasswordRegisterForm({
       <FormField
         name="email"
         required
+        rules={{
+          // The server's address rule (trimmed, printable ASCII, exactly
+          // one @ with a part on each side, at most 254 bytes): a
+          // malformed address is refused here rather than sent, where the
+          // answer could only be the generic bad-request.
+          validate: (value) =>
+            parseEmailAddress(value) !== null || t('register.invalidEmail'),
+        }}
         render={({ field, invalid, errorText }) => (
           <TextField
             {...field}

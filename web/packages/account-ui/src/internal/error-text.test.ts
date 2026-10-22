@@ -137,17 +137,19 @@ describe('error-text whitelist', () => {
     }
   })
 
-  it('name both a username and a verified email in the missing-login-identifier text', () => {
-    // The wording is pinned through the bundle's own labels: the sentence
-    // must name a username, an email address, and the verified qualifier
-    // -- an unverified address is not a login name.
+  it('name both a username and an email address in the missing-login-identifier text', () => {
+    // The wording is pinned through the bundle's own labels: either kind is a
+    // login name, and the proving channel does not decide that -- the text
+    // therefore carries no verified qualifier, and it must read the same for
+    // the set-password and remove-last-login-name refusals that share the code.
     const zh = zhCN.errors.authn.login_identifier_required
     const en = enUS.errors.authn.login_identifier_required
     expect(zh).toContain(zhCN.identifiers.add.value.labelUsername)
     expect(zh).toContain(zhCN.identifiers.add.value.labelEmail)
-    expect(zh).toContain(zhCN.identifiers.verified)
+    expect(zh).not.toContain(zhCN.identifiers.verified)
     expect(en).toContain('username')
-    expect(en).toContain('verified email')
+    expect(en).toContain('email address')
+    expect(en).not.toContain('verified')
   })
 
   it('keep every policy-named shared-answer text a verbatim copy of the auth-ui text for the same code', () => {

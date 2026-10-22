@@ -5,10 +5,10 @@
 `@speed/account-ui` 是一个 speed 前端已登录一方的账户管理组件族：一组节（section）组成宿主的账户页。账户自助写面归本包的理由见 [ADR-web-account-ui-selfservice-2026-10-16](../../../adr/adr-web-account-ui-selfservice-2026-10-16.md)。它交付下列面：
 
 - `ProfileSection`：账户显示名的编辑，读 `GET /api/v1/auth/me` 取存下的值、写 `PATCH /api/v1/auth/me` 提交单字段的修改，走账户档案的自写面（[authn-profile](../authn/design-authn-profile.md)）。
-- `PasswordSection`：改口令，走登录自助面的 `PUT /api/v1/auth/password`（[authn 登录](../authn/design-authn-login.md)）。账户 `password_set` 为假（经提供方开户、无口令）时不显示当前口令字段，只给新口令两项；确认口令是客户端自己的校验，不上线。账户没有可作登录名的标识（没有用户名也没有已验证邮箱）时，`PUT /api/v1/auth/password` 答 409 `login-identifier-required`，口令节渲染这条码的文本，说明需要先添加用户名或已验证邮箱。
+- `PasswordSection`：改口令，走登录自助面的 `PUT /api/v1/auth/password`（[authn 登录](../authn/design-authn-login.md)）。账户 `password_set` 为假（经提供方开户、无口令）时不显示当前口令字段，只给新口令两项；确认口令是客户端自己的校验，不上线。账户没有可作登录名的标识（没有用户名也没有邮箱标识）时，`PUT /api/v1/auth/password` 答 409 `login-identifier-required`，口令节渲染这条码的文本，说明账户需要至少一个登录名。
 - `PhoneSection`：添加或更换手机号的两步——`POST /api/v1/auth/phone` 发送验证码、`POST /api/v1/auth/phone/verify` 提交它；第二步只带验证码，号码是服务端按会话存下的（[authn 登录](../authn/design-authn-login.md)）。号码经 ui-kit 的共享两段式控件（`PhoneNumberField`：国家/地区选择器加本地号码）录入，提交前组装为 E.164 并按国家/地区本地校验；它与 `SMSSignInForm` 用同一控件与同一套规则，两处不会各自漂移。手机是登录方式与额外安全因素，验证手机不解除注册验证的限制——只有邮箱被证明才解除。
-- `IdentifiersSection`：账户登录标识的列表、逐条删除与自助添加。标识读自 `GET /api/v1/auth/me` 的 `identifiers` 字段（规格无独立的清单路由），删除走 `DELETE /api/v1/auth/identifiers/{id}`。添加面走登录自助的 `POST /api/v1/auth/identifiers`（体 `{kind, value}`，`kind` 取 `username` 或 `email`）：用户名一步写入；邮箱先发验证码、再经 `POST /api/v1/auth/identifiers/verify` 提交码，通过才写标识（[authn 登录](../authn/design-authn-login.md)）。每行的 `proven` 表示它是否已证明归属：`email-code`、`sms-code`、`invite` 与 `idp:<provider>` 为真，`admin`、`import-unverified` 与 `self` 为假；chip 读 `proven`，不读 `verified_at`，故注册时以 `self` 写入的用户名不显示为已证明。`verification.state` 为 `pending` 时，添加面不提供邮箱一项——待验证联系方式由 `ContactVerificationSection` 管理（`pending` 且没有目标邮箱时由它提供添加邮箱的入口），避免同一账户出现两个待验证邮箱；用户名与手机选项照常。`emailAvailable` 表示添加面是否提供邮箱一项（缺省提供）；`offerUsername` 表示添加面是否提供用户名一项（缺省提供），与「档案已列出用户名」求交。
-- `ContactVerificationSection`：注册后联系方式验证的节。它读 `GET /api/v1/auth/me` 的 `verification` 字段：`pending` 且 `email` 非空时显示目标邮箱、发送与重发验证码、验证码输入与更换邮箱；`pending` 且 `email` 为空时显示添加邮箱表单（`POST /api/v1/auth/identifiers`）；`verified` 显示完成态；`none` 不渲染。发送、验证与更换邮箱走标识回路（`POST /api/v1/auth/identifiers` 与 `/identifiers/verify`），手机走手机回路（`POST /api/v1/auth/phone` 与 `/phone/verify`），写入受提权门控。验证节与宿主挂在应用栏之下的验证提示都以邮箱为主路径；手机入口标注为额外安全因素，不承诺解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
+- `IdentifiersSection`：账户登录标识的列表、逐条删除与自助添加。标识读自 `GET /api/v1/auth/me` 的 `identifiers` 字段（规格无独立的清单路由），删除走 `DELETE /api/v1/auth/identifiers/{id}`。添加面走登录自助的 `POST /api/v1/auth/identifiers`（体 `{kind, value}`，`kind` 取 `username` 或 `email`）：用户名一步写入；邮箱先发验证码、再经 `POST /api/v1/auth/identifiers/verify` 提交码，通过才写标识（[authn 登录](../authn/design-authn-login.md)）。每行的 `proven` 表示它是否已证明归属：`email-code`、`sms-code`、`invite` 与 `idp:<provider>` 为真，`admin`、`import-unverified` 与 `self` 为假；chip 读 `proven`，不读 `verified_at`。用户名是登录名、没有归属可验证，故用户名行不渲染任何验证状态 chip；邮箱与手机行渲染读 `proven` 的 chip。带口令（`password_set`）的账户经用户名或邮箱标识登录：档案里这两类标识恰好一条时，该行不渲染删除按钮，改为说明「先添加另一个登录名再删除」；另有用户名/邮箱或账户无口令时保留删除。手机不计入登录名，服务端仍是最后登录方式的判定者。`verification.state` 为 `pending` 时，添加面不提供邮箱一项——待验证联系方式由 `ContactVerificationSection` 管理（`pending` 且没有目标邮箱时由它提供添加邮箱的入口），避免同一账户出现两个待验证邮箱；用户名与手机选项照常。`emailAvailable` 表示添加面是否提供邮箱一项（缺省提供）；`offerUsername` 表示添加面是否提供用户名一项（缺省提供），与「档案已列出用户名」求交。添加面在 `kind=email` 时先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段显示 `identifiers.add.invalidEmail` 且不发请求，提交的是去空白后的值；服务端仍答 400 `authn.bad_request` 且 kind 为 email 时同样落在该字段，而不是通用横幅。用户名的 400 走通用文案：服务端的用户名规则还拒绝本面不复述的形状（静态凭据前缀、UUID 形状）。取消添加清空失败横幅、字段错误、成功提示与已发码状态。
+- `ContactVerificationSection`：注册后联系方式验证的节。它读 `GET /api/v1/auth/me` 的 `verification` 字段：`pending` 且 `email` 非空时显示目标邮箱、发送与重发验证码、验证码输入与更换邮箱；`pending` 且 `email` 为空时显示添加邮箱表单（`POST /api/v1/auth/identifiers`）；`verified` 显示完成态；`none` 不渲染。发送、验证与更换邮箱走标识回路（`POST /api/v1/auth/identifiers` 与 `/identifiers/verify`），手机走手机回路（`POST /api/v1/auth/phone` 与 `/phone/verify`），写入受提权门控。宿主可传 `autoSend`：`pending` 且有目标邮箱、更换表单未展开时，本次挂载自动发送一次验证码，重渲染与写后重读都不重复；自动发送不替用户打开提权对话框，被 401 拒绝时保留手动发送按钮并渲染说明，用户点击后走既有门控。落地即展开更换表单（`initialChangeOpen`）的挂载整次都不自动发送，关闭表单后也不补发——来访者是来更换地址的，旧地址不该在本挂载收到验证码。只在专用验证页传。验证节与宿主挂在应用栏之下的验证提示都以邮箱为主路径；手机入口标注为额外安全因素，不承诺解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
 - `PreferencesSection`：语言与时区两个下拉，编辑账户存下的偏好，走账户档案的自写面（`PATCH /api/v1/auth/me`，[authn-profile](../authn/design-authn-profile.md)）。语言的取值集是 i18n 实例自己的受支持集；语言的选取先写账户、确认写入后再落设备（手选槽位），清空偏好只动账户；时区取值集是引擎的 IANA 列表加一个显式的「未选」。
 - `AppearanceSection`：外观主题的选择。它是受控节：预设列表、每个预设的显示名、当前值与选择回调都由宿主给出，本包不 import `@speed/theme-presets`、不读主题 provider，也不持有选择状态。宿主把选择接到主题 provider 后，切换立即生效。
 - `SessionsSection`：账户的会话与设备列表，当前会话所属的那条打上当前徽标，逐条撤销与批量撤销「其它会话」。撤销自己的会话是低损失动作（行上不再确认），撤销其余走 ui-kit 危险 `ConfirmDialog` 的单次确认——它是可恢复的动作（被登出的设备再登录即可），不设 `doubleConfirm` 两步守卫，免得比不可逆的删除还重。
@@ -61,6 +61,7 @@ interface IdentifiersSectionProps {
 interface ContactVerificationSectionProps {
   readonly session: AuthSession // 提权门控驱动一条 step-up 流程
   readonly initialChangeOpen?: boolean // 进页即展开更换邮箱表单；缺省关闭（停在验证码一步）
+  readonly autoSend?: boolean // 待验证且有目标邮箱时于本次挂载自动发一次码；缺省 false
 }
 
 interface PreferencesSectionProps {
@@ -156,7 +157,7 @@ sequenceDiagram
 | 时区链 | `resolveTimeZone` + ui-kit 上下文 | 存下的偏好优先，否则 ui-kit 的显示时区上下文（只替换「设备」一级），否则设备时区，否则 UTC；每个时间渲染都显式传 `timeZone` |
 | 渠道词表 | 发现文档的描述符 | 添加区取 `kind=redirect` 的方法名与 `label`，并以描述符的 `binding_providers` 判定方法是否已绑定；已绑定行按同一组 `binding_providers` 匹配（相等或以一项为前缀），缺该项时按方法名，仍匹配不到回落到本包自己的封闭词表 |
 | 注册验证状态 | `verification` | `GET /api/v1/auth/me` 的 `{state, email, since}`：`state` 取 `none`（非自助注册）、`pending`（自助注册且尚无已验证邮箱）、`verified`（已有已验证邮箱）；`email` 是当前状态下的邮箱，非自助注册时为空；`since` 是验证时刻，未验证时为空串。`pending` 的 `email` 是待验证联系方式，不是登录标识；删除最后一个已验证邮箱后它为空，此时账户仍是 `pending` |
-| 标识的已证明性 | `proven` | 标识行上的布尔值：`email-code`、`sms-code`、`invite` 与 `idp:<provider>` 为真，`admin`、`import-unverified` 与 `self` 为假；标识节据此渲染状态 chip |
+| 标识的已证明性 | `proven` | 标识行上的布尔值：`email-code`、`sms-code`、`invite` 与 `idp:<provider>` 为真，`admin`、`import-unverified` 与 `self` 为假；邮箱与手机行的状态 chip 据此渲染，用户名行不渲染 chip（登录名没有归属可证明） |
 | 加强认证流程 | `StepUpFlow` | 一条 `purpose: 'step-up'` 流程的驱动；成功后重跑被门控的动作 |
 | 外观选择 | `ThemePresetChoice` | 宿主提供的一个预设：id 与已翻译的显示名；`AppearanceSection` 只渲染与上报 |
 | 命名空间 | `accountUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同 |
@@ -177,10 +178,11 @@ sequenceDiagram
 
 1. **读状态。** `ContactVerificationSection` 读 `GET /api/v1/auth/me` 的 `verification`。`none` 不渲染；`verified` 渲染完成态；`pending` 且 `email` 非空时渲染目标邮箱、发送与重发、验证码字段与更换邮箱；`pending` 且 `email` 为空时渲染「添加邮箱」表单，提交 `POST /api/v1/auth/identifiers`（`{kind: 'email', value}`）。删除最后一个已验证邮箱后账户回到 `pending` 而没有待验证目标，这是合法状态；邮箱添加项因此不能只藏在标识节里，验证节必须给出补邮箱的入口，否则受限能力无解除路径。
 2. **发送与重发。** 发送调 `POST /api/v1/auth/identifiers`（`{kind: 'email', value: <目标邮箱>}`），验证调 `POST /api/v1/auth/identifiers/verify`（只带验证码）。重发是同一个发送动作，发往与展示同源的地址（本次挂载内已发送的地址，否则档案里的待验证联系方式），不会出现界面显示新地址而重发发往旧地址。发送落地后「验证码已发送」的目的地文字在验证码一步内持续显示，通知用先挂空、再填文本的 `role="status"` 播报一次，焦点落在验证码字段。重发控件在发送应答的 `resend_after` 给出的间隔内禁用并说明原因；被 429 拒绝时按 `Retry-After` 起算。间隔到点后倒计时计时器自行清除，不在页面上留下常驻计时器。
-3. **更换邮箱。** 以同一发送动作带新地址；服务端以它替换该账户的待验证联系方式，旧地址的验证码随之失效。更换只在 `pending` 上提供；`verified` 后改邮箱走标识节的添加入口。宿主可经 `initialChangeOpen` 让本节落地即展开更换表单（提示里的「更换邮箱」就是这样到达的），缺省落地在验证码一步（提示里的「去验证」）。
-4. **手机是安全因素。** 手机验证走 `POST /api/v1/auth/phone` 与 `/phone/verify`，与邮箱共用同一套发码与验证语义。手机是登录方式与额外安全因素：验证手机不解除注册限制，入口标注为安全因素，不承诺解锁；只有邮箱被证明才把 `verification.state` 变成 `verified`。
-5. **提权。** 发送、验证与更换都是自助写，被 401 `authn.insufficient_user_authentication` 拒绝时走 `useStepUpGate`，成功后只重跑那次被拒的写一次。
-6. **与标识节的边界。** `pending` 时标识节的添加面不提供邮箱一项；待验证联系方式只由本节管理。标识 chip 读 `proven`，`self` 写入的用户名不显示为已证明。
+3. **首次进入自动发送。** 宿主在专用验证页传 `autoSend`；`pending`、目标邮箱非空且更换表单未展开时，本次挂载在档案读到后自动发送一次，挂载内的重渲染与写后重读都不再发送（一次挂载一次）。落地即展开更换表单（`initialChangeOpen`）的挂载整次都不发送，关闭表单后也不补发：来访者要更换地址，旧地址的验证码不是他们要的。自动发送不替用户打开提权对话框：被 401 `authn.insufficient_user_authentication` 拒绝时保留手动「发送验证码」按钮并渲染说明（`verification.autoStepUp`），用户点击后走既有门控；429 仍进入重发倒计时；其它失败走失败横幅。账户页不传 `autoSend`，其验证节只在用户点击时发送。
+4. **更换邮箱。** 以同一发送动作带新地址；服务端以它替换该账户的待验证联系方式，旧地址的验证码随之失效。更换只在 `pending` 上提供；`verified` 后改邮箱走标识节的添加入口。宿主可经 `initialChangeOpen` 让本节落地即展开更换表单（提示里的「更换邮箱」就是这样到达的），缺省落地在验证码一步（提示里的「去验证」）。
+5. **手机是安全因素。** 手机验证走 `POST /api/v1/auth/phone` 与 `/phone/verify`，与邮箱共用同一套发码与验证语义。手机是登录方式与额外安全因素：验证手机不解除注册限制，入口标注为安全因素，不承诺解锁；只有邮箱被证明才把 `verification.state` 变成 `verified`。
+6. **提权。** 发送、验证与更换都是自助写，被 401 `authn.insufficient_user_authentication` 拒绝时走 `useStepUpGate`，成功后只重跑那次被拒的写一次（自动发送被拒时不进门控，见第 3 条）。
+7. **与标识节的边界。** `pending` 时标识节的添加面不提供邮箱一项；待验证联系方式只由本节管理。标识行上的用户名不渲染验证状态 chip；邮箱与手机行的 chip 读 `proven`。
 
 失败文案：发送阶段不区分地址是否已被其他账户持有，应答同形；验证阶段地址已被占用时答 409，文案点明该地址已被其他账户使用并给出更换邮箱。任何失败都不出现「该邮箱已被注册」这类在未证明控制地址前即可读出的措辞；验证码错误的统一文案是「验证码无效或已过期，请重试或更换邮箱」。
 
@@ -211,7 +213,7 @@ sequenceDiagram
 
 - **成功确认只经区域渲染。** 成功由 `WriteFeedbackRegion` 渲染，间距经区域的 `sx`；本包没有第二种成功区域，调用点不单独渲染 `InlineSuccess`。
 - **每个由用户发起、落定且无一失败的动作都有成功文案**，含撤销单个会话、删除标识、两步验证的登记与移除，文案点明被改动的对象。社交绑定的完成是例外：`onBound` 是宿主离开回调路由的信号，离开的宿主以刷新后的绑定行呈现结果；留在该路由或未给 `onBound` 的宿主得到 `done` 阶段的绑定成功文案，挂在 `role="status"` 区域里。
-- **一个节一个失败横幅。** 标识节的失败只经区域渲染一次，添加、验证与移除共用同一个槽；取消添加与每次移除都 `reset`，使「已添加」的成功文案不在其后的移除之后停留，取消也不留下失败横幅。口令节的客户端校验失败同样以 `reset` 开头，不让上一次的服务端横幅与新的字段错误并存。
+- **一个节一个失败横幅。** 标识节的失败只经区域渲染一次，添加、验证与移除共用同一个槽；取消添加清空失败横幅、字段错误、成功提示与已发码状态，每次移除都 `reset`，使「已添加」的成功文案不在其后的移除之后停留，取消也不留下失败横幅。口令节的客户端校验失败同样以 `reset` 开头，不让上一次的服务端横幅与新的字段错误并存。
 - **「验证码已发送」的目的地文字在验证码一步内持续显示。** 它说明验证码发往哪个号码或邮箱，不是槽的结果，验证失败、`reset` 与无关的移除都不清除它；一个先挂空区域、再填文本的 `role="status"` 只在发码落地时播报一次，发码成功后焦点落在验证码字段。标识节与手机节没有重发控件，回退再发码的路径以 `reset` 开头，播报区的文本因此经空到非空；验证节有重发控件，它在服务端给出的重发间隔内禁用并说明原因，间隔内的重复点击不发请求。
 - **验证节的失败文案不暴露地址占用。** 发送阶段对已被其他账户持有的地址与未占用地址同形应答；冲突文案只出现在验证阶段，点明地址已被其他账户使用并给出更换邮箱，不出现「该邮箱已被注册」式的措辞（见「注册联系方式的验证」）。
 - **偏好节的写入被 401 `authn.insufficient_user_authentication` 拒绝时走提权门控。** 偏好节接受类型同为 `AuthSession` 的可选 `session`：给了会话，被拒的写由门控记住，成功提权后重放一次；没给会话，失败横幅沿用该码的失败文案（要求重新验证身份），不开对话框，宿主只能在同页其它带会话的节完成提权（提权对整页的会话生效）或重新登录。参考装配把 `session` 传给偏好节。偏好写入失败渲染一条横幅，控件退回存下的值；语言写入在 `switchLanguage` 落定之后才调用 `succeed`，使确认文案取自新语言。
@@ -229,6 +231,8 @@ sequenceDiagram
 | 自助写被答 401 `authn.insufficient_user_authentication` | 打开提权对话框，成功后重跑那次被拒的写一次 |
 | 口令写被拒为 400 `authn.bad_request` | 一条横幅渲染口令策略句，覆盖长度不合适（过短或过长）、与账户的用户名、邮箱、手机号相同、与当前口令相同（修改时）；句子不写数字，长度下限是部署的设置 |
 | 加用户名被拒为 409 `authn.conflict` | 一条横幅渲染「用户名已被使用」；添加面在账户已有用户名时不提供用户名，该码在此只意味着被他人占用 |
+| 加用户名被拒为 400 `authn.bad_request` | 一条横幅渲染该码文本；服务端的用户名规则还拒绝本面不复述的形状（静态凭据前缀、UUID 形状），故不给单一字段文案 |
+| 添加邮箱时地址不符合服务端格式 | 邮箱字段渲染 `identifiers.add.invalidEmail`（`aria-invalid`），不发请求；服务端仍答 400 `authn.bad_request` 且 kind 为 email 时同样落在该字段，不出现通用横幅 |
 | 改口令的当前口令不匹配（401 `authn.login_failed`） | 一条横幅渲染该码文本；与提权 401 同状态码，靠问题码区分，不误开门控 |
 | 加手机时号码已属另一账户（409 `authn.conflict`） | 一条横幅渲染该码文本 |
 | 验证码错误或已过期 | 一条横幅渲染统一文案（验证码无效或已过期，请重试或更换邮箱），验证码字段清空，目标地址保留 |
@@ -236,7 +240,9 @@ sequenceDiagram
 | 发送阶段目标地址已被其他账户持有 | 与未占用地址同形应答；验证节不渲染任何「已注册」文案 |
 | 验证阶段目标地址已被其他账户持有（409 `authn.conflict`） | 一条横幅点明该地址已被其他账户使用并给出更换邮箱；不出现「该邮箱已被注册」式的措辞 |
 | 验证节的发送、验证或更换被 401 `authn.insufficient_user_authentication` 拒绝 | 打开提权对话框，成功后重跑那次被拒的写一次 |
-| 删标识会抽掉最后一个登录方式（409 `authn.conflict`） | 一条横幅渲染该码文本，服务端按自己的登录方式计数判定 |
+| 验证节的自动发送被 401 `authn.insufficient_user_authentication` 拒绝 | 不打开提权对话框；保留手动「发送验证码」按钮并渲染说明（`verification.autoStepUp`），用户点击后走提权门控 |
+| 带口令账户的唯一用户名/邮箱登录名 | 该行不渲染删除按钮，改渲染说明（`identifiers.lastLoginName`）；另有登录名或账户无口令时保留删除，服务端仍判定最后登录方式 |
+| 删除最后一个登录名被服务端拒绝（409 `login-identifier-required`；客户端守卫因并发删除或陈旧档案未拦住） | 一条横幅渲染 `errors.authn.login_identifier_required` 的文本，说明账户需要至少一个登录名；删除不生效，列表重取以收敛 |
 | 撤销自己的会话命中已死的会话 | 一条横幅渲染该码文本，列表重取以收敛 |
 | 解绑会抽掉最后一个登录方式 | 一条横幅渲染该错误码文本，服务端按自己的登录方式计数判定 |
 | 待验证账户发起外部身份绑定被 403 `authn.contact_required` 拒绝 | 一条横幅渲染该码文本，说明先验证邮箱；绑定动作保持可重试 |
@@ -267,7 +273,7 @@ sequenceDiagram
 |---|---|---|
 | 档案显示名节 | 已实现 | `web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection` |
 | 口令节 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection` |
-| `login-identifier-required` 的文本点名用户名或已验证邮箱 | 已实现 | `web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.login_identifier_required` |
+| `login-identifier-required` 的文本覆盖设口令与删除最后一个登录名两种语义 | 已实现 | `web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.login_identifier_required` |
 | 手机号节 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
@@ -296,7 +302,12 @@ sequenceDiagram
 | 口令节的可选 `withoutLoginName`（`'form'` 缺省、`'explain'` 先说明） | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`、`PasswordSectionProps` |
 | 标识节的可选 `offerUsername` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
 | `ContactVerificationSection`（待验证联系方式、发送与重发、验证码、更换邮箱、完成态） | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps` |
-| 标识 chip 读 `proven`，`self` 写入的用户名不显示为已证明 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
+| 标识 chip 读 `proven`；用户名行不渲染验证状态 chip | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
+| 带口令账户的唯一用户名/邮箱登录名不渲染删除按钮并说明 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.lastLoginName` |
+| 标识添加面的邮箱本地校验、提交去空白值与字段级 400 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/ui-kit/src/email-address.ts` `parseEmailAddress`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `identifiers.add.invalidEmail` |
+| 取消添加清空失败横幅、字段错误、成功提示与已发码状态 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`（`closeAdd`） |
+| 验证节的首次挂载自动发码 `autoSend`（自动 401 不弹对话框） | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `verification.autoStepUp` |
+| 落地即展开更换表单的挂载不自动发码，关闭表单后也不补发 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`（`autoSendSuppressed`） |
 | `pending` 时标识节的添加面不提供邮箱一项 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | `pending` 且 `verification.email` 为空时验证节提供添加邮箱表单 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
 | 手机入口标注为额外安全因素，不承诺解除注册限制 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `phone.securityNote` |

@@ -13,7 +13,7 @@
       "forbidden": "You do not have permission to do that.",
       "contact_required": "Verify your email address first to continue.",
       "conflict": "The request conflicts with the account's current state. Refresh and try again.",
-      "login_identifier_required": "This account needs a username or a verified email address before a password can be set.",
+      "login_identifier_required": "This account needs at least one login name (a username or an email address).",
       "unsupported_media_type": "The request could not be read.",
       "throttled": "Too many attempts. Please try again later.",
       "unavailable": "The service is temporarily unavailable. Please try again later."
@@ -232,7 +232,7 @@
     "policyFailure": "The new password does not meet the requirements. Its length must be suitable (neither too short nor too long), and it cannot be the same as your username, email address or phone number or, when changing a password, your current password.",
     "missingNew": "Enter a new password.",
     "mismatch": "The two passwords do not match.",
-    "loginNameRequired": "Add a username or a verified email address first, then set a password.",
+    "loginNameRequired": "Add a username or an email address first, then set a password.",
     "error": {
       "title": "Could not load password settings",
       "description": "Something went wrong while loading your password settings. Please try again."
@@ -265,6 +265,7 @@
     "send": "Send code",
     "resend": "Send another code",
     "resendIn": "You can request another code in {{seconds}} seconds.",
+    "autoStepUp": "A verification code could not be sent automatically. Select Send code to continue.",
     "sent": "A verification code was sent to {{email}}.",
     "codeLabel": "Verification code",
     "codeHelper": "Enter the 6-digit code from the email.",
@@ -299,6 +300,7 @@
     },
     "verified": "Verified",
     "unverified": "Not verified",
+    "lastLoginName": "This is your only sign-in name. Add another username or email address before removing it.",
     "remove": "Remove",
     "removeAria": "Remove this sign-in identifier: {{value}}",
     "confirmTitle": "Remove this sign-in identifier?",
@@ -329,6 +331,7 @@
       },
       "submitEmail": "Send code",
       "submitUsername": "Add",
+      "invalidEmail": "Enter a valid email address.",
       "usernameTaken": "That username is already taken. Try another one.",
       "cancel": "Cancel",
       "sent": "A verification code was sent to {{value}}.",

@@ -9,6 +9,7 @@
       "bad_request": "服务端无法读取该请求，请检查表单后重试。",
       "unsupported_region": "此操作不支持该地区。",
       "conflict": "该改动与账户的当前状态冲突。",
+      "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
       "forbidden": "你没有执行此操作的权限。",
       "impersonation_restricted": "此操作要求目标账户是该租户中已启用、未受保护的成员，且当前会话没有进行中的冒充。",
       "factor_not_seasoned": "此操作需要一个已启用满规定时长的非短信验证方式（认证器应用或通行密钥）。刚添加的验证方式需要先等待一段时间。",

@@ -8,7 +8,7 @@
 
 - `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的「口令注册」渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用。
 - `PasswordSignInForm` 起一条 `method: 'password'` 的登录流程，按字段提交与后续步答复；`SMSSignInForm` 起 `method: 'sms'` 的流程，两步（手机号步与验证码步）收在同一个表单里；描述符为其他 `form` 方法给出首步字段时，由通用描述符表单驱动。三个可单独挂载的入口都接受同一个 `beforeStart` 门。
-- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入「已登录」态，收起「账户已创建，请登录」与重试动作；宿主不导航时界面也不停留在「已登录却仍提示请登录」。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用、横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。400 不映射为口令策略，走通用 `errors.authn.*` 文案。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
+- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入「已登录」态，收起「账户已创建，请登录」与重试动作；宿主不导航时界面也不停留在「已登录却仍提示请登录」。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用、横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。400 不映射为口令策略，走通用 `errors.authn.*` 文案。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
 - `SocialSignInSection` 渲染一组 redirect 方法，每个方法起一条登录流程；开始响应的 `redirect` 步交出授权地址，由宿主导航。
 - `SocialCallbackHandler` 在宿主的回调路由上读回那条流程（`session.readFlow`），据其状态续接。
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
@@ -245,7 +245,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 - **公开面是 `index.ts` 的导出集。** 变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 - **每个驱动会话的组件持一个 `session` 属性，且不消费 auth-core 的钩子。** 这条是宿主据以装配的接口面：组件挂在宿主的 `attachSession` 之下，状态变化只经属性与回调进出。`SignInScreen` 的发现读取经这个 `session` 属性的操作完成，不构成对钩子的消费（见「非职责」）。
 - **结果回调在操作判决之后触发，且被包住。** `onSignedIn` 与 `onAuthorizeUrl` 在各自的操作判决之后触发；一个抛出的回调不是那次操作的失败：本包不因此渲染错误横幅、不把结果重新归成失败态、不为一次已成功的操作提供重试，且把抛出挡在 fire-and-forget 的 promise 之外，不产生未处理的拒绝。另有三个回调报告控制事件而非结果：`onSignIn` 在查看者要求重新登录时触发，由宿主导航，其前没有操作；`onModeChange` 在模式切换被点击时触发，其前没有请求；`SignOutMenuItem` 的 `onActivate` 在 `session.logout()` 之前触发，其中抛出被挡下，登出照常进行。
-- **注册文案在 `auth-ui` 命名空间的顶层 `register` 节。** `zh-CN` 与 `en-US` 两份目录的叶子键集一致，承载注册表单的标题、说明、字段、提交、用户名占用、限流、不可用、限流等待的秒数、已登录提示与自动登录失败；注册模式的标题与切换按钮仍取既有的模式词条。
+- **注册文案在 `auth-ui` 命名空间的顶层 `register` 节。** `zh-CN` 与 `en-US` 两份目录的叶子键集一致，承载注册表单的标题、说明、字段、提交、邮箱格式、用户名占用、限流、不可用、限流等待的秒数、已登录提示与自动登录失败；注册模式的标题与切换按钮仍取既有的模式词条。
 - **文档化的用法是可执行的。** README 的快速开始由 `web/packages/auth-ui/src/usage-example.test.tsx` 端到端编译并运行，故文档里的装配不能与 API 漂移。
 
 ## 依赖
@@ -330,7 +330,7 @@ sequenceDiagram
 
 注册与登录是两个操作：注册经 `session.register` 一次请求写入账户，不建立会话、不发送邮件；会话仍由随后的口令登录流程建立。表单的处理次序是：
 
-1. **本地校验。** 用户名与邮箱按服务端的规范化规则给格式提示；口令只做非空、两次一致与部署给出的最小长度提示，不复刻服务端的策略数值；确认口令不进入请求。字段不合格时焦点移到首个不合格字段，错误文字经 `aria-describedby` 指向，字段标 `aria-invalid`。
+1. **本地校验。** 用户名与邮箱按服务端的规范化规则给格式提示；邮箱的规则是去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节，不合格时在邮箱字段渲染 `register.invalidEmail` 并且不发请求。口令只做非空、两次一致与部署给出的最小长度提示，不复刻服务端的策略数值；确认口令不进入请求。字段不合格时焦点移到首个不合格字段，错误文字经 `aria-describedby` 指向，字段标 `aria-invalid`。
 2. **起手门。** 「口令注册」渠道与其他渠道一样在起手前询问 `beforeStart`，上下文是 `{method: 'password', mode: 'register'}`；答案不为真时不发请求、不渲染错误。
 3. **建号。** 调 `session.register`，请求带用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填，它是注册后的待验证联系方式，在验证前不是登录名。提交在途时控件禁用并标忙，不发第二次。
 4. **自动登录。** 注册成功后以同一凭据起一条 `method: 'password'` 的口令登录流程，走通则报一次 `onSignedIn({mode: 'register', channel: 'password'})`。注册本身不报这个回调，也不改变会话快照。
@@ -470,6 +470,7 @@ sequenceDiagram
 | 注册模式下 `signup.password.enabled` 的合成「口令注册」渠道与默认选中 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`（`PASSWORD_REGISTER_CHANNEL`、`registerVisible`、`renderForm`） |
 | 注册成功后的自动口令登录、被拒时退回登录表单并预填用户名 | 已实现 | `web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm`（`onSignInRequired`、登录重试）；`web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`（`prefillUsername`）；`web/packages/auth-ui/src/PasswordSignInForm.tsx` `PasswordSignInForm`（`defaultUsername`） |
 | 注册表单的字段错误、焦点与先空后填的 live region | 已实现 | `web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm` |
+| 注册表单邮箱字段的服务端同规则本地校验（`register.invalidEmail`，不发请求） | 已实现 | `web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm`；`web/packages/ui-kit/src/email-address.ts` `parseEmailAddress`；`web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json` `register.invalidEmail` |
 | 注册表单的 429 `Retry-After` 等待与到点恢复、已登录态、400 走通用文案 | 已实现 | `web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm` |
 | 注册模式默认渠道不沿用登录模式选中的渠道 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`（`pickChannel`） |
 | 注册模式下经短信渠道开户的验证码重发倒计时 | 未实现 | — |

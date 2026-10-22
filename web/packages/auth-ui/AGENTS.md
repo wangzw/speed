@@ -105,7 +105,11 @@ account-resolution outcome where the deployment enables that.
   surface. A settled auto-login, the first or the retry, replaces the
   fields and both notices with the signed-in line, so a mounted surface
   never shows "please sign in" over an authenticated session. The
-  confirmation field is compared in the form and never travels. A taken
+  confirmation field is compared in the form and never travels. The email
+  field is checked against the server's address rule through
+  `parseEmailAddress` from `@speed/ui-kit` (trimmed, printable ASCII, exactly
+  one `@` with a part on each side, at most 254 bytes): a malformed address
+  renders `register.invalidEmail` in that field and sends nothing. A taken
   username is the username field's error; the other mapped refusals
   (closed signup, throttle, unavailable) render their register-section
   text in one banner, and every other code -- a 400 included -- through

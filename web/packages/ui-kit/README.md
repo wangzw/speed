@@ -44,6 +44,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/FormLayout.tsx` | `FormLayout`, `FormLayoutProps`, `FormLayoutColumns` |
 | `components/PhoneNumberField.tsx` | `PhoneNumberField`, `PhoneNumberFieldProps` |
 | `phone-number.ts` | `toE164`, `validatePhoneNumber`, `formatNationalPhoneNumber`, `parseInternationalPhoneNumber`, `nationalNumberDigits`, `defaultPhoneCountry`, `phoneCountries`, `phoneCountryCallingCode`, `phoneCountryName`, `isPhoneCountry`, `PhoneNumberParts`, `PhoneNumberValidation` |
+| `email-address.ts` | `parseEmailAddress`, `EMAIL_ADDRESS_MAX_BYTES` |
 | `zod-form-resolver.ts` | `zodFormResolver`, `INVALID_ERROR_KEY` |
 | `components/DataTable.tsx` | `DataTable`, `DataTableColumn`, `DataTableColumnCellWrap`, `DataTableColumnContentMaxWidth`, `DataTableColumnPriority`, `DataTableSort`, `DataTableSortDirection`, `DataTableFilter`, `DataTablePagination`, `DataTableProps`, `PRIMARY_COLUMN_MAX_WIDTH`, `LONG_TEXT_COLUMN_MAX_WIDTH`, `primaryColumnMaxWidthSx` |
 | `components/InlineError.tsx` | `InlineError`, `InlineErrorProps`, `errorCodeOf`, `httpStatusOf` |
@@ -770,6 +771,23 @@ const phone = toE164(country, nationalNumber) // null while invalid
 The country data is **`libphonenumber-js`'s** (`mobile` metadata build),
 not a table maintained here -- see Dependencies for the bundle cost and
 why the `mobile` build.
+
+### parseEmailAddress
+
+The email-address rule the sign-in and registration surfaces share,
+stated from the server's own normalization rule: trim the value, require
+printable ASCII (0x21 to 0x7e), exactly one `@` with a non-empty part on
+each side, and at most `EMAIL_ADDRESS_MAX_BYTES` (254) bytes.
+
+```ts
+import { parseEmailAddress } from '@speed/ui-kit'
+
+const address = parseEmailAddress(typed) // the trimmed address, or null
+```
+
+It returns the trimmed address so the caller submits what it validated,
+and it does not change case: the server folds it, and folding a value the
+viewer is still editing would change what they typed.
 
 ### DataTable
 

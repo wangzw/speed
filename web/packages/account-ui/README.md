@@ -162,8 +162,8 @@ others) and reports the change -- a first password too, whose notice
 therefore also names the other devices signed out.
 
 `withoutLoginName` covers the state in which the route answers 409
-`login-identifier-required` (the account holds neither a username nor a
-verified email address). The default `'form'` keeps the form and lets the
+`login-identifier-required` (the account holds neither a username nor an
+email address). The default `'form'` keeps the form and lets the
 server's refusal render the code's text; `'explain'` renders the
 explanation up front and no form, for a page that already knows the
 account cannot set a password yet.
@@ -185,15 +185,24 @@ route revokes the account's other sessions) and reports the addition.
 
 Lists the account's sign-in identifiers -- read off the profile's
 `identifiers` field (`GET /api/v1/auth/me`), because the spec ships no dedicated
-list route -- each with its kind (email, phone or username) and the server's
-`proven` state. `proven` is true only for the ways of establishing an
-identifier that prove ownership (`email-code`, `sms-code`, `invite`,
-`idp:<provider>`); `admin`, `import-unverified` and `self` only record an
-assertion, so a username written at registration as `self` reads as not
-verified. `verified_at` cannot answer that question -- every stored identifier
-carries one. A row's remove action sits behind the
-ui-kit danger confirm and sends `DELETE /api/v1/auth/identifiers/{id}`; a refusal
-(the account's last way in is the 409 `conflict`) renders its code text.
+list route -- each with its kind (email, phone or username). A username is a
+login name with no ownership to prove, so its row shows no verified/unverified
+state; email and phone rows show the server's `proven` state. `proven` is true
+only for the ways of establishing an identifier that prove ownership
+(`email-code`, `sms-code`, `invite`, `idp:<provider>`); `admin`,
+`import-unverified` and `self` only record an assertion, so `proven` is false
+for them. A username row renders no state at all, so these values never show
+for it. `verified_at` cannot answer that question -- every stored identifier
+carries one. A row's remove action sits behind the ui-kit danger confirm and
+sends `DELETE /api/v1/auth/identifiers/{id}`; a refusal (removing a password
+account's last username or email address is the 409
+`login-identifier-required`) renders its code text and re-reads the profile,
+so a client guard that read a stale list converges on the server's answer.
+An account with a password
+signs in with a username or an email address: while the profile lists exactly
+one of those, that row's remove action gives way to a note saying another login
+name must be added first. Another username/email, or an account with no
+password at all, keeps the action; the server still judges the last way in.
 
 Below the list an add face adds one identifier the caller chooses, its kind
 `username` or `email` (a phone is added through its own two-step surface).
@@ -201,9 +210,17 @@ A username is a login name with no ownership to prove, so
 `POST /api/v1/auth/identifiers` writes it in one step and the answer reports the
 addition; a username already in use is answered 409 `conflict` and
 rendered as the taken-name sentence (the same code on a removal keeps its
-generic text). An email is a contact address, so the add sends a code to it (the
-answer is state `pending`) and the code is submitted through
-`POST /api/v1/auth/identifiers/verify`; only the matching code writes the address.
+generic text). An email is a contact address, so the add checks it against the
+server's rule through `parseEmailAddress` (trimmed, printable ASCII, exactly one
+`@` with a part on each side, at most 254 bytes) before sending anything: a
+malformed address renders `identifiers.add.invalidEmail` in the field, and the
+submitted value is the trimmed one. A 400 the server still answers for the email
+kind lands in that same field rather than the banner; a username's 400 keeps the
+banner because the server's username rule also refuses shapes this face does not
+restate. A well-formed email gets a code (the answer is state `pending`) and the
+code is submitted through `POST /api/v1/auth/identifiers/verify`; only the
+matching code writes the address. Closing the add face clears the failure
+banner, the field error, the success notice and the sent-code step.
 The email branch is unavailable on a deployment with no email channel (a
 503 `unavailable`). Every write -- add, verify and remove -- asks for fresh
 authentication: a 401 `authn.insufficient_user_authentication` opens the
@@ -258,6 +275,16 @@ gate, and a won challenge re-runs exactly that write once.
 the code step; a host whose persistent notice offers "change address" beside
 "verify" lands the first on the flag and the second without it.
 
+`autoSend` turns the section into a landing surface: once per mount, a pending
+account with a target address and a closed change form sends one code on its
+own, and re-renders and the post-write profile refetch keep to that one send. A
+mount that starts with the change form open never sends automatically, even
+after the form is closed: that visitor came to replace the address.
+The automatic send never opens the step-up dialog -- a dialog is the visitor's
+to open -- so a 401 leaves the manual send action with an explanation; a 429
+still starts the resend countdown, and other failures render the failure
+banner. The dedicated verification page sets it; the account page does not.
+
 A phone number is a sign-in method and an additional security factor.
 Verifying a phone does not lift the registration restriction; only a proved
 email address turns `verification.state` to `verified`. `PhoneSection`'s copy
@@ -268,6 +295,9 @@ interface ContactVerificationSectionProps {
   readonly session: AuthSession
   /** Starts the change-address form open (default false: the code step). */
   readonly initialChangeOpen?: boolean
+  /** Sends one code on mount when pending with a target address (default
+   * false). The automatic send never opens the step-up dialog. */
+  readonly autoSend?: boolean
 }
 ```
 

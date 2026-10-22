@@ -132,6 +132,7 @@ describe('console-ui error text', () => {
       'authn.bad_request',
       'authn.unsupported_region',
       'authn.conflict',
+      'authn.login_identifier_required',
       'authn.forbidden',
       'authn.impersonation_restricted',
       'authn.factor_not_seasoned',

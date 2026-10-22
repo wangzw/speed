@@ -4,7 +4,7 @@
  * The page is the host half of a registration: it reads the account's own
  * profile and decides what the account still needs. A phone alone is not a
  * login name, so the password section stays withheld behind an explanatory
- * line until a username (or a verified email) is present; once the account
+ * line until a username (or an email address) is present; once the account
  * has both a login name and a password the page states that setup is
  * complete. The tests script the one read the page makes (GET /api/v1/auth/me) and
  * read their expected copy from the shipped bundles.
@@ -235,7 +235,9 @@ describe('the account setup page', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('treats a verified email as a login name', async () => {
+  it('treats an email as a login name regardless of verification', async () => {
+    // The identifier's kind is the whole judgement: an email written without
+    // a proof is still the login name a password is set against.
     bindProfile(
       profileOf({
         password_set: false,
@@ -244,9 +246,9 @@ describe('the account setup page', () => {
             id: 'id-3',
             kind: 'email',
             value: 'member@example.com',
-            proven: true,
-            verified_at: '2026-01-01T00:00:00Z',
-            verified_via: 'email-code',
+            proven: false,
+            verified_at: '',
+            verified_via: '',
           },
         ],
       }),

@@ -24,9 +24,9 @@ const USERNAME = {
   verified_at: '2026-01-01T00:00:00Z',
 } as const
 
-const VERIFIED_EMAIL = {
+const EMAIL = {
   kind: 'email',
-  verified_at: '2026-01-01T00:00:00Z',
+  verified_at: '',
 } as const
 
 const VERIFIED_PHONE = {
@@ -39,8 +39,10 @@ describe('setupIncomplete', () => {
     expect(
       setupIncomplete({ ...PASSWORD, identifiers: [USERNAME] }),
     ).toBe(false)
+    // An email is a login name by kind alone: no proof of ownership is
+    // needed for the account to be ready for password sign-in.
     expect(
-      setupIncomplete({ ...PASSWORD, identifiers: [VERIFIED_EMAIL] }),
+      setupIncomplete({ ...PASSWORD, identifiers: [EMAIL] }),
     ).toBe(false)
     expect(
       setupIncomplete({ password_set: false, identifiers: [USERNAME] }),

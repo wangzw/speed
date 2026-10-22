@@ -154,6 +154,23 @@ describe('PasswordRegisterForm', () => {
     expect(harness.calls).toHaveLength(0)
   })
 
+  it('refuse a malformed email without reaching the network', async () => {
+    // The server's address rule restated in the field: two @ signs would
+    // come back as the generic bad-request, with no clue which field.
+    const harness = makeHarness({})
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit({ email: 'ada@example@com' })
+
+    expect(
+      await screen.findByText(zhCN.register.invalidEmail),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(LABELS.email)).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    expect(harness.calls).toHaveLength(0)
+  })
+
   it('attach a taken username to the username field and focus it', async () => {
     const harness = makeHarness({
       [REGISTER]: () => {

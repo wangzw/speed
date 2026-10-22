@@ -7,7 +7,9 @@
  * and its verified/unverified state; a row's remove sends
  * DELETE /api/v1/auth/identifiers/{id} behind the danger confirm and refetches
  * the profile so the row drops off; a last-way-in refusal (409) renders
- * its code text; a removal refused with 401
+ * its code text, and the server's last-login-name code renders its own text
+ * and re-reads the profile when the client guard read a stale list; a
+ * removal refused with 401
  * authn.insufficient_user_authentication opens the step-up dialog, a won
  * step-up re-running it once; an account with no identifiers renders the
  * empty state; and an answer that omitted the identifiers key renders the
@@ -83,10 +85,9 @@ describe('IdentifiersSection', () => {
     await expectNoAxeViolations()
   })
 
-  it('renders the chip from proven, not from verified_at', async () => {
-    // A username written at registration is stored as `self`: it carries a
-    // verified_at instant but proves no ownership, so the row must not read
-    // as verified.
+  it('renders no verification chip for a username', async () => {
+    // A username is a login name with no ownership to prove, so its row has
+    // no verified state at all -- not even one read off `proven`.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -109,8 +110,194 @@ describe('IdentifiersSection', () => {
     mount(respond)
 
     expect(await screen.findByText('ada')).toBeTruthy()
-    expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
+    expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
     expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
+  })
+
+  it('withholds removal of the only login name on a password account and explains why', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: true,
+            identifiers: [
+              identifier({
+                id: 'id-user',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_at: '',
+                verified_via: 'self',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('ada')).toBeTruthy()
+    // The password signs in through this row; removing it would leave the
+    // password without a login name, so the action gives way to the rule.
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
+      }),
+    ).toBeNull()
+    expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
+
+    await expectNoAxeViolations()
+  })
+
+  it('withholds removal of the only login name when it is an email and explains why', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: true,
+            identifiers: [
+              identifier({ id: 'id-email', kind: 'email', value: 'ada@x.test' }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('ada@x.test')).toBeTruthy()
+    // An email address is a login name for a password account too.
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    ).toBeNull()
+    expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
+  })
+
+  it('keeps a phone removable when the username is the only login name', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: true,
+            identifiers: [
+              identifier({
+                id: 'id-user',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_at: '',
+                verified_via: 'self',
+              }),
+              identifier({
+                id: 'id-phone',
+                kind: 'phone',
+                value: '+14155550123',
+                proven: false,
+                verified_at: '',
+                verified_via: '',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(screen.getByText('+14155550123')).toBeTruthy()
+    // The username is the password's only login name; the phone signs in
+    // through its own code route, so it is not counted and stays removable.
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
+      }),
+    ).toBeNull()
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', '+14155550123'),
+      }),
+    ).toBeTruthy()
+    // The explanation belongs to the withheld row, not to the phone row.
+    expect(screen.getAllByText(zhCN.identifiers.lastLoginName)).toHaveLength(1)
+  })
+
+  it('keeps the username removal when an email also signs in', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: true,
+            identifiers: [
+              identifier({
+                id: 'id-user',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_at: '',
+                verified_via: 'self',
+              }),
+              identifier({
+                id: 'id-email',
+                kind: 'email',
+                value: 'ada@x.test',
+                proven: true,
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
+      }),
+    ).toBeTruthy()
+    expect(screen.queryByText(zhCN.identifiers.lastLoginName)).toBeNull()
+  })
+
+  it('keeps the only login name removable on an account with no password', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: [
+              identifier({
+                id: 'id-user',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_at: '',
+                verified_via: 'self',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(
+      screen.getByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada'),
+      }),
+    ).toBeTruthy()
+    expect(screen.queryByText(zhCN.identifiers.lastLoginName)).toBeNull()
   })
 
   it('does not offer the email kind while verification is pending', async () => {
@@ -152,6 +339,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(
           200,
           profileBody({
+            password_set: false,
             identifiers: removed ? [] : [identifier({ id: 'id-email' })],
           }),
         )
@@ -193,7 +381,10 @@ describe('IdentifiersSection', () => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
           200,
-          profileBody({ identifiers: [identifier({ id: 'id-email' })] }),
+          profileBody({
+            password_set: false,
+            identifiers: [identifier({ id: 'id-email' })],
+          }),
         )
       }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email') {
@@ -220,6 +411,86 @@ describe('IdentifiersSection', () => {
     expect(alert).toHaveTextContent(zhCN.errors.authn.conflict)
   })
 
+  it('renders the last-login-name refusal when the guard read a stale profile', async () => {
+    // The client guard withholds the action only when the profile it read
+    // shows this row as the sole username/email. Another session can delete
+    // the other login name in between, so the server refuses with its own
+    // 409 and the section must render that code's text rather than the
+    // generic conflict sentence. The re-read then converges on the server's
+    // state: the remaining row is the only login name and loses its action.
+    let profileReads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        profileReads += 1
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: true,
+            identifiers:
+              profileReads === 1
+                ? [
+                    identifier({
+                      id: 'id-user',
+                      kind: 'username',
+                      value: 'ada',
+                      proven: false,
+                      verified_at: '',
+                      verified_via: 'self',
+                    }),
+                    identifier({
+                      id: 'id-email',
+                      kind: 'email',
+                      value: 'ada@x.test',
+                    }),
+                  ]
+                : [
+                    identifier({
+                      id: 'id-email',
+                      kind: 'email',
+                      value: 'ada@x.test',
+                    }),
+                  ],
+          }),
+        )
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/identifiers/id-email'
+      ) {
+        return errorResponse(409, 'authn.login_identifier_required')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.identifiers.confirmLabel,
+      }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.login_identifier_required)
+    expect(alert).not.toHaveTextContent(zhCN.errors.authn.conflict)
+    // The decisive re-read: the profile is fetched again and the remaining
+    // email becomes the only login name, so its removal gives way to the
+    // note.
+    await waitFor(() => expect(profileReads).toBe(2))
+    expect(screen.getByText(zhCN.identifiers.lastLoginName)).toBeTruthy()
+    expect(
+      screen.queryByRole('button', {
+        name: zhCN.identifiers.removeAria.replace('{{value}}', 'ada@x.test'),
+      }),
+    ).toBeNull()
+  })
+
   it('gates a step_up_required removal behind the dialog and re-runs it once', async () => {
     const warn = captureRefreshWarning()
     let elevated = false
@@ -229,6 +500,7 @@ describe('IdentifiersSection', () => {
         return jsonResponse(
           200,
           profileBody({
+            password_set: false,
             identifiers: removed ? [] : [identifier({ id: 'id-email' })],
           }),
         )
@@ -545,6 +817,169 @@ describe('IdentifiersSection', () => {
     )
     expect(verifies).toHaveLength(1)
     expect(verifies[0]?.body).toEqual({ code: '123456' })
+  })
+
+  it('refuses a malformed email in the field without sending a request', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    // Two @ signs: the shape the server would answer with a bare 400.
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@example@com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    const message = await screen.findByText(zhCN.identifiers.add.invalidEmail)
+    expect(message).toBeTruthy()
+    expect(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
+      ),
+    ).toHaveLength(0)
+
+    // Cancelling clears the field error with the rest of the attempt.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.cancel }),
+    )
+    expect(screen.queryByText(zhCN.identifiers.add.invalidEmail)).toBeNull()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    expect(
+      await screen.findByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toHaveValue('')
+    expect(screen.queryByText(zhCN.identifiers.add.invalidEmail)).toBeNull()
+  })
+
+  it('sends the trimmed address for a well-formed email', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    const field = screen.getByLabelText(zhCN.identifiers.add.value.labelEmail)
+    fireEvent.change(field, { target: { value: '  ada@x.test  ' } })
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    await screen.findByLabelText(zhCN.identifiers.add.code.label)
+    const posts = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
+    )
+    expect(posts).toHaveLength(1)
+    expect(posts[0]?.body).toEqual({ kind: 'email', value: 'ada@x.test' })
+  })
+
+  it('renders a server bad-request for an email as the field error', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return errorResponse(400, 'authn.bad_request')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    expect(
+      await screen.findByText(zhCN.identifiers.add.invalidEmail),
+    ).toBeTruthy()
+    expect(
+      screen.queryByText(zhCN.errors.authn.bad_request),
+    ).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('clears the failure banner when the add face is cancelled', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return errorResponse(503, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.unavailable,
+    )
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.cancel }),
+    )
+
+    // The banner belonged to the attempt, not to the section.
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(
+      screen.queryByText(zhCN.errors.authn.unavailable),
+    ).toBeNull()
+    // The form is closed and an empty one opens on the next attempt.
+    expect(
+      screen.queryByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toBeNull()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    expect(
+      await screen.findByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toHaveValue('')
   })
 
   it('renders a no-channel refusal of an email add as its code text', async () => {
@@ -944,7 +1379,10 @@ describe('IdentifiersSection', () => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
           200,
-          profileBody({ identifiers: [identifier({ id: 'id-email' })] }),
+          profileBody({
+            password_set: false,
+            identifiers: [identifier({ id: 'id-email' })],
+          }),
         )
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)

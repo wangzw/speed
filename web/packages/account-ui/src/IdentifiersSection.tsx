@@ -13,6 +13,8 @@
  * versus the ones that only record an assertion: admin, import-unverified,
  * self). `verified_at` cannot answer that question: every stored identifier
  * carries one, including a username written at registration as `self`.
+ * A username is a login name with no ownership to prove, so its row carries
+ * no verified/unverified chip; email and phone rows keep the chip.
  *
  * A row whose identifier carries an id has a row-end remove action that
  * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
@@ -20,7 +22,16 @@
  * proves it again). The removal is DELETE /api/v1/auth/identifiers/{id}
  * (authn.login.removeIdentifier). The account module refuses to remove the
  * account's last way to log in with a 409, whose code text renders above
- * the list; the section never computes that count client-side.
+ * the list; a refused removal re-reads the profile, so a guard that read a
+ * stale list converges on the server's answer. An account with a password
+ * signs in with a username or an email
+ * address, so while it holds exactly one such identifier the section
+ * renders a note in place of that row's remove action: removing it would
+ * leave the password without a login name. Another username/email, or an
+ * account with no password at all, keeps the action. Phone numbers are not
+ * counted -- they sign in through their own code route. The server remains
+ * the authority on the last way in; the note states the one case the
+ * profile can reveal.
  *
  * Below the list is the add face: POST /api/v1/auth/identifiers
  * (authn.login.addIdentifier) with a kind and a value. An account holds at
@@ -40,6 +51,18 @@
  * writes revoke the account's other sessions, so a success refetches the
  * profile and the session list.
  *
+ * An email address is checked against the server's own rule before it is
+ * sent -- trimmed, printable ASCII, exactly one @ with a part on each
+ * side, at most 254 bytes -- so a malformed address is refused in the
+ * field instead of making a round trip that can only answer the generic
+ * bad-request. The value submitted is the trimmed one. A 400 the server
+ * still answers for the email kind renders the same field message rather
+ * than the account-state banner; a username's 400 keeps the banner,
+ * because the server's username rule also refuses shapes this face does
+ * not restate (the reserved static-credential prefix, a UUID-shaped
+ * name). Closing the add face clears the whole attempt: the failure
+ * banner, the field error, the success notice and the sent-code step.
+ *
  * Every write asks for a fresh authentication: a 401
  * authn.insufficient_user_authentication opens the step-up dialog with the
  * write's inputs remembered, and a won challenge re-runs that one write
@@ -50,9 +73,9 @@
  * it, so a failure renders exactly one role="alert" banner (it sits above
  * the add face, after the list).
  *
- * The section takes the session as its only prop -- the step-up dialog
- * drives it -- while the profile read and the writes travel on the shared
- * access token through the generated calls.
+ * The section takes the session (the step-up dialog drives it) and the two
+ * optional add-face flags, while the profile read and the writes travel on
+ * the shared access token through the generated calls.
  */
 
 import { useState } from 'react'
@@ -81,6 +104,7 @@ import {
   errorCodeOf,
   FORM_MAX_WIDTH,
   ListSkeleton,
+  parseEmailAddress,
   SectionCard,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -174,7 +198,9 @@ export function IdentifiersSection({
   // The add face's own state. addOpen shows the form; addKind picks the
   // kind; addValue holds the entry; sentTo is the address a code went to,
   // or null while the value is being entered; code is the answer. added
-  // fills the live region once a write lands.
+  // fills the live region once a write lands. fieldErrorKey is the value
+  // field's own error (an ill-formed email, or the server's bad-request
+  // answer to one), rendered under that field rather than in the banner.
   const [addOpen, setAddOpen] = useState(false)
   const [addKind, setAddKind] = useState<AddKind>(
     emailAvailable ? 'email' : 'username',
@@ -183,6 +209,7 @@ export function IdentifiersSection({
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [added, setAdded] = useState(false)
+  const [fieldErrorKey, setFieldErrorKey] = useState<string | null>(null)
 
   const addBusy =
     addIdentifier.isPending || verifyIdentifier.isPending
@@ -204,6 +231,16 @@ export function IdentifiersSection({
 
   const pending = isPending && data === undefined
   const rows = !pending && data !== undefined ? data.identifiers : undefined
+  // A password signs an account in through a username or an email address.
+  // With exactly one of those on the profile, that row's removal
+  // is withheld and explained; the server still judges the last way in on
+  // the write itself, so this is the visible half of the same rule.
+  const passwordSet = data?.password_set === true
+  const loginNameCount =
+    rows === undefined
+      ? 0
+      : rows.filter((row) => row.kind === 'username' || row.kind === 'email')
+          .length
   // An account holds at most one username. The server answers a second
   // username with the same 409 authn.conflict as a name someone else took,
   // so once the profile lists one the add face does not offer that kind:
@@ -255,11 +292,17 @@ export function IdentifiersSection({
     setAddFailureKind(null)
   }
 
+  /** Settle the add face back to closed with no trace of the attempt: the
+   * failure banner, the field error, the success notice and the sent-code
+   * step all belong to the form that is going away. */
   function closeAdd(): void {
     setAddOpen(false)
     setSentTo(null)
     setAddValue('')
     setCode('')
+    setAdded(false)
+    setFieldErrorKey(null)
+    clearFailure()
   }
 
   async function remove(id: string): Promise<void> {
@@ -276,11 +319,17 @@ export function IdentifiersSection({
         return
       }
       setFailureCode(failure)
+      // The refusal is the server's judgement on the current state, which
+      // this mount's guard may have read stale (another session removed a
+      // login name first): re-read so the list and the withheld-removal
+      // note converge on what the server sees.
+      await invalidateAfterWrite()
     }
   }
 
   async function add(kind: AddKind, value: string): Promise<void> {
     clearFailure()
+    setFieldErrorKey(null)
     setAdded(false)
     try {
       const result = await addIdentifier.mutateAsync({ data: { kind, value } })
@@ -298,6 +347,17 @@ export function IdentifiersSection({
       const failure = errorCodeOf(error)
       if (failure === STEP_UP_REQUIRED) {
         gate.arm({ step: 'add', kind, value })
+        return
+      }
+      // A bad request for an email is the server refusing the address's
+      // shape -- the same rule the client checked -- so the field carries
+      // the message instead of the generic account-state banner. A
+      // username's bad request keeps the banner: the server's username
+      // rule also refuses shapes the client does not restate (the
+      // reserved static-credential prefix, a UUID-shaped name), which the
+      // kind's helper text describes rather than one blanket sentence.
+      if (kind === 'email' && failure === 'authn.bad_request') {
+        setFieldErrorKey('identifiers.add.invalidEmail')
         return
       }
       setAddFailureKind(kind)
@@ -386,6 +446,13 @@ export function IdentifiersSection({
                 // written at registration as `self`), so it cannot answer that
                 // question.
                 const verified = identifier.proven === true
+                // A username proves no ownership, so it has no verification
+                // state to show.
+                const showChip = kind !== 'username'
+                const lastLoginName =
+                  passwordSet &&
+                  loginNameCount === 1 &&
+                  (kind === 'username' || kind === 'email')
                 return (
                   <Box
                     component="li"
@@ -408,6 +475,11 @@ export function IdentifiersSection({
                         <Typography variant="body2" color="text.secondary">
                           {kindLabel}
                         </Typography>
+                        {lastLoginName ? (
+                          <Typography variant="body2" color="text.secondary">
+                            {t('identifiers.lastLoginName')}
+                          </Typography>
+                        ) : null}
                       </Box>
                       <Box
                         sx={{
@@ -418,17 +490,19 @@ export function IdentifiersSection({
                           gap: 1,
                         }}
                       >
-                        <Chip
-                          size="small"
-                          variant="outlined"
-                          color={verified ? 'primary' : 'default'}
-                          label={
-                            verified
-                              ? t('identifiers.verified')
-                              : t('identifiers.unverified')
-                          }
-                        />
-                        {id !== null && (
+                        {showChip ? (
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            color={verified ? 'primary' : 'default'}
+                            label={
+                              verified
+                                ? t('identifiers.verified')
+                                : t('identifiers.unverified')
+                            }
+                          />
+                        ) : null}
+                        {id !== null && !lastLoginName && (
                           <Button
                             variant="outlined"
                             color="error"
@@ -480,6 +554,7 @@ export function IdentifiersSection({
             onClick={() => {
               clearFailure()
               setAdded(false)
+              setFieldErrorKey(null)
               setAddOpen(true)
             }}
           >
@@ -495,10 +570,22 @@ export function IdentifiersSection({
               noValidate
               onSubmit={(event) => {
                 event.preventDefault()
-                if (sentTo === null) {
-                  void add(formKind, addValue)
-                } else {
+                if (sentTo !== null) {
                   void verify(code)
+                  return
+                }
+                if (formKind === 'email') {
+                  const address = parseEmailAddress(addValue)
+                  if (address === null) {
+                    setFieldErrorKey('identifiers.add.invalidEmail')
+                    return
+                  }
+                  void add('email', address)
+                  return
+                }
+                const username = addValue.trim()
+                if (username !== '') {
+                  void add('username', username)
                 }
               }}
               sx={{
@@ -518,9 +605,10 @@ export function IdentifiersSection({
                     label={t('identifiers.add.kind.label')}
                     value={formKind}
                     disabled={addBusy}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setAddKind(event.target.value as AddKind)
-                    }
+                      setFieldErrorKey(null)
+                    }}
                   >
                     {addKinds.map((option) => (
                       <MenuItem key={option} value={option}>
@@ -533,10 +621,20 @@ export function IdentifiersSection({
                     type={formKind === 'email' ? 'email' : 'text'}
                     autoComplete={formKind === 'email' ? 'email' : 'username'}
                     label={valueLabel}
-                    helperText={valueHelper}
+                    error={fieldErrorKey !== null}
+                    helperText={
+                      fieldErrorKey === null
+                        ? valueHelper
+                        : t(fieldErrorKey)
+                    }
                     value={addValue}
                     disabled={addBusy}
-                    onChange={(event) => setAddValue(event.target.value)}
+                    onChange={(event) => {
+                      setAddValue(event.target.value)
+                      if (fieldErrorKey !== null) {
+                        setFieldErrorKey(null)
+                      }
+                    }}
                   />
                   <Stack direction="row" spacing={1}>
                     <Button
@@ -584,6 +682,7 @@ export function IdentifiersSection({
                       onClick={() => {
                         setSentTo(null)
                         setCode('')
+                        setFieldErrorKey(null)
                         clearFailure()
                       }}
                     >

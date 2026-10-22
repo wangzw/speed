@@ -179,7 +179,10 @@ program beside this directory embeds with `go:embed` and serves through
   (`src/contact-verification-banner.tsx`) shows the target address and the
   verify/change links while pending; verify goes to `/account/verify`, change
   to `/account/verify?change=email`, whose page starts the section in the
-  change-address form. It is a `region`, not a live region, and
+  change-address form. The plain landing passes `autoSend`, so each mount
+  sends one code once the profile reads `pending` with a target address; the
+  change landing sends nothing, and closing the change-address form there does
+  not trigger a send either. It is a `region`, not a live region, and
   it has no close control: it stays until the address is proved. It is
   separate from the once-only "finish account setup" notice -- the two
   predicates are `contactVerificationPending` and `setupIncomplete` in

@@ -17,7 +17,9 @@ that render only the
 state hosts give them, plus the form family's zod validation bridge
 (`zodFormResolver`), the phone parts' composition helpers (`toE164`,
 `validatePhoneNumber`, `defaultPhoneCountry` and the grouping/parsing
-functions in `src/phone-number.ts`), the write-feedback scope
+functions in `src/phone-number.ts`), the email-address rule shared by the
+surfaces that accept one (`parseEmailAddress` and
+`EMAIL_ADDRESS_MAX_BYTES` in `src/email-address.ts`), the write-feedback scope
 (`useWriteFeedback`, with the slot's renderer
 `WriteFeedbackRegion`), the refresh pair (`RefreshButton` plus
 `usePageRefresh` / `pageRefreshRead`, which re-reads the query handles the

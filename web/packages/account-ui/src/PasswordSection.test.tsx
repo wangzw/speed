@@ -117,9 +117,71 @@ describe('PasswordSection', () => {
   })
 
   it("explains the missing login name up front in 'explain' mode", async () => {
-    // Neither a username nor a verified email: the page that already knows
+    // Neither a username nor an email address: the page that already knows
     // the account cannot set a password yet gets the explanation instead of
-    // a form whose submit could only answer 409.
+    // a form whose submit could only answer 409. A phone is not a login
+    // name, however it was proved.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: [
+              identifier({
+                kind: 'phone',
+                value: '+14155550123',
+                proven: true,
+                verified_via: 'sms-code',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, 'explain')
+
+    expect(
+      await screen.findByText(zhCN.password.loginNameRequired),
+    ).toBeTruthy()
+    // The login name is an identifier of either kind; verification is not
+    // part of the requirement the copy states.
+    expect(enUS.password.loginNameRequired).toMatch(
+      /username or an email address/i,
+    )
+    expect(enUS.password.loginNameRequired).not.toMatch(/verified/i)
+    expect(screen.queryByLabelText(zhCN.password.new.label)).toBeNull()
+    // The section header stays: the explanation belongs under it.
+    expect(
+      screen.getByRole('heading', { name: zhCN.password.title }),
+    ).toBeTruthy()
+    await expectNoAxeViolations()
+  })
+
+  it("keeps the form in 'explain' mode once a login name exists", async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            password_set: false,
+            identifiers: [identifier({ kind: 'username', value: 'ada' })],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, 'explain')
+
+    expect(await screen.findByLabelText(zhCN.password.new.label)).toBeTruthy()
+    expect(screen.queryByText(zhCN.password.loginNameRequired)).toBeNull()
+  })
+
+  it("treats an email as a login name without a verification timestamp", async () => {
+    // The judgement is the identifier's kind: an email identifier is the
+    // login name a password is set against even when its ownership was
+    // never proved. Reading `verified_at` would withhold the form here.
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
         return jsonResponse(
@@ -134,32 +196,6 @@ describe('PasswordSection', () => {
                 verified_via: '',
               }),
             ],
-          }),
-        )
-      }
-      throw new Error(`unexpected ${call.method} ${call.path}`)
-    }
-    mount(respond, 'explain')
-
-    expect(
-      await screen.findByText(zhCN.password.loginNameRequired),
-    ).toBeTruthy()
-    expect(screen.queryByLabelText(zhCN.password.new.label)).toBeNull()
-    // The section header stays: the explanation belongs under it.
-    expect(
-      screen.getByRole('heading', { name: zhCN.password.title }),
-    ).toBeTruthy()
-    await expectNoAxeViolations()
-  })
-
-  it("keeps the form in 'explain' mode once a verified login name exists", async () => {
-    const respond: RealResponder = (call: RealCall) => {
-      if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return jsonResponse(
-          200,
-          profileBody({
-            password_set: false,
-            identifiers: [identifier({ kind: 'username', value: 'ada' })],
           }),
         )
       }

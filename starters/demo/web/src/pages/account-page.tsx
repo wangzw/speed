@@ -114,7 +114,8 @@ export function AccountSettingsPage(): ReactElement {
       />
       {/* The registration contact's verification state, when the account has
           one: `none` renders nothing, `pending` offers the send/verify path
-          and the verify route is the dedicated destination. */}
+          and the verify route is the dedicated destination. The section here
+          does not auto-send; only the verify route does that. */}
       <ContactVerificationSection session={session} />
       <AppearanceSection
         presets={presetChoices}

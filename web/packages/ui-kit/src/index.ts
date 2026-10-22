@@ -92,6 +92,10 @@ export {
   type PhoneNumberFieldProps,
 } from './components/PhoneNumberField.js'
 export {
+  EMAIL_ADDRESS_MAX_BYTES,
+  parseEmailAddress,
+} from './email-address.js'
+export {
   defaultPhoneCountry,
   formatNationalPhoneNumber,
   isPhoneCountry,

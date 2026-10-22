@@ -13,7 +13,7 @@
       "forbidden": "你没有执行该操作的权限。",
       "contact_required": "请先验证邮箱地址再继续。",
       "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
-      "login_identifier_required": "此账户需要先添加用户名或已验证的邮箱地址，才能设置密码。",
+      "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
       "unsupported_media_type": "请求无法被读取。",
       "throttled": "尝试次数过多，请稍后再试。",
       "unavailable": "服务暂时不可用，请稍后重试。"
@@ -232,7 +232,7 @@
     "policyFailure": "新密码不符合要求：长度需合适（不能过短，也不能过长），且不能与用户名、邮箱、手机号相同；修改口令时还不能与当前口令相同。",
     "missingNew": "请输入新密码。",
     "mismatch": "两次输入的密码不一致。",
-    "loginNameRequired": "请先添加用户名或已验证的邮箱地址，再设置密码。",
+    "loginNameRequired": "请先添加用户名或邮箱地址，再设置密码。",
     "error": {
       "title": "无法加载密码设置",
       "description": "加载密码设置时出了问题，请稍后重试。"
@@ -265,6 +265,7 @@
     "send": "发送验证码",
     "resend": "重新发送验证码",
     "resendIn": "{{seconds}} 秒后可重新获取验证码。",
+    "autoStepUp": "无法自动发送验证码，请点击「发送验证码」继续。",
     "sent": "验证码已发送至 {{email}}。",
     "codeLabel": "验证码",
     "codeHelper": "输入邮件中的 6 位验证码。",
@@ -299,6 +300,7 @@
     },
     "verified": "已验证",
     "unverified": "未验证",
+    "lastLoginName": "这是你当前唯一的登录名。请先添加另一个用户名或邮箱，再删除它。",
     "remove": "移除",
     "removeAria": "移除此登录标识：{{value}}",
     "confirmTitle": "移除此登录标识？",
@@ -329,6 +331,7 @@
       },
       "submitEmail": "发送验证码",
       "submitUsername": "添加",
+      "invalidEmail": "请输入有效的邮箱地址。",
       "usernameTaken": "该用户名已被使用，请换一个。",
       "cancel": "取消",
       "sent": "验证码已发送至 {{value}}。",

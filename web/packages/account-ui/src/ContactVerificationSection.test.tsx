@@ -54,11 +54,17 @@ function profileVerification(
   })
 }
 
-function mount(respond: RealResponder) {
+function mount(
+  respond: RealResponder,
+  props: {
+    readonly autoSend?: boolean
+    readonly initialChangeOpen?: boolean
+  } = {},
+) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
   const rendered = renderWithProviders(
-    <ContactVerificationSection session={rig.session} />,
+    <ContactVerificationSection session={rig.session} {...props} />,
   )
   return { rig, ...rendered }
 }
@@ -357,6 +363,310 @@ describe('ContactVerificationSection', () => {
     await waitFor(() =>
       expect(screen.getByLabelText(zhCN.verification.codeLabel)).toHaveFocus(),
     )
+  })
+
+  it('auto-sends one code on mount and never again on the refetch it triggers', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, { autoSend: true })
+
+    expect(
+      await screen.findByText(
+        zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
+      ),
+    ).toBeTruthy()
+    // The landed write refetches the profile; the re-read must not send a
+    // second code.
+    await waitFor(() =>
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'GET' && call.path === PROFILE_PATH,
+        ),
+      ).toHaveLength(2),
+    )
+    const posts = rig.calls.filter(
+      (call) => call.method === 'POST' && call.path === ADD_PATH,
+    )
+    expect(posts).toHaveLength(1)
+    expect(posts[0]?.body).toEqual({ kind: 'email', value: 'ada@x.test' })
+  })
+
+  it('does not auto-send without the autoSend flag', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond)
+
+    await screen.findByText(
+      zhCN.verification.target.replace('{{email}}', 'ada@x.test'),
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('does not auto-send while the change-address form is open', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, { autoSend: true, initialChangeOpen: true })
+
+    await screen.findByLabelText(zhCN.verification.changeLabel)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('never auto-sends for a mount landed with the change form open, even after closing it', async () => {
+    // `?change=email` lands here: the visitor came to replace the address,
+    // so closing the form must not fall back to sending a code to the old
+    // one.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, { autoSend: true, initialChangeOpen: true })
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByLabelText(zhCN.verification.changeLabel),
+    ).toBeTruthy()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.changeCancel }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(zhCN.verification.changeLabel),
+      ).toBeNull(),
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('does not auto-send for a verified account', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('verified', 'ada@x.test'))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, { autoSend: true })
+
+    await screen.findByText(
+      zhCN.verification.verifiedDescription.replace(
+        '{{email}}',
+        'ada@x.test',
+      ),
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('does not auto-send for an account that never self-registered', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody())
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, { autoSend: true })
+
+    await waitFor(() =>
+      expect(rig.calls.some((call) => call.path === PROFILE_PATH)).toBe(true),
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('holds the resend control when the automatic send is throttled', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        return new Response(
+          JSON.stringify({ code: 'authn.throttled', traceId: 'trace-1' }),
+          {
+            status: 429,
+            headers: {
+              'content-type': 'application/json',
+              'retry-after': '30',
+            },
+          },
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond, { autoSend: true })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.throttled)
+    // The Retry-After a 429 carried starts the same countdown a send answer
+    // does.
+    expect(
+      screen.getByRole('button', { name: zhCN.verification.send }),
+    ).toBeDisabled()
+    const [before, after] = zhCN.verification.resendIn.split('{{seconds}}')
+    expect(
+      screen.getByText(resendNote(before ?? '', after ?? '')),
+    ).toBeTruthy()
+  })
+
+  it('states the automatic step-up refusal instead of opening the dialog, then gates the manual send', async () => {
+    const warn = captureRefreshWarning()
+    let elevated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      if (call.method === 'POST' && call.path === ADD_PATH) {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'App',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mount(respond, { autoSend: true })
+    const user = userEvent.setup()
+
+    // The automatic attempt's 401 leaves the manual action and its
+    // explanation, and opens no dialog.
+    expect(
+      await screen.findByText(zhCN.verification.autoStepUp),
+    ).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    const manual = screen.getByRole('button', {
+      name: zhCN.verification.send,
+    })
+    expect(manual).toBeEnabled()
+    // The explanation is an info alert beside the manual action; it must
+    // not introduce an accessibility violation of its own.
+    await expectNoAxeViolations()
+
+    // The visitor's own click takes the ordinary gated path.
+    await user.click(manual)
+    await user.click(await screen.findByRole('button', { name: 'App' }))
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    expect(
+      await screen.findByText(
+        zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
+      ),
+    ).toBeTruthy()
+    // The automatic attempt, the manual attempt and the replayed write.
+    expect(
+      rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      ),
+    ).toHaveLength(3)
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({
+        status: 401,
+        code: 'authn.insufficient_user_authentication',
+        trace_id: 'trace-1',
+      }),
+    )
+    // The automatic and manual refusals each report one shortfall.
+    expect(warn).toHaveBeenCalledTimes(2)
   })
 
   it('changes the pending target by sending a code to the new address', async () => {

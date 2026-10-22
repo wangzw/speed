@@ -8,7 +8,7 @@
  * the account proves that address after signing in; an SMS first login opens
  * the account with a verified phone. Setup then adds the two pieces password
  * sign-in needs: a login name and a password. A login name is a username or
- * a verified email; a phone signs in but is not one. The profile these
+ * an email address; a phone signs in but is not one. The profile these
  * predicates read is GET /api/v1/auth/me.
  *
  * `contactVerificationPending` reads the profile's `verification.state`.
@@ -23,7 +23,6 @@ export interface SetupProfile {
   readonly password_set: boolean
   readonly identifiers: readonly {
     readonly kind: string
-    readonly verified_at: string
   }[]
 }
 
@@ -36,18 +35,13 @@ export interface VerificationProfile {
 }
 
 /**
- * Whether one identifier can serve as a login name: a username, or an
- * email address that has been verified. A phone is a way to sign in but not
- * a login name, so it does not unlock password sign-in.
+ * Whether one identifier can serve as a login name: a username or an email
+ * address. Verification does not enter the judgement -- an email identifier
+ * is a login name whether or not its ownership was proved. A phone is a way
+ * to sign in but not a login name, so it does not unlock password sign-in.
  */
-export function isLoginName(identifier: {
-  readonly kind: string
-  readonly verified_at: string
-}): boolean {
-  if (identifier.kind === 'username') {
-    return true
-  }
-  return identifier.kind === 'email' && identifier.verified_at !== ''
+export function isLoginName(identifier: { readonly kind: string }): boolean {
+  return identifier.kind === 'username' || identifier.kind === 'email'
 }
 
 /**

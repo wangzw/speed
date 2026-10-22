@@ -312,6 +312,13 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     { templates: [SMS_TEMPLATE], next_cursor: '' } satisfies SmsAdminTemplatesList200,
     { templates: [], next_cursor: '' } satisfies SmsAdminTemplatesList200,
   ),
+  // The verification page's automatic code send. The scripted request
+  // function keys on the URL alone, so the write is answered here too; no
+  // read shares the path.
+  '/api/v1/auth/identifiers': answer(
+    { state: 'pending', expires_in: 600, resend_after: 60 },
+    { state: 'pending', expires_in: 600, resend_after: 60 },
+  ),
   '/api/v1/auth/me': answer(PROFILE, {
     ...PROFILE,
     identifiers: [],

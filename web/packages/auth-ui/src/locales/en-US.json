@@ -82,6 +82,7 @@
     "throttled": "Too many registration attempts. Please try again later.",
     "retryAfter": "Too many registration attempts. Try again in {{seconds}} seconds.",
     "unavailable": "Registration is temporarily unavailable. Please try again later.",
+    "invalidEmail": "Enter a valid email address.",
     "passwordMismatch": "The two passwords do not match."
   },
   "social": {

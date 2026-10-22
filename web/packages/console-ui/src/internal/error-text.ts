@@ -80,11 +80,14 @@ export const ERROR_TEXT_CODES = [
   'authz.forbidden',
   // authn admin (accounts, impersonations, invitations, members, sso): a
   // 400 shape refusal, the 400 an unsupported region is answered with,
-  // the 409 an account, domain or factor collision is answered with, and
-  // the 403 a denied or impersonation-restricted write is answered with.
+  // the 409 an account, domain or factor collision is answered with, the
+  // 409 a password write is refused with when the account has no login
+  // name, and the 403 a denied or impersonation-restricted write is
+  // answered with.
   'authn.bad_request',
   'authn.unsupported_region',
   'authn.conflict',
+  'authn.login_identifier_required',
   'authn.forbidden',
   'authn.impersonation_restricted',
   // authn's highest-privilege refused writes: the 403 of an initiator with no

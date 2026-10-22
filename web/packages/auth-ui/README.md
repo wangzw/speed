@@ -392,7 +392,11 @@ auto-login -- the first one or the retry -- puts the signed-in line in
 place of the registration fields and the account-created / sign-in
 notices, so a host that does not navigate never leaves a "please sign
 in" prompt over an authenticated session. The confirmation is compared
-in the form and never travels. A taken username
+in the form and never travels. The email address is checked against the
+server's rule (`parseEmailAddress` from `@speed/ui-kit`: trimmed, printable
+ASCII, exactly one `@` with a part on each side, at most 254 bytes) before
+anything is sent; a malformed address renders `register.invalidEmail` in
+that field. A taken username
 (`authn.username_taken`) is the username field's message and focus;
 closed signup, a throttle and an unavailable dependency render their
 `register.*` text in one banner, and every other code -- a 400 with a
@@ -712,7 +716,7 @@ enforced by registration):
 | Section | Purpose |
 |---|---|
 | `passwordSignIn.*` | the password channel: title, field labels (identifier, password, new password), submit, the credential refusal |
-| `register.*` | the password registration form: title (also the synthetic channel's label), description, username/email/password/confirmation labels, submit, the account-created and account-created-sign-in notices, the signed-in line, the sign-in retry, the taken username, the closed/throttled/unavailable refusals, and the throttle wait |
+| `register.*` | the password registration form: title (also the synthetic channel's label), description, username/email/password/confirmation labels, submit, the email format message, the account-created and account-created-sign-in notices, the signed-in line, the sign-in retry, the taken username, the closed/throttled/unavailable refusals, and the throttle wait |
 | `smsSignIn.*` | the SMS channel: title, country/phone labels, the phone hint, send/resubmit/change-phone actions, the sent notice (the assembled E.164 number), the code step's own refusal, the used-code notice. The per-country validation messages live in the `ui-kit` namespace (`phoneNumber.*`) |
 | `signInFlow.*` | the step renderer: the continue action, the factor/enroll titles, the factor-kind names (a guarded closed set plus an "other" label), the passkey prompt for a login and for a registration, the waiting/cancel/retry controls, and its unsupported/cancelled/failed messages, the unavailable-step notice |
 | `discovery.*` | the sign-in surface: the loading notice and the retry action |

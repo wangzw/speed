@@ -31,6 +31,19 @@
  * control of the address, and its text names the address as another
  * account's and points at the change action.
  *
+ * A host that lands this section as the dedicated verification page sets
+ * `autoSend`: once per mount, when the account is `pending` with a target
+ * address and the change-address form is closed, the section sends the code
+ * itself so the visitor arrives with one already on its way. A mount that
+ * lands with the form already open (`initialChangeOpen`, the
+ * `?change=email` entry) never sends automatically, even after the form is
+ * closed: that visitor arrived to replace the address, and a code for the
+ * old one is not what they asked for. The automatic
+ * send never arms the step-up gate -- a gate needs the visitor's own click --
+ * so a 401 leaves the manual send action in place with an explanation, and
+ * that click then takes the ordinary gated path. A 429 still starts the
+ * resend countdown, and any other failure renders the failure banner.
+ *
  * A 401 authn.insufficient_user_authentication arms the shared step-up gate
  * with the refused write remembered; a won challenge re-runs exactly that
  * write once. Other failures render through the family's one role="alert"
@@ -48,7 +61,7 @@
  * (`initialChangeOpen`), which is what the banner's change action asks for;
  * its verify action lands with the entry closed and the code step showing.
  *
- * The section takes the session and that one optional flag as its props -- the
+ * The section takes the session and the two optional flags as its props -- the
  * step-up dialog drives the session -- while the reads and writes travel on the
  * shared access token through the generated calls.
  */
@@ -91,8 +104,17 @@ export interface ContactVerificationSectionProps {
   readonly session: AuthSession
   /** Whether the change-address entry starts open, so a host landing here
    * from a "change address" action reaches the form directly. Defaults to
-   * closed (the code step). */
+   * closed (the code step). A mount that starts open never auto-sends,
+   * even after the form is closed: the visitor arrived to change the
+   * address, so the old one gets no code from this mount. */
   readonly initialChangeOpen?: boolean
+  /** Whether a pending account with a target address sends a code once when
+   * the section mounts, so a dedicated verification page opens with one
+   * already on its way. Defaults to false; the account page leaves it off
+   * and the verify route turns it on. The automatic send never opens the
+   * step-up dialog: a refused send leaves the manual action and its
+   * explanation. */
+  readonly autoSend?: boolean
 }
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
@@ -115,6 +137,7 @@ function retryAfterMsOf(error: unknown): number | undefined {
 export function ContactVerificationSection({
   session,
   initialChangeOpen = false,
+  autoSend = false,
 }: ContactVerificationSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -145,6 +168,18 @@ export function ContactVerificationSection({
   // The live region's text: emptied when an attempt starts and filled when a
   // send lands, so the announcement happens on the empty-to-filled edge.
   const [announcement, setAnnouncement] = useState('')
+  // Whether the mount's automatic send was refused for step-up. The dialog
+  // is the visitor's to open, so the section states why it could not send
+  // and leaves the manual action in place.
+  const [autoStepUp, setAutoStepUp] = useState(false)
+  // The mount-local guards for the automatic send: one attempt per mount,
+  // however many times a refetch re-renders the section, and no attempt at
+  // all when the host landed with the change form open (the `?change=email`
+  // entry). That second guard is fixed at mount: closing the form later
+  // does not turn the automatic send back on, because the visitor arrived
+  // to change the address, not to receive a code for the old one.
+  const autoSent = useRef(false)
+  const autoSendSuppressed = useRef(initialChangeOpen)
   const codeRef = useRef<HTMLInputElement>(null)
 
   const busy = addIdentifier.isPending || verifyIdentifier.isPending
@@ -203,10 +238,11 @@ export function ContactVerificationSection({
     ])
   }
 
-  async function send(nextEmail: string): Promise<void> {
+  async function send(nextEmail: string, automatic = false): Promise<void> {
     const address = nextEmail.trim()
     setFailure(null)
     setCodeInvalid(false)
+    setAutoStepUp(false)
     setAnnouncement('')
     try {
       const result = await addIdentifier.mutateAsync({
@@ -232,6 +268,13 @@ export function ContactVerificationSection({
     } catch (error) {
       const failureCode = errorCodeOf(error)
       if (failureCode === STEP_UP_REQUIRED) {
+        // A dialog the visitor did not ask for is not opened for them: the
+        // automatic attempt states what happened instead, and the next
+        // click on the send action takes the ordinary gated path.
+        if (automatic) {
+          setAutoStepUp(true)
+          return
+        }
         gate.arm({ step: 'send', email: address })
         return
       }
@@ -267,6 +310,26 @@ export function ContactVerificationSection({
       setFailure({ code: failureCode, step: 'verify' })
     }
   }
+
+  // The dedicated verification page's single automatic send: it fires when
+  // the profile first settles on a pending target with the change form
+  // closed, and the mount-local refs keep every later render, refetch and
+  // form close from sending.
+  useEffect(() => {
+    if (
+      !autoSend ||
+      autoSent.current ||
+      autoSendSuppressed.current ||
+      entryOpen
+    ) {
+      return
+    }
+    if (state !== 'pending' || targetEmail === '') {
+      return
+    }
+    autoSent.current = true
+    void send(targetEmail, true)
+  }, [autoSend, entryOpen, state, targetEmail, send])
 
   // The read's own state: a settled answer with no body is the error variant,
   // never "nothing to verify".
@@ -433,6 +496,11 @@ export function ContactVerificationSection({
           >
             {announcement}
           </Alert>
+          {autoStepUp ? (
+            <Alert severity="info" sx={{ width: '100%' }}>
+              {t('verification.autoStepUp')}
+            </Alert>
+          ) : null}
           {failureBanner}
           <Typography variant="body2" color="text.secondary">
             {sentNotice === ''

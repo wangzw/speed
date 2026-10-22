@@ -93,16 +93,48 @@ session as a required prop; `PreferencesSection` takes it optionally
   timer stops at expiry; the sent notice is announced once through a
   `role="status"` region that is mounted empty and filled on landing, and
   focus moves to the code field. It takes the session (its writes are step-up
-  gated) and the optional `initialChangeOpen`, which starts it in the
-  change-address form so a host can land a "change address" action there.
-- **An identifier's chip reads `proven`, never `verified_at`.** `proven` is
-  the server's derivation of whether the way the identifier was established
-  proves ownership (`email-code`, `sms-code`, `invite`, `idp:<provider>`)
-  rather than merely records an assertion (`admin`, `import-unverified`,
-  `self`). Every stored identifier carries a `verified_at`, including a
-  username written at registration as `self`, so `verified_at` cannot answer
-  the question. While the profile's `verification.state` is `pending`, the
-  identifiers add face does not offer the email kind: the pending contact is
+  gated), the optional `initialChangeOpen`, which starts it in the
+  change-address form so a host can land a "change address" action there, and
+  the optional `autoSend`, which the dedicated verification page sets: once
+  per mount, a pending account with a target address and a closed change form
+  sends one code itself, and re-renders and the post-write refetch keep to
+  that one send. A mount that lands with the change form open
+  (`initialChangeOpen`, the `?change=email` entry) never sends automatically,
+  even after the form is closed: that visitor came to replace the address.
+  The automatic send never opens the step-up dialog -- that is the visitor's
+  to open -- so a 401 leaves the manual send action with an explanation; a
+  429 still starts the resend countdown, and other failures render the
+  failure banner.
+- **The identifiers add face checks an email address before sending it.**
+  For `kind=email` the value is checked against the server's rule through
+  `parseEmailAddress` from `@speed/ui-kit` (trimmed, printable ASCII, exactly
+  one `@` with a part on each side, at most 254 bytes); a malformed address
+  renders `identifiers.add.invalidEmail` in the field and sends nothing, and
+  the submitted value is the trimmed one. A 400 the server still answers for
+  the email kind renders that same field message, never the account-state
+  banner. A username's 400 keeps the banner: the server's username rule also
+  refuses shapes this face does not restate (the reserved static-credential
+  prefix, a UUID-shaped name). Closing the add face clears the failure
+  banner, the field error, the success notice and the sent-code step.
+- **A username carries no verification chip; an identifier's chip reads
+  `proven`, never `verified_at`.** A username is a login name with no
+  ownership to prove, so its row renders no verified/unverified chip; email
+  and phone rows read `proven`, the server's derivation of whether the way
+  the identifier was established proves ownership (`email-code`, `sms-code`,
+  `invite`, `idp:<provider>`) rather than merely records an assertion
+  (`admin`, `import-unverified`, `self`). Every stored identifier carries a
+  `verified_at`, including a username written at registration as `self`, so
+  `verified_at` cannot answer the question for the rows that show one. An
+  account with a password signs in with a username or an email address:
+  while the profile lists exactly one of those, that row's remove
+  action gives way to a note (`identifiers.lastLoginName`) telling the user
+  to add another login name first. Another username/email, or an account
+  with no password at all, keeps the action; the server still judges the
+  last way in on the write itself, and a refusal renders its 409
+  `login-identifier-required` text and re-reads the profile, so a guard
+  that read a stale list converges on the server's answer. While the profile's
+  `verification.state` is `pending`, the identifiers add face does not offer
+  the email kind: the pending contact is
   the verification section's, and a second pending address must not exist on
   one account. A phone is a sign-in method and an additional security factor;
   verifying it never lifts the registration restriction -- only a proved email

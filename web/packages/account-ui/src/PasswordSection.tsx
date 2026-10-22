@@ -63,8 +63,8 @@ export interface PasswordSectionProps {
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
   /**
-   * What to render when the account holds neither a username nor a
-   * verified email address -- the state in which `PUT
+   * What to render when the account holds neither a username nor an
+   * email address -- the state in which `PUT
    * /api/v1/auth/password` answers 409 `login-identifier-required`.
    * `'form'` (the default) keeps the form: the server's refusal renders
    * the code's text. `'explain'` renders the explanation up front
@@ -126,19 +126,18 @@ export function PasswordSection({
   // did, so a scalar the surface cannot decide never hides the form -- the
   // server validates the current password regardless.
   const passwordSet = data?.password_set !== false
-  // A username or a verified email address can serve as the login name a
-  // password is set against. An answer that did not list identifiers is
-  // not read as "none": the explanation needs a settled, explicit answer,
-  // and the server's 409 remains the authority.
+  // A username or an email address is the login name a password is set
+  // against; verification does not enter the judgement, because an email
+  // identifier is a login name whether or not its ownership was proved.
+  // An answer that did not list identifiers is not read as "none": the
+  // explanation needs a settled, explicit answer, and the server's 409
+  // remains the authority.
   const loginNamePresent =
     data?.identifiers === undefined
       ? true
       : data.identifiers.some(
           (identifier) =>
-            identifier.kind === 'username' ||
-            (identifier.kind === 'email' &&
-              identifier.verified_at != null &&
-              identifier.verified_at !== ''),
+            identifier.kind === 'username' || identifier.kind === 'email',
         )
   const explainWithoutLoginName =
     withoutLoginName === 'explain' &&

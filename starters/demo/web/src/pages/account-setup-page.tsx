@@ -11,14 +11,14 @@
  * PasswordSection under a page header.
  *
  * The account's own profile (GET /api/v1/auth/me, the same query the sections read)
- * decides the state. A login name is a username or a verified email: the
+ * decides the state. A login name is a username or an email address: the
  * password route refuses an account without one with 409
  * login_identifier_required, so `PasswordSection` is given
  * `withoutLoginName="explain"`: until the profile lists one it renders its
  * own heading and the explanation that a username is needed first, instead
  * of the form. Once the account has both a login name and a password the
  * page states setup is complete, naming the sign-in name the account holds:
- * a username when it has one, a verified email address when that is the only
+ * a username when it has one, an email address when that is the only
  * login name. The profile query's cache entry is the one the sections
  * invalidate after each write, so adding a username reveals the password
  * form and setting a password flips the page to complete without a reload.
@@ -57,7 +57,7 @@ export function AccountSetupPage(): ReactElement {
   const identifiers = profile.data?.identifiers
   const hasLoginName =
     identifiers?.some((identifier) => isLoginName(identifier)) ?? false
-  // A verified email is a login name, but it is not a username: the
+  // An email address is a login name, but it is not a username: the
   // completion copy names the sign-in name the account actually holds.
   const hasUsername =
     identifiers?.some((identifier) => identifier.kind === 'username') ?? false
@@ -86,7 +86,7 @@ export function AccountSetupPage(): ReactElement {
         </Alert>
       ) : null}
       {/* Usernames only: the setup page's job is the login name a password
-          sign-in needs, and a verified email as one is the account page's
+          sign-in needs, and an email address as one is the account page's
           face, beside the other identifier writes. */}
       <IdentifiersSection session={session} emailAvailable={false} />
       {/* The section owns its heading and the withheld form: with no login
