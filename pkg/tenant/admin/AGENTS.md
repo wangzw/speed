@@ -11,8 +11,9 @@ module is in force.
 
 The roster owns which tenants exist — what names they carry, which are served —
 so this module only decides who may ask and how the answer is shaped. It carries
-no policy rule: it asks the decision of the handler-internal `authz.guard` API
-and maps the roster's refusals to responses.
+no policy rule: it asks the decision of the handler-internal `authz.guard` API,
+refuses a write from an account whose self-registration has not proved an email
+address, and maps the roster's refusals to responses.
 
 Taken in only by a command that wants the management routes, it is absent from
 every other command: without it the roster is still read and written through the
@@ -85,12 +86,40 @@ key.
   problem the admission and authorization layers write for a route that requires
   an identity and carries none: the status alone, no type, and the realm
   challenge naming the endpoint the route was mounted on — and the wrapper
-  returns without asking the guard. Then it asks the guard for the route's
-  permission: a shortfall is the guard's own refusal, a 403 for a denial and a
-  503 for an outage. Only past the decision does a write parse its body, run its
-  checks, land its audit and call the roster, or a read call the roster and
-  answer. The wrapper sits in front of the declared handler because the entry
-  point binds a typed operation's input before it calls the handler.
+  returns without asking the guard. On a write it then reads the request's
+  actor's self-registration state and refuses an unverified one (see the next
+  bullet). Then it asks the guard for the route's permission: a shortfall is the
+  guard's own refusal, a 403 for a denial and a 503 for an outage. Only past the
+  decision does a write parse its body, run its checks, land its audit and call
+  the roster, or a read call the roster and answer. The wrapper sits in front of
+  the declared handler because the entry point binds a typed operation's input
+  before it calls the handler.
+- **A write from an unverified self-registration is refused before the
+  decision.** The wrapper reads the request's actor's state through
+  `authn.SignupVerification.SignupStateOf` after the caller and before the
+  permission decision, the body, the mandatory audit and the roster: a
+  `SignupPending` account is answered 403 with the problem type
+  `urn:speed:authn:contact-required` (the authentication capability's exported
+  `authn.ContactRequiredProblemType`, not this surface's own code) — and the
+  action does not run. The subject is the actor and not the account the request
+  is taken to be from, so under an impersonation the operator's state is read and
+  the target's does not participate. A service account, a static-table
+  subject and an account created outside self-registration are exempt, and a read
+  route never consults the state. A state that cannot be read is a 503 and is
+  never read as verified: the gate only narrows what a caller may do, so a
+  failure must not widen it. An account row that does not exist is the one
+  exception: it is answered as "no self-registration record" and passed to the
+  rest of the pipeline.
+  `TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns`,
+  `TestAReadIsNotGated`,
+  `TestTheTenantReadIsNotGated`,
+  `TestAServiceAccountAndAStaticSubjectAreExempt`,
+  `TestAnUnreadableSignupStateIs503`,
+  `TestTheRegistrationGatePrecedesThePermissionDecision`,
+  `TestAnAccountWithNoSignupRecordWrites`,
+  `TestTheGateRefusesBeforeTheBodyShape`,
+  `TestTheGateReadsTheActorNotTheImpersonationTarget`,
+  `TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead`.
 - **The decision is made in the platform domain, whatever tenant the request
   carries.** The roster is the process's own table of which tenants exist and not
   a tenant's, so the handler asks through the guard's explicit-domain form with
@@ -140,14 +169,16 @@ key.
   is the framework-provided provider for the roster: the tenant capability itself
   mounts no management face, and a host that wants one writes this module into its
   command rather than hand-writing the same routes, decision and audit preamble.
-- **It requires the roster, the handler-internal guard and the audit capability.**
-  A command that brings this one in without the roster to act on, the guard to
-  decide with, or the audit to record through fails the startup before any route
-  is mounted, rather than answering every route with a refusal or a write that
-  cannot land. The HTTP entry point is taken up in `Init` and is required — a
-  command that mounts the management routes and has no entry point has nothing to
-  mount on, which is `authz.ErrNoRouter`. The logger is the one optional
-  requirement, and the route-declaration surface is taken up optionally in `Init`.
+- **It requires the roster, the handler-internal guard, the audit capability and
+  the registration-verification read.** A command that brings this one in without
+  the roster to act on, the guard to decide with, the audit to record through, or
+  the `authn.SignupVerification` read to gate a write on fails the startup before
+  any route is mounted, rather than answering every route with a refusal or a
+  write that cannot land. The HTTP entry point is taken up in `Init` and is
+  required — a command that mounts the management routes and has no entry point
+  has nothing to mount on, which is `authz.ErrNoRouter`. The logger is the one
+  optional requirement, and the route-declaration surface is taken up optionally
+  in `Init`.
 - **The answer is a view, built field by field.** Every route answers with a view
   assembled from a `tenant.Tenant` and never the record as it stands, so a field
   added to a record later does not reach a client by being there. The view carries
@@ -190,10 +221,11 @@ env -C pkg golangci-lint run ./tenant/admin/...
 
 The tests ask for no service and no environment. The route cases mount the
 module's whole route set on a real `gin` engine and drive it over an `httptest`
-recorder, with stand-ins for the roster, the guard, the audit and the
-configuration reader, and a real identity from `authntest` — so a case can assert
-that a route the guard refused, a request with no identity, and a write whose
-mandatory audit did not land reached no roster call and wrote no audit row. The
+recorder, with stand-ins for the roster, the guard, the audit, the signup-state
+read and the configuration reader, and a real identity from `authntest` — so a
+case can assert that a route the guard refused, a write the registration gate
+refused, a request with no identity, and a write whose mandatory audit did not
+land reached no roster call and wrote no audit row. The
 assembly cases drive the module's descriptor through a real registry, which is
 where what it requires and takes up is observed; one of them drives the real
 enforcement module alongside this one, which is what proves this module's

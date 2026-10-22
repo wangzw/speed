@@ -12,9 +12,11 @@ module is in force.
 The settings module owns what a setting item is — its declared type, its value
 domain, its default and the three-level fallback — so this module only decides
 who may ask and how the answer is shaped. It carries no policy rule: it asks the
-decision of the handler-internal `authz.guard` API and maps the settings module's
-refusals to responses. It also masks a sensitive item's value before it reaches a
-client, which the settings module does not do on the read path.
+decision of the handler-internal `authz.guard` API, refuses a write from an
+account whose self-registration has not proved an email address, and maps the
+settings module's refusals to responses. It also masks a sensitive item's value
+before it reaches a client, which the settings module does not do on the read
+path.
 
 Taken in only by a command that wants the management routes, it is absent from
 every other command: without it the settings are still read and written through
@@ -113,16 +115,46 @@ row's existence without revealing the text.
   the problem the admission and authorization layers write for a route that
   requires an identity and carries none: the status alone, no type, and the realm
   challenge naming the endpoint the route was mounted on — and the route returns
-  without asking the guard. Then it settles the layer and the domain from the
-  query string: a layer selection or a tenant identifier outside its value domain
-  is a 400, written before the guard is asked. Then it asks the guard for the
-  route's permission in the layer's domain: a shortfall is the guard's own
-  refusal, a 403 for a denial and a 503 for an outage. Only past the decision does
-  the entry point bind a write's body and the declared handler run its shape
-  checks, land its audit and call the settings module, or a read call the settings
-  module and answer. The step sits in front of the declared handler because a
-  typed handler receives no request, and the realm is bound per endpoint at the
-  mount.
+  without asking the guard. On a write it then reads the request's actor's
+  self-registration state and refuses an unverified one (see the next bullet).
+  Then it settles the layer and the domain from the query string: a layer
+  selection or a tenant identifier outside its value domain is a 400, written
+  before the guard is asked. Then it asks the guard for the route's permission in
+  the layer's domain: a shortfall is the guard's own refusal, a 403 for a denial
+  and a 503 for an outage. Only past the decision does the entry point bind a
+  write's body and the declared handler run its shape checks, land its audit and
+  call the settings module, or a read call the settings module and answer. The
+  write decision is derived from the route's method, not passed in: a route that
+  is not a read is a write, so a write route added to the set is gated by
+  construction. The step sits in front of the declared handler because a typed
+  handler receives no request, and the realm is bound per endpoint at the mount.
+- **A write from an unverified self-registration is refused before the
+  decision.** The step reads the request's actor's state through
+  `authn.SignupVerification.SignupStateOf` after the caller and before the layer
+  selection, the permission decision, the body, the mandatory audit and the
+  settings module: a `SignupPending` account is answered 403 with the problem type
+  `urn:speed:authn:contact-required` (the authentication capability's exported
+  `authn.ContactRequiredProblemType`, not this surface's own code) — and the
+  action does not run. The subject is the actor and not the account the request
+  is taken to be from, so under an impersonation the operator's state is read and
+  the target's does not participate. A service account, a static-table
+  subject and an account created outside self-registration are exempt, and a read
+  route never consults the state. A state that cannot be read is a 503 and is
+  never read as verified: the gate only narrows what a caller may do, so a
+  failure must not widen it. An account row that does not exist is the one
+  exception: it is answered as "no self-registration record" and passed to the
+  rest of the pipeline.
+  `TestAWriteFromAnUnverifiedRegistrationIsRefusedBeforeAnythingRuns`,
+  `TestAReadIsNotGated`,
+  `TestTheNamespaceReadIsNotGated`,
+  `TestAServiceAccountAndAStaticSubjectAreExempt`,
+  `TestAnUnreadableSignupStateIs503`,
+  `TestTheRegistrationGatePrecedesThePermissionDecision`,
+  `TestAnAccountWithNoSignupRecordWrites`,
+  `TestTheGateIsDerivedFromTheMethod`,
+  `TestTheGateRefusesBeforeTheLayerShape`,
+  `TestTheGateReadsTheActorNotTheImpersonationTarget`,
+  `TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead`.
 - **The decision is made per layer, in the layer's own domain.** The global layer
   is a platform operation, decided in the platform domain `authz.PlatformDomain`;
   a tenant layer is decided in that tenant's domain `authz.Domain(id)`. The two
@@ -164,14 +196,15 @@ row's existence without revealing the text.
   routes. It states `StateEnabled` and never `StateAuto`: whether the management
   routes exist is a decision of the command tree, not a conclusion a
   configuration infers.
-- **It requires the settings surface, the handler-internal guard and the audit
-  capability.** A command that brings this one in without the settings surface to
-  act on, the guard to decide with, or the audit to record through fails the
-  startup before any route is mounted. The HTTP entry point is taken up in `Init`
-  and is required — a command that mounts the management routes and has no entry
-  point has nothing to mount on, which is `authz.ErrNoRouter`. The logger is the
-  one optional requirement, and the route-declaration surface is taken up
-  optionally in `Init`.
+- **It requires the settings surface, the handler-internal guard, the audit
+  capability and the registration-verification read.** A command that brings this
+  one in without the settings surface to act on, the guard to decide with, the
+  audit to record through, or the `authn.SignupVerification` read to gate a write
+  on fails the startup before any route is mounted. The HTTP entry point is taken
+  up in `Init` and is required — a command that mounts the management routes and
+  has no entry point has nothing to mount on, which is `authz.ErrNoRouter`. The
+  logger is the one optional requirement, and the route-declaration surface is
+  taken up optionally in `Init`.
 - **The module validates no value.** A value's type and domain are judged by the
   settings module when it is written; this module checks only the request's shape
   — the layer selection, the tenant identifier, the full key's declaration and
@@ -213,10 +246,12 @@ env -C pkg golangci-lint run ./settings/admin/...
 
 The tests ask for no service and no environment. The route cases mount the
 module's whole route set on a real `gin` engine and drive it over an `httptest`
-recorder, with stand-ins for the settings surface, the guard, the audit and the
-configuration reader, and a real identity from `authntest` — so a case can assert
-that the layer chooses the domain and the permission, that the guard's refusal is
-its own, that a sensitive item's value is masked, and that a write whose mandatory
-audit did not land reached no settings call. The assembly cases drive the module's
+recorder, with stand-ins for the settings surface, the guard, the audit, the
+signup-state read and the configuration reader, and a real identity from
+`authntest` — so a case can assert that the layer chooses the domain and the
+permission, that the guard's refusal is its own, that the registration gate
+refuses an unverified write before the decision, that a sensitive item's value is
+masked, and that a write whose mandatory audit did not land reached no settings
+call. The assembly cases drive the module's
 descriptor through a real registry, which is where what it requires and takes up
 is observed.

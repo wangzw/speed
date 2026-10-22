@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/authz/internal/translation"
@@ -504,4 +506,51 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 		Provides: provides,
 		New:      func(context.Context, *core.Registry) (any, error) { return instance, nil },
 	}
+}
+
+// fakeSignupVerification answers the acting account's self-registration state
+// with what a case scripts, and counts the reads, so a case can hold that a
+// granted reader was not asked. The zero value reports SignupNone with no
+// failure, which is what an account created outside self-registration reads as.
+type fakeSignupVerification struct {
+	mu     sync.Mutex
+	state  authn.SignupState
+	err    error
+	reads  int
+	lastID authn.AccountID
+}
+
+func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.reads++
+	v.lastID = id
+	return authn.SignupStatus{State: v.state}, v.err
+}
+
+// PendingAccountByContact is not part of this surface.
+func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
+	return "", false, errors.New("authz.admin: the pending-contact read is not part of this surface")
+}
+
+// answer scripts the state and the failure the next reads report.
+func (v *fakeSignupVerification) answer(state authn.SignupState, err error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.state, v.err = state, err
+}
+
+// readCount is how many state reads the fake answered.
+func (v *fakeSignupVerification) readCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.reads
+}
+
+// lastAccount is the account the last state read named, which a case holds to
+// the request's actor rather than its impersonation target.
+func (v *fakeSignupVerification) lastAccount() authn.AccountID {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.lastID
 }

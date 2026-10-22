@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -408,6 +409,10 @@ type rig struct {
 	audit  *recordingAudit
 	logs   *logBuffer
 	engine *gin.Engine
+	// signup answers the acting account's self-registration state. Its zero
+	// value reports SignupNone, which is what an account created outside
+	// self-registration reads as.
+	signup *fakeSignupVerification
 }
 
 // newRig builds the module over the stubs and mounts its route set on a real
@@ -416,18 +421,20 @@ func newRig(t *testing.T) *rig {
 	t.Helper()
 	logs := &logBuffer{}
 	r := &rig{
-		t:     t,
-		store: &stubStore{values: map[string]any{}},
-		guard: &stubGuard{allow: true},
-		audit: &recordingAudit{},
-		logs:  logs,
+		t:      t,
+		store:  &stubStore{values: map[string]any{}},
+		guard:  &stubGuard{allow: true},
+		audit:  &recordingAudit{},
+		logs:   logs,
+		signup: &fakeSignupVerification{},
 	}
 	r.p = &product{
-		store:  r.store,
-		guard:  r.guard,
-		audit:  r.audit,
-		logger: logs.logger(),
-		cfg:    resolved{endpoints: []string{"public"}},
+		store:        r.store,
+		guard:        r.guard,
+		audit:        r.audit,
+		verification: r.signup,
+		logger:       logs.logger(),
+		cfg:          resolved{endpoints: []string{"public"}},
 	}
 	r.engine = r.mount()
 	return r
@@ -489,4 +496,51 @@ func (r *rig) send(method, target string, reader io.Reader, jsonBody bool, ctx c
 	w := httptest.NewRecorder()
 	r.engine.ServeHTTP(w, req)
 	return w
+}
+
+// fakeSignupVerification answers the acting account's self-registration state
+// with what a case scripts, and counts the reads, so a case can hold that a
+// granted reader was not asked. The zero value reports SignupNone with no
+// failure, which is what an account created outside self-registration reads as.
+type fakeSignupVerification struct {
+	mu     sync.Mutex
+	state  authn.SignupState
+	err    error
+	reads  int
+	lastID authn.AccountID
+}
+
+func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.reads++
+	v.lastID = id
+	return authn.SignupStatus{State: v.state}, v.err
+}
+
+// PendingAccountByContact is not part of this surface.
+func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
+	return "", false, errors.New("settings.admin: the pending-contact read is not part of this surface")
+}
+
+// answer scripts the state and the failure the next reads report.
+func (v *fakeSignupVerification) answer(state authn.SignupState, err error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.state, v.err = state, err
+}
+
+// readCount is how many state reads the fake answered.
+func (v *fakeSignupVerification) readCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.reads
+}
+
+// lastAccount is the account the last state read named, which a case holds to
+// the request's actor rather than its impersonation target.
+func (v *fakeSignupVerification) lastAccount() authn.AccountID {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.lastID
 }

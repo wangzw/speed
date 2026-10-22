@@ -114,7 +114,7 @@ func (p *product) routes() []route {
 		},
 	}
 	for i := range routes {
-		routes[i].handler = p.guardRoute(routes[i].perm, routes[i].handler)
+		routes[i].handler = p.guardRoute(routes[i].method, routes[i].perm, routes[i].handler)
 	}
 	return routes
 }

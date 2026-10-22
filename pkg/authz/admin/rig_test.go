@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -26,13 +27,13 @@ type roleBody struct {
 // readRoute binds a read operation's typed handler behind the route's
 // identity-and-permission guard, the way the module mounts it.
 func readRoute(p *product, handler gin.HandlerFunc) gin.HandlerFunc {
-	return p.guardRoute(authz.PermissionRoleRead, handler)
+	return p.guardRoute(http.MethodGet, authz.PermissionRoleRead, handler)
 }
 
 // writeRoute binds a write operation's typed handler behind the route's
-// identity-and-permission guard, the way the module mounts it.
+// identity-and-registration-and-permission guard, the way the module mounts it.
 func writeRoute(p *product, handler gin.HandlerFunc) gin.HandlerFunc {
-	return p.guardRoute(authz.PermissionRoleManage, handler)
+	return p.guardRoute(http.MethodPut, authz.PermissionRoleManage, handler)
 }
 
 // rolePutRoute binds the role write's operation, the one route whose body the
@@ -53,6 +54,10 @@ type rig struct {
 	audit   *recordingAudit
 	router  *stubRouter
 	logs    *logBuffer
+	// signup answers the acting account's self-registration state. Its zero
+	// value reports SignupNone, which is what an account created outside
+	// self-registration reads as.
+	signup *fakeSignupVerification
 	// locale is the request's language, written into the context of every
 	// request this rig serves. Empty leaves the context carrying none, which the
 	// stub localizer reads as its fallback.
@@ -72,14 +77,16 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 		audit:   &recordingAudit{},
 		router:  newStubRouter("public"),
 		logs:    logs,
+		signup:  &fakeSignupVerification{},
 	}
 	r.p = &product{
-		manager: r.manager,
-		catalog: r.catalog,
-		guard:   r.guard,
-		audit:   r.audit,
-		logger:  logs.logger(),
-		cfg:     resolved{endpoints: []string{"public"}},
+		manager:      r.manager,
+		catalog:      r.catalog,
+		guard:        r.guard,
+		audit:        r.audit,
+		verification: r.signup,
+		logger:       logs.logger(),
+		cfg:          resolved{endpoints: []string{"public"}},
 	}
 	return r
 }

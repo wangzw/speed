@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,13 @@ import (
 // and a 503 are written with no type: they say something is not there or a
 // dependency could not answer, and not which kind of refusal it was, so naming a
 // kind would separate the failures the answer is meant to keep apart.
+//
+// The contact-required refusal is the authentication capability's, not this surface's:
+// the refusal it names is a fact about the acting account's registration, so a
+// client branches on it the same way it branches on the answer any other
+// surface of that capability gives. It is that capability's exported
+// authn.ContactRequiredProblemType, written at the one refusal below rather than
+// copied here.
 const (
 	typePrefix     = "urn:speed:tenant:"
 	badRequestCode = "bad-request"
@@ -88,20 +96,26 @@ func quoteRealm(name string) string {
 // input — including the JSON body — before it calls the handler, so a handler
 // that refused a missing identity would answer a request with an unreadable body
 // after the binding refusal instead of before it. The management surface's order
-// is identity, then permission, then shape, and this wrapper is what keeps it.
-// The decision is made in the platform domain and not the tenant the request
-// resolved to: the roster is the process's own table of which tenants exist, so
-// deciding in whatever tenant the request happened to resolve to would let a
-// caller authorized in one tenant reach the whole roster by sending a tenant
-// header.
+// is identity, then the registration check of a write, then permission, then
+// shape, and this wrapper is what keeps it. The decision is made in the platform
+// domain and not the tenant the request resolved to: the roster is the process's
+// own table of which tenants exist, so deciding in whatever tenant the request
+// happened to resolve to would let a caller authorized in one tenant reach the
+// whole roster by sending a tenant header.
 //
 // A shortfall is answered here and the declared handler is not called: a 401
-// with the realm challenge when there is no identity, and the guard's own 403 or
-// 503 when it refuses.
-func (p *product) guardRoute(perm authz.Permission, next gin.HandlerFunc) gin.HandlerFunc {
+// with the realm challenge when there is no identity, the 403 contact-required of
+// an unverified self-registration on a write, and the guard's own 403 or 503 when
+// it refuses.
+func (p *product) guardRoute(method string, perm authz.Permission, next gin.HandlerFunc) gin.HandlerFunc {
+	write := method != http.MethodGet
 	return func(c *gin.Context) {
-		if _, ok := authn.FromContext(c.Request.Context()); !ok {
+		id, ok := authn.FromContext(c.Request.Context())
+		if !ok {
 			writeNoIdentity401(c, realmOf(c))
+			return
+		}
+		if write && !p.requireVerifiedAccount(c, id) {
 			return
 		}
 		if !p.guard.RequirePermissionIn(c, perm, authz.PlatformDomain) {
@@ -109,6 +123,48 @@ func (p *product) guardRoute(perm authz.Permission, next gin.HandlerFunc) gin.Ha
 		}
 		next(c)
 	}
+}
+
+// requireVerifiedAccount refuses a management write an unverified
+// self-registration makes. It sits after the caller is read and before the
+// permission decision, the body, the mandatory audit and the roster: a refused
+// request asks no guard, lands no audit row and changes no tenant.
+//
+// The subject it reads is the request's actor, not the account the request is
+// taken to be from: under an impersonation the actor is whose hands are on the
+// request and the target's self-registration does not participate, which is the
+// design's rule for this gate on every capability's management face. A given
+// actor is exempt — one created outside self-registration, a service account,
+// and a static-table subject, which has no account row and never a
+// self-registration — and a read route does not consult it at all.
+//
+// A state that cannot be read is a 503 and is never read as verified: a
+// dependency that cannot answer must not widen what a caller may do.
+func (p *product) requireVerifiedAccount(c *gin.Context, id authn.Identity) bool {
+	actor := id.Actor()
+	if actor == "" || actor.IsStatic() || slices.Contains(id.Methods(), authn.MethodClientSecret) {
+		return true
+	}
+	status, err := p.verification.SignupStateOf(c.Request.Context(), actor)
+	switch {
+	case errors.Is(err, authn.ErrAccountNotFound):
+		// No account row is no self-registration; the rest of the pipeline
+		// answers for it.
+		return true
+	case err != nil:
+		p.logger.Error(ModuleName+": the signup state could not be read, so the write was not carried out",
+			slog.String("cause", err.Error()))
+		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
+		return false
+	}
+	if status.State == authn.SignupPending {
+		speedhttp.Fail(c, speedhttp.Problem{
+			Status: http.StatusForbidden,
+			Type:   authn.ContactRequiredProblemType,
+		})
+		return false
+	}
+	return true
 }
 
 // prescreenJSON answers a JSON body the declared binding would refuse, before

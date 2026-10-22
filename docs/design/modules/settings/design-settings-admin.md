@@ -245,4 +245,4 @@ sequenceDiagram
 | 管理面 `settings.admin`（路由、按层判定、审计、敏感遮蔽、回绝映射） | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/routes.go` `routes`、`mount`；`pkg/settings/admin/handlers.go` `handleList`、`handleListNamespace`、`handleSet`、`handleRemove`；`pkg/settings/admin/pipeline.go` `selectLayer`、`require`、`auditRequired`；`pkg/settings/admin/views.go` `maskedValue`、`viewOf` |
 | 管理面 `settings.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/settings/admin/operations.go`；`pkg/settings/admin/openapi_generated_test.go`；片段 `pkg/settings/admin/openapi/settings.admin.json` |
 | 静态特性 `settings.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/settings/admin/admin.go` `Module`；`pkg/settings/admin/feature_test.go` `TestTheModuleDeclaresTheSettingsAdminFeature` |
-| 设置写面的注册验证门控（`signup_state=1` 答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 未实现 | — |
+| 设置写面的注册验证门控（`signup_state=1` 答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/settings/admin/pipeline.go` `(*product).requireVerifiedAccount`；`pkg/settings/admin/routes.go` `(*product).guardRoute`、`routes`；`pkg/settings/admin/gate_test.go` |

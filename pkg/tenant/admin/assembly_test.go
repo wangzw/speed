@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/authztest"
@@ -56,13 +57,16 @@ func recordingModule(record *any) core.Module {
 type managementAssembly struct {
 	// body is the configuration. The zero value uses managementBody.
 	body string
-	// noCatalog, noGuard and noAudit leave out the stand-in for the required
-	// capability named, so the drive reaches resolution without it.
-	noCatalog, noGuard, noAudit bool
+	// noCatalog, noGuard, noAudit and noVerification leave out the stand-in for
+	// the required capability named, so the drive reaches resolution without it.
+	noCatalog, noGuard, noAudit, noVerification bool
 	// noRouter leaves the entry point out, which fails Init.
 	noRouter bool
 	// catalog is the roster stand-in delivered as that capability.
 	catalog tenant.Catalog
+	// verification is the signup-state read stand-in; nil uses one that reports
+	// no self-registration.
+	verification authn.SignupVerification
 	// router is the entry point stand-in; nil uses one that declares "public".
 	router speedhttp.Router
 	// gate is the optional route-declaration surface, taken up in Init when set.
@@ -107,6 +111,14 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	if !a.noAudit {
 		reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
 		names = append(names, "stand-in.audit")
+	}
+	if !a.noVerification {
+		v := a.verification
+		if v == nil {
+			v = &fakeSignupVerification{}
+		}
+		reg.Register(standIn("stand-in.verification", v, (*authn.SignupVerification)(nil)))
+		names = append(names, "stand-in.verification")
 	}
 	logger := a.logger
 	if logger == nil {
@@ -156,9 +168,10 @@ func TestThisModuleDeliversNothing(t *testing.T) {
 // anything.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
-		"no catalog": {noCatalog: true},
-		"no guard":   {noGuard: true},
-		"no audit":   {noAudit: true},
+		"no catalog":      {noCatalog: true},
+		"no guard":        {noGuard: true},
+		"no audit":        {noAudit: true},
+		"no verification": {noVerification: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var built any
@@ -365,6 +378,7 @@ func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
 		{"stand-in.catalog", catalog, (*authz.Catalog)(nil)},
 		{"stand-in.roster", &stubCatalog{}, (*tenant.Catalog)(nil)},
 		{"stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)},
+		{"stand-in.verification", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)},
 		{"stand-in.router", newStubRouter("public"), (*speedhttp.Router)(nil)},
 		{"stand-in.logger", loggerStub{logger: (&logBuffer{}).logger()}, (*log.Logger)(nil)},
 	} {

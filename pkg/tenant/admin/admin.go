@@ -10,7 +10,9 @@
 //
 // Every route is declared open on the authorization middleware, so the
 // middleware lets a request through and the handler makes the decision itself:
-// it reads the caller from the request, asks the handler-internal authz.guard
+// it reads the caller from the request, reads the acting account's
+// self-registration state on a write and refuses one that has not proved an email
+// address with 403 contact-required, then asks the handler-internal authz.guard
 // API for tenant.read on a read or tenant.manage on a write, in the platform
 // domain, and answers a shortfall before anything else runs. A read that is
 // allowed ends there; a write lands a mandatory audit row outside any
@@ -29,6 +31,7 @@ import (
 	"log/slog"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
@@ -107,14 +110,16 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The roster, the handler-internal guard and the audit capability are required.
-// That the guard is required is what makes the per-request decision available;
-// that the audit capability is required is what makes an assembly without one
-// fail before any instance is built, rather than at the first write. The roster
-// is delivered exclusively by the roster module and the guard by the enforcement
-// module, so the closure of a command that takes this one in does not pull them
-// in: the host writes them down. The logger is the one optional requirement,
-// taken up so that it is initialised first.
+// The roster, the handler-internal guard, the audit capability and the
+// registration-verification read are required. That the guard is required is
+// what makes the per-request decision available; that the audit capability is
+// required is what makes an assembly without one fail before any instance is
+// built, rather than at the first write; the verification read is what lets a
+// write refuse an account whose self-registration has not proved an email
+// address. The roster is delivered exclusively by the roster module and the
+// guard by the enforcement module, so the closure of a command that takes this
+// one in does not pull them in: the host writes them down. The logger is the one
+// optional requirement, taken up so that it is initialised first.
 //
 // The HTTP entry point and the route-declaration surface are taken up in Init
 // rather than declared: a command that mounts routes and has no entry point is a
@@ -138,6 +143,7 @@ func Module() core.Module {
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*guard.Guard)(nil)},
 			{Token: (*audit.Audit)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -194,6 +200,10 @@ type product struct {
 	catalog tenant.Catalog
 	guard   guard.Guard
 	audit   audit.Audit
+	// verification reads how far the acting account's self-registration has
+	// got. A write route reads it before the permission decision, so an account
+	// that has not proved an email address cannot change the roster.
+	verification authn.SignupVerification
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -219,6 +229,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the audit capability: %w", ModuleName, err)
 	}
+	verification, err := core.Resolve[authn.SignupVerification](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the signup-verification read: %w", ModuleName, err)
+	}
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
@@ -228,11 +242,12 @@ func newProduct(reg *core.Registry) (*product, error) {
 		return nil, err
 	}
 	return &product{
-		catalog: catalog,
-		guard:   guardAPI,
-		audit:   auditor,
-		logger:  log.Default(),
-		cfg:     cfg,
+		catalog:      catalog,
+		guard:        guardAPI,
+		audit:        auditor,
+		verification: verification,
+		logger:       log.Default(),
+		cfg:          cfg,
 	}, nil
 }
 

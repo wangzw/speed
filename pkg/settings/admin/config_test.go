@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -64,14 +65,17 @@ func TestTheEndpointItemIsRequiredOnThePrimarySource(t *testing.T) {
 	}
 }
 
-// The descriptor requires the settings surface, the guard and the audit
-// capability, and takes the logger optionally.
+// The descriptor requires the settings surface, the guard, the audit capability
+// and the registration-verification read, and takes the logger optionally.
 func TestTheDescriptorRequiresItsCapabilities(t *testing.T) {
 	optional := map[any]bool{}
 	for _, req := range Module().Requires {
 		optional[req.Token] = req.Optional
 	}
-	for _, tk := range []any{(*settings.Store)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil)} {
+	for _, tk := range []any{
+		(*settings.Store)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil),
+		(*authn.SignupVerification)(nil),
+	} {
 		opt, present := optional[tk]
 		if !present {
 			t.Errorf("the descriptor does not require %T", tk)

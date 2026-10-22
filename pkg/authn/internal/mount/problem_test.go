@@ -414,3 +414,16 @@ func TestStepUpRequiredDoesNotTrustTheSchemeToBeAHeaderValue(t *testing.T) {
 		}
 	}
 }
+
+// TestContactRequiredCodeMatchesTheRootConstant holds the two writers of the
+// contact-required type to one value: this capability's handlers build it as
+// typePrefix + CodeContactRequired, and the managing faces of the other
+// capabilities and a host's own surfaces write authn.ContactRequiredProblemType.
+// A change to either side that the other does not follow fails here rather than
+// splitting the type across surfaces.
+func TestContactRequiredCodeMatchesTheRootConstant(t *testing.T) {
+	if got := typePrefix + CodeContactRequired; got != authn.ContactRequiredProblemType {
+		t.Errorf("typePrefix+CodeContactRequired = %q, but authn.ContactRequiredProblemType = %q",
+			got, authn.ContactRequiredProblemType)
+	}
+}

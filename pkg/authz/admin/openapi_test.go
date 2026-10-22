@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/guard"
 	"github.com/vislake/speed/pkg/core"
@@ -18,6 +19,7 @@ type seams struct {
 	authz.Catalog
 	guard.Guard
 	audit.Audit
+	authn.SignupVerification
 }
 
 // TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters holds the one thing
@@ -32,7 +34,8 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Endpoints: []string{"admin"},
 		Stubs: []core.Module{
 			routecontract.StandIn("stand-in.seams", &seams{},
-				(*authz.Manager)(nil), (*authz.Catalog)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil)),
+				(*authz.Manager)(nil), (*authz.Catalog)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil),
+				(*authn.SignupVerification)(nil)),
 		},
 		Config: map[string]any{
 			ConfigNamespace: map[string]any{"endpoints": []string{"admin"}},

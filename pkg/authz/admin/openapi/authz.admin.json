@@ -494,7 +494,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain"
+            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "503": {
             "content": {
@@ -581,7 +581,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain"
+            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "503": {
             "content": {
@@ -752,7 +752,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain"
+            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -851,7 +851,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain"
+            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -1060,7 +1060,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain"
+            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "409": {
             "content": {
@@ -1157,7 +1157,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain"
+            "description": "The caller holds no role.manage in the platform domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "409": {
             "content": {

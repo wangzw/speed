@@ -310,6 +310,19 @@ func provide(name string, token core.Token, instance any) core.Module {
 	}
 }
 
+// signupStub answers every account's self-registration state with the state a
+// case scripts. The zero value reports SignupNone, which is what an account
+// created outside self-registration reads as, so the end-to-end cases write with
+// every account given.
+type signupStub struct {
+	authn.SignupVerification
+	state authn.SignupState
+}
+
+func (s signupStub) SignupStateOf(context.Context, authn.AccountID) (authn.SignupStatus, error) {
+	return authn.SignupStatus{State: s.state}, nil
+}
+
 // assembly is one drive of the real registry to Serve, with the stand-ins a case
 // drives. A nil stand-in is replaced with a fresh one.
 type assembly struct {
@@ -426,12 +439,13 @@ func (a assembly) serve(t *testing.T, use func(l *live)) {
 	reg.Register(provide("stand-in.catalog", (*authz.Catalog)(nil), a.catalog))
 	reg.Register(provide("stand-in.manager", (*authz.Manager)(nil), a.manager))
 	reg.Register(provide("stand-in.audit", (*audit.Audit)(nil), a.audit))
+	reg.Register(provide("stand-in.verification", (*authn.SignupVerification)(nil), signupStub{}))
 
 	modules := []core.Module{entry, gateway, enforcement, management}
 	participants := []string{
 		speedhttp.ModuleName, gate.ModuleName, guard.ModuleName, admin.ModuleName,
 		"stand-in.backend", "stand-in.logger", "stand-in.enforcer", "stand-in.catalog",
-		"stand-in.manager", "stand-in.audit",
+		"stand-in.manager", "stand-in.audit", "stand-in.verification",
 	}
 	if a.resolve {
 		body = `{

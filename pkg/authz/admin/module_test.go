@@ -35,6 +35,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 	wantRequired := []core.Token{
 		(*authz.Manager)(nil), (*authz.Catalog)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil),
+		(*authn.SignupVerification)(nil),
 	}
 	var required []core.Token
 	for _, r := range m.Requires {
@@ -201,9 +202,11 @@ func (a assembly) drive(t *testing.T, action func(*core.Registry)) error {
 	reg.Register(standIn("stand-in.catalog", newStubCatalog(), (*authz.Catalog)(nil)))
 	reg.Register(standIn("stand-in.guard", &stubGuard{allow: true}, (*guard.Guard)(nil)))
 	reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
+	reg.Register(standIn("stand-in.verification", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
 	logs := &logBuffer{}
 	reg.Register(standIn("stand-in.logger", loggerStub{logger: logs.logger()}, (*log.Logger)(nil)))
-	names = append(names, "stand-in.manager", "stand-in.catalog", "stand-in.guard", "stand-in.audit", "stand-in.logger")
+	names = append(names, "stand-in.manager", "stand-in.catalog", "stand-in.guard", "stand-in.audit",
+		"stand-in.verification", "stand-in.logger")
 	if a.router != nil {
 		reg.Register(standIn("stand-in.router", a.router, (*speedhttp.Router)(nil)))
 		names = append(names, "stand-in.router")
@@ -491,6 +494,7 @@ func TestTheManagementRoutesServeOnTheRealEntryPoint(t *testing.T) {
 	reg.Register(standIn("stand-in.catalog", newStubCatalog(authz.PermissionRoleRead), (*authz.Catalog)(nil)))
 	reg.Register(standIn("stand-in.guard", &stubGuard{allow: true}, (*guard.Guard)(nil)))
 	reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
+	reg.Register(standIn("stand-in.verification", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
 	reg.Register(standIn("stand-in.logger", loggerStub{logger: slog.New(logs)}, (*log.Logger)(nil)))
 	// The entry point's own Serve binds the address and writes the listening
 	// record; this module sorts after it by name, so its Serve runs once the

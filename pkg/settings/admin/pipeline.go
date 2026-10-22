@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -22,6 +23,13 @@ import (
 // 404 and a 503 are written with no type: they say something is not there or a
 // dependency could not answer, and not which kind of refusal it was, so naming a
 // kind would separate the failures the answer is meant to keep apart.
+//
+// The contact-required refusal is the authentication capability's, not this surface's:
+// the refusal it names is a fact about the acting account's registration, so a
+// client branches on it the same way it branches on the answer any other
+// surface of that capability gives. It is that capability's exported
+// authn.ContactRequiredProblemType, written at the one refusal below rather than
+// copied here.
 const (
 	typePrefix       = "urn:speed:settings:"
 	badRequestCode   = "bad-request"
@@ -94,6 +102,49 @@ func (p *product) caller(c *gin.Context) (authn.Identity, bool) {
 		return authn.Identity{}, false
 	}
 	return id, true
+}
+
+// requireVerifiedAccount refuses a management write an unverified
+// self-registration makes. It sits after the caller is read and before the layer
+// selection, the permission decision, the body, the mandatory audit and the
+// settings module: a refused request asks no guard, lands no audit row and
+// changes no setting.
+//
+// The subject it reads is the request's actor, not the account the request is
+// taken to be from: under an impersonation the actor is whose hands are on the
+// request and the target's self-registration does not participate, which is the
+// design's rule for this gate on every capability's management face. A given
+// actor is exempt — one created outside self-registration, a service account,
+// and a static-table subject, which has no account row and never a
+// self-registration — and a read route does not consult it at all.
+//
+// A state that cannot be read is a 503 and is never read as verified: a
+// dependency that cannot answer must not widen what a caller may do.
+func (p *product) requireVerifiedAccount(c *gin.Context, id authn.Identity) bool {
+	actor := id.Actor()
+	if actor == "" || actor.IsStatic() || slices.Contains(id.Methods(), authn.MethodClientSecret) {
+		return true
+	}
+	status, err := p.verification.SignupStateOf(c.Request.Context(), actor)
+	switch {
+	case errors.Is(err, authn.ErrAccountNotFound):
+		// No account row is no self-registration; the rest of the pipeline
+		// answers for it.
+		return true
+	case err != nil:
+		p.logger.Error(ModuleName+": the signup state could not be read, so the write was not carried out",
+			slog.String("cause", err.Error()))
+		speedhttp.Fail(c, speedhttp.Problem{Status: http.StatusServiceUnavailable})
+		return false
+	}
+	if status.State == authn.SignupPending {
+		speedhttp.Fail(c, speedhttp.Problem{
+			Status: http.StatusForbidden,
+			Type:   authn.ContactRequiredProblemType,
+		})
+		return false
+	}
+	return true
 }
 
 // realmOf reads back the endpoint a management route was mounted on, the name

@@ -197,7 +197,8 @@ var rolePutOperation = speedhttp.NewOperation[roleWriteInput, struct{}](
 			"The body is not one object, or the tenant is empty"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no role.manage in the platform domain"),
+			"The caller holds no role.manage in the platform domain, or the caller's self-registration "+
+				"has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusConflict, "The role is builtin and cannot be changed"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
@@ -223,7 +224,8 @@ var roleDeleteOperation = speedhttp.NewOperation[roleInput, struct{}](
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The tenant is empty"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no role.manage in the platform domain"),
+			"The caller holds no role.manage in the platform domain, or the caller's self-registration "+
+				"has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusConflict, "The role is builtin and cannot be removed"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
@@ -279,7 +281,8 @@ var grantPutOperation = speedhttp.NewOperation[grantInput, struct{}](
 			"The tenant is empty, the named permission is not in the catalog, or the translation has no row for it, or the named role belongs to another tenant"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no role.manage in the platform domain"),
+			"The caller holds no role.manage in the platform domain, or the caller's self-registration "+
+				"has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The role is builtin and its grants cannot be changed"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
@@ -310,7 +313,8 @@ var grantDeleteOperation = speedhttp.NewOperation[grantInput, struct{}](
 			"The tenant is empty, or the translation has no row for the named permission"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no role.manage in the platform domain"),
+			"The caller holds no role.manage in the platform domain, or the caller's self-registration "+
+				"has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The role is builtin and its grants cannot be revoked"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
@@ -390,7 +394,8 @@ var bindingPutOperation = speedhttp.NewOperation[bindingInput, struct{}](
 			"The tenant or the account is empty, no such role, or the named role belongs to another tenant"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no role.manage in the platform domain"),
+			"The caller holds no role.manage in the platform domain, or the caller's self-registration "+
+				"has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )
@@ -416,7 +421,8 @@ var bindingDeleteOperation = speedhttp.NewOperation[bindingInput, struct{}](
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The account or the tenant is empty"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no role.manage in the platform domain"),
+			"The caller holds no role.manage in the platform domain, or the caller's self-registration "+
+				"has not proved an email address (contact-required)"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )

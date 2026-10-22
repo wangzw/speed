@@ -56,6 +56,7 @@ var exportedSurface = []string{
 	"const AssuranceNone",
 	"const AssuranceSingle",
 	"const AttributeKeyMax",
+	"const ContactRequiredProblemType",
 	"const DefaultPageLimit",
 	"const EndActorDisabled",
 	"const EndExpired",

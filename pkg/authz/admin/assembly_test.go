@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/audit"
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/authz/authztest"
@@ -62,16 +63,20 @@ func recordingModule(record *any) core.Module {
 type managementAssembly struct {
 	// body is the configuration. The zero value uses managementBody.
 	body string
-	// noManager, noCatalog, noGuard and noAudit leave out the stand-in for the
-	// required capability named, so the drive reaches resolution without it.
-	noManager, noCatalog, noGuard, noAudit bool
-	// noRouter leaves the entry point out, which fails Init.
-	noRouter bool
+	// noManager, noCatalog, noGuard, noAudit and noVerification leave out the
+	// stand-in for the required capability named, so the drive reaches
+	// resolution without it.
+	noManager, noCatalog, noGuard, noAudit, noVerification bool
 	// manager and catalog, when set, are the stand-ins delivered as those
 	// capabilities; a case that holds the product to what New took up sets them
 	// to the very instances it reads back.
 	manager authz.Manager
 	catalog authz.Catalog
+	// verification, when set, is the stand-in delivered as the signup-state
+	// read; nil uses one that reports no self-registration.
+	verification authn.SignupVerification
+	// noRouter leaves the entry point out, which fails Init.
+	noRouter bool
 	// router is the entry point stand-in; nil uses one that declares "public".
 	router speedhttp.Router
 	// gate is the optional route-declaration surface, taken up in Init when set.
@@ -124,6 +129,14 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	if !a.noAudit {
 		reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
 		names = append(names, "stand-in.audit")
+	}
+	if !a.noVerification {
+		v := a.verification
+		if v == nil {
+			v = &fakeSignupVerification{}
+		}
+		reg.Register(standIn("stand-in.verification", v, (*authn.SignupVerification)(nil)))
+		names = append(names, "stand-in.verification")
 	}
 	logger := a.logger
 	if logger == nil {
@@ -233,19 +246,21 @@ func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) 
 	})
 }
 
-// The four required capabilities are each another module's to deliver: a command
+// The five required capabilities are each another module's to deliver: a command
 // that brings this one in without the manager, the catalog, the handler-internal
-// guard or the audit capability fails resolution with ErrMissingProvider, before
-// New builds anything. The manager and the catalog are what New takes up to read
-// and write the policy tables through; the guard is what makes the per-request
-// decision available; the audit capability is what makes a write's mandatory row
-// land.
+// guard, the audit capability or the registration-verification read fails
+// resolution with ErrMissingProvider, before New builds anything. The manager and
+// the catalog are what New takes up to read and write the policy tables through;
+// the guard is what makes the per-request decision available; the audit
+// capability is what makes a write's mandatory row land; the verification read is
+// what lets a write refuse an account that has not proved an email address.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
-		"no manager": {noManager: true},
-		"no catalog": {noCatalog: true},
-		"no guard":   {noGuard: true},
-		"no audit":   {noAudit: true},
+		"no manager":      {noManager: true},
+		"no catalog":      {noCatalog: true},
+		"no guard":        {noGuard: true},
+		"no audit":        {noAudit: true},
+		"no verification": {noVerification: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var built any

@@ -95,15 +95,17 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The policy manager, the permission catalog, the handler-internal guard and the
-// audit capability are required. The manager and the catalog are delivered
-// exclusively by the policy module and the guard by the enforcement module, so
-// the closure of a command that takes this one in does not pull them in: the
-// host writes them down. The guard being required is what makes the per-request
-// decision available; the audit capability being required is what makes an
-// assembly without one fail before any instance is built, rather than at the
-// first write. The logger is taken up so that it is initialised first, and the
-// message localizer so that the catalog route can render a permission's
+// The policy manager, the permission catalog, the handler-internal guard, the
+// audit capability and the registration-verification read are required. The
+// manager and the catalog are delivered exclusively by the policy module and the
+// guard by the enforcement module, so the closure of a command that takes this
+// one in does not pull them in: the host writes them down. The guard being
+// required is what makes the per-request decision available; the audit
+// capability being required is what makes an assembly without one fail before
+// any instance is built, rather than at the first write; the verification read
+// is what lets a write refuse an account whose self-registration has not proved
+// an email address. The logger is taken up so that it is initialised first, and
+// the message localizer so that the catalog route can render a permission's
 // description in the request's language; both are optional, and an assembly
 // without the localizer answers the description as an empty string.
 //
@@ -129,6 +131,7 @@ func Module() core.Module {
 			{Token: (*authz.Catalog)(nil)},
 			{Token: (*guard.Guard)(nil)},
 			{Token: (*audit.Audit)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -186,6 +189,10 @@ type product struct {
 	catalog authz.Catalog
 	guard   guard.Guard
 	audit   audit.Audit
+	// verification reads how far the acting account's self-registration has
+	// got. A write route reads it before the permission decision, so an account
+	// that has not proved an email address cannot change policy data.
+	verification authn.SignupVerification
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -219,6 +226,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the audit capability: %w", ModuleName, err)
 	}
+	verification, err := core.Resolve[authn.SignupVerification](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the signup-verification read: %w", ModuleName, err)
+	}
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
@@ -228,12 +239,13 @@ func newProduct(reg *core.Registry) (*product, error) {
 		return nil, err
 	}
 	return &product{
-		manager: manager,
-		catalog: catalog,
-		guard:   guardAPI,
-		audit:   auditor,
-		logger:  log.Default(),
-		cfg:     cfg,
+		manager:      manager,
+		catalog:      catalog,
+		guard:        guardAPI,
+		audit:        auditor,
+		verification: verification,
+		logger:       log.Default(),
+		cfg:          cfg,
 	}, nil
 }
 

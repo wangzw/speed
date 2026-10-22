@@ -146,3 +146,16 @@ func TestASentinelSurvivesWrapping(t *testing.T) {
 		t.Error("a wrapped ErrCleanupIncomplete reads as another sentinel")
 	}
 }
+
+// TestContactRequiredProblemTypeIsTheWireValue holds the exported code to its
+// wire value. The three management faces and a host's own surfaces write this
+// constant, so its value is a contract those surfaces share; pinning the literal
+// here is what makes a rename fail rather than drift silently, because the
+// surfaces' own cases assert against the constant and would pass whatever it
+// held.
+func TestContactRequiredProblemTypeIsTheWireValue(t *testing.T) {
+	if ContactRequiredProblemType != "urn:speed:authn:contact-required" {
+		t.Errorf("ContactRequiredProblemType = %q, want %q",
+			ContactRequiredProblemType, "urn:speed:authn:contact-required")
+	}
+}

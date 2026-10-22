@@ -112,10 +112,14 @@ const personalMemberSource = "personal"
 const personalKind = "personal"
 
 // The problem types the module writes. A 403, a 401 and a 503 carry no type of
-// their own in this surface; the 409 does, because the frontend distinguishes
-// the refusals a retry cannot change from a dependency failure.
+// their own in this surface; the 409s do, because the frontend distinguishes
+// the refusals a retry cannot change from a dependency failure. Every code here
+// is this surface's own, including verification-required: the status is a 409
+// the client navigates to the verification page on, not the authentication
+// capability's 403 permission refusal, so the two surfaces do not share a code.
 const (
 	personalProblemPrefix     = "urn:speed:workspace:"
+	verificationRequiredCode  = "verification-required"
 	alreadyMemberCode         = "already-member"
 	tenantUnavailableCode     = "tenant-unavailable"
 	identifierUnavailableCode = "identifier-unavailable"
@@ -140,6 +144,9 @@ var (
 	// between concurrent ensure calls and between replicas, and it is
 	// retryable.
 	errRosterLagging = errors.New("the roster's snapshot has not caught up with the tenant row")
+	// errVerificationRequired refuses an account whose self-registration has not
+	// proved an email address. The workspace is opened once it has.
+	errVerificationRequired = errors.New("the account has not verified an email address")
 )
 
 // personalFragmentTitle and personalFragmentVersion are the info section the
@@ -182,8 +189,10 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 	"Creates the caller's personal tenant on first call and reads it back afterwards, completing its "+
 		"owner role and binding and converging the role's grants to the host's allowlist on every "+
 		"call. A membership row that exists is left as it stands, and a tenant that is not enabled is "+
-		"refused without a write. The tenant identifier and alias are derived from the account "+
-		"identifier; the answer names the tenant and whether this call created it.",
+		"refused without a write. An account whose self-registration has not proved an email address "+
+		"is refused without a write too; the workspace opens once it has. The tenant identifier and "+
+		"alias are derived from the account identifier; the answer names the tenant and whether this "+
+		"call created it.",
 	nil,
 	[]speedhttp.Response{
 		{
@@ -197,11 +206,13 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 			"The caller is impersonating, is a service account, or is a static-table subject that "+
 				"cannot own a tenant"),
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The caller cannot have a personal tenant: it belongs to another tenant while holding "+
-				"none of its own (already-member), its personal tenant exists and is not enabled "+
-				"(tenant-unavailable), or the derived identifier or alias is unavailable "+
-				"(identifier-unavailable). The type field names which. Already-member changes if the "+
-				"other membership is removed, and tenant-unavailable changes if an operator enables "+
+			"The caller cannot have a personal tenant: its self-registration has not proved an email "+
+				"address (urn:speed:workspace:verification-required), it belongs"+
+				"to another tenant while holding none of its own (already-member), its personal tenant "+
+				"exists and is not enabled (tenant-unavailable), or the derived identifier or alias is "+
+				"unavailable (identifier-unavailable). The type field names which. The verification-required"+
+				"refusal changes once the account verifies an email address, already-member changes if "+
+				"the other membership is removed, and tenant-unavailable changes if an operator enables "+
 				"the tenant; identifier-unavailable does not change on retry"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
 			"A dependency could not answer; no part of the result is returned"),
@@ -218,15 +229,16 @@ func init() { core.ProcessRegistry.Register(personalModule()) }
 
 // personalModule is the descriptor of this host's personal-tenant policy.
 //
-// The roster, the memberships, the policy manager, the seeding surface and the
-// permission catalog are required: the ensure writes all five pieces, and an
-// assembly that names this module without one of them cannot run it. The HTTP
-// entry point, the feature board, the route-declaration surface and the logger
-// are optional: without an entry point the routes are not mounted, without a
-// board the conditional feature is simply absent from the document, and without
-// the gateway's registration surface the route is guarded by the gateway's
-// default and an impersonating caller is answered by the gateway instead of the
-// handler.
+// The roster, the memberships, the policy manager, the seeding surface, the
+// permission catalog and the registration-verification read are required: the
+// ensure writes all five pieces and refuses an account whose self-registration
+// has not proved an email address, and an assembly that names this module without
+// one of them cannot run it. The HTTP entry point, the feature board, the
+// route-declaration surface and the logger are optional: without an entry point
+// the routes are not mounted, without a board the conditional feature is simply
+// absent from the document, and without the gateway's registration surface the
+// route is guarded by the gateway's default and an impersonating caller is
+// answered by the gateway instead of the handler.
 //
 // The descriptor declares its OpenAPI fragment on the account endpoint: the
 // contract belongs to the application's own second-level generation, not to a
@@ -240,6 +252,7 @@ func personalModule() core.Module {
 			{Token: (*authz.Manager)(nil)},
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*speedhttp.Router)(nil), Optional: true},
 			{Token: (*feature.Board)(nil), Optional: true},
 			{Token: (*authn.Gate)(nil), Optional: true},
@@ -314,15 +327,17 @@ func readPersonalConfig(reg *core.Registry) (personalConfig, error) {
 }
 
 // personalProduct is the module's instance: the five seams the ensure writes
-// through and the switch it runs on.
+// through, the registration-verification read it gates on, and the switch it
+// runs on.
 type personalProduct struct {
-	config      personalConfig
-	roster      tenant.Catalog
-	memberships authn.Memberships
-	manager     authz.Manager
-	seeder      authz.Seeder
-	catalog     authz.Catalog
-	logger      *slog.Logger
+	config       personalConfig
+	roster       tenant.Catalog
+	memberships  authn.Memberships
+	manager      authz.Manager
+	seeder       authz.Seeder
+	catalog      authz.Catalog
+	verification authn.SignupVerification
+	logger       *slog.Logger
 }
 
 // personalProductOf narrows an instance to this module's product. An instance of
@@ -358,14 +373,19 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the permission catalog: %w", personalModuleName, err)
 	}
+	verification, err := core.Resolve[authn.SignupVerification](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the signup-verification read: %w", personalModuleName, err)
+	}
 	p := &personalProduct{
-		config:      cfg,
-		roster:      roster,
-		memberships: memberships,
-		manager:     manager,
-		seeder:      seeder,
-		catalog:     catalog,
-		logger:      log.Default(),
+		config:       cfg,
+		roster:       roster,
+		memberships:  memberships,
+		manager:      manager,
+		seeder:       seeder,
+		catalog:      catalog,
+		verification: verification,
+		logger:       log.Default(),
 	}
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(personalModuleName)
@@ -458,11 +478,13 @@ type personalResult struct {
 // The caller has to be authenticated; the gateway has usually settled that, and
 // the check here is what answers a run whose account endpoint is unguarded. An
 // impersonating identity is a 403, a service account is a 403, a static-table
-// subject is not an account and is a 403, and an account that belongs to
-// another tenant is the 409 already-member. An account whose personal tenant is
-// not enabled is the 409 tenant-unavailable, and an identifier or alias the
-// tenant cannot take is the 409 identifier-unavailable. Every dependency
-// failure is a 503 that carries no part of the result.
+// subject is not an account and is a 403, and an account whose self-registration
+// has not proved an email address is the 409 verification-required with no
+// tenant created. An account that belongs to another tenant is the 409
+// already-member. An account whose personal tenant is not enabled is the 409
+// tenant-unavailable, and an identifier or alias the tenant cannot take is the
+// 409 identifier-unavailable. Every dependency failure is a 503 that carries no
+// part of the result.
 func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (WorkspacePersonalReply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -494,6 +516,11 @@ func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (Workspa
 			},
 			Created: result.Created,
 		}, nil
+	case errors.Is(err, errVerificationRequired):
+		return WorkspacePersonalReply{}, speedhttp.Fault{
+			Status: http.StatusConflict,
+			Type:   personalProblemPrefix + verificationRequiredCode,
+		}
 	case errors.Is(err, errAlreadyMember):
 		return WorkspacePersonalReply{}, speedhttp.Fault{
 			Status: http.StatusConflict,
@@ -542,11 +569,28 @@ func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (Workspa
 // its state, and a tenant row that is not enabled is answered with a refusal
 // before anything is written.
 //
-// The eligibility check runs first. An account that already holds a membership
-// in its personal tenant reads that tenant back, whether or not it belongs to
-// other tenants too. An account with no personal membership and a membership
-// elsewhere is refused and no tenant is created.
+// The eligibility check runs first. An account whose self-registration has not
+// proved an email address is refused and nothing is written: the workspace opens
+// after verification. An account that already holds a membership in its personal
+// tenant reads that tenant back, whether or not it belongs to other tenants too.
+// An account with no personal membership and a membership elsewhere is refused
+// and no tenant is created.
 func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (personalResult, error) {
+	status, err := p.verification.SignupStateOf(ctx, account)
+	if err != nil {
+		// Every failure here is the 503 the handler writes, authn.ErrAccountNotFound
+		// included. The management faces of the capabilities read that sentinel as
+		// "no self-registration" and let the rest of their pipeline answer, because
+		// they only gate a request that already names a real target. This ensure is
+		// an authenticated account's own provisioning: an account row that is not
+		// there is an anomaly, not a state to read past, and writing the tenant for
+		// it would register a workspace for an account the account store does not
+		// hold.
+		return personalResult{}, fmt.Errorf("reading the account's signup state: %w", err)
+	}
+	if status.State == authn.SignupPending {
+		return personalResult{}, errVerificationRequired
+	}
 	personalID := personalTenantID(account)
 	// The roster admits an identifier without blanks or control characters and
 	// with no length bound; the account identifier's own domain is 1 to 64

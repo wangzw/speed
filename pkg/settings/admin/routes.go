@@ -34,22 +34,34 @@ func withRealm(endpoint string, handler gin.HandlerFunc) gin.HandlerFunc {
 	}
 }
 
-// authorize wraps an operation's handler with the decision this module makes
-// itself: the identity the request carries, the layer its query string names and
-// the permission that layer implies. The routes are declared open, so the
-// middleware lets every request reach this wrapper; it refuses an anonymous
-// request with the realm challenge, an unreadable layer selection with the
-// capability's bad-request problem, and a permission shortfall with the guard's
-// own answer, all before the entry point binds the request and before any
-// settings call.
+// guardRoute wraps an operation's handler with the decision this module makes
+// itself: the identity the request carries, the registration state of a write's
+// actor, the layer its query string names and the permission that layer implies.
+// The routes are declared open, so the middleware lets every request reach this
+// wrapper; it refuses an anonymous request with the realm challenge, an
+// unverified self-registration's write with 403 contact-required, an unreadable
+// layer selection with the capability's bad-request problem, and a permission
+// shortfall with the guard's own answer, all before the entry point binds the
+// request and before any settings call.
+//
+// The write decision is derived from the method rather than passed in: a route
+// that is not a read is a write, so a write route added to the set cannot be
+// left ungated by a caller that forgot the flag. The method is the one fact the
+// route already carries, and deriving from it is what makes the gate follow the
+// surface as it grows.
 //
 // The decision stays in front of the declared handler because the typed handler
 // receives no request: the realm is bound per endpoint at the mount, and the
 // guard's refusals are written through it. The handler then reads the settled
 // layer from its bound input, which the wrapper has already validated.
-func (p *product) authorize(perm authz.Permission, handler gin.HandlerFunc) gin.HandlerFunc {
+func (p *product) guardRoute(method string, perm authz.Permission, handler gin.HandlerFunc) gin.HandlerFunc {
+	write := method != http.MethodGet
 	return func(c *gin.Context) {
-		if _, ok := p.caller(c); !ok {
+		id, ok := p.caller(c)
+		if !ok {
+			return
+		}
+		if write && !p.requireVerifiedAccount(c, id) {
 			return
 		}
 		sel, ok := p.selectLayer(c)
@@ -63,39 +75,46 @@ func (p *product) authorize(perm authz.Permission, handler gin.HandlerFunc) gin.
 	}
 }
 
-// route is one management route: the method and path it answers and the handler
-// that serves it, the permission decision already bound into the handler's
-// wrapper. The path is absolute, resolved from the declaration against the
-// module's API root once here so the mounting and the declaration share one
-// source.
+// route is one management route: the method and path it answers, the permission
+// the layer's domain is asked for, and the handler that serves it, the decision
+// already bound into the handler's wrapper. The path is absolute, resolved from
+// the declaration against the module's API root once here so the mounting and
+// the declaration share one source.
 type route struct {
 	method  string
 	path    string
+	perm    authz.Permission
 	handler gin.HandlerFunc
 }
 
 // routes is the closed set of management routes, in the order they are mounted.
 // Each route is bound from the operation declared for it, so the handler
-// receives the declared input and writes the declared answer.
+// receives the declared input and writes the declared answer, and each is put
+// behind the guard that makes the identity, registration and permission
+// decision before the entry point binds the request.
 func (p *product) routes() []route {
-	return []route{
+	routes := []route{
 		{
-			http.MethodGet, adminSpec.ResolvePath(pathSettings),
-			p.authorize(authz.PermissionSettingsRead, listOperation.Handle(p.handleList)),
+			http.MethodGet, adminSpec.ResolvePath(pathSettings), authz.PermissionSettingsRead,
+			listOperation.Handle(p.handleList),
 		},
 		{
-			http.MethodGet, adminSpec.ResolvePath(pathNamespace),
-			p.authorize(authz.PermissionSettingsRead, namespaceOperation.Handle(p.handleListNamespace)),
+			http.MethodGet, adminSpec.ResolvePath(pathNamespace), authz.PermissionSettingsRead,
+			namespaceOperation.Handle(p.handleListNamespace),
 		},
 		{
-			http.MethodPut, adminSpec.ResolvePath(pathNamespaceKey),
-			p.authorize(authz.PermissionSettingsWrite, setOperation.Handle(p.handleSet)),
+			http.MethodPut, adminSpec.ResolvePath(pathNamespaceKey), authz.PermissionSettingsWrite,
+			setOperation.Handle(p.handleSet),
 		},
 		{
-			http.MethodDelete, adminSpec.ResolvePath(pathNamespaceKey),
-			p.authorize(authz.PermissionSettingsWrite, removeOperation.Handle(p.handleRemove)),
+			http.MethodDelete, adminSpec.ResolvePath(pathNamespaceKey), authz.PermissionSettingsWrite,
+			removeOperation.Handle(p.handleRemove),
 		},
 	}
+	for i := range routes {
+		routes[i].handler = p.guardRoute(routes[i].method, routes[i].perm, routes[i].handler)
+	}
+	return routes
 }
 
 // mount resolves every configured endpoint on the entry point and registers the

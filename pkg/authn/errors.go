@@ -6,6 +6,16 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/model"
 )
 
+// ContactRequiredProblemType is the Problem.Type a surface writes when it
+// refuses an account whose self-registration has not proved an email address.
+// It is the authentication capability's code, exported so the management faces
+// of other capabilities and a host's own surfaces answer with one value rather
+// than a copy each. A surface pairs it with its own status — the capability's
+// handlers answer 403 where the refusal is a permission denial, and a host may
+// answer 409 where the refusal is a state a client navigates on — but the type
+// identifies the same fact on every surface.
+const ContactRequiredProblemType = "urn:speed:authn:contact-required"
+
 // The failures this capability directory judges for itself. A caller tells
 // them apart with errors.Is, and every wrap on the way out uses %w so the
 // chain stays whole.

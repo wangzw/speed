@@ -372,7 +372,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.write in the layer's domain"
+            "description": "The caller holds no settings.write in the layer's domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "404": {
             "description": "The full key has no declaration"
@@ -494,7 +494,7 @@
                 }
               }
             },
-            "description": "The caller holds no settings.write in the layer's domain"
+            "description": "The caller holds no settings.write in the layer's domain, or the caller's self-registration has not proved an email address (contact-required)"
           },
           "404": {
             "description": "The full key has no declaration"
