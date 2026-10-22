@@ -156,7 +156,10 @@ export function PhoneSection({ session }: PhoneSectionProps) {
 
   return (
     <>
-      <SectionCard title={t('phone.title')}>
+      <SectionCard
+        title={t('phone.title')}
+        description={t('phone.securityNote')}
+      >
         <Box
           component="form"
           noValidate

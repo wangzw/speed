@@ -337,7 +337,7 @@ flowchart TD
 决策见 [ADR-authn-signup-2026-10-22](../../adr/adr-authn-signup-2026-10-22.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真，且 `signup.password.enabled` 为真或至少一个可见方法带 `opens_account` 时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
 
 - **口令注册成功后落在验证页。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account/verify`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、控制台会话门的登录屏登录之后留在原地址。
-- **验证页与持续验证提示。** `/account/verify` 承载 account-ui 的 `ContactVerificationSection`，受会话门保护。`verification.state` 是账户 `signup_state` 的投影：`none`、`pending`、`verified` 分别对应 0、1、2。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失，与个人租户的一次性提示分开。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示，不并进 `setupIncomplete`——口令注册的账户在后者下已完成，验证提示仍要显示。
+- **验证页与持续验证提示。** `/account/verify` 承载 account-ui 的 `ContactVerificationSection`，受会话门保护。`verification.state` 是账户 `signup_state` 的投影：`none`、`pending`、`verified` 分别对应 0、1、2。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失，与个人租户的一次性提示分开。「去验证」落在 `/account/verify`，从验证码一步开始；「更换邮箱」落在 `/account/verify?change=email`，验证页据此让验证节直接展开更换邮箱表单。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示，不并进 `setupIncomplete`——口令注册的账户在后者下已完成，验证提示仍要显示。
 - **待验证账户与个人租户。** `verification.state` 为 `pending` 时示范不调用个人租户 ensure，先引导验证（见「个人租户」）；ensure 在 pending 账户上答 409（type 为 `urn:speed:workspace:verification-required`），前端收到它时导航到验证页，不渲染失败占位。邮箱验证通过后 `verification.state` 变为 `verified`，ensure 恢复调用。未启用个人租户时，验证后的账户落在租户区首页，不触发建户。
 - **邮箱解除限制，手机不解除。** 邮箱验证走标识节的自助回路（`POST /api/v1/auth/identifiers` 与 `/verify`）；手机验证走手机节的两步。手机是登录方式与额外安全因素，验证手机不解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
 - **短信与社交开户的落点不变。** 注册模式下经短信渠道登录成功（`mode: 'register'`、`channel: 'sms'`）仍按个人租户是否启用决定去租户区首页或完成设置页；这个落点同样只在登录屏是应用登录页本身时生效。社交与企业登录照常进入应用。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
@@ -433,11 +433,11 @@ flowchart TD
 | 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、开始冒充时的读暂停、控制台区在冒充中的重定向） | 已实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleImpersonationGate`、`ConsoleEntry`；`starters/demo/web/src/console-routes.ts` `useConsoleTarget`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
 | 注册模式下短信登录之后的完成设置页（用户名、口令） | 已实现 | `starters/demo/web/src/pages/account-setup-page.tsx` `AccountSetupPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | 审查装配的日志邮件 `mail.review` 与开放口令注册的走查链 | 未实现 | — |
-| 口令注册成功落地 `/account/verify` 与持续验证提示 | 未实现 | — |
+| 口令注册成功落地 `/account/verify` 与持续验证提示 | 已实现 | `starters/demo/web/src/pages/account-verify-page.tsx` `AccountVerifyPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner`；`starters/demo/web/src/paths.ts` `ACCOUNT_VERIFY_PATH` |
 | ensure 在 `pending` 账户上答 409（type 为 `urn:speed:workspace:verification-required`），不建租户；验证后恢复 | 已实现 | `starters/demo/server/personal.go` `personalProduct.ensure`、`errVerificationRequired`、`handleEnsure`；`starters/demo/server/personal-openapi.json` |
-| `pending` 时前端不调用个人租户 ensure，收到 409 时导航到验证页 | 未实现 | — |
+| `pending` 时前端不调用个人租户 ensure，收到 409 时导航到验证页 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/account-setup.ts` `contactVerificationPending` |
 | Fly 的 `mail.smtp` 配置与 SMTP secret（配好前注册保持关闭） | 未实现 | — |
-| 页面表新增 `/account/verify` | 未实现 | — |
+| 页面表新增 `/account/verify` | 已实现 | `starters/demo/web/src/paths.ts` `ACCOUNT_VERIFY_PATH`；`starters/demo/web/src/routes.tsx` 的 `/account/verify` 声明 |
 | 个人租户：服务端 ensure、`POST /api/v1/workspace/personal`、特性 `workspace.personal`、`/api/v1/workspace` 的认领，以及租户框架的触发 | 部分实现 | `starters/demo/server/personal.go` `personalModule`、`personalProduct`；`starters/demo/server/personal-openapi.json`；`starters/demo/web/src/app.tsx` `TenantFrame` |
 | 个人租户端点的 operation 声明与 `personal-openapi.json` 生成 | 已实现 | `starters/demo/server/personal.go`；`starters/demo/server/openapi_generated_test.go`；片段 `starters/demo/server/personal-openapi.json` |
 | 个人租户 owner 的权限取宿主声明的允许集，ensure 把授予收敛到允许集 | 已实现 | `starters/demo/server/personal.go` `personalOwnerPermissions`、`convergeOwnerGrants` |

@@ -55,6 +55,7 @@ import Box from '@mui/material/Box'
 import {
   AppearanceSection,
   BindingCallbackHandler,
+  ContactVerificationSection,
   IdentifiersSection,
   MfaSection,
   PasswordSection,
@@ -111,6 +112,10 @@ export function AccountSettingsPage(): ReactElement {
         session={session}
         emailAvailable={emailIdentifierServed}
       />
+      {/* The registration contact's verification state, when the account has
+          one: `none` renders nothing, `pending` offers the send/verify path
+          and the verify route is the dedicated destination. */}
+      <ContactVerificationSection session={session} />
       <AppearanceSection
         presets={presetChoices}
         value={preset}

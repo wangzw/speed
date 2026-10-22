@@ -8,6 +8,8 @@ profile's `PATCH /api/v1/auth/me`, `PasswordSection` over `PUT /api/v1/auth/pass
 `/api/v1/auth/phone/verify`, and `IdentifiersSection` over the profile's own
 identifiers, its add face's `POST /api/v1/auth/identifiers` and
 `/api/v1/auth/identifiers/verify`, and `DELETE /api/v1/auth/identifiers/{id}`),
+`ContactVerificationSection` (the self-registration email verification state
+read from the profile's `verification`, over the same identifier write pair),
 `PreferencesSection`
 (the language-and-timezone selects over the profile's own `PATCH
 /api/v1/auth/me`), `AppearanceSection` (the controlled theme-preset
@@ -73,6 +75,38 @@ session as a required prop; `PreferencesSection` takes it optionally
   `@speed/i18n` alongside the `ui-kit` namespace — the confirm-again
   label of the armed danger dialog and the `EmptyState` texts are
   ui-kit-namespace keys.
+- **Registration verification is a read state plus the identifier writes.**
+  `ContactVerificationSection` reads `verification` off the same profile
+  query the other surfaces read: `none` renders nothing, `verified` renders
+  the completion state, `pending` with an address renders the target, the
+  send/resend action, the code field and the change-address action, and
+  `pending` with no address renders the add-email form (the legal state after
+  the last proved address is removed -- the section is the only path back to a
+  verifiable address, so the add cannot live only on the identifiers face).
+  Sending is `POST /api/v1/auth/identifiers`; verification is
+  `/api/v1/auth/identifiers/verify` with the code alone. The section never
+  distinguishes a free address from one another account holds while sending
+  (the answer is the same shape and no "already registered" copy exists); the
+  taken-address text belongs to the verify step alone. A resend control
+  addresses the target the section displays, is disabled for the server's
+  `resend_after` (or a 429's Retry-After) and states why, and its countdown
+  timer stops at expiry; the sent notice is announced once through a
+  `role="status"` region that is mounted empty and filled on landing, and
+  focus moves to the code field. It takes the session (its writes are step-up
+  gated) and the optional `initialChangeOpen`, which starts it in the
+  change-address form so a host can land a "change address" action there.
+- **An identifier's chip reads `proven`, never `verified_at`.** `proven` is
+  the server's derivation of whether the way the identifier was established
+  proves ownership (`email-code`, `sms-code`, `invite`, `idp:<provider>`)
+  rather than merely records an assertion (`admin`, `import-unverified`,
+  `self`). Every stored identifier carries a `verified_at`, including a
+  username written at registration as `self`, so `verified_at` cannot answer
+  the question. While the profile's `verification.state` is `pending`, the
+  identifiers add face does not offer the email kind: the pending contact is
+  the verification section's, and a second pending address must not exist on
+  one account. A phone is a sign-in method and an additional security factor;
+  verifying it never lifts the registration restriction -- only a proved email
+  address does.
 - **The error surface is a code whitelist with guarded vocabulary.**
   Every failure path resolves to one error code rendered in one
   `role="alert"` banner; codes outside the whitelist render
@@ -197,7 +231,8 @@ session as a required prop; `PreferencesSection` takes it optionally
 Everything in `src/index.ts` is public: the surfaces (`ProfileSection`
 with `ProfileSectionProps`; `PasswordSection` with `PasswordSectionProps`;
 `PhoneSection` with `PhoneSectionProps`; `IdentifiersSection` with
-`IdentifiersSectionProps`; `PreferencesSection` with
+`IdentifiersSectionProps`; `ContactVerificationSection` with
+`ContactVerificationSectionProps`; `PreferencesSection` with
 `PreferencesSectionProps`; `SessionsSection`; `SocialBindingsSection`
 with `SocialBindingsSectionProps`; `MfaSection` with `MfaSectionProps`),
 `BindingCallbackHandler` with `BindingCallbackHandlerProps`,

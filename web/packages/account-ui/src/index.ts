@@ -53,6 +53,10 @@ export {
   type IdentifiersSectionProps,
 } from './IdentifiersSection.js'
 export {
+  ContactVerificationSection,
+  type ContactVerificationSectionProps,
+} from './ContactVerificationSection.js'
+export {
   AppearanceSection,
   type AppearanceSectionProps,
   type ThemePresetChoice,

@@ -574,9 +574,13 @@ names the fixed part of that wiring, and no configuration file repeats it:
   needs that shape, since `@speed/api-client` degrades every other problem type
   to `client.http.<status>`. The frontend calls it from the tenant frame when an
   authenticated, non-impersonating viewer has no current tenant and the feature
-  is served; a registration completed through SMS lands on `/` (the tenant home)
-  with a one-time setup notice, and without the feature it lands on
-  `/account/setup` as before.
+  is served, except while the account's self-registration is still `pending`
+  (the server refuses it, so the frontend waits and shows the verification
+  notice instead); a registration completed through SMS lands on `/` (the
+  tenant home) with a one-time setup notice, and without the feature it lands
+  on `/account/setup`. A password registration lands on `/account/verify` in
+  either case, and a `409 verification-required` from the ensure sends the
+  frame there rather than rendering a failure placeholder.
 - The journal (`audit.journal`) records the requests its `requests` list names
   on the endpoints its `endpoints` list names. The sample files name the object
   store's declaration and delete (`POST /api/v1/objects`,

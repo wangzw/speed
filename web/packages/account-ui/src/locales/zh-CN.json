@@ -11,6 +11,7 @@
       "account_unavailable": "该账户当前不可用，请联系管理员。",
       "impersonation_restricted": "正在以其他账户身份查看时无法执行此操作。",
       "forbidden": "你没有执行该操作的权限。",
+      "contact_required": "请先验证邮箱地址再继续。",
       "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
       "login_identifier_required": "此账户需要先添加用户名或已验证的邮箱地址，才能设置密码。",
       "unsupported_media_type": "请求无法被读取。",
@@ -240,6 +241,7 @@
   },
   "phone": {
     "title": "手机号",
+    "securityNote": "手机号是一种登录方式，也是额外的安全因素。验证手机号不会解除邮箱验证前适用的限制。",
     "country": {
       "label": "国家/地区"
     },
@@ -255,6 +257,36 @@
     "verify": "验证",
     "added": "手机号已添加。",
     "cancel": "换一个号码"
+  },
+  "verification": {
+    "title": "验证邮箱地址",
+    "description": "确认你的邮箱地址以完成注册，并解除账户上的限制。",
+    "target": "我们会向 {{email}} 发送验证码。",
+    "send": "发送验证码",
+    "resend": "重新发送验证码",
+    "resendIn": "{{seconds}} 秒后可重新获取验证码。",
+    "sent": "验证码已发送至 {{email}}。",
+    "codeLabel": "验证码",
+    "codeHelper": "输入邮件中的 6 位验证码。",
+    "verify": "验证",
+    "change": "更换邮箱地址",
+    "changeLabel": "新邮箱地址",
+    "changeSubmit": "发送验证码",
+    "changeCancel": "取消",
+    "codeInvalid": "验证码无效或已过期，请重试或更换邮箱地址。",
+    "addressTaken": "该邮箱地址已被其他账户使用，请更换邮箱地址。",
+    "addTitle": "添加邮箱地址",
+    "addDescription": "添加一个邮箱地址，验证后即可完成注册。",
+    "addLabel": "邮箱地址",
+    "addSubmit": "发送验证码",
+    "verifiedTitle": "邮箱地址已验证",
+    "verifiedDescription": "{{email}} 已完成验证。",
+    "verifiedDescriptionNoEmail": "验证已完成。",
+    "error": {
+      "title": "无法读取验证状态",
+      "description": "读取你的验证状态时出了问题，请稍后重试。"
+    },
+    "retry": "重试"
   },
   "identifiers": {
     "title": "登录标识",

@@ -40,6 +40,7 @@ import { ProfileSection } from './ProfileSection.js'
 import { PasswordSection } from './PasswordSection.js'
 import { PhoneSection } from './PhoneSection.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
+import { ContactVerificationSection } from './ContactVerificationSection.js'
 import { PreferencesSection } from './PreferencesSection.js'
 import { SessionsSection } from './SessionsSection.js'
 import { SocialBindingsSection } from './SocialBindingsSection.js'
@@ -64,6 +65,7 @@ function AccountPage({ session }: { readonly session: AuthSession }) {
       <PasswordSection session={session} />
       <PhoneSection session={session} />
       <IdentifiersSection session={session} />
+      <ContactVerificationSection session={session} />
       <PreferencesSection session={session} />
       <SessionsSection />
       <SocialBindingsSection
@@ -96,6 +98,7 @@ describe('the README quick start, exercised over a real api-client', () => {
                 id: 'id-email',
                 kind: 'email',
                 value: 'ada@example.test',
+                proven: true,
                 verified_at: '2026-01-01T00:00:00Z',
                 verified_via: 'idp:github',
               },
@@ -103,6 +106,7 @@ describe('the README quick start, exercised over a real api-client', () => {
             links: [
               { id: 'github-1', provider: 'github', email: 'ada@example.test' },
             ],
+            verification: { state: 'none', email: '', since: '' },
           })
         case SESSIONS_PATH:
           return jsonResponse(200, {

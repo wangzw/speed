@@ -4,11 +4,15 @@
  * The identifiers are the account's own, read off the profile
  * (GET /api/v1/auth/me, authn.profile.get): the spec ships no dedicated
  * identifier-list route, and the profile answer carries each identifier's
- * own id, kind, value and verification, so the section reads the same
+ * own id, kind, value and proven flag, so the section reads the same
  * profile query the other account surfaces read. Each row names the kind
  * (email, phone or username, mapped through a guarded vocabulary, a value
  * outside it rendering the generic identifier label) and the value, with
- * the account's verified or unverified state.
+ * the server's `proven` answer (the ways of establishing ownership that
+ * actually prove it -- email-code, sms-code, invite, idp:<provider> --
+ * versus the ones that only record an assertion: admin, import-unverified,
+ * self). `verified_at` cannot answer that question: every stored identifier
+ * carries one, including a username written at registration as `self`.
  *
  * A row whose identifier carries an id has a row-end remove action that
  * sits behind the ui-kit danger ConfirmDialog -- removing an identifier is
@@ -206,9 +210,14 @@ export function IdentifiersSection({
   // the client never sends a write whose refusal the copy cannot describe.
   const usernamePresent =
     rows !== undefined && rows.some((row) => row.kind === 'username')
+  // A pending self-registration carries one contact awaiting proof, managed by
+  // ContactVerificationSection. Offering an email add here as well would put a
+  // second pending address on the account, so the kind leaves this face until
+  // the registration is verified.
+  const verificationPending = data?.verification?.state === 'pending'
   /** The kinds the add face offers in this deployment and profile. */
   const addKinds: AddKind[] = []
-  if (emailAvailable) {
+  if (emailAvailable && !verificationPending) {
     addKinds.push('email')
   }
   if (offerUsername && !usernamePresent) {
@@ -371,9 +380,12 @@ export function IdentifiersSection({
                   ? t(`identifiers.kind.${kind}`)
                   : t('identifiers.kind.other')
                 const value = identifier.value ?? ''
-                const verified =
-                  identifier.verified_at != null &&
-                  identifier.verified_at !== ''
+                // `proven` is the server's derivation of whether the way the
+                // identifier was established proves ownership. `verified_at`
+                // is present on every stored identifier (including a username
+                // written at registration as `self`), so it cannot answer that
+                // question.
+                const verified = identifier.proven === true
                 return (
                   <Box
                     component="li"

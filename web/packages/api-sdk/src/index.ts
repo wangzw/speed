@@ -395,6 +395,8 @@ export interface AuthnProfileIdentifier {
   id: string;
   /** The identifier kind: username, email or phone */
   kind: string;
+  /** Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self */
+  proven: boolean;
   /** The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits */
   value: string;
   /** RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification */
@@ -420,6 +422,18 @@ export interface AuthnProfileLink {
 }
 
 /**
+ * The self-registration state of the account, read on this request: none for an account that never self-registered, pending for one that has not proved an email address, verified for one that has.
+ */
+export interface AuthnProfileVerification {
+  /** The address of the state: for verified the email identifier proved earliest, ties broken by identifier; for pending the email contact awaiting verification; empty when there is none, which includes a pending registration whose last proved address was removed and which then has no target */
+  email: string;
+  /** RFC 3339 in UTC, the first instant the account reached verified; kept when a removal of the last proved address returns it to pending; empty while it never reached verified */
+  since: string;
+  /** none, pending or verified. none is a registration that never began; pending is a self-registration with no proved email address; verified is a self-registration whose email address has been proved */
+  state: string;
+}
+
+/**
  * The caller's own profile: the account's self fields plus its identifiers and external bindings, which this surface only reads. It is built field by field from the account module's values, so a field added to the record there does not reach a client by being there.
  */
 export interface AuthnProfileProfile {
@@ -431,7 +445,7 @@ export interface AuthnProfileProfile {
   created_at: string;
   /** The account's display name, empty when it carries none */
   display_name: string;
-  /** The account's identifiers; always an array, never null, and empty when the account has none */
+  /** The account's identifiers; always an array, never null, and empty when the account has none. A pending email contact is not among them: it is not an identifier until an email proof writes it */
   identifiers: AuthnProfileIdentifier[];
   /** The account's kind: user or service, a service being a non-interactive API client. */
   kind: string;
@@ -445,6 +459,8 @@ export interface AuthnProfileProfile {
   password_set: boolean;
   /** Read out of the attribute set, empty when it carries none */
   time_zone: string;
+  /** How far the account's self-registration has got, read at request time and never stored in a session or an access token */
+  verification: AuthnProfileVerification;
 }
 
 /**
@@ -3763,7 +3779,7 @@ export const useAuthnSessionLogout = <TError = Problem,
     }
 
 /**
- * The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.
+ * The caller's own account, read from the identity the gateway left on the request; no path parameter or body names an account. An impersonating identity may reach this route and then reads the account it is impersonating. The answer also carries the account's self-registration state, read on this request and never stored in a session or an access token, and each identifier's proven flag. Every time that is present is RFC 3339 in UTC, and a zero instant in a time field other than last_login_at is the empty string; last_login_at is instead absent when the binding has never been used to sign in. The identity's own account being gone (a tombstone, or a row that cannot be read) is a 401, the same answer a request with no identity gets.
  * @summary The caller's own profile
  */
 export const authnProfileGet = (

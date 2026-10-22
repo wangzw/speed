@@ -196,9 +196,10 @@ const PROFILE: AuthnProfileProfile = {
   locale: 'en-US',
   time_zone: 'UTC',
   identifiers: [
-    { id: 'id-1', kind: 'email', value: 'user@example.com', verified_at: INSTANT, verified_via: 'admin' },
+    { id: 'id-1', kind: 'email', value: 'user@example.com', proven: true, verified_at: INSTANT, verified_via: 'email-code' },
   ],
   links: [],
+  verification: { state: 'pending', email: 'user@example.com', since: '' },
 }
 
 // --- The data-mode bodies, keyed by the endpoint they answer. ---------------
@@ -315,6 +316,9 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     ...PROFILE,
     identifiers: [],
     links: [],
+    // The empty state has no self-registration contact: `none` renders no
+    // verification section and no banner.
+    verification: { state: 'none', email: '', since: '' },
   } satisfies AuthnProfileProfile),
   '/api/v1/auth/sessions': answer(
     {

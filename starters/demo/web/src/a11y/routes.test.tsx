@@ -29,11 +29,14 @@
  * regression, never that a page is accessible.
  */
 
-import { act } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
+import type { RequestFn, RequestOptions } from '@speed/api-client'
+import type { AuthnProfileProfile } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { AppShellShellLayout } from '@speed/layout-kit'
+import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { routes } from '../routes.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
@@ -94,15 +97,17 @@ const ROUTE_PATHS = [...new Set(routes.map((route) => concretize(route.path)))]
  * The concrete paths the composition ships, pinned so a route that drops out
  * of the table cannot leave the sweep silently -- the coverage guard below
  * asserts each of these is still enumerated. Drawn from the app's route table:
- * the business routes (the home page, the account page, the object store, the
- * notification centre, the binding callback), the auth and invitation
- * landings, and the console area under CONSOLE_PREFIX, every `:param`
- * concretized to `sample` as `concretize` does.
+ * the business routes (the home page, the account page, the setup and
+ * verification landings, the object store, the notification centre, the
+ * binding callback), the auth and invitation landings, and the console area
+ * under CONSOLE_PREFIX, every `:param` concretized to `sample` as
+ * `concretize` does.
  */
 const EXPECTED_ROUTE_PATHS = [
   '/',
   '/account',
   '/account/setup',
+  '/account/verify',
   '/account/callback',
   '/objects',
   '/notifications',
@@ -348,6 +353,61 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     if (failing.length > 0) {
       expect.fail(
         `route /no-such-route [data] has ${failing.length} serious/critical axe violation(s):\n` +
+          formatFindings(failing),
+      )
+    }
+  })
+
+  it('scans the pending verification notice when the account has no target address', async () => {
+    // The sweep's data profile carries a pending target, and its empty
+    // profile is `none`; neither state renders the add-email variant of the
+    // notice. This case scripts the third state -- pending with no address,
+    // the legal state after the last proved address is removed -- so the
+    // notice and the add form on the account page are scanned where they
+    // appear.
+    const noTarget: AuthnProfileProfile = {
+      account_id: 'account-1',
+      kind: 'user',
+      display_name: 'Test User',
+      mfa_required: false,
+      password_set: true,
+      created_at: '2026-01-01T00:00:00Z',
+      attributes: {},
+      locale: 'en-US',
+      time_zone: 'UTC',
+      identifiers: [],
+      links: [],
+      verification: { state: 'pending', email: '', since: '' },
+    }
+    const unscripted: string[] = []
+    const data = createBackend('data', (url) => unscripted.push(url))
+    bindRequestFn(((url: string, init?: RequestOptions) =>
+      url === '/api/v1/auth/me'
+        ? Promise.resolve(noTarget)
+        : data(url, init)) as RequestFn)
+    window.history.replaceState({}, '', '/')
+    const { container } = renderDemoApp({ session: staffSession() })
+    expect(container.innerHTML).not.toBe('')
+    await settle()
+    expect(
+      screen.getByText(demoEnUS.verificationBanner.pendingNoEmail),
+    ).toBeInTheDocument()
+    expect(
+      unscripted,
+      'the pending-verification notice issued read(s) the scripted backend does not answer',
+    ).toEqual([])
+    const result = await scanPage()
+    for (const finding of result.incomplete) {
+      console.warn(
+        `[route-a11y] / [pending-no-target] indeterminate: ${formatFinding(finding)}`,
+      )
+    }
+    records.push({ path: '/', mode: 'data', findings: result.violations })
+    const failing = result.violations.filter(isFailing)
+    warnNonFailing('/', 'data', result.violations.filter((f) => !isFailing(f)))
+    if (failing.length > 0) {
+      expect.fail(
+        `route / [pending-no-target] has ${failing.length} serious/critical axe violation(s):\n` +
           formatFindings(failing),
       )
     }

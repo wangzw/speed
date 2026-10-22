@@ -35,6 +35,7 @@ export const AUTHENTICATED_SNAPSHOT: AuthSnapshot = {
     time_zone: 'UTC',
     identifiers: [],
     links: [],
+    verification: { state: 'none', email: '', since: '' },
   },
   impersonating: false,
   permissionSets: { tenant: null, system: null },

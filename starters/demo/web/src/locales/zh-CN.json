@@ -66,6 +66,18 @@
     "home": "回到首页",
     "later": "稍后设置"
   },
+  "accountVerify": {
+    "title": "验证邮箱地址",
+    "description": "确认你的邮箱地址以完成注册，并解除账户上的限制。"
+  },
+  "verificationBanner": {
+    "region": "邮箱验证",
+    "pending": "验证 {{email}} 以完成注册。",
+    "pendingNoEmail": "添加邮箱地址以完成注册。",
+    "verify": "去验证",
+    "add": "添加邮箱地址",
+    "change": "更换邮箱"
+  },
   "userMenu": {
     "accountMenu": "账户菜单",
     "profile": "个人资料",

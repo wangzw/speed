@@ -23,6 +23,7 @@ generated read or write on the shared access token.
 | `src/PasswordSection.tsx` | `PasswordSection`, `PasswordSectionProps` |
 | `src/PhoneSection.tsx` | `PhoneSection`, `PhoneSectionProps` |
 | `src/IdentifiersSection.tsx` | `IdentifiersSection`, `IdentifiersSectionProps` |
+| `src/ContactVerificationSection.tsx` | `ContactVerificationSection`, `ContactVerificationSectionProps` |
 | `src/PreferencesSection.tsx` | `PreferencesSection`, `PreferencesSectionProps` |
 | `src/AppearanceSection.tsx` | `AppearanceSection`, `AppearanceSectionProps`, `ThemePresetChoice` |
 | `src/SessionsSection.tsx` | `SessionsSection` |
@@ -56,6 +57,7 @@ import {
   PasswordSection,
   PhoneSection,
   IdentifiersSection,
+  ContactVerificationSection,
   PreferencesSection,
   AppearanceSection,
   SessionsSection,
@@ -74,6 +76,7 @@ function AccountPage({ session, onAuthorizeUrl }) {
         <PasswordSection session={session} />
         <PhoneSection session={session} />
         <IdentifiersSection session={session} />
+        <ContactVerificationSection session={session} />
         <PreferencesSection session={session} />
         <SessionsSection />
         <SocialBindingsSection
@@ -100,7 +103,7 @@ this assembly end to end.
 
 ## The self-service write surfaces
 
-Four sections cover the account's own self-service writes. Each drives a
+These sections cover the account's own self-service writes. Each drives a
 route that asks for a fresh authentication: an unelevated caller is
 answered 401 `authn.insufficient_user_authentication`, which arms the
 shared `useStepUpGate` from `@speed/auth-core` and opens `StepUpDialog`
@@ -123,6 +126,10 @@ interface IdentifiersSectionProps {
   readonly session: AuthSession
   readonly emailAvailable?: boolean
   readonly offerUsername?: boolean
+}
+interface ContactVerificationSectionProps {
+  readonly session: AuthSession
+  readonly initialChangeOpen?: boolean // the change-address form starts open
 }
 ```
 
@@ -178,8 +185,13 @@ route revokes the account's other sessions) and reports the addition.
 
 Lists the account's sign-in identifiers -- read off the profile's
 `identifiers` field (`GET /api/v1/auth/me`), because the spec ships no dedicated
-list route -- each with its kind (email, phone or username) and its
-verified or unverified state. A row's remove action sits behind the
+list route -- each with its kind (email, phone or username) and the server's
+`proven` state. `proven` is true only for the ways of establishing an
+identifier that prove ownership (`email-code`, `sms-code`, `invite`,
+`idp:<provider>`); `admin`, `import-unverified` and `self` only record an
+assertion, so a username written at registration as `self` reads as not
+verified. `verified_at` cannot answer that question -- every stored identifier
+carries one. A row's remove action sits behind the
 ui-kit danger confirm and sends `DELETE /api/v1/auth/identifiers/{id}`; a refusal
 (the account's last way in is the 409 `conflict`) renders its code text.
 
@@ -205,7 +217,59 @@ other sessions.
 host passes the deployment's `authn.identifiers.email` feature, optionally
 narrowed by its own product choice); `offerUsername` says whether it
 offers the username kind. Both default to true, and a profile that
-already lists a username never offers that kind.
+already lists a username never offers that kind. While the profile's
+`verification.state` is `pending`, the email kind is withheld regardless:
+the pending contact belongs to `ContactVerificationSection`, and one
+account must not carry two pending addresses.
+
+### ContactVerificationSection
+
+The self-registration contact's verification state, read from
+`GET /api/v1/auth/me`'s `verification` field:
+
+- `none` (an account that never self-registered) renders nothing.
+- `verified` renders the completion state, naming the proved address.
+- `pending` with an address renders the target, a send/resend action, the
+  code field and a change-address action.
+- `pending` with no address renders the add-email form. That is a legal
+  state (the account's last proved address was removed), and the section is
+  the only path back to a verifiable address.
+
+Sending (and changing the target) is `POST /api/v1/auth/identifiers` with
+`{kind: 'email', value}`; verification is
+`POST /api/v1/auth/identifiers/verify` with the code alone. A landed verify
+refetches the profile (so `verification` flips to `verified`) and the session
+list, because the route revokes the account's other sessions.
+
+The send answer is the same shape whether or not another account holds the
+address, and the section has no "already registered" copy. A conflict renders
+its own sentence only on the verify step, after a code proved control of the
+address, and points at the change action. The wrong-code answer renders the
+unified invalid-or-expired sentence. A resend action addresses the same
+target the section displays (the address this mount sent to, else the
+profile's pending contact), is disabled for the server's `resend_after` (or a
+429's `Retry-After`) and states the remaining seconds, and its countdown timer
+stops at expiry. The sent notice is announced once through a `role="status"`
+region mounted empty and filled on landing, and focus moves to the code
+field. A 401 `authn.insufficient_user_authentication` arms the shared step-up
+gate, and a won challenge re-runs exactly that write once.
+
+`initialChangeOpen` starts the section in the change-address form instead of
+the code step; a host whose persistent notice offers "change address" beside
+"verify" lands the first on the flag and the second without it.
+
+A phone number is a sign-in method and an additional security factor.
+Verifying a phone does not lift the registration restriction; only a proved
+email address turns `verification.state` to `verified`. `PhoneSection`'s copy
+states that.
+
+```tsx
+interface ContactVerificationSectionProps {
+  readonly session: AuthSession
+  /** Starts the change-address form open (default false: the code step). */
+  readonly initialChangeOpen?: boolean
+}
+```
 
 ## PreferencesSection
 

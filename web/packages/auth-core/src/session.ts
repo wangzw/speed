@@ -183,6 +183,7 @@ import type {
   AuthnProfileIdentifier,
   AuthnProfileLink,
   AuthnProfileProfile,
+  AuthnProfileVerification,
   AuthnSessionView as AuthnSessionViewModel,
   AuthnSsoProvider as AuthnSsoProviderModel,
   FeatureBoardDocument,
@@ -646,8 +647,21 @@ function parseIdentifier(value: unknown): AuthnIdentifier {
     id: requireString(rec.id, 'profile identifier carries no id'),
     kind: typeof rec.kind === 'string' ? rec.kind : '',
     value: typeof rec.value === 'string' ? rec.value : '',
+    proven: rec.proven === true,
     verified_at: typeof rec.verified_at === 'string' ? rec.verified_at : '',
     verified_via: typeof rec.verified_via === 'string' ? rec.verified_via : '',
+  }
+}
+
+/** The account's self-registration state: absent on an answer that predates
+ * the field reads as `none` with no target and no instant. */
+function parseVerification(value: unknown): AuthnProfileVerification {
+  const rec = typeof value === 'object' && value !== null ? value : {}
+  const typed = rec as Record<string, unknown>
+  return {
+    state: typeof typed.state === 'string' ? typed.state : 'none',
+    email: typeof typed.email === 'string' ? typed.email : '',
+    since: typeof typed.since === 'string' ? typed.since : '',
   }
 }
 
@@ -704,6 +718,7 @@ function parsePrincipal(body: unknown): AuthnPrincipal {
       ? identifiers.map((entry) => parseIdentifier(entry))
       : [],
     links: Array.isArray(links) ? links.map((entry) => parseLink(entry)) : [],
+    verification: parseVerification(rec.verification),
   }
 }
 

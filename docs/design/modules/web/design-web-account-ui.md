@@ -60,6 +60,7 @@ interface IdentifiersSectionProps {
 
 interface ContactVerificationSectionProps {
   readonly session: AuthSession // 提权门控驱动一条 step-up 流程
+  readonly initialChangeOpen?: boolean // 进页即展开更换邮箱表单；缺省关闭（停在验证码一步）
 }
 
 interface PreferencesSectionProps {
@@ -175,8 +176,8 @@ sequenceDiagram
 注册建成的账户在邮箱被证明之前是 `pending`；验证是登录后的账户动作，不建立会话（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
 
 1. **读状态。** `ContactVerificationSection` 读 `GET /api/v1/auth/me` 的 `verification`。`none` 不渲染；`verified` 渲染完成态；`pending` 且 `email` 非空时渲染目标邮箱、发送与重发、验证码字段与更换邮箱；`pending` 且 `email` 为空时渲染「添加邮箱」表单，提交 `POST /api/v1/auth/identifiers`（`{kind: 'email', value}`）。删除最后一个已验证邮箱后账户回到 `pending` 而没有待验证目标，这是合法状态；邮箱添加项因此不能只藏在标识节里，验证节必须给出补邮箱的入口，否则受限能力无解除路径。
-2. **发送与重发。** 发送调 `POST /api/v1/auth/identifiers`（`{kind: 'email', value: <目标邮箱>}`），验证调 `POST /api/v1/auth/identifiers/verify`（只带验证码）。重发是同一个发送动作；发送落地后「验证码已发送」的目的地文字在验证码一步内持续显示，通知用先挂空、再填文本的 `role="status"` 播报一次，焦点落在验证码字段。重发控件在发送应答的 `resend_after` 给出的间隔内禁用并说明原因；被 429 拒绝时按 `Retry-After` 起算。
-3. **更换邮箱。** 以同一发送动作带新地址；服务端以它替换该账户的待验证联系方式，旧地址的验证码随之失效。更换只在 `pending` 上提供；`verified` 后改邮箱走标识节的添加入口。
+2. **发送与重发。** 发送调 `POST /api/v1/auth/identifiers`（`{kind: 'email', value: <目标邮箱>}`），验证调 `POST /api/v1/auth/identifiers/verify`（只带验证码）。重发是同一个发送动作，发往与展示同源的地址（本次挂载内已发送的地址，否则档案里的待验证联系方式），不会出现界面显示新地址而重发发往旧地址。发送落地后「验证码已发送」的目的地文字在验证码一步内持续显示，通知用先挂空、再填文本的 `role="status"` 播报一次，焦点落在验证码字段。重发控件在发送应答的 `resend_after` 给出的间隔内禁用并说明原因；被 429 拒绝时按 `Retry-After` 起算。间隔到点后倒计时计时器自行清除，不在页面上留下常驻计时器。
+3. **更换邮箱。** 以同一发送动作带新地址；服务端以它替换该账户的待验证联系方式，旧地址的验证码随之失效。更换只在 `pending` 上提供；`verified` 后改邮箱走标识节的添加入口。宿主可经 `initialChangeOpen` 让本节落地即展开更换表单（提示里的「更换邮箱」就是这样到达的），缺省落地在验证码一步（提示里的「去验证」）。
 4. **手机是安全因素。** 手机验证走 `POST /api/v1/auth/phone` 与 `/phone/verify`，与邮箱共用同一套发码与验证语义。手机是登录方式与额外安全因素：验证手机不解除注册限制，入口标注为安全因素，不承诺解锁；只有邮箱被证明才把 `verification.state` 变成 `verified`。
 5. **提权。** 发送、验证与更换都是自助写，被 401 `authn.insufficient_user_authentication` 拒绝时走 `useStepUpGate`，成功后只重跑那次被拒的写一次。
 6. **与标识节的边界。** `pending` 时标识节的添加面不提供邮箱一项；待验证联系方式只由本节管理。标识 chip 读 `proven`，`self` 写入的用户名不显示为已证明。
@@ -294,12 +295,12 @@ sequenceDiagram
 | 两步验证登记入口按 `mfa.factors` 逐个生成（含 `sms` 与未知种类的通用入口） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
 | 口令节的可选 `withoutLoginName`（`'form'` 缺省、`'explain'` 先说明） | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`、`PasswordSectionProps` |
 | 标识节的可选 `offerUsername` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
-| `ContactVerificationSection`（待验证联系方式、发送与重发、验证码、更换邮箱、完成态） | 未实现 | — |
-| 标识 chip 读 `proven`，`self` 写入的用户名不显示为已证明 | 未实现 | — |
-| `pending` 时标识节的添加面不提供邮箱一项 | 未实现 | — |
-| `pending` 且 `verification.email` 为空时验证节提供添加邮箱表单 | 未实现 | — |
-| 手机入口标注为额外安全因素，不承诺解除注册限制 | 未实现 | — |
-| 验证节的重发倒计时、先空后填的 live region 与不泄露地址占用的失败文案 | 未实现 | — |
-| 验证节与 `authn.contact_required` 的 i18n 键 | 未实现 | — |
+| `ContactVerificationSection`（待验证联系方式、发送与重发、验证码、更换邮箱、完成态） | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps` |
+| 标识 chip 读 `proven`，`self` 写入的用户名不显示为已证明 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
+| `pending` 时标识节的添加面不提供邮箱一项 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
+| `pending` 且 `verification.email` 为空时验证节提供添加邮箱表单 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
+| 手机入口标注为额外安全因素，不承诺解除注册限制 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `phone.securityNote` |
+| 验证节的重发倒计时、先空后填的 live region 与不泄露地址占用的失败文案 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `verification.*` |
+| 验证节与 `authn.contact_required` 的 i18n 键 | 已实现 | `web/packages/account-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.contact_required` |
 | 时间格式与显示时区链改用 `@speed/i18n` 与 ui-kit 上下文 | 已实现 | `web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection` |
 | 绑定回调在本部署不提供社交绑定时渲染 `absent` | 已实现 | `web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |

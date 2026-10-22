@@ -36,7 +36,7 @@
  * falls through to the tenant area like any other gated path.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -77,10 +77,17 @@ import {
   useRouteLinkProps,
 } from '@speed/route-kit'
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
-import { httpStatusOf } from '@speed/ui-kit'
+import { errorCodeOf, httpStatusOf } from '@speed/ui-kit'
 import type { ReactElement, ReactNode } from 'react'
-import { setupIncomplete } from './account-setup.js'
-import { tenantAdminTenantsList, workspacePersonalEnsure } from './app-api/index.js'
+import {
+  contactVerificationPending,
+  setupIncomplete,
+} from './account-setup.js'
+import {
+  tenantAdminTenantsList,
+  useAuthnProfileGet,
+  workspacePersonalEnsure,
+} from './app-api/index.js'
 import { useAppServices } from './app-services.js'
 import {
   AppBrand,
@@ -110,6 +117,7 @@ import {
   useImpersonationNoticeState,
   useImpersonationStatus,
 } from './impersonation.js'
+import { ContactVerificationBanner } from './contact-verification-banner.js'
 import { DemoNavLabel } from './nav-label.js'
 import { ConsoleNavIcon } from './nav-icons.js'
 import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
@@ -120,7 +128,7 @@ import {
   TENANT_HOME_PATH,
 } from './pages/not-found-page.js'
 import { SignInView } from './pages/sign-in-view.js'
-import { isAccountLevelPath } from './paths.js'
+import { ACCOUNT_VERIFY_PATH, isAccountLevelPath } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   AUTH_CALLBACK_PATH,
@@ -393,6 +401,21 @@ function TenantFrame({
   const personalServed = useFeature('workspace.personal')
   const snapshot = useAuthState()
   const authenticated = snapshot.state === 'authenticated'
+  // The caller's own registration-verification state, read from the same
+  // GET /api/v1/auth/me the account surfaces read. A `pending` account must
+  // prove its email before the personal tenant can be ensured, so the ensure
+  // below waits for this answer and skips while the state is pending.
+  const profileQuery = useAuthnProfileGet({
+    query: { enabled: authenticated },
+  })
+  const verificationKnown = profileQuery.data !== undefined
+  const verificationReadFailed = profileQuery.isError
+  // The state itself, not only its pending projection: the ensure effect keys
+  // on it so the answer that lifts a 409 -- a verified address after the
+  // 409's trip to the verification page -- re-runs the ensure. A value that
+  // did not change (a refetch of the same state) leaves the effect alone.
+  const verificationState = profileQuery.data?.verification?.state ?? ''
+  const verificationPending = contactVerificationPending(profileQuery.data ?? {})
   // Whose identity this session acts as right now. A start or end swaps it,
   // and the identity-keyed effects below re-read what was read under the
   // previous one.
@@ -621,6 +644,15 @@ function TenantFrame({
     setPersonalSetupEligible(false)
   }, [principalId, generation, impersonating])
 
+  // The router's navigate callback changes identity with the location, so an
+  // effect that depended on it would re-run on every route change -- including
+  // the 409's own move to the verification page, which would issue the ensure
+  // a second time. The effect reads the latest callback through a ref instead.
+  const navigateRef = useRef(navigate)
+  useEffect(() => {
+    navigateRef.current = navigate
+  }, [navigate])
+
   // The personal ensure. It runs only when every eligibility fact the server
   // will check holds here too: an authenticated session that is not
   // impersonating, a settled feature document that serves workspace.personal,
@@ -639,6 +671,22 @@ function TenantFrame({
       return undefined
     }
     if (!rosterSettled || tenantId !== null) {
+      return undefined
+    }
+    // The profile's verification state decides whether the ensure may run at
+    // all: the server refuses a pending account, so the frame does not ask.
+    // An unread profile is not "not pending" -- wait for the answer rather
+    // than issue a request the account may not be eligible for. A read that
+    // failed is different: it says nothing about eligibility, so the ensure
+    // proceeds and the server's own answer decides (a pending account's 409
+    // is routed to the verification page below). A state that changes after
+    // the 409 -- the verify write invalidates the profile and it comes back
+    // `verified` -- re-runs this effect, so the ensure resumes without a
+    // reload; the state is a dependency for exactly that.
+    if (verificationPending) {
+      return undefined
+    }
+    if (!verificationKnown && !verificationReadFailed) {
       return undefined
     }
     let cancelled = false
@@ -674,6 +722,20 @@ function TenantFrame({
         if (cancelled) {
           return
         }
+        if (
+          httpStatusOf(error) === 409 &&
+          errorCodeOf(error) === 'workspace.verification_required'
+        ) {
+          // The account has not proved its email yet. This is not a failure:
+          // the verification page is where it becomes eligible, and the
+          // ensure re-runs by itself once the profile flips to verified.
+          setPersonalFailure(false)
+          setPersonalTenant(null)
+          setTenantSettled(false)
+          setIdentitySettling(false)
+          navigateRef.current(ACCOUNT_VERIFY_PATH)
+          return
+        }
         if (httpStatusOf(error) === 409) {
           // already-member: the account belongs to another tenant. It gets no
           // personal one, and the placeholder tenant is what makes its reads
@@ -696,6 +758,10 @@ function TenantFrame({
     personalServed,
     rosterSettled,
     tenantId,
+    verificationKnown,
+    verificationReadFailed,
+    verificationPending,
+    verificationState,
     principalId,
     generation,
     personalRetry,
@@ -760,7 +826,16 @@ function TenantFrame({
           // tenant frame. It is always mounted: the component tells the
           // shell when there is nothing to show, and its live region keeps
           // the end confirmation after the banner itself goes away.
-          banner={<ImpersonationBannerSlot />}
+          banner={
+            <>
+              <ImpersonationBannerSlot />
+              {/* The registration-verification notice, below the app bar for
+                  the whole tenant frame. It renders only while the profile's
+                  verification state is pending, and stays until the address
+                  is proved (no close control). */}
+              <ContactVerificationBanner />
+            </>
+          }
           // The notification bell rides the header actions slot beside the
           // shared chrome; it opens the notification surface. It lives only
           // in the tenant area (the console resolves no tenant, so its bell

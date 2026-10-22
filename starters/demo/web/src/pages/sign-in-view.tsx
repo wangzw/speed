@@ -55,7 +55,11 @@ import { useNavigate } from '@speed/route-kit'
 import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { useAppServices } from '../app-services.js'
-import { ACCOUNT_SETUP_PATH, AUTH_CALLBACK_PATH } from '../paths.js'
+import {
+  ACCOUNT_SETUP_PATH,
+  ACCOUNT_VERIFY_PATH,
+  AUTH_CALLBACK_PATH,
+} from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
@@ -106,13 +110,23 @@ export function SignInView({
   // runs before React re-renders, so a render-time value would still be the
   // anonymous one.
   const onSignedIn = (context: SignInContext): void => {
-    if (context.mode !== 'register' || context.channel !== 'sms') {
+    if (context.mode !== 'register') {
       return
     }
     if (keepLanding) {
       // The embedding page's URL is the destination: the session flip
       // re-renders it (the invitation landing onto its accept screen, the
       // console gate onto the console) and no navigation may take it away.
+      return
+    }
+    if (context.channel === 'password') {
+      // A password registration lands on the verification page whatever the
+      // deployment's personal-tenant policy: the account exists but its email
+      // address is not proved yet, and that page is where it is proved.
+      navigate(ACCOUNT_VERIFY_PATH)
+      return
+    }
+    if (context.channel !== 'sms') {
       return
     }
     const features = session.getSnapshot().features

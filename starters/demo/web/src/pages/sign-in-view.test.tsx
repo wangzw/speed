@@ -31,7 +31,7 @@ import {
   principal,
 } from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_SETUP_PATH } from '../paths.js'
+import { ACCOUNT_SETUP_PATH, ACCOUNT_VERIFY_PATH } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createTestSession } from '../test-utils/session.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
@@ -86,6 +86,21 @@ const authEn = authUiResources['en-US'] as unknown as {
     readonly submit: string
   }
 }
+
+/** The auth-ui password-registration labels, read from the bundle the
+ * screen renders (both languages are pinned in that package's own suite). */
+const authRegisterEn = authUiResources['en-US'] as unknown as {
+  readonly register: {
+    readonly usernameLabel: string
+    readonly emailLabel: string
+    readonly passwordLabel: string
+    readonly confirmPasswordLabel: string
+    readonly submit: string
+  }
+}
+
+const REGISTER_PATH = '/api/v1/auth/register'
+const REGISTER = `POST ${REGISTER_PATH}`
 
 /** The account-ui explanation the setup page renders while the account has
  * no login name (PasswordSection owns that copy now). */
@@ -235,6 +250,62 @@ describe('the sign-in surface', () => {
     expect(
       await screen.findByText(accountEn.password.loginNameRequired),
     ).toBeInTheDocument()
+  })
+
+  it('lands a password registration on the verification page', async () => {
+    // A password registration opens the account without proving its email
+    // address, then signs in with the same credentials. The host sends the
+    // just-opened account to the verification page whatever the deployment's
+    // personal-tenant policy is.
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([{ name: 'password', kind: 'form' }], {
+          signup: true,
+          signupPassword: true,
+        }),
+      [REGISTER]: () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: 'ada@example.com' },
+      }),
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () => principal(),
+    })
+    renderDemoApp({ session: harness.session })
+
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.usernameLabel),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.emailLabel),
+      'ada@example.com',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.passwordLabel),
+      's3cret-pass',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.confirmPasswordLabel),
+      's3cret-pass',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authRegisterEn.register.submit }),
+    )
+
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_VERIFY_PATH),
+    )
+    expect(
+      harness.calls.some(
+        (call) => call.method === 'POST' && call.path === REGISTER_PATH,
+      ),
+    ).toBe(true)
   })
 
   it('lands a registration in the tenant area when the personal tenant is in force', async () => {
@@ -467,8 +538,9 @@ describe('the sign-in surface', () => {
               id: 'identifier-phone',
               kind: 'phone',
               value: '+14155550123',
+              proven: true,
               verified_at: '2026-01-01T00:00:00Z',
-              verified_via: 'sms',
+              verified_via: 'sms-code',
             },
           ],
         }),

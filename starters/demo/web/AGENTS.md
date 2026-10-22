@@ -143,10 +143,11 @@ program beside this directory embeds with `go:embed` and serves through
   never branches on the layout. `src/paths.ts`
   holds the route paths the chrome links into, shared with the route table.
 - **The account page mounts the account-ui family.** `src/pages/account-page.tsx`
-  composes `@speed/account-ui`'s sections -- the appearance theme choice
-  first, then the self-service writes (profile,
-  password, identifiers), then preferences, sessions, social bindings and
-  MFA -- under a `@speed/ui-kit` `PageHeader`, at `/account` in the tenant
+  composes `@speed/account-ui`'s sections -- the self-service writes
+  (profile, password, identifiers and the registration contact's
+  verification), then the appearance theme choice, then preferences,
+  sessions, social bindings and MFA -- under a
+  `@speed/ui-kit` `PageHeader`, at `/account` in the tenant
   navigation. The appearance section is `account-ui`'s controlled
   `AppearanceSection`: the page maps the shipped preset shelf to this
   bundle's names and passes the provider's active preset and setter
@@ -164,6 +165,26 @@ program beside this directory embeds with `go:embed` and serves through
   `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
   objectstore-ui, tenancy-ui, notification-ui, demo) beside the four the
   assembly registers automatically.
+- **Registration verification has its own page, banner and ensure gate.**
+  `/account/verify` (`src/pages/account-verify-page.tsx`, an account-level
+  route) renders account-ui's `ContactVerificationSection` under the session
+  gate, and a password registration's automatic sign-in lands there
+  (`src/pages/sign-in-view.tsx`). The tenant frame reads the profile's
+  `verification.state` (`GET /api/v1/auth/me`) and does three things with it:
+  it does not call the personal-tenant ensure while the state is `pending`; on
+  a 409 `workspace.verification-required` it navigates to the verification
+  page rather than rendering the retryable failure placeholder; and it
+  resumes the ensure once the state becomes `verified` (the profile read is
+  invalidated by the verify write). A persistent notice below the app bar
+  (`src/contact-verification-banner.tsx`) shows the target address and the
+  verify/change links while pending; verify goes to `/account/verify`, change
+  to `/account/verify?change=email`, whose page starts the section in the
+  change-address form. It is a `region`, not a live region, and
+  it has no close control: it stays until the address is proved. It is
+  separate from the once-only "finish account setup" notice -- the two
+  predicates are `contactVerificationPending` and `setupIncomplete` in
+  `src/account-setup.ts`, and a password registration is setup-complete while
+  verification is still pending.
 - **A page reload keeps the viewer signed in.** The session is delivered as
   the server's httpOnly cookie (the login flow requests `delivery: 'session'`,
   the client sends it with `credentials: 'same-origin'`), so a reload

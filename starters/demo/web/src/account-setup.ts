@@ -1,12 +1,21 @@
 /**
- * Whether an account's setup is complete: the fact the setup page renders
- * and the once-only home notice keys on.
+ * Whether an account's setup is complete, and whether its registration
+ * contact is still awaiting verification: two separate facts the host keys
+ * on, deliberately not folded together.
  *
- * The ruling (docs/adr/adr-authn-signup-2026-10-18) is that an SMS first
- * login opens the account with a verified phone, and setup adds the two
- * pieces password sign-in needs: a login name and a password. A login name
- * is a username or a verified email; a phone signs in but is not one. The
- * profile these predicates read is GET /api/v1/auth/me.
+ * The ruling (ADR-authn-signup-2026-10-22) splits registration from setup. A
+ * password registration opens the account with a pending email address, and
+ * the account proves that address after signing in; an SMS first login opens
+ * the account with a verified phone. Setup then adds the two pieces password
+ * sign-in needs: a login name and a password. A login name is a username or
+ * a verified email; a phone signs in but is not one. The profile these
+ * predicates read is GET /api/v1/auth/me.
+ *
+ * `contactVerificationPending` reads the profile's `verification.state`.
+ * `setupIncomplete` reads the login name and password. A password
+ * registration has already supplied a login name and password, so setup can
+ * be complete while verification is still pending; the verification notice
+ * must not be hidden by that.
  */
 
 /** The part of GET /api/v1/auth/me the readiness question needs. */
@@ -16,6 +25,14 @@ export interface SetupProfile {
     readonly kind: string
     readonly verified_at: string
   }[]
+}
+
+/** The part of GET /api/v1/auth/me the registration-verification question
+ * needs. */
+export interface VerificationProfile {
+  readonly verification?: {
+    readonly state?: string
+  }
 }
 
 /**
@@ -43,4 +60,17 @@ export function setupIncomplete(profile: SetupProfile): boolean {
     !profile.identifiers.some((identifier) => isLoginName(identifier)) ||
     !profile.password_set
   )
+}
+
+/**
+ * Whether the account's self-registration still awaits email verification.
+ * `none` (an account that never self-registered) and `verified` answer false;
+ * only `pending` answers true. This is independent of `setupIncomplete`: the
+ * verification notice stays until the address is proved, whatever the login
+ * name and password state.
+ */
+export function contactVerificationPending(
+  profile: VerificationProfile,
+): boolean {
+  return profile.verification?.state === 'pending'
 }

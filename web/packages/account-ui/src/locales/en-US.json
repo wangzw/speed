@@ -11,6 +11,7 @@
       "account_unavailable": "This account is unavailable. Contact an administrator for help.",
       "impersonation_restricted": "This action is not available while you are viewing as another account.",
       "forbidden": "You do not have permission to do that.",
+      "contact_required": "Verify your email address first to continue.",
       "conflict": "The request conflicts with the account's current state. Refresh and try again.",
       "login_identifier_required": "This account needs a username or a verified email address before a password can be set.",
       "unsupported_media_type": "The request could not be read.",
@@ -240,6 +241,7 @@
   },
   "phone": {
     "title": "Phone number",
+    "securityNote": "A phone number is a sign-in method and an additional security factor. Verifying it does not lift the limits that apply until your email address is verified.",
     "country": {
       "label": "Country/region"
     },
@@ -255,6 +257,36 @@
     "verify": "Verify",
     "added": "Your phone number has been added.",
     "cancel": "Use a different number"
+  },
+  "verification": {
+    "title": "Verify your email address",
+    "description": "Confirm your email address to finish registration and lift the limits on your account.",
+    "target": "We will send a verification code to {{email}}.",
+    "send": "Send code",
+    "resend": "Send another code",
+    "resendIn": "You can request another code in {{seconds}} seconds.",
+    "sent": "A verification code was sent to {{email}}.",
+    "codeLabel": "Verification code",
+    "codeHelper": "Enter the 6-digit code from the email.",
+    "verify": "Verify",
+    "change": "Use a different email address",
+    "changeLabel": "New email address",
+    "changeSubmit": "Send code",
+    "changeCancel": "Cancel",
+    "codeInvalid": "The verification code is invalid or has expired. Try again or use a different email address.",
+    "addressTaken": "This email address is already used by another account. Use a different email address.",
+    "addTitle": "Add an email address",
+    "addDescription": "Add an email address so we can verify it and finish registration.",
+    "addLabel": "Email address",
+    "addSubmit": "Send code",
+    "verifiedTitle": "Email address verified",
+    "verifiedDescription": "Verification is complete for {{email}}.",
+    "verifiedDescriptionNoEmail": "Verification is complete.",
+    "error": {
+      "title": "Could not load verification status",
+      "description": "Something went wrong while loading your verification status. Please try again."
+    },
+    "retry": "Retry"
   },
   "identifiers": {
     "title": "Sign-in identifiers",

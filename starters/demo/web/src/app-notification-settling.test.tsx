@@ -32,6 +32,23 @@ const ENSURE_PATH = '/api/v1/workspace/personal'
 const UNREAD_PATH = '/api/v1/notifications/messages/unread-count'
 
 const PERSONAL_ID = 'personal-account-1'
+
+/** The caller's own profile: no self-registration, so the verification gate
+ * lets the personal-tenant ensure run. */
+const PROFILE = {
+  account_id: 'account-1',
+  kind: 'user',
+  display_name: 'Test User',
+  mfa_required: false,
+  password_set: true,
+  created_at: '2026-01-01T00:00:00Z',
+  attributes: {},
+  locale: 'en-US',
+  time_zone: 'UTC',
+  identifiers: [],
+  links: [],
+  verification: { state: 'none', email: '', since: '' },
+} as const
 const STREAM_FEATURES = [
   'tenant.admin',
   'workspace.personal',
@@ -65,6 +82,9 @@ describe('the live subscription and the tenant context', () => {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,
         })
+      }
+      if (method === 'GET' && path === '/api/v1/auth/me') {
+        return PROFILE
       }
       if (method === 'POST' && path === ENSURE_PATH) {
         return ensurePending

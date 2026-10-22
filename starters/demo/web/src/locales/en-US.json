@@ -66,6 +66,18 @@
     "home": "Go to the home page",
     "later": "Set up later"
   },
+  "accountVerify": {
+    "title": "Verify your email address",
+    "description": "Confirm your email address to finish registration and lift the limits on your account."
+  },
+  "verificationBanner": {
+    "region": "Email verification",
+    "pending": "Verify {{email}} to finish registration.",
+    "pendingNoEmail": "Add an email address to finish registration.",
+    "verify": "Verify now",
+    "add": "Add an email address",
+    "change": "Change email"
+  },
   "userMenu": {
     "accountMenu": "Account menu",
     "profile": "Profile",

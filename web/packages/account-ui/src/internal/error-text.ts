@@ -70,6 +70,7 @@ export const ERROR_TEXT_CODES = [
   'authn.account_unavailable',
   'authn.impersonation_restricted',
   'authn.forbidden',
+  'authn.contact_required',
   'authn.conflict',
   'authn.login_identifier_required',
   'authn.unsupported_media_type',

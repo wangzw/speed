@@ -25,12 +25,13 @@ export function profileBody(
     time_zone: '',
     identifiers: [],
     links: [],
+    verification: { state: 'none', email: '', since: '' },
     ...overrides,
   }
 }
 
 /** One identifier row of the profile's `identifiers`, in the fragment's
- * own shape; a verified row carries both verification fields. */
+ * own shape; the default row was proved by the provider, so `proven` is true. */
 export function identifier(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
@@ -38,6 +39,7 @@ export function identifier(
     id: 'ident-1',
     kind: 'email',
     value: 'ada@example.test',
+    proven: true,
     verified_at: '2026-01-01T00:00:00Z',
     verified_via: 'idp:google',
     ...overrides,

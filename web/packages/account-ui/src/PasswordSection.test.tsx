@@ -127,7 +127,12 @@ describe('PasswordSection', () => {
           profileBody({
             password_set: false,
             identifiers: [
-              identifier({ kind: 'email', verified_at: '', verified_via: '' }),
+              identifier({
+                kind: 'email',
+                proven: false,
+                verified_at: '',
+                verified_via: '',
+              }),
             ],
           }),
         )

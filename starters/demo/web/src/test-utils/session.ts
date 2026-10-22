@@ -72,6 +72,7 @@ export function authenticatedSnapshot(options: {
       time_zone: 'UTC',
       identifiers: [],
       links: [],
+      verification: { state: 'none', email: '', since: '' },
     },
     impersonating: false,
     permissionSets: {

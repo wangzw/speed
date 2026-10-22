@@ -58,6 +58,7 @@ export function principal(
     time_zone: 'UTC',
     identifiers: [],
     links: [],
+    verification: { state: 'none', email: '', since: '' },
     ...overrides,
   }
 }

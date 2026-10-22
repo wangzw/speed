@@ -14,6 +14,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { AuthnProfileProfile } from './app-api/index.js'
@@ -26,7 +27,7 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
-import { ACCOUNT_SETUP_PATH } from './paths.js'
+import { ACCOUNT_SETUP_PATH, ACCOUNT_VERIFY_PATH } from './paths.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
   ANONYMOUS_SNAPSHOT,
@@ -74,11 +75,20 @@ const INCOMPLETE_PROFILE: AuthnProfileProfile = {
       id: 'identifier-phone',
       kind: 'phone',
       value: '+14155550123',
+      proven: true,
       verified_at: '2026-01-01T00:00:00Z',
-      verified_via: 'sms',
+      verified_via: 'sms-code',
     },
   ],
   links: [],
+  verification: { state: 'none', email: '', since: '' },
+}
+
+/** A self-registration whose email address is not proved yet. */
+const PENDING_PROFILE: AuthnProfileProfile = {
+  ...INCOMPLETE_PROFILE,
+  password_set: true,
+  verification: { state: 'pending', email: 'ada@x.test', since: '' },
 }
 
 /** The profile of an account that completed setup: a username and a
@@ -92,8 +102,9 @@ const COMPLETE_PROFILE: AuthnProfileProfile = {
       id: 'identifier-username',
       kind: 'username',
       value: 'test-user',
+      proven: false,
       verified_at: '',
-      verified_via: '',
+      verified_via: 'self',
     },
   ],
 }
@@ -104,7 +115,7 @@ const COMPLETE_PROFILE: AuthnProfileProfile = {
  * other call fails loudly. */
 function script(options: {
   readonly roster?: RosterAnswer
-  readonly ensure?: 'success' | 'conflict' | 'unavailable'
+  readonly ensure?: 'success' | 'conflict' | 'unavailable' | 'verification'
   /** Whether the answer reports a creation; a function answers per call. */
   readonly ensureCreated?: boolean | (() => boolean)
   readonly ensureCalls?: string[]
@@ -132,15 +143,23 @@ function script(options: {
       return roster
     }
     if ((call.method ?? 'GET') === 'GET' && path === '/api/v1/auth/me') {
-      if (options.profile === undefined) {
-        throw new Error('the case scripts no profile')
-      }
-      return options.profile()
+      // The frame reads the profile to decide the verification state even
+      // when a case cares only about the ensure, so an unscripted profile is
+      // the ordinary incomplete one rather than a failure.
+      return options.profile === undefined
+        ? INCOMPLETE_PROFILE
+        : options.profile()
     }
     if (call.method === 'POST' && path === ENSURE_PATH) {
       options.ensureCalls?.push(ENSURE_PATH)
       if (ensure === 'conflict') {
         throw Object.assign(new Error('already a member'), { status: 409 })
+      }
+      if (ensure === 'verification') {
+        throw Object.assign(new Error('verify the email first'), {
+          status: 409,
+          code: 'workspace.verification_required',
+        })
       }
       if (ensure === 'unavailable') {
         throw Object.assign(new Error('the store is unavailable'), {
@@ -188,8 +207,9 @@ function snapshotWithProfile(
               id: 'identifier-username',
               kind: 'username',
               value: 'test-user',
+              proven: false,
               verified_at: '',
-              verified_via: '',
+              verified_via: 'self',
             },
           ]
         : [
@@ -197,8 +217,9 @@ function snapshotWithProfile(
               id: 'identifier-phone',
               kind: 'phone',
               value: '+14155550123',
+              proven: true,
               verified_at: '2026-01-01T00:00:00Z',
-              verified_via: 'sms',
+              verified_via: 'sms-code',
             },
           ],
     },
@@ -206,6 +227,7 @@ function snapshotWithProfile(
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/')
   setCurrentTenantId(null)
   setTenantAliases(new Map())
 })
@@ -252,8 +274,9 @@ describe('the tenant frame and the personal tenant', () => {
               id: 'identifier-phone',
               kind: 'phone',
               value: '+14155550123',
+              proven: true,
               verified_at: '2026-01-01T00:00:00Z',
-              verified_via: 'sms',
+              verified_via: 'sms-code',
             },
           ],
         },
@@ -348,6 +371,9 @@ describe('the tenant frame and the personal tenant', () => {
           status: 403,
         })
       }
+      if ((call.method ?? 'GET') === 'GET' && path === '/api/v1/auth/me') {
+        return INCOMPLETE_PROFILE
+      }
       throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
     })
     const snapshot = authenticatedSnapshot({
@@ -363,6 +389,118 @@ describe('the tenant frame and the personal tenant', () => {
     expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
   })
 
+  it('does not call the personal ensure while registration verification is pending', async () => {
+    // The server refuses a pending account, so the frame answers with the
+    // verification state alone: no ensure request is issued until the address
+    // is proved.
+    const ensureCalls: string[] = []
+    script({ roster: 'refused', ensureCalls, profile: () => PENDING_PROFILE })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    expect(
+      await screen.findByRole('region', {
+        name: demoEnUS.verificationBanner.region,
+      }),
+    ).toBeInTheDocument()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(ensureCalls).toEqual([])
+    expect(getCurrentTenantId()).toBeNull()
+  })
+
+  it('navigates to the verification page on the 409 verification-required, not a failure', async () => {
+    // The server's refusal names the reason: the account must verify first.
+    // That is a routing fact, not a retryable failure, so the frame moves to
+    // the verification page and renders no failure placeholder.
+    const ensureCalls: string[] = []
+    script({
+      roster: 'refused',
+      ensure: 'verification',
+      ensureCalls,
+      profile: () => INCOMPLETE_PROFILE,
+    })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_VERIFY_PATH),
+    )
+    expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
+    expect(getCurrentTenantId()).toBeNull()
+  })
+
+  it('resumes the ensure once verification moves the profile to verified', async () => {
+    // The 409 is not a terminal answer: the account proves its address on the
+    // verification page, the verify write invalidates the profile, and the
+    // frame's ensure runs again without a reload.
+    const ensureCalls: string[] = []
+    let verificationState = 'none'
+    bindScript(async (path, call) => {
+      if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
+        throw Object.assign(new Error('the roster read was refused'), {
+          status: 403,
+        })
+      }
+      if ((call.method ?? 'GET') === 'GET' && path === '/api/v1/auth/me') {
+        return {
+          ...INCOMPLETE_PROFILE,
+          verification: {
+            state: verificationState,
+            email: 'ada@x.test',
+            since: '',
+          },
+        }
+      }
+      if (call.method === 'POST' && path === ENSURE_PATH) {
+        ensureCalls.push(ENSURE_PATH)
+        if (ensureCalls.length === 1) {
+          throw Object.assign(new Error('verify the email first'), {
+            status: 409,
+            code: 'workspace.verification_required',
+          })
+        }
+        return {
+          tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
+          created: true,
+        }
+      }
+      throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
+    })
+    const { queryClient } = renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(ACCOUNT_VERIFY_PATH),
+    )
+    expect(getCurrentTenantId()).toBeNull()
+
+    verificationState = 'verified'
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: getAuthnProfileGetQueryKey(),
+      })
+    })
+
+    expect(
+      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+    ).toBeInTheDocument()
+    expect(ensureCalls).toHaveLength(2)
+    expect(getCurrentTenantId()).toBe(PERSONAL_ID)
+  })
+
   it('renders a retryable failure on a 503, and the retry asks again', async () => {
     const ensureCalls: string[] = []
     let behavior: 'unavailable' | 'success' = 'unavailable'
@@ -371,6 +509,9 @@ describe('the tenant frame and the personal tenant', () => {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,
         })
+      }
+      if ((call.method ?? 'GET') === 'GET' && path === '/api/v1/auth/me') {
+        return INCOMPLETE_PROFILE
       }
       if (call.method === 'POST' && path === ENSURE_PATH) {
         ensureCalls.push(ENSURE_PATH)
@@ -459,7 +600,7 @@ describe('the tenant frame and the personal tenant', () => {
     expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
   })
 
-  it('offers no notice and reads no profile when a new tenant already has a complete account', async () => {
+  it('offers no notice when a new tenant already has a complete account', async () => {
     const calls: string[] = []
     script({
       roster: 'refused',
@@ -473,14 +614,18 @@ describe('the tenant frame and the personal tenant', () => {
 
     // The ensure created the tenant, but the account already holds the
     // username and password the notice would ask it to add: the eligibility
-    // condition is false, so the home page never even reads the profile.
+    // condition is false and the home page shows no notice. The frame still
+    // reads the profile once -- the verification banner needs its state --
+    // and the shared query dedupes that with anything else reading it.
     expect(
       await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
     ).toBeInTheDocument()
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
-    expect(calls).not.toContain('GET /api/v1/auth/me')
+    expect(
+      calls.filter((call) => call === 'GET /api/v1/auth/me'),
+    ).toHaveLength(1)
     expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
   })
 

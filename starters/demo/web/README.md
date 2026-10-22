@@ -170,7 +170,7 @@ development wiring that a copied-out project drops**:
 | `src/paths.ts` | The app's own route paths, shared by the route table and the chrome that links into them. |
 | `src/chrome.tsx` | The shared top-bar chrome: the brand, the app-wide header actions (language switch, color-mode toggle), the tenant switcher and the avatar account menu. |
 | `src/console/console-area.tsx` | The platform console, the second shell, over `@speed/console-ui`. |
-| `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities) and the account page. |
+| `src/pages/` | The app's pages: the starting page (the `/` card grid over the assembled capabilities), the account page, and the setup and verification landing pages a registration completes on. |
 | `src/runtime-config.ts` | Reads the deployment's runtime configuration from `runtime-config.json` at the deployment root (resolved against the entry document, not the current URL): the API origin, the shell layout and the default theme preset, each falling back on its own. |
 | `src/document-metadata.ts` | Keeps the document title in step with the active language. `<html lang>` is the assembly's (the app-entry bootstrap binds it and follows every switch). |
 | `src/resources.ts`, `src/locales/` | The app's bilingual i18n bundle ("demo" namespace). |
@@ -327,9 +327,10 @@ so the console shows its wait or failure instead of misreading the member.
 The tenant area ships one account page (`/account`, in the navigation) that
 mounts `@speed/account-ui`'s sections -- the appearance theme choice, the
 self-service writes (display
-name, password and sign-in identifiers), then preferences, active sessions,
-social bindings and the step-up-gated two-step-verification setup -- under a
-`@speed/ui-kit` `PageHeader`. The appearance section is
+name, password, sign-in identifiers and the registration contact's
+verification), then preferences, active sessions, social bindings and the
+step-up-gated two-step-verification setup -- under a `@speed/ui-kit`
+`PageHeader`. The appearance section is
 `account-ui`'s controlled `AppearanceSection`, placed ahead of the
 preferences section: it lists the shipped preset shelf with this bundle's
 names (`themePreset.*` in `src/locales/`), reports a pick, and the page
@@ -376,6 +377,24 @@ navigated in the current window, and its round trip returns to the app's
 `/sign-in/callback` route. The surface carries no deployment-operation copy:
 which methods are enabled, and whether registration is offered, are the
 deployment's facts, not text the page asserts.
+
+A password registration opens the account without proving its email address,
+then signs in with the same credentials; the host lands that sign-in on
+`/account/verify` (`src/pages/account-verify-page.tsx`), which renders
+account-ui's `ContactVerificationSection`. While `GET /api/v1/auth/me`
+reports `verification.state` as `pending`, the tenant frame shows a persistent
+notice below the app bar (`src/contact-verification-banner.tsx`) naming the
+target address and linking to the verify page; its "verify" action goes to
+`/account/verify` and its "change address" action to
+`/account/verify?change=email`, where the page starts the section in the
+change form. The notice is a `region`, has no close control, and stays until
+the address is proved. It is separate from the
+once-only "finish account setup" notice: the predicates are
+`contactVerificationPending` and `setupIncomplete` in `src/account-setup.ts`,
+and a password registration is setup-complete while verification is still
+pending. The frame does not call the personal-tenant ensure while verification
+is pending, and a 409 `workspace.verification-required` sends it to
+`/account/verify`; the ensure resumes once the state is `verified`.
 
 ## What to change when you copy this out
 

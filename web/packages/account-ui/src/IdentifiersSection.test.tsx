@@ -59,6 +59,7 @@ describe('IdentifiersSection', () => {
                 id: 'id-phone',
                 kind: 'phone',
                 value: '+14155550123',
+                proven: false,
                 verified_at: '',
                 verified_via: '',
               }),
@@ -80,6 +81,68 @@ describe('IdentifiersSection', () => {
     expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it('renders the chip from proven, not from verified_at', async () => {
+    // A username written at registration is stored as `self`: it carries a
+    // verified_at instant but proves no ownership, so the row must not read
+    // as verified.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [
+              identifier({
+                id: 'id-self',
+                kind: 'username',
+                value: 'ada',
+                proven: false,
+                verified_via: 'self',
+              }),
+            ],
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('ada')).toBeTruthy()
+    expect(screen.getByText(zhCN.identifiers.unverified)).toBeTruthy()
+    expect(screen.queryByText(zhCN.identifiers.verified)).toBeNull()
+  })
+
+  it('does not offer the email kind while verification is pending', async () => {
+    // A pending registration carries one contact awaiting proof; the add face
+    // must not put a second pending address on the account.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profileBody({
+            identifiers: [],
+            verification: {
+              state: 'pending',
+              email: 'ada@x.test',
+              since: '',
+            },
+          }),
+        )
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    const combo = await screen.findByRole('combobox', {
+      name: zhCN.identifiers.add.kind.label,
+    })
+    expect(combo).toHaveTextContent(zhCN.identifiers.add.kind.username)
+    expect(combo).not.toHaveTextContent(zhCN.identifiers.add.kind.email)
   })
 
   it('removes an identifier behind the confirm and refetches', async () => {
