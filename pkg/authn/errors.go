@@ -175,6 +175,13 @@ var (
 	// way on both engines. Outwardly it is a 409.
 	ErrAccountExists = errors.New("authn: account, identifier or binding already exists")
 
+	// ErrContactTaken reports an email address another account has reserved or
+	// holds. A reservation is the row a self-registration writes before the
+	// address is proved, so the failure says the address is no longer available
+	// rather than that an account with the same name exists. Outwardly it is a
+	// 409 email-taken.
+	ErrContactTaken = errors.New("authn: the contact is reserved by another account")
+
 	// ErrInvalidCredentials reports an unknown identifier, a wrong password, a
 	// wrong code, a disabled account or an account with no password, all in this
 	// one value. Outwardly it is a 401 login-failed.

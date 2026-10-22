@@ -8,7 +8,8 @@
  * the client as `authn.<code>` with the dashes spelled as underscores:
  * bad_request for a malformed write, insufficient_user_authentication
  * for an operation the caller's token does not yet prove, conflict for
- * the last-factor and last-login-method guards, forbidden for a session
+ * the last-factor and last-login-method guards, email_taken for an
+ * address another account has reserved or proved, forbidden for a session
  * that is not the caller's, flow_invalid for a flow binding that has
  * gone, link_required and method_disabled for the social channel,
  * throttled for the shared rate limiter, unavailable for a dependency
@@ -72,6 +73,7 @@ export const ERROR_TEXT_CODES = [
   'authn.forbidden',
   'authn.contact_required',
   'authn.conflict',
+  'authn.email_taken',
   'authn.login_identifier_required',
   'authn.unsupported_media_type',
   'authn.throttled',

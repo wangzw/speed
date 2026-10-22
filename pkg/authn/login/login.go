@@ -440,6 +440,7 @@ func (p *product) buildSelfservice() error {
 		KV:          p.kv,
 		Throttle:    p.throttle,
 		EmailSender: p.emailSender,
+		Signup:      p.verification,
 		Settings:    p.store,
 		Bus:         p.bus,
 		Audit:       p.audit,

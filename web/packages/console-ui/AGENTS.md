@@ -332,7 +332,10 @@ request body.
   underscore); the whitelist carries one leaf per language for each
   reachable code, so a refusal renders its own text rather than the
   generic fallback. A new write surface extends the whitelist with the
-  codes it can meet.
+  codes it can meet. An address an account create or identifier add
+  collides with is the 409 `authn.email_taken`, whose text names the
+  address as already registered and asks for another -- an actionable
+  refusal, not a restated status.
 - **Each page opens with ui-kit's `PageHeader`.** The page title is the
   level-one heading and a breadcrumb trail runs from the console to the
   page. The refresh action that re-reads the page's data (its `refetch`)

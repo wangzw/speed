@@ -328,6 +328,10 @@ read that instead.
   re-reading; any other failure with no settled payload renders the
   retryable error placeholder. The branch reads the answer the server
   wrote, not a route-level permission read.
+- **No opaque collision copy.** An account create or identifier add the
+  server refuses because the email address is already registered (409
+  `authn.email_taken`) renders that code's text, naming the address and
+  asking for another, rather than the generic fallback.
 - **No authorization decisions.** The permission code a declaration
   carries is data; the server decides on every request and the host
   composes any route guard. A page renders its write controls and lets

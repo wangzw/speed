@@ -41,8 +41,8 @@
 `GET B/me` 应答 200 与一份档案视图，逐字段从账户模块的读面构造，从不把值原样交出：`account_id`、`kind`、`display_name`、`mfa_required`、`password_set`、`created_at`、`attributes`、`locale`、`time_zone`、`identifiers`、`verification`、`links`。
 
 - `attributes` 是账户的属性集；`locale` 与 `time_zone` 从它的 `i18n.locale`、`i18n.tz` 键解出，各自没有时为空。
-- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 的每一项带 `proven`，由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假。待验证邮箱不在 `identifiers` 里。
-- `verification` 是 `{state, email, since}`：`state` 取 `none`、`pending`、`verified`，对应 `SignupState` 的 `0`、`1`、`2`。`email` 的取值是确定的：`verified` 取 `Proves` 为真、`verified_at` 最早的邮箱，同一时刻按标识 ID 排序取第一个；`pending` 取待验证联系方式里的邮箱，账户没有待验证目标时为空——删除最后一个已验证邮箱会把账户从 `verified` 拉回 `pending` 而不重建目标，空值是合法状态，界面据此给出添加邮箱的入口，不假设未验证账户总有地址；`none` 为空。`since` 是 `signup_verified_at`，只在账户第一次进入 `verified` 时写入，之后再验证其他邮箱不更新，`verified` 回到 `pending` 时保留；未验证时为空串。它由 `SignupVerification.SignupStateOf` 请求期活读，不进会话、身份或访问令牌。
+- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 的每一项带 `proven`，由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假。待验证邮箱不在 `identifiers` 里，只经 `verification.email` 出现。
+- `verification` 是 `{state, email, since}`：`state` 取 `none`、`pending`、`verified`，对应 `SignupState` 的 `0`、`1`、`2`。`email` 的取值是确定的：`verified` 取 `Proves` 为真、`verified_at` 最早的邮箱，同一时刻按标识 ID 排序取第一个；`pending` 取未证明预留里的邮箱（按创建时刻、再按行标识取第一条），账户没有未证明预留时为空——删除最后一个已验证邮箱会把账户从 `verified` 拉回 `pending` 而不重建预留，空值是合法状态，界面据此给出添加邮箱的入口，不假设未验证账户总有地址；`none` 为空。`since` 是 `signup_verified_at`，只在账户第一次进入 `verified` 时写入，之后再验证其他邮箱不更新，`verified` 回到 `pending` 时保留；未验证时为空串。它由 `SignupVerification.SignupStateOf` 请求期活读，不进会话、身份或访问令牌。
 - 时间按 UTC 以 RFC 3339 写出，零时间写空串。
 
 ### 写的请求与应答
@@ -157,7 +157,7 @@ classDiagram
 
 ### 一次读
 
-读身份：`authn.FromContext` 没有身份或身份没有账户即 401。取账户（`Accounts.Get`）、标识（`Accounts.Identifiers`）、外部绑定（`Accounts.Externals`）与注册验证状态（`SignupVerification.SignupStateOf`），按档案视图逐字段构造应答；标识的 `proven` 由 `Verification.Proves` 派生，待验证邮箱只经 `verification.email` 出现。本面不解引用任何客户端给的账户标识。
+读身份：`authn.FromContext` 没有身份或身份没有账户即 401。取账户（`Accounts.Get`）、标识（`Accounts.Identifiers`）、外部绑定（`Accounts.Externals`）与注册验证状态（`SignupVerification.SignupStateOf`），按档案视图逐字段构造应答；标识的 `proven` 由 `Verification.Proves` 派生，未证明预留只经 `verification.email` 出现。本面不解引用任何客户端给的账户标识。
 
 ### 一次写
 

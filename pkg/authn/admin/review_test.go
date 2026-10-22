@@ -478,6 +478,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		{"invalid config", authn.ErrInvalidConfig, http.StatusBadRequest, mount.CodeBadRequest},
 		{"identifier required", authn.ErrIdentifierRequired, http.StatusConflict, mount.CodeLoginIdentifierRequired},
 		{"account exists", authn.ErrAccountExists, http.StatusConflict, mount.CodeConflict},
+		{"contact taken", authn.ErrContactTaken, http.StatusConflict, mount.CodeEmailTaken},
 		{"binding conflict", authn.ErrBindingConflict, http.StatusConflict, mount.CodeConflict},
 		{"domain claimed", authn.ErrDomainClaimed, http.StatusConflict, mount.CodeConflict},
 		{"last login method", authn.ErrLastLoginMethod, http.StatusConflict, mount.CodeConflict},

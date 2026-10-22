@@ -162,6 +162,30 @@ func TestARegistrationAnswersATakenUsernameWithAConflict(t *testing.T) {
 	})
 }
 
+// TestARegistrationAnswersAReservedEmailWithEmailTaken holds the contact
+// arbitration: the first registration reserves the address, and a second one
+// naming it, in any case, is 409 email-taken and opens no account.
+func TestARegistrationAnswersAReservedEmailWithEmailTaken(t *testing.T) {
+	assemble(t, func(h *harness) {
+		openPasswordSignup(t, h)
+
+		first := h.registerOne("alice", "shared@example.com", "alice-password")
+		if first.status != http.StatusCreated {
+			t.Fatalf("the first registration answered %d: %s", first.status, first.body)
+		}
+		second := h.registerOne("bob", "Shared@Example.com", "bob-password")
+		if second.status != http.StatusConflict {
+			t.Fatalf("a reserved email answered %d, want 409: %s", second.status, second.body)
+		}
+		if got := second.json(t)["type"]; got != "urn:speed:authn:email-taken" {
+			t.Errorf("the refusal's type = %v, want urn:speed:authn:email-taken", got)
+		}
+		if _, err := h.accounts.Lookup(h.ctx, authn.IdentifierUsername, "bob"); err == nil {
+			t.Error("a refused registration opened the username")
+		}
+	})
+}
+
 // TestThePerSourceBudgetStopsARegistration holds the minute bucket against the
 // real key-value store: one source address may register up to the budget, and the
 // attempt past it is a 429 with a Retry-After, opening no account.

@@ -43,11 +43,14 @@ type Accounts interface {
 type AccountAdmin interface {
 	// Create writes an enabled account. An email and a phone must already be
 	// verified, and the way each was comes in EmailVerifiedVia and
-	// PhoneVerifiedVia; there is no row awaiting verification. Password and
-	// PasswordHash are alternatives, the first checked against the password
-	// policy and the second a PHC or legacy hash for an import. An empty ID
-	// generates one; a given one is for an import. An identifier, a login name
-	// or a binding that breaks a uniqueness constraint is ErrAccountExists.
+	// PhoneVerifiedVia; there is no row awaiting verification. An email address
+	// also writes its contact reservation, verified now, in the same
+	// transaction. Password and PasswordHash are alternatives, the first checked
+	// against the password policy and the second a PHC or legacy hash for an
+	// import. An empty ID generates one; a given one is for an import. An
+	// identifier, a login name or a binding that breaks a uniqueness constraint
+	// is ErrAccountExists, and a contact another account reserved or proved is
+	// ErrContactTaken.
 	Create(ctx context.Context, in CreateAccount) (Account, error)
 	// SetStatus moves an account between disabled and enabled, and Delete ends
 	// it. Both write the account's own tables in one transaction and then call
@@ -72,8 +75,12 @@ type AccountAdmin interface {
 	SetMFARequired(ctx context.Context, id AccountID, required bool) error
 	// AddIdentifier binds an identifier, normalized first. via is one of the
 	// forms Verification.Valid accepts, and anything else is ErrInvalidArgument.
+	// An email address also writes its contact reservation, verified now: an
+	// existing reservation of this account is brought up to date, and one
+	// another account holds is ErrContactTaken.
 	AddIdentifier(ctx context.Context, id AccountID, kind IdentifierKind, value string, via Verification) error
-	// RemoveIdentifier unbinds one identifier by its identifier.
+	// RemoveIdentifier unbinds one identifier by its identifier. Removing an
+	// email address also releases the account's reservation of that contact.
 	RemoveIdentifier(ctx context.Context, id AccountID, identifierID string) error
 	// LinkExternal binds an external identity. One already bound to another
 	// account is ErrBindingConflict.

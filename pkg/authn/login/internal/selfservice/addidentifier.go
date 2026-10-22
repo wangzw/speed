@@ -238,18 +238,17 @@ func (r *routes) addIdentifier(ctx context.Context, in addIdentifierInput, meta 
 // addEmail starts the email branch of POST /identifiers: it sends a code to the
 // address and keeps what is needed to check it. A deployment with no email
 // channel has no way to prove an address, so it answers that the route is
-// unavailable; the code reaches the address and nothing the client reads says
-// whether it left.
+// unavailable.
 //
-// An address another account already holds is not sent to at all, but it spends
-// the same resend window a free address does, and spends none of the budgets.
-// The answer is the pending answer a real send gives, a repeat inside the window
-// is the same 429 a free address gets, and a store that cannot be claimed is the
-// same 503, so nothing a client reads says whether the address is taken. The
-// write of an identifier another account holds is refused, but a held address
-// receives no code and so has no completion path in this loop: that refusal is
-// reachable only in the race where a code was sent and the address was taken
-// before its answer came back.
+// An address another account holds as a proved identifier, or has reserved with
+// an unproved contact row, is answered 409 email-taken and gets no code. The
+// check runs before the resend window and the budgets, so a taken address costs
+// nothing and a client learns at once that it cannot use it. A registration
+// already refuses such an address when it inserts its reservation; this answer
+// is the fallback for the race in which the address was taken after the code was
+// requested, and for a row written before reservations existed. The write of the
+// identifier at POST /identifiers/verify is the authoritative refusal, and it
+// answers email-taken as well.
 func (r *routes) addEmail(c *call, who caller, raw string) {
 	if r.deps.EmailSender == nil {
 		logWarn(c.ctx, "an email identifier was asked for on a deployment with no email channel", nil)
@@ -265,10 +264,14 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	ttl := r.durations.get(c.ctx, keyEmailCodeTTL, defaultEmailCodeTTL, minEmailCodeTTL, maxEmailCodeTTL)
 	resend := r.durations.get(c.ctx, keyEmailResendInterval, defaultEmailResendInterval, minEmailResendInterval, maxEmailResendInterval)
 
-	held, err := r.emailHeldByAnother(c.ctx, email, who.account)
+	held, err := r.emailTakenByAnother(c.ctx, email, who.account)
 	if err != nil {
-		logWarn(c.ctx, "whether an email address is already held cannot be read", err)
+		logWarn(c.ctx, "whether an email address is already taken cannot be read", err)
 		c.unavailable()
+		return
+	}
+	if held {
+		c.fail(mount.CodeEmailTaken)
 		return
 	}
 
@@ -278,8 +281,9 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	// second session — or a second account — naming the same address still meets
 	// it. A store that cannot be claimed is a 503 before the code is drawn,
 	// because a code that cannot be recorded is a message paid for and sent to no
-	// use. The window is claimed before the held-or-free branch is acted on, so a
-	// held address and a free one answer alike on a repeat and on a store failure.
+	// use. The window is claimed after the address is known to be free, so a
+	// taken address never spends it and every free address meets the same 429 on
+	// a repeat.
 	now := r.deps.Clock.Now()
 	resendKey := emailResendKey(email)
 	mark, err := json.Marshal(emailResendMark{SentAt: now.Unix()})
@@ -295,15 +299,6 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	}
 	if !claimed {
 		c.throttled(r.resendWait(c.ctx, resendKey, resend))
-		return
-	}
-
-	// A held address keeps the window it just claimed and gets no message, no
-	// pending record and no charge against any budget. Its first answer is the
-	// pending answer a send gives, so the two addresses cannot be told apart by
-	// this route.
-	if held {
-		r.answerPending(c, ttl, resend)
 		return
 	}
 
@@ -349,35 +344,47 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	r.answerPending(c, ttl, resend)
 }
 
-// answerPending writes the answer of the email branch: a code was sent, or the
-// route is answering as though one had been. It is one function so that a
-// suppressed send and a real one cannot drift apart in what a client sees.
+// answerPending writes the answer of the email branch: a code was sent. It is
+// one function so that every send answers with the same shape.
 func (r *routes) answerPending(c *call, ttl, resend time.Duration) {
 	c.json(http.StatusOK, addIdentifierResponse{
 		State: identifierStatePending, ExpiresIn: int(seconds(ttl)), ResendAfter: int(seconds(resend)),
 	})
 }
 
-// emailHeldByAnother reports whether an account other than who already holds
-// email as a verified identifier.
+// emailTakenByAnother reports whether an account other than who already holds
+// email: a proved identifier, or an unproved reservation a self-registration
+// wrote. Either is a contact the asking account cannot use, so the caller
+// answers email-taken.
 //
-// An address no identifier carries, and one this account already holds, are both
+// An address neither table carries, and one this account already holds, are both
 // sendable: the first is the ordinary case, and the second is a re-add of the
 // account's own proof. An address the account module cannot normalize is treated
-// as unheld here and refused by the write step if it is submitted, which is the
-// order the route took before this read existed. Every other failure is an
-// outage and is handed back for the caller to answer 503: a lookup that cannot
-// be made must not be read as "nobody holds it".
-func (r *routes) emailHeldByAnother(ctx context.Context, email string, who authn.AccountID) (bool, error) {
+// as free here and refused by the write step if it is submitted. Every other
+// failure is an outage and is handed back for the caller to answer 503: a read
+// that cannot be made must not be read as "nobody holds it".
+func (r *routes) emailTakenByAnother(ctx context.Context, email string, who authn.AccountID) (bool, error) {
 	owner, err := r.deps.Accounts.Lookup(ctx, authn.IdentifierEmail, email)
 	switch {
 	case err == nil:
+		// An address this account holds is a re-add of its own proof, and no
+		// reservation of another account can outweigh that.
 		return owner != who, nil
 	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrInvalidIdentifier):
-		return false, nil
 	default:
 		return false, err
 	}
+	reserved, ok, err := r.deps.Signup.PendingAccountByContact(ctx, identifierKindEmail, email)
+	if errors.Is(err, authn.ErrInvalidIdentifier) {
+		// The route's shape check is looser than the account module's
+		// normalization, so a value this module refuses can reach here. It cannot
+		// be reserved either: the write step refuses it as a bad request.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return ok && authn.AccountID(reserved) != who, nil
 }
 
 // emailBudgetsAllow counts one send against the email budgets and reports
@@ -527,6 +534,17 @@ func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput,
 		logWarn(c.ctx, "the attempt count of a consumed email verification could not be deleted", err)
 	}
 	if bindErr != nil {
+		// The address was taken between the code going out and its answer. The
+		// reservation row is written in the same transaction as the identifier,
+		// so an address another account proved or reserved answers ErrContactTaken
+		// and is the caller's to replace. ErrAccountExists is the identifier
+		// table's own duplicate, either this account's or a row written around the
+		// reservation table, and stays the conflict it was before reservations
+		// existed.
+		if errors.Is(bindErr, authn.ErrContactTaken) {
+			c.fail(mount.CodeEmailTaken)
+			return c.result()
+		}
 		r.fail(c, bindErr)
 		return c.result()
 	}

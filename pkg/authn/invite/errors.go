@@ -22,6 +22,7 @@ var domainErrors = []error{
 	ErrInvite,
 	authn.ErrAccountNotFound,
 	authn.ErrAccountExists,
+	authn.ErrContactTaken,
 	authn.ErrInvalidArgument,
 	authn.ErrInvalidIdentifier,
 	authn.ErrBindingConflict,

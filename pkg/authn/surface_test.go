@@ -768,6 +768,7 @@ var exportedSurface = []string{
 	"var ErrClaimConflict",
 	"var ErrCleanupIncomplete",
 	"var ErrContactRequired",
+	"var ErrContactTaken",
 	"var ErrDomainClaimed",
 	"var ErrDomainMismatch",
 	"var ErrDrainTimeout",

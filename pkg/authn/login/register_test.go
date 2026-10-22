@@ -197,6 +197,7 @@ func TestARegistrationMapsTheModulesRefusals(t *testing.T) {
 		retry  string
 	}{
 		{"a taken username", authn.ErrAccountExists, http.StatusConflict, "urn:speed:authn:username-taken", ""},
+		{"a taken email address", authn.ErrContactTaken, http.StatusConflict, "urn:speed:authn:email-taken", ""},
 		{"a password policy", authn.ErrPasswordPolicy, http.StatusBadRequest, "urn:speed:authn:bad-request", ""},
 		{"an identifier that cannot be normalized", authn.ErrInvalidIdentifier, http.StatusBadRequest, "urn:speed:authn:bad-request", ""},
 		{"an argument outside its domain", authn.ErrInvalidArgument, http.StatusBadRequest, "urn:speed:authn:bad-request", ""},

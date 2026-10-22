@@ -54,15 +54,18 @@ type accountRow struct {
 
 func (accountRow) TableName() string { return tableAccounts }
 
-// pendingContactRow is one row of authn_pending_contacts: a contact awaiting
-// verification, which is not an identifier and is read by no login path.
+// pendingContactRow is one row of authn_pending_contacts: a contact an account
+// reserved. verified_at is empty while the reservation is an unproved target a
+// registration wrote, and set once the address is proved or an administrator
+// writes it. A reservation is not an identifier and is read by no login path.
 type pendingContactRow struct {
-	ID        string    `gorm:"column:id;primaryKey"`
-	AccountID string    `gorm:"column:account_id"`
-	Kind      string    `gorm:"column:kind"`
-	Value     string    `gorm:"column:value"`
-	CreatedAt time.Time `gorm:"column:created_at;autoCreateTime:false"`
-	UpdatedAt time.Time `gorm:"column:updated_at;autoUpdateTime:false"`
+	ID         string     `gorm:"column:id;primaryKey"`
+	AccountID  string     `gorm:"column:account_id"`
+	Kind       string     `gorm:"column:kind"`
+	Value      string     `gorm:"column:value"`
+	VerifiedAt *time.Time `gorm:"column:verified_at"`
+	CreatedAt  time.Time  `gorm:"column:created_at;autoCreateTime:false"`
+	UpdatedAt  time.Time  `gorm:"column:updated_at;autoUpdateTime:false"`
 }
 
 func (pendingContactRow) TableName() string { return tablePending }

@@ -143,10 +143,11 @@ func untilNextBucket(now time.Time, bucket time.Duration) time.Duration {
 }
 
 // failRegister maps a registration's failure to the answer the design gives it.
-// The register route's 409 is username-taken, not the conflict the other routes
-// answer a taken name with; the signup-username back-off and the two budgets are
-// the one 429; and a database that cannot answer, or a derivation capacity that is
-// full, are the 503s.
+// The register route's two 409s are username-taken for a login name and
+// email-taken for an address another account reserved or holds, not the conflict
+// the other routes answer with; the signup-username back-off and the two budgets
+// are the one 429; and a database that cannot answer, or a derivation capacity
+// that is full, are the 503s.
 func (r *routes) failRegister(c *call, err error) {
 	var throttled *authn.ThrottledError
 	switch {
@@ -156,6 +157,8 @@ func (r *routes) failRegister(c *call, err error) {
 		c.throttled(0)
 	case errors.Is(err, authn.ErrSignupClosed):
 		c.forbidden(mount.CodeSignupClosed)
+	case errors.Is(err, authn.ErrContactTaken):
+		c.fail(mount.CodeEmailTaken)
 	case errors.Is(err, authn.ErrAccountExists):
 		c.fail(mount.CodeUsernameTaken)
 	case errors.Is(err, authn.ErrBusy):

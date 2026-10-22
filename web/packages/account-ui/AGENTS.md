@@ -112,7 +112,13 @@ session as a required prop; `PreferencesSection` takes it optionally
   renders `identifiers.add.invalidEmail` in the field and sends nothing, and
   the submitted value is the trimmed one. A 400 the server still answers for
   the email kind renders that same field message, never the account-state
-  banner. A username's 400 keeps the banner: the server's username rule also
+  banner. An address another account has reserved or proved is answered 409
+  `email_taken`; the claim is atomic, so that refusal is the address's too
+  and renders `identifiers.add.emailTaken` in the same field. The code's
+  verification answers `email_taken` as well when the address was taken
+  after the code was requested; the face returns to the value field
+  instead of asking for a code nothing can accept. A username's
+  400 keeps the banner: the server's username rule also
   refuses shapes this face does not restate (the reserved static-credential
   prefix, a UUID-shaped name). Closing the add face clears the failure
   banner, the field error, the success notice and the sent-code step.

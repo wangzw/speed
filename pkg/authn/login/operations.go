@@ -252,7 +252,7 @@ type registerInput struct {
 	_ struct{} "description:\"The anonymous registration request: a username, an email address and a password are required; a display name, a language and a time zone are optional. The email address is only a contact awaiting verification, not a login name.\""
 
 	Username    string "json:\"username\" description:\"The login name, required. A name already taken is a 409 username-taken; a name that cannot be normalized is a 400 bad-request.\""
-	Email       string `json:"email" description:"The email address, required. It is only a contact awaiting verification, not a login name yet, and it is never checked for being taken: a conflict surfaces only after a code proves control of the address, once the account is signed in."`
+	Email       string `json:"email" description:"The email address, required. It is only a contact awaiting verification, not a login name yet. The registration reserves it in the same transaction, so an address another account has reserved or proved is a 409 email-taken."`
 	Password    string `json:"password" description:"The password, required, held to the deployment's password policy; a password that violates it is a 400 bad-request."`
 	DisplayName string `json:"display_name" description:"The display name, optional: valid text of at most 100 characters."`
 	Locale      string `json:"locale" description:"The account's language preference, optional, written to the i18n.locale attribute; a value outside the accepted language domain is a 400 bad-request."`
@@ -401,9 +401,10 @@ var registerOperation = speedhttp.NewReplyOperation[registerInput](
 		"that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password "+
 		"the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a "+
 		"pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken "+
-		"is a 409 username-taken; and the per-source and deployment-wide budgets answer 429 with `Retry-After` "+
-		"when they are exhausted. The email address is never checked for being taken and is never echoed as a "+
-		"conflict: a clash surfaces only after a code proves control of the address.",
+		"is a 409 username-taken; an email address another account has reserved or proved is a 409 email-taken, "+
+		"because the reservation row is inserted in the same transaction and its unique constraint is the "+
+		"arbiter; and the per-source and deployment-wide budgets answer 429 with `Retry-After` when they are "+
+		"exhausted.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The registration request: the username, email address and password the account is opened with, and optionally a display name, a language and a time zone. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
@@ -419,7 +420,7 @@ var registerOperation = speedhttp.NewReplyOperation[registerInput](
 		capabilityProblem(http.StatusForbidden, mount.CodeSignupClosed,
 			"Self-registration is closed on this deployment"),
 		capabilityProblem(http.StatusConflict, mount.CodeUsernameTaken,
-			"The username is already taken"),
+			"The username is already taken, or the email address is reserved by another account (email-taken)"),
 		mediaTypeAnswer,
 		throttled("The per-source or deployment-wide registration budget is exhausted; retry after the stated delay"),
 		dependencyAnswer,

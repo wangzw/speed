@@ -52,9 +52,14 @@ type Deps struct {
 	// EmailSender is the channel a self-service email verification code goes out
 	// over. It switches the email branch of POST /identifiers on: without it an
 	// email address cannot be added self-service, and the branch answers that the
-	// deployment offers no channel. With it, KV is required as well, for the
-	// pending record.
+	// deployment offers no channel. With it, KV is required for the pending
+	// record and Signup for the unproved reservation another account may hold.
 	EmailSender authn.EmailCodeSender
+
+	// Signup reads the reservation of a contact a self-registration wrote. The
+	// email branch asks it before sending a code, so an address another account
+	// reserved is answered as taken instead of being silently left unsent.
+	Signup authn.SignupVerification
 
 	// Settings is read for authn.mfa.recent-window, for the two authn.sms
 	// durations the phone routes answer with, and for the authn.login email-code
@@ -103,6 +108,7 @@ func New(d Deps) (*Service, error) {
 	}
 	if d.EmailSender != nil {
 		need("KV", d.KV == nil)
+		need("Signup", d.Signup == nil)
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("authn.login: the account self-service routes need %s", strings.Join(missing, ", "))

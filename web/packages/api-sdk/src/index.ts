@@ -1969,7 +1969,7 @@ export type AuthnLoginVerifyPhoneBody = {
 export type AuthnLoginRegisterBody = {
   /** The display name, optional: valid text of at most 100 characters. */
   display_name?: string;
-  /** The email address, required. It is only a contact awaiting verification, not a login name yet, and it is never checked for being taken: a conflict surfaces only after a code proves control of the address, once the account is signed in. */
+  /** The email address, required. It is only a contact awaiting verification, not a login name yet. The registration reserves it in the same transaction, so an address another account has reserved or proved is a 409 email-taken. */
   email?: string;
   /** The account's language preference, optional, written to the i18n.locale attribute; a value outside the accepted language domain is a 400 bad-request. */
   locale?: string;
@@ -4179,7 +4179,7 @@ export const useAuthnLoginVerifyPhone = <TError = Problem,
     }
 
 /**
- * Opens one enabled account in one transaction from a username, an email address and a password, without a session and without sending an email. The email address is only a contact awaiting verification: it is not a login name until it is proved, which happens after the client signs in through `POST /auth/flows` and adds the address through the account self-service routes. The route reads no cookie and keeps no flow, so it has no binding and no sequence number. It passes the cross-origin check and refuses a body that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken is a 409 username-taken; and the per-source and deployment-wide budgets answer 429 with `Retry-After` when they are exhausted. The email address is never checked for being taken and is never echoed as a conflict: a clash surfaces only after a code proves control of the address.
+ * Opens one enabled account in one transaction from a username, an email address and a password, without a session and without sending an email. The email address is only a contact awaiting verification: it is not a login name until it is proved, which happens after the client signs in through `POST /auth/flows` and adds the address through the account self-service routes. The route reads no cookie and keeps no flow, so it has no binding and no sequence number. It passes the cross-origin check and refuses a body that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken is a 409 username-taken; an email address another account has reserved or proved is a 409 email-taken, because the reservation row is inserted in the same transaction and its unique constraint is the arbiter; and the per-source and deployment-wide budgets answer 429 with `Retry-After` when they are exhausted.
  * @summary Register an account with a username, an email address and a password
  */
 export const authnLoginRegister = (

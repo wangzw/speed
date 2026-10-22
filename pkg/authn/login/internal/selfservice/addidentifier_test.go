@@ -147,6 +147,43 @@ func TestAnEmailIsAddedOnlyAfterItsCodeComesBack(t *testing.T) {
 	}
 }
 
+// TestReaddingTheAccountsOwnEmailStaysAConflict holds that the identifier
+// table's duplicate for an address this account already holds stays the conflict
+// it was before reservations existed, not the email-taken answer reserved for an
+// address another account owns.
+func TestReaddingTheAccountsOwnEmailStaysAConflict(t *testing.T) {
+	h := emailHarness(t)
+	h.accounts.lookup["ada@example.com"] = account
+	w := h.post("/identifiers", addBody("email", "ada@example.com"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("the add answered %d %s, want 200", w.Code, w.Body)
+	}
+	if len(h.email.sent) != 1 {
+		t.Fatalf("SendCode was called %d times, want once", len(h.email.sent))
+	}
+	h.admin.addErr = authn.ErrAccountExists
+	w = h.post("/identifiers/verify", verifyBody(h.email.sent[0].code))
+	if w.Code != http.StatusConflict || problemType(t, w) != "conflict" {
+		t.Fatalf("the verify answered %d %s, want 409 conflict", w.Code, w.Body)
+	}
+}
+
+// TestAnAddressTheAccountModuleCannotNormalizeIsStillSent holds that the
+// reservation read's normalization refusal is not an outage: the route sends to
+// an address the account module cannot reserve, and the write step refuses it if
+// it is submitted.
+func TestAnAddressTheAccountModuleCannotNormalizeIsStillSent(t *testing.T) {
+	h := emailHarness(t)
+	h.signup.pendingErr = authn.ErrInvalidIdentifier
+	w := h.post("/identifiers", addBody("email", "ada@example.com"))
+	if w.Code != http.StatusOK || problemState(t, w) != "pending" {
+		t.Fatalf("the add answered %d %s, want 200 pending", w.Code, w.Body)
+	}
+	if len(h.email.sent) != 1 {
+		t.Fatalf("SendCode was called %d times, want once", len(h.email.sent))
+	}
+}
+
 // TestTheEmailBranchRefusesWhenTheDeploymentHasNoChannel holds that an assembly
 // with no email channel cannot prove an address, so it answers the email branch
 // as unavailable rather than writing an unproven address.
@@ -325,16 +362,18 @@ func TestAWrongCodeAdvancesTheCountByAnAtomicIncrement(t *testing.T) {
 	}
 }
 
-// TestAnAddressOfAnotherAccountIsAConflict holds that the account module's
-// refusal of an address another account holds reaches the client as a 409.
+// TestAnAddressOfAnotherAccountIsAConflict holds that the contact reservation's
+// refusal of an address another account owns reaches the client as 409
+// email-taken. The identifier table's own duplicate is this account's conflict,
+// which TestReaddingTheAccountsOwnEmailStaysAConflict holds.
 func TestAnAddressOfAnotherAccountIsAConflict(t *testing.T) {
 	h := emailHarness(t)
 	h.post("/identifiers", addBody("email", "ada@example.com"))
 	code := h.email.sent[0].code
-	h.admin.addErr = authn.ErrAccountExists
+	h.admin.addErr = authn.ErrContactTaken
 	w := h.post("/identifiers/verify", verifyBody(code))
-	if w.Code != http.StatusConflict || problemType(t, w) != "conflict" {
-		t.Fatalf("answer = %d %s, want 409 conflict", w.Code, w.Body)
+	if w.Code != http.StatusConflict || problemType(t, w) != "email-taken" {
+		t.Fatalf("answer = %d %s, want 409 email-taken", w.Code, w.Body)
 	}
 }
 

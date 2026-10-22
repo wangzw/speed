@@ -93,12 +93,16 @@ func eventVia(via string) (string, error) {
 // Create writes an enabled account.
 //
 // An email address and a phone number are written verified, and the way each
-// was comes with it; no row awaits verification. A password is judged by the
-// policy, derived under the capacity the module allows before the transaction
-// opens, and written with the account; a hash is read and bounded and written
-// as it is, whatever its strength. An identifier, a login name or an identifier
-// of the account that breaks a uniqueness constraint is authn.ErrAccountExists,
-// and two calls that create one email address at once leave one account.
+// was comes with it; no row awaits verification. An email address also reserves
+// its contact in the same transaction: the reservation is written beside the
+// identifier, so the contact is owned by this account from the moment the
+// account exists. A password is judged by the policy, derived under the capacity
+// the module allows before the transaction opens, and written with the account;
+// a hash is read and bounded and written as it is, whatever its strength. An
+// identifier, a login name or a binding of the account that breaks a uniqueness
+// constraint is authn.ErrAccountExists; a contact reservation another account
+// holds is authn.ErrContactTaken. Two calls that create one email address at
+// once leave one account.
 func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Account, error) {
 	in = in.Clone()
 	plan, err := p.planCreate(in)
@@ -115,6 +119,14 @@ func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Acc
 	err = p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if err = tx.Create(&row).Error; err != nil {
 			return err
+		}
+		for i := range plan.claims {
+			if err = tx.Create(&plan.claims[i]).Error; err != nil {
+				if duplicate(err) {
+					return fmt.Errorf("%w", authn.ErrContactTaken)
+				}
+				return err
+			}
 		}
 		for i := range plan.identifiers {
 			if err = tx.Create(&plan.identifiers[i]).Error; err != nil {
@@ -143,6 +155,7 @@ func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Acc
 type creation struct {
 	row         accountRow
 	identifiers []identifierRow
+	claims      []pendingContactRow
 	via         string
 }
 
@@ -237,6 +250,18 @@ func (p *product) planCreate(in authn.CreateAccount) (creation, error) {
 		if err = add(authn.IdentifierEmail, in.Email, verified); err != nil {
 			return plan, err
 		}
+		email, err := NormalizeIdentifier(authn.IdentifierEmail, in.Email)
+		if err != nil {
+			return plan, err
+		}
+		claimID, err := newID()
+		if err != nil {
+			return plan, err
+		}
+		plan.claims = append(plan.claims, pendingContactRow{
+			ID: claimID, AccountID: id.String(), Kind: string(authn.IdentifierEmail), Value: email,
+			VerifiedAt: &now, CreatedAt: now, UpdatedAt: now,
+		})
 	}
 	if in.Phone != "" {
 		verified, err := viaOf(in.PhoneVerifiedVia)
@@ -374,10 +399,17 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 			return lockErr
 		}
 		now := p.at()
-		// A proving identifier consumes the pending contact with the same value:
-		// the address is now proved, so there is nothing left to verify. An
-		// unproven channel (admin, import-unverified, self) leaves it alone.
-		if via.Proves() {
+		// An email address is a contact an account owns, so the same transaction
+		// records the reservation. A row of this account for the value is brought
+		// to proved now; one of another account answers ErrContactTaken, and the
+		// unique index on the contact is the arbiter of two writers. A phone
+		// number has no reservation: proving one consumes the pending target a
+		// registration or a flow wrote for it.
+		if kind == authn.IdentifierEmail {
+			if err = writeEmailClaim(tx, id.String(), normalized, now); err != nil {
+				return err
+			}
+		} else if kind == authn.IdentifierPhone && via.Proves() {
 			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(), string(kind), normalized).
 				Delete(&pendingContactRow{}).Error; err != nil {
 				return err
@@ -434,11 +466,44 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 	return nil
 }
 
+// writeEmailClaim records that an account owns an email address as a contact.
+// A row of the same account and value is brought to proved now. Any other row
+// for the value belongs to another account and is authn.ErrContactTaken; the
+// insert of a missing row is the atomic arbiter, so two writers cannot both
+// reserve one address.
+func writeEmailClaim(tx *gorm.DB, account, value string, now time.Time) error {
+	kind := string(authn.IdentifierEmail)
+	var held []pendingContactRow
+	if err := tx.Where("account_id = ? AND kind = ? AND value = ?", account, kind, value).Find(&held).Error; err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		return tx.Model(&pendingContactRow{}).Where("id = ?", held[0].ID).
+			Updates(map[string]any{"verified_at": now, "updated_at": now}).Error
+	}
+	id, err := newID()
+	if err != nil {
+		return err
+	}
+	claim := pendingContactRow{
+		ID: id, AccountID: account, Kind: kind, Value: value,
+		VerifiedAt: &now, CreatedAt: now, UpdatedAt: now,
+	}
+	if err = tx.Create(&claim).Error; err != nil {
+		if duplicate(err) {
+			return fmt.Errorf("%w", authn.ErrContactTaken)
+		}
+		return err
+	}
+	return nil
+}
+
 // RemoveIdentifier unbinds one identifier by its identifier. One the account does
-// not have is already unbound, and the call is nil. Removing the last proved
-// email address returns a verified self-registration to pending: the instant it
-// first reached verified is kept, and no pending contact is made up in place of
-// the address that was removed.
+// not have is already unbound, and the call is nil. Removing an email address
+// also removes the account's reservation of that contact, releasing it to
+// another account. Removing the last proved email address returns a verified
+// self-registration to pending: the instant it first reached verified is kept,
+// and no pending contact is made up in place of the address that was removed.
 //
 // An account that holds a password credential keeps at least one login name:
 // removing its last username or email address is authn.ErrIdentifierRequired,
@@ -464,6 +529,14 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 			return err
 		}
 		kind := authn.IdentifierKind(row.Kind)
+		// An email address is released with the identifier: the contact is no
+		// longer owned by this account, so another account may reserve it.
+		if kind == authn.IdentifierEmail {
+			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(),
+				string(authn.IdentifierEmail), row.Value).Delete(&pendingContactRow{}).Error; err != nil {
+				return err
+			}
+		}
 		if kind == authn.IdentifierUsername || kind == authn.IdentifierEmail {
 			var hasPassword bool
 			if hasPassword, err = hasCredential(tx, id.String()); err != nil {

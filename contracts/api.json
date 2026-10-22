@@ -2739,7 +2739,7 @@
     },
     "/api/v1/auth/register": {
       "post": {
-        "description": "Opens one enabled account in one transaction from a username, an email address and a password, without a session and without sending an email. The email address is only a contact awaiting verification: it is not a login name until it is proved, which happens after the client signs in through `POST /auth/flows` and adds the address through the account self-service routes. The route reads no cookie and keeps no flow, so it has no binding and no sequence number. It passes the cross-origin check and refuses a body that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken is a 409 username-taken; and the per-source and deployment-wide budgets answer 429 with `Retry-After` when they are exhausted. The email address is never checked for being taken and is never echoed as a conflict: a clash surfaces only after a code proves control of the address.",
+        "description": "Opens one enabled account in one transaction from a username, an email address and a password, without a session and without sending an email. The email address is only a contact awaiting verification: it is not a login name until it is proved, which happens after the client signs in through `POST /auth/flows` and adds the address through the account self-service routes. The route reads no cookie and keeps no flow, so it has no binding and no sequence number. It passes the cross-origin check and refuses a body that is not `application/json` with 415 and one over 64 KiB, with an unknown member or with a password the policy refuses with 400. Registration that the deployment has closed, the switch read both here as a pre-check and in the account module's own registration, is a 403 signup-closed; a username already taken is a 409 username-taken; an email address another account has reserved or proved is a 409 email-taken, because the reservation row is inserted in the same transaction and its unique constraint is the arbiter; and the per-source and deployment-wide budgets answer 429 with `Retry-After` when they are exhausted.",
         "operationId": "authn.login.register",
         "requestBody": {
           "content": {
@@ -2753,7 +2753,7 @@
                     "type": "string"
                   },
                   "email": {
-                    "description": "The email address, required. It is only a contact awaiting verification, not a login name yet, and it is never checked for being taken: a conflict surfaces only after a code proves control of the address, once the account is signed in.",
+                    "description": "The email address, required. It is only a contact awaiting verification, not a login name yet. The registration reserves it in the same transaction, so an address another account has reserved or proved is a 409 email-taken.",
                     "type": "string"
                   },
                   "locale": {
@@ -2819,7 +2819,7 @@
                 }
               }
             },
-            "description": "The username is already taken"
+            "description": "The username is already taken, or the email address is reserved by another account (email-taken)"
           },
           "413": {
             "content": {
@@ -5192,7 +5192,7 @@
                 }
               }
             },
-            "description": "An account with that identifier already exists, or a password account would have no username or email address to log in with (login-identifier-required)"
+            "description": "An account with that identifier already exists (conflict), the email address is reserved by another account (email-taken), or a password account would have no username or email address to log in with (login-identifier-required)"
           },
           "413": {
             "content": {
@@ -5681,7 +5681,7 @@
                 }
               }
             },
-            "description": "The identifier is bound elsewhere"
+            "description": "The identifier is bound elsewhere (conflict), or the email address is reserved by another account (email-taken)"
           },
           "413": {
             "content": {

@@ -76,6 +76,7 @@ var codeTable = []struct {
 	{"conflict", 409},
 	{"login-identifier-required", 409},
 	{"username-taken", 409},
+	{"email-taken", 409},
 	{"unsupported-media-type", 415},
 	{"throttled", 429},
 	{"unavailable", 503},
@@ -99,7 +100,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 	for _, code := range []string{
 		"", "Bad-Request", "bad_request", "bad-request ", "login_failed", "not-found", "internal",
 		"insufficient-user-authentication", "urn:speed:authn:bad-request", "payload-too-large", "unauthorized",
-		"signup_closed", "username_taken", "contact_required",
+		"signup_closed", "username_taken", "email_taken", "contact_required",
 	} {
 		if ValidCode(code) {
 			t.Errorf("ValidCode(%q) = true", code)
@@ -113,7 +114,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 		CodeBadRequest, CodeUnsupportedRegion, CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired,
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
-		CodeContactRequired, CodeConflict, CodeLoginIdentifierRequired, CodeUsernameTaken,
+		CodeContactRequired, CodeConflict, CodeLoginIdentifierRequired, CodeUsernameTaken, CodeEmailTaken,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
 	for i, c := range codeTable {
@@ -128,7 +129,7 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 // that is nothing but the problem's own members, and the headers the handler set
 // before the call.
 func TestFailWritesTheCodeAsAProblemWithNoCause(t *testing.T) {
-	for _, code := range []string{CodeBadRequest, CodeUnsupportedRegion, CodeConflict, CodeLoginIdentifierRequired, CodeUsernameTaken, CodeUnsupportedMediaType} {
+	for _, code := range []string{CodeBadRequest, CodeUnsupportedRegion, CodeConflict, CodeLoginIdentifierRequired, CodeUsernameTaken, CodeEmailTaken, CodeUnsupportedMediaType} {
 		t.Run(code, func(t *testing.T) {
 			w := serve(func(c *gin.Context) {
 				c.Header("X-Kept", "yes")

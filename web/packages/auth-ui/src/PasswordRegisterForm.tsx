@@ -18,11 +18,12 @@
  * printable ASCII, exactly one @ with a part on each side, at most 254
  * bytes -- so a malformed address is refused in the field rather than
  * answered with the generic bad-request. Everything else -- username
- * normalization, the password policy, a taken username, the pending
- * contact -- is the server's; a refusal renders its own mapped text and
- * never restates the policy's numbers. A taken username is the username
- * field's error (invalid, described by the message, focused); every other
- * mapped refusal is one whole-attempt banner.
+ * normalization, the password policy, a taken username or email address,
+ * the pending contact -- is the server's; a refusal renders its own mapped
+ * text and never restates the policy's numbers. A taken username is the
+ * username field's error and a taken email address the email field's
+ * (invalid, described by the message, focused), because the server refused
+ * that one value; every other mapped refusal is one whole-attempt banner.
  *
  * An account that was opened but whose auto-login was refused is not a
  * registration failure: the account exists, so the form must never
@@ -112,6 +113,11 @@ const REFUSAL_TEXT_KEYS: Readonly<Record<string, string>> = {
 /** The taken-username refusal: the username field carries it. */
 const USERNAME_TAKEN = 'authn.username_taken'
 
+/** The taken-email refusal: the registration reserves the address, so an
+ * address another account holds is the email field's error -- that one
+ * value was refused, not the whole attempt. */
+const EMAIL_TAKEN = 'authn.email_taken'
+
 /**
  * The wait a refused request stated, read structurally: this package
  * consumes the session, not `@speed/api-client`, so the ApiError shape
@@ -169,6 +175,8 @@ export function PasswordRegisterForm({
   // The username input itself: RHF's setFocus targets the control the
   // Controller's ref is attached to, not MUI's inner input.
   const usernameInput = useRef<HTMLInputElement>(null)
+  // The email input, focused when the server refuses a taken address.
+  const emailInput = useRef<HTMLInputElement>(null)
   // Whether the current submit has opened an account: from then on a
   // password-flow failure is an auto-login refusal, not a registration
   // failure.
@@ -269,6 +277,14 @@ export function PasswordRegisterForm({
         usernameInput.current?.focus()
         return
       }
+      if (code === EMAIL_TAKEN) {
+        form.setError('email', {
+          type: 'server',
+          message: t('register.emailTaken'),
+        })
+        emailInput.current?.focus()
+        return
+      }
       const wait = retryWaitMs(error)
       if (wait !== undefined) {
         setRetryUntil(Date.now() + wait)
@@ -350,6 +366,7 @@ export function PasswordRegisterForm({
         render={({ field, invalid, errorText }) => (
           <TextField
             {...field}
+            inputRef={emailInput}
             label={t('register.emailLabel')}
             type="email"
             autoComplete="email"

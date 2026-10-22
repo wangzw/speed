@@ -114,6 +114,26 @@ func (f *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value s
 	return "", authn.ErrAccountNotFound
 }
 
+// fakeSignup answers the reservation read of the email branch. A value with an
+// entry is an unproved contact another account reserved.
+type fakeSignup struct {
+	authn.SignupVerification
+	log        *callLog
+	pending    map[string]authn.AccountID
+	pendingErr error
+	asked      []string
+}
+
+func (f *fakeSignup) PendingAccountByContact(_ context.Context, kind, value string) (string, bool, error) {
+	f.log.add("signup.PendingAccountByContact")
+	f.asked = append(f.asked, kind+":"+value)
+	if f.pendingErr != nil {
+		return "", false, f.pendingErr
+	}
+	id, ok := f.pending[value]
+	return string(id), ok, nil
+}
+
 type addCall struct {
 	account authn.AccountID
 	kind    authn.IdentifierKind

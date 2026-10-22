@@ -38,6 +38,7 @@ const (
 	CodeConflict                       = "conflict"                         // 409
 	CodeLoginIdentifierRequired        = "login-identifier-required"        // 409
 	CodeUsernameTaken                  = "username-taken"                   // 409
+	CodeEmailTaken                     = "email-taken"                      // 409
 	CodeUnsupportedMediaType           = "unsupported-media-type"           // 415
 	CodeThrottled                      = "throttled"                        // 429
 	CodeUnavailable                    = "unavailable"                      // 503
@@ -60,6 +61,7 @@ var statusOf = map[string]int{
 	CodeConflict:                       http.StatusConflict,
 	CodeLoginIdentifierRequired:        http.StatusConflict,
 	CodeUsernameTaken:                  http.StatusConflict,
+	CodeEmailTaken:                     http.StatusConflict,
 	CodeUnsupportedMediaType:           http.StatusUnsupportedMediaType,
 	CodeThrottled:                      http.StatusTooManyRequests,
 	CodeUnavailable:                    http.StatusServiceUnavailable,

@@ -8,7 +8,7 @@
 
 - `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的「口令注册」渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用。
 - `PasswordSignInForm` 起一条 `method: 'password'` 的登录流程，按字段提交与后续步答复；`SMSSignInForm` 起 `method: 'sms'` 的流程，两步（手机号步与验证码步）收在同一个表单里；描述符为其他 `form` 方法给出首步字段时，由通用描述符表单驱动。三个可单独挂载的入口都接受同一个 `beforeStart` 门。
-- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入「已登录」态，收起「账户已创建，请登录」与重试动作；宿主不导航时界面也不停留在「已登录却仍提示请登录」。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用、横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。400 不映射为口令策略，走通用 `errors.authn.*` 文案。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
+- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求；服务端答 409 `authn.email_taken` 时，邮箱字段渲染 `register.emailTaken` 并把焦点移到该字段——注册在事务里预留地址，被拒的是这一个值，不是整次尝试。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入「已登录」态，收起「账户已创建，请登录」与重试动作；宿主不导航时界面也不停留在「已登录却仍提示请登录」。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用、横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。400 不映射为口令策略，走通用 `errors.authn.*` 文案。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
 - `SocialSignInSection` 渲染一组 redirect 方法，每个方法起一条登录流程；开始响应的 `redirect` 步交出授权地址，由宿主导航。
 - `SocialCallbackHandler` 在宿主的回调路由上读回那条流程（`session.readFlow`），据其状态续接。
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
@@ -23,7 +23,7 @@
 - **不拥有会话状态机。** 流程的推进、会话的建立与撤销归 `@speed/auth-core`（[authn 登录](../authn/design-authn-login.md)）；本包渲染的会话契约的每一项都是 auth-core 交付的操作。要在本包见不到的操作里做点别的，那是 auth-core 契约该长的地方，不是本包里的第二次 HTTP。
 - **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开面，也不判定令牌有效性——有效性由服务端在应答里给出（无此邀请 404、已失效 409）。接受是公开的、令牌即凭据：成员关系落到**被邀请地址**的账户上，而非登录账号。宿主可在受理面前渲染它自己的登录面（先登录或注册再受理是宿主的组合），本包不内建这道门禁，那道门禁也不约束成员关系落到哪个账户。
 - **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。
-- **不拥有注册状态机，但内建注册表单。** 自助注册是 `@speed/auth-core` 的 `session.register` 操作，一次请求建号，不建立会话、不发送邮件（[authn-account](../authn/design-authn-account.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。本包渲染 `PasswordRegisterForm` 并驱动该操作；字段规范化、口令策略、用户名占用与待验证联系方式的写入都在服务端。注册成功后的会话仍由既有口令登录流程建立，本包不自行铸造会话；建号与自动登录都经 auth-core 的会话操作，本包不在它之外发请求。`SignInScreen` 在部署开放口令注册时给出这个渠道，开户仍由服务端完成。
+- **不拥有注册状态机，但内建注册表单。** 自助注册是 `@speed/auth-core` 的 `session.register` 操作，一次请求建号，不建立会话、不发送邮件（[authn-account](../authn/design-authn-account.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。本包渲染 `PasswordRegisterForm` 并驱动该操作；字段规范化、口令策略、用户名占用与邮箱预留的写入都在服务端。注册成功后的会话仍由既有口令登录流程建立，本包不自行铸造会话；建号与自动登录都经 auth-core 的会话操作，本包不在它之外发请求。`SignInScreen` 在部署开放口令注册时给出这个渠道，开户仍由服务端完成。
 - **不消费 auth-core 的钩子，不读存储。** 组件读到的会话状态只有它驱动的那些操作，其余状态经宿主的钩子观察。一个自己订阅会话的组件必须已挂在宿主的 `attachSession` 之下，故这一层留在宿主。**读取发现文档是一个例外**：`SignInScreen` 经它持有的 `session` 属性上的 `listMethods` 与 `discoverSso` 操作读取部署的登录方式与企业提供方，给了 `absent` 的 `SocialCallbackHandler` 经 `listMethods` 读取部署有没有 redirect 类与 enterprise 类方法——那是会话操作，不是 auth-core 的钩子，而组件本就在驱动这个会话；这条例外不放松「不消费钩子、不读存储」。
 - **不认识路由与权限。** 本包不匹配 URL、不判定权限、不做路由守卫；回调返给宿主，宿主经自己的路由与权限组合处置。
 - **不是运维面。** 平台员工的管理面与登录面无交集，那些面归 [console-ui](design-web-console-ui.md)。
@@ -295,7 +295,7 @@ sequenceDiagram
 | 方法描述符 | `AuthnMethodDescriptor` | 一个方法自报的渲染类别（`kind`）、线协议、品牌标签、首步字段、是否可开户与绑定提供方（`binding_providers`） |
 | 登录渠道 | `SignInChannel` | `password`／`sms`；已弃用的窄化与选中口径 |
 | 注册请求 | `session.register` 的入参 | 用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填；确认口令只在客户端比较，不进请求 |
-| 注册应答 | `session.register` 的结果 | `state: 'registered'`、账户标识与待验证联系方式 `{state: 'pending', email}`；会话快照不变 |
+| 注册应答 | `session.register` 的结果 | `state: 'registered'`、账户标识与未证明预留 `{state: 'pending', email}`；会话快照不变 |
 | 注册渠道 | 合成渠道 | `signup.password.enabled` 为真时注册模式下的「口令注册」，渲染 `PasswordRegisterForm`；password 描述符不标 `opens_account` |
 | 呈现模式 | `SignInMode` | `sign-in`／`register`；注册模式收窄渠道并把口令渠道换成注册表单 |
 | 社交渠道 | `SocialProvider` | 方法名字符串，定义在 `web/packages/auth-ui/src/SocialSignInSection.tsx` |
@@ -332,7 +332,7 @@ sequenceDiagram
 
 1. **本地校验。** 用户名与邮箱按服务端的规范化规则给格式提示；邮箱的规则是去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节，不合格时在邮箱字段渲染 `register.invalidEmail` 并且不发请求。口令只做非空、两次一致与部署给出的最小长度提示，不复刻服务端的策略数值；确认口令不进入请求。字段不合格时焦点移到首个不合格字段，错误文字经 `aria-describedby` 指向，字段标 `aria-invalid`。
 2. **起手门。** 「口令注册」渠道与其他渠道一样在起手前询问 `beforeStart`，上下文是 `{method: 'password', mode: 'register'}`；答案不为真时不发请求、不渲染错误。
-3. **建号。** 调 `session.register`，请求带用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填，它是注册后的待验证联系方式，在验证前不是登录名。提交在途时控件禁用并标忙，不发第二次。
+3. **建号。** 调 `session.register`，请求带用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填，它是注册后写下的未证明预留，在验证前不是登录名。提交在途时控件禁用并标忙，不发第二次。
 4. **自动登录。** 注册成功后以同一凭据起一条 `method: 'password'` 的口令登录流程，走通则报一次 `onSignedIn({mode: 'register', channel: 'password'})`。注册本身不报这个回调，也不改变会话快照。
 5. **自动登录被拒。** 账户已建成，不重发注册请求：给出 `onSignInRequired` 时把用户名交给宿主，屏幕切回登录模式并以 `defaultUsername` 预填；未给出时就地说明「账户已创建，请登录」，重试只重跑口令登录。
 
@@ -409,6 +409,7 @@ sequenceDiagram
 | 企业 discover 被拒 | 企业入口渲染应答的错误码文本 |
 | 流程操作被拒（验证码错、口令策略等） | 一条 `role="alert"` 横幅渲染应答的错误码文本，状态原地不变，可重试 |
 | 注册被拒为 409 `username-taken` | 文本落在用户名字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；不渲染整次尝试横幅 |
+| 注册被拒为 409 `email-taken` | 文本落在邮箱字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；注册在事务里预留地址，被拒的是邮箱这一个值，不渲染整次尝试横幅 |
 | 注册被拒为 403 `signup-closed` 或 503 `unavailable` | 一条 `role="alert"` 横幅渲染应答的错误码文本，表单保持可重试 |
 | 注册被拒为 429 `throttled` | 一条横幅渲染该码文本；提交控件按 `Retry-After` 禁用至该时刻并说明原因 |
 | 注册被拒为 400 `bad-request`（格式或口令策略） | 一条 `role="alert"` 横幅渲染应答的错误码文本；不在客户端复述策略数值 |

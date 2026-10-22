@@ -21,7 +21,7 @@
 - **不执行跨源检查。** 浏览器自行附带的凭据下的跨源检查由网关在调用校验后端之前执行，规则写在本文的「浏览器自行附带的凭据下的跨源检查」一节，载体判据、执行点与拒绝形状见 [design-authn-gate](design-authn-gate.md)。
 - **不认证任何人。** 第一因素与第二因素由登录引擎与因素编排完成（[design-authn-login](design-authn-login.md)、[design-authn-mfa](design-authn-mfa.md)），登录完成后调用 `Sessions.Create`；本模块不创建没有账户的匿名会话。
 - **不持有账户状态。** 账户的启用、停用、删除与 `valid_after` 归 `authn.account`（[design-authn-account](design-authn-account.md)）；本模块只读，并在每次校验时核对。
-- **不承载注册验证状态。** `signup_state` 与待验证联系方式归 `authn.account`；会话行、`SessionStatus` 与访问令牌都不携带它，请求期由 `GET B/me` 与 `SignupVerification.SignupStateOf` 活读。未验证账户的会话与其余账户的会话按同一判据有效（[design-authn](design-authn.md)、[design-authn-account](design-authn-account.md)）。
+- **不承载注册验证状态。** `signup_state` 与联系方式预留归 `authn.account`；会话行、`SessionStatus` 与访问令牌都不携带它，请求期由 `GET B/me` 与 `SignupVerification.SignupStateOf` 活读。未验证账户的会话与其余账户的会话按同一判据有效（[design-authn](design-authn.md)、[design-authn-account](design-authn-account.md)）。
 - **不签发、不校验访问令牌与刷新令牌。** 令牌、刷新令牌表 `authn_refresh_tokens` 与服务密钥的换令牌流程归 `authn.token`（[design-authn-token](design-authn-token.md)）；`token` 种与 `service` 种的会话行住在本模块，行里没有令牌。
 - **不持有冒充记录。** `authn_impersonations` 归 `authn.impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）；本模块只在会话行上记冒充记录标识，并在校验时向它询问记录是否仍然有效。
 - **不写管理面路由。** 列出与撤销他人会话、按账户批量撤销的 HTTP 路由、判定接缝与强制审计归 `authn.admin`（[design-authn-admin](design-authn-admin.md)）；本模块只提供它调用的方法。

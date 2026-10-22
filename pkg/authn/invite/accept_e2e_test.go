@@ -267,8 +267,11 @@ func TestAcceptMergesIntoThePendingAccountThroughTheRealAccountModule(t *testing
 		if status.Since.IsZero() {
 			t.Error("the instant the account reached verified was not recorded")
 		}
-		if n := pendingContacts(t, handle, registered.ID); n != 0 {
-			t.Errorf("the account still lists %d pending contact(s), want the proved address consumed", n)
+		if n := pendingContacts(t, handle, registered.ID); n != 1 {
+			t.Errorf("the account lists %d contact(s), want the proved address's reservation kept", n)
+		}
+		if n := provedContacts(t, handle, registered.ID); n != 1 {
+			t.Errorf("the account has %d proved reservation(s), want the invited address stamped", n)
 		}
 		if vias := identifierVias(t, handle, registered.ID, "newcomer@example.com"); len(vias) != 1 || vias[0] != VerifiedViaInvite {
 			t.Errorf("the email identifier was written through %v, want exactly [%q]", vias, VerifiedViaInvite)
@@ -279,11 +282,11 @@ func TestAcceptMergesIntoThePendingAccountThroughTheRealAccountModule(t *testing
 	})
 }
 
-// TestAcceptDoesNotGuessBetweenPendingOwners holds the reverse lookup's
-// ambiguity: two pending accounts list the same address, so no owner is named
-// and the acceptance takes the no-account path. The new account gets the address
-// and the membership, and neither pending account is touched.
-func TestAcceptDoesNotGuessBetweenPendingOwners(t *testing.T) {
+// TestASecondPendingOwnerCannotExist holds the reservation's arbitration: a
+// second registration of one address is ErrContactTaken, so the reverse lookup
+// has one owner and the acceptance merges into it rather than creating a third
+// account.
+func TestASecondPendingOwnerCannotExist(t *testing.T) {
 	withRealAccountProduct(t, func(handle *gorm.DB, signups authn.Signups, admin authn.AccountAdmin,
 		accounts authn.Accounts, verification authn.SignupVerification, memberships authn.Memberships,
 	) {
@@ -297,62 +300,60 @@ func TestAcceptDoesNotGuessBetweenPendingOwners(t *testing.T) {
 		if err != nil {
 			t.Fatalf("registering the first pending account: %v", err)
 		}
-		second, err := signups.Register(ctx, authn.RegisterAccount{
-			Username: "second", Email: "clash@example.com", Password: "password123",
-		})
-		if err != nil {
-			t.Fatalf("registering the second pending account: %v", err)
+		if _, err = signups.Register(ctx, authn.RegisterAccount{
+			Username: "second", Email: "Clash@Example.com", Password: "password123",
+		}); !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("a second registration of the address gave %v, want ErrContactTaken", err)
 		}
-		if owner, ok, missErr := verification.PendingAccountByContact(ctx, string(authn.IdentifierEmail), "clash@example.com"); missErr != nil || ok {
-			t.Fatalf("PendingAccountByContact = (%q, %v, %v) with two owners, want a miss and no error", owner, ok, missErr)
+		owner, ok, err := verification.PendingAccountByContact(ctx, string(authn.IdentifierEmail), "clash@example.com")
+		if err != nil || !ok || owner != first.ID.String() {
+			t.Fatalf("PendingAccountByContact = (%q, %v, %v), want the one owner", owner, ok, err)
 		}
 
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
 		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "clash@example.com"})
 		if err != nil {
-			t.Fatalf("issuing an invitation for the ambiguous address: %v", err)
+			t.Fatalf("issuing an invitation for the reserved address: %v", err)
 		}
-		mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token, Password: "password123"})
+		mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token})
 		if err != nil {
-			t.Fatalf("accepting an invitation for an ambiguous address: %v", err)
+			t.Fatalf("accepting an invitation for the reserved address: %v", err)
 		}
 
-		if mem.Account == first.ID || mem.Account == second.ID {
-			t.Fatalf("the accepted membership names pending account %q, want a new account", mem.Account)
+		if mem.Account != first.ID {
+			t.Fatalf("the accepted membership names account %q, want the owner %q", mem.Account, first.ID)
 		}
-		if n := accountCount(t, handle); n != 3 {
-			t.Errorf("the database holds %d accounts, want the two pending ones and the created one", n)
+		if n := accountCount(t, handle); n != 1 {
+			t.Errorf("the database holds %d accounts, want the one pending owner", n)
 		}
-		if vias := identifierVias(t, handle, mem.Account, "clash@example.com"); len(vias) != 1 || vias[0] != VerifiedViaInvite {
-			t.Errorf("the created account's identifier was written through %v, want exactly [%q]", vias, VerifiedViaInvite)
+		status, err := verification.SignupStateOf(ctx, first.ID)
+		if err != nil || status.State != authn.SignupVerified {
+			t.Errorf("the owner reads %+v (%v), want verified by the invitation", status, err)
 		}
-		for _, pending := range []authn.Account{first, second} {
-			status, sErr := verification.SignupStateOf(ctx, pending.ID)
-			if sErr != nil {
-				t.Fatalf("reading the signup state of %q: %v", pending.ID, sErr)
-			}
-			if status.State != authn.SignupPending {
-				t.Errorf("pending account %q is now %d, want it left pending", pending.ID, status.State)
-			}
-			if vias := identifierVias(t, handle, pending.ID, "clash@example.com"); len(vias) != 0 {
-				t.Errorf("pending account %q got the email identifier through %v, want none", pending.ID, vias)
-			}
-			if n := pendingContacts(t, handle, pending.ID); n != 1 {
-				t.Errorf("pending account %q lists %d pending contact(s), want its own one left alone", pending.ID, n)
-			}
-			if _, ok, mErr := memberships.Membership(ctx, tenant, pending.ID); mErr != nil || ok {
-				t.Errorf("pending account %q holds a membership (present %v, error %v), want none", pending.ID, ok, mErr)
-			}
+		if n := provedContacts(t, handle, first.ID); n != 1 {
+			t.Errorf("the owner has %d proved reservation(s), want its address kept and stamped", n)
 		}
 	})
 }
 
-// pendingContacts counts the pending contacts an account lists.
+// pendingContacts counts the contact reservations an account lists.
 func pendingContacts(t *testing.T, handle *gorm.DB, id authn.AccountID) int64 {
 	t.Helper()
 	var n int64
 	if err := handle.Raw("SELECT count(*) FROM authn_pending_contacts WHERE account_id = ?", id.String()).Scan(&n).Error; err != nil {
 		t.Fatalf("counting the pending contacts of %q: %v", id, err)
+	}
+	return n
+}
+
+// provedContacts counts the contact reservations an account lists with a proof
+// instant.
+func provedContacts(t *testing.T, handle *gorm.DB, id authn.AccountID) int64 {
+	t.Helper()
+	var n int64
+	if err := handle.Raw("SELECT count(*) FROM authn_pending_contacts WHERE account_id = ? AND verified_at IS NOT NULL",
+		id.String()).Scan(&n).Error; err != nil {
+		t.Fatalf("counting the proved contacts of %q: %v", id, err)
 	}
 	return n
 }

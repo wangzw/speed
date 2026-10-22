@@ -78,6 +78,7 @@
     "signedIn": "已登录。",
     "retrySignIn": "重新登录",
     "usernameTaken": "该用户名已被占用，请换一个。",
+    "emailTaken": "该邮箱已被注册，请换一个。",
     "signupClosed": "本部署已关闭注册，请联系管理员获取账户。",
     "throttled": "注册尝试次数过多，请稍后再试。",
     "retryAfter": "注册尝试次数过多，请在 {{seconds}} 秒后重试。",

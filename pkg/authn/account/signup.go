@@ -28,16 +28,21 @@ const (
 // the back-off is read before the uniqueness check, so a request that cannot
 // succeed costs no derivation. A username that is taken is authn.ErrAccountExists
 // and counts one failure against the signup-username back-off; a concurrent
-// registration that loses the unique constraint counts one as well. A derivation
-// that finds its capacity full and a transaction that fails for any other reason
-// count nothing, since neither says anything about the name. The derivation runs
-// under the self-registration width and no memory budget of its own; a full width
-// is authn.ErrBusy.
+// registration that loses the username's unique constraint counts one as well.
+// The email address is not checked before the write: the reservation row's unique
+// constraint is the one atomic arbiter, and a registration that loses it is
+// authn.ErrContactTaken, which says the address is already reserved rather than
+// that the username exists. An unproved reservation is accepted: the first
+// registration to claim an address owns it until it is proved or its account is
+// deleted. A derivation that finds its capacity full and a transaction that fails
+// for any other reason count nothing, since neither says anything about the name.
+// The derivation runs under the self-registration width and no memory budget of
+// its own; a full width is authn.ErrBusy.
 //
 // One transaction writes the enabled account with signup_state 1, a username
-// identifier written through self, a password credential and one email contact
-// awaiting verification. No identifier awaits verification, no email is sent and
-// no session is made.
+// identifier written through self, a password credential and one email
+// reservation awaiting verification. No identifier awaits verification, no email
+// is sent and no session is made.
 func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn.Account, error) {
 	if p.passwordSignup() != signupOpen {
 		return authn.Account{}, fmt.Errorf("%w", authn.ErrSignupClosed)
@@ -128,6 +133,13 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 			CreatedAt: now, UpdatedAt: now,
 		}
 		if idErr = tx.Create(&pending).Error; idErr != nil {
+			// The contact row is the only arbiter of the address. A duplicate
+			// says another account reserved it, not that the username exists,
+			// and the transaction rolls the account, identifier and credential
+			// back with it.
+			if duplicate(idErr) {
+				return fmt.Errorf("%w", authn.ErrContactTaken)
+			}
 			return idErr
 		}
 		return p.emit(tx, b, accountCreated(authn.AccountID(id), authn.KindUser, bySignup), false)
@@ -200,8 +212,8 @@ func usernameTaken(conn *gorm.DB, username string) (bool, error) {
 
 // SignupStateOf reads how far an account's self-registration has got. The state
 // is read from the account row on every call; the address is the earliest-proved
-// email identifier for Verified (ties broken by identifier), the pending email
-// contact for Pending, and empty when there is nothing to report.
+// email identifier for Verified (ties broken by identifier), the unproved email
+// reservation for Pending, and empty when there is nothing to report.
 func (p *product) SignupStateOf(ctx context.Context, id authn.AccountID) (authn.SignupStatus, error) {
 	conn := p.conn(ctx)
 	row, err := loadAccount(conn, id)
@@ -221,8 +233,8 @@ func (p *product) SignupStateOf(ctx context.Context, id authn.AccountID) (authn.
 		status.Email = email
 	case authn.SignupPending:
 		var contacts []pendingContactRow
-		if err = conn.Where("account_id = ? AND kind = ?", id.String(), string(authn.IdentifierEmail)).
-			Limit(1).Find(&contacts).Error; err != nil {
+		if err = conn.Where("account_id = ? AND kind = ? AND verified_at IS NULL", id.String(),
+			string(authn.IdentifierEmail)).Order("created_at, id").Limit(1).Find(&contacts).Error; err != nil {
 			return authn.SignupStatus{}, failed("reading a pending contact", err)
 		}
 		if len(contacts) > 0 {
@@ -266,7 +278,10 @@ func earliestProvedEmail(conn *gorm.DB, account string) (string, error) {
 // PendingAccountByContact finds the one pending account a contact belongs to.
 // kind is email or phone and value is normalized first; a caller never guesses
 // an owner, so no owner and more than one owner are both ok false. The rows are
-// read from authn_pending_contacts only, never from the identifier table.
+// read from authn_pending_contacts only, never from the identifier table. Only
+// an unproved reservation belongs to a pending account: a row whose verified_at
+// is set is a contact an account already holds, and that account is answered by
+// the identifier table, not here.
 func (p *product) PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error) {
 	identifierKind := authn.IdentifierKind(kind)
 	if identifierKind != authn.IdentifierEmail && identifierKind != authn.IdentifierPhone {
@@ -278,7 +293,7 @@ func (p *product) PendingAccountByContact(ctx context.Context, kind string, valu
 	}
 	var ids []string
 	err = p.conn(ctx).Raw("SELECT a.id FROM "+tablePending+" c JOIN "+tableAccounts+" a ON a.id = c.account_id "+
-		"WHERE c.kind = ? AND c.value = ? AND a.signup_state = ? AND a.status <> ?",
+		"WHERE c.kind = ? AND c.value = ? AND c.verified_at IS NULL AND a.signup_state = ? AND a.status <> ?",
 		string(identifierKind), normalized, signupPending, statusDeleted).Scan(&ids).Error
 	if err != nil {
 		return "", false, failed("reading a pending contact", err)
@@ -289,7 +304,8 @@ func (p *product) PendingAccountByContact(ctx context.Context, kind string, valu
 	case 1:
 		return ids[0], true, nil
 	}
-	// The table holds at most one contact of a kind per account, so more than
-	// one owner is more than one account, and an owner is not guessed.
+	// The table's unique index holds at most one row per contact, so more than
+	// one owner can only come from a row written around it, and an owner is not
+	// guessed.
 	return "", false, nil
 }

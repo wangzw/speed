@@ -1,10 +1,8 @@
 package selfservice_test
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -19,24 +17,6 @@ const (
 	budgetAccountHourly = "authn.login.email-per-account-hourly"
 	budgetGlobalHourly  = "authn.login.email-global-hourly"
 )
-
-// pendingAnswer is the wire shape of the email branch's answer, read back so two
-// answers can be compared field by field.
-type pendingAnswer struct {
-	State       string `json:"state"`
-	ExpiresIn   int    `json:"expires_in"`
-	ResendAfter int    `json:"resend_after"`
-}
-
-// pendingOf reads the answer of an add as the wire shape.
-func pendingOf(t *testing.T, body []byte) pendingAnswer {
-	t.Helper()
-	var answer pendingAnswer
-	if err := json.Unmarshal(body, &answer); err != nil {
-		t.Fatalf("the answer is not JSON: %v\n%s", err, body)
-	}
-	return answer
-}
 
 // budgetHarness is an email harness whose budget settings a case scripts. Every
 // value not named reads as its declared default, because the fake has no entry
@@ -66,140 +46,88 @@ func hasKey(h *harness, prefix string) bool {
 	return false
 }
 
-// TestAnAddressAnotherAccountHoldsIsNotSentTo holds the suppression: an address
-// another account already carries gets no message, no budget charge and no
-// pending record, and the answer is the pending answer a real send gives. It
-// does hold the address's resend window, which is what keeps a repeat
-// indistinguishable from a repeat against a free address.
-func TestAnAddressAnotherAccountHoldsIsNotSentTo(t *testing.T) {
+// TestAnAddressAnotherAccountHoldsIsRejected holds the refusal: an address
+// another account carries as a verified identifier is answered 409 email-taken,
+// gets no message, spends no resend window or budget, and keeps no pending
+// record.
+func TestAnAddressAnotherAccountHoldsIsRejected(t *testing.T) {
 	h := emailHarness(t)
 	h.accounts.lookup["ada@example.com"] = "someone-else"
 
 	w := h.post("/identifiers", addBody("email", "Ada@Example.com"))
-	if w.Code != http.StatusOK {
-		t.Fatalf("the add answered %d %s, want 200", w.Code, w.Body)
-	}
-	answer := pendingOf(t, w.Body.Bytes())
-	if answer.State != "pending" || answer.ExpiresIn <= 0 || answer.ResendAfter <= 0 {
-		t.Errorf("the answer is %+v, want a pending answer with both durations", answer)
+	if w.Code != http.StatusConflict || problemType(t, w) != "email-taken" {
+		t.Fatalf("the add answered %d %s, want 409 email-taken", w.Code, w.Body)
 	}
 	if len(h.email.sent) != 0 {
-		t.Errorf("a held address was sent %d message(s), want none", len(h.email.sent))
+		t.Errorf("a taken address was sent %d message(s), want none", len(h.email.sent))
 	}
-	if !hasKey(h, "authn:email-resend:") {
-		t.Error("a held address did not hold its resend window")
+	if hasKey(h, "authn:email-resend:") {
+		t.Error("a taken address spent a resend window")
 	}
 	if _, _, ok := pendingEmailKey(h); ok {
-		t.Error("a held address kept a pending record")
+		t.Error("a taken address kept a pending record")
 	}
 	if got := h.accounts.looked; len(got) != 1 || got[0] != "ada@example.com" {
 		t.Errorf("Lookup was asked for %v, want the one normalized address", got)
 	}
 }
 
-// TestAPairOfAsksToAHeldAddressAndAFreeOneAnswerAlike holds the
-// indistinguishability across a repeat: the held and the free address answer the
-// same pending shape on the first ask and the same 429 throttled on the second
-// inside the window. Only the free one sends.
-func TestAPairOfAsksToAHeldAddressAndAFreeOneAnswerAlike(t *testing.T) {
-	held := emailHarness(t)
-	held.accounts.lookup["taken@example.com"] = "someone-else"
-	heldFirst := held.post("/identifiers", addBody("email", "Taken@Example.com"))
-	heldSecond := held.post("/identifiers", addBody("email", "Taken@Example.com"))
+// TestAnAddressReservedByAnotherAccountIsRejected holds the other source of a
+// taken address: an unproved reservation a self-registration wrote. The asking
+// account is told email-taken before a code is drawn.
+func TestAnAddressReservedByAnotherAccountIsRejected(t *testing.T) {
+	h := emailHarness(t)
+	h.signup.pending["reserved@example.com"] = "someone-else"
 
-	free := emailHarness(t)
-	freeFirst := free.post("/identifiers", addBody("email", "Taken@Example.com"))
-	freeSecond := free.post("/identifiers", addBody("email", "Taken@Example.com"))
-
-	if heldFirst.Code != http.StatusOK || freeFirst.Code != http.StatusOK {
-		t.Fatalf("the first asks answered %d and %d, want 200 and 200", heldFirst.Code, freeFirst.Code)
+	w := h.post("/identifiers", addBody("email", "Reserved@Example.com"))
+	if w.Code != http.StatusConflict || problemType(t, w) != "email-taken" {
+		t.Fatalf("the add answered %d %s, want 409 email-taken", w.Code, w.Body)
 	}
-	if got, want := pendingOf(t, heldFirst.Body.Bytes()), pendingOf(t, freeFirst.Body.Bytes()); got != want {
-		t.Errorf("the first answers are %+v and %+v, want the same shape", got, want)
+	if len(h.email.sent) != 0 {
+		t.Errorf("a reserved address was sent %d message(s), want none", len(h.email.sent))
 	}
-	for _, second := range []*httptest.ResponseRecorder{heldSecond, freeSecond} {
-		if second.Code != http.StatusTooManyRequests || problemType(t, second) != "throttled" {
-			t.Fatalf("a repeat answered %d %s, want 429 throttled", second.Code, second.Body)
-		}
-	}
-	if got, want := heldSecond.Header().Get("Retry-After"), freeSecond.Header().Get("Retry-After"); got != want {
-		t.Errorf("the repeats state %q and %q to retry, want the same", got, want)
-	}
-	if len(held.email.sent) != 0 || len(free.email.sent) != 1 {
-		t.Errorf("the held address was sent %d message(s) and the free one %d, want 0 and 1",
-			len(held.email.sent), len(free.email.sent))
+	if got := h.signup.asked; len(got) != 1 || got[0] != "email:reserved@example.com" {
+		t.Errorf("the reservation read was asked for %v, want the one normalized address", got)
 	}
 }
 
-// TestAHeldAddressAndAFreeOneFailAlikeWhenTheStoreCannotBeClaimed holds the other
-// failure direction: a store that cannot take the resend claim answers both
-// addresses 503 unavailable, so the store's state tells a client nothing about
-// which address is taken.
-func TestAHeldAddressAndAFreeOneFailAlikeWhenTheStoreCannotBeClaimed(t *testing.T) {
+// TestATakenAddressIsAnsweredBeforeTheStoreIsRead holds the order: the taken
+// check runs before the resend claim, so a taken address is 409 even when the
+// store cannot answer, while a free address still meets the outage as a 503.
+func TestATakenAddressIsAnsweredBeforeTheStoreIsRead(t *testing.T) {
 	storeDown := errors.New("the store is unavailable")
-	held := emailHarness(t)
-	held.accounts.lookup["taken@example.com"] = "someone-else"
-	held.kv.setErr = storeDown
+	taken := emailHarness(t)
+	taken.accounts.lookup["taken@example.com"] = "someone-else"
+	taken.kv.setErr = storeDown
+
+	w := taken.post("/identifiers", addBody("email", "taken@example.com"))
+	if w.Code != http.StatusConflict || problemType(t, w) != "email-taken" {
+		t.Errorf("the taken address answered %d %s, want 409 email-taken", w.Code, w.Body)
+	}
+	if len(taken.email.sent) != 0 {
+		t.Errorf("the taken address was sent %d message(s), want none", len(taken.email.sent))
+	}
+
 	free := emailHarness(t)
 	free.kv.setErr = storeDown
-
-	for name, h := range map[string]*harness{"held": held, "free": free} {
-		w := h.post("/identifiers", addBody("email", "taken@example.com"))
-		if w.Code != http.StatusServiceUnavailable || problemType(t, w) != "unavailable" {
-			t.Errorf("%s: the add answered %d %s, want 503 unavailable", name, w.Code, w.Body)
-		}
-		if len(h.email.sent) != 0 {
-			t.Errorf("%s: the address was sent %d message(s), want none", name, len(h.email.sent))
-		}
+	w = free.post("/identifiers", addBody("email", "taken@example.com"))
+	if w.Code != http.StatusServiceUnavailable || problemType(t, w) != "unavailable" {
+		t.Errorf("the free address answered %d %s, want 503 unavailable", w.Code, w.Body)
 	}
 }
 
-// TestAHeldAddressAndAFreeOneAnswerTheSameShape holds the indistinguishability:
-// the answers to a held address and to a free one carry the same state and the
-// same two durations, so a client cannot tell whether an address is taken.
-func TestAHeldAddressAndAFreeOneAnswerTheSameShape(t *testing.T) {
-	held := emailHarness(t)
-	held.accounts.lookup["taken@example.com"] = "someone-else"
-	heldAnswer := pendingOf(t, held.post("/identifiers", addBody("email", "taken@example.com")).Body.Bytes())
-
-	free := emailHarness(t)
-	freeAnswer := pendingOf(t, free.post("/identifiers", addBody("email", "taken@example.com")).Body.Bytes())
-
-	if heldAnswer != freeAnswer {
-		t.Errorf("the held address answered %+v, the free one %+v; want the same shape",
-			heldAnswer, freeAnswer)
+// TestAVerifyAfterATakenAddHasNoRecord holds that a taken address receives no
+// code, so a verify has no record and answers the same login-failed a wrong code
+// gets.
+func TestAVerifyAfterATakenAddHasNoRecord(t *testing.T) {
+	h := emailHarness(t)
+	h.accounts.lookup["taken@example.com"] = "someone-else"
+	if w := h.post("/identifiers", addBody("email", "taken@example.com")); w.Code != http.StatusConflict {
+		t.Fatalf("the add answered %d %s, want 409", w.Code, w.Body)
 	}
-	if len(held.email.sent) != 0 || len(free.email.sent) != 1 {
-		t.Errorf("the held address was sent %d message(s) and the free one %d, want 0 and 1",
-			len(held.email.sent), len(free.email.sent))
-	}
-}
-
-// TestAVerifyAfterAHeldSendLooksLikeAWrongCode holds the second half of the
-// indistinguishability: a held address never received a code, so its verify
-// has no record, and the answer must be the same login-failed a free address
-// gives for a wrong code.
-func TestAVerifyAfterAHeldSendLooksLikeAWrongCode(t *testing.T) {
-	held := emailHarness(t)
-	held.accounts.lookup["taken@example.com"] = "someone-else"
-	held.post("/identifiers", addBody("email", "taken@example.com"))
-	heldVerify := held.post("/identifiers/verify", verifyBody("000000"))
-
-	free := emailHarness(t)
-	free.post("/identifiers", addBody("email", "taken@example.com"))
-	wrong := "000000"
-	if len(free.email.sent) == 1 && free.email.sent[0].code == wrong {
-		wrong = "111111"
-	}
-	freeVerify := free.post("/identifiers/verify", verifyBody(wrong))
-
-	if heldVerify.Code != http.StatusUnauthorized || problemType(t, heldVerify) != "login-failed" {
-		t.Fatalf("the held address's verify answered %d %s, want 401 login-failed",
-			heldVerify.Code, heldVerify.Body)
-	}
-	if heldVerify.Code != freeVerify.Code || problemType(t, heldVerify) != problemType(t, freeVerify) {
-		t.Errorf("the held address answered %d %s, the free one %d %s; want the same refusal",
-			heldVerify.Code, heldVerify.Body, freeVerify.Code, freeVerify.Body)
+	w := h.post("/identifiers/verify", verifyBody("000000"))
+	if w.Code != http.StatusUnauthorized || problemType(t, w) != "login-failed" {
+		t.Fatalf("the verify answered %d %s, want 401 login-failed", w.Code, w.Body)
 	}
 }
 
@@ -349,19 +277,21 @@ func TestABudgetThatCannotBeCountedIsAnOutage(t *testing.T) {
 	}
 }
 
-// TestASuppressedSendSpendsNoBudget holds that suppression happens before any
+// TestATakenAddressSpendsNoBudget holds that the taken check happens before any
 // counter is touched: an address another account holds is not charged to the
 // address, the account or the deployment.
-func TestASuppressedSendSpendsNoBudget(t *testing.T) {
+func TestATakenAddressSpendsNoBudget(t *testing.T) {
 	h := emailHarness(t)
 	h.accounts.lookup["ada@example.com"] = "someone-else"
-	h.post("/identifiers", addBody("email", "ada@example.com"))
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusConflict {
+		t.Fatalf("the add answered %d %s, want 409", w.Code, w.Body)
+	}
 
 	for _, prefix := range []string{
 		"authn:email-address:", "authn:email-account:", "authn:email-global:",
 	} {
 		if hasKey(h, prefix) {
-			t.Errorf("a suppressed send spent a %s budget", prefix)
+			t.Errorf("a taken address spent a %s budget", prefix)
 		}
 	}
 }

@@ -54,6 +54,8 @@ starters/demo/
 
 **Fly 部署开放口令注册。** 镜像以 `-tags deploy` 构建，`deployModules` 在基线之上加入 `authn.emailcode` 与 `mail.smtp`；`deploy/fly.yaml.tmpl` 的 `mail.smtp` 节由入口从 Fly secret 渲染，`seed.settings` 把 `authn.account.password-signup` 写为 `open`，`workspace.personal.enabled` 为真。入口缺 SMTP 主机或发件地址时拒绝启动，因此开放注册不会落在没有投递通道的机器上。默认构建（不带 `deploy` 标签）仍不含邮件模块、注册保持关闭。
 
+**卷上的数据库不做数据迁移。** 联系方式预留的 `(kind, value)` 全局唯一由 `0003_contact_claim.sql` 施加；该迁移只加约束、不对账已有数据，已有库里重复的联系方式预留会让它失败。升级到含这条迁移的版本时，Fly 部署删除 Machine 与卷、以空库重新部署，再由 `seed` 写入初始账户与租户；签名密钥与对象存储的本地根随卷一起重建（[ADR-authn-contact-claim-2026-10-22](../../adr/adr-authn-contact-claim-2026-10-22.md)）。
+
 部署门禁是后端监听上 `GET /` 的检查，入口文档由嵌入的前端产物作答；就绪信号是运营端点的 `GET /ready`，以顶层检查声明——运营监听不是对外服务，顶层检查只报告 Machine 健康、不影响路由。`.github/workflows/deploy.yml` 在 `check` 于 `main` 上成功之后、以及手动触发时调用 `make deploy`。
 
 ### 命令树

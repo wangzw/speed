@@ -110,7 +110,9 @@ account-resolution outcome where the deployment enables that.
   `parseEmailAddress` from `@speed/ui-kit` (trimmed, printable ASCII, exactly
   one `@` with a part on each side, at most 254 bytes): a malformed address
   renders `register.invalidEmail` in that field and sends nothing. A taken
-  username is the username field's error; the other mapped refusals
+  username is the username field's error and a taken email address
+  (`authn.email_taken`) the email field's -- the registration reserves the
+  address, so the refusal is that value's; the other mapped refusals
   (closed signup, throttle, unavailable) render their register-section
   text in one banner, and every other code -- a 400 included -- through
   the family's error-code banner. A 429 carrying `Retry-After` holds

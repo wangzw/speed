@@ -215,9 +215,14 @@ server's rule through `parseEmailAddress` (trimmed, printable ASCII, exactly one
 `@` with a part on each side, at most 254 bytes) before sending anything: a
 malformed address renders `identifiers.add.invalidEmail` in the field, and the
 submitted value is the trimmed one. A 400 the server still answers for the email
-kind lands in that same field rather than the banner; a username's 400 keeps the
-banner because the server's username rule also refuses shapes this face does not
-restate. A well-formed email gets a code (the answer is state `pending`) and the
+kind lands in that same field rather than the banner; so does the 409
+`email_taken` for an address another account has reserved or proved, because
+the claim is atomic and the address is the value to change. The code's
+verification answers the same code when the address was taken after the code
+was requested, and the face returns to the value field with that message. A
+username's 400
+keeps the banner because the server's username rule also refuses shapes this
+face does not restate. A well-formed email gets a code (the answer is state `pending`) and the
 code is submitted through `POST /api/v1/auth/identifiers/verify`; only the
 matching code writes the address. Closing the add face clears the failure
 banner, the field error, the success notice and the sent-code step.

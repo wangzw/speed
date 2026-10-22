@@ -469,6 +469,7 @@ graph TD
 | 写入被拒，未被步进拦截的裸 401 | 渲染会话已结束文案，不渲染状态码叶子 |
 | 冒充发起或管理员重置因素、口令被 403 `authn.factor_not_seasoned` 拒绝 | 渲染需要已启用满规定时长的非短信因素的说明，不开步进对话框 |
 | 管理员重置口令或删除账户的最后一个用户名/邮箱登录名被 409 `authn.login_identifier_required` 拒绝 | 一条横幅渲染该码文本，说明账号需要至少一个登录名；账户状态不变 |
+| 账户创建或标识添加被 409 `authn.email_taken` 拒绝 | 一条横幅渲染该码文本，点明邮箱地址已被另一个账户注册；输入保留，操作者改地址后可重试 |
 | 详情面板内有写入在途时收到关闭请求 | 面板 `busy`，不上报 `onClose` |
 | 详情面板展示着未关闭的服务密钥时收到关闭请求 | 先经 `ConfirmDialog` 确认放弃，取消则面板保持 |
 | 写入在途时操作租户选择器或其它改变上下文的选择器 | 选择器在它牵动的作用域 `pending` 时禁用 |
@@ -516,6 +517,7 @@ graph TD
 | 写入失败的裸 403 与裸 401 文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `useConsoleUiErrorText`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.factor_not_seasoned` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | `authn.login_identifier_required` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
+| `authn.email_taken` 的失败文案 | 已实现 | `web/packages/console-ui/src/internal/error-text.ts` `ERROR_TEXT_CODES`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 写入在途时改变上下文的控件禁用 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`anyPending`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage` |
 | 详情面板内写入在途时 `busy` 与服务密钥的关闭守卫 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`（`detailBusy`、`requestDetailClose`）、`OneTimeSecretNotice` |
 | 账户身份单元区分已删除或非账户行动者与无权限 | 已实现 | `web/packages/console-ui/src/internal/account-identity.tsx` `AccountIdentity`、`useAccountIdentity` |

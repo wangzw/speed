@@ -106,7 +106,7 @@ does.
   bucket that cannot be written answers `503`, because it is the only bound on an
   open registration. The route reads no cookie, keeps no flow record, makes no
   session and sends no email.
-- **The email branch declares four budgets and suppresses an address another
+- **The email branch declares four budgets and refuses an address another
   account holds.** `authn.login.email-per-address-hourly`,
   `email-per-address-daily`, `email-per-account-hourly` and
   `email-global-hourly` are declared here (`config.go`) and read by the
@@ -116,16 +116,13 @@ does.
   the `Retry-After` that ends that window. A counter that cannot be advanced is
   a 503 and no send: the budgets are the only bound on messages to an address,
   so none of them is skipped. Before any window is claimed the branch reads
-  `Accounts.Lookup` for the address; an address another account already holds is
-  answered the pending answer a real send gives, with no message and no budget
-  spent, but the same resend window is claimed, so a repeated request inside the
-  interval is a 429 and a store failure is a 503 exactly as for a free address.
-  The route says nothing about whether the address is taken. A held address
-  never receives a code, so it has no completion path; the conflict surfaces
-  only when an address is taken after a code was sent and before the identifier
-  write proves control. The verify route answers a missing record under the same
-  login-failed code as a wrong code, so the two addresses stay indistinguishable
-  there too. A lookup that fails is a 503, never "nobody holds it".
+  `Accounts.Lookup` and `SignupVerification.PendingAccountByContact`; an address
+  another account holds as a proved identifier or as an unproved reservation is
+  answered `409 email-taken`, with no message, no resend window and no budget
+  spent. A read that fails is a 503, never "nobody holds it". The verify route
+  answers a missing record under the same login-failed code as a wrong code; a
+  conflict at the identifier write, where the address was taken after the code
+  went out or an old row still holds it, is `409 email-taken` as well.
 - **Removing a login identifier is refused when it would strand a password
   account.** `DELETE /auth/identifiers/:id` maps the account module's
   `ErrIdentifierRequired` to 409 `login-identifier-required`: an account holding a
@@ -140,11 +137,11 @@ does.
   `purpose=link` gate that refuses a pending self-registration (`signup_state=1`)
   reads it: a link answers `403 contact-required` before any flow record is
   written, `step-up` and `enroll` are not gated, and a read that fails is a 503.
-- **A registration's 409 is `username-taken`, not `conflict`.** The username is
-  the only explicit conflict, and only `Signups.Register`'s `ErrAccountExists`
-  produces it. The email address is never checked for being taken and never
-  echoed as a conflict: a clash surfaces only after a code proves control of the
-  address.
+- **A registration's 409s are `username-taken` and `email-taken`, not
+  `conflict`.** Only `Signups.Register`'s `ErrAccountExists` produces the first.
+  The email address is reserved by the transaction that opens the account, and a
+  reservation another account holds is `ErrContactTaken`, answered
+  `409 email-taken`.
 - **The discovery document publishes the two registration switches separately.**
   `signup.enabled` is true when either `authn.account.signup` or
   `authn.account.password-signup` is open, and `signup.password.enabled` reports

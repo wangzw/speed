@@ -28,6 +28,7 @@ var designSentinels = map[string]error{
 	"ErrNoLoginMethod": ErrNoLoginMethod, "ErrNoFactor": ErrNoFactor, "ErrDrainTimeout": ErrDrainTimeout,
 	// runtime
 	"ErrInvalidAccountID": ErrInvalidAccountID, "ErrAccountNotFound": ErrAccountNotFound, "ErrAccountExists": ErrAccountExists,
+	"ErrContactTaken":       ErrContactTaken,
 	"ErrInvalidCredentials": ErrInvalidCredentials, "ErrPasswordPolicy": ErrPasswordPolicy,
 	"ErrInvalidIdentifier": ErrInvalidIdentifier, "ErrInvalidArgument": ErrInvalidArgument, "ErrFactorLimit": ErrFactorLimit,
 	"ErrIdentifierRequired": ErrIdentifierRequired, "ErrAccountUnavailable": ErrAccountUnavailable,

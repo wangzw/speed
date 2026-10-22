@@ -193,6 +193,22 @@ func TestAcceptSettlesAPermanentFailureAsRevoked(t *testing.T) {
 	}
 }
 
+// TestAcceptSettlesATakenContactAsRevoked holds that an address another account
+// reserved or proved is a permanent failure like an existing account: the
+// invitation is revoked rather than left pending for a retry that cannot work.
+func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
+	h := newHarness(t)
+	h.admin.err = authn.ErrContactTaken
+	issued := h.issue(tenant, "judy@example.com")
+
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrContactTaken) {
+		t.Fatalf("accepting over a reserved contact gave %v, want ErrContactTaken", err)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusRevoked {
+		t.Errorf("status after a taken contact = %d, want revoked", got)
+	}
+}
+
 func TestRevokeIsIdempotentAndRefusesAnAcceptedInvitation(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()

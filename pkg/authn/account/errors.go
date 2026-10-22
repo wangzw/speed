@@ -16,6 +16,7 @@ import (
 var domainErrors = []error{
 	authn.ErrAccountNotFound,
 	authn.ErrAccountExists,
+	authn.ErrContactTaken,
 	authn.ErrInvalidArgument,
 	authn.ErrInvalidIdentifier,
 	authn.ErrInvalidAccountID,

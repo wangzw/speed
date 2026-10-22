@@ -2,7 +2,8 @@
  * PasswordRegisterForm behaviour: the form opens an account with one
  * `session.register` request and then signs in with the same credentials
  * through the ordinary password flow, the confirmation is compared in the
- * form and never travels, a taken username lands on the username field,
+ * form and never travels, a taken username lands on the username field, a
+ * taken email address lands on the email field,
  * the mapped refusals render their register-section text while every other
  * code resolves through the shared error banner, an auto-login refusal
  * keeps the opened account (notice plus a retry that re-runs only the
@@ -188,6 +189,34 @@ describe('PasswordRegisterForm', () => {
     expect(username).toHaveFocus()
     // The refusal is the field's, not a whole-attempt banner.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(harness.calls).toHaveLength(1)
+  })
+
+  it('attach a taken email to the email field and focus it', async () => {
+    // The registration reserves the address, so another account's claim is
+    // refused as that field's value -- never as a whole-attempt banner the
+    // viewer cannot act on.
+    const harness = makeHarness({
+      [REGISTER]: () => {
+        throw apiError(409, 'authn.email_taken')
+      },
+    })
+    renderWithProviders(<PasswordRegisterForm session={harness.session} />)
+    await fillAndSubmit()
+
+    const email = screen.getByLabelText(LABELS.email)
+    await waitFor(() => expect(email).toHaveAttribute('aria-invalid', 'true'))
+    const message = screen.getByText(zhCN.register.emailTaken)
+    expect(message.id).not.toBe('')
+    expect(email.getAttribute('aria-describedby')).toContain(message.id)
+    expect(email).toHaveFocus()
+    // The refusal is the field's, not a whole-attempt banner, and the
+    // username -- which the server accepted -- carries no error.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByLabelText(LABELS.username)).toHaveAttribute(
+      'aria-invalid',
+      'false',
+    )
     expect(harness.calls).toHaveLength(1)
   })
 

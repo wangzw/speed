@@ -159,6 +159,7 @@ func TestRegisterRefusesATakenUsernameWithoutHalfRows(t *testing.T) {
 		h.openSelfRegistration()
 		h.user("taken", "")
 		before := h.count(tableAccounts, "")
+		beforePending := h.count(tablePending, "")
 
 		if _, err := h.register("taken", "other@example.com", "password123"); !errors.Is(err, authn.ErrAccountExists) {
 			t.Fatalf("an occupied username gave %v, want ErrAccountExists", err)
@@ -166,8 +167,8 @@ func TestRegisterRefusesATakenUsernameWithoutHalfRows(t *testing.T) {
 		if n := h.count(tableAccounts, ""); n != before {
 			t.Errorf("the refused registration left %d account(s), want the %d that were there", n, before)
 		}
-		if n := h.count(tablePending, ""); n != 0 {
-			t.Errorf("the refused registration wrote %d pending contact(s)", n)
+		if n := h.count(tablePending, ""); n != beforePending {
+			t.Errorf("the refused registration left %d reservation(s), want the %d that were there", n, beforePending)
 		}
 		if n, ok := h.failuresOf(authn.ScopeSignupUsername, "taken"); !ok || n != 1 {
 			t.Errorf("the refused registration counted %d failure(s) (present %v), want 1", n, ok)
@@ -196,28 +197,111 @@ func TestRegisterHoldsThePasswordToThePolicy(t *testing.T) {
 	})
 }
 
-// Two accounts may list one email address as a pending contact; an account may
-// list at most one email contact, which the table's unique constraint states.
-func TestPendingContactsAreUniquePerAccountAndKind(t *testing.T) {
+// A contact is reserved once: the first registration owns the address and a
+// second registration naming it, in any case, is ErrContactTaken. The losing
+// registration leaves no account, identifier, credential or reservation behind.
+func TestAContactIsReservedOnceAcrossAccounts(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
 		first := h.mustRegister("first", "shared@example.com", "password123")
-		h.mustRegister("second", "Shared@Example.com", "password123")
-		if n := h.count(tablePending, "kind = ? AND value = ?", string(authn.IdentifierEmail), "shared@example.com"); n != 2 {
-			t.Errorf("the shared address is %d pending rows, want 2: one address may be the target of several accounts", n)
+		if _, err := h.register("second", "Shared@Example.com", "password123"); !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("a second registration of the address gave %v, want ErrContactTaken", err)
 		}
-		duplicateRow := pendingContactRow{
-			ID: "another", AccountID: first.ID.String(), Kind: string(authn.IdentifierEmail),
-			Value: "second@example.com", CreatedAt: h.clock.read(), UpdatedAt: h.clock.read(),
+		if n := h.count(tablePending, "kind = ? AND value = ?", string(authn.IdentifierEmail), "shared@example.com"); n != 1 {
+			t.Errorf("the shared address is %d reservations, want the first account's one", n)
 		}
-		if err := h.handle.Create(&duplicateRow).Error; !duplicate(err) {
-			t.Errorf("a second email contact of one account gave %v, want the unique constraint", err)
+		if n := h.count(tableAccounts, ""); n != 1 {
+			t.Errorf("the losing registration left %d account(s), want the winner's one", n)
+		}
+		if n := h.count(tableIdentifiers, "account_id = ?", first.ID.String()); n != 1 {
+			t.Errorf("the winner holds %d identifier(s), want its username alone", n)
+		}
+		if n := h.count(tableCredentials, ""); n != 1 {
+			t.Errorf("the losing registration left %d credential(s), want the winner's one", n)
 		}
 	})
 }
 
-// A proving email address ends the pending state, consumes the pending contact,
-// and records the instant once. A phone number and an unproven email change
+// An address an account already holds as a proved identifier is still reserved,
+// so a registration naming it is ErrContactTaken and opens nothing.
+func TestRegisterRefusesAnAddressAnAccountAlreadyHolds(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		h.openSelfRegistration()
+		h.user("holder", "")
+		if _, err := h.register("newcomer", "Holder@Example.com", "password123"); !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("a registration of a proved address gave %v, want ErrContactTaken", err)
+		}
+		if n := h.count(tableAccounts, ""); n != 1 {
+			t.Errorf("the refused registration left %d account(s), want the holder's one", n)
+		}
+	})
+}
+
+// Create writes the contact reservation in the same transaction, so an address
+// another account reserved is ErrContactTaken and no account is written.
+func TestCreateRefusesAContactAnotherAccountHolds(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		h.user("holder", "")
+		_, err := h.p.Create(context.Background(), authn.CreateAccount{
+			Username: "other", Email: "holder@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin}, Via: "admin",
+		})
+		if !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("creating an account on a held contact gave %v, want ErrContactTaken", err)
+		}
+		if n := h.count(tableAccounts, ""); n != 1 {
+			t.Errorf("the refused create left %d account(s), want the holder's one", n)
+		}
+	})
+}
+
+// An unproved reservation is an occupation like a proved one: Create naming an
+// address a pending registration reserved is ErrContactTaken and writes nothing.
+func TestCreateRefusesAnUnprovedReservation(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		h.openSelfRegistration()
+		h.mustRegister("holder", "reserved@example.com", "password123")
+		_, err := h.p.Create(context.Background(), authn.CreateAccount{
+			Username: "other", Email: "reserved@example.com",
+			EmailVerifiedVia: authn.Verification{Via: authn.VerifiedViaAdmin}, Via: "admin",
+		})
+		if !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("creating an account on an unproved reservation gave %v, want ErrContactTaken", err)
+		}
+		if n := h.count(tableAccounts, ""); n != 1 {
+			t.Errorf("the refused create left %d account(s), want the registering account's one", n)
+		}
+	})
+}
+
+// Removing an email identifier releases its contact: the reservation is deleted,
+// so another account may register the address.
+func TestRemovingAnEmailReleasesItsContact(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		h.openSelfRegistration()
+		account := h.mustRegister("alice", "alice@example.com", "password123")
+		if err := h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "alice@example.com",
+			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
+			t.Fatalf("proving the address: %v", err)
+		}
+		if _, err := h.register("carol", "alice@example.com", "password123"); !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("a registration of the held address gave %v, want ErrContactTaken", err)
+		}
+		if err := h.p.RemoveIdentifier(ctx, account.ID, h.identifierIDOf(account.ID, "alice@example.com")); err != nil {
+			t.Fatalf("removing the address: %v", err)
+		}
+		if n := h.count(tablePending, "account_id = ?", account.ID.String()); n != 0 {
+			t.Errorf("the removed address left %d reservation(s), want none", n)
+		}
+		if _, err := h.register("bob", "alice@example.com", "password123"); err != nil {
+			t.Fatalf("a registration of the released address gave %v, want it accepted", err)
+		}
+	})
+}
+
+// A proving email address ends the pending state, keeps the contact row with its
+// proof instant, and records the instant once. A phone number and an unproven email change
 // neither. Removing the last proved address returns the account to pending and
 // keeps the instant, and no pending contact is made up.
 func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
@@ -247,8 +331,12 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 		if status.State != authn.SignupPending {
 			t.Errorf("an unproven email moved the state to %v, want pending", status.State)
 		}
-		if n := h.count(tablePending, "account_id = ?", account.ID.String()); n != 1 {
-			t.Errorf("an unproven email left %d pending contact(s), want the one registration wrote", n)
+		if n := h.count(tablePending, "account_id = ?", account.ID.String()); n != 2 {
+			t.Errorf("an added email left %d reservation(s), want the registration's and the added one", n)
+		}
+		if n := h.count(tablePending, "account_id = ? AND value = ? AND verified_at IS NOT NULL",
+			account.ID.String(), "admin@example.com"); n != 1 {
+			t.Errorf("the added address has %d proved reservation(s), want one", n)
 		}
 
 		provedAt := h.clock.read()
@@ -264,8 +352,9 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 			t.Errorf("after proving the address the state reads %+v, want verified on alice@example.com since %v",
 				status, provedAt)
 		}
-		if n := h.count(tablePending, "account_id = ? AND value = ?", account.ID.String(), "alice@example.com"); n != 0 {
-			t.Errorf("the proved address left %d pending contact(s), want the same value deleted", n)
+		if n := h.count(tablePending, "account_id = ? AND value = ? AND verified_at IS NOT NULL",
+			account.ID.String(), "alice@example.com"); n != 1 {
+			t.Errorf("the proved address left %d proved reservation(s), want the row kept and stamped", n)
 		}
 
 		// A second proved address does not move the instant and is not the one
@@ -310,8 +399,8 @@ func TestTheRegistrationStateMovesWithProvedEmailAddresses(t *testing.T) {
 		if status.State != authn.SignupPending || status.Email != "" || !status.Since.Equal(provedAt) {
 			t.Errorf("removing the last proved address reads %+v, want pending with no email and the kept instant", status)
 		}
-		if n := h.count(tablePending, "account_id = ?", account.ID.String()); n != 0 {
-			t.Errorf("removing the last proved address rebuilt %d pending contact(s), want none", n)
+		if n := h.count(tablePending, "account_id = ? AND verified_at IS NULL", account.ID.String()); n != 0 {
+			t.Errorf("removing the last proved address rebuilt %d unproved reservation(s), want none", n)
 		}
 
 		// A phone is never the thing that returns the account to verified.
@@ -381,10 +470,14 @@ func TestPendingAccountByContactReturnsOnlyAnUnambiguousOwner(t *testing.T) {
 			t.Fatalf("the pending contact gave (%q, %v, %v), want the account that lists it", got, ok, err)
 		}
 
-		// One address listed by two pending accounts is no owner to guess.
-		h.mustRegister("second", "alice@example.com", "password123")
-		if _, ok, err = h.p.PendingAccountByContact(ctx, "email", "alice@example.com"); err != nil || ok {
-			t.Errorf("an address of two pending accounts gave (ok %v, err %v), want no owner", ok, err)
+		// A second registration of the address is refused, so the owner stays
+		// the one account that reserved it.
+		if _, err = h.register("second", "alice@example.com", "password123"); !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("a second registration of the reserved address gave %v, want ErrContactTaken", err)
+		}
+		if got2, ok, lookupErr := h.p.PendingAccountByContact(ctx, "email", "alice@example.com"); lookupErr != nil ||
+			!ok || got2 != account.ID.String() {
+			t.Errorf("the reserved address gave (%q, %v, %v), want the account that reserved it", got2, ok, lookupErr)
 		}
 
 		if _, _, err = h.p.PendingAccountByContact(ctx, "username", "alice"); !errors.Is(err, authn.ErrInvalidIdentifier) {
@@ -498,8 +591,11 @@ func TestCreateWritesNoRegistration(t *testing.T) {
 			account.ID.String(), string(authn.IdentifierUsername), authn.VerifiedViaAdmin); n != 1 {
 			t.Errorf("the zero UsernameVerifiedVia is %d admin rows, want 1", n)
 		}
-		if n := h.count(tablePending, ""); n != 0 {
-			t.Errorf("Create wrote %d pending contact(s), want none", n)
+		if n := h.count(tablePending, "verified_at IS NOT NULL"); n != 1 {
+			t.Errorf("Create wrote %d proved reservations, want the account's email address", n)
+		}
+		if n := h.count(tablePending, "verified_at IS NULL"); n != 0 {
+			t.Errorf("Create wrote %d unproved reservation(s), want none", n)
 		}
 
 		self := admin
@@ -513,6 +609,9 @@ func TestCreateWritesNoRegistration(t *testing.T) {
 		if n := h.count(tableIdentifiers, "account_id = ? AND kind = ? AND verified_via = ?",
 			account.ID.String(), string(authn.IdentifierUsername), authn.VerifiedViaSelf); n != 1 {
 			t.Errorf("UsernameVerifiedVia self is %d rows, want 1", n)
+		}
+		if n := h.count(tablePending, "verified_at IS NOT NULL"); n != 2 {
+			t.Errorf("two created accounts hold %d proved reservations, want one each", n)
 		}
 
 		bad := admin
@@ -542,6 +641,9 @@ func TestTheUnverifiedSweepDeletesOnlyAnIdlePendingAccount(t *testing.T) {
 		plain := h.user("plain", "")
 
 		h.clock.advance(defaults.UnverifiedTTL + time.Hour)
+		if _, err := h.register("early", "idle@example.com", "password123"); !errors.Is(err, authn.ErrContactTaken) {
+			t.Fatalf("a registration of the idle address before the sweep gave %v, want ErrContactTaken", err)
+		}
 		recent := h.mustRegister("recent", "recent@example.com", "password123")
 
 		deleted, err := h.p.sweepUnverified(ctx)
@@ -564,6 +666,10 @@ func TestTheUnverifiedSweepDeletesOnlyAnIdlePendingAccount(t *testing.T) {
 			if n := h.count(tableAccounts, "id = ? AND status <> ?", kept.String(), statusDeleted); n != 1 {
 				t.Errorf("the sweep deleted account %s, want it kept", kept)
 			}
+		}
+		// The reservation went with the account, so the address is free again.
+		if _, err = h.register("reuser", "idle@example.com", "password123"); err != nil {
+			t.Fatalf("a registration of the swept address gave %v, want it released", err)
 		}
 	})
 }
@@ -629,8 +735,8 @@ func TestAddIdentifierProvesAPendingRegistration(t *testing.T) {
 			if status.State != authn.SignupVerified || status.Email != c.name+"@example.com" || !status.Since.Equal(provedAt) {
 				t.Errorf("%s: the state reads %+v, want verified on %s since %v", c.name, status, status.Email, provedAt)
 			}
-			if n := h.count(tablePending, "account_id = ?", account.ID.String()); n != 0 {
-				t.Errorf("%s: the proved address left %d pending contact(s), want none", c.name, n)
+			if n := h.count(tablePending, "account_id = ? AND verified_at IS NOT NULL", account.ID.String()); n != 1 {
+				t.Errorf("%s: the proved address left %d proved reservation(s), want the row kept and stamped", c.name, n)
 			}
 		}
 	})
@@ -665,9 +771,8 @@ func TestAProvedPhoneConsumesAPendingPhoneContact(t *testing.T) {
 	})
 }
 
-// The reverse lookup reports only a pending owner: a verified account that still
-// lists the contact — a row the state machine never writes, made here — is not an
-// owner to answer with.
+// The reverse lookup reports only an unproved reservation: a verified account's
+// contact row stays, with verified_at set, and is not an owner to answer with.
 func TestPendingAccountByContactIgnoresAVerifiedAccount(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -677,12 +782,8 @@ func TestPendingAccountByContactIgnoresAVerifiedAccount(t *testing.T) {
 			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
 			t.Fatalf("proving the address: %v", err)
 		}
-		now := h.clock.read()
-		if err := h.handle.Create(&pendingContactRow{
-			ID: "leftover", AccountID: account.ID.String(), Kind: string(authn.IdentifierEmail),
-			Value: "alice@example.com", CreatedAt: now, UpdatedAt: now,
-		}).Error; err != nil {
-			t.Fatalf("writing a leftover contact: %v", err)
+		if n := h.count(tablePending, "account_id = ? AND verified_at IS NOT NULL", account.ID.String()); n != 1 {
+			t.Fatalf("the proved address holds %d proved reservation(s), want one", n)
 		}
 		if owner, ok, err := h.p.PendingAccountByContact(ctx, "email", "alice@example.com"); err != nil || ok {
 			t.Errorf("the address of a verified account gave (%q, %v, %v), want no owner", owner, ok, err)
@@ -887,6 +988,49 @@ func TestTheSignupMigrationUpgradesAnExistingDatabase(t *testing.T) {
 			}
 			if status.State != authn.SignupNone || status.Email != "" || !status.Since.IsZero() {
 				t.Errorf("the migrated account reads %+v, want no registration", status)
+			}
+		})
+	}
+}
+
+// The contact-claim migration turns the pending table into the reservation
+// table: the row that was there is kept with an empty verified_at, a contact is
+// unique across accounts, and one account may reserve several addresses.
+func TestTheContactClaimMigrationUpgradesAnExistingDatabase(t *testing.T) {
+	for _, dialect := range dialectsUnderTest {
+		t.Run(string(dialect), func(t *testing.T) {
+			handle := quietly(databaseOpeners[dialect](t).DB())
+			applyMigrationFile(t, handle, dialect, "0001_authn_account.sql")
+			applyMigrationFile(t, handle, dialect, "0002_authn_signup.sql")
+			at := newTestClock().read()
+			if err := handle.Exec("INSERT INTO "+tablePending+" (id, account_id, kind, value, created_at, updated_at) "+
+				"VALUES (?, ?, ?, ?, ?, ?)", "existing", "account-a", string(authn.IdentifierEmail),
+				"shared@example.com", at, at).Error; err != nil {
+				t.Fatalf("writing a row of the earlier declaration: %v", err)
+			}
+
+			applyMigrationFile(t, handle, dialect, "0003_contact_claim.sql")
+
+			var rows []struct {
+				Value      string
+				VerifiedAt *time.Time
+			}
+			if err := handle.Raw("SELECT value, verified_at FROM "+tablePending+" WHERE id = ?", "existing").
+				Scan(&rows).Error; err != nil {
+				t.Fatalf("reading the upgraded row: %v", err)
+			}
+			if len(rows) != 1 || rows[0].Value != "shared@example.com" || rows[0].VerifiedAt != nil {
+				t.Errorf("the row that was there reads %+v, want the same value and no proof instant", rows)
+			}
+			insert := "INSERT INTO " + tablePending + " (id, account_id, kind, value, created_at, updated_at) " +
+				"VALUES (?, ?, ?, ?, ?, ?)"
+			if err := handle.Exec(insert, "second", "account-b", string(authn.IdentifierEmail),
+				"shared@example.com", at, at).Error; !duplicate(err) {
+				t.Errorf("a second row for one contact gave %v, want the unique constraint", err)
+			}
+			if err := handle.Exec(insert, "third", "account-a", string(authn.IdentifierEmail),
+				"another@example.com", at, at).Error; err != nil {
+				t.Errorf("a second address of one account gave %v, want it admitted", err)
 			}
 		})
 	}

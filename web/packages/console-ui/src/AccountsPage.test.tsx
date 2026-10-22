@@ -304,6 +304,16 @@ const FORBIDDEN = {
 
 const FORBIDDEN_TEXT = zhCN.errors.authn.forbidden
 
+/** A 409 refusal whose email address another account reserved, so the
+ * create form's failure copy must name the address and say what to do. */
+const EMAIL_TAKEN = {
+  status: 409,
+  code: 'authn.email_taken',
+  message: 'email taken',
+}
+
+const EMAIL_TAKEN_TEXT = zhCN.errors.authn.email_taken
+
 const SECRET_ROW = {
   id: 'sec-1',
   label: 'ci',
@@ -1451,6 +1461,29 @@ describe('AccountsPage', () => {
     // The fields stay for correction and the panel stays open.
     expect(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel)).toHaveValue('Grace')
     expect(screen.getByRole('dialog', { name: CREATE_PANEL_NAME })).toBe(panel)
+  })
+
+  it('names a taken email address in a creation failure instead of the fallback', async () => {
+    // Creating an account reserves the address, so a 409 email-taken is a
+    // refusal the operator can act on: the banner states it and names the
+    // value to change, never the generic unknown line.
+    const user = userEvent.setup()
+    const operations = withAccounts({
+      createAccount: () => Promise.reject(EMAIL_TAKEN),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    const panel = await openCreate(user)
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel), 'Grace')
+    await user.type(within(panel).getByLabelText(zhCN.accounts.create.emailLabel), 'grace@x.test')
+    await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
+
+    const alert = await within(panel).findByRole('alert')
+    expect(alert).toHaveTextContent(EMAIL_TAKEN_TEXT)
+    expect(alert).not.toHaveTextContent(zhCN.errors.unknown)
+    // The operator still holds the fields to correct the address.
+    expect(within(panel).getByLabelText(zhCN.accounts.create.emailLabel)).toHaveValue(
+      'grace@x.test',
+    )
   })
 
   it('writes the creation success below the list only after the panel exits', async () => {

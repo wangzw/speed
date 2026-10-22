@@ -49,7 +49,12 @@
  * matching code writes the address, with the proof. The email branch is
  * unavailable on a deployment with no email channel (a 503), and both
  * writes revoke the account's other sessions, so a success refetches the
- * profile and the session list.
+ * profile and the session list. An address another account has reserved or
+ * proved is answered 409 authn.email_taken -- the claim is atomic, so the
+ * refusal is the address's, and the value field carries it. The code's
+ * verification answers the same code when the address was taken after the
+ * code was requested; the face returns to the value field rather than
+ * asking for a code nothing can accept.
  *
  * An email address is checked against the server's own rule before it is
  * sent -- trimmed, printable ASCII, exactly one @ with a part on each
@@ -199,8 +204,9 @@ export function IdentifiersSection({
   // kind; addValue holds the entry; sentTo is the address a code went to,
   // or null while the value is being entered; code is the answer. added
   // fills the live region once a write lands. fieldErrorKey is the value
-  // field's own error (an ill-formed email, or the server's bad-request
-  // answer to one), rendered under that field rather than in the banner.
+  // field's own error (an ill-formed email, the server's bad-request answer
+  // to one, or an address another account already holds), rendered under
+  // that field rather than in the banner.
   const [addOpen, setAddOpen] = useState(false)
   const [addKind, setAddKind] = useState<AddKind>(
     emailAvailable ? 'email' : 'username',
@@ -351,13 +357,22 @@ export function IdentifiersSection({
       }
       // A bad request for an email is the server refusing the address's
       // shape -- the same rule the client checked -- so the field carries
-      // the message instead of the generic account-state banner. A
-      // username's bad request keeps the banner: the server's username
+      // the message instead of the generic account-state banner. A taken
+      // address is the same field's failure: the claim is atomic, and the
+      // one value the viewer can change is the address. A username's bad
+      // request keeps the banner: the server's username
       // rule also refuses shapes the client does not restate (the
       // reserved static-credential prefix, a UUID-shaped name), which the
       // kind's helper text describes rather than one blanket sentence.
-      if (kind === 'email' && failure === 'authn.bad_request') {
-        setFieldErrorKey('identifiers.add.invalidEmail')
+      if (
+        kind === 'email' &&
+        (failure === 'authn.bad_request' || failure === 'authn.email_taken')
+      ) {
+        setFieldErrorKey(
+          failure === 'authn.email_taken'
+            ? 'identifiers.add.emailTaken'
+            : 'identifiers.add.invalidEmail',
+        )
         return
       }
       setAddFailureKind(kind)
@@ -377,6 +392,16 @@ export function IdentifiersSection({
       const failure = errorCodeOf(error)
       if (failure === STEP_UP_REQUIRED) {
         gate.arm({ step: 'verify', code: nextCode })
+        return
+      }
+      if (failure === 'authn.email_taken') {
+        // The address was taken between the code request and the write
+        // (the write is the authoritative refusal): the value is what must
+        // change, so the face returns to it with the field's message
+        // instead of leaving the viewer on a code with nothing to answer.
+        setSentTo(null)
+        setCode('')
+        setFieldErrorKey('identifiers.add.emailTaken')
         return
       }
       setFailureCode(failure)

@@ -3,8 +3,8 @@
 package account
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -24,6 +24,8 @@ func postgresOnly(t *testing.T, run func(t *testing.T, h *harness)) {
 
 // Concurrent registrations of one username leave one account: the unique index
 // on (kind, value) is the arbiter and every other call reads the name as taken.
+// Each attempt names an address of its own, so the username is what the
+// arbitration is about.
 func TestConcurrentRegistrationsOfOneUsernameLeaveOneAccount(t *testing.T) {
 	postgresOnly(t, func(t *testing.T, h *harness) {
 		h.openSelfRegistration()
@@ -36,7 +38,7 @@ func TestConcurrentRegistrationsOfOneUsernameLeaveOneAccount(t *testing.T) {
 			go func(i int) {
 				defer wg.Done()
 				<-start
-				_, results[i] = h.register("racer", "racer@example.com", "password123")
+				_, results[i] = h.register("racer", fmt.Sprintf("racer-%d@example.com", i), "password123")
 			}(i)
 		}
 		close(start)
@@ -65,44 +67,47 @@ func TestConcurrentRegistrationsOfOneUsernameLeaveOneAccount(t *testing.T) {
 	})
 }
 
-// One address may be the pending target of several accounts, and the identifier
-// table arbitrates the first one that proves it: the other call meets the unique
-// constraint and keeps its pending contact.
-func TestVerificationArbitratesBetweenAccountsSharingAnAddress(t *testing.T) {
+// Concurrent registrations of one email address leave one reservation: the
+// unique index on (kind, value) is the arbiter, the winner owns the address and
+// every other call is ErrContactTaken. Each attempt names a username of its own,
+// so the address is what the arbitration is about.
+func TestConcurrentRegistrationsOfOneEmailLeaveOneAccount(t *testing.T) {
 	postgresOnly(t, func(t *testing.T, h *harness) {
-		ctx := context.Background()
 		h.openSelfRegistration()
-		first := h.mustRegister("first", "shared@example.com", "password123")
-		second := h.mustRegister("second", "shared@example.com", "password123")
-		if n := h.count(tablePending, "kind = ? AND value = ?",
-			string(authn.IdentifierEmail), "shared@example.com"); n != 2 {
-			t.Fatalf("the shared address is %d pending rows, want 2", n)
+		const attempts = 8
+		var wg sync.WaitGroup
+		results := make([]error, attempts)
+		start := make(chan struct{})
+		for i := range attempts {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				<-start
+				_, results[i] = h.register(fmt.Sprintf("racer-%d", i), "shared@example.com", "password123")
+			}(i)
 		}
+		close(start)
+		wg.Wait()
 
-		if err := h.p.AddIdentifier(ctx, first.ID, authn.IdentifierEmail, "shared@example.com",
-			authn.Verification{Via: authn.VerifiedViaEmailCode}); err != nil {
-			t.Fatalf("the first account proving the address: %v", err)
+		succeeded := 0
+		for i, err := range results {
+			switch {
+			case err == nil:
+				succeeded++
+			case errors.Is(err, authn.ErrContactTaken):
+			default:
+				t.Errorf("attempt %d gave %v, want nil or ErrContactTaken", i, err)
+			}
 		}
-		if err := h.p.AddIdentifier(ctx, second.ID, authn.IdentifierEmail, "shared@example.com",
-			authn.Verification{Via: authn.VerifiedViaEmailCode}); !errors.Is(err, authn.ErrAccountExists) {
-			t.Fatalf("the second account proving the same address gave %v, want ErrAccountExists", err)
+		if succeeded != 1 {
+			t.Errorf("%d of %d concurrent registrations succeeded, want one", succeeded, attempts)
 		}
-		if n := h.count(tablePending, "account_id = ? AND value = ?", second.ID.String(), "shared@example.com"); n != 1 {
-			t.Errorf("the losing account kept %d pending contact(s), want its one", n)
+		if n := h.count(tableAccounts, ""); n != 1 {
+			t.Errorf("the concurrent attempts left %d account(s), want one", n)
 		}
-		status, err := h.p.SignupStateOf(ctx, second.ID)
-		if err != nil {
-			t.Fatalf("reading the losing account: %v", err)
-		}
-		if status.State != authn.SignupPending {
-			t.Errorf("the losing account reads %v, want pending", status.State)
-		}
-
-		// The address is now an identifier, so the reverse lookup answers the
-		// account still listing it as a pending target.
-		owner, ok, err := h.p.PendingAccountByContact(ctx, "email", "shared@example.com")
-		if err != nil || !ok || owner != second.ID.String() {
-			t.Errorf("the reverse lookup gave (%q, %v, %v), want the losing account alone", owner, ok, err)
+		if n := h.count(tablePending, "kind = ? AND value = ? AND verified_at IS NULL",
+			string(authn.IdentifierEmail), "shared@example.com"); n != 1 {
+			t.Errorf("the concurrent attempts left %d reservation(s), want one", n)
 		}
 	})
 }

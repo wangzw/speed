@@ -2,7 +2,7 @@
 
 The account store of the authentication capability, registered as
 `authn.account`. It owns the tables for the accounts, the identifiers they are
-found by, the contacts they list as awaiting verification, their external
+found by, the contact reservations they own, their external
 identities and tenant memberships, their password credentials, the secrets of
 service accounts, and the failure back-off; it delivers seven capabilities
 exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
@@ -78,18 +78,29 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   its own with no memory budget that never takes a place from a password login,
   and then writes in one transaction the enabled account with `signup_state` 1, a
   username identifier written through `self`, the credential and one email
-  contact in `authn_pending_contacts`. It sends no email and creates no session.
-  A proving email written by `AddIdentifier` deletes the same-value pending
-  contact and moves a pending account to verified, recording the instant once; a
-  proving phone deletes the same-value contact and changes no state; `admin`,
-  `import-unverified` and `self` change neither. `RemoveIdentifier` of the last
-  proved email returns the account to pending, keeps the instant and rebuilds no
-  contact. An account holding a password credential cannot lose its last username
-  or email address: that removal answers `authn.ErrIdentifierRequired` and the
-  transaction rolls back, since the password would then authenticate nothing. An
-  account with no password credential may lose its last login name, and removing a
-  phone number never triggers the rule. `Create` always writes `signup_state` 0 and
-  writes only verified identifiers; the way a username came about is
+  reservation in `authn_pending_contacts`. It sends no email and creates no
+  session. The reservation's global unique index on `(kind, value)` is the only
+  arbiter of the address: a registration that loses it answers
+  `authn.ErrContactTaken`, and an unproved reservation is accepted until the
+  address is proved or the account is deleted. Proving an address disposes only
+  the same-value reservation: an unproved one for an address the account
+  replaced stays in place until the account is deleted.
+  `authn_pending_contacts` is the reservation table for contacts. A row with an
+  empty `verified_at` is an unproved target a registration wrote; `AddIdentifier`
+  of an email address brings this account's row to proved now or inserts one, and
+  a reservation another account holds answers `authn.ErrContactTaken`. A proving
+  phone deletes the same-value pending target and changes no state; `admin`,
+  `import-unverified` and `self` no longer leave an email reservation unproved.
+  `RemoveIdentifier` of an email deletes this account's reservation, releasing the
+  address; removing the last proved email returns the account to pending, keeps
+  the instant and rebuilds no reservation. An account holding a password
+  credential cannot lose its last username or email address: that removal answers
+  `authn.ErrIdentifierRequired` and the transaction rolls back, since the password
+  would then authenticate nothing. An account with no password credential may lose
+  its last login name, and removing a phone number never triggers the rule.
+  `Create` always writes `signup_state` 0 and writes only verified identifiers; an
+  email address also writes a proved reservation, and a reservation another
+  account holds answers `authn.ErrContactTaken`. The way a username came about is
   `UsernameVerifiedVia`, whose zero value is `admin`.
 - **The unverified-account sweep has its own switch and interval.** It deletes
   only an account with `signup_state` 1, no `signup_verified_at`, no email
@@ -97,8 +108,8 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   created_at)` older than `unverified-ttl`. The conditions are read once to pick
   a batch and re-judged in each deletion's own transaction under a lock of the
   account row, so an account that proved an address or logged in in between is
-  skipped; a deletion erases the identifiers, credential and pending contact with
-  the row, through the same body `Delete` uses. `unverified-ttl` of
+  skipped; a deletion erases the identifiers, credential and contact reservations
+  with the row, through the same body `Delete` uses. `unverified-ttl` of
   zero turns it off, and `unverified-sweep-interval` is read before every pass,
   so a change needs no restart. `authn_pending_contacts` has no sweep of its own:
   its rows go with the account.

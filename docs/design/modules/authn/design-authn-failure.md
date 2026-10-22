@@ -65,7 +65,7 @@
 
 - **503 的形状。** authn 自己的处理器答 503 时，`Problem.Type` 为 `urn:speed:authn:unavailable`；令牌端点按 OAuth 的约定答 `temporarily_unavailable`。网关的 503 只带状态码（入口模块的 `Fail` 只带状态码），同样不区分成因。503 的应答里只有 `ErrBusy` 带 `Retry-After: 1`。
 - **其余形状。** 机器可读的码取 `urn:speed:authn:<码>`，码的集合与新增规则在 [design-authn-login](design-authn-login.md)；运行期哨兵表的 HTTP 列是码与状态的对应。
-- **注册与验证的冲突形状。** `POST B/register` 把用户名冲突答 409 `username-taken`；注册本身不检查也不回显邮箱占用。邮箱已被其他账户持有时，自助添加邮箱的发码请求答同形的 `pending`、不发信、不花预算，但占同一重发窗口：窗口内的重复与空闲地址同样答 429，kv 失败同样答 503。该地址在邮箱回路没有完成路径——持有者收不到码，调用者拿到的是同形 `pending`，无从证明控制该地址——写标识的 409 只在「发码后、验证前被他人抢注」的竞态里出现。
+- **注册与验证的冲突形状。** `POST B/register` 把用户名冲突答 409 `username-taken`，把邮箱地址冲突答 409 `email-taken`：注册在开户事务里插入邮箱预留，`(kind, value)` 的唯一索引是地址的唯一仲裁点，冲突返回 `ErrContactTaken`，账户、用户名与口令随事务回滚。自助添加邮箱也在发码之前读标识表与未证明预留，地址已被别的账户持有或预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算；写标识是权威拒绝，地址在发码之后被占用时 `ErrContactTaken` 与 `ErrAccountExists` 都答 409 `email-taken`。读预留或标识失败答 503，不按空闲处理。
 - **待验证账户的能力限制。** 要求已验证邮箱的能力对 `signup_state = 1` 的账户答 403 `contact-required`；注册验证状态读取失败答 503，不按放行处理（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
 - **并入 `login-failed` 的哨兵。** 运行期哨兵表的 HTTP 列写作「并入 `login-failed`」的哨兵，其应答不暴露各自的成因，成因只进日志。
 
@@ -232,6 +232,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 哨兵 | 含义 | HTTP |
 |---|---|---|
 | `ErrInvalidAccountID`、`ErrAccountNotFound`、`ErrAccountExists` | 标识格式不合法；账户不存在（含墓碑）；标识、登录名或绑定违反唯一约束（`gorm.ErrDuplicatedKey`，两个引擎同判）；自助注册的用户名冲突 | 400；对外并入 `login-failed` 或 404；409（自助注册用户名冲突是 409 `username-taken`） |
+| `ErrContactTaken` | 邮箱地址已被别的账户预留或持有（`authn_pending_contacts` 的 `(kind, value)` 唯一索引冲突） | 409 `email-taken` |
 | `ErrInvalidCredentials` | 未知标识、错口令、验证码错、停用、无口令，一律此哨兵 | 401 `login-failed` |
 | `ErrPasswordPolicy`、`ErrInvalidIdentifier` | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同）；标识规范化失败（用户名、邮箱、手机格式不合） | 400 `bad-request` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
@@ -372,7 +373,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 令牌与 SAML 的时间容差、撤销不依赖时钟的会话行 | 已实现 | `pkg/authn/session/sessions.go` `Revoke`；`pkg/authn/token/verify.go`、`pkg/authn/token/settings.go`；`pkg/authn/sso/config.go`、`pkg/authn/sso/saml/assertion.go` `checkConditions` |
 | `New` 不读写自己的表、`Start` 里自检与清扫 | 已实现 | `pkg/authn/account/account.go` `Start`、`pkg/authn/account/sweep.go`；`pkg/authn/session/session.go`、`pkg/authn/session/sweep.go`；`pkg/authn/mfa/mfa.go`、`pkg/authn/mfa/sweep.go`；`pkg/authn/token/module.go` `Start`、`pkg/authn/token/sweep.go`；`pkg/authn/sms/start.go`、`pkg/authn/sms/sweep.go`；`pkg/authn/mfa/totp/totp.go` `(*factor).start`、`pkg/authn/mfa/webauthn/webauthn.go` `(*product).start` |
 | 哨兵归类的装配测试与按依赖注入故障的方向测试 | 已实现 | `pkg/authn/summary_failure_test.go`；`pkg/authn/account/assembly_test.go`；`pkg/authn/session/assembly_test.go`；`pkg/authn/mfa/assembly_test.go`；`pkg/authn/login/e2e_test.go` |
-| 自助注册与待验证账户的失败哨兵 `ErrSignupClosed`、`ErrContactRequired`、`ErrBusy`（注册派生名额已满） | 已实现 | `pkg/authn/errors.go` `ErrSignupClosed`、`ErrContactRequired`、`ErrBusy`；`pkg/authn/account/signup.go` `(*product).Register` |
-| 自助注册的问题码 `signup-closed`、`username-taken` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeSignupClosed`、`CodeUsernameTaken`、`statusOf`、`Forbidden`；`pkg/authn/login/register.go` `(*routes).failRegister` |
+| 自助注册与待验证账户的失败哨兵 `ErrSignupClosed`、`ErrContactRequired`、`ErrContactTaken`、`ErrBusy`（注册派生名额已满） | 已实现 | `pkg/authn/errors.go` `ErrSignupClosed`、`ErrContactRequired`、`ErrContactTaken`、`ErrBusy`；`pkg/authn/account/signup.go` `(*product).Register` |
+| 自助注册与邮箱添加的问题码 `signup-closed`、`username-taken`、`email-taken` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeSignupClosed`、`CodeUsernameTaken`、`CodeEmailTaken`、`statusOf`、`Forbidden`；`pkg/authn/login/register.go` `(*routes).failRegister`；`pkg/authn/login/internal/selfservice/call.go` `(*routes).fail`；`pkg/authn/admin/pipeline.go` `(*product).answer` |
 | 待验证账户的问题码 `contact-required` 与状态映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeContactRequired`、`statusOf` |
 | 待验证账户的 `contact-required` 运行时映射（要求已验证邮箱的门控） | 已实现 | `pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |

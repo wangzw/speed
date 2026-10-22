@@ -745,7 +745,7 @@
                 }
               }
             },
-            "description": "An account with that identifier already exists, or a password account would have no username or email address to log in with (login-identifier-required)"
+            "description": "An account with that identifier already exists (conflict), the email address is reserved by another account (email-taken), or a password account would have no username or email address to log in with (login-identifier-required)"
           },
           "413": {
             "content": {
@@ -1214,7 +1214,7 @@
                 }
               }
             },
-            "description": "The identifier is bound elsewhere"
+            "description": "The identifier is bound elsewhere (conflict), or the email address is reserved by another account (email-taken)"
           },
           "413": {
             "content": {

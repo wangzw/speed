@@ -39,6 +39,11 @@ type Signups interface {
 	// is ErrPasswordPolicy. A username already taken is ErrAccountExists, and
 	// the pair is counted against the signup-username back-off, which is read
 	// before the uniqueness check and answered while it holds as ErrThrottled.
+	// The email address is reserved by inserting its contact row in the same
+	// transaction, and that insert is the atomic arbiter: an address another
+	// account has reserved or proved is ErrContactTaken. An unproved reservation
+	// is accepted, and it lasts until the address is proved or the account is
+	// deleted.
 	// Deriving the password uses the signup-concurrency capacity of its own, so
 	// a full capacity is ErrBusy and never takes a place from a password login.
 	// No email is sent, no session is created and no identifier awaits
@@ -59,11 +64,13 @@ type SignupVerification interface {
 	// ErrAccountNotFound, and an unavailable database is ErrUnavailable: a read
 	// failure is never answered as SignupNone.
 	SignupStateOf(ctx context.Context, id AccountID) (SignupStatus, error)
-	// PendingAccountByContact finds the one account a pending contact belongs
-	// to. kind is email or phone, value is normalized first (one that cannot be
-	// is ErrInvalidIdentifier), and ok is false when no account lists the
-	// contact or more than one does: a caller never guesses an owner. Only
-	// owners that are still pending are reported. The caller is the invitation
-	// acceptance path, whose token has already proved control of the address.
+	// PendingAccountByContact finds the one account an unproved contact
+	// reservation belongs to. kind is email or phone, value is normalized first
+	// (one that cannot be is ErrInvalidIdentifier), and ok is false when no
+	// account reserved the contact or more than one does: a caller never guesses
+	// an owner. Only owners that are still pending are reported, and a row whose
+	// verified_at is set is never one: that contact is held by the identifier
+	// table. The caller is the invitation acceptance path, whose token has
+	// already proved control of the address.
 	PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error)
 }

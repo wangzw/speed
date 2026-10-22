@@ -43,6 +43,7 @@ type harness struct {
 	svc      *selfservice.Service
 	accounts *fakeAccounts
 	admin    *fakeAdmin
+	signup   *fakeSignup
 	pw       *fakePasswords
 	sessions *fakeSessions
 	mfa      *fakeMFA
@@ -82,6 +83,7 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 			CreatedAt: now.Add(-48 * time.Hour),
 		}},
 		admin:    &fakeAdmin{log: log},
+		signup:   &fakeSignup{log: log, pending: map[string]authn.AccountID{}},
 		pw:       &fakePasswords{log: log},
 		sessions: &fakeSessions{log: log, issued: authn.Issued{ID: session, Token: "rotated-token", ExpiresAt: now.Add(time.Hour)}},
 		mfa:      &fakeMFA{log: log},
@@ -99,6 +101,7 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 	deps := selfservice.Deps{
 		Accounts:        h.accounts,
 		Admin:           h.admin,
+		Signup:          h.signup,
 		Passwords:       h.pw,
 		Sessions:        h.sessions,
 		MFA:             h.mfa,

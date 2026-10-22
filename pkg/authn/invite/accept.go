@@ -204,8 +204,9 @@ func (p *product) settle(ctx context.Context, id string, cause error) {
 }
 
 // permanent reports whether a redemption failure cannot be fixed by retrying:
-// an address that conflicts with an existing account, or a binding another
-// account holds.
+// an address that conflicts with an existing account or a reservation, or a
+// binding another account holds.
 func permanent(cause error) bool {
-	return errors.Is(cause, authn.ErrAccountExists) || errors.Is(cause, authn.ErrBindingConflict)
+	return errors.Is(cause, authn.ErrAccountExists) || errors.Is(cause, authn.ErrContactTaken) ||
+		errors.Is(cause, authn.ErrBindingConflict)
 }

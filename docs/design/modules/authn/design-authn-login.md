@@ -7,13 +7,13 @@
 - 在第一因素通过之后做与方式无关的全部动作：把证明解析成账户（含开户与关联）、向 `MFA` 询问是否还要第二因素或登记因素、建登录会话或发令牌。账户解析的规则归 [authn-account](design-authn-account.md)，因素、策略与保障等级的合成归 [authn-mfa](design-authn-mfa.md)，本文只写引擎怎样调用它们、怎样处理它们的结果。
 - 让目的 `login`、`link`、`step-up`、`enroll` 共用同一台状态机，终态动作按目的区分。目的取值是封闭集。
 - 在 `authn.gate.mount.endpoint` 指定的端、该作用域的基路径之下挂登录路由、回跳路由、方式列表与账户自助路由：未认证的登录流程与回调挂普通面的基路径。路由与访问级别经 `mount.Mounter` 用同一个调用声明（[authn-gate](design-authn-gate.md)）。账户自助里随装配成立的面声明为[条件特性](../../../glossary.md)，在决定它们是否成立的同一处判定里经 `feature.Board` 的 `Post` 报告：手机号自助在挂其路由的分支里，邮箱分支在与该分支答 503 同源的判定处（见「声明的特性」）。
-- 挂匿名注册路由 `POST B/register`，经账户模块的 `Signups.Register` 一次建号：注册收集用户名、口令与邮箱，不建立会话、不发送邮件；开户后客户端走既有的 `POST B/flows` 口令方法登录，邮箱在登录后经账户自助回路验证（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
+- 挂匿名注册路由 `POST B/register`，经账户模块的 `Signups.Register` 一次建号：注册收集用户名、口令与邮箱，不建立会话、不发送邮件；同一事务插入的邮箱预留以唯一索引仲裁地址占用（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)、[ADR-authn-contact-claim-2026-10-22](../../../adr/adr-authn-contact-claim-2026-10-22.md)）。开户后客户端走既有的 `POST B/flows` 口令方法登录，邮箱在登录后经账户自助回路验证。
 - 规定认证前的失败退避与枚举防护在登录路径上的形状：在何处计数、何时拒绝校验、应答怎样同形同时。退避状态的存取面 `Throttle` 与 `authn_throttles` 表归 [authn-account](design-authn-account.md)（[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)）。
 - 规定口令、社交登录（Google、GitHub）与微信各方式的流程。短信、通行密钥、企业 OIDC 与 SAML 作为方式接入同一接缝，各自的状态机与校验分别归 [authn-sms](design-authn-sms.md)、[authn-mfa](design-authn-mfa.md)、[authn-sso](design-authn-sso.md)。
 
 ### 非职责
 
-- **不存账户，不定账户解析的规则。** 账户、标识、待验证联系方式、外部身份绑定、成员关系与口令凭据的存取，以及自动关联、首登开户与自助注册开户的判据，归 [authn-account](design-authn-account.md)；引擎只按那里的规则调用。注册路由不自己写账户表：校验、开户事务与注册验证状态都由 `Signups.Register` 承担。
+- **不存账户，不定账户解析的规则。** 账户、标识、联系方式预留、外部身份绑定、成员关系与口令凭据的存取，以及自动关联、首登开户与自助注册开户的判据，归 [authn-account](design-authn-account.md)；引擎只按那里的规则调用。注册路由不自己写账户表：校验、开户事务与注册验证状态都由 `Signups.Register` 承担。
 - **不建会话、不签令牌。** 会话的建立、cookie 的写出与撤销归 [authn-session](design-authn-session.md)，令牌的签发归 [authn-token](design-authn-token.md)；引擎经 `Sessions` 与 `Tokens` 调用，不自己拼 cookie。
 - **不实现因素，不合成保障等级。** 因素的登记、校验与保障等级的唯一计算处是 `authn.mfa`；方法只交出 `Proof.UserVerified` 与 `Proof.IDPAsserted` 这类事实。
 - **不持有短信验证码的状态。** 挑战行、预算、尝试次数与发送归 [authn-sms](design-authn-sms.md)。
@@ -151,7 +151,7 @@ type Proof struct {
 
 | `GET B/methods` | Open | 列出已纳入且未被 `disabled-methods` 关掉的登录方式描述符，并发布注册开关与可用的第二因素种类 |
 | `POST B/flows` | Open | 开始 `login` 流程，body `{method, delivery, return_to, binding, input}`；不读 cookie；流程绑定在此建立 |
-| `POST B/register` | Open | 匿名自助注册，body `{username, email, password, display_name?, locale?, time_zone?}`；邮箱必填；一次事务建号，不建会话、不发邮件 |
+| `POST B/register` | Open | 匿名自助注册，body `{username, email, password, display_name?, locale?, time_zone?}`；邮箱必填并作为未证明预留写入；一次事务建号，不建会话、不发邮件 |
 | `POST B/flows/authenticated` | Required | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定当前账户与会话；冒充中拒绝；`enroll` 是因素登记的唯一入口；起始状态与前置要求见「在已登录身份上开始流程」 |
 | `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定 |
 | `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等；要求绑定 |
@@ -218,13 +218,13 @@ type Proof struct {
 }
 ```
 
-- `username`、`email` 与 `password` 必填；邮箱只作为待验证联系方式，验证前不是登录名。`display_name`、`locale` 与 `time_zone` 可选，分别写到显示名与属性集的 `i18n.locale`、`i18n.tz` 键；`locale` 与 `time_zone` 按语言与时区的取值域校验，越界答 400。
+- `username`、`email` 与 `password` 必填；邮箱先作为未证明预留写入，验证前不是登录名。`display_name`、`locale` 与 `time_zone` 可选，分别写到显示名与属性集的 `i18n.locale`、`i18n.tz` 键；`locale` 与 `time_zone` 按语言与时区的取值域校验，越界答 400。
 - 成功是 `201` 与 `{"state":"registered","account_id":"...","verification":{"state":"pending","email":"..."}}`。开户在一次事务里完成（`Signups.Register`），不建立会话、不发送邮件。
 - 客户端随后以 `POST B/flows` 的 `password` 方法登录，`input` 带 `identifier`（用户名）与 `password`。注册与验证都不自行铸造会话；自动登录失败时客户端退回登录表单并预填用户名。
 - 邮箱验证在登录后走 `POST B/identifiers` 与 `POST B/identifiers/verify`。只有邮箱被证明才把账户的注册验证状态转为已验证，短信验证手机不解除限制（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
-- 失败：400 体不合法或口令不合策略；403 `signup-closed`（`authn.account.password-signup` 不是 `open`）；409 `username-taken`；429 `throttled` 带 `Retry-After`；503 `unavailable`（db 或派生容量不可用）。
+- 失败：400 体不合法或口令不合策略；403 `signup-closed`（`authn.account.password-signup` 不是 `open`）；409 `username-taken`、409 `email-taken`；429 `throttled` 带 `Retry-After`；503 `unavailable`（db 或派生容量不可用）。
 - **注册开关的权威检查在 `Signups.Register`。** 本路由与 `GET B/methods` 读同一个设置项只作预检查，便于在校验与派生之前早拒；预检查放过的请求仍可能被 `Signups.Register` 以 `ErrSignupClosed` 拒绝，两处答同一个 403 `signup-closed`。
-- 注册按来源地址的分钟预算与全局小时预算限流，超限答 429；查用户名之前先按 `signup-username` 读一次退避，退避中同样答 429 带 `Retry-After`。用户名冲突是显式的 409，邮箱占用不在注册时检查、也不在应答里回显；邮箱冲突的 409 只在发码后、验证前被抢注的竞态里可达（地址已被持有时不发码，见「账户自助」的 `POST B/identifiers`）。
+- 注册按来源地址的分钟预算与全局小时预算限流，超限答 429；查用户名之前先按 `signup-username` 读一次退避，退避中同样答 429 带 `Retry-After`。用户名冲突与邮箱占用都是显式的 409：`Signups.Register` 在开户事务里插入邮箱预留，`(kind, value)` 的唯一索引是地址的唯一仲裁点，冲突返回 `ErrContactTaken`，路由答 409 `email-taken`；注册不在插入之前检查邮箱占用，冲突时整个开户事务回滚。
 
 ### 问题码
 
@@ -238,7 +238,7 @@ type Proof struct {
 | 401 | `link-required` | 社交登录无绑定而已验证邮箱命中现有账户 |
 | 401 | `insufficient_user_authentication` | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
 | 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是待验证账户调用了要求已验证邮箱的能力 |
-| 409 | `conflict`、`login-identifier-required`、`username-taken` | 外部身份冲突、解绑最后一种登录方式、删最后一个因素、某种因素已达上限；账户没有可作登录名的标识而设口令，或删除带口令凭据账户的最后一个登录名；自助注册的用户名已被占用 |
+| 409 | `conflict`、`login-identifier-required`、`username-taken`、`email-taken` | 外部身份冲突、解绑最后一种登录方式、删最后一个因素、某种因素已达上限；账户没有可作登录名的标识而设口令，或删除带口令凭据账户的最后一个登录名；自助注册的用户名已被占用；邮箱地址已被别的账户预留或持有 |
 | 415、429、503 | `unsupported-media-type`、`throttled`（带 `Retry-After`）、`unavailable` | `unavailable` 对外不区分是哪个依赖不可用 |
 
 401 一律带 `WWW-Authenticate`。挂在本模块路由上的 401 有三种来源。**网关自产的 401**（没有凭据、头不合规、出口检查不符、冒充范围不符，以及网关自己对浏览器会自行附带的凭据做的跨源检查不过）取网关为该端建成的挑战，含口令表后端在场时的 `Basic`。**本模块处理器答的 401**（`login-failed`、`flow-invalid`、`link-required`、`insufficient_user_authentication`）与 **`Mounter` 的 `Wrap` 为挂载路由写的跨源检查 401**，挑战去掉 `Basic`，只用 `Bearer` 与 `Cookie`：同源页面的 `fetch` 收到带 `Basic` 的 401 会让浏览器弹出原生口令框，而这些 401 不是在要求 Basic 凭据（[ADR-authn-credential-dispatch-2026-10-10](../../../adr/adr-authn-credential-dispatch-2026-10-10.md)）。三种 401 的 realm 都取该端点的端名，与网关写的 realm 同源：处理器与 `Wrap` 经 `mount.Mounter.Endpoint()` 得到端名，再交给路由部件的 401 写出函数（[authn-gate](design-authn-gate.md)）。
@@ -277,7 +277,7 @@ type Proof struct {
 | `kv.KV` | 是 | 流程记录、手机号验证记录与来源地址减负的计数 |
 | `Accounts`、`AccountAdmin` | 是 | 账户解析、开户、关联、`Touch`（[authn-account](design-authn-account.md)） |
 | `Signups` | 是 | 匿名注册路由的开户入口；注册校验、事务与注册验证状态归账户模块 |
-| `SignupVerification` | 是 | `purpose=link` 的门控读发起者的注册验证状态；读失败答 503 |
+| `SignupVerification` | 是 | `purpose=link` 的门控读发起者的注册验证状态；邮箱分支发码前反查地址的未证明预留；读失败答 503 |
 | `Passwords` | 是 | 自助改口令的处理器；口令方式的校验在方法包里经同一接口完成 |
 | `Memberships` | 是 | 企业 SSO 首登开户与并入判定所需的成员关系读写 |
 | `Throttle` | 是 | 失败退避的存取面 |
@@ -724,8 +724,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 |---|---|
 | `PUT B/password` | 改口令；请求体的当前口令可空（经提供方开户的账户没有口令），经 `SetPasswordOptions.Current` 交给 `Passwords.Set`，由账户模块校验当前口令与策略、失败即 `ErrPasswordPolicy`（400）或 `ErrInvalidCredentials`（401），本路由不单独计数退避；成功后处理器调 `Sessions.Rotate` 与 `Sessions.RevokeAccount(except = 当前会话)`；账户没有可作登录名的标识（没有用户名也没有邮箱标识）时 409 `login-identifier-required` |
 | `POST B/phone`、`POST B/phone/verify` | 添加或更换手机，经短信验证新号码（`verified_via = sms-code`）；成功后撤销其余会话；服务端状态与步骤见「手机号验证」 |
-| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；对同一归一化地址、间隔内的重发答 429 `throttled`（窗口按地址持有，跨会话与账户共享，一个地址在一次窗口内只发一条码）；地址已被其他账户持有时不发信、不花预算，但占同一重发窗口，应答与空闲地址同形（首次 200 `pending`，窗口内重复 429，kv 失败 503）；成功写入撤销其余会话。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier-2026-10-16](../../../adr/adr-authn-selfservice-identifier-2026-10-16.md) |
-| `POST B/identifiers/verify` | 提交自助邮箱验证码，体 `{code}`：读会话的待验证记录，比对码；不符计数、用尽五次即废、记录过期靠键的生存期；通过才以 `verified_via = email-code` 调 `AccountAdmin.AddIdentifier` 写标识、删记录并撤销其余会话；没有待验证记录（或记录不属于本账户）与错码同答 401 `login-failed`，使不发码的持有地址与空闲地址不可区分 |
+| `POST B/identifiers` | 添加本人登录标识，体 `{kind, value}`：`kind` 取 `username` 或 `email`，手机走 `POST B/phone`。用户名是登录名，无所有权可证，一步写入，`verified_via = self`；邮箱先经 `EmailCodeSender` 发码并在 kv 写一条按会话的待验证记录，应答 `{state: "pending", expires_in, resend_after}`（用户名成功应答 `{state: "added"}`）；没有 `EmailCodeSender` 时邮箱分支答 503 `unavailable`；发码之前读 `Accounts.Lookup` 与 `SignupVerification.PendingAccountByContact`，地址已被其他账户持有或留有未证明预留时答 409 `email-taken`，不发信、不占重发窗口、不花预算，读失败答 503；对同一归一化地址、间隔内的重发答 429 `throttled`（窗口按地址持有，跨会话与账户共享，一个地址在一次窗口内只发一条码）；成功写入撤销其余会话。`verified_via` 由写标识的这一步定，非管理员自陈，见 [ADR-authn-selfservice-identifier-2026-10-16](../../../adr/adr-authn-selfservice-identifier-2026-10-16.md) |
+| `POST B/identifiers/verify` | 提交自助邮箱验证码，体 `{code}`：读会话的待验证记录，比对码；不符计数、用尽五次即废、记录过期靠键的生存期；通过才以 `verified_via = email-code` 调 `AccountAdmin.AddIdentifier` 写标识、删记录并撤销其余会话；写标识是权威的占用判定，地址在发码之后被别的账户取得时 `ErrContactTaken` 与 `ErrAccountExists` 都答 409 `email-taken`；没有待验证记录（或记录不属于本账户）与错码同答 401 `login-failed` |
 | `DELETE B/identifiers/:id` | 删本人持有的标识；标识不属本人与不存在同形，都答 400 `bad-request`；带口令凭据的账户删除最后一个用户名或邮箱时答 409 `login-identifier-required`，删除不生效；无口令凭据的账户可删最后一个登录名，删手机从不触发该规则；不撤销会话；`authn.identifier.changed` 由 [authn-account](design-authn-account.md) 在删除时发布 |
 | `DELETE B/links/:id` | 解绑外部身份；账户有因素时，IdP 声明的多因素不算；解绑后账户至少还剩一种可用登录方式，否则 409 `conflict`；成功后撤销其余会话并发 `authn.binding.changed` |
 
@@ -810,7 +810,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 - **流程记录是唯一的并发裁判。** 每次迁移是 `CompareAndSwap(旧, 新)`，同一条流程上的并发请求至多一个胜出；败者按 `flow-invalid` 拒绝，不重试，也不做第二次读。
 - **回跳的并发消费在方法之外裁决。** 两个并发回跳读到同一份旧记录时，只有一个能交换成 `processing`；败者在 `Answer` 被调用之前就被挡住，所以授权码至多换一次。
 - **终态动作先交换后执行。** `ready` 交换成 `done` 的败者拒绝，胜者执行动作；动作失败时流程已消耗。这使「登录完成只成功一次」只依赖 kv 的原子性。
-- **注册的一次建号在账户模块的事务里完成。** 注册处理器只做路由、请求校验与哨兵映射；账户、用户名标识、口令凭据与待验证联系方式由 `Signups.Register` 在同一事务写入。注册不建会话、不发邮件，因而没有跨模块的写。
+- **注册的一次建号在账户模块的事务里完成。** 注册处理器只做路由、请求校验与哨兵映射；账户、用户名标识、口令凭据与未证明预留由 `Signups.Register` 在同一事务写入，预留的插入是地址的唯一仲裁点。注册不建会话、不发邮件，因而没有跨模块的写。
 - **跨模块的写不在一个事务里。** 账户解析、开户与绑定在 `authn.account` 自己的事务里完成；会话、因素、审计、事件各在自己的模块里写。引擎的一次完成因而是一串各自原子的调用：失败时可能留下已建而未交付的会话，它不可用于认证之外的任何事，随期限到期，用户重新登录。
 - **自动并入先撤销后建会话。** 撤销该账户既有会话发生在本次登录建立新会话之前，次序不可颠倒，否则新会话也会被撤销。
 - **口令派生的并发约束归 [authn-account](design-authn-account.md)。** 登录路径只把 `ErrBusy` 映射成 503。
@@ -839,7 +839,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 路由、请求与应答的形状、问题码 | 已实现 | `pkg/authn/login/routes.go`、`pkg/authn/login/respond.go`；`pkg/authn/login/answer.go`；`pkg/authn/internal/mount/problem.go` |
 | 账户凭据自助路由与手机号验证 | 已实现 | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |
 | 登录标识的自助添加（用户名一步写入、邮箱经验证码证明） | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(routes).addIdentifier`、`(routes).verifyIdentifier`；`pkg/authn/email.go` `EmailCodeSender`；`pkg/authn/login/login.go` `(*product).emailSender` |
-| 邮箱验证码回路的各层预算与地址占用抑制 | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).addEmail`、`emailBudgetsAllow`、`untilNextEmailBucket`、`emailHeldByAnother`、`answerPending`；设置项声明于 `pkg/authn/login/config.go`，读取于 `pkg/authn/login/internal/selfservice/settings.go` `(*counts).get`；`pkg/authn/login/internal/selfservice/emailbudget_test.go` |
+| 邮箱验证码回路的各层预算与地址占用判定 | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).addEmail`、`emailBudgetsAllow`、`untilNextEmailBucket`、`emailTakenByAnother`；`(*routes).verifyIdentifier` 的 `email-taken` 映射；设置项声明于 `pkg/authn/login/config.go`，读取于 `pkg/authn/login/internal/selfservice/settings.go` `(*counts).get`；`pkg/authn/login/internal/selfservice/emailbudget_test.go` |
 | 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 | `pkg/authn/login/engine.go`、`pkg/authn/login/answer.go` |
 | 口令方法 `authn.login.password` | 已实现 | `pkg/authn/login/password/password.go` `Module`、`(method).Begin`、`(method).Answer`、`(method).Name` |
 | 短信方法 `authn.login.sms` | 已实现 | `pkg/authn/login/sms/sms.go` `Module` |

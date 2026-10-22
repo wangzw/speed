@@ -934,6 +934,98 @@ describe('IdentifiersSection', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('renders a taken email on the value field, not the failure banner', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return errorResponse(409, 'authn.email_taken')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+
+    // The address's own failure: the field describes it, so the value the
+    // viewer can change carries the message.
+    expect(
+      await screen.findByText(zhCN.identifiers.add.emailTaken),
+    ).toBeTruthy()
+    expect(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+    ).toHaveAttribute('aria-invalid', 'true')
+    // The code's generic account-state text and the shared banner stay out
+    // of it: the section's one failure slot renders no role="alert".
+    expect(screen.queryByText(zhCN.errors.authn.email_taken)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('returns a taken email from the verification step to the value field', async () => {
+    // The write is the authoritative refusal: the address can be taken
+    // between the code request and the code's submission, so the face
+    // returns to the value -- the thing to change -- with the field's
+    // message rather than asking for a code nothing can accept.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers/verify') {
+        return errorResponse(409, 'authn.email_taken')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+    )
+
+    const email = await screen.findByLabelText(
+      zhCN.identifiers.add.value.labelEmail,
+    )
+    expect(email).toHaveValue('ada@x.test')
+    expect(email).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText(zhCN.identifiers.add.emailTaken)).toBeTruthy()
+    expect(
+      screen.queryByLabelText(zhCN.identifiers.add.code.label),
+    ).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('clears the failure banner when the add face is cancelled', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {

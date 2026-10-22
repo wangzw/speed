@@ -13,6 +13,7 @@
       "forbidden": "你没有执行该操作的权限。",
       "contact_required": "请先验证邮箱地址再继续。",
       "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
+      "email_taken": "该邮箱已被另一账户使用。",
       "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
       "unsupported_media_type": "请求无法被读取。",
       "throttled": "尝试次数过多，请稍后再试。",
@@ -333,6 +334,7 @@
       "submitUsername": "添加",
       "invalidEmail": "请输入有效的邮箱地址。",
       "usernameTaken": "该用户名已被使用，请换一个。",
+      "emailTaken": "该邮箱已被另一账户使用，请换一个。",
       "cancel": "取消",
       "sent": "验证码已发送至 {{value}}。",
       "code": {

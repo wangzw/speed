@@ -584,7 +584,8 @@ func assertNoDependencyName(t *testing.T, body string) {
 // The runtime sentinels of design-authn-failure.md's runtime table, the closed
 // set a runtime failure of this capability directory is classified into.
 var runtimeSentinels = []error{
-	authn.ErrInvalidAccountID, authn.ErrAccountNotFound, authn.ErrAccountExists, authn.ErrInvalidCredentials,
+	authn.ErrInvalidAccountID, authn.ErrAccountNotFound, authn.ErrAccountExists, authn.ErrContactTaken,
+	authn.ErrInvalidCredentials,
 	authn.ErrPasswordPolicy, authn.ErrInvalidIdentifier, authn.ErrInvalidArgument, authn.ErrFactorLimit,
 	authn.ErrIdentifierRequired, authn.ErrAccountUnavailable, authn.ErrMethodDisabled, authn.ErrCleanupIncomplete,
 	authn.ErrSessionRevoked, authn.ErrThrottled, authn.ErrFlowInvalid, authn.ErrStepOutOfOrder,

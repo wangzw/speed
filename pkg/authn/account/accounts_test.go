@@ -218,8 +218,8 @@ func TestTwoCreatesOfOneEmailLeaveOneAccount(t *testing.T) {
 			switch {
 			case err == nil:
 				won++
-			case !errors.Is(err, authn.ErrAccountExists):
-				t.Errorf("a loser got %v, want ErrAccountExists", err)
+			case !errors.Is(err, authn.ErrContactTaken):
+				t.Errorf("a loser got %v, want ErrContactTaken", err)
 			}
 		}
 		if won != 1 {
@@ -852,8 +852,8 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierUsername, "holder2", admin); !errors.Is(err, authn.ErrAccountExists) {
 			t.Errorf("a second username gave %v, want ErrAccountExists: an account has one", err)
 		}
-		if err := h.p.AddIdentifier(ctx, other, authn.IdentifierEmail, "SECOND@example.com", admin); !errors.Is(err, authn.ErrAccountExists) {
-			t.Errorf("an email address another account holds gave %v, want ErrAccountExists", err)
+		if err := h.p.AddIdentifier(ctx, other, authn.IdentifierEmail, "SECOND@example.com", admin); !errors.Is(err, authn.ErrContactTaken) {
+			t.Errorf("an email address another account holds gave %v, want ErrContactTaken", err)
 		}
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierEmail, "third@example.com", authn.Verification{}); !errors.Is(err, authn.ErrInvalidArgument) {
 			t.Errorf("an identifier with no proof gave %v, want ErrInvalidArgument", err)

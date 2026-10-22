@@ -91,7 +91,7 @@ func TestNewNamesWhatIsMissing(t *testing.T) {
 	full := func() selfservice.Deps {
 		h := newHarness(t)
 		return selfservice.Deps{
-			Accounts: h.accounts, Admin: h.admin, Passwords: h.pw, Sessions: h.sessions, MFA: h.mfa,
+			Accounts: h.accounts, Admin: h.admin, Signup: h.signup, Passwords: h.pw, Sessions: h.sessions, MFA: h.mfa,
 			SMSCodes: h.sms, KV: h.kv, Throttle: h.throttle,
 		}
 	}
@@ -117,6 +117,10 @@ func TestNewNamesWhatIsMissing(t *testing.T) {
 			d.SMSCodes, d.Throttle = nil, nil
 			d.EmailSender = &fakeEmail{}
 		}, ""},
+		{"email without signup", func(d *selfservice.Deps) {
+			d.SMSCodes, d.Throttle = nil, nil
+			d.EmailSender, d.Signup = &fakeEmail{}, nil
+		}, "Signup"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

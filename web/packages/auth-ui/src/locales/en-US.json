@@ -78,6 +78,7 @@
     "signedIn": "You are signed in.",
     "retrySignIn": "Sign in again",
     "usernameTaken": "That username is already taken. Choose another one.",
+    "emailTaken": "That email address is already registered. Choose another one.",
     "signupClosed": "Registration is closed on this deployment. Ask an administrator for an account.",
     "throttled": "Too many registration attempts. Please try again later.",
     "retryAfter": "Too many registration attempts. Try again in {{seconds}} seconds.",
