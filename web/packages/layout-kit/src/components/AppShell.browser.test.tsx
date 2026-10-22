@@ -394,9 +394,9 @@ describe('AppShell sidebar layout in Chromium', () => {
     userMenu: <button type="button">Account</button>,
   } as const
 
-  /** Icon-sized actions for the rail, whose inner width is 46px: a host
-   * control wider than the rail is the host's own layout concern (the
-   * slot stacks vertically but AppShell does not resize it). */
+  /** Icon-sized actions for the rail: a host control wider than the rail is
+   * the host's own layout concern (the slot stacks vertically but AppShell
+   * does not resize it). */
   const RAIL_CHROME = {
     // A role-bearing brand: the rail clips it visually, but a screen
     // reader must still find it. `getByRole` filters hidden elements, so
@@ -589,6 +589,64 @@ describe('AppShell sidebar layout in Chromium', () => {
       expect(rect.left).toBeGreaterThanOrEqual(paperRect.left - 0.5)
       expect(rect.right).toBeLessThanOrEqual(paperRect.right + 0.5)
     }
+  })
+
+  it('keeps the collapsed rail wide enough for its controls and their focus ring under a dense spacing base', async () => {
+    await page.viewport(1280, VIEWPORT_HEIGHT)
+    // The focus ring a control draws when focused: a 2px outline offset by
+    // 2px, so the rail has to clear that much on the sides the ring reaches.
+    const RING_REACH = 4
+    // Two controls at the touch-target minimum, as siblings: the shell
+    // stacks them in the rail instead of laying them out in a row.
+    const control = (label: string) => (
+      <button
+        type="button"
+        aria-label={label}
+        style={{ width: 44, height: 44, padding: 0 }}
+      >
+        {label.slice(0, 1)}
+      </button>
+    )
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={NAV_ITEMS}
+        sidebarCollapsed
+        onSidebarCollapsedChange={() => undefined}
+        header={<a href="/home">Speed Admin</a>}
+        headerActions={
+          <>
+            {control('Search')}
+            {control('Colour mode')}
+          </>
+        }
+        userMenu={control('Account')}
+      >
+        <div style={{ height: 240 }}>content</div>
+      </AppShell>,
+      // A dense preset's spacing base: 7 x 6 = 42px, so the rail renders at
+      // its floor rather than at the derived width.
+      { projectTokens: { spacing: { unit: 6 } } },
+    )
+
+    const paper = drawerPaper()
+    const paperRect = paper.getBoundingClientRect()
+    expect(paper.scrollWidth).toBeLessThanOrEqual(paper.clientWidth)
+
+    const [search, colour] = ['Search', 'Colour mode'].map((name) =>
+      screen.getByRole('button', { name }).getBoundingClientRect(),
+    )
+    for (const rect of [search, colour]) {
+      expect(rect.left - paperRect.left).toBeGreaterThanOrEqual(
+        RING_REACH - 0.5,
+      )
+      expect(paperRect.right - rect.right).toBeGreaterThanOrEqual(
+        RING_REACH - 0.5,
+      )
+    }
+    // Stacked, not side by side: a row of two would put the second control
+    // past the paper's right edge.
+    expect(colour.top).toBeGreaterThanOrEqual(search.bottom - 0.5)
   })
 
   it('shows the brand once at 400px and pins the open drawer bottom row, with no accessibility violations', async () => {

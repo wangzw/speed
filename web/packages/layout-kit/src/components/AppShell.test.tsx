@@ -526,7 +526,7 @@ describe('AppShell', () => {
       // its own unit instead of being coerced to px.
       expect(emittedStyleText()).toMatch(
         new RegExp(
-          `\\.${drawerClasses.paper}\\{[^}]*width:max\\(56px,\\s*44px\\)`,
+          `\\.${drawerClasses.paper}\\{[^}]*width:max\\(56px,\\s*53px\\)`,
         ),
       )
       // The toggle now offers to expand.
@@ -1158,7 +1158,7 @@ describe('AppShell', () => {
       expect(getByRole('button', { name: 'Account' })).toBeInTheDocument()
     })
 
-    it('floors the collapsed rail at the 44px touch-target minimum under a smaller spacing base', () => {
+    it('floors the collapsed rail at the width its contents need under a smaller spacing base', () => {
       mockMatchMedia(true)
       renderWithProviders(
         <AppShell
@@ -1171,12 +1171,14 @@ describe('AppShell', () => {
         </AppShell>,
         // A dense preset's spacing base: 7 x 6 = 42px, below the floor.
         // The declaration keeps both operands: jsdom cannot evaluate the
-        // CSS max(), and a browser resolves it to the 44px floor.
+        // CSS max(), and a browser resolves it to the floor -- a control
+        // at the touch-target minimum, the focus ring's clearance on both
+        // sides of it, and the paper's divider.
         { projectTokens: { spacing: { unit: 6 } } },
       )
       expect(emittedStyleText()).toMatch(
         new RegExp(
-          `\\.${drawerClasses.paper}\\{[^}]*width:max\\(42px,\\s*44px\\)`,
+          `\\.${drawerClasses.paper}\\{[^}]*width:max\\(42px,\\s*53px\\)`,
         ),
       )
     })

@@ -417,14 +417,23 @@ const DEFAULT_SIDEBAR_WIDTH = 280
 const COLLAPSED_SIDEBAR_SPACING_UNITS = 7
 
 /**
+ * The horizontal inset of the collapsed rail's rows, in px. It is the
+ * focus ring's reach -- a 2px outline offset by 2px -- so a control inside
+ * the rail keeps its ring clear of the paper's edge. A spacing step would
+ * shrink with a dense preset's base and cut the ring instead.
+ */
+const RAIL_ROW_INSET_PX = 4
+
+/**
  * The rail's floor, in px. The derived width is a multiple of the
  * spacing base, so a theme that shrinks the base (a dense preset, say)
- * would push the rail below the touch-target minimum the layout design
- * requires of every clickable target. The rail therefore never renders
- * narrower than this floor; at the default base the derived width is
- * already above it, so the default rendering is unchanged.
+ * pushes the rail below what it has to hold: a control at the layout
+ * design's touch-target minimum, the ring's clearance on both sides of
+ * it, and the paper's own divider. The rail therefore never renders
+ * narrower than that; at the default base the derived width is already
+ * above it, so the default rendering is unchanged.
  */
-const COLLAPSED_SIDEBAR_MIN_WIDTH = 44
+const COLLAPSED_SIDEBAR_MIN_WIDTH = 44 + RAIL_ROW_INSET_PX * 2 + 1
 
 /**
  * A collapsed rail entry that carries an icon: the icon is centered and
@@ -1092,11 +1101,12 @@ export function AppShell({
           alignItems: 'center',
           gap: sidebarCollapsed ? 0 : 1,
           flexShrink: 0,
-          // The rail is 56px, 55 of them inside its divider: 4px on
-          // each side still leaves the 40px an IconButton occupies. An
-          // expanded sidebar uses the drawer's own spacing (16px) so the
-          // brand lines up with the nav entries below it.
-          px: sidebarCollapsed ? 0.5 : 2,
+          // The rail holds a control at the touch-target minimum, cleared
+          // on each side by the focus ring's reach; the rail's own floor
+          // is that sum, so these insets are the ring's, not a spacing
+          // step's. An expanded sidebar uses the drawer's own spacing
+          // (16px) so the brand lines up with the nav entries below it.
+          px: sidebarCollapsed ? `${RAIL_ROW_INSET_PX}px` : 2,
           py: 1,
         }}
       >
@@ -1136,7 +1146,7 @@ export function AppShell({
           flexWrap: 'wrap',
           gap: 1,
           flexShrink: 0,
-          px: narrow ? 0.5 : 2,
+          px: narrow ? `${RAIL_ROW_INSET_PX}px` : 2,
           py: 1,
           ...(narrow
             ? { flexDirection: 'column', justifyContent: 'center' }
