@@ -25,6 +25,9 @@ func (p *product) handleIssue(ctx context.Context, in issueInput) (AuthnInviteIs
 	if err = p.admit(id); err != nil {
 		return AuthnInviteIssued{}, err
 	}
+	if err = p.gateSignup(ctx, id); err != nil {
+		return AuthnInviteIssued{}, err
+	}
 	if in.Tenant == "" {
 		return AuthnInviteIssued{}, p.badRequest()
 	}
@@ -95,6 +98,9 @@ func (p *product) handleRevoke(ctx context.Context, in revokeInput, _ *speedhttp
 		return nil, err
 	}
 	if err := p.admit(id); err != nil {
+		return nil, err
+	}
+	if err := p.gateSignup(ctx, id); err != nil {
 		return nil, err
 	}
 	if err := p.asks(ctx, authn.Decision{

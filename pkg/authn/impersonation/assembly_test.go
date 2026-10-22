@@ -57,7 +57,8 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 
 	wantRequired := []core.Token{
 		(*db.Database)(nil), (*mount.Mounter)(nil), (*authn.Sessions)(nil), (*authn.Accounts)(nil),
-		(*authn.Memberships)(nil), (*authn.MFA)(nil), (*audit.Audit)(nil), (*authn.ScopeGuard)(nil),
+		(*authn.Memberships)(nil), (*authn.MFA)(nil), (*authn.SignupVerification)(nil),
+		(*audit.Audit)(nil), (*authn.ScopeGuard)(nil),
 	}
 	var required []core.Token
 	for _, r := range m.Requires {
@@ -137,7 +138,8 @@ func (a assembly) drive(t *testing.T, action func(ctx context.Context, reg *core
 	reg.Register(standIn(sessionModule, sessions, (*authn.Sessions)(nil)))
 	names = append(names, sessionModule)
 	reg.Register(standIn(accountModule, accounts, (*authn.Accounts)(nil)))
-	names = append(names, accountModule)
+	reg.Register(standIn("stand-in.signup-state", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
+	names = append(names, accountModule, "stand-in.signup-state")
 	reg.Register(standIn("stand-in.memberships", memberships, (*authn.Memberships)(nil)))
 	names = append(names, "stand-in.memberships")
 	reg.Register(standIn(mfaModule, mfa, (*authn.MFA)(nil)))

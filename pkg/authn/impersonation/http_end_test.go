@@ -176,6 +176,7 @@ func assembleOverHTTP(t *testing.T, use func(h *httpHarness)) {
 		sqlite.Module(), logModule, speedhttp.Module(), kvmemory.Module(),
 		eventmemory.Module(), settings.Module(), gate.Module(), authnmount.Module(),
 		provide(httpAccountsModule, accounts, (*authn.Accounts)(nil)),
+		provide("http-signup-state", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)),
 		provide(httpMembershipsModule, memberships, (*authn.Memberships)(nil)),
 		provide(httpMFAModule, mfa, (*authn.MFA)(nil)),
 		provide(httpAuditModule, auditor, (*audit.Audit)(nil)),

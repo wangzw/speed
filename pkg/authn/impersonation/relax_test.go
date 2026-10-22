@@ -136,7 +136,7 @@ func TestTheSubscriptionNeedsBothBusAndStore(t *testing.T) {
 // neither: the handler reaches for neither, records nothing with no audit seam,
 // and neither it nor the subscription panics.
 func TestTheHandlerIsInertWithoutABusOrStore(t *testing.T) {
-	p := build(nil, nil, nil, nil, nil, nil, nil, nil)
+	p := build(nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	if p.bus != nil || p.settings.store != nil || p.audit != nil {
 		t.Fatal("the product is not the empty assembly this case is about")
 	}

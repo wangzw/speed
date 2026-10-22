@@ -76,6 +76,20 @@ The API is the package's godoc.
   impersonable, so an administrator can always see and end an impersonation.
   The mount endpoint may not be one the admission layer guards, which the
   module's `Start` refuses with `ErrInvalidConfig`.
+- **An unverified self-registration cannot start an impersonation.** The first
+  condition of the actor's group reads `SignupVerification.SignupStateOf` and
+  answers `ErrContactRequired` (`403 contact-required`) when the state is
+  pending, before the strength, freshness, method-set and `Seasoned` checks and
+  before the `Decider`. That answer writes no audit row and counts no denied
+  attempt: it is guidance to prove an address, not an attempt. A state that
+  cannot be read is `ErrUnavailable` (503) with the same silence, never a pass.
+  A service account is not a candidate in the first place, and an account that
+  never self-registered is exempt. `SignupVerification` is required, so an
+  assembly that takes this module in also delivers the account module. The
+  subject is the initiator, `Actor()`, not `Account()`: an impersonating
+  identity's `Account()` is the target, whose state never takes part, and
+  `Start` is a host-visible seam that judges this itself rather than relying on
+  the handler having refused the impersonating identity first.
 - **The required dependency `ScopeGuard` is held, not called, by the module's
   own logic beyond the endpoint check.** It is what makes the absence of the
   admission layer fail the assembly before any instance is built. The scope

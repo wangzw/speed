@@ -416,5 +416,5 @@ flowchart LR
 | `pkg/go.mod` 对 go-jose 与 goxmldsig 的版本下限 | 已实现 | `pkg/go.mod` `github.com/go-jose/go-jose/v4` v4.1.5、`github.com/russellhaering/goxmldsig` v1.6.1；`pkg/authn/deps_test.go` `goJoseFloor`、`goxmldsigFloor` |
 | 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |
 | 匿名注册路由、用户名与邮箱的冲突处置、注册预算与独立的派生容量 | 未实现 | — |
-| 注册验证状态的门控与未验证账户的清理 | 未实现 | — |
+| 注册验证状态的门控与未验证账户的清理 | 已实现 | `pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup`；`pkg/authn/account/sweep.go` `sweepUnverified` |
 | 邮箱验证码的按地址、按账户与全局预算 | 未实现 | — |

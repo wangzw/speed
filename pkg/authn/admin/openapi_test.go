@@ -63,6 +63,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		(*authn.Accounts)(nil),
 		(*authn.AccountAdmin)(nil),
 		(*authn.Memberships)(nil),
+		(*authn.SignupVerification)(nil),
 		(*audit.Audit)(nil),
 		(*authn.Decider)(nil),
 		(*authn.Passwords)(nil),

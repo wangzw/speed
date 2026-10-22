@@ -204,4 +204,4 @@ classDiagram
 |---|---|---|
 | 用户档案自服务面（`GET B/me`、`PATCH B/me`） | 已实现 | `pkg/authn/profile/profile.go` `Module`；`pkg/authn/profile/routes.go` `mountRoutes`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/write.go` `handlePatchMe` |
 | operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/profile/operations.go`；`pkg/authn/profile/openapi_generated_test.go`；片段 `pkg/authn/profile/openapi/profile.json` |
-| `GET B/me` 的注册验证状态 `verification` 与标识的 `proven` | 未实现 | — |
+| `GET B/me` 的注册验证状态 `verification` 与标识的 `proven` | 已实现 | `pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/views.go` `AuthnProfileVerification`、`AuthnProfileIdentifier.Proven`、`profileViewOf`、`signupStateName`；`pkg/authn/profile/profile.go` `Module`、`product.signupVerification` |

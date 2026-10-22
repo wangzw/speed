@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/authn/internal/step"
 	"github.com/vislake/speed/pkg/core"
 )
@@ -718,5 +719,95 @@ func TestAResolverErrorFailsTheFlowClosed(t *testing.T) {
 	}
 	if st := flowRecordOf(t, r, cookie).State; st != stateFailed {
 		t.Errorf("the flow state is %q, want the failed tombstone", st)
+	}
+}
+
+// TestALinkIsRefusedForAnUnverifiedAccount holds the signup gate of the
+// authenticated start: a pending self-registration cannot begin a link, the
+// answer is 403 contact-required, and no flow record is written. Step-up and
+// enroll are not gated, and an account that never self-registered or has proved
+// its address links as before.
+func TestALinkIsRefusedForAnUnverifiedAccount(t *testing.T) {
+	cases := []struct {
+		name  string
+		state authn.SignupStatus
+		code  int
+		code_ string
+	}{
+		{"a pending registration", authn.SignupStatus{State: authn.SignupPending}, http.StatusForbidden, mount.CodeContactRequired},
+		{"a never-registered account", authn.SignupStatus{State: authn.SignupNone}, http.StatusOK, ""},
+		{"a verified registration", authn.SignupStatus{State: authn.SignupVerified}, http.StatusOK, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := &fakeMethod{name: "password"}
+			m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+			r := newRig(t, m)
+			r.loginAsAuthenticated("acct1", "sid")
+			r.verification.state = c.state
+
+			rec := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+			if rec.Code != c.code {
+				t.Fatalf("a link answered %d, want %d: %s", rec.Code, c.code, rec.Body.String())
+			}
+			if c.code_ != "" && !strings.Contains(rec.Body.String(), c.code_) {
+				t.Errorf("the answer carries no %q code: %s", c.code_, rec.Body.String())
+			}
+			r.kv.mu.Lock()
+			records := len(r.kv.m)
+			r.kv.mu.Unlock()
+			if c.code == http.StatusForbidden && records != 0 {
+				t.Errorf("a refused link wrote %d flow record(s), want none", records)
+			}
+			if c.code == http.StatusOK && records == 0 {
+				t.Error("an allowed link wrote no flow record")
+			}
+			if got := r.verification.readCount(); got != 1 {
+				t.Errorf("the signup state was read %d times, want once", got)
+			}
+		})
+	}
+}
+
+// TestStepUpAndEnrollAreNotGatedByTheSignupState holds the other two purposes:
+// an unverified account may still strengthen its session and register a factor.
+func TestStepUpAndEnrollAreNotGatedByTheSignupState(t *testing.T) {
+	for _, body := range []string{
+		`{"purpose":"step-up","method":"password"}`,
+		`{"purpose":"enroll","input":{"kind":"totp"}}`,
+	} {
+		m := &fakeMethod{name: "password"}
+		m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+		r := newRig(t, m)
+		r.loginAsAuthenticated("acct1", "sid")
+		r.verification.state = authn.SignupStatus{State: authn.SignupPending}
+
+		rec := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", body)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s answered %d, want 200: %s", body, rec.Code, rec.Body.String())
+		}
+		if got := r.verification.readCount(); got != 0 {
+			t.Errorf("%s read the signup state %d times, want none", body, got)
+		}
+	}
+}
+
+// TestALinkOnAnUnreadableSignupStateIs503 holds the failure direction: a state
+// that cannot be read is unavailable, never a pass.
+func TestALinkOnAnUnreadableSignupStateIs503(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	r := newRig(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.verification.err = errors.New("boom")
+
+	rec := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated", `{"purpose":"link","method":"password"}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("a link with an unreadable signup state answered %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+	r.kv.mu.Lock()
+	records := len(r.kv.m)
+	r.kv.mu.Unlock()
+	if records != 0 {
+		t.Errorf("the failed start wrote %d flow record(s), want none", records)
 	}
 }

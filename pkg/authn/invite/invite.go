@@ -120,7 +120,8 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // Module is the descriptor a host registers.
 //
 // The database, the route mounter, the account read and write surfaces, the
-// membership writes and the audit capability are required, and each is
+// signup verification reads, the membership writes and the audit capability are
+// required, and each is
 // delivered exclusively by another module, so the closure of a command that
 // takes this one in does not pull them in: the host writes them down. The audit
 // capability being required is what makes an assembly without one fail before
@@ -141,6 +142,7 @@ func Module() core.Module {
 			{Token: (*mount.Mounter)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
@@ -207,9 +209,10 @@ type product struct {
 	// is read from, in UTC.
 	now clock.Source
 
-	accounts    authn.Accounts
-	accountAdm  authn.AccountAdmin
-	memberships authn.Memberships
+	accounts     authn.Accounts
+	accountAdm   authn.AccountAdmin
+	verification authn.SignupVerification
+	memberships  authn.Memberships
 
 	mounter mount.Mounter
 	audit   audit.Audit
@@ -246,6 +249,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the account writes: %w", ModuleName, err)
 	}
+	verification, err := core.Resolve[authn.SignupVerification](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the signup verification reads: %w", ModuleName, err)
+	}
 	memberships, err := core.Resolve[authn.Memberships](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the membership writes: %w", ModuleName, err)
@@ -255,14 +262,15 @@ func newProduct(reg *core.Registry) (*product, error) {
 		return nil, fmt.Errorf("%s: taking up the audit capability: %w", ModuleName, err)
 	}
 	return &product{
-		handle:      database.DB(),
-		accounts:    accounts,
-		accountAdm:  accountAdm,
-		memberships: memberships,
-		mounter:     mounter,
-		audit:       auditor,
-		logger:      log.Default(),
-		reported:    make(map[string]string),
+		handle:       database.DB(),
+		accounts:     accounts,
+		accountAdm:   accountAdm,
+		verification: verification,
+		memberships:  memberships,
+		mounter:      mounter,
+		audit:        auditor,
+		logger:       log.Default(),
+		reported:     make(map[string]string),
 	}, nil
 }
 

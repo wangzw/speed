@@ -351,6 +351,12 @@ var (
 		"The body could not be read, or a value is outside its domain")
 	forbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable")
+	// signedInForbiddenAnswer is the 403 of the flow route that runs on an
+	// identity already signed in. It carries the signup gate of `purpose=link`
+	// beside the refusal shared with the other routes.
+	signedInForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
+		"The method or the account is unavailable, or a `purpose=link` flow is refused because the "+
+			"caller's self-registration has not verified an email address (contact-required)")
 	conflictAnswer = speedhttp.ProblemResponse(http.StatusConflict,
 		"The request conflicts with the account's state")
 	mediaTypeAnswer = capabilityProblem(http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType,
@@ -484,7 +490,7 @@ var startAuthenticatedOperation = speedhttp.NewReplyOperation[startAuthenticated
 		badRequestAnswer,
 		bodyOverLimit,
 		unauthorized("No usable credential"),
-		forbiddenAnswer,
+		signedInForbiddenAnswer,
 		conflictAnswer,
 		mediaTypeAnswer,
 		tooManyAnswer,

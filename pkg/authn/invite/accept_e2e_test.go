@@ -2,6 +2,7 @@ package invite
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/db/sqlite"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // TestAcceptCreatesAnAccountThroughTheRealAccountModule holds the whole of a
@@ -29,22 +31,13 @@ import (
 // reach that judgement; the address-verified-through-invitation channel is what
 // this case exists to hold.
 func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
-	withRealAccountProduct(t, func(handle *gorm.DB, admin authn.AccountAdmin, accounts authn.Accounts, memberships authn.Memberships) {
+	withRealAccountProduct(t, func(handle *gorm.DB, _ authn.Signups, admin authn.AccountAdmin, accounts authn.Accounts,
+		verification authn.SignupVerification, memberships authn.Memberships) {
 		// This module's own migrations go onto the same handle the account module
 		// built its tables on.
 		applyMigrations(t, handle)
 
-		p := &product{
-			handle:      handle,
-			accounts:    accounts,
-			accountAdm:  admin,
-			memberships: memberships,
-			mounter:     mounttest.New(t),
-			audit:       &recordingAudit{},
-			decider:     &fakeDecider{allow: true},
-			logger:      (&logBuffer{}).logger(),
-		}
-		p.now = newTestClock().read
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
 
 		ctx := context.Background()
 		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
@@ -84,18 +77,85 @@ func TestAcceptCreatesAnAccountThroughTheRealAccountModule(t *testing.T) {
 	})
 }
 
+// newRealProduct builds this module's product over the account module's own
+// capabilities and the database both modules' tables stand on.
+func newRealProduct(t *testing.T, handle *gorm.DB, admin authn.AccountAdmin, accounts authn.Accounts,
+	verification authn.SignupVerification, memberships authn.Memberships,
+) *product {
+	t.Helper()
+	p := &product{
+		handle:       handle,
+		accounts:     accounts,
+		accountAdm:   admin,
+		verification: verification,
+		memberships:  memberships,
+		mounter:      mounttest.New(t),
+		audit:        &recordingAudit{},
+		decider:      &fakeDecider{allow: true},
+		logger:       (&logBuffer{}).logger(),
+	}
+	p.now = newTestClock().read
+	return p
+}
+
+// openPasswordSignupKey is the setting the account module's registration reads
+// as its authority. The stand-in below turns it on; every other key it answers
+// as undeclared, which the module reads as that item's declared default.
+const openPasswordSignupKey = "authn.account.password-signup"
+
+// openPasswordSignup is a settings store whose password-signup item is open. It
+// is what lets a case start from a real pending self-registration rather than a
+// hand-written row.
+type openPasswordSignup struct{}
+
+func (openPasswordSignup) Get(_ settings.Layer, key string, target any) error {
+	if key != openPasswordSignupKey {
+		return settings.ErrUnknownKey
+	}
+	value, ok := target.(*string)
+	if !ok {
+		return settings.ErrTypeMismatch
+	}
+	*value = "open"
+	return nil
+}
+
+func (openPasswordSignup) Set(context.Context, settings.Write) error {
+	return errors.New("invite test: the stand-in settings store is read-only")
+}
+
+func (openPasswordSignup) Delete(context.Context, settings.Layer, string, string) error {
+	return errors.New("invite test: the stand-in settings store is read-only")
+}
+
+func (openPasswordSignup) List(context.Context, settings.Layer) ([]settings.Entry, error) {
+	return nil, nil
+}
+
+func (openPasswordSignup) Declared() []settings.DeclaredItem { return nil }
+
+// provideSettings declares the stand-in module that hands the settings store
+// over.
+func provideSettings() core.Module {
+	return core.Module{
+		Name:     "stand-in.invite-settings",
+		Provides: []core.Provision{{Token: (*settings.Store)(nil), Exclusive: true}},
+		New:      func(context.Context, *core.Registry) (any, error) { return openPasswordSignup{}, nil },
+	}
+}
+
 // withRealAccountProduct brings the real account module up over a SQLite file of
 // this test's own, so that its Create runs its own checks, and runs use inside
-// the drive with the handle and the three capabilities the invitation module
-// takes up. use runs before the drive closes the pool, which is why it is a
-// callback rather than a set of return values.
+// the drive with the handle and the capabilities the invitation module takes up.
+// use runs before the drive closes the pool, which is why it is a callback
+// rather than a set of return values.
 func withRealAccountProduct(t *testing.T,
-	use func(*gorm.DB, authn.AccountAdmin, authn.Accounts, authn.Memberships),
+	use func(*gorm.DB, authn.Signups, authn.AccountAdmin, authn.Accounts, authn.SignupVerification, authn.Memberships),
 ) {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "invite-e2e.db")
 	body := `{"db":{"sqlite":{"dsn":"` + dsn + `"}}}`
-	mods := []core.Module{sqlite.Module(), account.Module()}
+	mods := []core.Module{sqlite.Module(), account.Module(), provideSettings()}
 
 	reader := authntest.ConfigReaderAll(t, body, mods...)
 	reg := core.New()
@@ -115,6 +175,10 @@ func withRealAccountProduct(t *testing.T,
 			if err != nil {
 				return err
 			}
+			signups, err := core.Resolve[authn.Signups](reg)
+			if err != nil {
+				return err
+			}
 			admin, err := core.Resolve[authn.AccountAdmin](reg)
 			if err != nil {
 				return err
@@ -123,15 +187,193 @@ func withRealAccountProduct(t *testing.T,
 			if err != nil {
 				return err
 			}
+			verification, err := core.Resolve[authn.SignupVerification](reg)
+			if err != nil {
+				return err
+			}
 			memberships, err := core.Resolve[authn.Memberships](reg)
 			if err != nil {
 				return err
 			}
-			use(database.DB(), admin, accounts, memberships)
+			use(database.DB(), signups, admin, accounts, verification, memberships)
 			return nil
 		},
 	})
 	if err != nil {
 		t.Fatalf("driving the account module: %v", err)
 	}
+}
+
+// TestAcceptMergesIntoThePendingAccountThroughTheRealAccountModule holds the
+// acceptance's merge branch against the account module's own writes over one
+// database: an address that is nobody's identifier but is the pending contact of
+// a self-registration is proved by the invitation's token, so the identifier is
+// written on that account through invite, the pending contact with the same
+// value is consumed, the account's signup state moves from pending to verified,
+// the membership hangs on the same account and no second account is opened.
+func TestAcceptMergesIntoThePendingAccountThroughTheRealAccountModule(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, signups authn.Signups, admin authn.AccountAdmin,
+		accounts authn.Accounts, verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+		ctx := context.Background()
+
+		registered, err := signups.Register(ctx, authn.RegisterAccount{
+			Username: "newcomer", Email: "Newcomer@Example.com", Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("registering the pending account: %v", err)
+		}
+		if status, sErr := verification.SignupStateOf(ctx, registered.ID); sErr != nil || status.State != authn.SignupPending {
+			t.Fatalf("the registered account is %+v (%v), want a pending registration", status, sErr)
+		}
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "newcomer@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation for the pending address: %v", err)
+		}
+
+		mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token})
+		if err != nil {
+			t.Fatalf("accepting an invitation for a pending contact: %v", err)
+		}
+
+		// The membership hangs on the account that was already there.
+		if mem.Account != registered.ID {
+			t.Fatalf("the accepted membership names account %q, want the pending account %q", mem.Account, registered.ID)
+		}
+		got, ok, err := memberships.Membership(ctx, tenant, registered.ID)
+		if err != nil {
+			t.Fatalf("reading the membership back: %v", err)
+		}
+		if !ok || !got.Active || got.Source != SourceInvite {
+			t.Errorf("membership = %+v (present %v), want an active invite membership on the pending account", got, ok)
+		}
+
+		// The invitation's address verified the registration.
+		status, err := verification.SignupStateOf(ctx, registered.ID)
+		if err != nil {
+			t.Fatalf("reading the signup state back: %v", err)
+		}
+		if status.State != authn.SignupVerified {
+			t.Errorf("the account's signup state is %d, want verified", status.State)
+		}
+		if status.Email != "newcomer@example.com" {
+			t.Errorf("the verified address is %q, want newcomer@example.com", status.Email)
+		}
+		if status.Since.IsZero() {
+			t.Error("the instant the account reached verified was not recorded")
+		}
+		if n := pendingContacts(t, handle, registered.ID); n != 0 {
+			t.Errorf("the account still lists %d pending contact(s), want the proved address consumed", n)
+		}
+		if vias := identifierVias(t, handle, registered.ID, "newcomer@example.com"); len(vias) != 1 || vias[0] != VerifiedViaInvite {
+			t.Errorf("the email identifier was written through %v, want exactly [%q]", vias, VerifiedViaInvite)
+		}
+		if n := accountCount(t, handle); n != 1 {
+			t.Errorf("the database holds %d accounts, want the one pending account alone", n)
+		}
+	})
+}
+
+// TestAcceptDoesNotGuessBetweenPendingOwners holds the reverse lookup's
+// ambiguity: two pending accounts list the same address, so no owner is named
+// and the acceptance takes the no-account path. The new account gets the address
+// and the membership, and neither pending account is touched.
+func TestAcceptDoesNotGuessBetweenPendingOwners(t *testing.T) {
+	withRealAccountProduct(t, func(handle *gorm.DB, signups authn.Signups, admin authn.AccountAdmin,
+		accounts authn.Accounts, verification authn.SignupVerification, memberships authn.Memberships,
+	) {
+		applyMigrations(t, handle)
+		p := newRealProduct(t, handle, admin, accounts, verification, memberships)
+		ctx := context.Background()
+
+		first, err := signups.Register(ctx, authn.RegisterAccount{
+			Username: "first", Email: "clash@example.com", Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("registering the first pending account: %v", err)
+		}
+		second, err := signups.Register(ctx, authn.RegisterAccount{
+			Username: "second", Email: "clash@example.com", Password: "password123",
+		})
+		if err != nil {
+			t.Fatalf("registering the second pending account: %v", err)
+		}
+		if owner, ok, err := verification.PendingAccountByContact(ctx, string(authn.IdentifierEmail), "clash@example.com"); err != nil || ok {
+			t.Fatalf("PendingAccountByContact = (%q, %v, %v) with two owners, want a miss and no error", owner, ok, err)
+		}
+
+		issueCtx := authntest.Context(t, ctx, authntest.WithAccount(adminID))
+		issued, err := p.Issue(issueCtx, IssueInvite{Tenant: tenant, Email: "clash@example.com"})
+		if err != nil {
+			t.Fatalf("issuing an invitation for the ambiguous address: %v", err)
+		}
+		mem, err := p.Accept(ctx, AcceptInvite{Token: issued.Token, Password: "password123"})
+		if err != nil {
+			t.Fatalf("accepting an invitation for an ambiguous address: %v", err)
+		}
+
+		if mem.Account == first.ID || mem.Account == second.ID {
+			t.Fatalf("the accepted membership names pending account %q, want a new account", mem.Account)
+		}
+		if n := accountCount(t, handle); n != 3 {
+			t.Errorf("the database holds %d accounts, want the two pending ones and the created one", n)
+		}
+		if vias := identifierVias(t, handle, mem.Account, "clash@example.com"); len(vias) != 1 || vias[0] != VerifiedViaInvite {
+			t.Errorf("the created account's identifier was written through %v, want exactly [%q]", vias, VerifiedViaInvite)
+		}
+		for _, pending := range []authn.Account{first, second} {
+			status, sErr := verification.SignupStateOf(ctx, pending.ID)
+			if sErr != nil {
+				t.Fatalf("reading the signup state of %q: %v", pending.ID, sErr)
+			}
+			if status.State != authn.SignupPending {
+				t.Errorf("pending account %q is now %d, want it left pending", pending.ID, status.State)
+			}
+			if vias := identifierVias(t, handle, pending.ID, "clash@example.com"); len(vias) != 0 {
+				t.Errorf("pending account %q got the email identifier through %v, want none", pending.ID, vias)
+			}
+			if n := pendingContacts(t, handle, pending.ID); n != 1 {
+				t.Errorf("pending account %q lists %d pending contact(s), want its own one left alone", pending.ID, n)
+			}
+			if _, ok, mErr := memberships.Membership(ctx, tenant, pending.ID); mErr != nil || ok {
+				t.Errorf("pending account %q holds a membership (present %v, error %v), want none", pending.ID, ok, mErr)
+			}
+		}
+	})
+}
+
+// pendingContacts counts the pending contacts an account lists.
+func pendingContacts(t *testing.T, handle *gorm.DB, id authn.AccountID) int64 {
+	t.Helper()
+	var n int64
+	if err := handle.Raw("SELECT count(*) FROM authn_pending_contacts WHERE account_id = ?", id.String()).Scan(&n).Error; err != nil {
+		t.Fatalf("counting the pending contacts of %q: %v", id, err)
+	}
+	return n
+}
+
+// identifierVias reads how the account's identifiers with one email value were
+// verified, so that a case can tell the channel they were written through.
+func identifierVias(t *testing.T, handle *gorm.DB, id authn.AccountID, value string) []string {
+	t.Helper()
+	var vias []string
+	if err := handle.Raw("SELECT verified_via FROM authn_identifiers WHERE account_id = ? AND kind = ? AND value = ?",
+		id.String(), string(authn.IdentifierEmail), value).Scan(&vias).Error; err != nil {
+		t.Fatalf("reading the identifiers of %q: %v", id, err)
+	}
+	return vias
+}
+
+// accountCount reads how many account rows the database holds.
+func accountCount(t *testing.T, handle *gorm.DB) int64 {
+	t.Helper()
+	var n int64
+	if err := handle.Raw("SELECT count(*) FROM authn_accounts").Scan(&n).Error; err != nil {
+		t.Fatalf("counting the accounts: %v", err)
+	}
+	return n
 }

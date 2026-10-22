@@ -124,6 +124,7 @@ func driveWithBoard(t *testing.T, on capabilities) (*mounttest.Mounter, []string
 	register(standIn("stand-in.accounts", newAccounts(), (*authn.Accounts)(nil)))
 	register(standIn("stand-in.account-admin", newAccountAdmin(), (*authn.AccountAdmin)(nil)))
 	register(standIn("stand-in.memberships", newMemberships(), (*authn.Memberships)(nil)))
+	register(standIn("stand-in.signup-state", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
 	register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
 	register(standIn("stand-in.settings", newStore(), (*settings.Store)(nil)))
 	register(standIn("stand-in.router", router, (*speedhttp.Router)(nil)))

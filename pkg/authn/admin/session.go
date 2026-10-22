@@ -75,6 +75,9 @@ func (m *product) handleRevokeAccountSessions(ctx context.Context, in accountIDI
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
 	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
+	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionSessionRevoke, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
@@ -122,6 +125,9 @@ func (m *product) handleSessionRevoke(ctx context.Context, in sessionRevokeInput
 	info, err := m.sessions.Get(ctx, sessionID)
 	if err != nil {
 		return m.replyFailure("reading a session", err)
+	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
 	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionSessionRevoke, Actor: id,

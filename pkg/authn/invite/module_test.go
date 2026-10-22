@@ -27,7 +27,8 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 
 	wantRequired := []core.Token{
 		(*db.Database)(nil), (*mount.Mounter)(nil), (*authn.Accounts)(nil),
-		(*authn.AccountAdmin)(nil), (*authn.Memberships)(nil), (*audit.Audit)(nil),
+		(*authn.AccountAdmin)(nil), (*authn.SignupVerification)(nil), (*authn.Memberships)(nil),
+		(*audit.Audit)(nil),
 	}
 	var required []core.Token
 	optionalLogger := false

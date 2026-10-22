@@ -99,8 +99,8 @@ var _ authn.Impersonation = (*product)(nil)
 // Module is the descriptor a host registers.
 //
 // The database, the route mounter, the session store, the account reads, the
-// membership reads, the multi-factor composition, the audit capability and the
-// tenant admission layer's scope guard are required, and each is delivered
+// signup verification reads, the membership reads, the multi-factor composition,
+// the audit capability and the tenant admission layer's scope guard are required, and each is delivered
 // exclusively by another module of the directory, so the closure of a command
 // that takes this one in does not pull them in: the host writes them down. The
 // settings store is required as optional only so that it is initialised first;
@@ -120,6 +120,7 @@ func Module() core.Module {
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*authn.MFA)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*authn.ScopeGuard)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
@@ -180,14 +181,15 @@ func productOf(instance any) (*product, bool) {
 
 // product is the module's instance. It delivers the impersonation capability.
 type product struct {
-	store       *store
-	accounts    authn.Accounts
-	memberships authn.Memberships
-	mfa         authn.MFA
-	sessions    authn.Sessions
-	audit       audit.Audit
-	scopeGuard  authn.ScopeGuard
-	mounter     mount.Mounter
+	store        *store
+	accounts     authn.Accounts
+	verification authn.SignupVerification
+	memberships  authn.Memberships
+	mfa          authn.MFA
+	sessions     authn.Sessions
+	audit        audit.Audit
+	scopeGuard   authn.ScopeGuard
+	mounter      mount.Mounter
 
 	// What Init takes up. decider and tokens are nil when absent, which the
 	// behaviour of each states.
@@ -218,6 +220,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the account reads: %w", diagnosticPrefix, ModuleName, err)
 	}
+	verification, err := core.Resolve[authn.SignupVerification](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: taking up the signup verification reads: %w", diagnosticPrefix, ModuleName, err)
+	}
 	memberships, err := core.Resolve[authn.Memberships](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the membership reads: %w", diagnosticPrefix, ModuleName, err)
@@ -234,28 +240,30 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the tenant scope guard: %w", diagnosticPrefix, ModuleName, err)
 	}
-	return build(database.DB(), accounts, memberships, mfa, sessions, auditor, guard, mounter), nil
+	return build(database.DB(), accounts, verification, memberships, mfa, sessions, auditor, guard, mounter), nil
 }
 
 // build assembles a product from its parts. The optional parts start absent and
 // the logger starts as the process's, so that a product that has not been through
 // Init is still one that does not panic.
-func build(handle *gorm.DB, accounts authn.Accounts, memberships authn.Memberships, mfa authn.MFA,
-	sessions authn.Sessions, auditor audit.Audit, guard authn.ScopeGuard, mounter mount.Mounter,
+func build(handle *gorm.DB, accounts authn.Accounts, verification authn.SignupVerification,
+	memberships authn.Memberships, mfa authn.MFA, sessions authn.Sessions, auditor audit.Audit,
+	guard authn.ScopeGuard, mounter mount.Mounter,
 ) *product {
 	logger := log.Default()
 	return &product{
-		store:       &store{handle: handle},
-		accounts:    accounts,
-		memberships: memberships,
-		mfa:         mfa,
-		sessions:    sessions,
-		audit:       auditor,
-		scopeGuard:  guard,
-		mounter:     mounter,
-		meters:      &meters{},
-		settings:    newReader(nil, logger),
-		logger:      logger,
+		store:        &store{handle: handle},
+		accounts:     accounts,
+		verification: verification,
+		memberships:  memberships,
+		mfa:          mfa,
+		sessions:     sessions,
+		audit:        auditor,
+		scopeGuard:   guard,
+		mounter:      mounter,
+		meters:       &meters{},
+		settings:     newReader(nil, logger),
+		logger:       logger,
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -691,22 +692,23 @@ func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 
 // rig is the module with every dependency a case drives.
 type rig struct {
-	t          *testing.T
-	p          *product
-	mounter    *mounttest.Mounter
-	accounts   *fakeAccounts
-	accountAdm *fakeAccountAdmin
-	passwords  *fakePasswords
-	members    *fakeMemberships
-	sessions   *fakeSessions
-	mfa        *fakeMFA
-	providers  *fakeProviders
-	refresher  *fakeRefresher
-	records    *fakeRecords
-	audit      *recordingAudit
-	decider    *fakeDecider
-	store      *fakeStore
-	logs       *logBuffer
+	t            *testing.T
+	p            *product
+	mounter      *mounttest.Mounter
+	accounts     *fakeAccounts
+	verification *fakeSignupVerification
+	accountAdm   *fakeAccountAdmin
+	passwords    *fakePasswords
+	members      *fakeMemberships
+	sessions     *fakeSessions
+	mfa          *fakeMFA
+	providers    *fakeProviders
+	refresher    *fakeRefresher
+	records      *fakeRecords
+	audit        *recordingAudit
+	decider      *fakeDecider
+	store        *fakeStore
+	logs         *logBuffer
 }
 
 // leaveOut names a capability a rig builds without.
@@ -732,21 +734,22 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 		left[o] = true
 	}
 	r := &rig{
-		t:          t,
-		mounter:    mounttest.New(t),
-		accounts:   newAccounts(),
-		accountAdm: newAccountAdmin(),
-		passwords:  &fakePasswords{},
-		members:    newMemberships(),
-		sessions:   newSessions(),
-		mfa:        &fakeMFA{seasoned: true},
-		providers:  newProviders(),
-		refresher:  &fakeRefresher{protocol: authn.SSOProtocolSAML},
-		records:    newRecords(),
-		audit:      &recordingAudit{},
-		decider:    &fakeDecider{allow: true},
-		store:      newStore(),
-		logs:       &logBuffer{},
+		t:            t,
+		mounter:      mounttest.New(t),
+		accounts:     newAccounts(),
+		verification: &fakeSignupVerification{},
+		accountAdm:   newAccountAdmin(),
+		passwords:    &fakePasswords{},
+		members:      newMemberships(),
+		sessions:     newSessions(),
+		mfa:          &fakeMFA{seasoned: true},
+		providers:    newProviders(),
+		refresher:    &fakeRefresher{protocol: authn.SSOProtocolSAML},
+		records:      newRecords(),
+		audit:        &recordingAudit{},
+		decider:      &fakeDecider{allow: true},
+		store:        newStore(),
+		logs:         &logBuffer{},
 	}
 	r.accounts.put(adminID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
 	r.accounts.put(userID, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
@@ -754,14 +757,15 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 
 	logger := r.logs.logger()
 	p := &product{
-		mounter:     r.mounter,
-		accounts:    r.accounts,
-		accountAdm:  r.accountAdm,
-		passwords:   r.passwords,
-		memberships: r.members,
-		audit:       r.audit,
-		logger:      logger,
-		settings:    newReader(r.store, logger),
+		mounter:      r.mounter,
+		accounts:     r.accounts,
+		accountAdm:   r.accountAdm,
+		verification: r.verification,
+		passwords:    r.passwords,
+		memberships:  r.members,
+		audit:        r.audit,
+		logger:       logger,
+		settings:     newReader(r.store, logger),
 	}
 	if !left[noSessions] {
 		p.sessions = r.sessions
@@ -855,4 +859,33 @@ func (r *rig) invoke(handler gin.HandlerFunc, method, target string, params gin.
 	c.Params = params
 	handler(c)
 	return w
+}
+
+// fakeSignupVerification reports the self-registration state a case scripts and
+// counts how often it was read.
+type fakeSignupVerification struct {
+	mu    sync.Mutex
+	state authn.SignupStatus
+	err   error
+	reads int
+}
+
+// SignupStateOf answers the scripted state, or the scripted failure.
+func (v *fakeSignupVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.reads++
+	return v.state, v.err
+}
+
+// PendingAccountByContact is not part of the management surface.
+func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
+	return "", false, errors.New("admin: the pending-contact read is not part of this surface")
+}
+
+// readCount is how many state reads the fake answered.
+func (v *fakeSignupVerification) readCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.reads
 }

@@ -281,6 +281,8 @@ func (m *product) startFailure(id authn.Identity, err error) error {
 		}
 	case errors.Is(err, authn.ErrFactorNotSeasoned):
 		return authnFailure(http.StatusForbidden, mount.CodeFactorNotSeasoned)
+	case errors.Is(err, authn.ErrContactRequired):
+		return authnFailure(http.StatusForbidden, mount.CodeContactRequired)
 	case errors.Is(err, authn.ErrForbidden):
 		return authnFailure(http.StatusForbidden, mount.CodeForbidden)
 	case errors.Is(err, authn.ErrImpersonationRestricted), errors.Is(err, authn.ErrImpersonationNeedsSession):

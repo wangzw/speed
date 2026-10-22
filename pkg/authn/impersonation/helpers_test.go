@@ -383,7 +383,7 @@ func (s *perSessionSessions) answer(id authn.SessionID) (authn.SessionStatus, er
 // replica builds a second product over the same dependencies: another replica of
 // the module over one store, for a case that races two of them.
 func (r *rig) replica() *product {
-	p := build(r.h, r.accounts, r.memberships, r.mfa, r.sessions, r.audit, r.guard, r.mounter)
+	p := build(r.h, r.accounts, r.verification, r.memberships, r.mfa, r.sessions, r.audit, r.guard, r.mounter)
 	p.logger = r.logs.logger()
 	p.settings = r.p.settings
 	p.bus = r.bus
@@ -584,23 +584,24 @@ func (g fakeScopeGuard) Covers(endpoint string) bool { return g.covers[endpoint]
 
 // rig is the module over a real database with every dependency a case drives.
 type rig struct {
-	t           *testing.T
-	p           *product
-	h           *gorm.DB
-	accounts    *fakeAccounts
-	memberships *fakeMemberships
-	mfa         *fakeMFA
-	sessions    *fakeSessions
-	audit       *recordingAudit
-	decider     *fakeDecider
-	tokens      *fakeTokens
-	bus         *recordingBus
-	store       *fakeStore
-	logs        *logBuffer
-	clock       *fakeClock
-	mounter     *mounttest.Mounter
-	guard       fakeScopeGuard
-	metrics     *sdkmetric.ManualReader
+	t            *testing.T
+	p            *product
+	h            *gorm.DB
+	accounts     *fakeAccounts
+	verification *fakeSignupVerification
+	memberships  *fakeMemberships
+	mfa          *fakeMFA
+	sessions     *fakeSessions
+	audit        *recordingAudit
+	decider      *fakeDecider
+	tokens       *fakeTokens
+	bus          *recordingBus
+	store        *fakeStore
+	logs         *logBuffer
+	clock        *fakeClock
+	mounter      *mounttest.Mounter
+	guard        fakeScopeGuard
+	metrics      *sdkmetric.ManualReader
 }
 
 // The identifiers and defaults a case starts from.
@@ -628,10 +629,12 @@ func newRig(t *testing.T, h *gorm.DB) *rig {
 	guard := fakeScopeGuard{covers: map[string]bool{}}
 	mounter := mounttest.New(t)
 
-	p := build(h, accounts, memberships, mfa, sessions, &recordingAudit{}, guard, mounter)
+	verification := &fakeSignupVerification{}
+	p := build(h, accounts, verification, memberships, mfa, sessions, &recordingAudit{}, guard, mounter)
 	r := &rig{
 		t: t, p: p, h: h,
-		accounts: accounts, memberships: memberships, mfa: mfa, sessions: sessions,
+		accounts: accounts, verification: verification, memberships: memberships,
+		mfa: mfa, sessions: sessions,
 		audit: &recordingAudit{}, decider: &fakeDecider{allow: true}, tokens: &fakeTokens{},
 		bus: newBus(), store: newStore(), logs: &logBuffer{}, clock: newClock(base), mounter: mounter,
 		guard: guard,
@@ -863,4 +866,59 @@ func (r *rig) blockEndWrites(t *testing.T, dialect string) {
 func withinASecond(a, b time.Time) bool {
 	d := a.Sub(b)
 	return d <= time.Second && d >= -time.Second
+}
+
+// fakeSignupVerification reports the self-registration state a case scripts and
+// counts how often it was read. state answers every account; states overrides it
+// for the accounts a case names, so that a case can give the initiator and the
+// target different states and tell which one was read.
+type fakeSignupVerification struct {
+	mu     sync.Mutex
+	state  authn.SignupStatus
+	states map[authn.AccountID]authn.SignupStatus
+	err    error
+	reads  int
+	asked  []authn.AccountID
+}
+
+// setState gives one account its own answer, for a case that must tell the
+// initiator's state from the target's.
+func (v *fakeSignupVerification) setState(id authn.AccountID, state authn.SignupStatus) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.states == nil {
+		v.states = map[authn.AccountID]authn.SignupStatus{}
+	}
+	v.states[id] = state
+}
+
+// SignupStateOf answers the scripted state, or the scripted failure.
+func (v *fakeSignupVerification) SignupStateOf(_ context.Context, id authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.reads++
+	v.asked = append(v.asked, id)
+	if state, ok := v.states[id]; ok {
+		return state, v.err
+	}
+	return v.state, v.err
+}
+
+// askedIDs is every account whose state the fake was asked for, in order.
+func (v *fakeSignupVerification) askedIDs() []authn.AccountID {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return append([]authn.AccountID(nil), v.asked...)
+}
+
+// PendingAccountByContact is never reached by this module's starts.
+func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
+	return "", false, errors.New("impersonation: the pending-contact read is not part of a start")
+}
+
+// readCount is how many state reads the fake answered.
+func (v *fakeSignupVerification) readCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.reads
 }

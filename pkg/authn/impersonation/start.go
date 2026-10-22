@@ -43,7 +43,12 @@ func (m *product) Start(ctx context.Context, actor authn.Identity, r authn.Imper
 	now := m.clock.Now()
 
 	if err := m.checkActor(ctx, actor); err != nil {
-		m.refuse(ctx, actor, r, err)
+		// The signup gate is answered without a denied audit row: the refusal is
+		// guidance to prove an address, and a state that cannot be read is a
+		// dependency that did not answer. Neither is an impersonation attempt.
+		if !quietRefusal(err) {
+			m.refuse(ctx, actor, r, err)
+		}
 		return authn.ImpersonationGrant{}, err
 	}
 	if err := m.checkTarget(ctx, actor, r); err != nil {
@@ -97,6 +102,13 @@ func (m *product) Start(ctx context.Context, actor authn.Identity, r authn.Imper
 // account is read as the actor being unavailable, which is the same refusal as
 // a static or disabled one and says nothing about the target.
 func (m *product) checkActor(ctx context.Context, actor authn.Identity) error {
+	// The signup gate is the first condition of group a: a pending
+	// self-registration is refused before any authorization or strength
+	// judgement, so that it receives the guidance to prove its address rather
+	// than a step-up or a factor refusal.
+	if err := m.checkSignup(ctx, actor); err != nil {
+		return err
+	}
 	if actor.Impersonating() {
 		return authn.ErrImpersonationRestricted
 	}
@@ -130,6 +142,55 @@ func (m *product) checkActor(ctx context.Context, actor authn.Identity) error {
 	}
 	if !seasoned {
 		return authn.ErrFactorNotSeasoned
+	}
+	return nil
+}
+
+// errSignupUnavailable marks a signup-state read that did not answer. It is one
+// of the gate's two answers that write no denied audit row, and it still reads
+// as ErrUnavailable to the caller's answer mapping.
+var errSignupUnavailable = errors.New("authn.impersonation: the signup state could not be read")
+
+// quietRefusal reports whether a refusal of group a is one of the signup gate's
+// answers: a pending self-registration's 403, or the 503 of a state that could
+// not be read. Neither writes an audit row or counts a denied attempt.
+func quietRefusal(err error) bool {
+	return errors.Is(err, authn.ErrContactRequired) || errors.Is(err, errSignupUnavailable)
+}
+
+// checkSignup refuses an initiator whose self-registration has not proved an
+// email address yet. The state is read on every start and never cached; a
+// service account and an account created outside self-registration are exempt,
+// having no self-registration to be pending.
+//
+// The initiator is Actor(), not Account(): an impersonating identity's Account()
+// is the target, and the target's signup state never takes part in whether the
+// administrator may start. Start is a host-visible seam, so it judges the
+// initiator itself rather than relying on the handler having refused the
+// impersonating identity first.
+func (m *product) checkSignup(ctx context.Context, actor authn.Identity) error {
+	initiator := actor.Actor()
+	if initiator == "" || initiator.IsStatic() {
+		return nil
+	}
+	a, err := m.accounts.Get(ctx, initiator)
+	switch {
+	case errors.Is(err, authn.ErrAccountNotFound):
+		// The rest of group a answers a missing account as an impersonation
+		// restriction, which is the same refusal a static or disabled one gets.
+		return nil
+	case err != nil:
+		return authn.ErrUnavailable
+	}
+	if a.Kind != authn.KindUser {
+		return nil
+	}
+	status, err := m.verification.SignupStateOf(ctx, initiator)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errSignupUnavailable, authn.ErrUnavailable)
+	}
+	if status.State == authn.SignupPending {
+		return authn.ErrContactRequired
 	}
 	return nil
 }

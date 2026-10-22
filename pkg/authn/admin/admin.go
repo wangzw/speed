@@ -112,8 +112,8 @@ const (
 
 // Module is the descriptor a host registers.
 //
-// The route mounter, the account read and write surfaces, the membership reads
-// and the audit capability are required, and each is delivered exclusively by
+// The route mounter, the account read and write surfaces, the membership reads,
+// the signup verification reads and the audit capability are required, and each is delivered exclusively by
 // another module of the directory, so the closure of a command that takes this
 // one in does not pull them in: the host writes them down. The audit capability
 // being required is what makes an assembly without one fail before any instance
@@ -134,6 +134,7 @@ func Module() core.Module {
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
@@ -192,12 +193,13 @@ func productOf(instance any) (*product, bool) {
 // product is the module's instance. It holds the required capabilities and the
 // optional ones taken up in Init.
 type product struct {
-	mounter     mount.Mounter
-	accounts    authn.Accounts
-	accountAdm  authn.AccountAdmin
-	passwords   authn.Passwords
-	memberships authn.Memberships
-	audit       audit.Audit
+	mounter      mount.Mounter
+	accounts     authn.Accounts
+	accountAdm   authn.AccountAdmin
+	passwords    authn.Passwords
+	memberships  authn.Memberships
+	verification authn.SignupVerification
+	audit        audit.Audit
 
 	// The optional capabilities. Each is nil when absent, and each gates the
 	// group of routes that needs it.
@@ -243,19 +245,24 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the membership reads: %w", diagnosticPrefix, ModuleName, err)
 	}
+	verification, err := core.Resolve[authn.SignupVerification](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: taking up the signup verification reads: %w", diagnosticPrefix, ModuleName, err)
+	}
 	auditor, err := core.Resolve[audit.Audit](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the audit capability: %w", diagnosticPrefix, ModuleName, err)
 	}
 	logger := log.Default()
 	return &product{
-		mounter:     mounter,
-		accounts:    accounts,
-		accountAdm:  accountAdm,
-		memberships: memberships,
-		audit:       auditor,
-		logger:      logger,
-		settings:    newReader(nil, logger),
+		mounter:      mounter,
+		accounts:     accounts,
+		accountAdm:   accountAdm,
+		memberships:  memberships,
+		verification: verification,
+		audit:        auditor,
+		logger:       logger,
+		settings:     newReader(nil, logger),
 	}, nil
 }
 

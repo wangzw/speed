@@ -142,7 +142,9 @@ var startOperation = speedhttp.NewReplyOperation[startInput](
 		capabilityProblem(http.StatusBadRequest, mount.CodeBadRequest, "The body could not be read"),
 		unauthorized("No usable credential, or a step-up is required"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"Impersonation is refused for this caller or target, or the caller has no seasoned non-SMS factor (factor-not-seasoned)"),
+			"Impersonation is refused for this caller or target, the caller has no seasoned non-SMS factor "+
+				"(factor-not-seasoned), or the caller's self-registration has not verified an email address "+
+				"(contact-required)"),
 		speedhttp.ProblemResponse(http.StatusConflict, "An impersonation is already in force"),
 		capabilityProblem(http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType,
 			"The request body is not application/json"),

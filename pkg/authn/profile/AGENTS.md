@@ -16,9 +16,9 @@ interfaces by the host's own commands. It states `StateEnabled` and never
 `StateAuto`: whether the profile surface exists is a decision on the command tree,
 not a conclusion a configuration can infer.
 
-The API is the package's godoc, plus the `Accounts`, `AccountAdmin` and `MFA`
-interfaces and the `Account`, `Identifier` and `ExternalBinding` types in
-`pkg/authn`.
+The API is the package's godoc, plus the `Accounts`, `AccountAdmin`,
+`SignupVerification` and `MFA` interfaces and the `Account`, `Identifier`,
+`ExternalBinding` and `SignupStatus` types in `pkg/authn`.
 
 ## Routes
 
@@ -45,6 +45,17 @@ configuration that is `/api/v1/auth`, so the two routes are `/api/v1/auth/me`.
   the profile surface from the administration surface: a management action needs a
   permission point and is decided through the `Decider`; a self-service action is
   authorised by the identity alone.
+- **The read face publishes the self-registration state and the proof behind each
+  identifier.** `GET B/me` reads `authn.SignupVerification.SignupStateOf` on the
+  request and answers `verification: {state, email, since}`: `state` is `none`,
+  `pending` or `verified`; `email` is the address the account module selects for
+  that state, and is empty when there is none; `since` is the first instant the
+  account reached verified and is kept when a removal returns it to pending.
+  Each identifier carries `proven`, derived from `Verification.Proves`: the
+  four proofs are true and `admin`, `import-unverified` and `self` are false.
+  The pending contact is not an identifier and appears only in
+  `verification.email`. A state read that fails is a 503 and is never answered
+  as `none`.
 - **The writable set is closed, and the read side is broader than the write side.**
   The display name, the whole attribute set, the language and the time zone are
   writable. The account's status, its identifiers and its external bindings are
@@ -129,8 +140,8 @@ configuration that is `/api/v1/auth`, so the two routes are `/api/v1/auth/me`.
   declaration, so the fragment and the registration cannot drift.
 - **The module delivers no capability and registers `authn.profile`.** It carries
   no product another module resolves; it is taken in only to mount the routes.
-- **It requires the route mounter, the account read and write surfaces and the
-  multi-factor composition.** A command that brings this one in without the
+- **It requires the route mounter, the account read and write surfaces, the
+  signup verification reads and the multi-factor composition.** A command that brings this one in without the
   mounter to mount on, the account to act on, or the factors to hold a write to
   fails the startup before any instance is built. The settings store, the audit
   capability and the logging capability are declared optional: their absence is a

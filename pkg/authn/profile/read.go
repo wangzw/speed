@@ -32,5 +32,11 @@ func (p *product) handleGetMe(ctx context.Context, _ struct{}) (AuthnProfileProf
 	if err != nil {
 		return AuthnProfileProfile{}, p.readFailure(err)
 	}
-	return profileViewOf(account, identifiers, links), nil
+	signup, err := p.signupVerification.SignupStateOf(ctx, id.Account())
+	if err != nil {
+		// A read failure is never answered as none: an unavailable state read
+		// would otherwise report a verified account as never registered.
+		return AuthnProfileProfile{}, p.cause("reading the signup state", err)
+	}
+	return profileViewOf(account, identifiers, links, signup), nil
 }

@@ -94,6 +94,9 @@ func (m *product) handleImpersonationRevoke(ctx context.Context, in impersonatio
 	if grant.Tenant != in.Tenant {
 		return speedhttp.EmptyReply(404), nil
 	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
+	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionImpersonationRevoke, Actor: id,
 		Tenant: grant.Tenant, Target: string(grant.Target), TargetAccount: string(grant.Target),

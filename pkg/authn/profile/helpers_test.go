@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -225,15 +226,16 @@ const (
 
 // rig is the module over a mounttest Mounter with every capability present.
 type rig struct {
-	t        *testing.T
-	mounter  *mounttest.Mounter
-	accounts *fakeAccounts
-	admin    *fakeAccountAdmin
-	mfa      *fakeMFA
-	audit    *recordingAudit
-	store    *fakeStore
-	logs     *logBuffer
-	p        *product
+	t            *testing.T
+	mounter      *mounttest.Mounter
+	accounts     *fakeAccounts
+	verification *fakeSignupVerification
+	admin        *fakeAccountAdmin
+	mfa          *fakeMFA
+	audit        *recordingAudit
+	store        *fakeStore
+	logs         *logBuffer
+	p            *product
 }
 
 // newRig builds the module over a mounttest Mounter with every capability
@@ -245,14 +247,15 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 		left[o] = true
 	}
 	r := &rig{
-		t:        t,
-		mounter:  mounttest.New(t),
-		accounts: newAccounts(),
-		admin:    newAccountAdmin(),
-		mfa:      &fakeMFA{},
-		audit:    &recordingAudit{},
-		store:    &fakeStore{window: defaultRecentWindow},
-		logs:     &logBuffer{},
+		t:            t,
+		mounter:      mounttest.New(t),
+		accounts:     newAccounts(),
+		verification: &fakeSignupVerification{},
+		admin:        newAccountAdmin(),
+		mfa:          &fakeMFA{},
+		audit:        &recordingAudit{},
+		store:        &fakeStore{window: defaultRecentWindow},
+		logs:         &logBuffer{},
 	}
 	r.accounts.put(meAccount, authn.Account{
 		Kind:        authn.KindUser,
@@ -263,12 +266,13 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 
 	logger := r.logs.logger()
 	p := &product{
-		mounter:    r.mounter,
-		accounts:   r.accounts,
-		accountAdm: r.admin,
-		mfa:        r.mfa,
-		logger:     logger,
-		settings:   newReader(r.store, logger),
+		mounter:            r.mounter,
+		accounts:           r.accounts,
+		signupVerification: r.verification,
+		accountAdm:         r.admin,
+		mfa:                r.mfa,
+		logger:             logger,
+		settings:           newReader(r.store, logger),
 	}
 	if !left[noAudit] {
 		p.audit = r.audit
@@ -386,4 +390,33 @@ func bodyReader(t *testing.T, body any) io.Reader {
 		t.Fatalf("encoding the body: %v", err)
 	}
 	return bytes.NewReader(encoded)
+}
+
+// fakeSignupVerification reports the self-registration state a case scripts and
+// counts how often it was read.
+type fakeSignupVerification struct {
+	mu    sync.Mutex
+	state authn.SignupStatus
+	err   error
+	reads int
+}
+
+// SignupStateOf answers the scripted state, or the scripted failure.
+func (v *fakeSignupVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.reads++
+	return v.state, v.err
+}
+
+// PendingAccountByContact is not part of the profile surface.
+func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
+	return "", false, errors.New("profile: the pending-contact read is not part of this surface")
+}
+
+// readCount is how many state reads the fake answered.
+func (v *fakeSignupVerification) readCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.reads
 }

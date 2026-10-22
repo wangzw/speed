@@ -145,6 +145,9 @@ func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput
 	if kind == authn.KindUser && in.Username == "" && in.Email == "" && in.Phone == "" {
 		return AuthnAdminAccountEnvelope{}, m.bad()
 	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return AuthnAdminAccountEnvelope{}, err
+	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionAccountCreate, Actor: id}); err != nil {
 		return AuthnAdminAccountEnvelope{}, err
 	}
@@ -193,6 +196,9 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 	accountID := authn.AccountID(in.ID)
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
+	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,
@@ -279,6 +285,9 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	if _, err := m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
 	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
+	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountDelete, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
@@ -318,6 +327,9 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 	}
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
+	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
 	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountDisable, Actor: id,
@@ -366,6 +378,9 @@ func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput
 	if _, err = m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
 	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
+	}
 	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
@@ -398,6 +413,9 @@ func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemov
 	accountID := authn.AccountID(in.ID)
 	if _, err := m.accounts.Get(ctx, accountID); err != nil {
 		return m.replyFailure("reading an object", err)
+	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
 	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountUpdate, Actor: id,

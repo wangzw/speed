@@ -375,4 +375,4 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 自助注册与待验证账户的失败哨兵 `ErrSignupClosed`、`ErrContactRequired`、`ErrBusy`（注册派生名额已满） | 已实现 | `pkg/authn/errors.go` `ErrSignupClosed`、`ErrContactRequired`、`ErrBusy`；`pkg/authn/account/signup.go` `(*product).Register` |
 | 自助注册的问题码 `signup-closed`、`username-taken` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeSignupClosed`、`CodeUsernameTaken`、`statusOf`、`Forbidden`；`pkg/authn/login/register.go` `(*routes).failRegister` |
 | 待验证账户的问题码 `contact-required` 与状态映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeContactRequired`、`statusOf` |
-| 待验证账户的 `contact-required` 运行时映射（要求已验证邮箱的门控） | 未实现 | — |
+| 待验证账户的 `contact-required` 运行时映射（要求已验证邮箱的门控） | 已实现 | `pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |

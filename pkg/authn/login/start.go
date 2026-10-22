@@ -123,6 +123,21 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 		c.fail(mount.CodeBadRequest)
 		return c.result()
 	}
+	// A link binds an external identity, an identity surface the platform gates
+	// on a proved email address. The gate is checked before any record is
+	// written, so a refused start leaves nothing behind; a state that cannot be
+	// read is a 503 and never a pass. Step-up and enroll are not gated.
+	if in.Purpose == authn.PurposeLink {
+		signup, err := r.verification.SignupStateOf(c.ctx, id.Account())
+		if err != nil {
+			r.fail(c, fmt.Errorf("%w: reading the signup state: %w", authn.ErrUnavailable, err))
+			return c.result()
+		}
+		if signup.State == authn.SignupPending {
+			c.forbidden(mount.CodeContactRequired)
+			return c.result()
+		}
+	}
 	if err := checkFields(in.Input, maxStartFieldBytes); err != nil {
 		r.fail(c, err)
 		return c.result()

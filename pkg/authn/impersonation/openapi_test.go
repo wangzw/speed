@@ -14,8 +14,9 @@ import (
 
 // TestTheStartDeclaresTheUnseasonedRefusal holds the fragment's 403 of the start
 // operation. The design gives an actor with no seasoned non-SMS factor its own
-// 403 rather than the step-up 401, so the declared operation a generated client
-// is built from carries it.
+// 403 rather than the step-up 401, and a pending self-registration the
+// contact-required 403, so the declared operation a generated client is built
+// from carries both causes.
 func TestTheStartDeclaresTheUnseasonedRefusal(t *testing.T) {
 	var doc struct {
 		Paths map[string]map[string]struct {
@@ -37,6 +38,9 @@ func TestTheStartDeclaresTheUnseasonedRefusal(t *testing.T) {
 	}
 	if !strings.Contains(refusal.Description, "factor-not-seasoned") {
 		t.Errorf("the 403 reads %q, want it to name factor-not-seasoned", refusal.Description)
+	}
+	if !strings.Contains(refusal.Description, "contact-required") {
+		t.Errorf("the 403 reads %q, want it to name contact-required", refusal.Description)
 	}
 }
 
@@ -94,6 +98,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		(*authn.Accounts)(nil),
 		(*authn.Memberships)(nil),
 		(*authn.MFA)(nil),
+		(*authn.SignupVerification)(nil),
 		(*audit.Audit)(nil),
 		(*authn.ScopeGuard)(nil),
 	)...)

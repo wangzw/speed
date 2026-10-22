@@ -113,6 +113,20 @@ func (p *product) redeem(ctx context.Context, held invitationRow, in AcceptInvit
 	case err == nil:
 		return p.putMembership(ctx, id, held.TenantID)
 	case errors.Is(err, authn.ErrAccountNotFound):
+		// No account holds the address as an identifier. It may still be the
+		// pending contact of one that self-registered: the token was delivered
+		// to the address and presented by its holder, so the address is proved,
+		// and the acceptance writes it through invite and hangs the membership
+		// on that account instead of opening a second one. A read failure is
+		// neither a hit nor a miss: it fails the redemption, which the caller
+		// settles back to pending, and no account is created.
+		owner, ok, perr := p.verification.PendingAccountByContact(ctx, string(authn.IdentifierEmail), held.Email)
+		if perr != nil {
+			return "", failed("finding a pending account", perr)
+		}
+		if ok {
+			return p.verifyPending(ctx, authn.AccountID(owner), held)
+		}
 		created, cerr := p.createAccount(ctx, held.Email, in)
 		if cerr != nil {
 			return "", failed("creating an account", cerr)
@@ -121,6 +135,18 @@ func (p *product) redeem(ctx context.Context, held invitationRow, in AcceptInvit
 	default:
 		return "", failed("looking up an account", err)
 	}
+}
+
+// verifyPending writes the invitation's address onto the pending account that
+// already lists it, as an identifier proved through invite. The account module
+// moves the account's signup state to verified in the same transaction, and the
+// membership hangs on that account.
+func (p *product) verifyPending(ctx context.Context, id authn.AccountID, held invitationRow) (authn.AccountID, error) {
+	if err := p.accountAdm.AddIdentifier(ctx, id, authn.IdentifierEmail, held.Email,
+		authn.Verification{Via: VerifiedViaInvite}); err != nil {
+		return "", failed("writing an identifier", err)
+	}
+	return p.putMembership(ctx, id, held.TenantID)
 }
 
 // putMembership writes the membership an accepted invitation stands for, its

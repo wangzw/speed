@@ -425,6 +425,67 @@ func TestStartSeparatesAnUnseasonedActorFromAShortfall(t *testing.T) {
 	})
 }
 
+// TestStartAnswersContactRequiredForAPendingRegistration holds the answer the
+// start route gives an initiator whose self-registration is pending: 403
+// contact-required, with no record, no denied attempt and no audit row. The 403
+// is the mapping's own; without the sentinel's branch in startFailure it falls
+// through to the 503 of a dependency that did not answer, which a client reads
+// as a retry rather than as guidance to prove the address. An account that never
+// registered and one that has proved its address start as before.
+func TestStartAnswersContactRequiredForAPendingRegistration(t *testing.T) {
+	t.Run("a pending registration", func(t *testing.T) {
+		onEachDialect(t, func(t *testing.T, r *rig) {
+			r.verification.state = authn.SignupStatus{State: authn.SignupPending}
+			r.mounter.As(adminOpts()...)
+			r.p.mountRoutes()
+			w := r.mounter.Do(startRequest(postBody()))
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+			}
+			var body struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+				t.Fatalf("the body %q is not a problem: %v", w.Body.String(), err)
+			}
+			if want := "urn:speed:authn:contact-required"; body.Type != want {
+				t.Errorf("the problem type is %q, want %q", body.Type, want)
+			}
+			if r.recordCount() != 0 {
+				t.Errorf("the refusal wrote %d records, want none", r.recordCount())
+			}
+			if rows := r.audit.entries(); len(rows) != 0 {
+				t.Errorf("the refusal wrote %d audit rows, want none", len(rows))
+			}
+			if got := r.counter(outcomeDenied); got != 0 {
+				t.Errorf("the refusal counted %d denied attempts, want none", got)
+			}
+			if len(r.decider.calls) != 0 {
+				t.Errorf("the Decider was asked %d times, want none", len(r.decider.calls))
+			}
+		})
+	})
+
+	for _, c := range []struct {
+		name  string
+		state authn.SignupStatus
+	}{
+		{"a never-registered account", authn.SignupStatus{State: authn.SignupNone}},
+		{"a verified registration", authn.SignupStatus{State: authn.SignupVerified}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			onEachDialect(t, func(t *testing.T, r *rig) {
+				r.verification.state = c.state
+				r.mounter.As(adminOpts()...)
+				r.p.mountRoutes()
+				if w := r.mounter.Do(startRequest(postBody())); w.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+				}
+			})
+		})
+	}
+}
+
 // TestStartFailureMapsEachErrorToItsStatusAndCode holds the handler's answer to
 // each error Start returns: the fault's status and problem code are the design's,
 // which the entry point writes and the client reads.
@@ -438,6 +499,7 @@ func TestStartFailureMapsEachErrorToItsStatusAndCode(t *testing.T) {
 		}{
 			{"a step-up shortfall", authn.ErrStepUpRequired, http.StatusUnauthorized, "insufficient_user_authentication"},
 			{"an unseasoned factor", authn.ErrFactorNotSeasoned, http.StatusForbidden, "factor-not-seasoned"},
+			{"a pending registration", authn.ErrContactRequired, http.StatusForbidden, "contact-required"},
 			{"a forbidden decision", authn.ErrForbidden, http.StatusForbidden, "forbidden"},
 			{"a restricted start", authn.ErrImpersonationRestricted, http.StatusForbidden, "impersonation-restricted"},
 			{"a session with no life", authn.ErrImpersonationNeedsSession, http.StatusForbidden, "impersonation-restricted"},

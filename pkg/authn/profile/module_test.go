@@ -42,7 +42,8 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 	}
 
 	wantRequired := []core.Token{
-		(*mount.Mounter)(nil), (*authn.Accounts)(nil), (*authn.AccountAdmin)(nil), (*authn.MFA)(nil),
+		(*mount.Mounter)(nil), (*authn.Accounts)(nil), (*authn.SignupVerification)(nil),
+		(*authn.AccountAdmin)(nil), (*authn.MFA)(nil),
 	}
 	var required []core.Token
 	for _, r := range m.Requires {
@@ -107,6 +108,8 @@ func drive(t *testing.T, run func(m *mounttest.Mounter), omit ...leaveOut) error
 	names = append(names, "stand-in.mounter")
 	reg.Register(standIn("stand-in.accounts", newAccounts(), (*authn.Accounts)(nil)))
 	names = append(names, "stand-in.accounts")
+	reg.Register(standIn("stand-in.signup-state", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
+	names = append(names, "stand-in.signup-state")
 	reg.Register(standIn("stand-in.account-admin", newAccountAdmin(), (*authn.AccountAdmin)(nil)))
 	names = append(names, "stand-in.account-admin")
 

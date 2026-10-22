@@ -25,11 +25,20 @@ The API is the package's godoc.
 - **One pipeline, in one order, for every route.** A handler checks that the
   actor is not impersonating, that a `Decider` is there, the shape and the
   tenant, resolves the object's owner into the `Decision`, reads the object,
-  asks the `Decider`, checks the actor's strength, writes the mandatory audit
-  and only then calls the capability. A read ends after the decision. The
-  impersonation check and the missing-`Decider` refusal come before any read,
-  so a deployment with no `Decider` tells a caller nothing about which objects
-  exist.
+  asks the signup gate, asks the `Decider`, checks the actor's strength, writes
+  the mandatory audit and only then calls the capability. A read ends after the
+  decision. The impersonation check and the missing-`Decider` refusal come
+  before any read, so a deployment with no `Decider` tells a caller nothing
+  about which objects exist.
+- **A management write by an unverified self-registration is refused.**
+  `gateSignup` reads `SignupVerification.SignupStateOf` for the acting account
+  and answers `403 contact-required` while the state is pending. It runs after
+  the object is read and before the `Decider`, the strength check and the
+  mandatory audit, so a refused request asks no `Decider`, asks for no strength,
+  writes no audit row and calls no capability. Reads are not gated; a service
+  account and an account that never self-registered are exempt, and a state that
+  cannot be read is a 503 and never a pass. `SignupVerification` is required,
+  so an assembly that takes this module in also delivers the account module.
 - **The account list route's query parameters are a closed set.** A parameter
   the list route does not accept is a 400, answered before the read, so a
   misspelled filter is reported rather than swallowed by a read that ignores it;

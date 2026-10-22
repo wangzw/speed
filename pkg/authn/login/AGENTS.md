@@ -110,8 +110,9 @@ does.
   `authn.SignupVerification` is declared in `Requires` and resolved in `New`, so an
   assembly that names this module supplies the account module that delivers it,
   which is also where `Signups`, `Accounts` and `AccountAdmin` come from. The
-  `purpose=link` gate that refuses an unverified account reads it; that gate is
-  not mounted here yet.
+  `purpose=link` gate that refuses a pending self-registration (`signup_state=1`)
+  reads it: a link answers `403 contact-required` before any flow record is
+  written, `step-up` and `enroll` are not gated, and a read that fails is a 503.
 - **A registration's 409 is `username-taken`, not `conflict`.** The username is
   the only explicit conflict, and only `Signups.Register`'s `ErrAccountExists`
   produces it. The email address is never checked for being taken and never

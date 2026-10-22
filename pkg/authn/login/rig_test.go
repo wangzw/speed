@@ -419,15 +419,16 @@ func (s *fakeSignups) Register(_ context.Context, in authn.RegisterAccount) (aut
 
 // rig is a login product wired to fakes and mounted through the test mounter.
 type rig struct {
-	t        *testing.T
-	m        *mounttest.Mounter
-	kv       *fakeKV
-	mfa      *fakeMFA
-	sessions *fakeSessions
-	accounts *fakeAccounts
-	admin    *fakeAdmin
-	signups  *fakeSignups
-	p        *product
+	t            *testing.T
+	m            *mounttest.Mounter
+	kv           *fakeKV
+	mfa          *fakeMFA
+	sessions     *fakeSessions
+	accounts     *fakeAccounts
+	admin        *fakeAdmin
+	signups      *fakeSignups
+	verification *fakeVerification
+	p            *product
 
 	// watchCtx arms the request-context probe and leaked records what it saw. A
 	// case sets watchCtx on a request whose route carries no identity, so that an
@@ -465,6 +466,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 	sessions := &fakeSessions{}
 	admin := &fakeAdmin{}
 	signups := &fakeSignups{}
+	verification := &fakeVerification{}
 	mounter := mounttest.New(t)
 
 	p := &product{
@@ -473,6 +475,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		accounts:       accounts,
 		admin:          admin,
 		signups:        signups,
+		verification:   verification,
 		passwords:      stubPasswords{},
 		memberships:    stubMemberships{},
 		throttle:       stubThrottle{},
@@ -496,15 +499,16 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 	p.resolver = r
 
 	rig := &rig{
-		t:        t,
-		m:        mounter,
-		kv:       kv,
-		mfa:      mfa,
-		sessions: sessions,
-		accounts: accounts,
-		admin:    admin,
-		signups:  signups,
-		p:        p,
+		t:            t,
+		m:            mounter,
+		kv:           kv,
+		mfa:          mfa,
+		sessions:     sessions,
+		accounts:     accounts,
+		admin:        admin,
+		signups:      signups,
+		verification: verification,
+		p:            p,
 	}
 	// The probe goes in before the routes are mounted, so it runs inside every
 	// route's chain and sees the request's own context after the handler.
@@ -666,4 +670,33 @@ func (r *rig) withAutoLink() {
 		r.t.Fatalf("building the resolver: %v", err)
 	}
 	r.p.resolver = res
+}
+
+// fakeVerification reports the self-registration state a case scripts and
+// counts how often it was read.
+type fakeVerification struct {
+	mu    sync.Mutex
+	state authn.SignupStatus
+	err   error
+	reads int
+}
+
+// SignupStateOf answers the scripted state, or the scripted failure.
+func (v *fakeVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.reads++
+	return v.state, v.err
+}
+
+// PendingAccountByContact is not part of a login route.
+func (v *fakeVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
+	return "", false, errors.New("login: the pending-contact read is not part of this surface")
+}
+
+// readCount is how many state reads the fake answered.
+func (v *fakeVerification) readCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.reads
 }

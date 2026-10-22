@@ -10,9 +10,10 @@
 // identity with no account, is answered 401.
 //
 // The module holds no data, no rule and no store of its own. It reads the
-// account, its identifiers and its external bindings through the Accounts
-// interface and writes the display name and the attribute set through
-// AccountAdmin, mapping what those return to responses. The writable set is
+// account, its identifiers, its external bindings and its self-registration
+// state through the Accounts and SignupVerification interfaces, and writes the
+// display name and the attribute set through AccountAdmin, mapping what those
+// return to responses. The writable set is
 // closed: the display name, the attribute set, the language and the time zone.
 // The account's status, its identifiers and its external bindings are not
 // writable here. The language and the time zone are named uses of the attribute
@@ -87,8 +88,8 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The route mounter, the account read and write surfaces and the multi-factor
-// composition are required, and each is delivered exclusively by another module
+// The route mounter, the account read and write surfaces, the signup
+// verification reads and the multi-factor composition are required, and each is delivered exclusively by another module
 // of the directory, so the closure of a command that takes this one in does not
 // pull them in: the host writes them down. The multi-factor composition is
 // required because a write holds the caller to the freshness the account's own
@@ -105,6 +106,7 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*mount.Mounter)(nil)},
 			{Token: (*authn.Accounts)(nil)},
+			{Token: (*authn.SignupVerification)(nil)},
 			{Token: (*authn.AccountAdmin)(nil)},
 			{Token: (*authn.MFA)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
@@ -158,10 +160,11 @@ func productOf(instance any) (*product, bool) {
 // product is the module's instance. It holds the required capabilities and the
 // optional ones taken up in Init.
 type product struct {
-	mounter    mount.Mounter
-	accounts   authn.Accounts
-	accountAdm authn.AccountAdmin
-	mfa        authn.MFA
+	mounter            mount.Mounter
+	accounts           authn.Accounts
+	signupVerification authn.SignupVerification
+	accountAdm         authn.AccountAdmin
+	mfa                authn.MFA
 
 	// The optional capabilities. audit is nil when the assembly delivers none,
 	// and the write's best-effort audit row is then not written.
@@ -180,6 +183,10 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the account reads: %w", diagnosticPrefix, ModuleName, err)
 	}
+	signupVerification, err := core.Resolve[authn.SignupVerification](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s%s: taking up the signup verification reads: %w", diagnosticPrefix, ModuleName, err)
+	}
 	accountAdm, err := core.Resolve[authn.AccountAdmin](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s%s: taking up the account writes: %w", diagnosticPrefix, ModuleName, err)
@@ -190,12 +197,13 @@ func newProduct(reg *core.Registry) (*product, error) {
 	}
 	logger := log.Default()
 	return &product{
-		mounter:    mounter,
-		accounts:   accounts,
-		accountAdm: accountAdm,
-		mfa:        mfa,
-		logger:     logger,
-		settings:   newReader(nil, logger),
+		mounter:            mounter,
+		accounts:           accounts,
+		signupVerification: signupVerification,
+		accountAdm:         accountAdm,
+		mfa:                mfa,
+		logger:             logger,
+		settings:           newReader(nil, logger),
 	}, nil
 }
 

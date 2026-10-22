@@ -19,17 +19,29 @@ import (
 type AuthnProfileProfile struct {
 	_ struct{} `description:"The caller's own profile: the account's self fields plus its identifiers and external bindings, which this surface only reads. It is built field by field from the account module's values, so a field added to the record there does not reach a client by being there."`
 
-	AccountID   string                   `json:"account_id" required:"true" description:"The account's identifier, the one the request's identity names; never empty on a 200."`
-	Kind        string                   `json:"kind" required:"true" description:"The account's kind: user or service, a service being a non-interactive API client."`
-	DisplayName string                   `json:"display_name" required:"true" description:"The account's display name, empty when it carries none"`
-	MFARequired bool                     `json:"mfa_required" required:"true" description:"Whether the account must register a factor"`
-	PasswordSet bool                     `json:"password_set" required:"true" description:"Whether the account has a password credential set"`
-	CreatedAt   string                   `json:"created_at" required:"true" description:"RFC 3339 in UTC, empty when the account carries no creation instant"`
-	Attributes  map[string]string        `json:"attributes" required:"true" description:"Never null; the empty object when the account carries none"`
-	Locale      string                   `json:"locale" required:"true" description:"Read out of the attribute set, empty when it carries none"`
-	TimeZone    string                   `json:"time_zone" required:"true" description:"Read out of the attribute set, empty when it carries none"`
-	Identifiers []AuthnProfileIdentifier `json:"identifiers" required:"true" description:"The account's identifiers; always an array, never null, and empty when the account has none"`
-	Links       []AuthnProfileLink       `json:"links" required:"true" description:"The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included"`
+	AccountID    string                   `json:"account_id" required:"true" description:"The account's identifier, the one the request's identity names; never empty on a 200."`
+	Kind         string                   `json:"kind" required:"true" description:"The account's kind: user or service, a service being a non-interactive API client."`
+	DisplayName  string                   `json:"display_name" required:"true" description:"The account's display name, empty when it carries none"`
+	MFARequired  bool                     `json:"mfa_required" required:"true" description:"Whether the account must register a factor"`
+	PasswordSet  bool                     `json:"password_set" required:"true" description:"Whether the account has a password credential set"`
+	CreatedAt    string                   `json:"created_at" required:"true" description:"RFC 3339 in UTC, empty when the account carries no creation instant"`
+	Attributes   map[string]string        `json:"attributes" required:"true" description:"Never null; the empty object when the account carries none"`
+	Locale       string                   `json:"locale" required:"true" description:"Read out of the attribute set, empty when it carries none"`
+	TimeZone     string                   `json:"time_zone" required:"true" description:"Read out of the attribute set, empty when it carries none"`
+	Identifiers  []AuthnProfileIdentifier `json:"identifiers" required:"true" description:"The account's identifiers; always an array, never null, and empty when the account has none. A pending email contact is not among them: it is not an identifier until an email proof writes it"`
+	Verification AuthnProfileVerification `json:"verification" required:"true" description:"How far the account's self-registration has got, read at request time and never stored in a session or an access token"`
+	Links        []AuthnProfileLink       `json:"links" required:"true" description:"The account's external bindings; always an array, never null, and empty when there are none. The provider's own subject for the person is not included"`
+}
+
+// AuthnProfileVerification is the self-registration state as the profile shows
+// it: the state, the address that state reports, and when the account first
+// reached verified.
+type AuthnProfileVerification struct {
+	_ struct{} `description:"The self-registration state of the account, read on this request: none for an account that never self-registered, pending for one that has not proved an email address, verified for one that has."`
+
+	State string `json:"state" required:"true" description:"none, pending or verified. none is a registration that never began; pending is a self-registration with no proved email address; verified is a self-registration whose email address has been proved"`
+	Email string `json:"email" required:"true" description:"The address of the state: for verified the email identifier proved earliest, ties broken by identifier; for pending the email contact awaiting verification; empty when there is none, which includes a pending registration whose last proved address was removed and which then has no target"`
+	Since string `json:"since" required:"true" description:"RFC 3339 in UTC, the first instant the account reached verified; kept when a removal of the last proved address returns it to pending; empty while it never reached verified"`
 }
 
 // AuthnProfileIdentifier is one identifier of the caller's account.
@@ -41,6 +53,7 @@ type AuthnProfileIdentifier struct {
 	Value       string `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits"`
 	VerifiedAt  string `json:"verified_at" required:"true" description:"RFC 3339 in UTC, the instant the identifier's ownership was established; always present, as no identifier is stored awaiting verification"`
 	VerifiedVia string `json:"verified_via" required:"true" description:"How the identifier's ownership was established: sms-code, email-code, invite, idp:<provider> (followed by the provider's identifier), admin, import-unverified or self. The first four prove ownership; admin, import-unverified and self only record a fact an administrator, an import or the account's own holder asserted"`
+	Proven      bool   `json:"proven" required:"true" description:"Whether the way of verification proves ownership: true for sms-code, email-code, invite and idp:<provider>, false for admin, import-unverified and self"`
 }
 
 // AuthnProfileLink is one external binding of the caller's account. It has no
@@ -69,20 +82,22 @@ type AuthnProfilePatch struct {
 }
 
 // profileViewOf builds the read view from the account module's read surface.
-func profileViewOf(account authn.Account, identifiers []authn.Identifier, links []authn.ExternalBinding) AuthnProfileProfile {
+func profileViewOf(account authn.Account, identifiers []authn.Identifier, links []authn.ExternalBinding,
+	signup authn.SignupStatus) AuthnProfileProfile {
 	attributes := copyAttributes(account.Attributes)
 	view := AuthnProfileProfile{
-		AccountID:   string(account.ID),
-		Kind:        string(account.Kind),
-		DisplayName: account.DisplayName,
-		MFARequired: account.MFARequired,
-		PasswordSet: account.PasswordSet,
-		CreatedAt:   instant(account.CreatedAt),
-		Attributes:  attributes,
-		Locale:      attributes[i18n.LocaleAttributeKey],
-		TimeZone:    attributes[i18n.TimeZoneAttributeKey],
-		Identifiers: make([]AuthnProfileIdentifier, 0, len(identifiers)),
-		Links:       make([]AuthnProfileLink, 0, len(links)),
+		AccountID:    string(account.ID),
+		Kind:         string(account.Kind),
+		DisplayName:  account.DisplayName,
+		MFARequired:  account.MFARequired,
+		PasswordSet:  account.PasswordSet,
+		CreatedAt:    instant(account.CreatedAt),
+		Attributes:   attributes,
+		Locale:       attributes[i18n.LocaleAttributeKey],
+		TimeZone:     attributes[i18n.TimeZoneAttributeKey],
+		Identifiers:  make([]AuthnProfileIdentifier, 0, len(identifiers)),
+		Verification: AuthnProfileVerification{State: signupStateName(signup.State), Email: signup.Email, Since: instant(signup.Since)},
+		Links:        make([]AuthnProfileLink, 0, len(links)),
 	}
 	for _, i := range identifiers {
 		view.Identifiers = append(view.Identifiers, AuthnProfileIdentifier{
@@ -91,6 +106,7 @@ func profileViewOf(account authn.Account, identifiers []authn.Identifier, links 
 			Value:       i.Value,
 			VerifiedAt:  instant(i.VerifiedAt),
 			VerifiedVia: i.VerifiedVia,
+			Proven:      authn.Verification{Via: i.VerifiedVia}.Proves(),
 		})
 	}
 	for _, l := range links {
@@ -123,6 +139,20 @@ func copyAttributes(attributes map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// signupStateName is the name the view writes for a self-registration state:
+// none, pending or verified. A value outside the declared set reads none, which
+// is the zero state.
+func signupStateName(s authn.SignupState) string {
+	switch s {
+	case authn.SignupPending:
+		return "pending"
+	case authn.SignupVerified:
+		return "verified"
+	default:
+		return "none"
+	}
 }
 
 // instant is t as RFC 3339 in UTC, and the empty string for the zero time.

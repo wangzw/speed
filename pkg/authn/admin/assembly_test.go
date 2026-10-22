@@ -42,7 +42,7 @@ func TestTheDescriptorNamesWhatItRequiresAndDelivers(t *testing.T) {
 
 	wantRequired := []core.Token{
 		(*mount.Mounter)(nil), (*authn.Accounts)(nil), (*authn.AccountAdmin)(nil),
-		(*authn.Memberships)(nil), (*audit.Audit)(nil),
+		(*authn.Memberships)(nil), (*authn.SignupVerification)(nil), (*audit.Audit)(nil),
 	}
 	var required []core.Token
 	for _, r := range m.Requires {
@@ -106,6 +106,8 @@ func (a assembly) drive(t *testing.T, run func(m *mounttest.Mounter)) error {
 	names = append(names, "stand-in.account-admin")
 	reg.Register(standIn("stand-in.memberships", newMemberships(), (*authn.Memberships)(nil)))
 	names = append(names, "stand-in.memberships")
+	reg.Register(standIn("stand-in.signup-state", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)))
+	names = append(names, "stand-in.signup-state")
 	if a.audit != nil {
 		reg.Register(standIn("stand-in.audit", a.audit, (*audit.Audit)(nil)))
 		names = append(names, "stand-in.audit")

@@ -64,6 +64,35 @@ func (m *product) admit(id authn.Identity) error {
 	return nil
 }
 
+// gateSignup refuses a management write an unverified self-registration makes.
+// It sits after the caller and the object's ownership are known and before the
+// Decider, the strength requirement and the mandatory audit: a refused request
+// asks no Decider, asks for no strength, writes no audit row and calls no
+// capability. A service account and an account created outside self-registration
+// are exempt; a state that cannot be read is a 503 and is never read as verified.
+func (m *product) gateSignup(ctx context.Context, id authn.Identity) error {
+	account, err := m.accounts.Get(ctx, id.Account())
+	switch {
+	case errors.Is(err, authn.ErrAccountNotFound):
+		// A static password-table subject is no account row and never a
+		// self-registration; the rest of the pipeline answers for it.
+		return nil
+	case err != nil:
+		return m.unavailable("reading the acting account", fmt.Errorf("%w: %w", authn.ErrUnavailable, err))
+	}
+	if account.Kind != authn.KindUser {
+		return nil
+	}
+	status, err := m.verification.SignupStateOf(ctx, id.Account())
+	if err != nil {
+		return m.unavailable("reading the signup state", fmt.Errorf("%w: %w", authn.ErrUnavailable, err))
+	}
+	if status.State == authn.SignupPending {
+		return authnFailure(http.StatusForbidden, mount.CodeContactRequired)
+	}
+	return nil
+}
+
 // asks puts one Decision to the Decider. A refusal is a 403 and an error or a
 // panic is a 503; either is returned as the fault the entry point writes.
 func (m *product) asks(ctx context.Context, d authn.Decision) error {

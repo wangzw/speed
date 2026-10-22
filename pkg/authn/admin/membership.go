@@ -63,6 +63,9 @@ func (m *product) handleMemberPut(ctx context.Context, in memberWriteInput, _ *s
 	if source == "" {
 		source = authn.ReasonAdmin
 	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
+	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,
 		Target: string(accountID), TargetAccount: string(accountID),
@@ -96,6 +99,9 @@ func (m *product) handleMemberRemove(ctx context.Context, in memberAddressInput,
 		return nil, err
 	}
 	accountID := authn.AccountID(in.Account)
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
+	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,
 		Target: string(accountID), TargetAccount: string(accountID),
@@ -133,6 +139,9 @@ func (m *product) handleMemberSSOExempt(ctx context.Context, in memberExemptInpu
 	}
 	if !found {
 		return speedhttp.EmptyReply(404), nil
+	}
+	if err := m.gateSignup(ctx, id); err != nil {
+		return nil, err
 	}
 	if err := m.asks(ctx, authn.Decision{
 		Action: authn.ActionMembershipManage, Actor: id, Tenant: in.Tenant,

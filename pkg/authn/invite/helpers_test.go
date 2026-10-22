@@ -116,17 +116,34 @@ type fakeAccounts struct {
 	authn.Accounts
 	mu       sync.Mutex
 	byEmail  map[string]authn.AccountID
+	kinds    map[authn.AccountID]authn.AccountKind
 	lookupEr error
+	getEr    error
 }
 
 func newAccounts() *fakeAccounts {
-	return &fakeAccounts{byEmail: map[string]authn.AccountID{}}
+	return &fakeAccounts{byEmail: map[string]authn.AccountID{}, kinds: map[authn.AccountID]authn.AccountKind{}}
 }
 
 func (a *fakeAccounts) put(email string, id authn.AccountID) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.byEmail[email] = id
+}
+
+// Get answers the acting account's kind: every account is a user unless a case
+// says otherwise, and a service account has no self-registration to gate.
+func (a *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.getEr != nil {
+		return authn.Account{}, a.getEr
+	}
+	kind := authn.KindUser
+	if k, ok := a.kinds[id]; ok {
+		kind = k
+	}
+	return authn.Account{ID: id, Kind: kind, Status: authn.StatusActive}, nil
 }
 
 func (a *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value string) (authn.AccountID, error) {
@@ -146,11 +163,33 @@ func (a *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value s
 // recording the input it was given.
 type fakeAccountAdmin struct {
 	authn.AccountAdmin
-	mu      sync.Mutex
-	creates int
-	created authn.CreateAccount
-	newID   authn.AccountID
-	err     error
+	mu       sync.Mutex
+	creates  int
+	created  authn.CreateAccount
+	newID    authn.AccountID
+	err      error
+	added    []addedIdentifier
+	addedErr error
+}
+
+// addedIdentifier is one AddIdentifier call the fake recorded.
+type addedIdentifier struct {
+	Account authn.AccountID
+	Kind    authn.IdentifierKind
+	Value   string
+	Via     authn.Verification
+}
+
+// AddIdentifier records the write the acceptance makes when it finds a pending
+// owner for the invited address.
+func (a *fakeAccountAdmin) AddIdentifier(_ context.Context, id authn.AccountID, kind authn.IdentifierKind, value string, via authn.Verification) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.addedErr != nil {
+		return a.addedErr
+	}
+	a.added = append(a.added, addedIdentifier{Account: id, Kind: kind, Value: value, Via: via})
+	return nil
 }
 
 func (a *fakeAccountAdmin) Create(_ context.Context, in authn.CreateAccount) (authn.Account, error) {
@@ -242,43 +281,46 @@ func (d *fakeDecider) last() (authn.Decision, bool) {
 // harness is the module's product over a migrated SQLite database, with the
 // capabilities replaced by ones a case can read.
 type harness struct {
-	t        *testing.T
-	p        *product
-	handle   *gorm.DB
-	clock    *testClock
-	accounts *fakeAccounts
-	admin    *fakeAccountAdmin
-	members  *fakeMemberships
-	audit    *recordingAudit
-	decider  *fakeDecider
-	mounter  *mounttest.Mounter
-	logs     *logBuffer
+	t            *testing.T
+	p            *product
+	handle       *gorm.DB
+	clock        *testClock
+	accounts     *fakeAccounts
+	verification *fakeSignupVerification
+	admin        *fakeAccountAdmin
+	members      *fakeMemberships
+	audit        *recordingAudit
+	decider      *fakeDecider
+	mounter      *mounttest.Mounter
+	logs         *logBuffer
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	handle := openDatabase(t)
 	h := &harness{
-		t:        t,
-		handle:   handle,
-		clock:    newTestClock(),
-		accounts: newAccounts(),
-		admin:    &fakeAccountAdmin{},
-		members:  &fakeMemberships{},
-		audit:    &recordingAudit{},
-		decider:  &fakeDecider{allow: true},
-		mounter:  mounttest.New(t),
-		logs:     &logBuffer{},
+		t:            t,
+		handle:       handle,
+		clock:        newTestClock(),
+		accounts:     newAccounts(),
+		verification: &fakeSignupVerification{},
+		admin:        &fakeAccountAdmin{},
+		members:      &fakeMemberships{},
+		audit:        &recordingAudit{},
+		decider:      &fakeDecider{allow: true},
+		mounter:      mounttest.New(t),
+		logs:         &logBuffer{},
 	}
 	p := &product{
-		handle:      handle,
-		accounts:    h.accounts,
-		accountAdm:  h.admin,
-		memberships: h.members,
-		mounter:     h.mounter,
-		audit:       h.audit,
-		decider:     h.decider,
-		logger:      h.logs.logger(),
+		handle:       handle,
+		accounts:     h.accounts,
+		verification: h.verification,
+		accountAdm:   h.admin,
+		memberships:  h.members,
+		mounter:      h.mounter,
+		audit:        h.audit,
+		decider:      h.decider,
+		logger:       h.logs.logger(),
 	}
 	p.now = h.clock.read
 	h.p = p
@@ -313,3 +355,39 @@ func (h *harness) row(id string) invitationRow {
 }
 
 const adminID = authn.AccountID("acct-admin")
+
+// fakeSignupVerification reports the self-registration state a case scripts and
+// answers the pending-contact reverse lookup.
+type fakeSignupVerification struct {
+	mu           sync.Mutex
+	state        authn.SignupStatus
+	err          error
+	owner        string
+	pending      bool
+	pendingErr   error
+	stateReads   int
+	contactReads int
+}
+
+// SignupStateOf answers the scripted state, or the scripted failure.
+func (v *fakeSignupVerification) SignupStateOf(_ context.Context, _ authn.AccountID) (authn.SignupStatus, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.stateReads++
+	return v.state, v.err
+}
+
+// readCount is how many state reads the fake answered.
+func (v *fakeSignupVerification) readCount() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.stateReads
+}
+
+// PendingAccountByContact answers the scripted owner.
+func (v *fakeSignupVerification) PendingAccountByContact(_ context.Context, _ string, _ string) (string, bool, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.contactReads++
+	return v.owner, v.pending, v.pendingErr
+}

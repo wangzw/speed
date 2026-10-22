@@ -1,6 +1,8 @@
 package login
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -40,4 +42,33 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Stubs:  stubs,
 		Config: config,
 	})
+}
+
+// TestTheSignedInStartDeclaresTheContactRequiredRefusal holds the 403 of the
+// route that starts a flow on an identity already signed in: a `purpose=link`
+// flow is refused when the caller's self-registration has not verified an email
+// address, so the declared operation a generated client is built from names that
+// cause beside the refusal it shares with the other flow routes.
+func TestTheSignedInStartDeclaresTheContactRequiredRefusal(t *testing.T) {
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Responses map[string]struct {
+				Description string `json:"description"`
+			} `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(loginFragment, &doc); err != nil {
+		t.Fatalf("the fragment is not JSON: %v", err)
+	}
+	op, ok := doc.Paths[pathFlowsAuth]["post"]
+	if !ok {
+		t.Fatalf("the fragment declares no POST %s", pathFlowsAuth)
+	}
+	refusal, ok := op.Responses["403"]
+	if !ok {
+		t.Fatalf("POST %s declares no 403", pathFlowsAuth)
+	}
+	if !strings.Contains(refusal.Description, "contact-required") {
+		t.Errorf("the 403 reads %q, want it to name contact-required", refusal.Description)
+	}
 }

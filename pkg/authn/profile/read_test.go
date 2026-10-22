@@ -197,3 +197,128 @@ func TestGetDependencyFailureIs503(t *testing.T) {
 		})
 	}
 }
+
+// TestGetVerificationShowsEachState holds the three states the read face
+// publishes and the field each one carries: none with no address and no
+// instant, pending with the contact awaiting verification, verified with the
+// address the account module reports and the instant the account first reached
+// it.
+func TestGetVerificationShowsEachState(t *testing.T) {
+	since := time.Date(2026, time.April, 5, 6, 7, 8, 0, time.UTC)
+	for _, c := range []struct {
+		name   string
+		status authn.SignupStatus
+		want   AuthnProfileVerification
+	}{
+		{
+			name:   "none",
+			status: authn.SignupStatus{State: authn.SignupNone},
+			want:   AuthnProfileVerification{State: "none"},
+		},
+		{
+			name:   "pending",
+			status: authn.SignupStatus{State: authn.SignupPending, Email: "me@example.com"},
+			want:   AuthnProfileVerification{State: "pending", Email: "me@example.com"},
+		},
+		{
+			name:   "verified",
+			status: authn.SignupStatus{State: authn.SignupVerified, Email: "first@example.com", Since: since},
+			want: AuthnProfileVerification{
+				State: "verified", Email: "first@example.com", Since: since.Format(time.RFC3339),
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t)
+			r.verification.state = c.status
+			rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+			}
+			if got := decodeProfile(t, rec).Verification; got != c.want {
+				t.Errorf("verification = %+v, want %+v", got, c.want)
+			}
+			if r.verification.readCount() != 1 {
+				t.Errorf("the state was read %d times, want once per request", r.verification.readCount())
+			}
+		})
+	}
+}
+
+// TestGetPendingContactIsNotAnIdentifier holds the boundary between the two
+// read surfaces: the address awaiting verification is reported only by
+// verification.email and never appears among the identifiers, which carry
+// proved facts alone.
+func TestGetPendingContactIsNotAnIdentifier(t *testing.T) {
+	r := newRig(t)
+	r.accounts.identifiers[meAccount] = []authn.Identifier{{
+		ID: "id-1", Kind: authn.IdentifierUsername, Value: "me",
+		VerifiedAt: time.Date(2026, time.March, 4, 5, 6, 7, 0, time.UTC), VerifiedVia: authn.VerifiedViaSelf,
+	}}
+	r.verification.state = authn.SignupStatus{State: authn.SignupPending, Email: "awaiting@example.com"}
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	got := decodeProfile(t, rec)
+	if got.Verification.Email != "awaiting@example.com" {
+		t.Errorf("verification.email = %q, want the pending contact", got.Verification.Email)
+	}
+	for _, identifier := range got.Identifiers {
+		if identifier.Value == "awaiting@example.com" {
+			t.Errorf("the pending contact appears among the identifiers: %+v", got.Identifiers)
+		}
+	}
+}
+
+// TestGetIdentifierProvenFollowsTheVerificationChannel holds the derivation of
+// proven over the closed set of channels: the four proofs read true and the
+// three assertions read false.
+func TestGetIdentifierProvenFollowsTheVerificationChannel(t *testing.T) {
+	channels := []struct {
+		via    string
+		proven bool
+	}{
+		{authn.VerifiedViaSMSCode, true},
+		{authn.VerifiedViaEmailCode, true},
+		{authn.VerifiedViaInvite, true},
+		{authn.VerifiedViaIDPPrefix + "0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0d", true},
+		{authn.VerifiedViaAdmin, false},
+		{authn.VerifiedViaImportUnverified, false},
+		{authn.VerifiedViaSelf, false},
+	}
+	r := newRig(t)
+	for i, c := range channels {
+		r.accounts.identifiers[meAccount] = append(r.accounts.identifiers[meAccount], authn.Identifier{
+			ID: "id-" + string(rune('a'+i)), Kind: authn.IdentifierEmail,
+			Value: "channel" + string(rune('a'+i)) + "@example.com", VerifiedAt: time.Now(), VerifiedVia: c.via,
+		})
+	}
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	got := decodeProfile(t, rec)
+	if len(got.Identifiers) != len(channels) {
+		t.Fatalf("identifiers = %+v, want one per channel", got.Identifiers)
+	}
+	for i, c := range channels {
+		if got.Identifiers[i].Proven != c.proven {
+			t.Errorf("%q reads proven=%v, want %v", c.via, got.Identifiers[i].Proven, c.proven)
+		}
+	}
+}
+
+// TestGetSignupStateReadFailureIs503 holds the read failure's direction: a
+// state that cannot be read is answered as unavailable and never as none.
+func TestGetSignupStateReadFailureIs503(t *testing.T) {
+	r := newRig(t)
+	r.verification.err = authn.ErrUnavailable
+	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, me()...)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (body %s)", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"state"`) {
+		t.Errorf("a failed read was answered as a profile: %s", rec.Body.String())
+	}
+}

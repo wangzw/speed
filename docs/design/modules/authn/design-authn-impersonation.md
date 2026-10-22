@@ -605,6 +605,6 @@ flowchart TD
 | 守住假设的测试：并发开始、SQLite 文件库上的开始、各成因的失效、强认证与范围限制、装配测试 | 已实现 | `pkg/authn/impersonation/start_test.go` `TestTwoStartsOnOneSessionRaceToOne`、`TestStartWritesTheMandatoryAuditBeforeTheTransaction`、`TestStartRefusesEachStructuralRestriction`；`pkg/authn/impersonation/active_test.go` `TestActiveLapsesForEachReason`；`pkg/authn/impersonation/guard_test.go` `TestGuardRequireRefusesAnImpersonatingIdentity`、`TestAnImpersonatingIdentityIsKeyedByItsActor`（`Identity.Key()` 取冒充发起者）；`pkg/authn/impersonation/get_test.go` `TestListConfinesToTheQueriedTenant`；`pkg/authn/impersonation/assembly_test.go` `TestTheDriveRefusesAGuardedMountEndpoint` |
 | operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/impersonation/operations.go`；`pkg/authn/impersonation/openapi_generated_test.go`；片段 `pkg/authn/impersonation/openapi/impersonation.json` |
 | 静态特性 `authn.impersonation` 的声明 | 已实现 | `pkg/authn/impersonation/impersonation.go` `Module`；`pkg/authn/impersonation/feature_test.go` `TestTheModuleDeclaresTheImpersonationFeature` |
-| 发起者的注册验证状态门控 | 未实现 | — |
+| 发起者的注册验证状态门控 | 已实现 | `pkg/authn/impersonation/start.go` `(*product).Start`、`checkActor`、`checkSignup`、`quietRefusal`；`pkg/authn/impersonation/impersonation.go` `Module`、`product.verification` |
 
 网关的范围规则、准入层的范围核对、会话与令牌载体的校验各自的实现状态由 [design-authn-gate](design-authn-gate.md)、[design-tenant-admission](../tenant/design-tenant-admission.md)、[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md) 承载。

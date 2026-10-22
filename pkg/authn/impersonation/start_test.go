@@ -572,3 +572,150 @@ func TestStartRefusesASessionThatIsGone(t *testing.T) {
 		}
 	})
 }
+
+// TestAnUnverifiedAccountCannotStart holds the signup gate of a start: a pending
+// self-registration is refused 403 contact-required before the strength
+// conditions, writes no record, counts no denied attempt and writes no audit
+// row. An account that never registered starts as before, and a service account
+// is refused as an impersonation restriction without its state being read.
+func TestAnUnverifiedAccountCannotStart(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		r.verification.state = authn.SignupStatus{State: authn.SignupPending}
+		_, err := r.p.Start(context.Background(), adminIdentity(t), request())
+		if !errors.Is(err, authn.ErrContactRequired) {
+			t.Fatalf("Start = %v, want ErrContactRequired", err)
+		}
+		if r.recordCount() != 0 {
+			t.Errorf("a refused start wrote %d records, want none", r.recordCount())
+		}
+		if rows := r.audit.entries(); len(rows) != 0 {
+			t.Errorf("a refused start wrote %d audit rows, want none", len(rows))
+		}
+		if got := r.counter(outcomeDenied); got != 0 {
+			t.Errorf("a refused start counted %d denied attempts, want none", got)
+		}
+		if len(r.decider.calls) != 0 {
+			t.Errorf("the Decider was asked %d times, want none", len(r.decider.calls))
+		}
+	})
+}
+
+// TestAVerifiedOrNeverRegisteredAccountStarts holds the exemption of the gate:
+// neither a verified self-registration nor an account that never registered is
+// refused by it.
+func TestAVerifiedOrNeverRegisteredAccountStarts(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		state authn.SignupStatus
+	}{
+		{"a never-registered account", authn.SignupStatus{State: authn.SignupNone}},
+		{"a verified registration", authn.SignupStatus{State: authn.SignupVerified}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			onEachDialect(t, func(t *testing.T, r *rig) {
+				r.verification.state = c.state
+				if _, err := r.p.Start(context.Background(), adminIdentity(t), request()); err != nil {
+					t.Fatalf("Start = %v, want a grant", err)
+				}
+			})
+		})
+	}
+}
+
+// TestAServiceAccountIsNotGated holds the exemption of the account kind: a
+// service account is not a self-registration, so the gate does not read its
+// state, and the kind check refuses the start with the structural answer.
+func TestAServiceAccountIsNotGated(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		r.accounts.put(actorID, authn.Account{Kind: authn.KindService, Status: authn.StatusActive})
+		r.verification.state = authn.SignupStatus{State: authn.SignupPending}
+		_, err := r.p.Start(context.Background(), adminIdentity(t), request())
+		if !errors.Is(err, authn.ErrImpersonationRestricted) {
+			t.Fatalf("Start = %v, want ErrImpersonationRestricted", err)
+		}
+		if got := r.verification.readCount(); got != 0 {
+			t.Errorf("a service account's signup state was read %d times, want none", got)
+		}
+	})
+}
+
+// TestTheSignupGateIsAnsweredBeforeTheStrengthConditions holds the gate's place
+// in group a: an initiator that fails the assurance, method-set and Seasoned
+// conditions is answered contact-required, not the step-up 401 or the
+// factor-not-seasoned 403 those conditions would give. The same identity with a
+// state that is not pending reaches the step-up, which proves it does fail the
+// conditions the gate ran ahead of.
+func TestTheSignupGateIsAnsweredBeforeTheStrengthConditions(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		r.mfa.seasoned = false
+		id := adminIdentity(t, authntest.WithAssurance(authn.AssuranceSingle))
+
+		r.verification.state = authn.SignupStatus{State: authn.SignupPending}
+		_, err := r.p.Start(context.Background(), id, request())
+		if !errors.Is(err, authn.ErrContactRequired) {
+			t.Fatalf("Start with a weak, unseasoned, pending initiator = %v, want ErrContactRequired", err)
+		}
+		if len(r.decider.calls) != 0 {
+			t.Errorf("the Decider was asked %d times, want none", len(r.decider.calls))
+		}
+
+		r.verification.state = authn.SignupStatus{State: authn.SignupNone}
+		if _, err = r.p.Start(context.Background(), id, request()); !errors.Is(err, authn.ErrStepUpRequired) {
+			t.Fatalf("Start with a weak, unseasoned initiator = %v, want ErrStepUpRequired", err)
+		}
+	})
+}
+
+// TestTheSignupGateJudgesTheInitiatorNotTheTarget holds the subject of the gate:
+// an impersonating identity's Account() is the target, so reading the state from
+// it would let the target's pending registration refuse the administrator's
+// start. The initiator's own state decides, and the target's never enters the
+// judgement.
+func TestTheSignupGateJudgesTheInitiatorNotTheTarget(t *testing.T) {
+	t.Run("a pending target does not refuse the initiator", func(t *testing.T) {
+		onEachDialect(t, func(t *testing.T, r *rig) {
+			r.verification.setState(targetID, authn.SignupStatus{State: authn.SignupPending})
+			r.verification.setState(actorID, authn.SignupStatus{State: authn.SignupVerified})
+			_, err := r.p.Start(context.Background(), impersonatingIdentity(t, sessionBackend), request())
+			if !errors.Is(err, authn.ErrImpersonationRestricted) {
+				t.Fatalf("Start = %v, want ErrImpersonationRestricted", err)
+			}
+			asked := r.verification.askedIDs()
+			if len(asked) != 1 || asked[0] != actorID {
+				t.Errorf("the signup state was read for %v, want the initiator %q alone", asked, actorID)
+			}
+		})
+	})
+	t.Run("a pending initiator is refused by its own state", func(t *testing.T) {
+		onEachDialect(t, func(t *testing.T, r *rig) {
+			r.verification.setState(actorID, authn.SignupStatus{State: authn.SignupPending})
+			r.verification.setState(targetID, authn.SignupStatus{State: authn.SignupVerified})
+			_, err := r.p.Start(context.Background(), impersonatingIdentity(t, sessionBackend), request())
+			if !errors.Is(err, authn.ErrContactRequired) {
+				t.Fatalf("Start = %v, want ErrContactRequired", err)
+			}
+		})
+	})
+}
+
+// TestAnUnreadableSignupStateCannotStart holds the failure direction: a state
+// that cannot be read is unavailable, writes no record and no audit row, and
+// counts no denied attempt.
+func TestAnUnreadableSignupStateCannotStart(t *testing.T) {
+	onEachDialect(t, func(t *testing.T, r *rig) {
+		r.verification.err = errors.New("boom")
+		_, err := r.p.Start(context.Background(), adminIdentity(t), request())
+		if !errors.Is(err, authn.ErrUnavailable) {
+			t.Fatalf("Start = %v, want ErrUnavailable", err)
+		}
+		if r.recordCount() != 0 {
+			t.Errorf("the failed start wrote %d records, want none", r.recordCount())
+		}
+		if rows := r.audit.entries(); len(rows) != 0 {
+			t.Errorf("the failed start wrote %d audit rows, want none", len(rows))
+		}
+		if got := r.counter(outcomeDenied); got != 0 {
+			t.Errorf("the failed start counted %d denied attempts, want none", got)
+		}
+	})
+}

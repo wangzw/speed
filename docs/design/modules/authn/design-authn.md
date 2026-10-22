@@ -711,5 +711,5 @@ type Provisioner interface {
 | 加强认证处理器 `authn/guard` | 已实现 | `pkg/authn/guard/guard.go` `Require` |
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |
-| 匿名注册 `Signups.Register`、注册验证状态 `SignupVerification` 与未验证账户的门控 | 未实现 | — |
+| 匿名注册 `Signups.Register`、注册验证状态 `SignupVerification` 与未验证账户的门控 | 已实现 | `pkg/authn/account/signup.go` `(*product).Register`、`SignupStateOf`、`PendingAccountByContact`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |
 | 可选的邮件适配模块 `authn.emailcode` | 未实现 | — |

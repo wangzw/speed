@@ -41,9 +41,14 @@ acceptance itself refuses it, so no sweeper is needed.
 - **Accept** finds the row by the token's digest, reports a terminal state, and
   wins the row with a conditional write (`status` still pending and not
   expired). Two concurrent acceptances leave at most one winner. The winner
-  creates an account when the address has none, then writes the membership. A
-  failure after the win is settled by a second conditional write: a transient
-  failure returns the row to pending, a permanent one revokes it.
+  looks the address up: when no identifier names it, it asks
+  `SignupVerification.PendingAccountByContact` whether the address is the
+  pending contact of one self-registered account; a hit writes the address
+  through `AccountAdmin.AddIdentifier` with `via = invite` and hangs the
+  membership on that account, a miss creates an account, and a read failure
+  fails the redemption so the row returns to pending. A failure after the win is
+  settled by a second conditional write: a transient failure returns the row to
+  pending, a permanent one revokes it.
 - **Revoke** flips a pending invitation to revoked. Revoking one that was
   already accepted is `ErrInvitationAlreadyAccepted`; revoking one that was
   already revoked is an idempotent success.
@@ -55,9 +60,13 @@ acceptance itself refuses it, so no sweeper is needed.
 
 Every management route is decided in the handler by the `Decider` seam with the
 action `authn.membership.manage`; the module grants itself no permission, and
-the routes are registered guarded and never impersonable. The acceptance routes
-are registered public: the token is the whole credential and there is no
-identity to read.
+the routes are registered guarded and never impersonable. Before the decision
+and before the mandatory audit, a management write asks the signup gate: a
+user account whose self-registration is still pending (`signup_state=1`) gets
+`403 contact-required`, asks no `Decider` and writes no row or audit row. The
+list is a read and is not gated; a service account and an account that never
+self-registered are exempt. The acceptance routes are registered public: the
+token is the whole credential and there is no identity to read.
 
 | Face | Method and path | Registration | Authorization |
 |---|---|---|---|
@@ -118,6 +127,16 @@ Without the variable the same test is the drift gate; `make check` runs it.
 - **The membership source is `invite`**, written into every membership row the
   module creates, so a subscriber of `authn.membership.changed` can tell an
   invitation join from an administrator's direct add.
+- **An accepted invitation may prove an address of an account that already
+  exists.** `SignupVerification.PendingAccountByContact` is this module's only
+  use of that seam beyond the write gate. It reports an owner only when exactly
+  one live pending account lists the address; a miss, or more than one owner,
+  is not a guess, and the acceptance creates an account as before. The
+  reverse lookup is a read of the pending-contact table; a failure is neither a
+  hit nor a miss and never creates an account.
+- **`SignupVerification` is required.** The descriptor declares it in
+  `Requires` and `newProduct` resolves it, so an assembly that names this
+  module also names the account module that delivers it.
 
 ## Configuration
 

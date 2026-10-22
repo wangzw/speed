@@ -141,6 +141,7 @@ func newSettingsAssembly(t *testing.T) *settingsAssembly {
 	supplyModule(t, reg, "test.mounter", (*mount.Mounter)(nil), mounttest.New(t))
 	supplyModule(t, reg, "test.accounts", (*authn.Accounts)(nil), newAccounts())
 	supplyModule(t, reg, "test.account-admin", (*authn.AccountAdmin)(nil), &fakeAccountAdmin{})
+	supplyModule(t, reg, "test.signup-state", (*authn.SignupVerification)(nil), &fakeSignupVerification{})
 	supplyModule(t, reg, "test.memberships", (*authn.Memberships)(nil), &fakeMemberships{})
 	supplyModule(t, reg, "test.audit", (*audit.Audit)(nil), h.audit)
 	supplyModule(t, reg, "test.settings", (*settings.Store)(nil), h.store)
