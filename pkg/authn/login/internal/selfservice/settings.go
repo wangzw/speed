@@ -40,6 +40,28 @@ const (
 	defaultEmailResendInterval = 60 * time.Second
 	minEmailResendInterval     = 30 * time.Second
 	maxEmailResendInterval     = 10 * time.Minute
+
+	// The four email verification code budgets. authn.login declares them and
+	// this package reads them into the domains the declaring module states.
+	keyEmailPerAddressHourly     = "authn.login.email-per-address-hourly"
+	defaultEmailPerAddressHourly = 5
+	minEmailPerAddressHourly     = 1
+	maxEmailPerAddressHourly     = 60
+
+	keyEmailPerAddressDaily     = "authn.login.email-per-address-daily"
+	defaultEmailPerAddressDaily = 10
+	minEmailPerAddressDaily     = 1
+	maxEmailPerAddressDaily     = 200
+
+	keyEmailPerAccountHourly     = "authn.login.email-per-account-hourly"
+	defaultEmailPerAccountHourly = 10
+	minEmailPerAccountHourly     = 1
+	maxEmailPerAccountHourly     = 60
+
+	keyEmailGlobalHourly     = "authn.login.email-global-hourly"
+	defaultEmailGlobalHourly = 300
+	minEmailGlobalHourly     = 1
+	maxEmailGlobalHourly     = 1000000
 )
 
 // durations reads duration settings from the store. A read that fails and a
@@ -75,6 +97,60 @@ func (d *durations) get(ctx context.Context, key string, def, lo, hi time.Durati
 	}
 	d.report(ctx, key, "", "")
 	return v
+}
+
+// counts reads whole-number settings from the store, with the same fallback as
+// durations: a read that fails and a value outside the setting's domain both
+// read as the declared default, and the fault is written at Error once per
+// distinct fault.
+type counts struct {
+	store settings.Store
+
+	mu       sync.Mutex
+	reported map[string]string
+}
+
+func newCounts(store settings.Store) *counts {
+	return &counts{store: store, reported: make(map[string]string)}
+}
+
+// get reads key as a whole number in [lo, hi] and falls back to def.
+func (c *counts) get(ctx context.Context, key string, def, lo, hi int) int {
+	if c.store == nil {
+		return def
+	}
+	v, err := settings.Get[int](c.store, settings.Global(), key)
+	switch {
+	case err != nil:
+		c.report(ctx, key, "the setting cannot be read, so its declared default is used", err.Error())
+		return def
+	case v < lo || v > hi:
+		c.report(ctx, key, "the setting holds a value outside its domain, so its declared default is used", "")
+		return def
+	}
+	c.report(ctx, key, "", "")
+	return v
+}
+
+func (c *counts) report(ctx context.Context, key, problem, cause string) {
+	c.mu.Lock()
+	last, was := c.reported[key]
+	switch {
+	case problem == "":
+		delete(c.reported, key)
+		c.mu.Unlock()
+		return
+	case was && last == problem:
+		c.mu.Unlock()
+		return
+	}
+	c.reported[key] = problem
+	c.mu.Unlock()
+	attrs := []any{slog.String("key", key)}
+	if cause != "" {
+		attrs = append(attrs, slog.String("cause", cause))
+	}
+	log.FromContext(ctx).Error(moduleName+": "+problem, attrs...)
 }
 
 func (d *durations) report(ctx context.Context, key, problem, cause string) {

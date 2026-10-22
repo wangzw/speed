@@ -29,6 +29,12 @@
 # field. (The attribute is not named "code" because that name is a registered
 # sensitive key of the process, and the logging layer would mask the value.)
 #
+# The email verification code works the same way. authn.emailcode renders it into
+# the authn.email.verify messages and mail.review writes each rendered message to
+# the process log; search for "review mail: a verification message was sent" and
+# read its verification_code field. The carrier declares no configuration item,
+# so this file carries no section for it either.
+#
 # No mounting key is repeated here: the loader accepts a required item from the
 # compiled-in document, whose mounting table is complete.
 
@@ -139,6 +145,29 @@ seed:
     # the methods listing reports signup.enabled.
     - key: "authn.account.signup"
       value: "open"
+    # REVIEW: name-and-password registration is open, and the email channel that
+    # makes its email verifiable is assembled (authn.emailcode over mail.review).
+    # The registration itself sends no mail; the code goes out when the signed-in
+    # account adds its address.
+    - key: "authn.account.password-signup"
+      value: "open"
+    # REVIEW: the email verification code budgets, widened so a walkthrough can
+    # ask for several codes without waiting out a window. They stay inside the
+    # domains authn.login declares (1-60 an hour and 1-200 a day per address, 1-60
+    # an hour per account, 1-1000000 an hour for the deployment), and the resend
+    # interval is lowered to its floor so a person can ask again quickly.
+    - key: "authn.login.email-per-address-hourly"
+      value: "60"
+    - key: "authn.login.email-per-address-daily"
+      value: "200"
+    - key: "authn.login.email-per-account-hourly"
+      value: "60"
+    - key: "authn.login.email-global-hourly"
+      value: "1000"
+    - key: "authn.login.email-resend-interval"
+      value: "30s"
+    - key: "authn.login.email-code-ttl"
+      value: "30m"
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"
     # REVIEW: the official-account entry is assembled but not offered. The

@@ -106,6 +106,26 @@ does.
   bucket that cannot be written answers `503`, because it is the only bound on an
   open registration. The route reads no cookie, keeps no flow record, makes no
   session and sends no email.
+- **The email branch declares four budgets and suppresses an address another
+  account holds.** `authn.login.email-per-address-hourly`,
+  `email-per-address-daily`, `email-per-account-hourly` and
+  `email-global-hourly` are declared here (`config.go`) and read by the
+  self-service package through the settings store; the code lifetime and resend
+  interval are declared the same way. Each send is one atomic increment in a
+  fixed window of its own, and a count past its limit is a 429 `throttled` with
+  the `Retry-After` that ends that window. A counter that cannot be advanced is
+  a 503 and no send: the budgets are the only bound on messages to an address,
+  so none of them is skipped. Before any window is claimed the branch reads
+  `Accounts.Lookup` for the address; an address another account already holds is
+  answered the pending answer a real send gives, with no message and no budget
+  spent, but the same resend window is claimed, so a repeated request inside the
+  interval is a 429 and a store failure is a 503 exactly as for a free address.
+  The route says nothing about whether the address is taken. A held address
+  never receives a code, so it has no completion path; the conflict surfaces
+  only when an address is taken after a code was sent and before the identifier
+  write proves control. The verify route answers a missing record under the same
+  login-failed code as a wrong code, so the two addresses stay indistinguishable
+  there too. A lookup that fails is a 503, never "nobody holds it".
 - **The account module's signup verification read is required beside `Signups`.**
   `authn.SignupVerification` is declared in `Requires` and resolved in `New`, so an
   assembly that names this module supplies the account module that delivers it,

@@ -57,10 +57,10 @@ type Deps struct {
 	EmailSender authn.EmailCodeSender
 
 	// Settings is read for authn.mfa.recent-window, for the two authn.sms
-	// durations the phone routes answer with, and for the two authn.login
-	// email-code durations the email route answers with. Without it, or when a
-	// read fails or lands outside the setting's domain, the declared default is
-	// used.
+	// durations the phone routes answer with, and for the authn.login email-code
+	// durations and budgets the email route answers with and counts against.
+	// Without it, or when a read fails or lands outside the setting's domain, the
+	// declared default is used.
 	Settings settings.Store
 	// Bus and Audit are optional: without them the event and the audit row are
 	// not written.
@@ -79,6 +79,7 @@ type Deps struct {
 type Service struct {
 	deps      Deps
 	durations *durations
+	budgets   *counts
 }
 
 // New checks that the dependencies the routes cannot do without are there and
@@ -106,7 +107,7 @@ func New(d Deps) (*Service, error) {
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("authn.login: the account self-service routes need %s", strings.Join(missing, ", "))
 	}
-	return &Service{deps: d, durations: newDurations(d.Settings)}, nil
+	return &Service{deps: d, durations: newDurations(d.Settings), budgets: newCounts(d.Settings)}, nil
 }
 
 // routes is the Service bound to the endpoint its routes were mounted on, whose

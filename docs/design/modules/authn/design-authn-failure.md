@@ -65,7 +65,7 @@
 
 - **503 的形状。** authn 自己的处理器答 503 时，`Problem.Type` 为 `urn:speed:authn:unavailable`；令牌端点按 OAuth 的约定答 `temporarily_unavailable`。网关的 503 只带状态码（入口模块的 `Fail` 只带状态码），同样不区分成因。503 的应答里只有 `ErrBusy` 带 `Retry-After: 1`。
 - **其余形状。** 机器可读的码取 `urn:speed:authn:<码>`，码的集合与新增规则在 [design-authn-login](design-authn-login.md)；运行期哨兵表的 HTTP 列是码与状态的对应。
-- **注册与验证的冲突形状。** `POST B/register` 把用户名冲突答 409 `username-taken`；注册本身不检查也不回显邮箱占用。邮箱已被其他账户持有时，自助添加邮箱的发码请求答同形的 `pending`、不发信、不占重发窗口；冲突只在验证码证明调用者控制该地址之后，由写标识一步以 409 暴露。
+- **注册与验证的冲突形状。** `POST B/register` 把用户名冲突答 409 `username-taken`；注册本身不检查也不回显邮箱占用。邮箱已被其他账户持有时，自助添加邮箱的发码请求答同形的 `pending`、不发信、不花预算，但占同一重发窗口：窗口内的重复与空闲地址同样答 429，kv 失败同样答 503。该地址在邮箱回路没有完成路径——持有者收不到码，调用者拿到的是同形 `pending`，无从证明控制该地址——写标识的 409 只在「发码后、验证前被他人抢注」的竞态里出现。
 - **待验证账户的能力限制。** 要求已验证邮箱的能力对 `signup_state = 1` 的账户答 403 `contact-required`；注册验证状态读取失败答 503，不按放行处理（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
 - **并入 `login-failed` 的哨兵。** 运行期哨兵表的 HTTP 列写作「并入 `login-failed`」的哨兵，其应答不暴露各自的成因，成因只进日志。
 

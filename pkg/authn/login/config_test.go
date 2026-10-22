@@ -34,6 +34,53 @@ func TestTheSettingDomainsAdmitTheirBounds(t *testing.T) {
 	}
 }
 
+// TestTheEmailBudgetDomainsAdmitTheirBounds holds the four email verification
+// code budgets at their endpoints: a value exactly at a bound is inside its
+// domain, one past either end is out, and the declared defaults are inside.
+func TestTheEmailBudgetDomainsAdmitTheirBounds(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		inDomain func(int) bool
+		lo, hi   int
+		def      int
+	}{
+		{
+			"email-per-address-hourly", emailPerAddressHourlyInDomain,
+			minEmailPerAddressHourly, maxEmailPerAddressHourly, defaults.EmailPerAddressHourly,
+		},
+		{
+			"email-per-address-daily", emailPerAddressDailyInDomain,
+			minEmailPerAddressDaily, maxEmailPerAddressDaily, defaults.EmailPerAddressDaily,
+		},
+		{
+			"email-per-account-hourly", emailPerAccountHourlyInDomain,
+			minEmailPerAccountHourly, maxEmailPerAccountHourly, defaults.EmailPerAccountHourly,
+		},
+		{
+			"email-global-hourly", emailGlobalHourlyInDomain,
+			minEmailGlobalHourly, maxEmailGlobalHourly, defaults.EmailGlobalHourly,
+		},
+	} {
+		if !c.inDomain(c.lo) || !c.inDomain(c.hi) {
+			t.Errorf("%s: a value at its own bound is outside the domain", c.name)
+		}
+		if c.inDomain(c.lo-1) || c.inDomain(c.hi+1) {
+			t.Errorf("%s: a value past its bound is inside the domain", c.name)
+		}
+		if !c.inDomain(c.def) {
+			t.Errorf("%s: the declared default %d is outside the domain", c.name, c.def)
+		}
+	}
+	// The declared defaults are the design's table; a change here is a change of
+	// the contract, so the numbers are pinned rather than only checked in-domain.
+	if defaults.EmailPerAddressHourly != 5 || defaults.EmailPerAddressDaily != 10 ||
+		defaults.EmailPerAccountHourly != 10 || defaults.EmailGlobalHourly != 300 {
+		t.Errorf("the email budgets default to %d/%d/%d/%d, want 5/10/10/300",
+			defaults.EmailPerAddressHourly, defaults.EmailPerAddressDaily,
+			defaults.EmailPerAccountHourly, defaults.EmailGlobalHourly)
+	}
+}
+
 // TestDeliveryModesRefuseARepeat holds that a list naming the same mode twice is
 // outside the domain.
 func TestDeliveryModesRefuseARepeat(t *testing.T) {

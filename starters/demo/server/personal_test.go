@@ -1447,7 +1447,7 @@ func TestTheEnsureRefusesAnUnverifiedRegistration409(t *testing.T) {
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
 	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix + verificationRequiredCode)
+	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
 	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
 		manager.putBinding != 0 || seeder.seed != 0 {
 		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), %d seeding(s)",
@@ -1466,7 +1466,7 @@ func TestTheEnsureCreatesTheTenantOnceVerificationIsProved(t *testing.T) {
 	signup.answer(authn.SignupPending, nil)
 	c, recorder := ginContext(ctx)
 	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix + verificationRequiredCode)
+	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
 	if roster.creates != 0 {
 		t.Fatalf("the pending ensure registered %d tenant(s), want none", roster.creates)
 	}
@@ -1537,7 +1537,7 @@ func TestTheVerificationGatePrecedesTheEligibilityRefusal(t *testing.T) {
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
 	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix + verificationRequiredCode)
+	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
 	if roster.creates != 0 || memberships.puts != 0 {
 		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), want none",
 			roster.creates, memberships.puts)
@@ -1559,7 +1559,7 @@ func TestTheVerificationGatePrecedesThePersonalTenantReadBack(t *testing.T) {
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
 	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix + verificationRequiredCode)
+	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
 	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
 		manager.putBinding != 0 || seeder.seed != 0 {
 		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), %d seeding(s)",

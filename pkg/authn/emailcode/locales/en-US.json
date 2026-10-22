@@ -1,0 +1,5 @@
+{
+  "authn.email.verify.subject": "Your verification code",
+  "authn.email.verify.body_text": "Your verification code is {{code}}. It is valid for {{ttl_minutes}} minutes. If you did not ask for it, ignore this message.",
+  "authn.email.verify.body_html": "<p>Your verification code is <strong>{{code}}</strong>.</p><p>It is valid for {{ttl_minutes}} minutes. If you did not ask for it, ignore this message.</p>"
+}

@@ -75,6 +75,13 @@ type fakeAccounts struct {
 	identifiers []authn.Identifier
 	externals   []authn.ExternalBinding
 	err         error
+
+	// lookup is the identifier table the email branch reads before it sends: a
+	// value here is held by the account it names, and anything else is held by
+	// nobody. lookupErr stands for a table that cannot be read.
+	lookup    map[string]authn.AccountID
+	lookupErr error
+	looked    []string
 }
 
 func (f *fakeAccounts) Get(_ context.Context, id authn.AccountID) (authn.Account, error) {
@@ -92,9 +99,19 @@ func (f *fakeAccounts) Externals(_ context.Context, id authn.AccountID) ([]authn
 	return f.externals, f.err
 }
 
-func (f *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, _ string) (authn.AccountID, error) {
+// Lookup answers from the identifier table a case scripts. With no entry for the
+// value it reports ErrAccountNotFound, which is the ordinary case: the branch
+// sends to an address no identifier carries.
+func (f *fakeAccounts) Lookup(_ context.Context, _ authn.IdentifierKind, value string) (authn.AccountID, error) {
 	f.log.add("accounts.Lookup")
-	return "someone-else", nil
+	f.looked = append(f.looked, value)
+	if f.lookupErr != nil {
+		return "", f.lookupErr
+	}
+	if id, ok := f.lookup[value]; ok {
+		return id, nil
+	}
+	return "", authn.ErrAccountNotFound
 }
 
 type addCall struct {
@@ -299,6 +316,9 @@ type fakeKV struct {
 	getErr  error
 	setErr  error
 	delErr  error
+	// incrErr fails the atomic increment alone, so a case can make the budgets
+	// unreadable while the resend claim and the pending record still work.
+	incrErr error
 	sets    int
 	deletes int
 }
@@ -402,6 +422,9 @@ func (f *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 	f.log.add("kv.IncrByFloatWithTTL")
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.incrErr != nil {
+		return 0, f.incrErr
+	}
 	if f.setErr != nil {
 		return 0, f.setErr
 	}
@@ -481,26 +504,35 @@ func (f *fakeAudit) entries() []audit.Entry {
 	return append([]audit.Entry(nil), f.rows...)
 }
 
-// fakeSettings serves the durations a test set and an error for the keys it
-// listed as unreadable.
+// fakeSettings serves the durations and whole numbers a test set and an error
+// for the keys it listed as unreadable.
 type fakeSettings struct {
 	settings.Store
-	values map[string]time.Duration
-	errs   map[string]error
+	values  map[string]time.Duration
+	numbers map[string]int
+	errs    map[string]error
 }
 
 func (f *fakeSettings) Get(_ settings.Layer, key string, target any) error {
 	if err := f.errs[key]; err != nil {
 		return err
 	}
-	v, ok := f.values[key]
-	if !ok {
-		return settings.ErrUnknownKey
-	}
-	dst, ok := target.(*time.Duration)
-	if !ok {
+	switch dst := target.(type) {
+	case *time.Duration:
+		v, ok := f.values[key]
+		if !ok {
+			return settings.ErrUnknownKey
+		}
+		*dst = v
+		return nil
+	case *int:
+		v, ok := f.numbers[key]
+		if !ok {
+			return settings.ErrUnknownKey
+		}
+		*dst = v
+		return nil
+	default:
 		return fmt.Errorf("fakeSettings: target is %s", reflect.TypeOf(target))
 	}
-	*dst = v
-	return nil
 }

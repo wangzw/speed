@@ -7,9 +7,11 @@ credential backend, whose subject table comes from configuration,
 `pkg/authn/mount`, which mounts a module's routes under the base path with the
 access level the gateway applies to each, the modules of the identity system —
 `pkg/authn/account`, `pkg/authn/session`, `pkg/authn/mfa`, `pkg/authn/token`,
-`pkg/authn/sso`, `pkg/authn/impersonation`, `pkg/authn/admin` and the login
-methods under `pkg/authn/login` — `pkg/authn/guard`, which writes the step-up
-challenge of a route that requires a stronger authentication, and
+`pkg/authn/sso`, `pkg/authn/impersonation`, `pkg/authn/admin`, the login methods
+under `pkg/authn/login` and `pkg/authn/emailcode`, the optional channel that
+renders a self-service email verification code into a `pkg/mail` message —
+`pkg/authn/guard`, which writes the step-up challenge of a route that requires a
+stronger authentication, and
 `pkg/authn/authntest`, which builds the context a gateway would have left on a
 request, and the configuration reader a backend's tests need, for the tests of
 modules that read an identity.

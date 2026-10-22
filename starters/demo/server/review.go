@@ -33,6 +33,14 @@ package main
 // success. Every number still goes through the real budgets, the real challenge
 // row and the real verification, so the flow exercises the product's own state
 // machine end to end.
+//
+// The mail side is the same shape on the other capability: mail.review is a
+// carrier built through mail.NewModule, it reaches no relay, and it writes each
+// message authn.emailcode rendered to the process log. That is what makes
+// name-and-password registration walkable here: the password-signup switch is
+// open in review/sqlite.yaml, the account adds its address after signing in, and
+// the reviewer reads the code out of the log. The baseline has neither module
+// and keeps the switch closed.
 
 import (
 	"context"
@@ -44,8 +52,10 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/sms"
 
+	"github.com/vislake/speed/pkg/authn/emailcode"
 	githublogin "github.com/vislake/speed/pkg/authn/login/github"
 	googlelogin "github.com/vislake/speed/pkg/authn/login/google"
 	smslogin "github.com/vislake/speed/pkg/authn/login/sms"
@@ -60,6 +70,14 @@ import (
 // enablement lookup, and it is the namespace the sender reads, which declares
 // no item and therefore appears in no configuration file.
 const reviewCarrierModuleName = "sms.review"
+
+// reviewMailModuleName is the module name of the review mail carrier. It is a
+// carrier's own name under the mail capability's namespace, and the sender it
+// builds reaches no relay: every message goes to the process log.
+const reviewMailModuleName = "mail.review"
+
+// reviewMailCarrierName is what the mail sender answers Name with.
+const reviewMailCarrierName = "review"
 
 // reviewGuardModuleName is the module name of the startup guard. It mounts
 // nothing: its one work is refusing a run whose listening addresses are not
@@ -89,6 +107,12 @@ var reviewModules = []string{
 	smsregistry.ModuleName,
 	smslogin.ModuleName,
 	reviewCarrierModuleName,
+	// Name-and-password registration needs an email channel: authn.emailcode
+	// renders the code into the authn.email.verify messages and hands them to a
+	// mail carrier, and mail.review is that carrier, writing each message to the
+	// process log instead of reaching a relay.
+	emailcode.ModuleName,
+	reviewMailModuleName,
 	reviewGuardModuleName,
 }
 
@@ -97,9 +121,14 @@ var reviewModules = []string{
 // process log.
 type reviewSenderConfig struct{}
 
-// init registers the review sender as a carrier module and the review guard
-// beside it. Importing this file is what puts both in the available set, and
-// the serve roster below names them for a run.
+// reviewMailConfig is the review mail carrier's configuration. It declares no
+// item for the same reason: the carrier reaches no relay.
+type reviewMailConfig struct{}
+
+// init registers the two review carriers — sms.review for SMS and mail.review
+// for mail — and the review guard beside them. Importing this file is what puts
+// all three in the available set, and the serve roster above names them for a
+// run.
 func init() {
 	core.ProcessRegistry.Register(sms.NewModule(sms.Spec[reviewSenderConfig]{
 		ModuleName:      reviewCarrierModuleName,
@@ -110,6 +139,17 @@ func init() {
 		},
 		Open: func(context.Context, *reviewSenderConfig) (sms.Product, error) {
 			return reviewSender{}, nil
+		},
+	}))
+	core.ProcessRegistry.Register(mail.NewModule(mail.Spec[reviewMailConfig]{
+		ModuleName:      reviewMailModuleName,
+		ConfigNamespace: reviewMailModuleName,
+		Config:          &reviewMailConfig{},
+		Stance: func(*reviewMailConfig) (core.Enablement, error) {
+			return core.Enablement{State: core.StateEnabled}, nil
+		},
+		Open: func(context.Context, *reviewMailConfig) (mail.Sender, error) {
+			return reviewMailSender{}, nil
 		},
 	}))
 	core.ProcessRegistry.Register(reviewGuardModule())
@@ -253,3 +293,70 @@ func (reviewSender) Approval(context.Context, string) (sms.Approval, error) {
 // Retire accepts the removal of a template, which this process never holds at a
 // vendor.
 func (reviewSender) Retire(context.Context, string) error { return nil }
+
+// reviewMailSender is the mail carrier the review build sends through. It
+// reaches no relay: Send writes the message it was handed to the process log and
+// answers success.
+//
+// Writing the body is this carrier's whole purpose and the one place the mail
+// capability's "the body reaches no log" promise is deliberately suspended: the
+// review build exists so a person can read the verification code out of the
+// server output. The code is also reported under verification_code, because the
+// gateway registers "code" as a sensitive key name for the process and the
+// logging layer would mask a value logged under it. The carrier listens on
+// loopback only, through the review guard, and the log can still leave the
+// machine through collection or export.
+type reviewMailSender struct{}
+
+var _ mail.Sender = reviewMailSender{}
+
+// Name is the carrier's own name.
+func (reviewMailSender) Name() string { return reviewMailCarrierName }
+
+// Send writes the rendered message to the process log. No value here is chosen
+// by this file: the code was drawn by the login module and rendered by
+// authn.emailcode.
+func (reviewMailSender) Send(_ context.Context, m mail.Message) (mail.Receipt, error) {
+	log.Default().Info("review mail: a verification message was sent",
+		"sender", reviewMailCarrierName,
+		"to", strings.Join(m.To, ", "),
+		"subject", m.Subject,
+		"text", m.Text,
+		"html", m.HTML,
+		"verification_code", verificationCode(m.Text, m.HTML))
+	return mail.Receipt{ProviderID: reviewMailCarrierName}, nil
+}
+
+// verificationCode reads the six-digit code out of the rendered bodies, the
+// plain text first. It reports an empty string when no body carries one; a
+// longer run of digits is not a code and is not reported.
+func verificationCode(bodies ...string) string {
+	for _, body := range bodies {
+		if code := sixDigitRun(body); code != "" {
+			return code
+		}
+	}
+	return ""
+}
+
+// sixDigitRun returns the first run of exactly six digits in text, or "".
+func sixDigitRun(text string) string {
+	run, start := 0, 0
+	for i := 0; i < len(text); i++ {
+		if text[i] >= '0' && text[i] <= '9' {
+			if run == 0 {
+				start = i
+			}
+			run++
+			continue
+		}
+		if run == 6 {
+			return text[start : start+6]
+		}
+		run = 0
+	}
+	if run == 6 {
+		return text[start : start+6]
+	}
+	return ""
+}

@@ -274,7 +274,8 @@ func TestAWrongCodeIsRejectedAndCounted(t *testing.T) {
 
 // TestTheRecordIsSpentAfterTheAttemptsAreUsedUp holds that a pending code cannot
 // be guessed over its lifetime: once the attempts are used up the record is gone
-// and the next verify is flow-invalid, so the caller has to ask for another code.
+// and the next verify is the same login-failed a wrong code gets, so the caller
+// has to ask for another code.
 func TestTheRecordIsSpentAfterTheAttemptsAreUsedUp(t *testing.T) {
 	h := emailHarness(t)
 	h.post("/identifiers", addBody("email", "ada@example.com"))
@@ -292,8 +293,8 @@ func TestTheRecordIsSpentAfterTheAttemptsAreUsedUp(t *testing.T) {
 		t.Fatal("the record survived the attempts being used up")
 	}
 	w := h.post("/identifiers/verify", verifyBody(real))
-	if w.Code != http.StatusUnauthorized || problemType(t, w) != "flow-invalid" {
-		t.Fatalf("answer = %d %s, want 401 flow-invalid once the record is spent", w.Code, w.Body)
+	if w.Code != http.StatusUnauthorized || problemType(t, w) != "login-failed" {
+		t.Fatalf("answer = %d %s, want 401 login-failed once the record is spent", w.Code, w.Body)
 	}
 }
 
@@ -337,14 +338,15 @@ func TestAnAddressOfAnotherAccountIsAConflict(t *testing.T) {
 	}
 }
 
-// TestAVerificationWithNoPendingRecordIsFlowInvalid holds that a verify with no
-// add behind it proves nothing and says nothing about any other session's
-// pending address.
-func TestAVerificationWithNoPendingRecordIsFlowInvalid(t *testing.T) {
+// TestAVerificationWithNoPendingRecordIsLoginFailed holds that a verify with no
+// add behind it reports the same refusal a wrong code gets: an address another
+// account holds never receives a code, so a distinct code here would tell the
+// caller which addresses are taken.
+func TestAVerificationWithNoPendingRecordIsLoginFailed(t *testing.T) {
 	h := emailHarness(t)
 	w := h.post("/identifiers/verify", verifyBody("123456"))
-	if w.Code != http.StatusUnauthorized || problemType(t, w) != "flow-invalid" {
-		t.Fatalf("answer = %d %s, want 401 flow-invalid", w.Code, w.Body)
+	if w.Code != http.StatusUnauthorized || problemType(t, w) != "login-failed" {
+		t.Fatalf("answer = %d %s, want 401 login-failed", w.Code, w.Body)
 	}
 }
 

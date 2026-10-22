@@ -886,7 +886,7 @@ flowchart TD
 | `ErrBusy` | 口令派生的并发上限或内存预算已满；自助注册派生的并发名额已满 | 503，`Retry-After: 1` |
 | `ErrUnavailable` | db 不可用（外部库错误包它） | 503 |
 
-自助注册路由把用户名冲突的 `ErrAccountExists` 答成 409 `username-taken`；邮箱冲突只在验证码证明调用者控制该地址之后才以 `ErrAccountExists` 暴露，注册请求本身不检查邮箱唯一性。
+自助注册路由把用户名冲突的 `ErrAccountExists` 答成 409 `username-taken`；注册请求本身不检查邮箱唯一性。邮箱冲突只在「发码后、验证前被其他账户抢注」的竞态里于写标识一步以 `ErrAccountExists` 暴露；发码时已被其他账户持有的地址在本回路不发码，因而没有完成路径。
 
 `ErrContactRequired` 不由本模块的任何方法返回：它由要求已验证邮箱的调用方在请求期读取 `SignupVerification.SignupStateOf` 之后返回；列在此表是为了让自助注册契约的失败面集中在一处。
 

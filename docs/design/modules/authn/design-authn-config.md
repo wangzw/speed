@@ -242,7 +242,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 - `authn.login.disabled-methods` 在运行期关闭一个登录方式，例如遭遇短信轰炸时关 `sms`；`authn.login.ip-limit` 缺省关闭的理由见 [design-authn-login](design-authn-login.md)。
 - `authn.sms.global-hourly-*` 按用途分设：登录的预算耗尽不挤占已通过口令的第二因素与因素登记。
 - `authn.sms.per-account-hourly` 只对 `mfa` 与 `enroll` 用途计数。
-- `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly` 与 `email-global-hourly` 是邮箱验证码的预算：前两项按归一化后的地址计数，窗口跨会话与账户共享，一个地址在一次重发窗口内只发一条码；第三项按发起的账户计；第四项是全部账户与地址共享的小时总量。地址已被其他账户持有时不发信、不占重发窗口。
+- `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly` 与 `email-global-hourly` 是邮箱验证码的预算：前两项按归一化后的地址计数，窗口跨会话与账户共享，一个地址在一次重发窗口内只发一条码；第三项按发起的账户计；第四项是全部账户与地址共享的小时总量。地址已被其他账户持有时不发信、不花预算，但占同一重发窗口，使应答与空闲地址不可区分。
 - `authn.mfa.sensitive-min-age` 是冒充发起与管理员重置因素所要求的因素启用年龄。
 
 下表是企业 SSO、冒充与租户准入的设置项（封闭集合）。
@@ -572,5 +572,5 @@ flowchart TD
 | `AGENTS.md` 对设置写权限的硬要求 | 已实现 | `pkg/authn/AGENTS.md` |
 | 注册开关 `authn.account.password-signup`、注册预算与未验证账户清理期限的设置项 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`（`password-signup`、`signup-ip-limit`、`signup-global-hourly`、`unverified-ttl`、`unverified-sweep-interval`）、`signupIPLimitInDomain`、`signupHourlyInDomain`、`unverifiedTTLInDomain`、`unverifiedSweepInDomain`；`pkg/authn/account/params.go` `passwordSignup`、`unverifiedTTL`、`unverifiedSweepInterval`；`pkg/authn/account/relax.go` `relaxing`、`relaxedMove` |
 | 登录路由按路径读取注册开关与两个注册预算（不重复声明） | 已实现 | `pkg/authn/login/config.go` `passwordSignupPath`、`signupIPLimitPath`、`signupGlobalHourlyPath`、`signupIPLimitInDomain`、`signupGlobalHourlyInDomain`、`(*reader).passwordSignup`、`signupIPLimit`、`signupGlobalHourly`；`pkg/authn/login/register.go` `signupSourceAllow`、`signupGlobalAllow`；`pkg/authn/login/respond.go` `(*routes).methods` |
-| 邮箱验证码的按地址、按账户与全局预算的设置项 | 未实现 | — |
+| 邮箱验证码的按地址、按账户与全局预算的设置项 | 已实现 | `pkg/authn/login/config.go` `emailPerAddressHourlyKey`、`emailPerAddressDailyKey`、`emailPerAccountHourlyKey`、`emailGlobalHourlyKey`、`settingsSchema`、`emailPerAddressHourlyInDomain`、`emailPerAddressDailyInDomain`、`emailPerAccountHourlyInDomain`、`emailGlobalHourlyInDomain`、`defaults`；读取与计数落点 `pkg/authn/login/internal/selfservice/settings.go` `(*counts).get`、`pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).emailBudgetsAllow`、`untilNextEmailBucket` |
 | `authn.account.signup-concurrency` 配置项 | 已实现 | `pkg/authn/account/config.go` `signupConcurrencyItem`、`configDefaults`、`(moduleConfig).resolve`；`pkg/authn/account/account.go` `newProduct`（`signupGov`） |

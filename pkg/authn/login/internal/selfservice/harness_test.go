@@ -77,7 +77,7 @@ func newHarness(t *testing.T, cfgs ...func(*config)) *harness {
 		t:   t,
 		log: log,
 		m:   mounttest.New(t),
-		accounts: &fakeAccounts{log: log, account: authn.Account{
+		accounts: &fakeAccounts{log: log, lookup: map[string]authn.AccountID{}, account: authn.Account{
 			ID: account, Kind: authn.KindUser, DisplayName: "Ada", PasswordSet: true,
 			CreatedAt: now.Add(-48 * time.Hour),
 		}},

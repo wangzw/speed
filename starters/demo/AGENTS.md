@@ -36,6 +36,7 @@ product adds it once it holds the dependency:
 | `authn.sso.oidc`, `authn.sso.saml` | an enterprise provider's client credentials and metadata |
 | `sms.*`, `authn.login.sms`, `authn.mfa.sms`, `authn.sms` | an SMS vendor's account |
 | `mail.smtp` | an SMTP account |
+| `authn.emailcode` | a mail carrier to send through; the review build pairs it with `mail.review` |
 | `objectstore.s3` | an S3 account and bucket |
 
 The test of a doubtful module is the module's own contract: if its required
@@ -102,6 +103,45 @@ no error — the document would simply be smaller than the platform contract.
 `server/main.go` carries these as blank imports beside a comment saying why; the
 declarations of a module reached this way are collected by the stack node's
 `IncludeAllDeclarations`, and no `Include` names it.
+
+### The review build
+
+`go build -tags review` compiles a second assembly beside the baseline one.
+`server/review.go` adds the login methods that need a provider or a carrier —
+the four social methods, the SMS family with the `sms.review` log carrier, and
+name-and-password registration with `authn.emailcode` over the `mail.review` log
+carrier — through `reviewModules`, which `serve` includes after `baselineServe`.
+`server/review_off.go` compiles in a default build and names nothing, so a
+baseline binary carries none of those modules' code paths.
+
+`mail.review` is a carrier built through `mail.NewModule`, the same factory
+`mail.smtp` uses: it reaches no relay and writes each rendered message to the
+process log. `authn.emailcode` renders `authn.email.verify` in the language the
+request announced (falling back to English) and hands the message over. Register
+the code for the walkthrough with `verification_code`; the value is not logged
+under `code`, because that name is a registered sensitive key of the process and
+the logging layer would mask it.
+
+`server/review/sqlite.yaml` is the configuration the build reads. It keeps
+`authn.account.signup` and `authn.account.password-signup` open, widens the four
+`authn.login.email-*` budgets and lowers the resend interval to its floor so a
+person can walk the flow, and points the database, key and object root under
+`var/`. Baseline `serve` names none of these modules and leaves registration
+closed, so the baseline login page advertises no registration entry.
+
+The walkthrough is: register a username, email and password; sign in with the
+password through the ordinary flow; add the email under the account's own
+identifiers; read the code from the `review mail:` line; submit it to
+`POST /api/v1/auth/identifiers/verify`; watch `/api/v1/auth/me` report
+`verification.state = verified`; then call the personal ensure. Registration
+itself sends no mail, and `sms.review` verifies a phone the same way without
+lifting the registration limit.
+
+The build also carries a guard (`reviewGuardModule`) that refuses to start when
+any configured listener is not loopback: the review build seeds the published
+administrator credential and opens registration. The guard limits the listening
+address only; a code written to the process log can still leave the machine
+through log collection or export.
 
 ### The token signing key
 

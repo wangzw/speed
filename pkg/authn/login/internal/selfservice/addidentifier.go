@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -62,6 +63,25 @@ const (
 	// a second session cannot turn the route into a flood of messages to one
 	// address.
 	emailResendKeyPrefix = "authn:email-resend:"
+
+	// The prefixes of the email verification code budgets: one counter per
+	// address per hour, one per address per day, one per account per hour and one
+	// for the whole deployment per hour. They are keys of their own rather than
+	// fields of the pending record, so each is advanced by the store's atomic
+	// increment and no read-modify-write can lose a count.
+	emailAddressBudgetPrefix = "authn:email-address:"
+	emailAccountBudgetPrefix = "authn:email-account:"
+	emailGlobalBudgetPrefix  = "authn:email-global:"
+)
+
+// The widths and key layouts of the email budgets. A bucket is the fixed window
+// a counter lives in; its key carries the window it was started in, so a new
+// window is a new key and the count starts at zero without a reset step.
+const (
+	emailHourBucket = time.Hour
+	emailDayBucket  = 24 * time.Hour
+	emailHourLayout = "2006010215"
+	emailDayLayout  = "20060102"
 )
 
 // emailAddress is the form an address is accepted in: ASCII, exactly one at
@@ -104,6 +124,31 @@ func emailAttemptKey(codeDigest string) string {
 func emailResendKey(email string) string {
 	sum := sha256.Sum256([]byte(email))
 	return emailResendKeyPrefix + hex.EncodeToString(sum[:])
+}
+
+// emailAddressHourlyKey is an address's hourly budget key for the window now
+// falls in. The address is digested, so the store carries no address in the
+// clear, exactly as the resend window does.
+func emailAddressHourlyKey(email string, now time.Time) string {
+	sum := sha256.Sum256([]byte(email))
+	return emailAddressBudgetPrefix + hex.EncodeToString(sum[:]) + ":h:" + now.UTC().Format(emailHourLayout)
+}
+
+// emailAddressDailyKey is an address's daily budget key for the window now falls
+// in.
+func emailAddressDailyKey(email string, now time.Time) string {
+	sum := sha256.Sum256([]byte(email))
+	return emailAddressBudgetPrefix + hex.EncodeToString(sum[:]) + ":d:" + now.UTC().Format(emailDayLayout)
+}
+
+// emailAccountHourlyKey is an account's hourly budget key.
+func emailAccountHourlyKey(account authn.AccountID, now time.Time) string {
+	return emailAccountBudgetPrefix + string(account) + ":" + now.UTC().Format(emailHourLayout)
+}
+
+// emailGlobalHourlyKey is the deployment-wide hourly budget key.
+func emailGlobalHourlyKey(now time.Time) string {
+	return emailGlobalBudgetPrefix + now.UTC().Format(emailHourLayout)
 }
 
 // emailDigest is the digest of a code, salted with the session the code was
@@ -195,6 +240,16 @@ func (r *routes) addIdentifier(ctx context.Context, in addIdentifierInput, meta 
 // channel has no way to prove an address, so it answers that the route is
 // unavailable; the code reaches the address and nothing the client reads says
 // whether it left.
+//
+// An address another account already holds is not sent to at all, but it spends
+// the same resend window a free address does, and spends none of the budgets.
+// The answer is the pending answer a real send gives, a repeat inside the window
+// is the same 429 a free address gets, and a store that cannot be claimed is the
+// same 503, so nothing a client reads says whether the address is taken. The
+// write of an identifier another account holds is refused, but a held address
+// receives no code and so has no completion path in this loop: that refusal is
+// reachable only in the race where a code was sent and the address was taken
+// before its answer came back.
 func (r *routes) addEmail(c *call, who caller, raw string) {
 	if r.deps.EmailSender == nil {
 		logWarn(c.ctx, "an email identifier was asked for on a deployment with no email channel", nil)
@@ -210,13 +265,21 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	ttl := r.durations.get(c.ctx, keyEmailCodeTTL, defaultEmailCodeTTL, minEmailCodeTTL, maxEmailCodeTTL)
 	resend := r.durations.get(c.ctx, keyEmailResendInterval, defaultEmailResendInterval, minEmailResendInterval, maxEmailResendInterval)
 
+	held, err := r.emailHeldByAnother(c.ctx, email, who.account)
+	if err != nil {
+		logWarn(c.ctx, "whether an email address is already held cannot be read", err)
+		c.unavailable()
+		return
+	}
+
 	// Another code within the interval is a 429, so a client cannot turn the
 	// route into a flood of messages to one address. The window is held against
 	// the address rather than the session: the claim is one atomic step, so a
 	// second session — or a second account — naming the same address still meets
 	// it. A store that cannot be claimed is a 503 before the code is drawn,
 	// because a code that cannot be recorded is a message paid for and sent to no
-	// use.
+	// use. The window is claimed before the held-or-free branch is acted on, so a
+	// held address and a free one answer alike on a repeat and on a store failure.
 	now := r.deps.Clock.Now()
 	resendKey := emailResendKey(email)
 	mark, err := json.Marshal(emailResendMark{SentAt: now.Unix()})
@@ -232,6 +295,26 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	}
 	if !claimed {
 		c.throttled(r.resendWait(c.ctx, resendKey, resend))
+		return
+	}
+
+	// A held address keeps the window it just claimed and gets no message, no
+	// pending record and no charge against any budget. Its first answer is the
+	// pending answer a send gives, so the two addresses cannot be told apart by
+	// this route.
+	if held {
+		r.answerPending(c, ttl, resend)
+		return
+	}
+
+	// The four budgets bound what one address, one account and the whole
+	// deployment may be sent. They are counted after the resend window is claimed
+	// and before a code is drawn, so a request that never sends spends none of
+	// them; a counter that cannot be advanced releases the claim and answers 503,
+	// because these budgets are the only bound on messages to an address and a
+	// skipped count would leave none.
+	if !r.emailBudgetsAllow(c, now, email, who.account) {
+		r.releaseResend(c.ctx, resendKey)
 		return
 	}
 
@@ -263,9 +346,109 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 		c.unavailable()
 		return
 	}
+	r.answerPending(c, ttl, resend)
+}
+
+// answerPending writes the answer of the email branch: a code was sent, or the
+// route is answering as though one had been. It is one function so that a
+// suppressed send and a real one cannot drift apart in what a client sees.
+func (r *routes) answerPending(c *call, ttl, resend time.Duration) {
 	c.json(http.StatusOK, addIdentifierResponse{
 		State: identifierStatePending, ExpiresIn: int(seconds(ttl)), ResendAfter: int(seconds(resend)),
 	})
+}
+
+// emailHeldByAnother reports whether an account other than who already holds
+// email as a verified identifier.
+//
+// An address no identifier carries, and one this account already holds, are both
+// sendable: the first is the ordinary case, and the second is a re-add of the
+// account's own proof. An address the account module cannot normalize is treated
+// as unheld here and refused by the write step if it is submitted, which is the
+// order the route took before this read existed. Every other failure is an
+// outage and is handed back for the caller to answer 503: a lookup that cannot
+// be made must not be read as "nobody holds it".
+func (r *routes) emailHeldByAnother(ctx context.Context, email string, who authn.AccountID) (bool, error) {
+	owner, err := r.deps.Accounts.Lookup(ctx, authn.IdentifierEmail, email)
+	switch {
+	case err == nil:
+		return owner != who, nil
+	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrInvalidIdentifier):
+		return false, nil
+	default:
+		return false, err
+	}
+}
+
+// emailBudgetsAllow counts one send against the email budgets and reports
+// whether every one of them admits it.
+//
+// The order is the narrowest bound first: hour per address, day per address,
+// hour per account, hour for the deployment. Each is one atomic increment on a
+// key of its own window, and a count past its limit is the 429 the caller
+// answers with the time left of that window. A counter that cannot be advanced
+// is a 503 and no send: the failure document's direction for a dependency that
+// cannot answer, and the only bound there is on messages to an address.
+func (r *routes) emailBudgetsAllow(c *call, now time.Time, email string, account authn.AccountID) bool {
+	budgets := []struct {
+		name   string
+		key    string
+		limit  int
+		bucket time.Duration
+	}{
+		{
+			"per-address hourly", emailAddressHourlyKey(email, now),
+			r.budgets.get(c.ctx, keyEmailPerAddressHourly,
+				defaultEmailPerAddressHourly, minEmailPerAddressHourly, maxEmailPerAddressHourly),
+			emailHourBucket,
+		},
+		{
+			"per-address daily", emailAddressDailyKey(email, now),
+			r.budgets.get(c.ctx, keyEmailPerAddressDaily,
+				defaultEmailPerAddressDaily, minEmailPerAddressDaily, maxEmailPerAddressDaily),
+			emailDayBucket,
+		},
+		{
+			"per-account hourly", emailAccountHourlyKey(account, now),
+			r.budgets.get(c.ctx, keyEmailPerAccountHourly,
+				defaultEmailPerAccountHourly, minEmailPerAccountHourly, maxEmailPerAccountHourly),
+			emailHourBucket,
+		},
+		{
+			"global hourly", emailGlobalHourlyKey(now),
+			r.budgets.get(c.ctx, keyEmailGlobalHourly,
+				defaultEmailGlobalHourly, minEmailGlobalHourly, maxEmailGlobalHourly),
+			emailHourBucket,
+		},
+	}
+	for _, budget := range budgets {
+		if budget.limit <= 0 {
+			continue
+		}
+		count, err := r.deps.KV.IncrByFloatWithTTL(c.ctx, budget.key, 1, budget.bucket)
+		if err != nil {
+			logWarn(c.ctx, "the "+budget.name+" budget of an email verification code cannot be counted, so the "+
+				"address is not sent to", err)
+			c.unavailable()
+			return false
+		}
+		if count > float64(budget.limit) {
+			c.throttled(untilNextEmailBucket(now, budget.bucket))
+			return false
+		}
+	}
+	return true
+}
+
+// untilNextEmailBucket is how long the window a count fell into has left: the
+// delay a 429 states, never below one second so a client does not retry inside
+// the same window.
+func untilNextEmailBucket(now time.Time, bucket time.Duration) time.Duration {
+	wait := now.Truncate(bucket).Add(bucket).Sub(now)
+	if wait < time.Second {
+		return time.Second
+	}
+	return wait
 }
 
 // resendWait is the time left of an address's resend window, read back from the
@@ -299,10 +482,12 @@ func (r *routes) releaseResend(ctx context.Context, resendKey string) {
 // the address and, on a match, writes the address as a verified identifier and
 // publishes it through the account module. The record of the session is read
 // first; a missing one, one that names another account, or one that does not
-// parse is a flow-invalid, so nothing about another session's pending address
-// leaks. A code that does not match counts an attempt, and the record is spent
-// once the attempts are used up, so a six-digit code cannot be guessed over its
-// lifetime.
+// parse is refused under the same login-failed code as a wrong code. The
+// address another account holds never receives a code, so it has no record;
+// answering a distinct code there would let an authenticated caller tell a held
+// address from a free one. A code that does not match counts an attempt, and
+// the record is spent once the attempts are used up, so a six-digit code cannot
+// be guessed over its lifetime.
 func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")
@@ -323,7 +508,7 @@ func (r *routes) verifyIdentifier(ctx context.Context, in verifyIdentifierInput,
 	var rec emailRecord
 	if !present || json.Unmarshal(raw, &rec) != nil || rec.Account != string(who.account) ||
 		rec.Email == "" || rec.CodeDigest == "" {
-		c.unauthorized(mount.CodeFlowInvalid)
+		c.unauthorized(mount.CodeLoginFailed)
 		return c.result()
 	}
 	attemptKey := emailAttemptKey(rec.CodeDigest)

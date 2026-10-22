@@ -21,14 +21,18 @@ import (
 // a read goes by. The module declares these; the ones belonging to another
 // namespace are read, not declared, and their owners state their domains.
 const (
-	flowTTLKey         = "flow-ttl"
-	callBudgetKey      = "call-budget"
-	defaultReturnToKey = "default-return-to"
-	disabledMethodsKey = "disabled-methods"
-	deliveryModesKey   = "delivery-modes"
-	ipLimitKey         = "ip-limit"
-	emailCodeTTLKey    = "email-code-ttl"
-	emailResendKey     = "email-resend-interval"
+	flowTTLKey               = "flow-ttl"
+	callBudgetKey            = "call-budget"
+	defaultReturnToKey       = "default-return-to"
+	disabledMethodsKey       = "disabled-methods"
+	deliveryModesKey         = "delivery-modes"
+	ipLimitKey               = "ip-limit"
+	emailCodeTTLKey          = "email-code-ttl"
+	emailResendKey           = "email-resend-interval"
+	emailPerAddressHourlyKey = "email-per-address-hourly"
+	emailPerAddressDailyKey  = "email-per-address-daily"
+	emailPerAccountHourlyKey = "email-per-account-hourly"
+	emailGlobalHourlyKey     = "email-global-hourly"
 
 	disabledMethodsPath = ModuleName + "." + disabledMethodsKey
 	deliveryModesPath   = ModuleName + "." + deliveryModesKey
@@ -70,6 +74,21 @@ const (
 
 	minEmailResend = 30 * time.Second
 	maxEmailResend = 10 * time.Minute
+
+	// The domains of the email verification code budgets, in sends per window.
+	// The first two count a normalized address, the third the account that asked,
+	// and the last every account and address together.
+	minEmailPerAddressHourly = 1
+	maxEmailPerAddressHourly = 60
+
+	minEmailPerAddressDaily = 1
+	maxEmailPerAddressDaily = 200
+
+	minEmailPerAccountHourly = 1
+	maxEmailPerAccountHourly = 60
+
+	minEmailGlobalHourly = 1
+	maxEmailGlobalHourly = 1000000
 )
 
 // The closed set of delivery modes, and the two the value-name set names.
@@ -129,6 +148,11 @@ type options struct {
 	IPLimit         int           `config:"ip-limit"`
 	EmailCodeTTL    time.Duration `config:"email-code-ttl"`
 	EmailResend     time.Duration `config:"email-resend-interval"`
+
+	EmailPerAddressHourly int `config:"email-per-address-hourly"`
+	EmailPerAddressDaily  int `config:"email-per-address-daily"`
+	EmailPerAccountHourly int `config:"email-per-account-hourly"`
+	EmailGlobalHourly     int `config:"email-global-hourly"`
 }
 
 // defaults is the declared default of each setting, and the value a tuning read
@@ -143,6 +167,11 @@ var defaults = options{
 	IPLimit:         0,
 	EmailCodeTTL:    10 * time.Minute,
 	EmailResend:     60 * time.Second,
+
+	EmailPerAddressHourly: 5,
+	EmailPerAddressDaily:  10,
+	EmailPerAccountHourly: 10,
+	EmailGlobalHourly:     300,
 }
 
 // The domains of the settings this module declares.
@@ -151,6 +180,22 @@ func callBudgetInDomain(d time.Duration) bool   { return d >= minCallBudget && d
 func ipLimitInDomain(n int) bool                { return n >= 0 && n <= maxIPLimit }
 func emailCodeTTLInDomain(d time.Duration) bool { return d >= minEmailCodeTTL && d <= maxEmailCodeTTL }
 func emailResendInDomain(d time.Duration) bool  { return d >= minEmailResend && d <= maxEmailResend }
+
+func emailPerAddressHourlyInDomain(n int) bool {
+	return n >= minEmailPerAddressHourly && n <= maxEmailPerAddressHourly
+}
+
+func emailPerAddressDailyInDomain(n int) bool {
+	return n >= minEmailPerAddressDaily && n <= maxEmailPerAddressDaily
+}
+
+func emailPerAccountHourlyInDomain(n int) bool {
+	return n >= minEmailPerAccountHourly && n <= maxEmailPerAccountHourly
+}
+
+func emailGlobalHourlyInDomain(n int) bool {
+	return n >= minEmailGlobalHourly && n <= maxEmailGlobalHourly
+}
 
 // deliveryModesTextInDomain reports whether a JSON array of strings is a legal
 // value of the delivery-modes setting.
@@ -244,6 +289,34 @@ func settingsSchema() settings.Schema {
 					minEmailResend.String() + " to " + maxEmailResend.String(),
 				Domain: settings.DomainOf("durations from "+minEmailResend.String()+" to "+maxEmailResend.String(),
 					emailResendInDomain),
+			},
+			emailPerAddressHourlyKey: {
+				Description: "how many email verification codes one normalized address may be sent in an hour, " +
+					"across sessions and accounts",
+				Domain: settings.DomainOf("whole numbers from "+
+					fmt.Sprint(minEmailPerAddressHourly)+" to "+fmt.Sprint(maxEmailPerAddressHourly),
+					emailPerAddressHourlyInDomain),
+			},
+			emailPerAddressDailyKey: {
+				Description: "how many email verification codes one normalized address may be sent in a day, " +
+					"across sessions and accounts",
+				Domain: settings.DomainOf("whole numbers from "+
+					fmt.Sprint(minEmailPerAddressDaily)+" to "+fmt.Sprint(maxEmailPerAddressDaily),
+					emailPerAddressDailyInDomain),
+			},
+			emailPerAccountHourlyKey: {
+				Description: "how many email verification codes one account may ask for in an hour, whatever " +
+					"addresses it names",
+				Domain: settings.DomainOf("whole numbers from "+
+					fmt.Sprint(minEmailPerAccountHourly)+" to "+fmt.Sprint(maxEmailPerAccountHourly),
+					emailPerAccountHourlyInDomain),
+			},
+			emailGlobalHourlyKey: {
+				Description: "how many email verification codes the whole deployment may send in an hour, " +
+					"across every account and address",
+				Domain: settings.DomainOf("whole numbers from "+
+					fmt.Sprint(minEmailGlobalHourly)+" to "+fmt.Sprint(maxEmailGlobalHourly),
+					emailGlobalHourlyInDomain),
 			},
 		},
 	}
