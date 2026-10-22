@@ -54,6 +54,16 @@ to where bytes land, so a host names exactly one of them on the command tree and
 two at once fail in resolution. The metadata module requires `(*Store)(nil)`
 non-optionally, so an assembly that installs no backend fails at startup.
 
+## Outbound calls
+
+A backend that reaches an external service logs every call it makes, a success
+and a failure alike, so a failed or slow call can be located after the fact.
+Each line carries the operation, the target, a hash of the object's internal key,
+the duration and `outcome`, and a failure adds a cause and the service's answer
+status where it gave one. The internal key, an object's bytes and a credential
+never reach a line. `objectstore.s3` follows this; `objectstore.fs` touches a
+local directory and makes no outbound call, so it has nothing to record.
+
 ## What the capability does not do
 
 - **Content re-verification, sanitization and thumbnail derivation are deferred
@@ -76,9 +86,9 @@ non-optionally, so an assembly that installs no backend fails at startup.
 - **It does not write audit rows.** It declares the action type names and points
   no dependency at the audit module.
 
-The internal key never leaves the capability. It is not in any API response, not
-in any error text and not in any log line; changing its syntax is an internal
-change that no caller can observe.
+The internal key never leaves the capability. It is not in any API response and
+not in any error text, and a log line names an object only by a truncated hash of
+it; changing its syntax is an internal change that no caller can observe.
 
 ## How a backend contributes
 
@@ -97,20 +107,23 @@ func Module() core.Module {
 		Items:           items,        // the declared input items
 		Stance:          stance,       // how the exclusive claim yields, or what is missing
 		Secrets:         secrets,      // the credential strings to redact, or nil
-		Open:            open,         // builds the Store
+		Open:            open,         // builds the Store; receives the module's named logger
 	})
 }
 ```
 
 **A backend registers its secrets before it binds any logger.** `Spec.Secrets`
 returns the credential strings to register as literal redaction matchers, and the
-factory registers them through `pkg/internal/literal` before it calls
-`Spec.Open`, which is where a backend would bind an attribute to a `Named`
-logger. The register lives one level up at `pkg/internal/literal`, not here,
-because a backend's credentials and the login leaves that use the same register
-must not each carry their own copy. A backend whose credentials come only from
-configuration returns what it decoded; a backend with no credential leaves the
-hook nil.
+factory registers them through `pkg/internal/literal`, then takes up the optional
+`log.Logger`, names it after the module and hands it to `Spec.Open`. A backend
+holds that logger for the calls it reports: the factory's background sweep runs
+on a context it created, which carries no injected logger, so a backend reading
+`log.FromContext` would put that path's records on the process default chain
+instead of the configured destinations. The register lives one level up at
+`pkg/internal/literal`, not here, because a backend's credentials and the login
+leaves that use the same register must not each carry their own copy. A backend
+whose credentials come only from configuration returns what it decoded; a backend
+with no credential leaves the hook nil.
 
 ## Boundaries
 

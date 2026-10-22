@@ -112,7 +112,7 @@ func TestASendLogsOneOutcomeLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("driving the email channel: %v", err)
 	}
-	if err := channel.SendCode(ctx, address, testCode, 10*time.Minute, "en-US"); err != nil {
+	if err = channel.SendCode(ctx, address, testCode, 10*time.Minute, "en-US"); err != nil {
 		t.Fatalf("sending the code: %v", err)
 	}
 	success := out.String()

@@ -180,7 +180,11 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // by Resolve when a template may not be sent under, and no management route
 // reaches it; a registry that answers it here is answering the wrong question,
 // so it falls to the same 503 an unknown failure gets.
-func (p *product) answer(op string, err error) (speedhttp.Reply, error) {
+//
+// The one line an unmapped failure writes carries the cause and, from a call
+// site that measured it, the operation's own fields. A mapped refusal is an
+// answer and writes nothing here.
+func (p *product) answer(op string, err error, attrs ...any) (speedhttp.Reply, error) {
 	switch {
 	case errors.Is(err, sms.ErrImmutable):
 		return nil, speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + configTemplateCode}
@@ -191,7 +195,8 @@ func (p *product) answer(op string, err error) (speedhttp.Reply, error) {
 	case errors.Is(err, sms.ErrInvalidConfig), errors.Is(err, sms.ErrRejected):
 		return nil, speedhttp.Fault{Status: http.StatusBadRequest, Type: typePrefix + badRequestCode}
 	default:
-		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+		fields := append([]any{slog.String("cause", err.Error())}, attrs...)
+		p.logger.Error(ModuleName+": "+op+" failed", fields...)
 		return nil, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
 }

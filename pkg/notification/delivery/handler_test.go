@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/mail"
@@ -439,5 +440,232 @@ func TestTheHandlerRefusesAContextWithoutATenant(t *testing.T) {
 	_, err := r.p.Handle(context.Background(), jobOf(t, dispatch("u1", "occ-1", validParams())), nil)
 	if !errors.Is(err, tenant.ErrNoTenantInContext) {
 		t.Fatalf("the handler ended with %v, want tenant.ErrNoTenantInContext", err)
+	}
+}
+
+// TestTheEmailSendWritesOneLineWithoutSecrets holds the external-send log rule
+// on the email channel: an accepted send writes one Info line carrying the
+// channel, the type, the outcome, the carrier's identifier and the duration, a
+// failed send writes one Warn line carrying the outcome and the cause, and
+// neither carries the recipient, the message text or a parameter value.
+func TestTheEmailSendWritesOneLineWithoutSecrets(t *testing.T) {
+	const (
+		recipient = "alice@acme.test"
+		body      = "Invoice inv-1 is paid in full."
+		param     = "inv-secret-42"
+	)
+	cases := []struct {
+		name    string
+		failure error
+		level   string
+		outcome string
+	}{
+		{"sent", nil, "level=INFO", logOutcomeSent},
+		{"uncertain", fmt.Errorf("the carrier did not answer: %w", mail.ErrUncertain), "level=WARN", logOutcomeUncertain},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			moduleLogs := &logBuffer{}
+			r := newRig(t, func(h *host) {
+				h.mail = true
+				h.logger = bufferLogger{buf: moduleLogs}
+				h.specs = map[string]notification.TypeSpec{"test.declarer": {
+					Key:             typeName,
+					Group:           "billing",
+					DefaultChannels: []notification.Channel{notification.ChannelEmail},
+					Unsubscribable:  true,
+				}}
+			})
+			r.setChannels(notification.ChannelEmail)
+			r.local.set(typeName+".email.subject", "Invoice inv-1 is paid")
+			r.local.set(typeName+".email.body_text", body)
+			if c.failure != nil {
+				r.mailSender.failWith(c.failure)
+			}
+			ctx := r.tenantCtx("t1")
+
+			params := map[string]any{"to": recipient, "invoice_id": param}
+			_, _ = r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil)
+
+			lines := moduleLogs.lines("channel=email", "outcome="+c.outcome)
+			if len(lines) != 1 {
+				t.Fatalf("the email send wrote %d lines with outcome %s, want 1:\n%s",
+					len(lines), c.outcome, moduleLogs.String())
+			}
+			line := lines[0]
+			for _, want := range []string{c.level, "type_key=" + typeName, "duration_ms="} {
+				if !strings.Contains(line, want) {
+					t.Errorf("the line omits %q: %s", want, line)
+				}
+			}
+			if c.failure == nil {
+				if !strings.Contains(line, "provider_id=receipt-1") {
+					t.Errorf("the success line omits the carrier's identifier: %s", line)
+				}
+			} else if !strings.Contains(line, "cause=") {
+				t.Errorf("the failure line omits the cause: %s", line)
+			}
+			for _, secret := range []string{recipient, body, param} {
+				if strings.Contains(line, secret) {
+					t.Errorf("the line carries %q: %s", secret, line)
+				}
+			}
+		})
+	}
+}
+
+// TestTheSMSSendWritesOneLineWithoutSecrets holds the external-send log rule on
+// the sms channel the same way: one line per call, the outcome and duration on
+// both, the carrier's identifier on a success and the cause on a failure, and no
+// recipient, body or parameter value on either.
+func TestTheSMSSendWritesOneLineWithoutSecrets(t *testing.T) {
+	const (
+		recipient = "+15550000"
+		param     = "inv-secret-42"
+	)
+	cases := []struct {
+		name    string
+		failure error
+		level   string
+		outcome string
+	}{
+		{"sent", nil, "level=INFO", logOutcomeSent},
+		{"throttled", fmt.Errorf("the vendor limited the call: %w", sms.ErrThrottled), "level=WARN", logOutcomeThrottled},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			moduleLogs := &logBuffer{}
+			r := newRig(t, func(h *host) {
+				h.sms = true
+				h.logger = bufferLogger{buf: moduleLogs}
+				h.specs = map[string]notification.TypeSpec{"test.declarer": {
+					Key:             typeName,
+					Group:           "billing",
+					DefaultChannels: []notification.Channel{notification.ChannelSMS},
+					Unsubscribable:  true,
+				}}
+			})
+			r.setChannels(notification.ChannelSMS)
+			r.local.set(typeName+".sms.template", "sms-template")
+			if c.failure != nil {
+				r.smsSender.failWith(c.failure)
+			}
+			ctx := r.tenantCtx("t1")
+
+			params := map[string]any{"to": recipient, "invoice_id": param}
+			_, _ = r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil)
+
+			lines := moduleLogs.lines("channel=sms", "outcome="+c.outcome)
+			if len(lines) != 1 {
+				t.Fatalf("the sms send wrote %d lines with outcome %s, want 1:\n%s",
+					len(lines), c.outcome, moduleLogs.String())
+			}
+			line := lines[0]
+			for _, want := range []string{c.level, "type_key=" + typeName, "duration_ms="} {
+				if !strings.Contains(line, want) {
+					t.Errorf("the line omits %q: %s", want, line)
+				}
+			}
+			if c.failure == nil {
+				if !strings.Contains(line, "provider_id=receipt-1") {
+					t.Errorf("the success line omits the carrier's identifier: %s", line)
+				}
+			} else if !strings.Contains(line, "cause=") {
+				t.Errorf("the failure line omits the cause: %s", line)
+			}
+			for _, secret := range []string{recipient, param} {
+				if strings.Contains(line, secret) {
+					t.Errorf("the line carries %q: %s", secret, line)
+				}
+			}
+		})
+	}
+}
+
+// TestTheExternalSendLogsToTheModuleLogger holds where an external-send line
+// goes. The delivery job runs on a context the queue created, which carries no
+// injected logger, so a line taken from that context lands on the process
+// default chain and never reaches the configured destinations. The module
+// therefore takes the logging capability in New and writes through it, named
+// after itself. The case gives the context a logger of its own and holds that
+// the line does not go there, and that the module's logger carries it — for a
+// refused send, a send outside the carrier's sentinels, and one this deployment
+// cannot route.
+func TestTheExternalSendLogsToTheModuleLogger(t *testing.T) {
+	cases := []struct {
+		name    string
+		channel notification.Channel
+		failure error
+		level   string
+		outcome string
+	}{
+		{
+			name:    "rejected",
+			channel: notification.ChannelEmail,
+			failure: fmt.Errorf("the carrier refused the message: %w", mail.ErrRejected),
+			level:   "level=WARN",
+			outcome: logOutcomeRejected,
+		},
+		{
+			name:    "failed",
+			channel: notification.ChannelEmail,
+			failure: errors.New("the carrier answered something it does not declare"),
+			level:   "level=ERROR",
+			outcome: logOutcomeFailed,
+		},
+		{
+			name:    "unroutable",
+			channel: notification.ChannelSMS,
+			failure: fmt.Errorf("the deployment cannot reach that destination: %w", sms.ErrUnroutable),
+			level:   "level=WARN",
+			outcome: logOutcomeUnroutable,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			moduleLogs := &logBuffer{}
+			r := newRig(t, func(h *host) {
+				h.logger = bufferLogger{buf: moduleLogs}
+				if c.channel == notification.ChannelEmail {
+					h.mail = true
+				} else {
+					h.sms = true
+				}
+				h.specs = map[string]notification.TypeSpec{"test.declarer": {
+					Key:             typeName,
+					Group:           "billing",
+					DefaultChannels: []notification.Channel{c.channel},
+					Unsubscribable:  true,
+				}}
+			})
+			r.setChannels(c.channel)
+			if c.channel == notification.ChannelEmail {
+				r.local.set(typeName+".email.subject", "Invoice inv-1 is paid")
+				r.local.set(typeName+".email.body_text", "Invoice inv-1 is paid in full.")
+				r.mailSender.failWith(c.failure)
+			} else {
+				r.local.set(typeName+".sms.template", "sms-template")
+				r.smsSender.failWith(c.failure)
+			}
+			contextLogs, ctx := r.capturingLogger(r.tenantCtx("t1"))
+
+			params := map[string]any{"to": "destination", "invoice_id": "inv-1"}
+			_, _ = r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil)
+
+			lines := moduleLogs.lines("channel="+string(c.channel), "outcome="+c.outcome)
+			if len(lines) != 1 {
+				t.Fatalf("the module logger holds %d lines with outcome %s, want 1:\n%s",
+					len(lines), c.outcome, moduleLogs.String())
+			}
+			line := lines[0]
+			for _, want := range []string{"module=" + ModuleName, c.level, "type_key=" + typeName, "duration_ms="} {
+				if !strings.Contains(line, want) {
+					t.Errorf("the line omits %q: %s", want, line)
+				}
+			}
+			if got := contextLogs.lines("an external message"); len(got) != 0 {
+				t.Errorf("the send line went to the context logger, not the module's: %v", got)
+			}
+		})
 	}
 }

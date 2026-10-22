@@ -31,11 +31,13 @@ The dependencies the descriptor requires, non-optionally, are:
 | `(*notification.Inbox)(nil)` | the in-app channel writes through it. |
 | `(*i18n.Localizer)(nil)` | the message text is rendered through it. |
 
-The optional dependencies are `(*mail.Sender)(nil)`, `(*sms.Registry)(nil)` and
-`(*sms.Sender)(nil)`. No absence fails the startup: a channel is available
-exactly when the seams it sends through are present — email on the mail sender,
-sms only when **both** its seams are there — and a missing seam records a
-`skipped` row rather than a failure.
+The optional dependencies are `(*log.Logger)(nil)`, `(*mail.Sender)(nil)`,
+`(*sms.Registry)(nil)` and `(*sms.Sender)(nil)`. No absence fails the startup: a
+channel is available exactly when the seams it sends through are present — email
+on the mail sender, sms only when **both** its seams are there — and a missing
+seam records a `skipped` row rather than a failure. The logging capability is
+taken up in `New` and named after the module; without it the module keeps the
+process default logger, as it did before the capability was declared.
 
 The descriptor declares nothing else. It names no HTTP entry point — this module
 mounts no route, so declaring one would only carry `pkg/http` into a host's
@@ -184,6 +186,46 @@ error as its own package wrote it — `mail.ErrThrottled`, `mail.ErrRejected` an
 one of them lands the channel at `failed`. The retry a `failed` row invites is the
 job's, not this module's: one handler call reaches each channel once.
 
+## External send logs
+
+Every call that leaves the process — an email or sms the carrier accepted, and
+one it did not — writes exactly one line through **the module's own logger**. The
+pipeline takes the optional `log.Logger` up in `New`, names it after this module
+and holds it for the life of the product. The handler's context is not consulted:
+the delivery job runs on a context `jobs.db` created, which carries no injected
+logger, so `log.FromContext` would land these records on the process default
+chain and the configured file or JSON destination would never see them. Reading
+from the module's logger is what makes a report of a message that never arrived
+matchable against what the carrier answered and how long the call took.
+
+| Field | Meaning |
+|---|---|
+| `channel` | `email` or `sms` |
+| `type_key` | the declared notification type |
+| `outcome` | `sent`, `throttled`, `rejected`, `unroutable`, `uncertain` or `failed` |
+| `provider_id` | the carrier's own identifier, on a success |
+| `duration_ms` | how long the carrier call took |
+| `cause` | the carrier's own error text, on a failure |
+
+The outcome is the log line's classification, not the ledger's: every carrier
+failure lands one `failed` row. A success is written at Info. A failure is written
+at Warn when the carrier's error is one of its sentinels — `ErrThrottled`,
+`ErrRejected`, `ErrUnroutable` or `ErrUncertain` — and at Error when it is outside
+them, which is a defect of the carrier. `ErrUnroutable` keeps its own name: the
+message has no defect, but this deployment cannot carry it to that destination.
+The line never carries the recipient, the message text or a parameter value. A
+channel this module judges before the carrier is reached — a missing destination,
+a template that will not resolve — writes no such line: no request left the
+process.
+
+`TestTheExternalSendLogsToTheModuleLogger` holds the destination: a context
+logger is present and stays empty while a refused send, a send outside the
+sentinels and an unroutable one each write their line through a stand-in logging
+capability, carrying the module attribute.
+`TestTheEmailSendWritesOneLineWithoutSecrets` and
+`TestTheSMSSendWritesOneLineWithoutSecrets` hold one line per outcome and the
+absence of the recipient, the body and the parameter values.
+
 ## Configuration
 
 None. The module declares no configuration namespace and reads no input item: the
@@ -219,6 +261,10 @@ outside the module it prints zero issues without loading the packages.
 
 ## Boundaries
 
+- **Every external send is logged once, and the line is safe to keep.** A
+  carrier call writes one line with its outcome, duration and the carrier's
+  identifier, never the recipient, the body or a parameter value (see
+  [External send logs](#external-send-logs)).
 - **This module owns no type and no preference matrix.** A notification type is
   the declaring business module's `notification.TypeSpec`; this module collects
   every declaration in `New` as the reference a dispatch is validated against,

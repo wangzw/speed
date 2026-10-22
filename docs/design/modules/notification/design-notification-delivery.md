@@ -24,9 +24,9 @@
 
 | 登记单元 | 模块名 | 交付 | 构造期依赖 |
 |---|---|---|---|
-| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`；可选 `(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
+| `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`；可选 `(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 
-可选依赖的缺席都不使本模块启动失败：`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
+可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
 
 ### 交付的功能
 
@@ -145,11 +145,12 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/mail` | 可选：`email` 渠道的发送接缝 `mail.Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本模块只引用这条接缝，不设计它的内部 |
 | `pkg/sms` | 可选：`sms` 渠道的 `sms.Registry`（解模板）与 `sms.Sender`（发送） |
 | `pkg/i18n` | 把消息渲染成收件人语言的文本（`i18n.Localizer`，必需依赖） |
+| `pkg/log` | 可选：外部发送的记录写在装配的日志能力上（`log.Logger`）；缺席时退回进程默认 logger |
 | `pkg/feature` 根包 | 声明渠道的条件特性（`feature.Spec`）；`Init` 经 `core.Resolve` 可选取用 `feature.Board` 报告，不列入构造期依赖。根包只依赖标准库 |
 
 **偏好、收件箱与渲染都在构造期依赖表里。** 本模块在 `New` 里用 `core.Resolve[notification.Preferences](reg)` 取偏好接缝、`core.Resolve[notification.Inbox](reg)` 取收件箱接缝、`core.Resolve[i18n.Localizer](reg)` 取渲染接缝，三者都是必需依赖，列在「登记单元与名字」的依赖列里。
 
-**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/feature` 根包与 `pkg/notification` 根包，并可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，也不 import `pkg/authn` 与 `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
+**依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/log`、`pkg/feature` 根包与 `pkg/notification` 根包，并可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，也不 import `pkg/authn` 与 `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
 
 **本模块不声明配置命名空间，不读任何输入项。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置；这是本模块没有可缺的启动项的直接结果（与 [event.outbox.relay](../event/design-event-outbox.md) 同形）。
 
@@ -256,12 +257,27 @@ classDiagram
 
 `sms.Message` 的参数是 `map[string]string`，而 `Dispatch.Params` 是 `map[string]any`。字符串化的判据是**只把有意义的值送上线路**：每个送进模板的参数都必须能字符串化成一个非空、稳定的文本——字符串原样、整数与布尔按十进制或小写文本、时间按约定的 RFC 3339 文本；**参数缺失、值为空、或值无法字符串化，一律使该渠道失败**（`ErrInvalidRequest`），不把空串或占位值送上线路。字符串化后的参数经 `sms.Registry.Resolve` 校验是否与模板声明的参数名表相等，缺项或多出都使该渠道失败。渲染与字符串化都在发送之前完成，任何一处失败都不触达厂商。
 
+### 外部发送的记录
+
+**每一次离开进程的发送写一条记录，成功与失败各一条。** 记录写在**模块自己的 logger** 上：`New` 取可选 `log.Logger`、以模块名绑定后由流水线持有。handler 的 context 不参与——投递作业跑在 `jobs.db` 创建的 context 上，那个 context 没有注入 logger，`log.FromContext` 会让这些记录落到进程默认链上，配置的 file／JSON 目的地看不到。
+
+| 字段 | 取值 |
+|---|---|
+| `channel` | `email` 或 `sms` |
+| `type_key` | 声明的通知类型键 |
+| `outcome` | `sent`、`throttled`、`rejected`、`unroutable`、`uncertain` 或 `failed` |
+| `provider_id` | 成功时厂商自己的回执标识 |
+| `duration_ms` | 厂商调用耗时 |
+| `cause` | 失败时厂商错误文本 |
+
+`outcome` 是日志的归类，不是账上的状态：任何厂商失败在账上都是 `failed`。成功记 Info；厂商错误属于其哨兵（`ErrThrottled`、`ErrRejected`、`ErrUnroutable`、`ErrUncertain`）时记 Warn，落到哨兵之外（载体自身的缺陷）时记 Error。`ErrUnroutable` 保留自己的名字：消息本身没有缺陷，是这个部署送不到那个目的地。记录不携带收件人、消息正文与任何参数值；本模块在触达厂商之前自己判定的失败（缺目的地、模板解不出）不写这条记录，因为没有请求离开进程。
+
 ### 阶段行为
 
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | 无动作 |
-| `New` | 取用队列与登记面、数据库、租户名册、偏好接缝、收件箱接缝、渲染接缝与在场的渠道接缝；收齐并校验分类法 |
+| `New` | 取用队列与登记面、数据库、租户名册、偏好接缝、收件箱接缝、渲染接缝与在场的渠道接缝；取可选 `log.Logger` 并以模块名绑定；收齐并校验分类法 |
 | `Migrate` | 数据库模块施加本模块声明的迁移集，建立 `notification_sends` 表 |
 | `Init` | 向 `jobs.Handlers` 登记处理器（`Type()` 返回本模块的作业类型名）；取得到 `feature.Board` 时按 `channelSeams` 报告渠道的条件特性。实例不是本模块的产物时，登记与报告都不做 |
 | `Start`、`Serve` | 无动作，消费由队列驱动 |

@@ -3,6 +3,7 @@ package sms
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,49 @@ func TestTheWorkerRecordsEachCarrierOutcome(t *testing.T) {
 			r.p.deliverOne(context.Background(), sms.Resolved{To: phone, Params: map[string]string{"code": "123456"}})
 			if got := r.counter(sendsName, attribute.String(outcomeAttribute, c.outcome)); got != 1 {
 				t.Errorf("outcome %s = %d, want 1", c.outcome, got)
+			}
+		})
+	}
+}
+
+// TestEachCarrierCallWritesOneLineWithoutSecrets holds the external-send log
+// rule on the carrier path: an accepted send writes one Info line carrying the
+// outcome, the duration and the carrier's identifier, a refused send writes one
+// Warn line carrying the outcome, the cause, the duration and the identifier,
+// and neither line carries the number or the code.
+func TestEachCarrierCallWritesOneLineWithoutSecrets(t *testing.T) {
+	const code = "654321"
+	cases := []struct {
+		name    string
+		result  error
+		level   string
+		outcome string
+	}{
+		{"sent", nil, "level=INFO", outcomeSent},
+		{"rejected", sms.ErrRejected, "level=WARN", outcomeRejected},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRigSQLite(t)
+			r.sender.setResult(c.result)
+			r.p.deliverOne(context.Background(), sms.Resolved{To: phone, Params: map[string]string{"code": code}})
+
+			lines := r.logs.lines("outcome=" + c.outcome)
+			if len(lines) != 1 {
+				t.Fatalf("the carrier call wrote %d lines with outcome %s, want 1:\n%s",
+					len(lines), c.outcome, r.logs.String())
+			}
+			line := lines[0]
+			for _, want := range []string{c.level, "duration_ms=", "provider_id=provider-1"} {
+				if !strings.Contains(line, want) {
+					t.Errorf("the line omits %q: %s", want, line)
+				}
+			}
+			if c.result != nil && !strings.Contains(line, "cause=") {
+				t.Errorf("the failure line omits the cause: %s", line)
+			}
+			if strings.Contains(line, phone) || strings.Contains(line, code) {
+				t.Errorf("the line carries the number or the code: %s", line)
 			}
 		})
 	}

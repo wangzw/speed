@@ -2,10 +2,12 @@ package admin
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/sms"
@@ -19,6 +21,36 @@ const (
 	defaultPageSize = 50
 	maxPageSize     = 200
 )
+
+// The registry calls this module records, and the outcome vocabulary those
+// records use. The three names are a closed set an operator's query is written
+// against; the outcome values are the two the outbound transport uses, so one
+// query reads both kinds of record. The audit rows' own vocabulary ("success")
+// belongs to the audit entry and is not reused here.
+const (
+	operationList   = "list"
+	operationOffer  = "offer"
+	operationRemove = "remove"
+
+	outcomeOK = "ok"
+)
+
+// templateCallAttrs is the field set a call on the registry carries into its
+// record: the operation, the logical template name where the call names one,
+// the outcome and how long the call took. elapsed is the registry call's own
+// time, read at the call site when the call returned, so the audit rows written
+// around the call — before it and after a refusal — are not part of it. It
+// carries no template body, no vendor code and no credential: none is read here,
+// and the name is the one the route already addresses the template by.
+func templateCallAttrs(operation, name string, elapsed time.Duration, outcome string) []any {
+	attrs := []any{slog.String("operation", operation)}
+	if name != "" {
+		attrs = append(attrs, slog.String("template", name))
+	}
+	return append(attrs,
+		slog.String("outcome", outcome),
+		slog.Int64("duration_ms", elapsed.Milliseconds()))
+}
 
 // handleTemplateList answers GET /sms/templates: one page of the template
 // set, configured templates included. It is a read, so the action is
@@ -38,11 +70,15 @@ func (p *product) handleTemplateList(ctx context.Context, in ListTemplatesInput)
 	case q.limit > maxPageSize:
 		q.limit = maxPageSize
 	}
+	started := time.Now()
 	records, err := p.registry.List(ctx)
 	if err != nil {
-		p.logger.Error(ModuleName+": listing the templates failed", "cause", err.Error())
+		p.logger.Error(ModuleName+": listing the templates failed",
+			append(templateCallAttrs(operationList, "", time.Since(started), outcomeFailed), slog.String("cause", err.Error()))...)
 		return templatePageBody{}, speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
+	p.logger.Info(ModuleName+": the templates were listed",
+		append(templateCallAttrs(operationList, "", time.Since(started), outcomeOK), slog.Int("count", len(records)))...)
 	page, next := paginate(records, q)
 	views := make([]SmsAdminTemplate, len(page))
 	for i, r := range page {
@@ -146,11 +182,17 @@ func (p *product) handleTemplateOffer(ctx context.Context, in offerBody, _ *spee
 	})); err != nil {
 		return nil, err
 	}
+	started := time.Now()
 	record, err := p.registry.Offer(ctx, submission)
+	elapsed := time.Since(started)
 	if err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTemplateOffer, in.Name, actionID))
-		return p.answer("offering a template", err)
+		return p.answer("offering a template", err,
+			templateCallAttrs(operationOffer, in.Name, elapsed, outcomeFailed)...)
 	}
+	p.logger.Info(ModuleName+": a template was offered",
+		append(templateCallAttrs(operationOffer, in.Name, elapsed, outcomeOK),
+			slog.String("carrier", record.Carrier))...)
 	return speedhttp.JSONReply(http.StatusCreated, offeredTemplateBody{Template: templateViewOf(record)}), nil
 }
 
@@ -191,9 +233,15 @@ func (p *product) handleTemplateRemove(ctx context.Context, in templateNameInput
 	})); err != nil {
 		return nil, err
 	}
-	if err := p.registry.Remove(ctx, in.Name); err != nil {
+	started := time.Now()
+	err := p.registry.Remove(ctx, in.Name)
+	elapsed := time.Since(started)
+	if err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTemplateRemove, in.Name, actionID))
-		return p.answer("removing a template", err)
+		return p.answer("removing a template", err,
+			templateCallAttrs(operationRemove, in.Name, elapsed, outcomeFailed)...)
 	}
+	p.logger.Info(ModuleName+": a template was removed",
+		templateCallAttrs(operationRemove, in.Name, elapsed, outcomeOK)...)
 	return speedhttp.EmptyReply(http.StatusNoContent), nil
 }

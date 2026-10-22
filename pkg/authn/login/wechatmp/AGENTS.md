@@ -50,6 +50,11 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   distinguished only in the log (a rejected code from rejected credentials); a
   status other than 200, an unreadable body and a transport failure are
   `StepUnavailable`. No cause carries the request URL or the secret.
+- **The exchange is recorded without its query.** The shared client's transport
+  is wrapped for the trace and the outbound record, so the token exchange leaves
+  one line, success or failure, naming the method, host, path, status, outcome
+  and duration. The record never carries the query, where the application secret
+  and the code travel, nor a transport failure's URL.
 - **The secret is registered as a literal redaction rule in `New`, before any
   logger this module would take.** An assembly with no logging capability
   registers nothing.

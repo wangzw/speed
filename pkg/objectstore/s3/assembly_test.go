@@ -1,12 +1,15 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/config"
@@ -16,6 +19,21 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/objectstore"
 )
+
+// bufferLogger is a logging capability whose Named logger writes into buf with
+// the module name bound, the way the factory's own logger does.
+type bufferLogger struct{ buf *bytes.Buffer }
+
+func (l bufferLogger) Named(name string) *slog.Logger {
+	return slog.New(slog.NewTextHandler(l.buf, nil)).With("module", name)
+}
+
+func (bufferLogger) Redaction() log.Redaction { return noRedaction{} }
+
+type noRedaction struct{}
+
+func (noRedaction) AddKeys(...string)              {}
+func (noRedaction) AddPattern(string, log.Matcher) {}
 
 // registryWithReader builds the minimal assembly this module's own config
 // reading needs: a real configuration loader over a JSON primary source holding
@@ -148,5 +166,57 @@ func TestTheCredentialsAreRegisteredAsRedactionRules(t *testing.T) {
 		if !want[v] {
 			t.Errorf("secrets = %v, want the access key and the secret", got)
 		}
+	}
+}
+
+// TestTheStoreReportsThroughTheLoggerNamedAfterTheModule drives the factory's
+// New with a logging capability supplying a logger that binds the name it is
+// given, and holds that a byte operation's line arrives on that logger with the
+// module attribute: this is the logger the factory takes up and hands to Open,
+// which is what makes a background sweep's Delete reach the configured
+// destinations.
+func TestTheStoreReportsThroughTheLoggerNamedAfterTheModule(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	var out bytes.Buffer
+	reg := registryWithReader(t, completeBody(endpointOf(server)))
+	reg.Register(core.Module{
+		Name:     "stand-in.logging",
+		Provides: []core.Provision{{Token: (*log.Logger)(nil), Exclusive: true}},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return bufferLogger{buf: &out}, nil
+		},
+	})
+
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{ModuleName, config.ModuleName, "stand-in.logging"},
+		Action: func(ctx context.Context, reg *core.Registry) error {
+			store, err := core.Resolve[objectstore.Store](reg)
+			if err != nil {
+				return err
+			}
+			return store.Delete(ctx, testKey)
+		},
+	})
+	if err != nil {
+		t.Fatalf("the drive failed: %v", err)
+	}
+	line := out.String()
+	for _, field := range []string{
+		"module=" + ModuleName,
+		"operation=delete",
+		"outcome=ok",
+		"key_hash=",
+	} {
+		if !strings.Contains(line, field) {
+			t.Errorf("the call line lacks %q: %s", field, line)
+		}
+	}
+	if strings.Contains(line, testKey) {
+		t.Errorf("the call line carries the internal key: %s", line)
 	}
 }

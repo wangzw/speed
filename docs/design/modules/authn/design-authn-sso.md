@@ -155,7 +155,7 @@ type SSOMetadataRefresher interface {
 | `event.Bus` | 取用，缺席合法 | `authn.sso` 发布 `authn.idp.changed`；协议模块订阅它以丢弃本地缓存 | 不发布、不订阅；缓存只靠 `version` 与有效期失效 |
 | `audit.Audit` | 取用，缺席合法 | 协议模块记尽力档的 `authn.sso.reject` | 只写日志与指标 |
 | `observability.MeterProvider` | 取用，缺席合法 | `authn.sso.assertions` | 静默跳过 |
-| `log.Logger` | 取用，缺席合法 | 脱敏规则在 `New` 里先于任何 logger 绑定登记；日志 | 无日志 |
+| `log.Logger` | 取用，缺席合法 | 脱敏规则在 `New` 里先于任何 logger 绑定登记；日志；出站调用的记录经 `log.Transport` 走操作上下文里的 logger | 脱敏规则不登记；出站记录照常写，落在 `Default()` 的引导链上 |
 
 非模块的依赖（封闭集合）：
 
@@ -459,8 +459,10 @@ Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Goog
 | 方案与重定向 | 只许 `https`，其他方案在建立连接之前失败；不跟随重定向，3xx 应答原样返回，发现文档不应重定向 |
 | 超时与大小 | 总期限取 `authn.sso.egress-timeout`，每次调用用 `context` 的期限，调用方必须带期限：不带期限的调用只受握手超时与对端约束。名称解析与每次连接尝试随调用的期限与取消而结束，每次尝试分得剩余期限的均分份额，第一个不可达的地址耗不尽后面的地址要用的时间；连接按地址逐个尝试，不做并行回退。响应体上限 1 MiB，超出的读失败，不静默截断；响应头上限 64 KiB |
 | TLS 与代理 | 系统根证书，从不关闭校验，TLS 1.2 为下限；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
-| 观测 | 追踪头由调用方在客户端的 `Transport` 外自行套 `observability.Transport` 注入，包内不提供这层包装；微信客户端不套，它的 URL 里有 `secret` |
+| 观测 | 追踪头由调用方在客户端的 `Transport` 外自行套 `observability.Transport` 注入，`internal/egress` 不提供这层包装；`authn.sso.oidc` 与 `authn.sso.saml` 的客户端在 `observability.Transport` 之内再套 `log.Transport`，每次出站请求写一条记录（方法、主机、不含 query 的路径、对端状态、`outcome`、耗时，无应答时带底层成因），不记 query、请求头与正文；微信客户端同样套这两层，它 query 里的 `secret` 与授权码不进记录 |
 | 开发开关 | `authn.sso.allow-private-egress`（仅主配置源，缺省假）放开回环 |
+
+**每次出站调用都留下一条记录。** `authn.sso.oidc` 与 `authn.sso.saml` 建客户端时把 `log.Transport` 套在 `observability.Transport` 之内：发现文档、密钥集、令牌与 SAML 元数据的每一次请求，成功与失败各写一条记录，经操作上下文里的 logger 写出，上下文没有 logger 时落在 `Default()` 的引导链上。记录记方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时记 `url.Error` 之下的底层成因；授权码、令牌、`state`、断言与正文都不进记录。
 
 **特殊用途段**（封闭集，取自 IANA 特殊用途地址登记表，与登记表的一致是假设，见「假设与守住它们的测试」）：
 

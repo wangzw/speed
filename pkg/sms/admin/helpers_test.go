@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -229,9 +230,10 @@ func (g *stubGuard) domainsAsked() []authz.Domain {
 // which is how a case holds that a write whose mandatory row did not land
 // reached no registry.
 type recordingAudit struct {
-	mu   sync.Mutex
-	rows []audit.Entry
-	err  error
+	mu    sync.Mutex
+	rows  []audit.Entry
+	err   error
+	delay time.Duration
 }
 
 func (a *recordingAudit) Record(_ context.Context, e audit.Entry) error {
@@ -240,6 +242,9 @@ func (a *recordingAudit) Record(_ context.Context, e audit.Entry) error {
 	if a.err != nil {
 		return a.err
 	}
+	// delay stands in for an audit store that is slow to take a row, so a case
+	// can hold what a call's own duration does and does not cover.
+	time.Sleep(a.delay)
 	a.rows = append(a.rows, e)
 	return nil
 }
@@ -251,6 +256,9 @@ func (a *recordingAudit) entries() []audit.Entry {
 }
 
 func (a *recordingAudit) fail(err error) { a.mu.Lock(); a.err = err; a.mu.Unlock() }
+
+// slow makes every row take d to record, standing in for a slow audit store.
+func (a *recordingAudit) slow(d time.Duration) { a.mu.Lock(); a.delay = d; a.mu.Unlock() }
 
 // mountedRoute is one (method, path) a registration recorded.
 type mountedRoute struct{ method, path string }

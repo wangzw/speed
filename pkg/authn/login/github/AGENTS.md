@@ -14,10 +14,12 @@ address from `/user/emails` is taken only when one entry is primary and
 verified. The address `/user` carries has no verified marker and is never used.
 The access token is used once and discarded.
 
-The method touches no HTTP server, session, token or flow record and writes no
-log line; it reads the anti-forgery state and the PKCE verifier from the flow
-record's method state, checks each exactly once on the callback, and says what is
-next. The engine, not this package, logs the cause of an answer.
+The method touches no HTTP server, session, token or flow record; it reads the
+anti-forgery state and the PKCE verifier from the flow record's method state,
+checks each exactly once on the callback, and says what is next. The engine, not
+this package, logs the cause of an answer, while the outbound requests are
+recorded by the logging transport the client carries (see the egress boundary
+below).
 
 The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
 `StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
@@ -51,6 +53,14 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   client is injected into the exchange with `oauth2.HTTPClient` and used for the
   two reads besides, so no request reaches a non-public address. The module's
   `New` builds no other client for these requests.
+- **The client carries the trace and logging transports.** `New` wraps the
+  restricted client's transport in `observability.Transport` and, inside it,
+  `log.Transport`, so the exchange and the two reads carry the call's span
+  across the hop and leave one record each, success or failure, naming the
+  method, host, path, status, outcome and duration. The record carries neither
+  the query nor a header: the code, the state, the verifier and the access token
+  travel there. `outbound_log_test.go` drives a request through the client the
+  product assembles and holds both what the record names and what it must not.
 - **The callback address is built from the public base, never from the
   request.** `readConfig` reads `authn.gate`'s `mount.public-url` and
   `mount.base-path` and refuses an empty one, so the `redirect_uri` the provider

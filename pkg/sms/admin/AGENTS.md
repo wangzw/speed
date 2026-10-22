@@ -141,6 +141,17 @@ express a permission and every route would refuse its caller.
 - **A credential and a vendor code reach no log line, no error text and no
   metric.** The audit detail names a template by its logical name and, for an
   enable, the state it set; it never names the carrier code behind a template.
+- **Every list, offer and remove call on the registry leaves one record.** A
+  success is an Info line and a failure keeps the Error line the module already
+  wrote; both carry `operation` (`list`, `offer`, `remove`), the logical
+  `template` name where the call names one, `outcome` (`ok` or `failed`) and
+  `duration_ms`, and a failure carries `cause`. `duration_ms` is the registry
+  call's own time, read when the call returned: the mandatory audit row that
+  precedes it and the failed-write row that closes a refusal are not part of it.
+  A list's success record carries the page-independent count and an offer's
+  carries the carrier. The record carries no template body, no vendor code and no
+  credential — the operation reads none of them. The other writes keep their
+  existing failure line.
 
 ## Configuration
 

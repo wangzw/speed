@@ -1,7 +1,8 @@
 // Package log carries structured logging: the capability modules take up from
 // each other, the handler chain the configuration assembles, the built-in
 // formats and destinations, the redaction layer every record passes through,
-// and the storage of a logger in a context.
+// the storage of a logger in a context, and the transport that records every
+// outbound HTTP request.
 //
 // The calling surface is the standard library's *slog.Logger. This package
 // defines no logging API of its own, so a call site depends on log/slog rather

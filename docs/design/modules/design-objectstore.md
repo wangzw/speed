@@ -199,7 +199,7 @@ const (
 
 - `Store`、`Objects`、`State`、`Object`、`Declaration`、`ListQuery` 的字段与方法集，以及本能力的全部哨兵，是与调用方之间的接口面。加方法、改签名或改字段名对实现了接缝的后端、对取用它们的调用方都是不兼容变更。
 - `Object` 的字段语义：`ID` 是对象标识、`Key` 是内部键、`State` 取 `pending`／`uploaded`／`completed`／`deleted` 之一、`Size` 与 `Checksum` 是上传后记录的实际值、`MIME` 是内容类型、`ExpiresAt` 可空。
-- **内部键从不经 API 暴露。** `Object.Key` 是模块的内部字段（导出，但不进任何对外面）：它不进任何 HTTP 视图，不进错误文本，日志里也不记它（日志只记对象标识）。改键的语法是内部变更，不影响调用方。`Store` 的 `key` 参数同样是内部键，接口不规定它的语法，实现只按自身后端把它映射到位。
+- **内部键从不经 API 暴露。** `Object.Key` 是模块的内部字段（导出，但不进任何对外面）：它不进任何 HTTP 视图，不进错误文本，日志里也不记它（日志以对象标识或该键的截断摘要指认对象）。改键的语法是内部变更，不影响调用方。`Store` 的 `key` 参数同样是内部键，接口不规定它的语法，实现只按自身后端把它映射到位。
 - **宿主可见面**：模块名 `objectstore.metadata`、`objectstore.fs`、`objectstore.s3`；配置键 `objectstore.metadata.{endpoints,sweep-interval}`、`objectstore.fs.root`、`objectstore.s3.{endpoint,region,bucket,access-key,secret-key,use-path-style}`；设置键 `objectstore.metadata.{upload-window,object-ttl}`；路由的路径与每条路由的权限；权限常量 `objectstore.object.read`、`objectstore.object.write`；`Problem.Type` 前缀 `urn:speed:objectstore:` 及其下的码（`bad-request`、`not-found`、`conflict`）；审计动作的类型名。改动它们是宿主可见的破坏性变更。
 - 特性名 `objectstore.objects`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 单个 `Store` 实现、`metadata` 模块各自可替换、可撤掉，不改变调用方的代码。
@@ -226,14 +226,14 @@ const (
 | `pkg/settings` | `objectstore.metadata`：可选，声明并读取设置项 `upload-window` 与 `object-ttl` |
 | `pkg/db` | `objectstore.metadata`：`objects` 表与迁移 |
 | `pkg/tenant` | `objectstore.metadata`：租户上下文、内嵌的 `tenant.Model` 与语句过滤插件 |
-| `pkg/log` | 可选：工厂在 `New` 里登记各后端凭据的字面量脱敏匹配器；`metadata` 记诊断 |
+| `pkg/log` | `objectstore.s3` 直接 import；工厂取可选 `log.Logger`、以模块名绑定后交给 `Open`，实现持有它并记录每一次出站调用；工厂在 `New` 里登记各后端凭据的字面量脱敏匹配器；`metadata` 记诊断。装配层面 `log.Logger` 可选：缺席时出站记录落在 `Default()` 的引导链上 |
 | `pkg/internal/literal` | 构造并登记字面量匹配器（各后端的凭据） |
 | `pkg/authz` | `objectstore.metadata`：`PermissionSpec`、`TranslationSpec` 与路由声明面 |
 | `pkg/http` | `objectstore.metadata`：入口模块的登记面，挂路由 |
 | `pkg/feature` 根包 | `objectstore.metadata`：声明静态特性（`feature.Spec`）；根包只依赖标准库 |
 | S3 SDK | 只被 `pkg/objectstore/s3` import |
 
-**根包依赖 `pkg/core`、`pkg/config`、`pkg/internal/literal` 与可选的 `pkg/log`，不 import 任何对象存储 SDK。** 工厂与公共类型都在根包，它经 `pkg/internal/literal` 登记字面量脱敏匹配器、取可选 `pkg/log` 的 logger（照 `pkg/sms/module.go` 的先例）；对象存储 SDK 只落在 `s3` 实现子包。方向是 `metadata` import `pkg/db`、`pkg/tenant`、`pkg/authz`、`pkg/http`、`pkg/feature` 的接口包，`fs` 只 import 标准库与根包，`s3` import 根包与它自己的 SDK；根包不 import `metadata`、`fs`、`s3` 中的任何一个。
+**根包依赖 `pkg/core`、`pkg/config`、`pkg/internal/literal` 与可选的 `pkg/log`，不 import 任何对象存储 SDK。** 工厂与公共类型都在根包，它经 `pkg/internal/literal` 登记字面量脱敏匹配器、取可选 `pkg/log` 的 logger（照 `pkg/sms/module.go` 的先例）；对象存储 SDK 只落在 `s3` 实现子包。方向是 `metadata` import `pkg/db`、`pkg/tenant`、`pkg/authz`、`pkg/http`、`pkg/feature` 的接口包，`fs` 只 import 标准库与根包，`s3` import 根包、`pkg/log` 与它自己的 SDK；根包不 import `metadata`、`fs`、`s3` 中的任何一个。
 
 **`s3` 的 SDK 落在绑定它的实现子包。** 根包与 `fs` 的传递闭包不含任何对象存储 SDK，也不含 `pkg/db`、`pkg/authz` 这类上层功能目录；这条由 `pkg/objectstore/deps_test.go` 的守卫守住（照 `pkg/sms/deps_test.go` 的形态），并守住 `fs` 不引入 SDK。
 
@@ -382,7 +382,7 @@ type Spec[C any] struct {
     Items           map[string]config.Item
     Stance          func(cfg *C) (core.Enablement, error)
     Secrets         func(cfg *C) []string      // 凭据：登记为日志的字面量脱敏匹配器
-    Open            func(ctx context.Context, cfg *C) (Store, error)
+    Open            func(ctx context.Context, cfg *C, logger *slog.Logger) (Store, error)
 }
 ```
 
@@ -391,15 +391,40 @@ type Spec[C any] struct {
 | 阶段 | 行为 |
 |---|---|
 | `Prepare` | `Decode` 自己那份配置；读出后调 `Stance`，与自身性质不符即启动失败，错误点名缺的是哪一项 |
-| `New` | `Decode` 配置 → 取可选 `log.Logger` → 调 `Secrets` 并经 `pkg/internal/literal` 登记字面量脱敏匹配器 → 调 `Open` 建立后端 |
+| `New` | `Decode` 配置 → 调 `Secrets` 并经 `pkg/internal/literal` 登记字面量脱敏匹配器 → 取可选 `log.Logger` 并以模块名绑定 → 把该 logger 交给 `Open` 建立后端 |
 
 **次序固定：先登记脱敏字面量，再绑定任何带属性的 logger，最后 `Open`。** 日志脱敏规则只对它注册之后写出的记录起作用，所以凭据的登记必须发生在实现把任何属性绑到 logger 之前。`Secrets` 钩子把「凭据先登记」这一步收进工厂，实现因此不 import `literal`，只交出凭据字符串。`fs` 不承载凭据，`Secrets` 交回空。
+
+**实现把外部调用记在工厂交给它的 logger 上，不从操作的 context 取。** 工厂的后台清扫用自己创建的 context 调 `Delete`，那个 context 没有注入 logger；`log.FromContext` 会把这条路径的记录落到进程默认链上，配置的目的地看不到。模块 logger 还使每条记录带上模块属性，无论调用由哪个 context 驱动。
 
 ### 后端适配
 
 **`fs` 落在本地目录。** 根路径来自 `objectstore.fs.root`。`Put` 把内部键当相对路径拼到根下，缺父目录即建、以流写字节；`Open` 打开该路径只读并返回它的正文流；`Delete` 删除该路径。`Name()` 报告实现名，供诊断。字节按内部键存取，键的语法（分段、路径分隔）是本模块自己的约定，本实现把它当文件路径拼到根下，映射细节不进接口。`fs` 不 import 任何对象存储 SDK，它的依赖只有标准库的 `os`、`io`。
 
 **`s3` 绑 S3 兼容的对象存储。** 配置项：`endpoint`、`region`、`bucket`、`access-key`、`secret-key`、`use-path-style`。SDK 是 `github.com/minio/minio-go/v7` v7.3.0 及其 `pkg/credentials` 子包，只被这个实现子包 import。`Put` 以内部键为对象键调用 `PutObject`，`Open` 用 `GetObject` 返回对象正文的只读流，`Delete` 用 `RemoveObject`（S3 的 `DeleteObject`）。`endpoint` 与 `use-path-style` 一起把客户端指向自建或云上的 S3 兼容服务，`region` 由 SDK 用于签名。`access-key` 与 `secret-key` 是凭据，由 `Secrets` 钩子交出、在 `New` 里先于 logger 绑定登记为日志的字面量脱敏匹配器（见「工厂的构造次序」）。字节同样按内部键存取，**键不出 API**。
+
+### 出站调用的记录
+
+**每一次向外部服务发出的调用写一条记录，成功与失败各一条。** `objectstore.s3` 的 `Put`、`Open` 与 `Delete` 在调用前后取时间，经**模块自己的 logger** 写出记录：工厂在 `New` 里取可选 `log.Logger`、以模块名绑定后交给 `Open`，实现持有它。操作的 context 不参与——工厂的后台清扫用自己创建的 context 调 `Delete`，那个 context 没有注入 logger，`log.FromContext` 会把这条路径落到进程默认链上，配置的目的地看不到。`Open` 的请求在交回字节流之前以一次 `Stat` 落地，该次调用的成功与失败各有一条记录。`objectstore.fs` 只访问本地目录，没有出站调用，不写这类记录。
+
+| 字段 | 取值 |
+|---|---|
+| `operation` | `put`、`open`、`delete`，或 `Open` 之后正文读取失败时的 `read` |
+| `bucket` | 配置的桶 |
+| `key_hash` | 内部键 SHA-256 的前十二位十六进制 |
+| `size` | `put` 的声明长度、`open` 读到的对象长度；`delete` 与 `read` 没有这一项 |
+| `duration_ms` | 从发出调用到它返回的毫秒数；`read` 行从第一次读取起算，到读取失败为止 |
+| `outcome` | 成功 `ok`，失败 `failed` |
+| `cause` | 失败时的分类：服务应答的错误码，或无应答时剥去内部键的传输错误文本 |
+| `http_status` | 失败且服务有应答时的状态码 |
+
+**内部键本身、对象的字节与凭据都不进记录。** `key_hash` 足以把指向同一对象的多次调用关联起来，不能用来寻址该对象。服务应答按错误码记录而不按消息记录——服务可能把键回显进消息；其余错误文本在写出之前把内部键及其 URL 转义形式（路径转义与查询转义）替换掉，因为 SDK 会在服务消息与传输错误的 URL 里重复这个键。
+
+**`Open` 之后的正文读取失败另有记录。** `Open` 的成功记录在对象头到手时写出，正文尚未读取；返回的流在读取出错时写一条同 `key_hash` 的 `read` 失败记录，`EOF` 不算失败。一条断掉的流只写一条这样的记录，无论读取方把同一个错误报多少次。`read` 记录的 `duration_ms` 是这次正文读取自身的耗时：从第一次读取——SDK 由它发出请求——算到失败发生，`Open` 的调用（另有自己的记录）与交回流之后的等待都不计入。
+
+**流式交付的失败另有一行。** `metadata` 把 `OpenContent` 的字节流写给 HTTP 调用方时，`io.Copy` 失败写一条 `Error`，带对象标识与成因；这一行不涉内部键，与后端的出站调用记录相互独立。
+
+**上下文在调用发出之前已结束时不写记录**：没有请求离开进程，`Put`、`Open`、`Delete` 直接交回上下文的错误。
 
 ## 错误与失败语义
 
@@ -443,6 +468,7 @@ type Spec[C any] struct {
 - 必须实现 `Store` 的 `Name`、`Put`、`Open`、`Delete`，按内部键存取字节；实现不得解释键的语法超出自身后端映射所需的部分，也不得把键留进任何对外输出。
 - 必须把后端自己的错误原样外传，不发明本能力的哨兵；字节的完整性交由 `metadata` 侧记下的 `size`、`checksum_sha256` 承载。
 - 承载凭据的实现必须经 `Secrets` 钩子交出凭据，使其先于任何 logger 绑定被登记为日志的字面量脱敏匹配器；不承载凭据的实现交回空。
+- 承载出站请求的实现必须为每一次调用写一条记录，成功与失败各一条，字段含操作、目标、内部键的截断摘要、耗时与 `outcome`，失败另带成因与对端状态；内部键本身、对象的字节与凭据不进记录。只访问本地目录的实现没有出站调用，没有可记的调用。
 
 **`Store` 本身与 `Objects` 一样是排他的扩展点**：另一个实现若要点名同一个 `(*Store)(nil)`，两者同时纳入即在消解阶段以排他冲突失败（[authz](design-authz.md) 同一条消解规则）。
 

@@ -4,14 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
 	"github.com/vislake/speed/pkg/tenant"
+)
+
+// The outcomes an external send is logged under. The set is closed: a call that
+// reached a carrier ends as exactly one of these, whichever value the ledger row
+// then takes. A carrier's throttled, refused, unroutable and uncertain answers
+// keep their own name; an error outside the sentinels is a failed send.
+const (
+	logOutcomeSent       = "sent"
+	logOutcomeThrottled  = "throttled"
+	logOutcomeRejected   = "rejected"
+	logOutcomeUnroutable = "unroutable"
+	logOutcomeUncertain  = "uncertain"
+	logOutcomeFailed     = "failed"
 )
 
 // Type reports the job type this handler executes; see jobs.Handler.
@@ -153,14 +168,18 @@ func (p *pipeline) sendEmail(ctx context.Context, d notification.Dispatch, spec 
 		return p.localFailure(ctx, row, "notification.delivery.email-destination", err)
 	}
 	msg := p.emailMessage(ctx, d, spec, to, row.IdempotencyKey)
+	started := time.Now()
 	receipt, err := p.seams.mailer.Send(ctx, msg)
+	elapsed := time.Since(started)
 	if err != nil {
 		row.Status = statusFailed
 		row.Error = textPtr(err.Error())
+		p.reportSendFailure(notification.ChannelEmail, d.TypeKey, err, elapsed)
 		return row, fmt.Errorf("%s: sending the email of %q: %w", ModuleName, d.TypeKey, err)
 	}
 	row.Status = statusSucceeded
 	row.ProviderReceiptID = textPtr(receipt.ProviderID)
+	p.reportSent(notification.ChannelEmail, d.TypeKey, receipt.ProviderID, elapsed)
 	return row, nil
 }
 
@@ -204,14 +223,18 @@ func (p *pipeline) sendSMS(ctx context.Context, d notification.Dispatch, spec no
 		row.Error = textPtr(err.Error())
 		return row, fmt.Errorf("%s: resolving the sms template %q: %w", ModuleName, template, err)
 	}
+	started := time.Now()
 	receipt, err := p.seams.sender.Send(ctx, resolved)
+	elapsed := time.Since(started)
 	if err != nil {
 		row.Status = statusFailed
 		row.Error = textPtr(err.Error())
+		p.reportSendFailure(notification.ChannelSMS, d.TypeKey, err, elapsed)
 		return row, fmt.Errorf("%s: sending the sms message of %q: %w", ModuleName, d.TypeKey, err)
 	}
 	row.Status = statusSucceeded
 	row.ProviderReceiptID = textPtr(receipt.ProviderID)
+	p.reportSent(notification.ChannelSMS, d.TypeKey, receipt.ProviderID, elapsed)
 	return row, nil
 }
 
@@ -223,4 +246,63 @@ func (p *pipeline) localFailure(ctx context.Context, row sendRow, key string, ca
 	row.Status = statusFailed
 	row.Error = textPtr(p.reason(ctx, key, cause.Error(), nil))
 	return row, cause
+}
+
+// reportSent writes the line for an external send a carrier accepted. The line
+// goes to the module's own logger (see Module), never to a logger taken from the
+// handler's context: the job runs on a context the queue created, which carries
+// no injected logger, so FromContext would land these records on the process
+// default chain instead of the configured destinations. The line carries the
+// channel, the declared type, the outcome, the carrier's own identifier and the
+// duration of the call; the recipient, the message text and every parameter
+// value stay out of it.
+func (p *pipeline) reportSent(ch notification.Channel, typeKey, providerID string, elapsed time.Duration) {
+	p.logger.Info(ModuleName+": an external message was sent",
+		slog.String("channel", string(ch)),
+		slog.String("type_key", typeKey),
+		slog.String("outcome", logOutcomeSent),
+		slog.String("provider_id", providerID),
+		slog.Int64("duration_ms", elapsed.Milliseconds()))
+}
+
+// reportSendFailure writes the line for an external send a carrier did not
+// accept. The line carries the channel, the declared type, the outcome, the
+// cause's own text and the duration of the call; the recipient, the message text
+// and every parameter value stay out of it. A classified carrier answer is the
+// carrier working as declared and is written at Warn; an error outside the
+// sentinels is a defect of the carrier and is written at Error.
+func (p *pipeline) reportSendFailure(ch notification.Channel, typeKey string, err error, elapsed time.Duration) {
+	outcome := sendFailureOutcome(err)
+	attrs := []any{
+		slog.String("channel", string(ch)),
+		slog.String("type_key", typeKey),
+		slog.String("outcome", outcome),
+		slog.String("cause", err.Error()),
+		slog.Int64("duration_ms", elapsed.Milliseconds()),
+	}
+	if outcome == logOutcomeFailed {
+		p.logger.Error(ModuleName+": an external message was not sent", attrs...)
+		return
+	}
+	p.logger.Warn(ModuleName+": an external message was not sent", attrs...)
+}
+
+// sendFailureOutcome maps a carrier's error onto the closed set an external-send
+// line reports. The sentinels both carrier packages classify into keep their own
+// name; an error outside the sentinels is a failed send. A ledger row is still
+// one `failed` for all of them — the distinction is the log line's, which an
+// operator reads to see why.
+func sendFailureOutcome(err error) string {
+	switch {
+	case errors.Is(err, mail.ErrThrottled), errors.Is(err, sms.ErrThrottled):
+		return logOutcomeThrottled
+	case errors.Is(err, mail.ErrRejected), errors.Is(err, sms.ErrRejected):
+		return logOutcomeRejected
+	case errors.Is(err, sms.ErrUnroutable):
+		return logOutcomeUnroutable
+	case errors.Is(err, mail.ErrUncertain), errors.Is(err, sms.ErrUncertain):
+		return logOutcomeUncertain
+	default:
+		return logOutcomeFailed
+	}
 }

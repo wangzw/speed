@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,8 +91,10 @@ func stance(cfg *moduleConfig) (core.Enablement, error) {
 
 // open builds the store over the configured directory. Production passes the
 // directory the host named; the directory itself is created on the first Put,
-// so an assembly may start before the root exists.
-func open(_ context.Context, cfg *moduleConfig) (objectstore.Store, error) {
+// so an assembly may start before the root exists. This backend makes no call
+// to a service, so it writes no call line and ignores the logger the factory
+// hands it.
+func open(_ context.Context, cfg *moduleConfig, _ *slog.Logger) (objectstore.Store, error) {
 	return &store{root: cfg.resolve().root}, nil
 }
 

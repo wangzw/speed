@@ -63,6 +63,15 @@ compatibility break for a dashboard written against it.
   `sms.ErrUnroutable` is a definite failure recorded under its own `unroutable`
   outcome: the message is not defective, but this deployment cannot carry it to
   that destination, so it is never read as an unknown outcome and never retried.
+- **Every call to the carrier writes one line, and the line carries no secret.**
+  An accepted send writes an `Info` line with `outcome=sent`, the carrier's
+  `provider_id` and the call's `duration_ms`; a refused one keeps its `Warn`
+  line, which now carries the outcome, the cause's own text, `duration_ms` and
+  the `provider_id` when the carrier answered with one. A send stopped before
+  the carrier is reached — a registry that will not resolve the message — keeps
+  its `Warn` with the outcome and the cause and has no duration, because no call
+  was made. No line carries the number, the code or the root key (`deliverOne`,
+  `infoSent`, `warnNotSent`, `TestEachCarrierCallWritesOneLineWithoutSecrets`).
 - **The worker pool is bounded and its outcomes are a closed set.** `Send`
   resolves the message against the registry, writes the row and returns without
   waiting for the carrier; the pool sends the resolved message off the request

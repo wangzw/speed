@@ -25,14 +25,21 @@ The API is the package's godoc.
   exchange puts the application secret in the query string, so the request URL is
   a credential. Every error this package returns drops the URL before it is
   handed back, and the `*url.Error` net/http returns — whose text carries the
-  whole URL — is unwrapped rather than passed on. The client also wraps its
-  transport in no other, so no span carries the URL either. A new outbound path
-  holds the same invariant and its tests assert it for every failure it can
-  produce.
-- **The outbound client is the restricted one.** [New] builds it from
-  `internal/egress`, which refuses a destination that is not a public https
-  address; a test names its own client to reach a loopback server. There is no
-  other transport.
+  whole URL — is unwrapped rather than passed on. A new outbound path holds the
+  same invariant and its tests assert it for every failure it can produce.
+- **The outbound client is the restricted one, wrapped for the trace and the
+  record.** [New] builds it from `internal/egress`, which refuses a destination
+  that is not a public https address; a test names its own client to reach a
+  loopback server. The client the default path builds then wraps its transport
+  in `observability.Transport` and, inside it, `log.Transport`, so an exchange
+  carries the call's span across the hop and leaves one record, success or
+  failure. The record names the method, host, path, status, outcome and
+  duration and never the query, where the secret and the code travel; a
+  transport failure is recorded through the cause under net/http's `*url.Error`,
+  so the URL is dropped there too. A client a test injects is used as it stands
+  and is not wrapped. `client_log_test.go` drives both outcomes through the
+  default client and holds that neither the secret nor the code reaches the
+  record.
 - **A non-zero errcode is a refusal; anything else that is unreadable is an
   outage.** The token endpoint answers HTTP 200 with a non-zero `errcode` for a
   bad code or bad credentials, and that is a *RefusalError whose class the caller

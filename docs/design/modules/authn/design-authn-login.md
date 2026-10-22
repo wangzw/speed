@@ -689,7 +689,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 4. `Exchange(ctx, code, oauth2.VerifierOption(verifier))`。
 5. OIDC：`Provider.Verifier` 验 `id_token` 的签名、`iss`、`aud`、`exp`；**另自行校验** `nonce` 与多受众时的 `azp`；不调 userinfo，只取 ID 令牌里的声明；`email_verified` 为布尔真才视为已验证邮箱。
 
-出站客户端全经 `internal/egress`：超时、体上限、不跟随重定向、连接时拒绝非公网地址；并以 `oidc.ClientContext` 注入，未注入时库用无超时的默认客户端，所以未经注入的出站调用本身是缺陷。授权码与令牌都不进日志。方法交出的 `Proof.External` 带（提供方，主体）、邮箱与 `EmailVerified`，邮箱只是线索。
+出站客户端全经 `internal/egress`：超时、体上限、不跟随重定向、连接时拒绝非公网地址；并以 `oidc.ClientContext` 注入，未注入时库用无超时的默认客户端，所以未经注入的出站调用本身是缺陷。`google`、`github` 与企业 `oidc`、`saml` 的客户端在 `observability.Transport` 之内套 `log.Transport`，每次出站请求成功与失败各写一条记录：方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时带底层成因；授权码与令牌都不进记录，请求头与正文同样不记。方法交出的 `Proof.External` 带（提供方，主体）、邮箱与 `EmailVerified`，邮箱只是线索。
 
 **Google。** 对 issuer `https://accounts.google.com` 用 go-oidc 做发现，首次使用时懒发现、缓存，失败不终止启动，期间该方式答 503。`sub` 作主体。配置了 `hosted-domain` 时检查 ID 令牌的 `hd` 声明：限定组织的依据是 `hd`，不是邮箱域名，授权请求里的 `hd` 参数只是界面优化。
 
@@ -703,7 +703,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 - **`state`**：32 字节随机数的十六进制，64 字符，满足公众号侧「字母数字、至多 128 字节」的限制。
 - **换令牌**：`GET https://api.weixin.qq.com/sns/oauth2/access_token?appid&secret&code&grant_type=authorization_code`；HTTP 200 加 `errcode` 非零按失败。
-- **`secret` 在查询串里**：携带 `secret` 的 URL 不得以任何形式离开客户端包。出站错误一律剥去 URL 再记日志（`*url.Error` 带全 URL）；该客户端不套 `observability.Transport`；配置里 `app-secret` 的值另登记为日志脱敏的字面量匹配器，登记在模块的 `New` 里、先于日志器绑定。
+- **`secret` 在查询串里**：携带 `secret` 的 URL 不得以任何形式离开客户端包。出站错误一律剥去 URL 再记日志（`*url.Error` 带全 URL）；配置里 `app-secret` 的值另登记为日志脱敏的字面量匹配器，登记在模块的 `New` 里、先于日志器绑定。
+- **出站记录**：客户端套 `observability.Transport(log.Transport(...))`，外层注入追踪头，内层为每次授权码换令牌写一条记录，成功与失败各一条：方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时记 `*url.Error` 之下的底层成因。query 里的 `secret` 与授权码既不进追踪头也不进记录，请求头与正文同样不记。
 - **不调 `/sns/userinfo`**：昵称头像不是授权依据，也省一次出站调用；显示名固定「微信用户」；不合成邮箱。
 - **主体**：有 `unionid` 时，`Proof.External` 的主体取 `unionid`，`Aliases` 填 `wechat-openid:<appid>` 命名空间加 `openid` 的键，使此前以 `openid` 键建立的绑定能升级为 `unionid` 键；没有 `unionid` 时，主体取该 `openid` 键，`Aliases` 为空。升级规则见 [authn-account](design-authn-account.md)。
 - **残余风险**：协议没有 PKCE、没有 `nonce`、没有 ID 令牌，回跳的防线只有 `state` 加流程绑定。

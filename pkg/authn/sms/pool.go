@@ -148,19 +148,22 @@ func (p *product) stopPool() error {
 // ended. The result never reaches the request that triggered the send: the
 // carrier's answer is a metric and a log line and nothing else.
 func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
-	_, err := p.sender.Send(ctx, r)
+	started := time.Now()
+	receipt, err := p.sender.Send(ctx, r)
+	elapsed := time.Since(started)
 	switch {
 	case err == nil:
 		p.meters.sent(ctx, outcomeSent)
+		p.infoSent(ctx, receipt, elapsed)
 	case errors.Is(err, sms.ErrUncertain):
 		p.meters.sent(ctx, outcomeUncertain)
-		p.warnNotSent(ctx, outcomeUncertain, err)
+		p.warnNotSent(ctx, outcomeUncertain, err, carrierAttributes(receipt, elapsed)...)
 	case errors.Is(err, sms.ErrThrottled):
 		p.meters.sent(ctx, outcomeThrottled)
-		p.warnNotSent(ctx, outcomeThrottled, err)
+		p.warnNotSent(ctx, outcomeThrottled, err, carrierAttributes(receipt, elapsed)...)
 	case errors.Is(err, sms.ErrRejected):
 		p.meters.sent(ctx, outcomeRejected)
-		p.warnNotSent(ctx, outcomeRejected, err)
+		p.warnNotSent(ctx, outcomeRejected, err, carrierAttributes(receipt, elapsed)...)
 	case errors.Is(err, sms.ErrUnroutable):
 		// A message this carrier cannot carry to this destination is a definite
 		// failure, like a rejection and unlike an uncertain outcome: the message is
@@ -169,22 +172,46 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 		// reads a deployment limit rather than a refusal they can send themselves
 		// around.
 		p.meters.sent(ctx, outcomeUnroutable)
-		p.warnNotSent(ctx, outcomeUnroutable, err)
+		p.warnNotSent(ctx, outcomeUnroutable, err, carrierAttributes(receipt, elapsed)...)
 	default:
 		// An error outside the closed set is a defect of the carrier. It is read
 		// as uncertain — never as a delivery and never as a retry — which is the
 		// direction that cannot do harm if the message did go out.
 		p.meters.sent(ctx, outcomeUncertain)
-		p.warnNotSent(ctx, outcomeUncertain, err)
+		p.warnNotSent(ctx, outcomeUncertain, err, carrierAttributes(receipt, elapsed)...)
 	}
+}
+
+// carrierAttributes is what a line about one call to the carrier carries beyond
+// the outcome: how long the call took, and the carrier's own identifier for the
+// send when it gave one. Nothing a message is made of enters it — not the
+// number, not the code, not a template parameter.
+func carrierAttributes(receipt sms.Receipt, elapsed time.Duration) []any {
+	attrs := []any{slog.Int64("duration_ms", elapsed.Milliseconds())}
+	if receipt.ProviderID != "" {
+		attrs = append(attrs, slog.String("provider_id", receipt.ProviderID))
+	}
+	return attrs
+}
+
+// infoSent writes the line for a code the carrier accepted. The line carries the
+// outcome, the carrier's identifier and the call's duration, so a report of a
+// message that never arrived can be matched against the carrier's own record.
+func (p *product) infoSent(ctx context.Context, receipt sms.Receipt, elapsed time.Duration) {
+	p.logger.InfoContext(ctx, ModuleName+": a verification code was sent",
+		slog.String("outcome", outcomeSent),
+		slog.Int64("duration_ms", elapsed.Milliseconds()),
+		slog.String("provider_id", receipt.ProviderID))
 }
 
 // warnNotSent writes the line for a code that did not go out, whatever stopped
 // it — a carrier that refused the send, a registry that would not resolve the
 // message, or a carrier that failed outside the sentinels. The line carries the
 // outcome and the cause's own error text, which the carrier keeps free of the
-// code and its credentials.
-func (p *product) warnNotSent(ctx context.Context, outcome string, err error) {
-	p.logger.WarnContext(ctx, ModuleName+": a verification code was not sent",
-		slog.String("outcome", outcome), slog.String("cause", err.Error()))
+// code and its credentials. A send stopped before the carrier is reached has no
+// call to report and passes no carrier attributes.
+func (p *product) warnNotSent(ctx context.Context, outcome string, err error, carrier ...any) {
+	attrs := []any{slog.String("outcome", outcome), slog.String("cause", err.Error())}
+	attrs = append(attrs, carrier...)
+	p.logger.WarnContext(ctx, ModuleName+": a verification code was not sent", attrs...)
 }

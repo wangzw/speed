@@ -11,16 +11,24 @@
 // package is that a URL carrying the secret never leaves it: every error it
 // returns drops the request URL before it is handed back, and the *url.Error
 // net/http returns — whose text carries the whole URL — is unwrapped rather than
-// passed on. The client also does not wrap its transport in the observability
-// one, so no span carries the URL either. A new outbound path has to hold the
-// same invariant, and the tests assert it for every error each one can produce.
+// passed on.
+//
+// The client the default path builds wraps its transport in the trace and
+// logging transports. The logging transport records the method, host, path,
+// status, outcome and duration of each exchange and never the query, where the
+// secret and the code travel; a transport failure is recorded through the cause
+// underneath net/http's *url.Error, so the URL is dropped there too. A new
+// outbound path has to hold the same invariant, and the tests assert it for
+// every error each one can produce.
 //
 // # The outbound client
 //
 // The client sends through the restricted egress client by default, so a
 // destination that is not a public https address is refused before a secret is
 // put on the wire. A host does not configure this; a test names its own server
-// and client through [Options].
+// and client through [Options]. A client a test injects is used as it stands
+// and is not wrapped: the record is a property of the client this package
+// builds.
 package wechat
 
 import (
@@ -34,6 +42,8 @@ import (
 	"net/url"
 
 	"github.com/vislake/speed/pkg/authn/internal/egress"
+	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/observability"
 )
 
 // The provider's endpoints. They are constants of the code: a deployment does
@@ -149,6 +159,13 @@ func New(o Options) *Client {
 	client := o.HTTP
 	if client == nil {
 		client = egress.New(egress.Options{AllowLoopback: o.AllowLoopback, RootCAs: o.RootCAs})
+		// The restricted client is wrapped from outside, so the exchange carries
+		// the span of the call's context across the hop, and inside it is the
+		// logging transport, so the exchange leaves one record. The record names
+		// the method, host, path, status, outcome and time and never the query,
+		// where the secret and the code travel; a failure is recorded through the
+		// cause under net/http's *url.Error, which drops the URL with it.
+		client.Transport = observability.Transport(log.Transport(client.Transport))
 	}
 	return &Client{
 		appID:     o.AppID,

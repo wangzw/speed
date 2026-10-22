@@ -51,7 +51,11 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   bounded by the deadline of the context the engine hands in (and, per call, by
   `authn.sso.egress-timeout`). A call that does not inject the client would use
   the library's own client and is a defect. The client is built here, from the
-  SSO module's `allow-private-egress` developer relaxation.
+  SSO module's `allow-private-egress` developer relaxation. Its transport also
+  carries `log.Transport` inside `observability.Transport`, so every discovery,
+  key-set and token request leaves one record naming the endpoint, the status
+  and the time — and carrying neither the query, where an authorization code, a
+  token and the state travel, nor a body.
 - **The provider is cached per identity provider and version.** The discovered
   provider and its OAuth client are held under the provider's identifier, keyed
   by its stored `version`, with the expiry of `authn.sso.provider-cache-ttl`;

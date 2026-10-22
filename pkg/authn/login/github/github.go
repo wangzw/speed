@@ -12,9 +12,13 @@
 // The method holds no flow state of its own beyond the opaque bytes the engine
 // keeps for it: the anti-forgery state and the PKCE verifier travel in the flow
 // record's method state and are checked exactly once, on the callback. It
-// touches no HTTP server, session, token or flow record, and it writes no log
-// line: the engine logs the cause of an answer, and no cause names the code,
-// the token, the state or the verifier.
+// touches no HTTP server, session, token or flow record apart from the outbound
+// requests it makes: the token exchange, the /user read and the /user/emails
+// read each leave one record through the outbound logging transport, naming the
+// method, host, path, status, outcome and time and never the query or a header,
+// where the code, the token, the state and the verifier travel. The engine logs
+// the cause of an answer, and no cause names the code, the token, the state or
+// the verifier.
 //
 // A host takes the method in by writing ModuleName into a command alongside the
 // login engine and a gateway. It delivers the login method capability
@@ -163,8 +167,11 @@ func Module() core.Module {
 			// The restricted client is wrapped from outside, so the token
 			// exchange and the two API reads carry the span of the call's context
 			// across the hop; internal/egress offers no constructor of its own
-			// for it.
-			client.Transport = observability.Transport(client.Transport)
+			// for it. The client is wrapped for the outbound record as well,
+			// inside the span injection: every request leaves one record naming
+			// the endpoint, the status and the time and carrying neither the
+			// query nor a header, where the code, the token and the state travel.
+			client.Transport = observability.Transport(log.Transport(client.Transport))
 			return newMethod(cfg, client), nil
 		},
 	}

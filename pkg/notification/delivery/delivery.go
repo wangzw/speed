@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"time"
 
 	"github.com/vislake/speed/pkg/core"
@@ -45,6 +46,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
@@ -123,6 +125,13 @@ var (
 // it sends through are present — email on the mail sender, sms on both the
 // registry and the sender.
 //
+// The logging capability is optional too. The pipeline takes it up in New and
+// names it after this module, because the delivery job runs on a context the
+// queue created: no entry point injects a logger into it, and the external-send
+// lines would otherwise fall back to the process default logger and never reach
+// the destinations a host configured. An assembly without logging keeps the
+// default logger, which is what it had before.
+//
 // The submission seam is delivered exclusively: one process has exactly one
 // outbound pipeline, so a second provider fails the startup rather than one of
 // them silently winning.
@@ -137,6 +146,7 @@ func Module() core.Module {
 			{Token: (*notification.Preferences)(nil)},
 			{Token: (*notification.Inbox)(nil)},
 			{Token: (*i18n.Localizer)(nil)},
+			{Token: (*log.Logger)(nil), Optional: true},
 			{Token: (*mail.Sender)(nil), Optional: true},
 			{Token: (*sms.Registry)(nil), Optional: true},
 			{Token: (*sms.Sender)(nil), Optional: true},
@@ -222,6 +232,11 @@ type pipeline struct {
 	ledger    *ledger
 	taxonomy  taxonomy
 	seams     channelSeams
+	// logger is where the external-send lines are written. It is the assembly's
+	// logging capability named after this module, or the process default logger
+	// when the assembly delivered none; it is never taken from the handler's
+	// context, which carries no injected logger (see Module).
+	logger *slog.Logger
 }
 
 // newPipeline takes up what the descriptor requires and assembles the product.
@@ -273,6 +288,10 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
+	logger, err := moduleLogger(reg)
+	if err != nil {
+		return nil, err
+	}
 	return &pipeline{
 		queue:     queue,
 		handlers:  handlers,
@@ -282,7 +301,29 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		ledger:    &ledger{handle: database.DB()},
 		taxonomy:  types,
 		seams:     channelSeams{mailer: mailer, registry: registry, sender: sender},
+		logger:    logger,
 	}, nil
+}
+
+// moduleLogger takes up the logging capability when the assembly delivers one,
+// and answers the process default logger otherwise.
+//
+// The returned logger carries this module's name, which is what tells its lines
+// apart from every other module's once they reach a shared destination. An
+// absence is a legal assembly and is told apart from a failed lookup by the
+// sentinel: anything other than "no provider" is the lookup itself failing, and
+// that ends the startup rather than quietly sending this module's records
+// somewhere the host did not configure.
+func moduleLogger(reg *core.Registry) (*slog.Logger, error) {
+	delivered, err := core.Resolve[log.Logger](reg)
+	switch {
+	case err == nil:
+		return delivered.Named(ModuleName), nil
+	case errors.Is(err, core.ErrMissingProvider):
+		return log.Default(), nil
+	default:
+		return nil, fmt.Errorf("%s: taking up the logging capability: %w", ModuleName, err)
+	}
 }
 
 // optional takes up a capability whose absence is a legal assembly: the zero

@@ -2,7 +2,8 @@
 
 The logging module: the capability modules take up from each other, the
 handler chain the configuration assembles, the redaction layer every record
-passes through, and the storage of a logger in a context.
+passes through, the storage of a logger in a context, and the transport that
+records every outbound HTTP request.
 
 Everything lives in the root package, because the built-in formats and
 destinations use the standard library alone: this module binds no third-party
@@ -32,8 +33,25 @@ The API is the package's godoc.
   package defines no logging API of its own.** A call site writes through
   `*slog.Logger` and depends on `log/slog` rather than on this project
   (`pkg/log/log.go`). What is exported here besides that is the capability
-  itself and the schema a host declares its configuration in — not a wrapper
-  over the standard library's types.
+  itself, the schema a host declares its configuration in, and `Transport` —
+  not a wrapper over the standard library's types. `Transport` is not a
+  logging API either: it is the rule for outbound HTTP requests, written once
+  (next bullet).
+
+- **Every outbound HTTP request is recorded, and the record carries no query,
+  no header and no body.** `Transport` wraps a client's transport and writes
+  one record per call: `method`, `host`, `path` (never the query),
+  `http_status` where a response came back, `outcome` (`ok` for a 2xx,
+  `failed` otherwise), `duration_ms`, and, when the call produced no response,
+  the `cause` underneath net/http's `url.Error` — never that wrapper's own
+  text, which quotes the request URL including the query
+  (`pkg/log/transport.go` `Transport`, `causeOf`). The query is where an
+  authorization code, a token and a state travel; a header or a body carries a
+  token, a cookie, a signed assertion or a message body. None of them reaches
+  a record. The record is written through the logger in the request's context
+  (`FromContext`), so it lands on the configured destinations; a call site
+  wraps the transport its client already holds, because a client left
+  unwrapped makes its calls unrecorded and no layer reports the omission.
 
 - **The chain is ordered level, then redaction, then fan-out, and no logger
   derived from it slips past the redaction layer.** That layer implements

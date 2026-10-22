@@ -20,7 +20,11 @@
 // Every outbound request goes through the restricted egress client, injected
 // through oidc.ClientContext, so a discovery document, a key set and a token
 // endpoint can only be reached over https at a public address, each bounded by
-// the deadline of the context the engine hands in. The discovered provider and
+// the deadline of the context the engine hands in. Each of those requests
+// leaves one log record naming the endpoint, the status and the duration; the
+// query, the headers and the bodies are never recorded, because an
+// authorization code, a token and the state travel there. The discovered
+// provider and
 // its OAuth client are cached per identity provider and version, expiry from
 // authn.sso.provider-cache-ttl, and dropped when an authn.idp.changed event for
 // that provider arrives; a construction that fails ends that provider's calls
@@ -187,7 +191,11 @@ func newProduct(reg *core.Registry) (*product, error) {
 	// The restricted client is wrapped from outside, so a discovery, key-set or
 	// token request carries the span of the call's context across the hop to the
 	// identity provider; internal/egress offers no constructor of its own for it.
-	client.Transport = observability.Transport(client.Transport)
+	// The client is wrapped for the outbound record as well, inside the span
+	// injection: every request this method makes leaves one record naming the
+	// endpoint, the status and the time and carrying neither the query — where
+	// an authorization code, a token and the state travel — nor a body.
+	client.Transport = observability.Transport(log.Transport(client.Transport))
 	settings := newReader(store, log.Default())
 	return build(cfg, sso, client, settings), nil
 }

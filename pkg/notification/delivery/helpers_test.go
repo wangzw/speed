@@ -1,11 +1,14 @@
 package delivery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -358,6 +361,56 @@ func defaultSpec() notification.TypeSpec {
 	}
 }
 
+// logBuffer collects what the module logs, as text lines, so a case can read the
+// level and the fields of a line and look for what must not be in any of them.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *logBuffer) logger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(b, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+// lines returns the lines that carry every one of the substrings.
+func (b *logBuffer) lines(substrings ...string) []string {
+	var out []string
+	for _, line := range strings.Split(b.String(), "\n") {
+		ok := line != ""
+		for _, s := range substrings {
+			ok = ok && strings.Contains(line, s)
+		}
+		if ok {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// bufferLogger is a logging capability whose Named logger writes into buf with
+// the module's name bound. A case uses it to read what the module reported
+// through its own logger, without a configured destination and without the
+// logger a context carries.
+type bufferLogger struct{ buf *logBuffer }
+
+func (l bufferLogger) Named(name string) *slog.Logger {
+	return l.buf.logger().With("module", name)
+}
+
+func (bufferLogger) Redaction() log.Redaction { return noRedaction{} }
+
 // host is one assembled run: the delivery module over a real SQLite database and
 // the tenant roster, with the seams a case drives stood in for and the type
 // declarations a case wants.
@@ -374,6 +427,10 @@ type host struct {
 	// notification.preferences — instead of this module, over the same
 	// declarations, so a case can hold both points to one criterion.
 	withPreferences bool
+	// logger replaces the real logging module with a stand-in delivering this
+	// capability, so a case can read what the module writes without going
+	// through a configured destination.
+	logger log.Logger
 }
 
 // drive loads the configuration the way a host loads it, drives a registry to
@@ -570,11 +627,26 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 		t.Fatalf("loading the configuration: %v", err)
 	}
 
+	// The configuration loader above always sees the real logging module, so the
+	// document's log section still names a declared item; a case that wants to
+	// read the module's own lines replaces the provider in the registry alone.
+	registered := modules
+	if h.logger != nil {
+		registered = make([]core.Module, 0, len(modules))
+		for _, m := range modules {
+			if m.Name == log.ModuleName {
+				registered = append(registered, standIn("stand-in.logging", h.logger, (*log.Logger)(nil)))
+				continue
+			}
+			registered = append(registered, m)
+		}
+	}
+
 	reg := core.New()
 	reg.Register(config.Module())
-	names := make([]string, 0, len(modules))
+	names := make([]string, 0, len(registered))
 	seen := map[string]bool{}
-	for _, m := range modules {
+	for _, m := range registered {
 		if m.Name == "" || seen[m.Name] {
 			continue
 		}
@@ -654,6 +726,13 @@ func (r *rig) tenantCtx(id string) context.Context {
 		r.t.Fatalf("entering the tenant %q: %v", id, err)
 	}
 	return ctx
+}
+
+// capturingLogger attaches a logger to ctx and returns the buffer that collects
+// what the module writes through it, so a case can read the external-send lines.
+func (r *rig) capturingLogger(ctx context.Context) (*logBuffer, context.Context) {
+	buf := &logBuffer{}
+	return buf, log.WithLogger(ctx, buf.logger())
 }
 
 // ledgerRow is one row read back from the ledger past every filter.
@@ -773,4 +852,11 @@ func (s *stubSender) Send(_ context.Context, _ sms.Resolved) (sms.Receipt, error
 		return sms.Receipt{}, s.sendErr
 	}
 	return sms.Receipt{ProviderID: "receipt-1"}, nil
+}
+
+// failWith makes every later send answer the given error.
+func (s *stubSender) failWith(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sendErr = err
 }

@@ -17,6 +17,11 @@
 // not an authorization fact: the method calls no user-info endpoint and
 // synthesizes nothing.
 //
+// The token exchange is the method's one outbound call. The shared client
+// records it, success or failure, naming the method, host, path, status, outcome
+// and duration and never the query, where the application secret and the code
+// travel.
+//
 // A host takes the method in by writing ModuleName into a command alongside the
 // login engine and providing this module's two configuration items, which are
 // required once the module is named.

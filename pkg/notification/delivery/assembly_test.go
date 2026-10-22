@@ -10,6 +10,7 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/sms"
@@ -44,10 +45,11 @@ func TestTheModuleDeliversTheDispatcherExclusively(t *testing.T) {
 
 // The descriptor declares the dependencies the design fixes: the queue, the
 // handler registration face, the database, the tenant roster, the preferences
-// seam, the inbox seam and the localizer are required; the mail sender and the
-// two sms seams are optional, one per channel that sends outside this process.
-// It declares nothing else — not an entry point, which this module mounts no
-// route on, and not an event bus, which it publishes nothing on.
+// seam, the inbox seam and the localizer are required; the logging capability,
+// the mail sender and the two sms seams are optional, one per channel that sends
+// outside this process. It declares nothing else — not an entry point, which
+// this module mounts no route on, and not an event bus, which it publishes
+// nothing on.
 func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	m := Module()
 	required := []core.Token{
@@ -70,6 +72,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 		}
 	}
 	optional := []core.Token{
+		(*log.Logger)(nil),
 		(*mail.Sender)(nil),
 		(*sms.Registry)(nil),
 		(*sms.Sender)(nil),

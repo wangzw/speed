@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -115,8 +116,17 @@ const noSuchKey = `<?xml version="1.0" encoding="UTF-8"?>` +
 
 // storeOver builds the module's product against the given endpoint, the way the
 // module's own Open does: the endpoint carries the scheme the transport is
-// derived from, and the bucket and credentials are the configured ones.
+// derived from, and the bucket and credentials are the configured ones. It
+// discards the call lines, which the logging cases drive through
+// storeOverWithLogger instead.
 func storeOver(t *testing.T, endpoint string) *store {
+	t.Helper()
+	return storeOverWithLogger(t, endpoint, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+// storeOverWithLogger builds the product over endpoint with logger as the module
+// logger the factory would have named.
+func storeOverWithLogger(t *testing.T, endpoint string, logger *slog.Logger) *store {
 	t.Helper()
 	s, err := open(t.Context(), &moduleConfig{
 		Endpoint:     endpoint,
@@ -125,7 +135,7 @@ func storeOver(t *testing.T, endpoint string) *store {
 		AccessKey:    testAccessKey,
 		SecretKey:    testSecretKey,
 		UsePathStyle: true,
-	})
+	}, logger)
 	if err != nil {
 		t.Fatalf("building the store over %s: %v", endpoint, err)
 	}

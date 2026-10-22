@@ -12,7 +12,9 @@ The method is this package's whole surface. In `Begin` it draws the state, the
 PKCE verifier and the nonce, keeps them in the flow's private state and answers
 the authorization URL; in `Answer` it checks the redirect, exchanges the code
 and verifies the identity token. It touches no HTTP route, session, token or flow
-record and writes no log line; the engine logs the cause of an answer.
+record; the engine logs the cause of an answer, and the outbound requests are
+recorded by the logging transport the client carries (see the egress boundary
+below).
 
 The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
 `StepInput`, `Step` and `Proof` shapes in `pkg/authn`.
@@ -42,6 +44,15 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   not inject the client would use the library's own client and is a defect; the
   test serves a loopback provider and the production client refuses it, so an
   uninjected call fails the suite.
+- **The client carries the trace and logging transports.** `New` wraps the
+  restricted client's transport in `observability.Transport` and, inside it,
+  `log.Transport`, so every discovery, key-set and token request carries the
+  call's span across the hop and leaves one record, success or failure, naming
+  the method, host, path, status, outcome and duration. The record carries
+  neither the query nor a body: the query is where an authorization code, a
+  token and a state travel. `outbound_log_test.go` drives a request through the
+  client the product assembles and holds both what the record names and what it
+  must not.
 - **Discovery is lazy, cached and fails open into an outage, not into a
   refusal.** The provider is discovered on the first call that needs it and
   cached; a discovery that fails ends that call with `StepUnavailable` and is not

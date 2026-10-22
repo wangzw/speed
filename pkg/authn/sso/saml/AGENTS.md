@@ -44,7 +44,10 @@ The API is the package's godoc. Read the `LoginMethod` comments in
   refresher fetches through the restricted client, bounded by the configured
   timeout; its URL comes from a tenant administrator, so the client's destination
   check is the protection. A parse or validation failure leaves the stored config
-  as it was and returns the error.
+  as it was and returns the error. The client's transport carries `log.Transport`
+  inside `observability.Transport`, so every metadata fetch leaves one record
+  naming the endpoint, the status and the time — and carrying neither the query
+  nor a body.
 - **The metadata is derived from the configured public address alone.** The entity
   identifier and the ACS address come from `public-url` and the base path, never
   from the `Host` header or a forwarded header, so a provider's IdP sees a stable

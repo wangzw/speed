@@ -8,9 +8,13 @@
 // it checks that the redirect came back with the state it drew, exchanges the
 // authorization code for an identity token, verifies the token through go-oidc,
 // and checks the nonce, the authorized party and the hosted domain itself. It
-// touches no HTTP route, session, token or flow record, and it writes no log
-// line: the engine logs the cause of an answer, and no cause here names an
-// authorization code, a token, a state or a nonce.
+// touches no HTTP route, session, token or flow record apart from the outbound
+// requests it makes: each of those — discovery, the key set, the token exchange
+// — leaves one record through the outbound logging transport, naming the
+// method, host, path, status, outcome and time and never the query, where an
+// authorization code, a token and a state travel. The engine logs the cause of
+// an answer, and no cause here names an authorization code, a token, a state or
+// a nonce.
 //
 // Every outbound request the method makes goes through the restricted egress
 // client, so a discovery document, a key set and a token endpoint can only be
@@ -136,8 +140,12 @@ func newProduct(reg *core.Registry) (*product, error) {
 	client := egress.New(egress.Options{})
 	// The restricted client is wrapped from outside, so a discovery, key-set or
 	// token request carries the span of the call's context across the hop to the
-	// provider; internal/egress offers no constructor of its own for it.
-	client.Transport = observability.Transport(client.Transport)
+	// provider; internal/egress offers no constructor of its own for it. The
+	// client is wrapped for the outbound record as well, inside the span
+	// injection: every request this method makes leaves one record naming the
+	// endpoint, the status and the time and carrying neither the query — where
+	// an authorization code, a token and a state travel — nor a body.
+	client.Transport = observability.Transport(log.Transport(client.Transport))
 	return newMethod(cfg, client), nil
 }
 

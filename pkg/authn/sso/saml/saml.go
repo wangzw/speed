@@ -17,7 +17,9 @@
 //
 // Every outbound request the method makes goes through the restricted egress
 // client, because the IdP's URLs come from a tenant administrator's input. The
-// metadata refresher fetches an IdP's metadata through the same client.
+// metadata refresher fetches an IdP's metadata through the same client. Each
+// fetch leaves one log record naming the endpoint, the status and the duration;
+// the query and the body are never recorded.
 //
 // A host takes the method in by writing ModuleName into a command alongside the
 // login engine and the enterprise provider register. It delivers the login
@@ -226,8 +228,12 @@ func newProduct(reg *core.Registry) (*product, error) {
 	client := egress.New(egress.Options{AllowLoopback: allowLoopback})
 	// The restricted client is wrapped from outside, so the metadata refresh and
 	// every other outbound request carries the span of the call's context across
-	// the hop; internal/egress offers no constructor of its own for it.
-	client.Transport = observability.Transport(client.Transport)
+	// the hop; internal/egress offers no constructor of its own for it. The
+	// client is wrapped for the outbound record as well, inside the span
+	// injection: every request this method makes leaves one record naming the
+	// endpoint, the status and the time and carrying neither the query nor a
+	// body.
+	client.Transport = observability.Transport(log.Transport(client.Transport))
 	return &product{
 		providers:  providers,
 		accounts:   accounts,

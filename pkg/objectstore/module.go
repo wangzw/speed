@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -57,7 +58,19 @@ type Spec[C any] struct {
 	Secrets func(cfg *C) []string
 	// Open builds this backend from the decoded configuration. It returns the one
 	// value that implements Store.
-	Open func(ctx context.Context, cfg *C) (Store, error)
+	//
+	// logger is where the backend reports the calls it makes to the service, and
+	// is the assembly's logging capability named after this module when the
+	// assembly delivers one, the logging module's process default otherwise. A
+	// backend holds it rather than reading one from each operation's context: the
+	// background sweep calls Delete on a context it created, which carries no
+	// injected logger, so FromContext would put that path's records on the
+	// default chain instead of the configured destinations.
+	//
+	// The factory registers the backend's credentials as literal redaction rules
+	// before this is reached, so a logger bound here is bound after the rules
+	// exist.
+	Open func(ctx context.Context, cfg *C, logger *slog.Logger) (Store, error)
 }
 
 // NewModule builds a backend's module descriptor.
@@ -94,10 +107,14 @@ func NewModule[C any](spec Spec[C]) core.Module {
 			if err != nil {
 				return nil, err
 			}
-			if err := spec.registerSecrets(reg, cfg); err != nil {
+			if err = spec.registerSecrets(reg, cfg); err != nil {
 				return nil, err
 			}
-			return spec.Open(ctx, cfg)
+			logger, err := spec.logger(reg)
+			if err != nil {
+				return nil, err
+			}
+			return spec.Open(ctx, cfg, logger)
 		},
 	}
 }
@@ -184,4 +201,30 @@ func (s Spec[C]) registerSecrets(reg *core.Registry, cfg *C) error {
 	}
 	literal.Register(delivered.Redaction(), s.ModuleName+".credentials", values...)
 	return nil
+}
+
+// logger takes up the logging capability when the assembly delivers one, and
+// answers the process default logger otherwise.
+//
+// The returned logger carries this backend's name, which is what lets a line
+// about an object-store call be told apart from every other module's once it
+// reaches a shared destination. An absence is a legal assembly and is told
+// apart from a failed lookup by the sentinel: anything other than "no provider"
+// is the lookup itself failing, and that ends the startup rather than quietly
+// sending the backend's records somewhere the host did not configure.
+//
+// It runs after the credentials are registered and before Open, which is the
+// order a redaction rule needs: a rule governs what is bound after it, and Named
+// binds the module attribute.
+func (s Spec[C]) logger(reg *core.Registry) (*slog.Logger, error) {
+	delivered, err := core.Resolve[log.Logger](reg)
+	switch {
+	case err == nil:
+		return delivered.Named(s.ModuleName), nil
+	case errors.Is(err, core.ErrMissingProvider):
+		return log.Default(), nil
+	default:
+		return nil, fmt.Errorf("%s: taking up the logger its calls are reported through: %w",
+			s.ModuleName, err)
+	}
 }

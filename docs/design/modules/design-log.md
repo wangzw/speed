@@ -10,12 +10,13 @@
 - 内置脱敏的机制，位于扇出之前，对每一种目的地一致生效；规则不内置，由其他模块登记，只可追加（[ADR-log-redaction-2026-09-13](../../adr/adr-log-redaction-2026-09-13.md)）。
 - 提供 logger 与 `context.Context` 之间的存取，供产生关联字段的模块绑定自己的字段（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)）。
 - 提供进程根 logger：没有上下文可取时用它，固定走带脱敏的引导链写标准输出。
+- 提供出站 HTTP 请求的记录包装 `Transport`：包住客户端的底层 transport，每个请求写一条记录，记方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时记底层成因；query、请求头与正文都不进记录。
 
 产品内容全部位于根包：格式与目的地都只用标准库，本模块没有需要隔离到子包的第三方实现。唯一的子包是 `internal/loghost`，它是端到端用例驱动的子进程宿主，不属于产品。
 
 ### 非职责
 
-- **不定义自己的日志 API。** 调用点使用标准库类型，本模块不包装它们（[ADR-log-api-2026-09-13](../../adr/adr-log-api-2026-09-13.md)）。
+- **不定义自己的日志 API。** 调用点使用标准库类型，本模块不包装它们（[ADR-log-api-2026-09-13](../../adr/adr-log-api-2026-09-13.md)）。`Transport` 不在此列：它的入参与返回值都是 `net/http` 的类型，记录由它经请求上下文里的 `*slog.Logger` 写出。
 - **不认识任何领域字段。** `trace_id`、`tenant_id` 这类关联字段由产生它们的模块绑定，根包只提供承载它们的存取途径，不知道字段本身的存在（[ADR-log-context-2026-09-13](../../adr/adr-log-context-2026-09-13.md)）。
 - **不接受外部提供的格式与目的地。** 格式与目的地都是内置的闭集，按名选定，新增是本模块的代码变更（[ADR-log-api-2026-09-13](../../adr/adr-log-api-2026-09-13.md)）。这与 [config](design-config.md) 的传输和格式扩展点同名而不同类：那边的实现会引入第三方依赖，必须隔离到子包、以资源声明交付；本模块的格式与目的地全在标准库内。
 - **不接管启动诊断。** 启动诊断固定写 `os.Stderr`，且发生在本模块构造之前，见[启动诊断与日志的分界](#启动诊断与日志的分界)。
@@ -172,6 +173,32 @@ func Default() *slog.Logger
 
 **`Named` 保的是记录的去向**：经它取得的 logger 写配置的目的地；`Default()` 写出的记录只进标准输出，与声明与否无关（见上）。
 
+### 出站 HTTP 请求的记录
+
+```go
+func Transport(base http.RoundTripper) http.RoundTripper
+```
+
+`Transport` 包住客户端的底层 transport，经它发出的每个请求写一条记录，成功与失败各一条。`base` 为 `nil` 时取 `http.DefaultTransport`，与客户端上 `Transport` 字段为 `nil` 的含义一致。
+
+| 字段 | 取值 |
+|---|---|
+| `method` | 请求方法 |
+| `host` | 请求的目标主机 |
+| `path` | 请求路径，不含 query |
+| `http_status` | 对端有应答时的状态码；无应答时没有这一项 |
+| `outcome` | 2xx 为 `ok`，其余为 `failed` |
+| `duration_ms` | 从发出请求到它返回的毫秒数 |
+| `cause` | 无应答时的失败分类 |
+
+**query、请求头与两侧的正文都不进记录。** 授权码、令牌、state、cookie、签名断言与消息正文都经这些位置传输，记录带上一项就会把它送到日志链写往的每一个目的地。`cause` 取 net/http 包在 `*url.Error` 内的错误，不取该包装自身的文本：那层文本引用完整请求 URL，query 在其中。
+
+**2xx 是唯一的成功。** 其余状态一律记 `failed`，重定向在内：本仓库装配的客户端不跟随重定向，3xx 表示请求落在它点名的资源之外，这正是运维要看见的事。
+
+记录经请求上下文里的 logger 写出（`FromContext`，见[取 logger 的途径](#取-logger-的途径)），上下文没有 logger 时经 `Default()` 写出，因而落在引导链上。
+
+**调用点包装客户端已有的 transport**，一个客户端的全部请求因而经过同一个包装；未包装的客户端发出的请求不留记录，没有任何一层报告这一遗漏。`base` 实现 `CloseIdleConnections` 时，包装转交这个调用。
+
 ### 取 logger 的途径
 
 **从上下文取是常规操作。** 请求、任务这些带上下文的路径都走它，关联字段也只在这条路径上：
@@ -206,7 +233,7 @@ func Default() *slog.Logger
 
 `pkg/log` 依赖 `pkg/core`（注册、功能交付）与 `pkg/config`（声明并读取自己的配置）。
 
-本模块自身不引入第三方依赖：处理链、脱敏、上下文存取、配置解读、文本与 JSON 编码、滚动与清理，全部在 `log/slog`、`context`、`io`、`os` 这些标准库范围内完成。
+本模块自身不引入第三方依赖：处理链、脱敏、上下文存取、出站请求的记录、配置解读、文本与 JSON 编码、滚动与清理，全部在 `log/slog`、`net/http`、`context`、`io`、`os` 这些标准库范围内完成。
 
 取用配置则承受 `pkg/config` 的解析工具依赖：cobra、viper、pflag 与 mapstructure 经 `pkg/config` 进入本模块的传递闭包，凡 import 本模块的宿主都带上它们，这是 [ADR-config-parsing-2026-09-20](../../adr/adr-config-parsing-2026-09-20.md) 记下的代价。
 
@@ -640,6 +667,7 @@ log:
 | 文件滚动 | 已实现 | `pkg/log/file.go` `shouldRotate`、`rotate` |
 | 文件清理 | 已实现 | `pkg/log/prune.go` `prune`、`backgroundPrune`、`parseArchive` |
 | 写入失败上报 | 已实现 | `pkg/log/writer.go` `destWriter`、`pkg/log/prune.go` `notePruneFailure` |
+| 出站 HTTP 请求的记录 | 已实现 | `pkg/log/transport.go` `Transport`、`loggingTransport`、`causeOf`、`targetOf` |
 | 哨兵错误 | 已实现 | `pkg/log/errors.go` |
 | 可观察字面量 | 已实现 | `pkg/log/module.go` `ModuleAttrKey`、`pkg/log/rules.go` `MaskedText` |
 | 模块名常量与按名纳入 | 已实现 | `pkg/log/module.go` `ModuleName` |
