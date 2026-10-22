@@ -321,6 +321,7 @@ export function TenantMenu({
   tenantId,
   personalTenant,
   onTenantSelect,
+  compact = false,
 }: {
   /** The tenant list the host offers; defaults to the placeholder list. A
    * product passes the tenants its own membership source returns. */
@@ -331,6 +332,10 @@ export function TenantMenu({
   readonly personalTenant: { readonly id: string; readonly alias: string } | null
   /** Reports the tenant the user picked; the host switches its route/state. */
   readonly onTenantSelect: (tenantId: string) => void
+  /** Icon-only trigger for the collapsed sidebar rail, where the tenant
+   * name does not fit; the switch confirmation stays announced but is not
+   * painted there. */
+  readonly compact?: boolean
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   const tenants: readonly DemoTenant[] =
@@ -348,6 +353,8 @@ export function TenantMenu({
       tenants={tenants}
       currentTenantId={tenantId}
       onSelect={onTenantSelect}
+      compact={compact}
+      announcement={compact ? 'visually-hidden' : 'inline'}
     />
   )
 }
@@ -543,7 +550,13 @@ export function ColorModeToggle(): ReactElement {
  * entries open the same page; sign-out drives the session's logout, whose
  * quiet terminal flip the shells observe.
  */
-export function UserMenu(): ReactElement {
+export function UserMenu({
+  narrow = false,
+}: {
+  /** Tightens the trigger for the collapsed sidebar rail, where the stock
+   * padding would push it past the paper's edge. */
+  readonly narrow?: boolean
+} = {}): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
   const { t } = useTranslation(DEMO_NAMESPACE)
@@ -578,13 +591,14 @@ export function UserMenu(): ReactElement {
     <Box>
       <IconButton
         color="inherit"
+        size={narrow ? 'small' : 'medium'}
         aria-label={triggerLabel}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? menuId : undefined}
         onClick={(event) => setAnchorEl(event.currentTarget)}
       >
-        <Avatar name={displayName} decorative size={32} />
+        <Avatar name={displayName} decorative size={narrow ? 28 : 32} />
       </IconButton>
       <Menu
         id={menuId}

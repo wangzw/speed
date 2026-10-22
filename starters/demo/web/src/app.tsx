@@ -40,6 +40,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import {
   TenantProvider,
@@ -110,6 +111,7 @@ import {
   useImpersonationStatus,
 } from './impersonation.js'
 import { DemoNavLabel } from './nav-label.js'
+import { ConsoleNavIcon } from './nav-icons.js'
 import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
@@ -767,7 +769,7 @@ function TenantFrame({
           // The console entry sits at the same end of the bar, nearest the
           // account controls, and shows only to platform staff (ConsoleEntry
           // gates itself).
-          headerActions={
+          headerActions={(rail) => (
             <>
               {inboxServed ? (
                 <NotificationBell
@@ -775,9 +777,9 @@ function TenantFrame({
                 />
               ) : null}
               <HeaderActions />
-              <ConsoleEntry routes={consoleRoutes} />
+              <ConsoleEntry routes={consoleRoutes} narrow={rail.narrow} />
             </>
-          }
+          )}
           sidebarCollapsed={sidebarCollapsed}
           onSidebarCollapsedChange={onSidebarCollapsedChange}
           // The tenant switcher sits in the userMenu slot (the design's
@@ -795,23 +797,24 @@ function TenantFrame({
           // out of the bar for the same reason -- the host has no tenant to
           // show yet, and its no-current-tenant text belongs to a host that
           // settles none.
-          userMenu={
+          userMenu={(rail) => (
             <>
               {impersonating || identitySettling ? null : (
                 <TenantMenu
                   tenantId={tenantId}
                   personalTenant={personalTenant}
                   onTenantSelect={setTenantId}
+                  compact={rail.narrow}
                 />
               )}
               {/* The chip sits ahead of the account menu: while an
                   impersonation is in force it is the persistent visible
                   indication, and it toggles the notice (its close control
                   moves focus here). */}
-              <ImpersonationChip />
-              <UserMenu />
+              <ImpersonationChip narrow={rail.narrow} />
+              <UserMenu narrow={rail.narrow} />
             </>
-          }
+          )}
           signIn={<SignInView />}
         >
           <PersonalTenantNoticeProvider
@@ -871,9 +874,13 @@ function TenantFrame({
  */
 function ConsoleEntry({
   routes,
+  narrow = false,
 }: {
   /** The console declarations the presence predicate left in force. */
   readonly routes: readonly ConsoleRoute[]
+  /** Whether the entry renders in the collapsed sidebar rail, where only an
+   * icon fits; the accessible name stays the entry's label. */
+  readonly narrow?: boolean
 }): ReactElement | null {
   // An impersonated session has no console to enter; the shared derivation
   // carries that rule for the header entry and the start page's card alike.
@@ -883,18 +890,34 @@ function ConsoleEntry({
   }
   // The link itself renders in its own component: the href/onClick pair is a
   // hook call, and hooks cannot follow the null branch above.
-  return <ConsoleEntryLink target={target} />
+  return <ConsoleEntryLink target={target} narrow={narrow} />
 }
 
 /** The console entry's anchor, with route-kit's basename-aware href and its
  * plain-click-navigates / modified-click-stays-with-the-browser handler. */
 function ConsoleEntryLink({
   target,
+  narrow,
 }: {
   /** The console page the entry points at (a route, not yet a served URL). */
   readonly target: string
+  /** Icon form for the collapsed rail. */
+  readonly narrow: boolean
 }): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
   const { href, onClick } = useRouteLinkProps(target)
+  if (narrow) {
+    return (
+      <IconButton
+        color="inherit"
+        aria-label={t('nav.console')}
+        href={href}
+        onClick={onClick}
+      >
+        <ConsoleNavIcon size={20} />
+      </IconButton>
+    )
+  }
   return (
     <Button color="inherit" href={href} onClick={onClick}>
       <DemoNavLabel labelKey="nav.console" />

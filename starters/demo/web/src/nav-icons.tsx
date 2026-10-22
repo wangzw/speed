@@ -104,3 +104,26 @@ export function NotificationsNavIcon({ size = 24 }: IconProps) {
     </svg>
   )
 }
+
+/** The console entry: four panels, the administration surfaces' own mark. */
+export function ConsoleNavIcon({ size = 24 }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3.8" y="3.8" width="7" height="7" rx="1.4" />
+      <rect x="13.2" y="3.8" width="7" height="7" rx="1.4" />
+      <rect x="3.8" y="13.2" width="7" height="7" rx="1.4" />
+      <rect x="13.2" y="13.2" width="7" height="7" rx="1.4" />
+    </svg>
+  )
+}

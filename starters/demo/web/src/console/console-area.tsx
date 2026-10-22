@@ -26,6 +26,7 @@
  */
 
 import { useCallback } from 'react'
+import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
 import type {
   ConsoleImpersonationStarting,
@@ -121,7 +122,7 @@ export function ConsoleArea({
       navGroups={navGroups ?? consoleNavGroups}
       hasFeature={hasFeature}
       title={<AppBrand />}
-      headerActions={<ConsoleHeaderActions />}
+      headerActions={(rail) => <ConsoleHeaderActions narrow={rail.narrow} />}
       onNavigate={navigate}
       // The session a step-up-gated console write elevates: a privileged
       // write refused for a strength shortfall opens the re-auth dialog,
@@ -155,9 +156,16 @@ export function ConsoleArea({
  * The console banner's trailing chrome: an exit back to the tenant area beside
  * the sign-out action, in the same chrome the tenant frame carries. The exit
  * routes in place (the same seam the frame's own navigation uses), so leaving
- * the console does not reload the page and sign the operator out.
+ * the console does not reload the page and sign the operator out. In the
+ * collapsed sidebar rail only the arrow fits, and its accessible name stays
+ * the exit label.
  */
-function ConsoleHeaderActions(): ReactElement {
+function ConsoleHeaderActions({
+  narrow = false,
+}: {
+  /** Whether the controls render in the collapsed sidebar rail. */
+  readonly narrow?: boolean
+}): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
   // The exit is a real link whose plain-click handler route-kit supplies:
   // the browser keeps a modified or new-tab click, and an in-app click moves
@@ -165,16 +173,49 @@ function ConsoleHeaderActions(): ReactElement {
   const { href, onClick } = useRouteLinkProps(TENANT_HOME_PATH)
   return (
     <>
-      <Link
-        href={href}
-        underline="hover"
-        onClick={onClick}
-        sx={{ color: 'inherit' }}
-      >
-        {t('console.backToApp')}
-      </Link>
+      {narrow ? (
+        <IconButton
+          color="inherit"
+          aria-label={t('console.backToApp')}
+          href={href}
+          onClick={onClick}
+        >
+          <BackGlyph />
+        </IconButton>
+      ) : (
+        <Link
+          href={href}
+          underline="hover"
+          onClick={onClick}
+          sx={{ color: 'inherit' }}
+        >
+          {t('console.backToApp')}
+        </Link>
+      )}
       <HeaderActions />
       <UserMenu />
     </>
+  )
+}
+
+/** The rail's exit mark: an arrow back, drawn decorative -- the icon button
+ * carries the exit label as its accessible name. */
+function BackGlyph() {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M19 12H5" />
+      <path d="M10.5 6.5 5 12l5.5 5.5" />
+    </svg>
   )
 }

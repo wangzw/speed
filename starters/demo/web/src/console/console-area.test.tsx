@@ -64,7 +64,13 @@ const textI18n = createSpeedI18n({
 })
 const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
 
-function renderConsoleArea(children: ReactNode = <p>console page</p>) {
+function renderConsoleArea(
+  children: ReactNode = <p>console page</p>,
+  frame: {
+    readonly shellLayout?: 'topbar' | 'sidebar'
+    readonly sidebarCollapsed?: boolean
+  } = {},
+) {
   const i18n = createI18n({
     supportedLanguages: ['zh-CN', 'en-US'],
     defaultLanguage: 'en-US',
@@ -110,6 +116,9 @@ function renderConsoleArea(children: ReactNode = <p>console page</p>) {
               <ConsoleArea
                 routes={consoleShellRoutes}
                 hasFeature={() => true}
+                shellLayout={frame.shellLayout}
+                sidebarCollapsed={frame.sidebarCollapsed}
+                onSidebarCollapsedChange={() => undefined}
               >
                 {children}
               </ConsoleArea>
@@ -126,6 +135,20 @@ describe('ConsoleArea', () => {
     renderConsoleArea()
     expect(screen.getByText(demoEnUS.app.title)).toBeInTheDocument()
     expect(screen.getByText('console page')).toBeInTheDocument()
+  })
+
+  it('renders the exit as an icon-only control in the collapsed rail, under the same name', () => {
+    renderConsoleArea(undefined, {
+      shellLayout: 'sidebar',
+      sidebarCollapsed: true,
+    })
+    // The rail has no room for the exit text; the control keeps the label
+    // as its accessible name and its href, so it stays a real link.
+    const exit = screen.getByRole('link', {
+      name: demoEnUS.console.backToApp,
+    })
+    expect(exit.textContent?.trim()).toBe('')
+    expect(exit.getAttribute('href')).not.toBeNull()
   })
 
   it('hands the console header controls to the shell as siblings, so a collapsed rail can stack them', () => {

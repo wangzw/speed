@@ -792,7 +792,13 @@ export function ImpersonationBannerSlot(): ReactElement | null {
  * is the disclosure control over it: activating toggles the banner, and
  * the banner's close control moves focus here.
  */
-export function ImpersonationChip(): ReactElement | null {
+export function ImpersonationChip({
+  narrow = false,
+}: {
+  /** Icon-only form for the collapsed sidebar rail, where the chip's label
+   * does not fit; the accessible name is unchanged. */
+  readonly narrow?: boolean
+} = {}): ReactElement | null {
   const notice = useImpersonationNotice()
   if (notice === null) {
     return null
@@ -804,6 +810,7 @@ export function ImpersonationChip(): ReactElement | null {
       controls={notice.regionId}
       onToggle={notice.toggle}
       ref={notice.indicatorRef}
+      compact={narrow}
     />
   )
 }
