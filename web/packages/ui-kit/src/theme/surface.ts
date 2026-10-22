@@ -64,23 +64,6 @@ export interface SurfaceTheme {
   readonly header: SurfaceThemeRole
 }
 
-/**
- * MUI's documented extension point for theme values: module augmentation
- * puts `surface` on the built theme (required -- the factory always fills
- * it) and on the options (optional -- a host composing its own
- * `createTheme` without the factory keeps MUI's shape).
- */
-declare module '@mui/material/styles' {
-  interface Theme {
-    /** The resolved surface roles (see `resolveSurfaceTheme`). */
-    surface: SurfaceTheme
-  }
-  interface ThemeOptions {
-    /** The resolved surface roles; the factory fills them from the tokens. */
-    surface?: SurfaceTheme
-  }
-}
-
 /** The palette slots the surface contract inherits from. */
 export interface SurfacePaletteSlots {
   readonly background: {

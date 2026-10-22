@@ -14,6 +14,14 @@
  * second assertion pins the entry's exported name list against a fixed
  * list, so a lost export of either kind (a value, or a type-only name
  * such as WriteOutcome) fails here too.
+ *
+ * The third assertion guards the module augmentations (`declare module
+ * '@mui/material/styles'`): a consumer that compiles against this
+ * package's emitted declarations loads only the modules the entry's
+ * `.d.ts` graph reaches, so an augmentation declared in an internal
+ * module never applies there and the property it adds reads as unknown.
+ * Every augmentation therefore has to live in a module the entry
+ * re-exports from.
  */
 
 import { readFileSync } from 'node:fs'
@@ -249,5 +257,28 @@ describe('the entry export surface', () => {
     expect(exportedNames(program, entryFile).sort()).toEqual(
       [...PUBLIC_EXPORTS].sort(),
     )
+  }, 30000)
+
+  it('declares module augmentations in modules the entry re-exports from', () => {
+    const { program, modulePaths } = createEntryProgram()
+    const exposed = new Set(modulePaths.map((path) => resolve(path)))
+    const offenders: string[] = []
+    for (const file of program.getSourceFiles()) {
+      if (file.isDeclarationFile || !file.fileName.startsWith(`${srcDir}/`)) {
+        continue
+      }
+      const augments = file.statements.some(
+        (statement) =>
+          ts.isModuleDeclaration(statement) &&
+          ts.isStringLiteral(statement.name),
+      )
+      if (augments && !exposed.has(resolve(file.fileName))) {
+        offenders.push(relative(srcDir, file.fileName))
+      }
+    }
+    expect(
+      offenders,
+      'augmentations a consumer of the emitted declarations cannot see:',
+    ).toEqual([])
   }, 30000)
 })

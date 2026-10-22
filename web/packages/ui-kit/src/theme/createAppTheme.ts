@@ -127,7 +127,7 @@ import {
   resolveSurfaceTheme,
   surfaceComponents,
 } from './surface.js'
-import type { SurfacePaletteSlots } from './surface.js'
+import type { SurfacePaletteSlots, SurfaceTheme } from './surface.js'
 
 /**
  * MUI's typography surface carries no monospace entry, while the token
@@ -149,6 +149,29 @@ declare module '@mui/material/styles' {
   interface TypographyVariantsOptions {
     /** The monospace stack; the factory fills it from the merged tokens. */
     fontFamilyMono?: string
+  }
+}
+
+/**
+ * The surface roles ride on the theme too (see surface.ts for how they are
+ * resolved). The augmentation sits here rather than in surface.ts because
+ * a consumer compiling against this package's emitted declarations loads
+ * only the modules the entry's `.d.ts` graph reaches: surface.ts is
+ * internal, and an augmentation declared there is invisible to such a
+ * consumer, leaving `theme.surface` an unknown property.
+ *
+ * `surface` is required on the built theme (the factory always fills it)
+ * and optional on the options (a host composing its own `createTheme`
+ * without the factory keeps MUI's shape).
+ */
+declare module '@mui/material/styles' {
+  interface Theme {
+    /** The resolved surface roles (see `resolveSurfaceTheme`). */
+    surface: SurfaceTheme
+  }
+  interface ThemeOptions {
+    /** The resolved surface roles; the factory fills them from the tokens. */
+    surface?: SurfaceTheme
   }
 }
 

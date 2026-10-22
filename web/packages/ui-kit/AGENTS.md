@@ -146,6 +146,17 @@ plumbing and deliberately not exported.
   options keep it optional so a host composing its own theme without the
   factory is unaffected. Read it like `fontFamily`, including from `sx`
   callbacks.
+- **The surface roles are exposed by module augmentation, declared in
+  the factory's own module.** The token tree's `surface` section maps to
+  `theme.surface` through a `declare module '@mui/material/styles'`
+  augmentation in `src/theme/createAppTheme.ts` -- the file that also
+  augments the monospace stack -- rather than in
+  `src/theme/surface.ts`. A consumer resolving `@speed/ui-kit` to its
+  `dist/` declarations loads only the modules the entry's `.d.ts` graph
+  reaches, and `surface.ts` is internal: an augmentation declared there
+  is invisible in that consumer's build, where `theme.surface` reads as
+  an unknown property. Read `theme.surface` like `fontFamilyMono`,
+  including from `sx` callbacks.
 - **Write results go through exactly one feedback scope per control
   group.** The scope is one `useWriteFeedback` instance plus one
   `WriteFeedbackRegion` rendered directly under the controls. Each
