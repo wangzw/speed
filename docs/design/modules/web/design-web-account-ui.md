@@ -234,7 +234,7 @@ sequenceDiagram
 | 加用户名被拒为 400 `authn.bad_request` | 一条横幅渲染该码文本；服务端的用户名规则还拒绝本面不复述的形状（静态凭据前缀、UUID 形状），故不给单一字段文案 |
 | 添加邮箱时地址不符合服务端格式 | 邮箱字段渲染 `identifiers.add.invalidEmail`（`aria-invalid`），不发请求；服务端仍答 400 `authn.bad_request` 且 kind 为 email 时同样落在该字段，不出现通用横幅 |
 | 添加邮箱被拒为 409 `authn.email_taken` | 邮箱字段渲染 `identifiers.add.emailTaken`（`aria-invalid`），焦点移到该字段；验证码一步收到该码时退回值字段并显示同一条文案，不出现通用横幅 |
-| 改口令的当前口令不匹配（401 `authn.login_failed`） | 一条横幅渲染该码文本；与提权 401 同状态码，靠问题码区分，不误开门控 |
+| 改口令被拒为 401 `authn.login_failed`（当前口令不符，或账户级退避期内的静默拒绝） | 一条横幅渲染本节自己的句子（`password.currentRejected`），不点名失败成因：账户级退避期内服务端对正确的当前口令也答该码，且该次尝试仍计入失败、延后退避，句子的重试指引因此带上「连续失败后稍候」的条件；不渲染该码在登录面的文本——那句话点名邮箱、手机号与验证码，在这里都不适用。与提权 401 同状态码，靠问题码区分，不误开门控 |
 | 加手机时号码已属另一账户（409 `authn.conflict`） | 一条横幅渲染该码文本 |
 | 验证码错误或已过期 | 一条横幅渲染统一文案（验证码无效或已过期，请重试或更换邮箱），验证码字段清空，目标地址保留 |
 | 发送验证码被 429 `authn.throttled` 拒绝 | 一条横幅渲染该码文本；重发控件按 `Retry-After` 倒计时禁用并说明原因 |
@@ -294,6 +294,7 @@ sequenceDiagram
 | 登录标识节的邮箱可用性属性 `emailAvailable` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
 | 档案已列出用户名时，添加面不提供用户名 kind | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 口令写被拒为 400 `authn.bad_request` 时渲染不含数字的策略句 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `password.policyFailure` |
+| 改口令被 401 `authn.login_failed` 拒绝时渲染本节自己的句子，不点名失败成因 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `password.currentRejected` |
 | 标识节的一个失败横幅（添加、验证与移除共用一个槽） | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 步进对话框对没有因素的账户以带 `method` 的步进重新证明第一因素 | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/account-ui/src/internal/queries.ts` `useSessionViewQuery` |
 | 社交绑定的 link 流程以顶层 `return_to` 发出回跳地址 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |

@@ -20,8 +20,12 @@
  * banner. A 400 bad-request on this route is the password policy, which is
  * the route's only other 400 (the client has already checked the fields
  * the answer could name), so it renders the section's policy sentence
- * instead of the generic bad-request text. A wrong current password is the
- * 401 login-failed the route answers, distinct from the step-up 401. The
+ * instead of the generic bad-request text. A failed current-password check
+ * is the 401 login-failed the route answers, distinct from the step-up 401;
+ * the server answers it for a wrong password and, silently, while the
+ * account's back-off is in force, so it renders the section's own sentence
+ * without naming a cause rather than the code's sign-in text, which names
+ * identifiers and verification codes that do not apply to this write. The
  * route asks for a fresh authentication: a 401
  * authn.insufficient_user_authentication opens the step-up dialog with the
  * typed values remembered, and a won challenge re-runs that one change
@@ -201,6 +205,18 @@ export function PasswordSection({
     void change({ current, newPassword })
   }
 
+  // The section answers two of the route's codes with its own sentences:
+  // the write's only 400 is the password policy, and its only login-failed
+  // (the step-up 401 is a different code) is a failed current-password
+  // check -- answered for a wrong password and, silently, while the
+  // account's back-off is in force, so the sentence names no cause.
+  const sectionFailure =
+    failureCode === 'authn.bad_request'
+      ? t('password.policyFailure')
+      : failureCode === 'authn.login_failed'
+        ? t('password.currentRejected')
+        : null
+
   return (
     <>
       <SectionCard title={t('password.title')}>
@@ -246,9 +262,9 @@ export function PasswordSection({
                 : ''}
             </Alert>
 
-            {failureCode === 'authn.bad_request' ? (
+            {sectionFailure !== null ? (
               <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-                {t('password.policyFailure')}
+                {sectionFailure}
               </Alert>
             ) : (
               <InlineError code={failureCode} />

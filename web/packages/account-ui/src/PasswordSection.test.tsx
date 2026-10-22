@@ -9,7 +9,9 @@
  * guards (an empty new password, a mismatched confirmation) render on
  * their fields and send no request; a valid change PUTs the current and
  * new passwords, fills the success live region and clears the fields; a
- * wrong current password (401 login-failed) renders its code text; and a
+ * 401 login-failed renders the section's own sentence, which names no
+ * cause because the server answers it for a wrong current password and,
+ * silently, while the account's back-off is in force; and a
  * change refused with 401 authn.insufficient_user_authentication opens the
  * step-up dialog, a won step-up re-running it exactly once.
  */
@@ -344,7 +346,7 @@ describe('PasswordSection', () => {
     expect(screen.getByLabelText(zhCN.password.new.label)).toHaveValue('')
   })
 
-  it('renders a wrong current password as its code text', async () => {
+  it('names a wrong current password in the section\'s own words', async () => {
     const warn = captureRefreshWarning()
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
@@ -367,7 +369,19 @@ describe('PasswordSection', () => {
     await user.click(screen.getByRole('button', { name: zhCN.password.submit }))
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
+    expect(alert).toHaveTextContent(zhCN.password.currentRejected)
+    // The code's own sign-in sentence names identifiers and a verification
+    // code; none of those belong to this write, so the section must not
+    // reuse it.
+    expect(alert).not.toHaveTextContent(zhCN.errors.authn.login_failed)
+    expect(enUS.password.currentRejected).toMatch(/current password/i)
+    expect(enUS.password.currentRejected).not.toMatch(/verification code/i)
+    // The same code answers a correct current password while the account's
+    // back-off is in force, so the sentence must not assert that the
+    // password is wrong, and it must tell the reader to wait after
+    // repeated failures.
+    expect(enUS.password.currentRejected).not.toMatch(/is incorrect/i)
+    expect(enUS.password.currentRejected).toMatch(/wait/i)
     // The wrong-password 401 is the expected refresh-failure diagnostic.
     expect(warn).toHaveBeenCalledWith(
       'access token refresh failed',

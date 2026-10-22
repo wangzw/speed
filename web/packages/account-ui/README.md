@@ -153,9 +153,13 @@ its first password with the new-password fields alone, and that form's
 helper states the policy instead of the change's "not used before"
 sentence. Two client-side guards -- a non-empty new password, a matching
 confirmation -- render on their fields before any request; a refusal from
-the server (a wrong current password is the 401 `login-failed`) renders
-its code text, except a 400 `bad-request`, which is this route's
-password-policy refusal and renders the section's policy sentence. A
+the server renders its code text, except two codes the section answers in its
+own words: a 400 `bad-request` is this route's password-policy refusal and
+renders the section's policy sentence, and a 401 `login-failed` -- a wrong
+current password, or a silent refusal while the account's back-off is in
+force -- renders the section's own sentence, which names no cause and tells
+the reader to wait after repeated failures, rather than the code's sign-in
+text, which names identifiers and verification codes that do not apply here. A
 successful change clears the fields, refetches the profile and the
 session list (the route rotates this session's token and revokes the
 others) and reports the change -- a first password too, whose notice
