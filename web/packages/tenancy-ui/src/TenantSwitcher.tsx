@@ -85,6 +85,7 @@ import Divider from '@mui/material/Divider'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Typography from '@mui/material/Typography'
+import type { SxProps, Theme } from '@mui/material/styles'
 // The clip recipe for the visually hidden announcement, shared with every
 // other hidden live region on the platform: the element keeps its place in
 // the accessibility tree -- so a text change still announces -- while its
@@ -136,6 +137,39 @@ export interface TenantSwitcherProps {
     ButtonProps,
     'variant' | 'size' | 'sx' | 'startIcon'
   >
+  /** Renders the trigger as an icon-only control for chrome too narrow for
+   * the tenant name, such as a collapsed navigation rail. The accessible
+   * name stays the name the text trigger would show, so a screen reader
+   * hears the same control either way; `triggerProps.startIcon` becomes
+   * the icon when the host gives one, and the package's own glyph fills
+   * in otherwise. The list, the disabled current row and the selection
+   * announcement are unchanged. */
+  readonly compact?: boolean
+}
+
+/**
+ * The compact trigger's glyph: a building, drawn decorative -- the button's
+ * accessible name is the tenant name, so the icon adds no text.
+ */
+function TenantGlyph() {
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 24 24"
+      width={18}
+      height={18}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 20.5h16" />
+      <path d="M6 20.5V6.5l6-2.5 6 2.5v14" />
+      <path d="M9.5 9.5h1.2M13.3 9.5h1.2M9.5 13h1.2M13.3 13h1.2M10.5 20.5v-3.5h3v3.5" />
+    </svg>
+  )
 }
 
 export function TenantSwitcher({
@@ -145,6 +179,7 @@ export function TenantSwitcher({
   menuFooter,
   announcement = 'inline',
   triggerProps,
+  compact = false,
 }: TenantSwitcherProps) {
   const { t } = useTenancyUiTranslation()
   const menuId = useId()
@@ -158,6 +193,19 @@ export function TenantSwitcher({
   const currentTenant =
     tenants.find((tenant) => tenant.id === currentTenantId) ?? null
   const closeMenu = (): void => setAnchorEl(null)
+  // The name the trigger stands for, whether it renders as text or as an
+  // icon-only control's accessible name.
+  const triggerLabel =
+    currentTenant === null
+      ? t('tenantSwitcher.noCurrentTenant')
+      : currentTenant.name
+  const { startIcon, ...buttonProps } = triggerProps ?? {}
+  // MUI's 64px button floor and 16px side padding are sized for a label; the
+  // icon form drops both, or it would still be wider than the rail it
+  // renders in. The host's own sx still applies, after ours.
+  const triggerSx = (
+    compact ? [{ minWidth: 0, px: 1 }, buttonProps.sx] : buttonProps.sx
+  ) as SxProps<Theme> | undefined
 
   const select = (tenant: TenantOption): void => {
     // The selection is a synchronous hand-off to the host: close the
@@ -193,14 +241,14 @@ export function TenantSwitcher({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-controls={menuOpen ? menuId : undefined}
+          {...(compact ? { 'aria-label': triggerLabel } : {})}
           onClick={(event) => {
             setAnchorEl(event.currentTarget)
           }}
-          {...triggerProps}
+          {...(compact ? buttonProps : triggerProps)}
+          sx={triggerSx}
         >
-          {currentTenant === null
-            ? t('tenantSwitcher.noCurrentTenant')
-            : currentTenant.name}
+          {compact ? (startIcon ?? <TenantGlyph />) : triggerLabel}
         </Button>
         <Typography
           component="span"

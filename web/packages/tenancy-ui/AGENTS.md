@@ -23,7 +23,7 @@ adding a required field, removing a field, or changing a field's meaning
 or name is incompatible. `TenantSwitcherProps` is `{ tenants,
 currentTenantId, onSelect }`, all three required, with `onSelect`
 `(tenantId: string) => void`, plus the optional `menuFooter`,
-`announcement` and `triggerProps`. Making a required prop optional is
+`announcement`, `triggerProps` and `compact`. Making a required prop optional is
 source-compatible in type terms but breaks this control's semantic
 contract (a host that stops passing it still compiles), so it is a
 breaking change; re-introducing a `session` prop is consumer-visible

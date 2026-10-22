@@ -39,16 +39,18 @@ interface TenantSwitcherProps {
   readonly menuFooter?: (close: () => void) => ReactNode
   readonly announcement?: 'inline' | 'visually-hidden'
   readonly triggerProps?: Pick<ButtonProps, 'variant' | 'size' | 'sx' | 'startIcon'>
+  readonly compact?: boolean
 }
 ```
 
 **`tenants`、`currentTenantId`、`onSelect` 是必需属性，`TenantOption` 的两个字段只读。** 这是本控件对宿主的语义契约：宿主必须提供这三者。把其中任一个放宽为可选，类型上属于源码兼容的放宽，但它破坏了这条语义契约——一个不再提供它们的宿主仍能通过编译，故这是契约语义层面的破坏性变更，而不是类型不兼容。`TenantOption` 的字段与这三个属性同属宿主提供的输入：宿主构造租户列表，控件只读取渲染。故按同一分类，给 `TenantOption` 新增可选字段是源码兼容的；新增必选字段、删除字段、或改字段的含义或名，是不兼容变更。
 
-**`menuFooter`、`announcement`、`triggerProps` 是可选属性，缺省时行为不变。**
+**`menuFooter`、`announcement`、`triggerProps`、`compact` 是可选属性，缺省时行为不变。**
 
 - `menuFooter(close)` 在租户行之后、同一菜单内的分隔线下方渲染宿主条目。`close` 关闭菜单；需要跳转的宿主条目在跳转前调用它。未提供时菜单只有租户行。
 - `announcement` 选择切换确认的位置：`inline`（缺省）在触发器旁绘制确认文本，`visually-hidden` 始终裁切、只留在无障碍树中播报。两种取值都从挂载起就渲染同一条 `role="status"` 区域。
 - `triggerProps` 只携带呈现属性——`variant`、`size`、`sx`、`startIcon`——展开到触发器按钮上，使控件的外观与宿主自己的 chrome 一致。未提供时触发器是继承环境文字颜色的描边按钮。
+- `compact` 把触发器收成仅图标形态，供放不下租户名的窄 chrome（收起侧栏的图标窄栏）使用：可及名仍是文字触发器会显示的那个租户名，`triggerProps.startIcon` 给出时作图标，否则用包内字形；MUI 按钮的 64px 最小宽与两侧内边距在形态内取消。列表、当前租户行的禁用与切换播报不变。
 
 **`onSelect` 在用户选一个非当前租户时触发一次，携带选中的租户标识。** 宿主在那里把路由切过去、更新租户上下文、重取数据并逐出上一租户的查询缓存；回调抛出不是选择失败，本包把它包住，既不当错误渲染，也不让它逃成未处理的拒绝。
 

@@ -441,6 +441,33 @@ describe('TenantSwitcher', () => {
     expect(trigger).toHaveStyle({ textTransform: 'none' })
   })
 
+  it('renders an icon-only trigger under compact, named by the tenant it stands for', async () => {
+    renderSwitcher({ compact: true })
+    const trigger = screen.getByRole('button', { name: 'Sunshine Dental' })
+    // No visible label: the name lives on the control, so a narrow host
+    // chrome still exposes the same control to assistive technology.
+    expect(trigger.textContent?.trim()).toBe('')
+    expect(trigger.querySelector('svg')).not.toBeNull()
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+  })
+
+  it('opens the same list from the compact trigger and reports the pick once', async () => {
+    const user = userEvent.setup()
+    const { onSelect } = renderSwitcher({ compact: true })
+    const rows = await openMenu(user)
+    await user.click(rows.other)
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('tenant-2')
+  })
+
+  it('draws the host startIcon as the compact glyph when one is given', () => {
+    renderSwitcher({
+      compact: true,
+      triggerProps: { startIcon: <span data-testid="tenant-icon" /> },
+    })
+    const trigger = screen.getByRole('button', { name: 'Sunshine Dental' })
+    expect(trigger).toContainElement(screen.getByTestId('tenant-icon'))
+  })
+
   it('pass axe with no violations over the open list', async () => {
     renderSwitcher()
     const user = userEvent.setup()

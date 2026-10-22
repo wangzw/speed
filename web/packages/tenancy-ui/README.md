@@ -137,6 +137,7 @@ documented usage cannot drift from the API.
 | `menuFooter` | `(close: () => void) => ReactNode` (optional) | host entries rendered after the tenant rows under a divider in the same menu; `close()` dismisses the menu |
 | `announcement` | `'inline' \| 'visually-hidden'` (optional; default `inline`) | whether the switched-to confirmation is painted beside the trigger or stays visually hidden while announcing |
 | `triggerProps` | `Pick<ButtonProps, 'variant' \| 'size' \| 'sx' \| 'startIcon'>` (optional) | presentation spread onto the trigger button, so it can match the host's chrome |
+| `compact` | `boolean` (optional; default `false`) | renders the trigger as an icon-only control for chrome too narrow for the tenant name, such as a collapsed navigation rail; the accessible name stays the tenant name |
 
 Behaviour, all of it controlled and test-pinned:
 
