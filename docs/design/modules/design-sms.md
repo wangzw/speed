@@ -541,6 +541,7 @@ type Spec[C any] struct {
 | 管理调用点名注册表不持有的模板 | `ErrNoTemplate` |
 | 管理调用点名已持有的名字／语言 | `ErrTemplateExists` |
 | 发送身份不存在 | `ErrRejected`，不调厂商 |
+| 消息带 `ValidFor` 而载体没有消息有效期 | `ErrRejected`，不调厂商：阿里云与腾讯云的接口没有可排队的有效期字段，静默丢弃会让一条验证码在失效之后才送达 |
 | 身份覆盖不了目的地国家 / 缺权限 / 资源不存在 / 配额不足 | `ErrUnroutable`；结果确定，换一个部署才可能改变 |
 | 厂商限流 | `ErrThrottled` |
 | 厂商拒绝模板、身份或号码 | `ErrRejected` |

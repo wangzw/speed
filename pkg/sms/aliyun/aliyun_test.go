@@ -309,6 +309,28 @@ func TestTheCarrierIsCalledExactlyOnceEvenWhenItFails(t *testing.T) {
 	}
 }
 
+// TestALifetimeTheCarrierCannotHonourIsRefused holds that a message asking for a
+// lifetime is refused before the vendor is called. Aliyun's interface has no
+// expiry for a queued message, so carrying the flag no further would deliver a
+// code hours after it stopped being useful, with nothing reported.
+func TestALifetimeTheCarrierCannotHonourIsRefused(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+
+	s := senderOver(t, server.Listener.Addr().String(), "http")
+	resolved := oneResolved()
+	resolved.ValidFor = 5 * time.Minute
+	if _, err := s.Send(t.Context(), resolved); !errors.Is(err, sms.ErrRejected) {
+		t.Fatalf("send answered %v, want the rejected sentinel", err)
+	}
+	if calls != 0 {
+		t.Errorf("the carrier was called %d times, want none", calls)
+	}
+}
+
 // mustJSON encodes a status body, so a code with a quote or a backslash still
 // produces valid JSON.
 func mustJSON(s string) string {

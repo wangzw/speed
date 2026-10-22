@@ -62,6 +62,11 @@ and `sms.Approval` types and the sending sentinels in `pkg/sms`.
   written with `${name}` placeholders, and Aliyun's approved templates use that
   same syntax, so this carrier rewrites nothing; a carrier whose vendor took its
   placeholders positionally would be the one to render them here.
+- **A message naming a lifetime is refused, because this vendor has none.**
+  Aliyun's send call carries no expiry for a queued message, so a resolved
+  message with a non-zero `ValidFor` is `sms.ErrRejected` before the vendor is
+  called. Dropping the field silently would deliver a verification code long
+  after it stopped being useful, with nothing reported.
 - **The vendor is called at most once per identifier, and nothing is retried.**
   The vendor interface is not idempotent, so a second call would deliver the
   message twice and bill it twice — or create a second template nobody approved. A

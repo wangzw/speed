@@ -204,6 +204,10 @@ func (s *sender) Send(ctx context.Context, r sms.Resolved) (sms.Receipt, error) 
 // vendor interface is not idempotent, and a second call would deliver the message
 // twice and bill it twice.
 func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, error) {
+	if r.ValidFor != 0 {
+		return sms.Receipt{}, fmt.Errorf("%w: %s has no lifetime for a queued message, and this message "+
+			"asks for one", sms.ErrRejected, ModuleName)
+	}
 	params, err := json.Marshal(r.Params)
 	if err != nil {
 		return sms.Receipt{}, fmt.Errorf("%w: the template parameters cannot be encoded as JSON", sms.ErrRejected)

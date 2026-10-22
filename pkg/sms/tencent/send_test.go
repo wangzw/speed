@@ -321,6 +321,29 @@ func TestOneIdentifierReachesTheCarrierOnce(t *testing.T) {
 	}
 }
 
+// A message asking for a lifetime is refused before the vendor is called:
+// Tencent's interface has no expiry for a queued message, so carrying the flag
+// no further would deliver a code hours after it stopped being useful, with
+// nothing reported.
+func TestALifetimeTheCarrierCannotHonourIsRefused(t *testing.T) {
+	var calls int32
+	host := fakeServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, okBody())
+	})
+	s := newTestSender(t, host)
+	m := resolvedMessage("chal-lifetime")
+	m.ValidFor = 5 * time.Minute
+
+	if _, err := s.Send(context.Background(), m); !errors.Is(err, sms.ErrRejected) {
+		t.Fatalf("send answered %v, want the rejected sentinel", err)
+	}
+	if n := atomic.LoadInt32(&calls); n != 0 {
+		t.Errorf("the carrier was called %d times, want none", n)
+	}
+}
+
 // Distinct identifiers each reach the carrier: a resend builds a new challenge
 // and so a new identifier, which is not held back by the one before it.
 func TestDistinctIdentifiersEachReachTheCarrier(t *testing.T) {

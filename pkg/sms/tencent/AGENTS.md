@@ -58,6 +58,11 @@ sending sentinels and the `sms.Provider` seam in `pkg/sms`.
   reason. A status the list does not name is `sms.ErrUncertain`. A response that
   names the id nowhere means the vendor no longer holds the template, which reads
   as withdrawn.
+- **A message naming a lifetime is refused, because this vendor has none.**
+  Tencent's send call carries no expiry for a queued message, so a resolved
+  message with a non-zero `ValidFor` is `sms.ErrRejected` before the vendor is
+  called. Dropping the field silently would deliver a verification code long
+  after it stopped being useful, with nothing reported.
 - **The carrier is called once, and nothing is retried.** The vendor's calls are
   not idempotent, so a second call would deliver a message twice and bill it
   twice, or file a second copy of a template. The vendor SDK's own network and

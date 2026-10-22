@@ -197,6 +197,10 @@ func (s *sender) Send(ctx context.Context, r sms.Resolved) (sms.Receipt, error) 
 // deliver builds the request from the resolved message and calls the carrier
 // once.
 func (s *sender) deliver(ctx context.Context, r sms.Resolved) (sms.Receipt, error) {
+	if r.ValidFor != 0 {
+		return sms.Receipt{}, fmt.Errorf("%w: %s has no lifetime for a queued message, and this message "+
+			"asks for one", sms.ErrRejected, ModuleName)
+	}
 	request := s.buildRequest(r)
 	response, err := s.client.SendSmsWithContext(ctx, request)
 	if err != nil {
