@@ -16,6 +16,7 @@
 
 - **不是 OIDC 的 OP。** 不提供授权端点，不实现授权码授权，不提供自省端点；支持的 grant 是封闭集：`client_credentials` 与 `refresh_token`。不提供个人访问令牌：长期凭据由服务账户承担（[ADR-authn-token-2026-10-10](../../../adr/adr-authn-token-2026-10-10.md)）。
 - **不在令牌里携带授权。** 声明集不含角色、租户、权限与范围；[authz](../design-authz.md) 实时查询并自行缓存。宿主经 `ClaimsContributor` 追加声明是宿主的选择，追加的声明在令牌有效期内无法撤销（[design-authn-admin](design-authn-admin.md)）。
+- **不携带注册验证状态。** 账户是否已验证邮箱不进访问令牌、刷新令牌或它们的校验：声明集是封闭集，不因这个状态增减；状态由 `GET B/me` 与 `SignupVerification.SignupStateOf` 在请求期活读，门控在请求期按当前值判定（[design-authn](design-authn.md)）。
 - **不持有登录会话。** 会话行、撤销标记与期限判定归 `authn.session`，本模块经 `Sessions` 接缝读取与撤销（[design-authn-session](design-authn-session.md)）；清扫的批量删除条件直接 JOIN `authn_sessions`，是本模块唯一直接读会话表的地方（见[清扫](#清扫)）。
 - **不持有账户与服务密钥。** 账户、`valid_after`、`authn_service_secrets` 归 `authn.account`；本模块经 `Accounts`、`Passwords` 与 `Throttle` 取用（[design-authn-account](design-authn-account.md)）。
 - **不持有冒充记录。** 记录的开始、结束与有效性归 `authn.impersonation`；本模块只读 `Impersonation.Active`，并在撤销冒充令牌时结束对应记录（[design-authn-impersonation](design-authn-impersonation.md)）。
@@ -402,7 +403,7 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 4. 按[声明集](#声明集)构造声明，冒充令牌另带该表里仅冒充的声明；`acr` 取 `Assurance` 的十进制文本。
 5. 以签名密钥签名，头带 `kid` 与 `typ: at+jwt`。
 
-声明集里没有角色、租户、权限与范围。`ErrReservedClaim` 是宿主实现的缺陷，不是请求的问题。
+声明集里没有角色、租户、权限与范围，也没有注册验证状态：账户事实新增一项时不自动成为声明，进声明集要有单独的改动。`ErrReservedClaim` 是宿主实现的缺陷，不是请求的问题。
 
 ### 刷新令牌的轮换
 
@@ -442,7 +443,7 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 
 ### 服务账户与 `client_credentials`
 
-服务账户（`kind=service`）由管理面创建，`Decider` 动作是 `authn.client.manage`（[design-authn-admin](design-authn-admin.md)）。创建时发放一个密钥：`spd_cs_` 加 32 字节随机数的 base64url，**只在创建应答里出现一次**，库里只存 SHA-256（[design-authn-account](design-authn-account.md)）。一个账户可同时持有多个有效密钥，新增、给旧密钥设 `expires_at` 或撤销，使客户端无停机切换。
+服务账户（`kind=service`）由管理面创建，`Decider` 动作是 `authn.client.manage`（[design-authn-admin](design-authn-admin.md)）。服务密钥的创建与撤销是管理面路由：发起者是 `signup_state = 1` 的账户时，管理面的注册验证状态门控答 403 `contact-required`，判定与豁免在 [design-authn-admin](design-authn-admin.md)，本模块不读注册验证状态；只读的密钥列表不受限。创建时发放一个密钥：`spd_cs_` 加 32 字节随机数的 base64url，**只在创建应答里出现一次**，库里只存 SHA-256（[design-authn-account](design-authn-account.md)）。一个账户可同时持有多个有效密钥，新增、给旧密钥设 `expires_at` 或撤销，使客户端无停机切换。
 
 `grant_type=client_credentials` 的处理：
 

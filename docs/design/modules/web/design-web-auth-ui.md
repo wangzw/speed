@@ -6,8 +6,9 @@
 
 族内各组件驱动会话契约的自己那一部分，登录一律按 `@speed/auth-core` 的流程操作分步推进：
 
-- `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。
+- `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的「口令注册」渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。
 - `PasswordSignInForm` 起一条 `method: 'password'` 的登录流程，按字段提交与后续步答复；`SMSSignInForm` 起 `method: 'sms'` 的流程，两步（手机号步与验证码步）收在同一个表单里；描述符为其他 `form` 方法给出首步字段时，由通用描述符表单驱动。三个可单独挂载的入口都接受同一个 `beforeStart` 门。
+- `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
 - `SocialSignInSection` 渲染一组 redirect 方法，每个方法起一条登录流程；开始响应的 `redirect` 步交出授权地址，由宿主导航。
 - `SocialCallbackHandler` 在宿主的回调路由上读回那条流程（`session.readFlow`），据其状态续接。
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
@@ -22,7 +23,7 @@
 - **不拥有会话状态机。** 流程的推进、会话的建立与撤销归 `@speed/auth-core`（[authn 登录](../authn/design-authn-login.md)）；本包渲染的会话契约的每一项都是 auth-core 交付的操作。要在本包见不到的操作里做点别的，那是 auth-core 契约该长的地方，不是本包里的第二次 HTTP。
 - **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开面，也不判定令牌有效性——有效性由服务端在应答里给出（无此邀请 404、已失效 409）。接受是公开的、令牌即凭据：成员关系落到**被邀请地址**的账户上，而非登录账号。宿主可在受理面前渲染它自己的登录面（先登录或注册再受理是宿主的组合），本包不内建这道门禁，那道门禁也不约束成员关系落到哪个账户。
 - **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。
-- **不内建注册面，但内建注册入口。** 账户没有独立的注册端点：账户在登录流程的账户解析阶段按注册设置创建，或经邀请受理、管理员建户产生（[authn-account](../authn/design-authn-account.md)、[authn-invite](../authn/design-authn-invite.md)）。一次「注册」因此是一次登录流程在当前部署下开户的结果，本包不内建独立表单；`SignInScreen` 在部署允许首登开户（`discovery.signup.enabled` 且至少一个可见方法带 `opens_account`）时呈现一个「注册」入口，起的是同一条流程，开户仍由服务端完成。
+- **不拥有注册状态机，但内建注册表单。** 自助注册是 `@speed/auth-core` 的 `session.register` 操作，一次请求建号，不建立会话、不发送邮件（[authn-account](../authn/design-authn-account.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。本包渲染 `PasswordRegisterForm` 并驱动该操作；字段规范化、口令策略、用户名占用与待验证联系方式的写入都在服务端。注册成功后的会话仍由既有口令登录流程建立，本包不自行铸造会话；建号与自动登录都经 auth-core 的会话操作，本包不在它之外发请求。`SignInScreen` 在部署开放口令注册时给出这个渠道，开户仍由服务端完成。
 - **不消费 auth-core 的钩子，不读存储。** 组件读到的会话状态只有它驱动的那些操作，其余状态经宿主的钩子观察。一个自己订阅会话的组件必须已挂在宿主的 `attachSession` 之下，故这一层留在宿主。**读取发现文档是一个例外**：`SignInScreen` 经它持有的 `session` 属性上的 `listMethods` 与 `discoverSso` 操作读取部署的登录方式与企业提供方，给了 `absent` 的 `SocialCallbackHandler` 经 `listMethods` 读取部署有没有 redirect 类与 enterprise 类方法——那是会话操作，不是 auth-core 的钩子，而组件本就在驱动这个会话；这条例外不放松「不消费钩子、不读存储」。
 - **不认识路由与权限。** 本包不匹配 URL、不判定权限、不做路由守卫；回调返给宿主，宿主经自己的路由与权限组合处置。
 - **不是运维面。** 平台员工的管理面与登录面无交集，那些面归 [console-ui](design-web-console-ui.md)。
@@ -30,7 +31,7 @@
 
 ## 外部接口契约
 
-`@speed/auth-ui` 的公开面是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`、`AcceptInvitationInput`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的助手（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)。
+`@speed/auth-ui` 的公开面是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`PasswordRegisterForm` 连同 `PasswordRegisterFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`、`AcceptInvitationInput`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的助手（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery-2026-10-16](../../../adr/adr-web-auth-channel-discovery-2026-10-16.md)。
 
 ### 受控组件的形状
 
@@ -41,7 +42,7 @@
 interface SignInScreenProps {
   readonly session: AuthSession
   readonly discovery?: AuthnMethodList      // 宿主注入预算好的文档（SSR、测试）；省略时屏幕自己读
-  readonly mode?: 'sign-in' | 'register'    // 纯呈现开关，起同一条流程
+  readonly mode?: 'sign-in' | 'register'    // 登录或注册；注册模式把口令渠道换成注册表单
   readonly onModeChange?: (mode: SignInMode) => void // 给出即受控：mode 是唯一来源，开关只报告
   readonly onSignedIn?: (context: SignInContext) => void // 屏内渠道登录成功时报出上下文
   readonly beforeStart?: (context: SignInStartContext) => boolean | Promise<boolean> // 每次起手前的门
@@ -83,6 +84,16 @@ interface SocialSignInOptions {
 interface PasswordSignInFormProps {
   readonly session: AuthSession
   readonly onSignedIn?: () => void
+  readonly beforeStart?: (context: SignInStartContext) => boolean | Promise<boolean>
+  readonly defaultUsername?: string // 预填的用户名；注册后自动登录被拒时由宿主给出
+}
+
+// PasswordRegisterForm：先经 session.register 建号，再用同一凭据起一次口令登录。
+// 注册不是登录，session.register 不改变会话快照。
+interface PasswordRegisterFormProps {
+  readonly session: AuthSession
+  readonly onSignedIn?: (context: SignInContext) => void // 自动登录成功：mode=register、channel=password
+  readonly onSignInRequired?: (username: string) => void // 自动登录被拒：账户已建成，交给宿主切到登录表单
   readonly beforeStart?: (context: SignInStartContext) => boolean | Promise<boolean>
 }
 
@@ -194,7 +205,7 @@ interface ImpersonationNoticeBannerProps {
 function ImpersonationNoticeIndicator(): ReactElement | null
 ```
 
-`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。`mode` 是纯呈现开关：注册入口的可见性由 `discovery.signup.enabled` 与至少一个可见方法带 `opens_account` 决定，起的是同一条登录流程。注册模式下屏上的每一种登录渠道（表单渠道条、重定向类、企业类与通行密钥）都只列带 `opens_account` 的方法，表单渠道默认选中第一个；说明文字因此不再对「所用的方式能否创建账户」设条件。标题、说明与切换按钮按模式命名（注册模式的标题是「创建账户」，切回去的按钮是「已有账户？登录」），两种模式下没有同名的按钮。登录模式下，`signup.enabled` 为真且屏上有带 `opens_account` 的短信渠道时，渠道下给一句同形的说明：未登记的手机号会创建账户——这句话对每个号码都一样，不泄露号码是否已登记；没有这样的短信渠道时不给这句话，因为它点名手机号。短信验证码步骤的拒绝用该步骤自己的文案（验证码有误或已失效，可重新输入或重新获取），不用口令渠道的通用句；手机号在本地校验不过时，焦点移到手机号字段，错误文字进入 live region，每次被拒的提交各播报一次，同一段文字重复被拒时也重新播报。`onSignedIn` 带一个 `context`：登录成功时屏幕所处的模式与走通的渠道，宿主据此区分一次注册与一次登录，例如注册模式下经短信渠道登录之后宿主引导账户设置用户名与口令（[starters](../design-starters.md)，[ADR-authn-signup-2026-10-18](../../../adr/adr-authn-signup-2026-10-18.md)）。屏幕自己驱动到完成的渠道（口令、短信、通行密钥与描述符表单）报出方法名；重定向类与企业类渠道经回调路由完成，不经本屏，也就不带上下文；单个渠道表单与回调处理器的 `onSignedIn` 形状不变。未知 `kind` 不渲染也不崩；方法显示名先按方法名取 `auth-ui` 命名空间里区分模式的词条（同一品牌经多种方式到达部署时，`wechat.mp` 与 `wechat.web` 的专属文案彼此可辨，且就是各自按钮的可及名），没有专属词条时取描述符的 `label`，再缺失时按方法名取通用词条，最后退回方法名本身。
+`SignInScreen` 的 `discovery` 缺省时经 `session.listMethods()` 读一次部署的发现文档（`useSignInDiscovery`）；给出时以注入的文档为准，不发起读取（SSR、测试）。注册入口的可见性由 `discovery.signup.enabled` 决定，并要求 `discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`。注册模式下屏上的登录渠道（表单渠道条、重定向类、企业类与通行密钥）都只列带 `opens_account` 的方法；`signup.password.enabled` 为真时另加入一个合成的「口令注册」渠道，它渲染 `PasswordRegisterForm` 并默认选中。合成渠道不来自方法描述符，password 描述符仍不带 `opens_account`；没有合成渠道时，表单渠道默认选中第一个。说明文字因此不再对「所用的方式能否创建账户」设条件。标题、说明与切换按钮按模式命名（注册模式的标题是「创建账户」，切回去的按钮是「已有账户？登录」），两种模式下没有同名的按钮。登录模式下，`signup.enabled` 为真且屏上有带 `opens_account` 的短信渠道时，渠道下给一句同形的说明：未登记的手机号会创建账户——这句话对每个号码都一样，不泄露号码是否已登记；没有这样的短信渠道时不给这句话，因为它点名手机号。短信验证码步骤的拒绝用该步骤自己的文案（验证码有误或已失效，可重新输入或重新获取），不用口令渠道的通用句；手机号在本地校验不过时，焦点移到手机号字段，错误文字进入 live region，每次被拒的提交各播报一次，同一段文字重复被拒时也重新播报。`onSignedIn` 带一个 `context`：登录成功时屏幕所处的模式与走通的渠道，宿主据此区分一次注册与一次登录：注册模式下经口令注册之后宿主引导验证邮箱，经短信渠道登录之后宿主引导账户设置用户名与口令（[starters](../design-starters.md)，[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。屏幕自己驱动到完成的渠道（口令、短信、通行密钥与描述符表单）报出方法名，注册渠道报 `password`、模式为 `register`；重定向类与企业类渠道经回调路由完成，不经本屏，也就不带上下文；单个渠道表单与回调处理器的 `onSignedIn` 形状不变。未知 `kind` 不渲染也不崩；方法显示名先按方法名取 `auth-ui` 命名空间里区分模式的词条（同一品牌经多种方式到达部署时，`wechat.mp` 与 `wechat.web` 的专属文案彼此可辨，且就是各自按钮的可及名），没有专属词条时取描述符的 `label`，再缺失时按方法名取通用词条，最后退回方法名本身。
 
 屏幕的装配面由宿主决定，缺省不放宽也不收窄：
 
@@ -202,7 +213,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 - `slots.aboveChannels` 与 `slots.belowForms` 是宿主的两个内容位：前者在渠道组之上、模式标题之下，后者在表单组（含它的开户说明）之下。
 - `providerIcon` 为每个 redirect 方法给出图标，渲染在标签之前；已弃用的 `social.providers` 配置里每项自己的 `icon` 优先。
 - `headingLevel` 是注册模式标题的元素，缺省 `h2`（屏幕通常挂在宿主页面标题之下）。
-- `beforeStart` 是起手门：每次渠道起一条新流程前询问宿主，上下文是 `{ method, mode }`，答案可以是布尔或它的 promise；`false` 不发起任何请求、不渲染错误（动作没有离开页面，没有服务端应答可展示），抛出的门按拒绝包住。门只管起手：流程停下的步骤由 `answerFlow` 答复，不再过门。
+- `beforeStart` 是起手门：每次渠道起一条新流程或一次注册前询问宿主，上下文是 `{ method, mode }`，答案可以是布尔或它的 promise；`false` 不发起任何请求、不渲染错误（动作没有离开页面，没有服务端应答可展示），抛出的门按拒绝包住。门只管起手：流程停下的步骤由 `answerFlow` 答复，不再过门。
 - `onModeChange` 给出时 `mode` 成为受控属性：注册／登录开关只报告选择，由宿主带新值重渲染，屏幕不再持有自己的模式副本。
 
 `SocialSignInSection` 的回调是 `onAuthorizeUrl?`，把某个渠道开始流程后得到的授权地址报给宿主，由宿主决定它是一次跳转、一个弹窗还是一个新标签。`SocialCallbackHandler` 在回调路由上读回流程，登录落地（会话已由服务端建于回跳应答）后触发一次 `onSignedIn`。它的可选属性 `absent` 是本部署不提供回调落点时宿主要渲染的内容；只在宿主给了 `absent` 时，处理器才读发现文档，规则见[本部署不提供回调落点时](#本部署不提供回调落点时)。
@@ -213,6 +224,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 |---|---|
 | `SignInScreen` | `session.listMethods`（发现） |
 | `PasswordSignInForm` | `session.startFlow`（`method: 'password'`）、`session.answerFlow` |
+| `PasswordRegisterForm` | `session.register`（建号）；`session.startFlow`（`method: 'password'`）、`session.answerFlow`（注册后的自动登录） |
 | `SMSSignInForm` | `session.startFlow`（`method: 'sms'`）、`session.answerFlow` |
 | 通用描述符表单 | `session.startFlow`（描述符的方法名）、`session.answerFlow` |
 | `SocialSignInSection` | `session.startFlow`（redirect 方法） |
@@ -225,13 +237,14 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 
 `AcceptInvitationScreen` 不在上表：它驱动的不是会话操作，而是宿主交给它的两个邀请操作（`invitations.readInvitation` 与 `invitations.acceptInvitation`）。冒充通告的部件（`ImpersonationBanner`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`ImpersonationNoticeProvider`）同样不在上表：它们不持 `session`，状态与操作都由宿主经属性交给提供者（`impersonation`、`identityKey`、`onEnd`、`pending`、`failureCode`、`successMessage`），结束冒充的 HTTP 在宿主绑定的那次尝试里。
 
-每个渠道的表单只驱动它那一个方法：`startFlow` 起流程，后续每一步（第二因素、改口令、登记因素、通行密钥仪式）由步进渲染器按 `next.kind` 渲染并交 `session.answerFlow`，直到流程落到完成。一次登录的落地由 auth-core 在同一会话上提交，视图不自己持有登录态。
+每个渠道的表单只驱动它那一个方法：`startFlow` 起流程，后续每一步（第二因素、改口令、登记因素、通行密钥仪式）由步进渲染器按 `next.kind` 渲染并交 `session.answerFlow`，直到流程落到完成。一次登录的落地由 auth-core 在同一会话上提交，视图不自己持有登录态。注册表单多一步建号：它先驱动 `session.register`，该操作只返回注册应答、不改变会话快照；随后以同一凭据起一条口令登录流程，登录的推进与落地仍走上面这条管线。因此注册与登录不是同一个操作，注册渠道也不在登录模式的渠道集合里。
 
 ### 对外接口面
 
 - **公开面是 `index.ts` 的导出集。** 变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。
 - **每个驱动会话的组件持一个 `session` 属性，且不消费 auth-core 的钩子。** 这条是宿主据以装配的接口面：组件挂在宿主的 `attachSession` 之下，状态变化只经属性与回调进出。`SignInScreen` 的发现读取经这个 `session` 属性的操作完成，不构成对钩子的消费（见「非职责」）。
 - **结果回调在操作判决之后触发，且被包住。** `onSignedIn` 与 `onAuthorizeUrl` 在各自的操作判决之后触发；一个抛出的回调不是那次操作的失败：本包不因此渲染错误横幅、不把结果重新归成失败态、不为一次已成功的操作提供重试，且把抛出挡在 fire-and-forget 的 promise 之外，不产生未处理的拒绝。另有三个回调报告控制事件而非结果：`onSignIn` 在查看者要求重新登录时触发，由宿主导航，其前没有操作；`onModeChange` 在模式切换被点击时触发，其前没有请求；`SignOutMenuItem` 的 `onActivate` 在 `session.logout()` 之前触发，其中抛出被挡下，登出照常进行。
+- **注册文案在 `auth-ui` 命名空间的顶层 `register` 节。** `zh-CN` 与 `en-US` 两份目录的叶子键集一致，承载注册表单的标题、说明、字段、提交、用户名占用、策略、限流、不可用与自动登录失败；注册模式的标题与切换按钮仍取既有的模式词条。
 - **文档化的用法是可执行的。** README 的快速开始由 `web/packages/auth-ui/src/usage-example.test.tsx` 端到端编译并运行，故文档里的装配不能与 API 漂移。
 
 ## 依赖
@@ -277,17 +290,20 @@ sequenceDiagram
 
 | 概念 | 形状 | 说明 |
 |---|---|---|
-| 发现文档 | `AuthnMethodList` | auth-core 再导出的生成类型：`methods`（描述符数组）、`signup`、`mfa` |
+| 发现文档 | `AuthnMethodList` | auth-core 再导出的生成类型：`methods`（描述符数组）、`signup`（含 `enabled` 与 `password.enabled`）、`mfa` |
 | 方法描述符 | `AuthnMethodDescriptor` | 一个方法自报的渲染类别（`kind`）、线协议、品牌标签、首步字段、是否可开户与绑定提供方（`binding_providers`） |
 | 登录渠道 | `SignInChannel` | `password`／`sms`；已弃用的窄化与选中口径 |
-| 呈现模式 | `SignInMode` | `sign-in`／`register`，纯呈现开关 |
+| 注册请求 | `session.register` 的入参 | 用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填；确认口令只在客户端比较，不进请求 |
+| 注册应答 | `session.register` 的结果 | `state: 'registered'`、账户标识与待验证联系方式 `{state: 'pending', email}`；会话快照不变 |
+| 注册渠道 | 合成渠道 | `signup.password.enabled` 为真时注册模式下的「口令注册」，渲染 `PasswordRegisterForm`；password 描述符不标 `opens_account` |
+| 呈现模式 | `SignInMode` | `sign-in`／`register`；注册模式收窄渠道并把口令渠道换成注册表单 |
 | 社交渠道 | `SocialProvider` | 方法名字符串，定义在 `web/packages/auth-ui/src/SocialSignInSection.tsx` |
 | 社交渠道配置 | `SocialProviderConfig` | 一个方法加它的品牌标签、宿主回调地址与可选图标 |
 | 一步 | `AuthnStep` | auth-core 手写的流程步模型，步进渲染器按 `kind` 分派 |
 | 邀请视图 | `InvitationSummary` | 受理面渲染的邀请字段：租户、地址、状态、期限 |
 | 邀请操作 | `InvitationOperations` | 宿主绑定的两个邀请操作：读取与受理 |
 | 受理入参 | `AcceptInvitationInput` | 受理可带的显示名与初始口令（地址尚无账户时用） |
-| 命名空间 | `authUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同 |
+| 命名空间 | `authUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同；注册表单的文案在顶层 `register` 节 |
 
 ## 核心算法与流程
 
@@ -300,7 +316,7 @@ sequenceDiagram
 - `enterprise` 交给企业入口；
 - `webauthn` 交给通行密钥入口。
 
-未知 `kind` 不渲染也不崩；注册入口的可见性由 `discovery.signup.enabled` 与至少一个可见方法带 `opens_account` 决定。
+未知 `kind` 不渲染也不崩；注册入口的可见性由 `discovery.signup.enabled` 与「`discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`」共同决定。注册模式在 `signup.password.enabled` 为真时插入合成的「口令注册」渠道并默认选中；它不参与按 `kind` 分组，因为它不是发现文档里的方法。
 
 ### 一次提交
 
@@ -308,6 +324,18 @@ sequenceDiagram
 2. 按应答的 `next.kind` 分派：`challenge` 渲染要提交的字段、`redirect` 把地址交给宿主、`factor` 渲染第二因素清单、`enroll` 渲染登记种类、`webauthn` 渲染通行密钥仪式、`complete` 以 `step: 'complete'` 取走结果。
 3. 每一步的答复经 `session.answerFlow` 发出（本包不直接触网）；流程落定后分叉：完成触发一次回调；被拒按错误码渲染一条 `role="alert"` 横幅、状态原地不变、可重试。
 4. 切换渠道时旧表单一并卸载，它的半填状态与整次失败的横幅随之消失——渠道的错误不跨面泄漏。
+
+### 注册一次性建号
+
+注册与登录是两个操作：注册经 `session.register` 一次请求写入账户，不建立会话、不发送邮件；会话仍由随后的口令登录流程建立。表单的处理次序是：
+
+1. **本地校验。** 用户名与邮箱按服务端的规范化规则给格式提示；口令只做非空、两次一致与部署给出的最小长度提示，不复刻服务端的策略数值；确认口令不进入请求。字段不合格时焦点移到首个不合格字段，错误文字经 `aria-describedby` 指向，字段标 `aria-invalid`。
+2. **起手门。** 「口令注册」渠道与其他渠道一样在起手前询问 `beforeStart`，上下文是 `{method: 'password', mode: 'register'}`；答案不为真时不发请求、不渲染错误。
+3. **建号。** 调 `session.register`，请求带用户名、邮箱与口令，另可带显示名、语言与时区；邮箱必填，它是注册后的待验证联系方式，在验证前不是登录名。提交在途时控件禁用并标忙，不发第二次。
+4. **自动登录。** 注册成功后以同一凭据起一条 `method: 'password'` 的口令登录流程，走通则报一次 `onSignedIn({mode: 'register', channel: 'password'})`。注册本身不报这个回调，也不改变会话快照。
+5. **自动登录被拒。** 账户已建成，不重发注册请求：给出 `onSignInRequired` 时把用户名交给宿主，屏幕切回登录模式并以 `defaultUsername` 预填；未给出时就地说明「账户已创建，请登录」，重试只重跑口令登录。
+
+注册结果的可及性：成功的注册由先挂空、下一 tick 再填文本的 `role="status"` 区域播报一次，失败横幅为 `role="alert"`。注册模式下经短信渠道开户时的验证码重发控件在服务端给出的重发间隔内禁用并说明原因；账户面的验证节遵循同一倒计时规则（[account-ui](design-web-account-ui.md)）。
 
 ### 短信码的两步
 
@@ -379,6 +407,12 @@ sequenceDiagram
 | 发现读取被拒 | 一条 `role="alert"` 横幅渲染应答的错误码文本，加一个重试按钮（重跑一次 `session.listMethods`） |
 | 企业 discover 被拒 | 企业入口渲染应答的错误码文本 |
 | 流程操作被拒（验证码错、口令策略等） | 一条 `role="alert"` 横幅渲染应答的错误码文本，状态原地不变，可重试 |
+| 注册被拒为 409 `username-taken` | 文本落在用户名字段（`aria-invalid`、`aria-describedby`），焦点移到该字段；不渲染整次尝试横幅 |
+| 注册被拒为 403 `signup-closed` 或 503 `unavailable` | 一条 `role="alert"` 横幅渲染应答的错误码文本，表单保持可重试 |
+| 注册被拒为 429 `throttled` | 一条横幅渲染该码文本；提交控件按 `Retry-After` 禁用至该时刻并说明原因 |
+| 注册被拒为 400 `bad-request`（格式或口令策略） | 一条 `role="alert"` 横幅渲染应答的错误码文本；不在客户端复述策略数值 |
+| 注册成功而自动口令登录被拒 | 切回登录表单并以 `defaultUsername` 预填用户名，说明账户已创建；不重发注册请求 |
+| 注册成功 | 先挂空、再填文本的 `role="status"` 播报「账户已创建」，随后进入自动登录 |
 | 口令渠道的口令不符（`authn.login_failed`） | 文本取 `passwordSignIn.loginFailed`，不提验证码，也不说明是不存在还是不符；作为口令字段的说明渲染，字段 `aria-invalid` 且 `aria-describedby` 指向该文本，焦点移到口令字段；不渲染整次尝试横幅。后续步骤（如第二因素）被拒时仍按上一行渲染 |
 | 流程已失（`flow-invalid`：过期、被并发消费、绑定不符）于渠道表单 | 一条横幅渲染该码文本，视图退回渠道第一步重新开始 |
 | 短信码步骤的验证码已用 | 用过的码渲染 `smsSignIn.codeUsed`，清空字段，对同一码的再提交在本地被拒 |
@@ -405,7 +439,7 @@ sequenceDiagram
 ## 并发与事务边界
 
 - 组件无自有共享状态，可被 React 正常渲染；同一会话上的并发流程操作以应答落定次序裁定，后到者的完成覆盖前者的会话。
-- 本包不打开事务、不持有客户端缓存；一次提交是一个会话操作的往返。
+- 本包不打开事务、不持有客户端缓存；一次登录提交是一个会话操作的往返，注册渠道的一次提交是建号与自动登录两次往返，两者之间没有事务。
 
 ## 实现状态
 
@@ -431,6 +465,11 @@ sequenceDiagram
 | 登录屏的 `onSignedIn` 带模式与渠道上下文 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`、`SignInContext` |
 | 横幅文字行内流动，主体与租户标识限宽省略，行数按值的长短有上界 | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerState` |
 | 注册模式下各渠道的收窄、标题与切换按钮，登录模式的开户说明，短信验证码步骤的拒绝文案与手机号校验失败的焦点 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm` |
+| 口令注册表单 `PasswordRegisterForm`（用户名、邮箱、口令、确认口令；经 `session.register` 建号并自动登录） | 未实现 | — |
+| 注册模式下 `signup.password.enabled` 的合成「口令注册」渠道与默认选中 | 未实现 | — |
+| 注册成功后的自动口令登录、被拒时退回登录表单并预填用户名 | 未实现 | — |
+| 注册表单的字段错误、焦点、先空后填的 live region 与重发倒计时 | 未实现 | — |
+| `register` i18n 节（zh-CN 与 en-US 键集一致） | 未实现 | — |
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 未实现 | — |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 未实现 | — |
 | 重发的「验证码已发送」可闻，步骤切换后的焦点 | 未实现 | — |

@@ -2,7 +2,7 @@
 
 ## 状态
 
-已接受
+已被 [ADR-authn-signup-2026-10-22](adr-authn-signup-2026-10-22.md) 取代
 
 ## 背景
 

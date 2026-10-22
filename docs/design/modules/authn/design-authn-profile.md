@@ -8,6 +8,7 @@
 - **身份取自上下文。** 路由经 `authn.FromContext` 取发起者的身份，账户由身份给出，不由路径或正文里的标识给出。授权依据是「发起者就是这个账户」这条无须策略的事实，自助范围的判据见 [authn-admin](design-authn-admin.md)。
 - **自写字段集。** 可自写的字段是一个封闭集：显示名、属性、语言、时区；其余字段不可自写。
 - **复用既有写面。** 写经根包接缝 `authn.AccountAdmin` 的 `SetDisplayName` 与 `SetAttributes` 落到账户模块；语言与时区是账户属性集里的具名用法，键由 `i18n.LocaleAttributeKey`、`i18n.TimeZoneAttributeKey` 命名，由 [i18n](../design-i18n.md) 的账户桥接读回，其存储归账户属性集的通用界面（[ADR-i18n-preferences-storage-2026-10-13](../../../adr/adr-i18n-preferences-storage-2026-10-13.md)）。本模块不另造写面、不新持状态、不新增存储。
+- **注册验证状态的只读面。** `GET B/me` 的 `verification` 取自账户模块的 `SignupVerification.SignupStateOf`，`identifiers` 的每一项带 `proven`（由 `Verification.Proves` 派生）。本模块不写注册验证状态；它由 `Proves` 为真的邮箱的写入派生（[authn-account](design-authn-account.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
 - **不交付功能接口。** 本模块只挂路由，仿 `authn.admin`。
 
 ### 非职责
@@ -37,10 +38,11 @@
 
 ### 读的应答
 
-`GET B/me` 应答 200 与一份档案视图，逐字段从账户模块的读面构造，从不把值原样交出：`account_id`、`kind`、`display_name`、`mfa_required`、`password_set`、`created_at`、`attributes`、`locale`、`time_zone`、`identifiers`、`links`。
+`GET B/me` 应答 200 与一份档案视图，逐字段从账户模块的读面构造，从不把值原样交出：`account_id`、`kind`、`display_name`、`mfa_required`、`password_set`、`created_at`、`attributes`、`locale`、`time_zone`、`identifiers`、`verification`、`links`。
 
 - `attributes` 是账户的属性集；`locale` 与 `time_zone` 从它的 `i18n.locale`、`i18n.tz` 键解出，各自没有时为空。
-- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。
+- `identifiers` 与 `links` 是本人的标识与外部身份绑定，只读，取自 `Accounts.Identifiers` 与 `Accounts.Externals`；绑定项不含 `Subject` 原文。`identifiers` 的每一项带 `proven`，由该标识的 `Verification.Proves` 派生：`sms-code`、`email-code`、`invite` 与 `idp:<提供方标识>` 为真，`admin`、`import-unverified` 与 `self` 为假。待验证邮箱不在 `identifiers` 里。
+- `verification` 是 `{state, email, since}`：`state` 取 `none`、`pending`、`verified`，对应 `SignupState` 的 `0`、`1`、`2`。`email` 的取值是确定的：`verified` 取 `Proves` 为真、`verified_at` 最早的邮箱，同一时刻按标识 ID 排序取第一个；`pending` 取待验证联系方式里的邮箱，账户没有待验证目标时为空——删除最后一个已验证邮箱会把账户从 `verified` 拉回 `pending` 而不重建目标，空值是合法状态，界面据此给出添加邮箱的入口，不假设未验证账户总有地址；`none` 为空。`since` 是 `signup_verified_at`，只在账户第一次进入 `verified` 时写入，之后再验证其他邮箱不更新，`verified` 回到 `pending` 时保留；未验证时为空串。它由 `SignupVerification.SignupStateOf` 请求期活读，不进会话、身份或访问令牌。
 - 时间按 UTC 以 RFC 3339 写出，零时间写空串。
 
 ### 写的请求与应答
@@ -74,11 +76,11 @@
 | 语言 | `AccountAdmin.SetAttributes`，键 `i18n.locale` | `i18n.ValidLocaleTag` |
 | 时区 | `AccountAdmin.SetAttributes`，键 `i18n.tz` | `i18n.ValidTimeZone` |
 
-**不可自写：账户状态、标识符、外部身份绑定。** 它们的改动各有其路由，并带比本面更强的认证要求：状态与标识符的增删在管理面（[authn-admin](design-authn-admin.md)），标识符的删除与外部身份的解绑在登录引擎的自助路由（[authn-login](design-authn-login.md)）。集合是封闭的：自写字段集里新增一项要有新的决定。
+**不可自写：账户状态、标识符、外部身份绑定、注册验证状态。** 它们的改动各有其路由，并带比本面更强的认证要求：状态与标识符的增删在管理面（[authn-admin](design-authn-admin.md)），标识符的删除与外部身份的解绑在登录引擎的自助路由（[authn-login](design-authn-login.md)），注册验证状态由 `Proves` 为真的邮箱的写入派生。集合是封闭的：自写字段集里新增一项要有新的决定。
 
 ### 登记单元与名字
 
-本模块登记一个名字 `authn.profile`，包 `pkg/authn/profile`，命名照顶层能力加叶子。`Requires` 路由挂载口 `mount.Mounter` 与账户读面 `authn.Accounts`、写面 `authn.AccountAdmin`；`Init` 里取用可选的 `audit.Audit` 与日志。它像 `authn.admin` 一样，只被想要这条面的命令纳入；不纳入时 `/me` 不挂，账户的读改仍可经 Go 接口由宿主命令调用。
+本模块登记一个名字 `authn.profile`，包 `pkg/authn/profile`，命名照顶层能力加叶子。`Requires` 路由挂载口 `mount.Mounter`、账户读面 `authn.Accounts`、注册验证状态读面 `authn.SignupVerification` 与写面 `authn.AccountAdmin`；`Init` 里取用可选的 `audit.Audit` 与日志。它像 `authn.admin` 一样，只被想要这条面的命令纳入；不纳入时 `/me` 不挂，账户的读改仍可经 Go 接口由宿主命令调用。
 
 ### 与账户其他自助路由的关系
 
@@ -89,6 +91,7 @@
 - 路由路径 `GET B/me`、`PATCH B/me` 与访问级别 `Required` 是宿主可见面；`GET B/me` 登记为可冒充，`PATCH B/me` 不登记为可冒充。
 - 模块名 `authn.profile` 是宿主可见面。
 - 自写字段集的字段名（`display_name`、`attributes`、`locale`、`time_zone`）与应答字段名是宿主可见面；请求体的字段集是封闭集，新增可自写字段要有新的决定。
+- `GET B/me` 应答的 `verification.state`、`verification.email`、`verification.since` 与 `identifiers[].proven` 是宿主可见面；`state` 的取值是封闭集 `none`、`pending`、`verified`。
 - 不可自写字段集同属接口面：不在集合里的字段，本面永不写。
 
 ## 依赖
@@ -96,7 +99,7 @@
 | 依赖 | 用途 |
 |---|---|
 | `pkg/core` | 模块描述符与登记 |
-| `pkg/authn`（根包） | `FromContext` 读身份；`Accounts` 读账户、标识与外部绑定；`AccountAdmin` 写显示名与属性；`Identity` 的账户、冒充与新鲜度判定 |
+| `pkg/authn`（根包） | `FromContext` 读身份；`Accounts` 读账户、标识与外部绑定；`SignupVerification` 读注册验证状态；`AccountAdmin` 写显示名与属性；`Identity` 的账户、冒充与新鲜度判定 |
 | `pkg/authn/internal/mount` | 挂路由与访问级别；401、403 与回绝的应答部件 |
 | `pkg/i18n` | 语言与时区的属性键（`LocaleAttributeKey`、`TimeZoneAttributeKey`）与校验（`ValidLocaleTag`、`ValidTimeZone`） |
 | `pkg/audit`（可选） | 写档案时写尽力档审计行 |
@@ -106,13 +109,14 @@
 
 ## UML 图
 
-本模块是一份路由面，经账户读面 `Accounts` 与写面 `AccountAdmin` 落到账户模块。图里看不出的是：本模块不经 `Decider`（自助面不过授权接缝），身份来自上下文而非路径；写是 `SetDisplayName` 与 `SetAttributes` 各一次调用，属性集与语言、时区合并成一次 `SetAttributes`。
+本模块是一份路由面，经账户读面 `Accounts`、注册验证状态读面 `SignupVerification` 与写面 `AccountAdmin` 落到账户模块。图里看不出的是：本模块不经 `Decider`（自助面不过授权接缝），身份来自上下文而非路径；写是 `SetDisplayName` 与 `SetAttributes` 各一次调用，属性集与语言、时区合并成一次 `SetAttributes`；注册验证状态是请求期活读，不写。
 
 ```mermaid
 classDiagram
     class product {
         +mounter mounter
         +accounts accounts
+        +signupVerification signupVerification
         +accountAdm accountAdmin
         +mountRoutes()
     }
@@ -122,6 +126,10 @@ classDiagram
         +Identifiers(ctx, id) identifiers
         +Externals(ctx, id) bindings
     }
+    class SignupVerification {
+        <<interface>>
+        +SignupStateOf(ctx, id) SignupStatus
+    }
     class AccountAdmin {
         <<interface>>
         +SetDisplayName(ctx, id, name)
@@ -130,6 +138,7 @@ classDiagram
     class profileView
     class patchBody
     product ..> Accounts
+    product ..> SignupVerification
     product ..> AccountAdmin
     product ..> profileView
     product ..> patchBody
@@ -139,7 +148,7 @@ classDiagram
 
 | 概念 | 类型 | 说明 |
 |---|---|---|
-| 档案视图 | `profileView` | `GET B/me` 的应答：账户标识、种类、显示名、属性、语言、时区、创建时刻、标识与外部绑定 |
+| 档案视图 | `profileView` | `GET B/me` 的应答：账户标识、种类、显示名、属性、语言、时区、创建时刻、标识（含 `proven`）、注册验证状态与外部绑定 |
 | 写请求 | `patchBody` | `PATCH B/me` 的正文：`display_name`、`attributes`、`locale`、`time_zone`，字段均可选 |
 
 `profileView` 与 `patchBody` 都只在本模块内构造与消费；账户、标识与绑定的形状归账户模块的根包接缝，本模块不复制它们。
@@ -148,7 +157,7 @@ classDiagram
 
 ### 一次读
 
-读身份：`authn.FromContext` 没有身份或身份没有账户即 401。取账户（`Accounts.Get`）、标识（`Accounts.Identifiers`）与外部绑定（`Accounts.Externals`），按档案视图逐字段构造应答。本面不解引用任何客户端给的账户标识。
+读身份：`authn.FromContext` 没有身份或身份没有账户即 401。取账户（`Accounts.Get`）、标识（`Accounts.Identifiers`）、外部绑定（`Accounts.Externals`）与注册验证状态（`SignupVerification.SignupStateOf`），按档案视图逐字段构造应答；标识的 `proven` 由 `Verification.Proves` 派生，待验证邮箱只经 `verification.email` 出现。本面不解引用任何客户端给的账户标识。
 
 ### 一次写
 
@@ -177,6 +186,7 @@ classDiagram
 | 正文形状不符、有未知字段、`display_name` 超过 100 字符、属性越过账户边界、`locale` 或 `time_zone` 取值域不符 | 400 `bad-request` |
 | 账户模块答 `ErrAccountNotFound`（身份的账户是墓碑或读不到） | 401 |
 | 账户模块答 `ErrInvalidArgument` | 400 `bad-request` |
+| `SignupVerification.SignupStateOf` 答 `ErrUnavailable` 或读不出状态 | 503，不按 `none` 放行 |
 | 依赖不可用 | 503 |
 | 其余失败 | 503，成因只进日志 |
 
@@ -194,3 +204,4 @@ classDiagram
 |---|---|---|
 | 用户档案自服务面（`GET B/me`、`PATCH B/me`） | 已实现 | `pkg/authn/profile/profile.go` `Module`；`pkg/authn/profile/routes.go` `mountRoutes`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/profile/write.go` `handlePatchMe` |
 | operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/profile/operations.go`；`pkg/authn/profile/openapi_generated_test.go`；片段 `pkg/authn/profile/openapi/profile.json` |
+| `GET B/me` 的注册验证状态 `verification` 与标识的 `proven` | 未实现 | — |

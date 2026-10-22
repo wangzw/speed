@@ -11,9 +11,9 @@
 - 持有口令类凭据的全部校验细节：口令规范化、查找、PHC 编解码与界限、诱饵派生、再哈希、服务密钥的摘要比对。
 - 执行账户状态的迁移：停用、启用、删除在本模块的事务里写自己的表，提交之后同步调用全部 `AccountLifecycle`。
 - 持有失败退避的算法与表，以及 `authn_throttles`、`authn_service_secrets` 的清扫协程。
-- 承载外部身份绑定、自动关联、首登开户与 JIT 并入的规则。规则约束的是本模块的数据（绑定、标识、成员关系）与账户的会话和口令，执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)）。
+- 承载外部身份绑定、自动关联、首登开户、自助注册开户与 JIT 并入的规则。规则约束的是本模块的数据（绑定、标识、待验证联系方式、成员关系）与账户的会话和口令；首登开户与 JIT 并入的执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)），自助注册开户经本模块的 `Signups.Register`。
 
-选型与取舍见 [ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md)、[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)、[ADR-authn-external-binding-2026-10-10](../../../adr/adr-authn-external-binding-2026-10-10.md)、[ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md)、[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)；模块在 authn 里的位置与依赖图见 [design-authn](design-authn.md)。
+选型与取舍见 [ADR-authn-accounts-2026-10-10](../../../adr/adr-authn-accounts-2026-10-10.md)、[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)、[ADR-authn-external-binding-2026-10-10](../../../adr/adr-authn-external-binding-2026-10-10.md)、[ADR-authn-password-hash-2026-10-10](../../../adr/adr-authn-password-hash-2026-10-10.md)、[ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)、[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)；模块在 authn 里的位置与依赖图见 [design-authn](design-authn.md)。
 
 ### 非职责
 
@@ -22,7 +22,7 @@
 - **不 import `pkg/tenant`。** 租户标识在本模块里是字符串；成员关系的请求期判定归 `tenant.admission`，它在 tenant 目录里经 `Memberships` 读取（[design-tenant-admission](../tenant/design-tenant-admission.md)）。
 - **不写别的模块的表。** 会话、因素、短信挑战各归 `authn.session`、`authn.mfa`、`authn.sms`；跨模块的清理走 `AccountLifecycle` 与事件，不进账户事务。
 - **不挂路由，不实现登录方式。** 登录路由与账户解析归 `authn.login`，自助与管理路由归 `authn.login`、`authn.session`、`authn.mfa`、`authn.admin` 各自的处理器；本模块只交付它们调用的接口。
-- **不提供没有验证渠道的自助注册。** 没有验证渠道的自助注册只能产生没有可验证标识的账户。用户名加口令的注册由已有能力组成：短信首登开户、自助添加用户名、自助设口令（[ADR-authn-signup-2026-10-18](../../../adr/adr-authn-signup-2026-10-18.md)），本模块不为它新增开户路径；口令账户也可由管理面或宿主代码创建。
+- **注册是用户名＋口令＋邮箱的匿名请求，开户后验证邮箱。** 本模块不为短信首登、社交登录与企业 JIT 新增开户路径，但新增自助注册的开户入口 `Signups.Register`：一次事务写入启用的账户、`via = self` 的用户名标识、口令凭据与一条待验证邮箱。注册路由归 `authn.login`，邮箱验证复用已认证账户的自助回路，只有邮箱被证明才解除限制（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。口令账户也可由管理面或宿主代码创建。
 - **不解析手机号，不做口令泄露库比对，不折叠邮箱别名。** 手机号只接受 E.164，转换由客户端做。
 - **不替宿主保存资料字段。** 账户表不留自由字段，宿主扩展字段的途径见[扩展点](#扩展点)。
 - **不拥有口令表（`authn.static.subjects`）的退避与缓存。** 口令表与本模块共用 `pkg/authn/internal/password` 里的 PHC 编解码与派生，但不依赖本模块、不读 db（[design-authn-gate](design-authn-gate.md)）。
@@ -47,6 +47,8 @@
 |---|---|---|
 | `Accounts` | 只读 | `authz.policy`、宿主、`authn.session`、`authn.token`、`authn.login`、`authn.admin` |
 | `AccountAdmin` | 写 | `authn.login`、`authn.admin`、宿主的命令行 |
+| `Signups` | 自助注册开户 | `authn.login` |
+| `SignupVerification` | 只读 | `authn.profile`、`authn.admin`、`authn.impersonation`、`authn.login`、`authn.invite`、`authz.admin`、`settings.admin`、`tenant.admin`、宿主 |
 | `Passwords` | 口令与服务密钥的校验与写入 | `authn.login.password`、`authn.token`、`authn.login` |
 | `Memberships` | 成员关系的读写 | `tenant.admission`、`authn.login`、`authn.impersonation`、`authn.admin`、`authz.policy` |
 | `Throttle` | 失败退避的存取 | `authn.login`、`authn.login.password`、`authn.mfa`、`authn.token` |
@@ -104,17 +106,45 @@ type AccountAdmin interface {
 
 | 方法 | 承诺 |
 |---|---|
-| `Create` | 写入启用状态的账户。邮箱与手机须已被验证，验证渠道分别由 `EmailVerifiedVia` 与 `PhoneVerifiedVia` 给出（短信首登开户取 `sms-code`），没有「待验证」的行；`Password` 与 `PasswordHash` 二选一，`Password` 经口令策略校验，`PasswordHash` 是 PHC 或遗留格式、供导入用；`ID` 留空则生成，仅导入用，管理面路由不暴露；`Via` 取 `admin`、`jit`、`signup`、`import`，写进事件载荷。标识、登录名或绑定违反唯一约束返回 `ErrAccountExists`。 |
+| `Create` | 写入启用状态的账户，`signup_state = 0`。邮箱与手机须已被验证，验证渠道分别由 `EmailVerifiedVia` 与 `PhoneVerifiedVia` 给出（短信首登开户取 `sms-code`），没有「待验证」的行；用户名标识的验证渠道取 `UsernameVerifiedVia`，零值按 `admin`，该字段供宿主或导入创建账户时标注用户名的来源。自助注册不调用 `Create`：`Signups.Register` 在自己的事务里写 `via = self` 的用户名标识与 `signup_state = 1`；自助添加用户名经 `AddIdentifier`（`via = self`）。`Password` 与 `PasswordHash` 二选一，`Password` 经口令策略校验，`PasswordHash` 是 PHC 或遗留格式、供导入用；`ID` 留空则生成，仅导入用，管理面路由不暴露；`Via` 取 `admin`、`jit`、`signup`、`import`，写进事件载荷。标识、登录名或绑定违反唯一约束返回 `ErrAccountExists`。 |
 | `SetStatus`、`Delete` | 在本模块事务里写 `status`、`valid_after`、墓碑与暂存的发件箱事件；事务提交之后同步调用全部 `AccountLifecycle`，清理失败返回 `ErrCleanupIncomplete`：状态已生效，重试同一调用幂等地补完清理。迁移表见[账户状态与生命周期](#账户状态与生命周期)。两者的 `reason` 形参取自 [authn-events](design-authn-events.md) 的 `ReasonClass` 闭集；签名是 `string`，没有类型约束，靠调用方与 `ValidReasonClass` 保证，它随 `authn.account.status-changed` 以 `reason_class` 写入载荷。`Sessions.Revoke` 的 `reason` 同此。 |
 | `SetDisplayName` | 至多 100 个字符。 |
 | `SetAttributes` | 受[属性集的限制](#扩展点)约束；经 `Identity.Attribute` 只读到达所有层。 |
 | `SetProtected` | 为真的账户不得被冒充，不依赖 `Decider`（[design-authn-impersonation](design-authn-impersonation.md)）。 |
-| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合的形态，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下，见 [design-authn-login](design-authn-login.md)。 |
+| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合的形态，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下（[design-authn-login](design-authn-login.md)），`invite` 由邀请接受的兑现写下（[design-authn-invite](design-authn-invite.md)）。`AddIdentifier` 写入任何一条 `Proves` 为真的邮箱标识时——`email-code`、`idp:<提供方标识>`，或命中同一待验证邮箱的 `invite`——都在同一事务里删掉同值的待验证联系方式、把 `signup_state` 从 `1` 置 `2`（`0` 与 `2` 不变）并在首次进入时写 `signup_verified_at`；写入手机标识（`sms-code`）时同样删掉同值的待验证联系方式，但不改变 `signup_state`；`admin`、`import-unverified` 与 `self` 既不改变 `signup_state`，也不删除待验证联系方式。`RemoveIdentifier` 删除最后一个 `Proves` 为真的邮箱时，若 `signup_state` 为 2 则回到 1，但保留 `signup_verified_at`，也不重建待验证联系方式；写入手机从不把它拉回 2。 |
 | `LinkExternal` | 该（提供方，主体）已被别的账户占用返回 `ErrBindingConflict`。 |
 | `UnlinkExternal` | 解绑之后账户至少还剩一种可用登录方式，否则返回 `ErrLastLoginMethod`。 |
 | `CreateServiceSecret` | 密钥是 256 位随机数，前缀 `spd_cs_`，库里只存 SHA-256；明文只在返回值里出现一次。 |
 | `RevokeServiceSecret` | 写 `revoked_at`；提交之后调 `AccountLifecycle.ServiceSecretRevoked`，失败同样返回 `ErrCleanupIncomplete`。 |
 | `Touch` | 写 `last_login_at`，走原生 SQL，不产生审计行。 |
+
+### Signups
+
+```go
+type Signups interface {
+	Register(ctx context.Context, in RegisterAccount) (Account, error)
+}
+```
+
+| 方法 | 承诺 |
+|---|---|
+| `Register` | 读设置 `authn.account.password-signup`，取值不是 `open` 时返回 `ErrSignupClosed`；设置存储缺席按声明的缺省 `closed` 处理。**这里的判定是注册开关的权威检查**：注册路由与发现端点读同一个键只作预检查，便于在参数校验之前早拒，不替代本方法的判定，也不构成第二处权威。用户名与邮箱先规范化，规范化失败返回 `ErrInvalidIdentifier`；口令经口令策略校验。查用户名之前先按 `ThrottleScope` 的 `signup-username` 读一次退避（键是规范化用户名的摘要），退避中返回 `ErrThrottled`（429）；再按 `authn_identifiers` 的 `(kind, value)` 唯一索引查用户名是否已被占用，占用时计一次失败并返回 `ErrAccountExists`；两者都在口令派生之前，避免对必然失败的请求做 Argon2。一次事务写入启用的账户（`signup_state = 1`）、`via = self` 的用户名标识、口令凭据与一条 `email` 待验证联系方式；不写任何待验证的标识行，不发送邮件，不建立会话；成功后把 `signup-username` 的失败计数清零。开户事件 `authn.account.created` 的 `via` 取 `signup`。派生受独立的并发名额约束（`authn.account.signup-concurrency`，见 [design-authn-config](design-authn-config.md)），不另设内存预算，单次派生的内存由该名额的上界约束；名额耗尽返回 `ErrBusy`（503），不占口令登录的并发名额。 |
+
+### SignupVerification
+
+```go
+type SignupVerification interface {
+	SignupStateOf(ctx context.Context, id AccountID) (SignupStatus, error)
+	PendingAccountByContact(ctx context.Context, kind string, value string) (accountID string, ok bool, err error)
+}
+```
+
+| 方法 | 承诺 |
+|---|---|
+| `SignupStateOf` | 请求期活读账户的注册验证状态，不读账户快照缓存。`SignupStatus.State` 是 `SignupNone`、`SignupPending` 或 `SignupVerified`；`Email` 是当前状态下的邮箱——`SignupVerified` 取 `Proves` 为真且 `VerifiedAt` 最早的邮箱、同一时刻按标识 ID 排序取第一个，`SignupPending` 取待验证联系方式里的邮箱、没有待验证目标时为空，`SignupNone` 为空；`Since` 是 `signup_verified_at`，未验证时零值，`1` → `2` → `1` 之后仍是首次进入 `2` 时的时刻。账户不存在返回 `ErrAccountNotFound`，db 不可用返回 `ErrUnavailable`。读取失败不得按 `SignupNone` 放行：调用方答 503。 |
+| `PendingAccountByContact` | 只读反查 `authn_pending_contacts`：`kind` 取 `email` 或 `phone`，`value` 先规范化（失败返回 `ErrInvalidIdentifier`），按（`kind`, `value`）找所有者，只在所有者是 `signup_state = 1` 的账户时返回该账户标识且 `ok` 为真。未命中、或同一地址被多个账户列为待验证目标时 `ok` 为假，不猜归属。db 不可用返回 `ErrUnavailable`。**唯一调用方是 `authn.invite` 的接受路径**，参数是邀请令牌已经证明控制权的邮箱。安全前提是这条控制权：令牌被送达该地址并由持有者出示，与本模块的 `sms-code` 同类；返回的账户标识让调用方能在该账户上写已验证标识与成员行，所以调用方不得用未经证明控制的地址调用它。调用方把读取失败答 503，不按未命中处理：把读失败读成未命中会让接受新建第二个账户。 |
+
+`PendingAccountByContact` 只回答「这条待验证联系方式属于谁」，不读 `authn_identifiers`——地址已经是某账户标识的情况由 `Accounts.Lookup` 覆盖，邀请接受先查 `Lookup`、未命中才用本方法反查。两个方法都是请求期活读，不读账户快照缓存。
 
 ### Passwords
 
@@ -171,11 +201,12 @@ type Memberships interface {
 type ThrottleScope string
 
 const (
-	ScopeIdentifier ThrottleScope = "identifier"
-	ScopeAccount    ThrottleScope = "account"
-	ScopeFactor     ThrottleScope = "factor"
-	ScopePhone      ThrottleScope = "phone"
-	ScopeClient     ThrottleScope = "client"
+	ScopeIdentifier     ThrottleScope = "identifier"
+	ScopeAccount        ThrottleScope = "account"
+	ScopeFactor         ThrottleScope = "factor"
+	ScopePhone          ThrottleScope = "phone"
+	ScopeClient         ThrottleScope = "client"
+	ScopeSignupUsername ThrottleScope = "signup-username" // 匿名注册按规范化用户名的摘要
 )
 
 type Throttle interface {
@@ -217,7 +248,7 @@ type AccountLifecycle interface {
 |---|---|---|
 | `pkg/authn` 根包 | 必需 | 能力接口、数据类型、哨兵、事件载荷；根包只依赖标准库与 authn 自己的内部包。 |
 | `db.Database` | `Requires`，排他功能 | 全部表与迁移；没有 db 的装配里本模块不可用。 |
-| `settings.Store` | 可选 | 口令策略与退避参数的运行期取值；缺席时取声明的默认值。 |
+| `settings.Store` | 可选 | 口令策略、退避参数与自助注册开关的运行期取值；缺席时取声明的默认值，自助注册开关因此为 `closed`。 |
 | `event.Bus`、`outbox.Outbox` | 可选 | 发布账户与成员关系事件；发件箱在场时在写入的同一事务里暂存。 |
 | `audit.Audit` | 可选 | 在场时经模型路径的写留下语句级审计行。 |
 | 全部 `AccountLifecycle` | 非排他，`ResolveAll` | 账户状态迁移之后的清理。 |
@@ -228,13 +259,13 @@ type AccountLifecycle interface {
 
 方向满足架构不变量：`authn.account` 只依赖根包、`pkg/db` 与可选的设置、事件、审计，不 import `pkg/tenant`，也不 import `authn.session`、`authn.mfa`、`authn.sms`；这些模块与 `authn.token`、`authn.login`、`authn.impersonation`、`authn.admin` 依赖本模块，反向依赖会成环。`authn.account` 取用 `AccountLifecycle` 经的是根包接口，不经具体模块。装配里不纳入 `authn.session`、`authn.mfa`、`authn.sms` 时，对应钩子不存在，本模块照常运行。选择与取舍见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)、[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)。
 
-带表模块的迁移由施加迁移的命令静态级纳入（`IncludeAllDeclarations`）；本模块的 `Start` 探测自己的表是否存在，缺失即以 `ErrNotMigrated` 终止启动。`New` 里不读写自己的表（首次启动时表尚未建立）。
+带表模块的迁移由施加迁移的命令静态级纳入（`IncludeAllDeclarations`）；本模块的 `Start` 探测自己的表是否存在（含 `authn_pending_contacts`），缺失即以 `ErrNotMigrated` 终止启动。`New` 里不读写自己的表（首次启动时表尚未建立）。
 
 ## UML 图
 
 ### 表之间的关系
 
-下图固定的是：所有指向账户的列都只是列，表之间没有外键；完整性由写入方在自己的事务里显式清理保证，跨模块靠钩子与事件补偿。`authn_memberships` 以字符串租户标识为主键的一半，不引用租户模块的表。口令表主体不进库，不在图里。
+下图固定的是：所有指向账户的列都只是列，表之间没有外键；完整性由写入方在自己的事务里显式清理保证，跨模块靠钩子与事件补偿。`authn_memberships` 以字符串租户标识为主键的一半，不引用租户模块的表。口令表主体不进库，不在图里。`authn_pending_contacts` 只存待验证目标，账户一旦写入已验证的同值标识，该行在同一事务里删除。
 
 ```mermaid
 classDiagram
@@ -242,6 +273,8 @@ classDiagram
         +id TEXT PK
         +kind TEXT
         +status SMALLINT
+        +signup_state SMALLINT
+        +signup_verified_at TIMESTAMPTZ
         +valid_after TIMESTAMPTZ
         +attributes TEXT
     }
@@ -251,6 +284,12 @@ classDiagram
         +kind TEXT
         +value TEXT
         +verified_via TEXT
+    }
+    class authn_pending_contacts {
+        +id TEXT PK
+        +account_id TEXT
+        +kind TEXT
+        +value TEXT
     }
     class authn_external_identities {
         +id TEXT PK
@@ -281,6 +320,7 @@ classDiagram
         +locked_until TIMESTAMPTZ
     }
     authn_accounts "1" .. "0..*" authn_identifiers : account_id 无外键
+    authn_accounts "1" .. "0..*" authn_pending_contacts : account_id 无外键
     authn_accounts "1" .. "0..*" authn_external_identities : account_id 无外键
     authn_accounts "1" .. "0..*" authn_memberships : account_id 无外键
     authn_accounts "1" .. "0..1" authn_password_credentials : account_id 无外键
@@ -291,11 +331,11 @@ classDiagram
 
 ### 账户状态
 
-状态零值是停用：没有被显式启用的账户不能认证。已删除是终态，标识保留、不复用。启用与停用之间可往返，停用与删除都把 `valid_after` 前移，启用时 `valid_after` 不回退，旧会话不恢复。
+状态零值是停用：没有被显式启用的账户不能认证。已删除是终态，标识保留、不复用。启用与停用之间可往返，停用与删除都把 `valid_after` 前移，启用时 `valid_after` 不回退，旧会话不恢复。自助注册经 `Signups.Register` 直接建启用的账户，不经过停用态。
 
 ```mermaid
 stateDiagram-v2
-    [*] --> 启用: Create
+    [*] --> 启用: Create 或 Signups.Register
     启用 --> 停用: SetStatus 停用
     停用 --> 启用: SetStatus 启用
     启用 --> 已删除: Delete
@@ -350,6 +390,22 @@ const (
 	StatusActive
 	StatusDeleted // 终态：已抹除，标识保留
 )
+
+// SignupState 是账户的注册验证状态；与 AccountStatus 相互独立。
+type SignupState uint8
+
+const (
+	SignupNone     SignupState = iota // 零值：非自助注册
+	SignupPending                     // 自助注册，尚无已验证邮箱
+	SignupVerified                    // 已有已验证邮箱
+)
+
+// SignupStatus 是注册验证状态的请求期读取形状。
+type SignupStatus struct {
+	State SignupState
+	Email string    // 已验证取 Proves 为真且 verified_at 最早的邮箱（同刻按标识 ID）；待验证取待验证联系方式；无目标为空
+	Since time.Time // signup_verified_at；只在首次进入 SignupVerified 时写入，回到 SignupPending 时保留
+}
 
 type IdentifierKind string
 
@@ -409,6 +465,7 @@ type CreateAccount struct {
 	Kind               AccountKind
 	DisplayName        string
 	Username           string
+	UsernameVerifiedVia Verification // 零值按 admin；供宿主或导入标注用户名来源，自助注册与自助添加用户名不经 Create
 	Email              string       // 须已被验证
 	EmailVerifiedVia   Verification
 	Phone              string       // 须已被验证
@@ -418,10 +475,22 @@ type CreateAccount struct {
 	MustChangePassword bool
 	MFARequired        bool
 	Attributes         map[string]string
-	Via                string       // admin、jit、signup、import
+	Via                string       // admin、jit、signup、import；经 Create 的宿主用 admin、jit 或 import，signup 只由 Signups.Register 写
 }
 
-type Verification struct{ Via string } // 写进 verified_via
+// RegisterAccount 是匿名自助注册的输入；邮箱只作为待验证联系方式，不是登录名。
+type RegisterAccount struct {
+	Username    string
+	Email       string // 必填；规范化后写入 authn_pending_contacts
+	Password    string
+	DisplayName string
+	Locale      string // 写到属性集的 i18n.locale
+	TimeZone    string // 写到属性集的 i18n.tz
+}
+
+// Verification 的 Via 写进 verified_via；Proves 报这条渠道是否构成所有权证明：
+// sms-code、email-code、invite 与 idp:<提供方标识> 为真，admin、import-unverified 与 self 为假。
+type Verification struct{ Via string }
 
 type AccountQuery struct {
 	Status            *AccountStatus // 空表示不过滤
@@ -463,7 +532,7 @@ type Page struct {
 
 ### 表
 
-全部在 `authn.account` 的一份迁移集里，`migrations/postgres/` 与 `migrations/sqlite/` 各一份同名文件，序号自 `0001_` 起。下面写 PostgreSQL 的形态；SQLite 的差别只有类型（`TIMESTAMPTZ` 写 `TIMESTAMP`、`BOOLEAN` 写 `INTEGER`）与部分索引的写法。
+全部在 `authn.account` 的一份迁移集里，`migrations/postgres/` 与 `migrations/sqlite/` 各一份同名文件，序号自 `0001_` 起；自助注册新增 `0002_authn_signup.sql`（账户的注册验证列、待验证联系方式表与其索引）。下面写 PostgreSQL 的形态；SQLite 的差别只有类型（`TIMESTAMPTZ` 写 `TIMESTAMP`、`BOOLEAN` 写 `INTEGER`）与部分索引的写法。
 
 **所有 authn 表之间、以及对其他模块的表，都不建外键**；各表只留索引。**所有表都不嵌入 `tenant.Model`**，成员关系与 IdP 的租户列由 authn 的代码显式过滤。
 
@@ -472,6 +541,8 @@ CREATE TABLE authn_accounts (
     id            TEXT        NOT NULL PRIMARY KEY,           -- AccountID，永不复用
     kind          TEXT        NOT NULL CHECK (kind IN ('user', 'service')),
     status        SMALLINT    NOT NULL DEFAULT 0 CHECK (status IN (0, 1, 2)),  -- 0 停用（零值）、1 启用、2 已删除
+    signup_state  SMALLINT    NOT NULL DEFAULT 0 CHECK (signup_state IN (0, 1, 2)),  -- 0 非自助注册（零值）、1 自助注册且尚无已验证邮箱、2 已有已验证邮箱
+    signup_verified_at TIMESTAMPTZ NULL,                      -- 第一次写入 Proves 为真的邮箱的时刻；回到 1 时保留
     display_name  TEXT        NOT NULL DEFAULT '' CHECK (length(display_name) <= 100),
     attributes    TEXT        NOT NULL DEFAULT '{}',          -- JSON，至多 4 KiB
     mfa_required  BOOLEAN     NOT NULL DEFAULT FALSE,
@@ -483,6 +554,7 @@ CREATE TABLE authn_accounts (
     disabled_at   TIMESTAMPTZ NULL,
     deleted_at    TIMESTAMPTZ NULL
 );
+CREATE INDEX authn_accounts_signup ON authn_accounts (signup_state, created_at);  -- 未验证账户的清理扫描
 
 CREATE TABLE authn_identifiers (
     id           TEXT        NOT NULL PRIMARY KEY,
@@ -497,6 +569,17 @@ CREATE TABLE authn_identifiers (
 CREATE INDEX authn_identifiers_account ON authn_identifiers (account_id);
 CREATE UNIQUE INDEX authn_identifiers_one_phone    ON authn_identifiers (account_id) WHERE kind = 'phone';
 CREATE UNIQUE INDEX authn_identifiers_one_username ON authn_identifiers (account_id) WHERE kind = 'username';
+
+CREATE TABLE authn_pending_contacts (
+    id         TEXT        NOT NULL PRIMARY KEY,
+    account_id TEXT        NOT NULL,
+    kind       TEXT        NOT NULL CHECK (kind IN ('email', 'phone')),
+    value      TEXT        NOT NULL,                        -- 已规范化
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (account_id, kind)                               -- 每账户每种至多一条；同一地址可被多个账户列为待验证目标
+);
+CREATE INDEX authn_pending_contacts_value ON authn_pending_contacts (kind, value);
 
 CREATE TABLE authn_external_identities (
     id             TEXT        NOT NULL PRIMARY KEY,
@@ -543,7 +626,7 @@ CREATE TABLE authn_service_secrets (
 CREATE INDEX authn_service_secrets_account ON authn_service_secrets (account_id);
 
 CREATE TABLE authn_throttles (
-    scope            TEXT        NOT NULL,                    -- identifier、account、factor、phone、client
+    scope            TEXT        NOT NULL,                    -- identifier、account、factor、phone、client、signup-username
     key_hash         TEXT        NOT NULL,                    -- 键的规范化形式的 SHA-256 十六进制
     failures         INTEGER     NOT NULL,
     first_failure_at TIMESTAMPTZ NOT NULL,
@@ -557,7 +640,9 @@ CREATE INDEX authn_throttles_decay ON authn_throttles (last_failure_at);   -- �
 几处约束承担的不变式：
 
 - `UNIQUE (kind, value)` 使一个邮箱或手机只属于一个账户；部分唯一索引使一个账户至多一个手机标识、至多一个用户名，邮箱不限数量。
-- `authn_identifiers` 没有「待验证」的行：`verified_at` 非空，`verified_via` 非空；证明强度由 `verified_via` 决定，读取标识的路径据此区分真实证明与未证明渠道。
+- `authn_identifiers` 没有「待验证」的行：`verified_at` 非空，`verified_via` 非空；证明强度由 `verified_via` 决定，读取标识的路径据此区分真实证明与未证明渠道。`authn_identifiers` 的列、约束与索引不因自助注册改变。
+- `authn_pending_contacts` 的 `UNIQUE (account_id, kind)` 使一个账户每种联系方式至多一条待验证目标；它不设全局唯一，同一地址可被多个账户列为待验证目标。**待验证联系方式不是标识**：`Lookup`、口令登录名、社交自动关联与企业 JIT 并入都只读 `authn_identifiers` 与 `authn_external_identities`，看不到它，因此它不能用于登录，也不能把外部身份并入一个只登记了待验证邮箱的账户。
+- `signup_state` 只有 `0`、`1`、`2` 三个取值，`signup_verified_at` 只在第一次写入 `Proves` 为真的邮箱时赋值；账户状态与它互不影响，会话、身份与访问令牌都不携带它。
 - `UNIQUE (provider, subject)` 使一个外部身份只属于一个账户，并发首登靠它仲裁（A9）。
 - `authn_memberships` 的主键是（租户，账户），次级索引以账户打头，服务按账户跨租户列出；租户列由 `Memberships` 的实现在每条语句里显式带上。
 - `authn_service_secrets.secret_hash` 唯一，按摘要取行。
@@ -624,7 +709,7 @@ flowchart TD
 
 ### 首登开户
 
-社交与短信登录是否开户，由 `authn.account.signup` 决定（设置项，缺省 `closed`，默认不开户；改到 `open` 是放宽方向，运行期写一行 `Warn` 与 `authn.settings.relaxed`），取值是封闭集 `closed` 与 `open`。该开关的当前取值经登录发现端点 `GET B/methods` 的 `signup.enabled` 发布（[design-authn-login](design-authn-login.md)）。
+社交与短信登录是否开户，由 `authn.account.signup` 决定（设置项，缺省 `closed`，默认不开户；改到 `open` 是放宽方向，运行期写一行 `Warn` 与 `authn.settings.relaxed`），取值是封闭集 `closed` 与 `open`。该开关与 `authn.account.password-signup` 共同决定登录发现端点 `GET B/methods` 的 `signup.enabled`；后者只管自助注册的开户入口（[design-authn-login](design-authn-login.md)）。
 
 - `closed`：无绑定又无关联可走时，统一应答 `login-failed`。
 - `open`：建 `kind = user`、启用的账户，写绑定或手机标识，**不建任何成员关系**：账户能登录，访问任何租户资源得 404，成员关系要管理员或邀请授予。
@@ -634,7 +719,37 @@ flowchart TD
 - `Provisioner` 在场则先调用，宿主可改写拟创建的账户或拒绝开户（[扩展点](#扩展点)）。
 - 没有可作登录名的标识的账户（没有用户名、也没有已验证邮箱，典型是只绑了微信或手机的账户）设口令得到 409 `login-identifier-required`：口令登录要有登录名，登录名是用户名或邮箱标识，用户名由管理员经管理面添加，或由本人经自助路由添加。
 
-不提供没有验证渠道的自助注册，理由见[非职责](#非职责)；用户名加口令的注册怎样由首登开户、用户名与口令依次组成，见 [design-authn-login](design-authn-login.md) 的「账户自助」。
+自助注册不经过首登开户：它由 `Signups.Register` 一次建号，见下一节。首登开户的 `closed` 取值不影响 `authn.account.password-signup`，反之亦然。
+
+### 自助注册与注册验证状态
+
+自助注册是用户名＋口令＋邮箱的匿名请求，开户后验证邮箱；只有邮箱被证明才解除未验证账户的能力限制（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。`Signups.Register` 的处理次序：
+
+1. 读设置 `authn.account.password-signup`，不是 `open` 即 `ErrSignupClosed`。这是注册开关的权威检查；注册路由与发现端点读同一个键只作预检查。
+2. 规范化用户名与邮箱，经口令策略校验口令。
+3. 按 `ThrottleScope` 的 `signup-username` 读一次退避，键是规范化用户名的摘要；退避中即 `ErrThrottled`，对外 429 带 `Retry-After`，不查唯一性、不派生。
+4. 再按 `(kind, value)` 唯一索引查用户名是否已被占用；占用即计一次 `signup-username` 失败并返回 `ErrAccountExists`。这两步都在口令派生之前，避免对必然失败的请求做 Argon2。并发同名注册由唯一约束仲裁，败者回读后返回 `ErrAccountExists`。
+5. 在独立的并发名额（`authn.account.signup-concurrency`）内派生口令；不另设内存预算，单次派生的 Argon2 内存由该名额的上界约束。名额耗尽返回 `ErrBusy`，不占口令登录的并发名额。
+6. 一次事务写入：启用的账户（`signup_state = 1`、`signup_verified_at` 为空，显示名与 `i18n.locale`、`i18n.tz` 属性取请求给的取值）、`via = self` 的用户名标识、口令凭据、一条 `email` 待验证联系方式。注册不发送邮件、不建立会话、不写待验证的标识行。事务提交之后把 `signup-username` 的失败计数清零。
+7. 邮箱唯一性不在注册时检查，也不在应答里回显；同一地址可以同时是多个账户的待验证目标，冲突只在验证码证明控制之后以 `ErrAccountExists` 暴露。
+
+注册验证状态的转换是封闭集：
+
+| 事件 | `signup_state` 变化 | `signup_verified_at` |
+|---|---|---|
+| `Signups.Register` | 开户时写 `1` | 不写 |
+| `AddIdentifier` 写入任何一条 `Proves` 为真的邮箱标识：`email-code`、`idp:<提供方标识>`，或命中同一待验证邮箱的 `invite` | `1` → `2`；同一事务删除同值的待验证联系方式 | 首次进入 `2` 时写当前时刻，此后再写其他邮箱不更新 |
+| `AddIdentifier` 写入手机标识（`sms-code`） | 不变；同一事务删除同值的待验证联系方式 | 不变 |
+| `AddIdentifier` 以 `admin`、`import-unverified` 或 `self` 写入 | 不变；不删除待验证联系方式 | 不变 |
+| `RemoveIdentifier` 删除最后一个 `Proves` 为真的邮箱 | `2` → `1` | 保留 |
+
+手机（`sms-code`）永不把账户置为 `2`。待验证账户实际可达的邮箱证明渠道是 `email-code`，以及命中同一待验证邮箱的 `invite`；`idp:<提供方标识>` 同为邮箱证明，但待验证账户在解除限制前不能发起外部绑定（`purpose=link` 被拒），因此不可达（[design-authn-login](design-authn-login.md)）。
+
+**删除最后一个已验证邮箱是合法的未验证状态。** `RemoveIdentifier` 把 `signup_state` 从 `2` 拉回 `1` 之后，本模块不重建待验证联系方式，账户因此可能没有任何待验证目标：`SignupStateOf` 的 `Email` 为空，界面必须提供添加邮箱的入口，不能假设未验证账户总有目标地址（[design-authn-profile](design-authn-profile.md)）。
+
+待验证邮箱不是登录名。它不在 `authn_identifiers` 里，所以 `Lookup`、口令登录名、社交自动关联与企业 JIT 并入都看不到它；`AddIdentifier` 把它写成邮箱标识之后，邮箱才是口令登录名，证明渠道只决定它的 `proven`，不改变它作为标识这一事实。手机验证不解除限制，手机仍可作为登录方式或额外安全因素。
+
+**清理。** 删除只针对 `signup_state = 1`、`signup_verified_at IS NULL`、没有任何 `Proves` 为真的邮箱且长期未登录的自助注册账户（闲置期以 `COALESCE(last_login_at, created_at)` 计，从未登录的账户从创建时刻起算）；删除走 `Delete`，连带清掉标识、口令凭据、待验证联系方式与会话。`signup_state = 0` 与 `signup_state = 2` 的账户永不因未验证被清理。期限与周期的设置项见 [design-authn-config](design-authn-config.md)。
 
 ### 账户状态与生命周期
 
@@ -643,9 +758,10 @@ flowchart TD
 | 迁移 | 账户事务内（本模块的表） | 提交之后 |
 |---|---|---|
 | 创建 | 插入账户与标识 | `authn.account.created` |
+| 自助注册的创建 | 插入启用的账户（`signup_state = 1`）、`via = self` 的用户名标识、口令凭据与 `email` 待验证联系方式 | `authn.account.created` |
 | 启用 → 停用 | `status = 0`；`valid_after` 前移到当前时刻向上取整到下一秒；暂存 `authn.account.status-changed`（发件箱） | 同步调用全部 `AccountLifecycle.AccountDisabled`；失败返回 `ErrCleanupIncomplete`，状态已生效，重试同一调用幂等地补完 |
 | 停用 → 启用 | `status = 1`；`valid_after` 不回退，旧会话不恢复；暂存事件 | 发事件 |
-| 任一 → 已删除（终态） | 抹除：`display_name` 清空、`attributes` 置 `{}`；删除标识、外部绑定、口令凭据、服务密钥、成员关系；保留墓碑行（`id`、`kind`、`status = 2`、`created_at`、`deleted_at`）；`valid_after` 前移；暂存 `authn.account.deleted` 与逐租户的 `authn.membership.changed`（`removed`）（发件箱） | 同步调用全部 `AccountLifecycle.AccountDeleted`：`authn.session` 撤销并删除会话行，`authn.mfa` 对每个因素调 `Factor.Remove`（TOTP 种子、通行密钥公钥）再删因素行与 `authn_webauthn_users` 的行，`authn.sms` 删挑战行；失败返回 `ErrCleanupIncomplete` |
+| 任一 → 已删除（终态） | 抹除：`display_name` 清空、`attributes` 置 `{}`；删除标识、待验证联系方式、外部绑定、口令凭据、服务密钥、成员关系；保留墓碑行（`id`、`kind`、`status = 2`、`created_at`、`deleted_at`）；`valid_after` 前移；暂存 `authn.account.deleted` 与逐租户的 `authn.membership.changed`（`removed`）（发件箱） | 同步调用全部 `AccountLifecycle.AccountDeleted`：`authn.session` 撤销并删除会话行，`authn.mfa` 对每个因素调 `Factor.Remove`（TOTP 种子、通行密钥公钥）再删因素行与 `authn_webauthn_users` 的行，`authn.sms` 删挑战行；失败返回 `ErrCleanupIncomplete` |
 | 删除服务密钥 | `authn_service_secrets.revoked_at` | 调 `AccountLifecycle.ServiceSecretRevoked`（`authn.session` 撤销该密钥那一行 service 种会话） |
 | 改口令、删因素、解绑 | 无，不是账户的迁移 | 由调用方的处理器在操作成功之后调 `Sessions.RevokeAccount(except = 当前会话)`；`Passwords.Set` 不替它撤销，使 `Passwords` 不依赖会话模块 |
 
@@ -712,6 +828,7 @@ flowchart TD
 - **退避期内不校验。** 退避期内的尝试不派生、不比对，直接以 429 带 `Retry-After` 拒绝。
 - **账户级退避静默。** 已知账户上累计失败（不论用了几种标识拼写）到同样阈值后，`Passwords.Verify` 照常诱饵派生并返回 `ErrInvalidCredentials`，不返回 429：返回 429，换标识拼写的攻击者就能分辨账户存在与否。标识级退避（键是提交的字符串）对调用方可见，返回 429。
 - **自我拒绝服务。** 匿名攻击者对任一已知标识连续失败，就能使该账户的口令登录最长 `throttle-max-delay` 不可用，有界，不是永久锁定。换标识拼写不能绕开账户级那一层，所以换拼写不是缓解；受害者仍可用短信、社交、SSO、通行密钥登录。
+- **注册的用户名退避。** `Signups.Register` 在查唯一性之前按 `ScopeSignupUsername` 读退避，键是规范化用户名的摘要，与来源地址无关：匿名者对同一用户名反复试探时，占用与不占用都在同一阈值上落到 429 带 `Retry-After`；换来用户名继续试探则由来源地址与全局小时预算约束（[design-authn-threats](design-authn-threats.md) 的批量注册与用户名枚举）。
 
 **枚举防护。** 口令不成立，以及账户不存在、无口令、已停用，统一返回 `ErrInvalidCredentials`。标识不存在时对一条诱饵 PHC 做一次等价派生；诱饵按当前设置的参数懒生成并缓存，设置变更事件触发重建，不在进程启动时固定一次：运行期改了 Argon2 或 PBKDF2 参数之后，已知账户按新参数派生、诱饵停在旧参数，耗时差会逐渐暴露账户存在。短信与外部登录路径上的同形措施见 [design-authn-login](design-authn-login.md)、[design-authn-sms](design-authn-sms.md)。
 
@@ -729,12 +846,15 @@ flowchart TD
 |---|---|---|---|
 | `authn_throttles` | `authn.account` | `last_failure_at < now - throttle-decay` 且（`locked_until` 为空或已过） | 10 分钟 |
 | `authn_service_secrets` | `authn.account` | `expires_at` 或 `revoked_at` 早于 `now - secret-retention` | 1 小时 |
+| `authn_accounts`（未验证的自助注册账户） | `authn.account` | `signup_state = 1`、`signup_verified_at IS NULL`、没有任何 `Proves` 为真的邮箱、`COALESCE(last_login_at, created_at)` 早于 `now - unverified-ttl`；删除走 `Delete`，连带清掉标识、凭据与待验证联系方式。`signup_state = 0` 与 `2` 的账户不在此列 | `authn.account.unverified-sweep-interval` |
 | `authn_idp_domains`（未验证的声明） | `authn.sso` | `verified_at` 为空且 `created_at` 早于 7 天 | 1 小时 |
 | `authn_saml_assertions` | `authn.sso` | `not_on_or_after < now` | 10 分钟 |
 | `authn_challenges` | `authn.sms` | `created_at < now - 25 小时`（预算统计窗口最长一天，留一小时余量） | 10 分钟 |
 | `authn_refresh_tokens` | `authn.token` | 所属会话已不存在、已撤销、已过绝对期限，或 `idle_expires_at < now` | 1 小时 |
 | `authn_sessions` | `authn.session` | 到期并过保留期 | 10 分钟 |
 | `authn_factors`（待确认行） | `authn.mfa` | `status = 0` 且超过 `pending-ttl` | 1 小时 |
+
+`authn_pending_contacts` 没有自己的清扫协程：它的行随账户删除清除，未验证账户的清理同时覆盖它。设置项 `authn.account.unverified-ttl` 取 `0` 时关闭未验证账户的清理。
 
 `authn_throttles` 的键是提交内容的摘要、与账户是否存在无关（枚举防护要求未知标识与已知标识走同一条计数路径），所以匿名攻击者用随机用户名能让它每个失败请求多一行：行数上界是失败请求速率乘 `throttle-decay`，写成非保证（[错误与失败语义](#非保证)）。缓解是来源地址层的前置减负（缺省关，[design-authn-login](design-authn-login.md)）、入口层限流与上表的清扫。**测试：** 随机标识洪泛之后，清扫能把表回收到洪泛前的量级。
 
@@ -755,14 +875,20 @@ flowchart TD
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界（条目数、键值形状、总字节）、显示名过长、`via` 不在接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；也会在会话载荷的 `idp.*` 越界处出现，那时是写载荷一方的缺陷，503 |
 | `ErrIdentifierRequired` | 账户没有可作登录名的标识而要设口令 | 409 `login-identifier-required` |
 | `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效，而某个 `AccountLifecycle` 钩子失败；重试同一调用幂等地补完 | 503 |
-| `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 标识级退避中 | 429 `throttled`，带 `Retry-After` |
+| `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 标识级退避中；注册的 `signup-username` 退避中 | 429 `throttled`，带 `Retry-After` |
 | `ErrBindingConflict` | 外部身份已被别的账户占用 | 409 |
 | `ErrLastLoginMethod` | 解绑最后一种登录方式 | 409 |
 | `ErrAccountUnavailable` | 外部登录路径上账户停用 | 403 `account-unavailable` |
 | `ErrLinkRequired` | 社交登录无绑定而邮箱命中现有账户；或 JIT 开户遇到已被占用的邮箱 | 401 `link-required` |
-| `ErrNotProvisioned`、`ErrSignupClosed`、`ErrDomainMismatch`、`ErrProvisionRefused` | 企业 SSO 未预开户；注册关闭；企业 SSO 邮箱的域不属于该租户已验证的域；宿主拒绝开户 | 一律 401 `login-failed`，成因进日志 |
-| `ErrBusy` | 口令派生的并发上限或内存预算已满 | 503，`Retry-After: 1` |
+| `ErrNotProvisioned`、`ErrDomainMismatch`、`ErrProvisionRefused` | 企业 SSO 未预开户；企业 SSO 邮箱的域不属于该租户已验证的域；宿主拒绝开户 | 一律 401 `login-failed`，成因进日志 |
+| `ErrSignupClosed` | 首登开户关闭；自助注册开关 `authn.account.password-signup` 不是 `open` | 首登开户路径 401 `login-failed`；自助注册路由 403 `signup-closed` |
+| `ErrContactRequired` | 账户是待验证状态（`signup_state = 1`）而调用的能力要求已验证邮箱 | 403 `contact-required` |
+| `ErrBusy` | 口令派生的并发上限或内存预算已满；自助注册派生的并发名额已满 | 503，`Retry-After: 1` |
 | `ErrUnavailable` | db 不可用（外部库错误包它） | 503 |
+
+自助注册路由把用户名冲突的 `ErrAccountExists` 答成 409 `username-taken`；邮箱冲突只在验证码证明调用者控制该地址之后才以 `ErrAccountExists` 暴露，注册请求本身不检查邮箱唯一性。
+
+`ErrContactRequired` 不由本模块的任何方法返回：它由要求已验证邮箱的调用方在请求期读取 `SignupVerification.SignupStateOf` 之后返回；列在此表是为了让自助注册契约的失败面集中在一处。
 
 启动期：`ErrNotMigrated`（`Start` 探测不到自己的表，点名施加迁移的命令，把本模块静态级纳入它）；`ErrInvalidConfig`（口令内存预算不满足启动自检的下限，或其他取值跑不起来的配置；判定见 [design-authn-config](design-authn-config.md)）。
 
@@ -772,14 +898,15 @@ flowchart TD
 
 | 不可用的依赖或异常 | 路径 | 行为 | 方向 |
 |---|---|---|---|
-| db | `Passwords`、`AccountAdmin`、`Memberships`、`Throttle` 的全部方法 | `ErrUnavailable`，503，不校验 | 拒 |
+| db | `Passwords`、`AccountAdmin`、`Signups`、`SignupVerification`、`Memberships`、`Throttle` 的全部方法 | `ErrUnavailable`，503，不校验 | 拒 |
 | db | 失败退避的读写 | 登录路径 503，不校验：退避状态读不到就不能放行校验 | 拒 |
 | 账户生命周期钩子 | 停用、删除、撤销服务密钥之后的清理 | 账户状态已在本模块事务里生效，钩子失败返回 `ErrCleanupIncomplete`（503），重试幂等；发件箱在场时事件补偿；`valid_after` 与账户状态检查兜底 | 拒：状态已生效，清理待补 |
 | `event.Bus` | 事件发布 | 记 Warn，不令业务操作失败 | 事件是提示 |
 | `outbox.Outbox` | 发件箱事件的暂存 | `Stage` 失败令该动作失败 | 强 |
 | `settings.Store` | 口令策略与退避参数的读取 | 读的是内存快照，不会失败；调参类读不出时取声明的默认值并记 Error；决定写出产物的算法设置读不出或越域时令写失败 | — |
 | `audit.Audit` | 模型路径的语句级审计行 | 尽力：写失败只记 Error 与计数，不令写失败；强制档审计由调用方（管理面处理器）在事务之外、动作之前写 | 放（审计缺失），明说 |
-| 并发上限或内存预算已满 | 口令派生 | `ErrBusy`，503，不校验 | 拒 |
+| 并发上限或内存预算已满 | 口令派生与自助注册派生 | `ErrBusy`，503，不校验；自助注册的派生没有独立的内存预算，只受并发名额约束 | 拒 |
+| `settings.Store` | 自助注册开关 `authn.account.password-signup` | 读不到或没有声明覆盖时按缺省 `closed` 处理：`Signups.Register` 答 `ErrSignupClosed` | 拒 |
 | `Provisioner` | 首登开户 | 返回 `ErrProvisionRefused`：拒绝开户，401 `login-failed`；返回其他 error：503，不带着半份结果放行 | 拒 |
 | 越界或损坏的 PHC 条目 | 口令校验 | 答「错误」，记一行不带条目的 Error，不分配派生所需内存 | 拒 |
 
@@ -790,6 +917,7 @@ flowchart TD
 - `SetStatus`、`Delete`、`RevokeServiceSecret` 在 `ErrCleanupIncomplete` 之后重试同一调用，幂等地补完清理。
 - 全部 `AccountLifecycle` 方法幂等；订阅事件的补偿处理函数幂等，按 `Event.ID` 去重。
 - `Memberships.Put` 幂等：新增、暂停、恢复由同一个调用按 `Membership` 的取值表达，重复调用不改变结果。
+- `Signups.Register` 不幂等：重放同一请求由用户名唯一约束拒绝，返回 `ErrAccountExists`。
 - 管理面写入靠唯一约束与条件更新保证幂等与互斥，不靠先读后写。
 - 同一（提供方，主体）并发首登靠 `UNIQUE (provider, subject)` 仲裁，败者回读绑定后继续（A9）。
 
@@ -805,6 +933,8 @@ flowchart TD
 - **邮箱、手机号、显示名在库里是明文**（规范化后），库转储即泄露；机密不是明文：口令哈希是 PHC，服务密钥只存摘要，因素种子与 IdP 密钥走加密列。
 - **按显示名前缀的列表过滤扫全表。** `authn_accounts` 上没有覆盖 `display_name` 的索引，这个条件无法走索引；过滤本身收缩的是返回集，不是读的成本，成本随表里账户数线性增长，上界是整张 `authn_accounts`。缓解是分页上限与把这一读留在平台运营面（`authn.admin`），普通租户面不提供它。
 - **没有外键。** 孤儿行靠写入方在自己的事务里清理、跨模块靠钩子与事件补偿避免，数据库不替它兜底。
+- **匿名注册不做人机验证与一次性邮箱识别。** 批量注册的上界由按来源地址的分钟预算、全局小时预算、入口层限流与按用户名的退避给出；自动化与一次性邮箱不被检测，这是残余风险。
+- **待验证的自助注册账户会存在。** 长期不验证的账户在被清理之前占着用户名与一条待验证邮箱；清理是删除账户的破坏性动作，期限由 `authn.account.unverified-ttl` 给出，取 `0` 时关闭。
 - **账户模块自身不带任何邮件通道，也没有「忘记口令」流程。** 自助添加邮箱走登录模块的自助路由，其验证码经宿主提供的 `EmailCodeSender` 投递，账户模块不经手发送（[design-authn-login](design-authn-login.md)）。找回口令的路径是经短信、社交或 SSO 登录后在账户设置里改口令，登录时同样过第二因素；管理员也可重置口令。
 - **自动关联缺省关闭。** 先用别的方式注册过的用户，第一次社交登录会被当作新用户或被开户策略拒绝，要用绑定流程手工关联。
 - **遗留写法的解析要一直维护。** 口令表里的遗留条目与 PHC 条目并存读取；自写的 PBKDF2 PHC 方言与 passlib 一派不能互读，用 Python 工具写表的运维改用 `static.Hash`。
@@ -826,6 +956,7 @@ flowchart TD
 ## 并发与事务边界
 
 - **每个模块只在自己的事务里写自己的表。** `pkg/db` 没有跨模块传递事务句柄的通道，别的模块的表可能因模块未纳入而不存在。账户事务只写本模块的表与暂存的发件箱事件；会话、因素、短信挑战的清理在提交之后经钩子与事件完成。
+- **自助注册是一次事务。** `Signups.Register` 在一个事务里写账户、用户名标识、口令凭据与待验证联系方式；不发邮件、不建会话、不写别的模块的表。用户名唯一性检查与口令派生的次序、独立派生预算见「自助注册与注册验证状态」。
 - **钩子在事务之外。** 钩子在账户事务提交之后同步调用，不在事务里；实现不得读账户行。
 - **审计接缝不在账户事务里调用。** 接缝级审计写入另占一条连接，在调用方事务里调用它在 SQLite 上会等锁失败；强制档审计由调用方在事务之外、动作之前写。
 - **并发的仲裁靠唯一约束与条件更新。** `UNIQUE (kind, value)`、`UNIQUE (provider, subject)`、`secret_hash` 的唯一约束、成员关系的主键、部分唯一索引都是仲裁点；口令哈希的再哈希是对旧哈希的比较并替换。
@@ -879,3 +1010,5 @@ type Provisioner interface {
 | 服务密钥的创建、校验与撤销 | 已实现 | `pkg/authn/account/admin.go` `CreateServiceSecret`；`pkg/authn/account/credentials.go` `VerifyServiceSecret`；`pkg/authn/account/lifecycle.go` `RevokeServiceSecret` |
 | `Provisioner` 钩子与账户属性集 | 已实现 | `pkg/authn/account/admin.go` `SetAttributes`；`pkg/authn/provision.go` `Provisioner`；`pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`AccountAttributesMax` |
 | 账户与口令的配置项、设置声明与启动自检 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/account/params.go`；`pkg/authn/account/relax.go` |
+| 自助注册开户、注册验证状态与待验证联系方式：`Signups.Register`、`SignupVerification.SignupStateOf`、`SignupVerification.PendingAccountByContact`、`authn_pending_contacts` 表、`signup_state` 与 `signup_verified_at` 列、按用户名的注册退避、未验证账户的清理 | 未实现 | — |
+| 根包类型 `SignupState`、`SignupStatus`、`RegisterAccount`、`CreateAccount.UsernameVerifiedVia`、`ThrottleScope` 的 `signup-username` 取值与哨兵 `ErrContactRequired` | 未实现 | — |

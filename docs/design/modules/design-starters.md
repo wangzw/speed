@@ -52,6 +52,8 @@ starters/demo/
 
 容器入口 `deploy/entrypoint.sh` 把 `deploy/fly.yaml.tmpl` 渲染成 `/data/config.yaml`：公开来源由 `FLY_APP_NAME` 推出，自定域由 `DEMO_PUBLIC_URL` 给出；运营账户与库加密根键取自 Fly secret。模板不承载凭据，镜像不含开发值。模板的 `http` 节承载模块级的代理信任设置：可信代理网段取 Fly Proxy 进入 Machine 的地址段，来源地址头名取 `Fly-Client-IP`。入口取得卷的所有权后降权运行，先执行 `sqlite seed`，再把进程交给 `sqlite serve`；`seed` 只写缺失项，重启不覆盖运营者经界面做的修改。`serve` 带上基线的后台模块，不再另起进程。
 
+**口令注册在配好真实邮件之前保持关闭。** 开放它要装配 `authn.emailcode` 与 `mail.smtp`，在 `deploy/fly.yaml.tmpl` 增加 `mail.smtp` 节（主机、端口、发件地址与凭据），并把 SMTP 凭据作为 Fly secret 交给入口；`authn.account.password-signup` 在 SMTP 配好之前保持 `closed`，部署不因镜像更新而自行开放注册。
+
 部署门禁是后端监听上 `GET /` 的检查，入口文档由嵌入的前端产物作答；就绪信号是运营端点的 `GET /ready`，以顶层检查声明——运营监听不是对外服务，顶层检查只报告 Machine 健康、不影响路由。`.github/workflows/deploy.yml` 在 `check` 于 `main` 上成功之后、以及手动触发时调用 `make deploy`。
 
 ### 命令树
@@ -73,7 +75,9 @@ starters/demo/
 
 `serve` 与 `worker` 各自点名纳入的那组平台能力是**平台基线**，写在 `main.go` 的 `baselineServe` 与 `baselineWorker` 两个列表里。基线的判据是一句话：**一条平台能力若能不要凭据、不要外部账号、不要部署栈之外的外部服务就启动，它就在基线里**；其余留给产品在拿到该依赖时自行加入。模块自己的契约是这个判据的落点——一项必需配置项给不出一个能启动的值，它就不属于基线。
 
-判据的两侧各有一组例证。落在基线里的，是只用进程内实现或栈内后端就起得来的平台能力——入站的身份系统（`authn.gate` 网关、`authn.login.password`、`authn.mfa.totp`、`authn.session`、`authn.account`）、租户的 `tenant.resolve` 与 `tenant.admission`、`authz.guard` 授权层、`authz.self` 的调用方权限读取、`audit.journal` 审计、`ratelimit` 限流、`settings` 设置、`feature.board` 特性文档的发布，以及任务（`jobs.db`、`jobs.scheduler`）、通知的收件箱、推送、偏好矩阵与投递流水线（`notification.inbox`、`notification.stream`、`notification.preferences`、`notification.delivery`）与对象存储的文件系统后端（`objectstore.fs`）。被判据排除在外的，是一启动就要一份外部凭据或一份栈外服务的：社交与企业身份提供方（`authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`、`authn.sso.oidc`、`authn.sso.saml`）、短信家族（`sms.*`、`authn.login.sms`、`authn.mfa.sms`、`authn.sms`）、SMTP 邮件（`mail.smtp`）、S3 对象存储（`objectstore.s3`）；它们在产品拿到对应依赖后自行加入。
+判据的两侧各有一组例证。落在基线里的，是只用进程内实现或栈内后端就起得来的平台能力——入站的身份系统（`authn.gate` 网关、`authn.login`、`authn.login.password`、`authn.mfa.totp`、`authn.session`、`authn.account`）、租户的 `tenant.resolve` 与 `tenant.admission`、`authz.guard` 授权层、`authz.self` 的调用方权限读取、`audit.journal` 审计、`ratelimit` 限流、`settings` 设置、`feature.board` 特性文档的发布，以及任务（`jobs.db`、`jobs.scheduler`）、通知的收件箱、推送、偏好矩阵与投递流水线（`notification.inbox`、`notification.stream`、`notification.preferences`、`notification.delivery`）与对象存储的文件系统后端（`objectstore.fs`）。被判据排除在外的，是一启动就要一份外部凭据或一份栈外服务的：社交与企业身份提供方（`authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`、`authn.sso.oidc`、`authn.sso.saml`）、短信家族（`sms.*`、`authn.login.sms`、`authn.mfa.sms`、`authn.sms`）、SMTP 邮件（`mail.smtp`）、S3 对象存储（`objectstore.s3`）；它们在产品拿到对应依赖后自行加入。
+
+**口令注册在基线上关闭。** 注册路由 `POST /api/v1/auth/register` 归 `authn.login`，基线装配纳入该模块，但设置项 `authn.account.password-signup` 保持缺省的 `closed`，基线的装配里也没有 `authn.emailcode`、`mail.smtp` 与短信通道；开放注册会产生永远无法验证的账户。此时调用注册路由答 403 `signup-closed`，发现面不出现注册入口。开放它需要装配邮箱验证通道，见「注册与完成设置」。
 
 **WebAuthn（`authn.mfa.webauthn`）也在基线里，是判据放行、示范仍须点名的那一项。** 它的依赖方绑定在部署被访问的来源上——那是 `testdata/` 承载的一个配置项，不是外部凭据也不是栈外服务——所以它一启动不依赖任何外部物，过得了判据（`AGENTS.md` 因此把它从「被排除」一栏移到基线）。点名它是因为平台管理面要能演示自身：步进要求一个与本会话已证明过的认证方式不相交的因素种类，只有 TOTP 一种时，以 TOTP 登录的会话没有因素可用来升级，步进起点因此被拒；TOTP 并上 WebAuthn，让步进有第二种因素种类可点。示范自带的前端实现 WebAuthn 仪式：`@speed/auth-ui`、`@speed/account-ui` 与 `@speed/console-ui` 都经 `@speed/auth-core/webauthn` 子路径驱动同一仪式，把 passkey 的创建或请求选项解码后交给浏览器，再把返回的凭据按后端解的 JSON 形状序列化成答复。登记与升级因此都能在界面上走完，不需要界面之外的客户端（`AGENTS.md` 详述）。
 
@@ -93,11 +97,13 @@ starters/demo/
 
 ### 审查装配
 
-审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。`server/review.go` 的 `reviewModules` 给 `serve` 的点名集加上基线判据排除在外的登录方式：社交登录方法（`authn.login.google`、`authn.login.github`、`authn.login.wechat-mp`、`authn.login.wechat-web`）与短信家族（`authn.sms`、`sms.registry`、`authn.login.sms`），外加载体 `sms.review`。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这些模块的代码路径；基线的判据与点名集不因它改变。
+审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。`server/review.go` 的 `reviewModules` 给 `serve` 的点名集加上基线判据排除在外的登录方式：社交登录方法（`authn.login.google`、`authn.login.github`、`authn.login.wechat-mp`、`authn.login.wechat-web`）与短信家族（`authn.sms`、`sms.registry`、`authn.login.sms`），外加载体 `sms.review`；口令注册另加邮箱验证模块 `authn.emailcode` 与它的日志载体 `mail.review`。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这些模块的代码路径；基线的判据与点名集不因它改变。
 
-**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
+**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 与 `authn.account.password-signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
 
 **验证码由短信模块生成，不写死。** `sms.review` 经 `sms.NewModule` 提供载体的发送与模板两条接缝，不读任何配置项；短信模块把消息的 `code` 参数交给它，它把这一行写进进程日志的 `verification_code` 字段。该字段不叫 `code`，因为 `code` 是进程已登记的敏感键名，日志层会把值打码。号码仍经过真实的预算、挑战行与校验，流程跑的是产品自己的状态机。
+
+**日志邮件与短信承载注册验证的走查。** `mail.review` 实现 `pkg/mail.Sender`，把渲染后的邮件写进进程日志，验证码落在 `verification_code` 字段（同样避开已登记的敏感键名 `code`）。审查走查链是：登录页切到注册模式，提交用户名、邮箱与口令 → 自动登录 → 落在 `/account/verify`（或应用栏之下的验证提示）→ 从 `mail.review` 的日志读邮箱验证码 → 提交验证 → `verification.state` 变为 `verified`，注册限制解除 → 个人租户 ensure 建出个人租户。手机走查仍可在账户页经 `sms.review` 的日志读码验证手机，但手机验证不解除注册限制，只作为登录方式与额外安全因素。
 
 **审查装配只在回环地址上监听。** `server/review.go` 的 `reviewGuardModule` 在 `Prepare` 里、任何套接字绑定之前，读 `http.listeners` 每一项的地址，主机不是回环就拒绝启动：`localhost` 与 IP 回环地址算回环；空主机（所有网卡）、`0.0.0.0`、`::` 与其它不能判定为回环的写法都拒绝，误拒落在安全一侧。监听地址只能来自主配置文件，环境变量与命令行不能设置它，守卫与 http 模块读同一份配置，没有第二条通道绕过它。理由是审查装配带着公开的种子管理员口令与开放注册，能被网络访问的进程把这两样交给任何人。守卫只限定监听地址，不限定日志的去向：验证码写进进程日志，日志被收集或导出到别处时，验证码随之出机。
 
@@ -163,6 +169,7 @@ starters/demo/
 | `/` | 无 | 示范 |
 | `/account` | 无 | 示范 |
 | `/account/setup` | 无 | 示范 |
+| `/account/verify` | 无 | 示范 |
 | `/objects` | `objectstore.objects` | 示范 |
 | `/notifications` | `notification.inbox` | notification-ui 的 `notificationRoutes`（[notification-ui](web/design-web-notification-ui.md)） |
 | `/invitations/:token` | `authn.invitations` | 示范 |
@@ -296,22 +303,22 @@ flowchart TD
 首登开户的账户没有任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），任何还没被加进租户的账户同样如此。客户端没有读取本人成员关系的接口；租户是请求的路由事实，由宿主的路由得出；准入层对不可进入的租户一律答不区分原因的 404（[tenant 准入](tenant/design-tenant-admission.md)）。示范因此不假装知道账户有没有成员关系：
 
 - 租户区里取租户数据的面（对象页、通知面）把这类裸 404 渲染为「无法访问当前组织」，说明它可能不存在、或账户还不是该组织的成员，并指引联系管理员发送邀请；不渲染成服务没有应答，也不给重试（[objectstore-ui](web/design-web-objectstore-ui.md)、[notification-ui](web/design-web-notification-ui.md)）。
-- 账户级的页面（账户设置、注册后的完成设置页）不取租户数据，照常可用；个人租户的 ensure 失败时，失败占位只替换取租户数据的页面，不替换它们。
+- 账户级的页面（账户设置、注册后的完成设置页、验证邮箱页）不取租户数据，照常可用；个人租户的 ensure 失败时，失败占位只替换取租户数据的页面，不替换它们。
 - 进入租户的途径是邀请链接与管理员授予的成员关系；示范只在启用个人租户时为没有成员关系的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建，也不提供读取本人成员关系的接口。
 
 ### 个人租户
 
-决策见 [ADR-starters-personal-tenant-2026-10-18](../../adr/adr-starters-personal-tenant-2026-10-18.md)。宿主配置开启个人租户时（缺省关闭；示范的审查装配开启它，见「审查装配」），示范为没有成员关系的账户建一个个人租户，使注册完成的账户在租户区即可使用。
+决策见 [ADR-starters-personal-tenant-2026-10-18](../../adr/adr-starters-personal-tenant-2026-10-18.md)。宿主配置开启个人租户时（缺省关闭；示范的审查装配开启它，见「审查装配」），示范为没有成员关系且已验证邮箱的账户建一个个人租户，使注册完成的账户在租户区即可使用。
 
 - **服务端是一个宿主模块，不进 `pkg/` 的公共面。** 它在 `account` 端挂一条没有租户解析的路由 `POST /api/v1/workspace/personal`，并声明特性 `workspace.personal`；开关关闭时路由不挂、特性不在场。`/api/v1/workspace` 作为 `account` 端的认领前缀写在每份配置与后端前缀清单里，认领与装配无关，开关关闭时该前缀对已认证调用答 404；未认证调用先被 `account` 端的网关拒绝为 401，这是各端认领前缀的普遍行为。契约属于应用自己的第二级契约：应用所有的操作与特性在合并文档里带所有者标记，平台包的生成面与特性名不含它们（[api-sdk](web/design-web-api-sdk.md)）。
-- **路由对调用方的要求与应答。** 调用方须已认证、不在冒充中、不是静态凭据主体、不是服务账户，不满足答 403。资格由服务端判定：调用方已有自己的个人租户的成员关系时读回它，不论是否还有别的成员关系；没有个人租户而成员关系为空时建；没有个人租户而有其他成员关系答 409 `already-member`，不建；租户行已存在而状态不是启用答 409 `tenant-unavailable`，不写任何东西；别名被别的租户占用或派生的标识越出名册域答 409 `identifier-unavailable`，重试不会成功。成功应答 `{ tenant: { id, alias, kind: "personal" }, created }`，`created` 表示这次调用建了租户。依赖不可用答 503，不带着半份结果放行。
+- **路由对调用方的要求与应答。** 调用方须已认证、不在冒充中、不是静态凭据主体、不是服务账户，不满足答 403。资格由服务端判定：调用方已有自己的个人租户的成员关系时读回它，不论是否还有别的成员关系；没有个人租户而成员关系为空时建；没有个人租户而有其他成员关系答 409 `already-member`，不建；租户行已存在而状态不是启用答 409 `tenant-unavailable`，不写任何东西；别名被别的租户占用或派生的标识越出名册域答 409 `identifier-unavailable`，重试不会成功；调用方的注册验证状态为 `pending` 答 409 `verification-required`，不建租户。成功应答 `{ tenant: { id, alias, kind: "personal" }, created }`，`created` 表示这次调用建了租户。依赖不可用答 503，不带着半份结果放行。
 - **租户标识由账户标识确定性派生。** 标识与别名取同一个由固定前缀加账户标识组成的字符串，不取手机号、显示名或任何个人信息：别名随请求出现在日志、审计与路径里，是请求面标识，不翻译，也不含个人信息。确定性使并发的两次调用撞上同一个唯一约束，后到者读回既有租户。
 - **每次调用幂等地核对并补齐，但不覆盖运营者的决定。** 租户行（不存在时经 `Create` 建，已存在则读回，读回前先经 `EnterRegistered` 追平本副本的名册快照）；账户在该租户的成员关系（已有一行，不论状态，就不改写，没有才写）；租户内的非内置角色 `owner`（`Manager.PutRole`）；该角色的授予收敛到宿主声明的允许集（`Seeder.SeedGrants` 补入缺的，多出的撤销）；账户到该角色的绑定（`Manager.PutBinding`，缺才写）。运营者要收回个人租户，停用租户即可，ensure 不替它复原；只删成员关系或绑定不算收回，下一次调用会补回。某一步失败时前面各步留着，下次调用补齐，补齐的那次调用 `created` 为假。
 - **owner 的权限是宿主声明的允许集，不是租户域的全部权限。** 允许集只含个人租户该有的业务资源面，由宿主在代码里显式列出（现为对象存储的各项权限；通知面不声明权限点）。认证模块的租户级管理动作——成员管理、邀请、身份提供方管理、冒充与客户端管理，以及非成员放行——按租户域决策，授给 owner 会让每个自助注册的账户成为带成员与冒充管理权的租户管理员，并使被它加入的账户永远得不到自己的个人租户，所以不在允许集内。允许集由宿主声明而不由目录推出，进程之后新声明的租户级权限因此不会自动进入 owner。已按旧口径建出的个人租户，其 owner 的多余授予在下一次 ensure 时撤销。
-- **租户框架在已认证、非冒充、没有当前租户且特性 `workspace.personal` 在场时调用它。** 有当前租户的账户（平台员工经名册读得到租户上下文，或已选定租户者）不触发；名册读被 403 拒绝才算普通成员、没有当前租户而触发，名册读的其他失败（5xx、网络、超时）不触发，沿用该读自己的失败呈现与重试，名册读成功的平台员工默认选中租户切换器能提供的租户中第一个启用且不是个人租户的租户（切换器只列占位清单的租户，选中清单外的租户会让调用方落进既无法命名、也无法离开的租户，而它的每个租户域请求都被拒绝）；成功后把应答的别名挂成当前租户上下文；失败（含 503）时，取租户数据的页面渲染可重试的失败占位，重试再调一次，账户级页面照常渲染；409 时不挂个人租户，租户区回落到占位租户读取（本节之外的既有限制），读答裸 404，按「账户没有成员关系时的租户区」渲染「无法访问当前组织」；租户为空时读被禁用、只会停在加载占位，所以不以空租户收场。
+- **租户框架在已认证、非冒充、没有当前租户、档案的 `verification.state` 不是 `pending` 且特性 `workspace.personal` 在场时调用它。** `pending` 时前端先引导验证，不调用 ensure；ensure 在 pending 账户上答 409 `verification-required`，前端收到它时导航到验证页，不渲染失败占位。验证邮箱通过后 `verification.state` 变为 `verified`，ensure 恢复调用。有当前租户的账户（平台员工经名册读得到租户上下文，或已选定租户者）不触发；名册读被 403 拒绝才算普通成员、没有当前租户而触发，名册读的其他失败（5xx、网络、超时）不触发，沿用该读自己的失败呈现与重试，名册读成功的平台员工默认选中租户切换器能提供的租户中第一个启用且不是个人租户的租户（切换器只列占位清单的租户，选中清单外的租户会让调用方落进既无法命名、也无法离开的租户，而它的每个租户域请求都被拒绝）；成功后把应答的别名挂成当前租户上下文；失败（含 503）时，取租户数据的页面渲染可重试的失败占位，重试再调一次，账户级页面照常渲染；409 时不挂个人租户，租户区回落到占位租户读取（本节之外的既有限制），读答裸 404，按「账户没有成员关系时的租户区」渲染「无法访问当前组织」；租户为空时读被禁用、只会停在加载占位，所以不以空租户收场。
 - **个人租户的展示取前端文案。** 租户记录没有展示名；应答标明 `kind` 为 `personal` 时，租户选择器渲染个人空间的文案（zh-CN 与 en-US 各一键），其余租户渲染别名，别名从不翻译。
 - **切换租户逐出离任租户的缓存。** 租户是请求的路由事实，不是会话操作：选择器只把选中的租户标识报告一次，宿主随即改自己的路由与租户上下文。每个租户作用域的读都按租户标识分键（auth-core 的 `tenantQueryKey`），所以宿主在切换时用切换之前读到的离任租户标识调 `evictTenantQueries`，把该租户的整棵子树逐出；新租户的标识不逐出任何东西。当前租户未知（`null`）到某个租户的落定不是切换，不逐出。
-- **注册完成后的落点与一次性提示。** 启用个人租户时，注册模式下经短信渠道登录成功后落在租户区首页。首页顶部的「完成账户设置」提示（可关闭，链接到 `/account/setup`）由 ensure 应答的 `created` 为真触发——账户刚得到个人租户——且 `GET /api/v1/auth/me` 显示账户设置未完成（没有可作登录名的标识或没有口令），提示出现之后仍按账户当前资料实时判定，设置完成即消失，而不由登录屏的注册模式触发，所以直接以新号码走普通短信登录而隐式开户的账户同样得到这条提示。登录完成应答不带「新开户」的事实，平台契约不为它加字段。未启用个人租户时没有这个信号，注册模式下的落点仍是 `/account/setup`。
+- **注册完成后的落点与一次性提示。** 口令注册成功并自动登录后落在验证页 `/account/verify`，与个人租户是否启用无关；账户在验证前不调用 ensure（见上一条）。注册模式下经短信渠道登录成功后，启用个人租户时落在租户区首页，未启用时落在 `/account/setup`。首页顶部的「完成账户设置」提示（可关闭，链接到 `/account/setup`）由 ensure 应答的 `created` 为真触发——账户刚得到个人租户——且 `GET /api/v1/auth/me` 显示账户设置未完成（没有可作登录名的标识或没有口令），提示出现之后仍按账户当前资料实时判定，设置完成即消失，而不由登录屏的注册模式触发，所以直接以新号码走普通短信登录而隐式开户的账户同样得到这条提示。登录完成应答不带「新开户」的事实，平台契约不为它加字段。验证提示与这条一次性提示分开：它由 `verification.state` 为 `pending` 触发，持续到邮箱验证完成，不随会话内关闭而消失。
 
 ### 冒充期间的壳
 
@@ -327,12 +334,16 @@ flowchart TD
 
 ### 注册与完成设置
 
-决策见 [ADR-authn-signup-2026-10-18](../../adr/adr-authn-signup-2026-10-18.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真且有可见的开户类方法时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
+决策见 [ADR-authn-signup-2026-10-22](../../adr/adr-authn-signup-2026-10-22.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真，且 `signup.password.enabled` 为真或至少一个可见方法带 `opens_account` 时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
 
-- **注册模式下经短信渠道登录成功后，示范按个人租户是否启用决定落点。** `SignInView` 的 `onSignedIn` 收到登录上下文，`mode` 为 `register` 且 `channel` 为 `sms` 时，个人租户启用则去租户区首页，未启用则导航到完成设置页（见「个人租户」；一次完成设置的提示由 ensure 的 `created` 决定，不由落点携带）；这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、控制台会话门的登录屏登录之后留在原地址；其余情形（口令、通行密钥、重定向类与企业类登录，以及登录模式下的短信登录）照常进入应用。注册模式下用已登记的手机号登录得到的是一次普通登录，完成设置页此时反映账户当前状态。
+- **口令注册成功后落在验证页。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account/verify`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、控制台会话门的登录屏登录之后留在原地址。
+- **验证页与持续验证提示。** `/account/verify` 承载 account-ui 的 `ContactVerificationSection`，受会话门保护。`verification.state` 是账户 `signup_state` 的投影：`none`、`pending`、`verified` 分别对应 0、1、2。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失，与个人租户的一次性提示分开。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示，不并进 `setupIncomplete`——口令注册的账户在后者下已完成，验证提示仍要显示。
+- **待验证账户与个人租户。** `verification.state` 为 `pending` 时示范不调用个人租户 ensure，先引导验证（见「个人租户」）；ensure 在 pending 账户上答 409 `verification-required`，前端收到它时导航到验证页，不渲染失败占位。邮箱验证通过后 `verification.state` 变为 `verified`，ensure 恢复调用。未启用个人租户时，验证后的账户落在租户区首页，不触发建户。
+- **邮箱解除限制，手机不解除。** 邮箱验证走标识节的自助回路（`POST /api/v1/auth/identifiers` 与 `/verify`）；手机验证走手机节的两步。手机是登录方式与额外安全因素，验证手机不解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
+- **短信与社交开户的落点不变。** 注册模式下经短信渠道登录成功（`mode: 'register'`、`channel: 'sms'`）仍按个人租户是否启用决定去租户区首页或完成设置页；这个落点同样只在登录屏是应用登录页本身时生效。社交与企业登录照常进入应用。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
 - **完成设置页由 account-ui 的两个节组成，用户名先于口令。** `IdentifiersSection` 添加用户名；`PasswordSection` 只在账户已有可作登录名的标识（用户名或已验证邮箱）之后可用，在此之前渲染说明：口令登录要有登录名，请先添加用户名。账户已经有登录名与口令时，页面陈述账户设置已完成并给出回到首页的链接。页面带一个回到首页的「稍后设置」链接；跳过不撤销已建的账户，账户仍可经短信登录。
-- **注册建立账户，不建立成员关系。** 开户不建任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），启用个人租户时，示范为没有成员关系的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建；未启用时新账户访问任何租户资源得 404，成员关系仍由管理员或邀请授予。
-- **注册的可用性随装配。** 它需要 `authn.sms` 在场并配了可用的短信载体，且 `authn.account.signup` 为 `open`；基线的装配与种子设置里两者都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
+- **注册建立账户，不建立成员关系。** 开户不建任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），启用个人租户时，示范为没有成员关系且已验证邮箱的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建；未启用时新账户访问任何租户资源得 404，成员关系仍由管理员或邀请授予。
+- **注册的可用性随装配。** 口令注册需要设置项 `authn.account.password-signup` 为 `open`，并装配邮箱验证通道（`authn.emailcode` 与一个 `pkg/mail.Sender`）；短信开户另需 `authn.account.signup` 为 `open` 与可用的短信载体。基线的装配与种子设置里这些都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
 
 ### 宿主侧的特性读取
 
@@ -348,12 +359,15 @@ flowchart TD
 | `NotificationPresenceProvider` | `preferences` 取特性 `notification.preferences` 是否在场；`channels` 取 `notification.channel.email`、`notification.channel.sms` 中特性在场的那些所对应的 `email`、`sms` |
 | 租户名册的读取 | 特性态为 `ready` 且特性 `tenant.admin` 在场才读；被 403 拒绝的普通成员在个人租户启用时没有当前租户；`ready` 而该特性缺席时取缺省租户；`pending`、`failed` 时当前租户保持未知，租户作用域的查询保持禁用 |
 | 控制台区的当前租户落定（`ConsoleAreaGate`） | 已认证且当前租户未定时读名册并落定默认租户，与租户框架的规则相同，供两域权限集的读取带上租户名；读被拒或失败时当前租户保持未知，区域照常按平台权限集判定 |
-| 个人租户的 ensure（`TenantFrame`） | 特性 `workspace.personal` 在场、已认证、非冒充、没有当前租户才调用 |
+| 个人租户的 ensure（`TenantFrame`） | 特性 `workspace.personal` 在场、已认证、非冒充、没有当前租户且 `verification.state` 不是 `pending` 才调用 |
 | 注册模式下短信登录之后的落点（`SignInView`） | 特性 `workspace.personal` 在场去租户区首页，缺席去完成设置页 |
+| 口令注册之后的落点（`SignInView`） | 一律去 `/account/verify`，与个人租户特性无关 |
 | 平台权限集与租户权限集的读取（`platform-permissions.tsx`） | 特性态为 `ready` 且当前租户已落定时读调用方自身的权限读取路由（`GET /api/v1/authz/me/permissions`）；`pending`、`failed` 或当前租户未定时两域保持未知；读被拒或失败时两域挂空集 |
 | 头部的 `ConsoleEntry` 与首页的控制台卡片 | 持有平台权限、且控制台声明经 `presentDeclarations` 收窄后非空时出现，冒充期间两者都不出现；目标是第一条特性在场、且持有其权限码的控制台导航项 |
 | 首页的对象卡片与通知卡片 | `useHasRoute('/objects')`、`useHasRoute('/notifications')`：入口跟随目标页 |
 | `ConsoleArea` | 给 console-ui 的 `ConsoleShell` 传经 `presentDeclarations` 收窄的控制台声明，以及取自 `featurePresence` 的 `hasFeature` |
+
+验证页与验证提示不经特性门控：它们按本人档案的 `verification.state` 渲染，`none` 时不出现。
 
 租户名册与两域权限集的读取以特性态为输入：特性态转为 `ready` 时各读一次；一次身份变更（`applyIdentityChange`）另是两域权限集与当前租户的重读触发；当前租户落定或切换同样重读两域权限集——它的租户域集合是在请求解析到的租户里持有的那一份。特性态此时仍是 `ready`、没有转为 `ready` 这一沿，重读仍受上表的门控约束。两域权限集的读取另以当前租户为门控：租户未落定时不发读，落定之后才读。账户页的 `PasswordSection` 不经特性门控，修改口令的路由由 `authn.login` 恒挂。
 
@@ -418,6 +432,11 @@ flowchart TD
 | 横幅在应用栏之下、横幅的隐藏与复位、应用栏的身份指示、账户菜单的结束项 | 已实现 | `starters/demo/web/src/impersonation.tsx` `useImpersonationNoticeState`、`ImpersonationBannerSlot`、`ImpersonationChip`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/chrome.tsx` `UserMenu` |
 | 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、开始冒充时的读暂停、控制台区在冒充中的重定向） | 已实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleImpersonationGate`、`ConsoleEntry`；`starters/demo/web/src/console-routes.ts` `useConsoleTarget`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
 | 注册模式下短信登录之后的完成设置页（用户名、口令） | 已实现 | `starters/demo/web/src/pages/account-setup-page.tsx` `AccountSetupPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
+| 审查装配的日志邮件 `mail.review` 与开放口令注册的走查链 | 未实现 | — |
+| 口令注册成功落地 `/account/verify` 与持续验证提示 | 未实现 | — |
+| `pending` 时不调用个人租户 ensure，ensure 答 409 `verification-required` | 未实现 | — |
+| Fly 的 `mail.smtp` 配置与 SMTP secret（配好前注册保持关闭） | 未实现 | — |
+| 页面表新增 `/account/verify` | 未实现 | — |
 | 个人租户：服务端 ensure、`POST /api/v1/workspace/personal`、特性 `workspace.personal`、`/api/v1/workspace` 的认领，以及租户框架的触发 | 部分实现 | `starters/demo/server/personal.go` `personalModule`、`personalProduct`；`starters/demo/server/personal-openapi.json`；`starters/demo/web/src/app.tsx` `TenantFrame` |
 | 个人租户端点的 operation 声明与 `personal-openapi.json` 生成 | 已实现 | `starters/demo/server/personal.go`；`starters/demo/server/openapi_generated_test.go`；片段 `starters/demo/server/personal-openapi.json` |
 | 个人租户 owner 的权限取宿主声明的允许集，ensure 把授予收敛到允许集 | 已实现 | `starters/demo/server/personal.go` `personalOwnerPermissions`、`convergeOwnerGrants` |

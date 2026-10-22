@@ -21,7 +21,7 @@
 
 ### 登记
 
-`tenant.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 名册功能 `(*tenant.Catalog)(nil)`、handler 内判定 `(*guard.Guard)(nil)` 与审计 `(*audit.Audit)(nil)`，并可选取 `log.Logger`。名册与 guard 各由唯一模块排他交付，命令的闭合不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
+`tenant.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 名册功能 `(*tenant.Catalog)(nil)`、handler 内判定 `(*guard.Guard)(nil)`、审计 `(*audit.Audit)(nil)` 与注册验证状态读面 `(*authn.SignupVerification)(nil)`，并可选取 `log.Logger`。名册与 guard 各由唯一模块排他交付，命令的闭合不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
 
 **本模块声明静态[特性](../../../glossary.md) `tenant.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "tenant.admin"}`；这个特性在场，表示本进程挂出名册管理面的路由（[feature](../design-feature.md)）。`tenant.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
@@ -57,7 +57,9 @@
 
 **判定由本模块在 handler 内做出，不经请求中间件的声明判定。** 管理面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `authz.guard` 的 handler 内判定 API 就这条路由的权限问一句，不足即回绝。模块不给自己授予任何权限。
 
-**判定顺序固定，写与读在判定之后分叉。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与准入层、授权层同形的 realm 质询，不询问 guard 即返回。再向 guard 要本条路由的权限：不足即由 guard 写出它自己的拒绝——拒绝 403、故障 503——并返回。判定之后才分叉：写解析正文、跑本条路由的形状检查、落强制档审计、调名册；读调名册并应答。
+**判定顺序固定，写与读在判定之后分叉。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与准入层、授权层同形的 realm 质询，不询问 guard 即返回。写路由随后读发起者的注册验证状态（见下），再向 guard 要本条路由的权限：不足即由 guard 写出它自己的拒绝——拒绝 403、故障 503——并返回。判定之后才分叉：写解析正文、跑本条路由的形状检查、落强制档审计、调名册；读调名册并应答。
+
+**注册验证状态的门控在权限判定之前。** 写路由（登记、改名与改状态）在读完调用方身份之后、权限判定与解析正文、落强制档审计之前，读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`）：发起者是 `signup_state=1` 的用户账户时答 403 `contact-required`（`authn.ErrContactRequired`），动作不执行；服务账户与 `signup_state=0` 的发起者豁免，读路由不受这条门控影响。读取状态失败答 503，不按放行处理。门控只收紧、不放行：它只多拒绝一类发起者，不改变权限判定本身，也不让任何未通过权限判定的请求通过。门控在服务端执行，不依赖前端的入口隐藏。
 
 **判定在平台域做出。** 名册是平台资产、不是某个租户的，所以一次名册操作是平台操作；handler 经 `RequirePermissionIn(c, perm, authz.PlatformDomain)` 显式指定平台域判定。若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到整个名册。**枚举也是平台操作**：`List` 读的名册表不是受租户约束的表，它本就在过滤之外，所以列出全部租户是一次平台域的读，不是一次跨租户读——它不建跨租户上下文，也不要求跨租户的权限。
 
@@ -77,11 +79,11 @@
 - **配置命名空间与输入项**：`tenant.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
 - **管理端点**：`tenant.admin.endpoints` 列出的端，`/api/v1/system/tenants/*` 下的名册读写路由（路由见「路由」）。
 - **权限**：读路由询 `tenant.read`，写路由询 `tenant.manage`；本模块的权限经 `authz.PermissionSpec` 进入进程目录、经 `authz.TranslationSpec` 进入进程翻译（`tenant.read` 译成 `(tenant, read)`、`tenant.manage` 译成 `(tenant, manage)`）。
-- **问题应答**：`Problem.Type` 前缀 `urn:speed:tenant:`，其下的码 `bad-request`、`conflict`。
+- **问题应答**：`Problem.Type` 前缀 `urn:speed:tenant:`，其下的码 `bad-request`、`conflict`。写路由另在发起者为未验证账户时答 403 `contact-required`，这个码不属于该前缀。
 
 ### 对外接口面
 
-- 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
+- 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`），是本模块对宿主的接口面。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口面。改动它们是宿主可见的破坏性变更。
 - 租户视图的字段名（`id`、`alias`、`status`）与容器成形态是应答形状：宿主与前端据此读应答。
 - 特性名 `tenant.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或名册的代码。
@@ -93,7 +95,7 @@
 | `pkg/tenant` | `tenant.Catalog`（名册的读写面）、`tenant.Tenant`、`tenant.ID`、`tenant.IsIdentifier`、`tenant.Status` 与哨兵 `tenant.ErrTenantExists`、`tenant.ErrAliasConflict`、`tenant.ErrInvalidTenant` |
 | `pkg/authz`、`pkg/authz/guard` | 权限声明与翻译（`authz.PermissionSpec`、`authz.TranslationSpec`）、handler 内判定（`guard.Guard.RequirePermissionIn`）、平台域 `authz.PlatformDomain`、路由声明面 `authz.Gate` |
 | `pkg/audit` | 强制档审计 |
-| `pkg/authn` | 读请求上的身份（`authn.FromContext`） |
+| `pkg/authn` | 读请求上的身份（`authn.FromContext`）与发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`） |
 | `pkg/http` | 路由挂载与问题应答（`speedhttp.Router`、`speedhttp.Fail`、`speedhttp.Problem`） |
 | `pkg/config` | 声明本模块的输入项 |
 | `pkg/core` | 模块描述符与功能取用 |
@@ -106,7 +108,7 @@
 
 ## UML 图
 
-本模块不持状态、不做判定之外的分支，它的结构是一串跨模块的调用。图固定一次写路由的操作序：读调用方 → 向 guard 要权限 → 解析正文与形状检查 → 落强制档审计 → 调名册 → 映射拒绝。图上看不出的是这些约束：判定在**平台域**做出，不是请求解析出的租户；审计落在**动作之前、事务之外**，写不进即 503 且动作不执行；guard 的拒绝（403）与故障（503）由 guard 自己写出，本模块不重写；名册的拒绝经本模块的封闭映射变成 400／404／409，其余失败落 503。读路由在「向 guard 要权限」之后直接调名册，不经正文、审计与写路径。
+本模块不持状态、不做判定之外的分支，它的结构是一串跨模块的调用。图固定一次写路由的操作序：读调用方 → 读注册验证状态 → 向 guard 要权限 → 解析正文与形状检查 → 落强制档审计 → 调名册 → 映射拒绝。图上看不出的是这些约束：判定在**平台域**做出，不是请求解析出的租户；写路由在权限判定之前、审计之前读发起者的注册验证状态，**待验证账户答 403 `contact-required`、读取失败答 503**，动作都不执行，门控只收紧、不放行；审计落在**动作之前、事务之外**，写不进即 503 且动作不执行；guard 的拒绝（403）与故障（503）由 guard 自己写出，本模块不重写；名册的拒绝经本模块的封闭映射变成 400／404／409，其余失败落 503。读路由在「向 guard 要权限」之后直接调名册，不经正文、审计与写路径。
 
 ```mermaid
 sequenceDiagram
@@ -120,21 +122,28 @@ sequenceDiagram
     alt 无身份
         H-->>C: 401 带 realm 质询
     else 有身份
-        H->>G: RequirePermissionIn(权限, 平台域)
-        alt 权限不足
-            G-->>C: 403 或 guard 故障 503
-        else 权限足够
-            H->>H: 解析正文并做形状检查
-            H->>A: 写强制档审计
-            alt 审计写不进
-                H-->>C: 503，动作不执行
-            else 审计落地
-                H->>R: Create / SetAlias / SetStatus
-                alt 名册拒绝
-                    H->>A: 记一行 failed
-                    H-->>C: 400 / 404 / 409
-                else 落地
-                    H-->>C: 201 / 204
+        H->>H: 读发起者的注册验证状态
+        alt 待验证账户
+            H-->>C: 403 contact-required，动作不执行
+        else 读取失败
+            H-->>C: 503，动作不执行
+        else 已验证
+            H->>G: RequirePermissionIn(权限, 平台域)
+            alt 权限不足
+                G-->>C: 403 或 guard 故障 503
+            else 权限足够
+                H->>H: 解析正文并做形状检查
+                H->>A: 写强制档审计
+                alt 审计写不进
+                    H-->>C: 503，动作不执行
+                else 审计落地
+                    H->>R: Create / SetAlias / SetStatus
+                    alt 名册拒绝
+                        H->>A: 记一行 failed
+                        H-->>C: 400 / 404 / 409
+                    else 落地
+                        H-->>C: 201 / 204
+                    end
                 end
             end
         end
@@ -158,7 +167,7 @@ sequenceDiagram
 
 ### 一次管理请求
 
-一次管理请求的操作序固定（细节见「访问控制」）：读调用方（无身份 401）→ 向 guard 要本条路由的权限（不足由 guard 写出 403／503）→ 判定之后写与读分叉，写先解析正文并做形状检查（越出形状即 400），再落强制档审计（落不进即 503、动作不执行），再调名册，把名册的回绝映射成应答；读直接调名册并应答。
+一次管理请求的操作序固定（细节见「访问控制」）：读调用方（无身份 401）→ 写路由读发起者的注册验证状态（待验证账户即 403 `contact-required`，读取失败即 503）→ 向 guard 要本条路由的权限（不足由 guard 写出 403／503）→ 判定之后写与读分叉：写解析正文并做形状检查（越出形状即 400），再落强制档审计（落不进即 503、动作不执行），再调名册，把名册的回绝映射成应答；读直接调名册并应答。
 
 ### 判定在平台域做出
 
@@ -166,24 +175,27 @@ sequenceDiagram
 
 ### 登记
 
-1. 形状检查：`id` 与 `alias` 都要落在 `tenant.IsIdentifier` 的取值域内，否则 400。
-2. 落强制档审计（动作 `tenant.create`）。
-3. `Catalog.Create(Tenant{ID: id, Alias: alias, Status: tenant.StatusActive})`。
-4. `ErrTenantExists` → 409；`ErrAliasConflict` → 409；其余 → 503。落地 → 201 加视图。
+1. 读发起者的注册验证状态：`signup_state=1` 答 403 `contact-required`，读取失败答 503，动作不执行。
+2. 形状检查：`id` 与 `alias` 都要落在 `tenant.IsIdentifier` 的取值域内，否则 400。
+3. 落强制档审计（动作 `tenant.create`）。
+4. `Catalog.Create(Tenant{ID: id, Alias: alias, Status: tenant.StatusActive})`。
+5. `ErrTenantExists` → 409；`ErrAliasConflict` → 409；其余 → 503。落地 → 201 加视图。
 
 ### 改名
 
-1. 形状检查：路径的 `id` 与正文的 `alias` 都要落在 `tenant.IsIdentifier` 的取值域内，否则 400。
-2. `Catalog.Get(id)`；名册不持有该标识 → 404。
-3. 落强制档审计（动作 `tenant.update`）。
-4. `Catalog.SetAlias(id, alias)`。
-5. `ErrAliasConflict` → 409；其余 → 503。落地 → 204。
+1. 读发起者的注册验证状态：`signup_state=1` 答 403 `contact-required`，读取失败答 503，动作不执行。
+2. 形状检查：路径的 `id` 与正文的 `alias` 都要落在 `tenant.IsIdentifier` 的取值域内，否则 400。
+3. `Catalog.Get(id)`；名册不持有该标识 → 404。
+4. 落强制档审计（动作 `tenant.update`）。
+5. `Catalog.SetAlias(id, alias)`。
+6. `ErrAliasConflict` → 409；其余 → 503。落地 → 204。
 
 ### 改状态
 
-1. 形状检查：路径的 `id` 落在取值域内，正文的 `status` 是 `active` 或 `disabled`，否则 400。
-2. 落强制档审计（动作 `tenant.status`）。
-3. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；其余 → 503。落地 → 204。
+1. 读发起者的注册验证状态：`signup_state=1` 答 403 `contact-required`，读取失败答 503，动作不执行。
+2. 形状检查：路径的 `id` 落在取值域内，正文的 `status` 是 `active` 或 `disabled`，否则 400。
+3. 落强制档审计（动作 `tenant.status`）。
+4. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；其余 → 503。落地 → 204。
 
 ## 错误与失败语义
 
@@ -195,10 +207,12 @@ sequenceDiagram
 | 登记点名一个已被持有的标识 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantExists` |
 | 别名被别的租户持有 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrAliasConflict` |
 | `GET`／`PATCH`／状态路由点名一个名册不持有的标识 | 404，不带 `Problem.Type` |
+| 发起者是未验证账户（`signup_state=1`），而这是写路由 | 403 `contact-required`（`authn.ErrContactRequired`），动作不执行 |
+| 注册验证状态读取失败 | 503，动作不执行，成因只进日志 |
 | 强制档审计写不进 | 503，动作不执行 |
 | 名册的其余失败、guard 的故障 | 503，不带 `Problem.Type`，成因只进日志 |
 
-**403 与 401 由别处写。** 权限不足的 403 与 guard 故障的 503 由 guard 写出（[design-authz](../design-authz.md)）；无身份的 401 由本模块写出，与准入层、授权层同形（只有状态、无 `Problem.Type`、带 realm 质询）。本模块不重写它们。
+**403 与 401 由别处写，注册验证门控的 403 除外。** 权限不足的 403 与 guard 故障的 503 由 guard 写出（[design-authz](../design-authz.md)）；无身份的 401 由本模块写出，与准入层、授权层同形（只有状态、无 `Problem.Type`、带 realm 质询）。本模块不重写它们；注册验证门控的 403 `contact-required` 由本模块在 handler 内写出，是它自己的拒绝。
 
 ## 并发与事务边界
 
@@ -214,3 +228,4 @@ sequenceDiagram
 | 管理面 `tenant.admin`（路由、判定、审计、回绝映射） | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/routes.go` `routes`、`mount`；`pkg/tenant/admin/tenants.go` `handleTenantList`、`handleTenantGet`、`handleTenantCreate`、`handleTenantSetAlias`、`handleTenantSetStatus`；`pkg/tenant/admin/pipeline.go` `require`、`auditRequired`、`answer` |
 | 管理面 `tenant.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/tenant/admin/operations.go`；`pkg/tenant/admin/openapi_generated_test.go`；片段 `pkg/tenant/admin/openapi/tenant.admin.json` |
 | 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/feature_test.go` `TestTheModuleDeclaresTheTenantAdminFeature` |
+| 租户写面的注册验证门控（`signup_state=1` 答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 未实现 | — |

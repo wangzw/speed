@@ -39,7 +39,7 @@
 
 ## 决策
 
-采纳：前端登录渠道的来源是后端发现端点。`SignInScreen` 读取 `@speed/auth-core` 的 `listMethods()`（或宿主注入的同一文档），按每个方法描述符的 `kind` 分组渲染；`@speed/auth-core` 的会话契约新增 `discoverSso(email)`，企业入口据此读邮箱域映射的 IdP。前端不写死任何方法名到界面的闭集——`SocialProvider` 由名字闭集改为 `string`，方法显示名取描述符的品牌标签，缺失时按方法名查 `@speed/auth-ui` 命名空间，再退回方法名本身。注册折进登录流程：前端把「注册」作为一个入口呈现，可见性由 `discovery.signup.enabled` 与至少一个可见方法带 `opens_account` 决定，开户仍由服务端在登录流程的账户解析阶段完成。
+采纳：前端登录渠道的来源是后端发现端点。`SignInScreen` 读取 `@speed/auth-core` 的 `listMethods()`（或宿主注入的同一文档），按每个方法描述符的 `kind` 分组渲染；`@speed/auth-core` 的会话契约新增 `discoverSso(email)`，企业入口据此读邮箱域映射的 IdP。前端不写死任何方法名到界面的闭集——`SocialProvider` 由名字闭集改为 `string`，方法显示名取描述符的品牌标签，缺失时按方法名查 `@speed/auth-ui` 命名空间，再退回方法名本身。用户名加口令的自助注册是独立的匿名路由 `POST /api/v1/auth/register`，开户在注册路由完成，不经登录流程；登录流程负责登录，以及社交与短信方法的首登开户（[ADR-authn-signup-2026-10-22](adr-authn-signup-2026-10-22.md)）。前端把「注册」作为一个入口呈现，可见性由 `discovery.signup.enabled` 与「`discovery.signup.password.enabled` 为真或至少一个可见方法带 `opens_account`」决定。
 
 ## 后果
 

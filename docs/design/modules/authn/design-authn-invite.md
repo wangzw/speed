@@ -3,15 +3,15 @@
 ## 职责
 
 - **持有邀请的状态机。** 一张 `authn_invitations` 表持有从「待接受」到终态的每一次迁移；签发、列表、撤销与接受都经它。邀请是一次**待兑现的成员关系授予**：它点名一个地址与一个租户，在被接受之前没有任何账户或成员行存在。
-- **接受即兑现。** 一次接受消费一个令牌，把一个地址变成一个账户（该地址还没有账户时）与一条成员关系，成员行的来源写 `invite`——这是 `Membership.Source` 早已声明的取值之一（`pkg/authn/internal/model/directory.go` `Membership.Source`）。接受的账户创建经 `AccountAdmin.Create`，账户规则仍归 `authn.account`。
+- **接受即兑现。** 一次接受消费一个令牌，把一个地址接上一个账户与一条成员关系：地址已有账户时加成员行，是某账户的待验证联系方式时在该账户上把邮箱证成标识，两者都没有时新建账户；成员行的来源写 `invite`——这是 `Membership.Source` 早已声明的取值之一（`pkg/authn/internal/model/directory.go` `Membership.Source`）。接受的账户创建经 `AccountAdmin.Create`，账户规则仍归 `authn.account`。
 - **令牌是唯一凭据，只以摘要留存。** 接受不需要身份：持有令牌即持有加入该租户的能力。令牌明文只在签发应答里交出一次，落表的是它的 SHA-256；撤销因此是改状态，不是撤销一个签名。
 - **登记为模块 `authn.invite`**，排他交付接口 `Invites`；接口与数据类型随它同处本子包（[design-authn](design-authn.md)）。
 
 ### 非职责
 
 - **不做组织树。** 没有节点、没有层级、没有子树数据范围，接受只落一条成员关系，不带任何位置。早期实现有一棵多级组织树，本方案刻意不做它（[ADR-org-invitation-2026-10-15](../../../adr/adr-org-invitation-2026-10-15.md)）。
-- **不投递邀请，不排队，不重试。** 本模块不发送任何消息——认证功能目录不含邮件通道（[design-authn](design-authn.md)）。签发应答把接受链接连同令牌一次性交给签发者，投递交由签发者或宿主经它自己的渠道完成。没有提醒、没有自动重发：一条新的待接受邀请只能来自一次新的签发调用。
-- **不持账户、成员关系、口令的表与规则。** 接受的账户创建经 `AccountAdmin.Create`，成员行写经 `Memberships.Put`；账户与成员关系的规则与哨兵在 [authn-account](design-authn-account.md)。
+- **不投递邀请，不排队，不重试。** 本模块不发送任何消息——邮件投递归 mail 模块，邀请的送达由签发者或宿主完成（[design-authn](design-authn.md)）。签发应答把接受链接连同令牌一次性交给签发者，投递交由签发者或宿主经它自己的渠道完成。没有提醒、没有自动重发：一条新的待接受邀请只能来自一次新的签发调用。
+- **不持账户、成员关系、口令的表与规则。** 接受的账户创建与标识写入经 `AccountAdmin.Create`、`AccountAdmin.AddIdentifier`，成员行写经 `Memberships.Put`；账户与成员关系的规则与哨兵在 [authn-account](design-authn-account.md)。
 - **不做邮件的送达证明。** 令牌证明持有者收到了这条链接，不证明地址可达。地址可达性由签发者按他送出链接的渠道承担。
 - **不判定租户成员资格，不 import `pkg/tenant`。** 租户标识在本模块里是字符串；请求期判定归 `tenant.admission`（[design-tenant-admission](../tenant/design-tenant-admission.md)）。
 - **不承载角色。** 接受只落成员关系，角色按（账户，租户）绑定归 `authz.policy`（[design-authz](../design-authz.md)）。
@@ -102,9 +102,10 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 - **地址已是某账户的标识**：不建账户，成员行加到那个账户上。令牌证明持有者收到了发往该地址的链接，与短信验证码同类；成员关系成立。
 - **地址尚无账户**：经 `AccountAdmin.Create` 建一个启用的用户账户，地址作为它的标识写入，成员行加到新账户。
 - **成员行的来源写 `invite`**：本模块落下的每一条成员行，`Membership.Source` 都取 `invite`。`Memberships.Put` 的成员关系变更事件（`authn.membership.changed`）随带该来源，订阅方据此分清邀请加入与管理员直加（[design-authn-events](design-authn-events.md)）。
+- **被邀请地址正是一条待验证联系方式**：接受面没有身份，配对只能按地址做——经账户模块的 `SignupVerification.PendingAccountByContact` 反查该地址的待验证所有者，命中时以 `invite` 证明同一邮箱：经 `AccountAdmin.AddIdentifier`（`via = invite`）写入已验证邮箱（账户模块在同一事务里把 `signup_state` 置 `2`），成员行挂到那个账户，不新建第二个账户。推断的地址控制权来自邀请令牌本身：它被送达该地址并由持有者出示，所以调用这个反查时地址已经被证明；本模块是它唯一的调用方。同一地址被多个未验证账户列为待验证目标时反查不返回归属（`ok` 为假），接受按「尚无账户」新建，不猜该挂到哪一个。命中这一条让先注册后受邀的人在原账户上解除限制，而不是撞上标识的唯一约束后失败。
 - **接受不受 `signup` 设置约束**：邀请接受是一次由租户管理员发起的显式授予，不是自助首次登录；`authn.account.signup` 只约束经社交或短信首次登录的开户。
 
-**接受的地址验证来源是 `invite`。** 接受把被邀请的地址交给 `AccountAdmin.Create` 时，地址的验证渠道是「邀请送达该地址并被兑现」，与 `sms-code` 同类（一个送达地址的载荷被持有者出示）。认证账户模型的 `Verification` 封闭集是 `sms-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`（`pkg/authn/internal/model/directory.go` `Verification`、`VerifiedViaInvite`）。它属于证据一类（`Verification.Proves` 为真），与 `admin`、`import-unverified` 这类未证明渠道分开。
+**接受的地址验证来源是 `invite`。** 接受把被邀请的地址写成标识时（经 `AccountAdmin.Create` 建账户，或经 `AccountAdmin.AddIdentifier` 挂到已有账户），地址的验证渠道是「邀请送达该地址并被兑现」，与 `sms-code` 同类（一个送达地址的载荷被持有者出示）。认证账户模型的 `Verification` 封闭集是 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self`（`pkg/authn/internal/model/directory.go` `Verification`、`VerifiedViaInvite`）。它属于证据一类（`Verification.Proves` 为真），与 `admin`、`import-unverified`、`self` 这类未证明渠道分开。
 
 ### 登记单元与名字
 
@@ -135,8 +136,9 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 管理面路由的判定在 handler 内做出，不经请求中间件的声明判定，与 `authn.admin` 同形（[ADR-authn-invitation-2026-10-15](../../../adr/adr-authn-invitation-2026-10-15.md)）。顺序固定：
 
 1. **读发起者。** 请求没有身份是 401 加强认证挑战，不询问接缝。
-2. **面向判定接缝。** 签发、列表与撤销都以 `Action authn.membership.manage` 询问 `Decider`——邀请授予的是一条成员关系，动作与成员关系的写同属一个（`pkg/authn/decide.go` `ActionMembershipManage`）。`Decision.Tenant` 取路径里的租户标识，`Target` 在撤销时取邀请标识、其余为空。接缝缺席即全拒，与其余管理面同形（[design-authn-admin](design-authn-admin.md)）。接缝的拒绝由接缝写出 403，故障写 503。
-3. **分叉。** 判定之后：写路由先解析正文、跑形状检查，再落强制档审计（落不进即 503、动作不执行），再调 `Invites`，把回绝映射成应答；列表调 `Invites.List` 直接应答。
+2. **注册验证状态的门控。** 发起者是用户账户且 `signup_state = 1` 时，签发（含取代旧待接受邀请的那次重发）与撤销答 403 `contact-required`；列表是读，不受影响。门控在身份确定之后、判定接缝与强制审计之前，只收紧不放行，被拦下的请求不询问接缝、不写审计。状态经 `SignupVerification.SignupStateOf` 读取，读失败答 503，不按放行处理；服务账户与 `signup_state = 0` 的发起者豁免。
+3. **面向判定接缝。** 签发、列表与撤销都以 `Action authn.membership.manage` 询问 `Decider`——邀请授予的是一条成员关系，动作与成员关系的写同属一个（`pkg/authn/decide.go` `ActionMembershipManage`）。`Decision.Tenant` 取路径里的租户标识，`Target` 在撤销时取邀请标识、其余为空。接缝缺席即全拒，与其余管理面同形（[design-authn-admin](design-authn-admin.md)）。接缝的拒绝由接缝写出 403，故障写 503。
+4. **分叉。** 门控与判定之后：写路由先解析正文、跑形状检查，再落强制档审计（落不进即 503、动作不执行），再调 `Invites`，把回绝映射成应答；列表调 `Invites.List` 直接应答。
 
 **判定接缝由本模块取用，不由 `authn.admin` 代挂。** 邀请有独立状态机与自己的表，路由因此挂在本模块；授权依据与成员关系的写一致，所以复用同一个动作，不新增动作常量。
 
@@ -188,6 +190,7 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 | `Accounts`（根包声明，由 `authn.account` 交付） | 接受时按标识查地址是否已有账户 |
 | `mount.Mounter`（`pkg/authn/internal/mount`） | 挂管理面与接受面路由 |
 | `Decider`（根包） | 管理面判定；可选取用，缺席即全拒 |
+| `SignupVerification`（根包声明，由 `authn.account` 交付） | 管理面的人类写经 `SignupStateOf` 读发起者的注册验证状态；接受经 `PendingAccountByContact` 反查地址的待验证所有者；必需，读失败答 503 |
 | `audit.Audit` | 管理面写路由的强制档审计；必需 |
 | `Throttle`（根包声明，由 `authn.account` 交付） | 接受面的来源层减负；可选 |
 | `event.Bus`、`outbox.Outbox` | 可选：邀请生命周期事件 |
@@ -307,11 +310,17 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 
 1. **按摘要查行。** 令牌不成形或查不到行即 `ErrInvitationNotFound`；查到但状态非待接受，按状态答 `ErrInvitationAlreadyAccepted` 或 `ErrInvitationRevoked`；时钟不早于 `ExpiresAt` 即 `ErrInvitationExpired`。
 2. **抢先兑现。** 条件写把该行从待接受翻到已接受，条件是状态仍为待接受且未过期；两个并发接受同一令牌至多一个赢得这次翻转，输者按终态报告，不建任何行。
-3. **核对地址。** 经 `Accounts.Lookup` 查该地址是否已是某账户的标识。
+3. **核对地址。** 先经 `Accounts.Lookup` 查该地址是否已是某账户的标识；没有命中时，经 `SignupVerification.PendingAccountByContact(ctx, "email", 地址)` 反查该地址是不是某待验证账户的联系方式。反查的返回值分三支：
+   - **命中**（`ok` 为真）：地址是 `signup_state = 1` 的那个账户的待验证联系方式，走第 4 步的「命中待验证联系方式」。
+   - **未命中**（`ok` 为假）：既不是标识，也没有唯一的待验证所有者——地址可能同时被多个账户列为待验证目标，反查不猜归属；走第 4 步的「两者都没有」。
+   - **读取失败**（`err` 非空）：不按未命中处理，也不继续兑现；按 503 返回调用方，并在第 5 步按临时失败把这次抢先还给待接受。把一次读失败读成未命中会让一个地址出现两个账户。
+
+   反查只读 `authn_pending_contacts`，不读标识表；标识已由 `Accounts.Lookup` 覆盖。本模块是 `PendingAccountByContact` 唯一的调用方，调用前提是令牌已被送达并出示于该地址——地址的控制权已由邀请令牌证明，与本模块把地址写成标识所依据的证据是同一件事。
 4. **兑现。**
    - 已有账户：`Memberships.Put`，来源 `invite`。
-   - 尚无账户：`AccountAdmin.Create` 建启用的用户账户（地址作标识，验证渠道为邀请），再 `Memberships.Put`，来源 `invite`。
-5. **失败结算。** 第 4 步跨模块，各自在自己的事务里，与第 2 步的翻转不在一条事务里。第 4 步失败时按失败性质结算这次抢先：临时失败把它还给待接受（重试不被锁死），永久失败（地址与账户冲突一类）把它结算为已撤销（一条再也兑现不了的邀请不该把令牌留到 TTL 结束）。结算是「状态仍为已接受」的条件写，绝不无条件覆盖；结算本身的失败只记 Error，不改变返回给调用方的错误。
+   - 命中待验证联系方式：`AccountAdmin.AddIdentifier`（`via = invite`）把该邮箱写成已验证标识，账户模块在同一事务里把 `signup_state` 置 `2`；`Memberships.Put` 把成员行挂到该账户，不建账户。
+   - 两者都没有：`AccountAdmin.Create` 建启用的用户账户（地址作标识，验证渠道为邀请），再 `Memberships.Put`，来源 `invite`。
+5. **失败结算。** 第 3 步的反查与第 4 步的兑现跨模块，各自在自己的事务里，与第 2 步的翻转不在一条事务里。它们失败时按失败性质结算这次抢先：临时失败把它还给待接受（重试不被锁死），永久失败（地址与账户冲突一类）把它结算为已撤销（一条再也兑现不了的邀请不该把令牌留到 TTL 结束）。结算是「状态仍为已接受」的条件写，绝不无条件覆盖；结算本身的失败只记 Error，不改变返回给调用方的错误。
 
 ### 列表与撤销
 
@@ -336,8 +345,11 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 | 撤销一条已接受的邀请 | `ErrInvitationAlreadyAccepted` |
 | 撤销一条已撤销的邀请 | 幂等成功 |
 | 接受赢了条件写而建账户或写成员行临时失败 | 结算回待接受，返回失败 |
+| 接受反查待验证联系方式读取失败 | 503，按临时失败结算回待接受，不新建账户 |
 | 接受赢了条件写而兑现永久失败（地址／账户冲突） | 结算为已撤销，返回失败 |
 | 管理面判定接缝缺席，或 `Decide` 返回假 | 403 `forbidden` |
+| 发起者是未验证账户，而这是签发或撤销 | 403 `contact-required`，不询问判定接缝与 `Invites`、不写审计 |
+| 读取发起者的注册验证状态失败 | 503，动作不执行 |
 | 管理面强制档审计写不进 | 503，动作不执行 |
 | 接受面依赖不可用 | 503 |
 | 签发读取存活期设置失败或取值越界 | 取声明默认值并记一行 `Error`，签发照常进行 |
@@ -384,3 +396,5 @@ CREATE UNIQUE INDEX authn_invitations_one_pending ON authn_invitations (tenant_i
 | 地址验证渠道 `invite`（`pkg/authn/internal/model` `Verification` 的扩展） | 已实现 | `pkg/authn/internal/model/directory.go` `VerifiedViaInvite`、`Verification.Valid` |
 | operation 声明与 OpenAPI 片段生成 | 已实现 | `pkg/authn/invite/operations.go`；`pkg/authn/invite/openapi_generated_test.go`；片段 `pkg/authn/invite/openapi/invite.json` |
 | 静态特性 `authn.invitations` 的声明 | 已实现 | `pkg/authn/invite/invite.go` `Module`；`pkg/authn/invite/feature_test.go` `TestTheModuleDeclaresTheInvitationsFeature` |
+| 注册验证状态的门控 | 未实现 | — |
+| 接受时经 `SignupVerification.PendingAccountByContact` 把成员行挂到待验证邮箱的已有账户 | 未实现 | — |

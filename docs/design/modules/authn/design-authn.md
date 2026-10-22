@@ -2,14 +2,15 @@
 
 ## 职责
 
-`pkg/authn` 交付身份系统：认定每个请求的调用方是谁，并提供使这个认定成立的登录、会话、令牌、多因素、企业 SSO、冒充与账户存储。授权另立（[authz](../design-authz.md)），本功能目录只为它留接缝（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)）。
+`pkg/authn` 交付身份系统：认定每个请求的调用方是谁，并提供使这个认定成立的注册、登录、会话、令牌、多因素、企业 SSO、冒充与账户存储。授权另立（[authz](../design-authz.md)），本功能目录只为它留接缝（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)）。
 
 归属本功能目录的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的，归本功能目录；还需要资源、动作与策略的，归授权。下列各项按这条判据例举，不是封闭集：
 
 - **网关**：在端点的中间件链上认定每个请求的调用方：取出凭据，交给整条认领它的校验后端，把回答收口成放行，或经入口模块的错误响应入口写出的一次拒绝响应；放行时把盖章后的身份与访问级别写进请求上下文，供链上其余各层与 handler 取用。
 - **校验后端的接缝与身份的形状**：凭据的形状、判决的形状、后端声明自己认领的载体与可交出的账户命名空间的途径，以及身份的类型化字段。
 - **路由访问级别的登记面**：豁免、可选认证与可冒充的登记，与请求期的命中判定。
-- **账户存储**：账户、已验证标识、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避。
+- **账户存储**：账户、已验证标识、待验证联系方式、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避。
+- **自助注册**：匿名的用户名加口令注册路由一次写入账户、用户名标识、口令凭据与待验证联系方式；账户立即可登录，邮箱的验证在登录之后完成，未验证账户的敏感能力受限。
 - **登录**：多种登录方式共用的多步引擎，终态是登录会话或令牌。
 - **登录会话、访问令牌与刷新令牌**：签发、校验、轮换与撤销。
 - **多因素、企业 SSO 与短信验证码**。
@@ -59,7 +60,7 @@
 
 下列各条例举本功能目录不承担的事，归属的判据见上文。
 
-- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](../design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充期间被限制的操作）、`factor-not-seasoned`（冒充发起与管理员重置时，发起者名下没有启用已满规定时长的非短信因素）。其余认证强度不足，即重新认证能解的，都是 401 加强认证挑战（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)、[design-authn-failure](design-authn-failure.md)）。
+- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](../design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充期间被限制的操作）、`factor-not-seasoned`（冒充发起与管理员重置时，发起者名下没有启用已满规定时长的非短信因素）、`contact-required`（未验证账户的人类写与冒充发起）。其余认证强度不足，即重新认证能解的，都是 401 加强认证挑战（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)、[design-authn-failure](design-authn-failure.md)）。
 - **不判定请求期的租户成员资格。** 成员关系的事实归本功能目录，请求期的判定在 tenant 目录的 `tenant.admission`（[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md)）。authn 的任何子包都不 import `pkg/tenant`。
 - **不为身份附加角色、权限与租户。** 身份只回答“谁”；角色按（账户，租户）绑定，归 `authz.policy`（冒充限定的租户范围是唯一例外，它限定的是一次冒充）。
 - **网关不实现、不解释任何凭据。** 口令表、登录会话、访问令牌与服务密钥各是一个校验后端，住在自己的子包里；网关取凭据的原文交给整条认领它的后端，连 `Basic` 也由认领它的后端自己解码；根包不认识其中任何一种。
@@ -68,16 +69,16 @@
 - **不提供配置式的豁免、可选认证与可冒充清单。** 这些登记只来自代码：一条命令行参数不该能改变哪些路径不需要认证、哪些路径可以匿名、哪些路径放行冒充身份（[ADR-authn-exemption-2026-10-10](../../../adr/adr-authn-exemption-2026-10-10.md)）。
 - **不把认证 scheme 名与 cookie 名做成输入项。** 它们由各校验后端在代码里自报；输入项清单按完整集合判冲突，而载体的撞车落不进那份清单的任何一条判据，装配期以 `ErrClaimConflict` 点名双方。
 - **网关不读入口模块的路由表，读它的端名。** 端名经入口模块的 `Router.Endpoints()` 与保留端名 `*` 取得，用来展开 `endpoints` 并校验登记所在的端；登记面不提供路由的枚举，网关无从核对一条登记是否对应一条已登记的路由，请求期只拿 gin 为本次请求报出的 `c.FullPath()` 与登记的方法、路径逐字比对（见 [http](../http/design-http.md)）。
-- **不含邮件投递通道的实现、忘记口令流程、冒充与异常登录的邮件通知与邮件链接登录。** 邮箱标识除经 IdP 或管理员的断言成为已验证标识外，还可由本人经登录自助面发码到地址、兑现码后写入（见 [design-authn-login](design-authn-login.md)）；投递由宿主经根包声明的 `EmailCodeSender` 装配，仓库不内置通道。
+- **不实现邮件的传输、忘记口令流程、冒充与异常登录的邮件通知与邮件链接登录。** 邮箱标识除经 IdP 或管理员的断言成为已验证标识外，还可由本人经登录自助面发码到地址、兑现码后写入（见 [design-authn-login](design-authn-login.md)）。投递接缝是根包的 `EmailCodeSender`，传输由顶层能力的 `mail.Sender` 承担（[design-mail](../design-mail.md)）：仓库提供一个可选的适配模块 `authn.emailcode`，把验证码渲染成邮件并经 `mail.Sender` 发出；不装配它时，宿主可以自己实现 `EmailCodeSender`，否则邮箱验证这一面不可用。
 - **不做 SAML 单点登出与 OIDC 背向通道登出，不在后台自动刷新 IdP 元数据，不提供每租户的 SP 密钥。** IdP 侧的登出不终止登录会话，会话受自己的空闲期限与绝对期限约束（见 [design-authn-sso](design-authn-sso.md)）。
-- **不提供个人访问令牌、没有验证渠道的自助注册与“记住此设备”。** 用户名加口令的注册由短信首登开户、自助添加用户名与自助设口令组成（[ADR-authn-signup-2026-10-18](../../../adr/adr-authn-signup-2026-10-18.md)）。
+- **不提供个人访问令牌与“记住此设备”。** 用户名加口令的自助注册由独立的匿名路由一次建号，注册必填用户名、口令与邮箱；账户立即可登录，邮箱在登录后验证，验证前敏感能力受限（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。注册时收集的邮箱是待验证联系方式，不是标识，也不是登录名；邮箱被证明之后才写入标识。注册开关 `authn.account.password-signup` 与首登开户开关 `authn.account.signup` 相互独立，缺省都关闭。
 - **不承载宿主的资料字段。** 账户表不留自由字段，宿主扩展用户字段的途径见[扩展点](#扩展点)。
 - **不做租户解析、请求级审计与限流。** 它们是别的模块的层，本功能目录只与它们的链上锚点有关（见[链上次序](#链上次序)）。
 - **不代替宿主决定哪条命令纳入认证。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论；这条约束没有任何机制强制，违反它的后果与接受的代价见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)。
 
 ## 术语表
 
-以下术语的含义限于本文档、各 `design-authn-*` 文档与认证主题的决策记录；它们不进项目术语表。术语「授权」不属此列：它在项目范围内含义一致，定义见[项目术语表](../../../glossary.md)，本表不重复。
+以下术语的含义限于 authn 模块的设计文档（本文档与各 `design-authn-*` 文档），以及引用这些事实的 web 与 starters 设计文档；它们不进项目术语表。术语「授权」不属此列：它在项目范围内含义一致，定义见[项目术语表](../../../glossary.md)，本表不重复。
 
 | 术语 | 英文 | 定义 |
 |---|---|---|
@@ -95,6 +96,9 @@
 | 责任键 | accountability key | `Identity.Key()` 的取值，恒为 `string(Actor())`；限流、审计与设置的 `actor` 参数按它归责。 |
 | 冒充 | impersonation | 管理员在限定的租户内、有期限、被审计地以另一个账户的身份行事；身份上 `Actor()` 不等于 `Account()`。 |
 | 访问级别 | access | 网关对一次请求命中的路由登记的归类：`Open`、`Optional`、`Required`，以及网关没有作过决定的 `Unknown`。 |
+| 注册验证状态 | signup state | 账户上的 `signup_state`：`0` 非自助注册、`1` 自助注册且尚无已验证邮箱、`2` 已有已验证邮箱。它是账户上的独立事实，与账户状态是两件事，不进入会话、身份或访问令牌；进入 `2` 只由邮箱的证明产生。 |
+| 待验证联系方式 | pending contact | `authn_pending_contacts` 的一行：注册时收集、尚未成为标识的邮箱或手机。它是验证目标，不是登录名，也不参与任何账户查找。 |
+| 未验证账户 | unverified account | 注册验证状态为 `signup_state=1` 的账户：自助注册、尚无已验证邮箱。它可以登录，但依赖已验证邮箱的能力被拒；邮箱被证明之后不再是未验证账户。 |
 | 判定接缝 | decision seam | 根包接口 `Decider`：回答某个发起者能否做认证范围内的某件事；缺席即全拒，由宿主或 `authz.guard` 实现。 |
 
 ## 外部接口契约
@@ -139,7 +143,7 @@ func (Identity) Satisfies(r Requirement, now time.Time) bool
 func FromContext(ctx context.Context) (Identity, bool) // 无回落
 ```
 
-**身份以账户为中心，不带归属。** 身份的字段集是封闭的：账户、实际操作者、会话、方式集、保障等级、`AssuranceFromIDP`、认证时刻、后端名、挑战方案名、提供方、冒充范围与属性集；后端名与挑战方案名由网关按校验后端与凭据载体盖章，不取自后端交出的任何值（[ADR-authn-identity-2026-10-10](../../../adr/adr-authn-identity-2026-10-10.md)）。没有角色，没有租户；属性集对每个校验后端都是可选的，承载宿主与 IdP 映射出的业务属性，不承载上述任何类型化事实，所以租户仍取自请求面、不从身份派生，成员关系是表而不是属性。
+**身份以账户为中心，不带归属。** 身份的字段集是封闭的：账户、实际操作者、会话、方式集、保障等级、`AssuranceFromIDP`、认证时刻、后端名、挑战方案名、提供方、冒充范围与属性集；后端名与挑战方案名由网关按校验后端与凭据载体盖章，不取自后端交出的任何值（[ADR-authn-identity-2026-10-10](../../../adr/adr-authn-identity-2026-10-10.md)）。没有角色，没有租户；属性集对每个校验后端都是可选的，承载宿主与 IdP 映射出的业务属性，不承载上述任何类型化事实，所以租户仍取自请求面、不从身份派生，成员关系是表而不是属性。注册验证状态也不在字段集里：它不是认证事实，请求期由 `SignupVerification.SignupStateOf` 与 `GET B/me` 活读，不复制进身份、会话或访问令牌。
 
 **`Account()` 与生效主体是同一个值，不设两个字段**：它是授权与审计把这次请求当作“谁的请求”的账户，冒充时就是被冒充者。`Actor()` 是实际操作者，不冒充时与 `Account()` 相同。身份是单一的，没有第二份“被冒充者身份”：下游每一层读哪一个账户由方法名显式给出。
 
@@ -266,7 +270,7 @@ type Requirement struct {
 - 根包的 `Gate`、`Verifier`、`Accepts`、`Credential`、`Challenger`、`CookieClearer`、`ScopeGuard`、`Verdict` 的构造器、`Principal`、`Identity` 的方法集与 `Access` 的取值；`Key()` 的取值（责任键恒为实际操作者）。
 - 网关层在链上代表的功能标识：中间件的 `Provides` 与描述符里的交付声明同为 `(*Gate)(nil)`，别的模块据它排序，取值与它所属的阶段属于对外接口面，改动它是破坏性变更。
 - 判定接缝、成员关系的只读面、账户生命周期钩子与事件名，这些是授权功能目录依赖的面（[authz.guard](../design-authz.md) 与 `authz.policy`；见 [design-authn-admin](design-authn-admin.md)、[design-authn-events](design-authn-events.md)）。
-- 下列根包接缝接口的方法集属于对外接口面，加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更：`Tokens` 与 `ClaimsContributor`（[design-authn-token](design-authn-token.md)）、`SMSCodes`（[design-authn-sms](design-authn-sms.md)）、`SSOProviders`（[design-authn-sso](design-authn-sso.md)）、`Impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）与 `Decider`（[design-authn-admin](design-authn-admin.md)）；各自的字段、取值集合与取用方式由各自的模块文档承载。
+- 下列根包接缝接口的方法集属于对外接口面，加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更：`Tokens` 与 `ClaimsContributor`（[design-authn-token](design-authn-token.md)）、`SMSCodes`（[design-authn-sms](design-authn-sms.md)）、`SSOProviders`（[design-authn-sso](design-authn-sso.md)）、`Impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）、`Decider`（[design-authn-admin](design-authn-admin.md)）、`Signups`、`SignupVerification`（[design-authn-account](design-authn-account.md)）与 `EmailCodeSender`；各自的字段、取值集合与取用方式由各自的模块文档承载。
 
 `Gate` 与 `Verifier` 是宿主可以预置自己实现的接口：对它们加方法或改签名，对预置了自己实现的宿主是不兼容变更。`Key()` 的签名不变而取值随责任键的定义而定，编译通过的调用方因此在取值变化时静默得到新值，变化必须带破坏性变更的标注。
 
@@ -281,10 +285,11 @@ type Requirement struct {
 | `authn/gate` | `authn.gate` | `Gate` | 是 | 无；`log.Logger`（○，使脱敏规则在 `New` 里登记） | `http.Router`、全部 `Verifier`、`ScopeGuard` ○、`observability.MeterProvider` ○ | 无 |
 | `authn/mount` | `authn.mount` | 内部 `mount.Mounter` | 是 | `Gate` | `http.Router`；读 `authn.gate` 的路由挂载键 | 无 |
 | `authn/static` | `authn.static` | `Verifier`（认领 `basic`） | 否 | 无 | `settings.Store` ○；失败退避恒在进程内，不取 db 的 `Throttle` | 无 |
-| `authn/account` | `authn.account` | `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle` | 各自是 | `db.Database` | `settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○、`audit.Audit` ○、全部 `AccountLifecycle` | `authn_accounts`、`authn_identifiers`、`authn_external_identities`、`authn_memberships`、`authn_password_credentials`、`authn_service_secrets`、`authn_throttles` |
+| `authn/account` | `authn.account` | `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle`、`Signups`、`SignupVerification` | 各自是 | `db.Database` | `settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○、`audit.Audit` ○、全部 `AccountLifecycle` | `authn_accounts`、`authn_identifiers`、`authn_pending_contacts`、`authn_external_identities`、`authn_memberships`、`authn_password_credentials`、`authn_service_secrets`、`authn_throttles` |
+| `authn/emailcode` | `authn.emailcode` | `EmailCodeSender` | 是 | `mail.Sender` | `i18n.Localizer` | 无 |
 | `authn/session` | `authn.session` | `Sessions`；`Verifier`（认领会话 cookie）；`AccountLifecycle` | `Sessions` 是 | `db.Database`、`mount.Mounter`、`Accounts` | `Impersonation` ○、`settings.Store` ○、`event.Bus` ○ | `authn_sessions` |
 | `authn/token` | `authn.token` | `Tokens`；`Verifier`（认领 `bearer`） | `Tokens` 是 | `db.Database`、`mount.Mounter`、`Accounts`、`Sessions`、`Passwords`、`Throttle` | `Impersonation` ○、全部 `ClaimsContributor`、`settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_refresh_tokens` |
-| `authn/login` | `authn.login` | 无（流程引擎与路由） | — | `mount.Mounter`、`kv.KV`、`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle`、`Sessions`、`MFA` | 全部 `LoginMethod`、`Tokens` ○、`SMSCodes` ○、`SSOProviders` ○、`Provisioner` ○、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | 无 |
+| `authn/login` | `authn.login` | 无（流程引擎与路由） | — | `mount.Mounter`、`kv.KV`、`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle`、`Sessions`、`MFA`、`Signups`、`SignupVerification` | 全部 `LoginMethod`、`Tokens` ○、`SMSCodes` ○、`SSOProviders` ○、`Provisioner` ○、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | 无 |
 | `authn/login/password` | `authn.login.password` | `LoginMethod` | 否 | `Passwords`、`Throttle` | 无 | 无 |
 | `authn/login/sms` | `authn.login.sms` | `LoginMethod` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
 | `authn/login/google`、`authn/login/github` | `authn.login.google`、`authn.login.github` | `LoginMethod` | 否 | 无 | 无 | 无 |
@@ -298,10 +303,12 @@ type Requirement struct {
 | `authn/sso` | `authn.sso` | `SSOProviders` | 是 | `db.Database`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○ | `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` |
 | `authn/sso/saml` | `authn.sso.saml` | `LoginMethod`、`SSOMetadataRefresher` | 否 | `SSOProviders`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
 | `authn/sso/oidc` | `authn.sso.oidc` | `LoginMethod` | 否 | `SSOProviders` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
-| `authn/impersonation` | `authn.impersonation` | `Impersonation` | 是 | `db.Database`、`mount.Mounter`、`Sessions`、`Accounts`、`Memberships`、`MFA`、`audit.Audit`、`ScopeGuard` | `Decider` ○（缺席即全拒）、`Tokens` ○、`settings.Store` ○、`event.Bus` ○ | `authn_impersonations` |
-| `authn/admin` | `authn.admin` | 无（只挂 `/api/v1/system/auth/*` 与 `/api/v1/tenants/*` 下的路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit` | `Sessions` ○、`MFA` ○、`SSOProviders` ○、全部 `SSOMetadataRefresher`、`Impersonation` ○、`Tokens` ○、`Decider` ○（缺席即全拒）；每组路由随对应能力在场才挂 | 无 |
-| `authn/profile` | `authn.profile` | 无（只挂 `B/me` 的两条路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`MFA` | `settings.Store` ○、`audit.Audit` ○ | 无 |
-| `authn/invite` | `authn.invite` | `Invites` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit` | `Decider` ○（缺席即全拒）、`Throttle` ○、`settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○ | `authn_invitations` |
+| `authn/impersonation` | `authn.impersonation` | `Impersonation` | 是 | `db.Database`、`mount.Mounter`、`Sessions`、`Accounts`、`Memberships`、`MFA`、`audit.Audit`、`ScopeGuard`、`SignupVerification` | `Decider` ○（缺席即全拒）、`Tokens` ○、`settings.Store` ○、`event.Bus` ○ | `authn_impersonations` |
+| `authn/admin` | `authn.admin` | 无（只挂 `/api/v1/system/auth/*` 与 `/api/v1/tenants/*` 下的路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`SignupVerification`、`audit.Audit` | `Sessions` ○、`MFA` ○、`SSOProviders` ○、全部 `SSOMetadataRefresher`、`Impersonation` ○、`Tokens` ○、`Decider` ○（缺席即全拒）；每组路由随对应能力在场才挂 | 无 |
+| `authn/profile` | `authn.profile` | 无（只挂 `B/me` 的两条路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`MFA`、`SignupVerification` | `settings.Store` ○、`audit.Audit` ○ | 无 |
+| `authn/invite` | `authn.invite` | `Invites` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit`、`SignupVerification` | `Decider` ○（缺席即全拒）、`Throttle` ○、`settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○ | `authn_invitations` |
+
+**注册、账户存储与验证回路的职责分工。** 匿名注册路由与登录方式的发现面归 `authn.login`：路由只做预算、参数校验与调用，不经过登录流程引擎；`purpose=link` 的门控也由它在开始流程时执行，因为流程路由归它。账户、用户名标识、口令凭据、注册验证状态与待验证联系方式归 `authn.account`：`Signups.Register` 以 `RegisterAccount` 为输入，一次事务写入全部事实；`SignupVerification.SignupStateOf` 回答当前状态，`SignupVerification.PendingAccountByContact` 只服务 `authn.invite` 接受时按已证明控制权的地址反查待验证账户。邮箱的验证回路由 `authn.login` 的账户自助面完成；写已验证标识经 `AccountAdmin.AddIdentifier`，删同值的待验证联系方式并把 `signup_state` 置 `2` 是 `authn.account` 在同一事务里的副作用。短信验证手机只写已验证的手机标识，不改变注册验证状态。
 
 `authn/guard` 与 `authn/authntest` 不登记模块：`guard.Require` 返回加强认证的 gin 处理器，`authntest` 是测试构造口。
 
@@ -394,7 +401,7 @@ classDiagram
 
 `gateway` 未导出，它持有各类登记表、按 scheme 与 cookie 名的分派表与在飞闸门（见 [design-authn-gate](design-authn-gate.md)）。
 
-下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`pkg/internal/literal` 是共享单元，被两个短信载体与四个登录叶子共用；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。
+下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`pkg/internal/literal` 是共享单元，被两个短信载体与四个登录叶子共用；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。`authn/emailcode` 是可选的邮件适配模块：它交付 `EmailCodeSender`，经 `mail.Sender` 投递、经 `i18n.Localizer` 渲染模板，不装配它的宿主不因此把邮件能力带进闭包。
 
 ```mermaid
 flowchart LR
@@ -429,6 +436,9 @@ flowchart LR
     mountmod[authn/mount] --> R
     leaf[login 叶子 mfa 叶子 sso/oidc sms 厂商叶子] --> R
     guard[authn/guard] --> R
+    emailcode[authn/emailcode] --> R
+    emailcode --> mailc[pkg/mail]
+    emailcode --> i18n[pkg/i18n]
     pwd[authn/internal/password] --> R
     mount[authn/internal/mount]
     egress[authn/internal/egress]
@@ -535,6 +545,7 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 | 状态 | 存放 | 丢失的后果 |
 |---|---|---|
 | 账户、标识、外部绑定、成员关系、口令凭据、服务密钥、因素及其种子与计数 | db | 不会丢，是权威 |
+| 注册验证状态与待验证联系方式 | db | 不会丢；未验证账户的门控与邮箱验证的目标以它为准 |
 | 登录会话、刷新令牌、冒充记录 | db | 不会丢；撤销必须可靠，且要按账户列出与批量撤销 |
 | 失败退避计数（标识、账户、因素、号码、客户端） | db（`authn_throttles`） | 计数归零等于放宽暴力破解的上限 |
 | 短信验证码、尝试次数、发送预算 | db（`authn_challenges`） | 同上 |
@@ -549,7 +560,13 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 
 ## 核心算法与流程
 
-请求期的判定顺序——端是否受守、`Exempt` 命中、取凭据、分派、占闸门调用、收口——与通过的判决在盖章前的出口检查，由 [design-authn-gate](design-authn-gate.md) 承载。被检查的对象在本文：`Principal` 的字段形状见[判决与证明](#判决与证明)，属性集的界限见[属性集的界限](#属性集的界限)，账户标识的格式见[值类型的落点](#值类型的落点)。本节承载与链位置有关的判定：网关在链上的次序。
+请求期的判定顺序——端是否受守、`Exempt` 命中、取凭据、分派、占闸门调用、收口——与通过的判决在盖章前的出口检查，由 [design-authn-gate](design-authn-gate.md) 承载。被检查的对象在本文：`Principal` 的字段形状见[判决与证明](#判决与证明)，属性集的界限见[属性集的界限](#属性集的界限)，账户标识的格式见[值类型的落点](#值类型的落点)。本节承载与链位置有关的判定：网关在链上的次序，以及注册验证状态的门控落在何处。
+
+### 注册验证状态的门控
+
+要求已验证邮箱的能力在请求期按 `SignupVerification.SignupStateOf` 活读账户的注册验证状态，`signup_state = 1` 时答 403 `contact-required`。门控在身份确定之后、授权与强度判定之前执行；它只收紧不放行，因此不构成越权。判定接缝缺席时按既有语义先拒绝，门控不改变该结果。读状态失败答 503，不按放行处理；服务账户与 `signup_state = 0` 的账户不受门控约束。状态不进身份、会话与访问令牌，所以每次判定都当场读取。
+
+**平台强制门控的是身份与运营面，集合封闭**：管理面的人类写、冒充发起、`purpose=link` 的外部身份绑定、授权策略的写面、设置的写面、租户的创建与变更、服务密钥的创建、邀请的签发与撤销。各条的判定、豁免与门控所在模块由承载它的文档给出（[design-authn-admin](design-authn-admin.md)、[design-authn-impersonation](design-authn-impersonation.md)、[design-authn-login](design-authn-login.md)、[design-authn-invite](design-authn-invite.md)，以及[授权](../design-authz.md)、[设置](../settings/design-settings.md)、[租户](../tenant/design-tenant.md)的设计文档）。**业务写面不在平台门控之内**：`objectstore`、`notification`、`jobs` 一类能力的写是否要求已验证邮箱，由宿主决定，authn 不为它们统一拦截。
 
 ### 链上次序
 
@@ -662,7 +679,7 @@ type Provisioner interface {
 }
 ```
 
-**邮件投递是宿主的接缝。** 根包声明 `EmailCodeSender`（`pkg/authn/email.go`），只做把验证码投递到地址这一件事，与顶层发送能力 `sms.Sender` 对称；仓库不内置通道，装配它的宿主才使登录自助面的邮箱添加可用。验证码的产生、记录与比对落在登录模块的自助件里，不另立 `LoginMethod` 或 `Factor`（见 [design-authn-login](design-authn-login.md)）。
+**邮件投递的接缝与可选的适配模块。** 根包声明 `EmailCodeSender`（`pkg/authn/email.go`），只做把验证码投递到地址这一件事，与顶层发送能力 `sms.Sender` 对称。`authn.emailcode` 是仓库提供的适配模块，把验证码渲染成 `authn.email.verify.*` 模板（zh-CN 与 en-US）并经 `mail.Sender` 发出；装配它才把邮件能力带进闭包，不装配它时宿主可以自己实现 `EmailCodeSender`。验证码的产生、记录与比对落在登录模块的自助件里，不另立 `LoginMethod` 或 `Factor`（见 [design-authn-login](design-authn-login.md)）。
 
 ## 实现状态
 
@@ -694,3 +711,5 @@ type Provisioner interface {
 | 加强认证处理器 `authn/guard` | 已实现 | `pkg/authn/guard/guard.go` `Require` |
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |
+| 匿名注册 `Signups.Register`、注册验证状态 `SignupVerification` 与未验证账户的门控 | 未实现 | — |
+| 可选的邮件适配模块 `authn.emailcode` | 未实现 | — |
