@@ -1470,16 +1470,31 @@ describe('AccountsPage', () => {
     await user.type(within(panel).getByLabelText(zhCN.accounts.create.usernameLabel), 'grace')
     await user.click(within(panel).getByRole('button', { name: zhCN.accounts.create.submit }))
 
+    // The page writes the success only once the panel has gone. That is an
+    // ordering fact, and the exit is a real transition: a snapshot taken the
+    // instant the create settles races it (under load the transition can
+    // finish first, leaving nothing to look at). So the ordering is
+    // recorded as it happens -- every DOM batch is checked for the success
+    // text existing while a dialog is still mounted.
+    const successAgainstOpenPanel: number[] = []
+    let batches = 0
+    const observer = new MutationObserver(() => {
+      batches += 1
+      const dialogMounted = document.querySelector('[role="dialog"]') !== null
+      const successWritten = document.body.textContent?.includes(CREATED_GRACE) ?? false
+      if (dialogMounted && successWritten) {
+        successAgainstOpenPanel.push(batches)
+      }
+    })
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+
     await act(async () => {
       finishCreate?.(accountFixture({ display_name: 'Grace' }))
     })
-
-    // While the panel is still exiting, the page behind it is aria-hidden:
-    // the success may not be written yet.
-    expect(
-      screen.getByRole('dialog', { name: CREATE_PANEL_NAME }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(CREATED_GRACE)).toBeNull()
 
     // Only after the exit does it land, in the page's list region.
     await waitFor(() => {
@@ -1488,6 +1503,11 @@ describe('AccountsPage', () => {
       ).not.toBeInTheDocument()
     })
     const notice = await screen.findByText(CREATED_GRACE)
+    observer.disconnect()
+
+    // The success was never on screen while the panel was: no batch saw
+    // both, and it lands outside the dialog, in the list's status region.
+    expect(successAgainstOpenPanel).toEqual([])
     expect(notice.closest('[role="dialog"]')).toBeNull()
     expect(notice.closest('[role="status"]')).not.toBeNull()
   })
