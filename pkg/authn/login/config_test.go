@@ -1,6 +1,9 @@
 package login
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
@@ -185,5 +188,31 @@ func TestThePerFlowSendLimitHoldsItsDomain(t *testing.T) {
 				t.Errorf("per-flow-sends %q read %d, want %d", c.val, got, c.want)
 			}
 		})
+	}
+}
+
+// TestThePerFlowSendLimitTreatsAnAbsentDeclaringModuleAsTheDefault holds the
+// deploy assembly's shape: the SMS module is not there, so the key is undeclared
+// and the engine uses the declared default without an Error. A real read failure
+// is still diagnosed.
+func TestThePerFlowSendLimitTreatsAnAbsentDeclaringModuleAsTheDefault(t *testing.T) {
+	var absent bytes.Buffer
+	r := newReader(&fakeStore{values: map[string]string{}},
+		slog.New(slog.NewTextHandler(&absent, nil)))
+	if got := r.perFlowSends(); got != defaultPerFlowSends {
+		t.Fatalf("an undeclared per-flow-sends read %d, want the default %d", got, defaultPerFlowSends)
+	}
+	if strings.Contains(absent.String(), "per-flow") {
+		t.Errorf("an absent declaring module was diagnosed: %s", absent.String())
+	}
+
+	var failed bytes.Buffer
+	r = newReader(&fakeStore{values: map[string]string{"authn.sms.per-flow-sends": "not-an-int"}},
+		slog.New(slog.NewTextHandler(&failed, nil)))
+	if got := r.perFlowSends(); got != defaultPerFlowSends {
+		t.Fatalf("an unreadable per-flow-sends read %d, want the default %d", got, defaultPerFlowSends)
+	}
+	if !strings.Contains(failed.String(), "per-flow") {
+		t.Errorf("a failed per-flow-sends read was not diagnosed: %s", failed.String())
 	}
 }

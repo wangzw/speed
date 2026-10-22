@@ -523,7 +523,7 @@ type fakeStore struct{ values map[string]string }
 func (s *fakeStore) Get(_ settings.Layer, key string, target any) error {
 	v, ok := s.values[key]
 	if !ok {
-		return errors.New("undeclared")
+		return settings.ErrUnknownKey
 	}
 	switch p := target.(type) {
 	case *string:

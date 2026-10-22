@@ -459,14 +459,21 @@ func (r *reader) recentWindow() time.Duration {
 }
 
 // perFlowSends reads the per-flow SMS send limit, which the SMS module declares
-// and this module only satisfies. Its absence, a failed read and a value outside
-// its domain read as the declared default.
+// and this module only satisfies. The declaring module may be absent from an
+// assembly (the deploy build carries no SMS family); an undeclared key is that
+// absence, not a fault, and reads as the declared default without a diagnostic.
+// A failed read and a value outside the domain also read as the default, and
+// each records its own Error.
 func (r *reader) perFlowSends() int {
 	const path = "authn.sms.per-flow-sends"
 	if r.store == nil {
 		return defaultPerFlowSends
 	}
 	v, err := settings.Get[int](r.store, settings.Global(), path)
+	if errors.Is(err, settings.ErrUnknownKey) {
+		r.report(path, "", "")
+		return defaultPerFlowSends
+	}
 	if err != nil {
 		r.report(path, "the per-flow send limit cannot be read, so the declared default is used", err.Error())
 		return defaultPerFlowSends
