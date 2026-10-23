@@ -115,6 +115,21 @@ case $smtp_tls in
     *) die "DEMO_SMTP_TLS must be starttls, implicit or none" ;;
 esac
 
+# The deployment build adds the Google and GitHub login methods, so each
+# application's identifier and secret is required: a method named in the roster
+# with an empty credential fails the startup. The redirect URI each provider
+# must hold is the public origin, the capability's base path and the method's
+# callback path: $public_origin/api/v1/auth/callback/google and .../github.
+require DEMO_GOOGLE_CLIENT_ID "${DEMO_GOOGLE_CLIENT_ID:-}"
+require DEMO_GOOGLE_CLIENT_SECRET "${DEMO_GOOGLE_CLIENT_SECRET:-}"
+require DEMO_GITHUB_CLIENT_ID "${DEMO_GITHUB_CLIENT_ID:-}"
+require DEMO_GITHUB_CLIENT_SECRET "${DEMO_GITHUB_CLIENT_SECRET:-}"
+
+check_scalar DEMO_GOOGLE_CLIENT_ID "$DEMO_GOOGLE_CLIENT_ID"
+check_scalar DEMO_GOOGLE_CLIENT_SECRET "$DEMO_GOOGLE_CLIENT_SECRET"
+check_scalar DEMO_GITHUB_CLIENT_ID "$DEMO_GITHUB_CLIENT_ID"
+check_scalar DEMO_GITHUB_CLIENT_SECRET "$DEMO_GITHUB_CLIENT_SECRET"
+
 mkdir -p /data/var /data/objects
 
 # The replacement is literal. awk's gsub is not used because "&" in a
@@ -129,7 +144,11 @@ awk -v origin="$public_origin" \
     -v smtp_tls="$smtp_tls" \
     -v smtp_username="${DEMO_SMTP_USERNAME:-}" \
     -v smtp_password="${DEMO_SMTP_PASSWORD:-}" \
-    -v smtp_from="$DEMO_SMTP_FROM" '
+    -v smtp_from="$DEMO_SMTP_FROM" \
+    -v google_id="$DEMO_GOOGLE_CLIENT_ID" \
+    -v google_secret="$DEMO_GOOGLE_CLIENT_SECRET" \
+    -v github_id="$DEMO_GITHUB_CLIENT_ID" \
+    -v github_secret="$DEMO_GITHUB_CLIENT_SECRET" '
     function replace(line, needle, repl,   out, i) {
         out = ""
         while ((i = index(line, needle)) > 0) {
@@ -151,6 +170,10 @@ awk -v origin="$public_origin" \
         line = replace(line, "__SMTP_USERNAME__", smtp_username)
         line = replace(line, "__SMTP_PASSWORD__", smtp_password)
         line = replace(line, "__SMTP_FROM__", smtp_from)
+        line = replace(line, "__GOOGLE_CLIENT_ID__", google_id)
+        line = replace(line, "__GOOGLE_CLIENT_SECRET__", google_secret)
+        line = replace(line, "__GITHUB_CLIENT_ID__", github_id)
+        line = replace(line, "__GITHUB_CLIENT_SECRET__", github_secret)
         print line
     }
 ' "$template" >"$config.new"
@@ -165,7 +188,8 @@ chmod 0600 "$config"
 # variable under its prefix that no item reads, and these four would each earn
 # a diagnostic on every start.
 unset DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL \
-    DEMO_SMTP_HOST DEMO_SMTP_PORT DEMO_SMTP_TLS DEMO_SMTP_USERNAME DEMO_SMTP_PASSWORD DEMO_SMTP_FROM
+    DEMO_SMTP_HOST DEMO_SMTP_PORT DEMO_SMTP_TLS DEMO_SMTP_USERNAME DEMO_SMTP_PASSWORD DEMO_SMTP_FROM \
+    DEMO_GOOGLE_CLIENT_ID DEMO_GOOGLE_CLIENT_SECRET DEMO_GITHUB_CLIENT_ID DEMO_GITHUB_CLIENT_SECRET
 
 su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite seed
 exec su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite serve

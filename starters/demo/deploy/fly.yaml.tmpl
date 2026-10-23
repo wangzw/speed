@@ -61,6 +61,18 @@ authn:
       # bound to; the entrypoint derives it from the Machine's app name, or
       # takes it from the DEMO_PUBLIC_URL secret for a custom domain.
       public-url: "__PUBLIC_ORIGIN__"
+  # The two social login methods the image assembles. Each section is an OAuth
+  # application registered with the provider; the entrypoint renders both from
+  # Fly secrets. The redirect URI registered with the provider is the public
+  # origin, the capability's base path and the method's own callback path:
+  # __PUBLIC_ORIGIN__/api/v1/auth/callback/google and .../github.
+  login:
+    google:
+      client-id: "__GOOGLE_CLIENT_ID__"
+      client-secret: "__GOOGLE_CLIENT_SECRET__"
+    github:
+      client-id: "__GITHUB_CLIENT_ID__"
+      client-secret: "__GITHUB_CLIENT_SECRET__"
   # The token signing key. The program generates one at this path on its first
   # run and keeps it afterwards; the path is relative to the working directory
   # (/data), so the key survives a redeploy with the volume.
@@ -117,6 +129,12 @@ seed:
     # The anonymous username-and-password registration is open; the account
     # is usable immediately and proves its email address afterwards.
     - key: "authn.account.password-signup"
+      value: "open"
+    # A first social login opens an account too. The provider has proved the
+    # identity, and an address it reports as verified is written as an email
+    # identifier; with this switch closed, only an account that already holds
+    # the binding could sign in with Google or GitHub.
+    - key: "authn.account.signup"
       value: "open"
 
 # The engine. The database file is on the volume; the encryption key seals the

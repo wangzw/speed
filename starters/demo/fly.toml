@@ -2,11 +2,12 @@
 #
 # That stack is the deployment's whole topology. Its database is a file, its
 # key-value store and event bus are in the process. The image runs the deploy
-# assembly: the baseline plus the SMTP mail carrier and the email verification
-# code sender, so registration can send real codes. The volume is what keeps
-# the seeded operator, the tenants, the token
-# signing key, the object store and the SQLite file across deploys and machine
-# stops; the sqlite-memory stack would lose all of them with the process.
+# assembly: the baseline plus the SMTP mail carrier, the email verification code
+# sender over it, and the Google and GitHub login methods, so registration can
+# send real codes and either provider can sign a person in. The volume is what
+# keeps the seeded operator, the tenants, the token signing key, the object
+# store and the SQLite file across deploys and machine stops; the sqlite-memory
+# stack would lose all of them with the process.
 #
 # One-time setup, the secrets the entrypoint requires and the deploy command
 # are in AGENTS.md under "Deploying to Fly.io". A fork changes `app` and the

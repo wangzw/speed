@@ -383,7 +383,11 @@ flyctl secrets set --app vislake-speed-demo \
   DEMO_SMTP_HOST=smtp.example.com \
   DEMO_SMTP_FROM='Demo <no-reply@example.com>' \
   DEMO_SMTP_USERNAME='...' \
-  DEMO_SMTP_PASSWORD='...'
+  DEMO_SMTP_PASSWORD='...' \
+  DEMO_GOOGLE_CLIENT_ID='...' \
+  DEMO_GOOGLE_CLIENT_SECRET='...' \
+  DEMO_GITHUB_CLIENT_ID='...' \
+  DEMO_GITHUB_CLIENT_SECRET='...'
 # optional: DEMO_SMTP_PORT (default 587), DEMO_SMTP_TLS (starttls, implicit, none)
 
 # the repository secret the deploy workflow reads
@@ -404,8 +408,9 @@ seals columns at rest, and a different key on an existing database makes them
 unreadable.
 
 **Registration is open on this deployment.** The image is built with
-`-tags deploy`, which adds `mail.smtp` and `authn.emailcode` to the baseline;
-`seed.settings` opens `authn.account.password-signup`; and
+`-tags deploy`, which adds `mail.smtp`, `authn.emailcode`, `authn.login.google`
+and `authn.login.github` to the baseline; `seed.settings` opens
+`authn.account.password-signup` and `authn.account.signup`; and
 `workspace.personal.enabled` is on, so an account that proves its email address
 gets a personal tenant. The email loop needs a real relay: the entrypoint
 requires `DEMO_SMTP_HOST` and `DEMO_SMTP_FROM`, and treats
@@ -417,6 +422,26 @@ The mail budgets are the declared defaults: a walk-through may need to wait
 out the per-address window. A default build has no mail path and leaves
 registration closed, so the baseline testdata and the review build keep their
 own assemblies.
+
+**Google and GitHub sign-in are on the same deployment.** Each application's
+identifier and secret come from its own Fly secret; the entrypoint requires all
+four, so a deployment that leaves one out refuses to start rather than serving a
+method with no credential. A first social login opens an account, and an address
+the provider reports as verified is written as an email identifier. Both
+providers hold a redirect URI on the deployment, and it is derived from the
+origin rather than configured:
+
+```
+https://<app>.fly.dev/api/v1/auth/callback/google
+https://<app>.fly.dev/api/v1/auth/callback/github
+```
+
+A custom domain (`DEMO_PUBLIC_URL`) changes both, so register the pair on the
+domain the deployment is reached at. An account that already exists under a
+password signs in socially only after it binds the provider in its account
+settings: `authn.account.auto-link` keeps its default of `never`, so a social
+login whose provider-proved address matches an existing account answers
+`link-required` rather than taking the account over.
 
 The origin is derived from `FLY_APP_NAME` (`https://<app>.fly.dev`). A custom
 domain sets `DEMO_PUBLIC_URL` to its https origin, which is what the WebAuthn

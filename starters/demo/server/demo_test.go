@@ -1623,6 +1623,42 @@ type flyProxyCarrier struct {
 	RemoteIPHeaders []string `config:"remote-ip-headers"`
 }
 
+// renderDeployTemplate renders deploy/fly.yaml.tmpl the way deploy/entrypoint.sh
+// does: every placeholder in it is replaced with a value of the shape the
+// entrypoint renders. It answers the template's text, so a case reads the
+// sections the deployment build carries rather than a copy of them.
+func renderDeployTemplate(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "deploy", "fly.yaml.tmpl"))
+	if err != nil {
+		t.Fatalf("reading the deployment template: %v", err)
+	}
+	rendered := string(raw)
+	for placeholder, value := range map[string]string{
+		"__PUBLIC_ORIGIN__":        "https://demo.example.test",
+		"__PUBLIC_DOMAIN__":        "demo.example.test",
+		"__OPERATOR_EMAIL__":       "operator@demo.example.test",
+		"__OPERATOR_PASSWORD__":    "operator-test-secret",
+		"__ENCRYPTION_KEY__":       "test-only-encryption-key-0123456789",
+		"__SMTP_HOST__":            "smtp.example.test",
+		"__SMTP_PORT__":            "587",
+		"__SMTP_TLS__":             "starttls",
+		"__SMTP_USERNAME__":        "review",
+		"__SMTP_PASSWORD__":        "review-secret",
+		"__SMTP_FROM__":            "Demo <no-reply@demo.example.test>",
+		"__GOOGLE_CLIENT_ID__":     "google-client.example.test",
+		"__GOOGLE_CLIENT_SECRET__": "google-client-secret",
+		"__GITHUB_CLIENT_ID__":     "github-client",
+		"__GITHUB_CLIENT_SECRET__": "github-client-secret",
+	} {
+		if !strings.Contains(rendered, placeholder) {
+			t.Fatalf("the deployment template carries no %s placeholder to render", placeholder)
+		}
+		rendered = strings.ReplaceAll(rendered, placeholder, value)
+	}
+	return rendered
+}
+
 // TestTheFlyTemplateTrustsTheFlyProxy holds the deployment template, not a
 // test-local copy of it, to the one proxy a Fly Machine is reached through.
 // Fly's proxy is the only peer whose forwarded headers are believed, and the
@@ -1632,34 +1668,14 @@ type flyProxyCarrier struct {
 // pkg/config entry point the binary uses, so a deployment that runs the
 // template carries the trust settings this case asserts.
 func TestTheFlyTemplateTrustsTheFlyProxy(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "deploy", "fly.yaml.tmpl"))
-	if err != nil {
-		t.Fatalf("reading the deployment template: %v", err)
-	}
-	rendered := string(raw)
-	for placeholder, value := range map[string]string{
-		"__PUBLIC_ORIGIN__":     "https://demo.example.test",
-		"__PUBLIC_DOMAIN__":     "demo.example.test",
-		"__OPERATOR_EMAIL__":    "operator@demo.example.test",
-		"__OPERATOR_PASSWORD__": "operator-test-secret",
-		"__ENCRYPTION_KEY__":    "test-only-encryption-key-0123456789",
-		"__SMTP_HOST__":         "smtp.example.test",
-		"__SMTP_PORT__":         "587",
-		"__SMTP_TLS__":          "starttls",
-		"__SMTP_USERNAME__":     "review",
-		"__SMTP_PASSWORD__":     "review-secret",
-		"__SMTP_FROM__":         "Demo <no-reply@demo.example.test>",
-	} {
-		if !strings.Contains(rendered, placeholder) {
-			t.Fatalf("the deployment template carries no %s placeholder to render", placeholder)
-		}
-		rendered = strings.ReplaceAll(rendered, placeholder, value)
-	}
-	// The default binary carries no mail module, so the deployment-only section
-	// would be an unknown key to it. The deploy build keeps the section and
-	// validates it; the proxy settings are the same either way.
+	rendered := renderDeployTemplate(t)
+	// The default binary carries no mail module and no social login method, so
+	// the deployment-only sections would be unknown keys to it. The deploy build
+	// keeps the sections and validates them; the proxy settings are the same
+	// either way.
 	if len(deployModules) == 0 {
 		rendered = strings.Replace(rendered, yamlBlock(rendered, "mail:"), "", 1)
+		rendered = strings.Replace(rendered, yamlBlock(rendered, "login:"), "", 1)
 	}
 
 	var carrier flyProxyCarrier
