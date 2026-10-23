@@ -20,9 +20,13 @@ import {
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 
 const ACCOUNT = 'acc-9'
-/** The two distinct markers an unresolved account read renders. */
-const MISSING_LABEL = `${ACCOUNT} (${zhCN.common.accountMissing})`
-const UNRESOLVED_LABEL = `${ACCOUNT} (${zhCN.common.accountUnresolved})`
+/**
+ * The two distinct notes an unresolved account read renders. The note is a
+ * visually hidden annotation beside the recorded value, so the case finds the
+ * marker by the title that carries the same text.
+ */
+const MISSING_TITLE = zhCN.common.accountMissing
+const UNRESOLVED_TITLE = zhCN.common.accountUnresolved
 
 describe('AccountIdentity', () => {
   it('shows the resolved display name when the account read answers', async () => {
@@ -39,8 +43,8 @@ describe('AccountIdentity', () => {
       }),
     )
     renderWithProviders(<AccountIdentity account={ACCOUNT} />, { operations })
-    expect(await screen.findByLabelText(MISSING_LABEL)).toBeInTheDocument()
-    expect(screen.queryByLabelText(UNRESOLVED_LABEL)).toBeNull()
+    expect(await screen.findByTitle(MISSING_TITLE)).toBeInTheDocument()
+    expect(screen.queryByTitle(UNRESOLVED_TITLE)).toBeNull()
   })
 
   it('marks a refused read as unresolved, not as a missing account', async () => {
@@ -51,8 +55,8 @@ describe('AccountIdentity', () => {
       }),
     )
     renderWithProviders(<AccountIdentity account={ACCOUNT} />, { operations })
-    expect(await screen.findByLabelText(UNRESOLVED_LABEL)).toBeInTheDocument()
-    expect(screen.queryByLabelText(MISSING_LABEL)).toBeNull()
+    expect(await screen.findByTitle(UNRESOLVED_TITLE)).toBeInTheDocument()
+    expect(screen.queryByTitle(MISSING_TITLE)).toBeNull()
   })
 
   it('issues no account read when authn.admin is absent and marks the identity unresolved', async () => {
@@ -66,8 +70,8 @@ describe('AccountIdentity', () => {
     })
     // The recorded value stands with the unresolved note -- never the 404
     // "deleted" marker, which only a read could have answered.
-    expect(await screen.findByLabelText(UNRESOLVED_LABEL)).toBeInTheDocument()
-    expect(screen.queryByLabelText(MISSING_LABEL)).toBeNull()
+    expect(await screen.findByTitle(UNRESOLVED_TITLE)).toBeInTheDocument()
+    expect(screen.queryByTitle(MISSING_TITLE)).toBeNull()
     expect(getAccount).not.toHaveBeenCalled()
   })
 
@@ -87,12 +91,12 @@ describe('AccountIdentity', () => {
     const first = renderWithProviders(<AccountIdentity account={ACCOUNT} />, {
       operations: missing,
     })
-    const missingMarker = await screen.findByLabelText(MISSING_LABEL)
+    const missingMarker = await screen.findByTitle(MISSING_TITLE)
     first.unmount()
     renderWithProviders(<AccountIdentity account={ACCOUNT} />, {
       operations: refused,
     })
-    const refusedMarker = await screen.findByLabelText(UNRESOLVED_LABEL)
+    const refusedMarker = await screen.findByTitle(UNRESOLVED_TITLE)
     expect(missingMarker.getAttribute('title')).not.toBe(
       refusedMarker.getAttribute('title'),
     )

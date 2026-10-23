@@ -786,7 +786,7 @@ describe('PermissionsPage', () => {
     await pickTenant(user)
     // The cell keeps the recorded id, labelled unresolved rather than
     // passed off as a resolved identity.
-    const cell = await screen.findByLabelText(contains(zhCN.common.accountUnresolved))
+    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent('acc-1')
     // The unbind control names the account by the recorded id when no
     // readable name was resolved.
@@ -809,7 +809,7 @@ describe('PermissionsPage', () => {
     // otherwise sets the account column's width from its content. The
     // account is the row's identity, so it takes the shared primary cap,
     // which grows at md and counts the copy control in the budget.
-    const accountMarker = await within(bindings).findByLabelText(contains(zhCN.common.accountUnresolved))
+    const accountMarker = await within(bindings).findByTitle(zhCN.common.accountUnresolved)
     const accountCell = accountMarker.closest('td')
     expect(containerMaxWidthOf(accountCell!.firstElementChild!)).toEqual(
       new Map([

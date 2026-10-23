@@ -74,11 +74,6 @@ function copyLabel(value: string): string {
   return template.replace('{{value}}', value)
 }
 
-/** Matches the account cell labelled with the unresolved-identity note. */
-function unresolvedAccountLabel(content: string): boolean {
-  return content.includes(zhCN.common.accountUnresolved)
-}
-
 function invitation(overrides: Partial<ConsoleInvitation> = {}): ConsoleInvitation {
   return {
     id: 'inv-1',
@@ -368,7 +363,7 @@ describe('InvitationsPage', () => {
     await pickTenant(user)
     // The cell keeps the recorded id but labels it unresolved rather than
     // passing it off as a resolved name.
-    const cell = await screen.findByLabelText(unresolvedAccountLabel)
+    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent('staff-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
@@ -393,7 +388,7 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations: refused })
     await pickTenant(user)
-    const cell = await screen.findByLabelText(unresolvedAccountLabel)
+    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent('acc-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })
@@ -793,7 +788,7 @@ describe('InvitationsPage', () => {
     })
     renderWithProviders(<InvitationsPage />, { operations: refused })
     await pickTenant(user)
-    await screen.findByLabelText(unresolvedAccountLabel)
+    await screen.findByTitle(zhCN.common.accountUnresolved)
     await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))

@@ -22,9 +22,6 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 
-const ACTOR = 'acc-9'
-const UNRESOLVED_LABEL = `${ACTOR} (${zhCN.common.accountUnresolved})`
-
 describe('AuditDetailPage', () => {
   it('renders the record fields read by id', async () => {
     const getRecord = vi.fn(() =>
@@ -78,7 +75,7 @@ describe('AuditDetailPage', () => {
     })
     // The row keeps the recorded id but labels it unresolved rather than
     // passing it off as a resolved name.
-    const cell = await screen.findByLabelText(UNRESOLVED_LABEL)
+    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent('acc-9')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })

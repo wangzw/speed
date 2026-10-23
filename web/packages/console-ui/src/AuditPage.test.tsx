@@ -255,9 +255,7 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     // The cell shows the recorded id, but labelled as unresolved rather
     // than passed off as a resolved (or system) name.
-    const cell = await screen.findByLabelText(zhCN.common.accountUnresolved, {
-      exact: false,
-    })
+    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent('acc-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })

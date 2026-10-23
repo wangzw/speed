@@ -39,7 +39,6 @@ const COPY = zhCN.common as {
 }
 
 /** The marker a refused account read leaves on the recent-activity actor. */
-const UNRESOLVED_ACTOR = `acc-1 (${zhCN.common.accountUnresolved})`
 
 const TENANTS = [
   { id: 'acme', alias: 'Acme', status: 'active' as const },
@@ -135,7 +134,7 @@ describe('DashboardPage', () => {
     renderDashboard({ operations })
     // The cell keeps the recorded id but labels it unresolved rather than
     // passing it off as a resolved (or system) actor.
-    const cell = await screen.findByLabelText(UNRESOLVED_ACTOR)
+    const cell = await screen.findByTitle(zhCN.common.accountUnresolved)
     expect(cell).toHaveTextContent('acc-1')
     expect(cell).toHaveAttribute('title', zhCN.common.accountUnresolved)
   })

@@ -22,7 +22,9 @@
  * re-render -- reuse one cached read.
  */
 
+import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
+import { visuallyHiddenSx } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 import { isNotFound } from './async-section.js'
 import { useConsoleHasFeature } from './features.js'
@@ -30,8 +32,8 @@ import { useConsoleOperations } from '../operations.js'
 
 /**
  * The account read's outcome for one identifier, for surfaces that need the
- * readable name without rendering the unit -- an aria label that names the
- * account, for one. `name` is the display name when the read answers a
+ * readable name without rendering the unit -- a hidden annotation beside the
+ * recorded value, for one. `name` is the display name when the read answers a
  * non-empty one; `refused` says the read failed for a reason other than the
  * account not existing (a permission refusal, a transport failure); and
  * `missing` says the read was answered 404 -- the account was deleted, or
@@ -76,9 +78,11 @@ export function AccountIdentity({ account }: { readonly account: string }) {
         variant="body2"
         sx={{ fontStyle: 'italic' }}
         title={t('common.accountUnresolved')}
-        aria-label={`${account} (${t('common.accountUnresolved')})`}
       >
         {account}
+        <Box component="span" sx={visuallyHiddenSx}>
+          {` (${t('common.accountUnresolved')})`}
+        </Box>
       </Typography>
     )
   }
@@ -92,9 +96,11 @@ export function AccountIdentity({ account }: { readonly account: string }) {
         variant="body2"
         sx={{ fontStyle: 'italic' }}
         title={t('common.accountMissing')}
-        aria-label={`${account} (${t('common.accountMissing')})`}
       >
         {account}
+        <Box component="span" sx={visuallyHiddenSx}>
+          {` (${t('common.accountMissing')})`}
+        </Box>
       </Typography>
     )
   }
@@ -105,9 +111,11 @@ export function AccountIdentity({ account }: { readonly account: string }) {
         variant="body2"
         sx={{ fontStyle: 'italic' }}
         title={t('common.accountUnresolved')}
-        aria-label={`${account} (${t('common.accountUnresolved')})`}
       >
         {account}
+        <Box component="span" sx={visuallyHiddenSx}>
+          {` (${t('common.accountUnresolved')})`}
+        </Box>
       </Typography>
     )
   }

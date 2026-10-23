@@ -69,11 +69,6 @@ function copyLabel(value: string): string {
   return template.replace('{{value}}', value)
 }
 
-/** Matches the account cell labelled with the unresolved-identity note. */
-function unresolvedAccountLabel(content: string): boolean {
-  return content.includes(zhCN.common.accountUnresolved)
-}
-
 /** The in-force panel's target line: its prefixed label beside the name. */
 function targetLine(name: string): string {
   return `${zhCN.impersonations.current.target}${name}`
@@ -387,9 +382,12 @@ describe('ImpersonationsPage', () => {
       }),
     })
     await pickTenant(user)
-    const recordIds = await screen.findAllByLabelText(unresolvedAccountLabel)
+    const recordIds = await screen.findAllByTitle(zhCN.common.accountUnresolved)
     expect(recordIds.map((cell) => cell.textContent)).toEqual(
-      expect.arrayContaining(['staff-1', 'acc-1']),
+      expect.arrayContaining([
+        expect.stringContaining('staff-1'),
+        expect.stringContaining('acc-1'),
+      ]),
     )
     recordHalf.unmount()
 
@@ -405,8 +403,9 @@ describe('ImpersonationsPage', () => {
     renderWithProviders(<ImpersonationsPage />, {
       operations: withPage({ getAccount: () => Promise.reject(new Error('forbidden')) }),
     })
-    const grantIds = await screen.findAllByLabelText(unresolvedAccountLabel)
-    expect(grantIds.map((cell) => cell.textContent)).toEqual(['acc-7'])
+    const grantIds = await screen.findAllByTitle(zhCN.common.accountUnresolved)
+    expect(grantIds).toHaveLength(1)
+    expect(grantIds[0]).toHaveTextContent('acc-7')
   })
 
   it('marks an ended record with its reason and disables termination', async () => {
