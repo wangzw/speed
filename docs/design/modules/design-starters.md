@@ -52,7 +52,7 @@ starters/demo/
 
 容器入口 `deploy/entrypoint.sh` 把 `deploy/fly.yaml.tmpl` 渲染成 `/data/config.yaml`：公开来源由 `FLY_APP_NAME` 推出，自定域由 `DEMO_PUBLIC_URL` 给出；运营账户与库加密根键取自 Fly secret。模板不承载凭据，镜像不含开发值。SMTP 的主机、发件地址与凭据也取自 Fly secret：入口要求主机与发件地址，端口缺省 587、TLS 姿态缺省 `starttls`，用户名与口令为空表示不使用 AUTH。两家身份提供方的应用标识与密钥同取自 Fly secret，入口缺任一项即拒绝启动。两者登记给提供方的回调地址由公开来源推出，不另设配置项：`<公开来源>/api/v1/auth/callback/google` 与 `<公开来源>/api/v1/auth/callback/github`。模板的 `http` 节承载模块级的代理信任设置：可信代理网段取 Fly Proxy 进入 Machine 的地址段，来源地址头名取 `Fly-Client-IP`。入口取得卷的所有权后降权运行，先执行 `sqlite seed`，再把进程交给 `sqlite serve`；`seed` 只写缺失项，重启不覆盖运营者经界面做的修改。`serve` 带上基线的后台模块，不再另起进程。
 
-**Fly 部署开放注册，口令与社交两种入口都开。** 镜像以 `-tags deploy` 构建，`deployModules` 在基线之上加入 `authn.emailcode`、`mail.smtp`、`authn.login.google` 与 `authn.login.github`；`deploy/fly.yaml.tmpl` 的 `mail.smtp` 与 `authn.login` 节由入口从 Fly secret 渲染，`seed.settings` 把 `authn.account.password-signup` 与 `authn.account.signup` 都写为 `open`，`workspace.personal.enabled` 为真。入口缺 SMTP 主机或发件地址时拒绝启动，因此开放注册不会落在没有投递通道的机器上。社交首登开户时，提供方声明为已验证的邮箱写成邮箱标识；`authn.account.auto-link` 保持缺省 `never`，与既有账户地址相同的一次社交登录答 `link-required`，不接管该账户。默认构建（不带 `deploy` 标签）仍不含邮件模块与社交方法、注册保持关闭。
+**Fly 部署开放注册，口令与社交两种入口都开。** 镜像以 `-tags deploy` 构建，`deployModules` 在基线之上加入 `authn.emailcode`、`mail.smtp`、`authn.login.google` 与 `authn.login.github`；`deploy/fly.yaml.tmpl` 的 `mail.smtp` 与 `authn.login` 节由入口从 Fly secret 渲染，`seed.settings` 把 `authn.account.password-signup` 与 `authn.account.signup` 都写为 `open`，`workspace.personal.enabled` 为真。入口缺 SMTP 主机或发件地址时拒绝启动，因此开放注册不会落在没有投递通道的机器上。社交首登开户时，提供方声明为已验证的邮箱写成邮箱标识；`authn.account.auto-link` 保持缺省 `never`，与既有账户地址相同的一次社交登录答 `link-required`，不接管该账户（REQ-signup-019）。默认构建（不带 `deploy` 标签）仍不含邮件模块与社交方法、注册保持关闭。
 
 **卷上的数据库不做数据迁移。** 联系方式预留的 `(kind, value)` 全局唯一由 `0003_contact_claim.sql` 施加；该迁移只加约束、不对账已有数据，已有库里重复的联系方式预留会让它失败。升级到含这条迁移的版本时，Fly 部署删除 Machine 与卷、以空库重新部署，再由 `seed` 写入初始账户与租户；签名密钥与对象存储的本地根随卷一起重建（[ADR-authn-contact-claim-2026-10-22](../../adr/adr-authn-contact-claim-2026-10-22.md)）。
 
@@ -65,7 +65,7 @@ starters/demo/
 - **`serve`** 起 HTTP 入口并接受流量。
 - **`worker`** 跑后台模块，不起 HTTP 入口。
 - **`migrate`** 只跑数据库引擎，经静态级纳入取得各模块的声明、把全部表建起来。
-- **`seed`** 先写配置 `seed.settings` 点名的运行期设置（`{key, value}` 列表，值取声明类型自己的文本形式，经公开的 `settings.Store` 写全局层）：这些值可能约束随后写入的账户，账户存储的口令策略就在其中，设置晚于账户就等于没有约束到它。再写配置 `seed.accounts` 点名的初始账户（凭据按项给明文口令或 PHC 条目）、配置 `seed.tenants` 点名的租户（登记进名册），以及其中标记为平台管理员的那些账户所持有的运营角色——角色带上本进程声明的全部权限。角色与它的授权写进两类域：平台域（平台自己的管理面读它），以及 `seed.tenants` 的每个租户域（控制台按租户寻址的页面——成员、邀请、SSO 提供方——因此开箱即答；平台域的绑定不覆盖租户域，所以租户域里绑得上，得先在租户域把角色与授权写出来）。它驱动到 `Start`，因此把迁移一并带上，一个从未迁移过的库一条命令即可就绪；声明集未变时重复执行不写任何东西，逐项报「跳过」；运行期设置的键在全局层已有显式行时同样跳过，重跑因此不覆盖操作者经设置面做的修改，键拼错或值越出声明的域由设置模块拒绝，命令失败而不写入；进程新声明了一条权限时，重跑把缺的那条授权经宿主的种入面 `authz.Seeder` 补进已置 `builtin` 的运营角色，管理面仍然改不动它。配置里删去的账户与租户既不失效也不删除。角色与绑定只由它写入：迁移不种策略数据，谁是部署的管理员是宿主的回答（[authz](design-authz.md) 对宿主的要求、[authn.admin](authn/design-authn-admin.md) 的引导）。
+- **`seed`** 先写配置 `seed.settings` 点名的运行期设置（`{key, value}` 列表，值取声明类型自己的文本形式，经公开的 `settings.Store` 写全局层）：这些值可能约束随后写入的账户，账户存储的口令策略就在其中，设置晚于账户就等于没有约束到它。再写配置 `seed.accounts` 点名的初始账户（凭据按项给明文口令或 PHC 条目）、配置 `seed.tenants` 点名的租户（登记进名册），以及其中标记为平台管理员的那些账户所持有的运营角色——角色带上本进程声明的全部权限。角色与它的授权写进两类域：平台域（平台自己的管理面读它），以及 `seed.tenants` 的每个租户域（控制台按租户寻址的页面——成员、邀请、SSO 提供方——因此开箱即答；平台域的绑定不覆盖租户域，所以租户域里绑得上，得先在租户域把角色与授权写出来）。它驱动到 `Start`，因此把迁移一并带上，一个从未迁移过的库一条命令即可就绪；声明集未变时重复执行不写任何东西，逐项报「跳过」；运行期设置的键在全局层已有显式行时同样跳过，重跑因此不覆盖操作者经设置面做的修改（REQ-deployment-011），键拼错或值越出声明的域由设置模块拒绝，命令失败而不写入；进程新声明了一条权限时，重跑把缺的那条授权经宿主的种入面 `authz.Seeder` 补进已置 `builtin` 的运营角色，管理面仍然改不动它。配置里删去的账户与租户既不失效也不删除。角色与绑定只由它写入：迁移不种策略数据，谁是部署的管理员是宿主的回答（[authz](design-authz.md) 对宿主的要求、[authn.admin](authn/design-authn-admin.md) 的引导）。
 - **`gen`** 合并并写出 API 规格，并写出特性声明的清单，见「`gen` 命令」。
 - **命令组** 承载一次性运维动作。
 
@@ -304,7 +304,7 @@ flowchart TD
 
 首登开户的账户没有任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），任何还没被加进租户的账户同样如此。客户端没有读取本人成员关系的接口；租户是请求的路由事实，由宿主的路由得出；准入层对不可进入的租户一律答不区分原因的 404（[tenant 准入](tenant/design-tenant-admission.md)）。示范因此不假装知道账户有没有成员关系：
 
-- 租户区里取租户数据的面（对象页、通知面）把这类裸 404 渲染为「无法访问当前组织」，说明它可能不存在、或账户还不是该组织的成员，并指引联系管理员发送邀请；不渲染成服务没有应答，也不给重试（[objectstore-ui](web/design-web-objectstore-ui.md)、[notification-ui](web/design-web-notification-ui.md)）。
+- 租户区里取租户数据的面（对象页、通知面）把这类裸 404 渲染为「无法访问当前组织」，说明它可能不存在、或账户还不是该组织的成员，并指引联系管理员发送邀请；不渲染成服务没有应答，也不给重试（REQ-tenancy-025；[objectstore-ui](web/design-web-objectstore-ui.md)、[notification-ui](web/design-web-notification-ui.md)）。
 - 账户级的页面（账户设置、注册后的完成设置页、验证邮箱页）不取租户数据，照常可用；个人租户的 ensure 失败时，失败占位只替换取租户数据的页面，不替换它们。
 - 进入租户的途径是邀请链接与管理员授予的成员关系；示范只在启用个人租户时为没有成员关系的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建，也不提供读取本人成员关系的接口。
 
@@ -338,10 +338,10 @@ flowchart TD
 
 决策见 [ADR-authn-signup-2026-10-22](../../adr/adr-authn-signup-2026-10-22.md)。登录页是 auth-ui 的 `SignInScreen`，注册入口由它按发现文档给出：`signup.enabled` 为真，且 `signup.password.enabled` 为真或至少一个可见方法带 `opens_account` 时显示（[auth-ui](web/design-web-auth-ui.md)）；示范不自造注册入口，也不在文案里断言注册可用。重定向类与企业类方法的授权地址由登录页在当前窗口导航，流程的 `return_to` 是 `/sign-in/callback`，提供方的一次往返因此落回示范自己的回调页。
 
-- **口令注册成功后落在账户页的验证节。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account?verify=1`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、控制台会话门的登录屏登录之后留在原地址。
+- **口令注册成功后落在账户页的验证节（REQ-signup-028）。** 注册表单提交用户名、邮箱与口令（邮箱必填，确认口令只在客户端比较）；注册不建立会话，前端随后以同一凭据起一次口令登录。`SignInView` 的 `onSignedIn` 收到 `mode: 'register'`、`channel: 'password'` 时导航到 `/account?verify=1`；自动登录被拒时退回登录表单并预填用户名，账户已经建成。这个落点只在登录屏是应用登录页本身时生效，嵌入邀请接受页、控制台会话门的登录屏登录之后留在原地址。
 - **账户页的验证节与持续验证提示。** 账户页 `/account` 承载 account-ui 的 `ContactVerificationSection`，受会话门保护；`?verify=1` 落地时给它传 `autoSend`：未验证且有目标邮箱时自动发送一次验证码；`?change=email` 落地即展开更换表单，不自动发送；普通访问不传 `autoSend`，只在用户点击时发送。`verification.state` 是账户注册验证状态的读面，不是 `signup_state` 列的投影：`none` 是没有邮箱、`pending` 是有邮箱而没有一条已证明的、`verified` 是已有一条证明。判定与账户来源无关，所以管理员预置的 operator 带着未证明邮箱时同样读 `pending`。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失，与个人租户的一次性提示分开。「去验证」落在 `/account?verify=1`，从验证码一步开始；「更换邮箱」落在 `/account?change=email`，账户页据此让验证节直接展开更换邮箱表单。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示，不并进 `setupIncomplete`——验证状态与注册入口无关，管理员预置的账户也在其中。
 - **未验证账户与个人租户。** `verification.state` 为 `pending` 时示范不调用个人租户 ensure，先引导验证（见「个人租户」）；ensure 在未验证账户上答 409（type 为 `urn:speed:workspace:verification-required`），前端收到它时导航到账户页的验证节（`/account?verify=1`），不渲染失败占位。邮箱验证通过后 `verification.state` 变为 `verified`，ensure 恢复调用。判据是读面而不是账户来源：管理员预置的账户带着未证明邮箱时同样被 ensure 拒。没有邮箱的账户读 `none`，不受这条限制。未启用个人租户时，验证后的账户落在租户区首页，不触发建户。
-- **邮箱解除限制，手机不解除。** 邮箱验证走标识节的自助回路（`POST /api/v1/auth/identifiers` 与 `/verify`）；手机验证走手机节的两步。手机是登录方式与额外安全因素，验证手机不解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
+- **邮箱解除限制，手机不解除（REQ-signup-026）。** 邮箱验证走标识节的自助回路（`POST /api/v1/auth/identifiers` 与 `/verify`）；手机验证走手机节的两步。手机是登录方式与额外安全因素，验证手机不解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
 - **短信与社交开户的落点不变。** 注册模式下经短信渠道登录成功（`mode: 'register'`、`channel: 'sms'`）仍按个人租户是否启用决定去租户区首页或完成设置页；这个落点同样只在登录屏是应用登录页本身时生效。社交与企业登录照常进入应用。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
 - **完成设置页由 account-ui 的两个节组成，用户名先于口令。** `IdentifiersSection` 添加用户名；`PasswordSection` 只在账户已有可作登录名的标识（用户名或邮箱标识）之后可用，在此之前渲染说明：口令登录要有登录名，请先添加用户名。账户已经有登录名与口令时，页面陈述账户设置已完成并给出回到首页的链接。页面带一个回到首页的「稍后设置」链接；跳过不撤销已建的账户，账户仍可经短信登录。
 - **注册建立账户，不建立成员关系。** 开户不建任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），启用个人租户时，示范为没有成员关系且已验证邮箱的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建；未启用时新账户访问任何租户资源得 404，成员关系仍由管理员或邀请授予。

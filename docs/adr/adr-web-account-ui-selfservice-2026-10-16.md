@@ -6,7 +6,7 @@
 
 ## 背景
 
-authn 后端的自助写路由已经存在：档案面（`authn.profile`）挂 `PATCH B/me`，自写显示名、通用属性集、语言与时区；登录自助面（`authn.login`）挂 `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id`。这些路由都要求新鲜认证，未提权时答 401 `authn.insufficient_user_authentication`。
+authn 后端的自助写路由已经存在：档案面（`authn.profile`）挂 `PATCH B/me`，自写显示名、通用属性集、语言与时区；登录自助面（`authn.login`）挂 `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id`。自助写要求新鲜认证（REQ-security-013），未提权时答 401 `authn.insufficient_user_authentication`。
 
 前端 `@speed/account-ui` 交付的节覆盖偏好（语言与时区）、会话、社交绑定与两步验证，不含档案字段与口令、手机、登录标识的写。
 

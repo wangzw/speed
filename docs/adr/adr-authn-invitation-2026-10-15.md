@@ -6,7 +6,7 @@
 
 ## 背景
 
-成员关系已经声明邀请这一个来源：`Membership.Source` 的取值域是 `admin`、`jit:<提供方标识>`、`invite`、`import`（`pkg/authn/internal/model/directory.go` `Membership.Source`），而没有任何地方生成 `invite`。一条由管理员发起、由被邀请人接受后才成立的成员授予，需要落在某处。
+成员关系已经声明邀请这一个来源：`Membership.Source` 的取值域是 `admin`、`jit:<提供方标识>`、`invite`、`import`（`pkg/authn/internal/model/directory.go` `Membership.Source`），而没有任何地方生成 `invite`。一条成员授予由管理员发起、经被邀请人接受后才成立（REQ-tenancy-011、REQ-tenancy-017）；这条路径没有落点。
 
 账户写面接不住它。`AccountAdmin.Create` 要求地址「已经过验证」，且它的模型里没有可放待验证行的行（`pkg/authn/account.go` `AccountAdmin`、`pkg/authn/internal/model/directory.go` `CreateAccount`）：一个账户要么已经成立，要么不存在，没有「已记下、等某人来认领」的中间态。
 

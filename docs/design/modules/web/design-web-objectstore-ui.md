@@ -4,7 +4,7 @@
 
 `@speed/objectstore-ui` 是对象存储能力（[objectstore](../design-objectstore.md)）在浏览器里的面：一个租户作用域的对象页。它交付下列面：
 
-- `ObjectsPage`：本租户的对象列表（名称、对象标识、状态、大小、内容类型、创建时间，以及每行的下载、详情与删除控件），经 `@speed/ui-kit` 的 `FileUploader` 驱动的上传面（每个文件走对象存储模块的三步传输：声明 → 上传字节 → 完成），一个逐对象的详情对话框，一次下载与一次删除。删除经 ui-kit 危险 `ConfirmDialog` 的 `doubleConfirm` 两步守卫确认——对象连同其字节一并销毁、界面上无从恢复。
+- `ObjectsPage`：本租户的对象列表（名称、对象标识、状态、大小、内容类型、创建时间，以及每行的下载、详情与删除控件），经 `@speed/ui-kit` 的 `FileUploader` 驱动的上传面（每个文件走对象存储模块的三步传输：声明 → 上传字节 → 完成），一个逐对象的详情对话框，一次下载与一次删除。删除经 ui-kit 危险 `ConfirmDialog` 的 `doubleConfirm` 两步守卫确认（删除不可恢复，REQ-objects-015）。
 - `ObjectDetailDialog`：单个对象的元数据（含名称），读 `GET /api/v1/objects/{id}`，由 `ObjectsPage` 的「详情」控件打开。
 - `useObjectUploads`：上传编排。宿主用自己的界面渲染 `FileUploader` 时复用它：它持队列、跑三步传输，并经 `onUploaded` 交出完成的对象与产生它的文件。
 - `useObjectDownload`：下载编排。返回一个操作，取回一个对象的字节并按派生文件名落盘。

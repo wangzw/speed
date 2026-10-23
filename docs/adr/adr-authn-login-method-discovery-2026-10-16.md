@@ -13,7 +13,7 @@
 - 第一因素方法是并立的叶子包，各自交付 `LoginMethod` 接缝；引擎不 import 任何方法，方法集合由 `core.ResolveAll` 汇总（[ADR-authn-login-flow-2026-10-10](adr-authn-login-flow-2026-10-10.md)）。任何方法专属的知识（名字、品牌、首步字段）都只能由方法自己持有。
 - 方法名属于对外接口面，但它出现的地方是路由、流程记录与指标属性，不是渲染契约；名字本身不告诉前端该画表单还是画按钮。
 - 首步字段是对交互的事实：方法在 `Begin` 以空字段调用时无副作用地返回首个 prompt，字段取自那里。
-- 注册开关 `authn.account.signup` 是部署级闭集开关，只有短信与社交在未知标识上开户，口令对未知标识直接拒（[ADR-authn-accounts-2026-10-10](adr-authn-accounts-2026-10-10.md)）。
+- 注册开关 `authn.account.signup` 是部署级闭集开关；一个方法能否为未知标识开户是各方法自己的事实，彼此不同：短信与社交在未知标识上开户，口令对未知标识直接拒绝（REQ-signup-012、REQ-signup-017、REQ-signin-007）（[ADR-authn-accounts-2026-10-10](adr-authn-accounts-2026-10-10.md)）。
 - 可用因素种类是装配收到的（部署级，谁可选），与账户级「本人已登记因素」是两回事。
 - 企业 SSO 的提供方清单刻意不公开：它按邮箱域 discover，不泄露账户存在性（[ADR-authn-sso-2026-10-10](adr-authn-sso-2026-10-10.md)）。发现端点不得成为它的旁路。
 

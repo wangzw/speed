@@ -10,7 +10,7 @@
 - **校验后端的接缝与身份的形状**：凭据的形状、判决的形状、后端声明自己认领的载体与可交出的账户命名空间的途径，以及身份的类型化字段。
 - **路由访问级别的登记面**：豁免、可选认证与可冒充的登记，与请求期的命中判定。
 - **账户存储**：账户、已验证标识、联系方式预留、外部身份绑定、成员关系、口令凭据、服务密钥与失败退避。
-- **自助注册**：匿名的用户名加口令注册路由一次写入账户、用户名标识、口令凭据与邮箱未证明预留；预留的插入以 `(kind, value)` 唯一索引仲裁地址占用，账户立即可登录，邮箱的验证在登录之后完成，未验证账户的敏感能力受限。未验证的判定对管理员预置与导入写出的账户同样成立，判定与创建路径无关。
+- **自助注册**：匿名的用户名加口令注册路由一次写入账户、用户名标识、口令凭据与邮箱未证明预留；预留的插入以 `(kind, value)` 唯一索引仲裁地址占用；注册后的登录与邮箱验证时机、未验证账户的能力限制见 REQ-signup-024 与 REQ-signup-025。未验证的判定对管理员预置与导入写出的账户同样成立，判定与创建路径无关。
 - **登录**：多种登录方式共用的多步引擎，终态是登录会话或令牌。
 - **登录会话、访问令牌与刷新令牌**：签发、校验、轮换与撤销。
 - **多因素、企业 SSO 与短信验证码**。
@@ -71,7 +71,7 @@
 - **网关不读入口模块的路由表，读它的端名。** 端名经入口模块的 `Router.Endpoints()` 与保留端名 `*` 取得，用来展开 `endpoints` 并校验登记所在的端；登记面不提供路由的枚举，网关无从核对一条登记是否对应一条已登记的路由，请求期只拿 gin 为本次请求报出的 `c.FullPath()` 与登记的方法、路径逐字比对（见 [http](../http/design-http.md)）。
 - **不实现邮件的传输、忘记口令流程、冒充与异常登录的邮件通知与邮件链接登录。** 邮箱标识除经 IdP 或管理员的断言成为已验证标识外，还可由本人经登录自助面发码到地址、兑现码后写入（见 [design-authn-login](design-authn-login.md)）。投递接缝是根包的 `EmailCodeSender`，传输由顶层能力的 `mail.Sender` 承担（[design-mail](../design-mail.md)）：仓库提供一个可选的适配模块 `authn.emailcode`，把验证码渲染成邮件并经 `mail.Sender` 发出；不装配它时，宿主可以自己实现 `EmailCodeSender`，否则邮箱验证这一面不可用。
 - **不做 SAML 单点登出与 OIDC 背向通道登出，不在后台自动刷新 IdP 元数据，不提供每租户的 SP 密钥。** IdP 侧的登出不终止登录会话，会话受自己的空闲期限与绝对期限约束（见 [design-authn-sso](design-authn-sso.md)）。
-- **不提供个人访问令牌与“记住此设备”。** 用户名加口令的自助注册由独立的匿名路由一次建号，注册必填用户名、口令与邮箱；账户立即可登录，邮箱在登录后验证，验证前敏感能力受限（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。注册时收集的邮箱先写成一条未证明预留，不是标识，也不是登录名；邮箱被证明之后才写入标识。注册开关 `authn.account.password-signup` 与首登开户开关 `authn.account.signup` 相互独立，缺省都关闭。
+- **不提供个人访问令牌与“记住此设备”。** 用户名加口令的自助注册由独立的匿名路由一次建号；注册的必填项、注册后的登录与验证时机、验证前的能力限制见 REQ-signup-004、REQ-signup-024 与 REQ-signup-025（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。注册时收集的邮箱先写成一条未证明预留，不是标识，也不是登录名；邮箱被证明之后才写入标识。注册开关 `authn.account.password-signup` 与首登开户开关 `authn.account.signup` 相互独立，缺省都关闭。
 - **不承载宿主的资料字段。** 账户表不留自由字段，宿主扩展用户字段的途径见[扩展点](#扩展点)。
 - **不做租户解析、请求级审计与限流。** 它们是别的模块的层，本功能目录只与它们的链上锚点有关（见[链上次序](#链上次序)）。
 - **不代替宿主决定哪条命令纳入认证。** 每个模块的 `Prepare` 只表态 `StateEnabled`，永不 `StateAuto`：是否运行是命令树上的决定，不是配置能推断的结论；这条约束没有任何机制强制，违反它的后果与接受的代价见 [ADR-authn-packaging-2026-10-10](../../../adr/adr-authn-packaging-2026-10-10.md)。
@@ -566,7 +566,7 @@ type SessionID string // 登录会话的公开标识（UUIDv7 文本），不是
 
 要求已验证邮箱的能力在请求期按 `SignupVerification.SignupStateOf` 活读账户的注册验证状态，读作未验证（`SignupPending`：持有邮箱而没有一条已证明的）时答 403 `contact-required`。判据与账户怎么创建无关：自助注册、管理员预置、导入、首登开户与企业 SSO 写出的用户账户一视同仁。门控在身份确定之后、授权与强度判定之前执行；它只收紧不放行，因此不构成越权。判定接缝缺席时按既有语义先拒绝，门控不改变该结果。读状态失败答 503，不按放行处理；服务账户与读作 `SignupNone`（没有任何邮箱）的账户不受门控约束。状态不进身份、会话与访问令牌，所以每次判定都当场读取。
 
-**平台强制门控的是身份与运营面，集合封闭**：管理面的人类写、冒充发起、`purpose=link` 的外部身份绑定、授权策略的写面、设置的写面、租户的创建与变更、服务密钥的创建、邀请的签发与撤销。各条的判定、豁免与门控所在模块由承载它的文档给出（[design-authn-admin](design-authn-admin.md)、[design-authn-impersonation](design-authn-impersonation.md)、[design-authn-login](design-authn-login.md)、[design-authn-invite](design-authn-invite.md)，以及[授权](../design-authz.md)、[设置](../settings/design-settings.md)、[租户](../tenant/design-tenant.md)的设计文档）。**业务写面不在平台门控之内**：`objectstore`、`notification`、`jobs` 一类能力的写是否要求已验证邮箱，由宿主决定，authn 不为它们统一拦截。
+**平台强制门控的是身份与运营面，集合封闭，见 REQ-signup-025**。各条的判定、豁免与门控所在模块由承载它的文档给出（[design-authn-admin](design-authn-admin.md)、[design-authn-impersonation](design-authn-impersonation.md)、[design-authn-login](design-authn-login.md)、[design-authn-invite](design-authn-invite.md)，以及[授权](../design-authz.md)、[设置](../settings/design-settings.md)、[租户](../tenant/design-tenant.md)的设计文档）。**业务写面不在平台门控之内**：`objectstore`、`notification`、`jobs` 一类能力的写是否要求已验证邮箱，由宿主决定，authn 不为它们统一拦截。
 
 ### 链上次序
 

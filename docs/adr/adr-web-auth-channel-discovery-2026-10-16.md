@@ -6,7 +6,7 @@
 
 ## 背景
 
-`speed` 前端的登录面要「部署提供什么登录途径就渲染什么」。此前 `SignInScreen` 的渠道由宿主经 `channels` 属性声明，`SocialSignInSection` 持一个社交渠道名字闭集（`google`、`github`、`wechat`、`dingtalk`、`feishu`），名字到界面的对应写在组件里。后端已把登录方式的发现端点升级为发布每个方法自报的描述符、注册开关与部署级因素种类（[ADR-authn-login-method-discovery-2026-10-16](adr-authn-login-method-discovery-2026-10-16.md)），`@speed/auth-core` 的 `listMethods()` 返回类型随之改为描述符文档。
+登录面呈现的登录方式集合随部署而变（REQ-signin-004）。此前 `SignInScreen` 的渠道由宿主经 `channels` 属性声明，`SocialSignInSection` 持一个社交渠道名字闭集（`google`、`github`、`wechat`、`dingtalk`、`feishu`），名字到界面的对应写在组件里。后端已把登录方式的发现端点升级为发布每个方法自报的描述符、注册开关与部署级因素种类（[ADR-authn-login-method-discovery-2026-10-16](adr-authn-login-method-discovery-2026-10-16.md)），`@speed/auth-core` 的 `listMethods()` 返回类型随之改为描述符文档。
 
 前端要在这次接口升级上定下渠道的来源：组件渲染的渠道集合从哪来、名字到界面的映射放在哪、宿主与后端各承担什么。
 

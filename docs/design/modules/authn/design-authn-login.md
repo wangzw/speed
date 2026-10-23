@@ -220,7 +220,7 @@ type Proof struct {
 
 - `username`、`email` 与 `password` 必填；邮箱先作为未证明预留写入，验证前不是登录名。`display_name`、`locale` 与 `time_zone` 可选，分别写到显示名与属性集的 `i18n.locale`、`i18n.tz` 键；`locale` 与 `time_zone` 按语言与时区的取值域校验，越界答 400。
 - 成功是 `201` 与 `{"state":"registered","account_id":"...","verification":{"state":"pending","email":"..."}}`。开户在一次事务里完成（`Signups.Register`），不建立会话、不发送邮件。
-- 客户端随后以 `POST B/flows` 的 `password` 方法登录，`input` 带 `identifier`（用户名）与 `password`。注册与验证都不自行铸造会话；自动登录失败时客户端退回登录表单并预填用户名。
+- 客户端随后以 `POST B/flows` 的 `password` 方法登录，`input` 带 `identifier`（用户名）与 `password`；注册与验证都不自行铸造会话。
 - 邮箱验证在登录后走 `POST B/identifiers` 与 `POST B/identifiers/verify`。只有邮箱被证明才把账户的注册验证状态转为已验证，短信验证手机不解除限制（[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。
 - 失败：400 体不合法或口令不合策略；403 `signup-closed`（`authn.account.password-signup` 不是 `open`）；409 `username-taken`、409 `email-taken`；429 `throttled` 带 `Retry-After`；503 `unavailable`（db 或派生容量不可用）。
 - **注册开关的权威检查在 `Signups.Register`。** 本路由与 `GET B/methods` 读同一个设置项只作预检查，便于在校验与派生之前早拒；预检查放过的请求仍可能被 `Signups.Register` 以 `ErrSignupClosed` 拒绝，两处答同一个 403 `signup-closed`。

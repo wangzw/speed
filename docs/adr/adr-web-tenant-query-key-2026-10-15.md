@@ -6,7 +6,7 @@
 
 ## 背景
 
-多租户下，一个用户在某个租户下读到的数据不能出现在另一个租户的界面里：切换租户之后，前一个租户的缓存必须逐出，否则新租户的界面会显示旧租户的数据。
+多租户下，切换租户后不得再展示离开的租户的数据（REQ-tenancy-023）：前一个租户的缓存必须逐出，否则新租户的界面会显示旧租户的数据。
 
 生成面刻意与租户无关。`@speed/api-sdk` 是 orval 生成的（`web/packages/api-sdk/src/index.ts`），它的 query key 是裸的 spec 路径，不带租户维度；`web/packages/api-sdk/AGENTS.md` 记下这条——生成代码里没有租户头、没有租户 query key，`tenant_id` 只在认证片段的类型里出现。租户由传输层统一挂在请求上：`@speed/api-client` 的 `tenantProvider` 的值接成 `X-Tenant` 头，不经任一生成操作，生成面因而仍与租户无关。
 

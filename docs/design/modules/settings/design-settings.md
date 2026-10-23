@@ -223,7 +223,7 @@ err := store.Get(settings.ForTenant(tenantID), "ratelimit.window", &opts.Window)
 
 **敏感项的值不进入本模块的任何日志与错误文本**。本模块的日志只写键与租户，不写值；敏感标记的作用面是事件载荷（见下）与设置项的列表（见列出设置项）。
 
-**注册验证状态的门控落在写入口，不在 `Write` 接缝。** 平台强制的是未验证账户不能写设置：`settings.admin` 与宿主自己写出的写入口在各自的权限判定之前、动作之前读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`），发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`，读取失败答 503、不按放行处理；服务账户与没有任何邮箱的账户（`SignupNone`）豁免。判据与账户怎么创建无关。门控只收紧、不放行：它只多拒绝一类发起者，不改变写入口的权限判定。`Set` 与 `Delete` 不读注册验证状态，也不能代替写入口执行这条门控；门控在服务端，不靠前端隐藏入口。
+**注册验证状态的门控落在写入口，不在 `Write` 接缝。** 这条门控执行的是未验证账户不得写设置这一约束（REQ-signup-025）：`settings.admin` 与宿主自己写出的写入口在各自的权限判定之前、动作之前读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`），发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`，读取失败答 503、不按放行处理；服务账户与没有任何邮箱的账户（`SignupNone`）豁免。判据与账户怎么创建无关。门控只收紧、不放行：它只多拒绝一类发起者，不改变写入口的权限判定。`Set` 与 `Delete` 不读注册验证状态，也不能代替写入口执行这条门控；门控在服务端，不靠前端隐藏入口。
 
 ### 列出设置项
 

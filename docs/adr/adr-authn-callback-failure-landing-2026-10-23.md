@@ -8,7 +8,7 @@
 
 社交与企业登录的回跳是用户代理的顶层导航：提供方把浏览器送回 `GET B/callback/:provider`。这条路径上的失败一律答 `application/problem+json`，这是本模块对全部失败的通则；通则没有区分导航与 API 调用，于是一个浏览器在登录被拒之后停在问题文档上，页面上只有一段 JSON，没有任何回到应用的入口。
 
-真实发生的一例：GitHub 登录的邮箱命中一个既有账户，引擎按威胁模型答 `401 link-required`，用户看到的是 `{"type":"urn:speed:authn:link-required",...}`。这不是可接受的呈现，也不是某个具体拒绝的问题——任何回跳失败都落在同一形状上。
+真实发生的一例：GitHub 登录的邮箱命中一个既有账户，引擎按威胁模型答 `401 link-required`，用户看到的是 `{"type":"urn:speed:authn:link-required",...}`。登录回跳被拒时不得把用户代理留在问题文档上（REQ-signin-028）；任何回跳失败都落在同一形状上。
 
 约束：
 

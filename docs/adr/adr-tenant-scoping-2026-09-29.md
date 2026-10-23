@@ -6,7 +6,7 @@
 
 ## 背景
 
-停用是让一个租户不再被服务的唯一途径，它不删数据（[ADR-tenant-directory-2026-09-21](adr-tenant-directory-2026-09-21.md)）。停用在写进标识的那一步生效：请求面把停用的租户答成 404，名册的 `Enter` 以 `ErrTenantDisabled` 拒绝它（[ADR-tenant-scoping-2026-09-28](adr-tenant-scoping-2026-09-28.md)）；插件不读名册，语句面不另拦（[ADR-tenant-isolation-2026-09-21](adr-tenant-isolation-2026-09-21.md)）。跨租户是为横跨多个租户的工作保留的途径（[ADR-tenant-scoping-2026-09-21](adr-tenant-scoping-2026-09-21.md)）。
+停用使租户不再被服务且不删除数据（REQ-tenancy-003、REQ-tenancy-004；[ADR-tenant-directory-2026-09-21](adr-tenant-directory-2026-09-21.md)）。停用在写进标识的那一步生效：请求面把停用的租户答成 404，名册的 `Enter` 以 `ErrTenantDisabled` 拒绝它（[ADR-tenant-scoping-2026-09-28](adr-tenant-scoping-2026-09-28.md)）；插件不读名册，语句面不另拦（[ADR-tenant-isolation-2026-09-21](adr-tenant-isolation-2026-09-21.md)）。跨租户是为横跨多个租户的工作保留的途径（[ADR-tenant-scoping-2026-09-21](adr-tenant-scoping-2026-09-21.md)）。
 
 停用之后仍有只属于那一个租户的工作：查看它的审计轨迹、下线之前导出它的数据、清除它的数据。导出、删除与搬迁本身是应用的领域动作，不由本模块提供（见设计文档的非职责）；本模块要回答的是这类工作以什么形状进入那个租户。在已有的途径下它只剩跨租户一条：过滤、填列与核对在那里一概不生效，一次漏写条件的清除删到每一个租户的行，审计行也记不下这件事是为哪个租户做的——为只属于一个租户的后台工作设 `Enter` 时否决的正是这个形态。
 

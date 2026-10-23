@@ -10,7 +10,7 @@
 
 **需求。**
 
-- 管理面与账户自助要能按账户列出会话并批量撤销（踢下线）。
+- 管理面按账户列出会话并逐条撤销，账户自助的会话面列出会话、撤销自己的单个会话并一次撤销除当前之外的其余会话，见需求文档（REQ-security-022、REQ-security-023、REQ-security-024、REQ-platform-admin-019、REQ-platform-admin-020）。
 - 撤销必须可靠：已撤销的会话不得因任何存储行为复活。
 - 访问令牌带会话标识，刷新令牌与冒充记录挂在会话上；撤销一个会话即撤销挂在它上面的一切。
 - 网关从 cookie 认出身份，cookie 随浏览器自动发送，需要跨源防护（[ADR-authn-credential-dispatch-2026-10-10](adr-authn-credential-dispatch-2026-10-10.md)）。

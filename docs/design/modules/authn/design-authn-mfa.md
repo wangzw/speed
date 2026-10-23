@@ -532,7 +532,7 @@ CREATE TABLE authn_webauthn_credentials (
 3. **管理员重置口令。** 路由 `POST B/accounts/:id/password`，经 `Decider`（动作 `authn.account.update`，缺席即全拒）；发起者的要求同管理员重置因素；管理员提交的临时口令是请求体，从不回显、不进日志与审计，缺省置 `must_change`；强制审计；成功后撤销该账户的全部会话。这是只有口令登录名的管理员创建账户的唯一重置路径，也是忘记口令之后组织内的找回途径。
 4. **运维经 Go 接口。** 宿主的命令直接调用 `MFA.Reset` 与 `Passwords.Set`，不经 `Decider`，是最后手段。
 
-忘记口令没有自助流程：账户主人经短信、社交或企业 SSO 登录后改口令，登录时同样过该账户的第二因素；或由管理员重置。找回途径的判据见 [ADR-authn-mfa-recovery-2026-10-10](../../../adr/adr-authn-mfa-recovery-2026-10-10.md)。
+忘记口令没有自助找回流程（REQ-security-020），找回途径限于本节列出的各项；经其他登录方式登录同样要过该账户的第二因素。找回途径的判据见 [ADR-authn-mfa-recovery-2026-10-10](../../../adr/adr-authn-mfa-recovery-2026-10-10.md)。
 
 **接受的代价。**
 
