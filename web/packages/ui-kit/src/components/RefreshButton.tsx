@@ -144,7 +144,7 @@ function RefreshButtonInner(
     return button
   }
   return (
-    <Tooltip title={disabledReason}>
+    <Tooltip title={disabledReason} describeChild>
       <Box component="span" sx={{ display: 'inline-flex' }}>
         {button}
       </Box>

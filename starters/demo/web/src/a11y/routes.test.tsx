@@ -184,6 +184,14 @@ async function scanRoute(
     result.incomplete.some((finding) => finding.rule === 'color-contrast'),
     `route ${path} [${mode}] swept color-contrast, which jsdom cannot decide`,
   ).toBe(false)
+  // aria-prohibited-attr lands in axe's indeterminate bucket only because jsdom
+  // does not compute an element's role; the question itself is decidable on a
+  // static tree. Asserting its absence turns the reported warning into a gate:
+  // the one node it named was a generic span carrying aria-label.
+  expect(
+    result.incomplete.some((finding) => finding.rule === 'aria-prohibited-attr'),
+    `route ${path} [${mode}] put an ARIA attribute on an element that does not permit it`,
+  ).toBe(false)
   for (const finding of result.incomplete) {
     console.warn(`[route-a11y] ${path} [${mode}] indeterminate: ${formatFinding(finding)}`)
   }
