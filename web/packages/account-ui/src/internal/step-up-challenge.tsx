@@ -78,6 +78,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -133,7 +134,6 @@ export function StepUpChallenge({
   onCancel,
   accountHref,
 }: StepUpChallengeProps) {
-  const { t } = useAccountUiTranslation()
   const titleId = useId()
   // The caller's own registered factors, read while the dialog is open. No
   // factor read, or a failed one, falls back to the flow's own refusal.
@@ -202,9 +202,79 @@ export function StepUpChallenge({
     open && noFactor && verdict?.kind === 'unknown-method'
   const startFlow =
     open && !checking && !awaitingVerdict && (!noFactor || reproveFirst)
+  // A restart remounts the flow driver: a fresh mount re-drives useStepUp,
+  // which has no restart command of its own. The factor and session reads
+  // stay put, so the verdict decided for this opening is not read again.
+  const [run, setRun] = useState(0)
+
+  if (!open) {
+    return null
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onCancel}
+      aria-labelledby={titleId}
+      maxWidth="xs"
+      fullWidth
+    >
+      <StepUpFlow
+        key={run}
+        session={session}
+        active={startFlow}
+        titleId={titleId}
+        onSuccess={onSuccess}
+        onCancel={onCancel}
+        onRestart={() => setRun((count) => count + 1)}
+        accountHref={accountHref}
+        freshFirst={freshFirst}
+        reloginOnly={reloginOnly}
+        checking={checking}
+        readingSession={readingSession}
+        reproveFirst={reproveFirst}
+        reproofMethod={reproofMethod}
+      />
+    </Dialog>
+  )
+}
+
+/** The flow a challenge drives, split from the dialog so a restart can
+ * remount it: a fresh mount re-drives useStepUp, and the challenge's factor
+ * and session reads are not repeated. */
+function StepUpFlow({
+  session,
+  active,
+  titleId,
+  onSuccess,
+  onCancel,
+  onRestart,
+  accountHref,
+  freshFirst,
+  reloginOnly,
+  checking,
+  readingSession,
+  reproveFirst,
+  reproofMethod,
+}: {
+  readonly session: AuthSession
+  readonly active: boolean
+  readonly titleId: string
+  readonly onSuccess: () => void
+  readonly onCancel: () => void
+  readonly onRestart: () => void
+  readonly accountHref?: string
+  readonly freshFirst: boolean
+  readonly reloginOnly: boolean
+  readonly checking: boolean
+  readonly readingSession: boolean
+  readonly reproveFirst: boolean
+  readonly reproofMethod?: string
+}): ReactElement {
+  const { t } = useAccountUiTranslation()
   const { phase, step, seq, errorCode, answer } = useStepUp(
     session,
-    startFlow,
+    active,
     onSuccess,
     reproveFirst ? reproofMethod : undefined,
   )
@@ -215,20 +285,8 @@ export function StepUpChallenge({
   // factor from the answer. A first-factor re-proof starts with no chosen
   // factor, whose steps travel under `answer` instead.
   const chosenFactor = useRef<string | null>(null)
-  // A fresh opening starts with no factor chosen: the ref outlives the
-  // closed dialog, and a stale choice would misname the next flow's steps.
-  const wasOpen = useRef(false)
-  useEffect(() => {
-    if (open && !wasOpen.current) {
-      chosenFactor.current = null
-    }
-    wasOpen.current = open
-  }, [open])
 
   function handleAnswer(value: AuthnFlowAnswer): void {
-    if (!open) {
-      return
-    }
     const input = value.input ?? {}
     if (input.factor !== undefined) {
       // The factor-choice step: remember the chosen factor and forward.
@@ -245,15 +303,17 @@ export function StepUpChallenge({
     answer(value)
   }
 
-  if (!open) {
-    return null
-  }
-
   const starting = phase === 'starting' || checking || readingSession
   // This deployment cannot raise the session at all (factors exist, none
   // that may strengthen it): no step will come, so the dialog says so and
   // offers a re-login rather than a verification that cannot succeed.
   const unavailable = phase === 'unavailable'
+  // The server no longer holds the flow the answer named -- it expired, or
+  // the deployment's flow store went with the process that held it. No step
+  // can be retried, so the code's banner and the restart action are the
+  // whole surface, as in the console's challenge.
+  const flowInvalid =
+    phase === 'failed' && step !== null && errorCode === 'authn.flow_invalid'
   const answerStep =
     chosenFactor.current !== null || !reproveFirst ? 'factor' : 'answer'
 
@@ -269,16 +329,12 @@ export function StepUpChallenge({
   }
 
   return (
-    <Dialog
-      open={open}
-      onClose={onCancel}
-      aria-labelledby={titleId}
-      maxWidth="xs"
-      fullWidth
-    >
+    <>
       <DialogTitle id={titleId}>{t('mfa.stepUp.title')}</DialogTitle>
       <DialogContent>
-        {freshFirst ? (
+        {flowInvalid ? (
+          <InlineError code={errorCode} />
+        ) : freshFirst ? (
           <Box>
             <Typography variant="body2" color="text.secondary">
               {t('mfa.stepUp.noFactor')}
@@ -328,13 +384,17 @@ export function StepUpChallenge({
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>{t('mfa.stepUp.cancelLabel')}</Button>
-        {unavailable || reloginOnly ? (
+        {flowInvalid ? (
+          <Button variant="contained" onClick={onRestart}>
+            {t('mfa.stepUp.restart')}
+          </Button>
+        ) : unavailable || reloginOnly ? (
           <Button variant="contained" onClick={handleRelogin}>
             {t('mfa.stepUp.relogin')}
           </Button>
         ) : null}
       </DialogActions>
-    </Dialog>
+    </>
   )
 }
 

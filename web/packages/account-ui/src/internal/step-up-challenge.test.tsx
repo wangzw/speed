@@ -363,6 +363,46 @@ describe('StepUpChallenge', () => {
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
+  it('offers a restart when the answer finds its flow gone', async () => {
+    // A flow the deployment no longer holds (expired, or lost with the
+    // process that stored it) can never accept another answer, so the
+    // dialog drops the step form and offers a fresh flow instead of a
+    // submit that could only repeat the same refusal.
+    const { rig } = mount(
+      makeStepUpResponder({
+        codeAnswer: () => errorResponse(401, 'authn.flow_invalid'),
+      }),
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Authenticator app' }),
+    )
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '000000')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.flow_invalid)
+    expect(screen.queryByLabelText(zhCN.flowStep.codeLabel)).toBeNull()
+
+    const starts = () =>
+      rig.calls.filter((call) => call.path === FLOW_START).length
+    const before = starts()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.restart }),
+    )
+
+    await waitFor(() => {
+      expect(starts()).toBe(before + 1)
+    })
+    // The fresh flow is parked on its own first step again.
+    expect(
+      await screen.findByRole('button', { name: 'Authenticator app' }),
+    ).toBeTruthy()
+  })
+
   it('fires onCancel on the cancel button without elevating', async () => {
     const { onSuccess, onCancel } = mount(makeStepUpResponder())
     const user = userEvent.setup()
