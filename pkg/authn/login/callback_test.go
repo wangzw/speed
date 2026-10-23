@@ -848,6 +848,83 @@ func TestACallbackAnsweringRefusedOrUnavailableLeavesATombstone(t *testing.T) {
 	}
 }
 
+// TestAFailedNavigationCallbackLandsBackInTheProduct holds the answer a browser
+// gets when the provider sends it back and the login is refused: the user agent
+// is landed on the configured failure page with the problem code in the URL
+// fragment, instead of a problem document a browser can only render as JSON. A
+// request that is not a navigation is an API client and keeps the problem
+// document, whose code is the same one the fragment carries.
+func TestAFailedNavigationCallbackLandsBackInTheProduct(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepRefused(authn.ErrInvalidCredentials), nil
+	}
+	r := newRigMethod(t, m)
+	r.allow("acct1")
+
+	// A callback spends the flow it belongs to, so the two answers are read off
+	// two flows.
+	apiCookie := startRedirect(t, r, "")
+	api := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", apiCookie)
+	if api.Code != http.StatusUnauthorized {
+		t.Fatalf("the API callback answered %d, want the problem document: %s", api.Code, api.Body.String())
+	}
+	if api.Header().Get("Location") != "" {
+		t.Errorf("the API callback answered a Location %q, want none", api.Header().Get("Location"))
+	}
+	if !strings.Contains(api.Body.String(), "urn:speed:authn:login-failed") {
+		t.Errorf("the API callback answered %q, want the login-failed problem", api.Body.String())
+	}
+
+	navCookie := startRedirect(t, r, "")
+	nav := r.send(http.MethodGet, "/api/v1/auth/callback/password", "",
+		"Cookie", navCookie, "Sec-Fetch-Mode", "navigate")
+	if nav.Code != http.StatusSeeOther {
+		t.Fatalf("the navigation callback answered %d, want 303: %s", nav.Code, nav.Body.String())
+	}
+	if got := nav.Header().Get("Location"); got != "/#authn_error=login-failed" {
+		t.Errorf("the navigation callback went to %q, want the failure landing with the code in the fragment", got)
+	}
+	if nav.Body.Len() != 0 {
+		t.Errorf("the navigation callback wrote a body: %q", nav.Body.String())
+	}
+	if len(r.sessions.created) != 0 {
+		t.Errorf("a failed callback made %d sessions", len(r.sessions.created))
+	}
+	if st := flowRecordOf(t, r, navCookie).State; st != stateFailed {
+		t.Errorf("the flow state is %q, want the failed tombstone", st)
+	}
+}
+
+// TestAFailedCallbackOfAnotherPurposeLandsOnItsOwnPage holds that a failed link,
+// step-up or enrollment lands the user agent on the page that started it — the
+// flow's recorded return target — rather than on the sign-in surface a failed
+// login lands on, and carries the same fragment.
+func TestAFailedCallbackOfAnotherPurposeLandsOnItsOwnPage(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepRefused(authn.ErrInvalidCredentials), nil
+	}
+	r := newRigMethod(t, m)
+	r.loginAsAuthenticated("acct1", "sid")
+	r.allow("acct1")
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"link","method":"password","return_to":"/account/callback"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "",
+		"Cookie", flowCookie(t, start), "Sec-Fetch-Mode", "navigate")
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the refused link callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+	if got := cb.Header().Get("Location"); got != "/account/callback#authn_error=login-failed" {
+		t.Errorf("the refused link callback went to %q, want its own return target with the code", got)
+	}
+}
+
 // TestACallbackOfAnUnregisteredMethodIsRefused holds that a flow record naming a
 // method the assembly does not hold cannot be walked into a proof: the callback
 // is refused and no method is dispatched.

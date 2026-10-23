@@ -159,7 +159,7 @@
       "unsupported_region": "Sign-in is not available for this phone number's region.",
       "login_failed": "Email, phone number or password is incorrect, or the code is wrong.",
       "flow_invalid": "Your sign-in attempt is no longer valid. Please start again.",
-      "link_required": "This social account is linked to another account. Sign in to that account first to link it.",
+      "link_required": "This social account's email belongs to an account here. Sign in to that account with its email and password, then link this account under Account settings → Social bindings.",
       "method_disabled": "This sign-in method is turned off. Choose another one.",
       "account_unavailable": "This account is unavailable. Contact an administrator for help.",
       "conflict": "The request conflicts with the account's current state. Refresh and try again.",

@@ -24,6 +24,7 @@ const (
 	flowTTLKey               = "flow-ttl"
 	callBudgetKey            = "call-budget"
 	defaultReturnToKey       = "default-return-to"
+	callbackErrorToKey       = "callback-error-return-to"
 	disabledMethodsKey       = "disabled-methods"
 	deliveryModesKey         = "delivery-modes"
 	ipLimitKey               = "ip-limit"
@@ -143,6 +144,7 @@ type options struct {
 	FlowTTL         time.Duration `config:"flow-ttl"`
 	CallBudget      time.Duration `config:"call-budget"`
 	DefaultReturnTo string        `config:"default-return-to"`
+	CallbackErrorTo string        `config:"callback-error-return-to"`
 	DisabledMethods string        `config:"disabled-methods"`
 	DeliveryModes   string        `config:"delivery-modes"`
 	IPLimit         int           `config:"ip-limit"`
@@ -162,6 +164,7 @@ var defaults = options{
 	FlowTTL:         10 * time.Minute,
 	CallBudget:      10 * time.Second,
 	DefaultReturnTo: "/",
+	CallbackErrorTo: "/",
 	DisabledMethods: "[]",
 	DeliveryModes:   `["session","token"]`,
 	IPLimit:         0,
@@ -263,6 +266,12 @@ func settingsSchema() settings.Schema {
 				Description: "where a callback lands the user agent when the flow recorded no return " +
 					"target: an identity-provider-initiated SAML sign-in, a login the callback completes or " +
 					"leaves needing a factor, and a callback of a purpose other than login",
+			},
+			callbackErrorToKey: {
+				Description: "where a failed callback lands the user agent when the callback is a top-level " +
+					"browser navigation, carrying the problem code in the URL fragment as " +
+					"authn_error; a callback of a purpose other than login lands on its own return target " +
+					"instead, and a request that is not a navigation is answered the problem document",
 			},
 			disabledMethodsKey: {
 				Description: "the login methods turned off at run time, by name, as a JSON array of strings",
@@ -381,6 +390,25 @@ func (r *reader) defaultReturnTo() string {
 	r.report(ModuleName+"."+defaultReturnToKey, "", "")
 	if v == "" {
 		return defaults.DefaultReturnTo
+	}
+	return v
+}
+
+// callbackErrorReturnTo is where a failed navigation callback lands the user
+// agent. An unreadable value falls back to the declared default, and the value
+// is held to the return target rule at use, like the default return target.
+func (r *reader) callbackErrorReturnTo() string {
+	if r.store == nil {
+		return defaults.CallbackErrorTo
+	}
+	var v string
+	if err := r.store.Get(settings.Global(), ModuleName+"."+callbackErrorToKey, &v); err != nil {
+		r.report(ModuleName+"."+callbackErrorToKey, "the callback failure landing cannot be read, so its declared default is used", err.Error())
+		return defaults.CallbackErrorTo
+	}
+	r.report(ModuleName+"."+callbackErrorToKey, "", "")
+	if v == "" {
+		return defaults.CallbackErrorTo
 	}
 	return v
 }

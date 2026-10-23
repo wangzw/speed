@@ -228,6 +228,14 @@ export interface SignInScreenProps {
    * one major.
    */
   readonly defaultChannel?: SignInChannel
+  /**
+   * A problem code the host carried here from outside a channel's own
+   * attempt, rendered above the channels with the same inline error the
+   * channels use. A failed social callback lands back on this screen with
+   * its code in the URL fragment, and the host hands it over here; an
+   * unknown code renders the generic message.
+   */
+  readonly initialError?: string
 }
 
 export function SignInScreen({
@@ -244,6 +252,7 @@ export function SignInScreen({
   providerIcon,
   channels,
   defaultChannel = 'password',
+  initialError,
 }: SignInScreenProps) {
   const { t } = useAuthUiTranslation()
   const [attempt, setAttempt] = useState(0)
@@ -619,6 +628,7 @@ export function SignInScreen({
           {t('mode.registerEntry')}
         </Button>
       ) : null}
+      {initialError === undefined ? null : <InlineError code={initialError} />}
       {slots?.aboveChannels}
       {groupOrder.filter((group) => hasGroup[group]).map(renderGroup)}
     </Box>

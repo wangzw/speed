@@ -68,6 +68,12 @@ type call struct {
 	err     error
 	cookies []*http.Cookie
 
+	// failureLanding is where a failed callback lands the user agent when the
+	// flow it belongs to serves a purpose other than login: the target that flow
+	// recorded, which is the page that started it. The empty string means the
+	// configured callback failure landing.
+	failureLanding string
+
 	// union is set on the answer route: its 200 body is the declared union of
 	// the four answers a step can produce.
 	union bool

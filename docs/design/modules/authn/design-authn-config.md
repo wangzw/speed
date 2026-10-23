@@ -210,6 +210,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.login.flow-ttl` | `time.Duration` | `10m` | 1m 到 30m | | 增大 |
 | `authn.login.call-budget` | `time.Duration` | `10s` | 1s 到 60s | | |
 | `authn.login.default-return-to` | 字符串 | `/` | 按 `return_to` 的规则校验 | | |
+| `authn.login.callback-error-return-to` | 字符串 | `/` | 按 `return_to` 的规则校验 | | |
 | `authn.login.disabled-methods` | 字符串，JSON 数组 | `[]` | 登录方式名的数组 | | 移除成员 |
 | `authn.login.delivery-modes` | 字符串，JSON 数组 | `["session","token"]` | 缺省集合的子集 | | 加入成员 |
 | `authn.login.ip-limit` | 整数 | `0`，关闭 | 0 到 10000，每分钟 | | 改为 0，或增大 |

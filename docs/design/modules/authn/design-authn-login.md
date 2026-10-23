@@ -581,6 +581,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 | 无绑定而已验证邮箱命中现有账户（`ErrLinkRequired`） | `failed` | 401 `link-required` |
 | 外部身份已被别的账户占用（`ErrBindingConflict`） | `failed` | 409 `conflict` |
 
+「对外」一列是问题文档的形状。回跳请求是顶层导航时，同一失败改按「回跳的失败落地」答 `303` 并携带同一个码；表里这些拒绝本身不变。
+
 自动并入成功后的会话与口令处置由 [authn-account](design-authn-account.md) 的规则 A10 规定；引擎在建新会话之前执行它，次序见「并发与事务边界」。显式关联（`link`）不触发。
 
 **策略判定。** 引擎调用 `MFA.Require(账户, Proof)`。结局的判据与可用清单的计算归 [authn-mfa](design-authn-mfa.md)；引擎按结局落入流程状态：`MFANone` 落入 `ready`，`MFAFactor` 落入 `second` 并把清单存入记录的 `mfa.offered`，`MFAEnroll` 落入 `enroll`。
@@ -623,6 +625,22 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 `return_to` 为空时，落到用户代理的收尾改用设置 `authn.login.default-return-to`：它按与 `return_to` 相同的规则校验，不合规时用 `/`，与 IdP 发起的路径一致。
 
 会话 cookie 在回调的 `303` 响应里设立不引入新的伪造面：流程绑定、`state` 与一次性消费已经把回调限定在发起流程的那个浏览器上。
+
+### 回跳的失败落地
+
+回跳是顶层导航（`Sec-Fetch-Mode: navigate`）而这次登录被拒时，用户代理不停在问题文档上：回调答 `303`，把机器码放进 URL 片段，落到产品内的一个页面。
+
+```
+Location: <落地页>#authn_error=<码>
+```
+
+- **落地页。** 目的为 `login` 的落到设置 `authn.login.callback-error-return-to`，缺省 `/`；目的为 `link`、`step-up`、`enroll` 的落到该流程记录里的 `return_to`，即发起它的那个页面。两个来源都按 `return_to` 的同一规则校验。
+- **码。** 取问题类型 `urn:speed:authn:<码>` 中 `<码>` 一段，是已有的封闭词汇（`login-failed`、`link-required`、`account-unavailable`、`conflict`、`throttled`、`unavailable` 等）；不带码的 500 落成 `unavailable`。
+- **片段而非查询串。** 片段不随请求发往服务器，码不进访问日志，也不进页面能发出的 `Referer`。
+- **不改变 API 客户端的形状。** 没有 `Sec-Fetch-Mode: navigate` 的请求照旧得到 `application/problem+json`。落地页读不出、或落地页不合规时同样退回问题文档，不把用户代理送到一个未经校验的地址。
+- **客户端呈现。** 登录面把片段里的码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给已有的内联错误渲染；白名单之外的码落通用文案。
+
+取舍见 [ADR-authn-callback-failure-landing-2026-10-23](../../../adr/adr-authn-callback-failure-landing-2026-10-23.md)。
 
 ### IdP 发起的 SAML
 

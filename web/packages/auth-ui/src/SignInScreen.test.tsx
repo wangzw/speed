@@ -144,6 +144,34 @@ describe('SignInScreen', () => {
     expect(harness.calls).toHaveLength(0)
   })
 
+  it('render the code a failed social callback landed with', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="authn.link_required"
+      />,
+    )
+    // The host hands over the code a refused callback landed with, and the
+    // family's own text for it is what the viewer reads.
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.link_required,
+    )
+  })
+
+  it('fall back to the generic message for a code it does not know', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={BOTH_FORMS}
+        initialError="not-a-code-this-surface-knows"
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(zhCN.errors.unknown)
+  })
+
   it('fire onSignedIn once from the password channel login', async () => {
     const harness = makeSignInHarness()
     const onSignedIn = vi.fn()

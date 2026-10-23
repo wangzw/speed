@@ -3,7 +3,10 @@ package login
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
@@ -14,13 +17,65 @@ import (
 // callbackGet handles the redirect a provider sends the user agent back with as
 // a browser navigation.
 func (r *routes) callbackGet(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
-	return r.callback(r.call(ctx, meta), in.Provider)
+	c := r.call(ctx, meta)
+	reply, err := r.callback(c, in.Provider)
+	return r.landCallbackFailure(c, reply, err)
 }
 
 // callbackPost handles a provider's callback delivered as a cross-site form
 // post.
 func (r *routes) callbackPost(ctx context.Context, in callbackInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
-	return r.callback(r.call(ctx, meta), in.Provider)
+	c := r.call(ctx, meta)
+	reply, err := r.callback(c, in.Provider)
+	return r.landCallbackFailure(c, reply, err)
+}
+
+// landingFragment is the URL fragment a failed navigation callback carries its
+// problem code in. A fragment never reaches the server, so the code stays out of
+// access logs and out of the Referer a page would otherwise send.
+const landingFragment = "authn_error"
+
+// landCallbackFailure answers a failed callback that is a top-level navigation
+// by landing the user agent back in the product with the problem code in the URL
+// fragment, rather than answering a problem document a browser can only render
+// as JSON. The landing is the return target the flow recorded when the flow
+// serves a purpose other than login — the page that started it — and the
+// configured authn.login.callback-error-return-to otherwise. Anything this
+// cannot land keeps the problem document: a request that is not a navigation, a
+// landing page that cannot be read, and a landing page that does not pass the
+// return target rule.
+func (r *routes) landCallbackFailure(c *call, reply speedhttp.Reply, err error) (speedhttp.Reply, error) {
+	if err == nil || !c.navigation() {
+		return reply, err
+	}
+	landing := c.failureLanding
+	if landing == "" {
+		landing = r.settings.callbackErrorReturnTo()
+	}
+	if checkReturnTo(landing, r.trustedOrigins) != nil {
+		return reply, err
+	}
+	// A landing page may carry a fragment of its own; the code replaces it,
+	// because a second "#" would sit inside the first fragment's text.
+	if i := strings.IndexByte(landing, '#'); i >= 0 {
+		landing = landing[:i]
+	}
+	c.err = nil
+	c.redirect(http.StatusSeeOther, landing+"#"+landingFragment+"="+url.QueryEscape(problemCode(err)))
+	return c.result()
+}
+
+// problemCode is the machine-readable code a fault carries, or the unavailable
+// code for a fault that names none: a defect the engine cannot pin on the client
+// is answered to the user as a temporary outage.
+func problemCode(err error) string {
+	var fault speedhttp.Fault
+	if errors.As(err, &fault) {
+		if code, ok := strings.CutPrefix(fault.Type, typePrefix); ok && code != "" {
+			return code
+		}
+	}
+	return mount.CodeUnavailable
 }
 
 // callback handles the redirect an external party sends the user agent back
@@ -37,6 +92,12 @@ func (r *routes) callback(c *call, provider string) (speedhttp.Reply, error) {
 	if err != nil {
 		r.fail(c, err)
 		return c.result()
+	}
+	// A link, a step-up and an enrollment are started from a page of the product,
+	// so a failure of one of them lands the user agent back on that page rather
+	// than on the sign-in surface a failed login lands on.
+	if rec.Purpose != authn.PurposeLogin {
+		c.failureLanding = r.returnTarget(rec)
 	}
 	// A callback only needs the flow to exist and to be at the first factor: a
 	// link, a step-up and an enrollment started on POST flows/authenticated with
