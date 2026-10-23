@@ -177,6 +177,47 @@ func TestSweepIsIdempotent(t *testing.T) {
 	})
 }
 
+// grantCount answers how many grant rows carry a token hash.
+func grantCount(t *testing.T, reg *core.Registry, hash string) int64 {
+	t.Helper()
+	var n int64
+	if err := dbHandle(t, reg).Raw(
+		"SELECT count(*) FROM object_grants WHERE token_hash = ?", hash).Row().Scan(&n); err != nil {
+		t.Fatalf("counting the grants: %v", err)
+	}
+	return n
+}
+
+// TestSweepRemovesExpiredGrants holds the sweep's second job: grants past their
+// expiry are removed, and a live one is left alone.
+func TestSweepRemovesExpiredGrants(t *testing.T) {
+	forEachEngine(t, func(t *testing.T, e engine) {
+		h := e.on(t, harness{router: newRecordingRouter("public")})
+		h.drive(t, func(ctx context.Context, reg *core.Registry) error {
+			objects := objectsOf(t, reg)
+			tctx := tenantCtx(t, reg, "acme")
+			id := declare(t, tctx, objects, "done", "body")
+			live := contentToken(t, objects, tctx, id, objectstore.URLAccessRead)
+			stale := contentToken(t, objects, tctx, id, objectstore.URLAccessRead)
+			if err := dbHandle(t, reg).Exec(
+				"UPDATE object_grants SET expires_at = ? WHERE token_hash = ?",
+				time.Now().Add(-time.Minute).UnixMilli(), hashToken(stale)).Error; err != nil {
+				t.Fatalf("expiring the grant: %v", err)
+			}
+
+			productOfAssembly(t, reg).sweepOnce(t.Context())
+
+			if n := grantCount(t, reg, hashToken(stale)); n != 0 {
+				t.Errorf("the sweep left %d expired grant rows, want none", n)
+			}
+			if n := grantCount(t, reg, hashToken(live)); n != 1 {
+				t.Errorf("the sweep removed the live grant: %d rows, want one", n)
+			}
+			return nil
+		})
+	})
+}
+
 // TestSweepDoesNotAssumeAPendingRowHasNoBytes holds that the sweep calls the byte
 // seam for a pending row too: a Put that succeeded with a state advance that did
 // not leaves bytes behind.

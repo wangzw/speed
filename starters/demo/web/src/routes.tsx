@@ -33,7 +33,6 @@ import {
   AccountNavIcon,
   HomeNavIcon,
   NotificationsNavIcon,
-  ObjectsNavIcon,
 } from './nav-icons.js'
 import {
   AccountBindingCallbackPage,
@@ -44,14 +43,12 @@ import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
 import { TENANT_HOME_PATH } from './pages/not-found-page.js'
-import { ObjectStoreHostPage } from './pages/objects-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
   INVITATION_PREFIX,
-  OBJECTS_PATH,
 } from './paths.js'
 
 // The path constants live in src/paths.ts, shared with the chrome that
@@ -64,7 +61,6 @@ export {
   AUTH_CALLBACK_PATH,
   CONSOLE_PREFIX,
   NOTIFICATIONS_PATH,
-  OBJECTS_PATH,
 } from './paths.js'
 // The console area's prefixed declarations and the prefix test live in
 // src/console-routes.ts, shared with the start page (which must not import
@@ -120,16 +116,6 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
   {
     path: ACCOUNT_SETUP_PATH,
     view: () => <AccountSetupPage />,
-  },
-  {
-    path: OBJECTS_PATH,
-    view: () => <ObjectStoreHostPage />,
-    label: <DemoNavLabel labelKey="nav.objects" />,
-    icon: <ObjectsNavIcon />,
-    // The object page's reads all land on the objectstore capability's
-    // routes: a deployment without objectstore.metadata does not serve the
-    // feature, so the page is a 404 and the navigation drops it.
-    requires: ['objectstore.objects'],
   },
   // The notification surface: the same declarative seam as the console's
   // pages -- notification-ui exports a structurally route-kit declaration,

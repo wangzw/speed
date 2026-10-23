@@ -98,8 +98,8 @@ const ROUTE_PATHS = [...new Set(routes.map((route) => concretize(route.path)))]
  * of the table cannot leave the sweep silently -- the coverage guard below
  * asserts each of these is still enumerated. Drawn from the app's route table:
  * the business routes (the home page, the account page that also carries the
- * email verification, the setup landing, the object store, the notification
- * centre, the binding callback), the auth and invitation landings, and the
+ * email verification, the setup landing, the notification centre, the
+ * binding callback), the auth and invitation landings, and the
  * console area under CONSOLE_PREFIX, every `:param` concretized to `sample` as
  * `concretize` does.
  */
@@ -108,7 +108,6 @@ const EXPECTED_ROUTE_PATHS = [
   '/account',
   '/account/setup',
   '/account/callback',
-  '/objects',
   '/notifications',
   '/sign-in/callback',
   '/invitations/sample',

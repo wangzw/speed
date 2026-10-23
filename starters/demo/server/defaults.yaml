@@ -37,6 +37,18 @@ http:
     ops:
       # Alone on its listener, so it claims "/" by default.
       listener: ops
+    content:
+      # The object store's content route. A browser reaches it with no
+      # credential at all, because an <img src> carries neither an Authorization
+      # header nor a tenant header — the token in the query string is the
+      # credential. It is therefore in none of the lists below that guard,
+      # resolve, admit, authorize, throttle or journal an endpoint's requests:
+      # any one of them would refuse the anonymous read or write the route
+      # exists for. max-body-bytes 0 removes the endpoint's body limit; the
+      # default 1 MiB would answer every large direct upload 413.
+      listener: backend
+      prefixes: ["/content"]
+      max-body-bytes: 0
     web:
       listener: backend
       prefixes: ["/"]
@@ -81,17 +93,16 @@ authz:
   self:
     endpoints: [api]
 
-# The journal records the operator writes this product carries: the object
-# store's declaration and delete. A read the frontend polls on its own would
-# land a row per poll and bury the changes worth finding, and an action a
-# capability already records at the seam — login, impersonation, the
-# account-management actions — would be recorded twice.
+# The journal records the writes this product carries that no capability
+# records at its own seam. The requests list is empty: every write left in the
+# assembly — sign-in, impersonation, account management, roles, settings,
+# tenants, SMS — records at the seam the capability itself writes, so a request
+# entry beside one would record it twice, and the frontend's own polls would
+# land a row per poll. A host that adds a write of its own lists it here.
 audit:
   journal:
     endpoints: [api, account, admin]
-    requests:
-      - "POST /api/v1/objects"
-      - "DELETE /api/v1/objects/:id"
+    requests: []
   admin:
     endpoints: [admin]
 
@@ -120,8 +131,10 @@ notification:
   preferences:
     endpoints: [api]
 
-# The object store's management routes mount on the API endpoint; where its
-# bytes are kept is a deployment path and lives in the configuration file.
+# The object store has no client-facing API: the business backend mints a URL
+# through the capability and the browser fetches the bytes from the content
+# endpoint above, which the list below names. Where the bytes are kept is a
+# deployment path and lives in the configuration file.
 objectstore:
   metadata:
-    endpoints: [api]
+    content-endpoints: [content]

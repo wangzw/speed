@@ -29,6 +29,10 @@ import {
 } from '@speed/console-ui'
 import { LAYOUT_KIT_NAMESPACE } from '@speed/layout-kit'
 import {
+  NOTIFICATION_UI_NAMESPACE,
+  notificationUiResources,
+} from '@speed/notification-ui'
+import {
   createSpeedI18n,
 } from '@speed/product-shell/bootstrap'
 import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
@@ -60,12 +64,20 @@ const textI18n = createSpeedI18n({
   namespaces: [
     { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
     { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
+    {
+      namespace: NOTIFICATION_UI_NAMESPACE,
+      resources: notificationUiResources,
+    },
   ],
 })
 const tAuth = textI18n.getFixedT('en-US', AUTH_UI_NAMESPACE)
 const tConsole = textI18n.getFixedT('en-US', CONSOLE_UI_NAMESPACE)
 const tLayout = textI18n.getFixedT('en-US', LAYOUT_KIT_NAMESPACE)
 const tTenancy = textI18n.getFixedT('en-US', TENANCY_UI_NAMESPACE)
+const tNotifications = textI18n.getFixedT(
+  'en-US',
+  NOTIFICATION_UI_NAMESPACE,
+)
 
 const TENANT = { id: 'acme', alias: 'acme', status: 'active' as const }
 
@@ -274,9 +286,9 @@ interface Backend {
   /** The current tenant's id at the moment each unread-count read left the
    * browser: the alias the request surface would have announced. */
   readonly unreadTenantIds: () => readonly (string | null)[]
-  readonly objectsReads: () => number
+  readonly messagesReads: () => number
   readonly deletes: () => number
-  /** A read of a tenant-scoped data surface (notifications, objects): what
+  /** A read of a tenant-scoped data surface (the notification centre): what
    * must not run under a tenant the frame has not settled on. */
   readonly tenantReads: () => number
 }
@@ -334,7 +346,7 @@ function makeBackend(options: {
   let postReads = 0
   let unreadReads = 0
   const unreadTenantIds: (string | null)[] = []
-  let objectsReads = 0
+  let messagesReads = 0
   let deletes = 0
   let tenantReads = 0
   const fn: RequestFn = <T,>(
@@ -345,10 +357,7 @@ function makeBackend(options: {
     if (method === 'GET') {
       reads += 1
     }
-    if (
-      path.startsWith('/api/v1/notifications/') ||
-      path.startsWith('/api/v1/objects')
-    ) {
+    if (path.startsWith('/api/v1/notifications/')) {
       tenantReads += 1
     }
     if (path === '/api/v1/system/tenants') {
@@ -443,12 +452,14 @@ function makeBackend(options: {
       return Promise.resolve({ unread: 0 } as T)
     }
     if (path === '/api/v1/notifications/messages') {
+      messagesReads += 1
       return Promise.resolve({ messages: [], total: 0 } as T)
     }
-    // The object store's page lists the tenant's objects.
-    if (path === '/api/v1/objects') {
-      objectsReads += 1
-      return Promise.resolve({ objects: [], next_cursor: '' } as T)
+    if (path === '/api/v1/notifications/types') {
+      return Promise.resolve({ types: [] } as T)
+    }
+    if (path === '/api/v1/notifications/preferences') {
+      return Promise.resolve({ preferences: [] } as T)
     }
     // Nothing in a mounted tenant frame may fall through to an undefined
     // query answer: react-query logs "Query data cannot be undefined" and the
@@ -469,7 +480,7 @@ function makeBackend(options: {
     postReads: () => postReads,
     unreadReads: () => unreadReads,
     unreadTenantIds: () => unreadTenantIds,
-    objectsReads: () => objectsReads,
+    messagesReads: () => messagesReads,
     deletes: () => deletes,
     tenantReads: () => tenantReads,
   }
@@ -602,9 +613,11 @@ describe('the impersonation shell', () => {
     renderDemoApp({ session })
     expect(await screen.findByRole('region', { name: tAuth('impersonation.regionLabel') })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('link', { name: demoEnUS.nav.objects }))
+    await user.click(
+      screen.getByRole('link', { name: tNotifications('inbox.title') }),
+    )
 
-    await waitFor(() => expect(window.location.pathname).toBe('/objects'))
+    await waitFor(() => expect(window.location.pathname).toBe('/notifications'))
     expect(
       screen.getByRole('region', { name: tAuth('impersonation.regionLabel') }),
     ).toBeInTheDocument()
@@ -1459,11 +1472,11 @@ describe('the impersonation shell', () => {
     await waitFor(() => expect(backend.rosterReads()).toBeGreaterThan(0))
 
     await user.click(
-      await screen.findByRole('link', { name: demoEnUS.nav.objects }),
+      await screen.findByRole('link', { name: tNotifications('inbox.title') }),
     )
 
-    await waitFor(() => expect(window.location.pathname).toBe('/objects'))
-    await waitFor(() => expect(backend.objectsReads()).toBeGreaterThan(0))
+    await waitFor(() => expect(window.location.pathname).toBe('/notifications'))
+    await waitFor(() => expect(backend.messagesReads()).toBeGreaterThan(0))
     expect(onlineManager.isOnline()).toBe(true)
   })
 
@@ -1679,9 +1692,11 @@ describe('the impersonation shell', () => {
       const statusReads = backend.statusReads()
 
       await user.click(
-        await screen.findByRole('link', { name: demoEnUS.nav.objects }),
+        await screen.findByRole('link', { name: tNotifications('inbox.title') }),
       )
-      await waitFor(() => expect(window.location.pathname).toBe('/objects'))
+      await waitFor(() =>
+        expect(window.location.pathname).toBe('/notifications'),
+      )
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0)
       })

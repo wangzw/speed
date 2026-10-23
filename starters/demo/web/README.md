@@ -366,9 +366,9 @@ tenant's reads never see the previous one's data.
 
 The tenant area's landing (`/`) is the skeleton's front door, not a business
 surface: `src/pages/home-page.tsx` renders the platform's assembled
-capabilities as a card grid -- the account settings, the platform console, the
-object store and the notification centre -- each a real route the app already
-serves. A product replaces the cards with its own surfaces.
+capabilities as a card grid -- the account settings, the platform console and
+the notification centre -- each a real route the app already serves. A
+product replaces the cards with its own surfaces.
 
 The sign-in surface (`src/pages/sign-in-view.tsx`) frames auth-ui's
 `SignInScreen` with the app's brand and heading; the methods it offers are the

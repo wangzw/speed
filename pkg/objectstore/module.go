@@ -56,8 +56,16 @@ type Spec[C any] struct {
 	// a backend whose credentials come only from configuration returns what it
 	// decoded.
 	Secrets func(cfg *C) []string
+	// Direct says the value Open returns also implements DirectURL. The module
+	// then declares that capability beside the byte seam, so an assembly can
+	// resolve it and the factory's delivery check covers it.
+	//
+	// The instance stays the one value Open returns, implementing both seams —
+	// the one-module-one-instance-many-tokens pattern the SMS, authorization
+	// policy and audit journal modules follow.
+	Direct bool
 	// Open builds this backend from the decoded configuration. It returns the one
-	// value that implements Store.
+	// value that implements Store, and DirectURL as well when Direct is set.
 	//
 	// logger is where the backend reports the calls it makes to the service, and
 	// is the assembly's logging capability named after this module when the
@@ -81,6 +89,13 @@ type Spec[C any] struct {
 // host nothing to handle.
 func NewModule[C any](spec Spec[C]) core.Module {
 	spec.check()
+	provides := []core.Provision{{Token: (*Store)(nil), Exclusive: true}}
+	if spec.Direct {
+		// The direct-address capability is declared beside the byte seam, so an
+		// assembly resolves it and the factory's delivery check is covered too.
+		// Both tokens name the one instance Open returns.
+		provides = append(provides, core.Provision{Token: (*DirectURL)(nil), Exclusive: true})
+	}
 	return core.Module{
 		Name: spec.ModuleName,
 		// Optional, because a backend has to work in an assembly that never took
@@ -90,10 +105,9 @@ func NewModule[C any](spec Spec[C]) core.Module {
 		Requires: []core.Requirement{{Token: (*log.Logger)(nil), Optional: true}},
 		// The byte seam is delivered exclusively: one process has exactly one
 		// answer to where bytes land, so two backends at once fail the startup
-		// instead of resolution letting one silently win.
-		Provides: []core.Provision{
-			{Token: (*Store)(nil), Exclusive: true},
-		},
+		// instead of resolution letting one silently win. A backend that also
+		// mints direct addresses appends that capability to the same claim.
+		Provides:  provides,
 		Resources: []any{spec.schema()},
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			cfg, err := spec.read(reg)

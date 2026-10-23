@@ -3,8 +3,11 @@
 The S3-compatible backend of the object-storage capability, registered as
 `objectstore.s3`. It delivers the byte seam — `objectstore.Store` — exclusively
 over one bucket of an S3-compatible service: an object's bytes are stored as one
-object, read back as a stream and deleted. A host writes this module's name into
-a command; the byte seam is delivered exclusively, so a command names exactly one
+object, read back as a stream, stat'ed and deleted. It also delivers
+`objectstore.DirectURL` (`Spec.Direct` is true), so a browser can reach the
+bucket through a signed address that does not pass through this process. Both
+tokens name the one value `Open` returns. A host writes this module's name into a
+command; the byte seam is delivered exclusively, so a command names exactly one
 backend and two at once fail in resolution.
 
 The whole leaf package binds `github.com/minio/minio-go/v7`, and the SDK is
@@ -44,7 +47,8 @@ self-hosted service usually needs; left off, the SDK picks its own address form.
 ## Outbound calls
 
 Every call this backend makes to the service — `Put`, the `Open` call that forces
-its `Stat`, and `Delete` — is logged once on **the module's own logger**. The
+its `Stat`, a standalone `Stat`, and `Delete` — and every signing call
+(`PresignRead`, `PresignWrite`) is logged once on **the module's own logger**. The
 factory takes up the optional `log.Logger` in `New`, names it after this module
 and hands it to `Open`, and the store holds it. The operation's context is not
 consulted: the factory's background sweep calls `Delete` on a context it created,
@@ -56,7 +60,7 @@ failure one `ERROR` line, each carrying:
 
 | Field | Meaning |
 |---|---|
-| `operation` | `put`, `open`, `delete`, or `read` for the body read after `Open` |
+| `operation` | `put`, `open`, `stat`, `delete`, `presign-read`, `presign-write`, or `read` for the body read after `Open` |
 | `bucket` | the configured bucket |
 | `key_hash` | the first twelve hex digits of the internal key's SHA-256 |
 | `size` | the declared length on a put, the object's observed length on an open |
@@ -84,6 +88,28 @@ and its URL-escaped forms (path-escaped and query-escaped, including a key
 carrying spaces, `+` and `%`) replaced before it is logged, because the SDK
 repeats the key in a service message and in the URL a transport error carries. A
 call the context had already ended writes no line: no request left the process.
+A signed address never reaches a line either: it carries the object key and the
+access-key identifier.
+
+## Direct addresses
+
+`PresignRead` answers a GET address that serves the object's bytes with the media
+type and file name the caller asked for, carried as `response-content-type` and
+`response-content-disposition` overrides so the bucket serves them rather than
+whatever the object was stored as. The disposition is rendered with
+`mime.FormatMediaType`, so the file name is escaped, never spliced in as written;
+an empty name adds no disposition parameter.
+
+`PresignWrite` answers a PUT address. No request header is signed: a presigned
+PUT binds the method, the object key and the expiry, and a `Content-Length`
+cannot be expressed in one, so the declared size is what the completion step's
+`Stat` checks.
+
+Signing is local and reaches no service. A lifetime shorter than a second or
+longer than seven days is refused with `objectstore.ErrURLUnavailable` rather
+than handed to the SDK, whose own acceptance bounds are the same. A returned
+`IssuedURL` carries the method and the instant the address stops working; the
+address itself is a bearer capability, used whole and parsed by no caller.
 
 ## Boundaries
 
@@ -112,9 +138,12 @@ call the context had already ended writes no line: no request left the process.
 - **A byte operation passes the backend's own error through and invents no
   sentinel.** A call the service refuses, or one that never reaches it, reports
   the SDK's error; the metadata module is what wraps a failed byte operation into
-  the capability's unavailable sentinel. The only sentinel this package raises is
-  `objectstore.ErrInvalidConfig`, for a configuration the client cannot be built
-  from.
+  the capability's unavailable sentinel. The sentinels this package raises are
+  the shapes the seam itself defines: `objectstore.ErrInvalidConfig` for a
+  configuration the client cannot be built from, `objectstore.ErrContentMissing`
+  when `Stat` finds the bucket holds no object under the key, and
+  `objectstore.ErrURLUnavailable` when a lifetime is outside the signing bounds or
+  the SDK refuses to sign.
 - **Nothing is queued, retried or degraded.** Each method reaches the service and
   returns once it has answered, and the caller's context is passed to the call, so
   a context that ends cancels the in-flight request.
@@ -123,7 +152,8 @@ call the context had already ended writes no line: no request left the process.
   signature, so a host that imports this package to register it never has to name
   the SDK.
 - **The metadata module imports no backend.** This package reaches the seam only
-  through the root package's `objectstore.Spec` and `objectstore.Store`.
+  through the root package's `objectstore.Spec`, `objectstore.Store` and
+  `objectstore.DirectURL`.
 
 ## How to run it
 
@@ -141,11 +171,17 @@ module it loads no packages and still exits 0.
 
 The cases need no real service: a case builds the store against a loopback
 `httptest` endpoint and holds the request shape — method, path, host, signature —
-the real SDK produced. `s3_log_test.go` builds the store with a logger the case
-owns and holds that each call writes exactly one line (it counts lines rather
-than asking whether a field is present), that a delete on a background context
-still reaches the module logger, that a body cut short after `Open` writes one
-`read` failure line, that `scrubKey` replaces a key's written, path-escaped and
-query-escaped forms, and that the key is in none of the lines. `assembly_test.go`
-drives the real configuration loader for the required items and a real registry
-through the descriptor to `Init`.
+the real SDK produced. A `Stat` case holds that a `HEAD` is sent and its length
+mapped, and that a 404 wraps `ErrContentMissing`. The presign cases need no
+listener at all, because signing is local: they hold that a read address carries
+a signature, an expiry and the media-type and file-name overrides, that a write
+address carries a signature and no read-side override, and that lifetimes outside
+`[1s, 7d]` are refused. `s3_log_test.go` builds the store with a logger the case
+owns and holds that each call — a signing call included — writes exactly one line
+(it counts lines rather than asking whether a field is present), that a delete on
+a background context still reaches the module logger, that a body cut short after
+`Open` writes one `read` failure line, that `scrubKey` replaces a key's written,
+path-escaped and query-escaped forms, and that neither the key nor a signed
+address is in any line. `assembly_test.go` drives the real configuration loader
+for the required items and a real registry through the descriptor to `Init`,
+resolving both seams from the one product.

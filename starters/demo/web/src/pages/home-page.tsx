@@ -5,12 +5,11 @@
  * carries no business domain, so there is no data to render -- what the page
  * shows instead is the platform already assembled around it: one card per
  * capability that works out of the box (the account settings, the platform
- * console, the object store, the notification centre), each a real
- * destination into the app.
+ * console, the notification centre), each a real destination into the app.
  *
  * A card is offered only while its destination exists: the account card
- * always, the object and notification cards when the route layer leaves their
- * declarations in force (useHasRoute), and the console card only to platform
+ * always, the notification card when the route layer leaves its
+ * declaration in force (useHasRoute), and the console card only to platform
  * staff while at least one console page is served -- pointing at the first such
  * page the principal may open, the same derivation the header entry uses
  * (src/console-routes.ts's firstConsoleTarget). The gates fail closed: a
@@ -48,7 +47,6 @@ import {
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
   NOTIFICATIONS_PATH,
-  OBJECTS_PATH,
 } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
@@ -61,7 +59,7 @@ import { DEMO_NAMESPACE } from '../resources.js'
 type StartCard =
   | {
       /** The `home.cards.<key>` prefix its title and description resolve from. */
-      readonly key: 'account' | 'objects' | 'notifications'
+      readonly key: 'account' | 'notifications'
       /** The route the card opens. */
       readonly path: string
       /**
@@ -78,7 +76,6 @@ type StartCard =
 const START_CARDS: readonly StartCard[] = [
   { key: 'account', path: ACCOUNT_PATH, gate: 'direct' },
   { key: 'console', gate: 'console' },
-  { key: 'objects', path: OBJECTS_PATH, gate: 'route' },
   { key: 'notifications', path: NOTIFICATIONS_PATH, gate: 'route' },
 ]
 

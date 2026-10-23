@@ -28,7 +28,6 @@ export interface FeatureNameRegistry {
   'notification.inbox': true
   'notification.preferences': true
   'notification.stream': true
-  'objectstore.objects': true
   'settings.admin': true
   'sms.admin': true
   'tenant.admin': true
@@ -58,7 +57,6 @@ export const FEATURE_NAMES: readonly FeatureName[] = [
   'notification.inbox',
   'notification.preferences',
   'notification.stream',
-  'objectstore.objects',
   'settings.admin',
   'sms.admin',
   'tenant.admin',

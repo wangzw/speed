@@ -6,7 +6,7 @@
 
 ## 背景
 
-模块的路由挂在各自的顶层命名空间下：认证与账户面在 `/auth`、授权管理面在 `/authz`、租户、设置、短信与审计管理面在 `/tenant`、`/settings`、`/sms`、`/audit`，特性文档在 `/features`，个人租户入口在 `/workspace`；通知与对象存储则挂在 `/api/v1/notifications` 与 `/api/v1/objects`。两类路径都符合端点的认领表，但对外契约 `contracts/api.json` 的根路径不统一：调用方要为每项能力分别记住它是否有前缀，生成的客户端也只能照抄两种形状。
+模块的路由挂在各自的顶层命名空间下：认证与账户面在 `/auth`、授权管理面在 `/authz`、租户、设置、短信与审计管理面在 `/tenant`、`/settings`、`/sms`、`/audit`，特性文档在 `/features`，个人租户入口在 `/workspace`；通知则挂在 `/api/v1/notifications`。两类路径都符合端点的认领表，但对外契约 `contracts/api.json` 的根路径不统一：调用方要为每项能力分别记住它是否有前缀，生成的客户端也只能照抄两种形状。
 
 `v1` 段没有版本策略支撑。平台不对路径版本化作任何承诺，也没有第二版的路由或迁移规则；带 `v1` 的路径因此读起来像一项不存在的保证，而不带的路径又不带这一段相同的含义。
 
@@ -22,7 +22,7 @@
 
 ### 业务资源留在 `/api` 下，去掉 `v1` 段
 
-把 `/api/v1/notifications` 与 `/api/v1/objects` 改为 `/api/notifications` 与 `/api/objects`。
+把 `/api/v1/notifications` 改为 `/api/notifications`。
 
 **否决**：只修掉一段。`/api/...` 与 `/auth/...` 仍是两种根路径，契约的不统一没有消除。
 

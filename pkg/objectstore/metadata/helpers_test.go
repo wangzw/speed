@@ -4,18 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/vislake/speed/pkg/authz"
-	"github.com/vislake/speed/pkg/authz/authztest"
 	"github.com/vislake/speed/pkg/config"
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
@@ -63,28 +61,30 @@ func forEachEngine(t *testing.T, run func(t *testing.T, e engine)) {
 // module's own configuration section, the byte seam and the optional surfaces
 // the case supplies, and the stage the run reaches.
 type harness struct {
-	database   core.Module
-	section    string
-	dsn        string
-	metadata   map[string]any
-	store      *fakeStore
-	withRouter bool
-	withGate   bool
+	database core.Module
+	section  string
+	dsn      string
+	metadata map[string]any
+	store    *fakeStore
+	// router stands in for the entry point, so a case can see where the content
+	// route was mounted.
+	router speedhttp.Router
+	// direct stands in for a backend that mints its own addresses; when it is
+	// set the content route must not be mounted.
+	direct objectstore.DirectURL
 	// withSettings assembles the settings module and its event bus, so a case
 	// can write a runtime tunable and watch the next call read it.
 	withSettings bool
-	router       *stubRouter
-	gate         *authztest.Gate
 	depth        core.Stage
 }
 
-// metadataBody is the module's default configuration: one endpoint named
-// "public" and the sweep turned off. The upload window and the object lifetime
-// are settings and are not configuration items.
+// metadataBody is the module's default configuration: one content endpoint named
+// "public" and the sweep turned off. The upload window, the object lifetime and
+// the URL lifetime are settings and are not configuration items.
 func metadataBody(overrides map[string]any) map[string]any {
 	body := map[string]any{
-		"endpoints":      []string{"public"},
-		"sweep-interval": "0s",
+		"content-endpoints": []string{"public"},
+		"sweep-interval":    "0s",
 	}
 	for k, v := range overrides {
 		body[k] = v
@@ -132,19 +132,11 @@ func (h harness) assemble(t *testing.T) (*core.Registry, []string) {
 		Module(),
 		store.module(),
 	}
-	if h.withRouter || h.router != nil {
-		router := h.router
-		if router == nil {
-			router = newStubRouter("public")
-		}
-		modules = append(modules, standIn("stand-in.router", router, (*speedhttp.Router)(nil)))
+	if h.router != nil {
+		modules = append(modules, standIn("stand-in.router", h.router, (*speedhttp.Router)(nil)))
 	}
-	if h.withGate || h.gate != nil {
-		gate := h.gate
-		if gate == nil {
-			gate = authztest.NewGate()
-		}
-		modules = append(modules, standIn("stand-in.gate", gate, (*authz.Gate)(nil)))
+	if h.direct != nil {
+		modules = append(modules, standIn("stand-in.direct", h.direct, (*objectstore.DirectURL)(nil)))
 	}
 	if h.withSettings {
 		modules = append(modules, memory.Module(), settings.Module())
@@ -264,8 +256,12 @@ type fakeStore struct {
 	blobs   map[string][]byte
 	putErr  error
 	openErr error
+	statErr error
 	delErr  error
-	deleted []string
+	// notSeekable makes Open answer a stream ServeContent cannot seek, which
+	// exercises the full-copy branch.
+	notSeekable bool
+	deleted     []string
 }
 
 func newFakeStore() *fakeStore { return &fakeStore{blobs: map[string][]byte{}} }
@@ -290,6 +286,13 @@ func (s *fakeStore) Put(_ context.Context, key string, r io.Reader, _ int64) err
 	return nil
 }
 
+// readSeekCloser is what the local-directory backend answers Open with: an
+// *os.File is an io.ReadSeeker, and the content route uses that to let
+// ServeContent answer ranges and HEAD.
+type readSeekCloser struct{ *bytes.Reader }
+
+func (readSeekCloser) Close() error { return nil }
+
 func (s *fakeStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -298,9 +301,27 @@ func (s *fakeStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	}
 	data, ok := s.blobs[key]
 	if !ok {
-		return nil, errors.New("no bytes under that key")
+		// The file system's own not-exist error, as the fs backend reports it.
+		return nil, fmt.Errorf("%w: no bytes under that key", fs.ErrNotExist)
 	}
-	return io.NopCloser(bytes.NewReader(data)), nil
+	reader := bytes.NewReader(data)
+	if s.notSeekable {
+		return io.NopCloser(reader), nil
+	}
+	return readSeekCloser{reader}, nil
+}
+
+func (s *fakeStore) Stat(_ context.Context, key string) (objectstore.Blob, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.statErr != nil {
+		return objectstore.Blob{}, s.statErr
+	}
+	data, ok := s.blobs[key]
+	if !ok {
+		return objectstore.Blob{}, fmt.Errorf("%w: no bytes under that key", objectstore.ErrContentMissing)
+	}
+	return objectstore.Blob{Size: int64(len(data))}, nil
 }
 
 func (s *fakeStore) Delete(_ context.Context, key string) error {
@@ -325,69 +346,6 @@ func (s *fakeStore) deletions() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.deleted...)
-}
-
-// mountedRoute is one (method, path) a registration recorded.
-type mountedRoute struct{ method, path string }
-
-// stubEndpoint records the routes registered on it.
-type stubEndpoint struct {
-	mu     sync.Mutex
-	routes []mountedRoute
-}
-
-func (e *stubEndpoint) Route(method, path string, _ ...gin.HandlerFunc) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.routes = append(e.routes, mountedRoute{method, path})
-}
-
-func (e *stubEndpoint) Use(speedhttp.Middleware) {}
-
-func (e *stubEndpoint) Accepting() bool { return true }
-
-func (e *stubEndpoint) registered() []mountedRoute {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return append([]mountedRoute(nil), e.routes...)
-}
-
-// stubRouter is a stand-in http.Router over a fixed set of endpoints.
-type stubRouter struct {
-	mu        sync.Mutex
-	endpoints map[string]*stubEndpoint
-	order     []string
-}
-
-func newStubRouter(names ...string) *stubRouter {
-	r := &stubRouter{endpoints: make(map[string]*stubEndpoint, len(names))}
-	for _, name := range names {
-		r.endpoints[name] = &stubEndpoint{}
-		r.order = append(r.order, name)
-	}
-	return r
-}
-
-func (r *stubRouter) Endpoint(name string) (speedhttp.Endpoint, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	endpoint, ok := r.endpoints[name]
-	if !ok {
-		return nil, errors.New("the entry point declares no endpoint " + name)
-	}
-	return endpoint, nil
-}
-
-func (r *stubRouter) Endpoints() []string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]string(nil), r.order...)
-}
-
-func (r *stubRouter) endpoint(name string) *stubEndpoint {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.endpoints[name]
 }
 
 // standIn is a module that delivers instance for the tokens named.

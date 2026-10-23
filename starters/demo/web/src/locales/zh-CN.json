@@ -5,8 +5,7 @@
   "nav": {
     "home": "首页",
     "console": "控制台",
-    "account": "账户设置",
-    "objects": "对象存储"
+    "account": "账户设置"
   },
   "console": {
     "backToApp": "返回应用",
@@ -39,10 +38,6 @@
       "console": {
         "title": "控制台",
         "description": "平台管理面：租户、账户、设置与审计等。"
-      },
-      "objects": {
-        "title": "对象存储",
-        "description": "当前租户的对象：列表、上传、下载与删除。"
       },
       "notifications": {
         "title": "通知",

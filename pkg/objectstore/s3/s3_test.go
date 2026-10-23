@@ -8,10 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 
@@ -413,6 +415,170 @@ func TestTheStoreServesCallersConcurrently(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestStatSendsAHeadAndMapsTheSize holds the shape Stat produces: a HEAD of the
+// object key under the bucket, whose answer's length is what the capability
+// reports.
+func TestStatSendsAHeadAndMapsTheSize(t *testing.T) {
+	var rec requestRecord
+	const payload = "twelve bytes"
+	server := httptest.NewServer(recorder(&rec, http.StatusOK, payload))
+	defer server.Close()
+
+	s := storeOver(t, endpointOf(server))
+	blob, err := s.Stat(t.Context(), testKey)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if rec.method != http.MethodHead {
+		t.Errorf("the service was called with %s, want HEAD", rec.method)
+	}
+	if want := "/" + testBucket + "/" + testKey; rec.path != want {
+		t.Errorf("the request path = %q, want %q", rec.path, want)
+	}
+	if blob.Size != int64(len(payload)) {
+		t.Errorf("Stat answered %d bytes, want %d", blob.Size, len(payload))
+	}
+}
+
+// TestStatOnAMissingObjectWrapsContentMissing holds the shape the completion
+// step reads: an object the bucket does not hold reports an error wrapping
+// ErrContentMissing, and the text carries no object key.
+func TestStatOnAMissingObjectWrapsContentMissing(t *testing.T) {
+	server := httptest.NewServer(recorder(&requestRecord{}, http.StatusNotFound, noSuchKey))
+	defer server.Close()
+
+	s := storeOver(t, endpointOf(server))
+	_, err := s.Stat(t.Context(), testKey)
+	if !errors.Is(err, objectstore.ErrContentMissing) {
+		t.Fatalf("Stat answered %v, want one wrapping ErrContentMissing", err)
+	}
+	if strings.Contains(err.Error(), testKey) {
+		t.Errorf("the error text %q carries the internal key", err.Error())
+	}
+}
+
+// TestEveryNotFoundAnswerMapsToContentMissing holds the classification from the
+// service's side: either not-found code and a plain 404 report the bytes as
+// missing, while a refusal does not.
+func TestEveryNotFoundAnswerMapsToContentMissing(t *testing.T) {
+	for _, resp := range []minio.ErrorResponse{
+		{Code: "NoSuchKey"},
+		{Code: "NoSuchObject"},
+		{StatusCode: http.StatusNotFound},
+	} {
+		if !missingFromService(resp) {
+			t.Errorf("the answer %+v is not read as missing bytes", resp)
+		}
+	}
+	if missingFromService(minio.ErrorResponse{Code: "AccessDenied", StatusCode: http.StatusForbidden}) {
+		t.Error("a refused call is read as missing bytes")
+	}
+}
+
+// presignStore is a store that makes no request when it signs, so a presign case
+// needs no listener.
+func presignStore(t *testing.T) *store {
+	t.Helper()
+	return storeOver(t, "http://127.0.0.1:1")
+}
+
+// TestPresignReadSignsTheMediaTypeAndFileNameOverrides holds the read address:
+// a GET carrying a signature and an expiry, with the media type and file name as
+// response overrides so the bucket serves the bytes as the caller asked.
+func TestPresignReadSignsTheMediaTypeAndFileNameOverrides(t *testing.T) {
+	const ttl = 5 * time.Minute
+	s := presignStore(t)
+	issued, err := s.PresignRead(t.Context(), testKey, objectstore.PresignParams{
+		TTL:         ttl,
+		ContentType: "image/png",
+		Filename:    "a picture.png",
+	})
+	if err != nil {
+		t.Fatalf("PresignRead: %v", err)
+	}
+	if issued.Method != http.MethodGet {
+		t.Errorf("the read address's method = %q, want GET", issued.Method)
+	}
+	if !issued.Expires.After(time.Now()) {
+		t.Errorf("the read address expires at %v, which is not in the future", issued.Expires)
+	}
+
+	u, err := url.Parse(issued.URL)
+	if err != nil {
+		t.Fatalf("parsing the read address: %v", err)
+	}
+	query := u.Query()
+	if got, want := query.Get("X-Amz-Expires"), strconv.Itoa(int(ttl/time.Second)); got != want {
+		t.Errorf("X-Amz-Expires = %q, want %q", got, want)
+	}
+	if query.Get("X-Amz-Signature") == "" {
+		t.Errorf("the read address carries no signature: %s", issued.URL)
+	}
+	if got := query.Get("response-content-type"); got != "image/png" {
+		t.Errorf("response-content-type = %q, want image/png", got)
+	}
+	if got := query.Get("response-content-disposition"); !strings.HasPrefix(got, "inline") ||
+		!strings.Contains(got, "a picture.png") {
+		t.Errorf("response-content-disposition = %q, want an inline disposition carrying the file name", got)
+	}
+}
+
+// TestPresignWriteSignsAPutAndNoResponseOverride holds the write address: a PUT
+// carrying a signature and an expiry, and none of the read side's response
+// overrides.
+func TestPresignWriteSignsAPutAndNoResponseOverride(t *testing.T) {
+	const ttl = 5 * time.Minute
+	s := presignStore(t)
+	issued, err := s.PresignWrite(t.Context(), testKey, objectstore.PresignParams{TTL: ttl})
+	if err != nil {
+		t.Fatalf("PresignWrite: %v", err)
+	}
+	if issued.Method != http.MethodPut {
+		t.Errorf("the write address's method = %q, want PUT", issued.Method)
+	}
+
+	u, err := url.Parse(issued.URL)
+	if err != nil {
+		t.Fatalf("parsing the write address: %v", err)
+	}
+	query := u.Query()
+	if got, want := query.Get("X-Amz-Expires"), strconv.Itoa(int(ttl/time.Second)); got != want {
+		t.Errorf("X-Amz-Expires = %q, want %q", got, want)
+	}
+	if query.Get("X-Amz-Signature") == "" {
+		t.Errorf("the write address carries no signature: %s", issued.URL)
+	}
+	for _, name := range []string{"response-content-type", "response-content-disposition"} {
+		if query.Has(name) {
+			t.Errorf("the write address carries the read-side override %q: %s", name, issued.URL)
+		}
+	}
+}
+
+// TestPresignRefusesALifetimeOutsideTheBounds holds the lifetime bounds both
+// signing calls keep: shorter than a second or longer than seven days is refused
+// with the capability's unavailable sentinel rather than handed to the SDK, while
+// both boundary values are honoured.
+func TestPresignRefusesALifetimeOutsideTheBounds(t *testing.T) {
+	s := presignStore(t)
+	for _, ttl := range []time.Duration{0, 500 * time.Millisecond, 8 * 24 * time.Hour} {
+		if _, err := s.PresignRead(t.Context(), testKey, objectstore.PresignParams{TTL: ttl}); !errors.Is(err, objectstore.ErrURLUnavailable) {
+			t.Errorf("PresignRead with a lifetime of %s answered %v, want ErrURLUnavailable", ttl, err)
+		}
+		if _, err := s.PresignWrite(t.Context(), testKey, objectstore.PresignParams{TTL: ttl}); !errors.Is(err, objectstore.ErrURLUnavailable) {
+			t.Errorf("PresignWrite with a lifetime of %s answered %v, want ErrURLUnavailable", ttl, err)
+		}
+	}
+	for _, ttl := range []time.Duration{time.Second, 7 * 24 * time.Hour} {
+		if _, err := s.PresignRead(t.Context(), testKey, objectstore.PresignParams{TTL: ttl}); err != nil {
+			t.Errorf("PresignRead with the boundary lifetime %s answered %v, want success", ttl, err)
+		}
+		if _, err := s.PresignWrite(t.Context(), testKey, objectstore.PresignParams{TTL: ttl}); err != nil {
+			t.Errorf("PresignWrite with the boundary lifetime %s answered %v, want success", ttl, err)
+		}
+	}
 }
 
 // TestTheSchemeOfTheEndpointChoosesTheTransport holds the endpoint parsing the

@@ -1,19 +1,17 @@
 package metadata
 
 import (
-	"encoding/json"
-	"io/fs"
+	"context"
 	"testing"
 
 	"github.com/vislake/speed/pkg/audit"
-	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
-	speedhttp "github.com/vislake/speed/pkg/http"
-	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/objectstore"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -61,11 +59,12 @@ func TestTheDescriptorRequiresItsDependencies(t *testing.T) {
 			t.Errorf("%T is not a required dependency", token)
 		}
 	}
-	if !optional[core.Token((*log.Logger)(nil))] {
-		t.Error("the logging capability is not optional")
-	}
-	if !optional[core.Token((*speedhttp.Router)(nil))] {
-		t.Error("the HTTP entry point is not optional")
+	for _, token := range []core.Token{
+		(*objectstore.DirectURL)(nil), (*settings.Store)(nil), (*log.Logger)(nil),
+	} {
+		if !optional[token] {
+			t.Errorf("%T is not an optional dependency", token)
+		}
 	}
 }
 
@@ -98,86 +97,54 @@ func TestTheAuditActionNamesAreDeclaredByTheRootPackage(t *testing.T) {
 	}
 }
 
-// TestTheModuleDeclaresItsPermissionVocabulary holds that the two permissions
-// reach the process catalog and that each has a translation row.
-func TestTheModuleDeclaresItsPermissionVocabulary(t *testing.T) {
-	var spec authz.PermissionSpec
-	var translation authz.TranslationSpec
-	var seenSpec, seenTranslation bool
+// TestTheModuleDeclaresOnlyItsOwnResources holds that the descriptor carries the
+// configuration schema, the settings schema and the migrations and nothing else:
+// the permission, feature, translation, message-catalog and OpenAPI resources an
+// earlier design registered are gone with the API surface that needed them.
+func TestTheModuleDeclaresOnlyItsOwnResources(t *testing.T) {
+	var (
+		schemaCount    int
+		settingsCount  int
+		migrationCount int
+	)
 	for _, res := range Module().Resources {
-		switch v := res.(type) {
-		case authz.PermissionSpec:
-			spec, seenSpec = v, true
-		case authz.TranslationSpec:
-			translation, seenTranslation = v, true
+		switch res.(type) {
+		case config.Schema:
+			schemaCount++
+		case settings.Schema:
+			settingsCount++
+		case db.Migrations:
+			migrationCount++
+		default:
+			t.Errorf("the descriptor declares an unexpected resource %T", res)
 		}
 	}
-	if !seenSpec || !seenTranslation {
-		t.Fatalf("resources carry spec=%v translation=%v, want both", seenSpec, seenTranslation)
+	if schemaCount != 1 {
+		t.Errorf("the descriptor declares %d configuration schemas, want one", schemaCount)
 	}
-	declared := map[authz.Permission]bool{}
-	for _, p := range spec.Permissions {
-		declared[p] = true
+	if settingsCount != 1 {
+		t.Errorf("the descriptor declares %d settings schemas, want one", settingsCount)
 	}
-	for _, p := range []authz.Permission{PermissionObjectRead, PermissionObjectWrite} {
-		if !declared[p] {
-			t.Errorf("the permission %q is not declared", p)
-		}
-		if _, ok := translation.Rows[p]; !ok {
-			t.Errorf("the permission %q has no translation row", p)
-		}
-	}
-	if row := translation.Rows[PermissionObjectRead]; row.Object != objectResource || row.Action != "read" {
-		t.Errorf("object.read translates to %+v, want %q/read", row, objectResource)
-	}
-	if row := translation.Rows[PermissionObjectWrite]; row.Object != objectResource || row.Action != "write" {
-		t.Errorf("object.write translates to %+v, want %q/write", row, objectResource)
+	if migrationCount != 1 {
+		t.Errorf("the descriptor declares %d migration sets, want one", migrationCount)
 	}
 }
 
-// TestTheModuleDeclaresItsMessageCatalog holds that the catalog is declared to the
-// i18n engine and that the two locale files carry the same key set.
-func TestTheModuleDeclaresItsMessageCatalog(t *testing.T) {
-	var catalog i18n.Catalog
-	found := false
-	for _, res := range Module().Resources {
-		if c, ok := res.(i18n.Catalog); ok {
-			catalog, found = c, true
-		}
-	}
-	if !found {
-		t.Fatal("the module declares no i18n.Catalog resource")
-	}
-	if catalog.FS == nil || catalog.Pattern != "locales/*.json" {
-		t.Fatalf("the catalog is %+v, want a locales/*.json pattern over an embedded filesystem", catalog)
-	}
-	en := localeKeys(t, "locales/en-US.json")
-	zh := localeKeys(t, "locales/zh-CN.json")
-	if len(en) == 0 {
-		t.Fatal("the English catalog is empty")
-	}
-	for key := range en {
-		if _, ok := zh[key]; !ok {
-			t.Errorf("the key %q is in the English catalog but not the Chinese one", key)
-		}
-	}
-	for key := range zh {
-		if _, ok := en[key]; !ok {
-			t.Errorf("the key %q is in the Chinese catalog but not the English one", key)
-		}
-	}
-}
-
-// localeKeys reads one locale file's key set.
-func localeKeys(t *testing.T, name string) map[string]string {
-	t.Helper()
-	raw, err := fs.ReadFile(localesFS, name)
-	if err != nil {
-		t.Fatalf("reading %q: %v", name, err)
-	}
-	entries := map[string]string{}
-	if err := json.Unmarshal(raw, &entries); err != nil {
-		t.Fatalf("decoding %q: %v", name, err)
-	}
-	return entries
+// TestTheGrantsTableIsCreatedOnEveryEngine drives the migrations and reads the
+// table the content route depends on, so a dialect the SQL was not written for
+// fails here rather than at the first minted URL.
+func TestTheGrantsTableIsCreatedOnEveryEngine(t *testing.T) {
+	forEachEngine(t, func(t *testing.T, e engine) {
+		h := e.on(t, harness{})
+		h.drive(t, func(_ context.Context, reg *core.Registry) error {
+			var n int64
+			if err := dbHandle(t, reg).Raw("SELECT count(*) FROM object_grants").Row().Scan(&n); err != nil {
+				t.Fatalf("reading the object_grants table: %v", err)
+			}
+			if n != 0 {
+				t.Errorf("a fresh object_grants table holds %d rows, want none", n)
+			}
+			return nil
+		})
+	})
 }

@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"context"
-	"encoding/json"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -174,27 +173,6 @@ func TestCreateStoresTheNormalizedNameAndNeverRefusesIt(t *testing.T) {
 			return nil
 		})
 	})
-}
-
-// TestTheObjectViewAlwaysCarriesTheName holds that the wire view has a name
-// member even when the object has none, so a client reads one shape and falls
-// back to the identifier rather than to an absent field.
-func TestTheObjectViewAlwaysCarriesTheName(t *testing.T) {
-	raw, err := json.Marshal(objectViewOf(objectstore.Object{ID: "o-1"}))
-	if err != nil {
-		t.Fatalf("encoding the view: %v", err)
-	}
-	var fields map[string]any
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		t.Fatalf("decoding the view: %v", err)
-	}
-	name, ok := fields["name"]
-	if !ok {
-		t.Fatalf("the object view carries no name member: %s", raw)
-	}
-	if name != "" {
-		t.Errorf("an unnamed object's view carries the name %v, want the empty string", name)
-	}
 }
 
 // TestARowThatPredatesTheNameMigrationReadsAsUnnamed holds the migration's

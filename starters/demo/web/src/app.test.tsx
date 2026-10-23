@@ -922,7 +922,6 @@ describe('the tenant navigation icons', () => {
       labels: [
         demoEnUS.nav.home,
         demoEnUS.nav.account,
-        demoEnUS.nav.objects,
         tNotifications('inbox.title'),
       ],
       collapse: tLayout('appShell.collapseNav'),
@@ -933,7 +932,6 @@ describe('the tenant navigation icons', () => {
       labels: [
         demoZhCN.nav.home,
         demoZhCN.nav.account,
-        demoZhCN.nav.objects,
         tNotificationsZh('inbox.title'),
       ],
       collapse: tLayoutZh('appShell.collapseNav'),
@@ -993,7 +991,6 @@ describe('the tenant navigation icons', () => {
     for (const label of [
       demoEnUS.nav.home,
       demoEnUS.nav.account,
-      demoEnUS.nav.objects,
       tNotifications('inbox.title'),
     ]) {
       const link = screen.getByRole('link', { name: label })
@@ -1005,6 +1002,25 @@ describe('the tenant navigation icons', () => {
 })
 
 describe('the not-found fallback', () => {
+  it('renders for the object page the skeleton no longer ships', async () => {
+    // The object store is a backend capability, not an end-user page: no
+    // route declares /objects, so a direct visit is the same dead link any
+    // unregistered path is (and no navigation entry or home card leads
+    // there).
+    window.history.replaceState({}, '', '/objects')
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.notFound.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: demoEnUS.notFound.home }),
+    ).toHaveAttribute('href', '/')
+  })
+
   it('explains the dead link in the user terms and offers a way home', async () => {
     window.history.replaceState({}, '', '/console/definitely-not-a-page')
     // A platform permission admits the console frame; the path itself

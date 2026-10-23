@@ -674,8 +674,9 @@ names the fixed part of that wiring, and no configuration file repeats it:
   and otherwise ensures the idempotent pieces: the tenant row (identifier and
   alias both `personal-<account-id>`), the account's membership, a non-builtin
   `owner` role, that role's grants converged to the allowlist the host declares
-  (the object store's permissions; never the tenant domain's management
-  actions), and the account's binding. It never overwrites an operator's
+  (an empty list: neither the notification surface nor the object store
+  declares a permission point; never the tenant domain's management actions),
+  and the account's binding. It never overwrites an operator's
   decision: an existing membership is left alone, and a tenant row whose status
   is not enabled answers 409 `tenant-unavailable` without writing anything. An
   alias collision or a derived identifier outside the roster domain answers 409
@@ -698,16 +699,17 @@ names the fixed part of that wiring, and no configuration file repeats it:
   frame to the account page's verification section rather than rendering a
   failure placeholder.
 - The journal (`audit.journal`) records the requests its `requests` list names
-  on the endpoints its `endpoints` list names. The sample files name the object
-  store's declaration and delete (`POST /api/v1/objects`,
-  `DELETE /api/v1/objects/:id`): writes an operator initiates on a business
-  route, which is what a copy names here. A read the frontend polls on its own
+  on the endpoints its `endpoints` list names. The sample files name no request
+  route (`requests: []`): the object store's routes are gone, and the writes a
+  copy would otherwise sample are recorded at their own seams. A read the frontend polls on its own
   (the profile, the session, the impersonation status) would write a row per
   poll and bury the changes worth finding, and a route whose action the
   capability already records at the seam (login, impersonation, the
   account-management actions) would record one fact twice.
-- `ops` and `web` carry no gateway: the operations surface serves probes and the
-  document, and the frontend bundle is static.
+- `ops`, `web` and `content` carry no gateway: the operations surface serves
+  probes and the document, the frontend bundle is static, and the content
+  endpoint serves token-bearing byte addresses, where the token itself is the
+  credential.
 
 Which guards each endpoint carries is configuration, and where a module mounts
 its routes — the two endpoint lists on the tenant layers, the guard's list, the

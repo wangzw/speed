@@ -123,37 +123,38 @@ function cardLink(title: string): HTMLElement {
 
 describe('a served document narrows the tenant area', () => {
   it('keeps the surfaces it names and hides the ones it omits', async () => {
-    // The document serves the object store alone. The object card and
-    // navigation entry survive; the notification surfaces -- bell, card,
-    // navigation entry -- must disappear with the page they lead to.
-    renderDemoApp({ session: sessionWith(readyFeatures('objectstore.objects')) })
+    // The document serves the notification centre alone. Its card, its
+    // navigation entry and the header bell survive; the console card -- a
+    // platform surface a member does not hold -- disappears, and the object
+    // page the skeleton no longer ships contributes neither a card nor a
+    // navigation entry.
+    renderDemoApp({ session: sessionWith(readyFeatures('notification.inbox')) })
 
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: demoEnUS.home.cards.objects.title,
+        name: demoEnUS.home.cards.notifications.title,
       }),
     ).toBeInTheDocument()
-    expect(cardLink(demoEnUS.home.cards.objects.title)).toHaveAttribute(
-      'href',
-      '/objects',
-    )
     expect(
-      screen.getByRole('link', { name: demoEnUS.nav.objects }),
+      cardLink(demoEnUS.home.cards.notifications.title),
+    ).toHaveAttribute('href', '/notifications')
+    expect(
+      screen.getByRole('link', { name: tNotifications('inbox.title') }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: BELL_NAME }),
     ).toBeInTheDocument()
 
-    expect(screen.queryByRole('button', { name: BELL_NAME })).not.toBeInTheDocument()
     expect(
-      cardHeading(demoEnUS.home.cards.notifications.title),
+      cardHeading(demoEnUS.home.cards.console.title),
     ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('link', { name: tNotifications('inbox.title') }),
-    ).not.toBeInTheDocument()
+    expect(document.querySelector('a[href="/objects"]')).toBeNull()
   })
 
   it('renders the not-found fallback for a gated page the document omits', async () => {
     window.history.replaceState({}, '', '/notifications')
-    renderDemoApp({ session: sessionWith(readyFeatures('objectstore.objects')) })
+    renderDemoApp({ session: sessionWith(readyFeatures('workspace.personal')) })
 
     // The notification page is not a page in this deployment: the same
     // fallback an unregistered path renders.
@@ -202,7 +203,7 @@ describe('a served document narrows the tenant area', () => {
       [LOGIN_START]: () => completeFlow(),
       [LOGIN_ANSWER]: () => authenticatedCompletion(),
       [PROFILE_GET]: () => principal(),
-      [FEATURES_GET]: () => ({ features: ['objectstore.objects'] }),
+      [FEATURES_GET]: () => ({ features: ['notification.inbox'] }),
     })
     await harness.session.startFlow({ method: 'password' })
     await harness.session.answerFlow({ seq: 2, step: 'complete' })
@@ -212,18 +213,23 @@ describe('a served document narrows the tenant area', () => {
     expect(harness.calls.some((call) => call.path === '/api/v1/features')).toBe(true)
     expect(harness.session.getSnapshot().features).toEqual({
       state: 'ready',
-      names: new Set(['objectstore.objects']),
+      names: new Set(['notification.inbox']),
     })
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: demoEnUS.home.cards.objects.title,
+        name: demoEnUS.home.cards.notifications.title,
       }),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: BELL_NAME })).not.toBeInTheDocument()
     expect(
-      cardHeading(demoEnUS.home.cards.notifications.title),
+      screen.getByRole('button', { name: BELL_NAME }),
+    ).toBeInTheDocument()
+    // The document leaves the console surfaces out: a member gets no console
+    // card, and the removed object page has no link to it.
+    expect(
+      cardHeading(demoEnUS.home.cards.console.title),
     ).not.toBeInTheDocument()
+    expect(document.querySelector('a[href="/objects"]')).toBeNull()
   })
 })
 
@@ -262,7 +268,6 @@ describe('a failed or pending document is not an empty one', () => {
         name: demoEnUS.home.cards.account.title,
       }),
     ).toBeInTheDocument()
-    expect(cardHeading(demoEnUS.home.cards.objects.title)).not.toBeInTheDocument()
     expect(
       cardHeading(demoEnUS.home.cards.notifications.title),
     ).not.toBeInTheDocument()
@@ -485,7 +490,7 @@ describe('the account page mounts only the sections its document serves', () => 
 describe('the invitation landing follows its gated declaration', () => {
   it('renders the not-found fallback when the deployment serves no invitations', async () => {
     window.history.replaceState({}, '', '/invitations/token-1')
-    renderDemoApp({ session: sessionWith(readyFeatures('objectstore.objects')) })
+    renderDemoApp({ session: sessionWith(readyFeatures('notification.inbox')) })
 
     expect(
       await screen.findByRole('heading', {

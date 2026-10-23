@@ -42,7 +42,6 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
-	objectstoremeta "github.com/vislake/speed/pkg/objectstore/metadata"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -80,11 +79,12 @@ const personalIDPrefix = "personal-"
 const personalOwnerRole = authz.Role("owner")
 
 // personalOwnerPermissions is the host-declared set of permissions the owner
-// role holds. It is the personal workspace's business surface: the object
-// store's two permissions today, and the notification surface declares no
-// permission point. The set is written out in code and not derived from the
-// process catalog, so a permission a module declares later does not join the
-// owner role on its own.
+// role holds. The set is empty: the notification surface declares no permission
+// point, and the object store no longer declares one — its terminal-user API is
+// gone, and bytes are reached through a minted URL the business backend asks
+// for. The set is written out in code and not derived from the process catalog,
+// so a permission a module declares later does not join the owner role on its
+// own.
 //
 // The authentication module's tenant-level management actions are deliberately
 // absent — membership management, invitations, identity providers,
@@ -92,10 +92,7 @@ const personalOwnerRole = authz.Role("owner")
 // tenant in the path, so granting them here would make every self-registered
 // account an administrator of its tenant, able to add any known account to it
 // and lock that account's own ensure out.
-var personalOwnerPermissions = []authz.Permission{
-	objectstoremeta.PermissionObjectRead,
-	objectstoremeta.PermissionObjectWrite,
-}
+var personalOwnerPermissions = []authz.Permission{}
 
 // personalOwnerDescriptionKey is the description key written with the owner
 // role. It travels in the API answer wherever a role is listed; the demo renders

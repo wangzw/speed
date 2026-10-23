@@ -64,7 +64,8 @@ type expiredRow struct {
 }
 
 // sweepOnce runs one pass: read the rows whose time is up, remove each one's
-// bytes through the seam, and tombstone its row.
+// bytes through the seam, and tombstone its row; then remove the grants whose
+// time is up.
 //
 // The pass crosses tenants — it is the database's own housekeeping, not a
 // tenant's request — so it runs under a cross-tenant context. Every instant is
@@ -78,11 +79,27 @@ type expiredRow struct {
 // while an upload left bytes behind — a Put that succeeded and a state advance
 // that did not — is the case the byte deletion exists for: the pending row
 // cannot be assumed to have no bytes.
+//
+// The grants are removed whatever became of the object rows: a pass that could
+// not read the rows still clears the table of expired grants, and a table that
+// could not be cleared is a Warn for the next pass. Correctness does not depend
+// on this step — every use of a token compares its expiry — it only keeps the
+// table from growing without bound.
 func (p *product) sweepOnce(ctx context.Context) {
 	if ctx.Err() != nil {
 		return
 	}
 	sweepCtx := tenant.CrossTenant(ctx)
+	p.sweepObjects(sweepCtx, ctx)
+	if err := p.handle.WithContext(sweepCtx).Exec(p.stmts.purgeGrants).Error; err != nil {
+		p.logger.Warn("objectstore.metadata: the sweep could not remove the expired grants; "+
+			"it will try again next pass", "error", err)
+	}
+}
+
+// sweepObjects removes the bytes and tombstones the rows whose time is up. A
+// failed read of the rows is a Warn; the caller's grants pass still runs.
+func (p *product) sweepObjects(sweepCtx, ctx context.Context) {
 	var rows []expiredRow
 	if err := p.handle.WithContext(sweepCtx).Raw(p.stmts.expired, sweepBatch).Scan(&rows).Error; err != nil {
 		p.logger.Warn("objectstore.metadata: the object sweep could not read the expired rows; "+

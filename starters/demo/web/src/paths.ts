@@ -35,9 +35,6 @@ export const ACCOUNT_PATH = '/account'
  */
 export const ACCOUNT_SETUP_PATH = '/account/setup'
 
-/** The tenant area's object storage page: the objectstore capability's face. */
-export const OBJECTS_PATH = '/objects'
-
 /**
  * The notification centre's path, taken from the declaration the surface
  * mounts from (@speed/notification-ui) -- the one source the route table, the

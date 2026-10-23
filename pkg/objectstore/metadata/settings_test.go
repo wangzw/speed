@@ -28,6 +28,7 @@ import (
 const (
 	uploadWindowSetting = "objectstore.metadata.upload-window"
 	objectTTLSetting    = "objectstore.metadata.object-ttl"
+	urlTTLSetting       = "objectstore.metadata.url-ttl"
 	sweepIntervalKey    = "objectstore.metadata.sweep-interval"
 )
 
@@ -83,20 +84,20 @@ func TestTheTunablesInTheStoreDriveTheNextCreateAndComplete(t *testing.T) {
 }
 
 // TestTheModuleDeclaresExactlyItsRuntimeTunables holds the line the design
-// draws: the upload window and the object lifetime are settings, while the sweep
-// interval sizes the startup ticker and stays a configuration item that a
-// change requires a restart to pick up.
+// draws: the upload window, the object lifetime and the URL lifetime are
+// settings, while the sweep interval sizes the startup ticker and stays a
+// configuration item that a change requires a restart to pick up.
 func TestTheModuleDeclaresExactlyItsRuntimeTunables(t *testing.T) {
 	declared := declaredSettings(t)
-	for _, key := range []string{uploadWindowSetting, objectTTLSetting} {
+	for _, key := range []string{uploadWindowSetting, objectTTLSetting, urlTTLSetting} {
 		if _, ok := declared[key]; !ok {
 			t.Errorf("%s is not declared as a setting", key)
 		}
 	}
 	for key := range declared {
-		if key != uploadWindowSetting && key != objectTTLSetting {
-			t.Errorf("%s is declared as a setting, but only the upload window and the object lifetime "+
-				"take effect without a restart", key)
+		if key != uploadWindowSetting && key != objectTTLSetting && key != urlTTLSetting {
+			t.Errorf("%s is declared as a setting, but only the upload window, the object lifetime and "+
+				"the URL lifetime take effect without a restart", key)
 		}
 	}
 	if _, ok := declared[sweepIntervalKey]; ok {
@@ -115,6 +116,7 @@ func TestAConfigurationCarryingARemovedTunableFailsStartup(t *testing.T) {
 	}{
 		{"upload-window", "3h", uploadWindowSetting},
 		{"object-ttl", "2h", objectTTLSetting},
+		{"url-ttl", "2m", urlTTLSetting},
 	} {
 		t.Run(c.item, func(t *testing.T) {
 			err := loadMetadataConfiguration(t, map[string]any{c.item: c.value})
@@ -133,6 +135,26 @@ func TestAConfigurationCarryingARemovedTunableFailsStartup(t *testing.T) {
 				"and stays a configuration item", err)
 		}
 	})
+}
+
+// TestTheContentConfigurationItemsHoldAndTheOldEndpointsKeyIsGone holds the
+// configuration move: content-endpoints and public-url load, and the endpoints
+// key this module used to read is an unknown key that refuses the startup.
+func TestTheContentConfigurationItemsHoldAndTheOldEndpointsKeyIsGone(t *testing.T) {
+	if err := loadMetadataConfiguration(t, map[string]any{
+		"content-endpoints": []string{"content"},
+		"public-url":        "https://api.example.com",
+	}); err != nil {
+		t.Fatalf("a configuration carrying content-endpoints and public-url was refused: %v", err)
+	}
+
+	err := loadMetadataConfiguration(t, map[string]any{"endpoints": []string{"api"}})
+	if !errors.Is(err, config.ErrUnknownKey) {
+		t.Fatalf("the removed endpoints key loaded with %v, want config.ErrUnknownKey", err)
+	}
+	if !strings.Contains(err.Error(), ConfigNamespace+".endpoints") {
+		t.Errorf("the refusal %q does not name the removed key", err)
+	}
 }
 
 // TestTheDeclaredTunablesApplyWithNoStoredRow pins the values a run acts on when
@@ -164,7 +186,10 @@ func TestAMetadataTunableReadFaultFallsBackToItsDeclaredDefault(t *testing.T) {
 	var report bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&report, nil))
 	store := tunableStore{
-		values:  map[string]any{objectTTLPath: time.Duration(-1)},
+		values: map[string]any{
+			objectTTLPath: time.Duration(-1),
+			urlTTLPath:    8 * 24 * time.Hour,
+		},
 		failKey: uploadWindowPath,
 		err:     errors.New("the store is down"),
 	}
@@ -176,8 +201,11 @@ func TestAMetadataTunableReadFaultFallsBackToItsDeclaredDefault(t *testing.T) {
 	if got := r.objectTTL(logger); got != 0 {
 		t.Errorf("an object lifetime outside its domain is %s, want the declared zero", got)
 	}
+	if got := r.urlTTL(logger); got != 5*time.Minute {
+		t.Errorf("a URL lifetime outside its domain is %s, want the declared 5m", got)
+	}
 	logged := report.String()
-	for _, key := range []string{uploadWindowPath, objectTTLPath} {
+	for _, key := range []string{uploadWindowPath, objectTTLPath, urlTTLPath} {
 		if !strings.Contains(logged, key) {
 			t.Errorf("the report does not name %s:\n%s", key, logged)
 		}
@@ -185,11 +213,13 @@ func TestAMetadataTunableReadFaultFallsBackToItsDeclaredDefault(t *testing.T) {
 }
 
 // TestASubMillisecondMetadataTunableIsRefused holds the boundary the domains
-// draw: both values are stored and read in whole milliseconds, so a positive
-// value shorter than one millisecond, which would truncate to zero, is refused at
-// the write.
+// draw: both millisecond-valued settings are stored and read in whole
+// milliseconds, so a positive value shorter than one millisecond, which would
+// truncate to zero, is refused at the write. The URL lifetime shares the refusal
+// for a value below its one-second lower bound even though its reason is
+// different.
 func TestASubMillisecondMetadataTunableIsRefused(t *testing.T) {
-	for _, key := range []string{uploadWindowPath, objectTTLPath} {
+	for _, key := range []string{uploadWindowPath, objectTTLPath, urlTTLPath} {
 		t.Run(key, func(t *testing.T) {
 			forEachEngine(t, func(t *testing.T, e engine) {
 				h := e.on(t, harness{withSettings: true})
@@ -207,8 +237,59 @@ func TestASubMillisecondMetadataTunableIsRefused(t *testing.T) {
 	}
 }
 
+// TestTheURLTTLDomainSpansOneSecondToSevenDays holds the exact bounds the design
+// fixes for url-ttl: one second and seven days are accepted, and a value just
+// outside either end is refused.
+func TestTheURLTTLDomainSpansOneSecondToSevenDays(t *testing.T) {
+	for _, c := range []struct {
+		label string
+		value time.Duration
+		ok    bool
+	}{
+		{"the lower bound", time.Second, true},
+		{"the upper bound", 168 * time.Hour, true},
+		{"below the lower bound", time.Second - time.Millisecond, false},
+		{"above the upper bound", 168*time.Hour + time.Millisecond, false},
+	} {
+		t.Run(c.label, func(t *testing.T) {
+			if got := urlTTLInDomain(c.value); got != c.ok {
+				t.Errorf("urlTTLInDomain(%s) = %v, want %v", c.value, got, c.ok)
+			}
+		})
+	}
+
+	// The domain is also what the store holds a write to.
+	forEachEngine(t, func(t *testing.T, e engine) {
+		h := e.on(t, harness{withSettings: true})
+		h.drive(t, func(ctx context.Context, reg *core.Registry) error {
+			for _, c := range []struct {
+				label string
+				value time.Duration
+				ok    bool
+			}{
+				{"the lower bound", time.Second, true},
+				{"the upper bound", 168 * time.Hour, true},
+				{"below the lower bound", time.Second - time.Millisecond, false},
+				{"above the upper bound", 168*time.Hour + time.Millisecond, false},
+			} {
+				err := settingsStoreOf(t, reg).Set(ctx, settings.Write{
+					Layer: settings.Global(), Key: urlTTLPath, Value: c.value, Actor: "test",
+				})
+				switch {
+				case c.ok && err != nil:
+					t.Errorf("writing url-ttl = %s (%s) was refused: %v", c.value, c.label, err)
+				case !c.ok && !errors.Is(err, settings.ErrInvalidValue):
+					t.Errorf("writing url-ttl = %s (%s) returned %v, want ErrInvalidValue",
+						c.value, c.label, err)
+				}
+			}
+			return nil
+		})
+	})
+}
+
 // tunableStore is a settings store over named rows with one key made to fail its
-// read, so a case can drive the two tunables without the settings module.
+// read, so a case can drive the three tunables without the settings module.
 type tunableStore struct {
 	values  map[string]any
 	failKey string

@@ -5,8 +5,7 @@
   "nav": {
     "home": "Home",
     "console": "Console",
-    "account": "Account settings",
-    "objects": "Objects"
+    "account": "Account settings"
   },
   "console": {
     "backToApp": "Back to app",
@@ -39,10 +38,6 @@
       "console": {
         "title": "Console",
         "description": "The platform's management surface: tenants, accounts, settings and the audit trail."
-      },
-      "objects": {
-        "title": "Objects",
-        "description": "The current tenant's object storage: list, upload, download and delete."
       },
       "notifications": {
         "title": "Notifications",

@@ -92,16 +92,32 @@ func mustJSON(s string) string {
 }
 
 // TestTheDescriptorDeliversTheByteSeamExclusively holds the shape the design
-// names: the objectstore.Store seam claimed for this module alone, so a command
-// names exactly one backend, and the logging capability taken up optionally.
+// names: the objectstore.Store seam and the objectstore.DirectURL capability
+// claimed for this module alone, so a command names exactly one backend, and the
+// logging capability taken up optionally.
 func TestTheDescriptorDeliversTheByteSeamExclusively(t *testing.T) {
 	m := Module()
 	if m.Name != ModuleName {
 		t.Errorf("Name = %q, want %q", m.Name, ModuleName)
 	}
-	seam := core.Token((*objectstore.Store)(nil))
-	if len(m.Provides) != 1 || m.Provides[0].Token != seam || !m.Provides[0].Exclusive {
-		t.Errorf("Provides = %+v, want the byte seam alone, exclusively", m.Provides)
+	seams := map[core.Token]bool{
+		core.Token((*objectstore.Store)(nil)):     false,
+		core.Token((*objectstore.DirectURL)(nil)): false,
+	}
+	if len(m.Provides) != len(seams) {
+		t.Fatalf("Provides = %+v, want the byte seam and the direct-URL capability", m.Provides)
+	}
+	for _, p := range m.Provides {
+		if _, ok := seams[p.Token]; !ok || !p.Exclusive {
+			t.Errorf("Provides carries %+v, want both seams delivered exclusively", p)
+			continue
+		}
+		seams[p.Token] = true
+	}
+	for token, found := range seams {
+		if !found {
+			t.Errorf("Provides does not claim %v exclusively", token)
+		}
 	}
 	if len(m.Requires) != 1 {
 		t.Fatalf("Requires = %+v, want the one optional logging capability", m.Requires)
@@ -128,21 +144,25 @@ func TestPrepareStatesEnabledForARunnableConfiguration(t *testing.T) {
 }
 
 // TestTheModuleDeliversTheStoreThroughTheRegistry drives a real registry through
-// this module's descriptor to Init, resolves the byte seam from the one product
-// and names it.
+// this module's descriptor to Init, resolves the byte seam and the direct-URL
+// capability from the one product and names it.
 func TestTheModuleDeliversTheStoreThroughTheRegistry(t *testing.T) {
 	server := httptest.NewServer(recorder(&requestRecord{}, http.StatusOK, "ok"))
 	defer server.Close()
 
 	reg := registryWithReader(t, completeBody(endpointOf(server)))
 	var store objectstore.Store
+	var direct objectstore.DirectURL
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageInit,
 		Participants: []string{ModuleName, config.ModuleName},
 		Action: func(_ context.Context, reg *core.Registry) error {
-			var err error
-			store, err = core.Resolve[objectstore.Store](reg)
-			return err
+			var resolveErr error
+			if store, resolveErr = core.Resolve[objectstore.Store](reg); resolveErr != nil {
+				return resolveErr
+			}
+			direct, resolveErr = core.Resolve[objectstore.DirectURL](reg)
+			return resolveErr
 		},
 	})
 	if err != nil {
@@ -150,6 +170,12 @@ func TestTheModuleDeliversTheStoreThroughTheRegistry(t *testing.T) {
 	}
 	if store == nil || store.Name() != backendName {
 		t.Errorf("the byte seam resolved %v, want one named %s", store, backendName)
+	}
+	if direct == nil {
+		t.Fatal("the direct-URL capability resolved nothing")
+	}
+	if direct != store.(objectstore.DirectURL) {
+		t.Errorf("the two seams resolved different instances: %T and %T", store, direct)
 	}
 }
 

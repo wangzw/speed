@@ -28,10 +28,6 @@ import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '@speed/account-ui'
 import { CONSOLE_UI_NAMESPACE, consoleUiResources } from '@speed/console-ui'
 import type { I18nInstance } from '@speed/i18n'
 import {
-  OBJECTSTORE_UI_NAMESPACE,
-  objectstoreUiResources,
-} from '@speed/objectstore-ui'
-import {
   NOTIFICATION_UI_NAMESPACE,
   notificationUiResources,
 } from '@speed/notification-ui'
@@ -110,7 +106,6 @@ export function createHarnessClient(): SpeedClient {
 const APP_NAMESPACES = [
   { namespace: CONSOLE_UI_NAMESPACE, resources: consoleUiResources },
   { namespace: ACCOUNT_UI_NAMESPACE, resources: accountUiResources },
-  { namespace: OBJECTSTORE_UI_NAMESPACE, resources: objectstoreUiResources },
   { namespace: TENANCY_UI_NAMESPACE, resources: tenancyUiResources },
   { namespace: NOTIFICATION_UI_NAMESPACE, resources: notificationUiResources },
   { namespace: DEMO_NAMESPACE, resources: demoResources },

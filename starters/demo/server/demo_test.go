@@ -1376,16 +1376,16 @@ func TestTheNotificationSurfaceIsReachable(t *testing.T) {
 	cancel()
 }
 
-// TestTheRequestSampleRecordsTheOperatorsWrites holds the request-level audit
-// sample to what it demonstrates. The sample names the object store's
-// declaration and delete, both writes an operator initiates, and the case
-// performs one of each and reads the journal back. It runs the rendered
-// template, so a path written another way matches nothing and fails nothing
-// here; claims_test.go holds the template and the six shipped samples to the
-// same two entries. The profile read the frontend polls on its own is
-// performed too and must leave no request row, and an account creation is held
-// to the seam row it already has, with no second request row beside it.
-func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
+// TestTheJournalRecordsTheSeamWritesAndNoRequestRow holds the journal's two
+// capture paths to what this product carries: the seam a capability records its
+// own write at, and the request-level sample, which the platform defaults leave
+// empty. The object store's client-facing routes the old sample named are gone —
+// the capability has no terminal-user API, and bytes are reached through a URL
+// the business backend mints — so the case asks for them and finds no route and
+// no row. The account creation is recorded by the authentication module at its
+// seam: exactly one row, and no request row beside it. The profile read the
+// frontend polls on its own is performed too and must leave no request row.
+func TestTheJournalRecordsTheSeamWritesAndNoRequestRow(t *testing.T) {
 	ports := freePorts(t, listenerCount)
 	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
 
@@ -1410,30 +1410,21 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 		t.Fatalf("GET /api/v1/auth/me answered %d, want 200:\n%s", res.status, res.body)
 	}
 
-	declared := send(t, client, http.MethodPost, base+"/api/v1/objects", map[string]any{
-		"name":         "sample-write.txt",
-		"size":         5,
-		"content_type": "text/plain",
-	}, headers)
-	if declared.status != http.StatusCreated {
-		t.Fatalf("declaring an object answered %d, want 201:\n%s", declared.status, declared.body)
-	}
-	var declaration struct {
-		Object struct {
-			ID string `json:"id"`
-		} `json:"object"`
-	}
-	if err := json.Unmarshal(declared.body, &declaration); err != nil || declaration.Object.ID == "" {
-		t.Fatalf("reading the declaration's object: %v\n%s", err, declared.body)
+	// The object store answers no client-facing route at all: a declaration and
+	// a delete, the two requests the old sample named, reach no endpoint
+	// handler.
+	for _, gone := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/objects"},
+		{http.MethodDelete, "/api/v1/objects/absent"},
+	} {
+		if res := send(t, client, gone.method, base+gone.path, nil, headers); res.status != http.StatusNotFound {
+			t.Fatalf("%s %s answered %d, want the absent route's 404:\n%s",
+				gone.method, gone.path, res.status, res.body)
+		}
 	}
 
-	if res := send(t, client, http.MethodDelete,
-		base+"/api/v1/objects/"+declaration.Object.ID, nil, headers); res.status != http.StatusNoContent {
-		t.Fatalf("deleting the object answered %d, want 204:\n%s", res.status, res.body)
-	}
-
-	// The account-management actions are recorded at the seam. The sample does
-	// not name the create route, so one call leaves one row and no request row
+	// The account-management action is recorded at the seam. The empty sample
+	// names no request, so one call leaves one seam row and no request row
 	// beside it.
 	created := send(t, client, http.MethodPost, base+"/api/v1/system/auth/accounts", map[string]any{
 		"kind":               "user",
@@ -1445,9 +1436,9 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 		t.Fatalf("creating an account answered %d, want 201:\n%s", created.status, created.body)
 	}
 
-	// The journal's query surface reads the rows back. The request rows are
-	// looked for until both writes are there: the capture layer writes after
-	// the handler returns, so a read can beat the row.
+	// The journal's query surface reads the rows back. The read is repeated
+	// until the seam row is there: a capture path writes after the handler
+	// returns, so a read can beat the row.
 	type record struct {
 		Source string `json:"source"`
 		Action string `json:"action"`
@@ -1475,20 +1466,10 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 		}
 		return n
 	}
-	writes := [][2]string{
-		{http.MethodPost, "/api/v1/objects"},
-		{http.MethodDelete, "/api/v1/objects/:id"},
-	}
 	var entries []record
 	for deadline := time.Now().Add(scaledForRace(5 * time.Second)); ; {
 		entries = readJournal()
-		seen := 0
-		for _, w := range writes {
-			if count(entries, "request", w[0], w[1]) > 0 {
-				seen++
-			}
-		}
-		if seen == len(writes) || time.Now().After(deadline) {
+		if count(entries, "seam", "authn.account.create", "") > 0 || time.Now().After(deadline) {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -1498,10 +1479,13 @@ func TestTheRequestSampleRecordsTheOperatorsWrites(t *testing.T) {
 		t.Fatalf("rendering the journal's rows: %v", err)
 	}
 
-	for _, write := range writes {
-		if n := count(entries, "request", write[0], write[1]); n != 1 {
-			t.Errorf("the journal holds %d request row(s) for %q %q, want exactly 1:\n%s",
-				n, write[0], write[1], readable)
+	for _, gone := range [][2]string{
+		{http.MethodPost, "/api/v1/objects"},
+		{http.MethodDelete, "/api/v1/objects/:id"},
+	} {
+		if n := count(entries, "request", gone[0], gone[1]); n != 0 {
+			t.Errorf("the journal holds %d request row(s) for the absent route %q %q, want none:\n%s",
+				n, gone[0], gone[1], readable)
 		}
 	}
 	if n := count(entries, "request", http.MethodGet, "/api/v1/auth/me"); n != 0 {

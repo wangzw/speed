@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vislake/speed/pkg/objectstore"
 )
 
 // linesMatching returns the log lines that carry every one of the substrings.
@@ -62,8 +64,8 @@ type call struct {
 	drive func(ctx context.Context, s *store) error
 }
 
-// byteCalls is the three operations the seam promises, each driven with the
-// case's context.
+// byteCalls is the operations the seam promises, each driven with the case's
+// context.
 func byteCalls() []call {
 	return []call{
 		{
@@ -71,6 +73,13 @@ func byteCalls() []call {
 			sized:     true,
 			drive: func(ctx context.Context, s *store) error {
 				return s.Put(ctx, testKey, strings.NewReader("bytes"), 5)
+			},
+		},
+		{
+			operation: "stat",
+			drive: func(ctx context.Context, s *store) error {
+				_, err := s.Stat(ctx, testKey)
+				return err
 			},
 		},
 		{
@@ -246,6 +255,82 @@ func TestATransportFailureLogsACauseWithoutTheKey(t *testing.T) {
 	// this line was rendered from: the marker is what took its place.
 	if !strings.Contains(line, "[redacted]") {
 		t.Errorf("the failure line carries no redaction marker: %s", line)
+	}
+}
+
+// TestPresigningLogsOneLineWithoutTheAddress holds the rule for the signing
+// calls: exactly one line each, carrying the common fields and the key's hash,
+// and neither the returned address — which carries the object key and the
+// access-key identifier — nor the internal key itself.
+func TestPresigningLogsOneLineWithoutTheAddress(t *testing.T) {
+	cases := []struct {
+		operation string
+		drive     func(ctx context.Context, s *store) (objectstore.IssuedURL, error)
+	}{
+		{
+			operation: "presign-read",
+			drive: func(ctx context.Context, s *store) (objectstore.IssuedURL, error) {
+				return s.PresignRead(ctx, testKey, objectstore.PresignParams{
+					TTL: time.Minute, ContentType: "text/plain", Filename: "note.txt",
+				})
+			},
+		},
+		{
+			operation: "presign-write",
+			drive: func(ctx context.Context, s *store) (objectstore.IssuedURL, error) {
+				return s.PresignWrite(ctx, testKey, objectstore.PresignParams{TTL: time.Minute})
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.operation, func(t *testing.T) {
+			var out bytes.Buffer
+			// Signing reaches no service, so the endpoint is never dialed.
+			s := storeOverWithLogger(t, "http://127.0.0.1:1", loggerInto(&out))
+			issued, err := c.drive(context.Background(), s)
+			if err != nil {
+				t.Fatalf("%s: %v", c.operation, err)
+			}
+
+			lines := linesMatching(&out, "operation="+c.operation)
+			if len(lines) != 1 {
+				t.Fatalf("%s wrote %d lines, want exactly 1:\n%s", c.operation, len(lines), out.String())
+			}
+			line := lines[0]
+			for _, field := range []string{
+				"bucket=" + testBucket,
+				hashedTestKey(),
+				"duration_ms=",
+				"outcome=ok",
+			} {
+				if !strings.Contains(line, field) {
+					t.Errorf("the %s line lacks %q: %s", c.operation, field, line)
+				}
+			}
+			if strings.Contains(line, testKey) {
+				t.Errorf("the %s line carries the internal key: %s", c.operation, line)
+			}
+			if strings.Contains(line, issued.URL) {
+				t.Errorf("the %s line carries the signed address: %s", c.operation, line)
+			}
+			if strings.Contains(line, testAccessKey) {
+				t.Errorf("the %s line carries the access-key identifier: %s", c.operation, line)
+			}
+		})
+	}
+}
+
+// TestARefusedLifetimeLogsNoLine holds that a lifetime the bounds refuse signs
+// nothing and therefore writes no call line: no address was produced.
+func TestARefusedLifetimeLogsNoLine(t *testing.T) {
+	var out bytes.Buffer
+	s := storeOverWithLogger(t, "http://127.0.0.1:1", loggerInto(&out))
+	_, err := s.PresignRead(context.Background(), testKey, objectstore.PresignParams{TTL: 0})
+	if !errors.Is(err, objectstore.ErrURLUnavailable) {
+		t.Fatalf("PresignRead answered %v, want ErrURLUnavailable", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("a refused signing call wrote a line: %s", out.String())
 	}
 }
 

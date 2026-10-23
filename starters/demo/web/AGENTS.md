@@ -163,8 +163,8 @@ program beside this directory embeds with `go:embed` and serves through
   bindings section lists existing bindings with no add area, and the
   binding-callback route is mounted beside it for a product that configures one.
   `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
-  objectstore-ui, tenancy-ui, notification-ui, demo) beside the four the
-  assembly registers automatically.
+  tenancy-ui, notification-ui, demo) beside the four the assembly registers
+  automatically.
 - **Registration verification has its own page, banner and ensure gate.**
   `/account/verify` (`src/pages/account-verify-page.tsx`, an account-level
   route) renders account-ui's `ContactVerificationSection` under the session

@@ -394,14 +394,12 @@ type namedClaims struct {
 }
 
 // auditSampleRequests is the request-level audit sample every configuration
-// ships: the object store's two operator writes. The sample names no read --
-// the frontend's own polls would land a row per poll -- and a path written
-// another way matches no registered route, so a case that only runs a server
-// would stay green with every sample wrong.
-var auditSampleRequests = []string{
-	"POST /api/v1/objects",
-	"DELETE /api/v1/objects/:id",
-}
+// ships: none. Every write this product carries records at the seam its own
+// capability writes, so the default document names no request, and a frontend
+// poll named here would land a row per poll. The empty list is still held, not
+// skipped: a copy that adds an entry, or a default that grows one back, shows
+// here rather than only in the rows a run writes.
+var auditSampleRequests = []string{}
 
 // auditCarrier is the part of the audit section the sample case reads.
 type auditCarrier struct {
@@ -418,7 +416,7 @@ type namedConfig struct {
 
 // checkAuditSamples holds the effective request-level audit sample of every
 // sample configuration, and of the rendered template -- the configuration the
-// HTTP cases run -- to the two operator writes. The list is read through
+// HTTP cases run -- to the platform default. The list is read through
 // pkg/config, so it is the list the run records: it may come from the host
 // defaults document, and a sample that changed it in the file would show here.
 // The hit case alone cannot do this: it runs the rendered template, so a
@@ -457,7 +455,7 @@ func checkAuditSamples(t *testing.T) {
 // checkPlatformClaims reads the two documents and holds every configuration to
 // them: the one the case is running, and the six samples a copy starts from.
 // Each configuration is also held to the ownership table itself, in both
-// directions, and its audit sample to the object store's two writes.
+// directions, and its audit sample to the platform default.
 func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 	t.Helper()
 	checkAuditSamples(t)

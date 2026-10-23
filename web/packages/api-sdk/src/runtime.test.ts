@@ -103,17 +103,17 @@ describe('bindRequestFn / speedRequest', () => {
   })
 
   it('forwards a raw-byte response flag as the transport blob responseType', async () => {
-    // A byte-returning operation (objectstore's content download)
-    // declares responseType: 'blob'; the seam forwards it so the client
-    // reads the 2xx body as a Blob instead of JSON text.
+    // A byte-returning operation declares responseType: 'blob'; the seam
+    // forwards it so the client reads the 2xx body as a Blob instead of
+    // JSON text.
     await speedRequest<Blob>({
-      url: '/api/v1/objects/o-1/content',
+      url: '/api/v1/files/f-1/content',
       method: 'GET',
       responseType: 'blob',
     })
     expect(calls).toEqual([
       {
-        path: '/api/v1/objects/o-1/content',
+        path: '/api/v1/files/f-1/content',
         options: { method: 'GET', responseType: 'blob' },
       },
     ])

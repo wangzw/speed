@@ -41,14 +41,55 @@ type Store interface {
 	// Name reports the implementation's name, for diagnostics.
 	Name() string
 	// Put stores size bytes read from r under key. The reader is read once; an
-	// implementation does not hold onto it past the call.
+	// implementation does not hold onto it past the call. An implementation may
+	// refuse a stream whose length differs from size: the local-directory backend
+	// does, the S3 backend passes the value as the object's Content-Length.
 	Put(ctx context.Context, key string, r io.Reader, size int64) error
 	// Open returns a read-only stream over the bytes stored under key. The
 	// caller closes it.
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
+	// Stat reports what the backend holds under key without reading its body. A
+	// key the backend holds no bytes under reports an error wrapping
+	// ErrContentMissing; any other failure keeps the backend's own error.
+	Stat(ctx context.Context, key string) (Blob, error)
 	// Delete removes the bytes stored under key. It is idempotent: deleting
 	// bytes that are not there is not an error.
 	Delete(ctx context.Context, key string) error
+}
+
+// Blob is what a backend observes about the bytes stored under a key, without
+// reading them.
+type Blob struct {
+	// Size is the number of bytes the backend holds.
+	Size int64
+}
+
+// DirectURL is the capability a backend delivers when a browser can reach its
+// bytes without this process. It is a separate capability rather than a method
+// on Store: "where bytes land" is every backend's answer, "where a browser can
+// reach them" is only some backends'.
+//
+// A backend that delivers it declares so through Spec.Direct, and the value
+// Open returns implements both seams.
+type DirectURL interface {
+	// PresignRead answers an address that serves the bytes under key with the
+	// given media type and file name. No network call is made: the address is
+	// signed locally.
+	PresignRead(ctx context.Context, key string, p PresignParams) (IssuedURL, error)
+	// PresignWrite answers an address a client can PUT the bytes under key to.
+	PresignWrite(ctx context.Context, key string, p PresignParams) (IssuedURL, error)
+}
+
+// PresignParams is what a direct address is bound to. ContentType and Filename
+// apply to a read address only.
+type PresignParams struct {
+	// TTL is the lifetime asked for. A backend caps it at the maximum it
+	// honours and reports the granted instant in IssuedURL.Expires.
+	TTL time.Duration
+	// ContentType is the media type a read address serves the bytes as.
+	ContentType string
+	// Filename is the file name a read address offers the bytes under.
+	Filename string
 }
 
 // State is where an object stands in its lifecycle. The set is closed: an
@@ -98,7 +139,8 @@ type Object struct {
 	// MIME is the content type recorded at upload, taken from the declaration.
 	MIME string
 	// Checksum is the SHA-256 recorded at upload, computed from the bytes. It is
-	// empty before an upload.
+	// empty before an upload, and stays empty for an object completed from a
+	// direct-to-S3 upload, whose bytes never pass through this process.
 	Checksum string
 	// ExpiresAt is when the object expires, set at completion. It is nil when the
 	// object has no expiry.
@@ -107,6 +149,43 @@ type Object struct {
 	CreatedAt time.Time
 	// UpdatedAt is when the object's row last changed.
 	UpdatedAt time.Time
+}
+
+// URLAccess is what a minted URL lets its holder do.
+type URLAccess string
+
+const (
+	// URLAccessRead is a URL that serves an object's bytes.
+	URLAccessRead URLAccess = "read"
+	// URLAccessWrite is a URL a client may PUT an object's bytes to.
+	URLAccessWrite URLAccess = "write"
+)
+
+// URLRequest is what a caller states when it asks for a URL.
+type URLRequest struct {
+	// Access is which way the URL moves bytes.
+	Access URLAccess
+	// Expiry is how long the caller wants the URL to live. Zero takes the
+	// configured lifetime (objectstore.metadata.url-ttl). A positive value may
+	// only shorten it: the delivering module clamps it to the configured value,
+	// to the upload window or the object's remaining life, and to the backend's
+	// own maximum.
+	Expiry time.Duration
+}
+
+// IssuedURL is a direct-access address and the terms it was granted under. It
+// is a bearer capability until it expires: holding it is enough to use it, and
+// it dies only by expiring.
+//
+// The address is opaque. A caller uses it whole and parses no part of it.
+type IssuedURL struct {
+	// URL is the address to hand to the client.
+	URL string
+	// Method is the HTTP method the holder uses: "GET" for a read URL, "PUT"
+	// for a write URL.
+	Method string
+	// Expires is the instant the address stops working.
+	Expires time.Time
 }
 
 // Objects is the metadata and lifecycle seam, delivered exclusively by the
@@ -135,6 +214,8 @@ type Object struct {
 //   - OpenContent answers only for a completed object and returns a read-only
 //     stream over its bytes; a row that says completed while the backend holds
 //     no bytes is ErrContentMissing.
+//   - URL mints one direct-access address for this object's bytes, and reports
+//     the method and the instant it stops working.
 //   - List returns this tenant's undeleted objects in (created_at, id) order.
 //   - Delete removes the bytes and tombstones the row; it is idempotent on an
 //     already-deleted object.
@@ -144,6 +225,18 @@ type Objects interface {
 	Complete(ctx context.Context, id string) (Object, error)
 	Get(ctx context.Context, id string) (Object, error)
 	OpenContent(ctx context.Context, id string) (io.ReadCloser, error)
+	// URL mints one direct-access address for this object's bytes.
+	//
+	// URLAccessRead requires a completed object that is not past its expiry.
+	// URLAccessWrite requires a pending or uploaded object whose upload window
+	// is still open.
+	//
+	// Whether a given end user may have this URL is the caller's decision, made
+	// before this call: the method checks the tenant and the object's state and
+	// nothing about the end user. A minted URL is a bearer capability until it
+	// expires; this capability keeps no per-URL record of who it was minted for
+	// and offers no revocation.
+	URL(ctx context.Context, id string, req URLRequest) (IssuedURL, error)
 	List(ctx context.Context, q ListQuery) ([]Object, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -203,8 +296,9 @@ var (
 	// allow: completing an object that was never uploaded, reading one that was
 	// never completed, or uploading past the upload window.
 	ErrStateConflict = errors.New("objectstore: the object's state does not allow this action")
-	// ErrContentMissing reports a row that says completed while the backend holds
-	// no bytes for it.
+	// ErrContentMissing reports a backend that holds no bytes for the object: a
+	// row that says completed while the backend holds none, and the bytes never
+	// having arrived when Complete or Stat looks for them.
 	ErrContentMissing = errors.New("objectstore: the object's bytes are not in the backend")
 	// ErrStoreUnavailable reports a byte seam that is absent or a backend that is
 	// unreachable. A byte operation that fails keeps the backend's own error
@@ -218,4 +312,7 @@ var (
 	// Declaration whose shape is illegal, or an upload whose byte count differs
 	// from the declared size.
 	ErrInvalidRequest = errors.New("objectstore: the request's shape cannot be read")
+	// ErrURLUnavailable reports an assembly that cannot answer a URL: the
+	// assembled backend mints none and this process serves no content route.
+	ErrURLUnavailable = errors.New("objectstore: this process cannot mint a URL for the object")
 )

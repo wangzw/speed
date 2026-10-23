@@ -83,6 +83,7 @@ var expectedOwners = map[string]string{
 	"/api/v1/system/settings":    "admin",
 	"/api/v1/system/sms":         "admin",
 	"/api/v1/system/tenants":     "admin",
+	"/content":                   "content",
 }
 
 // expectedEndpoint answers which endpoint the table says answers a path on the
@@ -831,6 +832,10 @@ const splitEndpoints = `  endpoints:
     admin:
       listener: backend
       prefixes: ["/api/v1/system/audit", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
+    content:
+      listener: backend
+      prefixes: ["/content"]
+      max-body-bytes: 0
     ops:
       listener: ops
     web:

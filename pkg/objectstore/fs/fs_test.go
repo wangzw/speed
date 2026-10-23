@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/vislake/speed/pkg/objectstore"
 )
 
 // storeOver builds a backend over a fresh directory under the case's temporary
@@ -78,15 +80,119 @@ func TestPutCreatesMissingParentDirectories(t *testing.T) {
 }
 
 // TestPutOverwritesAnExistingKey holds the upload step's retry: a second Put to
-// one key replaces the bytes the first left.
+// one key replaces the bytes the first left, and the atomic replacement leaves
+// no temporary file behind.
 func TestPutOverwritesAnExistingKey(t *testing.T) {
-	s, _ := storeOver(t)
+	s, root := storeOver(t)
 	putBytes(t, s, "k", "the first byte set")
 	putBytes(t, s, "k", "the second")
 
 	if got := readAll(t, s, "k"); got != "the second" {
 		t.Errorf("read back %q, want the second byte set", got)
 	}
+	if leftovers := partFiles(t, root); len(leftovers) != 0 {
+		t.Errorf("the atomic replacement left temporary files behind: %v", leftovers)
+	}
+}
+
+// partFiles lists the temporary files a Put writes before renaming one into
+// place, under every directory of the root.
+func partFiles(t *testing.T, root string) []string {
+	t.Helper()
+	var found []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if !d.IsDir() && strings.Contains(d.Name(), ".part-") {
+			found = append(found, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the backend root: %v", err)
+	}
+	return found
+}
+
+// TestPutRefusesAShortStream holds the exact-size promise: a stream that ends
+// before the declared byte count is refused with the capability's invalid-request
+// sentinel, the target file is not created and the temporary file is removed, so
+// a caller never observes a partly written object.
+func TestPutRefusesAShortStream(t *testing.T) {
+	s, root := storeOver(t)
+	const key = "short/stream"
+	err := s.Put(t.Context(), key, strings.NewReader("abc"), 5)
+	if !errors.Is(err, objectstore.ErrInvalidRequest) {
+		t.Fatalf("Put of a short stream answered %v, want ErrInvalidRequest", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "short", "stream")); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("the target exists after a refused Put: %v", statErr)
+	}
+	if leftovers := partFiles(t, root); len(leftovers) != 0 {
+		t.Errorf("a refused Put left temporary files behind: %v", leftovers)
+	}
+}
+
+// TestPutRefusesAnOverlongStream holds the other side of the exact-size promise:
+// a stream carrying more than the declared byte count is refused the same way,
+// and again neither the target nor a temporary file remains.
+func TestPutRefusesAnOverlongStream(t *testing.T) {
+	s, root := storeOver(t)
+	const key = "long/stream"
+	err := s.Put(t.Context(), key, strings.NewReader("abcdef"), 3)
+	if !errors.Is(err, objectstore.ErrInvalidRequest) {
+		t.Fatalf("Put of an overlong stream answered %v, want ErrInvalidRequest", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "long", "stream")); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Errorf("the target exists after a refused Put: %v", statErr)
+	}
+	if leftovers := partFiles(t, root); len(leftovers) != 0 {
+		t.Errorf("a refused Put left temporary files behind: %v", leftovers)
+	}
+}
+
+// TestStatReportsTheStoredSize holds that Stat answers the number of bytes the
+// backend holds under a key without reading them.
+func TestStatReportsTheStoredSize(t *testing.T) {
+	s, _ := storeOver(t)
+	putBytes(t, s, "a/b/leaf", "twelve bytes")
+
+	blob, err := s.Stat(t.Context(), "a/b/leaf")
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if blob.Size != int64(len("twelve bytes")) {
+		t.Errorf("Stat answered %d bytes, want %d", blob.Size, len("twelve bytes"))
+	}
+}
+
+// TestStatOnAKeyWithNoBytesWrapsContentMissing holds the shape the completion
+// step reads: a key the backend holds no bytes under reports an error wrapping
+// objectstore.ErrContentMissing — both for a key under an existing root and for
+// one under a root that was never created.
+func TestStatOnAKeyWithNoBytesWrapsContentMissing(t *testing.T) {
+	t.Run("missing key", func(t *testing.T) {
+		s, _ := storeOver(t)
+		putBytes(t, s, "present", "bytes")
+
+		_, err := s.Stat(t.Context(), "absent")
+		if !errors.Is(err, objectstore.ErrContentMissing) {
+			t.Errorf("Stat of an absent key answered %v, want one wrapping ErrContentMissing", err)
+		}
+	})
+
+	t.Run("root not created", func(t *testing.T) {
+		s, _ := storeOver(t)
+
+		_, err := s.Stat(t.Context(), "absent")
+		if !errors.Is(err, objectstore.ErrContentMissing) {
+			t.Errorf("Stat under a root that does not exist answered %v, want one wrapping ErrContentMissing", err)
+		}
+	})
 }
 
 // TestDeleteIsIdempotent holds that deleting a key removes its bytes and that a
@@ -161,6 +267,9 @@ func TestAnIllegalKeyIsRefused(t *testing.T) {
 			if _, err := s.Open(t.Context(), key); !errors.Is(err, errInvalidKey) {
 				t.Errorf("Open(%q) answered %v, want errInvalidKey", key, err)
 			}
+			if _, err := s.Stat(t.Context(), key); !errors.Is(err, errInvalidKey) {
+				t.Errorf("Stat(%q) answered %v, want errInvalidKey", key, err)
+			}
 			if err := s.Delete(t.Context(), key); !errors.Is(err, errInvalidKey) {
 				t.Errorf("Delete(%q) answered %v, want errInvalidKey", key, err)
 			}
@@ -209,6 +318,9 @@ func TestACancelledContextIsRefused(t *testing.T) {
 	}
 	if _, err := s.Open(ctx, "k"); !errors.Is(err, context.Canceled) {
 		t.Errorf("Open answered %v, want context.Canceled", err)
+	}
+	if _, err := s.Stat(ctx, "k"); !errors.Is(err, context.Canceled) {
+		t.Errorf("Stat answered %v, want context.Canceled", err)
 	}
 	if err := s.Delete(ctx, "k"); !errors.Is(err, context.Canceled) {
 		t.Errorf("Delete answered %v, want context.Canceled", err)

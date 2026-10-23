@@ -1,7 +1,9 @@
 package metadata
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,20 +26,25 @@ const (
 	maxListLimit     = 200
 )
 
-// The internal key grammar. A key is two segments joined by the separator: the
-// tenant identifier and the object identifier. The caps are the widths the key
-// column's own length check declares.
+// The internal key grammar. A key is two random hexadecimal segments joined by
+// the separator: a shard and a name, the latter carrying the whole 128 bits of
+// randomness. The caps are the widths the key column's own length check
+// declares.
 //
 // The key is this module's private convention. It is generated at declaration,
-// never handed back through any API, and the module never parses it: the tenant
-// and the object identifier are read from their own columns, and the key is only
-// ever passed to the byte seam. Its caps are stated so that a key the module
-// mints cannot outgrow the column; a declaration whose tenant identifier is
-// long enough to breach them is refused rather than written.
+// never handed back through any API, and the module never parses it: the object
+// identifier is read from its own column, and the key is only ever passed to
+// the byte seam. It carries no tenant and no object identifier, so a backend
+// address that embeds the key (an S3 pre-signed URL is one) reveals nothing
+// internal. A row written before this grammar keeps its old key; both syntaxes
+// are opaque to every reader here, which never parses either.
 const (
 	keySeparator  = "/"
 	keySegmentMax = 128
 	keyMaxLen     = 256
+
+	shardBytes = 4
+	nameBytes  = 16
 )
 
 // object is the row shape of the objects table.
@@ -112,28 +119,48 @@ func msTimePtr(ms *int64) *time.Time {
 	return &t
 }
 
-// internalKey mints the internal key an object's bytes are stored under: the
-// tenant identifier and the object identifier, joined by the separator. It
-// refuses a segment or a whole key that leaves the caps the key column declares.
+// internalKey mints the internal key an object's bytes are stored under: a
+// random shard and a random name, joined by the separator. It refuses a segment
+// or a whole key that leaves the caps the key column declares; a randomly drawn
+// key never does, and the checks stand so that the grammar is stated where it is
+// built.
 //
-// The refusal is a request the module cannot act on, because the segment it
-// cannot fit is a tenant identifier the roster handed over. It never names the
-// key or a segment of it: the segments are the tenant and the object identifier,
-// and the latter is not this module's to print.
-func internalKey(tenantID tenant.ID, id string) (string, error) {
-	if err := checkSegment(string(tenantID)); err != nil {
+// The randomness is the point: the key carries no tenant and no object
+// identifier, so a backend address that embeds it (an S3 pre-signed URL does)
+// reveals nothing internal. A failure to read the system's random source is a
+// failure of the store, not a request the module cannot act on.
+func internalKey() (string, error) {
+	shard, err := randomHex(shardBytes)
+	if err != nil {
 		return "", err
 	}
-	if err := checkSegment(id); err != nil {
+	name, err := randomHex(nameBytes)
+	if err != nil {
 		return "", err
 	}
-	key := string(tenantID) + keySeparator + id
+	if err := checkSegment(shard); err != nil {
+		return "", err
+	}
+	if err := checkSegment(name); err != nil {
+		return "", err
+	}
+	key := shard + keySeparator + name
 	if len(key) > keyMaxLen {
-		return "", fmt.Errorf("%w: the internal key a %d-byte tenant identifier and a %d-byte object "+
-			"identifier build is %d bytes, above the %d the key column admits",
-			objectstore.ErrInvalidRequest, len(tenantID), len(id), len(key), keyMaxLen)
+		return "", fmt.Errorf("%w: the internal key the module minted is %d bytes, above the %d the key "+
+			"column admits", objectstore.ErrInvalidRequest, len(key), keyMaxLen)
 	}
 	return key, nil
+}
+
+// randomHex draws n random bytes and renders them as lowercase hexadecimal, so
+// one byte becomes two characters. A random source that cannot be read is the
+// store being unavailable: no key can be minted without it.
+func randomHex(n int) (string, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("%w: minting an internal key: %w", objectstore.ErrStoreUnavailable, err)
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // checkSegment refuses a segment that is empty, carries the separator, or

@@ -2,15 +2,13 @@ package main
 
 // The personal-tenant cases: the ensure's idempotence and eligibility at the
 // unit level, over stand-ins for the five seams, and the whole flow through the
-// program for the object routes it unblocks.
+// program for the tenant-scoped routes it unblocks.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,15 +34,6 @@ import (
 // The account the unit cases ensure for. It is not a UUID so the derived
 // identifier is easy to read in a failure message.
 const unitAccount = authn.AccountID("7c1e0f6a")
-
-// The permissions the unit cases' catalog declares. The object-store pair is
-// the one the integration case holds the tenant area to; the untranslatable one
-// stands for a declared permission with no (object, action) row.
-var (
-	unitObjectRead  authz.Permission = "objectstore.object.read"
-	unitObjectWrite authz.Permission = "objectstore.object.write"
-	unitUnmapped    authz.Permission = "unmapped.permission"
-)
 
 // fakeRoster is the tenant.Catalog the unit cases use. Get and Create are the
 // rows' store, and lagging hides a row Get would otherwise find, standing for a
@@ -294,24 +283,20 @@ func (s *fakeSeeder) SeedGrants(_ context.Context, tenantID string, role authz.R
 	return added, nil
 }
 
-// fakeCatalog is the authz.Catalog the unit cases use.
+// fakeCatalog is the authz.Catalog the unit cases use. The owner allowlist is
+// empty, so no permission is ever translated into a grant; the two methods
+// exist because the seam requires them, and they answer that nothing is
+// declared and nothing maps.
 type fakeCatalog struct {
 	authz.Catalog
 }
 
 func (fakeCatalog) Declared() []authz.Permission {
-	return []authz.Permission{unitObjectRead, unitObjectWrite, unitUnmapped}
+	return nil
 }
 
-func (fakeCatalog) ObjectAction(p authz.Permission) (string, string, bool) {
-	switch p {
-	case unitObjectRead:
-		return "object", "read", true
-	case unitObjectWrite:
-		return "object", "write", true
-	default:
-		return "", "", false
-	}
+func (fakeCatalog) ObjectAction(authz.Permission) (string, string, bool) {
+	return "", "", false
 }
 
 // fakeSignupVerification answers the acting account's self-registration state
@@ -419,14 +404,8 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	if seeder.seed != 2 {
 		t.Errorf("the grants were seeded %d time(s), want once per ensure", seeder.seed)
 	}
-	grants := seeder.grants.held(string(wantID), personalOwnerRole)
-	for _, want := range []authz.Grant{
-		{Resource: "object", Action: "read"},
-		{Resource: "object", Action: "write"},
-	} {
-		if !slices.Contains(grants, want) {
-			t.Errorf("the owner role does not hold %+v; it holds %v", want, grants)
-		}
+	if grants := seeder.grants.held(string(wantID), personalOwnerRole); len(grants) != 0 {
+		t.Errorf("the owner role holds %v, want the empty allowlist", grants)
 	}
 }
 
@@ -465,9 +444,8 @@ func TestEnsureCompletesAMidwayFailureOnTheNextCall(t *testing.T) {
 	if len(manager.roles[wantID]) != 1 {
 		t.Errorf("the owner role is not there after the completing call")
 	}
-	if held := seeder.grants.held(wantID, personalOwnerRole); len(held) != 2 {
-		t.Errorf("the owner role holds %d grant(s), want the two allowlisted permissions: %v",
-			len(held), held)
+	if held := seeder.grants.held(wantID, personalOwnerRole); len(held) != 0 {
+		t.Errorf("the owner role holds %d grant(s), want the empty allowlist: %v", len(held), held)
 	}
 	if len(manager.bindings[wantID]) != 1 {
 		t.Errorf("the account is not bound after the completing call")
@@ -703,8 +681,8 @@ func TestEnsureReadsBackThePersonalTenantBesideAnotherMembership(t *testing.T) {
 }
 
 // TestEnsureConvergesTheOwnersGrantsToTheAllowlist holds the reconciliation an
-// older tenant gets: a grant outside the host's allowlist is revoked on the
-// next ensure, and the allowlist's own grants stay.
+// older tenant gets: every grant the role holds is outside the host's allowlist,
+// which is empty, so the next ensure revokes all of them.
 func TestEnsureConvergesTheOwnersGrantsToTheAllowlist(t *testing.T) {
 	product, _, _, manager, seeder := unitProduct()
 	ctx := context.Background()
@@ -712,23 +690,25 @@ func TestEnsureConvergesTheOwnersGrantsToTheAllowlist(t *testing.T) {
 		t.Fatalf("the first ensure: %v", err)
 	}
 	id := string(personalTenantID(unitAccount))
-	extra := authz.Grant{Resource: "account", Action: "read"}
+	outer := []authz.Grant{
+		{Resource: "account", Action: "read"},
+		{Resource: "object", Action: "read"},
+	}
 	seeder.grants.mu.Lock()
-	seeder.grants.sets[id][personalOwnerRole][extra] = struct{}{}
+	for _, extra := range outer {
+		seeder.grants.sets[id][personalOwnerRole][extra] = struct{}{}
+	}
 	seeder.grants.mu.Unlock()
 
 	if _, err := product.ensure(ctx, unitAccount); err != nil {
 		t.Fatalf("the second ensure: %v", err)
 	}
-	if manager.deleted != 1 {
-		t.Errorf("the ensure revoked %d grant(s), want the one outside the allowlist", manager.deleted)
+	if manager.deleted != len(outer) {
+		t.Errorf("the ensure revoked %d grant(s), want the %d outside the allowlist",
+			manager.deleted, len(outer))
 	}
-	held := seeder.grants.held(id, personalOwnerRole)
-	if len(held) != 2 {
-		t.Errorf("the owner role holds %v, want the allowlist's two grants", held)
-	}
-	if slices.Contains(held, extra) {
-		t.Errorf("the grant outside the allowlist survived: %v", held)
+	if held := seeder.grants.held(id, personalOwnerRole); len(held) != 0 {
+		t.Errorf("the owner role holds %v, want the empty allowlist", held)
 	}
 }
 
@@ -1102,12 +1082,13 @@ type personalCallReply struct {
 	Created bool `json:"created"`
 }
 
-// TestThePersonalTenantUnblocksTheObjectRoutes is the fail-before case: an
-// account with no membership reads the object list as a 404, the ensure creates
-// its personal tenant, and upload, list and delete then succeed under that
+// TestThePersonalTenantUnblocksTheTenantScopedRoutes is the fail-before case:
+// an account with no membership reads a tenant-scoped route as a 404, the ensure
+// creates its personal tenant, and the same read then succeeds under that
 // tenant. A second ensure after the fact, which is what a page reload makes,
-// reads the same tenant back.
-func TestThePersonalTenantUnblocksTheObjectRoutes(t *testing.T) {
+// reads the same tenant back. The object store's client-facing routes are gone,
+// so an account with a tenant still reaches no object API.
+func TestThePersonalTenantUnblocksTheTenantScopedRoutes(t *testing.T) {
 	base, token := personalServe(t, true)
 	client := &http.Client{Timeout: 10 * time.Second}
 
@@ -1117,8 +1098,8 @@ func TestThePersonalTenantUnblocksTheObjectRoutes(t *testing.T) {
 		"Authorization": "Bearer " + token,
 		"X-Tenant":      "demo",
 	}
-	if res := send(t, client, http.MethodGet, base+"/api/v1/objects", nil, noMembership); res.status != http.StatusNotFound {
-		t.Fatalf("the object list before the ensure answered %d, want the admission layer's 404:\n%s",
+	if res := send(t, client, http.MethodGet, base+"/api/v1/notifications/messages", nil, noMembership); res.status != http.StatusNotFound {
+		t.Fatalf("the inbox before the ensure answered %d, want the admission layer's 404:\n%s",
 			res.status, res.body)
 	}
 
@@ -1157,14 +1138,14 @@ func TestThePersonalTenantUnblocksTheObjectRoutes(t *testing.T) {
 			second, reply.Tenant.ID)
 	}
 
-	// The tenant's owner holds the host's allowlist, the object store's pair
-	// included: the tenant-scoped object routes work.
+	// The membership the ensure wrote is what the admission layer reads: the
+	// same tenant-scoped read now answers for the personal tenant.
 	tenantHeaders := map[string]string{
 		"Authorization": "Bearer " + token,
 		"X-Tenant":      reply.Tenant.Alias,
 	}
-	if res := send(t, client, http.MethodGet, base+"/api/v1/objects", nil, tenantHeaders); res.status != http.StatusOK {
-		t.Fatalf("the object list after the ensure answered %d, want 200:\n%s", res.status, res.body)
+	if res := send(t, client, http.MethodGet, base+"/api/v1/notifications/messages", nil, tenantHeaders); res.status != http.StatusOK {
+		t.Fatalf("the inbox after the ensure answered %d, want 200:\n%s", res.status, res.body)
 	}
 
 	// The conditional feature is posted while the route is mounted: it is what
@@ -1184,62 +1165,16 @@ func TestThePersonalTenantUnblocksTheObjectRoutes(t *testing.T) {
 			personalFeature, features.body)
 	}
 
-	body := []byte("hello")
-	declared := send(t, client, http.MethodPost, base+"/api/v1/objects", map[string]any{
-		"name":         "personal.txt",
-		"size":         len(body),
-		"content_type": "text/plain",
-	}, tenantHeaders)
-	if declared.status != http.StatusCreated {
-		t.Fatalf("declaring an object answered %d, want 201:\n%s", declared.status, declared.body)
-	}
-	var declaration struct {
-		Object struct {
-			ID string `json:"id"`
-		} `json:"object"`
-	}
-	if err := json.Unmarshal(declared.body, &declaration); err != nil || declaration.Object.ID == "" {
-		t.Fatalf("reading the declaration's object: %v\n%s", err, declared.body)
-	}
-
-	uploaded := sendBytes(t, client, http.MethodPut,
-		base+"/api/v1/objects/"+declaration.Object.ID+"/content", body, map[string]string{
-			"Authorization": "Bearer " + token,
-			"X-Tenant":      reply.Tenant.Alias,
-			"Content-Type":  "application/octet-stream",
-		})
-	if uploaded.status != http.StatusNoContent {
-		t.Fatalf("uploading the object answered %d, want 204:\n%s", uploaded.status, uploaded.body)
-	}
-	completed := send(t, client, http.MethodPost,
-		base+"/api/v1/objects/"+declaration.Object.ID+"/complete", nil, tenantHeaders)
-	if completed.status != http.StatusOK {
-		t.Fatalf("completing the object answered %d, want 200:\n%s", completed.status, completed.body)
-	}
-	list := send(t, client, http.MethodGet, base+"/api/v1/objects", nil, tenantHeaders)
-	if list.status != http.StatusOK {
-		t.Fatalf("listing the objects answered %d, want 200:\n%s", list.status, list.body)
-	}
-	var listed struct {
-		Objects []struct {
-			ID string `json:"id"`
-		} `json:"objects"`
-	}
-	if err := json.Unmarshal(list.body, &listed); err != nil {
-		t.Fatalf("the object list is not JSON: %v\n%s", err, list.body)
-	}
-	found := false
-	for _, object := range listed.Objects {
-		if object.ID == declaration.Object.ID {
-			found = true
+	// The object store answers no client-facing route in either scope: its
+	// bytes are reached through a URL the business backend mints.
+	for _, gone := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/objects"},
+		{http.MethodGet, "/api/v1/objects"},
+	} {
+		if res := send(t, client, gone.method, base+gone.path, nil, tenantHeaders); res.status != http.StatusNotFound {
+			t.Errorf("%s %s under the personal tenant answered %d, want the absent route's 404:\n%s",
+				gone.method, gone.path, res.status, res.body)
 		}
-	}
-	if !found {
-		t.Errorf("the listed objects do not carry %q:\n%s", declaration.Object.ID, list.body)
-	}
-	if res := send(t, client, http.MethodDelete,
-		base+"/api/v1/objects/"+declaration.Object.ID, nil, tenantHeaders); res.status != http.StatusNoContent {
-		t.Fatalf("deleting the object answered %d, want 204:\n%s", res.status, res.body)
 	}
 }
 
@@ -1311,7 +1246,8 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	operatorAuth := map[string]string{"Authorization": "Bearer " + operatorToken}
 
 	// The role's grants, read by the administrator through the policy surface,
-	// are the allowlist's two (object, action) pairs and nothing else.
+	// are the host's allowlist and nothing else — and the allowlist is empty, so
+	// the owner holds no permission at all.
 	grants := send(t, client, http.MethodGet,
 		base+"/api/v1/system/tenants/"+personalID+"/roles/"+string(personalOwnerRole)+"/grants",
 		nil, operatorAuth)
@@ -1327,18 +1263,8 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	if err := json.Unmarshal(grants.body, &listed); err != nil {
 		t.Fatalf("the grant list is not JSON: %v\n%s", err, grants.body)
 	}
-	held := make(map[string]bool, len(listed.Grants))
-	for _, grant := range listed.Grants {
-		held[grant.Resource+"/"+grant.Action] = true
-	}
-	want := map[string]bool{"object/read": true, "object/write": true}
-	if len(held) != len(want) {
-		t.Errorf("the owner role holds %v, want exactly the allowlist %v", held, want)
-	}
-	for pair := range want {
-		if !held[pair] {
-			t.Errorf("the owner role does not hold the allowlisted %q; it holds %v", pair, held)
-		}
+	if len(listed.Grants) != 0 {
+		t.Errorf("the owner role holds %+v, want the empty allowlist", listed.Grants)
 	}
 
 	// The administrator's account identifier, to attempt a membership write
@@ -1399,30 +1325,6 @@ func TestThePersonalTenantRouteIsAbsentWithTheSwitchOff(t *testing.T) {
 		t.Errorf("the feature document with the switch off carries %q: %s",
 			personalFeature, features.body)
 	}
-}
-
-// sendBytes sends a request whose body is the raw bytes, not JSON.
-func sendBytes(t *testing.T, client *http.Client, method, url string, body []byte,
-	headers map[string]string,
-) response {
-	t.Helper()
-	req, err := http.NewRequest(method, url, bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("building %s %s: %v", method, url, err)
-	}
-	for name, value := range headers {
-		req.Header.Set(name, value)
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, url, err)
-	}
-	defer func() { _ = res.Body.Close() }()
-	answer, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Fatalf("reading the body of %s %s: %v", method, url, err)
-	}
-	return response{status: res.StatusCode, body: answer}
 }
 
 // signupOf narrows the product's verification read to the fake the unit cases

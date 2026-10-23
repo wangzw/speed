@@ -2,10 +2,15 @@
 
 The local-directory backend of the object-storage byte seam, registered as
 `objectstore.fs`. It delivers `objectstore.Store` exclusively: an object's bytes
-land as files under one directory, reading returns a file's contents and
-deleting removes the file. A host writes this module's name into a command; the
-byte seam is delivered exclusively, so a command names exactly one backend and
-two at once fail in resolution.
+land as files under one directory, reading returns a file's contents, stat
+reports their size and deleting removes the file. A host writes this module's
+name into a command; the byte seam is delivered exclusively, so a command names
+exactly one backend and two at once fail in resolution.
+
+It does not deliver `objectstore.DirectURL` (`Spec.Direct` is false): only the
+process that can reach the directory can serve its bytes, so a browser reaches
+them through the content route the metadata module mounts, not through an address
+this backend mints. The backend holds no key material of any kind.
 
 The whole package depends on the standard library and the `pkg/objectstore` root
 package alone, so an assembly that uses only a local directory carries no
@@ -30,18 +35,26 @@ rule.
 
 ## The byte seam
 
-`Store` is `Name`, `Put`, `Open`, `Delete`. Every method reaches the file system
-and returns once it has answered; nothing is queued and nothing is retried. A
-failure keeps the file system's own error wrapped inside it (`%w`), which the
-metadata module is what turns into the capability's unavailable sentinel.
+`Store` is `Name`, `Put`, `Open`, `Stat`, `Delete`. Every method reaches the
+file system and returns once it has answered; nothing is queued and nothing is
+retried. A failure keeps the file system's own error wrapped inside it (`%w`),
+which the metadata module is what turns into the capability's unavailable
+sentinel.
 
-- **`Put`** writes the bytes read from the reader under the key, creating the
-  root and any missing parent directory. The reader is read once and is not held
-  past the call, so the store may be used from several goroutines at once. A
-  second `Put` to the same key overwrites the first; the seam carries a byte
-  length but this backend writes the stream as it arrives and ignores it.
+- **`Put`** writes exactly the declared number of bytes under the key, creating
+  the root and any missing parent directory. The bytes go to a temporary name
+  beside the target and are renamed into place once the stream has ended, so a
+  reader never observes a partly written object: a stream that ends before the
+  declared size, or carries more than it, is refused with
+  `objectstore.ErrInvalidRequest` and leaves neither the target nor the temporary
+  file behind. The reader is read once and is not held past the call, so the
+  store may be used from several goroutines at once. A second `Put` to the same
+  key replaces the first atomically.
 - **`Open`** returns a read-only stream the caller closes. A key with no bytes
   behind it reports a not-exist error.
+- **`Stat`** reports the size of the file a key maps to without reading it. A key
+  with no bytes behind it — including one under a root that does not exist yet —
+  reports an error wrapping `objectstore.ErrContentMissing`.
 - **`Delete`** removes the bytes under the key and is idempotent: deleting bytes
   that are not there is not an error.
 - **`Name`** reports `fs`, for diagnostics.
@@ -90,6 +103,8 @@ Run `golangci-lint` from `pkg`, never from the workspace root with an absolute
 path: run from outside the module it loads no package and still exits 0.
 
 The cases need no real store: `fs_test.go` exercises the store over a temporary
-directory (round-trip, idempotent `Delete`, refused keys, context, concurrency),
-`module_test.go` drives the real configuration loader for the required item, and
-`module_test.go` drives a real registry through the descriptor to `Init`.
+directory (round-trip, `Stat` present and missing, the exact-size `Put` with
+short and over-long streams, atomic replacement, idempotent `Delete`, refused
+keys, context, concurrency), and `module_test.go` drives the real configuration
+loader for the required item and a real registry through the descriptor to
+`Init`.

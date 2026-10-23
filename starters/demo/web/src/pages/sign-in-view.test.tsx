@@ -313,7 +313,7 @@ describe('the sign-in surface', () => {
     // Start away from the root: the wait below can then only succeed when
     // the completion actually navigated to the tenant home, not because the
     // page happened to stay where it was.
-    window.history.replaceState({}, '', '/objects')
+    window.history.replaceState({}, '', ACCOUNT_PATH)
     const harness = makeHarness({
       // The deployment serves workspace.personal: the register mode's
       // landing is the tenant home rather than the setup page.

@@ -187,7 +187,8 @@ func TestUploadWindowClosedIsAStateConflict(t *testing.T) {
 
 // TestCompleteIsIdempotentAndRefusesStatesItCannotComplete holds both idempotent
 // and refusing paths of Complete: a re-completion of a completed row returns it
-// unchanged, and a pending row is a state conflict.
+// unchanged, and a pending row the backend holds no bytes for is ErrContentMissing
+// — completion now really looks at the bytes.
 func TestCompleteIsIdempotentAndRefusesStatesItCannotComplete(t *testing.T) {
 	forEachEngine(t, func(t *testing.T, e engine) {
 		h := e.on(t, harness{})
@@ -195,13 +196,13 @@ func TestCompleteIsIdempotentAndRefusesStatesItCannotComplete(t *testing.T) {
 			objects := objectsOf(t, reg)
 			tctx := tenantCtx(t, reg, "acme")
 
-			// A pending row cannot be completed.
+			// A pending row whose bytes never arrived is ErrContentMissing.
 			pending, err := objects.Create(tctx, objectstore.Declaration{Size: 1, ContentType: "text/plain"})
 			if err != nil {
 				t.Fatalf("declaring: %v", err)
 			}
-			if _, cErr := objects.Complete(tctx, pending.ID); !errors.Is(cErr, objectstore.ErrStateConflict) {
-				t.Fatalf("completing a pending object gave %v, want ErrStateConflict", cErr)
+			if _, cErr := objects.Complete(tctx, pending.ID); !errors.Is(cErr, objectstore.ErrContentMissing) {
+				t.Fatalf("completing a pending object with no bytes gave %v, want ErrContentMissing", cErr)
 			}
 
 			// Complete the same object twice: the second call returns it unchanged.

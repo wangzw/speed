@@ -60,8 +60,6 @@ import type {
   NotificationInboxListMessages200,
   NotificationMessage,
   NotificationType,
-  ObjectstoreMetadataListObjects200,
-  ObjectstoreObject,
   SettingsAdminSetting,
   SmsAdminTemplatesList200,
   TenantAdminTenant,
@@ -172,17 +170,6 @@ const NOTIFICATION_TYPE: NotificationType = {
   default_channels: ['in_app'],
   unsubscribable: false,
   recipient_visible_params: [],
-}
-
-const OBJECT: ObjectstoreObject = {
-  id: 'obj-1',
-  name: 'example.txt',
-  state: 'uploaded',
-  size: 1024,
-  mime: 'text/plain',
-  checksum_sha256: 'a'.repeat(64),
-  created_at: INSTANT,
-  updated_at: INSTANT,
 }
 
 const PROFILE: AuthnProfileProfile = {
@@ -351,10 +338,6 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
       ],
     } satisfies AuthnMfaFactorList,
     { factors: [] } satisfies AuthnMfaFactorList,
-  ),
-  '/api/v1/objects': answer(
-    { objects: [OBJECT], next_cursor: '' } satisfies ObjectstoreMetadataListObjects200,
-    { objects: [], next_cursor: '' } satisfies ObjectstoreMetadataListObjects200,
   ),
   '/api/v1/notifications/messages': answer(
     { messages: [NOTIFICATION_MESSAGE], total: 1 } satisfies NotificationInboxListMessages200,

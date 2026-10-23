@@ -6,7 +6,7 @@
  * plain click, routing there without a reload. A card that declares a platform
  * permission -- the console card, held to the same code the header entry uses
  * -- is offered only to a principal that holds it and stays hidden while the
- * permission set is unknown. The member-facing cards (account, objects,
+ * permission set is unknown. The member-facing cards (account,
  * notifications) declare no permission and are offered to every signed-in
  * viewer.
  */
@@ -25,7 +25,6 @@ import {
   ACCOUNT_PATH,
   CONSOLE_PREFIX,
   NOTIFICATIONS_PATH,
-  OBJECTS_PATH,
 } from '../paths.js'
 
 beforeEach(() => {
@@ -73,10 +72,6 @@ describe('the start page', () => {
       'href',
       CONSOLE_PREFIX,
     )
-    expect(cardFor(demoEnUS.home.cards.objects.title)).toHaveAttribute(
-      'href',
-      OBJECTS_PATH,
-    )
     expect(cardFor(demoEnUS.home.cards.notifications.title)).toHaveAttribute(
       'href',
       NOTIFICATIONS_PATH,
@@ -97,10 +92,6 @@ describe('the start page', () => {
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
       'href',
       ACCOUNT_PATH,
-    )
-    expect(cardFor(demoEnUS.home.cards.objects.title)).toHaveAttribute(
-      'href',
-      OBJECTS_PATH,
     )
     expect(cardFor(demoEnUS.home.cards.notifications.title)).toHaveAttribute(
       'href',
@@ -124,10 +115,6 @@ describe('the start page', () => {
     expect(cardFor(demoEnUS.home.cards.account.title)).toHaveAttribute(
       'href',
       ACCOUNT_PATH,
-    )
-    expect(cardFor(demoEnUS.home.cards.objects.title)).toHaveAttribute(
-      'href',
-      OBJECTS_PATH,
     )
     expect(cardFor(demoEnUS.home.cards.notifications.title)).toHaveAttribute(
       'href',

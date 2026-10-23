@@ -62,28 +62,6 @@ export function AccountNavIcon({ size = 24 }: IconProps) {
   )
 }
 
-/** Object storage: a box. */
-export function ObjectsNavIcon({ size = 24 }: IconProps) {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 3.5 19 7.5v9L12 20.5 5 16.5v-9z" />
-      <path d="M5 7.5 12 11.5l7-4" />
-      <path d="M12 11.5v9" />
-    </svg>
-  )
-}
-
 /** The notification centre: a bell. */
 export function NotificationsNavIcon({ size = 24 }: IconProps) {
   return (

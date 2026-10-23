@@ -19,11 +19,19 @@
 // literal redaction rules by the factory before this package's Open builds the
 // client.
 //
-// Every byte operation logs the call it makes to the service once, success or
+// It delivers the direct-URL capability beside the byte seam: a browser can
+// reach an object's bytes through a signed address that does not pass through
+// this process. The read address carries the media type and file name the
+// caller asked for as response overrides, and the write address is a presigned
+// PUT. A lifetime outside a second and seven days is refused rather than handed
+// to the SDK.
+//
+// Every byte operation and every signing call is logged once, success or
 // failure, with the operation, the bucket, a hash of the internal key, its
 // duration and, on a failure, the cause and the service's status — so an
 // unreachable service or a refused call can be told apart after the fact. The
-// key itself, the object's bytes and the credentials reach no field of that
+// key itself, the object's bytes, the credentials and a signed address — which
+// carries the object key and the access-key identifier — reach no field of that
 // line.
 package s3
 
@@ -35,6 +43,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -80,7 +90,11 @@ func Module() core.Module {
 		Items:           items(),
 		Stance:          stance,
 		Secrets:         secrets,
-		Open:            open,
+		// The S3 backend can hand a browser an address that reaches the bucket
+		// without this process, so it declares the direct-URL capability beside
+		// the byte seam.
+		Direct: true,
+		Open:   open,
 	})
 }
 
@@ -174,8 +188,20 @@ type store struct {
 	logger *slog.Logger
 }
 
-// store must satisfy the seam it delivers.
-var _ objectstore.Store = (*store)(nil)
+// store must satisfy the seams it delivers.
+var (
+	_ objectstore.Store     = (*store)(nil)
+	_ objectstore.DirectURL = (*store)(nil)
+)
+
+// The lifetime bounds a signed address is honoured within. SigV4 presigning
+// accepts no less than a second and no more than seven days, and the capability
+// keeps the same bounds on the local-directory backend's content route so both
+// backends expire a URL by the same rule.
+const (
+	minPresignTTL = time.Second
+	maxPresignTTL = 7 * 24 * time.Hour
+)
 
 // Name reports the name this backend answers under. It is a constant: the
 // assembly names exactly one backend, and the name identifies it in a diagnostic.
@@ -294,6 +320,117 @@ func (s *store) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// Stat reports what the bucket holds under key without reading the object's
+// body, through a HEAD on the object.
+//
+// An object the bucket does not hold reports an error wrapping
+// objectstore.ErrContentMissing, which is the shape the metadata module's
+// completion step reads; any other failure — a refused call, an unreachable
+// service — keeps the SDK's own error.
+func (s *store) Stat(ctx context.Context, key string) (objectstore.Blob, error) {
+	if err := ctx.Err(); err != nil {
+		return objectstore.Blob{}, err
+	}
+	started := time.Now()
+	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	s.logCall("stat", key, time.Since(started), err)
+	if err != nil {
+		if missingFromService(err) {
+			return objectstore.Blob{}, fmt.Errorf("%w: the bucket holds no object under the key",
+				objectstore.ErrContentMissing)
+		}
+		return objectstore.Blob{}, fmt.Errorf("reading the object's size: %w", err)
+	}
+	return objectstore.Blob{Size: info.Size}, nil
+}
+
+// missingFromService reports whether a failed call says the object is not there:
+// the service answered NoSuchKey or NoSuchObject, or a 404.
+func missingFromService(err error) bool {
+	resp := minio.ToErrorResponse(err)
+	switch resp.Code {
+	case "NoSuchKey", "NoSuchObject":
+		return true
+	}
+	return resp.StatusCode == http.StatusNotFound
+}
+
+// PresignRead answers a signed address that serves the object's bytes under key
+// with the given media type and file name.
+//
+// The address is signed locally, so no request reaches the service here. The
+// media type and file name are carried as response overrides, so the bucket
+// serves the bytes with them rather than with whatever the object was stored
+// as; an empty file name adds no disposition override.
+func (s *store) PresignRead(ctx context.Context, key string, p objectstore.PresignParams) (objectstore.IssuedURL, error) {
+	if err := checkPresignTTL(p.TTL); err != nil {
+		return objectstore.IssuedURL{}, err
+	}
+	params := url.Values{}
+	if p.ContentType != "" {
+		params.Set("response-content-type", p.ContentType)
+	}
+	if disposition := contentDisposition(p.Filename); disposition != "" {
+		params.Set("response-content-disposition", disposition)
+	}
+	started := time.Now()
+	signed, err := s.client.PresignedGetObject(ctx, s.bucket, key, p.TTL, params)
+	s.logCall("presign-read", key, time.Since(started), err)
+	if err != nil {
+		return objectstore.IssuedURL{}, fmt.Errorf("%w: signing a read address: %w", objectstore.ErrURLUnavailable, err)
+	}
+	return objectstore.IssuedURL{
+		URL:     signed.String(),
+		Method:  http.MethodGet,
+		Expires: started.Add(p.TTL),
+	}, nil
+}
+
+// PresignWrite answers a signed address a client can PUT the object's bytes to
+// under key.
+//
+// No request header is signed: a presigned PUT binds the method, the object key
+// and the expiry, and a Content-Length cannot be expressed in one, so the size
+// is what the completion step's Stat checks.
+func (s *store) PresignWrite(ctx context.Context, key string, p objectstore.PresignParams) (objectstore.IssuedURL, error) {
+	if err := checkPresignTTL(p.TTL); err != nil {
+		return objectstore.IssuedURL{}, err
+	}
+	started := time.Now()
+	signed, err := s.client.PresignedPutObject(ctx, s.bucket, key, p.TTL)
+	s.logCall("presign-write", key, time.Since(started), err)
+	if err != nil {
+		return objectstore.IssuedURL{}, fmt.Errorf("%w: signing a write address: %w", objectstore.ErrURLUnavailable, err)
+	}
+	return objectstore.IssuedURL{
+		URL:     signed.String(),
+		Method:  http.MethodPut,
+		Expires: started.Add(p.TTL),
+	}, nil
+}
+
+// checkPresignTTL refuses a lifetime a signed address cannot carry, so the
+// SDK's own rejection never escapes: the bounds are a second at the least and
+// seven days at the most.
+func checkPresignTTL(ttl time.Duration) error {
+	if ttl < minPresignTTL || ttl > maxPresignTTL {
+		return fmt.Errorf("%w: the requested lifetime %s is outside [%s, %s]",
+			objectstore.ErrURLUnavailable, ttl, minPresignTTL, maxPresignTTL)
+	}
+	return nil
+}
+
+// contentDisposition renders the header a read address offers the bytes under:
+// an inline disposition carrying the file name. The name is escaped by the
+// standard library, never spliced in as written. An empty name renders nothing,
+// so the header is omitted.
+func contentDisposition(filename string) string {
+	if filename == "" {
+		return ""
+	}
+	return mime.FormatMediaType("inline", map[string]string{"filename": filename})
+}
+
 // logCall records one call the backend made to the service on the module's own
 // logger.
 //
@@ -308,7 +445,8 @@ func (s *store) Delete(ctx context.Context, key string) error {
 // bucket, the key's hash and the duration, or outcome "failed" with the same
 // fields plus the cause and, when the service answered, its HTTP status. The
 // extra arguments follow the common fields — the declared size on a put, the
-// observed size on an open. A call the context ended before it was made writes
+// observed size on an open. The stat and presign operations pass none: their
+// line carries the common fields alone, and a signed address never reaches it. A call the context ended before it was made writes
 // no line: no request left the process. The body read that follows Open is the
 // exception: it is reported by objectStream as its own "read" call, so a
 // transfer that breaks after Open returned still leaves a failure line.

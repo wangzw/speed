@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -15,7 +16,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vislake/speed/pkg/objectstore"
-	"github.com/vislake/speed/pkg/tenant"
 )
 
 // The states an object's row carries, as the strings the columns hold.
@@ -35,8 +35,8 @@ var (
 // value, and a name that is malformed, empty or reduced to nothing stores as
 // the empty string rather than failing the declaration. A declaration that
 // fails validation is refused and lands no row. The tenant column is filled
-// from the context by the model's own filter, and a context carrying no tenant
-// is refused before the key is minted, because the key needs the tenant.
+// from the context by the model's own filter, so a context carrying no tenant
+// is refused by the insert.
 //
 // The upload window is read from the settings store here, at each declaration,
 // so a value written while the process runs is what the next object records.
@@ -44,12 +44,8 @@ func (p *product) Create(ctx context.Context, d objectstore.Declaration) (object
 	if err := validateDeclaration(d); err != nil {
 		return objectstore.Object{}, err
 	}
-	tenantID, ok := tenant.FromContext(ctx)
-	if !ok {
-		return objectstore.Object{}, fmt.Errorf("%w: the request carries no tenant", tenant.ErrNoTenantInContext)
-	}
 	id := uuid.NewString()
-	key, err := internalKey(tenantID, id)
+	key, err := internalKey()
 	if err != nil {
 		return objectstore.Object{}, err
 	}
@@ -100,39 +96,69 @@ func (p *product) Upload(ctx context.Context, id string, r io.Reader, size int64
 		return fmt.Errorf("%w: the upload carries %d bytes and the object %s declared %d",
 			objectstore.ErrInvalidRequest, size, id, row.DeclaredSize)
 	}
-	observed := newHashingReader(r)
+	return p.storeUpload(ctx, row, r, size)
+}
+
+// storeUpload streams bytes into the seam and advances the row to uploaded. It
+// is the one write path the in-process Upload and the content route's PUT share,
+// so the two record the same observed size, SHA-256 and MIME under the same
+// rules.
+//
+// It computes the SHA-256 while it writes and compares it with a declared one
+// when there is one: a body that hashes elsewhere is not the declared object, so
+// its bytes are removed — best effort, the sweep would catch them otherwise —
+// and the call is a request the module cannot act on. A byte-seam failure is
+// ErrStoreUnavailable. The conditional advance covers a row that changed state
+// while the bytes were being written.
+func (p *product) storeUpload(ctx context.Context, row *object, source io.Reader, size int64) error {
+	observed := newHashingReader(source)
 	if err := p.bytes.Put(ctx, row.Key, observed, size); err != nil {
-		return fmt.Errorf("%w: storing the object %s's bytes: %w", objectstore.ErrStoreUnavailable, id, err)
+		return fmt.Errorf("%w: storing the object %s's bytes: %w", objectstore.ErrStoreUnavailable, row.ID, err)
+	}
+	if row.DeclaredChecksum != "" && !strings.EqualFold(row.DeclaredChecksum, observed.sum()) {
+		if delErr := p.bytes.Delete(ctx, row.Key); delErr != nil {
+			p.logger.Warn(ModuleName+": the bytes of an object whose declared checksum did not match could "+
+				"not be removed; the sweep will try again", "object", row.ID, "error", delErr)
+		}
+		return fmt.Errorf("%w: the object %s's bytes do not match its declared checksum",
+			objectstore.ErrInvalidRequest, row.ID)
 	}
 	advanced := p.handle.WithContext(ctx).Model(&object{}).
-		Where("id = ? AND state IN ?", id, []string{statePending, stateUploaded}).
+		Where("id = ? AND state IN ?", row.ID, []string{statePending, stateUploaded}).
 		Updates(map[string]any{
 			"state":           stateUploaded,
 			"size":            observed.count,
 			"checksum_sha256": observed.sum(),
 			"mime":            row.DeclaredType,
-			"updated_at":      now,
+			"updated_at":      time.Now().UnixMilli(),
 		})
 	if advanced.Error != nil {
-		return fmt.Errorf("%s: advancing the object %s to uploaded: %w", ModuleName, id, advanced.Error)
+		return fmt.Errorf("%s: advancing the object %s to uploaded: %w", ModuleName, row.ID, advanced.Error)
 	}
 	if advanced.RowsAffected == 0 {
 		return fmt.Errorf("%w: the object %s changed state while its bytes were being stored",
-			objectstore.ErrStateConflict, id)
+			objectstore.ErrStateConflict, row.ID)
 	}
 	return nil
 }
 
 // Complete moves an object to completed; see objectstore.Objects.
 //
-// A pending row is refused as a state conflict: it was never uploaded. A deleted
-// row is answered as not found, the same as an unknown identifier: it is gone
-// rather than in a state this call could move it out of. A completed row is
-// returned unchanged, its expiry left as it was. An uploaded row is advanced to
-// completed with an expiry taken from the object lifetime when one is set, in
-// one conditional statement. The lifetime is read from the settings store here,
-// at each completion, so a value written while the process runs is what the
-// next completion records.
+// A deleted row is answered as not found, the same as an unknown identifier: it
+// is gone rather than in a state this call could move it out of. A completed row
+// is returned unchanged, its expiry left as it was, and no byte is looked at:
+// completion is idempotent. A pending or uploaded row is completed only when the
+// backend really holds the declared number of bytes, which is what lets a
+// direct-to-backend upload finish through this call.
+//
+// The bytes are observed with Stat, never read. A backend that holds none is
+// ErrContentMissing, the bytes never having arrived. A byte count that differs
+// from the declaration has its bytes removed — best effort, the sweep would catch
+// them otherwise — and is a request the module cannot act on, with the row left
+// in its state for a retry. An unreachable backend is ErrStoreUnavailable.
+//
+// The lifetime is read from the settings store here, at each completion, so a
+// value written while the process runs is what the next completion records.
 func (p *product) Complete(ctx context.Context, id string) (objectstore.Object, error) {
 	row, err := p.load(ctx, id)
 	if err != nil {
@@ -141,12 +167,27 @@ func (p *product) Complete(ctx context.Context, id string) (objectstore.Object, 
 	switch objectstore.State(row.State) {
 	case objectstore.StateDeleted:
 		return objectstore.Object{}, fmt.Errorf("%w: the object %s is deleted", objectstore.ErrObjectNotFound, id)
-	case objectstore.StatePending:
-		return objectstore.Object{}, fmt.Errorf("%w: the object %s is pending and cannot be completed",
-			objectstore.ErrStateConflict, id)
 	case objectstore.StateCompleted:
 		return row.view(), nil
 	}
+
+	blob, err := p.bytes.Stat(ctx, row.Key)
+	switch {
+	case errors.Is(err, objectstore.ErrContentMissing):
+		return objectstore.Object{}, fmt.Errorf("%w: the object %s was never uploaded",
+			objectstore.ErrContentMissing, id)
+	case err != nil:
+		return objectstore.Object{}, fmt.Errorf("%w: observing the object %s's bytes: %w",
+			objectstore.ErrStoreUnavailable, id, err)
+	case blob.Size != row.DeclaredSize:
+		if delErr := p.bytes.Delete(ctx, row.Key); delErr != nil {
+			p.logger.Warn(ModuleName+": the bytes of an object whose size did not match its declaration "+
+				"could not be removed; the sweep will try again", "object", id, "error", delErr)
+		}
+		return objectstore.Object{}, fmt.Errorf("%w: the backend holds %d bytes for the object %s and the "+
+			"declaration named %d", objectstore.ErrInvalidRequest, blob.Size, id, row.DeclaredSize)
+	}
+
 	now := time.Now().UnixMilli()
 	var expires *int64
 	if ttl := p.tuned.objectTTL(p.logger); ttl > 0 {
@@ -154,14 +195,20 @@ func (p *product) Complete(ctx context.Context, id string) (objectstore.Object, 
 		expires = &at
 	}
 	advanced := p.handle.WithContext(ctx).Model(&object{}).
-		Where("id = ? AND state IN ?", id, []string{stateUploaded, stateCompleted}).
+		Where("id = ? AND state IN ?", id, []string{statePending, stateUploaded}).
 		Updates(map[string]any{
 			"state":      stateCompleted,
+			"size":       blob.Size,
+			"mime":       row.DeclaredType,
 			"expires_at": expires,
 			"updated_at": now,
 		})
 	if advanced.Error != nil {
 		return objectstore.Object{}, fmt.Errorf("%s: completing the object %s: %w", ModuleName, id, advanced.Error)
+	}
+	if advanced.RowsAffected == 0 {
+		return objectstore.Object{}, fmt.Errorf("%w: the object %s changed state while it was being completed",
+			objectstore.ErrStateConflict, id)
 	}
 	fresh, err := p.load(ctx, id)
 	if err != nil {
@@ -205,6 +252,115 @@ func (p *product) OpenContent(ctx context.Context, id string) (io.ReadCloser, er
 			objectstore.ErrContentMissing, id, err)
 	}
 	return content, nil
+}
+
+// maxURLTTL is the longest lifetime either backend honours: 604800 seconds,
+// the upper bound of an S3 SigV4 pre-signed address. The local-directory backend
+// keeps the same bound so the two backends answer the same expiry semantics.
+const maxURLTTL = 7 * 24 * time.Hour
+
+// URL mints one direct-access address for an object's bytes; see
+// objectstore.Objects.
+//
+// The address is either a pre-signed one minted by the backend that delivers
+// DirectURL, or a token-carrying content address this process serves. The two
+// differ in who holds the bytes: a pre-signed address carries the backend key, a
+// content address carries an opaque token this module records in a grant row.
+//
+// Every path checks the same things. A read needs a completed object that has
+// not passed its expiry; a write needs a pending or uploaded object whose upload
+// window is still open. A remaining life or window under one second answers as
+// though it had already passed. The lifetime is the configured url-ttl, may only
+// be shortened by the caller, and is clamped again to the remaining life, the
+// remaining window and the backend maximum. The caller's decision about which
+// end user may hold the address is made before this call; nothing about the end
+// user is checked here.
+func (p *product) URL(ctx context.Context, id string, req objectstore.URLRequest) (objectstore.IssuedURL, error) {
+	switch req.Access {
+	case objectstore.URLAccessRead, objectstore.URLAccessWrite:
+	default:
+		return objectstore.IssuedURL{}, fmt.Errorf("%w: the URL access %q is neither read nor write",
+			objectstore.ErrInvalidRequest, req.Access)
+	}
+	if req.Expiry < 0 {
+		return objectstore.IssuedURL{}, fmt.Errorf("%w: the URL lifetime %s is negative",
+			objectstore.ErrInvalidRequest, req.Expiry)
+	}
+	row, err := p.load(ctx, id)
+	if err != nil {
+		return objectstore.IssuedURL{}, err
+	}
+	if objectstore.State(row.State) == objectstore.StateDeleted {
+		return objectstore.IssuedURL{}, fmt.Errorf("%w: %s", objectstore.ErrObjectNotFound, id)
+	}
+
+	now := time.Now()
+	ttl := p.tuned.urlTTL(p.logger)
+	if req.Expiry > 0 && req.Expiry < ttl {
+		ttl = req.Expiry
+	}
+
+	var method string
+	switch req.Access {
+	case objectstore.URLAccessRead:
+		if objectstore.State(row.State) != objectstore.StateCompleted {
+			return objectstore.IssuedURL{}, fmt.Errorf("%w: the object %s is not completed",
+				objectstore.ErrStateConflict, id)
+		}
+		if row.ExpiresAt != nil {
+			remaining := time.UnixMilli(*row.ExpiresAt).Sub(now)
+			if remaining < time.Second {
+				return objectstore.IssuedURL{}, fmt.Errorf("%w: %s", objectstore.ErrObjectNotFound, id)
+			}
+			ttl = min(ttl, remaining)
+		}
+		method = http.MethodGet
+	case objectstore.URLAccessWrite:
+		if state := objectstore.State(row.State); state != objectstore.StatePending && state != objectstore.StateUploaded {
+			return objectstore.IssuedURL{}, fmt.Errorf("%w: the object %s is not awaiting an upload",
+				objectstore.ErrStateConflict, id)
+		}
+		remaining := time.UnixMilli(row.UploadExpiresAt).Sub(now)
+		if remaining < time.Second {
+			return objectstore.IssuedURL{}, fmt.Errorf("%w: the upload window of the object %s has closed",
+				objectstore.ErrStateConflict, id)
+		}
+		ttl = min(ttl, remaining)
+		method = http.MethodPut
+	}
+	ttl = min(ttl, maxURLTTL)
+	expires := now.Add(ttl)
+
+	if p.direct != nil {
+		params := objectstore.PresignParams{TTL: ttl}
+		var issued objectstore.IssuedURL
+		var signErr error
+		if req.Access == objectstore.URLAccessRead {
+			params.ContentType = mimeOrDefault(row.MIME)
+			params.Filename = row.Name
+			issued, signErr = p.direct.PresignRead(ctx, row.Key, params)
+		} else {
+			issued, signErr = p.direct.PresignWrite(ctx, row.Key, params)
+		}
+		if signErr != nil {
+			return objectstore.IssuedURL{}, fmt.Errorf("%w: signing the address of the object %s: %w",
+				objectstore.ErrURLUnavailable, id, signErr)
+		}
+		return issued, nil
+	}
+
+	if !p.contentMounted {
+		return objectstore.IssuedURL{}, fmt.Errorf("%w: no backend delivers direct addresses and this "+
+			"process serves no content route", objectstore.ErrURLUnavailable)
+	}
+	token, hash, err := mintToken()
+	if err != nil {
+		return objectstore.IssuedURL{}, err
+	}
+	if err := p.insertGrant(ctx, row, req.Access, hash, expires.UnixMilli()); err != nil {
+		return objectstore.IssuedURL{}, err
+	}
+	return objectstore.IssuedURL{URL: p.contentURL(token), Method: method, Expires: expires}, nil
 }
 
 // List returns a page of this tenant's undeleted objects; see objectstore.Objects.

@@ -11,7 +11,7 @@
 对象存储的能力目录是 `pkg/objectstore`。范围已定（[ADR-objectstore-scope-2026-10-15](adr-objectstore-scope-2026-10-15.md)）：核心面、字节接缝与 `fs`/`s3` 后端。包装要回答的是核心面、字节接缝与后端如何落到包与模块上，约束如下：
 
 - **字节接缝是一个功能接口，实现有多种。** `Store` 由 `fs` 与 `s3` 各自实现，一个进程里恰好一个生效（字节落在哪里只有一个答案）。
-- **元数据面自带 HTTP 面。** 对象存储的每个动作都要经 HTTP 暴露给调用方，HTTP 面是入口模块 `pkg/http` 交付的登记面，模块在自己的 `Init` 里挂路由。
+- **元数据面承担内容路由。** 后端不能铸直连地址时，字节要由元数据面经入口模块 `pkg/http` 的登记面投递；后端能铸址时字节不经本进程。HTTP 面是入口模块交付的登记面，模块在自己的 `Init` 里挂路由。
 - **第三方依赖只在绑定它的实现子包里。** 不装 `s3` 的装配不应背对象存储 SDK。
 
 ## 考虑过的选项
@@ -28,29 +28,29 @@
 
 **否决**：排他性会变成运行期分支——一个进程里哪个后端生效由配置在运行期决定，而不是在消解阶段由描述符裁定；且这条分支要求合起来的那个模块同时 import 对象存储 SDK，不装 `s3` 的装配因此被迫背上那个 SDK，违反「第三方依赖只在绑定它的实现子包里」这条约束。
 
-### 把元数据面与 HTTP 面拆成独立模块
+### 把元数据面与内容路由拆成独立模块
 
-`objectstore.metadata` 只交付 `Objects` 接缝，另设一个模块挂 HTTP 面。
+`objectstore.metadata` 只交付 `Objects` 接缝，另设一个模块挂内容路由。
 
-**否决**：HTTP 面的每个动作都是经元数据面调同一个服务——声明、上传、完成、读取、列表、删除都是对同一份元数据与同一条字节接缝的操作。拆开只会多一层转发，那个模块自己不持数据也不持规则，纯粹是把一次调用从一个包转到另一个包。
+**否决**：内容路由的每次请求都要按令牌查到授权行，再进入对应租户读对象行与后端字节——授权行与对象行都在元数据面的表里，规则也在它手里。拆开只会多一层转发，那个模块自己不持数据也不持规则。
 
-### 根包声明接缝，metadata 交付元数据面并挂 HTTP，fs 与 s3 各为一个实现子包
+### 根包声明接缝，metadata 交付元数据面并在后端不铸址时挂内容路由，fs 与 s3 各为一个实现子包
 
-根包 `pkg/objectstore` 声明字节接缝与公共类型、不登记模块；`objectstore.metadata` 排他交付元数据与生命周期面并挂 HTTP；`fs` 与 `s3` 各为一个排他的实现子包。
+根包 `pkg/objectstore` 声明字节接缝与公共类型、不登记模块；`objectstore.metadata` 排他交付元数据与生命周期面，并在装配的后端不铸直连地址时挂内容路由；`fs` 与 `s3` 各为一个排他的实现子包，`s3` 同时声明 `DirectURL` 能力。
 
 **采纳**，见决策。
 
 ## 决策
 
-采纳：**根包 `pkg/objectstore` 声明字节接缝与公共类型、不登记模块；`objectstore.metadata` 排他交付元数据与生命周期面并挂 HTTP 面；`fs` 与 `s3` 各为一个排他的实现子包。**
+采纳：**根包 `pkg/objectstore` 声明字节接缝与公共类型、不登记模块；`objectstore.metadata` 排他交付元数据与生命周期面，并在装配的后端不铸直连地址时挂内容路由；`fs` 与 `s3` 各为一个排他的实现子包，`s3` 同时声明 `DirectURL` 能力。**
 
-- **根包不登记模块。** `pkg/objectstore` 是接口包与公共类型：`Store`（字节接缝）、`Objects`（元数据与生命周期接缝）、`Object`、`State`、`Declaration`、`ListQuery` 与哨兵。它不 import 任何对象存储 SDK。
-- **`objectstore.metadata` 排他交付元数据与生命周期面。** `pkg/objectstore/metadata` 的 `Provides` 里排他声明 `(*objectstore.Objects)(nil)`，构造期必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)` 与 `(*objectstore.Store)(nil)`；它在自己的 `Init` 里把 `/api/v1/objects` 下的路由挂到入口模块的登记面上，`http.Router` 可选（缺席即不挂路由）。
-- **`fs` 与 `s3` 各为一个排他的实现子包。** `pkg/objectstore/fs` 登记 `objectstore.fs`，排他交付 `(*objectstore.Store)(nil)`，无构造期依赖，配置驱动；`pkg/objectstore/s3` 登记 `objectstore.s3`，同样排他交付 `(*objectstore.Store)(nil)`，绑它自己的对象存储 SDK。两者都是排他的：`Store` 的一个进程里恰好一个生效（照 `pkg/sms` 的载体形态），同时纳入即在消解阶段以排他冲突失败。`fs` 不 import 任何对象存储 SDK；不装 `s3` 的装配不背那个 SDK（`s3` 是本轮唯一引入新第三方依赖的地方，实现子包绑库是不变量 11 的正常形态）。
+- **根包不登记模块。** `pkg/objectstore` 是接口包与公共类型：`Store`（字节接缝）、`DirectURL`（可选直连能力）、`Objects`（元数据与生命周期接缝）、`Object`、`State`、`Declaration`、`ListQuery` 与哨兵。它不 import 任何对象存储 SDK。
+- **`objectstore.metadata` 排他交付元数据与生命周期面。** `pkg/objectstore/metadata` 的 `Provides` 里排他声明 `(*objectstore.Objects)(nil)`，构造期必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)` 与 `(*objectstore.Store)(nil)`，`(*objectstore.DirectURL)(nil)` 可选；它在自己的 `Init` 里只把内容路由挂到入口模块的登记面上，且仅在后端不声明 `DirectURL` 时挂；`http.Router` 可选（缺席即不挂路由）。
+- **`fs` 与 `s3` 各为一个排他的实现子包。** `pkg/objectstore/fs` 登记 `objectstore.fs`，排他交付 `(*objectstore.Store)(nil)`，无构造期依赖，配置驱动；`pkg/objectstore/s3` 登记 `objectstore.s3`，同样排他交付 `(*objectstore.Store)(nil)`，并让同一个 `Open` 返回值排他声明 `(*objectstore.DirectURL)(nil)`，绑它自己的对象存储 SDK。两者都是排他的：`Store` 的一个进程里恰好一个生效（照 `pkg/sms` 的载体形态），同时纳入即在消解阶段以排他冲突失败。`fs` 不 import 任何对象存储 SDK；不装 `s3` 的装配不背那个 SDK（`s3` 是本轮唯一引入新第三方依赖的地方，实现子包绑库是不变量 11 的正常形态）。
 
 ## 后果
 
-字节接缝的实现与元数据面各是一个可替换、可撤掉的模块，根包只声明接缝。宿主经命令树点名 `objectstore.metadata` 与一个后端模块即可装配出一个对象存储；换后端只换那个模块。
+字节接缝的实现与元数据面各是一个可替换、可撤掉的模块，根包只声明接缝。宿主经命令树点名 `objectstore.metadata` 与一个后端模块即可装配出一个对象存储；换后端只换那个模块。能铸址的后端同时声明 `DirectURL`，装配据此决定元数据面挂不挂内容路由。
 
 **接受的代价：**
 
@@ -62,4 +62,4 @@
 ## 失效条件
 
 - **若字节后端不再需要 `fs` 与 `s3` 这样的独立实现**（例如所有部署都经一个统一网关取字节，两者的区分消失），则「每个后端一个排他子包」的切分失去区分的意义，应重议。
-- **若出现「只用元数据面、不挂 HTTP」的常用装配需求**（例如一个只有后台命令、没有网关端点的进程），则把元数据面与 HTTP 面放在同一个模块的决定要重议。
+- **若所有后端都能直接铸址**，则内容路由与元数据面对入口模块的可选依赖可以整个移出元数据面，「内容路由与元数据面同一个模块」的切分随之失去对象。
