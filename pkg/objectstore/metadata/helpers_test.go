@@ -24,6 +24,7 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/objectstore"
+	objectstorefs "github.com/vislake/speed/pkg/objectstore/fs"
 	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
@@ -72,6 +73,10 @@ type harness struct {
 	// direct stands in for a backend that mints its own addresses; when it is
 	// set the content route must not be mounted.
 	direct objectstore.DirectURL
+	// fsRoot, when set, assembles the real local-directory backend over that
+	// directory instead of the in-memory stand-in, so a case can drive bytes
+	// through the backend the content route serves.
+	fsRoot string
 	// withSettings assembles the settings module and its event bus, so a case
 	// can write a runtime tunable and watch the next call read it.
 	withSettings bool
@@ -105,12 +110,16 @@ func (e engine) on(t *testing.T, h harness) harness {
 func (h harness) assemble(t *testing.T) (*core.Registry, []string) {
 	t.Helper()
 	dir := t.TempDir()
+	objectstoreBody := map[string]any{"metadata": metadataBody(h.metadata)}
+	if h.fsRoot != "" {
+		objectstoreBody["fs"] = map[string]any{"root": h.fsRoot}
+	}
 	document := map[string]any{
 		"db": map[string]any{h.section: map[string]any{"dsn": h.dsn}},
 		"log": map[string]any{"outputs": []any{
 			map[string]any{"to": "file", "format": "json", "path": filepath.Join(dir, "log.json")},
 		}},
-		"objectstore": map[string]any{"metadata": metadataBody(h.metadata)},
+		"objectstore": objectstoreBody,
 	}
 	body, err := json.Marshal(document)
 	if err != nil {
@@ -121,16 +130,20 @@ func (h harness) assemble(t *testing.T) (*core.Registry, []string) {
 		t.Fatalf("writing the primary config source: %v", writeErr)
 	}
 
-	store := h.store
-	if store == nil {
-		store = newFakeStore()
-	}
 	modules := []core.Module{
 		h.database,
 		log.Module(),
 		catalog.Module(),
 		Module(),
-		store.module(),
+	}
+	if h.fsRoot != "" {
+		modules = append(modules, objectstorefs.Module())
+	} else {
+		store := h.store
+		if store == nil {
+			store = newFakeStore()
+		}
+		modules = append(modules, store.module())
 	}
 	if h.router != nil {
 		modules = append(modules, standIn("stand-in.router", h.router, (*speedhttp.Router)(nil)))
