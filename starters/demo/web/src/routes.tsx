@@ -40,7 +40,6 @@ import {
   AccountSettingsPage,
 } from './pages/account-page.js'
 import { AccountSetupPage } from './pages/account-setup-page.js'
-import { AccountVerifyPage } from './pages/account-verify-page.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
@@ -50,7 +49,6 @@ import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
-  ACCOUNT_VERIFY_PATH,
   AUTH_CALLBACK_PATH,
   INVITATION_PREFIX,
   OBJECTS_PATH,
@@ -63,7 +61,6 @@ export {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
-  ACCOUNT_VERIFY_PATH,
   AUTH_CALLBACK_PATH,
   CONSOLE_PREFIX,
   NOTIFICATIONS_PATH,
@@ -123,12 +120,6 @@ export const businessRoutes: readonly HostRouteDeclaration[] = [
   {
     path: ACCOUNT_SETUP_PATH,
     view: () => <AccountSetupPage />,
-  },
-  // Unlabelled: a registration's verification landing, reached from the
-  // sign-in surface's completion or the persistent banner, not the nav.
-  {
-    path: ACCOUNT_VERIFY_PATH,
-    view: () => <AccountVerifyPage />,
   },
   {
     path: OBJECTS_PATH,

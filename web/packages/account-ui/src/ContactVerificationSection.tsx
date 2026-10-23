@@ -32,10 +32,12 @@
  * control of the address, and its text names the address as another
  * account's and points at the change action.
  *
- * A host that lands this section as the dedicated verification page sets
- * `autoSend`: once per mount, when the account is `pending` with a target
- * address and the change-address form is closed, the section sends the code
- * itself so the visitor arrives with one already on its way. A mount that
+ * A host that lands this section from a verification link sets `autoSend`:
+ * once per mount, when the account is `pending` with a target address and the
+ * change-address form is closed, the section sends the code itself so the
+ * visitor arrives with one already on its way. The demo host mounts the
+ * section on the account page and sets the flag only for a `?verify=1`
+ * landing, so an ordinary account visit sends nothing. A mount that
  * lands with the form already open (`initialChangeOpen`, the
  * `?change=email` entry) never sends automatically, even after the form is
  * closed: that visitor arrived to replace the address, and a code for the
@@ -111,11 +113,11 @@ export interface ContactVerificationSectionProps {
    * address, so the old one gets no code from this mount. */
   readonly initialChangeOpen?: boolean
   /** Whether a pending account with a target address sends a code once when
-   * the section mounts, so a dedicated verification page opens with one
-   * already on its way. Defaults to false; the account page leaves it off
-   * and the verify route turns it on. The automatic send never opens the
-   * step-up dialog: a refused send leaves the manual action and its
-   * explanation. */
+   * the section mounts, so a verification landing opens with one already on
+   * its way. Defaults to false; the account page turns it on only for a
+   * `?verify=1` landing and leaves an ordinary visit quiet. The automatic
+   * send never opens the step-up dialog: a refused send leaves the manual
+   * action and its explanation. */
   readonly autoSend?: boolean
 }
 
@@ -219,8 +221,8 @@ export function ContactVerificationSection({
   )
 
   /** Refetch what a landed write changes: the profile's verification state
-   * and identifiers, and the session list, because the verify route revokes
-   * the account's other sessions. */
+   * and identifiers, and the session list, because proving the address
+   * revokes the account's other sessions. */
   async function invalidateAfterWrite(): Promise<void> {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getAuthnProfileGetQueryKey() }),
@@ -303,9 +305,9 @@ export function ContactVerificationSection({
     }
   }
 
-  // The dedicated verification page's single automatic send: it fires when
-  // the profile first settles on a pending target with the change form
-  // closed, and the mount-local refs keep every later render, refetch and
+  // The verification landing's single automatic send: it fires when the
+  // profile first settles on a pending target with the change form closed,
+  // and the mount-local refs keep every later render, refetch and
   // form close from sending.
   useEffect(() => {
     if (

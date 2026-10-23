@@ -197,7 +197,7 @@ type ScopeGuard interface {
 注册验证状态是账户上的独立事实，判定二值：账户持有至少一条已证明归属的邮箱标识即已验证；持有邮箱而没有一条已证明的即未验证；一条邮箱也没有即不适用本规则。它不是账户状态，账户状态仍只有启用、停用、删除；未验证账户是启用账户，会话照常建立，管理面的列表、读取与过滤照常看得见它。判定从标识与联系方式预留现算（`SignupVerification.SignupStateOf`），与账户怎么创建无关：管理员预置的账户、导入的账户与自助注册的账户读同一套状态。`signup_state` 列只记账户怎么来，`0` 的账户一样可能读作未验证。
 
 - **判据与应答。** 发起者是用户账户且状态读作未验证（`SignupPending`）时，管理面的人类写答 403 `contact-required`（`ErrContactRequired`）；冒充发起按同一判据拒绝，它的路由在 `authn.impersonation`。读路由不受影响。
-- **豁免。** 服务账户（`AccountKind` 为 `service`）与没有任何邮箱的账户（`SignupNone`）不受门控约束。管理员预置、导入、首登开户与企业 SSO 写出的账户不豁免：它们带着邮箱而未证明时照样被拦，直到本人经验证页证明该地址。
+- **豁免。** 服务账户（`AccountKind` 为 `service`）与没有任何邮箱的账户（`SignupNone`）不受门控约束。管理员预置、导入、首登开户与企业 SSO 写出的账户不豁免：它们带着邮箱而未证明时照样被拦，直到本人经账户页的验证节证明该地址。
 - **位置。** 门控在身份确定之后、`Decider` 与强度核验之前；它只收紧不放行。被拦下的请求既不询问 `Decider`，也不询问强度，也不写强制档审计。状态经 `SignupVerification.SignupStateOf` 读当前值，读失败答 503，不按放行处理。
 - **与冒充的关系。** 冒充发起要求发起者是有会话的用户账户，未验证账户的发起被同一条判据拒；`authn.impersonation` 在它的结构性限制里、强度类条件与 `Decider` 之前答同一个 403 `contact-required`（[design-authn-impersonation](design-authn-impersonation.md)）。被冒充的目标账户的验证状态不参与判定。
 

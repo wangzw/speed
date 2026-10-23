@@ -31,7 +31,7 @@ import {
   principal,
 } from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_SETUP_PATH, ACCOUNT_VERIFY_PATH } from '../paths.js'
+import { ACCOUNT_PATH, ACCOUNT_SETUP_PATH } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createTestSession } from '../test-utils/session.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
@@ -298,9 +298,10 @@ describe('the sign-in surface', () => {
       screen.getByRole('button', { name: authRegisterEn.register.submit }),
     )
 
-    await waitFor(() =>
-      expect(window.location.pathname).toBe(ACCOUNT_VERIFY_PATH),
-    )
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(ACCOUNT_PATH)
+      expect(window.location.search).toBe('?verify=1')
+    })
     expect(
       harness.calls.some(
         (call) => call.method === 'POST' && call.path === REGISTER_PATH,

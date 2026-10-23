@@ -14,7 +14,7 @@ import type { RequestFn } from '@speed/api-client'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import type { AuthnProfileProfile } from './app-api/index.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_VERIFY_PATH } from './paths.js'
+import { ACCOUNT_PATH } from './paths.js'
 import { profileWithVerification } from './test-utils/profile.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
@@ -59,19 +59,19 @@ describe('ContactVerificationBanner', () => {
     renderFrame()
 
     const region = await screen.findByRole('region', {
-      name: demoEnUS.verificationBanner.region,
+      name: new RegExp(demoEnUS.verificationBanner.region),
     })
     expect(region).toHaveTextContent(
       demoEnUS.verificationBanner.pending.replace('{{email}}', 'ada@x.test'),
     )
     expect(
       screen.getByRole('link', { name: demoEnUS.verificationBanner.verify }),
-    ).toHaveAttribute('href', ACCOUNT_VERIFY_PATH)
+    ).toHaveAttribute('href', `${ACCOUNT_PATH}?verify=1`)
     // The two actions reach the same page with different intent: the change
     // link asks the page to start in the change-address form.
     expect(
       screen.getByRole('link', { name: demoEnUS.verificationBanner.change }),
-    ).toHaveAttribute('href', `${ACCOUNT_VERIFY_PATH}?change=email`)
+    ).toHaveAttribute('href', `${ACCOUNT_PATH}?change=email`)
     // No close control: the notice stays until the address is proved.
     expect(within(region).queryByRole('button')).toBeNull()
   })
@@ -81,14 +81,14 @@ describe('ContactVerificationBanner', () => {
     renderFrame()
 
     const region = await screen.findByRole('region', {
-      name: demoEnUS.verificationBanner.region,
+      name: new RegExp(demoEnUS.verificationBanner.region),
     })
     expect(region).toHaveTextContent(
       demoEnUS.verificationBanner.pendingNoEmail,
     )
     expect(
       screen.getByRole('link', { name: demoEnUS.verificationBanner.add }),
-    ).toHaveAttribute('href', ACCOUNT_VERIFY_PATH)
+    ).toHaveAttribute('href', `${ACCOUNT_PATH}?verify=1`)
     expect(
       screen.queryByRole('link', { name: demoEnUS.verificationBanner.change }),
     ).toBeNull()
@@ -105,7 +105,7 @@ describe('ContactVerificationBanner', () => {
     })
     expect(
       screen.queryByRole('region', {
-        name: demoEnUS.verificationBanner.region,
+        name: new RegExp(demoEnUS.verificationBanner.region),
       }),
     ).toBeNull()
   })
@@ -118,7 +118,7 @@ describe('ContactVerificationBanner', () => {
     const { queryClient } = renderFrame()
 
     await screen.findByRole('region', {
-      name: demoEnUS.verificationBanner.region,
+      name: new RegExp(demoEnUS.verificationBanner.region),
     })
 
     profile.verification = { state: 'verified', email: 'ada@x.test', since: '' }
@@ -131,7 +131,7 @@ describe('ContactVerificationBanner', () => {
     await waitFor(() =>
       expect(
         screen.queryByRole('region', {
-          name: demoEnUS.verificationBanner.region,
+          name: new RegExp(demoEnUS.verificationBanner.region),
         }),
       ).toBeNull(),
     )
@@ -147,7 +147,7 @@ describe('ContactVerificationBanner', () => {
     })
     expect(
       screen.queryByRole('region', {
-        name: demoEnUS.verificationBanner.region,
+        name: new RegExp(demoEnUS.verificationBanner.region),
       }),
     ).toBeNull()
   })

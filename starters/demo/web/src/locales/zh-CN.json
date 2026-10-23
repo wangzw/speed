@@ -66,10 +66,6 @@
     "home": "回到首页",
     "later": "稍后设置"
   },
-  "accountVerify": {
-    "title": "验证邮箱地址",
-    "description": "确认你的邮箱地址以解除账户上的限制。"
-  },
   "verificationBanner": {
     "region": "邮箱验证",
     "pending": "验证 {{email}} 以解除账户上的限制。",

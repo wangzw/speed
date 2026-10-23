@@ -35,13 +35,6 @@ export const ACCOUNT_PATH = '/account'
  */
 export const ACCOUNT_SETUP_PATH = '/account/setup'
 
-/**
- * The registration verification page: where a password registration lands so
- * the new account can prove its email address. Like the setup page it is a
- * completion point, not a navigation destination.
- */
-export const ACCOUNT_VERIFY_PATH = '/account/verify'
-
 /** The tenant area's object storage page: the objectstore capability's face. */
 export const OBJECTS_PATH = '/objects'
 
@@ -61,15 +54,15 @@ export const ACCOUNT_CALLBACK_PATH = '/account/callback'
 /**
  * The account-level pages: the routes that read no tenant data, so they
  * stay usable whatever the tenant context's state. The account settings
- * page, the setup page a registration completes on and the verification page
- * that registration lands on are the ones the design names; the binding
- * callback is the same family (it completes a write of the account's own),
- * and the tenant frame renders all four inside the tenant area.
+ * page, where registration now completes and the email verification runs, and
+ * the setup page a registration completes on are the ones the design names;
+ * the binding callback is the same family (it completes a write of the
+ * account's own), and the tenant frame renders all three inside the tenant
+ * area.
  */
 const ACCOUNT_LEVEL_PATHS: ReadonlySet<string> = new Set([
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
-  ACCOUNT_VERIFY_PATH,
   ACCOUNT_CALLBACK_PATH,
 ])
 

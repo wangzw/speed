@@ -67,7 +67,7 @@ import {
 } from '@speed/account-ui'
 import { useFeature } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
-import { useNavigate } from '@speed/route-kit'
+import { useLocationPath, useNavigate } from '@speed/route-kit'
 import { themePresets } from '@speed/theme-presets'
 import { PageHeader, useAppThemePreset } from '@speed/ui-kit'
 import { useAppServices } from '../app-services.js'
@@ -81,6 +81,14 @@ import { DEMO_NAMESPACE } from '../resources.js'
 export function AccountSettingsPage(): ReactElement {
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
+  const { search } = useLocationPath()
+  const landing = new URLSearchParams(search)
+  // The banner and the post-registration landing reach this page with an
+  // intent: `verify=1` asks for the one automatic code, `change=email` opens
+  // the change-address form instead. An ordinary visit carries neither, so the
+  // section waits for the visitor to ask.
+  const changeOpen = landing.get('change') === 'email'
+  const verifyLanding = landing.get('verify') === '1' && !changeOpen
   // Only the host reads the feature document; each section is mounted (or
   // told what it may offer) from the names this deployment serves.
   const phoneServed = useFeature('authn.phone')
@@ -106,17 +114,24 @@ export function AccountSettingsPage(): ReactElement {
         description={t('account.description')}
       />
       <ProfileSection session={session} />
+      {/* The account's email verification, completed here rather than on a
+          page of its own: `none` renders nothing, `pending` offers the
+          send/verify path and the change-address form, and `verified` names
+          the proved address. A landing from the banner or from registration
+          carries `verify=1`, which sends one code on the way; an ordinary
+          visit carries no flag and waits for the visitor to ask. */}
+      <ContactVerificationSection
+        key={changeOpen ? 'change-email' : verifyLanding ? 'verify' : 'profile'}
+        session={session}
+        initialChangeOpen={changeOpen}
+        autoSend={verifyLanding}
+      />
       <PasswordSection session={session} />
       {phoneServed ? <PhoneSection session={session} /> : null}
       <IdentifiersSection
         session={session}
         emailAvailable={emailIdentifierServed}
       />
-      {/* The registration contact's verification state, when the account has
-          one: `none` renders nothing, `pending` offers the send/verify path
-          and the verify route is the dedicated destination. The section here
-          does not auto-send; only the verify route does that. */}
-      <ContactVerificationSection session={session} />
       <AppearanceSection
         presets={presetChoices}
         value={preset}

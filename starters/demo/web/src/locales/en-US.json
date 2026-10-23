@@ -66,10 +66,6 @@
     "home": "Go to the home page",
     "later": "Set up later"
   },
-  "accountVerify": {
-    "title": "Verify your email address",
-    "description": "Confirm your email address to lift the restrictions on your account."
-  },
   "verificationBanner": {
     "region": "Email verification",
     "pending": "Verify {{email}} to lift the restrictions on your account.",

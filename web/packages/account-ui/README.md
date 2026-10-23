@@ -299,7 +299,9 @@ after the form is closed: that visitor came to replace the address.
 The automatic send never opens the step-up dialog -- a dialog is the visitor's
 to open -- so a 401 leaves the manual send action with an explanation; a 429
 still starts the resend countdown, and other failures render the failure
-banner. The dedicated verification page sets it; the account page does not.
+banner. The demo account page sets it only for a `?verify=1` landing (the
+banner's verify action and the post-registration landing); an ordinary
+account visit does not.
 
 A phone number is a sign-in method and an additional security factor.
 Verifying a phone does not lift the registration restriction; only a proved

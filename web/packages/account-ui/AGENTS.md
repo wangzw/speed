@@ -95,10 +95,11 @@ session as a required prop; `PreferencesSection` takes it optionally
   focus moves to the code field. It takes the session (its writes are step-up
   gated), the optional `initialChangeOpen`, which starts it in the
   change-address form so a host can land a "change address" action there, and
-  the optional `autoSend`, which the dedicated verification page sets: once
-  per mount, a pending account with a target address and a closed change form
-  sends one code itself, and re-renders and the post-write refetch keep to
-  that one send. A mount that lands with the change form open
+  the optional `autoSend`, which the demo account page sets only for a
+  `?verify=1` landing (the banner's verify action and the post-registration
+  landing): once per mount, a pending account with a target address and a
+  closed change form sends one code itself, and re-renders and the post-write
+  refetch keep to that one send. A mount that lands with the change form open
   (`initialChangeOpen`, the `?change=email` entry) never sends automatically,
   even after the form is closed: that visitor came to replace the address.
   The automatic send never opens the step-up dialog -- that is the visitor's

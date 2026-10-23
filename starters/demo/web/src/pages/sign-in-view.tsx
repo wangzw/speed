@@ -56,8 +56,8 @@ import { useState } from 'react'
 import type { ReactElement } from 'react'
 import { useAppServices } from '../app-services.js'
 import {
+  ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
-  ACCOUNT_VERIFY_PATH,
   AUTH_CALLBACK_PATH,
 } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
@@ -120,10 +120,11 @@ export function SignInView({
       return
     }
     if (context.channel === 'password') {
-      // A password registration lands on the verification page whatever the
-      // deployment's personal-tenant policy: the account exists but its email
-      // address is not proved yet, and that page is where it is proved.
-      navigate(ACCOUNT_VERIFY_PATH)
+      // A password registration lands on the account page's verification
+      // section whatever the deployment's personal-tenant policy: the account
+      // exists but its email address is not proved yet, and that section is
+      // where it is proved.
+      navigate(`${ACCOUNT_PATH}?verify=1`)
       return
     }
     if (context.channel !== 'sms') {

@@ -184,7 +184,7 @@ in; replace them all before a deployment serves real traffic:
   `verification.state = pending` and every management human write answers 403
   `contact-required` until its holder proves it. The first sign-in after a
   deployment upgrade therefore has to prove the address: open the account
-  verification page, send a code to the operator's address, read it from the
+  page's verification section, send a code to the operator's address, read it from the
   review build's `review mail:` line or from the mailbox the Fly image's SMTP
   relay delivers to, and submit it. Management actions are allowed from then
   on. This is the expected state of an administrator-provisioned email, not a
@@ -659,7 +659,7 @@ names the fixed part of that wiring, and no configuration file repeats it:
   `tenant-unavailable`, `identifier-unavailable` — carry
   `urn:speed:workspace:<code>` types, so a frontend that must render them by code
   can distinguish them; the 409 status is what tells the client to navigate to
-  the verification page rather than read the refusal as a permission denial. `personal.go` demonstrates
+  the account page's verification section rather than read the refusal as a permission denial. `personal.go` demonstrates
   that an application module's refusal a product frontend must render by code
   needs that shape, since `@speed/api-client` degrades every other problem type
   to `client.http.<status>`. The frontend calls it from the tenant frame when an
@@ -668,9 +668,10 @@ names the fixed part of that wiring, and no configuration file repeats it:
   (the server refuses it, so the frontend waits and shows the verification
   notice instead); a registration completed through SMS lands on `/` (the
   tenant home) with a one-time setup notice, and without the feature it lands
-  on `/account/setup`. A password registration lands on `/account/verify` in
+  on `/account/setup`. A password registration lands on `/account?verify=1` in
   either case, and a `409 verification-required` from the ensure sends the
-  frame there rather than rendering a failure placeholder.
+  frame to the account page's verification section rather than rendering a
+  failure placeholder.
 - The journal (`audit.journal`) records the requests its `requests` list names
   on the endpoints its `endpoints` list names. The sample files name the object
   store's declaration and delete (`POST /api/v1/objects`,

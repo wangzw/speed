@@ -27,7 +27,7 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
-import { ACCOUNT_SETUP_PATH, ACCOUNT_VERIFY_PATH } from './paths.js'
+import { ACCOUNT_PATH, ACCOUNT_SETUP_PATH } from './paths.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
   ANONYMOUS_SNAPSHOT,
@@ -403,7 +403,7 @@ describe('the tenant frame and the personal tenant', () => {
 
     expect(
       await screen.findByRole('region', {
-        name: demoEnUS.verificationBanner.region,
+        name: new RegExp(demoEnUS.verificationBanner.region),
       }),
     ).toBeInTheDocument()
     await act(async () => {
@@ -431,9 +431,10 @@ describe('the tenant frame and the personal tenant', () => {
     })
 
     await waitFor(() => expect(ensureCalls).toHaveLength(1))
-    await waitFor(() =>
-      expect(window.location.pathname).toBe(ACCOUNT_VERIFY_PATH),
-    )
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(ACCOUNT_PATH)
+      expect(window.location.search).toBe('?verify=1')
+    })
     expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
     expect(getCurrentTenantId()).toBeNull()
   })
@@ -482,9 +483,10 @@ describe('the tenant frame and the personal tenant', () => {
     })
 
     await waitFor(() => expect(ensureCalls).toHaveLength(1))
-    await waitFor(() =>
-      expect(window.location.pathname).toBe(ACCOUNT_VERIFY_PATH),
-    )
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(ACCOUNT_PATH)
+      expect(window.location.search).toBe('?verify=1')
+    })
     expect(getCurrentTenantId()).toBeNull()
 
     verificationState = 'verified'

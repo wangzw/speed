@@ -128,7 +128,7 @@ import {
   TENANT_HOME_PATH,
 } from './pages/not-found-page.js'
 import { SignInView } from './pages/sign-in-view.js'
-import { ACCOUNT_VERIFY_PATH, isAccountLevelPath } from './paths.js'
+import { ACCOUNT_PATH, isAccountLevelPath } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   AUTH_CALLBACK_PATH,
@@ -727,13 +727,14 @@ function TenantFrame({
           errorCodeOf(error) === 'workspace.verification_required'
         ) {
           // The account has not proved its email yet. This is not a failure:
-          // the verification page is where it becomes eligible, and the
-          // ensure re-runs by itself once the profile flips to verified.
+          // the account page's verification section is where it becomes
+          // eligible, and the ensure re-runs by itself once the profile flips
+          // to verified.
           setPersonalFailure(false)
           setPersonalTenant(null)
           setTenantSettled(false)
           setIdentitySettling(false)
-          navigateRef.current(ACCOUNT_VERIFY_PATH)
+          navigateRef.current(`${ACCOUNT_PATH}?verify=1`)
           return
         }
         if (httpStatusOf(error) === 409) {
