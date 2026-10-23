@@ -10,6 +10,8 @@ restates nothing another file already carries:
   it — no prose census here or anywhere else.
 - What the architecture is, and why: `docs/design` and `docs/adr`. A
   design question is answered there, never from this file.
+- What the product must do: `docs/prd`. A requirement is stated there,
+  and a design document that restates one references its id instead.
 - What a module's own contract is: that module's `AGENTS.md`, which
   travels with the code.
 - What the checks are: the root `Makefile`. `make help` lists the entry
@@ -17,18 +19,19 @@ restates nothing another file already carries:
 
 ## Language Rule (read this first)
 
-- **`docs/design/**`, `docs/adr/**` and `docs/glossary.md` are written in Chinese.** They hold design documents, decision records and the shared glossary.
+- **`docs/design/**`, `docs/adr/**`, `docs/prd/**` and `docs/glossary.md` are written in Chinese.** They hold design documents, decision records, requirements documents and the shared glossary.
 - **Everything else is English**: code comments, godoc/TSDoc, module docs, per-module `AGENTS.md` files, package READMEs, the root `README.md`, `.claude/skills/**`, commit messages, and GitHub Issues (titles, bodies, and comments — including the coding-flow role workflow).
 - User-facing product text is bilingual (zh-CN + en-US) and lives in i18n resources, never in code.
 
 ## Documentation
 
 - design: docs/design
+- requirements: docs/prd
 - adr: docs/adr
 - glossary: docs/glossary.md
 - language: zh-CN
 
-Requirements documents are not used. Load the `document-standards` skill before creating or editing anything under these paths.
+Load the `document-standards` skill before creating or editing anything under these paths.
 
 ## Commands
 
@@ -51,7 +54,7 @@ through `go.work` like every other.
 | `pkg/` | The implementation: one Go module. Each top-level directory under it is a capability directory, and each carries its own `AGENTS.md`. The shared units and their test fixtures live under `pkg/internal/`, each shared unit with an `AGENTS.md` of its own. |
 | `starters/` | Runnable, copyable product skeletons that assemble the modules into a running program; `starters/demo` is the starting point. |
 | `web/` | The frontend package library: the platform's deliverable npm packages, a pnpm workspace of its own. |
-| `docs/design`, `docs/adr`, `docs/glossary.md` | The design authority. Chinese, per the language rule above. |
+| `docs/design`, `docs/adr`, `docs/prd`, `docs/glossary.md` | The design authority and the requirements it serves. Chinese, per the language rule above. |
 | `tools/` | Repository self-checks. `tools/README.md` says what each one does. |
 | `Makefile`, `.mise.toml`, `.golangci.yml`, `.github/workflows/` | The engineering machinery: entry points, toolchain pins, lint configuration, CI. |
 | `compose.yaml` | The external backends the `integration`-tagged cases run against: PostgreSQL, Redis, NATS and memcached. The tests connect to it; it is the only thing that starts it. |
@@ -88,6 +91,7 @@ through `go.work` like every other.
 | Location | Content |
 |---|---|
 | `docs/design` | What the architecture is: the whole picture in `architecture.md`, one document per module under `modules/`. |
+| `docs/prd` | What the product must do: one document per capability under `features/`, one per business process under `journeys/`. |
 | `docs/adr` | Why it is that way: one decision per file, alternatives included. |
 | `docs/glossary.md` | The shared vocabulary. A term used in a design document means what this file says it means. |
 | `<module>/AGENTS.md` | The module's own contract: its boundaries and how to run it. |

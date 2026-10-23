@@ -80,17 +80,19 @@ checks need are pinned in `.mise.toml`.
 |---|---|
 | `pkg/` | The modules: one capability directory each, in a single Go module. |
 | `starters/` | Runnable, copyable product skeletons; `starters/demo` assembles the modules into one program. |
-| `docs/` | The design documents and decision records. |
+| `docs/` | The requirements, the design documents and the decision records. |
 | `tools/` | Repository self-checks. |
 | `go.work` | The module roster every command derives its module set from. |
 
 ## Documentation
 
-The design lives in [`docs/design`](docs/design): the whole picture in
-`architecture.md`, one document per module under `modules/`. The
-reasoning behind each decision, with the alternatives and the price, is
-in [`docs/adr`](docs/adr). Terms mean what
-[`docs/glossary.md`](docs/glossary.md) says they mean. Those three are
+What the product must do, seen from outside, is in
+[`docs/prd`](docs/prd): one document per capability and one per business
+process. The design lives in [`docs/design`](docs/design): the whole
+picture in `architecture.md`, one document per module under `modules`.
+The reasoning behind each decision, with the alternatives and the price,
+is in [`docs/adr`](docs/adr). Terms mean what
+[`docs/glossary.md`](docs/glossary.md) says they mean. Those four are
 written in Chinese; everything else in the repository is English.
 
 Each module carries its own `AGENTS.md` with the boundaries a change
