@@ -1148,12 +1148,23 @@ function ConsoleAreaGate({
 }): ReactElement | null {
   const snapshot = useAuthState()
   useConsoleTenantSettle(snapshot.state === 'authenticated')
+  // An account whose address is still unproved never settles a tenant: the
+  // personal tenant's ensure refuses a pending account and the roster is a
+  // staff-only read, so the permission set below is never read and the area
+  // would wait forever. The verification page is the one place that lifts the
+  // state, so a pending viewer who reaches the console is sent there instead.
+  const profile = useAuthnProfileGet({
+    query: { enabled: snapshot.state === 'authenticated' },
+  })
   const status = consoleAreaStatus(snapshot)
   if (status === 'granted') {
     return <>{children}</>
   }
   if (status === 'denied') {
     return <TenantHomeRedirect />
+  }
+  if (contactVerificationPending(profile.data ?? {})) {
+    return <ContactVerificationRedirect />
   }
   return <ConsoleAccessPending />
 }
@@ -1169,6 +1180,20 @@ function TenantHomeRedirect(): null {
   const redirect = useRedirect()
   useEffect(() => {
     redirect(TENANT_HOME_PATH)
+  }, [redirect])
+  return null
+}
+
+/**
+ * Moves a viewer whose address is still unproved to the account page's
+ * verification section, which is where a registration already lands and the
+ * only place the state can be lifted. Renders nothing on the way, like the
+ * redirect above.
+ */
+function ContactVerificationRedirect(): null {
+  const redirect = useRedirect()
+  useEffect(() => {
+    redirect(`${ACCOUNT_PATH}?verify=1`)
   }, [redirect])
   return null
 }

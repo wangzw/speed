@@ -16,7 +16,7 @@
  * apart.
  */
 
-import { act, fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { drawerClasses } from '@mui/material/Drawer'
@@ -479,6 +479,40 @@ describe('the console area', () => {
         name: demoEnUS.home.heading,
       }),
     ).not.toBeInTheDocument()
+  })
+
+  it('sends a viewer whose address is unproved to the verification page', async () => {
+    // A registration that has not proved its address settles no tenant: the
+    // personal tenant's ensure refuses a pending account and the roster is
+    // staff-only, so the platform permission set is never read and the area
+    // would wait forever. The verification page is the one place that lifts
+    // the state, so the console URL lands there instead of on the wait.
+    window.history.replaceState({}, '', '/console/tenants')
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      if (path === '/api/v1/auth/me') {
+        return Promise.resolve({
+          identifiers: [],
+          password_set: false,
+          verification: { state: 'pending' },
+        } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await waitFor(() => expect(window.location.pathname).toBe('/account'))
+    expect(window.location.search).toBe('?verify=1')
+    expect(
+      screen.queryByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).not.toBeInTheDocument()
+
+    // The seam is one global binding: leave no answer behind for the cases
+    // that mount the app without scripting one.
+    bindRequestFn(<T,>(): Promise<T> =>
+      Promise.reject(new Error('no request is scripted')),
+    )
   })
 
   it('admits the console once a staff platform set lands', async () => {

@@ -276,7 +276,8 @@ flowchart TD
    - 匿名 → 登录面（`SessionGate`）；
    - 会话在冒充中（auth-core 快照的 `impersonating` 为真）→ 重定向到租户区首页，与平台权限集无关；
    - 特性态为 `pending` → 无框架的等待；为 `failed` → 无框架的失败视图，带重试；
-   - 平台权限集未知 → 无框架的等待（`ConsoleAccessPending`）；
+   - 平台权限集未知、且档案的 `verification.state` 为 `pending` → 重定向到账户页的验证节 `/account?verify=1`：这样的账户既不会被 ensure 建出租户、也读不到名册，权限集永远读不出，等待不会有结果；
+   - 平台权限集未知（其余情形）→ 无框架的等待（`ConsoleAccessPending`）；
    - 平台权限集为空 → 重定向到租户区首页，任何 `/console/*` 路径都一样；
    - 控制台声明经 `presentDeclarations` 收窄后为空 → 按租户区处理，`/console/x` 与 `/x` 同为租户区的 404；
    - 其余 → 控制台框架，进入存在性判定。
