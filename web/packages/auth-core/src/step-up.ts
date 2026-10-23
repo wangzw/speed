@@ -61,6 +61,14 @@ import { useEffect, useRef, useState } from 'react'
 import { isApiError } from '@speed/api-client'
 import type { AuthSession, AuthnFlowState, AuthnStep } from './session.js'
 
+/**
+ * The code a refusal carries when the flow the request named is gone. The
+ * record is what the open claim below releases, so an answer saying it is
+ * gone ends the claim: there is nothing left to release, and releasing
+ * anyway would delete whatever flow the cookie names next.
+ */
+const FLOW_INVALID_CODE = 'authn.flow_invalid'
+
 /** One answer to a flow step: the answer step name and its input, the
  * shape the login answer operation carries. */
 export interface AuthnFlowAnswer {
@@ -282,7 +290,16 @@ export function useStepUp(
         settle(state)
       } catch (error) {
         if (run === runRef.current) {
-          setErrorCode(codeOf(error))
+          const code = codeOf(error)
+          if (code === FLOW_INVALID_CODE) {
+            // The record this flow named is gone, so there is no binding
+            // left to release. Releasing it anyway -- on a close, or on
+            // the remount a restart performs -- deletes whatever flow the
+            // cookie names by then, which is the fresh one the restart
+            // just opened. The server has said there is nothing here.
+            openRef.current = false
+          }
+          setErrorCode(code)
           setPhase('failed')
         }
       } finally {

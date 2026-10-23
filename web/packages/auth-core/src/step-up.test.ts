@@ -16,10 +16,10 @@
  * stubs that throw.
  */
 
-import { cleanup, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isApiError } from '@speed/api-client'
-import type { AuthSession, AuthSnapshot } from './session.js'
+import type { AuthSession, AuthnFlowState, AuthSnapshot } from './session.js'
 import { useStepUp } from './step-up.js'
 
 afterEach(() => {
@@ -120,6 +120,52 @@ describe('useStepUp', () => {
       expect(result.current.phase).toBe('failed')
     })
     expect(result.current.errorCode).toBe('client.http.400')
+  })
+
+  it('releases nothing when an answer finds its flow gone', async () => {
+    // An answer refused as flow_invalid says the record no longer exists.
+    // Releasing the binding afterwards would name whatever flow the cookie
+    // holds by then -- the fresh one a restart opens -- so the claim ends
+    // with the refusal and the unmount sends no abandon.
+    const openStep = {
+      seq: 1,
+      state: 'first',
+      next: { kind: 'prompt', fields: [] },
+    } as unknown as AuthnFlowState
+    const abandon = vi.fn(() => Promise.resolve())
+    const base = session(new Error('the start is scripted'))
+    const driven: AuthSession = {
+      ...base,
+      startAuthenticatedFlow: () => Promise.resolve(openStep),
+      answerFlow: () =>
+        Promise.reject({
+          status: 401,
+          code: 'authn.flow_invalid',
+          message: 'gone',
+          auth: true,
+        }),
+      abandonFlow: abandon,
+    }
+    const { result, unmount } = renderHook(() => useStepUp(driven, true, () => undefined))
+    await waitFor(() => {
+      expect(result.current.phase).toBe('step')
+    })
+
+    act(() => {
+      result.current.answer({ step: 'answer', input: { password: 'x' } })
+    })
+    await waitFor(() => {
+      expect(result.current.phase).toBe('failed')
+    })
+    expect(result.current.errorCode).toBe('authn.flow_invalid')
+
+    act(() => {
+      unmount()
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(abandon).not.toHaveBeenCalled()
   })
 
   it('stays on failed with its code when the start is refused for another reason', async () => {

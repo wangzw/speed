@@ -524,9 +524,9 @@ describe('StepUpChallenge', () => {
       />,
     )
 
-    // The answer says the flow is gone, which offers a restart. The old
-    // driver left its flow open (an answer refusal is not a settlement),
-    // so remounting releases it -- exactly once, while the new flow lives.
+    // The answer says the flow is gone, which offers a restart. Nothing is
+    // left to release for it: an abandon here would delete whatever flow
+    // the cookie names by then, which is the fresh one the restart opens.
     await user.type(await screen.findByLabelText(/code/), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.stepUp.submit }))
     await screen.findByRole('button', { name: zhCN.stepUp.restart })
@@ -534,7 +534,7 @@ describe('StepUpChallenge', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    expect(abandon).toHaveBeenCalledTimes(1)
+    expect(abandon).not.toHaveBeenCalled()
     expect(starts).toBe(2)
   })
 
