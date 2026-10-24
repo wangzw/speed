@@ -6,6 +6,7 @@
 
 ## 前置条件
 
+- 运营者的账户已证明本人邮箱。
 - 本次部署装配了短信注册表与恰好一个短信载体，载体可用。
 - 发送总开关处于开启。
 - 配置来源声明了模板，列表中可以观察到配置来源的只读表现。
@@ -64,7 +65,7 @@ flowchart TD
 
 ## 覆盖的需求
 
-- 平台设置与授权：`REQ-platform-config-010`、`REQ-platform-config-011`、`REQ-platform-config-012`、`REQ-platform-config-013`、`REQ-platform-config-014`、`REQ-platform-config-015`、`REQ-platform-config-016`
+- 平台设置与授权：`REQ-platform-config-010`、`REQ-platform-config-011`、`REQ-platform-config-012`、`REQ-platform-config-013`、`REQ-platform-config-014`、`REQ-platform-config-015`、`REQ-platform-config-016`、`REQ-platform-config-034`、`REQ-platform-config-036`
 - 通知：`REQ-notifications-021`、`REQ-notifications-023`、`REQ-notifications-044`
 - 界面反馈：`REQ-presentation-027`、`REQ-presentation-028`
 

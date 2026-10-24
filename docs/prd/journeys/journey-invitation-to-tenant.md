@@ -57,8 +57,8 @@ flowchart TD
 
 ## 覆盖的需求
 
-- 平台运营：`REQ-platform-admin-002`、`REQ-platform-admin-032`、`REQ-platform-admin-033`
-- 组织与成员：`REQ-tenancy-008`、`REQ-tenancy-011`、`REQ-tenancy-013`、`REQ-tenancy-015`、`REQ-tenancy-016`、`REQ-tenancy-017`、`REQ-tenancy-018`、`REQ-tenancy-019`、`REQ-tenancy-020`、`REQ-tenancy-021`
+- 平台运营：`REQ-platform-admin-001`、`REQ-platform-admin-002`、`REQ-platform-admin-032`、`REQ-platform-admin-033`、`REQ-platform-admin-036`
+- 组织与成员：`REQ-tenancy-008`、`REQ-tenancy-011`、`REQ-tenancy-013`、`REQ-tenancy-015`、`REQ-tenancy-016`、`REQ-tenancy-017`、`REQ-tenancy-018`、`REQ-tenancy-019`、`REQ-tenancy-020`、`REQ-tenancy-021`、`REQ-tenancy-035`、`REQ-tenancy-043`
 - 登录：`REQ-signin-030`
 
 ## 端到端测试

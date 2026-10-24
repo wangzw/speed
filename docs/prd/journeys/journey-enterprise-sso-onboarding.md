@@ -57,11 +57,11 @@ flowchart TD
 ## 覆盖的需求
 
 - 平台运营：`REQ-platform-admin-013`
-- 平台设置与授权：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`
+- 平台设置与授权：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`、`REQ-platform-config-038`
 - 登录：`REQ-signin-001`、`REQ-signin-003`、`REQ-signin-004`、`REQ-signin-020`、`REQ-signin-021`、`REQ-signin-022`、`REQ-signin-023`、`REQ-signin-027`、`REQ-signin-028`
 - 自助注册：`REQ-signup-018`
 - 账户安全：`REQ-security-029`
-- 组织与成员：`REQ-tenancy-009`、`REQ-tenancy-022`、`REQ-tenancy-023`
+- 组织与成员：`REQ-tenancy-009`、`REQ-tenancy-022`、`REQ-tenancy-023`、`REQ-tenancy-035`、`REQ-tenancy-036`
 - 界面偏好：`REQ-presentation-027`
 
 ## 端到端测试

@@ -6,7 +6,7 @@
 
 ## 前置条件
 
-- 运营者已用已证明邮箱的账户登录，当前会话不是冒充身份。
+- 运营者已用已证明邮箱的账户登录，当前会话不是冒充身份，且不具备发起冒充所需的新鲜多因素证明。
 - 运营者名下已登记两种两步验证方式，其中至少一种是已启用满规定时长的非短信方式（认证器应用或通行密钥），使发起冒充所要求的新鲜多因素与因素成熟度都能满足。
 - 存在一个组织，以及该组织中一位已启用、未受保护、不持有任何平台域权限的成员账户；目标账户是该组织的有效成员。
 - 发起冒充的运营者不是该组织成员，在该组织不持有任何权限。
@@ -54,9 +54,9 @@ flowchart TD
 
 ## 覆盖的需求
 
-- 平台运营：`REQ-platform-admin-001`、`REQ-platform-admin-003`、`REQ-platform-admin-021`、`REQ-platform-admin-022`、`REQ-platform-admin-023`、`REQ-platform-admin-024`、`REQ-platform-admin-026`、`REQ-platform-admin-027`、`REQ-platform-admin-029`、`REQ-platform-admin-107`、`REQ-platform-admin-109`、`REQ-platform-admin-110`
+- 平台运营：`REQ-platform-admin-001`、`REQ-platform-admin-003`、`REQ-platform-admin-021`、`REQ-platform-admin-022`、`REQ-platform-admin-023`、`REQ-platform-admin-024`、`REQ-platform-admin-026`、`REQ-platform-admin-027`、`REQ-platform-admin-029`、`REQ-platform-admin-078`、`REQ-platform-admin-081`、`REQ-platform-admin-082`、`REQ-platform-admin-084`、`REQ-platform-admin-107`、`REQ-platform-admin-108`、`REQ-platform-admin-109`、`REQ-platform-admin-110`
 - 账户安全：`REQ-security-013`、`REQ-security-014`、`REQ-security-015`、`REQ-security-018`
-- 组织与成员：`REQ-tenancy-024`
+- 组织与成员：`REQ-tenancy-024`、`REQ-tenancy-038`
 - 通知：`REQ-notifications-001`、`REQ-notifications-025`
 
 ## 端到端测试

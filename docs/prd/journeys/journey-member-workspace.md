@@ -51,8 +51,8 @@ flowchart TD
 
 ## 覆盖的需求
 
-- 通知：`REQ-notifications-001`、`REQ-notifications-003`、`REQ-notifications-004`、`REQ-notifications-009`、`REQ-notifications-010`、`REQ-notifications-013`、`REQ-notifications-025`、`REQ-notifications-028`、`REQ-notifications-029`、`REQ-notifications-030`、`REQ-notifications-031`、`REQ-notifications-057`
-- 组织与成员：`REQ-tenancy-022`、`REQ-tenancy-025`
+- 通知：`REQ-notifications-001`、`REQ-notifications-003`、`REQ-notifications-004`、`REQ-notifications-009`、`REQ-notifications-010`、`REQ-notifications-013`、`REQ-notifications-025`、`REQ-notifications-028`、`REQ-notifications-029`、`REQ-notifications-030`、`REQ-notifications-031`、`REQ-notifications-051`、`REQ-notifications-057`
+- 组织与成员：`REQ-tenancy-022`、`REQ-tenancy-025`、`REQ-tenancy-036`
 
 ## 端到端测试
 
