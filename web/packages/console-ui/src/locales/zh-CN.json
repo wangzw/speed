@@ -131,7 +131,12 @@
     "status": {
       "active": "已启用",
       "disabled": "已停用",
+      "deleted": "已删除",
       "other": "未知"
+    },
+    "disabledBy": {
+      "operator": "由运营者停用",
+      "account": "由账户状态停用"
     },
     "create": {
       "title": "登记租户",
@@ -219,7 +224,8 @@
     "field": {
       "id": "标识",
       "alias": "别名",
-      "status": "状态"
+      "status": "状态",
+      "disabledBy": "停用来源"
     },
     "actions": {
       "title": "操作",

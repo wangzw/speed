@@ -178,6 +178,7 @@ import type {
   SmsAdminTemplatesListParams,
   TenantAdminTenant,
   TenantAdminTenantStatus,
+  TenantAdminTenantsSetStatusBodyStatus,
 } from '@speed/api-sdk'
 import { useConsoleUiTranslation } from './internal/translation.js'
 
@@ -189,11 +190,16 @@ const GLOBAL_LAYER = { layer: 'global' } as const
  * GET /api/v1/system/tenants, named for the console's own view. */
 export type ConsoleTenant = TenantAdminTenant
 
-/** The roster's closed status set: the only values a status write may
- * carry (the read side stays open -- an answer outside the set renders
- * the generic label rather than a raw value). The generated
- * TenantAdminTenantStatus enum. */
+/** The state a roster row reads as (the read side stays open -- an answer
+ * outside the set renders the generic label rather than a raw value). The
+ * generated TenantAdminTenantStatus enum: active, disabled or deleted. */
 export type ConsoleTenantStatus = TenantAdminTenantStatus
+
+/** The state a status write may carry: active or disabled. Deletion is
+ * terminal and has no route on this surface, so the write body's enum is
+ * narrower than the response's -- the generated set-status body enum, not
+ * the response one. */
+export type ConsoleSetTenantStatusValue = TenantAdminTenantsSetStatusBodyStatus
 
 /** One setting as /api/v1/system/settings shows it -- the generated row of
  * GET /api/v1/system/settings. */
@@ -233,10 +239,11 @@ export interface ConsoleSetTenantAliasInput {
   readonly alias: string
 }
 
-/** POST /api/v1/system/tenants/:id/status body: a new state. */
+/** POST /api/v1/system/tenants/:id/status body: a new state, one of the
+ * writable set active/disabled. */
 export interface ConsoleSetTenantStatusInput {
   readonly id: string
-  readonly status: ConsoleTenantStatus
+  readonly status: ConsoleSetTenantStatusValue
 }
 
 /** A tenant target for a read that stays disabled while no id is chosen. */

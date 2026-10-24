@@ -12,9 +12,12 @@
  * Every read and write is an operation on the console operations bundle
  * -- the host binds the generated /api/v1/system/tenants operations to it -- so
  * the page builds no client and writes no query key. The row's state
- * renders from the roster's own spelling (active / disabled); a value
- * outside that closed set renders the generic label, never a raw value.
- * A failed list render settles into the retryable error placeholder.
+ * renders from the roster's own spelling (active / disabled / deleted); a
+ * value outside that closed set renders the generic label, never a raw
+ * value. A disabled row also shows who disabled it (an operator or the
+ * account's own state). A deleted row is a tombstone: its state is terminal,
+ * so the row carries no write controls at all. A failed list render settles
+ * into the retryable error placeholder.
  *
  * The identifier and alias inputs carry a helper that names the rule the
  * backend holds them to (no blanks or control characters) and mark
@@ -85,7 +88,7 @@ import type { ConsoleTenant } from './operations.js'
  * tenants.status. A value outside it renders the generic other label,
  * never a raw value.
  */
-const KNOWN_STATUSES = new Set<string>(['active', 'disabled'])
+const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 
 /** The status label for a roster value, guarding the closed set. */
 function statusLabel(
@@ -95,6 +98,19 @@ function statusLabel(
   return KNOWN_STATUSES.has(status)
     ? t(`tenants.status.${status}`)
     : t('tenants.status.other')
+}
+
+/**
+ * Who disabled a row, from the roster's own closed source set. Only called
+ * for a disabled row: the source is absent on every other state.
+ */
+function disabledByLabel(
+  source: string | undefined,
+  t: (key: string) => string,
+): string {
+  return source === 'account'
+    ? t('tenants.disabledBy.account')
+    : t('tenants.disabledBy.operator')
 }
 
 /**
@@ -406,9 +422,20 @@ export function TenantRosterPage({
       priority: 'medium',
       cellWrap: 'nowrap',
       cell: (tenant) => (
-        <Typography variant="body2" color="text.secondary">
-          {statusLabel(tenant.status, t)}
-        </Typography>
+        <Box>
+          <Typography variant="body2" color="text.secondary">
+            {statusLabel(tenant.status, t)}
+          </Typography>
+          {tenant.status === 'disabled' && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block' }}
+            >
+              {disabledByLabel(tenant.disabledBy, t)}
+            </Typography>
+          )}
+        </Box>
       ),
     },
     // Host columns sit between the roster's own fields and the row's write
@@ -417,13 +444,17 @@ export function TenantRosterPage({
     {
       id: 'actions',
       header: t('tenants.column.actions'),
-      cell: (tenant) => (
-        <TenantRowActions
-          tenant={tenant}
-          refreshGeneration={refreshGeneration}
-          onWritePendingChange={reportRowWritePending}
-        />
-      ),
+      // A tombstone is read-only: deletion is terminal, so neither the
+      // rename nor the status route can change it. The cell is empty and
+      // the row's write scope is never mounted.
+      cell: (tenant) =>
+        tenant.status === 'deleted' ? null : (
+          <TenantRowActions
+            tenant={tenant}
+            refreshGeneration={refreshGeneration}
+            onWritePendingChange={reportRowWritePending}
+          />
+        ),
     },
   ]
 

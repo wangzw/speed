@@ -653,6 +653,51 @@ describe('TenantDetailPage', () => {
     expect(screen.getByRole('button', { name: zhCN.tenantDetail.retry })).toBeInTheDocument()
   })
 
+  it('shows who disabled a disabled tenant', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () =>
+          Promise.resolve(
+            tenantFixture({
+              id: 'acme',
+              alias: 'Acme',
+              status: 'disabled',
+              disabledBy: 'account',
+            }),
+          ),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+    expect(
+      screen.getByText(zhCN.tenantDetail.field.disabledBy),
+    ).toBeInTheDocument()
+    expect(screen.getByText(zhCN.tenants.disabledBy.account)).toBeInTheDocument()
+  })
+
+  it('renders a tombstone read-only with no actions', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () =>
+          Promise.resolve(
+            tenantFixture({ id: 'gone', alias: 'Gone Co', status: 'deleted' }),
+          ),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="gone" />, { operations })
+    await screen.findByText('Gone Co')
+    expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
+    // Deletion is terminal: the page renders the tenant and no write
+    // control at all.
+    expect(screen.queryByText(zhCN.tenantDetail.actions.title)).toBeNull()
+    expect(
+      screen.queryByLabelText(zhCN.tenantDetail.actions.renameLabel),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: zhCN.tenantDetail.actions.renameSubmit }),
+    ).toBeNull()
+  })
+
   it('has no axe violations', async () => {
     const operations = createConsoleOperations(makeConsoleBackend())
     renderWithProviders(<TenantDetailPage id="acme" />, { operations })

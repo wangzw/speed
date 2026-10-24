@@ -82,6 +82,55 @@ describe('TenantRosterPage', () => {
     expect(screen.getByText(zhCN.tenants.status.disabled)).toBeInTheDocument()
   })
 
+  it('renders the deleted state and hides a tombstone row\'s write controls', async () => {
+    const tenants: ConsoleTenant[] = [
+      { id: 'gone', alias: 'Gone Co', status: 'deleted' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    expect(await screen.findByText('Gone Co')).toBeInTheDocument()
+    expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
+    // A tombstone is terminal: the row carries no rename input and no
+    // enable/disable toggle.
+    expect(
+      screen.queryByLabelText(text(zhCN.tenants.rename.ariaWithId, { id: 'gone' })),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.tenants.rename.submitAria, { id: 'gone' }),
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.tenants.enableAria, { id: 'gone' }),
+      }),
+    ).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: text(zhCN.tenants.disableAria, { id: 'gone' }),
+      }),
+    ).toBeNull()
+  })
+
+  it('shows who disabled a disabled row and nothing on a row that is not disabled', async () => {
+    const tenants: ConsoleTenant[] = [
+      { id: 'op', alias: 'Operator Off', status: 'disabled', disabledBy: 'operator' },
+      { id: 'acc', alias: 'Account Off', status: 'disabled', disabledBy: 'account' },
+      { id: 'on', alias: 'Still On', status: 'active' },
+    ]
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
+    )
+    renderWithProviders(<TenantRosterPage />, { operations })
+    await screen.findByText('Operator Off')
+    expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.tenants.disabledBy.account)).toBeInTheDocument()
+    // Only the disabled operator row carries the operator source; the
+    // active row carries none.
+    expect(screen.getAllByText(zhCN.tenants.disabledBy.operator)).toHaveLength(1)
+  })
 
   it('raises its compact actions to the 44px floor under a coarse pointer', async () => {
     const tenants: ConsoleTenant[] = [

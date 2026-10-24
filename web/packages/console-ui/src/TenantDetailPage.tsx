@@ -11,8 +11,11 @@
  *
  * The read is an operation on the console operations bundle, so the page
  * builds no client and writes no query key. The status renders from the
- * roster's own closed spelling (active / disabled); a value outside it
- * renders the generic label, never a raw value. A refused read settles
+ * roster's own closed spelling (active / disabled / deleted); a value
+ * outside it renders the generic label, never a raw value. A disabled
+ * tenant also shows who disabled it (an operator or the account's own
+ * state). A deleted tenant is a tombstone: its state is terminal, so the
+ * page renders no write control at all. A refused read settles
  * into a permission placeholder (403) or the retryable error placeholder
  * (any other failure). The rename and the enable/disable are one control
  * group, so they report through one feedback scope whose region sits
@@ -76,12 +79,23 @@ import { useConsoleOperations } from './operations.js'
 import type { ConsoleTenant } from './operations.js'
 
 /** The roster's closed status set; a value outside it renders the generic label. */
-const KNOWN_STATUSES = new Set<string>(['active', 'disabled'])
+const KNOWN_STATUSES = new Set<string>(['active', 'disabled', 'deleted'])
 
 function statusLabel(status: string, t: (key: string) => string): string {
   return KNOWN_STATUSES.has(status)
     ? t(`tenants.status.${status}`)
     : t('tenants.status.other')
+}
+
+/** Who disabled the tenant, from the roster's closed source set. Only called
+ * for a disabled tenant: the source is absent on every other state. */
+function disabledByLabel(
+  source: string | undefined,
+  t: (key: string) => string,
+): string {
+  return source === 'account'
+    ? t('tenants.disabledBy.account')
+    : t('tenants.disabledBy.operator')
 }
 
 /** The sibling administration pages this detail page links to, by declaration id. */
@@ -233,6 +247,9 @@ export function TenantDetailPage({
 
   const main = (settled: ConsoleTenant) => {
     const disabled = settled.status === 'disabled'
+    // A tombstone is read-only: deletion is terminal, so the page renders
+    // the tenant and no write control at all.
+    const deleted = settled.status === 'deleted'
     return (
       <>
         <SectionCard title={t('tenantDetail.summary')} sx={{ mb: 3 }}>
@@ -243,9 +260,16 @@ export function TenantDetailPage({
               label={t('tenantDetail.field.status')}
               value={statusLabel(settled.status, t)}
             />
+            {disabled && (
+              <DefinitionRow
+                label={t('tenantDetail.field.disabledBy')}
+                value={disabledByLabel(settled.disabledBy, t)}
+              />
+            )}
           </Box>
         </SectionCard>
 
+        {!deleted && (
         <SectionCard title={t('tenantDetail.actions.title')} sx={{ mb: 3 }}>
           <Box
             sx={{
@@ -312,6 +336,7 @@ export function TenantDetailPage({
             <WriteFeedbackRegion outcome={feedback.outcome} />
           </Box>
         </SectionCard>
+        )}
 
         {related.length > 0 && (
           <SectionCard title={t('tenantDetail.related.title')}>

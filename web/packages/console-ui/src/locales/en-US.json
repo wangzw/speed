@@ -131,7 +131,12 @@
     "status": {
       "active": "Active",
       "disabled": "Disabled",
+      "deleted": "Deleted",
       "other": "Unknown"
+    },
+    "disabledBy": {
+      "operator": "Disabled by an operator",
+      "account": "Disabled by the account's state"
     },
     "create": {
       "title": "Register a tenant",
@@ -219,7 +224,8 @@
     "field": {
       "id": "Identifier",
       "alias": "Alias",
-      "status": "Status"
+      "status": "Status",
+      "disabledBy": "Disabled by"
     },
     "actions": {
       "title": "Actions",
