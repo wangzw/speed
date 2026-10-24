@@ -128,7 +128,7 @@ const (
 	signupIPLimitCeil         = 10000
 	signupGlobalHourlyFloor   = 1
 	signupGlobalHourlyCeil    = 1000000
-	signupIPLimitDefault      = 0
+	signupIPLimitDefault      = 10
 	signupGlobalHourlyDefault = 100
 )
 
@@ -167,7 +167,7 @@ var defaults = options{
 	CallbackErrorTo: "/",
 	DisabledMethods: "[]",
 	DeliveryModes:   `["session","token"]`,
-	IPLimit:         0,
+	IPLimit:         60,
 	EmailCodeTTL:    10 * time.Minute,
 	EmailResend:     60 * time.Second,
 

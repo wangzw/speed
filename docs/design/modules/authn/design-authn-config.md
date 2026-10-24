@@ -181,13 +181,13 @@
 | `authn.account.secret-retention` | `time.Duration` | `720h` | 1h 到 8760h | | |
 | `authn.account.signup` | 字符串 | `closed` | `closed` 或 `open` | | 改为 `open` |
 | `authn.account.password-signup` | 字符串 | `closed` | `closed` 或 `open` | | 改为 `open` |
-| `authn.account.signup-ip-limit` | 整数 | `0`，关闭 | 0 到 10000，每分钟 | | 改为 0，或增大 |
+| `authn.account.signup-ip-limit` | 整数 | `10` | 0 到 10000，每分钟；0 关闭 | | 改小或改为 0 |
 | `authn.account.signup-global-hourly` | 整数 | `100` | 1 到 1000000 | | 增大 |
 | `authn.account.unverified-ttl` | `time.Duration` | `720h` | 0 到 8760h；0 关闭 | | |
 | `authn.account.unverified-sweep-interval` | `time.Duration` | `1h` | 1m 到 24h | | |
 | `authn.account.auto-link` | 字符串 | `never` | `never` 或 `verified-email` | | 改为 `verified-email` |
 
-`authn.account.password-signup` 与 `authn.account.signup` 相互独立：前者开的是匿名的用户名加口令注册路由，后者开的是社交与短信首次登录的开户。任一为 `open` 都使发现端点的 `signup.enabled` 为真，但两者互不蕴含：注册关闭时首登开户照旧，首登开户关闭时注册照旧。`authn.account.signup-ip-limit` 是注册路由按来源地址的分钟预算，0 关闭；`authn.account.signup-global-hourly` 是注册的全局小时预算。`unverified-ttl` 是自助注册账户在 `signup_state=1`、`signup_verified_at IS NULL` 且没有已验证邮箱时可以保持不动的期限，0 关闭清理；清理删除账户时连带释放它的联系方式预留；`unverified-sweep-interval` 是清扫协程的间隔。后两项不放宽任何校验：期限变长只是让受限账户留得更久。
+`authn.account.password-signup` 与 `authn.account.signup` 相互独立：前者开的是匿名的用户名加口令注册路由，后者开的是社交与短信首次登录的开户。任一为 `open` 都使发现端点的 `signup.enabled` 为真，但两者互不蕴含：注册关闭时首登开户照旧，首登开户关闭时注册照旧。`authn.account.signup-ip-limit` 是注册路由按来源地址的分钟预算，缺省为每分钟 10 次，0 关闭；`authn.account.signup-global-hourly` 是注册的全局小时预算。`unverified-ttl` 是自助注册账户在 `signup_state=1`、`signup_verified_at IS NULL` 且没有已验证邮箱时可以保持不动的期限，0 关闭清理；清理删除账户时连带释放它的联系方式预留；`unverified-sweep-interval` 是清扫协程的间隔。后两项不放宽任何校验：期限变长只是让受限账户留得更久。
 
 `cache-ttl` 是绝对期限：自一次真实派生通过起算，命中不续期，0 关闭缓存。`fail-window` 与 `max-backoff` 的取值域各自独立，所以 `max-backoff` 大于 `fail-window` 的组合合法。失败计数在窗口已过、且这些失败赚得的等待也已走完之后才归零，窗口不会在锁定期结束之前把计数清掉；缺省值下两者相等，行为与按窗口归零相同。账户的 `throttle-decay` 与 `throttle-max-delay` 同判（[design-authn-account](design-authn-account.md)）。
 
@@ -213,7 +213,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.login.callback-error-return-to` | 字符串 | `/` | 按 `return_to` 的规则校验 | | |
 | `authn.login.disabled-methods` | 字符串，JSON 数组 | `[]` | 登录方式名的数组 | | 移除成员 |
 | `authn.login.delivery-modes` | 字符串，JSON 数组 | `["session","token"]` | 缺省集合的子集 | | 加入成员 |
-| `authn.login.ip-limit` | 整数 | `0`，关闭 | 0 到 10000，每分钟 | | 改为 0，或增大 |
+| `authn.login.ip-limit` | 整数 | `60` | 0 到 10000，每分钟；0 关闭 | | 改小或改为 0 |
 | `authn.login.email-code-ttl` | `time.Duration` | `10m` | 1m 到 30m | | 增大 |
 | `authn.login.email-resend-interval` | `time.Duration` | `60s` | 30s 到 10m | | 减小 |
 | `authn.login.email-per-address-hourly` | 整数 | `5` | 1 到 60 | | 增大 |
@@ -240,7 +240,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 
 补充：
 
-- `authn.login.disabled-methods` 在运行期关闭一个登录方式，例如遭遇短信轰炸时关 `sms`；`authn.login.ip-limit` 缺省关闭的理由见 [design-authn-login](design-authn-login.md)。
+- `authn.login.disabled-methods` 在运行期关闭一个登录方式，例如遭遇短信轰炸时关 `sms`；`authn.login.ip-limit` 的缺省值与取值理由见 [design-authn-login](design-authn-login.md)。
 - `authn.sms.global-hourly-*` 按用途分设：登录的预算耗尽不挤占已通过口令的第二因素与因素登记。
 - `authn.sms.per-account-hourly` 只对 `mfa` 与 `enroll` 用途计数。
 - `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly` 与 `email-global-hourly` 是邮箱验证码的预算：前两项按归一化后的地址计数，窗口跨会话与账户共享，一个地址在一次重发窗口内只发一条码；第三项按发起的账户计；第四项是全部账户与地址共享的小时总量。地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算。
@@ -437,7 +437,7 @@ flowchart TD
     K -- 否 --> F["取声明默认值并记 Error"]
 ```
 
-强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类（含缺省为 0 即关闭的 `authn.login.ip-limit`）回落到默认值只是用了起点。**第三类是决定写出产物的写路径设置**（当前为 `authn.account.password-algorithm`）：它读不出来，或取值越出取值域时，不替换为默认值，而令这次写失败——登记账户与改口令答不可用，登录后的再哈希跳过并记 `Error`。键没有任何声明覆盖时按声明默认值写出并记一行 `Error`，这是本模块自身 schema 的缺陷，不令写失败。回落到另一个值会让宿主以为选定的值在生效，而实际写下的产物用了别的值。请求期的读取走内存快照；读取本身只在未知键、类型不符这类编程错误时出错，域外的行由各读取分支按上表处置并记 `Error`。因此 `Error` 日志多半指向代码缺陷，域外的行则指向一次绕过写入面的写入。
+强制类开关读不出来按拒绝：它们的声明默认值是「不强制」「不关闭」，回落到默认值就等于放行。强制类开关是封闭集合：`tenant.admission.require-mfa`、`tenant.admission.require-sso`、`authn.login.disabled-methods`、`authn.mfa.global-required`。其余设置项属调参类，读不出来取声明默认值并记 `Error`：超时、预算与次数类回落到默认值只是用了起点。**第三类是决定写出产物的写路径设置**（当前为 `authn.account.password-algorithm`）：它读不出来，或取值越出取值域时，不替换为默认值，而令这次写失败——登记账户与改口令答不可用，登录后的再哈希跳过并记 `Error`。键没有任何声明覆盖时按声明默认值写出并记一行 `Error`，这是本模块自身 schema 的缺陷，不令写失败。回落到另一个值会让宿主以为选定的值在生效，而实际写下的产物用了别的值。请求期的读取走内存快照；读取本身只在未知键、类型不符这类编程错误时出错，域外的行由各读取分支按上表处置并记 `Error`。因此 `Error` 日志多半指向代码缺陷，域外的行则指向一次绕过写入面的写入。
 
 设置缺席是合法的装配，不是读取出错：缺席时全部取声明默认值，不记 `Error`，也不按拒绝。
 

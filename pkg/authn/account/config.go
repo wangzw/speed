@@ -151,7 +151,7 @@ var defaults = options{
 	PasswordAlgorithm:        string(password.Argon2id),
 	Signup:                   signupClosed,
 	PasswordSignup:           signupClosed,
-	SignupIPLimit:            0,
+	SignupIPLimit:            10,
 	SignupGlobalHourly:       100,
 	UnverifiedTTL:            720 * time.Hour,
 	UnverifiedSweepInterval:  time.Hour,

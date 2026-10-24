@@ -418,8 +418,12 @@ requires `DEMO_SMTP_HOST` and `DEMO_SMTP_FROM`, and treats
 AUTH). `DEMO_SMTP_PORT` defaults to 587 and `DEMO_SMTP_TLS` to `starttls`. The
 entrypoint refuses a value carrying a double quote, a backslash, a line break
 or a control character, because the value is rendered inside a YAML scalar.
-The mail budgets are the declared defaults: a walk-through may need to wait
-out the per-address window. A default build has no mail path and leaves
+Both registration routes are open on a public deployment, so the two per-source
+budgets keep the platform defaults rather than the demo seeding its own: a source
+address may open ten accounts a minute (`authn.account.signup-ip-limit`) and
+start sixty login flows a minute (`authn.login.ip-limit`). The mail budgets are
+the declared defaults too: a walk-through may need to wait out the per-address
+window. A default build has no mail path and leaves
 registration closed, so the baseline testdata and the review build keep their
 own assemblies.
 
