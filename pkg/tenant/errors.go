@@ -126,6 +126,25 @@ var (
 	// and this one to the process's own code.
 	ErrTenantDisabled = errors.New("tenant: the tenant is not being served")
 
+	// ErrTenantDeleted reports a tenant the roster holds as a tombstone: a
+	// write path asked to change one — SetStatus, SetStatusByAccount, SetAlias
+	// or Put — or Enter asked to enter one. The row, the identifier and the
+	// alias stay, but the tenant is terminal: it is not served and no call
+	// serves it again.
+	//
+	// The fix is to drop the work the caller was doing for it. A deleted tenant
+	// is not a disabled one: one may be served again and a path can wait it
+	// out, while the other cannot. Work that still belongs to it — its trail
+	// read, its data exported or cleared — enters it through
+	// Catalog.EnterRegistered. Deletion itself has one route, Catalog.Delete;
+	// asking a status write to set the deleted state is ErrInvalidTenant.
+	//
+	// It is apart from ErrInvalidTenant, which an identifier no row carries
+	// gets, for the same reason ErrTenantDisabled is: a caller's move differs.
+	// The request face answers all three alike, because that answer goes to a
+	// caller outside the process; this one goes to the process's own code.
+	ErrTenantDeleted = errors.New("tenant: the tenant has been deleted")
+
 	// ErrAliasConflict reports a write that would put one alias on two
 	// tenants. The fix is to change one of them, or to rename the tenant
 	// that already holds it.

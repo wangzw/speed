@@ -93,16 +93,54 @@ const (
 	StatusDisabled Status = iota
 	// StatusActive is a tenant that is served.
 	StatusActive
+	// StatusDeleted is a tenant that has been deleted. The row, the identifier
+	// and the alias stay; the tenant is not served, and no write path changes
+	// its status again. A row in this state is a tombstone.
+	//
+	// It is a state of its own rather than a kind of disabled because the two
+	// are disposed of differently: a disabled tenant may be served again and a
+	// path can wait it out, while a deleted one is terminal and the work that
+	// named it is dropped. Only Delete reaches this state.
+	StatusDeleted
 )
 
-// String names the state for diagnostics.
+// String names the state for diagnostics and for the management surface's view.
 func (s Status) String() string {
-	if s == StatusActive {
+	switch s {
+	case StatusActive:
 		return "active"
+	case StatusDeleted:
+		return "deleted"
+	default:
+		// Every other value, including ones written by a later build, is
+		// refused rather than served.
+		return "disabled"
 	}
-	// Every other value, including ones written by a later build, is
-	// refused rather than served.
-	return "disabled"
+}
+
+// DisabledBy says who disabled a tenant. The set of values is closed.
+type DisabledBy int
+
+const (
+	// DisabledByOperator is the zero value: an operator disabled the tenant
+	// through SetStatus, or the source was never recorded. It also covers a
+	// source column holding a value this build does not recognise, so that a
+	// disable nobody can account for is never revoked by an account's recovery.
+	DisabledByOperator DisabledBy = iota
+	// DisabledByAccount is a disable that account state caused. It is written
+	// only through SetStatusByAccount, and setting the account back to enabled
+	// revokes it.
+	DisabledByAccount
+)
+
+// String names the source for diagnostics and for the management surface's view.
+// Only DisabledByAccount reads as the account's; everything else, a value this
+// build does not know included, reads as the operator's.
+func (d DisabledBy) String() string {
+	if d == DisabledByAccount {
+		return "account"
+	}
+	return "operator"
 }
 
 // Tenant is one row of the roster.
@@ -113,6 +151,10 @@ type Tenant struct {
 	// the roster and may be changed. Nothing is decided by it: resolution
 	// replaces it with the identifier before anything reads a tenant.
 	Alias string
-	// Status says whether this tenant is served.
+	// Status says whether this tenant is served, and whether it has been
+	// deleted.
 	Status Status
+	// DisabledBy says who disabled this tenant. It is read only while Status
+	// is StatusDisabled, and enabling a tenant clears it.
+	DisabledBy DisabledBy
 }
