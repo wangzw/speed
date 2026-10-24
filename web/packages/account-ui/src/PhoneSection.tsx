@@ -24,10 +24,14 @@
  * answer 401 authn.insufficient_user_authentication (the route asks for a
  * fresh authentication); the section opens the step-up dialog with that
  * step's inputs remembered and a won challenge re-runs exactly that step.
- * Every other refusal resolves through the code whitelist into the banner
- * (a number another account holds is the 409 conflict; a wrong code is the
- * 401 login-failed). A verified number refetches the profile so the
- * identifiers surface shows it, and fills the role="status" live region.
+ * Every other refusal resolves through the code whitelist into the
+ * section's write-feedback region beneath the controls (a number another
+ * account holds is the 409 conflict; a wrong code is the 401 login-failed).
+ * A verified number refetches the profile so the identifiers surface shows
+ * it, and the region confirms with a message naming the number. The "code
+ * sent" notice is the code step's own state, not a settled action, so it
+ * stays outside the outcome slot; the slot holds at most one result, so a
+ * success and a failure never stand beside each other.
  *
  * The section takes the session as its only prop -- the step-up dialog
  * drives it -- while the two writes travel on the shared access token
@@ -35,7 +39,6 @@
  */
 
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
@@ -52,18 +55,15 @@ import type { AuthSession } from '@speed/auth-core'
 import { useStepUpGate } from '@speed/auth-core'
 import {
   PhoneNumberField,
-  errorCodeOf,
   FORM_MAX_WIDTH,
   SectionCard,
   toE164,
   usePhoneCountryDefault,
-  visuallyHiddenSx,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
-
-const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface PhoneSectionProps {
   /** The session whose step-up flow the dialog drives. */
@@ -94,8 +94,7 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   // entered -- the phase's own state (entering a number vs. entering a
   // code) and the value the sent notice names.
   const [sentTo, setSentTo] = useState<string | null>(null)
-  const [failureCode, setFailureCode] = useState<string | null>(null)
-  const [added, setAdded] = useState(false)
+  const feedback = useWriteFeedback()
 
   const gate = useStepUpGate<PhoneAction>((action) => {
     if (action.kind === 'start') {
@@ -105,35 +104,47 @@ export function PhoneSection({ session }: PhoneSectionProps) {
     }
   })
 
-  const busy = startPhone.isPending || verifyPhone.isPending
+  // Disabled through the whole attempt, including the refetches that follow
+  // the mutation, so the controls cannot change context under a pending
+  // scope.
+  const busy =
+    startPhone.isPending || verifyPhone.isPending || feedback.pending
 
-  async function sendCode(nextPhone: string): Promise<void> {
-    setFailureCode(null)
-    setAdded(false)
-    try {
-      await startPhone.mutateAsync({ data: { phone: nextPhone } })
+  function sendCode(nextPhone: string): Promise<void> {
+    return feedback.run(async () => {
+      try {
+        await startPhone.mutateAsync({ data: { phone: nextPhone } })
+      } catch (error) {
+        if (gate.intercept(error, { kind: 'start', phone: nextPhone })) {
+          return null
+        }
+        throw error
+      }
       setSentTo(nextPhone)
       setCode('')
-    } catch (error) {
-      const failure = errorCodeOf(error)
-      if (failure === STEP_UP_REQUIRED) {
-        gate.arm({ kind: 'start', phone: nextPhone })
-        return
-      }
-      setFailureCode(failure)
-    }
+      // The "code sent" notice is the step's own state: the intermediate
+      // answer is not a settled action and leaves the slot empty.
+      return null
+    })
   }
 
-  async function verifyCode(nextCode: string): Promise<void> {
-    setFailureCode(null)
-    setAdded(false)
-    try {
-      await verifyPhone.mutateAsync({ data: { code: nextCode } })
+  function verifyCode(nextCode: string): Promise<void> {
+    // The step shows the verify controls only after a send, so the number
+    // the code was sent to is the one this attempt names on success.
+    const number = sentTo
+    return feedback.run(async () => {
+      try {
+        await verifyPhone.mutateAsync({ data: { code: nextCode } })
+      } catch (error) {
+        if (gate.intercept(error, { kind: 'verify', code: nextCode })) {
+          return null
+        }
+        throw error
+      }
       setSentTo(null)
       setNationalNumber('')
       setPhoneAttempted(false)
       setCode('')
-      setAdded(true)
       // The verified number joins the profile's identifiers, and the
       // route revokes the account's other sessions.
       await Promise.all([
@@ -144,14 +155,11 @@ export function PhoneSection({ session }: PhoneSectionProps) {
           queryKey: getAuthnSessionListQueryKey(),
         }),
       ])
-    } catch (error) {
-      const failure = errorCodeOf(error)
-      if (failure === STEP_UP_REQUIRED) {
-        gate.arm({ kind: 'verify', code: nextCode })
-        return
-      }
-      setFailureCode(failure)
-    }
+      return t('phone.added', {
+        phone: number ?? '',
+        interpolation: { escapeValue: false },
+      })
+    })
   }
 
   return (
@@ -185,16 +193,6 @@ export function PhoneSection({ session }: PhoneSectionProps) {
             maxWidth: FORM_MAX_WIDTH,
           }}
         >
-        <Alert
-          severity="success"
-          role="status"
-          sx={added ? { width: '100%' } : visuallyHiddenSx}
-        >
-          {added ? t('phone.added') : ''}
-        </Alert>
-
-        <InlineError code={failureCode} />
-
         {sentTo === null ? (
           <>
             <PhoneNumberField
@@ -248,7 +246,7 @@ export function PhoneSection({ session }: PhoneSectionProps) {
                 onClick={() => {
                   setSentTo(null)
                   setCode('')
-                  setFailureCode(null)
+                  feedback.reset()
                 }}
               >
                 {t('phone.cancel')}
@@ -256,6 +254,12 @@ export function PhoneSection({ session }: PhoneSectionProps) {
             </Stack>
           </>
         )}
+
+        {/* One scope's result, below the controls of the active step. */}
+        <WriteFeedbackRegion
+          outcome={feedback.outcome}
+          sx={{ alignSelf: 'stretch', width: '100%' }}
+        />
         </Box>
       </SectionCard>
 

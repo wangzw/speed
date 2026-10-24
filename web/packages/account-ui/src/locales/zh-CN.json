@@ -258,7 +258,7 @@
       "label": "验证码"
     },
     "verify": "验证",
-    "added": "手机号已添加。",
+    "added": "手机号 {{phone}} 已添加。",
     "cancel": "换一个号码"
   },
   "verification": {

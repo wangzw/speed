@@ -258,7 +258,7 @@
       "label": "Verification code"
     },
     "verify": "Verify",
-    "added": "Your phone number has been added.",
+    "added": "Phone number {{phone}} has been added.",
     "cancel": "Use a different number"
   },
   "verification": {

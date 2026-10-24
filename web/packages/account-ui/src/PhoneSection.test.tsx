@@ -10,8 +10,10 @@
  * disables the send action; a number too short for its country is refused
  * locally with the calling code named and sends nothing; the verify POSTs
  * the code alone (the number is the server's own record); a verified
- * number fills the success live region; a refused send and a wrong code
- * each render their code text; the way back to a different number returns
+ * number fills the scope's region beneath the controls with a message
+ * naming the number, while the sent notice stays outside the slot; a
+ * refused send and a wrong code each render their code text in that
+ * region; the way back to a different number returns
  * to the number step; and each step refused with 401
  * authn.insufficient_user_authentication opens the step-up dialog, a won
  * step-up re-running that step once.
@@ -22,6 +24,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { PhoneCountryDefaultProvider, uiKitResources } from '@speed/ui-kit'
+import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -94,15 +97,28 @@ describe('PhoneSection', () => {
     expect(rig.calls.find((call) => call.path === PHONE_PATH)?.body).toEqual({
       phone: US_E164,
     })
+    // The "code sent" notice is the step's own state, outside the outcome
+    // slot: the scope holds no result for the intermediate answer.
+    expect(screen.getByRole('status')).toHaveTextContent('')
 
     await expectNoAxeViolations()
 
     await user.type(screen.getByLabelText(zhCN.phone.code.label), '123456')
     await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
 
+    const added = zhCN.phone.added.replace('{{phone}}', US_E164)
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(zhCN.phone.added),
+      expect(screen.getByRole('status')).toHaveTextContent(added),
     )
+    // The confirmation names the number and sits beneath the control group.
+    expect(zhCN.phone.added).toContain(zhCN.phone.title)
+    expect(enUS.phone.added).toContain(enUS.phone.title)
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.phone.send })
+        .compareDocumentPosition(screen.getByRole('status')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     expect(verified).toBe(true)
     // The verify carries the code alone: the number is the server's record.
     expect(rig.calls.find((call) => call.path === VERIFY_PATH)?.body).toEqual({
@@ -208,6 +224,48 @@ describe('PhoneSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.conflict)
+    // The refusal lands in the same place a success does: beneath the
+    // control group.
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.phone.send })
+        .compareDocumentPosition(alert) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('renders a refused verification beneath the code controls', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        return errorResponse(401, 'authn.login_failed')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await screen.findByLabelText(zhCN.phone.code.label)
+    await user.type(screen.getByLabelText(zhCN.phone.code.label), '000000')
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.login_failed)
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.phone.verify })
+        .compareDocumentPosition(alert) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    // No success coexists with the failure in the one slot.
+    expect(screen.getByRole('status')).toHaveTextContent('')
   })
 
   it('gates a step_up_required send behind the dialog and re-runs it once', async () => {
