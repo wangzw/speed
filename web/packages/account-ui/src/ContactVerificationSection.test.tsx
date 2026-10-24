@@ -33,6 +33,13 @@ import {
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
+import {
+  AUTHENTICATED_SESSION,
+  EMPTY_FEATURES,
+  FEATURES_PATH,
+  SESSION_PATH,
+  makeRotationRig,
+} from '../test-utils/rotation.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { ContactVerificationSection } from './ContactVerificationSection.js'
 import { SessionsSection } from './SessionsSection.js'
@@ -1297,5 +1304,110 @@ describe('ContactVerificationSection', () => {
       }),
     )
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the session through the credential rotation an email verification performs', async () => {
+    // The verification writes the address with its proof and rotates the
+    // requesting session's credential. The profile refetch that follows the
+    // write is answered 401, standing for a read that left under the
+    // outgoing credential. The surface opens an identity-transition window
+    // around the write, so the anonymous answer is discarded: the snapshot
+    // stays authenticated and no sign-out edge is observed. Without the
+    // window the same script ends the session.
+    const warn = captureRefreshWarning()
+    let rotated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        rotated = true
+        return jsonResponse(200, { state: 'verified' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(
+      <ContactVerificationSection session={rig.session} />,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('releases the window a refused email verification opened', async () => {
+    // A refused verification must not leave its window open: the next
+    // genuine anonymous read has to end the session. The wrong-code 401
+    // makes the silent leg answer anonymous as well, and the open window
+    // discards that answer while the write is in flight. Once the failure is
+    // on screen the window is closed, so a fresh 401 read turns the snapshot
+    // anonymous with one sign-out edge.
+    let refused = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return refused
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return refused
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        refused = true
+        return errorResponse(401, 'authn.login_failed')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(
+      <ContactVerificationSection session={rig.session} />,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.verification.verify }),
+    )
+
+    await screen.findByText(zhCN.verification.codeInvalid)
+    expect(rig.transitionBegins()).toBe(1)
+
+    // A fresh 401 read now settles the true state.
+    await rig.session.restore()
+    expect(rig.session.getSnapshot().state).toBe('anonymous')
+    expect(rig.endedEdges()).toBe(1)
   })
 })

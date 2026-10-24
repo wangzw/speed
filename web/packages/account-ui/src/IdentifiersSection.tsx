@@ -27,7 +27,10 @@
  * (authn.login.removeIdentifier). The account module refuses to remove the
  * account's last way to log in with a 409, whose code text renders above
  * the list; a refused removal re-reads the profile, so a guard that read a
- * stale list converges on the server's answer. An account with a password
+ * stale list converges on the server's answer. The removal does not replace
+ * the caller's credential, so it runs outside the identity-transition
+ * window that the credential-rotating writes below use. An account with a
+ * password
  * signs in with a username or an email
  * address, so while it holds exactly one such identifier the section
  * renders a note in place of that row's remove action: removing it would
@@ -90,7 +93,14 @@
  * authn.insufficient_user_authentication opens the step-up dialog with the
  * write's inputs remembered, and a won challenge re-runs that one write
  * exactly once. A successful write refetches the profile so the rows
- * converge on the server's answer.
+ * converge on the server's answer. The one-step username add and both
+ * verification writes replace this session's credential as they commit, so
+ * each runs inside an identity-transition window
+ * (session.beginIdentityTransition) that closes once the refetch that
+ * follows the write has settled; a read still carrying the outgoing
+ * credential is discarded instead of ending the session. The email send
+ * only issues a code -- it does not rotate the credential -- and runs
+ * outside the window.
  *
  * The section has one failure slot: removal, add, row verification and the
  * code's verification share it, so a failure renders exactly one role="alert"
@@ -133,6 +143,7 @@ import {
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -440,9 +451,39 @@ export function IdentifiersSection({
     setFieldErrorKey(null)
     return feedback.run(async () => {
       setFailureText(null)
-      let result
+      /** Apply the write's answer: an address's code step, or the settled
+       * add that refetches the profile. */
+      async function settleAdded(result: {
+        readonly state?: string
+      }): Promise<string | null> {
+        if (result.state === 'pending') {
+          // An address the deployment can reach: the code is on its way and
+          // the answer is the next step, not a settled action.
+          setSentTo(value)
+          setCode('')
+          return null
+        }
+        closeAdd()
+        await invalidateAfterWrite()
+        // The confirmation names the changed kind (the sign-in identifier).
+        return t('identifiers.add.added')
+      }
       try {
-        result = await addIdentifier.mutateAsync({ data: { kind, value } })
+        // A username is written in one step, and that write rotates this
+        // session's credential with it, so it runs inside an
+        // identity-transition window whose release waits for the refetch
+        // that follows. The email add only sends a code: it does not rotate
+        // the credential, so it runs outside the window.
+        if (kind === 'username') {
+          return await runIdentityTransition(
+            session,
+            () => addIdentifier.mutateAsync({ data: { kind, value } }),
+            settleAdded,
+          )
+        }
+        return await settleAdded(
+          await addIdentifier.mutateAsync({ data: { kind, value } }),
+        )
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === STEP_UP_REQUIRED) {
@@ -478,17 +519,6 @@ export function IdentifiersSection({
         }
         throw error
       }
-      if (result.state === 'pending') {
-        // An address the deployment can reach: the code is on its way and
-        // the answer is the next step, not a settled action.
-        setSentTo(value)
-        setCode('')
-        return null
-      }
-      closeAdd()
-      await invalidateAfterWrite()
-      // The confirmation names the changed kind (the sign-in identifier).
-      return t('identifiers.add.added')
     })
   }
 
@@ -496,7 +526,17 @@ export function IdentifiersSection({
     return feedback.run(async () => {
       setFailureText(null)
       try {
-        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        // The verification writes the address with its proof and rotates
+        // this session's credential, so the window is open before the write
+        // and closes once the refetch that follows it has settled.
+        await runIdentityTransition(
+          session,
+          () => verifyIdentifier.mutateAsync({ data: { code: nextCode } }),
+          async () => {
+            closeAdd()
+            await invalidateAfterWrite()
+          },
+        )
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === STEP_UP_REQUIRED) {
@@ -515,8 +555,6 @@ export function IdentifiersSection({
         }
         throw error
       }
-      closeAdd()
-      await invalidateAfterWrite()
       return t('identifiers.add.added')
     })
   }
@@ -587,7 +625,20 @@ export function IdentifiersSection({
     return feedback.run(async () => {
       setFailureText(null)
       try {
-        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        // The row's verification proves the address and rotates this
+        // session's credential, so the window is open before the write and
+        // closes once the refetch that follows it has settled.
+        await runIdentityTransition(
+          session,
+          () => verifyIdentifier.mutateAsync({ data: { code: nextCode } }),
+          async () => {
+            setRowVerify(null)
+            setRowSentTo(null)
+            setRowCode('')
+            setRowResendUntil(0)
+            await invalidateAfterWrite()
+          },
+        )
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === STEP_UP_REQUIRED) {
@@ -610,11 +661,6 @@ export function IdentifiersSection({
         }
         throw error
       }
-      setRowVerify(null)
-      setRowSentTo(null)
-      setRowCode('')
-      setRowResendUntil(0)
-      await invalidateAfterWrite()
       // The confirmation names the address it proved.
       return t('verification.verifiedDescription', {
         email: address,

@@ -32,6 +32,14 @@ import {
   type RealResponder,
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
+import {
+  AUTHENTICATED_SESSION,
+  EMPTY_FEATURES,
+  FEATURES_PATH,
+  SESSION_PATH,
+  makeRotationRig,
+} from '../test-utils/rotation.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { SocialBindingsSection } from './SocialBindingsSection.js'
@@ -819,5 +827,164 @@ describe('SocialBindingsSection', () => {
       ),
     })
     expect(hasCoarsePointerTouchTarget(unbind)).toBe(true)
+  })
+
+  it('holds the session through the credential rotation an unlink performs', async () => {
+    // The unlink replaces the requesting session's credential. The profile
+    // refetch that follows the write is answered 401, standing for a read
+    // that left under the outgoing credential. The surface opens an
+    // identity-transition window around the write, so the anonymous answer
+    // is discarded: the snapshot stays authenticated and no sign-out edge is
+    // observed. Without the window the same script ends the session.
+    const warn = captureRefreshWarning()
+    let rotated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(
+              200,
+              profile([
+                {
+                  id: 'github-1',
+                  provider: 'github',
+                  email: 'ada@example.test',
+                },
+              ]),
+            )
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'github', label: 'GitHub' }]),
+        )
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/links/github-1'
+      ) {
+        rotated = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          'GitHub',
+        ),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.bindings.confirmLabel,
+      }),
+    )
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('releases the window a refused unlink opened', async () => {
+    // A refused unlink must not leave its window open: the next genuine
+    // anonymous read has to end the session. The unlink is refused 409, so
+    // no silent leg runs; once the failure is on screen the window is
+    // closed, and a fresh 401 read turns the snapshot anonymous with one
+    // sign-out edge. A window still open would discard that answer.
+    let gone = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return gone
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return gone
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(
+              200,
+              profile([
+                {
+                  id: 'github-1',
+                  provider: 'github',
+                  email: 'ada@example.test',
+                },
+              ]),
+            )
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'github', label: 'GitHub' }]),
+        )
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/links/github-1'
+      ) {
+        return errorResponse(409, 'authn.conflict')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          'GitHub',
+        ),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.bindings.confirmLabel,
+      }),
+    )
+
+    await screen.findByText(zhCN.errors.authn.conflict)
+    expect(rig.transitionBegins()).toBe(1)
+
+    // A fresh 401 read now settles the true state.
+    gone = true
+    await rig.session.restore()
+    expect(rig.session.getSnapshot().state).toBe('anonymous')
+    expect(rig.endedEdges()).toBe(1)
   })
 })

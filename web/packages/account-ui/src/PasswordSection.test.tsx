@@ -33,6 +33,13 @@ import {
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
+import {
+  AUTHENTICATED_SESSION,
+  EMPTY_FEATURES,
+  FEATURES_PATH,
+  SESSION_PATH,
+  makeRotationRig,
+} from '../test-utils/rotation.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PasswordSection } from './PasswordSection.js'
 
@@ -610,5 +617,114 @@ describe('PasswordSection', () => {
     // The shortfall and its re-run produce one refresh failure between
     // them; a second one means a write was sent twice.
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the session through the credential rotation a password change performs', async () => {
+    // The change rotates the requesting session's credential. This suite
+    // scripts the changeover: the profile refetch that follows the PUT is
+    // answered 401, standing for a read that left under the outgoing
+    // credential (the response's Set-Cookie has not reached a read already
+    // in flight, or one issued in the same round). The surface opens an
+    // identity-transition window around the change, so the anonymous answer
+    // speaks for the credential being replaced and is discarded: the
+    // snapshot stays authenticated and no sign-out edge is observed. Without
+    // the window the same script ends the session -- the regression this
+    // case pins.
+    const warn = captureRefreshWarning()
+    let rotated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody({ password_set: true }))
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        rotated = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<PasswordSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.password.current.label),
+      'old-pass',
+    )
+    await user.type(screen.getByLabelText(zhCN.password.new.label), 'new-pass')
+    await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'new-pass')
+    await user.click(screen.getByRole('button', { name: zhCN.password.submit }))
+
+    // The stale-credential read settles through the silent leg and reports
+    // the failed refresh.
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    // The anonymous answer speaks for the credential the change replaced,
+    // so it neither ends the session nor evicts the cache.
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('releases the window a refused password change opened', async () => {
+    // A refused change must not leave its window open: the next genuine
+    // anonymous read has to end the session. The current-password 401 makes
+    // the silent leg answer anonymous as well, and the open window discards
+    // that answer while the write is in flight. The failure surfaces only
+    // after the window was released, so the fresh 401 read that follows
+    // turns the snapshot anonymous with one sign-out edge. A window left
+    // open would keep the stale session and never sign the user out.
+    let refused = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return refused
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return refused
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody({ password_set: true }))
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        refused = true
+        return errorResponse(401, 'authn.login_failed')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<PasswordSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.password.current.label),
+      'old-pass',
+    )
+    await user.type(screen.getByLabelText(zhCN.password.new.label), 'new-pass')
+    await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'new-pass')
+    await user.click(screen.getByRole('button', { name: zhCN.password.submit }))
+
+    await screen.findByText(zhCN.password.currentRejected)
+    expect(rig.transitionBegins()).toBe(1)
+
+    // A fresh 401 read now settles the true state.
+    await rig.session.restore()
+    expect(rig.session.getSnapshot().state).toBe('anonymous')
+    expect(rig.endedEdges()).toBe(1)
   })
 })

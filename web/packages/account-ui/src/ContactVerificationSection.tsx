@@ -25,6 +25,12 @@
  * alone (the address is the server's session-keyed record). A landed verify
  * refetches the profile (so `verification` flips to `verified`) and the
  * session list, because the route revokes the account's other sessions.
+ * The verification also replaces this session's credential, so it runs
+ * inside an identity-transition window (session.beginIdentityTransition):
+ * a read that lands with the outgoing credential and answers anonymous is
+ * discarded instead of ending the session, and the window closes once the
+ * refetch that follows the write has settled. The send does not rotate the
+ * credential and runs outside the window.
  *
  * The section never distinguishes a free address from one another account
  * holds while sending: the answer is the same shape, and no "already
@@ -93,6 +99,7 @@ import {
   useWriteFeedback,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
+import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -302,7 +309,21 @@ export function ContactVerificationSection({
     return verifyFeedback.run(async () => {
       setVerifyFailureText(null)
       try {
-        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+        // The verification writes the address with its proof and rotates
+        // this session's credential, so the window is open before the write
+        // and closes once the refetch that follows it has settled: a read
+        // still carrying the outgoing credential is discarded instead of
+        // ending the session.
+        await runIdentityTransition(
+          session,
+          () => verifyIdentifier.mutateAsync({ data: { code: nextCode } }),
+          async () => {
+            setCode('')
+            setSentTo(null)
+            setResendUntil(0)
+            await invalidateAfterWrite()
+          },
+        )
       } catch (error) {
         const failureCode = errorCodeOf(error)
         if (failureCode === STEP_UP_REQUIRED) {
@@ -324,10 +345,6 @@ export function ContactVerificationSection({
         }
         throw error
       }
-      setCode('')
-      setSentTo(null)
-      setResendUntil(0)
-      await invalidateAfterWrite()
       // The section re-reads into `verified`, whose completion state names
       // the proved address: that is the verification's success.
       return null

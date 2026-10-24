@@ -33,8 +33,17 @@ import {
   type RealCall,
   type RealResponder,
 } from '../test-utils/real-client.js'
+import { profileBody } from '../test-utils/fixtures.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
+import {
+  AUTHENTICATED_SESSION,
+  EMPTY_FEATURES,
+  FEATURES_PATH,
+  ProfileQueryObserver,
+  SESSION_PATH,
+  makeRotationRig,
+} from '../test-utils/rotation.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { PhoneSection } from './PhoneSection.js'
 
@@ -46,6 +55,7 @@ const UI_KIT_ZH = uiKitResources['zh-CN'] as {
 
 const PHONE_PATH = '/api/v1/auth/phone'
 const VERIFY_PATH = '/api/v1/auth/phone/verify'
+const PROFILE_PATH = '/api/v1/auth/me'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
@@ -369,5 +379,126 @@ describe('PhoneSection', () => {
     // One shortfall, one refresh failure: a duplicated answer would warn
     // again.
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the session through the credential rotation a phone verification performs', async () => {
+    // The verification replaces the account's phone and rotates the
+    // requesting session's credential. The profile refetch that follows the
+    // write is answered 401, standing for a read that left under the
+    // outgoing credential. The surface opens an identity-transition window
+    // around the write, so the anonymous answer is discarded: the snapshot
+    // stays authenticated and no sign-out edge is observed. Without the
+    // window the same script ends the session.
+    const warn = captureRefreshWarning()
+    let rotated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody())
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        rotated = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    // The phone surface invalidates the profile query but does not read it;
+    // the other surfaces on an account page do. The observer stands in for
+    // them so the invalidation issues the read a real page would.
+    renderWithProviders(
+      <>
+        <PhoneSection session={rig.session} />
+        <ProfileQueryObserver />
+      </>,
+    )
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('releases the window a refused phone verification opened', async () => {
+    // A refused verification must not leave its window open: the next
+    // genuine anonymous read has to end the session. The wrong-code 401
+    // makes the silent leg answer anonymous as well, and the open window
+    // discards that answer while the write is in flight. Once the failure is
+    // on screen the window is closed, so a fresh 401 read turns the snapshot
+    // anonymous with one sign-out edge.
+    let refused = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return refused
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return refused
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody())
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === PHONE_PATH) {
+        return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+      }
+      if (call.method === 'POST' && call.path === VERIFY_PATH) {
+        refused = true
+        return errorResponse(401, 'authn.login_failed')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<PhoneSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+      US_NATIONAL,
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.send }))
+    await user.type(
+      await screen.findByLabelText(zhCN.phone.code.label),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
+
+    await screen.findByText(zhCN.errors.authn.login_failed)
+    expect(rig.transitionBegins()).toBe(1)
+
+    // A fresh 401 read now settles the true state.
+    await rig.session.restore()
+    expect(rig.session.getSnapshot().state).toBe('anonymous')
+    expect(rig.endedEdges()).toBe(1)
   })
 })

@@ -8,7 +8,12 @@
  * saying whether the number belongs to another account; POST
  * /api/v1/auth/phone/verify (authn.login.verifyPhone) submits the code, binds the
  * number to the account as a verified identifier (replacing any phone it
- * already held) and revokes the account's other sessions. The number is
+ * already held) and revokes the account's other sessions. The verification
+ * replaces this session's credential, so it runs inside an
+ * identity-transition window (session.beginIdentityTransition): a read
+ * that lands with the outgoing credential and answers anonymous is
+ * discarded instead of ending the session, and the window closes once the
+ * refetch that follows the write has settled. The number is
  * taken from the first step's record, keyed to the session, so the second
  * step carries the code alone -- the client never chooses which number is
  * verified.
@@ -63,6 +68,7 @@ import {
   usePhoneCountryDefault,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { runIdentityTransition } from './internal/identity-transition.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
@@ -147,27 +153,37 @@ export function PhoneSection({ session }: PhoneSectionProps) {
     const number = sentTo
     return feedback.run(async () => {
       try {
-        await verifyPhone.mutateAsync({ data: { code: nextCode } })
+        // The verify replaces the account's phone and rotates this
+        // session's credential, so the window is open before the write and
+        // closes once the refetch that follows it has settled: a read still
+        // carrying the outgoing credential is discarded instead of ending
+        // the session.
+        await runIdentityTransition(
+          session,
+          () => verifyPhone.mutateAsync({ data: { code: nextCode } }),
+          async () => {
+            setSentTo(null)
+            setNationalNumber('')
+            setPhoneAttempted(false)
+            setCode('')
+            // The verified number joins the profile's identifiers, and the
+            // route revokes the account's other sessions.
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: getAuthnProfileGetQueryKey(),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: getAuthnSessionListQueryKey(),
+              }),
+            ])
+          },
+        )
       } catch (error) {
         if (gate.intercept(error, { kind: 'verify', code: nextCode })) {
           return null
         }
         throw error
       }
-      setSentTo(null)
-      setNationalNumber('')
-      setPhoneAttempted(false)
-      setCode('')
-      // The verified number joins the profile's identifiers, and the
-      // route revokes the account's other sessions.
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: getAuthnProfileGetQueryKey(),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: getAuthnSessionListQueryKey(),
-        }),
-      ])
       return t('phone.added', {
         phone: number ?? '',
         interpolation: { escapeValue: false },

@@ -5,7 +5,12 @@
  * account self-service route of the login module). On success the server
  * rotates the current session's token and revokes the account's other
  * sessions, so the section refetches the session list after a change and
- * reports the sign-out in its success notice.
+ * reports the sign-out in its success notice. Because the route replaces
+ * the calling session's credential, the change runs inside an
+ * identity-transition window (session.beginIdentityTransition): a read
+ * that lands with the outgoing credential and answers anonymous is
+ * discarded instead of ending the session, and the window closes once the
+ * refetch that follows the write has settled.
  *
  * The account's `password_set` flag decides whether a current password is
  * asked for: an account opened through a provider holds no password, so
@@ -63,6 +68,7 @@ import {
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
@@ -174,12 +180,37 @@ export function PasswordSection({
       setSectionFailure(null)
       setFieldError(null)
       try {
-        await changePassword.mutateAsync({
-          data: {
-            ...(passwordSet ? { current_password: action.current } : {}),
-            new_password: action.newPassword,
+        // The route rotates this session's token as it commits, so the
+        // window is open before the write and closes once the refetch that
+        // follows it has settled: a read still carrying the outgoing
+        // credential is discarded instead of ending the session.
+        return await runIdentityTransition(
+          session,
+          () =>
+            changePassword.mutateAsync({
+              data: {
+                ...(passwordSet ? { current_password: action.current } : {}),
+                new_password: action.newPassword,
+              },
+            }),
+          async () => {
+            clearFields()
+            // A change rotates this session's token and revokes the others;
+            // the account's password_set may also have flipped, so refetch
+            // both.
+            await Promise.all([
+              queryClient.invalidateQueries({
+                queryKey: getAuthnSessionListQueryKey(),
+              }),
+              queryClient.invalidateQueries({
+                queryKey: getAuthnProfileGetQueryKey(),
+              }),
+            ])
+            return t(
+              settingFirst ? 'password.changedFirst' : 'password.changed',
+            )
           },
-        })
+        )
       } catch (error) {
         if (gate.intercept(error, action)) {
           return null
@@ -199,18 +230,6 @@ export function PasswordSection({
         }
         throw error
       }
-      clearFields()
-      // A change rotates this session's token and revokes the others; the
-      // account's password_set may also have flipped, so refetch both.
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: getAuthnSessionListQueryKey(),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: getAuthnProfileGetQueryKey(),
-        }),
-      ])
-      return t(settingFirst ? 'password.changedFirst' : 'password.changed')
     })
   }
 

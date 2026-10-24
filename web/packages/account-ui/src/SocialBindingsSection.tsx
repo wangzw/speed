@@ -27,7 +27,12 @@
  * walking the provider's flow again), so the row asks once before the
  * DELETE goes out. After a successful unbind the profile query is
  * invalidated, so the rows converge on the server's answer, and the
- * confirmation names the provider; a refused unbind renders its code text
+ * confirmation names the provider. The unlink replaces this session's
+ * credential, so it runs inside an identity-transition window
+ * (session.beginIdentityTransition): a read that lands with the outgoing
+ * credential and answers anonymous is discarded instead of ending the
+ * session, and the window closes once the refetch that follows the write
+ * has settled. A refused unbind renders its code text
  * in the same region below the list -- authn.conflict when the account
  * would be left with no sign-in method (the server decides by its own
  * login-method count, never computable client-side), anything else through
@@ -54,7 +59,9 @@
  * an absolute URL under an origin the deployment trusts (the server
  * accepts a path or such a URL). A refused start renders its code text in
  * the add area's own write-feedback region, and the button re-arms for
- * another attempt. One bind flow at a
+ * another attempt. Starting the flow does not rotate this session's
+ * credential -- the callback handler completes it -- so no
+ * identity-transition window is opened here. One bind flow at a
  * time: while a channel's flow is being started every provider button is
  * disabled, so a second start -- any channel's -- cannot begin before the
  * first answers. When every redirect method is already bound the add area
@@ -103,6 +110,7 @@ import {
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { WriteOutcome } from '@speed/ui-kit'
+import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
@@ -392,20 +400,29 @@ export function SocialBindingsSection({
   function handleUnbind(linkId: string, providerLabel: string): Promise<void> {
     return unbindFeedback.run(async () => {
       try {
-        await unbindMutation.mutateAsync(linkId)
+        // The unlink replaces this session's credential as it commits, so
+        // the window is open before the write and closes once the profile
+        // refetch that follows it has settled: a read still carrying the
+        // outgoing credential is discarded instead of ending the session.
+        return await runIdentityTransition(
+          session,
+          () => unbindMutation.mutateAsync(linkId),
+          async () => {
+            setUnbindTarget(null)
+            await queryClient.invalidateQueries({
+              queryKey: getAuthnProfileGetQueryKey(),
+            })
+            // The confirmation names the provider that was unlinked.
+            return t('bindings.unlinked', {
+              provider: providerLabel,
+              interpolation: { escapeValue: false },
+            })
+          },
+        )
       } catch (error) {
         setUnbindTarget(null)
         throw error
       }
-      setUnbindTarget(null)
-      await queryClient.invalidateQueries({
-        queryKey: getAuthnProfileGetQueryKey(),
-      })
-      // The confirmation names the provider that was unlinked.
-      return t('bindings.unlinked', {
-        provider: providerLabel,
-        interpolation: { escapeValue: false },
-      })
     })
   }
 

@@ -105,9 +105,9 @@ interface MfaSectionProps {
 }
 ```
 
-自助写节（`ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`、`ContactVerificationSection`）的 `session` 属性必选，`PreferencesSection` 的可选；它们的 `session` 都只为提权门控的对话框服务：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次；它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
+自助写节（`ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`、`ContactVerificationSection`）的 `session` 属性必选，`PreferencesSection` 的可选。`session` 为提权门控的对话框服务：一次写被答 401 `authn.insufficient_user_authentication` 时开一条 `purpose: 'step-up'` 流程（`session.startAuthenticatedFlow`），成功后重跑那次被拒的写恰好一次。替换调用方凭据的写另用同一个会话操作开身份切换窗口、在写后的失效与重读结算之后释放（见「轮换点上的身份切换窗口」）；`ProfileSection` 与 `PreferencesSection` 的写不改凭据，不用这一窗口。它们的读与写本身是走共享访问令牌的生成调用，不经会话操作。
 
-`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑是走共享访问令牌的生成调用，不经会话操作。`SessionsSection` 不接属性：它显示谁的会话，来自调用方绑定的客户端与它的访问令牌。
+`SocialBindingsSection` 的 `session` 属性经 `session.listMethods`（`GET /api/v1/auth/methods`）读部署的发现文档：添加区只渲染 `kind=redirect` 且未绑定的方法，名称取描述符的 `label`（缺省用方法名），并为点击起一条 `purpose: 'link'` 的流程（`session.startAuthenticatedFlow`），`returnTo` 作为该流程请求的顶层 `return_to` 发出；分离源部署传受信源下的绝对 URL，服务端接受路径或该 URL。方法是否已绑定、以及已绑定行的提供方取值归到哪个方法，都经同一份描述符的 `binding_providers` 解析：取值等于其中一项或以一项为前缀即归到该方法，描述符缺少该项时按方法名匹配；该方法就此与任一已绑定取值匹配上时，添加区不再提供该渠道。`MfaSection` 的 `session` 属性为登记起一条 `purpose: 'enroll'` 的流程、为挑战起一条 `purpose: 'step-up'` 的流程，并经 `session.listMethods`（`GET /api/v1/auth/methods`）读本部署装配的因素以决定提供哪些登记入口——读因子清单、删因子与解绑的读写本身是走共享访问令牌的生成调用；删已启用因素与解绑另用同一属性开身份切换窗口（见「轮换点上的身份切换窗口」）。`SessionsSection` 不接属性：它显示谁的会话，来自调用方绑定的客户端与它的访问令牌。
 
 **`AppearanceSection` 是受控的外观选择。** 它经 `SectionCard` 渲染一节，标题与说明取自本包命名空间；下拉列出宿主传入的全部预设，当前值标记为选中，选择时把该预设的 id 交给 `onChange`。预设列表为空或只有一项时，标题与带标签的控件照常渲染，不塌陷。它不 import `@speed/theme-presets`、不读主题 provider：预设存在与否、叫什么、选中后如何生效都是宿主的事实。
 
@@ -171,6 +171,12 @@ sequenceDiagram
 提权码与登录失败码都在 401 上：改口令的当前口令不匹配是 401 `login-failed`，与提权 401 靠问题码区分——前者进失败横幅，后者开门控。手机的两步各自门控：发码被拒重跑发码、验证被拒重跑验证，不混用。加标识的两步同此：添加被拒重跑添加、验证被拒重跑验证。
 
 写成功后按「改一次就失效」失效相关查询（读档的失效档案读、改口令、加手机与加标识再失效会话列表，因为这些路由会撤销其余会话），让视图收敛到服务端应答。
+
+### 轮换点上的身份切换窗口
+
+替换调用方凭据的写在服务端提交时换上新的 cookie 与令牌。以旧凭据发出的读可能在新凭据生效前答匿名：已在飞行中的读，或同一轮里由焦点、重连与 `staleTime` 0 触发的读。会话的静默腿默认把这一匿名应答当作会话结束，监听会话的壳随之清缓存并显示登出视图。因此，发起页在写之前同步调用 `session.beginIdentityTransition()` 打开一个窗口，并在写后的失效与重读结算之后调用它返回的释放函数。窗口打开期间、入口前已打开、或入口后才打开时仍在飞行的读，其匿名应答被丢弃：快照不变，发起该读的请求保留自己的 401，认证成功的应答照常接受。窗口不延迟或暂挂请求，只改变静默腿如何对待显式匿名应答；它只作用于 cookie 会话的静默腿，不影响令牌刷新路径。窗口计数可嵌套，释放幂等，被提权门控重跑的一次写自开自己的窗口。
+
+窗口是否打开以写是否替换调用方凭据为准，与动作名称无关。适用入口：`PasswordSection` 的改口令、`PhoneSection` 的验证手机、`ContactVerificationSection` 的验证邮箱、`IdentifiersSection` 的一步写入用户名与添加面及行内的验证邮箱、`SocialBindingsSection` 的解绑、`MfaSection` 删除已启用因素，以及 `starters/demo` 装配的冒充开始。`MfaSection` 删除待确认或已停用的因素不轮换发起会话（服务端只为已启用因素结清会话并轮换），因而不开窗口；名单里已不存在的因素名按已删除处理、仍会轮换，故仍按开窗处理。窗口的释放点是写后的失效与重读结算之后。发送验证码（邮箱或手机）、删除标识、撤销自己的会话、档案与偏好写入、发起外部身份关联流程这些写不替换调用方凭据，不开窗口。
 
 ### 邮箱的验证节
 
@@ -278,6 +284,7 @@ sequenceDiagram
 | 手机号节 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
+| 轮换点上的身份切换窗口 | 已实现 | `web/packages/account-ui/src/internal/identity-transition.ts` `runIdentityTransition` |
 | 偏好节 | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection` |
 | 外观节 `AppearanceSection`（受控的主题预设选择） | 已实现 | `web/packages/account-ui/src/AppearanceSection.tsx` `AppearanceSection`、`AppearanceSectionProps`、`ThemePresetChoice` |
 | 各节的反馈作用域与成功确认 | 已实现 | `web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |

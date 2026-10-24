@@ -34,12 +34,17 @@
  *    account's last one) renders its code text and the section stays put.
  *    A landed removal confirms itself below the list, naming the row that
  *    went -- its own label when it has one, else its kind -- because two
- *    factors of one kind can stand side by side. The route rotates the
- *    requesting session's cookie, so the removal runs inside an
- *    identity-transition window (session.beginIdentityTransition): a read
- *    that lands with the outgoing credential and answers anonymous is
- *    discarded instead of ending the session, and the window closes once
- *    the refetch that follows the write has settled.
+ *    factors of one kind can stand side by side. Removing an active factor
+ *    rotates the requesting session's cookie; removing a pending or
+ *    disabled one does not (the route settles the sessions only for a
+ *    factor that was active, and treats a name it no longer finds as
+ *    already removed, rotating all the same). The rotating removal runs
+ *    inside an identity-transition window (session.beginIdentityTransition):
+ *    a read that lands with the outgoing credential and answers anonymous
+ *    is discarded instead of ending the session, and the window closes once
+ *    the refetch that follows the write has settled. A removal the list
+ *    read as pending or disabled runs bare: no credential is replaced, so
+ *    a genuine anonymous answer must still end the session.
  *
  * Both gated entries share one dialog: the pending action is remembered
  * so a success re-runs exactly that action and a cancel re-runs nothing.
@@ -74,6 +79,7 @@ import {
 } from '@speed/ui-kit'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
+import { runIdentityTransition } from './internal/identity-transition.js'
 import { useFactorsQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
@@ -300,36 +306,44 @@ export function MfaSection({ session }: MfaSectionProps) {
         : removed.label != null && removed.label !== ''
           ? removed.label
           : factorKindLabel(removed.kind ?? '')
+    // Only removing an active factor replaces this session's credential:
+    // the route settles the sessions and rotates the requesting one for an
+    // active factor, while a pending or disabled one leaves them alone. A
+    // name the list no longer carries stays on the rotating side -- the
+    // route treats it as already removed and settles the sessions all the
+    // same. A non-rotating removal runs bare, because wrapping it would
+    // discard a genuine anonymous answer and postpone a real sign-out.
+    const rotates = removed === undefined || removed.status === 'active'
     return removeFeedback.run(async () => {
-      // The route rotates this session's cookie, so a read that left under
-      // the outgoing cookie can answer 401 and the client's silent restore
-      // would read that answer as the end of the session. The window is open
-      // across the write and the refetch that follows it: an anonymous
-      // answer read under the replaced credential is discarded, while the
-      // request that produced it keeps its own 401. The release is
-      // idempotent, and a step-up re-run opens its own window.
-      const releaseIdentityTransition = session.beginIdentityTransition()
       try {
-        try {
-          await removeMutation.mutateAsync({ id: factorId })
-        } catch (error) {
+        const write = () => removeMutation.mutateAsync({ id: factorId })
+        const settle = async (): Promise<string> => {
           setRemoveTarget(null)
-          const code = errorCodeOf(error)
-          if (code === 'authn.insufficient_user_authentication') {
-            setGate({ kind: 'remove', factorId })
-            return null
-          }
-          throw error
+          await invalidateFactors()
+          // The confirmation names the factor row removed.
+          return t('mfa.removed', {
+            factor: removedLabel,
+            interpolation: { escapeValue: false },
+          })
         }
+        // Only a rotating removal needs the window: it is open across the
+        // write and the refetch that follows it, so a read that left under
+        // the replaced credential and answers anonymous is discarded while
+        // the request that produced it keeps its own 401. The release is
+        // idempotent, and a step-up re-run opens its own window.
+        if (rotates) {
+          return await runIdentityTransition(session, write, settle)
+        }
+        await write()
+        return await settle()
+      } catch (error) {
         setRemoveTarget(null)
-        await invalidateFactors()
-        // The confirmation names the factor row removed.
-        return t('mfa.removed', {
-          factor: removedLabel,
-          interpolation: { escapeValue: false },
-        })
-      } finally {
-        releaseIdentityTransition()
+        const code = errorCodeOf(error)
+        if (code === 'authn.insufficient_user_authentication') {
+          setGate({ kind: 'remove', factorId })
+          return null
+        }
+        throw error
       }
     })
   }

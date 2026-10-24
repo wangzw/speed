@@ -24,7 +24,6 @@ import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
   jsonResponse,
-  makeCookieSessionRig,
   makeRealClientRig,
   type RealCall,
   type RealResponder,
@@ -32,13 +31,18 @@ import {
 import { profileBody } from '../test-utils/fixtures.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
+import {
+  AUTHENTICATED_SESSION,
+  EMPTY_FEATURES,
+  FEATURES_PATH,
+  SESSION_PATH,
+  makeRotationRig,
+} from '../test-utils/rotation.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { MfaSection } from './MfaSection.js'
 
-const SESSION_PATH = '/api/v1/auth/session'
 const PROFILE_PATH = '/api/v1/auth/me'
-const FEATURES_PATH = '/api/v1/features'
 const FACTORS_PATH = '/api/v1/auth/factors'
 const METHODS_PATH = '/api/v1/auth/methods'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
@@ -192,40 +196,38 @@ describe('MfaSection', () => {
     ).toHaveLength(1)
   })
 
-  it('holds the session through the credential rotation a factor removal performs', async () => {
-    // Factor removal rotates the requesting session's cookie: the server
-    // answers the DELETE with Set-Cookie. A read issued under the outgoing
-    // cookie can then answer 401 before the new cookie is in effect, and the
-    // client's silent 401 leg -- here the session's own restore(), the leg a
-    // production host binds -- would read that anonymous answer as the end of
-    // the session.
+  it('holds the session through the credential rotation an active factor removal performs', async () => {
+    // Removing an active factor rotates the requesting session's cookie:
+    // the server answers the DELETE with Set-Cookie. A read issued under the
+    // outgoing cookie can then answer 401 before the new cookie is in
+    // effect, and the client's silent 401 leg -- here the session's own
+    // restore(), the leg a production host binds -- would read that
+    // anonymous answer as the end of the session.
     //
     // This suite reproduces the changeover: the refetch that follows the
     // removal is answered 401, standing for a read that left under the old
     // credential (an already-in-flight or background read; a read issued
     // after the response would carry the new cookie). The surface opens an
-    // identity-transition window around the removal, so the anonymous answer
-    // belongs to the credential being replaced and is discarded: the snapshot
-    // stays authenticated and no sign-out edge is observed. Without the
-    // window the same script ends the session -- the regression this case
-    // pins.
+    // identity-transition window around the rotation, so the anonymous
+    // answer belongs to the credential being replaced and is discarded: the
+    // snapshot stays authenticated and no sign-out edge is observed. Without
+    // the window the same script ends the session -- the regression this
+    // case pins.
     const warn = captureRefreshWarning()
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === SESSION_PATH) {
         return removed
           ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, {
-              authenticated: true,
-              session_id: 'sess-1',
-              account_id: 'user-1',
-            })
+          : jsonResponse(200, AUTHENTICATED_SESSION)
       }
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
-        return jsonResponse(200, profileBody())
+        return removed
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody())
       }
       if (call.method === 'GET' && call.path === FEATURES_PATH) {
-        return jsonResponse(200, { features: [] })
+        return jsonResponse(200, EMPTY_FEATURES)
       }
       if (call.method === 'GET' && call.path === METHODS_PATH) {
         return jsonResponse(200, methodsDoc(['totp']))
@@ -233,7 +235,7 @@ describe('MfaSection', () => {
       if (call.method === 'GET' && call.path === FACTORS_PATH) {
         return removed
           ? errorResponse(401, 'authn.login-failed')
-          : jsonResponse(200, { factors: [factor({})] })
+          : jsonResponse(200, { factors: [factor({ status: 'active' })] })
       }
       if (
         call.method === 'DELETE' &&
@@ -244,22 +246,7 @@ describe('MfaSection', () => {
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
-    const rig = makeCookieSessionRig(respond)
-    // Establish the authenticated snapshot the removal starts from.
-    await rig.session.restore()
-    expect(rig.session.getSnapshot().state).toBe('authenticated')
-
-    // Count the sign-out edges a shell acts on: the session-end strategy
-    // evicts the whole query cache on authenticated -> anonymous.
-    let state = rig.session.getSnapshot().state
-    let endedEdges = 0
-    rig.session.subscribe((snapshot) => {
-      if (state === 'authenticated' && snapshot.state === 'anonymous') {
-        endedEdges += 1
-      }
-      state = snapshot.state
-    })
-
+    const rig = await makeRotationRig(respond)
     renderWithProviders(<MfaSection session={rig.session} />)
     const user = userEvent.setup()
     await user.click(
@@ -288,15 +275,139 @@ describe('MfaSection', () => {
         (call) => call.method === 'GET' && call.path === FACTORS_PATH,
       ),
     ).toHaveLength(2)
-    expect(
-      rig.calls.filter(
-        (call) => call.method === 'GET' && call.path === SESSION_PATH,
-      ).length,
-    ).toBeGreaterThan(1)
+    expect(rig.transitionBegins()).toBe(1)
     // The anonymous answer speaks for the credential the removal replaced,
     // so it neither ends the session nor evicts the cache.
     expect(rig.session.getSnapshot().state).toBe('authenticated')
-    expect(endedEdges).toBe(0)
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('lets a real anonymous answer end the session when a pending factor removal rotates nothing', async () => {
+    // Removing a pending factor replaces no credential: the route settles
+    // the sessions only for a factor that was active. The removal therefore
+    // runs bare, without an identity-transition window, so a read that lands
+    // anonymous after it is the session genuinely ending -- the opposite of
+    // the active case above. Wrapping this removal would keep the stale
+    // snapshot and postpone the sign-out to the next read.
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return removed
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return removed
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody())
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return removed
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, { factors: [factor({ status: 'pending' })] })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<MfaSection session={rig.session} />)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    // The refetch that follows the write is the first read issued after the
+    // removal. No window stands between it and the silent leg, so its
+    // anonymous answer ends the session.
+    await waitFor(() =>
+      expect(rig.session.getSnapshot().state).toBe('anonymous'),
+    )
+    expect(rig.transitionBegins()).toBe(0)
+    expect(rig.endedEdges()).toBe(1)
+  })
+
+  it('releases the window a refused active-factor removal opened', async () => {
+    // A refused write must not leave its window open: the next genuine
+    // anonymous read has to end the session. The removal is refused 409 (the
+    // factor is the account's last one); after that failure the session read
+    // is answered 401, and the snapshot must turn anonymous with one
+    // sign-out edge. A window still open would discard that answer and leave
+    // the user signed in forever.
+    let refused = false
+    let gone = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return gone
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody())
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [factor({ status: 'active' })] })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        refused = true
+        return errorResponse(409, 'authn.conflict')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<MfaSection session={rig.session} />)
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    // The failure is on screen only after the write rejected and its window
+    // was released.
+    expect(refused).toBe(true)
+    await screen.findByText(zhCN.errors.authn.conflict)
+    expect(rig.transitionBegins()).toBe(1)
+
+    // A fresh anonymous read now settles the true state.
+    gone = true
+    await rig.session.restore()
+    expect(rig.session.getSnapshot().state).toBe('anonymous')
+    expect(rig.endedEdges()).toBe(1)
   })
 
   it('renders a last-factor refusal as code text', async () => {
@@ -423,6 +534,125 @@ describe('MfaSection', () => {
     // One shortfall, one refresh failure: a duplicated removal would warn
     // again.
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a fresh window for the removal a won step-up re-runs', async () => {
+    // The refused removal opens a window, releases it on the failure, and
+    // the re-run is a new write: it opens its own window before the rotating
+    // DELETE goes out. The refetch that follows the re-run is answered 401
+    // -- a read under the credential the re-run replaced -- and is
+    // discarded by that fresh window. The two begins count the shortfall's
+    // window and the re-run's.
+    const warn = captureRefreshWarning()
+    let elevated = false
+    let rotated = false
+    // The shortfall's own silent leg answers anonymous: the server would
+    // read the outgoing cookie that way. The open window discards it, so the
+    // client does not retry the refused removal and the session stays
+    // established for the challenge.
+    let signedOut = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return signedOut
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return signedOut
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody())
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, { factors: [factor({ status: 'active' })] })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === '/api/v1/auth/factors/factor-1'
+      ) {
+        if (!elevated) {
+          signedOut = true
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        rotated = true
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'authenticated',
+          session: { id: 'sess-1', expires_at: '2026-01-01T00:00:00Z' },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<MfaSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+      }),
+    )
+    const confirm = await screen.findByRole('dialog')
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    // The 401 opens the step-up dialog.
+    await screen.findByRole('button', { name: 'App' })
+    await user.click(screen.getByRole('button', { name: 'App' }))
+    await user.type(await screen.findByLabelText(zhCN.flowStep.codeLabel), '123456')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    // The re-run's refetch lands 401 and is discarded by the re-run's own
+    // window: the snapshot stays authenticated and no sign-out is observed.
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    expect(
+      rig.calls.filter(
+        (call) =>
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/factors/factor-1',
+      ),
+    ).toHaveLength(2)
+    expect(rig.transitionBegins()).toBe(2)
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
   })
 
   it('walks the TOTP enrollment flow and refetches the factors', async () => {

@@ -32,6 +32,13 @@ import {
 } from '../test-utils/real-client.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { captureRefreshWarning } from '../test-utils/refresh-warning.js'
+import {
+  AUTHENTICATED_SESSION,
+  EMPTY_FEATURES,
+  FEATURES_PATH,
+  SESSION_PATH,
+  makeRotationRig,
+} from '../test-utils/rotation.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
@@ -1770,5 +1777,285 @@ describe('IdentifiersSection', () => {
     const add = screen.getByRole('button', { name: zhCN.identifiers.add.open })
     expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
     expect(hasCoarsePointerTouchTarget(add)).toBe(true)
+  })
+
+  it('holds the session through the credential rotation a username add performs', async () => {
+    // The one-step username add rotates the requesting session's
+    // credential. The profile refetch that follows the write is answered
+    // 401, standing for a read that left under the outgoing credential. The
+    // surface opens an identity-transition window around that write, so the
+    // anonymous answer is discarded: the snapshot stays authenticated and no
+    // sign-out edge is observed. Without the window the same script ends the
+    // session.
+    const warn = captureRefreshWarning()
+    let rotated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        rotated = true
+        return jsonResponse(200, { state: 'added' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<IdentifiersSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+      'ada2',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+    )
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('holds the session through the credential rotation an added email verifies', async () => {
+    // Sending the code does not rotate the credential; the verification that
+    // writes the address does. The profile refetch that follows the verify
+    // is answered 401, standing for a read that left under the outgoing
+    // credential. The surface opens an identity-transition window around
+    // that write, so the anonymous answer is discarded: the snapshot stays
+    // authenticated and no sign-out edge is observed.
+    const warn = captureRefreshWarning()
+    let rotated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify'
+      ) {
+        rotated = true
+        return jsonResponse(200, { state: 'added' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<IdentifiersSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+      'ada@x.test',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+    )
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('holds the session through the credential rotation a row verification performs', async () => {
+    // A row's verification proves the address and rotates the requesting
+    // session's credential, exactly as the add-face verification does. The
+    // profile refetch that follows the write is answered 401, standing for a
+    // read that left under the outgoing credential; the window around the
+    // write discards it, so the snapshot stays authenticated.
+    const warn = captureRefreshWarning()
+    let rotated = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return rotated
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(
+              200,
+              profileBody({
+                verification: {
+                  state: 'verified',
+                  email: 'ada@x.test',
+                  since: '',
+                },
+                identifiers: [
+                  identifier({
+                    id: 'id-primary',
+                    kind: 'email',
+                    value: 'ada@x.test',
+                  }),
+                  identifier({
+                    id: 'id-secondary',
+                    kind: 'email',
+                    value: 'second@x.test',
+                    proven: false,
+                    verified_via: 'admin',
+                  }),
+                ],
+              }),
+            )
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return jsonResponse(200, {
+          state: 'pending',
+          expires_in: 600,
+          resend_after: 60,
+        })
+      }
+      if (
+        call.method === 'POST' &&
+        call.path === '/api/v1/auth/identifiers/verify'
+      ) {
+        rotated = true
+        return jsonResponse(200, { state: 'added' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<IdentifiersSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.identifiers.verifyAria.replace('{{value}}', 'second@x.test'),
+      }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitEmail }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.identifiers.add.code.label),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
+    )
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'access token refresh failed',
+        expect.objectContaining({ status: 401 }),
+      ),
+    )
+    expect(rig.session.getSnapshot().state).toBe('authenticated')
+    expect(rig.endedEdges()).toBe(0)
+  })
+
+  it('releases the window a refused username add opened', async () => {
+    // A refused one-step username add must not leave its window open: the
+    // next genuine anonymous read has to end the session. The add is refused
+    // 409 (the name is taken), so no silent leg runs; once the failure is on
+    // screen the window is closed, and a fresh 401 read turns the snapshot
+    // anonymous with one sign-out edge.
+    let gone = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return gone
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, AUTHENTICATED_SESSION)
+      }
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return gone
+          ? errorResponse(401, 'authn.login-failed')
+          : jsonResponse(200, profileBody({ identifiers: [] }))
+      }
+      if (call.method === 'GET' && call.path === FEATURES_PATH) {
+        return jsonResponse(200, EMPTY_FEATURES)
+      }
+      if (call.method === 'POST' && call.path === '/api/v1/auth/identifiers') {
+        return errorResponse(409, 'authn.conflict')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = await makeRotationRig(respond)
+    renderWithProviders(<IdentifiersSection session={rig.session} />)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+    )
+    fireEvent.mouseDown(
+      screen.getByRole('combobox', { name: zhCN.identifiers.add.kind.label }),
+    )
+    await user.click(
+      screen.getByRole('option', { name: zhCN.identifiers.add.kind.username }),
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.identifiers.add.value.labelUsername),
+      'ada2',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.identifiers.add.submitUsername }),
+    )
+
+    await screen.findByText(zhCN.identifiers.add.usernameTaken)
+    expect(rig.transitionBegins()).toBe(1)
+
+    // A fresh 401 read now settles the true state.
+    gone = true
+    await rig.session.restore()
+    expect(rig.session.getSnapshot().state).toBe('anonymous')
+    expect(rig.endedEdges()).toBe(1)
   })
 })
