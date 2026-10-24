@@ -221,6 +221,25 @@ func TestANameOffTheRosterAndADisabledTenantAnswerAlike(t *testing.T) {
 	p.requireNothingInside(t)
 }
 
+// A deleted tenant is answered exactly as an unknown one. The request face must
+// not say whether a name ever existed, and deletion is one more state that
+// would leak it if it were answered differently: a caller could tell a tenant
+// that was deleted from a name that was never registered and time an attack on
+// the alias.
+func TestADeletedTenantAnswersLikeAnUnknownOne(t *testing.T) {
+	p := &probe{}
+	h := startHost(t, hostOptions{roster: standardRoster(), register: p.register})
+
+	unknown := h.get(t, "/orders", "ghost")
+	deleted := h.get(t, "/orders", "deleted")
+	requireProblem(t, deleted, nethttp.StatusNotFound)
+	if !sameAnswer(unknown, deleted) {
+		t.Fatalf("a deleted tenant was answered differently from an unknown one: %+v and %+v",
+			deleted, unknown)
+	}
+	p.requireNothingInside(t)
+}
+
 func TestAnUnreadableRosterIsAnInternalError(t *testing.T) {
 	p := &probe{}
 	h := startHost(t, hostOptions{roster: fakeRoster{err: tenant.ErrRosterMissing}, register: p.register})
