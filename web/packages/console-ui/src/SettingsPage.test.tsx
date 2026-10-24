@@ -79,6 +79,22 @@ const defaultItem: ConsoleSetting = {
 }
 
 /**
+ * A second declared item whose description and declared default are
+ * different from `item`'s, so a cross-wired cell is observable.
+ */
+const sessionItem: ConsoleSetting = {
+  ...item,
+  key: 'authn.session.absolute-lifetime',
+  namespace: 'authn',
+  type: 'duration',
+  description: 'Absolute session lifetime',
+  default: '24h',
+  written: '',
+  has_row: false,
+  value: '24h',
+}
+
+/**
  * jsdom implements no layout, so `scrollIntoView` does not exist on
  * elements. The tests that observe the region's scroll install this spy;
  * the ones that only drive a failure rely on the call site guarding a
@@ -191,6 +207,91 @@ describe('SettingsPage', () => {
     // Both rows stay editable: writing a value over a default is the way a
     // default row becomes overridden.
     expect(screen.getByRole('textbox', { name: 'mail.limit' })).toBeEnabled()
+  })
+
+  it('shows each row its own description and declared default', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listSettings: () => Promise.resolve([item, sessionItem]),
+      }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByText('mail.retry')
+
+    const rowOf = (key: string): HTMLElement => {
+      const row = screen.getByText(key).closest('tr')
+      expect(row).not.toBeNull()
+      return row as HTMLElement
+    }
+
+    // Each row carries its own declaration: a cell wired to another row's
+    // description or default leaves the row-scoped query empty.
+    expect(within(rowOf('mail.retry')).getByText('Retry count')).toBeInTheDocument()
+    expect(
+      within(rowOf('mail.retry')).getByText(
+        text(zhCN.settings.field.defaultValue, { value: '3' }),
+      ),
+    ).toBeInTheDocument()
+
+    expect(
+      within(rowOf('authn.session.absolute-lifetime')).getByText(
+        'Absolute session lifetime',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      within(rowOf('authn.session.absolute-lifetime')).getByText(
+        text(zhCN.settings.field.defaultValue, { value: '24h' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the declared default on an overridden row, not its current value', async () => {
+    // `item` holds a row (its current value is 5) while its declaration is
+    // 3: the default line must report the declaration, not the override.
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByText('mail.retry')
+
+    const row = screen.getByText('mail.retry').closest('tr') as HTMLElement
+    expect(within(row).getByText(zhCN.settings.state.overridden)).toBeInTheDocument()
+    expect(
+      within(row).getByText(text(zhCN.settings.field.defaultValue, { value: '3' })),
+    ).toBeInTheDocument()
+    expect(
+      within(row).queryByText(
+        text(zhCN.settings.field.defaultValue, { value: '5' }),
+      ),
+    ).toBeNull()
+  })
+
+  it('leaves the default line out when the setting declares no default', async () => {
+    // A sensitive item arrives with an empty declared default. The page
+    // keeps the description but renders no default line at all, rather than
+    // a label over emptiness that would read as an empty value.
+    const masked: ConsoleSetting = {
+      ...item,
+      key: 'mail.password',
+      sensitive: true,
+      description: 'SMTP password',
+      default: '',
+      written: '********',
+      has_row: true,
+      value: '********',
+    }
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([masked]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    await screen.findByText('mail.password')
+
+    const row = screen.getByText('mail.password').closest('tr') as HTMLElement
+    expect(within(row).getByText('SMTP password')).toBeInTheDocument()
+    const labelPrefix = zhCN.settings.field.defaultValue.replace('{{value}}', '')
+    expect(
+      within(row).queryByText(new RegExp(`^${escapeRegExp(labelPrefix)}`)),
+    ).toBeNull()
   })
 
   it('keeps the state column on one line', async () => {

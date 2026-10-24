@@ -12,8 +12,14 @@
  * as soon as any of its items is declared.
  *
  * The items render as a full-width table (key, type, current value, the
- * row's state and its remove control), through ui-kit's DataTable: a
- * large declared set is paged rather than run down one long column, so
+ * row's state and its remove control), through ui-kit's DataTable. The
+ * key cell also carries the row's own declaration in two stacked lines:
+ * the setting's description and its declared default, labelled apart
+ * from the current value beside it. The declaration is the server's
+ * answer, so a row never shows another row's description or default; a
+ * setting with no declared default renders neither an empty line nor a
+ * label over emptiness. A large declared set is paged rather than run
+ * down one long column, so
  * the list stays a fixed height however many settings a deployment
  * declares. The judgement a write lands under is layered and
  * server-side (the tenant layer in that tenant's domain, the global
@@ -324,16 +330,50 @@ export function SettingsPage() {
       // keeps a long key from pushing the other columns out of a narrow
       // container. The complete value stays on the copy control.
       contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      // The key cell carries the row's declaration beneath the identity:
+      // its description, then its declared default with the label that
+      // separates the declaration from the current value in the next
+      // column. Both lines wrap inside the primary column's cap instead of
+      // widening the cell; the key itself stays on one truncated line. An
+      // empty default (a sensitive item has none) leaves the line out
+      // rather than printing a label over nothing.
       cell: (setting) => (
         <Box
-          sx={{ display: 'flex', alignItems: 'baseline', columnGap: 1, minWidth: 0 }}
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            rowGap: 0.25,
+            minWidth: 0,
+          }}
         >
-          <Typography variant="body2" noWrap>
-            {setting.key}
-          </Typography>
-          {setting.sensitive && (
-            <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-              {t('settings.field.sensitive')}
+          <Box
+            sx={{ display: 'flex', alignItems: 'baseline', columnGap: 1, minWidth: 0 }}
+          >
+            <Typography variant="body2" noWrap>
+              {setting.key}
+            </Typography>
+            {setting.sensitive && (
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                {t('settings.field.sensitive')}
+              </Typography>
+            )}
+          </Box>
+          {setting.description !== '' && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}
+            >
+              {setting.description}
+            </Typography>
+          )}
+          {setting.default !== '' && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}
+            >
+              {t('settings.field.defaultValue', { value: setting.default })}
             </Typography>
           )}
         </Box>

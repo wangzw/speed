@@ -288,7 +288,8 @@
     },
     "retry": "重试",
     "field": {
-      "sensitive": "敏感值已遮蔽"
+      "sensitive": "敏感值已遮蔽",
+      "defaultValue": "默认值：{{value}}"
     },
     "saveBar": {
       "save": "保存改动",
