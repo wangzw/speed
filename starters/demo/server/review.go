@@ -113,6 +113,10 @@ var reviewModules = []string{
 	// process log instead of reaching a relay.
 	emailcode.ModuleName,
 	reviewMailModuleName,
+	// The notification journey's fixture: a notification type the baseline does
+	// not declare, a worker that dispatches it to every tenant's members, and the
+	// preference-recipient wiring. See review_notification.go.
+	reviewNotificationModuleName,
 	reviewGuardModuleName,
 }
 

@@ -181,6 +181,15 @@ seed:
     - key: "authn.sms.allowed-prefixes"
       value: '["+1","+86"]'
 
+# REVIEW: the scheduler's tick. The review notification fixture declares a
+# periodic dispatch and every window it runs is expanded per tenant; a two-second
+# tick makes a tenant created during a walkthrough start receiving notices
+# promptly instead of waiting out the declared one-minute tick. Nothing else in
+# this assembly declares a schedule, so the frequent tick costs nothing.
+jobs:
+  scheduler:
+    tick: 2s
+
 db:
   sqlite:
     dsn: "./var/review.db"
