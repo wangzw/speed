@@ -359,9 +359,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-sms-signup-to-password-login.md',
-    status: 'pending',
-    reason:
-      'The journey is browser-reachable because the review SMS carrier writes the code to the process log; no spec drives it yet, and its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-account-007',
       'REQ-account-008',

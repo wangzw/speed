@@ -207,6 +207,12 @@ seed:
     # what make +1 and +86 numbers reachable in the review.
     - key: "authn.sms.allowed-prefixes"
       value: '["+1","+86"]'
+    # REVIEW: the SMS resend interval, lowered to its floor like the email one
+    # above. A walkthrough that signs a second device in with the same number
+    # asks for a second code while the first send's window is still open; the
+    # declared minute would make that device wait it out at every signing.
+    - key: "authn.sms.resend-interval"
+      value: "30s"
 
 # REVIEW: the scheduler's tick. The review notification fixture declares a
 # periodic dispatch and every window it runs is expanded per tenant; a two-second
