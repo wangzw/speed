@@ -88,4 +88,4 @@ flowchart TD
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`

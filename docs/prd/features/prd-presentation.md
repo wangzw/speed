@@ -102,7 +102,7 @@
 
 - **验收**：切换界面语言后，同一时间值的日期顺序、月份名、分隔符与时钟制式随之改变；语言切换不需要重新加载数据。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-presentation-011
 

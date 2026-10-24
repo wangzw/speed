@@ -197,7 +197,7 @@
 
 - **验收**：当前租户的名字出现在控件上。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-tenancy-023
 
@@ -229,7 +229,7 @@
 
 - **验收**：新开户且尚未加入任何组织的账户，无论开户来源、无论邮箱是否已证明，第一次进入租户区即拥有个人租户，并可在其中使用该个人租户的业务能力。再次触发时读回同一个租户，标识不变，不新建租户；账户后来加入其他租户也不改变这一点。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-tenancy-027
 
@@ -237,7 +237,7 @@
 
 - **验收**：个人租户的所有者能执行允许集内的业务动作。执行允许集外的租户级管理动作被拒绝。进程后来新声明的租户级权限不自动进入该角色。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-tenancy-028
 
@@ -245,7 +245,7 @@
 
 - **验收**：以邮箱尚未证明的账户进入租户区，个人租户建立成功，界面同时呈现验证提示；该账户仍被未验证状态限制：绑定外部身份被拒绝并提示先证明邮箱。证明邮箱后同一绑定可进行，个人租户的标识与别名不变。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-tenancy-029
 

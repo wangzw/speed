@@ -26,7 +26,7 @@
 
 - **验收**：未认证调用读取该文档得到成功应答；增删一个登录模块或在运行期关闭一个方式后，同一应答里对应条目随之出现或消失。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signin-002
 
@@ -50,7 +50,7 @@
 
 - **验收**：只改部署装配或方式开关、不改前端产物，刷新登录面后渠道集合随之变化。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signin-005
 
@@ -66,7 +66,7 @@
 
 - **验收**：持有口令凭据且仍有用户名或邮箱标识的账户，以正确的标识与口令提交后登录完成；只存在于未证明预留中的邮箱不能作为登录名。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signin-007
 

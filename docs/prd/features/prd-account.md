@@ -178,7 +178,7 @@
 
 - **验收**：提交正确验证码后邮箱行变为已验证；账户已持有同值未证明邮箱时，提交正确验证码后该行就地变为已验证，列表不新增一行。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-041
 
@@ -266,7 +266,7 @@
 
 - **验收**：没有邮箱的账户读作不适用；持有未验证邮箱（含管理员写入）的账户读作未验证；持有至少一条已验证邮箱的账户读作已验证；任何来源的同状态账户得到相同结论。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-016
 
@@ -274,7 +274,7 @@
 
 - **验收**：未验证账户看到目标地址与发送控件；已验证账户看到完成文案且没有验证码输入；没有邮箱的账户看不到该节。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-017
 
@@ -282,7 +282,7 @@
 
 - **验收**：从「去验证」入口进入时目标邮箱收到一条验证码，页面停在验证码输入；直接打开账户页时不发码，需手动点击发送；自动发送被拒时出现手动发送按钮与说明，未出现重新认证对话框。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-018
 
@@ -322,7 +322,7 @@
 
 - **验收**：发送成功后重发控件在间隔内不可用并显示剩余秒数；间隔结束后可再次发送；收到限流应答时倒计时按应答给出的时间重置。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-020
 
@@ -330,7 +330,7 @@
 
 - **验收**：未验证账户在每个租户页看到该提示且没有关闭控件；完成验证后提示消失；在页面之间往返不使提示消失；没有目标地址时提示提供添加邮箱。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-021
 
