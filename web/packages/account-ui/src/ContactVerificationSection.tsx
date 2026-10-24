@@ -91,6 +91,7 @@ import {
   FORM_MAX_WIDTH,
   SectionCard,
   useWriteFeedback,
+  visuallyHiddenSx,
 } from '@speed/ui-kit'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
@@ -144,6 +145,11 @@ export function ContactVerificationSection({
   // verification.email, so a change that replaced the pending address
   // converges on the server's answer.
   const [sentTo, setSentTo] = useState<string | null>(null)
+  // The sent notice's live region must never mount together with its text:
+  // the region is mounted from the first render, and its text fills one
+  // commit after a send lands, so the announcement is a content change the
+  // screen reader already knows.
+  const [sentCommitted, setSentCommitted] = useState(false)
   const [code, setCode] = useState('')
   const [codeInvalid, setCodeInvalid] = useState(false)
   // Send and verify are two control groups: each owns its own feedback scope
@@ -216,8 +222,11 @@ export function ContactVerificationSection({
   }, [resendUntil])
 
   // Move focus to the code field once a send lands (the field exists before
-  // the send, so the focus move is a real hand-off, not a timing race).
+  // the send, so the focus move is a real hand-off, not a timing race), and
+  // arm the sent notice's live region one commit later so it fills an
+  // already-mounted region.
   useEffect(() => {
+    setSentCommitted(sentTo !== null)
     if (sentTo !== null) {
       codeRef.current?.focus()
     }
@@ -281,12 +290,10 @@ export function ContactVerificationSection({
       // The pending contact may have been replaced: re-read so the target
       // label and the verification state converge on the server's answer.
       await invalidateAfterWrite()
-      // The confirmation names the address the code went to; the target line
-      // above the code step keeps stating the destination.
-      return t('verification.sent', {
-        email: address,
-        interpolation: { escapeValue: false },
-      })
+      // The "code sent" destination text is the code step's own state, not a
+      // settled action: it is announced once through its own live region and
+      // leaves the send scope's slot empty.
+      return null
     })
   }
 
@@ -504,6 +511,18 @@ export function ContactVerificationSection({
                   interpolation: { escapeValue: false },
                 })}
           </Typography>
+          {/* The sent notice's live region: mounted from the first render,
+              filled one commit after a code lands, so it announces the
+              destination once without becoming a second result in the send
+              scope's slot. */}
+          <Box role="status" sx={visuallyHiddenSx}>
+            {sentCommitted && sentTo !== null
+              ? t('verification.sent', {
+                  email: sentTo,
+                  interpolation: { escapeValue: false },
+                })
+              : ''}
+          </Box>
           <TextField
             fullWidth
             inputMode="numeric"
@@ -569,10 +588,6 @@ export function ContactVerificationSection({
                 : t('verification.change')}
             </Button>
           </Stack>
-          <WriteFeedbackRegion
-            outcome={sendFeedback.outcome}
-            sx={{ alignSelf: 'stretch', width: '100%' }}
-          />
           {remainingSeconds > 0 ? (
             <Typography
               id={RESEND_NOTE_ID}
@@ -621,6 +636,14 @@ export function ContactVerificationSection({
             </Stack>
           </Box>
         ) : null}
+        {/* The send control group's result, below every control that writes
+            into it -- the resend action above and the change-address form
+            just above -- so a refused send or change renders under the form
+            that made it. */}
+        <WriteFeedbackRegion
+          outcome={sendFeedback.outcome}
+          sx={{ alignSelf: 'stretch', width: '100%' }}
+        />
       </SectionCard>
 
       <StepUpChallenge
