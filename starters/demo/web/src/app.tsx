@@ -121,6 +121,7 @@ import { ContactVerificationBanner } from './contact-verification-banner.js'
 import { DemoNavLabel } from './nav-label.js'
 import { ConsoleNavIcon } from './nav-icons.js'
 import { PersonalTenantNoticeProvider } from './personal-tenant-notice.js'
+import { TenantMembershipNoticeHost } from './tenant-membership-notice.js'
 import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import {
@@ -214,7 +215,13 @@ export function DemoApp({
           permission set, the current tenant and the live subscription
           belong to (src/impersonation). */}
       <IdentityChangeProvider>
-        <AppFrame presence={presence} shellLayout={shellLayout} />
+        {/* Above the shell switch: an accepted invitation announces the new
+            membership on its way from the landing (outside both shells) to
+            the tenant home (inside the tenant frame), so the confirmation has
+            to outlive that route change (src/tenant-membership-notice.tsx). */}
+        <TenantMembershipNoticeHost>
+          <AppFrame presence={presence} shellLayout={shellLayout} />
+        </TenantMembershipNoticeHost>
       </IdentityChangeProvider>
     </RouteProvider>
   )

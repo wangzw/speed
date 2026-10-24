@@ -30,11 +30,17 @@
  */
 
 import { act, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
-import type { AuthnProfileProfile } from '@speed/api-sdk'
+import type {
+  AuthnInviteAccept,
+  AuthnInviteView,
+  AuthnProfileProfile,
+} from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { authUiResources } from '@speed/auth-ui'
 import type { AppShellShellLayout } from '@speed/layout-kit'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { routes } from '../routes.js'
@@ -362,6 +368,75 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
           formatFindings(failing),
       )
     }
+  })
+
+  it('scans the membership confirmation after an invitation is accepted', async () => {
+    // The confirmation only exists after the landing's accept action settles
+    // and the app navigates home, so the per-route sweep -- which renders each
+    // route as it loads -- never reaches it. This case drives the click and
+    // scans the tenant home with the confirmation on it.
+    const authEn = authUiResources['en-US'] as unknown as {
+      readonly acceptInvitation: { readonly accept: string }
+    }
+    const view: AuthnInviteView = {
+      invitation: {
+        id: 'invite-1',
+        tenant: 'acme',
+        email: 'invitee@example.com',
+        invited_by: 'account-1',
+        status: 'pending',
+        created_at: '2026-01-01T00:00:00Z',
+        expires_at: '2027-01-01T00:00:00Z',
+        accepted_at: '0001-01-01T00:00:00Z',
+      },
+    }
+    const accepted: AuthnInviteAccept = {
+      account: 'account-1',
+      tenant: 'acme',
+      active: true,
+      source: 'invite',
+      sso_exempt: false,
+    }
+    const invitationPath = '/api/v1/auth/invitations/sample'
+    const unscripted: string[] = []
+    const base = createBackend('data', (url) => unscripted.push(url))
+    const fn: RequestFn = <T,>(url: string, options?: RequestOptions) => {
+      if (url === invitationPath) {
+        return Promise.resolve(
+          ((options?.method ?? 'GET') === 'POST' ? accepted : view) as T,
+        )
+      }
+      return base<T>(url, options)
+    }
+    bindRequestFn(fn)
+    window.history.replaceState({}, '', '/invitations/sample')
+    const user = userEvent.setup()
+    renderDemoApp({ session: staffSession() })
+    await settle()
+    await user.click(
+      await screen.findByRole('button', { name: authEn.acceptInvitation.accept }),
+    )
+    // The app lands on the tenant home with the confirmation; the scan below
+    // is only meaningful once that state is really on screen.
+    await screen.findByText(demoEnUS.home.membershipNotice.title)
+    const result = await scanPage()
+    records.push({
+      path: '/',
+      mode: 'data',
+      findings: result.violations,
+    })
+    const failing = result.violations.filter(isFailing)
+    warnNonFailing('/', 'data', result.violations.filter((f) => !isFailing(f)))
+    if (failing.length > 0) {
+      expect.fail(
+        `route / [data, membership confirmation] has ${failing.length} serious/critical axe violation(s):\n` +
+          formatFindings(failing),
+      )
+    }
+    expect(
+      unscripted,
+      'the accepted-invitation landing and its home page issued read(s) the scripted backend does not answer',
+    ).toEqual([])
   })
 
   it('scans the pending verification notice when the account has no target address', async () => {

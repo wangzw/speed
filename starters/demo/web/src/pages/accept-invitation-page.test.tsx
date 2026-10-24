@@ -179,6 +179,69 @@ describe('the invitation landing', () => {
     ).toBeInTheDocument()
   })
 
+  it('confirms the new membership on the tenant home and dismisses once', async () => {
+    const backend = makeInvitationBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.accept,
+      }),
+    )
+    await waitFor(() => expect(backend.accepted).toEqual([TOKEN]))
+
+    // The journey asks for the confirmation AND the return to the tenant
+    // home: the acceptance navigates home, and the confirmation is shown
+    // there rather than on the landing it just left.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+    const confirmation = await screen.findByText(
+      demoEnUS.home.membershipNotice.title,
+    )
+    expect(confirmation).toBeInTheDocument()
+    expect(
+      screen.getByText(demoEnUS.home.membershipNotice.description),
+    ).toBeInTheDocument()
+
+    // Dismissing it removes the confirmation.
+    await user.click(
+      screen.getByRole('button', {
+        name: demoEnUS.home.membershipNotice.dismiss,
+      }),
+    )
+    expect(
+      screen.queryByText(demoEnUS.home.membershipNotice.title),
+    ).not.toBeInTheDocument()
+
+    // A later visit to the home page in the same session does not bring it
+    // back.
+    await user.click(
+      screen.getByRole('link', { name: demoEnUS.nav.account }),
+    )
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.account.title,
+      }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: demoEnUS.nav.home }))
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(demoEnUS.home.membershipNotice.title),
+    ).not.toBeInTheDocument()
+  })
+
   it('stays on the invitation landing after a registration through SMS', async () => {
     // The URL carries the token: the register mode's landing belongs to the
     // application's own sign-in page, not to a sign-in surface embedded in

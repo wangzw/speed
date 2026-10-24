@@ -25,6 +25,11 @@
   "home": {
     "heading": "Get started",
     "intro": "This skeleton ships no business domain of its own. These are the platform capabilities that already work -- take a look around before you grow your own.",
+    "membershipNotice": {
+      "title": "You are now a member of the tenant.",
+      "description": "The current tenant is unchanged, and the invited tenant now appears in the tenant switcher.",
+      "dismiss": "Dismiss"
+    },
     "setupNotice": {
       "title": "Finish setting up your account.",
       "action": "Finish account setup",

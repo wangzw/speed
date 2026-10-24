@@ -14,7 +14,10 @@
  * signed-in viewer meets auth-ui's AcceptInvitationScreen, whose two
  * invitation operations this page binds to the app's generated SDK surface
  * (src/app-api, the platform document's operations). On acceptance the page
- * navigates home.
+ * announces the new membership to the tenant home and navigates there
+ * (src/tenant-membership-notice.tsx): the home page shows the confirmation the
+ * journey asks for, which the acceptance's own page cannot keep because the
+ * navigation unmounts it.
  *
  * The route is public and sits outside both shells (the invitee arrives
  * before any session exists), so the app renders its page directly
@@ -31,6 +34,7 @@ import type { InvitationOperations } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import { authnInviteAccept, authnInviteAcceptView } from '../app-api/index.js'
 import type { AuthnInviteView } from '../app-api/index.js'
+import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 import { SignInView } from './sign-in-view.js'
 
@@ -44,6 +48,7 @@ export function AcceptInvitationPage({
 }: AcceptInvitationPageProps): ReactElement {
   const snapshot = useAuthState()
   const navigate = useNavigate()
+  const membershipNotice = useTenantMembershipNotice()
 
   // The screen drives these two operations; they reach the backend through
   // the generated surface over the request function the assembly bound
@@ -92,7 +97,10 @@ export function AcceptInvitationPage({
         <AcceptInvitationScreen
           token={token}
           invitations={invitations}
-          onAccepted={() => navigate(TENANT_HOME_PATH)}
+          onAccepted={() => {
+            membershipNotice.announce()
+            navigate(TENANT_HOME_PATH)
+          }}
         />
       </Card>
     </Box>

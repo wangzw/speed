@@ -48,6 +48,7 @@ import {
   ACCOUNT_SETUP_PATH,
   NOTIFICATIONS_PATH,
 } from '../paths.js'
+import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /**
@@ -91,6 +92,10 @@ export function HomePage(): ReactElement {
   // identity's session, so leaving and returning to the page does not bring
   // it back.
   const setupNotice = usePersonalTenantNotice()
+  // The acceptance confirmation the invitation landing announced on its way
+  // here (src/tenant-membership-notice.tsx). It is a one-shot notice: the
+  // viewer dismisses it, and the dismissal lasts for the identity's session.
+  const membershipNotice = useTenantMembershipNotice()
   // Once the notice has appeared, the account's CURRENT profile decides
   // whether it still applies: completing setup makes it disappear, whichever
   // page the account finished on. The read runs only while the notice is
@@ -118,6 +123,21 @@ export function HomePage(): ReactElement {
       }}
     >
       <PageHeader title={t('home.heading')} description={t('home.intro')} />
+      {membershipNotice.visible ? (
+        <Alert
+          severity="success"
+          role="status"
+          onClose={membershipNotice.dismiss}
+          closeText={t('home.membershipNotice.dismiss')}
+        >
+          <Typography variant="body2">
+            {t('home.membershipNotice.title')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {t('home.membershipNotice.description')}
+          </Typography>
+        </Alert>
+      ) : null}
       {showSetupNotice ? (
         <Alert
           severity="info"
