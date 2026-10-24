@@ -181,17 +181,17 @@
   "preferences": {
     "title": "Preferences",
     "loading": "Loading preferences",
-    "saveFailed": "Your change could not be saved to your account.",
-    "saved": "Preferences saved",
     "language": {
       "label": "Language",
       "notChosen": "Not chosen (use your device's language)",
-      "helper": "The language for emails and other messages we send you."
+      "helper": "The language for emails and other messages we send you.",
+      "saved": "Language set to {{value}}."
     },
     "timezone": {
       "label": "Time zone",
       "notChosen": "Not chosen (use your device's time zone)",
-      "helper": "Times shown in your account use this time zone."
+      "helper": "Times shown in your account use this time zone.",
+      "saved": "Time zone set to {{value}}."
     },
     "error": {
       "title": "Could not load preferences",

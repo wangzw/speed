@@ -31,10 +31,13 @@
  * Both writes are immediate (no submit button) and PATCH-first: the
  * server is asked before anything moves locally, so a refused write
  * leaves the controls reading the stored values -- the natural revert --
- * and renders the two-line failure alert: the save line plus the
- * resolved code text (authn.bad_request when the server refuses a
- * value, the transport codes when the request never landed). Both selects are disabled while a write is in flight, so a
- * change can never race its own predecessor.
+ * and renders the resolved code text in that control's own feedback
+ * region (authn.bad_request when the server refuses a value, the
+ * transport codes when the request never landed). Each select is one
+ * control group with its own feedback scope and region beneath it, so
+ * the language outcome and the timezone outcome never share a slot and
+ * neither clears the other. Both selects are disabled while a write is in
+ * flight, so a change can never race its own predecessor.
  *
  * The write asks for a fresh authentication like the other self-service
  * writes. The section accepts an OPTIONAL session: when the host passes
@@ -56,13 +59,11 @@
  * locale or time zone renders both as "not chosen").
  */
 
-import { useMemo, useState } from 'react'
-import Alert from '@mui/material/Alert'
+import { useMemo } from 'react'
 import Box from '@mui/material/Box'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   getAuthnProfileGetQueryKey,
@@ -77,14 +78,14 @@ import {
 } from '@speed/i18n'
 import {
   AsyncSection,
-  errorCodeOf,
-  InlineSuccess,
   SectionCard,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { useAccountUiErrorText } from './internal/error-text.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
+import { ACCOUNT_UI_NAMESPACE } from './resources.js'
 
 export interface PreferencesSectionProps {
   /**
@@ -99,8 +100,6 @@ export interface PreferencesSectionProps {
 type PreferenceAction =
   | { readonly kind: 'locale'; readonly locale: string }
   | { readonly kind: 'timezone'; readonly timezone: string }
-
-const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 
 /** The engine's IANA timezone list, sorted, or [] when the environment
  * cannot produce one (Intl.supportedValuesOf is newer than the rest of
@@ -119,12 +118,13 @@ function supportedTimeZones(): readonly string[] {
 
 export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
   const { t, i18n } = useAccountUiTranslation()
-  const errorText = useAccountUiErrorText()
   const queryClient = useQueryClient()
   const { data, isPending, refetch } = useProfileQuery()
   const patchProfile = useAuthnProfilePatch()
-  const [failureCode, setFailureCode] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
+  // One scope per select: each control group owns its own result slot, so
+  // the language outcome and the timezone outcome never clear each other.
+  const languageFeedback = useWriteFeedback()
+  const timezoneFeedback = useWriteFeedback()
 
   const gate = useStepUpGate<PreferenceAction>((action) => {
     if (action.kind === 'locale') {
@@ -141,7 +141,12 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
   const timeZoneOptions = useMemo(() => supportedTimeZones(), [])
 
   const pending = isPending && data === undefined
-  const saving = patchProfile.isPending
+  // A control stays disabled while any preference write is in flight --
+  // including the steps that follow the mutation (the language switch and
+  // the invalidation) -- so no control can change context under a pending
+  // scope.
+  const saving =
+    patchProfile.isPending || languageFeedback.pending || timezoneFeedback.pending
 
   const storedLocale = data?.locale ?? ''
   const storedTimezone = data?.time_zone ?? ''
@@ -158,12 +163,20 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
 
   /** PATCH-first write: the server answers before anything local moves,
    * so a refusal needs no revert (the controls read the stored values)
-   * and only the failure alert renders. */
-  async function saveLocale(locale: string): Promise<void> {
-    setFailureCode(null)
-    setSaved(false)
-    try {
-      await patchProfile.mutateAsync({ data: { locale } })
+   * and only the language scope's region reports the refusal. */
+  function saveLocale(locale: string): Promise<void> {
+    return languageFeedback.run(async () => {
+      try {
+        await patchProfile.mutateAsync({ data: { locale } })
+      } catch (error) {
+        // Without a session the section cannot drive a dialog, so the refusal
+        // settles as a failure; with one it hands over and leaves the slot
+        // untouched.
+        if (session !== undefined && gate.intercept(error, { kind: 'locale', locale })) {
+          return null
+        }
+        throw error
+      }
       // The empty string IS the clearing value, not a language: a
       // successful clear leaves the device on its current language, so
       // only a real choice is switched to (switchLanguage refuses the
@@ -178,34 +191,46 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
-      setSaved(true)
-    } catch (error) {
-      const code = errorCodeOf(error)
-      if (code === STEP_UP_REQUIRED && session !== undefined) {
-        gate.arm({ kind: 'locale', locale })
-        return
-      }
-      setFailureCode(code)
-    }
+      // Translated in the language the write just chose, so the
+      // confirmation speaks the newly chosen language. The hook's `t` and
+      // the instance wrapper's `language` are fixed to the render-time
+      // language, so the target is the chosen tag itself; a clear does not
+      // switch, so it keeps the current language. The message names the
+      // control and the chosen value.
+      const target = locale === '' ? i18n.language : locale
+      const translate = i18n.getFixedT(target, ACCOUNT_UI_NAMESPACE)
+      const value =
+        locale === ''
+          ? translate('preferences.language.notChosen')
+          : languageDisplayName(locale, target)
+      return translate('preferences.language.saved', {
+        value,
+        interpolation: { escapeValue: false },
+      })
+    })
   }
 
-  async function saveTimezone(timezone: string): Promise<void> {
-    setFailureCode(null)
-    setSaved(false)
-    try {
-      await patchProfile.mutateAsync({ data: { time_zone: timezone } })
+  function saveTimezone(timezone: string): Promise<void> {
+    return timezoneFeedback.run(async () => {
+      try {
+        await patchProfile.mutateAsync({ data: { time_zone: timezone } })
+      } catch (error) {
+        if (
+          session !== undefined &&
+          gate.intercept(error, { kind: 'timezone', timezone })
+        ) {
+          return null
+        }
+        throw error
+      }
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
-      setSaved(true)
-    } catch (error) {
-      const code = errorCodeOf(error)
-      if (code === STEP_UP_REQUIRED && session !== undefined) {
-        gate.arm({ kind: 'timezone', timezone })
-        return
-      }
-      setFailureCode(code)
-    }
+      return t('preferences.timezone.saved', {
+        value: timezone === '' ? t('preferences.timezone.notChosen') : timezone,
+        interpolation: { escapeValue: false },
+      })
+    })
   }
 
   return (
@@ -234,98 +259,88 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
       >
         {() => (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            {failureCode !== null && (
-              <Alert severity="error">
-                {/* The two-line failure alert: what happened, then the
-                    server's own code text (the whitelist resolves
-                    authn.bad_request and the transport codes; anything else
-                    reads the generic line). */}
-                <Typography variant="body2">
-                  {t('preferences.saveFailed')}
-                </Typography>
-                <Typography variant="body2">
-                  {errorText(failureCode)}
-                </Typography>
-              </Alert>
-            )}
-
-            {/* The landed write's confirmation, in a polite status region (a
-                write here is immediate, so a silent success would leave the
-                operator unsure the choice took). */}
-            <InlineSuccess message={saved ? t('preferences.saved') : null} />
-
-            <TextField
-              select
-              fullWidth
-              // Both preference controls are short: a language tag or an
-              // IANA zone name does not need to span the whole content
-              // width, so each is capped to a comfortable select width and
-              // fills less than the row on a wide viewport.
-              sx={{ maxWidth: '24rem' }}
-              slotProps={{
-                // displayEmpty rides the Select slot (MUI 9's slotProps
-                // architecture): the "not chosen" choice carries the empty
-                // string, and without this the control renders blank instead
-                // of the option's own label. The empty value is why the
-                // InputLabel is shrunk explicitly -- MUI floats the label on
-                // its own only when the select is filled, so in the "not
-                // chosen" state the label would otherwise sit on the
-                // placeholder and overlap it.
-                select: { displayEmpty: true },
-                inputLabel: { shrink: true },
-              }}
-              label={t('preferences.language.label')}
-              value={storedLocale}
-              disabled={saving}
-              onChange={(event) => {
-                void saveLocale(event.target.value)
-              }}
-              helperText={t('preferences.language.helper')}
-            >
-              {/* The "not chosen" choice first: an empty stored locale is
-               * the account's real initial state, and the chain's device
-               * and default tiers are what actually apply until one is
-               * chosen. */}
-              <MenuItem value="">
-                {t('preferences.language.notChosen')}
-              </MenuItem>
-              {languageOptions.map((option) => (
-                <MenuItem key={option} value={option}>
-                  {languageDisplayName(option, i18n.language)}
+            {/* The language control and its own scope's region: a write
+                here is immediate, so both a success and a refusal report
+                directly beneath the control that made them. */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <TextField
+                select
+                fullWidth
+                // Both preference controls are short: a language tag or an
+                // IANA zone name does not need to span the whole content
+                // width, so each is capped to a comfortable select width and
+                // fills less than the row on a wide viewport.
+                sx={{ maxWidth: '24rem' }}
+                slotProps={{
+                  // displayEmpty rides the Select slot (MUI 9's slotProps
+                  // architecture): the "not chosen" choice carries the empty
+                  // string, and without this the control renders blank instead
+                  // of the option's own label. The empty value is why the
+                  // InputLabel is shrunk explicitly -- MUI floats the label on
+                  // its own only when the select is filled, so in the "not
+                  // chosen" state the label would otherwise sit on the
+                  // placeholder and overlap it.
+                  select: { displayEmpty: true },
+                  inputLabel: { shrink: true },
+                }}
+                label={t('preferences.language.label')}
+                value={storedLocale}
+                disabled={saving}
+                onChange={(event) => {
+                  void saveLocale(event.target.value)
+                }}
+                helperText={t('preferences.language.helper')}
+              >
+                {/* The "not chosen" choice first: an empty stored locale is
+                 * the account's real initial state, and the chain's device
+                 * and default tiers are what actually apply until one is
+                 * chosen. */}
+                <MenuItem value="">
+                  {t('preferences.language.notChosen')}
                 </MenuItem>
-              ))}
-            </TextField>
+                {languageOptions.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {languageDisplayName(option, i18n.language)}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <WriteFeedbackRegion outcome={languageFeedback.outcome} />
+            </Box>
 
-            <TextField
-              select
-              fullWidth
-              // Capped like the language select above: a zone name is short
-              // and the control need not span the content width.
-              sx={{ maxWidth: '24rem' }}
-              // Same two slots as the language select above: displayEmpty
-              // for the "not chosen" placeholder and an explicit shrink so
-              // the label floats above it instead of overlapping.
-              slotProps={{
-                select: { displayEmpty: true },
-                inputLabel: { shrink: true },
-              }}
-              label={t('preferences.timezone.label')}
-              value={storedTimezone}
-              disabled={saving}
-              onChange={(event) => {
-                void saveTimezone(event.target.value)
-              }}
-              helperText={t('preferences.timezone.helper')}
-            >
-              <MenuItem value="">
-                {t('preferences.timezone.notChosen')}
-              </MenuItem>
-              {timeZoneChoices.map((option) => (
-                <MenuItem key={option} value={option}>
-                  {option}
+            {/* The timezone control and its own scope's region. */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <TextField
+                select
+                fullWidth
+                // Capped like the language select above: a zone name is short
+                // and the control need not span the content width.
+                sx={{ maxWidth: '24rem' }}
+                // Same two slots as the language select above: displayEmpty
+                // for the "not chosen" placeholder and an explicit shrink so
+                // the label floats above it instead of overlapping.
+                slotProps={{
+                  select: { displayEmpty: true },
+                  inputLabel: { shrink: true },
+                }}
+                label={t('preferences.timezone.label')}
+                value={storedTimezone}
+                disabled={saving}
+                onChange={(event) => {
+                  void saveTimezone(event.target.value)
+                }}
+                helperText={t('preferences.timezone.helper')}
+              >
+                <MenuItem value="">
+                  {t('preferences.timezone.notChosen')}
                 </MenuItem>
-              ))}
-            </TextField>
+                {timeZoneChoices.map((option) => (
+                  <MenuItem key={option} value={option}>
+                    {option}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <WriteFeedbackRegion outcome={timezoneFeedback.outcome} />
+            </Box>
           </Box>
         )}
       </AsyncSection>

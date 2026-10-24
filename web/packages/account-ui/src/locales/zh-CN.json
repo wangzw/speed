@@ -181,17 +181,17 @@
   "preferences": {
     "title": "偏好设置",
     "loading": "正在加载偏好设置",
-    "saveFailed": "你的修改未能保存到账户。",
-    "saved": "偏好已保存",
     "language": {
       "label": "语言",
       "notChosen": "未选择（跟随设备语言）",
-      "helper": "我们发给你的邮件及其他消息使用的语言。"
+      "helper": "我们发给你的邮件及其他消息使用的语言。",
+      "saved": "语言已设为 {{value}}。"
     },
     "timezone": {
       "label": "时区",
       "notChosen": "未选择（跟随设备时区）",
-      "helper": "账户中显示的时间使用该时区。"
+      "helper": "账户中显示的时间使用该时区。",
+      "saved": "时区已设为 {{value}}。"
     },
     "error": {
       "title": "无法加载偏好设置",
