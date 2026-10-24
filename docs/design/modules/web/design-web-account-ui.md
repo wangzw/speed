@@ -285,7 +285,7 @@ sequenceDiagram
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 偏好节的提权门控（可选 `session`） | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`、`PreferencesSectionProps` |
 | 提权对话框 `StepUpDialog` 外导（只给宿主用） | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx`；`web/packages/account-ui/src/index.ts` |
-| 「验证码已发送」的 live region 与焦点 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
+| 「验证码已发送」的 live region 与焦点 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 绑定回调完成阶段的成功文案 | 已实现 | `web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 会话列表与撤销 | 已实现 | `web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection` |
 | 社交绑定与回调 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |

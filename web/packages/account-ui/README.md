@@ -404,7 +404,7 @@ The social-account bindings surface. The bound identities are the
 profile's `links` field (`GET /api/v1/auth/me`); each row names the provider and
 its email. A row with an id has an unlink action
 (`DELETE /api/v1/auth/links/{id}`) behind the ui-kit danger confirm; a landed
-unbind is confirmed in a `role="status"` notice above the list, and a
+unbind is confirmed in a `role="status"` notice below the list, and a
 refused one renders its code text there.
 
 The channels come from the deployment's discovery document
