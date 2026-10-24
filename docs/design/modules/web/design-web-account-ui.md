@@ -209,14 +209,14 @@ sequenceDiagram
 
 ### 写入的反馈
 
-每个节按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈：一个节是一个反馈作用域，区域紧贴该节的控件之下（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。
+每个节按 [ui-kit](design-web-ui-kit.md) 的「写入的反馈」组织反馈：一个控件组是一个反馈作用域，区域紧贴该控件组之下（[ADR-web-write-feedback-2026-10-17](../../../adr/adr-web-write-feedback-2026-10-17.md)）。偏好节的语言与时区各是一个控件组，各有自己的作用域与区域，一条的落定不清除另一条；档案、口令与手机各一个作用域。
 
 - **成功确认只经区域渲染。** 成功由 `WriteFeedbackRegion` 渲染，间距经区域的 `sx`；本包没有第二种成功区域，调用点不单独渲染 `InlineSuccess`。
-- **每个由用户发起、落定且无一失败的动作都有成功文案**，含撤销单个会话、删除标识、两步验证的登记与移除，文案点明被改动的对象。社交绑定的完成是例外：`onBound` 是宿主离开回调路由的信号，离开的宿主以刷新后的绑定行呈现结果；留在该路由或未给 `onBound` 的宿主得到 `done` 阶段的绑定成功文案，挂在 `role="status"` 区域里。
-- **一个节一个失败横幅。** 标识节的失败只经区域渲染一次，添加、验证与移除共用同一个槽；取消添加清空失败横幅、字段错误、成功提示与已发码状态，每次移除都 `reset`，使「已添加」的成功文案不在其后的移除之后停留，取消也不留下失败横幅。口令节的客户端校验失败同样以 `reset` 开头，不让上一次的服务端横幅与新的字段错误并存。
+- **每个由用户发起、落定且无一失败的动作都有成功文案**，含撤销单个会话、删除标识、两步验证的登记与移除，文案点明被改动的对象。档案的文案点名显示名；偏好节的文案点名语言或时区及其新值，清除时读「未选择」；手机验证的文案点名号码。社交绑定的完成是例外：`onBound` 是宿主离开回调路由的信号，离开的宿主以刷新后的绑定行呈现结果；留在该路由或未给 `onBound` 的宿主得到 `done` 阶段的绑定成功文案，挂在 `role="status"` 区域里。
+- **一个节一个失败横幅。** 标识节的失败只经区域渲染一次，添加、验证与移除共用同一个槽；取消添加清空失败横幅、字段错误、成功提示与已发码状态，每次移除都 `reset`，使「已添加」的成功文案不在其后的移除之后停留，取消也不留下失败横幅。口令节的客户端校验失败同样以 `reset` 开头，不让上一次的服务端横幅与新的字段错误并存；口令策略句与当前口令未通过的句子是作用域内的非码失败来源，与区域里的失败共用同一结果位置，二者互斥出现。
 - **「验证码已发送」的目的地文字在验证码一步内持续显示。** 它说明验证码发往哪个号码或邮箱，不是槽的结果，验证失败、`reset` 与无关的移除都不清除它；一个先挂空区域、再填文本的 `role="status"` 只在发码落地时播报一次，发码成功后焦点落在验证码字段。标识节与手机节没有重发控件，回退再发码的路径以 `reset` 开头，播报区的文本因此经空到非空；验证节有重发控件，它在服务端给出的重发间隔内禁用并说明原因，间隔内的重复点击不发请求。
 - **验证节对地址占用给出明确的 409。** 发送与验证两步都在占用时渲染 `email-taken` 的文案，点明地址已被另一个账户使用并给出更换邮箱；发送一步在发码之前判定，被拒的地址不会收到验证码（见「邮箱的验证节」）。
-- **偏好节的写入被 401 `authn.insufficient_user_authentication` 拒绝时走提权门控。** 偏好节接受类型同为 `AuthSession` 的可选 `session`：给了会话，被拒的写由门控记住，成功提权后重放一次；没给会话，失败横幅沿用该码的失败文案（要求重新验证身份），不开对话框，宿主只能在同页其它带会话的节完成提权（提权对整页的会话生效）或重新登录。参考装配把 `session` 传给偏好节。偏好写入失败渲染一条横幅，控件退回存下的值；语言写入在 `switchLanguage` 落定之后才调用 `succeed`，使确认文案取自新语言。
+- **偏好节的写入被 401 `authn.insufficient_user_authentication` 拒绝时走提权门控。** 偏好节接受类型同为 `AuthSession` 的可选 `session`：给了会话，被拒的写由门控记住，成功提权后重放一次；没给会话，失败横幅沿用该码的失败文案（要求重新验证身份），不开对话框，宿主只能在同页其它带会话的节完成提权（提权对整页的会话生效）或重新登录。参考装配把 `session` 传给偏好节。偏好写入失败渲染在该控件自己的区域里，控件退回存下的值；语言写入在 `switchLanguage` 落定之后才落定成功，确认文案按新语言译出并点名所选语言与值。
 - **通行密钥仪式的失败与区域里的失败横幅互斥。** 仪式失败是客户端原因，文本取自本包 bundle 的键，不经错误码白名单；一条出现时另一条被清掉。
 - **读的失败占位由各节自带，刷新失败由各节标明。** 每个以读为首的节在自己的读失败时渲染占位与重试；会话列表节读档案只为取显示时区，档案读失败时不渲染占位，回落到设备时区。已有数据时的读刷新失败（含写入后的失效再取）经 `AsyncSection` 的 `staleState` 标明：旧内容保留，其上渲染陈旧提示与重试，例如撤销之后重读失败时，旧行留在陈旧提示之下。
 - **错误白名单组合 `SESSION_LIFECYCLE_ERROR_CODES`。** 本包的白名单在自己的可达码与 `CLIENT_TRANSPORT_ERROR_CODES` 之外组合该族（[i18n](design-web-i18n.md) 的「扩展点」），每个码在 zh-CN 与 en-US 的 `errors.*` 下各有一条叶子，使会话在途中失效时到达的这类码渲染各自的文案，而不是 `errors.unknown`。
@@ -280,7 +280,7 @@ sequenceDiagram
 | 自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
 | 偏好节 | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection` |
 | 外观节 `AppearanceSection`（受控的主题预设选择） | 已实现 | `web/packages/account-ui/src/AppearanceSection.tsx` `AppearanceSection`、`AppearanceSectionProps`、`ThemePresetChoice` |
-| 各节的反馈作用域与成功确认 | 未实现 | — |
+| 各节的反馈作用域与成功确认 | 部分实现 | `web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
 | 读的刷新失败的陈旧提示 | 未实现 | — |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 偏好节的提权门控（可选 `session`） | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`、`PreferencesSectionProps` |
