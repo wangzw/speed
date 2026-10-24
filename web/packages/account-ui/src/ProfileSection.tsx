@@ -23,11 +23,11 @@
  * answered 401 authn.insufficient_user_authentication; the section opens
  * the step-up dialog with the typed name remembered, and a won challenge
  * re-runs that one save exactly once. Every other refusal resolves through
- * the code whitelist and renders in the banner above the field; a
- * successful save refetches the profile so the field shows the account's
- * own answer, and its success notice is a role="status" live region,
- * mounted empty and visually clipped until the notice fills it (a live
- * region announces only content changes that follow its own insertion).
+ * the code whitelist and renders in the section's write-feedback region
+ * below the control group; a successful save refetches the profile so the
+ * field shows the account's own answer, and the region confirms it with a
+ * message naming the display name. The region's slot holds at most one
+ * outcome, so a success and a failure never stand beside each other.
  *
  * The section takes the session as its only prop -- the step-up dialog
  * drives it -- while the profile read and the PATCH travel on the shared
@@ -35,7 +35,6 @@
  */
 
 import { useState } from 'react'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
@@ -49,19 +48,14 @@ import type { AuthSession } from '@speed/auth-core'
 import { useStepUpGate } from '@speed/auth-core'
 import {
   AsyncSection,
-  errorCodeOf,
   FORM_MAX_WIDTH,
   SectionCard,
-  visuallyHiddenSx,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
-
-/** The code the profile write answers an unelevated caller with; the one
- * that opens the step-up dialog rather than the plain failure banner. */
-const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 
 export interface ProfileSectionProps {
   /** The session whose step-up flow the dialog drives. */
@@ -90,8 +84,7 @@ export function ProfileSection({ session }: ProfileSectionProps) {
   // that arrives asynchronously. An empty string is a real edit (a cleared
   // name), which `??` preserves.
   const [editedName, setEditedName] = useState<string | null>(null)
-  const [failureCode, setFailureCode] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
+  const feedback = useWriteFeedback()
 
   const gate = useStepUpGate<{ readonly name: string }>((action) => {
     void save(action.name)
@@ -106,22 +99,23 @@ export function ProfileSection({ session }: ProfileSectionProps) {
     })
   }
 
-  async function save(nextName: string): Promise<void> {
-    setFailureCode(null)
-    setSaved(false)
-    try {
-      await patchProfile.mutateAsync({ data: { display_name: nextName } })
-      setEditedName(null)
-      setSaved(true)
-      await invalidateProfile()
-    } catch (error) {
-      const code = errorCodeOf(error)
-      if (code === STEP_UP_REQUIRED) {
-        gate.arm({ name: nextName })
-        return
+  function save(nextName: string): Promise<void> {
+    return feedback.run(async () => {
+      try {
+        await patchProfile.mutateAsync({ data: { display_name: nextName } })
+      } catch (error) {
+        // The write refused for insufficient step-up belongs to the dialog;
+        // settling with null leaves the slot untouched.
+        if (gate.intercept(error, { name: nextName })) {
+          return null
+        }
+        throw error
       }
-      setFailureCode(code)
-    }
+      setEditedName(null)
+      await invalidateProfile()
+      // Translated when the attempt settles; it names the changed object.
+      return t('profile.saved')
+    })
   }
 
   return (
@@ -155,21 +149,6 @@ export function ProfileSection({ session }: ProfileSectionProps) {
                 maxWidth: FORM_MAX_WIDTH,
               }}
             >
-              {/* The save notice is a role="status" live region mounted for
-                  the whole settled phase: clipped and visually silent until
-                  a save lands, when the same node fills with the notice, so
-                  a screen reader announces a change to a region it already
-                  knows rather than a region born with its text. */}
-              <Alert
-                severity="success"
-                role="status"
-                sx={saved ? { width: '100%' } : visuallyHiddenSx}
-              >
-                {saved ? t('profile.saved') : ''}
-              </Alert>
-
-              <InlineError code={failureCode} />
-
               <TextField
                 fullWidth
                 label={t('profile.displayName.label')}
@@ -189,6 +168,12 @@ export function ProfileSection({ session }: ProfileSectionProps) {
               >
                 {t('profile.save')}
               </Button>
+
+              {/* One scope's result, below the control group it confirms. */}
+              <WriteFeedbackRegion
+                outcome={feedback.outcome}
+                sx={{ alignSelf: 'stretch' }}
+              />
             </Box>
           )}
         </AsyncSection>

@@ -84,6 +84,15 @@ describe('ProfileSection', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(zhCN.profile.saved),
     )
+    // The confirmation names the changed object (the display name) and sits
+    // below the control group it confirms -- the field and its save button.
+    expect(zhCN.profile.saved).toContain(zhCN.profile.displayName.label)
+    const saveButton = screen.getByRole('button', { name: zhCN.profile.save })
+    expect(
+      saveButton.compareDocumentPosition(screen.getByRole('status')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
     const patch = rig.calls.find((call) => call.method === 'PATCH')
     expect(patch?.body).toEqual({ display_name: 'Grace' })
     // The read converges on the account's own answer.
@@ -116,6 +125,13 @@ describe('ProfileSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
+    // The failure renders in the same place as a success: below the control
+    // group, in the scope's region.
+    const saveButton = screen.getByRole('button', { name: zhCN.profile.save })
+    expect(
+      saveButton.compareDocumentPosition(alert) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it('disables the save button while the field still holds the account name', async () => {

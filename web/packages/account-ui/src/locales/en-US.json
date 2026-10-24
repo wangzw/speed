@@ -206,7 +206,7 @@
       "label": "Display name"
     },
     "save": "Save",
-    "saved": "Your profile has been saved.",
+    "saved": "Display name saved.",
     "error": {
       "title": "Could not load your profile",
       "description": "Something went wrong while loading your profile. Please try again."
