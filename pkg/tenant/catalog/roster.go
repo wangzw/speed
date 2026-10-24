@@ -663,9 +663,12 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 //
 // A row that is a tombstone is refused with ErrTenantDeleted, and nothing is
 // written: a deleted tenant is terminal, and the rewrite would otherwise serve it
-// again. The value's own status and disable source are judged before the write
-// as well (checkWrite), so a record that could not have come from a status
-// transition is refused rather than stored.
+// again. The upsert carries the same condition in its own statement, so a
+// deletion committed between the check and the write still leaves the tombstone
+// as it is; a statement that updated no row is read again to tell the tombstone
+// apart from a row that is no longer there. The value's own status and disable
+// source are judged before the write as well (checkWrite), so a record that could
+// not have come from a status transition is refused rather than stored.
 //
 // The write and the read that names a conflict run on one connection (write).
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
@@ -688,15 +691,28 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 			return fmt.Errorf("%w: alias %q is held by tenant %q",
 				tenant.ErrAliasConflict, t.Alias, held[0].ID)
 		}
-		return tx.Clauses(clause.OnConflict{
+		written := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{"alias", "status", "disabled_by"}),
+			// The rewrite itself refuses a tombstone: the check above runs
+			// before the statement, and a deletion committed between the two
+			// would otherwise be overwritten by the values this caller read.
+			Where: clause.Where{Exprs: []clause.Expression{
+				clause.Neq{Column: clause.Column{Table: tableName, Name: "status"}, Value: int(tenant.StatusDeleted)},
+			}},
 		}).Create(&row{
 			ID:         string(t.ID),
 			Alias:      t.Alias,
 			Status:     int(t.Status),
 			DisabledBy: int(t.DisabledBy),
-		}).Error
+		})
+		if written.Error != nil {
+			return written.Error
+		}
+		if written.RowsAffected == 0 {
+			return missingOrTombstone(tx, t.ID)
+		}
+		return nil
 	}, func(session *gorm.DB, err error) error { return failedPut(session, t, err) })
 }
 
@@ -772,6 +788,26 @@ func answered(err error) bool {
 // tombstone is the refusal of a write that reached a tenant written as deleted.
 func tombstone(id tenant.ID) error {
 	return fmt.Errorf("%w: identifier %q", tenant.ErrTenantDeleted, id)
+}
+
+// missingOrTombstone explains a statement that changed no row, read inside the
+// statement's own transaction. An identifier no row carries is ErrInvalidTenant,
+// and a row written as deleted is ErrTenantDeleted; a row that is there and not
+// a tombstone is a write that had nothing to change, and is no error. The read
+// is what tells a tombstone committed after the caller's own check from a
+// traversal the caller is allowed to skip.
+func missingOrTombstone(tx *gorm.DB, id tenant.ID) error {
+	held, err := lookUp(tx, "id", string(id))
+	if err != nil {
+		return err
+	}
+	switch {
+	case len(held) == 0:
+		return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+	case tenant.Status(held[0].Status) == tenant.StatusDeleted:
+		return tombstone(id)
+	}
+	return nil
 }
 
 // failedPut names the conflict a failed Put ran into when the alias turns out
@@ -891,30 +927,34 @@ func failedCreate(session *gorm.DB, t tenant.Tenant, err error) error {
 // set a value to what it already was, and this call would then report a tenant
 // that exists as one that does not. The check and the update run on one
 // connection (write).
+//
+// The transition is written by a statement that refuses a tombstone itself, so a
+// deletion committed between the check and the write cannot be overwritten: the
+// statement updates no row, and the read that distinguishes a tombstone from a
+// missing tenant runs inside the same transaction. The same read covers the
+// driver that reports no row for a value written as it already was.
 func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
 	}
 	if s != tenant.StatusActive && s != tenant.StatusDisabled {
-		return fmt.Errorf("%w: %s is not a status an operator sets; deletion goes through Delete",
-			tenant.ErrInvalidTenant, s)
+		return fmt.Errorf("%w: %d is not a status an operator sets; deletion goes through Delete",
+			tenant.ErrInvalidTenant, int(s))
 	}
 	return r.write(ctx, func(tx *gorm.DB) error {
-		held, err := lookUp(tx, "id", string(id))
-		if err != nil {
-			return err
-		}
-		if len(held) == 0 {
-			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
-		}
-		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
-			return tombstone(id)
-		}
-		return tx.Model(&row{}).Where("id = ?", string(id)).
+		written := tx.Model(&row{}).
+			Where("id = ? AND status <> ?", string(id), int(tenant.StatusDeleted)).
 			Updates(map[string]any{
 				"status":      int(s),
 				"disabled_by": int(tenant.DisabledByOperator),
-			}).Error
+			})
+		if written.Error != nil {
+			return written.Error
+		}
+		if written.RowsAffected > 0 {
+			return nil
+		}
+		return missingOrTombstone(tx, id)
 	}, nil)
 }
 
@@ -933,46 +973,48 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 // and s naming the deleted state, or anything outside the set, is refused with
 // ErrInvalidTenant. An identifier no row carries is ErrInvalidTenant, as the
 // operator path reports it.
+//
+// Each direction is written by a statement that carries the state it is allowed
+// to leave behind, so a deletion or an operator's disable committed between the
+// read and the write is not overwritten: the statement updates no row, and a
+// read inside the same transaction distinguishes the tombstone and the missing
+// tenant from a transition that is simply not this call's to make. That read is
+// also what covers a driver reporting no row for a value written as it already
+// was.
 func (r *roster) SetStatusByAccount(ctx context.Context, id tenant.ID, s tenant.Status) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
 	}
 	if s != tenant.StatusActive && s != tenant.StatusDisabled {
-		return fmt.Errorf("%w: account state does not set %s; deletion goes through Delete",
-			tenant.ErrInvalidTenant, s)
+		return fmt.Errorf("%w: %d is not a status account state sets; deletion goes through Delete",
+			tenant.ErrInvalidTenant, int(s))
 	}
 	_, err := r.writeResult(ctx, func(tx *gorm.DB) (bool, error) {
-		held, err := lookUp(tx, "id", string(id))
-		if err != nil {
-			return false, err
-		}
-		if len(held) == 0 {
-			return false, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
-		}
-		current := tenant.Tenant{
-			Status:     tenant.Status(held[0].Status),
-			DisabledBy: disabledByOf(held[0].DisabledBy),
-		}
-		if current.Status == tenant.StatusDeleted {
-			return false, tombstone(id)
-		}
-		switch {
-		case s == tenant.StatusDisabled && current.Status == tenant.StatusActive:
-			return true, tx.Model(&row{}).Where("id = ?", string(id)).
+		var written *gorm.DB
+		switch s {
+		case tenant.StatusDisabled:
+			written = tx.Model(&row{}).
+				Where("id = ? AND status = ?", string(id), int(tenant.StatusActive)).
 				Updates(map[string]any{
 					"status":      int(tenant.StatusDisabled),
 					"disabled_by": int(tenant.DisabledByAccount),
-				}).Error
-		case s == tenant.StatusActive && current.Status == tenant.StatusDisabled &&
-			current.DisabledBy == tenant.DisabledByAccount:
-			return true, tx.Model(&row{}).Where("id = ?", string(id)).
+				})
+		case tenant.StatusActive:
+			written = tx.Model(&row{}).
+				Where("id = ? AND status = ? AND disabled_by = ?",
+					string(id), int(tenant.StatusDisabled), int(tenant.DisabledByAccount)).
 				Updates(map[string]any{
 					"status":      int(tenant.StatusActive),
 					"disabled_by": int(tenant.DisabledByOperator),
-				}).Error
-		default:
-			return false, nil
+				})
 		}
+		if written.Error != nil {
+			return false, written.Error
+		}
+		if written.RowsAffected > 0 {
+			return true, nil
+		}
+		return false, missingOrTombstone(tx, id)
 	}, nil)
 	return err
 }
@@ -1021,8 +1063,11 @@ func (r *roster) Delete(ctx context.Context, id tenant.ID) error {
 // Existence is checked with its own read rather than inferred from the update's
 // affected-row count, as SetStatus checks it, so that a driver reporting zero
 // rows for a value written as it already was cannot turn an existing tenant
-// into one that is not there. The alias is checked and its race answered as Put
-// answers it, on the write's one connection (write).
+// into one that is not there. The update carries the tombstone condition itself,
+// so a deletion committed between the checks and the write cannot have its alias
+// rewritten — which would free the name for another tenant — and a statement that
+// updated no row is read again to answer ErrTenantDeleted. The alias is checked
+// and its race answered as Put answers it, on the write's one connection (write).
 func (r *roster) SetAlias(ctx context.Context, id tenant.ID, alias string) error {
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
@@ -1049,8 +1094,16 @@ func (r *roster) SetAlias(ctx context.Context, id tenant.ID, alias string) error
 			return fmt.Errorf("%w: alias %q is held by tenant %q",
 				tenant.ErrAliasConflict, alias, holder[0].ID)
 		}
-		return tx.Model(&row{}).Where("id = ?", string(id)).
-			Update("alias", alias).Error
+		written := tx.Model(&row{}).
+			Where("id = ? AND status <> ?", string(id), int(tenant.StatusDeleted)).
+			Update("alias", alias)
+		if written.Error != nil {
+			return written.Error
+		}
+		if written.RowsAffected > 0 {
+			return nil
+		}
+		return missingOrTombstone(tx, id)
 	}, func(session *gorm.DB, err error) error { return failedAlias(session, id, alias, err) })
 }
 
@@ -1131,8 +1184,8 @@ func checkWrite(t tenant.Tenant) error {
 			tenant.ErrInvalidTenant)
 	}
 	if t.DisabledBy != tenant.DisabledByOperator {
-		return fmt.Errorf("%w: a registration cannot record the disable source %s",
-			tenant.ErrInvalidTenant, t.DisabledBy)
+		return fmt.Errorf("%w: a registration cannot record the disable source %d",
+			tenant.ErrInvalidTenant, int(t.DisabledBy))
 	}
 	return nil
 }
