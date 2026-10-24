@@ -26,11 +26,12 @@
  * unbinding is irreversible (the binding is re-established only by
  * walking the provider's flow again), so the row asks once before the
  * DELETE goes out. After a successful unbind the profile query is
- * invalidated, so the rows converge on the server's answer; a refused
- * unbind renders its code text above the list -- authn.conflict when the
- * account would be left with no sign-in method (the server decides by its
- * own login-method count, never computable client-side), anything else
- * through the whitelist.
+ * invalidated, so the rows converge on the server's answer, and the
+ * confirmation names the provider; a refused unbind renders its code text
+ * in the same region above the list -- authn.conflict when the account
+ * would be left with no sign-in method (the server decides by its own
+ * login-method count, never computable client-side), anything else through
+ * the whitelist.
  *
  * The add area's channels come from the same discovery document: every
  * method whose kind is `redirect` and that is not already bound -- none
@@ -51,9 +52,9 @@
  * BindingCallbackHandler. `returnTo` thus moves the round trip's landing
  * point into the flow record itself; in a split-origin deployment it is
  * an absolute URL under an origin the deployment trusts (the server
- * accepts a path or such a URL). A refused start renders its code text
- * above the add area (the same InlineError banner the unbind refusal
- * uses) and the button re-arms for another attempt. One bind flow at a
+ * accepts a path or such a URL). A refused start renders its code text in
+ * the add area's own write-feedback region, and the button re-arms for
+ * another attempt. One bind flow at a
  * time: while a channel's flow is being started every provider button is
  * disabled, so a second start -- any channel's -- cannot begin before the
  * first answers. When every redirect method is already bound the add area
@@ -97,14 +98,14 @@ import type { AuthnMethodDescriptor, AuthSession } from '@speed/auth-core'
 import {
   AsyncSection,
   ConfirmDialog,
-  errorCodeOf,
-  InlineSuccess,
   ListSkeleton,
   SectionCard,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
+import type { WriteOutcome } from '@speed/ui-kit'
 import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface SocialBindingsSectionProps {
   /** The session that reads the deployment's methods and starts the
@@ -129,12 +130,6 @@ export interface SocialBindingsSectionProps {
    */
   readonly providerIcon?: (provider: string) => ReactNode
 }
-
-/** The transient outcome of an unbind action, rendered above the list. */
-type Notice =
-  | { readonly kind: 'unbind-failed'; readonly code: string }
-  | { readonly kind: 'unbind-done' }
-  | null
 
 /**
  * The provider values the authn identity surface answers with, one
@@ -280,10 +275,17 @@ export function SocialBindingsSection({
     mutationFn: (id: string) => authnLoginUnlink(id),
   })
 
-  const [unbindTarget, setUnbindTarget] = useState<string | null>(null)
+  // The row whose unlink is being confirmed, with the provider identity its
+  // confirmation names.
+  const [unbindTarget, setUnbindTarget] = useState<{
+    readonly id: string
+    readonly label: string
+  } | null>(null)
   const [busyProvider, setBusyProvider] = useState<string | null>(null)
-  const [notice, setNotice] = useState<Notice>(null)
-  const [authorizeError, setAuthorizeError] = useState<string | null>(null)
+  // Two control groups, two scopes: the bound rows' unlink result above the
+  // list, and the add area's flow-start result inside the add area.
+  const unbindFeedback = useWriteFeedback()
+  const authorizeFeedback = useWriteFeedback()
   // The deployment's methods, as read once per session. null is
   // unresolved (still reading, or the read failed): the add area is
   // withheld rather than guessed, and the bound rows fall back to the
@@ -387,48 +389,58 @@ export function SocialBindingsSection({
   const showHeader =
     pending || (rows !== undefined && (rows.length > 0 || hasAddArea))
 
-  async function handleUnbind(linkId: string): Promise<void> {
-    setNotice(null)
-    try {
-      await unbindMutation.mutateAsync(linkId)
+  function handleUnbind(linkId: string, providerLabel: string): Promise<void> {
+    return unbindFeedback.run(async () => {
+      try {
+        await unbindMutation.mutateAsync(linkId)
+      } catch (error) {
+        setUnbindTarget(null)
+        throw error
+      }
       setUnbindTarget(null)
-      setNotice({ kind: 'unbind-done' })
       await queryClient.invalidateQueries({
         queryKey: getAuthnProfileGetQueryKey(),
       })
-    } catch (error) {
-      setUnbindTarget(null)
-      setNotice({ kind: 'unbind-failed', code: errorCodeOf(error) })
-    }
+      // The confirmation names the provider that was unlinked.
+      return t('bindings.unlinked', {
+        provider: providerLabel,
+        interpolation: { escapeValue: false },
+      })
+    })
   }
 
-  async function handleAuthorize(method: AuthnMethodDescriptor): Promise<void> {
+  function handleAuthorize(method: AuthnMethodDescriptor): Promise<void> {
     // One bind flow at a time, across every provider: the busy slot is
     // provider-wide, so a second authorize click while a flow is being
     // started -- this channel's or any other's -- is refused outright
     // instead of racing the in-flight request.
     if (busyProvider !== null) {
-      return
+      return Promise.resolve()
     }
-    setAuthorizeError(null)
     setBusyProvider(method.name)
-    try {
-      const state = await session.startAuthenticatedFlow({
-        purpose: 'link',
-        method: method.name,
-        return_to: returnTo,
-      })
-      if ('next' in state && state.next.kind === 'redirect') {
-        onAuthorizeUrl?.(state.next.url)
+    return authorizeFeedback.run(async () => {
+      try {
+        const state = await session.startAuthenticatedFlow({
+          purpose: 'link',
+          method: method.name,
+          return_to: returnTo,
+        })
+        if ('next' in state && state.next.kind === 'redirect') {
+          onAuthorizeUrl?.(state.next.url)
+        }
+      } finally {
+        setBusyProvider(null)
       }
-    } catch (error) {
-      setAuthorizeError(errorCodeOf(error))
-    } finally {
-      setBusyProvider(null)
-    }
+      // Starting the flow is not a settled action: the host leaves for the
+      // provider and the callback handler reports the completion.
+      return null
+    })
   }
 
-  const unbindBusy = unbindTarget !== null && unbindMutation.isPending
+  const unbindBusy =
+    (unbindTarget !== null &&
+      (unbindMutation.isPending || unbindFeedback.pending)) ||
+    authorizeFeedback.pending
 
   return (
     <>
@@ -458,15 +470,13 @@ export function SocialBindingsSection({
       >
         {(settledRows) => (
           <Box>
-            {notice?.kind === 'unbind-failed' && <InlineError code={notice.code} />}
-            {/* The landed unbind's confirmation, in a standing polite live
-                region mounted empty until an unbind lands. */}
-            <InlineSuccess
-              message={notice?.kind === 'unbind-done' ? t('bindings.unlinked') : null}
-            />
+            {/* The unlink control group's result, above the list it acts on:
+                its success names the provider, and a failure is one banner
+                in the same place. */}
+            <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mb: 1.5 }} />
             {/* The binding rows are one real list, as the sessions rows
                 are: a screen-reader user hears each binding as one item
-                of a numbered set. The notice above and the add area
+                of a numbered set. The unlink region above and the add area
                 below are page-level content and stay outside the list.
                 role="list" keeps the list semantics under WebKit, which
                 strips them from a list-style-none ul. */}
@@ -572,7 +582,9 @@ export function SocialBindingsSection({
                               // escaping would embed a literal `&#x2F;`).
                               interpolation: { escapeValue: false },
                             })}
-                            onClick={() => setUnbindTarget(id)}
+                            onClick={() =>
+                              setUnbindTarget({ id, label: unbindIdentity })
+                            }
                           >
                             {t('bindings.unbind')}
                           </Button>
@@ -588,7 +600,7 @@ export function SocialBindingsSection({
               <AddArea
                 available={available}
                 busy={busyProvider !== null}
-                authorizeError={authorizeError}
+                authorizeOutcome={authorizeFeedback.outcome}
                 sectionLabel={t('bindings.addSectionTitle')}
                 providerIcon={providerIcon}
                 onAuthorize={handleAuthorize}
@@ -609,7 +621,7 @@ export function SocialBindingsSection({
         onCancel={() => setUnbindTarget(null)}
         onConfirm={() => {
           if (unbindTarget !== null) {
-            void handleUnbind(unbindTarget)
+            void handleUnbind(unbindTarget.id, unbindTarget.label)
           }
         }}
       />
@@ -627,7 +639,7 @@ export function SocialBindingsSection({
 function AddArea({
   available,
   busy,
-  authorizeError,
+  authorizeOutcome,
   sectionLabel,
   providerIcon,
   onAuthorize,
@@ -635,7 +647,8 @@ function AddArea({
   readonly available: readonly AuthnMethodDescriptor[]
   /** True while any channel's link flow is being started. */
   readonly busy: boolean
-  readonly authorizeError: string | null
+  /** The add area's own feedback slot: a refused start renders here. */
+  readonly authorizeOutcome: WriteOutcome | null
   readonly sectionLabel: string
   readonly providerIcon?: (provider: string) => ReactNode
   readonly onAuthorize: (method: AuthnMethodDescriptor) => void
@@ -675,7 +688,9 @@ function AddArea({
           )
         })}
       </Box>
-      <InlineError code={authorizeError} />
+      {/* The add area's own result position, below the channel buttons it
+          reports on: a refused start renders the code's text here. */}
+      <WriteFeedbackRegion outcome={authorizeOutcome} />
     </Box>
   )
 }

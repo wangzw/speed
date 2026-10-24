@@ -81,7 +81,7 @@
     "confirmTitle": "Unlink this social account?",
     "confirmMessage": "You will no longer be able to sign in with this social account. It can be linked again later.",
     "confirmLabel": "Unlink",
-    "unlinked": "Social account unlinked",
+    "unlinked": "{{provider}} unlinked.",
     "addSectionTitle": "Link another account",
     "empty": {
       "title": "No linked social accounts yet",

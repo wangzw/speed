@@ -81,7 +81,7 @@
     "confirmTitle": "解绑此社交账号？",
     "confirmMessage": "解绑后将无法再用此社交账号登录，之后仍可重新绑定。",
     "confirmLabel": "解绑",
-    "unlinked": "社交账号已解绑",
+    "unlinked": "{{provider}} 已解绑。",
     "addSectionTitle": "绑定其他账号",
     "empty": {
       "title": "暂无绑定的社交账号",

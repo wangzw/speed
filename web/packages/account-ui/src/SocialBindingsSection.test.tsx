@@ -376,8 +376,13 @@ describe('SocialBindingsSection', () => {
     // before the page behind it is queryable by role again.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     // The landed unbind confirms itself in the standing status region rather
-    // than succeeding silently.
-    expect(await screen.findByText(zhCN.bindings.unlinked)).toBeTruthy()
+    // than succeeding silently, and the confirmation names the provider.
+    expect(zhCN.bindings.unlinked).toContain('{{provider}}')
+    expect(
+      await screen.findByText(
+        zhCN.bindings.unlinked.replace('{{provider}}', 'GitHub'),
+      ),
+    ).toBeTruthy()
     expect(
       screen.queryByRole('button', {
         name: zhCN.bindings.unbindAriaWithProvider.replace('{{provider}}', 'GitHub'),
