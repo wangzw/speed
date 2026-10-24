@@ -125,7 +125,10 @@ not choose.
   the mapping does not name gets the same 503 an unknown failure gets; it never
   falls through as a success.
 - **The export's first page is read before the reply is returned.** A failure
-  there happens before any byte is written, so it is still a 503. Once the status
+  there happens before any byte is written, so it is still a 503. A request the
+  caller already cancelled is not a dependency failure: the mapped answer stays
+  the 503, but no failure record is written for it, the same way a disconnect
+  ends the stream quietly. Once the status
   and headers are committed, a later page's failure cannot become a status: the
   connection is abandoned, the caller has an incomplete download, and the log
   carries the filters, the rows written and the cause. A caller that disconnects

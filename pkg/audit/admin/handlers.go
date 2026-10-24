@@ -73,7 +73,7 @@ func (p *product) handleRecordList(ctx context.Context, in RecordListInput) (Aud
 	}
 	rows, next, err := p.reader.Query(tenant.CrossTenant(ctx), q)
 	if err != nil {
-		return AuditAdminRecordPage{}, p.answerErr("querying audit records", err)
+		return AuditAdminRecordPage{}, p.answerErr(ctx, "querying audit records", err)
 	}
 	entries := make([]AuditAdminRecord, len(rows))
 	for i, r := range rows {
@@ -108,7 +108,7 @@ func (p *product) handleRecordGet(ctx context.Context, in RecordGetInput, _ *spe
 	}
 	rows, _, err := p.reader.Query(tenant.CrossTenant(ctx), journal.Query{ID: rowID, Limit: 1})
 	if err != nil {
-		return nil, p.answerErr("reading an audit record", err)
+		return nil, p.answerErr(ctx, "reading an audit record", err)
 	}
 	if len(rows) == 0 {
 		return speedhttp.EmptyReply(http.StatusNotFound), nil
@@ -246,10 +246,17 @@ func (p *product) logRead(route string, caller authn.Identity, hits int) {
 // cause stays in the log and never reaches the caller. A failure the mapping
 // does not name does not fall through as a success: it is the same 503 an
 // unknown failure gets.
-func (p *product) answerErr(op string, err error) error {
+//
+// A request that is already done is not a dependency failure: the read ends with
+// the request's cancellation, the caller has nothing left to receive the answer,
+// and the same cancellation ends a running export quietly. The answer stays the
+// mapped 503, but no error line is written for it.
+func (p *product) answerErr(ctx context.Context, op string, err error) error {
 	if errors.Is(err, journal.ErrInvalidQuery) {
 		return badRequestFault()
 	}
-	p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+	if ctx.Err() == nil && !errors.Is(err, context.Canceled) {
+		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))
+	}
 	return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 }

@@ -296,7 +296,7 @@ sequenceDiagram
 | 请求在形状上不可读（路径的 `id` 不是数字、时间边界不是 RFC 3339、`limit` 越界、动作、结果或操作者取空值、出现本路由不接受的查询参数——导出路由上的 `cursor` 与 `limit` 在此列） | 400（`Problem.Type` 为 `urn:speed:audit:bad-request`），在读面之前 |
 | `GET /api/v1/system/audit/records/:id` 点名一行审计表不持有 | 404，不带 `Problem.Type` |
 | 列表或取一行的读面读表失败 | 503，不带 `Problem.Type`，成因只进日志 |
-| 导出在正文开始之前读第一页失败 | 503，不带 `Problem.Type`，成因只进日志 |
+| 导出在正文开始之前读第一页失败 | 503，不带 `Problem.Type`，成因只进日志；请求已被调用方取消时不算故障，同样答 503 但不写故障日志 |
 | 导出在正文开始之后某一页读失败 | 状态码不再改变；连接被放弃，调用方拿到一次未完成的下载，成因只进日志 |
 | guard 的拒答与故障 | 403 / 503，由 guard 写出 |
 | 请求没有身份 | 401，只有状态、无 `Problem.Type`，带 realm 质询 |
@@ -317,7 +317,7 @@ sequenceDiagram
 |---|---|---|
 | 管理面 `audit.admin` 的列表与取一行路由（判定、日志、回绝映射） | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/routes.go` `routes`、`mount`；`pkg/audit/admin/handlers.go` `handleRecordList`、`handleRecordGet`、`listQuery`、`logRead`；`pkg/audit/admin/pipeline.go` `require`、`answer`、`bad`、`notFound`、`unavailable` |
 | 列表与取一行的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/audit/admin/operations.go`；`pkg/audit/admin/openapi_generated_test.go`；片段 `pkg/audit/admin/openapi/audit.admin.json` |
-| 导出路由 `GET /api/v1/system/audit/export`（筛选、逐页流式 NDJSON、`Content-Disposition` 与 `Cache-Control`） | 未实现 | — |
-| 导出的 operation 声明与片段 | 未实现 | — |
+| 导出路由 `GET /api/v1/system/audit/export`（筛选、逐页流式 NDJSON、`Content-Disposition` 与 `Cache-Control`） | 已实现 | `pkg/audit/admin/export.go` `handleRecordExport`、`writeExport`、`exportFileName`、`exportDisposition`；`pkg/audit/admin/routes.go` `routes`、`exportPath` |
+| 导出的 operation 声明与片段 | 已实现 | `pkg/audit/admin/operations.go` `RecordExportInput`、`exportOperation`；片段 `pkg/audit/admin/openapi/audit.admin.json` |
 | 静态特性 `audit.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/feature_test.go` `TestTheModuleDeclaresTheAuditAdminFeature` |
 | 审计实现子包的读面 `journal.Reader`、`journal.Query`、`journal.Row` | 已实现 | `pkg/audit/journal/read.go` `Reader`、`Query`、`Row`；`pkg/audit/journal/journal.go` `Module` |

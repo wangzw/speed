@@ -1,8 +1,10 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/audit/journal"
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -244,6 +247,24 @@ func TestAFirstPageFailureIs503(t *testing.T) {
 	}
 	if !strings.Contains(r.logs.String(), "the table is gone") {
 		t.Errorf("the cause is not in the log: %q", r.logs.String())
+	}
+}
+
+// A request the caller abandoned before the first page came back is not a
+// dependency failure: the read ends with the request's cancellation, so there is
+// no fault to report. The failure is still mapped to the 503 the shape answers
+// with, but the log carries no error line for it.
+func TestAFirstPageReadCancelledByTheCallerIsNotAFailure(t *testing.T) {
+	r := newRig(t)
+	r.reader.fail(fmt.Errorf("reading: %w", context.Canceled))
+	ctx, cancel := context.WithCancel(authntest.Context(t, context.Background()))
+	cancel()
+	w := r.send(exportRoute, ctx)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want the mapped 503", w.Code)
+	}
+	if logged := r.logs.String(); strings.Contains(logged, "level=ERROR") {
+		t.Errorf("the log carries an error line for a cancelled request: %q", logged)
 	}
 }
 

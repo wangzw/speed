@@ -48,7 +48,7 @@ func (p *product) handleRecordExport(ctx context.Context, in RecordExportInput, 
 	readerCtx := tenant.CrossTenant(ctx)
 	rows, next, err := p.reader.Query(readerCtx, q)
 	if err != nil {
-		return nil, p.answerErr("reading the first page of the audit export", err)
+		return nil, p.answerErr(ctx, "reading the first page of the audit export", err)
 	}
 	stream := speedhttp.StreamReply(http.StatusOK, exportMediaType,
 		func(ctx context.Context, w io.Writer) error {
