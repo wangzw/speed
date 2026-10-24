@@ -121,10 +121,12 @@ gates cannot decide for a spec.
   The gate cannot prove a fixture is merely assembling, so this is also a
   review rule: a fixture that answers a journey's request is a defect.
 - **Never inject data into the database** to manufacture a precondition. A
-  precondition the UI cannot reach is registered as unreachable, not bypassed.
-  The layer split above keeps a spec and a helper away from a database client;
-  the fixtures' own seeding is the operator seed the binary performs, never a
-  journey's account, tenant or invitation.
+  journey whose precondition the UI cannot reach is registered `unreachable`;
+  a journey the UI can reach but whose spec is not written is `pending`.
+  Neither state is a licence to bypass the product. The layer split above
+  keeps a spec and a helper away from a database client; the fixtures' own
+  seeding is the operator seed the binary performs, never a journey's account,
+  tenant or invitation.
 - **Never assert only on an API response.** An assertion lands on what the
   product renders. A review rule: the gates can see that a spec has a test,
   not what its assertion reads.
@@ -159,12 +161,18 @@ Every spec declares, in its header comment:
 - Step labels (`test.step`) follow the journey document's own steps, so a
   failing run names the step a person would have been on.
 
-`journeys.ts` is the registry of every journey document and whether the tier
-drives it. A journey is either `covered` by a spec or `unreachable` with a
-reason saying why the browser tier cannot stand it up (a deployment, a real
-identity provider) or that its spec has not been written yet. The honesty gate
-reads this file; a journey that is neither covered nor registered fails
-`make repo-check`.
+`journeys.ts` is the registry of every journey document and how the tier
+relates to it. A journey is `covered` by a spec; `pending` when the browser
+tier can drive it but its spec has not been written yet, with the reason saying
+the path is reachable and the spec is scheduled; or `unreachable` when a
+precondition the tier cannot provide stands in the way (a deployment, a real
+identity or social provider, a vendor behaviour), which the reason names. The
+distinction is load-bearing: calling a reachable journey `unreachable` tells a
+reader the browser cannot get there when it can, and silences the honesty gate
+for that journey. The gate requires a reason on both non-covered states,
+rejects any other status, and prints the covered / pending / unreachable
+counts on every run; a journey that is neither covered nor registered
+non-covered fails `make repo-check`.
 
 ## Where the artifacts are
 

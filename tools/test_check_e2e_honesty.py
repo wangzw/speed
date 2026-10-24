@@ -66,7 +66,7 @@ def registry(entries: str) -> str:
     return f"""\
 export interface JourneyEntry {{
   journey: string
-  status: 'covered' | 'unreachable'
+  status: 'covered' | 'pending' | 'unreachable'
   reason?: string
   covers: string[]
 }}
@@ -143,7 +143,12 @@ class TestBaseline(GateCase):
     def test_the_baseline_tree_passes(self) -> None:
         code, out, err = self.run_gate()
         self.assertEqual(code, 0, f"{out}{err}")
-        self.assertEqual(out, "")
+        # A clean run prints the counts and nothing else.
+        self.assertEqual(
+            out,
+            "e2e-honesty: 2 journey document(s): "
+            "1 covered, 0 pending, 1 unreachable\n",
+        )
 
 
 class TestCoverage(GateCase):
@@ -152,7 +157,11 @@ class TestCoverage(GateCase):
         code, out, _ = self.run_gate()
         self.assertEqual(code, 1)
         self.assertIn("journey-gamma.md", out)
-        self.assertIn("neither covered by a spec nor registered unreachable", out)
+        self.assertIn(
+            "neither covered by a spec nor registered pending or unreachable "
+            "with a reason",
+            out,
+        )
 
     def test_an_absent_registry_is_valid_when_specs_cover_every_journey(self) -> None:
         # A tree whose journeys all have specs needs no registry at all.
@@ -165,8 +174,14 @@ class TestCoverage(GateCase):
         pathlib.Path(self.root, "starters/demo/web/e2e/journeys.ts").unlink()
         code, out, err = self.run_gate()
         self.assertEqual(code, 0, f"{out}{err}")
+        self.assertIn(
+            "2 journey document(s): 2 covered, 0 pending, 0 unreachable", out
+        )
 
-    def test_an_unreachable_journey_needs_a_reason(self) -> None:
+    def test_a_reachable_journey_labelled_unreachable_with_no_reason_fails(self) -> None:
+        # journey-beta has no external precondition in this fixture tree, so
+        # calling it unreachable is the mislabelling the status distinction
+        # exists to catch; the empty reason makes the gate reject it.
         self.write(
             "starters/demo/web/e2e/journeys.ts",
             registry(
@@ -182,6 +197,70 @@ class TestCoverage(GateCase):
         code, out, _ = self.run_gate()
         self.assertEqual(code, 1)
         self.assertIn("marked unreachable with no reason", out)
+
+    def test_a_pending_journey_needs_a_reason(self) -> None:
+        self.write(
+            "starters/demo/web/e2e/journeys.ts",
+            registry(
+                """\
+  {
+    journey: 'journey-beta.md',
+    status: 'pending',
+    reason: '',
+    covers: ['REQ-beta-001'],
+  },"""
+            ),
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(code, 1)
+        self.assertIn("marked pending with no reason", out)
+
+    def test_pending_is_an_honest_state_not_a_failure(self) -> None:
+        self.write(
+            "starters/demo/web/e2e/journeys.ts",
+            registry(
+                """\
+  {
+    journey: 'journey-beta.md',
+    status: 'pending',
+    reason: 'browser-reachable; its spec is scheduled for a later round',
+    covers: ['REQ-beta-001'],
+  },"""
+            ),
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(code, 0, f"{out}{err}")
+        self.assertIn(
+            "2 journey document(s): 1 covered, 1 pending, 0 unreachable", out
+        )
+
+    def test_the_summary_reports_the_three_counts(self) -> None:
+        self.write(
+            "docs/prd/journeys/journey-gamma.md", "# Gamma\n\n- `REQ-gamma-001`\n"
+        )
+        self.write(
+            "starters/demo/web/e2e/journeys.ts",
+            registry(
+                """\
+  {
+    journey: 'journey-beta.md',
+    status: 'unreachable',
+    reason: 'requires a mail carrier the review assembly does not configure',
+    covers: ['REQ-beta-001'],
+  },
+  {
+    journey: 'journey-gamma.md',
+    status: 'pending',
+    reason: 'browser-reachable; its spec is scheduled for a later round',
+    covers: ['REQ-gamma-001'],
+  },"""
+            ),
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(code, 0, f"{out}{err}")
+        self.assertIn(
+            "3 journey document(s): 1 covered, 1 pending, 1 unreachable", out
+        )
 
     def test_a_registry_covered_entry_still_needs_a_spec(self) -> None:
         self.write(
@@ -232,6 +311,7 @@ class TestCoverage(GateCase):
         code, out, _ = self.run_gate()
         self.assertEqual(code, 1)
         self.assertIn("unknown status", out)
+        self.assertIn("expected 'covered', 'pending' or 'unreachable'", out)
 
     def test_a_comment_with_braces_in_the_registry_is_not_an_entry(self) -> None:
         # The registry is read, not executed, so a comment is prose. A brace

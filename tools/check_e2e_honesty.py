@@ -7,8 +7,8 @@ only. Six things can quietly falsify that claim, and this gate holds each:
 
   1. Coverage. Every journey document under docs/prd/journeys is either
      exercised by a spec or registered in the harness's journey registry as
-     unreachable *with a reason*. A journey that is neither is a documented
-     path nothing vouches for.
+     pending or unreachable *with a reason*. A journey that is neither is a
+     documented path nothing vouches for.
   2. Declarations. Each spec declares, in its header, the journey document it
      drives (`@journey <file>.md`) and the requirement ids it exercises
      (`@covers REQ-...`). The declared journey must exist, every covered id
@@ -38,15 +38,21 @@ executes, the TypeScript, so the registry uses a shape it can parse:
     export const journeys = [
       {
         journey: 'journey-example.md',
-        status: 'unreachable',            // or 'covered'
-        reason: 'why the UI cannot reach it',
+        status: 'pending',                // 'covered', 'pending' or 'unreachable'
+        reason: 'why the tier cannot drive it, or when its spec is due',
         covers: ['REQ-example-001'],
       },
     ]
 
-An object must name `journey`; `unreachable` entries must carry a non-empty
-`reason`. An absent registry is valid -- a tree whose journeys all have specs
-needs none.
+An object must name `journey` and carry one of those three statuses. A
+`pending` or `unreachable` entry must carry a non-empty `reason`: `pending`
+says the path is reachable and its spec is scheduled; `unreachable` names the
+precondition the tier cannot provide. An absent registry is valid -- a tree
+whose journeys all have specs needs none.
+
+The gate prints a one-line summary of the covered, pending and unreachable
+counts on every run, so the number of journeys still unverified is visible
+rather than implied.
 
 Spec declaration contract (header comment, before the imports):
 
@@ -72,6 +78,7 @@ SPECS_DIR = os.path.join(E2E_DIR, "specs")
 HELPERS_DIR = os.path.join(E2E_DIR, "helpers")
 FIXTURES_DIR = os.path.join(E2E_DIR, "fixtures")
 REGISTRY = os.path.join(E2E_DIR, "journeys.ts")
+STATUSES = ("covered", "pending", "unreachable")
 PLAYWRIGHT_CONFIG = os.path.join(E2E_DIR, "playwright.config.ts")
 PATHS_MODULE = os.path.join(FIXTURES_DIR, "paths.ts")
 LOG_MODULE = os.path.join(FIXTURES_DIR, "log.ts")
@@ -589,15 +596,15 @@ def check_registry(
             )
             continue
         status = entry["status"]
-        if status not in ("covered", "unreachable"):
+        if status not in STATUSES:
             findings.append(
                 f"{REGISTRY}: `{journey}` has unknown status {status!r} "
-                "(expected 'covered' or 'unreachable')"
+                "(expected 'covered', 'pending' or 'unreachable')"
             )
             continue
-        if status == "unreachable" and not str(entry["reason"]).strip():
+        if status in ("pending", "unreachable") and not str(entry["reason"]).strip():
             findings.append(
-                f"{REGISTRY}: `{journey}` is marked unreachable with no reason"
+                f"{REGISTRY}: `{journey}` is marked {status} with no reason"
             )
         by_journey[journey] = entry
     return by_journey, findings
@@ -608,13 +615,13 @@ def check_coverage(
     declared_journeys: set[str],
     registry: dict[str, dict[str, object]],
 ) -> list[str]:
-    """Every journey is either declared by a spec or registered unreachable."""
+    """Every journey is either declared by a spec or registered non-covered."""
     findings: list[str] = []
     for journey in sorted(documents):
         entry = registry.get(journey)
         if journey in declared_journeys:
             continue
-        if entry is not None and entry["status"] == "unreachable":
+        if entry is not None and entry["status"] in ("pending", "unreachable"):
             continue
         if entry is not None and entry["status"] == "covered":
             findings.append(
@@ -623,9 +630,35 @@ def check_coverage(
             continue
         findings.append(
             f"{JOURNEYS_DIR}/{journey}: neither covered by a spec nor registered "
-            "unreachable with a reason"
+            "pending or unreachable with a reason"
         )
     return findings
+
+
+def coverage_counts(
+    documents: dict[str, set[str]],
+    declared_journeys: set[str],
+    registry: dict[str, dict[str, object]],
+) -> tuple[int, int, int]:
+    """The covered, pending and unreachable counts, one per journey document.
+
+    A journey a spec declares is covered; the registry's claim cannot override
+    the spec. Otherwise the registry's non-covered status decides, and a
+    journey left unaccounted for is counted in none of the three -- the
+    coverage finding names it.
+    """
+    covered = pending = unreachable = 0
+    for journey in documents:
+        if journey in declared_journeys:
+            covered += 1
+            continue
+        entry = registry.get(journey)
+        status = entry["status"] if entry is not None else None
+        if status == "pending":
+            pending += 1
+        elif status == "unreachable":
+            unreachable += 1
+    return covered, pending, unreachable
 
 
 def _scan_file(relative: str, text: str) -> list[str]:
@@ -958,6 +991,15 @@ def main(argv: list[str] | None = None) -> int:
 
     for finding in findings:
         print(finding)
+
+    covered, pending, unreachable = coverage_counts(
+        documents, declared_journeys, registry
+    )
+    print(
+        f"e2e-honesty: {len(documents)} journey document(s): "
+        f"{covered} covered, {pending} pending, {unreachable} unreachable"
+    )
+
     if findings:
         print(
             f"e2e-honesty: {len(findings)} finding(s) across {len(documents)} "

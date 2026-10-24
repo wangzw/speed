@@ -1,15 +1,26 @@
 /**
- * The journey registry: every document under docs/prd/journeys and whether the
- * end-to-end tier drives it.
+ * The journey registry: every document under docs/prd/journeys and how the
+ * end-to-end tier relates to it.
  *
- * `covered` means a spec declares the journey and drives it. `unreachable`
- * means no spec drives it yet; the reason says why. Two kinds of reason appear
- * here, and both are the truth about the tier rather than about the product:
- * a journey whose preconditions the harness cannot stand up (a deployment, a
- * real identity provider, a real social provider) and a journey whose spec has
- * not been written yet. The reason says which kind it is, so a reader is never
- * told a browser-reachable path is impossible. As specs land, the entry flips
- * to `covered`.
+ * `covered` means a spec declares the journey and drives it in the browser.
+ *
+ * `pending` means the browser tier can drive the journey but no spec has been
+ * written yet. It is a statement about the schedule, not about the product:
+ * the path is reachable through the rendered UI, and the reason says so.
+ *
+ * `unreachable` means a precondition the tier cannot provide stands between
+ * the journey and any spec: a deployment, a real identity or social provider,
+ * or a behaviour only a real vendor exhibits. The reason names the missing
+ * precondition. It is a statement about the tier's reach, not a verdict that
+ * the product is broken, and it is not a place to park a journey whose spec
+ * was merely deferred.
+ *
+ * The distinction matters because the two non-covered states say different
+ * things. Calling a reachable journey `unreachable` tells a reader the browser
+ * cannot get there when it can, and it silences the honesty gate for that
+ * journey: the gate accepts either non-covered state, so the label is what
+ * keeps the count of deliberately unverified journeys honest. The gate
+ * requires a reason on both states and prints the three counts on every run.
  *
  * `covers` lists the requirement ids the journey document itself lists. A
  * spec's `@covers` is the narrower claim: the ids that spec actually exercises.
@@ -21,7 +32,7 @@
 
 export interface JourneyEntry {
   readonly journey: string
-  readonly status: 'covered' | 'unreachable'
+  readonly status: 'covered' | 'pending' | 'unreachable'
   readonly reason?: string
   readonly covers: readonly string[]
 }
@@ -29,9 +40,9 @@ export interface JourneyEntry {
 export const journeys: readonly JourneyEntry[] = [
   {
     journey: 'journey-account-offboarding.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable and its spec is scheduled for a later round.',
+      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-platform-admin-012',
       'REQ-platform-admin-014',
@@ -49,9 +60,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-account-security-hardening.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable, including a passkey through the allowed WebAuthn virtual-authenticator fixture, and its spec is scheduled for a later round.',
+      'The journey is browser-reachable, including a passkey through the allowed WebAuthn virtual-authenticator fixture; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-account-007',
       'REQ-security-001',
@@ -73,9 +84,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-deploy-and-operate.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'The harness runs one loopback process, not a deployment: the journey needs a container image, a persistent volume, written deployment secrets, a container restart and the operations listener, which the browser tier cannot stand up.',
+      'Driven as a fixture-type test, not a pure browser journey: the harness stands up a deploy-tagged binary with a rendered config, a temporary volume, seed and serve, checks the operations probes by command, and then drives one sign-in through the browser with clicks and keys only. No spec drives it yet; its spec is scheduled for a later round.',
     covers: [
       'REQ-deployment-001',
       'REQ-deployment-002',
@@ -116,7 +127,7 @@ export const journeys: readonly JourneyEntry[] = [
     journey: 'journey-enterprise-sso-onboarding.md',
     status: 'unreachable',
     reason:
-      'The review assembly configures no enterprise OIDC or SAML login, and the journey needs a real identity provider plus a published DNS TXT record; neither can be stood up by the browser tier.',
+      'The harness cannot provide a real identity provider: the review assembly configures no enterprise OIDC or SAML login, and the journey also needs a published DNS TXT record, neither of which the browser tier can stand up.',
     covers: [
       'REQ-platform-admin-013',
       'REQ-platform-config-017',
@@ -177,9 +188,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-impersonation-for-support.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable, and its preconditions include two two-step methods whose passkey half uses the allowed WebAuthn fixture; its spec is scheduled for a later round.',
+      'The journey is browser-reachable, and its preconditions include two two-step methods whose passkey half uses the allowed WebAuthn virtual-authenticator fixture; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-notifications-001',
       'REQ-notifications-025',
@@ -210,9 +221,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-invitation-to-tenant.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable and its spec is scheduled for a later round.',
+      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-platform-admin-001',
       'REQ-platform-admin-002',
@@ -236,9 +247,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-member-workspace.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable once a second actor emits a notification, and its spec is scheduled for a later round.',
+      'The journey is browser-reachable once a second actor emits a notification; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-notifications-001',
       'REQ-notifications-003',
@@ -260,9 +271,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-operator-configuration.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable and its spec is scheduled for a later round.',
+      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-platform-admin-001',
       'REQ-platform-admin-029',
@@ -279,9 +290,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-operator-first-run.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable and its spec is scheduled for a later round.',
+      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-account-010',
       'REQ-account-015',
@@ -304,9 +315,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-operator-onboards-tenant.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable and its spec is scheduled for a later round.',
+      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-platform-admin-001',
       'REQ-platform-admin-006',
@@ -334,9 +345,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-personalize-interface.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable and its spec is scheduled for a later round.',
+      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-account-003',
       'REQ-account-004',
@@ -356,9 +367,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-sms-signup-to-password-login.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'No spec drives this journey yet: the journey is browser-reachable because the review SMS carrier writes the code to the process log, and its spec is scheduled for a later round.',
+      'The journey is browser-reachable because the review SMS carrier writes the code to the process log; no spec drives it yet, and its spec is scheduled for a later round.',
     covers: [
       'REQ-account-007',
       'REQ-account-008',
@@ -386,7 +397,7 @@ export const journeys: readonly JourneyEntry[] = [
     journey: 'journey-sms-template-rollout.md',
     status: 'unreachable',
     reason:
-      'No spec drives this journey yet: the main path is browser-reachable, while the vendor review transitions it also describes do not exist with the review carrier; its spec is scheduled for a later round.',
+      'The harness cannot provide a vendor that reviews templates: the review SMS carrier declares no per-template review and never changes a review result, so the vendor-driven review steps cannot be driven even though the registration and sending steps are browser-reachable.',
     covers: [
       'REQ-notifications-021',
       'REQ-notifications-023',
@@ -408,7 +419,7 @@ export const journeys: readonly JourneyEntry[] = [
     journey: 'journey-social-account-linking.md',
     status: 'unreachable',
     reason:
-      'The journey needs a real Google authorization round trip; the review assembly configures fake provider credentials so the methods build an authorization URL and no callback is ever expected.',
+      'The harness cannot provide a real Google authorization round trip: the review assembly configures fake provider credentials, so the method builds an authorization URL and no callback is ever expected.',
     covers: [
       'REQ-account-027',
       'REQ-account-028',
@@ -425,7 +436,7 @@ export const journeys: readonly JourneyEntry[] = [
     journey: 'journey-social-sign-in-and-linking.md',
     status: 'unreachable',
     reason:
-      'The journey needs a real Google authorization round trip; the review assembly configures fake provider credentials so the methods build an authorization URL and no callback is ever expected.',
+      'The harness cannot provide a real Google authorization round trip: the review assembly configures fake provider credentials, so the method builds an authorization URL and no callback is ever expected.',
     covers: [
       'REQ-account-015',
       'REQ-account-016',
