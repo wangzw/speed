@@ -810,7 +810,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | 主体持有权限的读取：快照的隐式权限经目录反向查找映射为权限名，去重并排序，未翻译的对略去 | 已实现 | `pkg/authz/internal/policy/policy.go` `(*Snapshot).Held`；`pkg/authz/policy/policy.go` `(*product).Held`；`pkg/authz/policy/catalog.go` `(*catalog).indexReverse`、`(*catalog).permissionOf` |
 | `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).DeleteBinding`（接口在 `pkg/authz/capabilities.go`） |
 | 种入面 `Seeder`：幂等、只增、可写 builtin 角色的授权集 | 已实现 | `pkg/authz/policy/manager.go` `(*product).SeedGrants`、`grantsHeld`（接口在 `pkg/authz/capabilities.go`） |
-| `AccountLifecycle` 清理（账户删除与停用钩子） | 部分实现 | `pkg/authz/policy/lifecycle.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked` |
+| `AccountLifecycle` 清理（账户删除、停用与启用钩子） | 已实现 | `pkg/authz/policy/lifecycle.go` `AccountDeleted`、`AccountDisabled`、`AccountEnabled`、`ServiceSecretRevoked`；`pkg/authz/policy/manager_test.go` |
 | `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 已实现 | `pkg/authz/policy/policy.go` `wire`（订阅）、`publish`、`reload`、`startRefresh` |
 | 配置 `load-timeout` 与 `refresh-interval` 的声明与读取 | 已实现 | `pkg/authz/policy/config.go` |
 | 配置 `endpoints`、`undeclared` 的声明与读取 | 已实现 | `pkg/authz/guard/config.go` `schema`、`resolve`、`readConfig` |
