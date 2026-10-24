@@ -1068,17 +1068,33 @@ describe('IdentifiersSection', () => {
     )
 
     // The pending answer moves the form to the code step.
+    await screen.findByLabelText(zhCN.identifiers.add.code.label)
+    // The send announces the destination through its own status region and
+    // hands focus to the code field.
+    const sentNotice = zhCN.identifiers.add.sent.replace(
+      '{{value}}',
+      'ada@x.test',
+    )
+    expect(screen.getByText(sentNotice)).toBeTruthy()
+    expect(screen.getByText(sentNotice).closest('[role="status"]')).not.toBeNull()
+    expect(screen.getByLabelText(zhCN.identifiers.add.code.label)).toHaveFocus()
     await user.type(
-      await screen.findByLabelText(zhCN.identifiers.add.code.label),
+      screen.getByLabelText(zhCN.identifiers.add.code.label),
       '123456',
     )
     await user.click(
       screen.getByRole('button', { name: zhCN.identifiers.add.verify }),
     )
 
-    await waitFor(() =>
-      expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
-    )
+    const added = await screen.findByText(zhCN.identifiers.add.added)
+    expect(added).toBeTruthy()
+    // The result sits below the whole control group (the add face), not
+    // between the list and the add face.
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.identifiers.add.open })
+        .compareDocumentPosition(added) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     const verifies = rig.calls.filter(
       (call) =>
         call.method === 'POST' && call.path === '/api/v1/auth/identifiers/verify',

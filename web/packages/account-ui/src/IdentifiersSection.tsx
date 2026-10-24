@@ -94,14 +94,16 @@
  *
  * The section has one failure slot: removal, add, row verification and the
  * code's verification share it, so a failure renders exactly one role="alert"
- * banner (it sits above the add face, after the list).
+ * banner. The slot is one control group -- the row actions and the add face
+ * are one section -- so its region sits below the add face, after the whole
+ * group.
  *
  * The section takes the session (the step-up dialog drives it) and the two
  * optional add-face flags, while the profile read and the writes travel on
  * the shared access token through the generated calls.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -241,6 +243,10 @@ export function IdentifiersSection({
   )
   const [addValue, setAddValue] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
+  // The sent notice's live region must never mount together with its text:
+  // it fills one commit after the code step mounts, so the announcement is a
+  // content change the screen reader already knows.
+  const [sentCommitted, setSentCommitted] = useState(false)
   const [code, setCode] = useState('')
   const [fieldErrorKey, setFieldErrorKey] = useState<string | null>(null)
 
@@ -254,6 +260,18 @@ export function IdentifiersSection({
   const [rowCodeInvalid, setRowCodeInvalid] = useState(false)
   const [rowResendUntil, setRowResendUntil] = useState(0)
   const [rowNow, setRowNow] = useState(() => Date.now())
+
+  // Arm the sent notice's live region one commit after the code step mounts,
+  // so the notice fills an already-mounted region rather than arriving with
+  // it, and hand focus to the code field. The region is empty again when the
+  // flow returns to the value field.
+  const addCodeRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    setSentCommitted(sentTo !== null)
+    if (sentTo !== null) {
+      addCodeRef.current?.focus()
+    }
+  }, [sentTo])
 
   // Disabled through the whole attempt, including the refetches that follow
   // the mutation, so no control changes context under a pending scope.
@@ -884,17 +902,6 @@ export function IdentifiersSection({
         )}
       </AsyncSection>
 
-      {/* The section's one result position: removal, add, row verification
-          and the code's verification share the scope's slot, so a success and
-          a failure can never stand together. The non-code failure sentences
-          occupy the same position and are mutually exclusive with it. */}
-      <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mb: 1 }} />
-      {failureText !== null && (
-        <Alert severity="error" role="alert" sx={{ width: '100%', mb: 1 }}>
-          {t(failureText)}
-        </Alert>
-      )}
-
       <Box sx={{ mt: 2 }}>
         {addKinds.length === 0 ? null : !addOpen ? (
           <Button
@@ -1006,11 +1013,21 @@ export function IdentifiersSection({
                 </>
               ) : (
                 <>
-                  <Typography variant="body2" color="text.secondary">
-                    {t('identifiers.add.sent', {
-                      value: sentTo,
-                      interpolation: { escapeValue: false },
-                    })}
+                  {/* The destination text stays through the step; being the
+                      live region itself, it announces the code's landing
+                      once (empty, then filled one commit later). */}
+                  <Typography
+                    component="div"
+                    role="status"
+                    variant="body2"
+                    color="text.secondary"
+                  >
+                    {sentCommitted
+                      ? t('identifiers.add.sent', {
+                          value: sentTo,
+                          interpolation: { escapeValue: false },
+                        })
+                      : ''}
                   </Typography>
                   <TextField
                     fullWidth
@@ -1018,6 +1035,7 @@ export function IdentifiersSection({
                     autoComplete="one-time-code"
                     label={t('identifiers.add.code.label')}
                     value={code}
+                    inputRef={addCodeRef}
                     disabled={addBusy}
                     onChange={(event) => setCode(event.target.value)}
                   />
@@ -1048,6 +1066,19 @@ export function IdentifiersSection({
           </>
         )}
       </Box>
+
+      {/* The section's one result position, below the whole control group --
+          the row actions and the add face whose writes share the slot -- so a
+          success and a failure can never stand together. It stays outside
+          AsyncSection so an empty list still shows it. The non-code failure
+          sentences occupy the same position and are mutually exclusive with
+          it. */}
+      <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mt: 1 }} />
+      {failureText !== null && (
+        <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
+          {t(failureText)}
+        </Alert>
+      )}
       </SectionCard>
 
       <ConfirmDialog
