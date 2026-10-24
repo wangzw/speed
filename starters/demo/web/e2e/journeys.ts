@@ -288,9 +288,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-operator-first-run.md',
-    status: 'pending',
-    reason:
-      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-account-010',
       'REQ-account-015',
