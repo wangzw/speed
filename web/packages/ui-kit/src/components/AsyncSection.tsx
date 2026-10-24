@@ -30,10 +30,15 @@
  * that state -- the latest refresh failed, the data is still on screen
  * and no read is in flight -- and withdraws it when the retry starts,
  * which unmounts the alert; a retry that fails again re-supplies it, so
- * the alert mounts anew and its `role="alert"` announces again. The
- * settled branches always return the same fragment shape, so the notice
- * appearing or withdrawing never unmounts the node beneath it and never
- * loses the state that node holds. A refusal such as HTTP 403 does not
+ * the alert mounts anew and its `role="alert"` announces again. When the
+ * notice withdraws while one of its controls holds focus -- the retry was
+ * activated by keyboard, or an automatic re-read started while the focus
+ * sat on the notice -- focus moves to the settled content that stays on
+ * screen, instead of falling back to the document body and forcing a
+ * keyboard user to tab in from the top again. The settled branches always
+ * return the same fragment shape, so the notice appearing or withdrawing
+ * never unmounts the node beneath it and never loses the state that node
+ * holds. A refusal such as HTTP 403 does not
  * use `staleState`: it makes the older data meaningless, so the caller
  * replaces the content with the no-permission placeholder instead.
  *
@@ -46,7 +51,7 @@
  * behaviour unchanged.
  */
 
-import { forwardRef } from 'react'
+import { forwardRef, useLayoutEffect, useRef } from 'react'
 import type { ReactElement, ReactNode, Ref } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -178,6 +183,27 @@ function AsyncSectionInner<Payload>(
   }: AsyncSectionProps<Payload>,
   ref: Ref<HTMLDivElement>,
 ): ReactElement | null {
+  // The content that stays on screen is the fallback focus target when the
+  // stale notice withdraws: the retry button inside it is about to be
+  // removed, and focus would otherwise land on the document body.
+  const settledRef = useRef<HTMLDivElement>(null)
+  const noticeHeldFocus = useRef(false)
+  useLayoutEffect(() => {
+    if (staleState !== undefined) {
+      return
+    }
+    if (!noticeHeldFocus.current) {
+      return
+    }
+    noticeHeldFocus.current = false
+    // Focus is only recovered when the removed notice left it on the
+    // body; a reader who moved focus elsewhere has already chosen a new
+    // resting place.
+    if (document.activeElement === document.body) {
+      settledRef.current?.focus()
+    }
+  }, [staleState])
+
   // The host's root props exist only when asked for: an omitted prop must
   // not add an element around the branch (a wrapped fragment would change
   // its children's layout context).
@@ -229,15 +255,19 @@ function AsyncSectionInner<Payload>(
     ) : (
       children(payload)
     )
-  // Both settled branches return the same fragment: the stale notice
+  // Both settled branches keep one wrapper element: the stale notice
   // mounts and unmounts as the fragment's first child, so the settled node
   // keeps its identity and its local state across the notice's lifecycle.
+  // The wrapper is the focus target the withdrawing notice hands off to.
   return withRoot(
     <>
       {staleState === undefined ? null : (
         <Alert
           severity="warning"
           role="alert"
+          onFocus={() => {
+            noticeHeldFocus.current = true
+          }}
           action={
             <Button color="inherit" onClick={staleState.onRetry}>
               {staleState.retryLabel}
@@ -248,7 +278,9 @@ function AsyncSectionInner<Payload>(
           {staleState.description}
         </Alert>
       )}
-      {settled}
+      <Box ref={settledRef} tabIndex={-1}>
+        {settled}
+      </Box>
     </>,
   )
 }

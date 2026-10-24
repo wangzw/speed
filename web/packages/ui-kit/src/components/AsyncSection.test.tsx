@@ -620,6 +620,21 @@ describe('AsyncSection', () => {
     expect(view.getByText(EMPTY_STATE.title).parentElement).toBe(placeholder)
   })
 
+  it('moves focus to the retained content when the withdrawn notice held it', async () => {
+    const view = renderWithProviders(<StaleSectionHost />)
+    const retry = view.getByRole('button', { name: STALE_RETRY_LABEL })
+    retry.focus()
+    expect(retry).toHaveFocus()
+
+    await userEvent.keyboard('{Enter}')
+
+    // The notice withdraws and the content stays; focus must not fall back
+    // to the document body, or a keyboard user would tab in from the top.
+    expect(view.queryByRole('alert')).toBeNull()
+    expect(document.activeElement).not.toBe(document.body)
+    expect(document.activeElement).toHaveTextContent('content alpha')
+  })
+
   it('reports the stale retry from under the empty placeholder', async () => {
     const onRetry = vi.fn()
     const view = renderWithProviders(
