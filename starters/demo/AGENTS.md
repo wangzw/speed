@@ -11,8 +11,9 @@ the seams; this program shows one way to put them together. It ships no business
 domain: `server/modules/` is the empty slot a product's own modules land in.
 Because it seeds no business data, several surfaces open empty in the browser:
 the object store, the console dashboard beyond the tenant counts it reads from
-the platform's own roster, the notification inbox (this program declares no
-notification type and dispatches nothing), and the preference matrix. An empty
+the platform's own roster, the notification inbox (the baseline declares no
+notification type and dispatches nothing; the review build adds one, see
+"The review build's notification fixture" below), and the preference matrix. An empty
 surface is the baseline doing what it says it does, not a capability left
 unfinished — the data is the product's and its users' to produce.
 
@@ -142,6 +143,55 @@ any configured listener is not loopback: the review build seeds the published
 administrator credential and opens registration. The guard limits the listening
 address only; a code written to the process log can still leave the machine
 through log collection or export.
+
+#### The review build's notification fixture
+
+`server/review_notification.go`, compiled only under the `review` tag and named
+in `reviewModules`, gives the member-notification journey a running
+counterpart. It adds three things the baseline deliberately lacks.
+
+- **A type.** It declares `review.notice` — group `review`, default channels
+  `in_app` and `email`, unsubscribable — with its text in
+  `server/review_notification_locales/en-US.json` and `zh-CN.json`. The
+  declaration lives in the review-tagged file on purpose:
+  `notification.preferences` and `notification.delivery` collect the type
+  taxonomy with `core.Resources` over the *available* set, not the running set,
+  so a type declared in an untagged file would appear in the baseline's
+  preference matrix and its dispatch validation even though no baseline command
+  runs its module. `server/review_notification_isolation_test.go` holds that
+  boundary in the default build, and the review-tagged case holds the other
+  direction.
+
+- **A worker-driven dispatch.** The module declares a `jobs.Schedule`, and the
+  platform's scheduler enqueues one job per tenant per window. The module's
+  handler turns each job into one dispatch per active member that carries an
+  email identifier: the type's default channels include email, so a member
+  without an address is skipped rather than failed. The dispatch is the real
+  one — `notification.Dispatcher` validates it against the collected taxonomy,
+  the job queue carries it, and the delivery pipeline writes the in-app row and
+  renders the email through `mail.review`. There is no HTTP endpoint for it: a
+  browser drives the journey with clicks alone, and the "another member or the
+  system sends a notice" step is the worker's window. `server/review/sqlite.yaml`
+  lowers `jobs.scheduler.tick` to two seconds, so a tenant created during a
+  walkthrough starts receiving notices promptly; the dispatch window itself is
+  the fixture's own constant.
+
+- **The preference recipient wiring.** The preference routes read the recipient
+  from the request context (`preferences.WithRecipient`); the capability holds
+  no identity, so the host names it. The baseline does not, which is why its
+  matrix is empty and a preference write is refused. The review module registers
+  a layer on the `api` endpoint in the recording stage — inside the
+  authentication gateway, so the identity is already on the context, and outside
+  the authorization guard — that copies the authenticated caller's effective
+  account (the impersonated one while impersonating) onto the context. A request
+  with no identity is left untouched, so an anonymous caller is still refused
+  before the preference handler runs.
+
+`TestReviewNotificationJourneyIsReachable` is the worked check: a registered
+member gets a tenant, the worker writes the type into the inbox and the email
+renders from the catalog, the member turns the email channel off and the write
+succeeds, an anonymous caller is still refused, and the following windows send
+no email.
 
 ### The token signing key
 
@@ -652,9 +702,10 @@ names the fixed part of that wiring, and no configuration file repeats it:
   because they are scoped by the caller's identity — the inbox and the stream
   read the caller's own account — and not by anyone's permission. The preference
   routes read a recipient the host names on the request context
-  (`preferences.WithRecipient`); this skeleton declares no notification type, so
-  the matrix is empty and that step does not arise, and a product that declares
-  one supplies the recipient.
+  (`preferences.WithRecipient`); the baseline declares no notification type and
+  names no recipient, so the matrix is empty and that step does not arise. The
+  review build is the worked example of both: it declares a type and names the
+  caller as the recipient (see "The review build's notification fixture").
 - **The personal tenant** is the host's own policy, not a platform capability
   (`workspace.personal`, `server/personal.go`, named in `baselineServe`). Its
   switch is `workspace.personal.enabled`, off in every `testdata/` file and on
