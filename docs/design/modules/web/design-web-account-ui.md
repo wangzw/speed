@@ -280,13 +280,13 @@ sequenceDiagram
 | 自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
 | 偏好节 | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection` |
 | 外观节 `AppearanceSection`（受控的主题预设选择） | 已实现 | `web/packages/account-ui/src/AppearanceSection.tsx` `AppearanceSection`、`AppearanceSectionProps`、`ThemePresetChoice` |
-| 各节的反馈作用域与成功确认 | 部分实现 | `web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
+| 各节的反馈作用域与成功确认 | 已实现 | `web/packages/account-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`；`web/packages/account-ui/src/ProfileSection.tsx` `ProfileSection`；`web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`；`web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`；`web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`；`web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection`；`web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 读的刷新失败的陈旧提示 | 未实现 | — |
 | 错误白名单组合会话生命周期码族及其双语文案 | 未实现 | — |
 | 偏好节的提权门控（可选 `session`） | 已实现 | `web/packages/account-ui/src/PreferencesSection.tsx` `PreferencesSection`、`PreferencesSectionProps` |
 | 提权对话框 `StepUpDialog` 外导（只给宿主用） | 已实现 | `web/packages/account-ui/src/internal/step-up-challenge.tsx`；`web/packages/account-ui/src/index.ts` |
-| 「验证码已发送」的 live region 与焦点 | 未实现 | — |
-| 绑定回调完成阶段的成功文案 | 未实现 | — |
+| 「验证码已发送」的 live region 与焦点 | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
+| 绑定回调完成阶段的成功文案 | 已实现 | `web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 会话列表与撤销 | 已实现 | `web/packages/account-ui/src/SessionsSection.tsx` `SessionsSection` |
 | 社交绑定与回调 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 两步验证设置 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
