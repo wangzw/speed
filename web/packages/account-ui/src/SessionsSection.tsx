@@ -45,7 +45,6 @@
 
 import { useMemo, useState } from 'react'
 import { formatInstant, isSupportedTimeZone, resolveTimeZone } from '@speed/i18n'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -62,16 +61,15 @@ import {
 import {
   AsyncSection,
   ConfirmDialog,
-  errorCodeOf,
   ListSkeleton,
   SectionCard,
   useDisplayTimeZone,
-  visuallyHiddenSx,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery, useSessionsQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 /**
  * The session kinds the authn session module records (pkg/authn/session's
@@ -87,12 +85,6 @@ const KNOWN_SESSION_KINDS = new Set<string>(['browser', 'token', 'service'])
  * live sessions, so the list is paged rather than rendered whole.
  */
 const SESSIONS_PER_PAGE = 8
-
-/** The transient outcome of a revoke action, rendered above the list. */
-type Notice =
-  | { readonly kind: 'others-done'; readonly count: number }
-  | { readonly kind: 'revoke-failed'; readonly code: string }
-  | null
 
 /** The row-end sign-out glyph, hand-drawn on the packages' 24-grid
  * pattern: an arrow leaving a door, stroke currentColor, no fill. */
@@ -166,7 +158,11 @@ export function SessionsSection() {
   const revokeOthersMutation = useAuthnSessionRevokeOthers()
 
   const [othersConfirmOpen, setOthersConfirmOpen] = useState(false)
-  const [notice, setNotice] = useState<Notice>(null)
+  // One scope for the section: the row revoke and the bulk revoke share the
+  // result position above the list, so a success and a failure never stand
+  // together. Each success names what changed -- the signed-out session or
+  // the count of other devices.
+  const feedback = useWriteFeedback()
   const [revokingId, setRevokingId] = useState<string | null>(null)
   // The 1-based page of the session list. It is clamped against the page
   // count on render below, so a revoke that shrinks the list can never
@@ -210,7 +206,12 @@ export function SessionsSection() {
   // parked states.
   const pending = isPending && sessions === undefined
   const hasSessions = sessions !== undefined && sessions.length > 0
-  const busy = revokeOneMutation.isPending || revokeOthersMutation.isPending
+  // Disabled through the whole attempt, including the refetch that follows
+  // the mutation, so no control changes context under a pending scope.
+  const busy =
+    revokeOneMutation.isPending ||
+    revokeOthersMutation.isPending ||
+    feedback.pending
 
   // The server lists only live sessions, so every non-current row is a
   // live device the section-top bulk action exists to sign out.
@@ -224,42 +225,50 @@ export function SessionsSection() {
   const pageCount = Math.max(1, Math.ceil(total / SESSIONS_PER_PAGE))
   const currentPage = Math.min(page, pageCount)
 
-  async function handleRevokeSession(sessionId: string): Promise<void> {
+  function handleRevokeSession(
+    sessionId: string,
+    deviceLabel: string,
+  ): Promise<void> {
     if (busy || sessionId === revokingId) {
-      return
+      return Promise.resolve()
     }
-    setNotice(null)
     setRevokingId(sessionId)
-    try {
-      await revokeOneMutation.mutateAsync({ id: sessionId })
-      await queryClient.invalidateQueries({
-        queryKey: getAuthnSessionListQueryKey(),
-      })
-    } catch (error) {
-      setNotice({ kind: 'revoke-failed', code: errorCodeOf(error) })
-    } finally {
-      setRevokingId(null)
-    }
+    return feedback.run(async () => {
+      try {
+        await revokeOneMutation.mutateAsync({ id: sessionId })
+        await queryClient.invalidateQueries({
+          queryKey: getAuthnSessionListQueryKey(),
+        })
+        // The confirmation names the session that was signed out.
+        return t('sessions.revokedOne', {
+          device: deviceLabel,
+          interpolation: { escapeValue: false },
+        })
+      } finally {
+        setRevokingId(null)
+      }
+    })
   }
 
-  async function handleRevokeOthers(): Promise<void> {
-    setNotice(null)
-    try {
-      const result = (await revokeOthersMutation.mutateAsync()) as
+  function handleRevokeOthers(): Promise<void> {
+    return feedback.run(async () => {
+      let result:
         | { readonly revoked?: number }
         | undefined
+      try {
+        result = (await revokeOthersMutation.mutateAsync()) as
+          | { readonly revoked?: number }
+          | undefined
+      } catch (error) {
+        setOthersConfirmOpen(false)
+        throw error
+      }
       setOthersConfirmOpen(false)
-      setNotice({
-        kind: 'others-done',
-        count: result?.revoked ?? 0,
-      })
       await queryClient.invalidateQueries({
         queryKey: getAuthnSessionListQueryKey(),
       })
-    } catch (error) {
-      setOthersConfirmOpen(false)
-      setNotice({ kind: 'revoke-failed', code: errorCodeOf(error) })
-    }
+      return t('sessions.revokeOthers.done', { count: result?.revoked ?? 0 })
+    })
   }
 
   const showHeader = pending || hasSessions
@@ -305,34 +314,12 @@ export function SessionsSection() {
           )
           return (
           <Box>
-            {notice?.kind === 'revoke-failed' && (
-              <InlineError code={notice.code} />
-            )}
-            {/* The revoke-others success live region. It must never mount
-                together with its text: a role="status" region announces
-                only content changes that follow its own insertion, so a
-                success notice born in the same commit as the region would
-                be silent. The region therefore stands here for the whole
-                list phase -- mounted empty and visually silent (clipped,
-                never display:none) while there is nothing to announce --
-                and the notice commit fills the text into a region the
-                screen reader already knows, which is what makes the
-                announcement fire. The clip and the notice never coexist:
-                the same node shows the full success banner exactly while
-                it carries the text. */}
-            <Alert
-              severity="success"
-              role="status"
-              sx={
-                notice?.kind === 'others-done'
-                  ? { width: '100%', mb: 1.5 }
-                  : visuallyHiddenSx
-              }
-            >
-              {notice?.kind === 'others-done'
-                ? t('sessions.revokeOthers.done', { count: notice.count })
-                : ''}
-            </Alert>
+            {/* The section's one result position, above the list: a row
+                revoke and the bulk revoke share it, so a success and a
+                failure never stand together. The success region is always
+                mounted as a polite status, so the notice announces on the
+                empty-to-filled edge. */}
+            <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mb: 1.5 }} />
             {/* The rows are one real list: a screen-reader user hears each
                 session as one item of a numbered set with a boundary
                 between rows, never a flat div stack. The notices above are
@@ -429,7 +416,7 @@ export function SessionsSection() {
                             disabled={busy || revokingId === id}
                             onClick={() => {
                               if (id !== null) {
-                                void handleRevokeSession(id)
+                                void handleRevokeSession(id, deviceLabel)
                               }
                             }}
                             sx={{ color: 'text.secondary' }}

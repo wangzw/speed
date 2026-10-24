@@ -336,6 +336,17 @@ describe('SessionsSection', () => {
     await user.click(target() as HTMLElement)
 
     await waitFor(() => expect(target()).toBeNull())
+    // The single revoke no longer succeeds silently: its confirmation names
+    // the session it signed out.
+    expect(
+      await screen.findByText(
+        zhCN.sessions.revokedOne.replace(
+          '{{device}}',
+          zhCN.sessions.deviceUnknown,
+        ),
+      ),
+    ).toBeTruthy()
+    expect(zhCN.sessions.revokedOne).toContain('{{device}}')
     expect(
       rig.calls.filter(
         (call) => call.method === 'DELETE' && call.path === `${SESSIONS_PATH}/session-2`,
