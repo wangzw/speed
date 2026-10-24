@@ -355,6 +355,15 @@ describe('ContactVerificationSection', () => {
         zhCN.verification.sent.replace('{{email}}', 'ada@x.test'),
       ),
     ).toBeTruthy()
+    // The confirmation names the address the code went to and lives in the
+    // send group's feedback region: a permanent polite status region, like
+    // every other settled write on the account page.
+    expect(zhCN.verification.sent).toContain('{{email}}')
+    expect(
+      screen
+        .getByText(zhCN.verification.sent.replace('{{email}}', 'ada@x.test'))
+        .closest('[role="status"]'),
+    ).not.toBeNull()
     const sent = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === ADD_PATH,
     )
@@ -863,6 +872,13 @@ describe('ContactVerificationSection', () => {
     expect(alert).toHaveTextContent(zhCN.verification.codeInvalid)
     expect(code).toHaveValue('')
     expect(code).toHaveAttribute('aria-invalid', 'true')
+    // The verify group's failure renders below the verify controls: the code
+    // field and its verify action.
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.verification.verify })
+        .compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it('renders a taken address only after the code proves control', async () => {

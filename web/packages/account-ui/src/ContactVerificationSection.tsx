@@ -90,13 +90,13 @@ import {
   errorCodeOf,
   FORM_MAX_WIDTH,
   SectionCard,
-  visuallyHiddenSx,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 
@@ -146,12 +146,17 @@ export function ContactVerificationSection({
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [code, setCode] = useState('')
   const [codeInvalid, setCodeInvalid] = useState(false)
-  // The failure's code and the step it came from: a conflict and a bad code
-  // mean different things on the verify step than on the send step.
-  const [failure, setFailure] = useState<{
-    readonly code: string
-    readonly step: 'send' | 'verify'
-  } | null>(null)
+  // Send and verify are two control groups: each owns its own feedback scope
+  // and region, so one group's outcome never clears the other's.
+  const sendFeedback = useWriteFeedback()
+  const verifyFeedback = useWriteFeedback()
+  // The verify group's non-code failure source: the wrong-code and
+  // taken-address answers render the section's own wording on the verify
+  // step. It occupies the verify region's result position and is mutually
+  // exclusive with that region's code failure.
+  const [verifyFailureText, setVerifyFailureText] = useState<string | null>(
+    null,
+  )
   // The address being entered in the change / first-add form.
   const [emailEntry, setEmailEntry] = useState('')
   const [entryOpen, setEntryOpen] = useState(initialChangeOpen)
@@ -159,9 +164,6 @@ export function ContactVerificationSection({
   // clock the note and the disabled state read.
   const [resendUntil, setResendUntil] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  // The live region's text: emptied when an attempt starts and filled when a
-  // send lands, so the announcement happens on the empty-to-filled edge.
-  const [announcement, setAnnouncement] = useState('')
   // Whether the mount's automatic send was refused for step-up. The dialog
   // is the visitor's to open, so the section states why it could not send
   // and leaves the manual action in place.
@@ -176,7 +178,13 @@ export function ContactVerificationSection({
   const autoSendSuppressed = useRef(initialChangeOpen)
   const codeRef = useRef<HTMLInputElement>(null)
 
-  const busy = addIdentifier.isPending || verifyIdentifier.isPending
+  // Disabled through the whole attempt, including the refetches that follow
+  // the mutation, so no control changes context under a pending scope.
+  const busy =
+    addIdentifier.isPending ||
+    verifyIdentifier.isPending ||
+    sendFeedback.pending ||
+    verifyFeedback.pending
   const verification = data?.verification
   const state = verification?.state ?? ''
   const targetEmail = verification?.email ?? ''
@@ -232,16 +240,36 @@ export function ContactVerificationSection({
     ])
   }
 
-  async function send(nextEmail: string, automatic = false): Promise<void> {
+  function send(nextEmail: string, automatic = false): Promise<void> {
     const address = nextEmail.trim()
-    setFailure(null)
     setCodeInvalid(false)
     setAutoStepUp(false)
-    setAnnouncement('')
-    try {
-      const result = await addIdentifier.mutateAsync({
-        data: { kind: 'email', value: address },
-      })
+    return sendFeedback.run(async () => {
+      let result
+      try {
+        result = await addIdentifier.mutateAsync({
+          data: { kind: 'email', value: address },
+        })
+      } catch (error) {
+        const failureCode = errorCodeOf(error)
+        if (failureCode === STEP_UP_REQUIRED) {
+          // A dialog the visitor did not ask for is not opened for them: the
+          // automatic attempt states what happened instead, and the next
+          // click on the send action takes the ordinary gated path.
+          if (automatic) {
+            setAutoStepUp(true)
+            return null
+          }
+          gate.arm({ step: 'send', email: address })
+          return null
+        }
+        const retryAfter = retryAfterMsOf(error)
+        if (retryAfter !== undefined) {
+          setResendUntil(Date.now() + retryAfter)
+          setNow(Date.now())
+        }
+        throw error
+      }
       const interval =
         typeof result.resend_after === 'number' ? result.resend_after : 0
       setResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
@@ -250,59 +278,53 @@ export function ContactVerificationSection({
       setCode('')
       setEmailEntry('')
       setEntryOpen(false)
-      setAnnouncement(
-        t('verification.sent', {
-          email: address,
-          interpolation: { escapeValue: false },
-        }),
-      )
       // The pending contact may have been replaced: re-read so the target
       // label and the verification state converge on the server's answer.
       await invalidateAfterWrite()
-    } catch (error) {
-      const failureCode = errorCodeOf(error)
-      if (failureCode === STEP_UP_REQUIRED) {
-        // A dialog the visitor did not ask for is not opened for them: the
-        // automatic attempt states what happened instead, and the next
-        // click on the send action takes the ordinary gated path.
-        if (automatic) {
-          setAutoStepUp(true)
-          return
-        }
-        gate.arm({ step: 'send', email: address })
-        return
-      }
-      setFailure({ code: failureCode, step: 'send' })
-      const retryAfter = retryAfterMsOf(error)
-      if (retryAfter !== undefined) {
-        setResendUntil(Date.now() + retryAfter)
-        setNow(Date.now())
-      }
-    }
+      // The confirmation names the address the code went to; the target line
+      // above the code step keeps stating the destination.
+      return t('verification.sent', {
+        email: address,
+        interpolation: { escapeValue: false },
+      })
+    })
   }
 
-  async function verify(nextCode: string): Promise<void> {
-    setFailure(null)
+  function verify(nextCode: string): Promise<void> {
     setCodeInvalid(false)
-    setAnnouncement('')
-    try {
-      await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+    return verifyFeedback.run(async () => {
+      setVerifyFailureText(null)
+      try {
+        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+      } catch (error) {
+        const failureCode = errorCodeOf(error)
+        if (failureCode === STEP_UP_REQUIRED) {
+          gate.arm({ step: 'verify', code: nextCode })
+          return null
+        }
+        if (failureCode === 'authn.login_failed') {
+          setCodeInvalid(true)
+          setCode('')
+          setVerifyFailureText('verification.codeInvalid')
+          return null
+        }
+        if (
+          failureCode === 'authn.conflict' ||
+          failureCode === 'authn.email_taken'
+        ) {
+          setVerifyFailureText('verification.addressTaken')
+          return null
+        }
+        throw error
+      }
       setCode('')
       setSentTo(null)
       setResendUntil(0)
       await invalidateAfterWrite()
-    } catch (error) {
-      const failureCode = errorCodeOf(error)
-      if (failureCode === STEP_UP_REQUIRED) {
-        gate.arm({ step: 'verify', code: nextCode })
-        return
-      }
-      if (failureCode === 'authn.login_failed') {
-        setCodeInvalid(true)
-        setCode('')
-      }
-      setFailure({ code: failureCode, step: 'verify' })
-    }
+      // The section re-reads into `verified`, whose completion state names
+      // the proved address: that is the verification's success.
+      return null
+    })
   }
 
   // The verification landing's single automatic send: it fires when the
@@ -372,27 +394,15 @@ export function ContactVerificationSection({
     )
   }
 
-  // The failure banner: the wrong-code and taken-address answers render this
-  // section's own wording only on the verify step; every other code renders
-  // through the family's whitelist.
-  let failureBanner = null
-  if (failure !== null) {
-    if (failure.step === 'verify' && failure.code === 'authn.login_failed') {
-      failureBanner = (
-        <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-          {t('verification.codeInvalid')}
-        </Alert>
-      )
-    } else if (failure.step === 'verify' && failure.code === 'authn.conflict') {
-      failureBanner = (
-        <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-          {t('verification.addressTaken')}
-        </Alert>
-      )
-    } else {
-      failureBanner = <InlineError code={failure.code} />
-    }
-  }
+  // The verify group's non-code failure, beside its region and mutually
+  // exclusive with it: the wrong-code and taken-address answers render this
+  // section's own wording, every other code through the whitelist.
+  const verifyFailureBanner =
+    verifyFailureText === null ? null : (
+      <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+        {t(verifyFailureText)}
+      </Alert>
+    )
 
   const sentNotice = sentTo ?? targetEmail
   const hasTarget = targetEmail !== ''
@@ -423,14 +433,6 @@ export function ContactVerificationSection({
               maxWidth: FORM_MAX_WIDTH,
             }}
           >
-            <Alert
-              severity="success"
-              role="status"
-              sx={announcement === '' ? visuallyHiddenSx : { width: '100%' }}
-            >
-              {announcement}
-            </Alert>
-            {failureBanner}
             <TextField
               fullWidth
               type="email"
@@ -448,6 +450,12 @@ export function ContactVerificationSection({
             >
               {t('verification.addSubmit')}
             </Button>
+            {/* The add form is the send group's control here: its result
+                sits below the action that made it. */}
+            <WriteFeedbackRegion
+              outcome={sendFeedback.outcome}
+              sx={{ alignSelf: 'stretch', width: '100%' }}
+            />
           </Box>
         </SectionCard>
         <StepUpChallenge
@@ -483,19 +491,11 @@ export function ContactVerificationSection({
             maxWidth: FORM_MAX_WIDTH,
           }}
         >
-          <Alert
-            severity="success"
-            role="status"
-            sx={announcement === '' ? visuallyHiddenSx : { width: '100%' }}
-          >
-            {announcement}
-          </Alert>
           {autoStepUp ? (
             <Alert severity="info" sx={{ width: '100%' }}>
               {t('verification.autoStepUp')}
             </Alert>
           ) : null}
-          {failureBanner}
           <Typography variant="body2" color="text.secondary">
             {sentNotice === ''
               ? t('verification.description')
@@ -522,6 +522,8 @@ export function ContactVerificationSection({
               }
             }}
           />
+          {/* The verify control group: its result sits below the code field
+              and the verify action. */}
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
             <Button
               type="submit"
@@ -531,6 +533,15 @@ export function ContactVerificationSection({
             >
               {t('verification.verify')}
             </Button>
+          </Stack>
+          <WriteFeedbackRegion
+            outcome={verifyFeedback.outcome}
+            sx={{ alignSelf: 'stretch', width: '100%' }}
+          />
+          {verifyFailureBanner}
+          {/* The send control group: its own result sits below the resend and
+              change actions. */}
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
             <Button
               type="button"
               variant="outlined"
@@ -551,7 +562,6 @@ export function ContactVerificationSection({
               onClick={() => {
                 setEntryOpen((open) => !open)
                 setEmailEntry('')
-                setFailure(null)
               }}
             >
               {entryOpen
@@ -559,6 +569,10 @@ export function ContactVerificationSection({
                 : t('verification.change')}
             </Button>
           </Stack>
+          <WriteFeedbackRegion
+            outcome={sendFeedback.outcome}
+            sx={{ alignSelf: 'stretch', width: '100%' }}
+          />
           {remainingSeconds > 0 ? (
             <Typography
               id={RESEND_NOTE_ID}
