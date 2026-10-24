@@ -59,7 +59,7 @@
  *    answers 200 without a credential.
  *  - REQ-signin-004 (the login surface's set is derived from the discovery
  *    document) cannot be discriminated here: a hardcoded surface that listed
- *    the same three methods would pass the same assertions, so it is not
+ *    the same four methods would pass the same assertions, so it is not
  *    claimed.
  *
  * The claims that are narrower than the requirement text:
@@ -91,7 +91,7 @@
  *    declared endpoint and the database answering, `/ready` answers 200 and its
  *    body says ready. The 503 case that names each failed part is not driven.
  *  - REQ-signin-001 is claimed for the discovery document's assembled entry
- *    set: the document lists exactly the three methods this assembly serves,
+ *    set: the document lists exactly the four methods this assembly serves,
  *    each with its rendering kind. The appear/disappear-when-toggled half is
  *    not driven, because it needs a second assembly or a runtime switch this
  *    tier does not perform.
@@ -142,13 +142,14 @@ interface DiscoveryMethod {
 
 /**
  * The login methods the deploy assembly serves, as the discovery document
- * reports them: the two social methods (redirect buttons) and password (a
- * form). These are the document's own stable method names, not interface
- * copy, so they are literals.
+ * reports them: the two social methods (redirect buttons), the passkey
+ * ceremony, and password (a form). These are the document's own stable method
+ * names, not interface copy, so they are literals.
  */
 const DISCOVERY_METHODS = [
   { name: 'github', kind: 'redirect' },
   { name: 'google', kind: 'redirect' },
+  { name: 'passkey', kind: 'webauthn' },
   { name: 'password', kind: 'form' },
 ] as const
 
@@ -317,10 +318,10 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     expect(methods.contentType).toContain('application/json')
 
     // The discovery document lists exactly the methods this assembly serves
-    // and not one it does not: password plus the two social methods, each with
-    // the kind that says how the surface renders it. The document is sorted by
-    // method name. (REQ-signin-001's runtime-toggle half is not driven; see the
-    // file header.)
+    // and not one it does not: password, the passkey ceremony and the two
+    // social methods, each with the kind that says how the surface renders it.
+    // The document is sorted by method name. (REQ-signin-001's runtime-toggle
+    // half is not driven; see the file header.)
     const discovery = jsonBody(methods)
     const entries = (discovery.methods as readonly DiscoveryMethod[]).map(
       ({ name, kind }) => ({ name, kind }),
