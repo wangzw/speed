@@ -36,13 +36,20 @@
  * REQ-signin-012 and REQ-signin-014 are left out too: the spec only sends to an
  * allowed prefix and never observes a refused region or compares two numbers,
  * so those claims would be wider than what the assertions exercise.
+ * REQ-signin-030 (an unauthenticated visit to a protected page renders the
+ * sign-in surface and continues in place after sign-in) is left out for the
+ * same reason: the spec's only unauthenticated entry is the deployment root,
+ * which is the sign-in surface itself, and after a session ends it asserts the
+ * ended-session surface, not an in-place continuation. A product that rendered
+ * an error page for a protected route, or that stopped at the sign-in surface
+ * after signing in, would leave every observation here unchanged.
  *
  * Expected copy is read from the shipped en-US locale bundles through
  * helpers/i18n.ts, so a sentence that changes in the product changes here with
  * it rather than leaving a stale literal that still passes.
  */
 // @journey journey-sms-signup-to-password-login.md
-// @covers REQ-account-007, REQ-account-008, REQ-account-012, REQ-account-013, REQ-account-021, REQ-account-022, REQ-account-023, REQ-security-029, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signin-030, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-tenancy-022, REQ-tenancy-026
+// @covers REQ-account-007, REQ-account-008, REQ-account-012, REQ-account-013, REQ-account-021, REQ-account-022, REQ-account-023, REQ-security-029, REQ-security-030, REQ-signin-006, REQ-signin-011, REQ-signup-012, REQ-signup-014, REQ-signup-015, REQ-tenancy-022, REQ-tenancy-026
 import type { BrowserContext, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
@@ -134,16 +141,38 @@ async function requestCode(page: Page): Promise<void> {
  * product's own notice appears, which is the window passing, never a fixed
  * delay. The retries add no challenge rows (a refused send is refused before
  * one is written), so they do not spend a budget.
+ *
+ * The retry stop condition is the surface's own state transition, not the
+ * notice alone: once an accepted send replaces the phone step with the code
+ * step, the send control is gone, so a later attempt must not click a detached
+ * node. Each attempt first checks whether the code step or the notice has
+ * already arrived and stops; otherwise it clicks the send control and waits the
+ * tier's uniform five seconds for the notice. A refusal leaves the phone step
+ * in place with no notice, which is what the next attempt retries.
  */
 async function requestCodeThroughResendWindow(page: Page): Promise<void> {
   const send = page.getByRole('button', {
     name: copy('authUi', 'smsSignIn.sendCode'),
     exact: true,
   })
+  const step = codeField(page)
   await expect(async () => {
+    // A successful send has already moved the surface on; stop rather than
+    // click the control it unmounted.
+    if (await step.isVisible()) {
+      return
+    }
+    if (!(await send.isVisible())) {
+      // The control vanished between polls: the transition is under way, so
+      // let the state assertion after the loop observe it.
+      return
+    }
     await send.click()
-    await expect(sentNotice(page)).toBeVisible({ timeout: 2_000 })
+    await expect(sentNotice(page)).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: 60_000, intervals: [4_000] })
+  // A resolved retry means an accepted send; the code step is the visible
+  // consequence of it.
+  await expect(step).toBeVisible()
 }
 
 /** Answer the code step with the given code and submit the login. */
@@ -211,8 +240,10 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
 
   // The second device: a browser context of its own, hence its own cookie jar
   // and its own session. It is opened at the review origin with the same
-  // language and clock the config pins, and it is closed with the server so its
-  // notification stream does not hold shutdown open.
+  // language and clock the config pins and the running page's viewport, so the
+  // two devices share every pin a context created by hand must repeat; it is
+  // closed with the server so its notification stream does not hold shutdown
+  // open.
   const browser = page.context().browser()
   if (browser === null) {
     throw new Error('the demo page is not attached to a browser')
@@ -226,6 +257,7 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
     second = await browser.newContext({
       locale: 'en-US',
       timezoneId: 'UTC',
+      viewport: page.viewportSize(),
     })
     const other = await second.newPage()
 
@@ -459,18 +491,14 @@ test('sms-signup: a phone-code first sign-in becomes a username-and-password log
       // tenant area, so its next request is what discovers the end: opening
       // the account settings asks the server, which answers as an ended
       // session and swaps the shell for the sign-in-again screen.
-      const bar = other.getByRole('banner')
-      const named = bar.getByRole('button', {
-        name: copy('demo', 'userMenu.accountMenu'),
-        exact: true,
-      })
-      if ((await named.count()) > 0) {
-        await named.click()
-      } else {
-        // The trigger names the display name when the account has one; the
-        // account menu is the last menu trigger in the bar.
-        await bar.locator('button[aria-haspopup="menu"]').last().click()
-      }
+      //
+      // The account menu trigger is addressed by its own stable identifier,
+      // not by its accessible name (which is the display name when the account
+      // has one) and not by its position among the bar's other menus.
+      await other
+        .getByRole('banner')
+        .getByTestId('user-menu-trigger')
+        .click()
       await other
         .getByRole('menuitem', {
           name: copy('demo', 'userMenu.accountSettings'),
