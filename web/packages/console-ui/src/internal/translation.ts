@@ -11,9 +11,23 @@
  */
 
 import { useTranslation } from '@speed/i18n'
+import { UI_KIT_NAMESPACE } from '@speed/ui-kit'
 import { CONSOLE_UI_NAMESPACE } from '../resources.js'
 
 /** The translation response (t plus re-render binding) for the console-ui namespace. */
 export function useConsoleUiTranslation() {
   return useTranslation(CONSOLE_UI_NAMESPACE)
+}
+
+/**
+ * The ui-kit namespace's translation response, for a console page that
+ * renders a ui-kit-owned control's wording itself. It exists for one
+ * shape: a page placing a ui-kit control outside the ui-kit component
+ * that owns it -- the account list's paging footer, which must outlive
+ * the async section's branches -- still speaks the ui-kit namespace, so
+ * the host overrides that wording where it registers ui-kit's resources
+ * rather than through a second copy of the keys.
+ */
+export function useUiKitTranslation() {
+  return useTranslation(UI_KIT_NAMESPACE)
 }

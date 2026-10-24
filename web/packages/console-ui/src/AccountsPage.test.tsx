@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { zhCN as muiZhCN } from '@mui/material/locale'
 import { CONFIRM_ARM_LOCKOUT_MS, uiKitResources } from '@speed/ui-kit'
 import { emittedStyleText } from '@speed/test-utils/emitted-css'
 import { AccountsPage } from './AccountsPage.js'
@@ -58,6 +59,16 @@ function fill(
     template,
   )
 }
+
+/** The pagination action labels MUI's zh-CN locale gives its own controls. */
+const NEXT_PAGE_LABEL =
+  muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
+    'next',
+  ) ?? ''
+const PREVIOUS_PAGE_LABEL =
+  muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
+    'previous',
+  ) ?? ''
 
 /** The fixture account the suite administers. */
 const ACCOUNT_ID = 'acc-1'
@@ -173,6 +184,13 @@ const PANEL_CLOSE_LABEL = (
     readonly sidePanel: { readonly closeLabel: string }
   }
 ).sidePanel.closeLabel
+
+/** The ui-kit footer's template for a page whose total is unknown. */
+const UNKNOWN_TOTAL_LABEL = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly dataTable: { readonly displayedRowsUnknown: string }
+  }
+).dataTable.displayedRowsUnknown
 
 /** The page's confirm label on a write's confirmation dialog. */
 const CONFIRM_LABEL = zhCN.common.confirm
@@ -1014,7 +1032,7 @@ describe('AccountsPage', () => {
       expect(calls).toContainEqual({
         method: 'GET',
         path: '/api/v1/system/auth/accounts',
-        query: { identifier_prefix: 'ada', identifier_kind: 'email' },
+        query: { identifier_prefix: 'ada', identifier_kind: 'email', limit: 100 },
       })
     })
   })
@@ -1037,7 +1055,7 @@ describe('AccountsPage', () => {
       expect(calls).toContainEqual({
         method: 'GET',
         path: '/api/v1/system/auth/accounts',
-        query: { status: 'disabled', kind: 'service' },
+        query: { status: 'disabled', kind: 'service', limit: 100 },
       })
     })
   })
@@ -1057,7 +1075,7 @@ describe('AccountsPage', () => {
       expect(calls).toContainEqual({
         method: 'GET',
         path: '/api/v1/system/auth/accounts',
-        query: { display_name_prefix: 'Ada' },
+        query: { display_name_prefix: 'Ada', limit: 100 },
       })
     })
   })
@@ -1075,9 +1093,404 @@ describe('AccountsPage', () => {
     await vi.waitFor(() => {
       const call = calls.find((entry) => entry.path === '/api/v1/system/auth/accounts')
       expect(call).toBeDefined()
-      // No filter is set, so the generated call carries no query parameter.
-      expect(call?.query ?? {}).toEqual({})
+      // No filter is set, so the call carries the page size and nothing else.
+      expect(call?.query ?? {}).toEqual({ limit: 100 })
     })
+  })
+
+  it('pages forward and back through the cursor read without repeating a page', async () => {
+    const user = userEvent.setup()
+    const pages: Record<
+      string,
+      { accounts: ConsoleAccount[]; next_cursor: string }
+    > = {
+      '': {
+        accounts: [accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' })],
+        next_cursor: 'cursor-1',
+      },
+      'cursor-1': {
+        accounts: [accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' })],
+        next_cursor: 'cursor-2',
+      },
+      'cursor-2': {
+        accounts: [
+          accountFixture({ id: 'acc-3', display_name: 'Katherine Johnson' }),
+        ],
+        next_cursor: '',
+      },
+    }
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: (params) =>
+          Promise.resolve(
+            pages[params?.after ?? ''] ?? { accounts: [], next_cursor: '' },
+          ),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+    expect(screen.queryByText('Ada Lovelace')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    expect(await screen.findByText('Katherine Johnson')).toBeInTheDocument()
+    expect(screen.queryByText('Grace Hopper')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL }))
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+    expect(screen.queryByText('Katherine Johnson')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL }))
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+    expect(screen.queryByText('Grace Hopper')).not.toBeInTheDocument()
+  })
+
+  it('keeps the previous-page control on an empty later page', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: (params) =>
+          Promise.resolve(
+            params?.after === undefined
+              ? {
+                  accounts: [
+                    accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+                  ],
+                  next_cursor: 'cursor-1',
+                }
+              : { accounts: [], next_cursor: '' },
+          ),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+
+    // The empty page keeps the table's footer: the read answered with no
+    // rows, but the page before it is still reachable.
+    const previous = await screen.findByRole('button', {
+      name: PREVIOUS_PAGE_LABEL,
+    })
+    expect(previous).toBeEnabled()
+
+    await user.click(previous)
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+  })
+
+  it('keeps the previous-page control when a later page fails to read', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: (params) =>
+          params?.after === undefined
+            ? Promise.resolve({
+                accounts: [
+                  accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+                ],
+                next_cursor: 'cursor-1',
+              })
+            : Promise.reject(new Error('boom')),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    expect(
+      await screen.findByText(zhCN.accounts.error.title),
+    ).toBeInTheDocument()
+
+    // The failed page renders its error placeholder, but the footer is not
+    // part of that branch: the page before it stays reachable.
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    expect(previous).toBeEnabled()
+    await user.click(previous)
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+  })
+
+  it('keeps focus inside the pagination controls after advancing', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: (params) =>
+          Promise.resolve(
+            params?.after === undefined
+              ? {
+                  accounts: [
+                    accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+                  ],
+                  next_cursor: 'cursor-1',
+                }
+              : {
+                  accounts: [
+                    accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' }),
+                  ],
+                  next_cursor: '',
+                },
+          ),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+
+    // The page branch swapped under the footer; focus must not fall to the
+    // document, or a keyboard operator loses their place.
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    expect(document.body).not.toBe(document.activeElement)
+    expect([next, previous]).toContain(document.activeElement)
+  })
+
+  it('disables the next-page control on the last page', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
+            next_cursor: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: NEXT_PAGE_LABEL }),
+    ).toBeDisabled()
+  })
+
+  it('does not advance while the next page is still loading', async () => {
+    const user = userEvent.setup()
+    let finishSecondPage: (() => void) | undefined
+    const calls = bindConsoleRequest((call) => {
+      if (call.path !== '/api/v1/system/auth/accounts') {
+        throw new Error(`unexpected request: ${call.path}`)
+      }
+      const query = call.query as { readonly after?: string } | undefined
+      if (query?.after === undefined) {
+        return {
+          accounts: [
+            accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+          ],
+          next_cursor: 'cursor-1',
+        }
+      }
+      return new Promise((resolve) => {
+        finishSecondPage = () =>
+          resolve({
+            accounts: [
+              accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' }),
+            ],
+            next_cursor: '',
+          })
+      })
+    })
+    renderWithProviders(<AccountsPage />, { operations: consoleOperations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    // An unsettled page has no cursor to advance from, so the control is
+    // disabled and a click cannot skip a page.
+    expect(next).toBeDisabled()
+    fireEvent.click(next)
+
+    const forwardReads = calls.filter(
+      (call) =>
+        call.method === 'GET' &&
+        call.path === '/api/v1/system/auth/accounts' &&
+        (call.query as { readonly after?: string } | undefined)?.after ===
+          'cursor-1',
+    )
+    expect(forwardReads).toHaveLength(1)
+
+    await act(async () => {
+      finishSecondPage?.()
+    })
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+  })
+
+  it('disables paging in both directions while a row write is in flight', async () => {
+    const user = userEvent.setup()
+    let finishDelete: (() => void) | undefined
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: (params) =>
+          Promise.resolve(
+            params?.after === undefined
+              ? {
+                  accounts: [
+                    accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+                  ],
+                  next_cursor: 'cursor-1',
+                }
+              : {
+                  accounts: [
+                    accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' }),
+                  ],
+                  next_cursor: 'cursor-2',
+                },
+          ),
+        deleteAccount: () =>
+          new Promise<void>((resolve) => {
+            finishDelete = resolve
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: fill(zhCN.accounts.deleteAria, { id: 'acc-2' }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    // The in-flight delete owns the list's context: paging away from it is
+    // disabled in both directions until it settles.
+    const previous = screen.getByRole('button', { name: PREVIOUS_PAGE_LABEL })
+    const next = screen.getByRole('button', { name: NEXT_PAGE_LABEL })
+    expect(previous).toBeDisabled()
+    expect(next).toBeDisabled()
+
+    await act(async () => {
+      finishDelete?.()
+    })
+    await waitFor(() => {
+      expect(next).toBeEnabled()
+    })
+    expect(previous).toBeEnabled()
+  })
+
+  it('returns to the first page when a filter is submitted', async () => {
+    const user = userEvent.setup()
+    const calls = bindConsoleRequest((call) => {
+      if (call.path !== '/api/v1/system/auth/accounts') {
+        throw new Error(`unexpected request: ${call.path}`)
+      }
+      const query = call.query as
+        | { readonly after?: string; readonly identifier_prefix?: string }
+        | undefined
+      if (query?.after !== undefined) {
+        return {
+          accounts: [
+            accountFixture({ id: 'acc-9', display_name: 'Grace Hopper' }),
+          ],
+          next_cursor: '',
+        }
+      }
+      return {
+        accounts: [
+          accountFixture({
+            id: 'acc-1',
+            display_name:
+              query?.identifier_prefix === undefined
+                ? 'Ada Lovelace'
+                : 'Ada Filtered',
+          }),
+        ],
+        next_cursor: 'cursor-1',
+      }
+    })
+    renderWithProviders(<AccountsPage />, { operations: consoleOperations })
+    expect(await screen.findByText('Ada Lovelace')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText(zhCN.accounts.identifierLabel), 'ada')
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
+    expect(await screen.findByText('Ada Filtered')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    expect(await screen.findByText('Grace Hopper')).toBeInTheDocument()
+
+    await user.type(
+      screen.getByLabelText(zhCN.accounts.displayNamePrefixLabel),
+      'Gr',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.accounts.search }))
+    expect(await screen.findByText('Ada Filtered')).toBeInTheDocument()
+    expect(screen.queryByText('Grace Hopper')).not.toBeInTheDocument()
+
+    const reads = calls.filter(
+      (call) =>
+        call.method === 'GET' &&
+        call.path === '/api/v1/system/auth/accounts',
+    )
+    // The filter submission reads its first page: the request carries the
+    // new filters and no cursor.
+    expect(reads[reads.length - 1]?.query).toEqual({
+      identifier_prefix: 'ada',
+      identifier_kind: 'username',
+      display_name_prefix: 'Gr',
+      limit: 100,
+    })
+  })
+
+  it('shows the page range without a total count', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [
+              accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+            ],
+            next_cursor: 'cursor-1',
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+    expect(
+      screen.getByText(fill(UNKNOWN_TOTAL_LABEL, { from: '1', to: '100' })),
+    ).toBeInTheDocument()
+  })
+
+  it('has no axe violations on a later page', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: (params) =>
+          Promise.resolve(
+            params?.after === undefined
+              ? {
+                  accounts: [
+                    accountFixture({ id: 'acc-1', display_name: 'Ada Lovelace' }),
+                  ],
+                  next_cursor: 'cursor-1',
+                }
+              : {
+                  accounts: [
+                    accountFixture({ id: 'acc-2', display_name: 'Grace Hopper' }),
+                  ],
+                  next_cursor: '',
+                },
+          ),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await screen.findByText('Ada Lovelace')
+    await user.click(screen.getByRole('button', { name: NEXT_PAGE_LABEL }))
+    await screen.findByText('Grace Hopper')
+    await expectNoAxeViolations()
   })
 
   it('opens the account detail with its factors, secrets and sessions', async () => {

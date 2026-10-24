@@ -23,6 +23,12 @@
  * and un-normalized), so the box sends the operator's text unchanged. Each
  * unset filter is left out of the request rather than sent empty.
  *
+ * The list read is cursor-paginated: it answers with the next page's
+ * cursor only, so the footer advances through a stack of the cursors each
+ * visited page was read by, and a filter submission returns to the first
+ * page. A cursor page carries no total, so the footer shows the page's
+ * range without a count.
+ *
  * The detail's factor, secret and session sections exist only while the
  * process serves their features (authn.admin.factors, authn.admin.secrets
  * and authn.admin.sessions): an absent feature unmounts the section and the
@@ -97,6 +103,7 @@ import Chip from '@mui/material/Chip'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Skeleton from '@mui/material/Skeleton'
+import TablePagination from '@mui/material/TablePagination'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
@@ -136,7 +143,10 @@ import { useConsoleHasFeature } from './internal/features.js'
 import { identifierPrefix } from './internal/identifier-prefix.js'
 import { useConsoleSession } from './internal/session.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
-import { useConsoleUiTranslation } from './internal/translation.js'
+import {
+  useConsoleUiTranslation,
+  useUiKitTranslation,
+} from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import { CONSOLE_UI_NAMESPACE } from './resources.js'
@@ -162,6 +172,10 @@ const ACCOUNT_KINDS = ['user', 'service'] as const
 
 /** The account statuses the list read narrows by, in the order the filter offers them. */
 const FILTER_STATUSES = ['active', 'disabled', 'deleted'] as const
+
+/** The list read's page size. Cursor pages carry no total, so the footer
+ * shows this page's slot range and offers no size selector. */
+const ACCOUNTS_PAGE_SIZE = 100
 
 /** One service secret handed out once, held by the page across panel
  * closes so a scope reset cannot drop the only copy. */
@@ -240,6 +254,10 @@ export function AccountsPage({
   attributeFields,
 }: AccountsPageProps = {}) {
   const { t, i18n } = useConsoleUiTranslation()
+  // The paging footer is ui-kit's own footer, rendered by this page (see
+  // the list card's footer): its wording stays in the ui-kit namespace the
+  // host already registers beside this one.
+  const { t: tUiKit } = useUiKitTranslation()
   const operations = useConsoleOperations()
   const confirm = usePendingConfirm()
   const session = useConsoleSession()
@@ -262,6 +280,12 @@ export function AccountsPage({
   const [status, setStatus] = useState('')
   const [accountKindDraft, setAccountKindDraft] = useState('')
   const [accountKind, setAccountKind] = useState('')
+  // The cursor stack: cursors[i] is the cursor that reads page i ('' is the
+  // first page). The read answers with the next page's cursor only, so the
+  // page keeps the cursor each visited page was read by; "previous" steps
+  // back through the stack, and a fresh filter submission starts it over.
+  const [cursors, setCursors] = useState<readonly string[]>([''])
+  const [page, setPage] = useState(0)
   // The selected account outlives the close request: the detail panel keeps
   // rendering it through the exit transition, and `selectedId` is cleared
   // only once the panel reports `onExited`.
@@ -309,7 +333,11 @@ export function AccountsPage({
   // The applied filters, committed together on submit so a keystroke never
   // fires a request. The identifier prefix is sent with its kind (the
   // module's index is keyed by the two together); the status and kind
-  // filters are each sent on their own, and an unset one is omitted.
+  // filters are each sent on their own, and an unset one is omitted. The
+  // cursor is part of the read's parameters, so each visited page caches
+  // under its own key and a filter submission (cursor back to '') reads the
+  // first page.
+  const cursor = cursors[page] ?? ''
   const accountParams = useMemo(
     () => ({
       ...(identifier === ''
@@ -318,10 +346,43 @@ export function AccountsPage({
       ...(displayName === '' ? {} : { display_name_prefix: displayName }),
       ...(status === '' ? {} : { status }),
       ...(accountKind === '' ? {} : { kind: accountKind }),
+      ...(cursor === '' ? {} : { after: cursor }),
+      limit: ACCOUNTS_PAGE_SIZE,
     }),
-    [identifier, identifierKind, displayName, status, accountKind],
+    [identifier, identifierKind, displayName, status, accountKind, cursor],
   )
   const accounts = operations.useAccounts(accountParams)
+
+  // The footer pages through the cursor the read answered with. A cursor
+  // page carries no total, so the footer cannot judge where the last page
+  // is on its own: a read answered with no next cursor is the last page,
+  // and the footer disables its forward control there. A page whose read
+  // has not settled yet has no cursor to advance from either, so it
+  // disables the control too and this guard backs that up.
+  function changePage(nextPage: number): void {
+    // A write in flight owns the list's context: paging away mid-write
+    // would let a result land against a list it no longer describes.
+    if (listWrite.pending) {
+      return
+    }
+    if (nextPage === page - 1 && page > 0) {
+      setPage(nextPage)
+      return
+    }
+    if (nextPage !== page + 1) {
+      return
+    }
+    const nextCursor = accounts.data?.next_cursor ?? ''
+    if (nextCursor === '') {
+      return
+    }
+    setCursors((previous) => {
+      const grown = [...previous]
+      grown[page + 1] = nextCursor
+      return grown
+    })
+    setPage(nextPage)
+  }
   const account = operations.useAccount({
     id: selectedId === '' ? undefined : selectedId,
   })
@@ -730,6 +791,10 @@ export function AccountsPage({
 
   const rows = accounts.data?.accounts
   const pending = accounts.isPending && rows === undefined
+  // Only a settled page names the next one: while a page read is in flight
+  // there is no cursor to advance from, and an empty one is the last page.
+  const hasNextPage =
+    accounts.data !== undefined && accounts.data.next_cursor !== ''
 
   return (
     <Box>
@@ -852,6 +917,10 @@ export function AccountsPage({
               setDisplayName(displayNameDraft.trim())
               setStatus(statusDraft)
               setAccountKind(accountKindDraft)
+              // A submitted filter is a new list: return to its first page,
+              // which is read by the empty cursor.
+              setCursors([''])
+              setPage(0)
             }}
           >
             {t('accounts.search')}
@@ -865,7 +934,13 @@ export function AccountsPage({
           payload={rows}
           error={accounts.error}
           refreshing={accounts.isFetching}
-          empty={rows !== undefined && rows.length === 0}
+          // Only the first page treats an empty answer as "no accounts": a
+          // later page that comes back empty still renders the table (its
+          // own empty state) so the footer, and the page before it, stay
+          // reachable.
+          empty={
+            rows !== undefined && rows.length === 0 && page === 0
+          }
           headingLevel="h2"
           loading={
             <ListSkeleton
@@ -888,10 +963,55 @@ export function AccountsPage({
           }}
         >
           {(settled) => (
-            <DataTable rows={settled} columns={columns} rowKey={(row) => row.id} />
+            <DataTable
+              rows={settled}
+              columns={columns}
+              rowKey={(row) => row.id}
+              // The table stands in for the async section's empty branch on
+              // a later page, so it carries the same wording and heading
+              // level.
+              emptyTitle={t('accounts.empty.title')}
+              emptyDescription={t('accounts.empty.description')}
+              emptyHeadingLevel="h2"
+            />
           )}
         </ConsoleAsyncSection>
       </SectionCard>
+
+      {/* The paging footer lives outside the async section's branches: it
+          is the control that changes the list's page, so it must survive
+          the page read it starts (a pending, failed or empty page would
+          otherwise unmount the one control that could return to the page
+          before it) and keep keyboard focus across the swap. */}
+      <Box sx={{ mt: 2 }}>
+        <TablePagination
+          component="div"
+          // The cursor read reports no total. -1 asks the footer for the
+          // unknown-total wording instead of inventing a count.
+          count={-1}
+          page={page}
+          rowsPerPage={ACCOUNTS_PAGE_SIZE}
+          // One size, so the footer offers no size selector and the
+          // callback below never fires.
+          rowsPerPageOptions={[ACCOUNTS_PAGE_SIZE]}
+          onPageChange={(_event, nextPage) => changePage(nextPage)}
+          onRowsPerPageChange={() => undefined}
+          labelRowsPerPage={tUiKit('dataTable.rowsPerPage')}
+          labelDisplayedRows={({ from, to }) =>
+            tUiKit('dataTable.displayedRowsUnknown', { from, to })
+          }
+          slotProps={{
+            actions: {
+              // Changing the page is a change of the list's context, so
+              // both directions are disabled while one of the list's
+              // writes is in flight (the same rule the toolbar's search
+              // and the header's refresh follow).
+              previousButton: { disabled: listWrite.pending || page === 0 },
+              nextButton: { disabled: listWrite.pending || !hasNextPage },
+            },
+          }}
+        />
+      </Box>
 
       {/* The list's feedback: the row delete's result and the create
           panel's success, which is written here only after the panel's
