@@ -129,13 +129,13 @@ import {
   ListSkeleton,
   parseEmailAddress,
   SectionCard,
-  visuallyHiddenSx,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 
@@ -183,13 +183,6 @@ type SectionAction =
   | { readonly step: 'rowSend'; readonly value: string }
   | { readonly step: 'rowVerify'; readonly code: string }
 
-/** The section's one failure slot: the server's code, plus an optional copy
- * key that states the failure more precisely than the code's general text. */
-type SectionFailure = {
-  readonly code: string
-  readonly textKey?: string
-}
-
 /** The resend note's id, referenced by the row flow's resend control while it
  * counts down. */
 const ROW_RESEND_NOTE_ID = 'identifiers-row-resend-note'
@@ -226,18 +219,22 @@ export function IdentifiersSection({
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
-  // The section's one failure slot. `textKey` names a failure the server's
-  // code text describes too broadly (a taken username, an address another
-  // account proved in between).
-  const [failure, setFailure] = useState<SectionFailure | null>(null)
+  // The section's one feedback scope: removal, add and both verification
+  // flows share this slot, so the section shows at most one result at a time
+  // and one failure never stands beside another.
+  const feedback = useWriteFeedback()
+  // The scope's non-code failure source: a failure the server's code text
+  // describes too broadly (a taken username, an address another account
+  // proved in between). It occupies the same result position as the region's
+  // failure, and the two are mutually exclusive.
+  const [failureText, setFailureText] = useState<string | null>(null)
 
   // The add face's own state. addOpen shows the form; addKind picks the
   // kind; addValue holds the entry; sentTo is the address a code went to,
-  // or null while the value is being entered; code is the answer. added
-  // fills the live region once a write lands. fieldErrorKey is the value
-  // field's own error (an ill-formed email, the server's bad-request answer
-  // to one, or an address another account already holds), rendered under
-  // that field rather than in the banner.
+  // or null while the value is being entered; code is the answer.
+  // fieldErrorKey is the value field's own error (an ill-formed email, the
+  // server's bad-request answer to one, or an address another account
+  // already holds), rendered under that field rather than in the banner.
   const [addOpen, setAddOpen] = useState(false)
   const [addKind, setAddKind] = useState<AddKind>(
     emailAvailable ? 'email' : 'username',
@@ -245,25 +242,24 @@ export function IdentifiersSection({
   const [addValue, setAddValue] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [code, setCode] = useState('')
-  const [added, setAdded] = useState(false)
   const [fieldErrorKey, setFieldErrorKey] = useState<string | null>(null)
 
   // The row flow's own state. rowVerify is the address whose row verification
   // is open (null when none is); rowSentTo is that address once its code has
   // been requested; rowCode is the answer; rowCodeInvalid marks a refused
-  // code in the field; rowNotice fills the live region once the row flips.
-  // rowResendUntil / rowNow drive the resend countdown.
+  // code in the field. rowResendUntil / rowNow drive the resend countdown.
   const [rowVerify, setRowVerify] = useState<string | null>(null)
   const [rowSentTo, setRowSentTo] = useState<string | null>(null)
   const [rowCode, setRowCode] = useState('')
   const [rowCodeInvalid, setRowCodeInvalid] = useState(false)
-  const [rowNotice, setRowNotice] = useState('')
   const [rowResendUntil, setRowResendUntil] = useState(0)
   const [rowNow, setRowNow] = useState(() => Date.now())
 
+  // Disabled through the whole attempt, including the refetches that follow
+  // the mutation, so no control changes context under a pending scope.
   const addBusy =
-    addIdentifier.isPending || verifyIdentifier.isPending
-  const writeBusy = removeIdentifier.isPending
+    addIdentifier.isPending || verifyIdentifier.isPending || feedback.pending
+  const writeBusy = removeIdentifier.isPending || feedback.pending
 
   // Tick the row flow's countdown only while one is running, and stop the
   // timer at its own expiry rather than leaving it ticking for the rest of
@@ -371,9 +367,11 @@ export function IdentifiersSection({
     ])
   }
 
-  /** Clear the section's one failure slot. */
+  /** Clear the section's shared result position: the slot and the
+   * non-code failure source alike. */
   function clearFailure(): void {
-    setFailure(null)
+    feedback.reset()
+    setFailureText(null)
   }
 
   /** Settle the add face back to closed with no trace of the attempt: the
@@ -384,113 +382,125 @@ export function IdentifiersSection({
     setSentTo(null)
     setAddValue('')
     setCode('')
-    setAdded(false)
     setFieldErrorKey(null)
     clearFailure()
   }
 
   async function remove(id: string): Promise<void> {
-    clearFailure()
-    try {
-      await removeIdentifier.mutateAsync({ id })
-      setRemoveTarget(null)
-      await invalidateAfterWrite()
-    } catch (error) {
-      setRemoveTarget(null)
-      const failure = errorCodeOf(error)
-      if (failure === STEP_UP_REQUIRED) {
-        gate.arm({ step: 'remove', id })
-        return
+    // Captured before the write: the refetched profile drops the row, so the
+    // confirmation's name must be read from the list this attempt acted on.
+    const identifierValue = rows?.find((row) => row.id === id)?.value ?? ''
+    return feedback.run(async () => {
+      setFailureText(null)
+      try {
+        await removeIdentifier.mutateAsync({ id })
+      } catch (error) {
+        setRemoveTarget(null)
+        const failure = errorCodeOf(error)
+        if (failure === STEP_UP_REQUIRED) {
+          gate.arm({ step: 'remove', id })
+          return null
+        }
+        // The refusal is the server's judgement on the current state, which
+        // this mount's guard may have read stale (another session removed a
+        // login name first): re-read so the list and the withheld-removal
+        // note converge on what the server sees.
+        await invalidateAfterWrite()
+        throw error
       }
-      setFailure({ code: failure })
-      // The refusal is the server's judgement on the current state, which
-      // this mount's guard may have read stale (another session removed a
-      // login name first): re-read so the list and the withheld-removal
-      // note converge on what the server sees.
+      setRemoveTarget(null)
       await invalidateAfterWrite()
-    }
+      // Translated when the attempt settles; it names the identifier removed.
+      return t('identifiers.removed', {
+        value: identifierValue,
+        interpolation: { escapeValue: false },
+      })
+    })
   }
 
-  async function add(kind: AddKind, value: string): Promise<void> {
-    clearFailure()
+  function add(kind: AddKind, value: string): Promise<void> {
     setFieldErrorKey(null)
-    setAdded(false)
-    try {
-      const result = await addIdentifier.mutateAsync({ data: { kind, value } })
+    return feedback.run(async () => {
+      setFailureText(null)
+      let result
+      try {
+        result = await addIdentifier.mutateAsync({ data: { kind, value } })
+      } catch (error) {
+        const failure = errorCodeOf(error)
+        if (failure === STEP_UP_REQUIRED) {
+          gate.arm({ step: 'add', kind, value })
+          return null
+        }
+        // A bad request for an email is the server refusing the address's
+        // shape -- the same rule the client checked -- so the field carries
+        // the message instead of the generic account-state banner. A taken
+        // address is the same field's failure: the claim is atomic, and the
+        // one value the viewer can change is the address. A username's bad
+        // request keeps the banner: the server's username
+        // rule also refuses shapes the client does not restate (the
+        // reserved static-credential prefix, a UUID-shaped name), which the
+        // kind's helper text describes rather than one blanket sentence.
+        if (
+          kind === 'email' &&
+          (failure === 'authn.bad_request' || failure === 'authn.email_taken')
+        ) {
+          setFieldErrorKey(
+            failure === 'authn.email_taken'
+              ? 'identifiers.add.emailTaken'
+              : 'identifiers.add.invalidEmail',
+          )
+          return null
+        }
+        if (kind === 'username' && failure === 'authn.conflict') {
+          // An existing username is the expected 409 of the one write this
+          // face exists for, and the account-state sentence sends the viewer
+          // to refresh, which can never free the name.
+          setFailureText('identifiers.add.usernameTaken')
+          return null
+        }
+        throw error
+      }
       if (result.state === 'pending') {
         // An address the deployment can reach: the code is on its way and
-        // the answer is the next step.
+        // the answer is the next step, not a settled action.
         setSentTo(value)
         setCode('')
-        return
+        return null
       }
       closeAdd()
-      setAdded(true)
       await invalidateAfterWrite()
-    } catch (error) {
-      const failure = errorCodeOf(error)
-      if (failure === STEP_UP_REQUIRED) {
-        gate.arm({ step: 'add', kind, value })
-        return
-      }
-      // A bad request for an email is the server refusing the address's
-      // shape -- the same rule the client checked -- so the field carries
-      // the message instead of the generic account-state banner. A taken
-      // address is the same field's failure: the claim is atomic, and the
-      // one value the viewer can change is the address. A username's bad
-      // request keeps the banner: the server's username
-      // rule also refuses shapes the client does not restate (the
-      // reserved static-credential prefix, a UUID-shaped name), which the
-      // kind's helper text describes rather than one blanket sentence.
-      if (
-        kind === 'email' &&
-        (failure === 'authn.bad_request' || failure === 'authn.email_taken')
-      ) {
-        setFieldErrorKey(
-          failure === 'authn.email_taken'
-            ? 'identifiers.add.emailTaken'
-            : 'identifiers.add.invalidEmail',
-        )
-        return
-      }
-      setFailure({
-        code: failure,
-        // An existing username is the expected 409 of the one write this
-        // face exists for, and the account-state sentence sends the viewer
-        // to refresh, which can never free the name.
-        ...(kind === 'username' && failure === 'authn.conflict'
-          ? { textKey: 'identifiers.add.usernameTaken' }
-          : {}),
-      })
-    }
+      // The confirmation names the changed kind (the sign-in identifier).
+      return t('identifiers.add.added')
+    })
   }
 
-  async function verify(nextCode: string): Promise<void> {
-    clearFailure()
-    setAdded(false)
-    try {
-      await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+  function verify(nextCode: string): Promise<void> {
+    return feedback.run(async () => {
+      setFailureText(null)
+      try {
+        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+      } catch (error) {
+        const failure = errorCodeOf(error)
+        if (failure === STEP_UP_REQUIRED) {
+          gate.arm({ step: 'verify', code: nextCode })
+          return null
+        }
+        if (failure === 'authn.email_taken') {
+          // The address was taken between the code request and the write
+          // (the write is the authoritative refusal): the value is what must
+          // change, so the face returns to it with the field's message
+          // instead of leaving the viewer on a code with nothing to answer.
+          setSentTo(null)
+          setCode('')
+          setFieldErrorKey('identifiers.add.emailTaken')
+          return null
+        }
+        throw error
+      }
       closeAdd()
-      setAdded(true)
       await invalidateAfterWrite()
-    } catch (error) {
-      const failure = errorCodeOf(error)
-      if (failure === STEP_UP_REQUIRED) {
-        gate.arm({ step: 'verify', code: nextCode })
-        return
-      }
-      if (failure === 'authn.email_taken') {
-        // The address was taken between the code request and the write
-        // (the write is the authoritative refusal): the value is what must
-        // change, so the face returns to it with the field's message
-        // instead of leaving the viewer on a code with nothing to answer.
-        setSentTo(null)
-        setCode('')
-        setFieldErrorKey('identifiers.add.emailTaken')
-        return
-      }
-      setFailure({ code: failure })
-    }
+      return t('identifiers.add.added')
+    })
   }
 
   /** Open a row's verification flow on the address the row already shows.
@@ -498,8 +508,6 @@ export function IdentifiersSection({
    * section. */
   function openRowVerify(value: string): void {
     closeAdd()
-    clearFailure()
-    setRowNotice('')
     setRowCodeInvalid(false)
     setRowCode('')
     setRowSentTo(null)
@@ -520,78 +528,81 @@ export function IdentifiersSection({
   /** Re-send a code to the row's fixed address. The route accepts the
    * account's own address as a re-add of its proof, so this is the same
    * write the add face makes, with the value already known. */
-  async function rowSend(address: string): Promise<void> {
-    clearFailure()
+  function rowSend(address: string): Promise<void> {
     setRowCodeInvalid(false)
-    setRowNotice('')
-    try {
-      const result = await addIdentifier.mutateAsync({
-        data: { kind: 'email', value: address },
-      })
-      const interval =
-        typeof result.resend_after === 'number' ? result.resend_after : 0
-      setRowResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
-      setRowNow(Date.now())
-      setRowSentTo(address)
-      setRowCode('')
-    } catch (error) {
-      const failure = errorCodeOf(error)
-      if (failure === STEP_UP_REQUIRED) {
-        gate.arm({ step: 'rowSend', value: address })
-        return
-      }
-      setFailure({ code: failure })
-      const retryAfter = retryAfterMsOf(error)
-      if (retryAfter !== undefined) {
-        setRowResendUntil(Date.now() + retryAfter)
+    return feedback.run(async () => {
+      setFailureText(null)
+      try {
+        const result = await addIdentifier.mutateAsync({
+          data: { kind: 'email', value: address },
+        })
+        const interval =
+          typeof result.resend_after === 'number' ? result.resend_after : 0
+        setRowResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
         setRowNow(Date.now())
+        setRowSentTo(address)
+        setRowCode('')
+        // The code is on its way; the sent-code step is the flow's own
+        // state, not a settled action.
+        return null
+      } catch (error) {
+        const failure = errorCodeOf(error)
+        if (failure === STEP_UP_REQUIRED) {
+          gate.arm({ step: 'rowSend', value: address })
+          return null
+        }
+        const retryAfter = retryAfterMsOf(error)
+        if (retryAfter !== undefined) {
+          setRowResendUntil(Date.now() + retryAfter)
+          setRowNow(Date.now())
+        }
+        throw error
       }
-    }
+    })
   }
 
   /** Submit the row flow's code. The write proves the address the send just
    * named, so the refetched row loses its unverified chip. */
-  async function rowVerifyCode(nextCode: string): Promise<void> {
-    clearFailure()
-    setRowCodeInvalid(false)
-    setRowNotice('')
+  function rowVerifyCode(nextCode: string): Promise<void> {
     const address = rowSentTo ?? rowVerify ?? ''
-    try {
-      await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+    setRowCodeInvalid(false)
+    return feedback.run(async () => {
+      setFailureText(null)
+      try {
+        await verifyIdentifier.mutateAsync({ data: { code: nextCode } })
+      } catch (error) {
+        const failure = errorCodeOf(error)
+        if (failure === STEP_UP_REQUIRED) {
+          gate.arm({ step: 'rowVerify', code: nextCode })
+          return null
+        }
+        if (failure === 'authn.login_failed') {
+          // The code is the one value this flow can change: state the refusal
+          // in its field instead of the section's banner.
+          setRowCodeInvalid(true)
+          setRowCode('')
+          return null
+        }
+        if (failure === 'authn.email_taken') {
+          // The address cannot be edited in this flow; the address-taken
+          // answer means another account proved it in between, and naming
+          // that is clearer than the code's account-state sentence.
+          setFailureText('verification.addressTaken')
+          return null
+        }
+        throw error
+      }
       setRowVerify(null)
       setRowSentTo(null)
       setRowCode('')
       setRowResendUntil(0)
-      setRowNotice(
-        t('verification.verifiedDescription', {
-          email: address,
-          interpolation: { escapeValue: false },
-        }),
-      )
       await invalidateAfterWrite()
-    } catch (error) {
-      const failure = errorCodeOf(error)
-      if (failure === STEP_UP_REQUIRED) {
-        gate.arm({ step: 'rowVerify', code: nextCode })
-        return
-      }
-      if (failure === 'authn.login_failed') {
-        // The code is the one value this flow can change: state the refusal
-        // in its field instead of the section's banner.
-        setRowCodeInvalid(true)
-        setRowCode('')
-        return
-      }
-      setFailure({
-        code: failure,
-        // The address cannot be edited in this flow; the address-taken
-        // answer means another account proved it in between, and naming
-        // that is clearer than the code's account-state sentence.
-        ...(failure === 'authn.email_taken'
-          ? { textKey: 'verification.addressTaken' }
-          : {}),
+      // The confirmation names the address it proved.
+      return t('verification.verifiedDescription', {
+        email: address,
+        interpolation: { escapeValue: false },
       })
-    }
+    })
   }
 
   const valueLabel =
@@ -602,15 +613,6 @@ export function IdentifiersSection({
     formKind === 'email'
       ? t('identifiers.add.value.helperEmail')
       : t('identifiers.add.value.helperUsername')
-
-  const failureBanner =
-    failure === null ? null : failure.textKey === undefined ? (
-      <InlineError code={failure.code} />
-    ) : (
-      <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-        {t(failure.textKey)}
-      </Alert>
-    )
 
   return (
     <>
@@ -882,28 +884,18 @@ export function IdentifiersSection({
         )}
       </AsyncSection>
 
-      {/* The section's one failure slot: removal, add, row verification and
-          the code's verification render through it, so a failure is exactly
-          one role="alert". */}
-      {failureBanner}
+      {/* The section's one result position: removal, add, row verification
+          and the code's verification share the scope's slot, so a success and
+          a failure can never stand together. The non-code failure sentences
+          occupy the same position and are mutually exclusive with it. */}
+      <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mb: 1 }} />
+      {failureText !== null && (
+        <Alert severity="error" role="alert" sx={{ width: '100%', mb: 1 }}>
+          {t(failureText)}
+        </Alert>
+      )}
 
       <Box sx={{ mt: 2 }}>
-        <Alert
-          severity="success"
-          role="status"
-          sx={added ? { mb: 1 } : visuallyHiddenSx}
-        >
-          {added ? t('identifiers.add.added') : ''}
-        </Alert>
-
-        <Alert
-          severity="success"
-          role="status"
-          sx={rowNotice === '' ? visuallyHiddenSx : { mb: 1 }}
-        >
-          {rowNotice}
-        </Alert>
-
         {addKinds.length === 0 ? null : !addOpen ? (
           <Button
             variant="outlined"
@@ -911,8 +903,6 @@ export function IdentifiersSection({
             disabled={writeBusy || addBusy}
             onClick={() => {
               closeRowVerify()
-              setRowNotice('')
-              setAdded(false)
               setFieldErrorKey(null)
               setAddOpen(true)
             }}
@@ -936,6 +926,10 @@ export function IdentifiersSection({
                 if (formKind === 'email') {
                   const address = parseEmailAddress(addValue)
                   if (address === null) {
+                    // The client guard owns this attempt's result; a settled
+                    // result from the previous attempt must not stand beside
+                    // the field error.
+                    clearFailure()
                     setFieldErrorKey('identifiers.add.invalidEmail')
                     return
                   }

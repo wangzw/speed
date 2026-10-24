@@ -309,6 +309,7 @@
     "lastLoginName": "这是你当前唯一的登录名。请先添加另一个用户名或邮箱，再删除它。",
     "remove": "移除",
     "removeAria": "移除此登录标识：{{value}}",
+    "removed": "登录标识 {{value}} 已移除。",
     "confirmTitle": "移除此登录标识？",
     "confirmMessage": "移除后该标识将无法再用于登录。账户至少需要保留一种登录方式。",
     "confirmLabel": "移除",

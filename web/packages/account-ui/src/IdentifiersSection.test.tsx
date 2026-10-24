@@ -289,6 +289,15 @@ describe('IdentifiersSection', () => {
       expect(screen.getAllByText(zhCN.identifiers.verified)).toHaveLength(2),
     )
     expect(screen.queryByText(zhCN.identifiers.unverified)).toBeNull()
+    // The row verification confirms itself, naming the address it proved.
+    expect(
+      await screen.findByText(
+        zhCN.verification.verifiedDescription.replace(
+          '{{email}}',
+          'second@x.test',
+        ),
+      ),
+    ).toBeTruthy()
 
     await expectNoAxeViolations()
   })
@@ -618,6 +627,13 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getByText(zhCN.identifiers.empty.title)).toBeTruthy(),
     )
+    // The silent removal now confirms itself, naming the identifier removed.
+    expect(
+      await screen.findByText(
+        zhCN.identifiers.removed.replace('{{value}}', 'ada@example.test'),
+      ),
+    ).toBeTruthy()
+    expect(zhCN.identifiers.removed).toContain('{{value}}')
     expect(
       rig.calls.filter(
         (call) =>
@@ -922,6 +938,8 @@ describe('IdentifiersSection', () => {
     await waitFor(() =>
       expect(screen.getByText(zhCN.identifiers.add.added)).toBeTruthy(),
     )
+    // The confirmation names the changed kind (the sign-in identifier).
+    expect(zhCN.identifiers.add.added).toContain(zhCN.identifiers.title)
     const posts = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === '/api/v1/auth/identifiers',
     )

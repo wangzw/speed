@@ -309,6 +309,7 @@
     "lastLoginName": "This is your only sign-in name. Add another username or email address before removing it.",
     "remove": "Remove",
     "removeAria": "Remove this sign-in identifier: {{value}}",
+    "removed": "Sign-in identifier {{value}} removed.",
     "confirmTitle": "Remove this sign-in identifier?",
     "confirmMessage": "The identifier will no longer be able to sign in. An account must keep at least one way to sign in.",
     "confirmLabel": "Remove",
