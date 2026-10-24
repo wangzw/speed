@@ -13,7 +13,8 @@
 |---|---|
 | 口令注册到个人空间 | [口令注册到个人空间](journeys/journey-first-registration-to-personal-workspace.md) |
 | 短信首登开户到改用口令登录 | [短信首登开户到改用口令登录](journeys/journey-sms-signup-to-password-login.md) |
-| 社交登录开户与已有账户的绑定 | [社交登录开户与已有账户的绑定](journeys/journey-social-sign-in-and-linking.md) |
+| 社交登录开户 | [社交登录开户](journeys/journey-social-sign-in-and-linking.md) |
+| 为已有账户绑定社交账号 | [为已有账户绑定社交账号](journeys/journey-social-account-linking.md) |
 | 邀请一位成员进入租户 | [邀请一位成员进入租户](journeys/journey-invitation-to-tenant.md) |
 | 停用账户并让它的会话失效 | [停用账户并让它的会话失效](journeys/journey-account-offboarding.md) |
 | 登记第二因素并执行一次敏感操作 | [登记第二因素并执行一次敏感操作](journeys/journey-account-security-hardening.md) |
@@ -37,7 +38,7 @@
 | 账户自助 | [账户自助](features/prd-account.md) |
 | 组织与成员 | [组织与成员](features/prd-tenancy.md) |
 | 平台运营 | [平台运营](features/prd-platform-admin.md) |
-| 平台配置 | [平台配置](features/prd-platform-config.md) |
+| 平台设置与授权 | [平台设置与授权](features/prd-platform-config.md) |
 | 通知 | [通知](features/prd-notifications.md) |
 | 界面偏好 | [界面偏好](features/prd-presentation.md) |
 | 部署与运维 | [部署与运维](features/prd-deployment.md) |

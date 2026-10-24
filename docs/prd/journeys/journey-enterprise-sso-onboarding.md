@@ -2,7 +2,7 @@
 
 ## 参与者
 
-- **平台运营者**：能进入控制台，在目标租户的域内持有身份提供方管理权限，并已登记至少一种两步验证方式。
+- **平台运营者**：能进入控制台，持有平台域的账户管理权限，在目标租户的域内持有身份提供方管理权限与成员关系管理权限，并已登记至少一种两步验证方式。
 - **企业员工**：持有该企业的邮箱，是该租户的现有成员，或将被该租户接纳的员工；可以尚无本产品账户。
 
 ## 前置条件
@@ -57,7 +57,7 @@ flowchart TD
 ## 覆盖的需求
 
 - 平台运营：`REQ-platform-admin-013`、`REQ-platform-admin-018`
-- 平台配置：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`
+- 平台设置与授权：`REQ-platform-config-017`、`REQ-platform-config-018`、`REQ-platform-config-019`、`REQ-platform-config-020`、`REQ-platform-config-021`
 - 登录：`REQ-signin-001`、`REQ-signin-003`、`REQ-signin-004`、`REQ-signin-020`、`REQ-signin-021`、`REQ-signin-022`、`REQ-signin-023`、`REQ-signin-027`、`REQ-signin-028`
 - 自助注册：`REQ-signup-018`
 - 账户安全：`REQ-security-013`、`REQ-security-014`、`REQ-security-029`
