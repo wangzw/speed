@@ -503,7 +503,7 @@ graph TD
 | 外壳形态透传（`shellLayout`） | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShell`、`AppShellPassthroughProps` |
 | 控制台仪表盘（租户 KPI、平台健康度与最近活动） | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage`；`web/packages/console-ui/src/routes.tsx` `dashboardAdminRoutes` |
 | 租户管理页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/routes.tsx` `tenantAdminRoutes` |
-| 名册的 `deleted` 状态文案、已删除行的只读渲染与停用来源文案 | 未实现 | — |
+| 名册的 `deleted` 状态文案、已删除行的只读渲染与停用来源文案 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`、`disabledByLabel`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage`、`disabledByLabel`；测试 `TenantRosterPage.test.tsx`、`TenantDetailPage.test.tsx`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`（`tenants.status.deleted`、`tenants.disabledBy.*`） |
 | 租户详情页（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
 | 审计详情页（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/AuditDetailPage.tsx` `AuditDetailPage` |
 | 设置页的二级导航、默认／已覆盖状态与粘性保存条 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`、`settingState` |
