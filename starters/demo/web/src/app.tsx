@@ -91,7 +91,6 @@ import {
 import { useAppServices } from './app-services.js'
 import {
   AppBrand,
-  DEFAULT_TENANT_ID,
   getCurrentTenantId,
   getRecordedTenantAlias,
   HeaderActions,
@@ -1176,7 +1175,7 @@ function useConsoleTenantSettle(authenticated: boolean): void {
         setTenantAliases(
           new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
         )
-        setCurrentTenantId(defaultRosterTenant(answer.tenants) ?? DEFAULT_TENANT_ID)
+        setCurrentTenantId(defaultRosterTenant(answer.tenants))
       })
       .catch(() => {
         // Undecided: the gate settles on whatever set is already known.

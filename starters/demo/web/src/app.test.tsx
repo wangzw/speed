@@ -51,13 +51,18 @@ import {
   createTestSession,
 } from './test-utils/session.js'
 import {
-  DEFAULT_TENANT_ID,
   getCurrentTenantId,
   initialThemePreset,
   setCurrentTenantId,
+  setTenantAliases,
   THEME_PRESET_STORAGE_KEY,
 } from './chrome.js'
 import { PlatformPermissions } from './platform-permissions.js'
+
+/** The tenant the suite acts in: an identifier and the alias the host has
+ * recorded for it. The host now holds no default roster, so a case that
+ * starts with a current tenant must make it nameable too. */
+const TENANT_ID = 'acme'
 
 /**
  * The expected copy, resolved from the packages' shipped resources through a
@@ -97,7 +102,10 @@ beforeEach(() => {
   window.history.replaceState({}, '', '/')
   // The current tenant is module-level host state (the client's tenantProvider
   // reads it); reset it so a switch in one test does not leak into the next.
-  setCurrentTenantId(DEFAULT_TENANT_ID)
+  // The alias cache is reset with it: a current tenant no source names would
+  // not survive the frame's settlement.
+  setCurrentTenantId(TENANT_ID)
+  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
 describe('the render harness', () => {
@@ -357,7 +365,7 @@ describe('the console area', () => {
       if (path === '/api/v1/system/tenants') {
         return Promise.resolve({
           tenants: [
-            { id: DEFAULT_TENANT_ID, alias: 'acme', status: 'active' },
+            { id: TENANT_ID, alias: 'acme', status: 'active' },
           ],
         } as T)
       }
@@ -397,7 +405,7 @@ describe('the console area', () => {
     ).toBeInTheDocument()
     // The read the area gate settled on carried the tenant the console
     // boundary chose from the roster.
-    expect(tenantAtRead).toEqual([DEFAULT_TENANT_ID])
+    expect(tenantAtRead).toEqual([TENANT_ID])
     expect(requested).toContain('/api/v1/system/tenants')
   })
 

@@ -39,7 +39,6 @@ import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
-  DEFAULT_TENANT_ID,
   getCurrentTenantId,
   setCurrentTenantId,
   setTenantAliases,
@@ -557,10 +556,14 @@ function tenantSwitcherTrigger(): HTMLElement | null {
   )
 }
 
+/** The tenant the suite acts in, with the alias the host has recorded for it;
+ * the host holds no default roster, so a current tenant must be nameable. */
+const TENANT_ID = 'acme'
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  setCurrentTenantId(DEFAULT_TENANT_ID)
-  setTenantAliases(new Map())
+  setCurrentTenantId(TENANT_ID)
+  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
 describe('the impersonation shell', () => {

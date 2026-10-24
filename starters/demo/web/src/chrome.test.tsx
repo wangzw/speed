@@ -33,7 +33,6 @@ import { AppServicesProvider } from './app-services.js'
 import {
   COLOR_MODE_STORAGE_KEY,
   ColorModeToggle,
-  DEMO_TENANTS,
   getCurrentTenantAlias,
   getCurrentTenantId,
   HeaderActions,
@@ -80,11 +79,13 @@ describe('the tenant alias layer', () => {
     expect(getCurrentTenantAlias()).toBe('acme-inc')
   })
 
-  it('falls back to the placeholder alias until the roster is read', () => {
-    const first = DEMO_TENANTS[0]
-    expect(first).toBeDefined()
-    setCurrentTenantId(first?.id ?? null)
-    expect(getCurrentTenantAlias()).toBe(first?.alias)
+  it('announces nothing for a tenant no source names', () => {
+    // The placeholder roster is retired. A current tenant that neither the
+    // caller tenant list nor the roster alias cache names has no alias to
+    // announce; a fallback list would send a name the server may no longer
+    // resolve, so the request surface stays silent instead.
+    setCurrentTenantId('acme')
+    expect(getCurrentTenantAlias()).toBeNull()
   })
 
   it('announces nothing with no current tenant', () => {

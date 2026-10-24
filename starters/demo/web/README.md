@@ -253,25 +253,19 @@ names apart: the switcher keys on the tenant id (`src/chrome.tsx`'s
 ends), while
 `bootstrapDemoApp` wires the client's `tenantProvider` to the current tenant's
 **alias** (`getCurrentTenantAlias`), which the client reads on every attempt and
-sends as `X-Tenant`. A rename moves the alias and leaves the id, so once a viewer
-is signed in the app reads the roster (`tenantAdminTenantsList`, its own
-generated operation) and announces each tenant's current alias rather than a name
-a placeholder fixed.
-
-That read is `tenant.admin`'s management operation and needs `tenant.read` in the
-**platform** domain (`pkg/tenant/admin` holds the route to it), which the demo's
-operator has; a viewer without it -- an ordinary member, who holds only
-tenant-domain roles -- is answered 403, and the app keeps the placeholder aliases
-(`DEMO_TENANTS`). That fallback answers only while the roster's alias still equals
-the placeholder's value: the roster read is the app's only route to a renamed
-alias and no member-facing endpoint carries one, so once a tenant has been renamed
-a viewer without the permission announces a name the roster no longer holds and
-every tenant-scoped request is refused 404. The demo's own seed signs in the
-platform administrator alone, which holds every permission, so the seeded
-deployment always answers; a copy that signs in ordinary members must give them
-their own alias source -- the tenants their memberships name, each with its
-current alias, handed to `setTenantAliases` -- or keep each tenant's alias equal
-to the placeholder's.
+sends as `X-Tenant`. A rename moves the alias and leaves the id, so the app reads the caller's own
+tenant list (`GET /api/v1/auth/me/tenants`, the `tenant.self` module) once per
+identity: authenticated, no permission needed, it answers each active
+membership's identifier and current alias. That list fills the switcher and is
+the alias source every tenant-scoped request announces. A platform staff
+member's roster read (`tenantAdminTenantsList`, `tenant.admin`'s management
+operation, which needs `tenant.read` in the **platform** domain) adds the
+aliases of tenants the caller list does not hold -- a staff member entering a
+tenant they are not a member of -- and names the staff default. An ordinary
+member is answered 403 there and settles from its own list alone. When neither
+source names the current tenant, the client announces nothing and the
+tenant-scoped reads stay disabled: the skeleton holds no placeholder roster,
+and a name no source holds would be refused 404.
 
 A product whose `api` endpoint resolves the tenant
 differently (a subdomain label, a path segment) repoints the server
@@ -345,9 +339,9 @@ the channels the host offers; the skeleton configures none, so it lists
 existing bindings with no add area, and the binding-callback route is mounted
 beside the page for a product that configures a provider.
 
-The shell chrome carries the tenant switcher (over the app's placeholder tenant
-list), an app-wide language switch and a color-mode toggle, and an avatar
-account menu (profile / account settings / sign out), all from
+The shell chrome carries the tenant switcher (over the caller tenant list from
+the `tenant.self` read), an app-wide language switch and a color-mode toggle, and
+an avatar account menu (profile / account settings / sign out), all from
 `src/chrome.tsx`; AppShell places them in the top bar or, in the `sidebar`
 form, in the drawer paper's top and bottom rows. The language and
 color-mode controls appear in the console frame too; the tenant switcher

@@ -65,6 +65,7 @@ import type {
   TenantAdminTenant,
   TenantAdminTenantsGet200,
   TenantAdminTenantsList200,
+  TenantSelfTenantsList200,
 } from '@speed/api-sdk'
 
 /** The three states a route is swept in. */
@@ -268,6 +269,14 @@ function answer(data: unknown, empty: unknown): RouteAnswer {
  * ./backends.test.ts can pin the prefix invariant on every entry.
  */
 export const EXACT: Readonly<Record<string, RouteAnswer>> = {
+  '/api/v1/auth/me/tenants': answer(
+    {
+      tenants: [
+        { id: TENANT.id, alias: TENANT.alias },
+      ],
+    } satisfies TenantSelfTenantsList200,
+    { tenants: [] } satisfies TenantSelfTenantsList200,
+  ),
   '/api/v1/system/tenants': answer(
     { tenants: [TENANT] } satisfies TenantAdminTenantsList200,
     { tenants: [] } satisfies TenantAdminTenantsList200,

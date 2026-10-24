@@ -16,7 +16,6 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createBackend } from '../a11y/backends.js'
 import {
-  DEFAULT_TENANT_ID,
   setCurrentTenantId,
   setTenantAliases,
 } from '../chrome.js'
@@ -27,10 +26,15 @@ import {
   createTestSession,
 } from '../test-utils/session.js'
 
+/** The tenant the callback route renders over, with the alias the host has
+ * recorded for it; the host holds no default roster, so a current tenant must
+ * be nameable. */
+const TENANT_ID = 'acme'
+
 beforeEach(() => {
   window.history.replaceState({}, '', AUTH_CALLBACK_PATH)
-  setCurrentTenantId(DEFAULT_TENANT_ID)
-  setTenantAliases(new Map())
+  setCurrentTenantId(TENANT_ID)
+  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
 describe('the auth callback route', () => {

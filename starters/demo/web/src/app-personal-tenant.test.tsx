@@ -923,9 +923,10 @@ describe('the tenant frame and the personal tenant', () => {
     // cleared, and a tenant the alias map still held would not resolve.
     await waitFor(() => expect(getCurrentTenantId()).toBeNull())
     expect(getCurrentTenantAlias()).toBeNull()
-    // The roster alias is gone too: the placeholder's own name is what a
-    // later resolution falls back to, not the ended identity's read.
+    // The roster alias is gone too: the id it belonged to is no longer
+    // nameable by any source, and there is no default list behind it to
+    // announce a stale name.
     setCurrentTenantId('acme')
-    expect(getCurrentTenantAlias()).toBe('acme')
+    expect(getCurrentTenantAlias()).toBeNull()
   })
 })

@@ -39,7 +39,10 @@ import {
 } from '@speed/notification-ui'
 import { createSpeedI18n } from '@speed/product-shell/bootstrap'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
-import { DEFAULT_TENANT_ID, setCurrentTenantId } from './chrome.js'
+import {
+  setCurrentTenantId,
+  setTenantAliases,
+} from './chrome.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -71,9 +74,14 @@ const tNotifications = textI18n.getFixedT(
   NOTIFICATION_UI_NAMESPACE,
 )
 
+/** The tenant the suite acts in, with the alias the host has recorded for it;
+ * the host holds no default roster, so a current tenant must be nameable. */
+const TENANT_ID = 'acme'
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  setCurrentTenantId(DEFAULT_TENANT_ID)
+  setCurrentTenantId(TENANT_ID)
+  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
 })
 
 /** An authenticated session over exactly this feature document. */

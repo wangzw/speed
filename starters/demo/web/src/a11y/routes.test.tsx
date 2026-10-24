@@ -50,7 +50,6 @@ import {
   createTestSession,
 } from '../test-utils/session.js'
 import {
-  DEFAULT_TENANT_ID,
   setCurrentTenantId,
   setTenantAliases,
 } from '../chrome.js'
@@ -240,10 +239,15 @@ const MISSING_KEY_WARNING = '[speed-i18n] missing translation key'
 const missingKeys: string[] = []
 let warnSpy: MockInstance
 
+/** The tenant every route is scanned under, with the alias the host has
+ * recorded for it; the host holds no default roster, so a current tenant must
+ * be nameable. */
+const TENANT_ID = 'acme'
+
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  setCurrentTenantId(DEFAULT_TENANT_ID)
-  setTenantAliases(new Map())
+  setCurrentTenantId(TENANT_ID)
+  setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
   missingKeys.length = 0
   const original = console.warn
   warnSpy = vi.spyOn(console, 'warn').mockImplementation((message, ...rest) => {

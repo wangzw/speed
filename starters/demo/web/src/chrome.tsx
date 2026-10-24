@@ -80,24 +80,6 @@ export interface DemoTenant extends TenantOption {
 }
 
 /**
- * The switcher's default list, used when a host does not pass its own rows.
- * The demo host passes the caller tenant read's answer instead, so this is a
- * fallback for a bare mount (and for the package-level harness); the seeded
- * roster in starters/demo/server/testdata registers `acme`.
- */
-export const DEMO_TENANTS: readonly DemoTenant[] = [
-  { id: 'acme', alias: 'acme', name: 'Acme Inc.' },
-]
-
-/**
- * The console area's last-resort tenant: the switcher default's first, used
- * when the roster read offers no active non-personal row. The tenant frame
- * does not use it -- a failed or empty caller tenant list leaves the current
- * tenant unknown.
- */
-export const DEFAULT_TENANT_ID: string | null = DEMO_TENANTS[0]?.id ?? null
-
-/**
  * The host's current tenant, held as a request-time fact. Two values come
  * off it and they must not be conflated: the identity the switcher compares
  * against (currentTenantId) and the alias every tenant-scoped request
@@ -163,14 +145,14 @@ export function useCurrentTenantId(): string | null {
 }
 
 /**
- * The alias -- the request-surface name -- of one tenant, in the given list
- * (the placeholder by default); null when the id is null or not on the list.
- * Kept separate from the tenant id so a rename (which moves the alias and not
- * the id) cannot leak the id into the field the server resolves against.
+ * The alias -- the request-surface name -- of one tenant, in the given list;
+ * null when the id is null or not on the list. Kept separate from the tenant
+ * id so a rename (which moves the alias and not the id) cannot leak the id
+ * into the field the server resolves against.
  */
 export function tenantAlias(
   tenantId: string | null,
-  tenants: readonly DemoTenant[] = DEMO_TENANTS,
+  tenants: readonly DemoTenant[],
 ): string | null {
   if (tenantId === null) {
     return null
@@ -179,18 +161,14 @@ export function tenantAlias(
 }
 
 /**
- * The aliases the roster reported for known tenant ids, layered over the
- * placeholder's own. The placeholder's list is what the switcher offers (the
- * demo holds no roster of its own), but a name the placeholder fixed can go
- * stale: a rename moves the alias and leaves the id, and a request that kept
- * announcing the old alias would be refused 404. So the app reads the roster
- * (its own generated operation) once a viewer is signed in and records each
- * tenant's current alias here (src/app.tsx), and the announced value prefers
- * it. The read needs tenant.read in the platform domain, so it answers for the
- * demo's operator but not for an ordinary member (403); a viewer without it
- * keeps the placeholder's aliases, which answer only while the roster's alias
- * still equals them -- after a rename such a viewer announces a stale name and
- * is refused 404, because no member-facing endpoint carries the current alias.
+ * The aliases the roster reported for known tenant ids, and the ones the host
+ * wrote itself. The switcher's rows come from the caller tenant list; this
+ * cache is the name source for a tenant that list does not hold -- a platform
+ * staff member entering a tenant they are not a member of -- and the place
+ * the host records an alias it learned from an operation's answer (the
+ * personal tenant's, for one). A tenant the cache does not hold and the
+ * caller list does not list has no alias, and the request surface announces
+ * none rather than a stale default.
  */
 let rosterAliases: ReadonlyMap<string, string> = new Map()
 
@@ -203,7 +181,7 @@ export function setTenantAliases(aliases: ReadonlyMap<string, string>): void {
  * Records one tenant's current alias, leaving the rest as they were. The
  * personal tenant's alias is written here before the frame announces it as
  * the current tenant: no roster read carries it, so without this record the
- * request surface would fall back to the placeholder list and announce null.
+ * request surface could not name the tenant it is about to act in.
  */
 export function setTenantAlias(tenantId: string, alias: string): void {
   const next = new Map(rosterAliases)
@@ -224,11 +202,11 @@ export function getRecordedTenantAlias(tenantId: string): string | null {
 
 /**
  * The value the client announces on every request as X-Tenant: the current
- * tenant's ALIAS, the name the request surface carries -- the roster's current
- * alias when the app has read it, the caller tenant list's otherwise, the
- * placeholder's last. This is the tenantProvider the assembly reads per
- * attempt (src/main.tsx); it is not getCurrentTenantId, whose value the
- * switcher keys on.
+ * tenant's ALIAS, the name the request surface carries -- the roster's or the
+ * host's recorded alias when there is one, the caller tenant list's
+ * otherwise. Null when no source names the tenant. This is the tenantProvider
+ * the assembly reads per attempt (src/main.tsx); it is not
+ * getCurrentTenantId, whose value the switcher keys on.
  */
 export function getCurrentTenantAlias(): string | null {
   if (currentTenantId === null) {
@@ -237,7 +215,7 @@ export function getCurrentTenantAlias(): string | null {
   return (
     rosterAliases.get(currentTenantId) ??
     selfTenantAlias(currentTenantId) ??
-    tenantAlias(currentTenantId)
+    null
   )
 }
 
@@ -333,16 +311,16 @@ export function HeaderActions(): ReactElement {
  * personal tenant shares the prefix and must render its alias instead.
  */
 export function TenantMenu({
-  tenants: offered = DEMO_TENANTS,
+  tenants: offered,
   tenantId,
   personalTenantId,
   onTenantSelect,
   compact = false,
 }: {
-  /** The tenant list the host offers; defaults to the placeholder list. The
-   * app passes the caller tenant read's rows plus the current tenant when the
-   * list does not hold it. */
-  readonly tenants?: readonly DemoTenant[]
+  /** The tenant list the host offers: the caller tenant read's rows plus the
+   * current tenant when the list does not hold it. Required -- the host has no
+   * default roster to fall back on. */
+  readonly tenants: readonly DemoTenant[]
   /** The id of the tenant the host currently resolves to, or null. */
   readonly tenantId: string | null
   /** The identifier the host derives for the caller's personal tenant
