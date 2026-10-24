@@ -28,7 +28,7 @@
  * DELETE goes out. After a successful unbind the profile query is
  * invalidated, so the rows converge on the server's answer, and the
  * confirmation names the provider; a refused unbind renders its code text
- * in the same region above the list -- authn.conflict when the account
+ * in the same region below the list -- authn.conflict when the account
  * would be left with no sign-in method (the server decides by its own
  * login-method count, never computable client-side), anything else through
  * the whitelist.
@@ -282,7 +282,7 @@ export function SocialBindingsSection({
     readonly label: string
   } | null>(null)
   const [busyProvider, setBusyProvider] = useState<string | null>(null)
-  // Two control groups, two scopes: the bound rows' unlink result above the
+  // Two control groups, two scopes: the bound rows' unlink result below the
   // list, and the add area's flow-start result inside the add area.
   const unbindFeedback = useWriteFeedback()
   const authorizeFeedback = useWriteFeedback()
@@ -437,19 +437,17 @@ export function SocialBindingsSection({
     })
   }
 
+  // Disabled through the whole attempt, including the profile refetch that
+  // follows the mutation, so the row's unlink action cannot re-arm while the
+  // scope is still pending -- the dialog closing is not the attempt settling.
   const unbindBusy =
-    (unbindTarget !== null &&
-      (unbindMutation.isPending || unbindFeedback.pending)) ||
+    unbindMutation.isPending ||
+    unbindFeedback.pending ||
     authorizeFeedback.pending
 
   return (
     <>
       <SectionCard title={showHeader ? t('bindings.title') : undefined}>
-      {/* The unlink control group's result, above the list it acts on and
-          outside the settled content, so it survives the list becoming empty
-          when the last binding goes. Its success names the provider, and a
-          failure is one banner in the same place. */}
-      <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mb: 1.5 }} />
       {/* The section header is hidden while the empty placeholder shows, but
           the empty placeholder is a status, not a section: a heading here
           ("No linked social accounts") would still enter the page outline as
@@ -477,8 +475,8 @@ export function SocialBindingsSection({
           <Box>
             {/* The binding rows are one real list, as the sessions rows
                 are: a screen-reader user hears each binding as one item
-                of a numbered set. The unlink region above and the add area
-                below are page-level content and stay outside the list.
+                of a numbered set. The unlink region below and the add area
+                are page-level content and stay outside the list.
                 role="list" keeps the list semantics under WebKit, which
                 strips them from a list-style-none ul. */}
             <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
@@ -610,6 +608,12 @@ export function SocialBindingsSection({
           </Box>
         )}
       </AsyncSection>
+      {/* The unlink control group's result, below the list and the add area
+          whose row actions and flow starts write into it, and outside the
+          settled content, so it survives the list becoming empty when the
+          last binding goes. Its success names the provider, and a failure is
+          one banner in the same place. */}
+      <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mt: 1.5 }} />
       </SectionCard>
 
       <ConfirmDialog

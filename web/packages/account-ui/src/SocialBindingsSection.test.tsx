@@ -11,15 +11,17 @@
  * declaring none matches by name), falling back to the family's closed
  * vocabulary for a value no descriptor claims -- and the add area offers
  * only the deployment's unbound redirect methods, labelled by their
- * descriptors; an unlink DELETE-s the link and refetches the profile; a
- * refused unlink (the account's last sign-in method) renders its code
- * text above the list and leaves the row; and the add area's click starts
- * a link flow carrying the host's `return_to` at the top level, whose
- * redirect step's URL is reported upward (the section never navigates).
+ * descriptors; an unlink DELETE-s the link and refetches the profile, and
+ * its row action stays disabled through that refetch; a refused unlink (the
+ * account's last sign-in method) renders its code text below the list and
+ * leaves the row; the unlink and add-area scopes never clear each other; and
+ * the add area's click starts a link flow carrying the host's `return_to` at
+ * the top level, whose redirect step's URL is reported upward (the section
+ * never navigates).
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -398,6 +400,148 @@ describe('SocialBindingsSection', () => {
     ).toBeGreaterThanOrEqual(2)
   })
 
+  it('keeps the row unlink disabled while the profile refetch settles', async () => {
+    let unlinked = false
+    let refetchPending = false
+    let releaseRefetch: ((response: Response) => void) | undefined
+    const respond: RealResponder = async (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        if (refetchPending) {
+          return new Promise<Response>((resolve) => {
+            releaseRefetch = resolve
+          })
+        }
+        return jsonResponse(
+          200,
+          profile(unlinked ? [] : [{ id: 'github-1', provider: 'github' }]),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
+        unlinked = true
+        refetchPending = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+    const rowUnlink = () =>
+      screen.queryByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      })
+
+    await user.click(
+      (await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      })) as HTMLElement,
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.bindings.confirmLabel }),
+    )
+
+    // The confirm dialog closes when the mutation settles, but the attempt
+    // is still in flight through the refetch that follows it: the row's
+    // action must stay disabled, not re-arm for a second DELETE against the
+    // row the first one already unlinked.
+    await waitFor(() => expect(refetchPending).toBe(true))
+    // Wait out the dialog's exit transition: while it runs the page behind
+    // it is hidden from the accessibility tree and role queries.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(rowUnlink()).toBeDisabled()
+
+    await act(async () => {
+      releaseRefetch?.(jsonResponse(200, profile([])))
+    })
+    await waitFor(() => expect(rowUnlink()).toBeNull())
+  })
+
+  it('keeps the unlink result when the add area settles later', async () => {
+    // Two control groups, two scopes: the unlink success and the add area's
+    // refused start must stand side by side, each in its own result
+    // position -- one group's settling never clears the other's.
+    let unlinked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile(
+            unlinked
+              ? []
+              : [{ id: 'github-1', provider: 'github' }],
+          ),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(
+          200,
+          methodsDoc([{ name: 'github', label: 'GitHub' }]),
+        )
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
+        unlinked = true
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        return errorResponse(400, 'authn.bad_request')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          'GitHub',
+        ),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: zhCN.bindings.confirmLabel }),
+    )
+    const unlinkedText = zhCN.bindings.unlinked.replace(
+      '{{provider}}',
+      'GitHub',
+    )
+    expect(await screen.findByText(unlinkedText)).toBeTruthy()
+
+    // Now drive the add area's scope to a failure of its own.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(screen.getByRole('button', { name: 'GitHub' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.bad_request)
+    // The unlink success is still there, in its own status region.
+    const confirmation = screen.getByText(unlinkedText)
+    expect(confirmation.closest('[role="status"]')).not.toBeNull()
+    expect(confirmation.closest('[role="status"]')).not.toBe(alert)
+  })
+
   it('keeps the unbind confirmation when the list empties', async () => {
     // The only binding goes and the deployment offers no channel to replace
     // it, so the section falls back to its empty placeholder. The confirmation
@@ -448,13 +592,20 @@ describe('SocialBindingsSection', () => {
     )
 
     expect(await screen.findByText(zhCN.bindings.empty.title)).toBeTruthy()
-    expect(
-      await screen.findByText(
-        zhCN.bindings.unlinked.replace(
-          '{{provider}}',
-          zhCN.bindings.provider.github,
-        ),
+    const confirmation = await screen.findByText(
+      zhCN.bindings.unlinked.replace(
+        '{{provider}}',
+        zhCN.bindings.provider.github,
       ),
+    )
+    expect(confirmation).toBeTruthy()
+    // The confirmation sits below the list (and the empty placeholder that
+    // replaced it), as the ui-kit rule asks for a control group's region.
+    expect(
+      screen
+        .getByText(zhCN.bindings.empty.title)
+        .compareDocumentPosition(confirmation) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     await expectNoAxeViolations()
   })
