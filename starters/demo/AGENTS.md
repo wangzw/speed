@@ -261,8 +261,11 @@ process is up waits for the record and not for a listening socket. Stop a run
 with SIGINT or SIGTERM; it drains in-flight requests first.
 
 `seed` writes the initial operators `seed.accounts` names, the tenants
-`seed.tenants` names, the platform-administrator role the ones marked with
-it hold, and the runtime settings `seed.settings` names. A setting is written
+`seed.tenants` names, the memberships `seed.members` names, the
+platform-administrator role the ones marked with it hold, and the runtime
+settings `seed.settings` names. A member entry names a tenant under
+`seed.tenants` and an account under `seed.accounts`; it is an active
+membership unless it carries `suspended: true`. A setting is written
 into the global layer only while that layer holds no explicit row for its key,
 so a value an operator changed through the settings surface survives a later
 seed run. It carries the migrations with it, so it is the whole of what a fresh
@@ -842,8 +845,13 @@ Under every stack:
   build every table.
 - **`seed`** writes the accounts under `seed.accounts`, each with the credential
   it is given — a plaintext `password` or a `password-hash` — the tenants under
-  `seed.tenants`, and the platform-administrator role the ones marked with it
-  hold, carrying every permission the process declares. The role is created, its
+  `seed.tenants`, the memberships under `seed.members`, and the
+  platform-administrator role the ones marked with it hold, carrying every
+  permission the process declares. A member names a tenant under `seed.tenants`
+  and an account under `seed.accounts`, and it is active unless it carries
+  `suspended: true`; a tenant or an account the configuration does not declare,
+  and one pair declared twice, fail the command before it writes anything, with
+  the entry named. The role is created, its
   grants are written through the seeding surface (`authz.Seeder`), and it is
   then marked builtin in every domain: the management surface refuses to
   rewrite it, delete it or change its grants, because deleting it would revoke
@@ -859,14 +867,22 @@ Under every stack:
   `seed.tenants`: it names the platform's policy domain and not a tenant, and the
   policy module refuses to start when the roster holds a tenant carrying it, so
   the seed refuses the name before writing it rather than seeding a roster the
-  next serve would not start on. It is idempotent: an account, a tenant, a role,
-  a grant or a binding already there is left as it stands and reported as
-  skipped, so a re-run writes nothing — and a re-run after the process gained a
-  permission writes exactly that grant. The one existing role it corrects is
-  the administrator role's `builtin` mark: a role an earlier seed wrote without
-  it is marked once its grants are in place, because that mark is what keeps the
-  role off the console's delete control. Nothing else is touched, and an
-  account or a tenant the configuration no longer names is neither disabled nor
+  next serve would not start on. The memberships are written through
+  `authn.Memberships.Put`, so an account that is missing or deleted is refused by
+  the seam. A membership is written only while the run is creating its account:
+  an account that already exists keeps whatever memberships the operator gave
+  it, so an addition, a suspension, a resume and a removal all survive every
+  restart and are never written back to the declared state. An existing
+  membership is reported as skipped and its row — its state, its source and its
+  SSO exemption — is left untouched. It is idempotent: an account, a
+  tenant, a membership, a role, a grant or a binding
+  already there is left as it stands and reported as skipped, so a re-run writes
+  nothing — and a re-run after the process gained a permission writes exactly
+  that grant. The one existing role it corrects is the administrator role's
+  `builtin` mark: a role an earlier seed wrote without it is marked once its
+  grants are in place, because that mark is what keeps the role off the
+  console's delete control. Nothing else is touched, and an account, a tenant or
+  a membership the configuration no longer names is neither disabled nor
   deleted. It drives to `StageStart`, past the migrations, so a database that was
   never migrated is one it can seed in a single command. A role and a binding come
   from here because no migration writes one: who a deployment's administrators

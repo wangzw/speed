@@ -34,6 +34,18 @@ const tenantsItem = "tenants"
 // settings from.
 const settingsItem = "settings"
 
+// membersItem is the item the seed reads the deployment's initial memberships
+// from.
+const membersItem = "members"
+
+// seedMemberSource is the source written with a membership the seed creates.
+// The membership module records one of a closed set of sources — admin,
+// jit:<provider>, invite or import — and a seeded row is an administrator's
+// decision about the deployment's start state. It is the module's own constant
+// for the administrator source, so the value cannot drift from the one the
+// membership management surface writes.
+const seedMemberSource = authn.ReasonAdmin
+
 // platformAdminRole is the role the seed gives the accounts its configuration
 // marks. It holds every permission the process declares, and it is written into
 // the platform domain and into each tenant the deployment serves. A role is a
@@ -73,6 +85,30 @@ type seedInput struct {
 	// operator through the settings surface — is left as it stands, so a
 	// later run never overrides a runtime change.
 	Settings []seedSetting `config:"settings"`
+	// Members are the memberships an account starts with. Each names a tenant
+	// under Tenants and an account under Accounts; the row is written through
+	// the membership seam, so the account has to exist and the tenant is
+	// validated against this list. A membership is written only while the run
+	// is creating the account: an account that is already there keeps whatever
+	// memberships the operator gave it, so a later run neither suspends,
+	// resumes nor restores one. A run that names neither, names a tenant or an
+	// account the configuration does not carry, or declares one pair twice is
+	// refused before anything is written.
+	Members []seedMember `config:"members"`
+}
+
+// seedMember is one membership the seed writes.
+type seedMember struct {
+	// Tenant is the tenant the account belongs to, as one of the names under
+	// Tenants.
+	Tenant string `config:"tenant"`
+	// Account is the account's login name, as one of the identifiers under
+	// Accounts.
+	Account string `config:"account"`
+	// Suspended writes the membership suspended instead of active. It is
+	// negative on purpose: the zero value is an active member, so an entry
+	// that leaves it out does not silently seed a suspended one.
+	Suspended bool `config:"suspended"`
 }
 
 // seedSetting is one runtime setting the seed writes.
@@ -135,6 +171,62 @@ func (a seedAccount) check() error {
 	return nil
 }
 
+// checkMembers refuses a member list the seed cannot write, before anything is
+// written.
+//
+// Like the account check, it is this command's own and not the
+// configuration's: a list carries no item metadata, so a member entry naming no
+// tenant or no account arrives here as a zero value. A tenant or an account the
+// configuration does not declare would otherwise surface as a row written
+// against a name no roster or account table holds — the membership seam checks
+// that the account exists, but a tenant is only a string to it — and one pair
+// declared twice would make the command report one write for a list that names
+// two.
+func checkMembers(in seedInput) error {
+	tenants := make(map[string]bool, len(in.Tenants))
+	for _, t := range in.Tenants {
+		tenants[t] = true
+	}
+	accounts := make(map[string]bool, len(in.Accounts))
+	for _, a := range in.Accounts {
+		_, name, err := seedLoginName(a.Identifier)
+		if err != nil {
+			return err
+		}
+		accounts[name] = true
+	}
+	seen := make(map[string]bool, len(in.Members))
+	for _, m := range in.Members {
+		if strings.TrimSpace(m.Tenant) == "" {
+			return fmt.Errorf("seed: a member under seed.%s names no tenant, and a membership is a "+
+				"tenant and an account", membersItem)
+		}
+		if strings.TrimSpace(m.Account) == "" {
+			return fmt.Errorf("seed: the member of the tenant %q names no account", m.Tenant)
+		}
+		_, name, err := seedLoginName(m.Account)
+		if err != nil {
+			return fmt.Errorf("seed: the account named by the member of the tenant %q: %w", m.Tenant, err)
+		}
+		if !tenants[m.Tenant] {
+			return fmt.Errorf("seed: the member %s names the tenant %q, which seed.%s does not list; "+
+				"add it there or correct the name", name, m.Tenant, tenantsItem)
+		}
+		if !accounts[name] {
+			return fmt.Errorf("seed: the member of the tenant %q names the account %q, which "+
+				"seed.%s does not declare; add it there or correct the name", m.Tenant, m.Account,
+				accountsItem)
+		}
+		pair := m.Tenant + "\x00" + name
+		if seen[pair] {
+			return fmt.Errorf("seed: the member %s of the tenant %q is declared twice under seed.%s",
+				name, m.Tenant, membersItem)
+		}
+		seen[pair] = true
+	}
+	return nil
+}
+
 // seedSchema declares the seed command's input items.
 //
 // The account list is one item and not a tree of them, because a list carries
@@ -165,6 +257,12 @@ func seedSchema() config.Schema {
 					"the global layer while that layer holds no explicit row for the key; the " +
 					"settings module holds every value to its declaration and domain",
 			},
+			membersItem: {
+				Origins: config.OriginPrimary,
+				Description: "the memberships the deployment starts with, each naming one of the " +
+					"tenants under seed.tenants and one of the accounts under seed.accounts; a " +
+					"member is active unless it is marked suspended",
+			},
 		},
 	}
 }
@@ -182,17 +280,22 @@ func seedModule() core.Module {
 }
 
 // seedDatabase writes the accounts the configuration names, the tenants this
-// deployment serves, the platform-administrator role the accounts marked
-// with it hold, and the runtime settings the configuration starts the
-// deployment with.
+// deployment serves, the memberships the configuration declares, the
+// platform-administrator role the accounts marked with it hold, and the
+// runtime settings the configuration starts the deployment with.
 //
-// It is idempotent: an account, a tenant, a role, a grant or a binding already
-// there is left as it stands and reported as skipped, so the command is safe to
-// run at every deployment. On an existing database it corrects two things: it
-// marks the administrator role builtin when an earlier seed wrote the row
-// without the mark, and it adds the declared grants the role does not hold.
-// Nothing else is touched — an account or a tenant the configuration no longer
-// names is not disabled or deleted.
+// It is idempotent: an account, a tenant, a membership, a role, a grant or a
+// binding already there is left as it stands and reported as skipped, so the
+// command is safe to run at every deployment. On an existing database it
+// corrects two things: it marks the administrator role builtin when an earlier
+// seed wrote the row without the mark, and it adds the declared grants the role
+// does not hold. A membership is written only while the run is creating its
+// account. An account that already exists keeps the memberships the operator
+// gave it through the membership management surface — an addition, a suspension,
+// a resume or a removal all survive a later run — because after the account
+// exists its memberships are runtime state and not a gap for the seed to fill.
+// Nothing else is touched — an account, a tenant or a membership the
+// configuration no longer names is not disabled or deleted.
 //
 // The role is written into two kinds of domain. The platform domain carries it
 // so the platform's own management surface answers; each tenant the
@@ -269,14 +372,23 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
-	// The account list is judged before anything is written: a list entry is a
-	// value the manifest cannot hold to, so a credential key spelled wrong is
-	// caught here rather than by the store, and a run that would refuse the
-	// account must not have written the settings below first.
+	memberships, err := core.Resolve[authn.Memberships](reg)
+	if err != nil {
+		return err
+	}
+	// The account and member lists are judged before anything is written: a
+	// list entry is a value the manifest cannot hold to, so a credential key
+	// spelled wrong, or a member naming a tenant or an account the
+	// configuration does not carry, is caught here rather than by the store,
+	// and a run that would refuse one must not have written the settings below
+	// first.
 	for _, a := range in.Accounts {
 		if err := a.check(); err != nil {
 			return err
 		}
+	}
+	if err := checkMembers(in); err != nil {
+		return err
 	}
 
 	// The settings first: a value the configuration names may govern how the
@@ -289,14 +401,24 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		return err
 	}
 
-	// Then the accounts, and the identifiers of the ones the configuration
-	// marks as administrators.
+	// Then the accounts, the identifiers of the ones the configuration marks as
+	// administrators, and the identifier of every account a member entry can
+	// name. created records the ones this run wrote, because a membership is
+	// provisioned with its account and never for one that was already there.
 	var administrators []authn.AccountID
+	accountIDs := make(map[string]authn.AccountID, len(in.Accounts))
+	created := make(map[string]bool, len(in.Accounts))
 	for _, a := range in.Accounts {
-		id, err := seedOneAccount(ctx, accounts, admin, a)
+		id, fresh, err := seedOneAccount(ctx, accounts, admin, a)
 		if err != nil {
 			return err
 		}
+		_, name, err := seedLoginName(a.Identifier)
+		if err != nil {
+			return err
+		}
+		accountIDs[name] = id
+		created[name] = fresh
 		if a.PlatformAdmin {
 			administrators = append(administrators, id)
 		}
@@ -309,6 +431,12 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		if err := seedTenant(ctx, roster, t); err != nil {
 			return err
 		}
+	}
+
+	// Then the memberships, which name both an account above and a tenant
+	// above, so both are written.
+	if err := seedMembers(ctx, memberships, in.Members, accountIDs, created); err != nil {
+		return err
 	}
 
 	if len(administrators) == 0 {
@@ -368,6 +496,74 @@ func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
 	return nil
 }
 
+// seedMembers writes the memberships the configuration names, through the
+// membership seam rather than the table.
+//
+// The seam is what holds the row to the account: Put answers
+// authn.ErrAccountNotFound for an account that is missing or deleted, so a
+// tombstoned account does not silently keep a membership. The tenant is only a
+// string to the seam, and checkMembers has already held each one to the tenants
+// the configuration declares.
+//
+// A membership is provisioned with its account and never written for one that
+// was already there. The account this run creates has no memberships yet, so
+// each declared pair is written; an account the run found already in place
+// keeps the memberships the operator gave it. That is what leaves the operator's
+// decisions through the membership management surface alone: a membership
+// added, suspended or resumed is reported as skipped, and one the operator
+// removed stays removed rather than being put back, because a row that is
+// absent and a row the operator deleted are the same thing to this seam. An
+// existing row is never rewritten, so its source and SSO exemption stand too.
+// Deleting a member from the configuration does not remove the row, just as it
+// does not disable an account or delete a tenant.
+func seedMembers(ctx context.Context, memberships authn.Memberships, members []seedMember,
+	accountIDs map[string]authn.AccountID, created map[string]bool,
+) error {
+	for _, m := range members {
+		_, name, err := seedLoginName(m.Account)
+		if err != nil {
+			return fmt.Errorf("seed: the account named by the member of the tenant %q: %w", m.Tenant, err)
+		}
+		id, ok := accountIDs[name]
+		if !ok {
+			// checkMembers refused this before anything was written; the map
+			// only lacks the entry if the two disagree, and the offender is
+			// named either way.
+			return fmt.Errorf("seed: the member of the tenant %q names the account %q, which seed.%s "+
+				"does not declare", m.Tenant, m.Account, accountsItem)
+		}
+		_, found, err := memberships.Membership(ctx, m.Tenant, id)
+		if err != nil {
+			return fmt.Errorf("seed: reading the membership of %s in %s: %w", name, m.Tenant, err)
+		}
+		if found {
+			fmt.Printf("skipped: member %s in %s (exists)\n", name, m.Tenant)
+			continue
+		}
+		if !created[name] {
+			// The account predates this run, so its missing membership is the
+			// operator's removal and not a gap for the seed to fill.
+			fmt.Printf("skipped: member %s in %s (account already present)\n", name, m.Tenant)
+			continue
+		}
+		record := authn.Membership{
+			Account: id,
+			Tenant:  m.Tenant,
+			Active:  !m.Suspended,
+			Source:  seedMemberSource,
+		}
+		if err := memberships.Put(ctx, record); err != nil {
+			return fmt.Errorf("seed: writing the membership of %s in %s: %w", name, m.Tenant, err)
+		}
+		if record.Active {
+			fmt.Printf("seeded: member %s in %s\n", name, m.Tenant)
+		} else {
+			fmt.Printf("seeded: member %s in %s (suspended)\n", name, m.Tenant)
+		}
+	}
+	return nil
+}
+
 // seedSettings writes the runtime settings the configuration names into the
 // global layer, unless that layer already holds an explicit row for the key.
 //
@@ -413,39 +609,41 @@ func seedSettings(ctx context.Context, store settings.Store, items []seedSetting
 }
 
 // seedOneAccount writes one configured account unless its login name is already
-// taken, and answers with the account's identifier either way.
+// taken, and answers with the account's identifier. The second result says
+// whether this run created the account: a membership is provisioned with the
+// account and never for one that was already there.
 func seedOneAccount(ctx context.Context, accounts authn.Accounts, admin authn.AccountAdmin,
 	a seedAccount,
-) (authn.AccountID, error) {
+) (authn.AccountID, bool, error) {
 	kind, name, err := seedLoginName(a.Identifier)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	id, err := accounts.Lookup(ctx, kind, name)
 	switch {
 	case err == nil:
 		fmt.Printf("skipped: account %s (exists)\n", name)
-		return id, nil
+		return id, false, nil
 	case !errors.Is(err, authn.ErrAccountNotFound):
-		return "", fmt.Errorf("seed: looking up the account %s: %w", name, err)
+		return "", false, fmt.Errorf("seed: looking up the account %s: %w", name, err)
 	}
-	created, err := admin.Create(ctx, seedCreateAccount(kind, name, a))
+	account, err := admin.Create(ctx, seedCreateAccount(kind, name, a))
 	if errors.Is(err, authn.ErrAccountExists) {
 		// Another run took the login name between the lookup and the write. The
 		// account is there, which is what this command is for, so the race is
 		// the answer and not a failure.
 		id, err = accounts.Lookup(ctx, kind, name)
 		if err != nil {
-			return "", fmt.Errorf("seed: looking up the account %s: %w", name, err)
+			return "", false, fmt.Errorf("seed: looking up the account %s: %w", name, err)
 		}
 		fmt.Printf("skipped: account %s (exists)\n", name)
-		return id, nil
+		return id, false, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("seed: creating the account %s: %w", name, err)
+		return "", false, fmt.Errorf("seed: creating the account %s: %w", name, err)
 	}
-	fmt.Printf("seeded: account %s (%s)\n", name, created.ID)
-	return created.ID, nil
+	fmt.Printf("seeded: account %s (%s)\n", name, account.ID)
+	return account.ID, true, nil
 }
 
 // seedCreateAccount is the library's creation request for one configured

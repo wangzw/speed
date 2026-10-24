@@ -65,7 +65,7 @@ starters/demo/
 - **`serve`** 起 HTTP 入口并接受流量。
 - **`worker`** 跑后台模块，不起 HTTP 入口。
 - **`migrate`** 只跑数据库引擎，经静态级纳入取得各模块的声明、把全部表建起来。
-- **`seed`** 先写配置 `seed.settings` 点名的运行期设置（`{key, value}` 列表，值取声明类型自己的文本形式，经公开的 `settings.Store` 写全局层）：这些值可能约束随后写入的账户，账户存储的口令策略就在其中，设置晚于账户就等于没有约束到它。再写配置 `seed.accounts` 点名的初始账户（凭据按项给明文口令或 PHC 条目）、配置 `seed.tenants` 点名的租户（登记进名册），以及其中标记为平台管理员的那些账户所持有的运营角色——角色带上本进程声明的全部权限。角色与它的授权写进两类域：平台域（平台自己的管理面读它），以及 `seed.tenants` 的每个租户域（控制台按租户寻址的页面——成员、邀请、SSO 提供方——因此开箱即答；平台域的绑定不覆盖租户域，所以租户域里绑得上，得先在租户域把角色与授权写出来）。它驱动到 `Start`，因此把迁移一并带上，一个从未迁移过的库一条命令即可就绪；声明集未变时重复执行不写任何东西，逐项报「跳过」；运行期设置的键在全局层已有显式行时同样跳过，重跑因此不覆盖操作者经设置面做的修改（REQ-deployment-011），键拼错或值越出声明的域由设置模块拒绝，命令失败而不写入；进程新声明了一条权限时，重跑把缺的那条授权经宿主的种入面 `authz.Seeder` 补进已置 `builtin` 的运营角色，管理面仍然改不动它。配置里删去的账户与租户既不失效也不删除。角色与绑定只由它写入：迁移不种策略数据，谁是部署的管理员是宿主的回答（[authz](design-authz.md) 对宿主的要求、[authn.admin](authn/design-authn-admin.md) 的引导）。
+- **`seed`** 先写配置 `seed.settings` 点名的运行期设置（`{key, value}` 列表，值取声明类型自己的文本形式，经公开的 `settings.Store` 写全局层）：这些值可能约束随后写入的账户，账户存储的口令策略就在其中，设置晚于账户就等于没有约束到它。再写配置 `seed.accounts` 点名的初始账户（凭据按项给明文口令或 PHC 条目）、配置 `seed.tenants` 点名的租户（登记进名册）、配置 `seed.members` 点名的成员关系（逐项点名 `seed.tenants` 里的一个租户与 `seed.accounts` 里的一个账户，缺省为有效，标 `suspended: true` 写为停用；经 `authn.Memberships.Put` 写，账户不存在或已删除由该接缝答 `ErrAccountNotFound`），以及其中标记为平台管理员的那些账户所持有的运营角色——角色带上本进程声明的全部权限。角色与它的授权写进两类域：平台域（平台自己的管理面读它），以及 `seed.tenants` 的每个租户域（控制台按租户寻址的页面——成员、邀请、SSO 提供方——因此开箱即答；平台域的绑定不覆盖租户域，所以租户域里绑得上，得先在租户域把角色与授权写出来）。它驱动到 `Start`，因此把迁移一并带上，一个从未迁移过的库一条命令即可就绪；声明集未变时重复执行不写任何东西，逐项报「跳过」；运行期设置的键在全局层已有显式行时同样跳过，重跑因此不覆盖操作者经设置面做的修改（REQ-deployment-011），键拼错或值越出声明的域由设置模块拒绝，命令失败而不写入；成员关系只在本次运行创建该账户时写入：账户已存在时其成员关系属运行期状态，运营者经成员管理面做的增加、停用、恢复或删除都由重跑保持，不回写声明状态、不补回被删掉的行，已有行的来源与 SSO 豁免也不改写；成员关系名单里出现未知租户、未知账户或同一对租户与账户重复声明时，命令在写入前拒绝并点名那一条。进程新声明了一条权限时，重跑把缺的那条授权经宿主的种入面 `authz.Seeder` 补进已置 `builtin` 的运营角色，管理面仍然改不动它。配置里删去的账户、租户与成员关系既不失效也不删除。角色与绑定只由它写入：迁移不种策略数据，谁是部署的管理员是宿主的回答（[authz](design-authz.md) 对宿主的要求、[authn.admin](authn/design-authn-admin.md) 的引导）。
 - **`gen`** 合并并写出 API 规格，并写出特性声明的清单，见「`gen` 命令」。
 - **命令组** 承载一次性运维动作。
 
@@ -433,7 +433,7 @@ flowchart TD
 | 审查装配的回环守卫 | 已实现 | `starters/demo/server/review.go` `reviewGuardModule`、`loopbackAddress` |
 | 只在 `review` 标签下编译的用例在提交门禁里被执行 | 已实现 | `./Makefile` `test-review`；`tools/check_test_tiers.py` |
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
-| `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedAdministration`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
+| `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedMembers`、`seedAdministration`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
 | `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument`、`featureVocabulary` |
 | 已提交的 `contracts/api.json` 与本二进制合并文档的一致性测试 | 已实现 | `starters/demo/server/demo_test.go` `TestCommittedMergedDocument` |
 | 已提交的 `contracts/features.json` 的新鲜度测试 | 已实现 | `starters/demo/server/feature_test.go` `TestCommittedFeatureVocabulary` |
