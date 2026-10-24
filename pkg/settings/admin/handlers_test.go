@@ -130,9 +130,9 @@ func TestTheGuardWritesItsOwnRefusal(t *testing.T) {
 }
 
 // The list route shows every declared item with the value it resolves to on the
-// selected layer: the type is the declared type's text form, the default is the
-// declared default's text, written is the selected layer's text and value is the
-// resolved text.
+// selected layer: the type is the declared type's text form, the description is
+// the text the declaration gave, the default is the declared default's text,
+// written is the selected layer's text and value is the resolved text.
 func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
@@ -162,6 +162,9 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	if window.Type != "time.Duration" {
 		t.Errorf("the type is %q, want time.Duration", window.Type)
 	}
+	if window.Description != "the length of one counting window" {
+		t.Errorf("the description is %q, want the declared text", window.Description)
+	}
 	if window.Domain != "the positive durations" {
 		t.Errorf("the domain is %q, want the declared rule", window.Domain)
 	}
@@ -188,6 +191,9 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 	if limit.Default != "100" {
 		t.Errorf("the limit's default is %q, want 100", limit.Default)
 	}
+	if limit.Description != "the limit" {
+		t.Errorf("the limit's description is %q, want the declared text", limit.Description)
+	}
 	if limit.Domain != "" {
 		t.Errorf("the limit's domain is %q, want empty: it declares none", limit.Domain)
 	}
@@ -195,11 +201,14 @@ func TestTheListShowsEveryDeclaredItemWithItsResolvedValue(t *testing.T) {
 
 // A row the layer holds as the empty string is reported as a row: the text is
 // empty either way, so has_row is what tells the client the answer holds an
-// override. A domain that admits the empty text lets the write land.
+// override. The declaration's description is carried unchanged. A domain that
+// admits the empty text lets the write land.
 func TestAnEmptyTextRowIsReportedAsAHeldRow(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
-		decl("authn.sms.allowed-prefixes", "authn.sms", reflect.TypeFor[string](), "[]", settings.Item{}),
+		decl("authn.sms.allowed-prefixes", "authn.sms", reflect.TypeFor[string](), "[]", settings.Item{
+			Description: "the number prefixes SMS may be sent to",
+		}),
 	}
 	r.store.values["authn.sms.allowed-prefixes"] = ""
 	r.store.rows = []settings.Entry{{Key: "authn.sms.allowed-prefixes", Tenant: "", Value: ""}}
@@ -220,11 +229,15 @@ func TestAnEmptyTextRowIsReportedAsAHeldRow(t *testing.T) {
 	if !v.HasRow {
 		t.Error("has_row is false, want true: the layer holds an empty-text row")
 	}
+	if v.Description != "the number prefixes SMS may be sent to" {
+		t.Errorf("the description is %q, want the declared text", v.Description)
+	}
 }
 
-// A sensitive item masks its text but not its row's existence: a request for a
-// sensitive item whose layer holds no row reports has_row false, and one whose
-// layer holds a row reports true.
+// A sensitive item masks its text but not its description or its row's
+// existence: a request for a sensitive item whose layer holds no row reports
+// has_row false, and one whose layer holds a row reports true; either way the
+// description is the declaration's text.
 func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
 	cases := []struct {
 		name string
@@ -238,7 +251,10 @@ func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRig(t)
 			r.store.declared = []settings.DeclaredItem{
-				decl("authn.sms.secret", "authn.sms", reflect.TypeFor[string](), "", settings.Item{Sensitive: true}),
+				decl("authn.sms.secret", "authn.sms", reflect.TypeFor[string](), "", settings.Item{
+					Description: "the SMS provider's secret",
+					Sensitive:   true,
+				}),
 			}
 			r.store.values["authn.sms.secret"] = "hunter2"
 			r.store.rows = tc.rows
@@ -257,6 +273,9 @@ func TestASensitiveItemStillReportsWhetherItsRowExists(t *testing.T) {
 			}
 			if views[0].HasRow != tc.want {
 				t.Errorf("has_row is %t, want %t", views[0].HasRow, tc.want)
+			}
+			if views[0].Description != "the SMS provider's secret" {
+				t.Errorf("the description is %q, want the declared text: masking blots out the text only", views[0].Description)
 			}
 		})
 	}
@@ -309,11 +328,15 @@ func TestANamespaceGroupIsShownAndAnEmptyOneIsA404(t *testing.T) {
 }
 
 // A sensitive item's value never reaches a client: its default is empty and its
-// written and value carry the fixed mask string, on every read route.
+// written and value carry the fixed mask string, on every read route; its
+// description is the declaration's text unchanged.
 func TestASensitiveItemsValueIsMasked(t *testing.T) {
 	r := newRig(t)
 	r.store.declared = []settings.DeclaredItem{
-		decl("authn.sms.secret", "authn.sms", reflect.TypeFor[string](), "", settings.Item{Sensitive: true}),
+		decl("authn.sms.secret", "authn.sms", reflect.TypeFor[string](), "", settings.Item{
+			Description: "the SMS provider's secret",
+			Sensitive:   true,
+		}),
 	}
 	r.store.values["authn.sms.secret"] = "hunter2"
 	r.store.rows = []settings.Entry{{Key: "authn.sms.secret", Tenant: "", Value: "hunter2"}}
@@ -337,6 +360,9 @@ func TestASensitiveItemsValueIsMasked(t *testing.T) {
 		}
 		if v.Default != "" {
 			t.Errorf("%s: the default is %q, want empty", target, v.Default)
+		}
+		if v.Description != "the SMS provider's secret" {
+			t.Errorf("%s: the description is %q, want the declared text", target, v.Description)
 		}
 		if v.Written != maskedValue || v.Value != maskedValue {
 			t.Errorf("%s: written/value are %q/%q, want the mask %q", target, v.Written, v.Value, maskedValue)
