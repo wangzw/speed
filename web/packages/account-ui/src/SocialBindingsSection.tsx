@@ -445,6 +445,11 @@ export function SocialBindingsSection({
   return (
     <>
       <SectionCard title={showHeader ? t('bindings.title') : undefined}>
+      {/* The unlink control group's result, above the list it acts on and
+          outside the settled content, so it survives the list becoming empty
+          when the last binding goes. Its success names the provider, and a
+          failure is one banner in the same place. */}
+      <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mb: 1.5 }} />
       {/* The section header is hidden while the empty placeholder shows, but
           the empty placeholder is a status, not a section: a heading here
           ("No linked social accounts") would still enter the page outline as
@@ -470,10 +475,6 @@ export function SocialBindingsSection({
       >
         {(settledRows) => (
           <Box>
-            {/* The unlink control group's result, above the list it acts on:
-                its success names the provider, and a failure is one banner
-                in the same place. */}
-            <WriteFeedbackRegion outcome={unbindFeedback.outcome} sx={{ mb: 1.5 }} />
             {/* The binding rows are one real list, as the sessions rows
                 are: a screen-reader user hears each binding as one item
                 of a numbered set. The unlink region above and the add area

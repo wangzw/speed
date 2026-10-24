@@ -398,6 +398,67 @@ describe('SocialBindingsSection', () => {
     ).toBeGreaterThanOrEqual(2)
   })
 
+  it('keeps the unbind confirmation when the list empties', async () => {
+    // The only binding goes and the deployment offers no channel to replace
+    // it, so the section falls back to its empty placeholder. The confirmation
+    // still names the provider: a settled result must not vanish with the
+    // rows it replaced.
+    let unlinked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile(
+            unlinked ? [] : [{ id: 'github-1', provider: 'github' }],
+          ),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
+        unlinked = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.bindings.confirmLabel,
+      }),
+    )
+
+    expect(await screen.findByText(zhCN.bindings.empty.title)).toBeTruthy()
+    expect(
+      await screen.findByText(
+        zhCN.bindings.unlinked.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      ),
+    ).toBeTruthy()
+    await expectNoAxeViolations()
+  })
+
   it('renders a refused unlink (last sign-in method) as a code-text banner', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {
