@@ -188,14 +188,14 @@ sequenceDiagram
 3. `Catalog.Get(id)`；名册不持有该标识 → 404。
 4. 落强制档审计（动作 `tenant.update`）。
 5. `Catalog.SetAlias(id, alias)`。
-6. `ErrAliasConflict` → 409；其余 → 503。落地 → 204。
+6. `ErrAliasConflict` → 409；`ErrTenantDeleted`（该租户是墓碑）→ 409；其余 → 503。落地 → 204。
 
 ### 改状态
 
 1. 读发起者的注册验证状态：读作未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
 2. 形状检查：路径的 `id` 落在取值域内，正文的 `status` 是 `active` 或 `disabled`，否则 400。
 3. 落强制档审计（动作 `tenant.status`）。
-4. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；其余 → 503。落地 → 204。
+4. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；`ErrTenantDeleted`（该租户是墓碑）→ 409；其余 → 503。落地 → 204。
 
 ## 错误与失败语义
 
@@ -207,6 +207,7 @@ sequenceDiagram
 | 登记点名一个已被持有的标识 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantExists` |
 | 别名被别的租户持有 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrAliasConflict` |
 | `GET`／`PATCH`／状态路由点名一个名册不持有的标识 | 404，不带 `Problem.Type` |
+| 改名或改状态点名一个已删除的租户 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantDeleted` |
 | 发起者读作未验证（`SignupPending`），而这是写路由 | 403 `contact-required`（`authn.ErrContactRequired`），动作不执行 |
 | 注册验证状态读取失败 | 503，动作不执行，成因只进日志 |
 | 强制档审计写不进 | 503，动作不执行 |
