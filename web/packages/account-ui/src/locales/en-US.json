@@ -95,6 +95,7 @@
   },
   "bindingCallback": {
     "pending": "Completing the link…",
+    "done": "Social account linked.",
     "continueLabel": "Continue",
     "retry": "Retry"
   },

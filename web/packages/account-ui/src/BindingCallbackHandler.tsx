@@ -16,9 +16,12 @@
  * onBound, the host's cue to navigate back to the account surface. A
  * flow still parked on a step renders that step's continuation (FlowStep)
  * and answers it through session.answerFlow, so a link flow that needs
- * another answer is finished where it stands. A read that failed, and a
- * completion whose state is not 'linked', render their code text in the
- * InlineError banner under a retry. The `link` flow never signs anyone in
+ * another answer is finished where it stands. A landed `link` completion
+ * confirms itself through the write-feedback region, naming the bound
+ * object, so a host that stays (or gave no onBound) is not left on the
+ * pending notice. A read that failed, and a completion whose state is not
+ * 'linked', render their code text in the InlineError banner under a retry.
+ * The `link` flow never signs anyone in
  * (a binding is not a login), so there is no signed-elsewhere outcome.
  * Nothing here navigates: the callbacks are the host's.
  *
@@ -38,11 +41,12 @@ import Typography from '@mui/material/Typography'
 import { useQueryClient } from '@tanstack/react-query'
 import { getAuthnProfileGetQueryKey } from '@speed/api-sdk'
 import type { AuthSession, AuthnFlowState, AuthnStep } from '@speed/auth-core'
-import { errorCodeOf } from '@speed/ui-kit'
+import { errorCodeOf, useWriteFeedback } from '@speed/ui-kit'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { InlineError } from './internal/inline-error.js'
 import { useAccountUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface BindingCallbackHandlerProps {
   /** The session whose link flow the handler reads back and completes. */
@@ -102,6 +106,13 @@ export function BindingCallbackHandler({
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [answering, setAnswering] = useState(false)
   const [absentShown, setAbsentShown] = useState(false)
+  // The done stage's settled success: the completion confirms itself through
+  // the same write-feedback region as every other account write, naming the
+  // bound object. A host that leaves on onBound never renders it; one that
+  // stays (or gave no onBound) gets the confirmation instead of the pending
+  // notice.
+  const doneFeedback = useWriteFeedback()
+  const succeedDone = doneFeedback.succeed
 
   // A running read is not cancelled on cleanup: StrictMode's
   // mount/effect/cleanup/effect cycle would leave one start, so the first
@@ -131,11 +142,13 @@ export function BindingCallbackHandler({
         queryKey: getAuthnProfileGetQueryKey(),
       })
       if (run === runRef.current) {
+        // Translated when the link settles; it names the bound object.
+        succeedDone(t('bindingCallback.done'))
         setPhase('done')
         onBound?.()
       }
     },
-    [queryClient, onBound],
+    [queryClient, onBound, succeedDone, t],
   )
 
   /** Applies a flow state read off the callback route: a ready flow is
@@ -267,6 +280,14 @@ export function BindingCallbackHandler({
 
   if (absentShown && absent !== undefined) {
     return <>{absent}</>
+  }
+
+  if (phase === 'done') {
+    return (
+      <Box sx={{ width: '100%' }}>
+        <WriteFeedbackRegion outcome={doneFeedback.outcome} />
+      </Box>
+    )
   }
 
   if (phase === 'failed') {

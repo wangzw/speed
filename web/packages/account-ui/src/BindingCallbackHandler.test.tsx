@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
   errorResponse,
@@ -52,6 +53,14 @@ describe('BindingCallbackHandler', () => {
     )
 
     await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
+    // The done stage reports the binding success, naming the bound object,
+    // in a polite status region -- a host that stays on the route is not
+    // left on the pending notice.
+    const done = await screen.findByText(zhCN.bindingCallback.done)
+    expect(done).toBeTruthy()
+    expect(done.closest('[role="status"]')).not.toBeNull()
+    expect(zhCN.bindingCallback.done).not.toBe(zhCN.bindingCallback.pending)
+    expect(enUS.bindingCallback.done).toMatch(/social account/i)
     const answer = rig.calls.find(
       (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
     )
