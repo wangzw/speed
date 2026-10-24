@@ -146,6 +146,7 @@ func (c *fakeCatalog) Create(context.Context, tenant.Tenant) error { return nil 
 func (c *fakeCatalog) SetStatus(context.Context, tenant.ID, tenant.Status) error {
 	return nil
 }
+
 func (c *fakeCatalog) SetStatusByAccount(context.Context, tenant.ID, tenant.Status) error {
 	return nil
 }
