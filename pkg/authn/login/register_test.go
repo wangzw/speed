@@ -13,8 +13,8 @@ import (
 )
 
 // registerRig builds a rig whose registration switch is open and whose budgets
-// are the declared defaults: no per-source budget and the deployment-wide
-// default.
+// are the declared defaults: ten registrations a minute per source address and
+// the deployment-wide default.
 func registerRig(t *testing.T) *rig {
 	t.Helper()
 	r := newRig(t, &fakeMethod{name: "password"})

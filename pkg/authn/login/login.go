@@ -506,14 +506,15 @@ func (p *product) diagnose(reg *core.Registry) {
 	if p.bus == nil {
 		p.logger.Info(diagnosticPrefix + "no event bus takes part, so a login publishes no event")
 	}
-	if p.settings.ipLimit() == 0 {
+	if limit := p.settings.ipLimit(); limit == 0 {
 		p.logger.Warn(diagnosticPrefix+ModuleName+": the source-address pre-throttle is off, because "+
 			ModuleName+"."+ipLimitKey+" is 0",
 			slog.String("setting", ModuleName+"."+ipLimitKey))
 	} else {
-		p.logger.Warn(diagnosticPrefix + ModuleName + ": the source-address pre-throttle is on; behind a proxy " +
-			"whose peers are not configured as trusted proxies, every caller shares one bucket, " +
-			"because the client address is then the proxy's")
+		// The layer being on is the ordinary state; the relaxation is what a
+		// reader has to be able to find, so only that one is a warning.
+		p.logger.Info(diagnosticPrefix+ModuleName+": the source-address pre-throttle is on",
+			slog.String("setting", ModuleName+"."+ipLimitKey), slog.Int("per-minute", limit))
 	}
 	p.diagnoseSignup()
 	p.checkResolutionEndpoints(reg)
@@ -529,13 +530,12 @@ func (p *product) diagnoseSignup() {
 	} else {
 		p.logger.Info(diagnosticPrefix + "name-and-password self-registration is open")
 	}
-	if p.settings.signupIPLimit() == 0 {
+	if limit := p.settings.signupIPLimit(); limit == 0 {
 		p.logger.Warn(diagnosticPrefix+ModuleName+": the per-source budget of a registration is off, because "+
 			signupIPLimitPath+" is 0", slog.String("setting", signupIPLimitPath))
 	} else {
-		p.logger.Warn(diagnosticPrefix + ModuleName + ": the per-source budget of a registration is on; behind " +
-			"a proxy whose peers are not configured as trusted proxies, every caller shares one bucket, because " +
-			"the client address is then the proxy's")
+		p.logger.Info(diagnosticPrefix+ModuleName+": the per-source budget of a registration is on",
+			slog.String("setting", signupIPLimitPath), slog.Int("per-minute", limit))
 	}
 }
 
