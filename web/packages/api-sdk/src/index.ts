@@ -1886,6 +1886,21 @@ export type AuthnProfilePatchBody = {
   time_zone?: string;
 };
 
+export type TenantSelfTenantsList200TenantsItem = {
+  /** The tenant's alias, the name the request surface addresses it by. */
+  alias: string;
+  /** The tenant's immutable identifier. */
+  id: string;
+};
+
+/**
+ * The tenants the calling account holds an active membership in.
+ */
+export type TenantSelfTenantsList200 = {
+  /** The tenants whose membership is active and whose roster row is active, ordered by identifier. Empty when the caller holds none. */
+  tenants: TenantSelfTenantsList200TenantsItem[];
+};
+
 /**
  * The password change: the password the account has now, when it has one, and the new one.
  */
@@ -3839,6 +3854,76 @@ export const useAuthnProfilePatch = <TError = Problem,
       > => {
       return useMutation(getAuthnProfilePatchMutationOptions(options));
     }
+
+/**
+ * Answers the tenants the calling account holds an active membership in, with each tenant's identifier and alias. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership or roster read that cannot answer is a 503, never an empty list.
+ * @summary List the tenants the caller holds an active membership in
+ */
+export const tenantSelfTenantsList = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<TenantSelfTenantsList200>(
+      {url: `/api/v1/auth/me/tenants`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getTenantSelfTenantsListQueryKey = () => {
+    return [
+    `/api/v1/auth/me/tenants`
+    ] as const;
+    }
+
+
+export const getTenantSelfTenantsListQueryOptions = <TData = Awaited<ReturnType<typeof tenantSelfTenantsList>>, TError = Problem>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof tenantSelfTenantsList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getTenantSelfTenantsListQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof tenantSelfTenantsList>>> = ({ signal }) => tenantSelfTenantsList(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof tenantSelfTenantsList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type TenantSelfTenantsListQueryResult = NonNullable<Awaited<ReturnType<typeof tenantSelfTenantsList>>>
+export type TenantSelfTenantsListQueryError = Problem
+
+
+/**
+ * @summary List the tenants the caller holds an active membership in
+ */
+
+export function useTenantSelfTenantsList<TData = Awaited<ReturnType<typeof tenantSelfTenantsList>>, TError = Problem>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof tenantSelfTenantsList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getTenantSelfTenantsListQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 /**
  * Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by method name, together with whether registration is open and the second-factor kinds the deployment takes in. It reads no credential and no request body, so every caller gets the same document. A method turned off by the deployment is left out rather than reported with a flag, and the call answers 503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are not listed here; they are discovered through the SSO module.

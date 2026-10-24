@@ -92,8 +92,8 @@ import { useAppServices } from './app-services.js'
 import {
   AppBrand,
   DEFAULT_TENANT_ID,
-  DEMO_TENANTS,
   getCurrentTenantId,
+  getRecordedTenantAlias,
   HeaderActions,
   setCurrentTenantId,
   setTenantAlias,
@@ -103,6 +103,7 @@ import {
   useCurrentTenantId,
   useTenantSelection,
 } from './chrome.js'
+import type { DemoTenant } from './chrome.js'
 import { ConsoleArea } from './console/console-area.js'
 import {
   consoleShellRoutes,
@@ -132,6 +133,14 @@ import { SignInView } from './pages/sign-in-view.js'
 import { ACCOUNT_PATH, isAccountLevelPath } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
+  clearSelfTenants,
+  loadSelfTenants,
+  PERSONAL_TENANT_ID_PREFIX,
+  personalTenantId,
+  useSelfTenantState,
+} from './tenant-self.js'
+import type { SelfTenantState } from './tenant-self.js'
+import {
   AUTH_CALLBACK_PATH,
   invitationRoutes,
   navIconFor,
@@ -144,23 +153,15 @@ import {
 const CONSOLE_PERMISSION_DOMAIN = 'system'
 
 /**
- * The server's personal-tenant identifier prefix (starters/demo/server's
- * personal.go, personalIDPrefix). The roster's tenant view carries no kind,
- * so the host tells a personal tenant from the identifier the server
- * derives. The two spellings must stay in sync by hand.
+ * The tenant the host settles when it has none: the first roster row that is
+ * active and is not someone's personal tenant. The roster view carries no
+ * kind, so the server's identifier prefix tells the personal tenants apart:
+ * one belongs to a single account and answers a staff viewer 404, and it also
+ * sorts before most deployment identifiers ('p' < 't', 'z'), so without that
+ * check the first active row would often be a stranger's personal space. The
+ * result is nameable through the roster's alias cache. Null when the roster
+ * offers no such row.
  */
-const PERSONAL_TENANT_ID_PREFIX = 'personal-'
-
-/** The tenant the host settles when it has none: the first roster row that is
- * active, is not someone's personal tenant, and is one the switcher can name.
- * The roster view carries no kind, so the server's identifier prefix tells the
- * personal tenants apart: one belongs to a single account and answers a staff
- * viewer 404, and it also sorts before most deployment identifiers ('p' < 't',
- * 'z'), so without that check the first active row would often be a stranger's
- * personal space. The switcher lists the placeholder's tenants alone, so a row
- * outside that list would leave the caller in a tenant the bar cannot name and
- * the switcher cannot leave, with every tenant-scoped request refused. Null
- * when the roster offers no such row. */
 function defaultRosterTenant(
   tenants: readonly { readonly id: string; readonly status: string }[],
 ): string | null {
@@ -168,9 +169,22 @@ function defaultRosterTenant(
     tenants.find(
       (tenant) =>
         tenant.status === 'active' &&
-        !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX) &&
-        DEMO_TENANTS.some((option) => option.id === tenant.id),
+        !tenant.id.startsWith(PERSONAL_TENANT_ID_PREFIX),
     )?.id ?? null
+  )
+}
+
+/**
+ * Whether the host can name a tenant: either the caller tenant list holds the
+ * row, or the roster's alias cache does (a platform staff member entering a
+ * tenant they are not a member of). A current tenant that no source names
+ * would leave the caller in a tenant the bar cannot show and the switcher
+ * cannot leave, while every tenant-scoped request is refused.
+ */
+function tenantNameable(tenantId: string, self: SelfTenantState): boolean {
+  return (
+    self.tenants.some((tenant) => tenant.id === tenantId) ||
+    getRecordedTenantAlias(tenantId) !== null
   )
 }
 
@@ -187,7 +201,13 @@ export function DemoApp({
   readonly shellLayout?: AppShellShellLayout
 } = {}): ReactElement {
   const presence = featurePresence(useFeatureState())
-  const authenticated = useAuthState().state === 'authenticated'
+  const snapshot = useAuthState()
+  const authenticated = snapshot.state === 'authenticated'
+  const principalId =
+    snapshot.state === 'authenticated'
+      ? (snapshot.principal?.account_id ?? '')
+      : ''
+  const impersonating = authenticated && snapshot.impersonating
   // A session that ends leaves no identity for the host's current tenant or
   // its alias map to belong to. Clear both module-level cells here, in the
   // always-mounted root, so the clearing does not depend on which frame is
@@ -202,6 +222,23 @@ export function DemoApp({
       setTenantAliases(new Map())
     }
   }, [authenticated])
+  // The caller tenant list belongs to an identity, not to the page. Read it
+  // once per acting account here in the always-mounted root -- not in the
+  // tenant frame, which the console area and the sign-in surface do not mount
+  // -- after forgetting the previous account's rows. The read is issued only
+  // while not impersonating: an impersonation is confined to the grant's
+  // tenant and the console shows no switcher, so the list has no reader.
+  useEffect(() => {
+    if (!authenticated) {
+      clearSelfTenants()
+      return
+    }
+    clearSelfTenants()
+    if (impersonating) {
+      return
+    }
+    void loadSelfTenants()
+  }, [authenticated, principalId, impersonating])
   return (
     <RouteProvider
       table={routes}
@@ -428,10 +465,10 @@ function TenantFrame({
   // the "impersonating" chip in the user-menu slot, and the account menu's
   // end item all read this one state and one shared end attempt.
   const notice = useImpersonationNoticeState(grant)
-  // Whether the feature document is settled at all. The roster read treats the
-  // three states differently: `pending`/`failed` keep the current tenant
-  // unknown (tenant-scoped queries stay disabled), `ready` without tenant.admin
-  // falls back to the placeholder, `ready` with it reads the roster.
+  // Whether the feature document is settled at all. `pending`/`failed` keep
+  // the current tenant unknown (tenant-scoped queries stay disabled); `ready`
+  // lets the roster read (when tenant.admin is served) and the caller tenant
+  // list settle it.
   const featuresReady = presence.state === 'ready'
   // The current tenant is a host fact (the server resolves it per request
   // from the request's tenant header). chrome.tsx holds the two values that
@@ -449,28 +486,30 @@ function TenantFrame({
   const [tenantId, setTenantId] = useTenantSelection(
     impersonating ? null : getCurrentTenantId(),
   )
-  // The personal tenant the server ensured, held for the switcher's label: the
-  // tenant record carries no display name, so the host renders the bilingual
-  // 「个人空间 / Personal workspace」 text from it (src/chrome.tsx).
-  const [personalTenant, setPersonalTenant] = useState<{
-    readonly id: string
-    readonly alias: string
-  } | null>(null)
+  // The caller's own tenant list: the memberships read the root loads, and
+  // the fact the current tenant settles from. A read that has not settled
+  // (a failure included) is not an empty answer, so neither the settlement
+  // nor the personal-tenant ensure may treat it as "no memberships".
+  const selfState = useSelfTenantState()
+  // The tenant the platform roster's staff default names, when the read
+  // answered one. The roster read is a platform management read (staff only),
+  // so an ordinary member leaves this null and settles from their own list.
+  const [rosterDefaultId, setRosterDefaultId] = useState<string | null>(null)
   // Whether this identity's ensure answer reported that it had just created
   // the account's personal tenant while the profile still shows setup
   // incomplete. The home page turns that fact into its one-time
   // 「完成账户设置」 notice (src/personal-tenant-notice.tsx); an ordinary SMS
   // sign-in with a new number reaches it exactly like a registration does.
   const [personalSetupEligible, setPersonalSetupEligible] = useState(false)
-  // Whether the roster read has settled, so the ensure below never races it:
-  // an account that already has a current tenant must not trigger.
+  // Whether the roster read has settled (with an answer or a failure). The
+  // ensure's order guard waits for it when the read is part of the assembly:
+  // a roster row proving an existing membership must be able to exclude the
+  // account before a personal tenant is created for it.
   const [rosterSettled, setRosterSettled] = useState(false)
-  // Whether the current tenant is a SETTLED context rather than the
-  // placeholder fallback. A tenant-scoped surface that opens a connection
-  // (the notification stream) waits for this: the placeholder's alias names
-  // no tenant the caller belongs to, and a new account would otherwise open
-  // the stream before its personal tenant's ensure completes and be refused
-  // 404.
+  // Whether the current tenant is a SETTLED context rather than an unknown
+  // one. A tenant-scoped surface that opens a connection (the notification
+  // stream) waits for this: a new account would otherwise open the stream
+  // before its personal tenant's ensure completes and be refused 404.
   const [tenantSettled, setTenantSettled] = useState(false)
   // The ensure's retryable failure (a 503, or any failure that is not the
   // 409 already-member): the tenant-reading pages then render a retry
@@ -479,22 +518,25 @@ function TenantFrame({
   // A retry tick: the failure view's control bumps it, which re-runs the
   // ensure effect.
   const [personalRetry, setPersonalRetry] = useState(0)
+  // A 409 already-member means the membership source and the ensure disagree
+  // for a moment: the account is in a tenant the list had not reported. The
+  // host re-reads the list and settles from it, but it must not ask again
+  // before that answer lands -- an empty re-read would otherwise re-trigger
+  // the ensure in a loop. Cleared when the identity changes.
+  const [personalBlocked, setPersonalBlocked] = useState(false)
   // The identity-change gap. Ending an impersonation re-decides the current
-  // tenant from the roster, but until that roster read lands the current
-  // tenant keeps the ended grant's value (when the status read answered a
-  // bare 404 it is already unknown, because the grant is gone); only the
-  // roster's outcome re-decides it. In that gap the roster list has no row
-  // matching the current tenant, so the switcher would render its
-  // no-current-tenant text -- a state a host that settles no tenant at all
-  // also renders, for a different reason. The switcher therefore stays out
-  // of the bar until the roster lands, rather than putting that text
-  // against a shell that is only still reading. The edge is detected during
-  // render, not in an effect: React re-renders this component before
-  // committing, so the very first commit after the snapshot flips already
-  // withholds the switcher. The tenant effect below closes the gap when the
-  // roster outcome lands. A mount that does not follow an impersonation is
-  // untouched, so a viewer who settles no tenant for another reason (no
-  // roster-read access) keeps the switcher and its documented
+  // tenant from the caller tenant list and the roster, and until those reads
+  // land the current tenant is unknown -- the settled facts belong to the
+  // ended identity. The switcher would then render its no-current-tenant text,
+  // a state a host that settles no tenant at all also renders, for a
+  // different reason. The switcher therefore stays out of the bar until the
+  // reads land, rather than putting that text against a shell that is only
+  // still reading. The edge is detected during render, not in an effect: React
+  // re-renders this component before committing, so the very first commit
+  // after the snapshot flips already withholds the switcher. The tenant effect
+  // below closes the gap once the facts have settled. A mount that does not
+  // follow an impersonation is untouched, so a viewer who settles no tenant
+  // for another reason (no memberships) keeps the switcher and its documented
   // no-current-tenant state.
   const [identitySettling, setIdentitySettling] = useState(false)
   const [previousImpersonating, setPreviousImpersonating] =
@@ -505,60 +547,19 @@ function TenantFrame({
       setIdentitySettling(true)
     }
   }
-  // Settle the current tenant from the feature state and the roster. The read
-  // is the app's own generated operation on the platform's management surface;
-  // it needs tenant.read in the platform domain, which the demo's operator
-  // holds but an ordinary member does not. A viewer answered 403 keeps the
-  // placeholder's aliases, which answer only while the roster's alias still
-  // equals them: this read is the only route to a renamed alias and no
-  // member-facing endpoint carries one, so after a rename such a viewer is
-  // refused 404 on every tenant-scoped call. The demo's own seed signs in the
-  // platform administrator alone, so the seeded deployment always answers. The
-  // tenant-scoped surfaces stay disabled until this settles, because their
-  // queries gate on the tenant being known (TenantProvider below).
+  // Read the platform roster when the assembly serves it. The read needs
+  // tenant.read in the platform domain, which the demo's operator holds but an
+  // ordinary member does not; a refused read leaves the alias cache empty and
+  // the staff default null, and the current tenant then settles from the
+  // caller's own list. The roster is also the name source for a staff member
+  // entering a tenant they are not a member of, so its aliases are kept in the
+  // module cache. It is a platform management read, refused to an impersonated
+  // identity, so the impersonation branch reads nothing.
   useEffect(() => {
-    if (!authenticated) {
-      // The root already cleared the module-level cells; this keeps the
-      // frame's own state in step while it stays mounted (the ending
-      // session keeps rendering the sign-in surface until it flips).
-      setTenantId(null)
+    if (!authenticated || impersonating || !featuresReady || !rosterServed) {
       setRosterSettled(false)
-      setTenantSettled(false)
-      return
-    }
-    // The tenant is unknown until this read settles it; only the branches
-    // below that produce a real context raise the flag.
-    setTenantSettled(false)
-    if (impersonating) {
-      // The roster read is a platform management read, refused to an
-      // impersonated identity. The current tenant is the grant's tenant
-      // identifier instead -- no roster read, no placeholder fallback --
-      // and stays unknown until the status read settles, which keeps
-      // tenant-scoped queries disabled. The request surface's alias comes
-      // from the previously read roster cache when it holds this id, and
-      // from the placeholder otherwise (the known limitation this shares
-      // with a member who cannot read the roster).
-      setTenantId(grant?.tenant ?? null)
-      setRosterSettled(true)
-      setTenantSettled(grant?.tenant != null)
-      return
-    }
-    if (!featuresReady) {
-      // A pending or failed document never stands in for "tenant.admin
-      // absent": the current tenant stays unknown.
-      setTenantId(null)
-      setRosterSettled(false)
-      setIdentitySettling(false)
-      return
-    }
-    if (!rosterServed) {
-      // No roster to read: the frame falls back to the placeholder, which
-      // names no tenant the caller is known to belong to. It is what the
-      // frame renders, not a settled tenant context.
-      setTenantId(DEFAULT_TENANT_ID)
-      setRosterSettled(true)
-      setIdentitySettling(false)
-      return
+      setRosterDefaultId(null)
+      return undefined
     }
     let cancelled = false
     setRosterSettled(false)
@@ -578,62 +579,131 @@ function TenantFrame({
         )
         // The staff default is the first active tenant that is not someone's
         // personal tenant: the roster view carries no kind, so the server's
-        // identifier prefix tells them apart. A personal tenant belongs to
-        // one account and answers a staff viewer 404; it also sorts before
-        // most deployment identifiers ('p' < 't', 'z'), so without this the
-        // first active row would often be a stranger's personal space. The
-        // default must also be a tenant the switcher offers: the switcher
-        // lists the placeholder's tenants alone, so a row outside that list
-        // would leave the caller in a tenant the bar cannot name and the
-        // switcher cannot leave, with every tenant-scoped request refused.
-        setTenantId(defaultRosterTenant(answer.tenants) ?? DEFAULT_TENANT_ID)
+        // identifier prefix tells them apart. A personal tenant belongs to one
+        // account and answers a staff viewer 404; it also sorts before most
+        // deployment identifiers ('p' < 't', 'z'), so without this the first
+        // active row would often be a stranger's personal space.
+        setRosterDefaultId(defaultRosterTenant(answer.tenants))
         setRosterSettled(true)
-        setTenantSettled(true)
-        setIdentitySettling(false)
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (cancelled) {
           return
         }
-        // Only a 403 means the ordinary member the design names: the roster
-        // is a platform management read, so a member without tenant.read is
-        // refused it. Their lack of a current tenant is what the ensure
-        // below fills. Every other failure -- a 5xx, a network error, a
-        // timeout, a 401 -- says nothing about membership and must not
-        // create a personal tenant: it falls back to the placeholder, as the
-        // frame does when the feature is off.
-        setTenantId(
-          personalServed && httpStatusOf(error) === 403
-            ? null
-            : DEFAULT_TENANT_ID,
-        )
+        // A refusal or failure says nothing about membership: it settles the
+        // read (so the ensure's order guard is satisfied) with no staff
+        // default and no aliases.
+        setRosterDefaultId(null)
         setRosterSettled(true)
-        setIdentitySettling(false)
       })
     return () => {
       cancelled = true
     }
-    // The identity is an input: after an impersonation ends the roster
-    // decides the tenant again, and after a start the branch above keeps
-    // the roster out of it.
+    // The identity is an input: after an impersonation ends the roster is
+    // read again, and after a start the branch above keeps it out.
+  }, [authenticated, impersonating, featuresReady, rosterServed, principalId])
+
+  // Settle the current tenant from the caller's own tenant list and the
+  // roster's staff default. The list is the membership fact; the roster (staff
+  // only) names the first active non-personal tenant. The order: a current
+  // tenant the host can name is kept (a switch, a route that named one, or a
+  // previous settlement); then the roster's staff default; then the account's
+  // personal row; then the list's first row; otherwise the current tenant
+  // stays unknown and tenant-scoped reads stay disabled. A list that has not
+  // settled -- and left no rows on hand -- is not an empty answer, so nothing
+  // is settled from it.
+  useEffect(() => {
+    if (!authenticated) {
+      // The root already cleared the module-level cells; this keeps the
+      // frame's own state in step while it stays mounted (the ending
+      // session keeps rendering the sign-in surface until it flips).
+      setTenantId(null)
+      setTenantSettled(false)
+      return
+    }
+    setTenantSettled(false)
+    if (impersonating) {
+      // The caller tenant read is not issued for an impersonated session. The
+      // current tenant is the grant's tenant identifier, and stays unknown
+      // until the status read settles, which keeps tenant-scoped queries
+      // disabled.
+      setTenantId(grant?.tenant ?? null)
+      setTenantSettled(grant?.tenant != null)
+      return
+    }
+    if (!featuresReady) {
+      // A pending or failed document never stands in for "no tenant": the
+      // current tenant stays unknown.
+      setTenantId(null)
+      setIdentitySettling(false)
+      return
+    }
+    // Keep a current tenant the host can name: a switch, a route that named
+    // one, or a previous settlement. It must be nameable -- a row of the list
+    // or a roster alias -- or the caller would sit in a tenant the bar cannot
+    // show and the switcher cannot leave.
+    const current = getCurrentTenantId()
+    if (
+      !identitySettling &&
+      current !== null &&
+      tenantNameable(current, selfState)
+    ) {
+      setTenantId(current)
+      setTenantSettled(true)
+      return
+    }
+    if (rosterServed && !rosterSettled) {
+      // The staff default is decided by a read still in flight. The
+      // identity-change gap stays open too: the switcher stays out of the bar
+      // rather than stating "no current tenant" while the host is only still
+      // reading.
+      setTenantId(null)
+      return
+    }
+    // A failure keeps the rows already settled, so the list stays usable; a
+    // failure with no rows on hand is not an empty answer.
+    const listUsable = selfState.settled || selfState.tenants.length > 0
+    if (!listUsable) {
+      setTenantId(null)
+      setIdentitySettling(false)
+      return
+    }
+    const personalId =
+      principalId === '' ? null : personalTenantId(principalId)
+    const personalRow =
+      personalId !== null &&
+      selfState.tenants.some((tenant) => tenant.id === personalId)
+        ? personalId
+        : null
+    const next =
+      (rosterServed ? rosterDefaultId : null) ??
+      personalRow ??
+      selfState.tenants[0]?.id ??
+      null
+    setTenantId(next)
+    setTenantSettled(next !== null)
+    setIdentitySettling(false)
   }, [
     authenticated,
+    impersonating,
     featuresReady,
     rosterServed,
-    personalServed,
-    impersonating,
+    rosterSettled,
+    rosterDefaultId,
+    selfState,
     principalId,
     grant?.tenant,
+    identitySettling,
     setTenantId,
   ])
 
-  // Reset the personal tenant the moment the identity it belongs to changes:
-  // a started or ended impersonation swaps the effective account, and a
-  // tenant the previous identity ensured must not label the new one.
+  // Reset the personal-tenant facts the moment the identity they belong to
+  // changes: a started or ended impersonation swaps the effective account, and
+  // a decision taken for the previous identity must not carry over.
   useEffect(() => {
-    setPersonalTenant(null)
     setPersonalFailure(false)
     setPersonalSetupEligible(false)
+    setPersonalBlocked(false)
   }, [principalId, generation, impersonating])
 
   // The router's navigate callback changes identity with the location, so an
@@ -644,24 +714,39 @@ function TenantFrame({
     navigateRef.current = navigate
   }, [navigate])
 
-  // The personal ensure. It runs only when every eligibility fact the server
-  // will check holds here too: an authenticated session that is not
-  // impersonating, a settled feature document that serves workspace.personal,
-  // a settled roster read, and no current tenant. An account that already has
-  // one -- platform staff whose roster read answered, or a viewer who picked
-  // one -- never calls it.
+  // The personal ensure. It asks the server only when the account has no
+  // membership at all: authenticated, not impersonating, the
+  // workspace.personal policy served, the caller tenant list settled AND
+  // EMPTY, the current tenant unknown, and -- when the assembly reads the
+  // roster -- the roster read settled, so a membership the roster shows has
+  // already excluded this account. A failed list read is not an empty list, so
+  // it never triggers.
   //
-  // The server decides the answer: 200 sets the personal tenant as the
-  // current one (the alias is recorded before it is announced, because no
-  // roster read carries it); 409 already-member leaves the account with no
-  // personal tenant and the frame falls back to the placeholder, whose
-  // tenant-scoped reads the admission layer refuses with the 「无法访问当前
-  // 组织」 state; every other failure is the tenant area's retryable failure.
+  // The server decides the answer: 200 sets the created tenant as the current
+  // one (the alias is recorded before it is announced, because no roster read
+  // carries it) and the list is re-read so the switcher gets the new row from
+  // the membership source; 409 already-member is the race with a concurrent
+  // grant, so no personal tenant is written and the host re-reads the list and
+  // settles from it; every other failure is the tenant area's retryable
+  // failure.
   useEffect(() => {
     if (!authenticated || impersonating || !featuresReady || !personalServed) {
       return undefined
     }
-    if (!rosterSettled || tenantId !== null) {
+    if (personalBlocked) {
+      return undefined
+    }
+    if (!selfState.settled || selfState.tenants.length !== 0) {
+      return undefined
+    }
+    // Read the cell, not this render's state: the settlement effect above runs
+    // earlier in the same commit and writes it synchronously, so a tenant it
+    // just settled (the roster's staff default, for one) is already visible
+    // here even though React has not re-rendered with the new state.
+    if (tenantId !== null || getCurrentTenantId() !== null) {
+      return undefined
+    }
+    if (rosterServed && !rosterSettled) {
       return undefined
     }
     let cancelled = false
@@ -673,10 +758,13 @@ function TenantFrame({
           return
         }
         setTenantAlias(answer.tenant.id, answer.tenant.alias)
-        setPersonalTenant({ id: answer.tenant.id, alias: answer.tenant.alias })
         setTenantId(answer.tenant.id)
         // The personal tenant is a real context the caller is a member of.
         setTenantSettled(true)
+        // Read the membership list again: the new space is a membership, and
+        // the switcher must get its row from that source, not from this
+        // answer.
+        void loadSelfTenants()
         // `created` says this call registered the tenant, so the account is
         // new to password sign-in until it adds a login name and a password.
         // The profile is the GET /api/v1/auth/me read the session committed with
@@ -698,13 +786,12 @@ function TenantFrame({
           return
         }
         if (httpStatusOf(error) === 409) {
-          // already-member: the account belongs to another tenant. It gets no
-          // personal one, and the placeholder tenant is what makes its reads
-          // fire and render the admission refusal.
-          setPersonalTenant(null)
-          setTenantId(DEFAULT_TENANT_ID)
-          setTenantSettled(false)
-          setIdentitySettling(false)
+          // already-member: the account belongs to a tenant the list had not
+          // reported yet. No personal tenant is written; re-read the list and
+          // settle the current tenant from it. The block keeps an empty
+          // re-read from triggering this effect in a loop.
+          setPersonalBlocked(true)
+          void loadSelfTenants()
           return
         }
         setPersonalFailure(true)
@@ -717,6 +804,9 @@ function TenantFrame({
     impersonating,
     featuresReady,
     personalServed,
+    personalBlocked,
+    selfState,
+    rosterServed,
     rosterSettled,
     tenantId,
     principalId,
@@ -725,6 +815,26 @@ function TenantFrame({
     session,
     setTenantId,
   ])
+  // The switcher's rows: every member tenant from the caller tenant read, in
+  // its (identifier) order, plus the current tenant when the list does not
+  // hold it -- a platform staff member entering a tenant they are not a member
+  // of. The added row is nameable through the roster's alias cache; when the
+  // cache has no alias either, the row is not added and the trigger shows its
+  // no-current-tenant state (the documented limitation).
+  const menuTenants: DemoTenant[] = selfState.tenants.map((tenant) => ({
+    id: tenant.id,
+    alias: tenant.alias,
+    name: tenant.alias,
+  }))
+  if (tenantId !== null && !menuTenants.some((row) => row.id === tenantId)) {
+    const alias = getRecordedTenantAlias(tenantId)
+    if (alias !== null) {
+      menuTenants.push({ id: tenantId, alias, name: alias })
+    }
+  }
+  const callerPersonalTenantId =
+    principalId === '' ? null : personalTenantId(principalId)
+
   const items = useNavItems()
   const consoleRoutes = presentDeclarations(consoleShellRoutes, presence)
 
@@ -833,8 +943,9 @@ function TenantFrame({
             <>
               {impersonating || identitySettling ? null : (
                 <TenantMenu
+                  tenants={menuTenants}
                   tenantId={tenantId}
-                  personalTenant={personalTenant}
+                  personalTenantId={callerPersonalTenantId}
                   onTenantSelect={setTenantId}
                   compact={rail.narrow}
                 />
@@ -1059,6 +1170,12 @@ function useConsoleTenantSettle(authenticated: boolean): void {
         if (cancelled || getCurrentTenantId() !== null) {
           return
         }
+        // The selected row's alias is the name the permission read announces:
+        // a roster tenant outside the switcher's default list has no other
+        // source for it.
+        setTenantAliases(
+          new Map(answer.tenants.map((tenant) => [tenant.id, tenant.alias])),
+        )
         setCurrentTenantId(defaultRosterTenant(answer.tenants) ?? DEFAULT_TENANT_ID)
       })
       .catch(() => {

@@ -546,12 +546,15 @@ describe('the sign-in surface', () => {
           ],
         }),
       // An ordinary member cannot read the tenant roster; the frame's failed
-      // read leaves no current tenant, which is what lets the ensure run.
+      // read leaves no current tenant. The caller tenant list is the
+      // membership fact, and it answers empty: the account has no membership
+      // yet, which is what lets the ensure run.
       'GET /api/v1/system/tenants': () => {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,
         })
       },
+      'GET /api/v1/auth/me/tenants': () => ({ tenants: [] }),
       'POST /api/v1/workspace/personal': () => ({
         tenant: {
           id: 'personal-account-1',

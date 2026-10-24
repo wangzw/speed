@@ -159,7 +159,7 @@ function TenantSwitchHarness(): ReactElement {
     <TenantMenu
       tenants={TWO_TENANTS}
       tenantId={tenantId}
-      personalTenant={null}
+      personalTenantId={null}
       onTenantSelect={setTenantId}
     />
   )

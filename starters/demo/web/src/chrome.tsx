@@ -14,9 +14,10 @@
  *  - AppBrand: the demo namespace's product title.
  *  - HeaderActions: the app-wide language switch and color-mode toggle,
  *    grouped for the frame's headerActions slot. Both shells render them.
- *  - TenantMenu: tenancy-ui's TenantSwitcher over the host's own placeholder
- *    tenant list. product-shell places the switcher in the userMenu slot;
- *    the console banner, which resolves no tenant, does not render it.
+ *  - TenantMenu: tenancy-ui's TenantSwitcher over the caller's own tenant
+ *    list (the caller tenant read). product-shell places the switcher in the
+ *    userMenu slot; the console banner, which resolves no tenant, does not
+ *    render it.
  *  - UserMenu: an avatar trigger opening a menu of profile / account-settings
  *    / sign-out, replacing the bare sign-out button. While an impersonation
  *    is in force, auth-ui's end item sits first: closing the banner must not
@@ -48,6 +49,7 @@ import type { AppThemeMode } from '@speed/ui-kit'
 import { useAppServices } from './app-services.js'
 import { ACCOUNT_PATH } from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
+import { selfTenantAlias } from './tenant-self.js'
 
 /**
  * One tenant the switcher offers. Its two identifiers are distinct on
@@ -78,23 +80,20 @@ export interface DemoTenant extends TenantOption {
 }
 
 /**
- * The tenant list the switcher offers. The skeleton carries no tenant
- * roster -- there is no membership source -- so the app supplies a
- * placeholder list; a product replaces it with the tenants its own
- * generated operations return (each row's id and alias are what the roster
- * holds, so the two may differ after a rename). The placeholder must not
- * name a tenant the deployment does not serve: the seeded roster in
- * starters/demo/server/testdata registers `acme`, so that is the whole list
- * here. The current tenant is a routing fact the server resolves per
- * request, held here as host state.
+ * The switcher's default list, used when a host does not pass its own rows.
+ * The demo host passes the caller tenant read's answer instead, so this is a
+ * fallback for a bare mount (and for the package-level harness); the seeded
+ * roster in starters/demo/server/testdata registers `acme`.
  */
 export const DEMO_TENANTS: readonly DemoTenant[] = [
   { id: 'acme', alias: 'acme', name: 'Acme Inc.' },
 ]
 
 /**
- * The tenant the app falls back to when the roster cannot be read: the
- * placeholder list's first.
+ * The console area's last-resort tenant: the switcher default's first, used
+ * when the roster read offers no active non-personal row. The tenant frame
+ * does not use it -- a failed or empty caller tenant list leaves the current
+ * tenant unknown.
  */
 export const DEFAULT_TENANT_ID: string | null = DEMO_TENANTS[0]?.id ?? null
 
@@ -213,17 +212,33 @@ export function setTenantAlias(tenantId: string, alias: string): void {
 }
 
 /**
+ * One tenant's alias as the roster read recorded it, or null when the cache
+ * does not hold that id. The tenant list the switcher renders adds the current
+ * tenant from here when the caller tenant read does not list it -- a platform
+ * staff member entering a tenant they are not a member of -- so the trigger
+ * can name it and leave it.
+ */
+export function getRecordedTenantAlias(tenantId: string): string | null {
+  return rosterAliases.get(tenantId) ?? null
+}
+
+/**
  * The value the client announces on every request as X-Tenant: the current
  * tenant's ALIAS, the name the request surface carries -- the roster's current
- * alias when the app has read it, the placeholder's otherwise. This is the
- * tenantProvider the assembly reads per attempt (src/main.tsx); it is not
- * getCurrentTenantId, whose value the switcher keys on.
+ * alias when the app has read it, the caller tenant list's otherwise, the
+ * placeholder's last. This is the tenantProvider the assembly reads per
+ * attempt (src/main.tsx); it is not getCurrentTenantId, whose value the
+ * switcher keys on.
  */
 export function getCurrentTenantAlias(): string | null {
   if (currentTenantId === null) {
     return null
   }
-  return rosterAliases.get(currentTenantId) ?? tenantAlias(currentTenantId)
+  return (
+    rosterAliases.get(currentTenantId) ??
+    selfTenantAlias(currentTenantId) ??
+    tenantAlias(currentTenantId)
+  )
 }
 
 /**
@@ -305,31 +320,35 @@ export function HeaderActions(): ReactElement {
 }
 
 /**
- * The tenant switcher over the host's tenant list. The current tenant is a
- * host fact (a route change, not a session op), and product-shell places the
+ * The tenant switcher over the caller's own tenant list. The current tenant is
+ * a host fact (a route change, not a session op), and product-shell places the
  * switcher in the userMenu slot; the console banner, which resolves no tenant,
  * does not render it.
  *
- * A personal tenant is the whole list while it is the current tenant: the
- * tenant record carries no display name, so the label is the host's bilingual
- * 「个人空间 / Personal workspace」 text rather than the alias. Any other
- * tenant renders its alias, which is the request-surface name and is never
- * translated.
+ * Every row the host offers is rendered. A tenant record carries no display
+ * name, so a row renders its alias -- the request-surface name, never
+ * translated -- except the account's own personal tenant, which renders the
+ * host's bilingual 「个人空间 / Personal workspace」 text. The personal row is
+ * recognised by the derived identifier compared EXACTLY: another account's
+ * personal tenant shares the prefix and must render its alias instead.
  */
 export function TenantMenu({
   tenants: offered = DEMO_TENANTS,
   tenantId,
-  personalTenant,
+  personalTenantId,
   onTenantSelect,
   compact = false,
 }: {
-  /** The tenant list the host offers; defaults to the placeholder list. A
-   * product passes the tenants its own membership source returns. */
+  /** The tenant list the host offers; defaults to the placeholder list. The
+   * app passes the caller tenant read's rows plus the current tenant when the
+   * list does not hold it. */
   readonly tenants?: readonly DemoTenant[]
   /** The id of the tenant the host currently resolves to, or null. */
   readonly tenantId: string | null
-  /** The caller's personal tenant, when one was ensured, or null. */
-  readonly personalTenant: { readonly id: string; readonly alias: string } | null
+  /** The identifier the host derives for the caller's personal tenant
+   * (personalTenantId(accountId)), or null while no account is known. Only the
+   * row whose id equals it exactly carries the personal-workspace copy. */
+  readonly personalTenantId: string | null
   /** Reports the tenant the user picked; the host switches its route/state. */
   readonly onTenantSelect: (tenantId: string) => void
   /** Icon-only trigger for the collapsed sidebar rail, where the tenant
@@ -338,16 +357,11 @@ export function TenantMenu({
   readonly compact?: boolean
 }): ReactElement {
   const { t } = useTranslation(DEMO_NAMESPACE)
-  const tenants: readonly DemoTenant[] =
-    personalTenant === null
-      ? offered.map((tenant) => ({ ...tenant, name: tenant.alias }))
-      : [
-          {
-            id: personalTenant.id,
-            alias: personalTenant.alias,
-            name: t('workspace.personal'),
-          },
-        ]
+  const tenants: readonly DemoTenant[] = offered.map((tenant) =>
+    personalTenantId !== null && tenant.id === personalTenantId
+      ? { ...tenant, name: t('workspace.personal') }
+      : { ...tenant, name: tenant.alias },
+  )
   return (
     <TenantSwitcher
       tenants={tenants}

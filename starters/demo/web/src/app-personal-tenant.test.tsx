@@ -20,13 +20,13 @@ import type { AuthnProfileProfile } from './app-api/index.js'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import demoZhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
-  DEFAULT_TENANT_ID,
   getCurrentTenantAlias,
   getCurrentTenantId,
   setCurrentTenantId,
   setTenantAliases,
 } from './chrome.js'
 import { ACCOUNT_SETUP_PATH } from './paths.js'
+import { clearSelfTenants } from './tenant-self.js'
 import { renderDemoApp } from './test-utils/render.js'
 import {
   ANONYMOUS_SNAPSHOT,
@@ -38,6 +38,7 @@ import {
 const PERSONAL_ID = 'personal-account-1'
 const ROSTER_PATH = '/api/v1/system/tenants'
 const ENSURE_PATH = '/api/v1/workspace/personal'
+const SELF_PATH = '/api/v1/auth/me/tenants'
 
 const PERSONAL_FEATURES = ['tenant.admin', 'workspace.personal'] as const
 
@@ -56,6 +57,12 @@ type RosterAnswer =
   | 'network'
   | { readonly tenants: readonly unknown[] }
   | { readonly status: number }
+
+/** The caller tenant read's answer: a list of memberships, or a failure. A
+ * function answers per call, so a case can change the list after the ensure. */
+type SelfAnswer =
+  | 'failure'
+  | { readonly tenants: readonly { readonly id: string; readonly alias: string }[] }
 
 /** A profile the session's GET /api/v1/auth/me answers: no login name and no
  * password -- the setup-incomplete state the notice is about. */
@@ -117,13 +124,33 @@ function script(options: {
   readonly ensure?: 'success' | 'conflict' | 'unavailable'
   /** Whether the answer reports a creation; a function answers per call. */
   readonly ensureCreated?: boolean | (() => boolean)
+  /** The personal tenant identifier the ensure answers; defaults to the
+   * first identity's. A function answers per call, so a case that swaps the
+   * acting account returns the identifier that account's server would derive. */
+  readonly ensureTenantId?: () => string
   readonly ensureCalls?: string[]
+  /** The caller tenant read's answer; defaults to an empty, settled list. A
+   * function answers per call, so a case can reveal a membership the ensure
+   * or the roster settled after the first read. */
+  readonly self?: SelfAnswer | (() => SelfAnswer)
+  readonly selfCalls?: string[]
   readonly calls?: string[]
   readonly profile?: () => AuthnProfileProfile
 }): void {
   const ensure = options.ensure ?? 'success'
   bindScript(async (path, call) => {
     options.calls?.push(`${call.method ?? 'GET'} ${path}`)
+    if ((call.method ?? 'GET') === 'GET' && path === SELF_PATH) {
+      options.selfCalls?.push(SELF_PATH)
+      const self =
+        typeof options.self === 'function'
+          ? options.self()
+          : (options.self ?? { tenants: [] })
+      if (self === 'failure') {
+        throw Object.assign(new Error('the self read failed'), { status: 503 })
+      }
+      return self
+    }
     if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
       const roster = options.roster ?? { tenants: [] }
       if (roster === 'refused') {
@@ -162,8 +189,9 @@ function script(options: {
         typeof options.ensureCreated === 'function'
           ? options.ensureCreated()
           : (options.ensureCreated ?? true)
+      const tenantId = options.ensureTenantId?.() ?? PERSONAL_ID
       return {
-        tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
+        tenant: { id: tenantId, alias: tenantId, kind: 'personal' },
         created,
       }
     }
@@ -220,6 +248,7 @@ function snapshotWithProfile(
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
+  clearSelfTenants()
   setCurrentTenantId(null)
   setTenantAliases(new Map())
 })
@@ -242,6 +271,127 @@ describe('the tenant frame and the personal tenant', () => {
     expect(ensureCalls).toEqual([ENSURE_PATH])
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
     expect(getCurrentTenantAlias()).toBe(PERSONAL_ID)
+  })
+
+  it('does not ensure from a failed self read: a failure is not an empty list', async () => {
+    const ensureCalls: string[] = []
+    const selfCalls: string[] = []
+    script({ roster: 'refused', ensureCalls, selfCalls, self: 'failure' })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    // The read failed, so the list never settled and the trigger is not met:
+    // the host does not mistake a failed read for "no memberships" and create
+    // a space the account may not need.
+    await waitFor(() => expect(selfCalls.length).toBeGreaterThanOrEqual(1))
+    expect(ensureCalls).toHaveLength(0)
+    expect(getCurrentTenantId()).toBeNull()
+  })
+
+  it('never ensures when the self list already has memberships', async () => {
+    const ensureCalls: string[] = []
+    script({
+      roster: 'refused',
+      ensureCalls,
+      self: { tenants: [{ id: 'acme', alias: 'acme' }] },
+    })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    // A non-empty list means the account already has an entry; the current
+    // tenant settles from the list and no personal tenant is created.
+    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
+    expect(ensureCalls).toHaveLength(0)
+  })
+
+  it('settles the account personal row before the first row of the list', async () => {
+    const ensureCalls: string[] = []
+    script({
+      roster: 'refused',
+      ensureCalls,
+      // Ordered by identifier: the personal row is deliberately not first.
+      self: {
+        tenants: [
+          { id: 'aaa', alias: 'aaa' },
+          { id: PERSONAL_ID, alias: PERSONAL_ID },
+        ],
+      },
+    })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    // The account's own space is the preferred entry even when another
+    // membership sorts before it, and the existing row means no ensure.
+    await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
+    expect(ensureCalls).toHaveLength(0)
+  })
+
+  it('ensures without the roster read when the assembly does not serve it', async () => {
+    const ensureCalls: string[] = []
+    script({ ensureCalls })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures('workspace.personal') }),
+      ),
+    })
+
+    // No roster read is part of this assembly, so the order guard has nothing
+    // to wait for: the settled empty list and the unknown current tenant are
+    // enough.
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
+    await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
+  })
+
+  it('re-reads the self list after creating the personal tenant', async () => {
+    const selfCalls: string[] = []
+    let created = false
+    bindScript(async (path, call) => {
+      if ((call.method ?? 'GET') === 'GET' && path === SELF_PATH) {
+        selfCalls.push(SELF_PATH)
+        return created
+          ? { tenants: [{ id: PERSONAL_ID, alias: PERSONAL_ID }] }
+          : { tenants: [] }
+      }
+      if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
+        throw Object.assign(new Error('the roster read was refused'), {
+          status: 403,
+        })
+      }
+      if (call.method === 'POST' && path === ENSURE_PATH) {
+        created = true
+        return {
+          tenant: { id: PERSONAL_ID, alias: PERSONAL_ID, kind: 'personal' },
+          created: true,
+        }
+      }
+      if ((call.method ?? 'GET') === 'GET' && path === '/api/v1/auth/me') {
+        return INCOMPLETE_PROFILE
+      }
+      throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
+    })
+    renderDemoApp({
+      session: createTestSession(
+        authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
+      ),
+    })
+
+    // The list the switcher renders is the read's answer: after the ensure
+    // creates the space the host reads it again, so the new row comes from the
+    // membership source rather than a special case.
+    await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
+    await waitFor(() => expect(selfCalls.length).toBeGreaterThanOrEqual(2))
+    expect(
+      await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
+    ).toBeInTheDocument()
   })
 
   it('does not offer the setup notice when the personal tenant already existed', async () => {
@@ -314,15 +464,20 @@ describe('the tenant frame and the personal tenant', () => {
   })
 
   it('does not call the ensure when the feature is not in force', async () => {
+    const selfCalls: string[] = []
     const calls: string[] = []
-    script({ roster: 'refused', calls })
+    script({ roster: 'refused', calls, selfCalls })
     renderDemoApp({
       session: createTestSession(
         authenticatedSnapshot({ features: readyFeatures('tenant.admin') }),
       ),
     })
 
-    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
+    // The empty self list is the account's membership fact: the current tenant
+    // stays unknown, and nothing creates a personal tenant when the deployment
+    // does not serve the policy.
+    await waitFor(() => expect(selfCalls).toHaveLength(1))
+    expect(getCurrentTenantId()).toBeNull()
     expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
   })
 
@@ -406,6 +561,9 @@ describe('the tenant frame and the personal tenant', () => {
     const ensureCalls: string[] = []
     let behavior: 'unavailable' | 'success' = 'unavailable'
     bindScript(async (path, call) => {
+      if ((call.method ?? 'GET') === 'GET' && path === SELF_PATH) {
+        return { tenants: [] }
+      }
       if ((call.method ?? 'GET') === 'GET' && path === ROSTER_PATH) {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,
@@ -450,55 +608,66 @@ describe('the tenant frame and the personal tenant', () => {
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
   })
 
-  it('keeps no personal tenant on the 409, falling back to the placeholder', async () => {
+  it('keeps no current tenant on the 409 and settles from a re-read of the list', async () => {
     const ensureCalls: string[] = []
-    script({ roster: 'refused', ensure: 'conflict', ensureCalls })
+    let reads = 0
+    script({
+      roster: 'refused',
+      ensure: 'conflict',
+      ensureCalls,
+      // The first read is the pre-ensure snapshot; the re-read reveals the
+      // membership the concurrent grant created.
+      self: () =>
+        reads++ === 0
+          ? { tenants: [] }
+          : { tenants: [{ id: 'globex', alias: 'globex' }] },
+    })
     renderDemoApp({
       session: createTestSession(
         authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
       ),
     })
 
-    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
+    // The 409 already-member is a race, not a failure: no personal tenant is
+    // written, the list is re-read, and the membership it now reports becomes
+    // the current tenant.
+    await waitFor(() => expect(getCurrentTenantId()).toBe('globex'))
     expect(ensureCalls).toHaveLength(1)
-    // No personal tenant was set, and no retryable failure is shown: the
-    // tenant-scoped reads fire under the placeholder and render the admission
-    // layer's access-refused state, which is the tenant area's answer for an
-    // account without a readable roster.
     expect(
       screen.queryByRole('button', { name: demoEnUS.workspace.personal }),
     ).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('does not ensure a personal tenant when the roster read fails with a 5xx', async () => {
-    const calls: string[] = []
-    script({ roster: { status: 500 }, calls })
+  it('does not let a failed roster read stand in for membership: the empty self list still ensures', async () => {
+    const ensureCalls: string[] = []
+    const selfCalls: string[] = []
+    script({ roster: { status: 500 }, ensureCalls, selfCalls })
     renderDemoApp({
       session: createTestSession(
         authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
       ),
     })
 
-    // Only a 403 says "an ordinary member". A 5xx says nothing about
-    // membership, so it falls back to the placeholder tenant and the ensure
-    // is never called.
-    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
-    expect(calls).toContain(`GET ${ROSTER_PATH}`)
-    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+    // The self list is the membership fact. A 5xx roster read says nothing
+    // about it; once the list has settled empty, the order guard is satisfied
+    // (the roster read settled, even by failing) and the ensure runs.
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
+    expect(selfCalls.length).toBeGreaterThanOrEqual(1)
+    await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
   })
 
-  it('does not ensure a personal tenant on a network failure', async () => {
-    const calls: string[] = []
-    script({ roster: 'network', calls })
+  it('does not let a network-failed roster read block the ensure either', async () => {
+    const ensureCalls: string[] = []
+    script({ roster: 'network', ensureCalls })
     renderDemoApp({
       session: createTestSession(
         authenticatedSnapshot({ features: readyFeatures(...PERSONAL_FEATURES) }),
       ),
     })
 
-    await waitFor(() => expect(getCurrentTenantId()).toBe(DEFAULT_TENANT_ID))
-    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
+    await waitFor(() => expect(getCurrentTenantId()).toBe(PERSONAL_ID))
   })
 
   it('offers no notice when a new tenant already has a complete account', async () => {
@@ -652,11 +821,17 @@ describe('the tenant frame and the personal tenant', () => {
 
   it('resets the notice when the identity changes', async () => {
     let ensures = 0
+    let identities = 0
     script({
       roster: 'refused',
       // The first identity's tenant is created; the second identity already
       // has its own, so it must not inherit the first one's notice.
       ensureCreated: () => ensures++ === 0,
+      // The server derives the identifier per account; the second identity's
+      // own space is therefore a different identifier, and the switcher must
+      // label it as personal (not another account's row).
+      ensureTenantId: () =>
+        identities++ === 0 ? PERSONAL_ID : 'personal-account-2',
       profile: () => INCOMPLETE_PROFILE,
     })
     const session = createTestSession(snapshotWithProfile(false))

@@ -78,6 +78,9 @@ describe('the live subscription and the tenant context', () => {
     bindRequestFn((async (path: string, options?: RequestOptions) => {
       const method = options?.method ?? 'GET'
       calls.push(`${method} ${path}`)
+      if (method === 'GET' && path === '/api/v1/auth/me/tenants') {
+        return { tenants: [] }
+      }
       if (method === 'GET' && path === ROSTER_PATH) {
         throw Object.assign(new Error('the roster read was refused'), {
           status: 403,

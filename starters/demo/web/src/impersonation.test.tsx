@@ -378,6 +378,12 @@ function makeBackend(options: {
     if (path.startsWith('/api/v1/notifications/')) {
       tenantReads += 1
     }
+    if (path === '/api/v1/auth/me/tenants') {
+      // The caller tenant list: this backend's operator holds no membership
+      // the roster default would not already name, so an empty settled list is
+      // the answer the settlement needs.
+      return Promise.resolve({ tenants: [] } as T)
+    }
     if (path === '/api/v1/system/tenants') {
       rosterReads += 1
       if (options.rosterGate !== undefined) {
@@ -1871,8 +1877,10 @@ describe('the impersonation shell', () => {
 
     // The set went unknown immediately before the re-read that answered it;
     // without that reset a stale set could outlive the identity it was read
-    // under.
-    expect(attached).toEqual([null, [], null, ['tenant.read']])
+    // under. The current tenant is unknown while the caller tenant list and the
+    // roster settle after the end, so the set is reset once more -- the read
+    // waits for a tenant it can name -- before the operator's read attaches.
+    expect(attached).toEqual([null, [], null, null, ['tenant.read']])
     expect(
       await screen.findByRole('link', { name: demoEnUS.nav.console }),
     ).toBeInTheDocument()

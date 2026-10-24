@@ -33,6 +33,9 @@ describe('the announced tenant, once the roster is read', () => {
     const request: RequestFn = async <T>(
       path: string,
     ): Promise<T> => {
+      if (path === '/api/v1/auth/me/tenants') {
+        return { tenants: [] } as T
+      }
       if (path === '/api/v1/system/tenants') {
         return {
           tenants: [{ id: 'acme', alias: 'acme-inc', status: 'active' }],
@@ -52,14 +55,16 @@ describe('the announced tenant, once the roster is read', () => {
     expect(getCurrentTenantAlias()).toBe('acme-inc')
   })
 
-  it('chooses the first active tenant the switcher offers, skipping personal tenants', async () => {
+  it('chooses the first active roster tenant, skipping personal tenants', async () => {
     // The roster is ordered by identifier, so a personal tenant ('personal-')
     // sorts before most deployment tenants. It belongs to one account and
-    // would refuse a staff viewer, so the default must skip it. The default
-    // must also stay inside the placeholder's list, which is all the switcher
-    // offers: a roster tenant outside it would leave the caller in a tenant
-    // the bar cannot name and the switcher cannot leave.
+    // would refuse a staff viewer, so the default must skip it. The chosen row
+    // is nameable through the roster's alias cache even though the caller is
+    // not a member of it.
     const request: RequestFn = async <T>(path: string): Promise<T> => {
+      if (path === '/api/v1/auth/me/tenants') {
+        return { tenants: [] } as T
+      }
       if (path === '/api/v1/system/tenants') {
         return {
           tenants: [
@@ -76,8 +81,8 @@ describe('the announced tenant, once the roster is read', () => {
     renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
 
     await waitFor(() => {
-      expect(getCurrentTenantId()).toBe('acme')
+      expect(getCurrentTenantId()).toBe('accept-tenant')
     })
-    expect(getCurrentTenantAlias()).toBe('acme')
+    expect(getCurrentTenantAlias()).toBe('accept-tenant')
   })
 })
