@@ -24,6 +24,7 @@ python3 tools/check_workflow_refs.py
 python3 tools/check_conflict_markers.py
 python3 tools/check_observability_readiness.py
 python3 tools/check_test_tiers.py
+python3 tools/check_e2e_honesty.py
 ```
 
 Their own test suites run together, from the repository root:
@@ -120,6 +121,24 @@ and what is missing), 2 infrastructure error (the root is not a directory,
 `pkg/` is missing, no Go file was read, or a positive control saw an empty
 set).
 
+
+`check_e2e_honesty.py` — holds the end-to-end tier's claim that its journeys
+prove the product through a real browser. It checks that every journey
+document under `docs/prd/journeys` is either declared by a spec or registered
+unreachable with a reason; that each spec declares one known journey and
+covers only ids that document lists, and contains at least one `test(...)`
+that runs (`test.skip`/`test.fixme` do not count); that no e2e source issues
+network requests, intercepts routes, evaluates script or uses a non-WebAuthn
+CDP domain; that a spec or helper does not import the process, a filesystem
+write or a database client, and that only `fixtures/log.ts` parses logfmt lines
+or reads `verification_code`; that every Playwright artifact path
+(`outputDir`, the HTML reporter's `outputFolder`, any `outputFile`) resolves
+under `/tmp`; and that the root Makefile has an `e2e` target while `check`
+does not reach the tier by target name, `playwright test` or
+`typecheck:e2e`. Exit codes: 0 clean, 1 findings (each with its path, and a
+line for a token hit), 2 infrastructure error (the root is not a directory,
+the journeys directory is missing or empty, the e2e directory is missing, or
+the journey registry cannot be parsed).
 
 `check_test_tiers.py` — holds the two rulings of the test-tier decision
 that nothing else in the tree holds, each of which fails silently. A
