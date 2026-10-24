@@ -150,6 +150,7 @@ func (rosterStub) Create(context.Context, tenant.Tenant) error { return nil }
 func (rosterStub) SetStatus(context.Context, tenant.ID, tenant.Status) error {
 	return nil
 }
+
 func (rosterStub) SetStatusByAccount(context.Context, tenant.ID, tenant.Status) error {
 	return nil
 }
