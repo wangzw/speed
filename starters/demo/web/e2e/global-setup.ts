@@ -26,6 +26,7 @@ import { join } from 'node:path'
 import {
   ARTIFACT_ROOT,
   BINARY_NAME,
+  DEPLOY_BINARY_NAME,
   HARNESS_DIR,
   MANIFEST_PATH,
   REPO_ROOT,
@@ -121,8 +122,22 @@ export default async function globalSetup(): Promise<void> {
     'building the review binary',
   )
 
+  // The deployment assembly is a second build of the same program: the deploy
+  // tag adds the SMTP carrier, the email verification code sender and the two
+  // social login methods, which is what the deploy journey drives. It embeds
+  // the same front-end bundle, so it is built after the front end like the
+  // review binary.
+  const deployBinary = join(HARNESS_DIR, DEPLOY_BINARY_NAME)
+  await build(
+    'go',
+    ['-C', SERVER_DIR, 'build', '-tags', 'deploy', '-o', deployBinary, '.'],
+    REPO_ROOT,
+    'building the deploy binary',
+  )
+
   const manifest = {
     binary,
+    deployBinary,
     artifactsRoot: ARTIFACT_ROOT,
     repoRoot: REPO_ROOT,
     serverDir: SERVER_DIR,

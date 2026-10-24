@@ -82,9 +82,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-deploy-and-operate.md',
-    status: 'pending',
-    reason:
-      'Driven as a fixture-type test, not a pure browser journey: the harness stands up a deploy-tagged binary with a rendered config, a temporary volume, seed and serve, checks the operations probes by command, and then drives one sign-in through the browser with clicks and keys only. No spec drives it yet; its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-deployment-001',
       'REQ-deployment-002',

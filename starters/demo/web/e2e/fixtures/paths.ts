@@ -55,6 +55,9 @@ export const MANIFEST_PATH = `${HARNESS_DIR}/manifest.json`
 /** The review binary the global setup builds. */
 export const BINARY_NAME = 'demo-review'
 
+/** The deploy assembly's binary, built with the deploy build tag. */
+export const DEPLOY_BINARY_NAME = 'demo-deploy'
+
 /** The repository root. */
 export const REPO_ROOT = fileURLToPath(new URL('../../../../../', import.meta.url))
 
@@ -67,4 +70,13 @@ export const WEB_DIR = fileURLToPath(new URL('../../', import.meta.url))
 /** The review assembly's configuration template, copied and edited per server. */
 export const REVIEW_CONFIG_TEMPLATE = fileURLToPath(
   new URL('../../../server/review/sqlite.yaml', import.meta.url),
+)
+
+/**
+ * The deployment's configuration template. The container entrypoint renders it
+ * from Fly secrets; the deploy fixture renders the same placeholders itself and
+ * runs the rendered document from the temporary volume.
+ */
+export const DEPLOY_CONFIG_TEMPLATE = fileURLToPath(
+  new URL('../../../deploy/fly.yaml.tmpl', import.meta.url),
 )

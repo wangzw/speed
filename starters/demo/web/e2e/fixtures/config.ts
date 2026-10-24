@@ -18,7 +18,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { REVIEW_CONFIG_TEMPLATE } from './paths'
+import { DEPLOY_CONFIG_TEMPLATE, REVIEW_CONFIG_TEMPLATE } from './paths'
 
 export interface ReviewConfigInput {
   /** The server's own temporary directory; the config and state live there. */
@@ -140,13 +140,13 @@ function replaceOnce(
   const first = body.indexOf(needle)
   if (first === -1) {
     throw new Error(
-      `the review configuration template holds no ${label} needle ` +
+      `the configuration template holds no ${label} needle ` +
         `(${JSON.stringify(needle)}); the template and the harness have drifted`,
     )
   }
   if (body.indexOf(needle, first + needle.length) !== -1) {
     throw new Error(
-      `the review configuration template holds more than one ${label} needle ` +
+      `the configuration template holds more than one ${label} needle ` +
         `(${JSON.stringify(needle)}); the replacement would be ambiguous`,
     )
   }
@@ -165,7 +165,7 @@ function replaceAll(
   const found = parts.length - 1
   if (found !== expected) {
     throw new Error(
-      `the review configuration template holds ${found} ${label} needle(s) ` +
+      `the configuration template holds ${found} ${label} needle(s) ` +
         `(${JSON.stringify(needle)}), expected ${expected}`,
     )
   }
@@ -318,6 +318,162 @@ export async function writeReviewConfig(
   return {
     path,
     dir: input.dir,
+    backendPort: input.backendPort,
+    opsPort: input.opsPort,
+    backendAddress,
+    opsAddress,
+    origin,
+    opsOrigin,
+    dsn,
+    signingKey,
+    objectsRoot,
+  }
+}
+
+/**
+ * The operator the deployment's seed writes.
+ *
+ * The deploy template seeds this account from the rendered operator secret.
+ * The fixture renders the same credential so the browser can sign in as the
+ * account the seed wrote; it is a review value, not a credential that reaches
+ * a provider. Its identifier is an email address, so the account holds an
+ * email login name whose address the seed does not prove -- which is what the
+ * deploy journey's refusal step needs.
+ */
+export const deployOperator = {
+  identifier: 'operator@demo.test',
+  password: 'operator-dev-secret',
+  displayName: 'Demo Operator',
+} as const
+
+/**
+ * The values the deploy fixture renders into the deployment template. The
+ * template's placeholders are filled by the container entrypoint from Fly
+ * secrets; the fixture fills them with review values. The SMTP relay, the OAuth
+ * applications and the encryption key are fake and reach nothing: this journey
+ * sends no mail and completes no social round trip.
+ */
+const deployValues = {
+  publicDomain: 'localhost',
+  operatorEmail: deployOperator.identifier,
+  operatorPassword: deployOperator.password,
+  encryptionKey: 'dev-only-change-me-0123456789abcdef',
+  smtpHost: '127.0.0.1',
+  smtpPort: 2525,
+  smtpTls: 'none',
+  smtpUsername: '',
+  smtpPassword: '',
+  smtpFrom: 'demo@demo.test',
+  googleClientID: 'review-google-client',
+  googleClientSecret: 'review-google-secret',
+  githubClientID: 'review-github-client',
+  githubClientSecret: 'review-github-secret',
+} as const
+
+export interface DeployConfigInput {
+  /** The temporary volume the rendered configuration and state live on. */
+  readonly volume: string
+  /** The backend listener's port (the browser's origin, and the API). */
+  readonly backendPort: number
+  /** The operations listener's port. */
+  readonly opsPort: number
+}
+
+/** A rendered deployment configuration and the paths it names. */
+export interface DeployConfig {
+  /** The rendered configuration's absolute path on the volume. */
+  readonly path: string
+  /** The temporary volume; every relative path in the document resolves here. */
+  readonly volume: string
+  readonly backendPort: number
+  readonly opsPort: number
+  readonly backendAddress: string
+  readonly opsAddress: string
+  /** The browser-facing origin, e.g. http://localhost:41234. */
+  readonly origin: string
+  /** The operations listener's origin. */
+  readonly opsOrigin: string
+  readonly dsn: string
+  readonly signingKey: string
+  readonly objectsRoot: string
+}
+
+/**
+ * Render the deployment template onto the volume, the way
+ * deploy/entrypoint.sh does, and answer with the values the fixture and the
+ * tests read.
+ *
+ * The placeholders sit inside double-quoted YAML scalars (except the SMTP
+ * port), so each is replaced with the raw value rather than a quoted one. The
+ * two listener addresses are the deployment template's own published ones; the
+ * fixture substitutes the loopback addresses on its free ports so a run never
+ * binds 8080/8083. A placeholder that is absent, duplicated, or left behind
+ * after rendering fails the fixture: a half-rendered document would start a
+ * server with a placeholder origin.
+ */
+export async function writeDeployConfig(
+  input: DeployConfigInput,
+): Promise<DeployConfig> {
+  const template = await readFile(DEPLOY_CONFIG_TEMPLATE, 'utf8')
+  const backendAddress = `127.0.0.1:${input.backendPort}`
+  const opsAddress = `127.0.0.1:${input.opsPort}`
+  const origin = `http://localhost:${input.backendPort}`
+  const opsOrigin = `http://localhost:${input.opsPort}`
+  const dsn = join(input.volume, 'demo.db')
+  const signingKey = join(input.volume, 'var', 'token-signing-key.pem')
+  const objectsRoot = join(input.volume, 'objects')
+  const path = join(input.volume, 'config.yaml')
+
+  let body = template
+  body = replaceOnce(
+    body,
+    'address: "0.0.0.0:8080"',
+    `address: ${quoted(backendAddress)}`,
+    'backend listener',
+  )
+  body = replaceOnce(
+    body,
+    'address: "0.0.0.0:8083"',
+    `address: ${quoted(opsAddress)}`,
+    'operations listener',
+  )
+  // The template names the public origin in five places: the API's CORS
+  // origins, the operations document's server list, the authentication gate's
+  // public URL, a comment naming the registered callback addresses, and the
+  // WebAuthn origins. The entrypoint replaces every line, comments included;
+  // all five follow the browser's origin.
+  const replacements: ReadonlyArray<readonly [string, string, number]> = [
+    ['__PUBLIC_ORIGIN__', origin, 5],
+    ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 1],
+    ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 1],
+    ['__OPERATOR_PASSWORD__', deployValues.operatorPassword, 1],
+    ['__ENCRYPTION_KEY__', deployValues.encryptionKey, 1],
+    ['__SMTP_HOST__', deployValues.smtpHost, 1],
+    ['__SMTP_PORT__', String(deployValues.smtpPort), 1],
+    ['__SMTP_TLS__', deployValues.smtpTls, 1],
+    ['__SMTP_USERNAME__', deployValues.smtpUsername, 1],
+    ['__SMTP_PASSWORD__', deployValues.smtpPassword, 1],
+    ['__SMTP_FROM__', deployValues.smtpFrom, 1],
+    ['__GOOGLE_CLIENT_ID__', deployValues.googleClientID, 1],
+    ['__GOOGLE_CLIENT_SECRET__', deployValues.googleClientSecret, 1],
+    ['__GITHUB_CLIENT_ID__', deployValues.githubClientID, 1],
+    ['__GITHUB_CLIENT_SECRET__', deployValues.githubClientSecret, 1],
+  ]
+  for (const [needle, replacement, expected] of replacements) {
+    body = replaceAll(body, needle, replacement, expected, `deploy ${needle}`)
+  }
+  const leftover = body.match(/__[A-Z][A-Z0-9_]*__/)
+  if (leftover !== null) {
+    throw new Error(
+      `the deployment template still carries the placeholder ${leftover[0]} ` +
+        'after rendering; the template and the deploy fixture have drifted',
+    )
+  }
+
+  await writeFile(path, body, { encoding: 'utf8', mode: 0o600 })
+  return {
+    path,
+    volume: input.volume,
     backendPort: input.backendPort,
     opsPort: input.opsPort,
     backendAddress,
