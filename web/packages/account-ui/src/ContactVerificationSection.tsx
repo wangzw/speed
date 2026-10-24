@@ -228,16 +228,28 @@ export function ContactVerificationSection({
     }
   }, [resendUntil])
 
-  // Move focus to the code field once a send lands (the field exists before
-  // the send, so the focus move is a real hand-off, not a timing race), and
-  // arm the sent notice's live region one commit later so it fills an
-  // already-mounted region.
+  // Arm the sent notice's live region one commit later so it fills an
+  // already-mounted region, and request the focus hand-off when the send lands.
+  // The field exists before the send, so the hand-off is a real move rather
+  // than a timing race -- but the send scope keeps the controls disabled until
+  // it settles (including the refetches that follow the mutation), and a
+  // disabled input cannot take focus. The request is therefore discharged by
+  // the first commit in which the scope is no longer busy, not here.
+  const focusCodeWhenSettled = useRef(false)
   useEffect(() => {
     setSentCommitted(sentTo !== null)
     if (sentTo !== null) {
-      codeRef.current?.focus()
+      focusCodeWhenSettled.current = true
     }
   }, [sentTo])
+
+  useEffect(() => {
+    if (!focusCodeWhenSettled.current || busy) {
+      return
+    }
+    focusCodeWhenSettled.current = false
+    codeRef.current?.focus()
+  }, [busy, sentTo])
 
   const remainingSeconds = Math.max(
     0,
