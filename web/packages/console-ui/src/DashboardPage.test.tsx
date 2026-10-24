@@ -74,17 +74,32 @@ describe('DashboardPage', () => {
     expect(hasCoarsePointerTouchTarget(refresh)).toBe(true)
   })
 
-  it('summarizes the roster in the KPI row', async () => {
+  it('summarizes the roster in the KPI row, tombstones included', async () => {
+    // The roster read carries tombstones. The four counts partition it, so the
+    // deleted count is what keeps active, disabled and deleted adding up to the
+    // total instead of leaving a tombstone unaccounted for.
+    const tenants = [
+      ...TENANTS,
+      { id: 'gone', alias: 'Gone', status: 'deleted' as const },
+    ]
     const operations = createConsoleOperations(
-      makeConsoleBackend({ listTenants: () => Promise.resolve(TENANTS) }),
+      makeConsoleBackend({ listTenants: () => Promise.resolve(tenants) }),
     )
     renderDashboard({ operations })
 
     expect(await screen.findByText(zhCN.dashboard.kpi.tenants)).toBeInTheDocument()
-    // total / active / disabled, derived from the whole roster read.
-    expect(screen.getByText('3')).toBeInTheDocument()
-    expect(screen.getByText('2')).toBeInTheDocument()
-    expect(screen.getByText('1')).toBeInTheDocument()
+    const count = (label: string, value: number) => {
+      const card = screen.getByText(label).closest('li')
+      if (card === null) {
+        throw new Error(`the KPI card ${label} has no list item`)
+      }
+      expect(within(card as HTMLElement).getByText(String(value))).toBeInTheDocument()
+    }
+    // 4 = 2 active + 1 disabled + 1 deleted, all from the whole roster read.
+    count(zhCN.dashboard.kpi.tenants, 4)
+    count(zhCN.dashboard.kpi.active, 2)
+    count(zhCN.dashboard.kpi.disabled, 1)
+    count(zhCN.dashboard.kpi.deleted, 1)
   })
 
   it('lists the newest audit activity', async () => {

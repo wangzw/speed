@@ -178,7 +178,8 @@
     "kpi": {
       "tenants": "Tenants",
       "active": "Active",
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "deleted": "Deleted"
     },
     "health": {
       "title": "Platform health",

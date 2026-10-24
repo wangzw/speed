@@ -254,11 +254,17 @@ function KpiSection({
     const disabled = settled.filter(
       (tenant) => tenant.status === 'disabled',
     ).length
+    // A tombstone is part of the roster read: the three state counts partition
+    // it, so the deleted count is what keeps them adding up to the total.
+    const deleted = settled.filter(
+      (tenant) => tenant.status === 'deleted',
+    ).length
     return (
       <KpiRow>
         <KpiCard label={t('dashboard.kpi.tenants')} value={settled.length} />
         <KpiCard label={t('dashboard.kpi.active')} value={active} />
         <KpiCard label={t('dashboard.kpi.disabled')} value={disabled} />
+        <KpiCard label={t('dashboard.kpi.deleted')} value={deleted} />
       </KpiRow>
     )
   }
