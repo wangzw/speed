@@ -156,7 +156,7 @@ sequenceDiagram
 
 | 概念 | 形状 | 说明 |
 |---|---|---|
-| 租户视图 | `{id, alias, status}` | 从 `tenant.Tenant` 逐字段构造；`status` 是 `active` 或 `disabled` |
+| 租户视图 | `{id, alias, status, disabledBy?}` | 从 `tenant.Tenant` 逐字段构造；`status` 是 `active`、`disabled` 或 `deleted`；`disabledBy` 是 `operator` 或 `account`，只在状态为 `disabled` 时出现 |
 | 登记正文 | `{id, alias}` | `POST /tenants` 的正文；新租户起于 `active` |
 | 改名正文 | `{alias}` | `PATCH /tenants/:tenant` 的正文 |
 | 状态正文 | `{status}` | `POST /tenants/:tenant/status` 的正文；取值闭集 `active`、`disabled` |
@@ -230,4 +230,4 @@ sequenceDiagram
 | 管理面 `tenant.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/tenant/admin/operations.go`；`pkg/tenant/admin/openapi_generated_test.go`；片段 `pkg/tenant/admin/openapi/tenant.admin.json` |
 | 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/feature_test.go` `TestTheModuleDeclaresTheTenantAdminFeature` |
 | 租户写面的注册验证门控（读作 `SignupPending` 时答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/tenant/admin/pipeline.go` `(*product).guardRoute`、`(*product).requireVerifiedAccount`；`pkg/tenant/admin/routes.go` `routes`；`pkg/tenant/admin/gate_test.go` |
-| 租户视图的 `deleted` 状态与 `disabledBy` 字段，以及墓碑上的改名与改状态拒绝 | 未实现 | — |
+| 租户视图的 `deleted` 状态与 `disabledBy` 字段，以及墓碑上的改名与改状态拒绝 | 已实现 | `pkg/tenant/admin/views.go` `tenantViewOf`；`pkg/tenant/admin/pipeline.go` `(*product).failureOf`；`pkg/tenant/admin/tenants_test.go` `TestTheViewCarriesTheNamedFieldsPerState`、`TestTheFailureMappingIsClosed` |

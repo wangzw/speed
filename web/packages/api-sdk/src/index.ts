@@ -1436,7 +1436,18 @@ export interface SmsAdminSubmission {
 }
 
 /**
- * The tenant's state: active is served, disabled is not.
+ * Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled.
+ */
+export type TenantAdminTenantDisabledBy = typeof TenantAdminTenantDisabledBy[keyof typeof TenantAdminTenantDisabledBy];
+
+
+export const TenantAdminTenantDisabledBy = {
+  operator: 'operator',
+  account: 'account',
+} as const;
+
+/**
+ * The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again.
  */
 export type TenantAdminTenantStatus = typeof TenantAdminTenantStatus[keyof typeof TenantAdminTenantStatus];
 
@@ -1444,17 +1455,20 @@ export type TenantAdminTenantStatus = typeof TenantAdminTenantStatus[keyof typeo
 export const TenantAdminTenantStatus = {
   active: 'active',
   disabled: 'disabled',
+  deleted: 'deleted',
 } as const;
 
 /**
- * One tenant as the management routes render it: the identifier, the alias and the state.
+ * One tenant as the management routes render it: the identifier, the alias and the state, plus who disabled it while it is disabled.
  */
 export interface TenantAdminTenant {
   /** The alias the request surface addresses the tenant by. */
   alias: string;
+  /** Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled. */
+  disabledBy?: TenantAdminTenantDisabledBy;
   /** The tenant's identifier, the natural key the roster keys the row by. */
   id: string;
-  /** The tenant's state: active is served, disabled is not. */
+  /** The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again. */
   status: TenantAdminTenantStatus;
 }
 
@@ -7849,7 +7863,7 @@ export function useTenantAdminTenantsGet<TData = Awaited<ReturnType<typeof tenan
 
 
 /**
- * Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, and an alias another tenant holds is a 409. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.
+ * Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, an alias another tenant holds is a 409, and a tenant the roster holds as a tombstone is a 409: deletion is terminal and a rename does not revive it. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.
  * @summary Change one tenant's alias
  */
 export const tenantAdminTenantsSetAlias = (
@@ -8594,7 +8608,7 @@ export const useAuthzAdminGrantsPut = <TError = Problem,
     }
 
 /**
- * Changes one tenant's state, which is one of the closed set active and disabled. The roster has no delete, so disabling is the only way to stop serving a tenant. An identifier the roster does not hold is a 404. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
+ * Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.
  * @summary Change one tenant's state
  */
 export const tenantAdminTenantsSetStatus = (

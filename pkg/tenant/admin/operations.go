@@ -177,7 +177,8 @@ var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
 	"Change one tenant's alias",
 	"Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path "+
 		"identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, "+
-		"and an alias another tenant holds is a 409. A mandatory audit row lands before the write; if it "+
+		"an alias another tenant holds is a 409, and a tenant the roster holds as a tombstone is a 409: deletion "+
+		"is terminal and a rename does not revive it. A mandatory audit row lands before the write; if it "+
 		"cannot, the alias is unchanged and the request is answered 503.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
@@ -198,7 +199,7 @@ var setAliasOperation = speedhttp.NewReplyOperation[setAliasInput](
 			Status:      http.StatusNotFound,
 			Description: "No tenant carries the identifier",
 		},
-		speedhttp.ProblemResponse(http.StatusConflict, "The alias is already taken"),
+		speedhttp.ProblemResponse(http.StatusConflict, "The alias is already taken, or the tenant is a tombstone"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )
@@ -211,10 +212,12 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 	http.MethodPost,
 	pathTenantStatusFragment,
 	"Change one tenant's state",
-	"Changes one tenant's state, which is one of the closed set active and disabled. The roster has no "+
-		"delete, so disabling is the only way to stop serving a tenant. An identifier the roster does not hold "+
-		"is a 404. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the "+
-		"request is answered 503.",
+	"Changes one tenant's state, which is one of the closed set active and disabled. This surface does not "+
+		"write the deleted state: deletion is the roster's terminal marker, written by the host that winds an "+
+		"account up, and the deleted tenant is rendered read-only here. An identifier the roster does not hold "+
+		"is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no "+
+		"status change revives it. A mandatory audit row lands before the write; if it cannot, the state is "+
+		"unchanged and the request is answered 503.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The target state, one of the closed set active and disabled.",
@@ -234,6 +237,7 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 			Status:      http.StatusNotFound,
 			Description: "No tenant carries the identifier",
 		},
+		speedhttp.ProblemResponse(http.StatusConflict, "The tenant is a tombstone; deletion is terminal"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )

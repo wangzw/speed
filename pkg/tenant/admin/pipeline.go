@@ -242,12 +242,18 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // answers with.
 //
 // The mapping is closed and fail-closed. An identifier the roster's table
-// already holds is a 409; an alias another tenant holds is a 409; an identifier
-// no row carries is a 404; any other failure is a 503 whose cause stays in the
-// log and never reaches the caller. A 404 and a 503 carry no problem type — they
-// say something is not there or a dependency could not answer and not which
-// refusal it was — while a 409 carries the capability's type prefix
-// urn:speed:tenant:.
+// already holds is a 409; an alias another tenant holds is a 409; a write or a
+// rename that reaches a tombstone is a 409; an identifier no row carries is a
+// 404; any other failure is a 503 whose cause stays in the log and never
+// reaches the caller. A 404 and a 503 carry no problem type — they say something
+// is not there or a dependency could not answer and not which refusal it was —
+// while a 409 carries the capability's type prefix urn:speed:tenant:.
+//
+// tenant.ErrTenantDeleted is a 409 and not a 404 because the row is there: the
+// identifier and the alias are held by a tombstone, and the conflict is with a
+// tenant that exists but is terminal. It is not an ErrInvalidTenant either,
+// which would fold a deleted tenant into "no such tenant" and hide that the
+// identifier can never be registered again.
 //
 // tenant.ErrTenantDisabled and tenant.ErrNoTenantInContext are not mapped. They
 // are the resolution and scoping paths' sentinels, and no roster write reached
@@ -256,7 +262,8 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // gets.
 func (p *product) failureOf(op string, err error) error {
 	switch {
-	case errors.Is(err, tenant.ErrTenantExists), errors.Is(err, tenant.ErrAliasConflict):
+	case errors.Is(err, tenant.ErrTenantExists), errors.Is(err, tenant.ErrAliasConflict),
+		errors.Is(err, tenant.ErrTenantDeleted):
 		return speedhttp.Fault{Status: http.StatusConflict, Type: typePrefix + conflictCode}
 	case errors.Is(err, tenant.ErrInvalidTenant):
 		return speedhttp.Fault{Status: http.StatusNotFound}

@@ -7917,7 +7917,7 @@
         "x-endpoint": "admin"
       },
       "patch": {
-        "description": "Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, and an alias another tenant holds is a 409. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.",
+        "description": "Changes one tenant's alias and nothing else; the tenant's state is left as it stands. The path identifier and the new alias must both be identifiers. A tenant the roster does not hold is a 404, an alias another tenant holds is a 409, and a tenant the roster holds as a tombstone is a 409: deletion is terminal and a rename does not revive it. A mandatory audit row lands before the write; if it cannot, the alias is unchanged and the request is answered 503.",
         "operationId": "tenant.admin.tenants.setAlias",
         "parameters": [
           {
@@ -7996,7 +7996,7 @@
                 }
               }
             },
-            "description": "The alias is already taken"
+            "description": "The alias is already taken, or the tenant is a tombstone"
           },
           "413": {
             "content": {
@@ -9029,7 +9029,7 @@
     },
     "/api/v1/system/tenants/{tenant}/status": {
       "post": {
-        "description": "Changes one tenant's state, which is one of the closed set active and disabled. The roster has no delete, so disabling is the only way to stop serving a tenant. An identifier the roster does not hold is a 404. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
+        "description": "Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
         "operationId": "tenant.admin.tenants.setStatus",
         "parameters": [
           {
@@ -9103,6 +9103,16 @@
           },
           "404": {
             "description": "No tenant carries the identifier"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The tenant is a tombstone; deletion is terminal"
           },
           "413": {
             "content": {
@@ -14228,10 +14238,18 @@
         "type": "object"
       },
       "TenantAdminTenant": {
-        "description": "One tenant as the management routes render it: the identifier, the alias and the state.",
+        "description": "One tenant as the management routes render it: the identifier, the alias and the state, plus who disabled it while it is disabled.",
         "properties": {
           "alias": {
             "description": "The alias the request surface addresses the tenant by.",
+            "type": "string"
+          },
+          "disabledBy": {
+            "description": "Who disabled the tenant: operator through a status change, or account through the account's own state. Present only while the state is disabled.",
+            "enum": [
+              "operator",
+              "account"
+            ],
             "type": "string"
           },
           "id": {
@@ -14239,10 +14257,11 @@
             "type": "string"
           },
           "status": {
-            "description": "The tenant's state: active is served, disabled is not.",
+            "description": "The tenant's state: active is served, disabled is not and may be served again, deleted is a tombstone that is never served again.",
             "enum": [
               "active",
-              "disabled"
+              "disabled",
+              "deleted"
             ],
             "type": "string"
           }

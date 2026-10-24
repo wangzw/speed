@@ -96,7 +96,9 @@ type aliasBody struct {
 // process last read, and a tenant another replica disabled in that window — the
 // gap between the snapshot and the table — would be served again. Both fields
 // are checked against the identifier domain, and a tenant the roster does not
-// hold is a 404 before the audit row is written. The mandatory audit row lands
+// hold is a 404 before the audit row is written. A tombstone reaches SetAlias
+// and is refused with tenant.ErrTenantDeleted, answered a 409: the row and the
+// alias stay, and a rename does not revive it. The mandatory audit row lands
 // before SetAlias runs.
 func (p *product) handleTenantSetAlias(ctx context.Context, in setAliasInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	if !tenant.IsIdentifier(in.ID) || !tenant.IsIdentifier(in.Alias) {
@@ -133,10 +135,13 @@ type statusBody struct {
 // changes one tenant's state. It is a write, so the action is tenant.manage.
 //
 // The state is a closed set: active or disabled, anything else a 400 before the
-// roster is called. Disabling goes through Catalog.SetStatus and only through it
-// — the roster has no delete — and an identifier no row carries comes back with
-// tenant.ErrInvalidTenant, answered a 404. The mandatory audit row lands before
-// SetStatus runs.
+// roster is called. Deletion is not in this surface's writable set — it is the
+// roster's terminal marker, reached through Catalog.Delete by the host that
+// winds an account up — so this route never writes the deleted state. An
+// identifier no row carries comes back with tenant.ErrInvalidTenant, answered a
+// 404, and a tombstone comes back with tenant.ErrTenantDeleted, answered a 409:
+// deletion is terminal and no status change revives it. The mandatory audit row
+// lands before SetStatus runs.
 func (p *product) handleTenantSetStatus(ctx context.Context, in setStatusInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	status, ok := statusOf(in.Status)
 	if !ok {

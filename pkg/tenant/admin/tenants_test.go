@@ -383,17 +383,28 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 	})
 
 	t.Run("rename", func(t *testing.T) {
-		// The read the rename makes for its 404 succeeds, so the failure comes
-		// from the write.
-		r := newRig(t)
-		r.catalog.found = true
-		r.catalog.setAliasErr = tenant.ErrAliasConflict
-		w := r.do(http.MethodPatch, pathTenants+"/t", aliasBody{Alias: "a"})
-		if w.Code != http.StatusConflict {
-			t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
-		}
-		if got := problemOf(t, w); got.Type != typePrefix+conflictCode {
-			t.Errorf("problem type = %q, want the conflict type", got.Type)
+		for name, tc := range map[string]struct {
+			err    error
+			status int
+			typ    string
+		}{
+			"an alias another holds": {tenant.ErrAliasConflict, http.StatusConflict, typePrefix + conflictCode},
+			"a tombstone":            {tenant.ErrTenantDeleted, http.StatusConflict, typePrefix + conflictCode},
+		} {
+			t.Run(name, func(t *testing.T) {
+				// The read the rename makes for its 404 succeeds, so the failure
+				// comes from the write.
+				r := newRig(t)
+				r.catalog.found = true
+				r.catalog.setAliasErr = tc.err
+				w := r.do(http.MethodPatch, pathTenants+"/t", aliasBody{Alias: "a"})
+				if w.Code != tc.status {
+					t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.status, w.Body.String())
+				}
+				if got := problemOf(t, w); got.Type != tc.typ {
+					t.Errorf("problem type = %q, want %q", got.Type, tc.typ)
+				}
+			})
 		}
 	})
 
@@ -404,6 +415,7 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 			typ    string
 		}{
 			"an unknown tenant":  {tenant.ErrInvalidTenant, http.StatusNotFound, ""},
+			"a tombstone":        {tenant.ErrTenantDeleted, http.StatusConflict, typePrefix + conflictCode},
 			"an unknown failure": {errors.New("boom"), http.StatusServiceUnavailable, ""},
 		} {
 			t.Run(name, func(t *testing.T) {
@@ -487,27 +499,74 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 	})
 }
 
-// The view carries exactly the three fields the design names, spelled the way
-// tenant.Status spells the state, so a field added to a record later does not
-// reach a client by being there.
-func TestTheViewCarriesTheNamedFields(t *testing.T) {
-	r := newRig(t)
-	r.catalog.list = []tenant.Tenant{{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}}
-	w := r.do(http.MethodGet, pathTenants, nil)
-	var raw struct {
-		Tenants []map[string]any `json:"tenants"`
+// The view carries the fields the design names, per state, spelled the way
+// tenant.Status and tenant.DisabledBy spell them: the identifier, the alias and
+// the state's name on every row, and disabledBy only on a disabled one. A field
+// added to a record later does not reach a client by being there, and a source
+// never appears on a row whose state is not disabled.
+func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
+	cases := map[string]struct {
+		row        tenant.Tenant
+		wantStatus string
+		wantKeys   []string
+		disabledBy string
+	}{
+		"active": {
+			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
+			wantStatus: "active",
+			wantKeys:   []string{"id", "alias", "status"},
+		},
+		"disabled by an operator": {
+			row: tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
+				DisabledBy: tenant.DisabledByOperator},
+			wantStatus: "disabled",
+			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
+			disabledBy: "operator",
+		},
+		"disabled by an account": {
+			row: tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
+				DisabledBy: tenant.DisabledByAccount},
+			wantStatus: "disabled",
+			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
+			disabledBy: "account",
+		},
+		"deleted": {
+			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted},
+			wantStatus: "deleted",
+			wantKeys:   []string{"id", "alias", "status"},
+		},
 	}
-	decode(t, w, &raw)
-	if len(raw.Tenants) != 1 {
-		t.Fatalf("tenants = %+v, want one", raw.Tenants)
-	}
-	got := raw.Tenants[0]
-	if len(got) != 3 {
-		t.Errorf("the view carries %d fields (%v), want exactly id, alias, status", len(got), got)
-	}
-	for _, want := range []string{"id", "alias", "status"} {
-		if _, ok := got[want]; !ok {
-			t.Errorf("the view is missing %q", want)
-		}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			r.catalog.list = []tenant.Tenant{tc.row}
+			w := r.do(http.MethodGet, pathTenants, nil)
+			var raw struct {
+				Tenants []map[string]any `json:"tenants"`
+			}
+			decode(t, w, &raw)
+			if len(raw.Tenants) != 1 {
+				t.Fatalf("tenants = %+v, want one", raw.Tenants)
+			}
+			got := raw.Tenants[0]
+			if len(got) != len(tc.wantKeys) {
+				t.Errorf("the view carries %d fields (%v), want exactly %v", len(got), got, tc.wantKeys)
+			}
+			for _, want := range tc.wantKeys {
+				if _, ok := got[want]; !ok {
+					t.Errorf("the view is missing %q", want)
+				}
+			}
+			if status, _ := got["status"].(string); status != tc.wantStatus {
+				t.Errorf("status = %q, want %q", status, tc.wantStatus)
+			}
+			if tc.disabledBy == "" {
+				if _, ok := got["disabledBy"]; ok {
+					t.Errorf("disabledBy is on a row whose state is %q: %v", tc.wantStatus, got)
+				}
+			} else if source, _ := got["disabledBy"].(string); source != tc.disabledBy {
+				t.Errorf("disabledBy = %q, want %q", source, tc.disabledBy)
+			}
+		})
 	}
 }
