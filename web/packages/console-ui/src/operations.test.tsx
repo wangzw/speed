@@ -190,6 +190,29 @@ describe('consoleOperations', () => {
     })
   })
 
+  it('streams the audit export from the generated endpoint', async () => {
+    const calls = bindConsoleRequest((call) => {
+      if (call.path === '/api/v1/system/audit/export') {
+        return new Blob(['{"id":"rec-1"}\n'], {
+          type: 'application/x-ndjson',
+        })
+      }
+      throw new Error(`unexpected request: ${call.path}`)
+    })
+    const exportRecords = consoleOperations.exportAuditRecords
+    expect(exportRecords).toBeDefined()
+    const body = await exportRecords!({
+      since: '2026-10-15T00:00:00Z',
+      action: ['tenant.create'],
+    })
+    expect(body).toBeInstanceOf(Blob)
+    expect(calls).toContainEqual({
+      method: 'GET',
+      path: '/api/v1/system/audit/export',
+      query: { since: '2026-10-15T00:00:00Z', action: ['tenant.create'] },
+    })
+  })
+
   it('reads a single tenant from the generated detail endpoint', async () => {
     const calls = bindConsoleRequest((call) => {
       if (call.path === '/api/v1/system/tenants/acme') {

@@ -50,6 +50,7 @@ import {
 } from '@tanstack/react-query'
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query'
 import {
+  auditAdminRecordsExport,
   authnAdminAccountsAddIdentifier,
   authnAdminAccountsCreate,
   authnAdminAccountsDelete,
@@ -138,6 +139,7 @@ import {
 import type {
   AuditAdminRecord,
   AuditAdminRecordPage,
+  AuditAdminRecordsExportParams,
   AuditAdminRecordsListParams,
   AuthnAdminAccount,
   AuthnAdminAccountCreate,
@@ -588,8 +590,10 @@ export interface ConsoleAuditRecordsOptions {
 }
 
 /**
- * The console's data operations, in react-query hook shape. Every member
- * is a hook the pages call during render (on the host's QueryClient);
+ * The console's data operations, in react-query hook shape. Every read and
+ * write member is a hook the pages call during render (on the host's
+ * QueryClient); the audit export is the one action -- a page calls it on a
+ * click, because mounting it as a query would fire an export on render.
  * consoleOperations below binds them to the generated @speed/api-sdk
  * operations of the same shape, and a host or suite may bind its own.
  *
@@ -654,6 +658,17 @@ export interface ConsoleOperations {
   readonly useAuditRecord: (
     query: ConsoleAuditRecordQuery,
   ) => UseQueryResult<ConsoleAuditRecord, unknown>
+  /**
+   * GET /api/v1/system/audit/export -- every record the filters match as
+   * one NDJSON Blob. This is an action, not a hook: the page calls it once
+   * when the operator asks for a file, and it takes the filters only (no
+   * cursor and no page size -- the export is not a page). Optional, so a
+   * host bundle that predates the export keeps compiling; a page renders
+   * no export control when the member is absent.
+   */
+  readonly exportAuditRecords?: (
+    params?: AuditAdminRecordsExportParams,
+  ) => Promise<Blob>
 
   // --- Authorization surface (/api/v1/system, tenant-scoped) --------------
 
@@ -1076,6 +1091,8 @@ export const consoleOperations: ConsoleOperations = {
       ...getAuditAdminRecordsGetQueryOptions(id ?? ''),
       enabled: id !== undefined && id !== '',
     }),
+
+  exportAuditRecords: (params) => auditAdminRecordsExport(params),
 
   // --- Authorization surface (/api/v1/system, tenant-scoped) --------------
 

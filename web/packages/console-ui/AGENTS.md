@@ -199,7 +199,12 @@ writes call the generated mutation functions and invalidate the list
 through the generated key factories. A read whose route carries a
 parameter (a tenant, a role, an account) takes that parameter, so its
 generated query key namespaces by it; a read whose parameter is undefined
-declares itself disabled rather than firing a malformed request.
+declares itself disabled rather than firing a malformed request. The audit
+export is the bundle's one action rather than a hook: a page calls
+`exportAuditRecords` once on a click, because mounting it as a query would
+fire an export on render. The member is optional, so a host bundle that
+predates the export keeps compiling, and a page renders no export control
+when the member is absent.
 
 What the pages reach through the bundle, grouped by surface:
 
@@ -213,7 +218,7 @@ What the pages reach through the bundle, grouped by surface:
 | `useSsoProviders`, `useSsoProvider`, `useCreateSsoProvider`, `useUpdateSsoProvider`, `useClaimSsoDomain`, `useDeleteSsoProvider`, `useRemoveSsoDomain`, `useVerifySsoDomain`, `useRefreshSsoMetadata`, `useReverifySsoDomains` | `/api/v1/tenants/:tenant/sso/providers`, `/api/v1/tenants/{tenant}/sso/providers/:id[/domains[/:domain[/verify]]|/metadata/refresh|/reverify-domains]` |
 | `useSettings`, `useSetSetting`, `useRemoveSetting` | `/api/v1/system/settings[/:namespace[/:key]]` |
 | `useSmsTemplates`, `useRegisterSmsTemplate`, `useOfferSmsTemplate`, `useSetSmsTemplateEnabled`, `useRemoveSmsTemplate` | `/api/v1/system/sms/templates[/submissions|/:name[/enabled]]` |
-| `useAuditRecords`, `useAuditRecord` | `/api/v1/system/audit/records[/:id]` |
+| `useAuditRecords`, `useAuditRecord`, `exportAuditRecords` | `/api/v1/system/audit/records[/:id]`, `/api/v1/system/audit/export` |
 
 The view types are the generated response rows of each module's admin
 surface, named for the console's own pages; only the write inputs stay
@@ -382,16 +387,15 @@ surface, driven over the request rig, plus the provider fallback and the
 key-splitting helper); `routes` (the declarations' paths, permissions,
 `requires` names, icons and translated labels); `resources`,
 `internal/error-text`, `internal/identifier`, `internal/datetime`,
-`internal/async-section` and `internal/write-feedback` (bundle key parity,
-whitelist pairing, the identifier rule, the zero-instant sentinel, the
-403/retry/stale split, and the region's resolver binding);
+`internal/async-section`, `internal/export-file` and
+`internal/write-feedback` (bundle key parity, whitelist pairing, the
+identifier rule, the zero-instant sentinel, the export name and download
+handoff, the 403/retry/stale split, and the region's resolver binding);
 `package.json` (the manifest contract); and `usage-example` (the README's
 composition, with the operations bundle substituted from test-utils).
 
 ## Deferrals (recorded, do not re-open silently)
 
-- **Audit export surface.** An export route is not surfaced; export is
-  another permission and another module's to carry.
 - **Batched account-identity resolution.** The account identity unit (an
   audit record's actor, an impersonation record's actor and target, an
   invitation's inviter, a membership's account, an authorization binding's

@@ -33,6 +33,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { getAuthnAdminImpersonationsListQueryKey } from '@speed/api-sdk'
+import type { AuditAdminRecordsExportParams } from '@speed/api-sdk'
 import type {
   ConsoleAccount,
   ConsoleAccountBindingsQuery,
@@ -114,6 +115,7 @@ export interface ConsoleBackend {
     params?: Parameters<ConsoleOperations['useAuditRecords']>[0],
   ) => Promise<ConsoleAuditPage>
   getRecord: (query: ConsoleAuditRecordQuery) => Promise<ConsoleAuditRecord>
+  exportRecords: (params?: AuditAdminRecordsExportParams) => Promise<Blob>
 
   // Authorization surface (tenant-scoped).
   listPermissions: () => Promise<readonly ConsolePermission[]>
@@ -216,6 +218,7 @@ export function makeConsoleBackend(
     removeSetting: () => Promise.resolve(),
     listRecords: () => Promise.resolve(emptyPage<ConsoleAuditRecord>()),
     getRecord: () => Promise.resolve(recordFixture()),
+    exportRecords: () => Promise.resolve(new Blob([])),
 
     listPermissions: () => Promise.resolve([]),
     listRoles: () => Promise.resolve([]),
@@ -516,6 +519,7 @@ export function createConsoleOperations(
         queryFn: () => backend.getRecord(query),
         enabled: query.id !== undefined && query.id !== '',
       }),
+    exportAuditRecords: (params) => backend.exportRecords(params),
 
     usePermissions: () =>
       useQuery({

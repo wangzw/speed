@@ -5,8 +5,13 @@
  * trail, whose rows span every tenant -- and renders them newest first as
  * a table (time, action, object, actor and outcome), through ui-kit's
  * DataTable; the columns shed the least important first as the table's
- * container narrows. The read surface carries no export: exporting is another
- * permission and another module's to carry, so this page only lists.
+ * container narrows. The toolbar beside the filters exports the records
+ * the applied filters match as one NDJSON file: the control calls the
+ * operations bundle's export action once, saves the Blob the streamed
+ * route answers under the export's UTC instant, and reports a refusal in
+ * the toolbar rather than in the read's placeholder. A download is its
+ * own confirmation, so a successful export adds no success message; a
+ * bundle without the export action renders no control.
  *
  * The read is an operation on the console operations bundle -- the host
  * binds the generated /api/v1/system/audit operation to it -- so the page builds
@@ -40,7 +45,7 @@
  * placeholders render one level down, so the heading order never skips.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Skeleton from '@mui/material/Skeleton'
@@ -53,12 +58,15 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
+  errorCodeOf,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
 import { formatInstant } from '@speed/i18n'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { AccountIdentity } from './internal/account-identity.js'
 import { AUDIT_RECORD_COLUMN_PRIORITY } from './internal/audit-record-columns.js'
+import { exportFileName, saveBlob } from './internal/export-file.js'
+import { InlineError } from './internal/inline-error.js'
 import { ConsoleLink } from './internal/navigation.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { RefreshStatus } from './internal/refresh-status.js'
@@ -117,23 +125,40 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
   // the first page), and the page advances one index at a time.
   const [cursors, setCursors] = useState<readonly string[]>([''])
   const [page, setPage] = useState(0)
+  // The export action's own state: whether one is in flight (the ref also
+  // guards a second activation in the same tick, before the re-render that
+  // loads the control) and the code of its failure, rendered in the
+  // toolbar.
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const exportInFlight = useRef(false)
 
   const appliedActions = useMemo(() => parseSet(action), [action])
   const appliedOutcomes = useMemo(() => parseSet(outcome), [outcome])
   const appliedActors = useMemo(() => parseSet(actor), [actor])
   const cursor = cursors[page] ?? ''
 
-  const params = useMemo(
+  // The filters the list read -- and the export -- take: the applied
+  // values, no cursor and no page size. An export is not a page; a page
+  // window belongs to the list read below.
+  const appliedFilters = useMemo(
     () => ({
       ...(since === '' ? {} : { since: toInstant(since) }),
       ...(until === '' ? {} : { until: toInstant(until) }),
       ...(appliedActions.length === 0 ? {} : { action: appliedActions }),
       ...(appliedOutcomes.length === 0 ? {} : { outcome: appliedOutcomes }),
       ...(appliedActors.length === 0 ? {} : { actor: appliedActors }),
+    }),
+    [since, until, appliedActions, appliedOutcomes, appliedActors],
+  )
+
+  const params = useMemo(
+    () => ({
+      ...appliedFilters,
       ...(cursor === '' ? {} : { cursor }),
       limit: DEFAULT_LIMIT,
     }),
-    [since, until, appliedActions, appliedOutcomes, appliedActors, cursor],
+    [appliedFilters, cursor],
   )
 
   const records = operations.useAuditRecords(params)
@@ -262,6 +287,33 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
     setPage(0)
   }
 
+  /**
+   * Exports every record the applied filters match, once per activation:
+   * the action fetches the NDJSON Blob and hands it to the browser as a
+   * file named by this click's instant. A failure replaces the toolbar's
+   * error text; a success adds nothing, because the download is its own
+   * confirmation.
+   */
+  const startExport = async () => {
+    const exportRecords = operations.exportAuditRecords
+    if (exportRecords === undefined || exportInFlight.current) {
+      return
+    }
+    exportInFlight.current = true
+    setExporting(true)
+    setExportError(null)
+    const startedAt = new Date()
+    try {
+      const blob = await exportRecords(appliedFilters)
+      saveBlob(blob, exportFileName(startedAt))
+    } catch (error) {
+      setExportError(errorCodeOf(error))
+    } finally {
+      exportInFlight.current = false
+      setExporting(false)
+    }
+  }
+
   return (
     <Box>
       <PageHeader
@@ -288,8 +340,6 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
 
       <SectionCard sx={{ mb: 3 }}>
         <Box
-          role="group"
-          aria-label={t('audit.filters.label')}
           sx={{
             display: 'flex',
             flexWrap: 'wrap',
@@ -298,50 +348,83 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
             rowGap: 1,
           }}
         >
-          <TextField
-            size="small"
-            type="datetime-local"
-            value={sinceDraft}
-            onChange={(event) => setSinceDraft(event.target.value)}
-            label={t('audit.filters.since')}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <TextField
-            size="small"
-            type="datetime-local"
-            value={untilDraft}
-            onChange={(event) => setUntilDraft(event.target.value)}
-            label={t('audit.filters.until')}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <TextField
-            size="small"
-            value={actionDraft}
-            onChange={(event) => setActionDraft(event.target.value)}
-            label={t('audit.filters.action')}
-            placeholder={t('audit.filters.valuePlaceholder')}
-          />
-          <TextField
-            size="small"
-            value={outcomeDraft}
-            onChange={(event) => setOutcomeDraft(event.target.value)}
-            label={t('audit.filters.outcome')}
-            placeholder={t('audit.filters.valuePlaceholder')}
-          />
-          <TextField
-            size="small"
-            value={actorDraft}
-            onChange={(event) => setActorDraft(event.target.value)}
-            label={t('audit.filters.actor')}
-            placeholder={t('audit.filters.valuePlaceholder')}
-          />
-          <Button type="button" variant="contained" onClick={applyFilters}>
-            {t('audit.filters.apply')}
-          </Button>
-          <Button type="button" variant="outlined" onClick={resetFilters}>
-            {t('audit.filters.reset')}
-          </Button>
+          <Box
+            role="group"
+            aria-label={t('audit.filters.label')}
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'flex-end',
+              columnGap: 2,
+              rowGap: 1,
+              flexGrow: 1,
+            }}
+          >
+            <TextField
+              size="small"
+              type="datetime-local"
+              value={sinceDraft}
+              onChange={(event) => setSinceDraft(event.target.value)}
+              label={t('audit.filters.since')}
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              size="small"
+              type="datetime-local"
+              value={untilDraft}
+              onChange={(event) => setUntilDraft(event.target.value)}
+              label={t('audit.filters.until')}
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              size="small"
+              value={actionDraft}
+              onChange={(event) => setActionDraft(event.target.value)}
+              label={t('audit.filters.action')}
+              placeholder={t('audit.filters.valuePlaceholder')}
+            />
+            <TextField
+              size="small"
+              value={outcomeDraft}
+              onChange={(event) => setOutcomeDraft(event.target.value)}
+              label={t('audit.filters.outcome')}
+              placeholder={t('audit.filters.valuePlaceholder')}
+            />
+            <TextField
+              size="small"
+              value={actorDraft}
+              onChange={(event) => setActorDraft(event.target.value)}
+              label={t('audit.filters.actor')}
+              placeholder={t('audit.filters.valuePlaceholder')}
+            />
+            <Button type="button" variant="contained" onClick={applyFilters}>
+              {t('audit.filters.apply')}
+            </Button>
+            <Button type="button" variant="outlined" onClick={resetFilters}>
+              {t('audit.filters.reset')}
+            </Button>
+          </Box>
+          {operations.exportAuditRecords === undefined ? null : (
+            <Button
+              type="button"
+              variant="outlined"
+              loading={exporting}
+              aria-busy={exporting || undefined}
+              onClick={() => {
+                void startExport()
+              }}
+            >
+              {exporting
+                ? t('audit.export.busy')
+                : t('audit.export.label')}
+            </Button>
+          )}
         </Box>
+        {exportError === null ? null : (
+          <Box sx={{ mt: 2 }}>
+            <InlineError code={exportError} />
+          </Box>
+        )}
       </SectionCard>
 
       <SectionCard flushContent>

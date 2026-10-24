@@ -10,12 +10,14 @@
  * placeholder.
  */
 
-import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { AuditAdminRecordsExportParams } from '@speed/api-sdk'
 import { AuditPage } from './AuditPage.js'
 import type { ConsoleAuditRecord } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { captureDownloads } from '../test-utils/download.js'
 import {
   columnVisibility,
   containerMaxWidthOf,
@@ -524,5 +526,197 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
     await expectNoAxeViolations()
+  })
+
+  describe('export', () => {
+    let capture: ReturnType<typeof captureDownloads>
+
+    beforeEach(() => {
+      capture = captureDownloads()
+    })
+
+    afterEach(() => {
+      capture.restore()
+    })
+
+    it('renders the export control in the filter toolbar, outside the filter group', async () => {
+      const operations = createConsoleOperations(makeConsoleBackend())
+      renderWithProviders(<AuditPage />, { operations })
+      const control = await screen.findByRole('button', {
+        name: zhCN.audit.export.label,
+      })
+      const filters = screen.getByRole('group', {
+        name: zhCN.audit.filters.label,
+      })
+      expect(filters).not.toContainElement(control)
+      expect(filters.parentElement).toContainElement(control)
+    })
+
+    it('renders no export control when the bundle carries no export member', async () => {
+      const operations = { ...createConsoleOperations(makeConsoleBackend()) }
+      delete operations.exportAuditRecords
+      renderWithProviders(<AuditPage />, { operations })
+      expect(await screen.findByText(zhCN.audit.empty.title)).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: zhCN.audit.export.label }),
+      ).toBeNull()
+    })
+
+    it('exports the applied filters, never the drafts or a page window', async () => {
+      const user = userEvent.setup()
+      const seen: AuditAdminRecordsExportParams[] = []
+      const operations = createConsoleOperations(
+        makeConsoleBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: (params) => {
+            seen.push(params ?? {})
+            return Promise.resolve(new Blob([]))
+          },
+        }),
+      )
+      renderWithProviders(<AuditPage />, { operations })
+      await screen.findByText('tenant.create')
+      const control = screen.getByRole('button', {
+        name: zhCN.audit.export.label,
+      })
+
+      // A typed filter that was never applied does not reach the export.
+      await user.type(
+        screen.getByLabelText(zhCN.audit.filters.action),
+        'tenant.delete',
+      )
+      await user.click(control)
+      await vi.waitFor(() => expect(seen).toHaveLength(1))
+      expect(seen[0]).toEqual({})
+
+      // Apply that filter, then change the drafts without applying again:
+      // the export carries the applied set, not the newer drafts.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.audit.filters.apply }),
+      )
+      await screen.findByText('tenant.create')
+      await user.clear(screen.getByLabelText(zhCN.audit.filters.action))
+      await user.type(
+        screen.getByLabelText(zhCN.audit.filters.action),
+        'tenant.remove',
+      )
+      await user.click(control)
+      await vi.waitFor(() => expect(seen).toHaveLength(2))
+      expect(seen[1]).toEqual({ action: ['tenant.delete'] })
+      // An export is not a page: it carries no cursor and no page size.
+      expect(seen[1]).not.toHaveProperty('cursor')
+      expect(seen[1]).not.toHaveProperty('limit')
+    })
+
+    it('saves the streamed export under its UTC instant', async () => {
+      const user = userEvent.setup()
+      const content = '{"id":"42"}\n'
+      const operations = createConsoleOperations(
+        makeConsoleBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: () =>
+            Promise.resolve(
+              new Blob([content], { type: 'application/x-ndjson' }),
+            ),
+        }),
+      )
+      renderWithProviders(<AuditPage />, { operations })
+      await screen.findByText('tenant.create')
+
+      await user.click(
+        screen.getByRole('button', { name: zhCN.audit.export.label }),
+      )
+      await vi.waitFor(() => expect(capture.downloads()).toHaveLength(1))
+
+      const download = capture.downloads()[0]!
+      const match = /^audit-records-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.ndjson$/.exec(
+        download.fileName,
+      )
+      expect(match).not.toBeNull()
+      const [, year, month, day, hour, minute, second] = match!
+      const instant = Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+      )
+      // The name is the export's own instant, read in UTC.
+      expect(Math.abs(instant - Date.now())).toBeLessThan(5 * 60 * 1000)
+      expect(await capture.blobs()[0]!.text()).toBe(content)
+      // A download is its own confirmation; the page adds none.
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('marks the control busy and starts no second export while one is in flight', async () => {
+      const user = userEvent.setup()
+      let resolveExport!: (blob: Blob) => void
+      let calls = 0
+      const operations = createConsoleOperations(
+        makeConsoleBackend({
+          listRecords: () => Promise.resolve(page([record])),
+          exportRecords: () => {
+            calls += 1
+            return new Promise<Blob>((resolve) => {
+              resolveExport = resolve
+            })
+          },
+        }),
+      )
+      renderWithProviders(<AuditPage />, { operations })
+      await screen.findByText('tenant.create')
+      const control = screen.getByRole('button', {
+        name: zhCN.audit.export.label,
+      })
+
+      await user.click(control)
+      await vi.waitFor(() => expect(calls).toBe(1))
+      expect(control).toHaveAttribute('aria-busy', 'true')
+
+      // A second activation while the first is in flight issues nothing.
+      fireEvent.click(control)
+      expect(calls).toBe(1)
+
+      await act(async () => {
+        resolveExport(new Blob([]))
+      })
+      await vi.waitFor(() => {
+        expect(control).not.toHaveAttribute('aria-busy')
+      })
+      expect(control).toBeEnabled()
+    })
+
+    it.each([
+      { status: 403, text: zhCN.errors.client.httpForbidden },
+      {
+        status: 503,
+        text: zhCN.errors.client.http.replace('{{status}}', '503'),
+      },
+    ])(
+      'reports a $status refusal in the toolbar and restores the control',
+      async ({ status, text }) => {
+        const user = userEvent.setup()
+        const operations = createConsoleOperations(
+          makeConsoleBackend({
+            listRecords: () => Promise.resolve(page([record])),
+            exportRecords: () =>
+              Promise.reject({ status, code: `client.http.${status}` }),
+          }),
+        )
+        renderWithProviders(<AuditPage />, { operations })
+        await screen.findByText('tenant.create')
+        const control = screen.getByRole('button', {
+          name: zhCN.audit.export.label,
+        })
+
+        await user.click(control)
+        expect(await screen.findByText(text)).toBeInTheDocument()
+        expect(control).toBeEnabled()
+        expect(control).not.toHaveAttribute('aria-busy')
+        // The failure belongs to the action, not to the read's placeholder.
+        expect(screen.queryByText(zhCN.audit.error.title)).toBeNull()
+      },
+    )
   })
 })

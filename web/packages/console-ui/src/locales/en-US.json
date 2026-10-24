@@ -318,6 +318,10 @@
       "description": "The audit surface could not complete this request."
     },
     "retry": "Retry",
+    "export": {
+      "label": "Export",
+      "busy": "Exporting…"
+    },
     "column": {
       "time": "Time",
       "actor": "Actor",

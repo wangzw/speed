@@ -318,6 +318,10 @@
       "description": "审计面未能完成这次请求。"
     },
     "retry": "重试",
+    "export": {
+      "label": "导出",
+      "busy": "正在导出…"
+    },
     "column": {
       "time": "时间",
       "actor": "操作者",
