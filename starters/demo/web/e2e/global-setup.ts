@@ -4,9 +4,10 @@
  * The run's own directory is created here, so this is also where the retention
  * rule runs: before the harness directory is created, every earlier run
  * directory under /tmp whose modification time is older than the retention
- * window is removed. The sweep matches the whole run directory name and only
- * direct children of /tmp, so the per-spec server directories beside it are
- * left alone. A fresh directory -- this run's, or one belonging to a run
+ * window is removed. The per-spec directories a failed test keeps -- the
+ * review server's temporary directory and the deploy fixture's volume -- are
+ * swept by the same age rule under the system temp directory, each by its own
+ * name shape. A fresh directory -- this run's, or one belonging to a run
  * happening in parallel -- is inside the window and is never touched.
  *
  * The Go program embeds starters/demo/server/dist, so the front end is built
@@ -33,7 +34,10 @@ import {
   SERVER_DIR,
   WEB_DIR,
 } from './fixtures/paths'
-import { removeExpiredRunDirectories } from './fixtures/retention'
+import {
+  removeExpiredPerSpecDirectories,
+  removeExpiredRunDirectories,
+} from './fixtures/retention'
 
 const BUILD_TIMEOUT_MS = 10 * 60_000
 
@@ -101,6 +105,10 @@ export default async function globalSetup(): Promise<void> {
   const expired = await removeExpiredRunDirectories()
   for (const path of expired) {
     process.stderr.write(`[e2e] removed expired run directory: ${path}\n`)
+  }
+  const expiredPerSpec = await removeExpiredPerSpecDirectories()
+  for (const path of expiredPerSpec) {
+    process.stderr.write(`[e2e] removed expired per-spec directory: ${path}\n`)
   }
 
   await mkdir(HARNESS_DIR, { recursive: true })

@@ -34,6 +34,25 @@
  * product shows -- the type's defaults before the write and the stored set
  * after it -- and not the explicit/default flag the matrix never displays.
  *
+ * REQ-notifications-013 is also left out: its acceptance judges the push by
+ * the prompt frame on the recipient's live connection and explicitly forbids
+ * judging it by list or cache content. The browser-only tier can see the
+ * bell's unread count move on its own, but a client that re-read the count on
+ * a timer would show the same movement, so the assertion cannot tell push
+ * from poll. The spec therefore asserts the rendered arrival and not the
+ * push-to-the-connection property.
+ *
+ * REQ-notifications-030 is claimed for the fixed column order this assembly
+ * shows, and not for the whole requirement: the review type declares its
+ * optional channels in-app then email, which is also the platform's order, so
+ * a matrix that followed the host's declaration order would render the same
+ * sequence. The reversed-declaration case is not driven here.
+ *
+ * REQ-notifications-001 is claimed narrowly: the spec asserts the notice's
+ * title, body and unread state in the signed-in member's own inbox. The
+ * other row fields (type, group, parameters, link, received and read times)
+ * and a second recipient's isolation are not asserted.
+ *
  * The worker dispatches one notice per tenant per ten-second window, so a
  * count read and the write that follows it must not straddle a window or the
  * new notice makes an exact count wrong for reasons the journey did not
@@ -49,7 +68,7 @@
  * whose keys are literal dotted strings.
  */
 // @journey journey-member-workspace.md
-// @covers REQ-notifications-001, REQ-notifications-003, REQ-notifications-004, REQ-notifications-010, REQ-notifications-013, REQ-notifications-028, REQ-notifications-029, REQ-notifications-030, REQ-notifications-051, REQ-tenancy-022, REQ-tenancy-036
+// @covers REQ-notifications-001, REQ-notifications-003, REQ-notifications-004, REQ-notifications-010, REQ-notifications-028, REQ-notifications-029, REQ-notifications-030, REQ-notifications-051, REQ-tenancy-022, REQ-tenancy-036
 import type { Locator, Page } from '@playwright/test'
 
 import { reviewMember } from '../fixtures/config'
@@ -212,11 +231,12 @@ test('member-workspace: a member receives, reads and configures notifications', 
   })
 
   await test.step('a notice arrives on another page and the bell counts it without a reload', async () => {
-    // The member stays on the home page. The count must move on its own: the
-    // live subscription invalidates the unread read on the pushed frame, so no
-    // list read and no reload is what carries the change. The next window is
-    // ten seconds away plus the delivery job's poll, so wait for the bell to
-    // change rather than for a fixed delay.
+    // The member stays on the home page and the count moves on its own: no
+    // reload and no interaction with the list is what carries the change. The
+    // next window is ten seconds away plus the delivery job's poll, so wait
+    // for the bell to change rather than for a fixed delay. Whether the move
+    // came from a pushed frame or a re-read on a timer is not discriminated
+    // here (see the file header on REQ-notifications-013).
     await afterNextNotice(page)
 
     // Opening the surface from the bell lists the notice, unread, with its
@@ -344,7 +364,10 @@ test('member-workspace: a member receives, reads and configures notifications', 
     // The review assembly serves both optional channels, so the matrix carries
     // the type column and the platform's fixed channel order: in-app, email,
     // sms. Reading the whole ordered set from the bundle proves the set and its
-    // order (REQ-notifications-030) without depending on a column index.
+    // order without depending on a column index. The claim is narrow: this
+    // type declares its optional channels in the platform's own order, so the
+    // reversed-declaration case of REQ-notifications-030 is not driven (see the
+    // file header).
     await expect(table.getByRole('columnheader')).toHaveText([
       copy('notificationUi', 'preferences.column.type'),
       copy('notificationUi', 'preferences.channel.in_app'),

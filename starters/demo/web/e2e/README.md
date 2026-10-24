@@ -89,6 +89,34 @@ name and the logging layer masks its value.
 Everything else is an assertion on rendered behaviour: visible text, accessible
 roles and names, focus, URL, disabled/selected state, banners and empty states.
 
+## Fixture-type journeys
+
+A journey whose subject is deployment machinery rather than a rendered surface
+may be registered fixture-type, and `journey-deploy-and-operate` is the only
+one. Its steps -- rendering the deployment template onto a volume, running the
+binary's own `sqlite seed`, starting `sqlite serve`, and reading the listeners
+the deployment publishes -- are the deployment's own work, and no browser can
+perform or observe them. The counterpart of that allowance is that the spec's
+header names the ids it covers off-browser, and only these may be so covered:
+
+- the process and its commands: the ready record, and `seed`'s report of what
+  it wrote (REQ-deployment-005, 007, 008, 012);
+- what the binary serves: the entry document, the extension-less page
+  fallback, and the 404 for a named asset (REQ-deployment-002 for the
+  same-origin half, 003, 004);
+- files the deployment writes: the first-run signing key and its permission
+  (REQ-deployment-006);
+- the operations listener, which has no browser client: the liveness and
+  readiness probes and the merged API document (REQ-deployment-017, 018, 019);
+- the backend origin's login discovery document, whose entry set is the
+  requirement's own subject (REQ-signin-001, assembled entry set only).
+
+Everything else in that journey -- sign-in, the account page, the console, the
+refused write -- is still driven in the browser with clicks and keys. The
+allowance is not a licence to substitute a fixture for product behaviour: a
+fixture may read what the deployment itself produces, and may not answer a
+request or manufacture a state the product would otherwise have to reach.
+
 ## Honesty rules
 
 These are the contract the tier is held to, enforced twice — by the eslint rule
@@ -178,10 +206,17 @@ non-covered fails `make repo-check`.
 ## Where the artifacts are
 
 Each run mints an id and keeps everything under `/tmp/speed-e2e-<run-id>`, so
-two runs at the same time never share a build, a manifest or an output
-directory (Playwright clears `outputDir` when it starts). The id travels in
+two runs in different worktrees never share a manifest or an output directory
+(Playwright clears `outputDir` when it starts). The id travels in
 `SPEED_E2E_RUN_ID` from the config process to the global setup and the fixture
 workers.
+
+**At most one run per checkout at a time.** The front-end build writes
+`starters/demo/server/dist` inside the checkout (the Go program embeds that
+directory), and both binaries are built from it, so this one product is not
+per-run. Two runs on the same checkout would race on the directory and could
+embed a half-written bundle; two runs in different worktrees are isolated
+because each worktree owns its own `dist`.
 
 | Path | Contents |
 |---|---|
@@ -198,11 +233,14 @@ inspected; the path is attached to the failure.
 The run directory is bounded. At the start of every run, global setup removes
 earlier run directories under `/tmp` whose whole name matches
 `speed-e2e-<pid>-<clock>-<nonce>` and whose modification time is older than
-seven days (`RETENTION_WINDOW_MS` in `fixtures/retention.ts`). A name that does
-not match exactly -- including the per-spec `speed-e2e-server-*` directories,
-which share the string prefix -- is never a candidate, nothing outside `/tmp`
-is ever considered, and a symbolic link is never followed. When the whole run
-passes, `fixtures/retention-reporter.ts` removes this run's directory from
-Playwright's `onExit`, after the HTML report has been written. A failed,
-timed-out or interrupted run keeps the directory and the reporter prints its
-path (and the report's) at the end of the run.
+seven days (`RETENTION_WINDOW_MS` in `fixtures/retention.ts`). The same sweep
+removes the per-spec directories a failed test keeps -- the review server's
+`speed-e2e-server-<six>` and the deploy fixture's `speed-e2e-deploy-<six>` --
+once they age past the window, under the system temp directory the fixtures
+create them in. A name that does not match one of those shapes exactly is never
+a candidate, and a symbolic link is never followed. When the whole run passes,
+`fixtures/retention-reporter.ts` removes this run's directory from Playwright's
+`onExit`, after the HTML report has been written. A failed, timed-out or
+interrupted run keeps the directory and the reporter prints its path (and the
+report's) at the end of the run; the failure-kept per-spec directories are
+cleaned by the next run only after the same window.

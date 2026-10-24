@@ -13,9 +13,10 @@
  *    (deploy/fly.yaml.tmpl) onto a temporary volume, runs the binary's own
  *    `sqlite seed`, then starts `sqlite serve` from that volume. The operations
  *    probes and the merged API document are read by HTTP from the operations
- *    listener, and the first-run signing key's permission is read from the
- *    volume. This is the allowance the fixture-type ruling makes; no browser
- *    behaviour is replaced by it.
+ *    listener, the login discovery document is read from the backend origin,
+ *    and the first-run signing key's permission is read from the volume. This
+ *    is the allowance the e2e README records for fixture-type journeys; no
+ *    browser behaviour is replaced by it.
  *  - Browser side: one sign-in, driven with clicks and keys only. An anonymous
  *    viewer opens the protected account path and meets the sign-in surface; the
  *    seeded operator signs in with the email and password the seed wrote and
@@ -51,6 +52,11 @@
  *    one-shot-command halves (the same binary seeds and serves page and API),
  *    but not for the in-process job delivery its acceptance also names, so it
  *    is not claimed.
+ *  - REQ-deployment-017's down-state clause (the probe still answers 200 while
+ *    the database or a backend is down) is not driven: stopping a declared
+ *    endpoint would reach around the product. The claim is the probe's positive
+ *    half -- an unauthenticated GET on the separate operations listener that
+ *    answers 200 without a credential.
  *  - REQ-signin-004 (the login surface's set is derived from the discovery
  *    document) cannot be discriminated here: a hardcoded surface that listed
  *    the same three methods would pass the same assertions, so it is not
@@ -84,6 +90,11 @@
  *  - REQ-deployment-018 is claimed for its positive half only: with every
  *    declared endpoint and the database answering, `/ready` answers 200 and its
  *    body says ready. The 503 case that names each failed part is not driven.
+ *  - REQ-signin-001 is claimed for the discovery document's assembled entry
+ *    set: the document lists exactly the three methods this assembly serves,
+ *    each with its rendering kind. The appear/disappear-when-toggled half is
+ *    not driven, because it needs a second assembly or a runtime switch this
+ *    tier does not perform.
  *  - REQ-platform-admin-017 and REQ-signup-027 are claimed for the refusal of a
  *    human write from an unproved operator and the guidance it renders; the
  *    step-up retry that must still be refused is not driven.
@@ -122,6 +133,24 @@ const NEW_VALUE = '150'
 /** The operation the merged document must carry from a module no command runs. */
 const UNRUN_MODULE_PATH = '/api/v1/system/sms/templates'
 const UNRUN_MODULE_NAME = 'sms.admin'
+
+/** One login method as the discovery document reports it. */
+interface DiscoveryMethod {
+  readonly name: string
+  readonly kind: string
+}
+
+/**
+ * The login methods the deploy assembly serves, as the discovery document
+ * reports them: the two social methods (redirect buttons) and password (a
+ * form). These are the document's own stable method names, not interface
+ * copy, so they are literals.
+ */
+const DISCOVERY_METHODS = [
+  { name: 'github', kind: 'redirect' },
+  { name: 'google', kind: 'redirect' },
+  { name: 'password', kind: 'form' },
+] as const
 
 /** The account page's profile section heading. */
 function profileHeading(page: Page): Locator {
@@ -286,6 +315,17 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
     const methods = await server.probe('/api/v1/auth/methods')
     expect(methods.status).toBe(200)
     expect(methods.contentType).toContain('application/json')
+
+    // The discovery document lists exactly the methods this assembly serves
+    // and not one it does not: password plus the two social methods, each with
+    // the kind that says how the surface renders it. The document is sorted by
+    // method name. (REQ-signin-001's runtime-toggle half is not driven; see the
+    // file header.)
+    const discovery = jsonBody(methods)
+    const entries = (discovery.methods as readonly DiscoveryMethod[]).map(
+      ({ name, kind }) => ({ name, kind }),
+    )
+    expect(entries).toEqual(DISCOVERY_METHODS)
   })
 
   await test.step('step 6: the protected account path meets an anonymous viewer with the sign-in surface', async () => {

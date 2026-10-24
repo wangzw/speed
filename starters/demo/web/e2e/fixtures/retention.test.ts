@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   RETENTION_WINDOW_MS,
+  removeExpiredPerSpecDirectories,
   removeExpiredRunDirectories,
   removeRunDirectory,
 } from './retention'
@@ -22,7 +23,13 @@ import {
 /** A directory name the harness itself mints: pid, base36 clock, hex nonce. */
 const RUN_DIRECTORY = 'speed-e2e-4242-m1abc2de-0a1b2c3d'
 
-/** The per-spec server temporary directory's name: shares the prefix, not the shape. */
+/** A per-spec server directory: the six characters mkdtemp appends. */
+const PER_SPEC_SERVER = 'speed-e2e-server-a1B2c3'
+
+/** A deploy fixture's kept volume directory. */
+const PER_SPEC_DEPLOY = 'speed-e2e-deploy-d4E5f6'
+
+/** The per-spec server temporary directory's near-miss name: wrong shape. */
 const SERVER_DIRECTORY = 'speed-e2e-server-ab12cd34'
 
 /** A day in milliseconds, for stating ages in the cases below. */
@@ -161,6 +168,53 @@ describe('removeExpiredRunDirectories', () => {
     } finally {
       await rm(targetRoot, { recursive: true, force: true })
     }
+  })
+})
+
+describe('removeExpiredPerSpecDirectories', () => {
+  it('removes an expired server directory and an expired deploy volume', async () => {
+    const now = Date.now()
+    const server = await makeDirectory(PER_SPEC_SERVER)
+    const deploy = await makeDirectory(PER_SPEC_DEPLOY)
+    await backdate(server, now, RETENTION_WINDOW_MS + DAY_MS)
+    await backdate(deploy, now, RETENTION_WINDOW_MS + DAY_MS)
+
+    const removed = await removeExpiredPerSpecDirectories({
+      root: prefixRoot,
+      now,
+    })
+
+    // The scan's order is the filesystem's; compare the set it removed.
+    expect([...removed].sort()).toEqual([server, deploy].sort())
+    await expect(exists(server)).resolves.toBe(false)
+    await expect(exists(deploy)).resolves.toBe(false)
+  })
+
+  it('keeps a per-spec directory inside the window', async () => {
+    const now = Date.now()
+    const server = await makeDirectory(PER_SPEC_SERVER)
+
+    const removed = await removeExpiredPerSpecDirectories({
+      root: prefixRoot,
+      now,
+    })
+
+    expect(removed).toEqual([])
+    await expect(lstat(server)).resolves.toBeTruthy()
+  })
+
+  it('keeps a prefix-sharing name that is not a per-spec shape', async () => {
+    const now = Date.now()
+    const nearMiss = await makeDirectory(SERVER_DIRECTORY)
+    await backdate(nearMiss, now, RETENTION_WINDOW_MS + DAY_MS)
+
+    const removed = await removeExpiredPerSpecDirectories({
+      root: prefixRoot,
+      now,
+    })
+
+    expect(removed).toEqual([])
+    await expect(lstat(nearMiss)).resolves.toBeTruthy()
   })
 })
 

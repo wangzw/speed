@@ -1,13 +1,16 @@
 /**
  * The paths the end-to-end harness resolves once and shares.
  *
- * Every artifact of a run lives under one per-run root: two runs at the same
- * time -- two worktrees, or CI beside a local run -- would otherwise share the
- * same harness binary, manifest and Playwright outputDir, and one run's
- * Playwright startup would clear the other's failure screenshots. The run id
- * is minted once and carried in the environment, so the config process, the
- * global setup and every fixture worker agree on it even though they are
- * separate processes.
+ * Every artifact of a run lives under one per-run root: two runs in different
+ * worktrees would otherwise share the same harness binary, manifest and
+ * Playwright outputDir, and one run's Playwright startup would clear the
+ * other's failure screenshots. The run id is minted once and carried in the
+ * environment, so the config process, the global setup and every fixture
+ * worker agree on it even though they are separate processes. The front-end
+ * build is the exception: it writes `starters/demo/server/dist` inside the
+ * checkout and both binaries embed that directory, so at most one run may
+ * execute in one checkout at a time. Two checkouts are isolated because each
+ * owns its own `dist`.
  *
  * The root, the harness build and the manifest stay under /tmp: a run must
  * leave nothing in the tree except the build products the front-end build

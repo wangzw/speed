@@ -18,6 +18,15 @@
  * Expected copy is read from the shipped en-US locale bundles through
  * helpers/i18n.ts, so a sentence that changes in the product changes here with
  * it rather than leaving a stale literal that still passes.
+ *
+ * The PRD's per-requirement end-to-end field names this spec for
+ * REQ-account-015, REQ-presentation-010, REQ-tenancy-027, REQ-tenancy-028,
+ * REQ-signin-001, REQ-signin-004 and REQ-signup-024, but this spec does not
+ * assert them: account verification status by source, locale-formatted
+ * times, the personal owner's permission allow-list, the unverified-account
+ * restriction, the anonymous discovery document, a surface derived from it,
+ * and unverified sign-in are all outside the steps below. Those fields are
+ * inaccurate; the ids this spec does exercise are the `@covers` line.
  */
 // @journey journey-first-registration-to-personal-workspace.md
 // @covers REQ-signin-006, REQ-signup-001, REQ-signup-002, REQ-signup-003, REQ-signup-004, REQ-signup-005, REQ-signup-008, REQ-signup-009, REQ-signup-010, REQ-signup-028, REQ-signup-029, REQ-account-010, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-tenancy-022, REQ-tenancy-026
