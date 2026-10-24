@@ -40,9 +40,7 @@ export interface JourneyEntry {
 export const journeys: readonly JourneyEntry[] = [
   {
     journey: 'journey-account-offboarding.md',
-    status: 'pending',
-    reason:
-      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-platform-admin-012',
       'REQ-platform-admin-014',
