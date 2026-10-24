@@ -269,9 +269,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-operator-configuration.md',
-    status: 'pending',
-    reason:
-      'The journey is browser-reachable; no spec drives it yet, and its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-platform-admin-001',
       'REQ-platform-admin-029',
