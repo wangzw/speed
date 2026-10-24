@@ -53,9 +53,16 @@ async function attachFailure(
 export const test = base.extend<{
   server: ReviewServer
   demo: DemoTarget
+  /**
+   * Seed the member-workspace journey's account and membership. A spec sets
+   * `test.use({ seedMember: true })` when it signs that member in; every other
+   * spec starts from the template's own seed.
+   */
+  seedMember: boolean
 }>({
-  server: async ({}, use, testInfo) => {
-    const server = await startReviewServer()
+  seedMember: [false, { option: true }],
+  server: async ({ seedMember }, use, testInfo) => {
+    const server = await startReviewServer({ seedMember })
     try {
       await use(server)
     } finally {

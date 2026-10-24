@@ -282,8 +282,14 @@ export interface ReviewServer {
  * config write. A bind failure is still possible -- another process can take
  * the port in that window -- so it is retried with a fresh pair, bounded by
  * MAX_BIND_ATTEMPTS.
+ *
+ * `seedMember` is passed through to the configuration the binary seeds; a spec
+ * that does not sign the member in leaves it off, so the template's own seed
+ * stays the baseline.
  */
-export async function startReviewServer(): Promise<ReviewServer> {
+export async function startReviewServer(
+  options: { readonly seedMember?: boolean } = {},
+): Promise<ReviewServer> {
   const manifest = await readHarnessManifest()
   await ensureBinary(manifest.binary)
   const dir = await mkdtemp(join(tmpdir(), 'speed-e2e-server-'))
@@ -330,6 +336,7 @@ export async function startReviewServer(): Promise<ReviewServer> {
       dir,
       backendPort: seedBackend,
       opsPort: seedOps,
+      seedMember: options.seedMember,
     })
     await runCommand(
       manifest.binary,
@@ -346,7 +353,12 @@ export async function startReviewServer(): Promise<ReviewServer> {
       if (backendPort === undefined || opsPort === undefined) {
         throw new Error('the harness could not allocate two free ports')
       }
-      config = await writeReviewConfig({ dir, backendPort, opsPort })
+      config = await writeReviewConfig({
+        dir,
+        backendPort,
+        opsPort,
+        seedMember: options.seedMember,
+      })
       const configLocator = `file:${config.path}`
       const from = log.mark()
       let spawnError: Error | undefined

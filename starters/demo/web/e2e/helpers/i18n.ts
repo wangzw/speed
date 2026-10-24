@@ -25,6 +25,7 @@ export type CopyBundle =
   | 'notificationUi'
   | 'uiKit'
   | 'consoleUi'
+  | 'reviewNotice'
 
 const BUNDLES: Record<CopyBundle, URL> = {
   demo: new URL('../../src/locales/en-US.json', import.meta.url),
@@ -58,6 +59,15 @@ const BUNDLES: Record<CopyBundle, URL> = {
   ),
   consoleUi: new URL(
     '../../../../../web/packages/console-ui/src/locales/en-US.json',
+    import.meta.url,
+  ),
+  // The review assembly's notification catalog. The delivery pipeline renders
+  // an in-app message from "<type_key>.<channel>.<part>" in the module's own
+  // catalog, and the review build is where a type exists, so its text is a
+  // shipped product string like any other. Its keys carry dots as literal
+  // characters; `copyKey` reads them that way.
+  reviewNotice: new URL(
+    '../../../server/review_notification_locales/en-US.json',
     import.meta.url,
   ),
 }
@@ -122,6 +132,27 @@ export function copy(
     }
     return String(value)
   })
+}
+
+/**
+ * The expected copy for one bundle key read literally.
+ *
+ * A catalog whose keys are themselves whole strings -- the review fixture's
+ * notification text is keyed `<type_key>.<channel>.<part>` -- cannot go through
+ * `copy`'s dot-path lookup, which reads those dots as nesting. This reads the
+ * top-level entry under the exact key. A missing key or a non-string value is
+ * a harness error, the same as `copy`.
+ */
+export function copyKey(name: CopyBundle, key: string): string {
+  const catalog = bundle(name)
+  if (typeof catalog !== 'object' || catalog === null || Array.isArray(catalog)) {
+    throw new Error(`the ${name} locale bundle is not an object`)
+  }
+  const value = (catalog as Record<string, unknown>)[key]
+  if (typeof value !== 'string') {
+    throw new Error(`the ${name} locale bundle has no string at the key ${key}`)
+  }
+  return value
 }
 
 /** Escape the characters a regular expression reads as syntax. */

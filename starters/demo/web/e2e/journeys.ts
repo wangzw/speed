@@ -247,9 +247,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-member-workspace.md',
-    status: 'pending',
-    reason:
-      'The journey is browser-reachable once a second actor emits a notification; no spec drives it yet, and its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-notifications-001',
       'REQ-notifications-003',

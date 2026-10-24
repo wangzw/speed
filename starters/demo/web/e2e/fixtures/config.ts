@@ -27,6 +27,13 @@ export interface ReviewConfigInput {
   readonly backendPort: number
   /** The operations listener's port. */
   readonly opsPort: number
+  /**
+   * Seed the member-workspace journey's account and membership. Off by
+   * default: only that journey's server reads them, so the shared template's
+   * seed -- the operator, the tenant and the settings -- stays the baseline
+   * every other spec starts from.
+   */
+  readonly seedMember?: boolean
 }
 
 export interface ReviewConfig {
@@ -45,6 +52,45 @@ export interface ReviewConfig {
   readonly dsn: string
   readonly signingKey: string
   readonly objectsRoot: string
+}
+
+/**
+ * The member the member-workspace journey signs in as.
+ *
+ * The review template's seed holds the platform operator alone, and a platform
+ * administrator's role binding is not a membership: the seeded tenant has no
+ * member for the notification worker to address. When the member-workspace
+ * spec asks for it (`seedMember`), this account and its membership are added
+ * to the configuration the harness writes, so the binary's own `seed` command
+ * creates both -- the fixture never writes a row into a running database. The
+ * account is seeded by an email address on purpose: the review type's default
+ * channels include email, and the worker skips a member with no email
+ * identifier.
+ */
+export const reviewMember = {
+  tenant: 'acme',
+  identifier: 'member@demo.test',
+  password: 'member-review-secret',
+  displayName: 'Demo Member',
+} as const
+
+/** The template's seeded operator entry; the member entry is appended to it. */
+const seedOperatorAccount = `    - identifier: operator@demo.test
+      password: operator-dev-secret
+      display-name: Demo Operator
+      platform-admin: true`
+
+/** The member's `seed.accounts` entry, indented for the list it joins. */
+function seedMemberAccount(): string {
+  return `    - identifier: ${quoted(reviewMember.identifier)}
+      password: ${quoted(reviewMember.password)}
+      display-name: ${quoted(reviewMember.displayName)}`
+}
+
+/** The member's `seed.members` entry, indented for the key it joins. */
+function seedMemberMembership(): string {
+  return `    - tenant: ${quoted(reviewMember.tenant)}
+      account: ${quoted(reviewMember.identifier)}`
 }
 
 /** Replace exactly one occurrence of a needle, or fail the fixture. */
@@ -163,6 +209,27 @@ export async function writeReviewConfig(
     throw new Error(
       'the review configuration template no longer pins authn.mfa.webauthn.rp-id to localhost; ' +
         'the harness opens the browser at http://localhost:<port>',
+    )
+  }
+  // The member the member-workspace journey signs in as: its account joins the
+  // seeded operator's list, and its membership joins the seed's members. Both
+  // are part of the configuration the binary's own seed command reads, so the
+  // account and the row that binds it to the tenant are the product's writes,
+  // not the fixture's. The membership goes before `settings` so the key order
+  // the template documents is kept. The block is opt-in so a spec that does
+  // not sign the member in starts from the template's own seed.
+  if (input.seedMember === true) {
+    body = replaceOnce(
+      body,
+      seedOperatorAccount,
+      `${seedOperatorAccount}\n${seedMemberAccount()}`,
+      'seed operator account',
+    )
+    body = replaceOnce(
+      body,
+      '\n  settings:\n',
+      `\n  members:\n${seedMemberMembership()}\n  settings:\n`,
+      'seed settings section',
     )
   }
 
