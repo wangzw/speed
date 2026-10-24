@@ -1,15 +1,15 @@
 // Package admin is the audit capability's management module: it mounts the
-// record-query routes under /api/v1/system/audit/* and delivers no capability of its
-// own.
+// record-query and export routes under /api/v1/system/audit/* and delivers no
+// capability of its own.
 //
-// The module holds no data and no rule. Every route's action is one read of the
-// audit table, reached through the audit implementation subpackage's read
-// surface — journal.Reader — so the audit module owns the table, its shape and
-// its writing, and this module only decides who may ask and how the answer is
-// shaped. It is the query surface the audit capability deliberately does not
-// provide: reading an audit record needs an authorization decision, which
-// belongs to the permission model, so the capability leaves it to a module that
-// carries one.
+// The module holds no data and no rule. Every route's action is one or more
+// reads of the audit table, reached through the audit implementation
+// subpackage's read surface — journal.Reader — so the audit module owns the
+// table, its shape and its writing, and this module only decides who may ask and
+// how the answer is shaped. It is the query surface the audit capability
+// deliberately does not provide: reading an audit record needs an authorization
+// decision, which belongs to the permission model, so the capability leaves it
+// to a module that carries one.
 //
 // Every route is declared open on the authorization middleware, so the
 // middleware lets a request through and the handler makes the decision itself:

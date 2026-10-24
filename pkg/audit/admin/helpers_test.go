@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	stdlog "log"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -41,15 +44,37 @@ type readerCall struct {
 	ctx context.Context
 }
 
+// stubPage is one page a scripted read answers: the rows, the cursor of the
+// next page and the failure the read ends with.
+type stubPage struct {
+	rows []journal.Row
+	next string
+	err  error
+}
+
 // stubReader is a stand-in journal.Reader. It records every call, answers reads
 // from what a case set, and fails every read with the error a case set, which is
-// how a case drives a read failure up the handler's mapping.
+// how a case drives a read failure up the handler's mapping. A scripted reader
+// answers the pages in order instead, so a case can drive a multi-page read or a
+// page that fails after the rows before it were answered.
 type stubReader struct {
 	mu    sync.Mutex
 	calls []readerCall
 	rows  []journal.Row
 	next  string
 	err   error
+	pages []stubPage
+	at    int
+}
+
+// script makes the reader answer the given pages in order. A read past the last
+// scripted page answers an empty last page, so a loop that reads one page too
+// many ends rather than blocking.
+func (s *stubReader) script(pages ...stubPage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pages = pages
+	s.at = 0
 }
 
 func (s *stubReader) record(call readerCall) {
@@ -70,6 +95,14 @@ func (s *stubReader) Query(ctx context.Context, q journal.Query) ([]journal.Row,
 	s.record(readerCall{q: q, ctx: ctx})
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.pages != nil {
+		if s.at >= len(s.pages) {
+			return nil, "", nil
+		}
+		page := s.pages[s.at]
+		s.at++
+		return append([]journal.Row(nil), page.rows...), page.next, page.err
+	}
 	if s.err != nil {
 		return nil, "", s.err
 	}
@@ -363,4 +396,24 @@ func (r *rig) send(target string, ctx context.Context) *httptest.ResponseRecorde
 	w := httptest.NewRecorder()
 	r.engine.ServeHTTP(w, req)
 	return w
+}
+
+// server mounts the same engine on a real HTTP server, with the identity the
+// options build installed on every request. It is the surface a streamed reply
+// needs: a recorder swallows the abort a reply raises after its body has started,
+// while a real server closes the connection the way the reply asked, so the
+// caller sees the incomplete body a client would.
+func (r *rig) server(t *testing.T, opts ...authntest.Option) *httptest.Server {
+	t.Helper()
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := authntest.Context(t, req.Context(), opts...)
+		ctx = log.WithLogger(ctx, r.logs.logger())
+		r.engine.ServeHTTP(w, req.WithContext(ctx))
+	}))
+	// A reply that abandons its connection makes net/http log the panic it
+	// recovered; the case reads the module's own log instead.
+	server.Config.ErrorLog = stdlog.New(io.Discard, "", 0)
+	server.Start()
+	t.Cleanup(server.Close)
+	return server
 }

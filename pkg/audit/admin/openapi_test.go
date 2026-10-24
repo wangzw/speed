@@ -37,6 +37,7 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		},
 		QueryParams: map[routecontract.Route]map[string]bool{
 			{Method: "GET", Path: "/api/v1/system/audit/records"}: listParams,
+			{Method: "GET", Path: "/api/v1/system/audit/export"}:  exportParams,
 		},
 	})
 }

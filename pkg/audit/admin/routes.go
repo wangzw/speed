@@ -17,6 +17,7 @@ import (
 var (
 	recordsPath = auditSpec.ResolvePath(pathRecords)
 	recordPath  = auditSpec.ResolvePath(pathRecord)
+	exportPath  = auditSpec.ResolvePath(pathExport)
 )
 
 // managementGroups names the route groups in the order the start diagnostic
@@ -56,13 +57,15 @@ type route struct {
 type shape func(*gin.Context) bool
 
 // routes is the closed set of query routes, in the order they are mounted. Every
-// route reads and none exports: the export surface is another permission and
-// another module's to carry. Each handler is the operation declared for the
-// route, bound to its typed input and answer, behind the route's decision.
+// route reads the audit table: two read it a page or a row at a time and one
+// exports the rows the filters match, all under the same permission. Each
+// handler is the operation declared for the route, bound to its typed input and
+// answer, behind the route's decision.
 func (p *product) routes() []route {
 	return []route{
 		{http.MethodGet, recordsPath, p.guardRoute(listParams, listShape, listOperation.Handle(p.handleRecordList))},
 		{http.MethodGet, recordPath, p.guardRoute(nil, nil, getOperation.Handle(p.handleRecordGet))},
+		{http.MethodGet, exportPath, p.guardRoute(exportParams, nil, exportOperation.Handle(p.handleRecordExport))},
 	}
 }
 

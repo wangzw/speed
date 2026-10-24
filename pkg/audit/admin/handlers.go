@@ -40,6 +40,18 @@ var listParams = map[string]bool{
 	paramLimit:   true,
 }
 
+// exportParams is the set the export route accepts. It is deliberately not
+// listParams: a cursor and a page size describe a page, and an export reads the
+// whole matching set, so either on an export request is a shape refusal rather
+// than a bound the route silently ignores.
+var exportParams = map[string]bool{
+	paramSince:   true,
+	paramUntil:   true,
+	paramAction:  true,
+	paramOutcome: true,
+	paramActor:   true,
+}
+
 // handleRecordList answers GET /api/v1/system/audit/records: one page of audit records,
 // narrowed by a time window and sets of actions, outcomes and actors, read
 // newest first.
@@ -105,49 +117,74 @@ func (p *product) handleRecordGet(ctx context.Context, in RecordGetInput, _ *spe
 	return speedhttp.JSONReply(http.StatusOK, recordViewOf(rows[0])), nil
 }
 
-// listQueryOf turns the list route's bound input into a read query. A time
-// bound that is not RFC 3339, an action, outcome or actor that names nothing,
-// and a limit that is not a non-negative integer are each a refusal. A limit
-// above the read surface's maximum is not refused: the read surface caps it.
+// listQueryOf turns the list route's bound input into a read query. The filters
+// are the ones every query route shares; on top of them the list route takes the
+// page's cursor and size. A limit that is not a non-negative integer is a
+// refusal; a limit above the read surface's maximum is not refused, because the
+// read surface caps it.
 func listQueryOf(in RecordListInput) (journal.Query, bool) {
-	var q journal.Query
-	if in.Since != "" {
-		t, ok := parseInstant(in.Since)
-		if !ok {
-			return journal.Query{}, false
-		}
-		q.Since = t
-	}
-	if in.Until != "" {
-		t, ok := parseInstant(in.Until)
-		if !ok {
-			return journal.Query{}, false
-		}
-		q.Until = t
-	}
-	for _, action := range in.Action {
-		if action == "" {
-			return journal.Query{}, false
-		}
-		q.Actions = append(q.Actions, action)
-	}
-	for _, outcome := range in.Outcome {
-		if outcome == "" {
-			return journal.Query{}, false
-		}
-		q.Outcomes = append(q.Outcomes, outcome)
-	}
-	for _, actor := range in.Actor {
-		if actor == "" {
-			return journal.Query{}, false
-		}
-		q.Actors = append(q.Actors, actor)
+	q, ok := filterQueryOf(in.Since, in.Until, in.Action, in.Outcome, in.Actor)
+	if !ok {
+		return journal.Query{}, false
 	}
 	q.After = in.Cursor
 	if in.Limit < 0 {
 		return journal.Query{}, false
 	}
 	q.Limit = in.Limit
+	return q, true
+}
+
+// exportQueryOf turns the export route's bound input into a read query. It
+// carries the shared filters and the read surface's maximum page size: the
+// export is not a caller-sized page, it reads as much as one read can return and
+// continues with the cursor until the cursor is empty.
+func exportQueryOf(in RecordExportInput) (journal.Query, bool) {
+	q, ok := filterQueryOf(in.Since, in.Until, in.Action, in.Outcome, in.Actor)
+	if !ok {
+		return journal.Query{}, false
+	}
+	q.Limit = journal.MaxPageSize
+	return q, true
+}
+
+// filterQueryOf turns the filters every query route shares into a read query. A
+// time bound that is not RFC 3339 and an action, outcome or actor that names
+// nothing are each a refusal.
+func filterQueryOf(since, until string, actions, outcomes, actors []string) (journal.Query, bool) {
+	var q journal.Query
+	if since != "" {
+		t, ok := parseInstant(since)
+		if !ok {
+			return journal.Query{}, false
+		}
+		q.Since = t
+	}
+	if until != "" {
+		t, ok := parseInstant(until)
+		if !ok {
+			return journal.Query{}, false
+		}
+		q.Until = t
+	}
+	for _, action := range actions {
+		if action == "" {
+			return journal.Query{}, false
+		}
+		q.Actions = append(q.Actions, action)
+	}
+	for _, outcome := range outcomes {
+		if outcome == "" {
+			return journal.Query{}, false
+		}
+		q.Outcomes = append(q.Outcomes, outcome)
+	}
+	for _, actor := range actors {
+		if actor == "" {
+			return journal.Query{}, false
+		}
+		q.Actors = append(q.Actors, actor)
+	}
 	return q, true
 }
 

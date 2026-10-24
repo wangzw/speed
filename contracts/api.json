@@ -4181,6 +4181,153 @@
         "x-endpoint": "api"
       }
     },
+    "/api/v1/system/audit/export": {
+      "get": {
+        "description": "Reads every audit row the supplied conditions match and writes it as one JSON object per line, the same record view the list route answers, with no envelope and no header line. The body is streamed page by page as the read surface returns it; the export is not a snapshot of one instant, so a row appended while it runs is not in the file and a row deleted while it runs is missing from it. The page size is the read surface's maximum and is not the caller's to choose; cursor and limit describe a page and are refused. A filter that matches nothing answers an empty body.",
+        "operationId": "audit.admin.records.export",
+        "parameters": [
+          {
+            "description": "Export rows at or after this instant, RFC 3339",
+            "in": "query",
+            "name": "since",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Export rows before this instant, RFC 3339",
+            "in": "query",
+            "name": "until",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Narrow to rows carrying one of these actions",
+            "in": "query",
+            "name": "action",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "description": "Narrow to rows whose outcome is one of these",
+            "in": "query",
+            "name": "outcome",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "description": "Narrow to rows whose actor is one of these",
+            "in": "query",
+            "name": "actor",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Every matching record, one JSON object per line, or an empty body when nothing matches",
+            "headers": {
+              "Cache-Control": {
+                "description": "Always no-store: exported audit data is not kept by a cache.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "description": "The download name: audit-records-\u003cthe export's UTC instant\u003e.ndjson, carried as an attachment.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A query parameter the route does not accept, a time bound that is not RFC 3339, an empty action, outcome or actor, or a cursor or limit, which an export does not take"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The identity challenge, carrying the realm of the endpoint the route was mounted on.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller holds no audit.read in the platform domain"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Export the audit records matching the filters as NDJSON",
+        "tags": [
+          "audit.admin"
+        ],
+        "x-endpoint": "admin"
+      }
+    },
     "/api/v1/system/audit/records": {
       "get": {
         "description": "Reads one page of the audit table across every tenant and the rows that belong to none, newest first. All supplied conditions apply together: the time window plus each non-empty set of actions, outcomes and actors. Paging is cut by row identifier rather than by offset, so rows appended while paging do not shift the page that follows. The page size defaults to 50 and is capped at 200; the answer's next is empty on the last page.",

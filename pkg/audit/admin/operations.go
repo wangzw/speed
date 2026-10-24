@@ -20,6 +20,7 @@ const (
 const (
 	pathRecords = "/audit/records"
 	pathRecord  = "/audit/records/:id"
+	pathExport  = "/audit/export"
 )
 
 // RecordListInput is the request of the list route: the closed set of query
@@ -38,6 +39,18 @@ type RecordListInput struct {
 	Actor   []string `query:"actor" description:"Narrow to rows whose actor is one of these"`
 	Cursor  string   `query:"cursor" description:"Continue after the row this cursor names"`
 	Limit   int      `query:"limit" minimum:"0" description:"The page's maximum size; the read surface caps it"`
+}
+
+// RecordExportInput is the request of the export route: the same closed set of
+// filters as the list route, with no cursor and no page size. Both of those
+// describe a page, and an export reads every row the filters match, so a request
+// that sends either is a shape refusal rather than a bound the route ignores.
+type RecordExportInput struct {
+	Since   string   `query:"since" format:"date-time" description:"Export rows at or after this instant, RFC 3339"`
+	Until   string   `query:"until" format:"date-time" description:"Export rows before this instant, RFC 3339"`
+	Action  []string `query:"action" description:"Narrow to rows carrying one of these actions"`
+	Outcome []string `query:"outcome" description:"Narrow to rows whose outcome is one of these"`
+	Actor   []string `query:"actor" description:"Narrow to rows whose actor is one of these"`
 }
 
 // RecordGetInput is the request of the get route: the row identifier as a path
@@ -131,6 +144,51 @@ var getOperation = speedhttp.NewReplyOperation[RecordGetInput](
 	},
 )
 
+// exportOperation declares GET /audit/export and binds its types. The handler
+// builds the answer because the body is streamed: the first page is read before
+// the reply is returned, and the pages after it are written as they are read,
+// which the simple form cannot express.
+var exportOperation = speedhttp.NewReplyOperation[RecordExportInput](
+	"audit.admin.records.export",
+	http.MethodGet,
+	pathExport,
+	"Export the audit records matching the filters as NDJSON",
+	"Reads every audit row the supplied conditions match and writes it as one JSON object per "+
+		"line, the same record view the list route answers, with no envelope and no header line. "+
+		"The body is streamed page by page as the read surface returns it; the export is not a "+
+		"snapshot of one instant, so a row appended while it runs is not in the file and a row "+
+		"deleted while it runs is missing from it. The page size is the read surface's maximum and "+
+		"is not the caller's to choose; cursor and limit describe a page and are refused. A filter "+
+		"that matches nothing answers an empty body.",
+	nil,
+	[]speedhttp.Response{
+		{
+			Status:      http.StatusOK,
+			Description: "Every matching record, one JSON object per line, or an empty body when nothing matches",
+			Headers: []speedhttp.Header{
+				{
+					Name: "Content-Disposition",
+					Description: "The download name: audit-records-<the export's UTC instant>.ndjson, " +
+						"carried as an attachment.",
+				},
+				{
+					Name:        "Cache-Control",
+					Description: "Always no-store: exported audit data is not kept by a cache.",
+					Value:       "no-store",
+				},
+			},
+			Body: &speedhttp.Body{MediaType: exportMediaType},
+		},
+		speedhttp.ProblemResponse(http.StatusBadRequest,
+			"A query parameter the route does not accept, a time bound that is not RFC 3339, an "+
+				"empty action, outcome or actor, or a cursor or limit, which an export does not take"),
+		unauthorized("The request carries no identity"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The caller holds no audit.read in the platform domain"),
+		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
+	},
+)
+
 // operations is this module's declaration of the API it serves. The fragment is
 // generated from it; the routes are mounted from the same declarations.
-var operations = speedhttp.Operations{listOperation, getOperation}
+var operations = speedhttp.Operations{listOperation, getOperation, exportOperation}
