@@ -111,9 +111,12 @@ func (m *product) listFactors(ctx context.Context, _ struct{}) (AuthnMfaFactorLi
 
 // deleteFactor answers DELETE /factors/:id. It asks for a fresh multi-factor
 // authentication that was verified here: an IdP's declaration of one is not
-// enough to remove an account's own factor. A factor that is not the caller's
-// reads as one already gone, because the route has no 404 among its answers and
-// a different answer for another account's identifier would say it exists.
+// enough to remove an account's own factor. The route is where the account's
+// other sessions are ended after a successful removal of an active factor; the
+// caller's own session is the one kept, so the device that removed the factor
+// stays signed in. A factor that is not the caller's reads as one already gone,
+// because the route has no 404 among its answers and a different answer for
+// another account's identifier would say it exists.
 func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -129,7 +132,7 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 	if in.ID == "" || len(in.ID) > maxFactorIDLen {
 		return nil, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 	}
-	err := m.Remove(ctx, id.Account(), in.ID)
+	err := m.removeFactorAndEndOtherSessions(ctx, id.Account(), in.ID, id.Session())
 	switch {
 	case err == nil, errors.Is(err, authn.ErrFactorNotEnrolled):
 		return speedhttp.EmptyReply(http.StatusNoContent), nil

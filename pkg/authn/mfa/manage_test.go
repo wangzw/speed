@@ -177,6 +177,36 @@ func TestRemoveOfAKindNobodyDeliversStillRemovesTheRow(t *testing.T) {
 	})
 }
 
+// The exported Remove is the capability's promise and touches no session: the
+// route that wants the other devices signed out orchestrates it. A module with
+// live sessions still ends none of them, and the sessions seam is never called.
+func TestRemoveEndsNoSessionItself(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS}, func(t *testing.T, r *rig) {
+		for _, kind := range []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS, authn.FactorWebAuthn} {
+			t.Run(string(kind), func(t *testing.T) {
+				const asked = authn.SessionID("session-that-asked")
+				id := r.activeFactor(acct, kind, time.Hour)
+				r.sessions.add(asked, acct)
+				r.sessions.add("another-session", acct)
+				r.sessions.add("another-accounts-session", "someone-else")
+				r.sessions.err = errors.New("the session store must not be reached")
+				if err := r.p.Remove(context.Background(), acct, id); err != nil {
+					t.Fatalf("Remove: %v", err)
+				}
+				if _, there := r.status(id); there {
+					t.Error("the factor stayed")
+				}
+				if got := r.sessions.revocations(); len(got) != 0 {
+					t.Errorf("Remove revoked %v: session effects belong to the route", got)
+				}
+				if !r.sessions.isLive(asked) || !r.sessions.isLive("another-session") {
+					t.Error("Remove ended a session")
+				}
+			})
+		}
+	})
+}
+
 func TestTheEventNamesWhoActed(t *testing.T) {
 	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
 		cases := []struct {

@@ -210,15 +210,45 @@ func (a *fakeAdmin) SetMFARequired(_ context.Context, id authn.AccountID, requir
 	return nil
 }
 
-// fakeSessions records the revocations it is asked for.
+// fakeSessions records the revocations it is asked for and keeps the set of live
+// sessions a case gave it, so a case can read which of them a revocation ended.
+// It models RevokeAccount's rule: every live session of the account goes except
+// the one named by except.
 type fakeSessions struct {
 	authn.Sessions
 	mu      sync.Mutex
 	err     error
 	revoked []string
+	live    map[authn.SessionID]authn.AccountID
 	// onRevoke runs as the call arrives, so a case can read the state the call
 	// finds.
 	onRevoke func()
+}
+
+func newFakeSessions() *fakeSessions {
+	return &fakeSessions{live: map[authn.SessionID]authn.AccountID{}}
+}
+
+// add makes a session live for an account, as a completed login would.
+func (s *fakeSessions) add(id authn.SessionID, account authn.AccountID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.live[id] = account
+}
+
+// isLive reports whether the session is still one a request could use.
+func (s *fakeSessions) isLive(id authn.SessionID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.live[id]
+	return ok
+}
+
+// revocations reports the revocation calls in the order they arrived.
+func (s *fakeSessions) revocations() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.revoked...)
 }
 
 func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, except authn.SessionID, reason string) ([]authn.SessionID, error) {
@@ -228,7 +258,18 @@ func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID,
 	if s.onRevoke != nil {
 		s.onRevoke()
 	}
-	return nil, s.err
+	if s.err != nil {
+		return nil, s.err
+	}
+	var ended []authn.SessionID
+	for id, acct := range s.live {
+		if acct != account || id == except {
+			continue
+		}
+		ended = append(ended, id)
+		delete(s.live, id)
+	}
+	return ended, nil
 }
 
 // recordingBus is a bus that keeps what was published and delivers it to the
@@ -494,7 +535,7 @@ func newRig(t *testing.T, h *gorm.DB, factors ...authn.Factor) *rig {
 	p := build(h, accounts, admin, throttle, mounter)
 	r := &rig{
 		t: t, p: p, h: h, accounts: accounts, admin: admin, throttle: throttle,
-		sessions: &fakeSessions{}, bus: newBus(), audit: &recordingAudit{}, store: newStore(),
+		sessions: newFakeSessions(), bus: newBus(), audit: &recordingAudit{}, store: newStore(),
 		logs: &logBuffer{}, clock: newClock(base), mounter: mounter,
 	}
 	p.logger = r.logs.logger()

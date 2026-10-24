@@ -19,7 +19,7 @@
 - **不执行租户级 MFA 强制。** 登录时账户全局、租户未知，租户级强制只能在请求期判；该判定属于 `tenant.admission`，它读本模块经登录会话行记录的值。
 - **不做授权判定，不写 403。** 管理员重置因素的授权经 `Decider`，其接缝与管理面路由在 [authn-admin](design-authn-admin.md)；本模块不认识角色。
 - **不实现短信验证码引擎与发送方。** 短信因素复用 `authn.sms` 的 `SMSCodes`（[authn-sms](design-authn-sms.md)）。
-- **不持有登录会话。** 加强认证完成后更新会话的是 `Sessions.Elevate`（[authn-session](design-authn-session.md)）；`MFA.Reset` 对会话只发起撤销。
+- **不持有登录会话。** 加强认证完成后更新会话的是 `Sessions.Elevate`（[authn-session](design-authn-session.md)）；`MFA.Reset` 与删除因素时的撤销只经 `Sessions` 发起。`MFA.Remove` 本身不撤销会话、也不对会话作任何承诺，删除后的撤销由用户面 DELETE 路由编排（见「删除与重置」）。
 - **不实现失败退避的算法与存储。** 本模块经 `Throttle` 使用范围 `ScopeFactor`，退避算法与表由 `authn.account` 承载（[authn-account](design-authn-account.md)）。
 - **不提供恢复码、不提供「记住此设备」、不提供短信或邮箱找回。** 找回途径限于本文「找回途径」一节列出的几项。
 - **不核验求助者的身份。** 确认来求助的人就是账户主人是组织流程，不由本模块自动化。
@@ -116,7 +116,7 @@ type MFA interface {
 | `Verify` | 先 `Throttle.Check`（`ScopeFactor`，键为因素标识），退避中不校验；再转调 `Factor.Verify`；失败 `Throttle.Fail`，成功 `Throttle.Succeed`；审计与事件在此统一。 |
 | `Enroll` | 登记的唯一入口：核对每种至多 `max-per-kind` 个、写待确认行、转调 `Factor.Enroll`、最后一步置启用。 |
 | `Assurance` | 保障等级的唯一计算处，纯函数，不读库；规则见「保障等级的合成」。 |
-| `Remove` | 对因素调 `Factor.Remove` 清理种类专属数据，再删因素行；`mfa_required` 的账户删最后一个因素返回 `ErrLastFactor`。 |
+| `Remove` | 对因素调 `Factor.Remove` 清理种类专属数据，再删因素行。不撤销会话，也不对账户的会话作任何承诺；删除后的会话效果属于路由（见「删除与重置」）。`mfa_required` 的账户删最后一个因素返回 `ErrLastFactor`，该拒绝先于任何会话动作。 |
 | `Reset` | 效果见「删除与重置」；返回被停用的因素个数。授权与强认证核验不在此处，在管理面处理器里。 |
 | `Seasoned` | 账户有至少一个非短信、状态为启用且启用已满 `sensitive-min-age` 的因素时为真。 |
 | `Kinds` | 已纳入的因素种类，用于启动诊断与登录期的「该因素不可用」判断。 |
@@ -194,7 +194,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 | `Accounts`、`AccountAdmin` | 必需 | 读账户的 `mfa_required` 与手机标识；`Reset` 经 `AccountAdmin.SetMFARequired` 置位。`Accounts` 与 `AccountAdmin` 都由 `authn.account` 交付。 |
 | `Throttle` | 必需 | 范围 `ScopeFactor`，键为因素标识。 |
 | 全部 `Factor` | `ResolveAll` | 因素实现；`authn.mfa` 对因素子包只经根包的 `Factor` 接口，不 import 它们。 |
-| `Sessions` | 可选 | `Reset` 撤销账户的全部会话；缺席时只停因素。 |
+| `Sessions` | 可选 | `Reset` 撤销账户的全部会话；用户面删除已启用因素后撤销除发起会话之外的会话。缺席时跳过并写一行 Warn，会话保持有效。 |
 | `settings.Store` | 可选 | 运行期可调的策略与期限；缺席时取声明的默认值。 |
 | `audit.Audit` | 可选 | 尽力档审计；强制档动作的审计由管理面处理器承担，那里把它当必需。 |
 | `event.Bus` | 可选 | 发布 `authn.factor.changed`，提交之后 `Bus.Publish`，不经发件箱；订阅 `authn.account.deleted` 作补偿。 |
@@ -508,7 +508,16 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### 删除与重置
 
-**`MFA.Remove`。** 调 `Factor.Remove` 清理种类专属数据，再删因素行。`mfa_required` 的账户不得删最后一个因素（`ErrLastFactor`）。
+**`MFA.Remove`。** 调 `Factor.Remove` 清理种类专属数据，再删因素行。它不撤销会话，也不对账户的会话作任何承诺；会话效果由用户面 DELETE 路由编排，宿主直接调用 `MFA.Remove` 时其余会话不受影响。删除失败时因素行留在原处，重复调用能补完，因为因素的删除是幂等的。`mfa_required` 的账户不得删最后一个因素（`ErrLastFactor`）。
+
+**删除用户面路由的会话效果。** `DELETE B/factors/:id` 先读被删因素的当前状态（行删掉之后就无处再读），调用 `MFA.Remove`，成功之后按当时的状态决定会话：
+
+1. 被删因素处于启用状态：经 `Sessions.RevokeAccount(ctx, account, 发起会话, authn.ReasonSelf)` 撤销该账户除发起会话之外的其余会话。发起删除的会话因此保持登录；`Sessions` 缺席时跳过并写一行 Warn，会话保持有效。
+2. 待确认或已停用：不撤销。这两种因素不改变账户已有的强度，删掉它们不改变其余会话的可信度。
+
+拒绝（`ErrLastFactor`、账户读失败）与删除本身的失败都发生在撤销之前，被拒或失败的删除不动会话。撤销在因素行删掉之后进行；`Sessions.RevokeAccount` 失败时路由答 503，此时因素已经删掉，重发同一请求按「因素已不存在」处理并补完撤销。一个本来就不存在的名字与一个已删掉的名字无从区分，同样按已删处理并结束其余会话——这是重试得以收口的代价，账下本没有这个因素时撤销只是把该账户按更严的方向收口。代价说白：一条把因素标识写错的 DELETE，会结束调用者自己的其他会话。
+
+删除单个因素的原因是账户持有人在改自己的凭据，会话撤销取 `authn.ReasonSelf`，与解绑等自助变更同类；`Reset` 是管理员动作，固定用 `authn.ReasonFactorReset`。
 
 **`MFA.Reset` 的效果。** 按下列次序，任一步失败返回错误，重试幂等；次序使中途失败时账户处于更严而不是更松的状态：
 
@@ -595,6 +604,7 @@ CREATE TABLE authn_webauthn_credentials (
 - **仪式数据的一次性消费靠引擎对流程记录的比较并交换。** 本模块不持有 kv。
 - **退避的原子递增在 `Throttle` 一侧**，本模块的 `Check`、`Fail`、`Succeed` 不自带锁。
 - **清扫协程每小时删一次待确认的过期行。** 删除只作用于状态为待确认且超过 `pending-ttl` 的行，与登记并发时不触及进行中的登记。
+- **删除路由与 `MFA.Remove` 各读一次因素状态，两次读之间有一个窄窗口。** 状态在这期间翻转时，撤销会保守地多执行一次（启用转为停用）或漏掉一次（待确认转为启用）。这是不保证：不为它另造机制，也不写用例假装覆盖；窗口内的一次误撤销只会把账户按更严的方向收口，一次漏撤销要等下一次改动凭据才收口。
 - **时间一律取自认证功能目录的统一时钟，写入 UTC。**
 
 ## 扩展点

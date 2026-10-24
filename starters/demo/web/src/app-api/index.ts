@@ -2678,7 +2678,7 @@ export function useAuthnMfaFactors<TData = Awaited<ReturnType<typeof authnMfaFac
 
 
 /**
- * Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed first, then its register row. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent. When the account has mfa_required set, its last active factor cannot be removed.
+ * Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, then its register row. After an active factor has been removed, the account's other sessions are ended, keeping the one that made the request signed in; a pending or disabled factor ends no session, and a session store that fails after the factor is gone is reported as an outage. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent. When the account has mfa_required set, its last active factor cannot be removed.
  * @summary Remove one of the caller's own factors
  */
 export const authnMfaRemoveFactor = (

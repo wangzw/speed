@@ -56,8 +56,11 @@ type MFA interface {
 	// proof and the second factor's pass, which is nil when there was none. It is
 	// the one place a level is computed. It reads no store.
 	Assurance(first Proof, second *Pass) MFAResult
-	// Remove removes a factor's kind-specific data and then its row. The last
-	// factor of an account that requires one is ErrLastFactor.
+	// Remove removes a factor's kind-specific data and then its row. It ends no
+	// session and promises nothing about the account's sessions: a caller that
+	// wants the other devices signed out does it after a successful removal of an
+	// active factor, keeping the session that asked. The last factor of an
+	// account that requires one is ErrLastFactor.
 	Remove(ctx context.Context, id AccountID, factorID string) error
 	// Reset disables the account's factors and returns how many. Authorizing it
 	// and checking the strength of the administrator are the handler's work.

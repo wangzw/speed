@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -233,9 +234,197 @@ func TestDeletingAFactorThatIsNotTheCallersOrIsGoneReadsAsAlreadyDone(t *testing
 	}
 }
 
+// Removing an enabled factor of any kind ends the account's other sessions and
+// keeps the one that asked signed in: a credential taken away must not stay
+// trusted on another device.
+func TestRemovingAFactorEndsTheAccountsOtherSessionsAndKeepsTheCurrentOne(t *testing.T) {
+	for _, kind := range []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS} {
+		t.Run(string(kind), func(t *testing.T) {
+			r := routed(t, kind)
+			const otherSession = authn.SessionID("0192f5a0-7b1c-7d3a-9e11-3c2d4e5f6a7d")
+			id := r.activeFactor(acct, kind, time.Hour)
+			r.sessions.add(sessionUUID, acct)
+			r.sessions.add(otherSession, acct)
+			r.sessions.add("another-accounts-session", "someone-else")
+			// The revocation runs after the removal: at the instant the session
+			// store is called the factor row is already gone. That is what tells
+			// this orchestration apart from a capability that revokes before it
+			// deletes the row.
+			var rowThereWhenRevoking bool
+			r.sessions.onRevoke = func() {
+				_, rowThereWhenRevoking = r.status(id)
+			}
+			r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+
+			if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+				t.Fatalf("DELETE = %d %s, want 204", w.Code, w.Body.String())
+			}
+			if rowThereWhenRevoking {
+				t.Error("the sessions were revoked while the factor row was still there: the route ends them after a successful removal")
+			}
+			if !r.sessions.isLive(sessionUUID) {
+				t.Error("the session that removed the factor was ended")
+			}
+			if r.sessions.isLive(otherSession) {
+				t.Error("the account's other session is still live after an enabled factor was removed")
+			}
+			if !r.sessions.isLive("another-accounts-session") {
+				t.Error("another account's session was ended")
+			}
+			want := []string{fmt.Sprintf("revoke-account:%s:except=%q:%s", acct, sessionUUID, authn.ReasonSelf)}
+			if got := r.sessions.revocations(); !slices.Equal(got, want) {
+				t.Errorf("the sessions were revoked as %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// A factor that is not active never added to the account's strength, so removing
+// one ends no session.
+func TestDeletingAFactorThatIsNotActiveEndsNoSession(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+	r.sessions.add(sessionUUID, acct)
+	r.sessions.add("another-session", acct)
+	pending := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, r.clock.read(), nil)
+	disabled := r.insertRow(acct, authn.FactorTOTP, authn.FactorDisabled, r.clock.read(), nil)
+	for _, id := range []string{pending, disabled} {
+		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+			t.Fatalf("DELETE %s = %d %s, want 204", id, w.Code, w.Body.String())
+		}
+	}
+	if got := r.sessions.revocations(); len(got) != 0 {
+		t.Errorf("the sessions were revoked as %v, want none for a factor that is not active", got)
+	}
+	if !r.sessions.isLive("another-session") {
+		t.Error("a session was ended by deleting a factor that is not active")
+	}
+}
+
+// The refusal is decided before the sessions are touched: an account that cannot
+// be read leaves the factor and every session where they were.
+func TestADeletionRefusedForAnUnreadableAccountEndsNoSession(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.sessions.add(sessionUUID, acct)
+	r.sessions.add("another-session", acct)
+	r.accounts.getErr = errors.New("account store down")
+	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+	w := r.do(http.MethodDelete, listPath+"/"+id, nil)
+	if w.Code != http.StatusServiceUnavailable || problemOf(t, w).Type != problemType+"unavailable" {
+		t.Fatalf("DELETE = %d %s, want 503 unavailable", w.Code, w.Body.String())
+	}
+	if _, there := r.status(id); !there {
+		t.Error("the factor went although whether the deletion is allowed could not be read")
+	}
+	if got := r.sessions.revocations(); len(got) != 0 {
+		t.Errorf("a refused deletion revoked the sessions: %v", got)
+	}
+	if !r.sessions.isLive(sessionUUID) || !r.sessions.isLive("another-session") {
+		t.Error("a refused deletion ended a session")
+	}
+}
+
+// A removal that fails in the factor did not happen, so the sessions stay as they
+// were.
+func TestADeletionThatFailsInTheFactorEndsNoSession(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.sessions.add(sessionUUID, acct)
+	r.sessions.add("another-session", acct)
+	r.p.factors[authn.FactorTOTP].(*fakeFactor).removeFn = func(context.Context, authn.AccountID, authn.FactorRecord) error {
+		return errors.New("seed store down")
+	}
+	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+	w := r.do(http.MethodDelete, listPath+"/"+id, nil)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("DELETE = %d %s, want 503", w.Code, w.Body.String())
+	}
+	if _, there := r.status(id); !there {
+		t.Error("the row went although the factor could not clean its data")
+	}
+	if got := r.sessions.revocations(); len(got) != 0 {
+		t.Errorf("a failed deletion revoked the sessions: %v", got)
+	}
+	if !r.sessions.isLive("another-session") {
+		t.Error("a failed deletion ended a session")
+	}
+}
+
+// A session store that fails after the row is gone is reported as an outage: the
+// factor is already removed and the other devices are still signed in. Repeating
+// the request ends them, because a name that is no longer there reads as a
+// removal that has already happened.
+func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.sessions.add(sessionUUID, acct)
+	r.sessions.add("another-session", acct)
+	r.sessions.err = errors.New("session store down")
+	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+
+	w := r.do(http.MethodDelete, listPath+"/"+id, nil)
+	if w.Code != http.StatusServiceUnavailable || problemOf(t, w).Type != problemType+"unavailable" {
+		t.Fatalf("DELETE = %d %s, want 503 unavailable", w.Code, w.Body.String())
+	}
+	if _, there := r.status(id); there {
+		t.Error("the factor stayed although the removal had landed")
+	}
+	if !r.sessions.isLive("another-session") {
+		t.Error("the other session was ended by a revocation that failed")
+	}
+
+	r.sessions.err = nil
+	if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("the retry = %d %s, want 204", w.Code, w.Body.String())
+	}
+	if r.sessions.isLive("another-session") {
+		t.Error("the retry did not end the other session")
+	}
+	if !r.sessions.isLive(sessionUUID) {
+		t.Error("the retry ended the session that asked")
+	}
+	want := []string{
+		fmt.Sprintf("revoke-account:%s:except=%q:%s", acct, sessionUUID, authn.ReasonSelf),
+		fmt.Sprintf("revoke-account:%s:except=%q:%s", acct, sessionUUID, authn.ReasonSelf),
+	}
+	if got := r.sessions.revocations(); !slices.Equal(got, want) {
+		t.Errorf("the sessions were revoked as %v, want %v: the attempt that failed and the retry", got, want)
+	}
+}
+
+// With no session store taken in, the route still removes the factor and says
+// in one Warn that the account's sessions stay valid: the capability has no
+// session seam to call, so the removal stands and nothing is revoked.
+func TestDeletingAFactorWithoutASessionModuleRemovesItAndSaysSo(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	r.p.sessions = nil
+	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.sessions.add(sessionUUID, acct)
+	r.sessions.add("another-session", acct)
+	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+
+	if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE = %d %s, want 204", w.Code, w.Body.String())
+	}
+	if _, there := r.status(id); there {
+		t.Error("the factor stayed although no session store refused the removal")
+	}
+	if got := r.sessions.revocations(); len(got) != 0 {
+		t.Errorf("a module with no session store reached the session seam: %v", got)
+	}
+	if !r.sessions.isLive("another-session") {
+		t.Error("a module with no session store ended a session")
+	}
+	if got := r.logs.lines("level=WARN", "sessions stay valid"); len(got) != 1 {
+		t.Errorf("the log said the sessions stay valid %d times, want once: %q", len(got), r.logs.String())
+	}
+}
+
 func TestDeletingTheLastFactorOfAnAccountThatRequiresOneIsAConflict(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.sessions.add("another-session", acct)
 	r.accounts.required[acct] = true
 	r.mounter.As(multiAt(time.Minute)...)
 	w := r.do(http.MethodDelete, listPath+"/"+id, nil)
@@ -244,6 +433,12 @@ func TestDeletingTheLastFactorOfAnAccountThatRequiresOneIsAConflict(t *testing.T
 	}
 	if _, there := r.status(id); !there {
 		t.Error("the last factor was deleted")
+	}
+	if got := r.sessions.revocations(); len(got) != 0 {
+		t.Errorf("a refused deletion revoked the sessions: %v", got)
+	}
+	if !r.sessions.isLive("another-session") {
+		t.Error("a refused deletion ended a session")
 	}
 }
 

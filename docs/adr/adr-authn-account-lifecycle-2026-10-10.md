@@ -77,7 +77,7 @@
 - 钩子未做完时，残留的会话行与刷新令牌不能换出有效身份；账户之后重新启用，旧会话也不复活。
 - service 种会话行只经撤销服务密钥与删除账户终结：停用靠 `valid_after` 使其失效，重新启用之后由 `Sessions.ForCredential` 以仍有效的密钥恢复。
 
-**改口令、删因素、解绑不是账户的迁移。** `Passwords.Set` 不撤销会话；由调用它的处理器在操作成功之后调用 `Sessions.RevokeAccount(except)`，使 `Passwords` 不依赖会话模块。
+**改口令、删因素、解绑不是账户的迁移。** `Passwords.Set` 不撤销会话；由调用它的处理器在操作成功之后调用 `Sessions.RevokeAccount(except)`，使 `Passwords` 不依赖会话模块。删因素同样由它的用户面 DELETE 路由在操作成功之后撤销，`MFA.Remove` 自己不撤销、也不对会话作任何承诺。
 
 ```mermaid
 flowchart TD

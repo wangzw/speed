@@ -113,8 +113,11 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 	http.MethodDelete,
 	factorPath,
 	"Remove one of the caller's own factors",
-	"Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed "+
-		"first, then its register row. The call requires a fresh multi-factor authentication verified "+
+	"Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, "+
+		"then its register row. After an active factor has been removed, the account's other sessions "+
+		"are ended, keeping the one that made the request signed in; a pending or disabled factor ends "+
+		"no session, and a session store that fails after the factor is gone is reported as an outage. "+
+		"The call requires a fresh multi-factor authentication verified "+
 		"locally, so one merely declared by an identity provider does not satisfy it; an impersonating "+
 		"identity is refused. A factor that is not the caller's answers the same as one already gone, "+
 		"so the route never answers 404 and repeating a removal is idempotent. When the account has "+
@@ -130,8 +133,9 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 			"The factor is the account's last active factor, which cannot be removed while the account "+
 				"requires multi-factor authentication"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
-			"The factor could not be removed: the factor store or the account data it needs was "+
-				"unavailable. The cause is logged and not sent"),
+			"The removal could not be completed: the factor store, the account data it needs or the "+
+				"session store was unavailable. The cause is logged and not sent. When the factor itself "+
+				"was already removed, repeating the request finishes ending the other sessions"),
 		speedhttp.Response{
 			Status:      http.StatusNoContent,
 			Description: "The factor was removed, or is not the caller's and reads as already gone",
