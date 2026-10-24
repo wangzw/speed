@@ -98,8 +98,18 @@ describe('PhoneSection', () => {
       phone: US_E164,
     })
     // The "code sent" notice is the step's own state, outside the outcome
-    // slot: the scope holds no result for the intermediate answer.
-    expect(screen.getByRole('status')).toHaveTextContent('')
+    // slot: the slot holds no result for the intermediate answer, while the
+    // notice is its own status region (the one that carries the text).
+    expect(
+      screen.getAllByRole('status').filter((el) => el.textContent === ''),
+    ).toHaveLength(1)
+    expect(
+      screen
+        .getByText(zhCN.phone.sent.replace('{{phone}}', US_E164))
+        .closest('[role="status"]'),
+    ).not.toBeNull()
+    // The send hands focus to the code field.
+    expect(screen.getByLabelText(zhCN.phone.code.label)).toHaveFocus()
 
     await expectNoAxeViolations()
 
@@ -107,16 +117,17 @@ describe('PhoneSection', () => {
     await user.click(screen.getByRole('button', { name: zhCN.phone.verify }))
 
     const added = zhCN.phone.added.replace('{{phone}}', US_E164)
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(added),
-    )
+    await waitFor(() => expect(screen.getByText(added)).toBeTruthy())
     // The confirmation names the number and sits beneath the control group.
     expect(zhCN.phone.added).toContain(zhCN.phone.title)
     expect(enUS.phone.added).toContain(enUS.phone.title)
+    const successRegion = screen
+      .getByText(added)
+      .closest('[role="status"]') as HTMLElement
     expect(
       screen
         .getByRole('button', { name: zhCN.phone.send })
-        .compareDocumentPosition(screen.getByRole('status')) &
+        .compareDocumentPosition(successRegion) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     expect(verified).toBe(true)
@@ -264,8 +275,10 @@ describe('PhoneSection', () => {
         .compareDocumentPosition(alert) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    // No success coexists with the failure in the one slot.
-    expect(screen.getByRole('status')).toHaveTextContent('')
+    // No success confirmation coexists with the failure in the outcome slot.
+    expect(
+      screen.queryByText(zhCN.phone.added.replace('{{phone}}', US_E164)),
+    ).toBeNull()
   })
 
   it('gates a step_up_required send behind the dialog and re-runs it once', async () => {

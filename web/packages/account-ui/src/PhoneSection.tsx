@@ -30,15 +30,17 @@
  * A verified number refetches the profile so the identifiers surface shows
  * it, and the region confirms with a message naming the number. The "code
  * sent" notice is the code step's own state, not a settled action, so it
- * stays outside the outcome slot; the slot holds at most one result, so a
- * success and a failure never stand beside each other.
+ * stays outside the outcome slot: it is its own role="status" region, mounted
+ * empty and filled when the code lands, and focus moves to the code field.
+ * The slot holds at most one result, so a success and a failure never stand
+ * beside each other.
  *
  * The section takes the session as its only prop -- the step-up dialog
  * drives it -- while the two writes travel on the shared access token
  * through the generated calls.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Stack from '@mui/material/Stack'
@@ -94,6 +96,10 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   // entered -- the phase's own state (entering a number vs. entering a
   // code) and the value the sent notice names.
   const [sentTo, setSentTo] = useState<string | null>(null)
+  // The sent notice's live region must never mount together with its text:
+  // it fills one commit after the code step mounts, so the announcement is a
+  // content change the screen reader already knows.
+  const [sentCommitted, setSentCommitted] = useState(false)
   const feedback = useWriteFeedback()
 
   const gate = useStepUpGate<PhoneAction>((action) => {
@@ -109,6 +115,13 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   // scope.
   const busy =
     startPhone.isPending || verifyPhone.isPending || feedback.pending
+
+  // Arm the sent notice's live region one commit after the code step mounts,
+  // so the notice fills an already-mounted region rather than arriving with
+  // it. The region is empty again when the viewer returns to the number.
+  useEffect(() => {
+    setSentCommitted(sentTo !== null)
+  }, [sentTo])
 
   function sendCode(nextPhone: string): Promise<void> {
     return feedback.run(async () => {
@@ -217,14 +230,25 @@ export function PhoneSection({ session }: PhoneSectionProps) {
           </>
         ) : (
           <>
-            <Typography variant="body2" color="text.secondary">
-              {t('phone.sent', {
-                phone: sentTo,
-                interpolation: { escapeValue: false },
-              })}
+            {/* The destination text stays through the step; being the live
+                region itself, it announces the code's landing once (empty,
+                then filled one commit later). */}
+            <Typography
+              component="div"
+              role="status"
+              variant="body2"
+              color="text.secondary"
+            >
+              {sentCommitted
+                ? t('phone.sent', {
+                    phone: sentTo,
+                    interpolation: { escapeValue: false },
+                  })
+                : ''}
             </Typography>
             <TextField
               fullWidth
+              autoFocus
               inputMode="numeric"
               autoComplete="one-time-code"
               label={t('phone.code.label')}
