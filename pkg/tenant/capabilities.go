@@ -78,8 +78,9 @@ type Admission interface {
 // scoping is decided from, so its own statements run outside the filter, and
 // none of them needs a tenant in its context.
 //
-// A method that reads the table or writes it — Put, Create, SetStatus, and an
-// entry the snapshot would refuse — runs its statements on a connection of the
+// A method that reads the table or writes it — Put, Create, SetStatus,
+// SetStatusByAccount, Delete, and an entry the snapshot would refuse — runs its
+// statements on a connection of the
 // delivered pool of its own, not in the caller's transaction, taken through the
 // database module's Connection within five seconds. No connection within them
 // fails with ErrNoConnection, having done nothing: on a database held to one
@@ -117,15 +118,23 @@ type Catalog interface {
 	// the resolving layer makes on every request.
 	ByAlias(ctx context.Context, alias string) (Tenant, bool, error)
 	// Put registers a tenant, or rewrites the row its identifier already
-	// has. Alias and status are taken from the value as given.
+	// has. Alias, status and disable source are taken from the value as given.
 	//
 	// It is idempotent by identifier. A second tenant arriving with an
-	// alias another one holds is refused, and nothing is written.
+	// alias another one holds is refused, and nothing is written. A row that
+	// is a tombstone is refused with ErrTenantDeleted, and nothing is written:
+	// a deleted tenant is terminal. So is a value whose status is StatusDeleted
+	// or whose disable source is anything but the operator's, refused with
+	// ErrInvalidTenant — deletion goes through Delete, and an account-caused
+	// disable only through SetStatusByAccount.
 	Put(ctx context.Context, t Tenant) error
 	// Create registers a tenant that is not registered yet, and refuses one
 	// whose identifier the roster's table already holds with ErrTenantExists,
-	// writing nothing. An alias another tenant holds is refused as Put
-	// refuses it.
+	// writing nothing — a tombstone's identifier included, so a deleted tenant
+	// is never registered a second time. An alias another tenant holds is
+	// refused as Put refuses it, and a value whose status is StatusDeleted or
+	// whose disable source is not the operator's is refused with
+	// ErrInvalidTenant, as Put refuses it.
 	//
 	// It is how a registration that must not overwrite is written: whether
 	// the identifier is taken is asked of the table rather than of this
@@ -135,16 +144,34 @@ type Catalog interface {
 	// property: a replica whose snapshot has not seen a tenant yet rewrites
 	// its alias and status — re-enabling it if it was disabled.
 	Create(ctx context.Context, t Tenant) error
-	// SetStatus changes one tenant's state. Disabling goes through here and
-	// only here; there is no delete.
+	// SetStatus is the operator's state transition. Disabling writes the
+	// source as the operator's, even on a row already disabled — the operator
+	// has restated the decision — and enabling clears it. There is no delete
+	// here: s holding StatusDeleted is refused with ErrInvalidTenant, and a
+	// tombstone is refused with ErrTenantDeleted.
 	SetStatus(ctx context.Context, id ID, s Status) error
+	// SetStatusByAccount is the state transition account state drives. It
+	// disables only a tenant that is active, writing the source as the
+	// account's, and enables only a tenant that is disabled by the account,
+	// clearing the source. Any other request writes nothing and returns nil,
+	// so repeating a call changes nothing and a no-op costs no reread. A
+	// tombstone is refused with ErrTenantDeleted, and s holding StatusDeleted
+	// with ErrInvalidTenant.
+	SetStatusByAccount(ctx context.Context, id ID, s Status) error
+	// Delete writes one tenant as deleted, the terminal state: the row, the
+	// identifier and the alias stay, the source column is left as it is, and
+	// the tenant is never served again. Deleting a tombstone again writes
+	// nothing and returns nil. An identifier no row carries, or one outside
+	// the domain, is refused with ErrInvalidTenant.
+	Delete(ctx context.Context, id ID) error
 	// SetAlias changes one tenant's alias and nothing else. It is how a rename
 	// is written, and Put is not: Put takes the whole row's new values and
 	// writes alias and status back together, so a rename through it carries
 	// the status this process last read, and a tenant another replica disabled
 	// in that window is served again. Only the alias column is written here,
 	// and the status is read from nowhere. An alias another tenant holds is
-	// refused as Put refuses it, as ErrAliasConflict naming the holder.
+	// refused as Put refuses it, as ErrAliasConflict naming the holder, and a
+	// tombstone is refused with ErrTenantDeleted: its alias stays with the row.
 	SetAlias(ctx context.Context, id ID, alias string) error
 	// List returns every tenant the roster holds, ordered by identifier, as a
 	// copy: a caller sorting or trimming what it was handed does not disturb
@@ -159,7 +186,9 @@ type Catalog interface {
 	// worker, a command-line action — acts for one tenant, instead of crossing
 	// tenants and writing the tenant into every statement by hand. The
 	// identifier is read against the roster: one no row carries is refused
-	// with ErrInvalidTenant, and one that is disabled with ErrTenantDisabled.
+	// with ErrInvalidTenant, one that is disabled with ErrTenantDisabled, and
+	// one that is a tombstone with ErrTenantDeleted — a deleted tenant cannot
+	// be waited out.
 	//
 	// A refusal is the table's answer, not a snapshot's: where this replica's
 	// snapshot would refuse, the tenant's row is read from the table, so a

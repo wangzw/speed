@@ -171,7 +171,7 @@ func TestLoadEndsTheStartupWhenTheReadRefuses(t *testing.T) {
 	if !errors.Is(err, tenant.ErrInvalidTenant) {
 		t.Fatalf("the failure is %v, want the read's own error", err)
 	}
-	if lines := rec.carrying("tenants", "active", "disabled"); len(lines) != 0 {
+	if lines := rec.carrying("tenants", "active", "disabled", "deleted"); len(lines) != 0 {
 		t.Errorf("the failed load wrote %d records carrying the startup account's counts, want none: "+
 			"the account is the success path's; the lines written were %v", len(lines), rec.messages())
 	}
@@ -195,14 +195,25 @@ func TestLoadEndsTheStartupWhenTheReadRefuses(t *testing.T) {
 // successful load writes the account; a release that moved the line to another
 // level would still have written it, so a level is not something this case can
 // hold the account to.
+//
+// The three states are counted apart, and the total is their sum: a tombstone
+// is neither served nor disabled, and a line that folded it into either half
+// would tell an operator the wrong thing about the deployment.
 func TestLoadWritesTheStartupAccount(t *testing.T) {
 	r := rosterOver(t,
 		insert("acme", "acme"),
 		insert("globex", "globex"),
 		insert("initech", "initech"),
+		insert("umbrella", "umbrella"),
+		insert("hooli", "hooli"),
+		insert("wonka", "wonka"),
 	)
-	if err := r.handle.Exec(`UPDATE tenants SET status = 0 WHERE id = 'initech'`).Error; err != nil {
-		t.Fatalf("disabling a tenant: %v", err)
+	if err := r.handle.Exec(
+		`UPDATE tenants SET status = 0 WHERE id IN ('initech', 'umbrella')`).Error; err != nil {
+		t.Fatalf("disabling two tenants: %v", err)
+	}
+	if err := r.handle.Exec(`UPDATE tenants SET status = 2 WHERE id = 'wonka'`).Error; err != nil {
+		t.Fatalf("deleting a tenant: %v", err)
 	}
 	rec := captureLogs(r)
 
@@ -210,7 +221,7 @@ func TestLoadWritesTheStartupAccount(t *testing.T) {
 		t.Fatalf("loading a conforming roster: %v", err)
 	}
 
-	lines := rec.carrying("tenants", "active", "disabled")
+	lines := rec.carrying("tenants", "active", "disabled", "deleted")
 	if len(lines) != 1 {
 		t.Fatalf("the successful load wrote %d records carrying the startup account's counts, want 1: %v",
 			len(lines), rec.messages())
@@ -221,8 +232,8 @@ func TestLoadWritesTheStartupAccount(t *testing.T) {
 			got[a.Key] = n
 		}
 	}
-	want := map[string]int64{"tenants": 3, "active": 2, "disabled": 1}
-	for _, key := range []string{"tenants", "active", "disabled"} {
+	want := map[string]int64{"tenants": 6, "active": 3, "disabled": 2, "deleted": 1}
+	for _, key := range []string{"tenants", "active", "disabled", "deleted"} {
 		if got[key] != want[key] {
 			t.Errorf("the startup account's %s is %d, want the %s count %d: %v",
 				key, got[key], key, want[key], got)

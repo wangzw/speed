@@ -80,16 +80,37 @@ func rosterOverDialect(t *testing.T, dialect string, rows ...string) *roster {
 	return rosterOn(t, openHandle(t), dialect, rows...)
 }
 
+// applyMigrations builds the roster's table from the files the module ships for
+// one dialect, in filename order.
+//
+// A dialect's migration set is every .sql file in its directory: the first
+// creates the table and a later one adds the columns this build reads, so a
+// fixture that applied only the first would build a table the roster no longer
+// matches.
+func applyMigrations(t *testing.T, handle *gorm.DB, dialect string) {
+	t.Helper()
+	entries, err := fs.ReadDir(migrationsFS, dialect)
+	if err != nil {
+		t.Fatalf("listing the %s migrations: %v", dialect, err)
+	}
+	if len(entries) == 0 {
+		t.Fatalf("the %s migration set is empty", dialect)
+	}
+	for _, entry := range entries {
+		ddl, err := fs.ReadFile(migrationsFS, dialect+"/"+entry.Name())
+		if err != nil {
+			t.Fatalf("reading %s: %v", entry.Name(), err)
+		}
+		if err := handle.Exec(string(ddl)).Error; err != nil {
+			t.Fatalf("applying %s: %v", entry.Name(), err)
+		}
+	}
+}
+
 // rosterOn is rosterOverDialect over a handle the case opened.
 func rosterOn(t *testing.T, handle *gorm.DB, dialect string, rows ...string) *roster {
 	t.Helper()
-	ddl, err := fs.ReadFile(migrationsFS, dialect+"/0001_tenants.sql")
-	if err != nil {
-		t.Fatalf("reading the %s migration: %v", dialect, err)
-	}
-	if err := handle.Exec(string(ddl)).Error; err != nil {
-		t.Fatalf("creating the table from the %s migration: %v", dialect, err)
-	}
+	applyMigrations(t, handle, dialect)
 	for _, stmt := range rows {
 		if err := handle.Exec(stmt).Error; err != nil {
 			t.Fatalf("writing %q: %v", stmt, err)
@@ -854,34 +875,15 @@ func TestPutTellsAnEmptyFieldApartFromABlankOne(t *testing.T) {
 // resolves to whichever of the two tenants the index kept while the other
 // leaves the roster with nothing reporting it.
 //
-// The table is built from every dialect's migration, each one against a table
-// of its own, because the module ships one file per dialect and a deployment
-// runs one of them: a constraint dropped from either file is a deployment whose
-// alias is no longer unique, and no other case in this package reads the file
-// that deployment runs. Today both files carry the same statement and it is
-// portable, which is what lets either be applied through the SQLite handle this
-// fixture opens — and this case is also where a file that stopped being
-// portable surfaces, at the fixture, rather than going unread.
+// The table is built from the sqlite migration set, the one the handle this
+// fixture opens speaks. The postgres set is applied against PostgreSQL by the
+// integration cases, which build their roster through applyMigrations too; the
+// two dialects no longer ship the same text, so one dialect's statements cannot
+// be run through the other's engine.
 func TestTheTableRefusesTwoTenantsSharingOneAlias(t *testing.T) {
-	dialects, err := fs.ReadDir(migrationsFS, ".")
-	if err != nil {
-		t.Fatalf("listing the migration dialects: %v", err)
-	}
-	applied := 0
-	for _, dialect := range dialects {
-		if !dialect.IsDir() {
-			continue
-		}
-		applied++
-		t.Run(dialect.Name(), func(t *testing.T) {
-			r := rosterOverDialect(t, dialect.Name(), insert("acme", "acme"))
+	r := rosterOverDialect(t, "sqlite", insert("acme", "acme"))
 
-			if err := r.handle.Exec(insert("globex", "acme")).Error; err == nil {
-				t.Fatal("the table took a second tenant under an alias it already holds")
-			}
-		})
-	}
-	if applied == 0 {
-		t.Fatal("the migration tree names no dialect, so the case applied nothing and holds nothing")
+	if err := r.handle.Exec(insert("globex", "acme")).Error; err == nil {
+		t.Fatal("the table took a second tenant under an alias it already holds")
 	}
 }

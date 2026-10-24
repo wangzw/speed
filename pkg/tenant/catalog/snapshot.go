@@ -25,9 +25,10 @@ const tableName = "tenants"
 // the constraint in that file is what enforces the alias, and the tag records
 // the shape for a reader.
 type row struct {
-	ID     string `gorm:"column:id;primaryKey"`
-	Alias  string `gorm:"column:alias;not null;uniqueIndex"`
-	Status int    `gorm:"column:status;not null"`
+	ID         string `gorm:"column:id;primaryKey"`
+	Alias      string `gorm:"column:alias;not null;uniqueIndex"`
+	Status     int    `gorm:"column:status;not null"`
+	DisabledBy int    `gorm:"column:disabled_by;not null"`
 }
 
 // TableName fixes the table this type maps to.
@@ -57,9 +58,10 @@ func buildSnapshot(rows []row) *snapshot {
 	}
 	for _, r := range rows {
 		t := tenant.Tenant{
-			ID:     tenant.ID(r.ID),
-			Alias:  r.Alias,
-			Status: tenant.Status(r.Status),
+			ID:         tenant.ID(r.ID),
+			Alias:      r.Alias,
+			Status:     tenant.Status(r.Status),
+			DisabledBy: disabledByOf(r.DisabledBy),
 		}
 		s.byID[t.ID] = t
 		s.byAlias[t.Alias] = t
@@ -69,14 +71,31 @@ func buildSnapshot(rows []row) *snapshot {
 	return s
 }
 
-// counts reports how many tenants are in each state, for the startup account.
-func (s *snapshot) counts() (active, disabled int) {
-	for _, t := range s.ordered {
-		if t.Status == tenant.StatusActive {
-			active++
-			continue
-		}
-		disabled++
+// disabledByOf reads the source column as the roster serves it: only the
+// account's value reads as the account's, and everything else — the operator's
+// value, a value this build does not know, and the default an existing row
+// took — reads as the operator's. An unexplained disable must never be
+// revocable by account state.
+func disabledByOf(source int) tenant.DisabledBy {
+	if source == int(tenant.DisabledByAccount) {
+		return tenant.DisabledByAccount
 	}
-	return active, disabled
+	return tenant.DisabledByOperator
+}
+
+// counts reports how many tenants are in each state, for the startup account.
+// The three counts are disjoint and their sum is the roster's size; a status
+// this build does not know reads as disabled, as it does everywhere else.
+func (s *snapshot) counts() (active, disabled, deleted int) {
+	for _, t := range s.ordered {
+		switch t.Status {
+		case tenant.StatusActive:
+			active++
+		case tenant.StatusDeleted:
+			deleted++
+		default:
+			disabled++
+		}
+	}
+	return active, disabled, deleted
 }

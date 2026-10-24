@@ -29,7 +29,8 @@ func enteringRoster(t *testing.T) *roster {
 	r := rosterOver(t,
 		insert("t_acme", "acme"),
 		insert("t_globex", "globex"),
-		"INSERT INTO tenants (id, alias, status) VALUES ('t_paused', 'paused', 0)")
+		"INSERT INTO tenants (id, alias, status) VALUES ('t_paused', 'paused', 0)",
+		insertRow("t_deleted", "deleted", tenant.StatusDeleted, tenant.DisabledByOperator))
 	if err := r.handle.Use(newFilter()); err != nil {
 		t.Fatalf("installing the filter: %v", err)
 	}
@@ -147,6 +148,40 @@ func TestEnterTellsAnUnknownTenantFromADisabledOne(t *testing.T) {
 	if errors.Is(unknown, tenant.ErrTenantDisabled) || errors.Is(disabled, tenant.ErrInvalidTenant) {
 		t.Fatalf("the refusals are not told apart: unknown %v, disabled %v", unknown, disabled)
 	}
+}
+
+// A deleted tenant is told apart from both an unknown and a disabled one: a
+// path drops work for a tenant that does not exist, waits out one that is
+// disabled, and gives up on one that is deleted, because it cannot come back.
+func TestEnterRefusesADeletedTenantAsItsOwnRefusal(t *testing.T) {
+	r := enteringRoster(t)
+	_, unknown := r.Enter(context.Background(), "t_ghost")
+	_, disabled := r.Enter(context.Background(), "t_paused")
+	_, deleted := r.Enter(context.Background(), "t_deleted")
+	if !errors.Is(deleted, tenant.ErrTenantDeleted) {
+		t.Fatalf("entering a deleted tenant gave %v, want ErrTenantDeleted", deleted)
+	}
+	if errors.Is(deleted, tenant.ErrTenantDisabled) || errors.Is(deleted, tenant.ErrInvalidTenant) {
+		t.Errorf("a deleted tenant is reported as disabled or unknown too: %v", deleted)
+	}
+	if errors.Is(unknown, tenant.ErrTenantDeleted) || errors.Is(disabled, tenant.ErrTenantDeleted) {
+		t.Errorf("an unknown or disabled tenant is reported as deleted: unknown %v, disabled %v", unknown, disabled)
+	}
+}
+
+// A deleted tenant's row stays, so work that still belongs to it — clearing or
+// exporting what it left behind — enters it through EnterRegistered.
+func TestEnterRegisteredEntersADeletedTenant(t *testing.T) {
+	r := enteringRoster(t)
+	if err := r.handle.WithContext(crossContext()).Exec(
+		"INSERT INTO orders (tenant_id, id, note) VALUES ('t_deleted', 'd', 'z')").Error; err != nil {
+		t.Fatalf("seeding: %v", err)
+	}
+	ctx, err := r.EnterRegistered(crossContext(), "t_deleted")
+	if err != nil {
+		t.Fatalf("entering a deleted tenant through EnterRegistered gave %v, want the tenant", err)
+	}
+	requireScopedTo(t, r, ctx, "t_deleted")
 }
 
 func TestEnterBeforeTheRosterIsReadRefuses(t *testing.T) {

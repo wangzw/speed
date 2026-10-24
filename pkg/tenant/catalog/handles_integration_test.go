@@ -5,7 +5,6 @@ package catalog
 import (
 	"context"
 	"errors"
-	"io/fs"
 	"net/url"
 	"slices"
 	"strings"
@@ -30,13 +29,7 @@ func TestAPermissionRefusedIsNotAMissingRosterOnPostgres(t *testing.T) {
 	// The role is made before the table, so it holds no privilege on it.
 	asRole := pgtest.DMLRole(t, dsn)
 	owner := quiet(dbtest.Postgres(t, dsn, nil).DB())
-	ddl, err := fs.ReadFile(migrationsFS, "postgres/0001_tenants.sql")
-	if err != nil {
-		t.Fatalf("reading the postgres migration: %v", err)
-	}
-	if err := owner.Exec(string(ddl)).Error; err != nil {
-		t.Fatalf("creating the table as its owner: %v", err)
-	}
+	applyMigrations(t, owner, "postgres")
 	if err := owner.Exec(insert("t_acme", "acme")).Error; err != nil {
 		t.Fatalf("writing a row as the owner: %v", err)
 	}
@@ -102,14 +95,9 @@ func roleOf(t *testing.T, dsn string) string {
 // ships for PostgreSQL, over a handle, and writes acme's row into it.
 func createRosterTable(t *testing.T, handle *gorm.DB) {
 	t.Helper()
-	ddl, err := fs.ReadFile(migrationsFS, "postgres/0001_tenants.sql")
-	if err != nil {
-		t.Fatalf("reading the postgres migration: %v", err)
-	}
-	for _, stmt := range []string{string(ddl), insert("t_acme", "acme")} {
-		if err := handle.Exec(stmt).Error; err != nil {
-			t.Fatalf("creating the roster table: %v", err)
-		}
+	applyMigrations(t, handle, "postgres")
+	if err := handle.Exec(insert("t_acme", "acme")).Error; err != nil {
+		t.Fatalf("writing acme's row: %v", err)
 	}
 }
 

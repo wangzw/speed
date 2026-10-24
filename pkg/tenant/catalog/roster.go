@@ -89,9 +89,9 @@ func (r *roster) load(ctx context.Context) error {
 	if err := r.read(ctx); err != nil {
 		return err
 	}
-	active, disabled := r.snap.Load().counts()
+	active, disabled, deleted := r.snap.Load().counts()
 	r.logger.Info(diagnosticPrefix+ModuleName+": roster loaded",
-		"tenants", active+disabled, "active", active, "disabled", disabled,
+		"tenants", active+disabled+deleted, "active", active, "disabled", disabled, "deleted", deleted,
 		"refresh", r.refresh.String())
 	return nil
 }
@@ -446,7 +446,12 @@ const connectionWait = 5 * time.Second
 // out of log lines and error text is what the domain is for.
 func checkRows(rows []row) error {
 	for _, r := range rows {
-		t := tenant.Tenant{ID: tenant.ID(r.ID), Alias: r.Alias, Status: tenant.Status(r.Status)}
+		t := tenant.Tenant{
+			ID:         tenant.ID(r.ID),
+			Alias:      r.Alias,
+			Status:     tenant.Status(r.Status),
+			DisabledBy: disabledByOf(r.DisabledBy),
+		}
 		if err := checkTenant(t); err != nil {
 			return fmt.Errorf("%w: table %s holds a row this module will not act on: %w",
 				tenant.ErrInvalidTenant, tableName, err)
@@ -510,7 +515,10 @@ func (r *roster) EnterRegistered(ctx context.Context, id tenant.ID) (context.Con
 }
 
 // enter is both entries: Enter admits a tenant the roster serves, and
-// EnterRegistered one it holds whatever its status.
+// EnterRegistered one it holds whatever its status. Enter refuses a disabled
+// tenant with ErrTenantDisabled and a tombstone with ErrTenantDeleted — the two
+// are disposed of differently, one waits out and the other is dropped — while
+// EnterRegistered enters both.
 //
 // It admits from the snapshot the resolving layer reads, and refuses only on
 // the table's word. A refusal is what a path with no request behind it drops
@@ -562,6 +570,8 @@ func (r *roster) enter(ctx context.Context, id tenant.ID, anyStatus bool) (conte
 	switch {
 	case !ok:
 		return refused, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+	case !anyStatus && t.Status == tenant.StatusDeleted:
+		return refused, fmt.Errorf("%w: tenant %q is %s", tenant.ErrTenantDeleted, id, t.Status)
 	case !admits(t):
 		return refused, fmt.Errorf("%w: tenant %q is %s", tenant.ErrTenantDisabled, id, t.Status)
 	}
@@ -591,8 +601,12 @@ func (r *roster) fromTable(ctx context.Context, id tenant.ID) (tenant.Tenant, bo
 	if err := checkRows(held); err != nil {
 		return tenant.Tenant{}, false, err
 	}
-	return tenant.Tenant{ID: tenant.ID(held[0].ID), Alias: held[0].Alias, Status: tenant.Status(held[0].Status)},
-		true, nil
+	return tenant.Tenant{
+		ID:         tenant.ID(held[0].ID),
+		Alias:      held[0].Alias,
+		Status:     tenant.Status(held[0].Status),
+		DisabledBy: disabledByOf(held[0].DisabledBy),
+	}, true, nil
 }
 
 // catchUp rereads the roster when the row an entry read from the table is not
@@ -647,13 +661,26 @@ var contextLogger = tenantctx.Logger{With: log.WithAttrs, Without: log.WithoutAt
 // another tenant now holds is reported as ErrAliasConflict naming it, with the
 // driver's error kept in the chain.
 //
+// A row that is a tombstone is refused with ErrTenantDeleted, and nothing is
+// written: a deleted tenant is terminal, and the rewrite would otherwise serve it
+// again. The value's own status and disable source are judged before the write
+// as well (checkWrite), so a record that could not have come from a status
+// transition is refused rather than stored.
+//
 // The write and the read that names a conflict run on one connection (write).
 func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
-	if err := checkTenant(t); err != nil {
+	if err := checkWrite(t); err != nil {
 		return err
 	}
 	return r.write(ctx, func(tx *gorm.DB) error {
-		held, err := lookUp(tx, "alias", t.Alias)
+		held, err := lookUp(tx, "id", string(t.ID))
+		if err != nil {
+			return err
+		}
+		if len(held) > 0 && tenant.Status(held[0].Status) == tenant.StatusDeleted {
+			return tombstone(t.ID)
+		}
+		held, err = lookUp(tx, "alias", t.Alias)
 		if err != nil {
 			return err
 		}
@@ -663,11 +690,12 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 		}
 		return tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"alias", "status"}),
+			DoUpdates: clause.AssignmentColumns([]string{"alias", "status", "disabled_by"}),
 		}).Create(&row{
-			ID:     string(t.ID),
-			Alias:  t.Alias,
-			Status: int(t.Status),
+			ID:         string(t.ID),
+			Alias:      t.Alias,
+			Status:     int(t.Status),
+			DisabledBy: int(t.DisabledBy),
 		}).Error
 	}, func(session *gorm.DB, err error) error { return failedPut(session, t, err) })
 }
@@ -682,8 +710,33 @@ func (r *roster) Put(ctx context.Context, t tenant.Tenant) error {
 func (r *roster) write(ctx context.Context, apply func(tx *gorm.DB) error,
 	failed func(session *gorm.DB, err error) error,
 ) error {
+	_, err := r.writeResult(ctx, func(tx *gorm.DB) (bool, error) {
+		return true, apply(tx)
+	}, failed)
+	return err
+}
+
+// writeResult is write for a caller that may decide, inside the transaction,
+// that there is nothing to write. It reports whether a write happened, and
+// rereads the roster only when one did: a call that changed nothing has no
+// result for this process to serve, and paying a full read for it would turn a
+// repeated event into load.
+//
+// A transaction that fails reports false whatever apply said about writing: it
+// rolled back, so nothing reached the table.
+func (r *roster) writeResult(ctx context.Context, apply func(tx *gorm.DB) (bool, error),
+	failed func(session *gorm.DB, err error) error,
+) (bool, error) {
+	wrote := false
 	ran, err := r.onConnection(ctx, func(session *gorm.DB) error {
-		err := session.Transaction(apply)
+		err := session.Transaction(func(tx *gorm.DB) error {
+			w, aerr := apply(tx)
+			if aerr != nil {
+				return aerr
+			}
+			wrote = w
+			return nil
+		})
 		if err != nil && failed != nil {
 			err = failed(session, err)
 		}
@@ -694,20 +747,31 @@ func (r *roster) write(ctx context.Context, apply func(tx *gorm.DB) error,
 	})
 	if err != nil {
 		if !ran {
-			return fmt.Errorf("%s%s: nothing was written: %w", diagnosticPrefix, ModuleName, err)
+			return false, fmt.Errorf("%s%s: nothing was written: %w", diagnosticPrefix, ModuleName, err)
 		}
-		return err
+		return false, err
 	}
-	return r.afterWrite(ctx)
+	if !wrote {
+		return false, nil
+	}
+	if err := r.afterWrite(ctx); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 // answered reports whether a write's failure is one of this module's answers
 // about the tenant — a conflict, a registration already there, an identifier no
-// row carries — which the table was read to give, rather than a statement that
-// failed.
+// row carries, a tombstone — which the table was read to give, rather than a
+// statement that failed.
 func answered(err error) bool {
 	return errors.Is(err, tenant.ErrAliasConflict) || errors.Is(err, tenant.ErrTenantExists) ||
-		errors.Is(err, tenant.ErrInvalidTenant)
+		errors.Is(err, tenant.ErrInvalidTenant) || errors.Is(err, tenant.ErrTenantDeleted)
+}
+
+// tombstone is the refusal of a write that reached a tenant written as deleted.
+func tombstone(id tenant.ID) error {
+	return fmt.Errorf("%w: identifier %q", tenant.ErrTenantDeleted, id)
 }
 
 // failedPut names the conflict a failed Put ran into when the alias turns out
@@ -737,6 +801,11 @@ func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error 
 
 // Create implements tenant.Catalog.
 //
+// A tombstone's identifier is taken as any existing identifier is: the creation
+// is refused with ErrTenantExists, so a deleted tenant is never registered
+// again, and its alias stays with the row. The value's own status and disable
+// source are judged before the write (checkWrite), as Put judges them.
+//
 // Whether the identifier is taken is asked of the table inside the write, not
 // of the snapshot: a replica whose snapshot predates another replica's
 // registration would otherwise take the identifier for free, and the write
@@ -747,7 +816,7 @@ func failedAlias(session *gorm.DB, id tenant.ID, alias string, err error) error 
 // than overwriting it. The alias is checked and its race answered as Put
 // answers it, on the write's one connection (write).
 func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
-	if err := checkTenant(t); err != nil {
+	if err := checkWrite(t); err != nil {
 		return err
 	}
 	return r.write(ctx, func(tx *gorm.DB) error {
@@ -770,9 +839,10 @@ func (r *roster) Create(ctx context.Context, t tenant.Tenant) error {
 			Columns:   []clause.Column{{Name: "id"}},
 			DoNothing: true,
 		}).Create(&row{
-			ID:     string(t.ID),
-			Alias:  t.Alias,
-			Status: int(t.Status),
+			ID:         string(t.ID),
+			Alias:      t.Alias,
+			Status:     int(t.Status),
+			DisabledBy: int(t.DisabledBy),
 		})
 		if written.Error != nil {
 			return written.Error
@@ -806,7 +876,15 @@ func failedCreate(session *gorm.DB, t tenant.Tenant, err error) error {
 	return failedPut(session, t, err)
 }
 
-// SetStatus implements tenant.Catalog, and is the only way to disable a tenant.
+// SetStatus implements tenant.Catalog, and is the operator's status transition.
+//
+// Only active and disabled are writable here: the deleted state is reached
+// through Delete and nowhere else, so s naming it, or naming anything outside
+// the set, is refused with ErrInvalidTenant. A tombstone is refused with
+// ErrTenantDeleted. Disabling writes the source as the operator's even on a row
+// already disabled — the operator has restated the decision, and a row an
+// account disabled must not stay revocable by that account — and enabling
+// clears it; the two writes put the same operator value in the column.
 //
 // Existence is checked with its own read rather than inferred from the update's
 // affected-row count: a driver is free to report zero rows for an update that
@@ -817,6 +895,10 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 	if err := checkField("identifier", string(id)); err != nil {
 		return err
 	}
+	if s != tenant.StatusActive && s != tenant.StatusDisabled {
+		return fmt.Errorf("%w: %s is not a status an operator sets; deletion goes through Delete",
+			tenant.ErrInvalidTenant, s)
+	}
 	return r.write(ctx, func(tx *gorm.DB) error {
 		held, err := lookUp(tx, "id", string(id))
 		if err != nil {
@@ -825,9 +907,105 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 		if len(held) == 0 {
 			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
 		}
+		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
+			return tombstone(id)
+		}
 		return tx.Model(&row{}).Where("id = ?", string(id)).
-			Update("status", int(s)).Error
+			Updates(map[string]any{
+				"status":      int(s),
+				"disabled_by": int(tenant.DisabledByOperator),
+			}).Error
 	}, nil)
+}
+
+// SetStatusByAccount implements tenant.Catalog, and is the transition account
+// state drives.
+//
+// The two directions are asymmetric on purpose. Disabling is taken only from an
+// active tenant, and writes the source as the account's; a tenant already
+// disabled is not account state's to disable again, whoever disabled it.
+// Enabling is taken only from a tenant disabled by the account, and clears the
+// source; an operator's disable, and a source this build does not know, are not
+// account state's to revoke. Every other request writes nothing and returns nil,
+// so a repeated event is harmless and a no-op costs no reread (writeResult).
+//
+// Neither direction reaches a tombstone, which is refused with ErrTenantDeleted,
+// and s naming the deleted state, or anything outside the set, is refused with
+// ErrInvalidTenant. An identifier no row carries is ErrInvalidTenant, as the
+// operator path reports it.
+func (r *roster) SetStatusByAccount(ctx context.Context, id tenant.ID, s tenant.Status) error {
+	if err := checkField("identifier", string(id)); err != nil {
+		return err
+	}
+	if s != tenant.StatusActive && s != tenant.StatusDisabled {
+		return fmt.Errorf("%w: account state does not set %s; deletion goes through Delete",
+			tenant.ErrInvalidTenant, s)
+	}
+	_, err := r.writeResult(ctx, func(tx *gorm.DB) (bool, error) {
+		held, err := lookUp(tx, "id", string(id))
+		if err != nil {
+			return false, err
+		}
+		if len(held) == 0 {
+			return false, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+		}
+		current := tenant.Tenant{
+			Status:     tenant.Status(held[0].Status),
+			DisabledBy: disabledByOf(held[0].DisabledBy),
+		}
+		if current.Status == tenant.StatusDeleted {
+			return false, tombstone(id)
+		}
+		switch {
+		case s == tenant.StatusDisabled && current.Status == tenant.StatusActive:
+			return true, tx.Model(&row{}).Where("id = ?", string(id)).
+				Updates(map[string]any{
+					"status":      int(tenant.StatusDisabled),
+					"disabled_by": int(tenant.DisabledByAccount),
+				}).Error
+		case s == tenant.StatusActive && current.Status == tenant.StatusDisabled &&
+			current.DisabledBy == tenant.DisabledByAccount:
+			return true, tx.Model(&row{}).Where("id = ?", string(id)).
+				Updates(map[string]any{
+					"status":      int(tenant.StatusActive),
+					"disabled_by": int(tenant.DisabledByOperator),
+				}).Error
+		default:
+			return false, nil
+		}
+	}, nil)
+	return err
+}
+
+// Delete implements tenant.Catalog, and is the one way to reach the terminal
+// state.
+//
+// It writes the status column and nothing else: the row, the identifier, the
+// alias and the disable source stay, so a scoped table's data still has a
+// tenant to be found under and the alias cannot be registered again while the
+// row carries it. Deleting a tombstone again is a no-op that returns nil, so a
+// sweep retrying a deletion converges. An identifier no row carries, or one
+// outside the domain, is refused with ErrInvalidTenant, as the status paths
+// refuse it.
+func (r *roster) Delete(ctx context.Context, id tenant.ID) error {
+	if err := checkField("identifier", string(id)); err != nil {
+		return err
+	}
+	_, err := r.writeResult(ctx, func(tx *gorm.DB) (bool, error) {
+		held, err := lookUp(tx, "id", string(id))
+		if err != nil {
+			return false, err
+		}
+		if len(held) == 0 {
+			return false, fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+		}
+		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
+			return false, nil
+		}
+		return true, tx.Model(&row{}).Where("id = ?", string(id)).
+			Update("status", int(tenant.StatusDeleted)).Error
+	}, nil)
+	return err
 }
 
 // SetAlias implements tenant.Catalog, and is the only way to rename a tenant.
@@ -836,7 +1014,9 @@ func (r *roster) SetStatus(ctx context.Context, id tenant.ID, s tenant.Status) e
 // That is the whole difference between this and Put: Put takes the whole row's
 // new values, so a rename through it writes back the status its caller read,
 // and a tenant another replica disabled between that read and this write would
-// be served again. This method reads no status and writes none.
+// be served again. This method reads no status and writes none. A tombstone is
+// refused with ErrTenantDeleted: its alias stays with the row, so a rename
+// cannot free the name for another tenant.
 //
 // Existence is checked with its own read rather than inferred from the update's
 // affected-row count, as SetStatus checks it, so that a driver reporting zero
@@ -857,6 +1037,9 @@ func (r *roster) SetAlias(ctx context.Context, id tenant.ID, alias string) error
 		}
 		if len(held) == 0 {
 			return fmt.Errorf("%w: no tenant has identifier %q", tenant.ErrInvalidTenant, id)
+		}
+		if tenant.Status(held[0].Status) == tenant.StatusDeleted {
+			return tombstone(id)
 		}
 		holder, err := lookUp(tx, "alias", alias)
 		if err != nil {
@@ -928,6 +1111,30 @@ func checkTenant(t tenant.Tenant) error {
 		return err
 	}
 	return checkField("alias", t.Alias)
+}
+
+// checkWrite is checkTenant plus the two values a registration may not choose.
+//
+// A registration takes the whole row's values, but two of them are written by
+// another route only: the deleted state is reached through Delete, and an
+// account-caused disable only through SetStatusByAccount. The source is judged
+// fail-closed — only the operator's value, which is the zero one, is accepted —
+// so a value this build does not know cannot be stored through a registration
+// and later read as though this build had chosen it. Both refusals run before
+// any write, so a refused registration leaves the table as it found it.
+func checkWrite(t tenant.Tenant) error {
+	if err := checkTenant(t); err != nil {
+		return err
+	}
+	if t.Status == tenant.StatusDeleted {
+		return fmt.Errorf("%w: a registration cannot write the deleted state; Delete is its only route",
+			tenant.ErrInvalidTenant)
+	}
+	if t.DisabledBy != tenant.DisabledByOperator {
+		return fmt.Errorf("%w: a registration cannot record the disable source %s",
+			tenant.ErrInvalidTenant, t.DisabledBy)
+	}
+	return nil
 }
 
 // checkField refuses a field that is empty or carries a character an alias

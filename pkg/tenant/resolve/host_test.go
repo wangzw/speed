@@ -376,6 +376,14 @@ func (fakeRoster) SetStatus(context.Context, tenant.ID, tenant.Status) error {
 	return errors.New("not used by the resolution layer")
 }
 
+func (fakeRoster) SetStatusByAccount(context.Context, tenant.ID, tenant.Status) error {
+	return errors.New("not used by the resolution layer")
+}
+
+func (fakeRoster) Delete(context.Context, tenant.ID) error {
+	return errors.New("not used by the resolution layer")
+}
+
 func (fakeRoster) SetAlias(context.Context, tenant.ID, string) error {
 	return errors.New("not used by the resolution layer")
 }
@@ -394,7 +402,8 @@ func (fakeRoster) EnterRegistered(ctx context.Context, _ tenant.ID) (context.Con
 
 func standardRoster() fakeRoster {
 	return fakeRoster{byAlias: map[string]tenant.Tenant{
-		"acme":   {ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
-		"paused": {ID: "t_paused", Alias: "paused", Status: tenant.StatusDisabled},
+		"acme":    {ID: "t_acme", Alias: "acme", Status: tenant.StatusActive},
+		"paused":  {ID: "t_paused", Alias: "paused", Status: tenant.StatusDisabled},
+		"deleted": {ID: "t_deleted", Alias: "deleted", Status: tenant.StatusDeleted},
 	}}
 }

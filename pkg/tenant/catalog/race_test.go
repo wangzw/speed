@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"sync"
 	"testing"
 
@@ -28,13 +27,7 @@ func rosterOverPostgres(t *testing.T) *roster {
 	handle := quiet(dbtest.Postgres(t, pgtest.Acquire(t), dbtest.Items{
 		"max-open-conns": racingConnections, "max-idle-conns": racingConnections,
 	}).DB())
-	ddl, err := fs.ReadFile(migrationsFS, "postgres/0001_tenants.sql")
-	if err != nil {
-		t.Fatalf("reading the postgres migration: %v", err)
-	}
-	if err := handle.Exec(string(ddl)).Error; err != nil {
-		t.Fatalf("creating the table: %v", err)
-	}
+	applyMigrations(t, handle, "postgres")
 	return newRoster(settings{}, databaseOver{handle: handle})
 }
 

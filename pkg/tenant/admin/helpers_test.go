@@ -123,6 +123,16 @@ func (s *stubCatalog) SetStatus(_ context.Context, id tenant.ID, st tenant.Statu
 	return s.errOr(s.setStatusErr)
 }
 
+func (s *stubCatalog) SetStatusByAccount(_ context.Context, id tenant.ID, st tenant.Status) error {
+	s.record(catalogCall{op: "SetStatusByAccount", id: id, status: st})
+	return errors.New("the management surface must not change status by account")
+}
+
+func (s *stubCatalog) Delete(_ context.Context, id tenant.ID) error {
+	s.record(catalogCall{op: "Delete", id: id})
+	return errors.New("the management surface must not delete a tenant")
+}
+
 func (s *stubCatalog) SetAlias(_ context.Context, id tenant.ID, alias string) error {
 	s.record(catalogCall{op: "SetAlias", id: id, alias: alias})
 	return s.errOr(s.setAliasErr)
