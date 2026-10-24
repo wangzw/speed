@@ -633,7 +633,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `ErrFactorNotSeasoned` 与 403 `factor-not-seasoned` | 已实现 | `pkg/authn/errors.go` `ErrFactorNotSeasoned`；`pkg/authn/internal/mount/problem.go` `CodeFactorNotSeasoned` |
 | 待确认行的清扫协程 | 已实现 | `pkg/authn/mfa/sweep.go` |
 | `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 已实现 | `pkg/authn/mfa/mfa.go` `admissionModule` |
-| 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 部分实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go` |
+| 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 已实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`AccountEnabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go`；`pkg/authn/mfa/lifecycle_test.go` |
 | `GET B/factors`、`DELETE B/factors/:id` | 已实现 | `pkg/authn/mfa/routes.go` |
 | TOTP 因素 | 已实现 | `pkg/authn/mfa/totp/factor.go`、`config.go`、`register.go`、`migrations/` |
 | 短信因素 | 已实现 | `pkg/authn/mfa/sms/sms.go` |

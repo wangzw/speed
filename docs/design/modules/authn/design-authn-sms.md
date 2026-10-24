@@ -483,5 +483,5 @@ flowchart TD
 | `authn.sms` 引擎：挑战状态机、预算、抑制行 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`、`config.go`、`module.go` |
 | `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`migrations/sqlite/0001_authn_challenges.sql` |
 | 发送工作池 | 已实现 | `pkg/authn/sms/pool.go` |
-| `AccountLifecycle` 钩子与事件补偿 | 部分实现 | `pkg/authn/sms/lifecycle.go`、`subscribe.go` |
+| `AccountLifecycle` 钩子与事件补偿 | 已实现 | `pkg/authn/sms/lifecycle.go`、`subscribe.go`；`pkg/authn/sms/lifecycle_test.go` |
 | `authn_challenges` 清扫 | 已实现 | `pkg/authn/sms/sweep.go` |

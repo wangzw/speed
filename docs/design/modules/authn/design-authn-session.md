@@ -655,7 +655,7 @@ stateDiagram-v2
 | 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 已实现 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`Epoch`、`PutIfEpoch`；`pkg/authn/session/cache.go` |
 | `CookieClearer` | 已实现 | `pkg/authn/session/sessions.go` `ClearCookie`；`pkg/authn/session.go` `CookieClearer` |
 | `service` 种：`ForCredential` 与 `RevokeCredential` | 已实现 | `pkg/authn/session/sessions.go` `ForCredential`、`RevokeCredential` |
-| `AccountLifecycle` 钩子与事件补偿订阅 | 部分实现 | `pkg/authn/session/lifecycle.go` `AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked` |
+| `AccountLifecycle` 钩子与事件补偿订阅 | 已实现 | `pkg/authn/session/lifecycle.go` `AccountDisabled`、`AccountEnabled`、`AccountDeleted`、`ServiceSecretRevoked`；`pkg/authn/session/lifecycle_test.go` |
 | 自助路由 `B/session`、`B/logout`、`B/sessions` | 已实现 | `pkg/authn/session/routes.go` |
 | 到期行的清扫协程 | 已实现 | `pkg/authn/session/sweep.go` |
 | `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/session/status.go` |
