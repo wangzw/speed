@@ -2050,6 +2050,29 @@ export type NotificationPreferencesListTypes200 = {
   types: NotificationType[];
 };
 
+export type AuditAdminRecordsExportParams = {
+/**
+ * Export rows at or after this instant, RFC 3339
+ */
+since?: string;
+/**
+ * Export rows before this instant, RFC 3339
+ */
+until?: string;
+/**
+ * Narrow to rows carrying one of these actions
+ */
+action?: string[];
+/**
+ * Narrow to rows whose outcome is one of these
+ */
+outcome?: string[];
+/**
+ * Narrow to rows whose actor is one of these
+ */
+actor?: string[];
+};
+
 export type AuditAdminRecordsListParams = {
 /**
  * Read rows at or after this instant, RFC 3339
@@ -5367,6 +5390,78 @@ export function useNotificationPreferencesListTypes<TData = Awaited<ReturnType<t
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getNotificationPreferencesListTypesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Reads every audit row the supplied conditions match and writes it as one JSON object per line, the same record view the list route answers, with no envelope and no header line. The body is streamed page by page as the read surface returns it; the export is not a snapshot of one instant, so a row appended while it runs is not in the file and a row deleted while it runs is missing from it. The page size is the read surface's maximum and is not the caller's to choose; cursor and limit describe a page and are refused. A filter that matches nothing answers an empty body.
+ * @summary Export the audit records matching the filters as NDJSON
+ */
+export const auditAdminRecordsExport = (
+    params?: AuditAdminRecordsExportParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<Blob>(
+      {url: `/api/v1/system/audit/export`, method: 'GET',
+        params,
+        responseType: 'blob', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuditAdminRecordsExportQueryKey = (params?: AuditAdminRecordsExportParams,) => {
+    return [
+    `/api/v1/system/audit/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuditAdminRecordsExportQueryOptions = <TData = Awaited<ReturnType<typeof auditAdminRecordsExport>>, TError = Problem>(params?: AuditAdminRecordsExportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsExport>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuditAdminRecordsExportQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof auditAdminRecordsExport>>> = ({ signal }) => auditAdminRecordsExport(params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsExport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuditAdminRecordsExportQueryResult = NonNullable<Awaited<ReturnType<typeof auditAdminRecordsExport>>>
+export type AuditAdminRecordsExportQueryError = Problem
+
+
+/**
+ * @summary Export the audit records matching the filters as NDJSON
+ */
+
+export function useAuditAdminRecordsExport<TData = Awaited<ReturnType<typeof auditAdminRecordsExport>>, TError = Problem>(
+ params?: AuditAdminRecordsExportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof auditAdminRecordsExport>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuditAdminRecordsExportQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
