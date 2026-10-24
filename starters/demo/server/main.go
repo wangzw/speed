@@ -107,6 +107,7 @@ import (
 	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 	"github.com/vislake/speed/pkg/tenant/resolve"
+	tenantself "github.com/vislake/speed/pkg/tenant/self"
 
 	// The platform modules whose HTTP fragments belong to the merged contract
 	// even though no command names them for a run. The credential criterion
@@ -312,6 +313,7 @@ var (
 		admission.ModuleName,
 		tenantcatalog.ModuleName,
 		tenantadmin.ModuleName,
+		tenantself.ModuleName,
 		auditjournal.ModuleName,
 		auditadmin.ModuleName,
 		authzpolicy.ModuleName,

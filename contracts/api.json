@@ -2274,6 +2274,84 @@
         "x-endpoint": "account"
       }
     },
+    "/api/v1/auth/me/tenants": {
+      "get": {
+        "description": "Answers the tenants the calling account holds an active membership in, with each tenant's identifier and alias. A membership that is suspended is left out, as is a tenant whose roster state is not active and an identifier the roster does not carry. The list is ordered by identifier and is empty rather than absent when the caller holds none. The route resolves no tenant and requires no permission: every authenticated caller reads its own memberships. A membership or roster read that cannot answer is a 503, never an empty list.",
+        "operationId": "tenant.self.tenants.list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "The tenants the calling account holds an active membership in.",
+                  "properties": {
+                    "tenants": {
+                      "description": "The tenants whose membership is active and whose roster row is active, ordered by identifier. Empty when the caller holds none.",
+                      "items": {
+                        "properties": {
+                          "alias": {
+                            "description": "The tenant's alias, the name the request surface addresses it by.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The tenant's immutable identifier.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "alias"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "tenants"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The tenants the caller holds an active membership in"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request carries no identity"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The membership table or the roster snapshot could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List the tenants the caller holds an active membership in",
+        "tags": [
+          "tenant.self"
+        ],
+        "x-endpoint": "account"
+      }
+    },
     "/api/v1/auth/methods": {
       "get": {
         "description": "Lists one descriptor per login method that takes part and is not turned off by the deployment, sorted by method name, together with whether registration is open and the second-factor kinds the deployment takes in. It reads no credential and no request body, so every caller gets the same document. A method turned off by the deployment is left out rather than reported with a flag, and the call answers 503 when the settings that decide which methods are off cannot be read. Enterprise identity providers are not listed here; they are discovered through the SSO module.",
@@ -14319,6 +14397,9 @@
     },
     {
       "name": "tenant.admin"
+    },
+    {
+      "name": "tenant.self"
     }
   ],
   "x-fragments": [
@@ -14413,6 +14494,10 @@
     {
       "module": "tenant.admin",
       "endpoint": "admin"
+    },
+    {
+      "module": "tenant.self",
+      "endpoint": "account"
     },
     {
       "module": "workspace.personal",

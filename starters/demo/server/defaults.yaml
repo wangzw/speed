@@ -81,6 +81,10 @@ tenant:
     endpoints: [api]
   admin:
     endpoints: [admin]
+  self:
+    # The caller's own tenant list. It mounts on the account endpoint, which
+    # resolves no tenant: the answer is about the caller, not about one tenant.
+    endpoints: [account]
 
 # The authorization layer: the guard enforces the API endpoint, the
 # management routes mount on the admin endpoint, and every authenticated
