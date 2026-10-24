@@ -132,7 +132,7 @@ func TestTheReadListsActiveMembershipsOfActiveTenants(t *testing.T) {
 // TestTheReadKeepsTheMembershipsOrder holds the answer to the order the
 // membership read gives: the interface already lists by identifier, and the
 // filter preserves that order rather than sorting again. A sort here would
-// answer zeta before alpha, which is the failure this case names.
+// answer alpha before zeta, which is the failure this case names.
 func TestTheReadKeepsTheMembershipsOrder(t *testing.T) {
 	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
 		"acct-bob": {

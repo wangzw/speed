@@ -22,7 +22,8 @@ type Memberships interface {
 	// Membership reads one membership. The second result is false when there is
 	// none.
 	Membership(ctx context.Context, tenant string, id AccountID) (Membership, bool, error)
-	// Tenants lists every membership of an account across tenants.
+	// Tenants lists every membership of an account across tenants, ordered by
+	// tenant identifier ascending.
 	Tenants(ctx context.Context, id AccountID) ([]Membership, error)
 	// Members lists the memberships of a tenant, one page at a time.
 	Members(ctx context.Context, tenant string, page Page) ([]Membership, error)

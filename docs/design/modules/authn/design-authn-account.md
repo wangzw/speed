@@ -190,7 +190,7 @@ type Memberships interface {
 | 方法 | 承诺 |
 |---|---|
 | 读法 | 查不到与已暂停都读作非成员（`Active` 的零值是暂停）。口令表主体没有成员关系行，`IsMember` 对它恒为假。 |
-| `Tenants` | 跨租户列出账户的全部成员关系；按 `authn_memberships_account` 索引走。 |
+| `Tenants` | 跨租户列出账户的全部成员关系，按租户标识升序；按 `authn_memberships_account` 索引走。 |
 | `Members` | 按租户分页，`Limit` 缺省 100、上限 1000。 |
 | `Put` | 幂等：新增、暂停、恢复。账户不存在（含墓碑）返回 `ErrAccountNotFound`：表间没有外键，由本方法核对。 |
 | `Remove` | 删除一条成员关系。 |
