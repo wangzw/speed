@@ -15,7 +15,12 @@
  * row's state and its remove control), through ui-kit's DataTable. The
  * key cell also carries the row's own declaration in two stacked lines:
  * the setting's description and its declared default, labelled apart
- * from the current value beside it. The declaration is the server's
+ * from the current value beside it. The key line alone keeps the shared
+ * primary-width cap and truncates there (the copy control carries the
+ * complete key); the declaration is prose and wraps at the cell's
+ * available width. The rows are top-aligned, so the value input and the
+ * copy control sit beside the key line rather than at the middle of a
+ * tall row. The declaration is the server's
  * answer, so a row never shows another row's description or default; a
  * setting with no declared default renders neither an empty line nor a
  * label over emptiness. A large declared set is paged rather than run
@@ -88,8 +93,8 @@ import Typography from '@mui/material/Typography'
 import {
   DataTable,
   ListSkeleton,
-  PRIMARY_COLUMN_MAX_WIDTH,
   PageHeader,
+  primaryColumnMaxWidthSx,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
@@ -326,17 +331,18 @@ export function SettingsPage() {
       header: t('settings.column.key'),
       cellWrap: 'nowrap',
       cellFullValue: (setting) => setting.key,
-      // The page's primary identity: it never hides, and the shared cap
-      // keeps a long key from pushing the other columns out of a narrow
-      // container. The complete value stays on the copy control.
-      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
-      // The key cell carries the row's declaration beneath the identity:
-      // its description, then its declared default with the label that
-      // separates the declaration from the current value in the next
-      // column. Both lines wrap inside the primary column's cap instead of
-      // widening the cell; the key itself stays on one truncated line. An
-      // empty default (a sensitive item has none) leaves the line out
-      // rather than printing a label over nothing.
+      // The key line is the page's primary identity: it keeps the shared
+      // primary-width cap and truncates there, with the complete key on
+      // the copy control. The declaration beneath it (the description,
+      // then the declared default) is prose and must not inherit that
+      // cap -- a real description runs to hundreds of characters, which
+      // inside 160/200px would wrap into a very tall column of thin
+      // text. The column therefore declares no `contentMaxWidth` (which
+      // would bound the whole cell); the prose wraps at whatever width
+      // the cell gets, while the key line alone carries the cap. The
+      // declaration is the server's answer, so a row never shows another
+      // row's description or default; a setting with no declared default
+      // renders neither an empty line nor a label over emptiness.
       cell: (setting) => (
         <Box
           sx={{
@@ -349,7 +355,11 @@ export function SettingsPage() {
           <Box
             sx={{ display: 'flex', alignItems: 'baseline', columnGap: 1, minWidth: 0 }}
           >
-            <Typography variant="body2" noWrap>
+            <Typography
+              variant="body2"
+              noWrap
+              sx={{ ...primaryColumnMaxWidthSx, minWidth: 0 }}
+            >
               {setting.key}
             </Typography>
             {setting.sensitive && (
@@ -569,6 +579,11 @@ export function SettingsPage() {
                     rows={pageRows}
                     columns={columns}
                     rowKey={(setting) => `${setting.namespace}.${setting.key}`}
+                    // Each row's key cell stacks the identity and its
+                    // declaration, so the row is top-aligned: the value
+                    // input and the copy control sit beside the key line
+                    // rather than dropping to the middle of a tall row.
+                    rowVerticalAlign="top"
                     pagination={{
                       page,
                       rowsPerPage,

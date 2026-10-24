@@ -23,6 +23,7 @@ import { zhCN as muiZhCN } from '@mui/material/locale'
 import { SettingsPage } from './SettingsPage.js'
 import type { ConsoleSetting } from './operations.js'
 import { renderWithProviders } from '../test-utils/render.js'
+import { uiKitResources } from '@speed/ui-kit'
 import {
   containerMaxWidthOf,
   emittedStyleText,
@@ -54,6 +55,17 @@ function text(
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
     values[key] ?? match,
   )
+}
+
+/** The ui-kit data table's zh-CN copy-control label, for one value. */
+const COPY_VALUE_TEMPLATE = (
+  uiKitResources['zh-CN'] as unknown as {
+    readonly dataTable: { readonly copyValue: string }
+  }
+).dataTable.copyValue
+
+function copyLabel(value: string): string {
+  return text(COPY_VALUE_TEMPLATE, { value })
 }
 
 const item: ConsoleSetting = {
@@ -339,33 +351,77 @@ describe('SettingsPage', () => {
     expect(alignItemsAt(css, container as Element, 900)).toBe('flex-start')
   })
 
-  it('caps the key column with the shared primary-column width', async () => {
+  it('caps the key line without capping the declaration beneath it', async () => {
+    // A prose description is what the whole-cell cap used to squeeze into
+    // a tall column of thin text: bounded to 160/200px it wrapped over
+    // many lines. The cap belongs to the identity line alone; the
+    // declaration wraps at the cell's available width.
+    const longDescription =
+      'Whether the mail carrier retries a refused message, measured against the delivery attempts recorded for that message and the configured retry window for this deployment.'
+    const described: ConsoleSetting = { ...item, description: longDescription }
     const operations = createConsoleOperations(
-      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
+      makeConsoleBackend({ listSettings: () => Promise.resolve([described]) }),
     )
     renderWithProviders(<SettingsPage />, { operations })
     const key = await screen.findByText('mail.retry')
     const cell = key.closest('td')
     expect(cell).not.toBeNull()
 
-    // The cap bounds the whole cell -- the key and its copy control -- at
-    // the shared primary-identity widths: 160 below md, 200 from md up.
-    const wrapper = cell?.firstElementChild
-    expect(wrapper).not.toBeNull()
-    expect(containerMaxWidthOf(wrapper as Element)).toEqual(
+    // The key line carries the shared primary cap -- 160 below md, 200
+    // from md up -- and truncates inside it instead of widening the cell;
+    // the complete key stays on the copy control.
+    expect(containerMaxWidthOf(key)).toEqual(
       new Map([
         [0, 160],
         [900, 200],
       ]),
     )
-
-    // The key truncates inside the cap instead of widening the cell; the
-    // complete value stays on the copy control.
     expect(key).toHaveStyle({
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
     })
+    expect(
+      within(cell as HTMLElement).getByRole('button', {
+        name: copyLabel('mail.retry'),
+      }),
+    ).toBeInTheDocument()
+
+    // The DataTable wrapper around the whole cell declares no cap, so the
+    // declaration beneath the key is not held to the primary width; the
+    // prose cell itself carries none either.
+    const wrapper = cell?.firstElementChild
+    expect(wrapper).not.toBeNull()
+    expect(containerMaxWidthOf(wrapper as Element)).toEqual(new Map())
+    expect(
+      containerMaxWidthOf(
+        within(cell as HTMLElement).getByText(longDescription),
+      ),
+    ).toEqual(new Map())
+  })
+
+  it('top-aligns the row so the value and copy control sit on the key line', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve([item]) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations })
+    const key = await screen.findByText('mail.retry')
+    const row = key.closest('tr')
+    expect(row).not.toBeNull()
+
+    // The key cell stacks the identity over its declaration, so the row
+    // must not centre its other cells on the tall cell: MUI's TableCell
+    // inherits the row's vertical alignment, which is top here.
+    expect(row).toHaveStyle({ verticalAlign: 'top' })
+
+    // The copy control aligns with the top of the cell content -- the key
+    // line -- rather than the vertical centre of the multi-line cell.
+    const copy = within(row as HTMLElement).getByRole('button', {
+      name: copyLabel('mail.retry'),
+    })
+    const wrapper = copy.parentElement
+    expect(wrapper).not.toBeNull()
+    expect(wrapper).toHaveStyle({ alignItems: 'flex-start' })
   })
 
   it('marks a row written as the empty string as an override', async () => {
