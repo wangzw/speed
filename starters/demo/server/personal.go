@@ -35,6 +35,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
@@ -117,6 +120,20 @@ const (
 	alreadyMemberCode         = "already-member"
 	tenantUnavailableCode     = "tenant-unavailable"
 	identifierUnavailableCode = "identifier-unavailable"
+)
+
+// The audit vocabulary the module writes, one action per tenant-side write. An
+// object is the personal tenant's identifier; the detail is a closed set: the
+// action identifier links the rows of one attempt, and account and tenant name
+// the two ends of the action. The shape is the management surface's.
+const (
+	personalCreateAction   = "workspace.personal.tenant.create"
+	personalDeleteAction   = "workspace.personal.tenant.delete"
+	personalOutcomeSuccess = "success"
+	personalOutcomeFailed  = "failed"
+	personalDetailActionID = "action_id"
+	personalDetailAccount  = "account"
+	personalDetailTenant   = "tenant"
 )
 
 // The ensure's own refusals. None is returned by a dependency and so none
@@ -218,14 +235,19 @@ func init() { core.ProcessRegistry.Register(personalModule()) }
 
 // personalModule is the descriptor of this host's personal-tenant policy.
 //
-// The roster, the memberships, the policy manager, the seeding surface and the
-// permission catalog are required: the ensure writes all five pieces, and an
-// assembly that names this module without one of them cannot run it. The HTTP entry point, the feature board, the
-// route-declaration surface and the logger are optional: without an entry point
-// the routes are not mounted, without a board the conditional feature is simply
-// absent from the document, and without the gateway's registration surface the
-// route is guarded by the gateway's default and an impersonating caller is
-// answered by the gateway instead of the handler.
+// The roster, the memberships, the policy manager, the seeding surface, the
+// permission catalog and the audit module are required: the ensure writes all
+// five pieces, the deletion writes the audit row, and an assembly that names
+// this module without one of them cannot run it. The HTTP entry point, the
+// feature board, the route-declaration surface and the logger are optional:
+// without an entry point the routes are not mounted, without a board the
+// conditional feature is simply absent from the document, and without the
+// gateway's registration surface the route is guarded by the gateway's default
+// and an impersonating caller is answered by the gateway instead of the handler.
+//
+// The module provides the account lifecycle hook: the personal tenant follows
+// the account that owns it, and the account module calls the hooks after its own
+// transaction commits.
 //
 // The descriptor declares its OpenAPI fragment on the account endpoint: the
 // contract belongs to the application's own second-level generation, not to a
@@ -239,10 +261,14 @@ func personalModule() core.Module {
 			{Token: (*authz.Manager)(nil)},
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
+			{Token: (*audit.Audit)(nil)},
 			{Token: (*speedhttp.Router)(nil), Optional: true},
 			{Token: (*feature.Board)(nil), Optional: true},
 			{Token: (*authn.Gate)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
+		},
+		Provides: []core.Provision{
+			{Token: (*authn.AccountLifecycle)(nil)},
 		},
 		Resources: []any{
 			personalSchema(),
@@ -312,8 +338,10 @@ func readPersonalConfig(reg *core.Registry) (personalConfig, error) {
 	return cfg, nil
 }
 
-// personalProduct is the module's instance: the five seams the ensure writes
-// through and the switch it runs on.
+// personalProduct is the module's instance: the seams the ensure and the
+// lifecycle hooks write through, the audit seam their actions are recorded on,
+// and the switch it runs on. It provides authn.AccountLifecycle, so the account
+// module's status change and deletion reach the personal tenant through it.
 type personalProduct struct {
 	config      personalConfig
 	roster      tenant.Catalog
@@ -321,6 +349,7 @@ type personalProduct struct {
 	manager     authz.Manager
 	seeder      authz.Seeder
 	catalog     authz.Catalog
+	audit       audit.Audit
 	logger      *slog.Logger
 }
 
@@ -357,6 +386,10 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the permission catalog: %w", personalModuleName, err)
 	}
+	auditor, err := core.Resolve[audit.Audit](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the audit capability: %w", personalModuleName, err)
+	}
 	p := &personalProduct{
 		config:      cfg,
 		roster:      roster,
@@ -364,6 +397,7 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 		manager:     manager,
 		seeder:      seeder,
 		catalog:     catalog,
+		audit:       auditor,
 		logger:      log.Default(),
 	}
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
@@ -526,6 +560,59 @@ func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (Workspa
 	}
 }
 
+// personalAudit builds the mandatory row of a tenant-side write: the tenant's
+// identifier is the object, and the detail names the action's two ends and the
+// identifier that links the rows of one attempt.
+func personalAudit(action string, account authn.AccountID, id tenant.ID, actionID string) audit.Entry {
+	return audit.Entry{
+		Action:  action,
+		Object:  string(id),
+		Outcome: personalOutcomeSuccess,
+		Detail: map[string]string{
+			personalDetailActionID: actionID,
+			personalDetailAccount:  account.String(),
+			personalDetailTenant:   string(id),
+		},
+	}
+}
+
+// personalFailedAudit builds the row that closes a failed attempt, linked to its
+// permitted row by the action identifier.
+func personalFailedAudit(action string, id tenant.ID, actionID string) audit.Entry {
+	return audit.Entry{
+		Action:  action,
+		Object:  string(id),
+		Outcome: personalOutcomeFailed,
+		Detail:  map[string]string{personalDetailActionID: actionID},
+	}
+}
+
+// newPersonalActionID mints the identifier that links the audit rows of one
+// attempt. It is made after the decision and before the mandatory row, so the
+// permitted row and any failed row beside it carry the same value.
+func newPersonalActionID() string { return uuid.NewString() }
+
+// auditRequired writes the mandatory row of an action. A row that does not land
+// is the audit module's state, and the action is not carried out: the caller
+// answers 503, with the cause in the log and never in the answer.
+func (p *personalProduct) auditRequired(ctx context.Context, e audit.Entry) error {
+	if err := p.audit.Record(ctx, e); err != nil {
+		p.logger.Error(personalModuleName+": the mandatory audit row could not be written, so the action was not carried out",
+			"action", e.Action, "tenant", e.Object, "cause", err.Error())
+		return fmt.Errorf("writing the %s audit row: %w", e.Action, err)
+	}
+	return nil
+}
+
+// auditBestEffort writes the failed row that closes a failed attempt. Its own
+// failure is a log line and changes nothing about the answer.
+func (p *personalProduct) auditBestEffort(ctx context.Context, e audit.Entry) {
+	if err := p.audit.Record(ctx, e); err != nil {
+		p.logger.Error(personalModuleName+": a failed-action audit row could not be written",
+			"action", e.Action, "tenant", e.Object, "cause", err.Error())
+	}
+}
+
 // ensure checks and completes the five pieces of a personal tenant:
 //
 //  1. the tenant row (created, or read back when it already exists),
@@ -576,18 +663,41 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 
 	var record tenant.Tenant
 	created := false
+	actionID := ""
+	createBegan := false
+	createRefused := false
 	if own {
 		record, err = p.registeredTenant(ctx, personalID)
 	} else {
-		record, created, err = p.createTenant(ctx, personalID)
+		// The mandatory row lands before the create: an audit module that cannot
+		// take it stops the registration, so no tenant is ever created without the
+		// record of it.
+		actionID = newPersonalActionID()
+		createBegan = true
+		if auditErr := p.auditRequired(ctx, personalAudit(personalCreateAction, account, personalID, actionID)); auditErr != nil {
+			return personalResult{}, auditErr
+		}
+		record, created, createRefused, err = p.createTenant(ctx, personalID)
 	}
 	if err != nil {
+		if createBegan {
+			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, personalID, actionID))
+		}
+		return personalResult{}, err
+	}
+	// fail closes whatever is left of a create attempt with the failed row that
+	// links to its permitted one. A read-back attempt has no permitted row to
+	// close.
+	fail := func(err error) (personalResult, error) {
+		if createBegan {
+			p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, personalID, actionID))
+		}
 		return personalResult{}, err
 	}
 	if record.Status != tenant.StatusActive {
 		// A disabled tenant is the operator's decision. Nothing below runs, so
 		// the next ensure leaves the row and its policy as they are.
-		return personalResult{}, errTenantUnavailable
+		return fail(errTenantUnavailable)
 	}
 
 	if !own {
@@ -597,13 +707,13 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 			Active:  true,
 			Source:  personalMemberSource,
 		}); err != nil {
-			return personalResult{}, fmt.Errorf("writing the membership: %w", err)
+			return fail(fmt.Errorf("writing the membership: %w", err))
 		}
 	}
 
 	roles, err := p.manager.Roles(ctx, string(personalID))
 	if err != nil {
-		return personalResult{}, fmt.Errorf("reading the personal tenant's roles: %w", err)
+		return fail(fmt.Errorf("reading the personal tenant's roles: %w", err))
 	}
 	ownerPresent := false
 	for _, role := range roles {
@@ -619,17 +729,17 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 			DescriptionKey: personalOwnerDescriptionKey,
 			CreatedAt:      time.Now().UTC(),
 		}); err != nil {
-			return personalResult{}, fmt.Errorf("writing the owner role: %w", err)
+			return fail(fmt.Errorf("writing the owner role: %w", err))
 		}
 	}
 
 	if err = p.convergeOwnerGrants(ctx, string(personalID)); err != nil {
-		return personalResult{}, err
+		return fail(err)
 	}
 
 	bindings, err := p.manager.BindingsOf(ctx, string(personalID), account.String())
 	if err != nil {
-		return personalResult{}, fmt.Errorf("reading the account's bindings: %w", err)
+		return fail(fmt.Errorf("reading the account's bindings: %w", err))
 	}
 	bound := false
 	for _, binding := range bindings {
@@ -645,10 +755,15 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 			Role:      personalOwnerRole,
 			GrantedAt: time.Now().UTC(),
 		}); err != nil {
-			return personalResult{}, fmt.Errorf("binding the account to the owner role: %w", err)
+			return fail(fmt.Errorf("binding the account to the owner role: %w", err))
 		}
 	}
 
+	if createRefused {
+		// Another call won the race the deterministic identifier creates: this
+		// attempt's create was refused, and the row it read back is the answer.
+		p.auditBestEffort(ctx, personalFailedAudit(personalCreateAction, personalID, actionID))
+	}
 	return personalResult{Tenant: record, Created: created}, nil
 }
 
@@ -678,24 +793,28 @@ func (p *personalProduct) registeredTenant(ctx context.Context, id tenant.ID) (t
 // expected race between concurrent ensure calls, and the row is the answer.
 // An alias another tenant holds, or a write that fails, is returned as it
 // stands.
-func (p *personalProduct) createTenant(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
+//
+// The third result reports whether the roster refused the create call itself.
+// A refusal the read-back recovers from still closes the attempt's audit row
+// with a failed one, because the create this call tried did not happen.
+func (p *personalProduct) createTenant(ctx context.Context, id tenant.ID) (tenant.Tenant, bool, bool, error) {
 	record := tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
 	err := p.roster.Create(ctx, record)
 	switch {
 	case err == nil:
-		return record, true, nil
+		return record, true, false, nil
 	case errors.Is(err, tenant.ErrTenantExists):
 		held, readErr := p.registeredTenant(ctx, id)
-		return held, false, readErr
+		return held, false, true, readErr
 	case errors.Is(err, tenant.ErrAliasConflict):
 		// The alias is held by a tenant whose identifier is not the derived
 		// one. The deterministic pair therefore no longer names this account's
 		// personal tenant, and writing the rest against it would attach the
 		// account to someone else's row.
-		return tenant.Tenant{}, false, fmt.Errorf("%w: the alias is held by another tenant: %w",
+		return tenant.Tenant{}, false, true, fmt.Errorf("%w: the alias is held by another tenant: %w",
 			errIdentifierUnavailable, err)
 	default:
-		return tenant.Tenant{}, false, fmt.Errorf("registering the personal tenant: %w", err)
+		return tenant.Tenant{}, false, true, fmt.Errorf("registering the personal tenant: %w", err)
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
@@ -48,6 +49,14 @@ type fakeRoster struct {
 	createErr error
 	creates   int
 	entered   int
+
+	steps          *stepLog
+	statusCalls    int
+	statusWrites   int
+	setStatusErr   error
+	deletes        int
+	deleteAttempts int
+	deleteErr      error
 }
 
 func newFakeRoster() *fakeRoster {
@@ -55,6 +64,66 @@ func newFakeRoster() *fakeRoster {
 		rows:    map[tenant.ID]tenant.Tenant{},
 		lagging: map[tenant.ID]bool{},
 	}
+}
+
+// SetStatusByAccount is the roster's account-driven transition: a disable is
+// written only from active and an enable only from a disable the account made,
+// so an operator's disable is left standing. A tombstone is ErrTenantDeleted.
+func (r *fakeRoster) SetStatusByAccount(_ context.Context, id tenant.ID, s tenant.Status) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.statusCalls++
+	r.steps.add("status:" + s.String())
+	if r.setStatusErr != nil {
+		return r.setStatusErr
+	}
+	row, found := r.rows[id]
+	if !found {
+		return fmt.Errorf("%w: identifier %q", tenant.ErrInvalidTenant, id)
+	}
+	switch row.Status {
+	case tenant.StatusDeleted:
+		return fmt.Errorf("%w: identifier %q", tenant.ErrTenantDeleted, id)
+	case tenant.StatusDisabled:
+		if s == tenant.StatusActive && row.DisabledBy == tenant.DisabledByAccount {
+			row.Status = tenant.StatusActive
+			row.DisabledBy = tenant.DisabledByOperator
+			r.rows[id] = row
+			r.statusWrites++
+		}
+	case tenant.StatusActive:
+		if s == tenant.StatusDisabled {
+			row.Status = tenant.StatusDisabled
+			row.DisabledBy = tenant.DisabledByAccount
+			r.rows[id] = row
+			r.statusWrites++
+		}
+	}
+	return nil
+}
+
+// Delete writes the tombstone. An identifier no row carries is ErrInvalidTenant,
+// a tombstone is no work, and the alias and the disable source are left as they
+// are.
+func (r *fakeRoster) Delete(_ context.Context, id tenant.ID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deleteAttempts++
+	r.steps.add("delete")
+	if r.deleteErr != nil {
+		return r.deleteErr
+	}
+	row, found := r.rows[id]
+	if !found {
+		return fmt.Errorf("%w: identifier %q", tenant.ErrInvalidTenant, id)
+	}
+	if row.Status == tenant.StatusDeleted {
+		return nil
+	}
+	row.Status = tenant.StatusDeleted
+	r.rows[id] = row
+	r.deletes++
+	return nil
 }
 
 func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, error) {
@@ -70,6 +139,7 @@ func (r *fakeRoster) Get(_ context.Context, id tenant.ID) (tenant.Tenant, bool, 
 func (r *fakeRoster) Create(_ context.Context, t tenant.Tenant) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.steps.add("create")
 	if r.createErr != nil {
 		return r.createErr
 	}
@@ -99,10 +169,73 @@ type fakeMemberships struct {
 	mu   sync.Mutex
 	rows map[authn.AccountID][]authn.Membership
 	puts int
+
+	steps      *stepLog
+	pages      int
+	removes    int
+	membersErr error
+	removeErr  error
 }
 
 func newFakeMemberships() *fakeMemberships {
 	return &fakeMemberships{rows: map[authn.AccountID][]authn.Membership{}}
+}
+
+// Members lists one page of a tenant's memberships in account order, the way
+// the account module does: After is the last account identifier of the page
+// before.
+func (m *fakeMemberships) Members(_ context.Context, tenantID string, page authn.Page) ([]authn.Membership, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pages++
+	m.steps.add("members")
+	if m.membersErr != nil {
+		return nil, m.membersErr
+	}
+	var all []authn.Membership
+	for _, held := range m.rows {
+		for _, membership := range held {
+			if membership.Tenant == tenantID {
+				all = append(all, membership)
+			}
+		}
+	}
+	slices.SortFunc(all, func(a, b authn.Membership) int {
+		return strings.Compare(string(a.Account), string(b.Account))
+	})
+	start := 0
+	for start < len(all) && page.After != "" && string(all[start].Account) <= page.After {
+		start++
+	}
+	all = all[start:]
+	if limit := page.EffectiveLimit(); len(all) > limit {
+		all = all[:limit]
+	}
+	return append([]authn.Membership(nil), all...), nil
+}
+
+// Remove deletes one membership.
+func (m *fakeMemberships) Remove(_ context.Context, id authn.AccountID, tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removes++
+	m.steps.add("remove:" + id.String())
+	if m.removeErr != nil {
+		return m.removeErr
+	}
+	held := m.rows[id]
+	kept := held[:0]
+	for _, membership := range held {
+		if membership.Tenant != tenantID {
+			kept = append(kept, membership)
+		}
+	}
+	if len(kept) == 0 {
+		delete(m.rows, id)
+	} else {
+		m.rows[id] = kept
+	}
+	return nil
 }
 
 func (m *fakeMemberships) Tenants(_ context.Context, id authn.AccountID) ([]authn.Membership, error) {
@@ -162,6 +295,13 @@ type fakeManager struct {
 	putRole    int
 	putBinding int
 	deleted    int
+
+	steps           *stepLog
+	bindingsErr     error
+	deleteBindErr   error
+	deletedBindings int
+	deleteRoleErr   error
+	deletedRoles    int
 }
 
 func newFakeManager(grants *fakeGrants) *fakeManager {
@@ -245,6 +385,60 @@ func (m *fakeManager) PutBinding(_ context.Context, binding authz.Binding) error
 	return nil
 }
 
+// Bindings lists every binding of a tenant.
+func (m *fakeManager) Bindings(_ context.Context, tenantID string) ([]authz.Binding, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.steps.add("bindings")
+	if m.bindingsErr != nil {
+		return nil, m.bindingsErr
+	}
+	return append([]authz.Binding(nil), m.bindings[tenantID]...), nil
+}
+
+// DeleteBinding removes one binding, and removing one that is not there is no
+// work.
+func (m *fakeManager) DeleteBinding(_ context.Context, tenantID, account string, role authz.Role) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deletedBindings++
+	m.steps.add("unbind:" + account + ":" + string(role))
+	if m.deleteBindErr != nil {
+		return m.deleteBindErr
+	}
+	held := m.bindings[tenantID]
+	kept := held[:0]
+	for _, binding := range held {
+		if binding.Account == account && binding.Role == role {
+			continue
+		}
+		kept = append(kept, binding)
+	}
+	m.bindings[tenantID] = kept
+	return nil
+}
+
+// DeleteRole removes a role with its grants and bindings. A builtin role is
+// refused with authz.ErrBuiltinRole; a role that is not there is no work.
+func (m *fakeManager) DeleteRole(_ context.Context, tenantID string, role authz.Role) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deletedRoles++
+	m.steps.add("role:" + string(role))
+	if m.deleteRoleErr != nil {
+		return m.deleteRoleErr
+	}
+	held := m.roles[tenantID]
+	kept := held[:0]
+	for _, record := range held {
+		if record.Role != role {
+			kept = append(kept, record)
+		}
+	}
+	m.roles[tenantID] = kept
+	return nil
+}
+
 // fakeSeeder is the authz.Seeder the unit cases use. It writes into the same
 // grant table the manager reads.
 type fakeSeeder struct {
@@ -299,15 +493,87 @@ func (fakeCatalog) ObjectAction(authz.Permission) (string, string, bool) {
 	return "", "", false
 }
 
+// stepLog records the order writes reached the stand-ins, so a case can pin a
+// fixed sequence across seams that are separate objects.
+type stepLog struct {
+	mu    sync.Mutex
+	steps []string
+}
+
+func (l *stepLog) add(step string) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.steps = append(l.steps, step)
+}
+
+func (l *stepLog) snapshot() []string {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.steps...)
+}
+
+func (l *stepLog) reset() {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.steps = nil
+}
+
+// recordedAudit is the audit.Audit the unit cases use. It keeps every accepted
+// entry and whether the context carried an identity, and fails on demand.
+type recordedAudit struct {
+	mu         sync.Mutex
+	entries    []audit.Entry
+	identities []bool
+	err        error
+	steps      *stepLog
+}
+
+func newRecordedAudit() *recordedAudit { return &recordedAudit{} }
+
+func (a *recordedAudit) Record(ctx context.Context, e audit.Entry) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.err != nil {
+		return a.err
+	}
+	_, identified := authn.FromContext(ctx)
+	a.entries = append(a.entries, e)
+	a.identities = append(a.identities, identified)
+	a.steps.add("audit:" + e.Action + ":" + e.Outcome)
+	return nil
+}
+
+// rows answers the entries accepted so far.
+func (a *recordedAudit) rows() []audit.Entry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]audit.Entry(nil), a.entries...)
+}
+
 // unitProduct assembles a personal product over the fakes. The verification
 // read reports no self-registration, which is the state the eligibility cases
 // that are not about verification run in.
 func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManager, *fakeSeeder) {
+	steps := &stepLog{}
 	roster := newFakeRoster()
+	roster.steps = steps
 	memberships := newFakeMemberships()
+	memberships.steps = steps
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
+	manager.steps = steps
 	seeder := newFakeSeeder(grants)
+	auditor := newRecordedAudit()
+	auditor.steps = steps
 	return &personalProduct{
 		config:      personalConfig{Enabled: true},
 		roster:      roster,
@@ -315,6 +581,7 @@ func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManage
 		manager:     manager,
 		seeder:      seeder,
 		catalog:     fakeCatalog{},
+		audit:       auditor,
 		logger:      log.Default(),
 	}, roster, memberships, manager, seeder
 }
