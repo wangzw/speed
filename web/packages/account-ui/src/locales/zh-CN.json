@@ -104,6 +104,7 @@
     "empty": "尚未设置任何两步验证方式。",
     "remove": "移除",
     "removeAria": "移除此两步验证方式：{{factor}}",
+    "removed": "{{factor}} 已移除。",
     "removeConfirm": {
       "title": "移除此两步验证方式？",
       "message": "移除后将不再要求使用它。账户至少需要保留一种登录方式。",
@@ -130,7 +131,8 @@
       "sms": "设置短信验证",
       "other": "添加其他验证方式",
       "confirmLabel": "确认",
-      "cancelLabel": "取消"
+      "cancelLabel": "取消",
+      "enrolled": "{{factor}} 已登记。"
     },
     "stepUp": {
       "title": "重新验证身份",

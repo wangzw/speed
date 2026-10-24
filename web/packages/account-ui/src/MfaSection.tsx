@@ -62,13 +62,14 @@ import {
   errorCodeOf,
   ListSkeleton,
   SectionCard,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { useFactorsQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface MfaSectionProps {
   /** The session that drives the enroll flow and the step-up dialog. */
@@ -136,8 +137,14 @@ export function MfaSection({ session }: MfaSectionProps) {
   const [enrolling, setEnrolling] = useState(false)
   // The row whose removal is being confirmed.
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
-  // Every failure answer: code text above the current view.
-  const [banner, setBanner] = useState<string | null>(null)
+  // The kind of the enrollment in progress, so its confirmation names the
+  // factor kind once the flow settles.
+  const [enrollKind, setEnrollKind] = useState<string | null>(null)
+  // Enrollment and removal are two control groups with their own scopes: the
+  // enrollment result sits below its entries, the removal result below the
+  // list, and one group's outcome never clears the other's.
+  const enrollFeedback = useWriteFeedback()
+  const removeFeedback = useWriteFeedback()
   // The deployment's enrollable factor kinds (GET /api/v1/auth/methods'
   // mfa.factors). null is unresolved -- still reading, or the read failed:
   // the enroll entries are then withheld rather than guessed.
@@ -172,7 +179,21 @@ export function MfaSection({ session }: MfaSectionProps) {
 
   const factors = data?.factors
   const pending = isPending && data === undefined
-  const busy = enrolling || removeMutation.isPending
+  // Disabled through the whole attempt, including the refetches that follow
+  // the mutation, so no control changes context under a pending scope.
+  const busy =
+    enrolling ||
+    removeMutation.isPending ||
+    enrollFeedback.pending ||
+    removeFeedback.pending
+
+  /** The translated name of a factor kind, the guarded vocabulary's generic
+   * label for a kind this package has no wording for. */
+  function factorKindLabel(kind: string): string {
+    return KNOWN_FACTOR_KINDS.has(kind)
+      ? t(`mfa.factor.kind.${kind}`)
+      : t('mfa.factor.kind.other')
+  }
   // Every kind the deployment reported gets an entry, in the document's
   // order. An unknown kind still starts that kind's flow -- the generic
   // label never turns a deployable factor into a missing entry.
@@ -185,85 +206,105 @@ export function MfaSection({ session }: MfaSectionProps) {
   }
 
   /** Start (or restart) an enrollment for one factor kind. */
-  async function startEnroll(factorKind: string): Promise<void> {
-    setBanner(null)
-    setEnrolling(true)
-    try {
-      const state = await session.startAuthenticatedFlow({
-        purpose: 'enroll',
-        input: { kind: factorKind },
-      })
-      if ('next' in state) {
-        setWizard({ step: state.next, seq: state.seq })
-        return
+  function startEnroll(factorKind: string): Promise<void> {
+    setEnrollKind(factorKind)
+    return enrollFeedback.run(async () => {
+      setEnrolling(true)
+      try {
+        const state = await session.startAuthenticatedFlow({
+          purpose: 'enroll',
+          input: { kind: factorKind },
+        })
+        if ('next' in state) {
+          setWizard({ step: state.next, seq: state.seq })
+          return null
+        }
+        if (state.state === 'enrolled') {
+          setWizard(null)
+          await invalidateFactors()
+          return t('mfa.enroll.enrolled', {
+            factor: factorKindLabel(factorKind),
+            interpolation: { escapeValue: false },
+          })
+        }
+        // A settled state other than 'enrolled' is not an enroll outcome.
+        enrollFeedback.fail({ code: 'client.unknown' })
+        return null
+      } catch (error) {
+        const code = errorCodeOf(error)
+        if (code === 'authn.insufficient_user_authentication') {
+          setGate({ kind: 'enroll', factorKind })
+          return null
+        }
+        throw error
+      } finally {
+        setEnrolling(false)
       }
-      if (state.state === 'enrolled') {
-        setWizard(null)
-        await invalidateFactors()
-        return
-      }
-      // A settled state other than 'enrolled' is not an enroll outcome.
-      setBanner('client.unknown')
-    } catch (error) {
-      const code = errorCodeOf(error)
-      if (code === 'authn.insufficient_user_authentication') {
-        setGate({ kind: 'enroll', factorKind })
-        return
-      }
-      setBanner(code)
-    } finally {
-      setEnrolling(false)
-    }
+    })
   }
 
   /** Answer the open enrollment's current step. */
-  async function answerEnroll(answer: FlowStepAnswer): Promise<void> {
+  function answerEnroll(answer: FlowStepAnswer): Promise<void> {
     if (wizard === null) {
-      return
+      return Promise.resolve()
     }
-    setBanner(null)
-    setEnrolling(true)
-    try {
-      const state = await session.answerFlow({
-        seq: wizard.seq,
-        step: answer.step,
-        input: answer.input,
-      })
-      if ('next' in state) {
-        setWizard({ step: state.next, seq: state.seq })
-        return
-      }
-      if (state.state === 'enrolled') {
+    const kind = enrollKind ?? ''
+    return enrollFeedback.run(async () => {
+      setEnrolling(true)
+      try {
+        const state = await session.answerFlow({
+          seq: wizard.seq,
+          step: answer.step,
+          input: answer.input,
+        })
+        if ('next' in state) {
+          setWizard({ step: state.next, seq: state.seq })
+          return null
+        }
+        if (state.state === 'enrolled') {
+          setWizard(null)
+          await invalidateFactors()
+          return t('mfa.enroll.enrolled', {
+            factor: factorKindLabel(kind),
+            interpolation: { escapeValue: false },
+          })
+        }
+        // A settled state other than 'enrolled' is not an enroll outcome.
         setWizard(null)
-        await invalidateFactors()
-        return
+        enrollFeedback.fail({ code: 'client.unknown' })
+        return null
+      } finally {
+        setEnrolling(false)
       }
-      // A settled state other than 'enrolled' is not an enroll outcome.
-      setBanner('client.unknown')
-      setWizard(null)
-    } catch (error) {
-      setBanner(errorCodeOf(error))
-    } finally {
-      setEnrolling(false)
-    }
+    })
   }
 
   /** Remove one factor. */
-  async function removeFactor(factorId: string): Promise<void> {
-    setBanner(null)
-    try {
-      await removeMutation.mutateAsync({ id: factorId })
+  function removeFactor(factorId: string): Promise<void> {
+    // Captured before the write: the refetched list drops the row, so the
+    // confirmation's name must be read from the list this attempt acted on.
+    const removedKind =
+      factors?.find((factor) => factor.id === factorId)?.kind ?? ''
+    return removeFeedback.run(async () => {
+      try {
+        await removeMutation.mutateAsync({ id: factorId })
+      } catch (error) {
+        setRemoveTarget(null)
+        const code = errorCodeOf(error)
+        if (code === 'authn.insufficient_user_authentication') {
+          setGate({ kind: 'remove', factorId })
+          return null
+        }
+        throw error
+      }
       setRemoveTarget(null)
       await invalidateFactors()
-    } catch (error) {
-      setRemoveTarget(null)
-      const code = errorCodeOf(error)
-      if (code === 'authn.insufficient_user_authentication') {
-        setGate({ kind: 'remove', factorId })
-        return
-      }
-      setBanner(code)
-    }
+      // The confirmation names the factor kind removed.
+      return t('mfa.removed', {
+        factor: factorKindLabel(removedKind),
+        interpolation: { escapeValue: false },
+      })
+    })
   }
 
   function handleStepUpSuccess(): void {
@@ -279,8 +320,6 @@ export function MfaSection({ session }: MfaSectionProps) {
   return (
     <>
       <SectionCard title={t('mfa.title')}>
-        <InlineError code={banner} />
-
         <AsyncSection
         pending={pending}
         payload={factors}
@@ -313,12 +352,15 @@ export function MfaSection({ session }: MfaSectionProps) {
                   disabled={enrolling}
                   onClick={() => {
                     setWizard(null)
-                    setBanner(null)
+                    enrollFeedback.reset()
                   }}
                 >
                   {t('mfa.enroll.cancelLabel')}
                 </Button>
               </Box>
+              {/* The enrollment group's result, below the step and its
+                  actions. */}
+              <WriteFeedbackRegion outcome={enrollFeedback.outcome} />
             </Box>
           ) : (
             <Box>
@@ -407,6 +449,10 @@ export function MfaSection({ session }: MfaSectionProps) {
                 </Typography>
               )}
 
+              {/* The removal group's result, below the list its row actions
+                  belong to. */}
+              <WriteFeedbackRegion outcome={removeFeedback.outcome} />
+
               {enrollEntries.length > 0 && (
                 <Box
                   sx={{
@@ -442,6 +488,9 @@ export function MfaSection({ session }: MfaSectionProps) {
                       </Button>
                     ))}
                   </Box>
+                  {/* The enrollment group's result, below the entries that
+                      started it. */}
+                  <WriteFeedbackRegion outcome={enrollFeedback.outcome} />
                 </Box>
               )}
             </Box>

@@ -172,6 +172,13 @@ describe('MfaSection', () => {
     await waitFor(() =>
       expect(screen.getByText(zhCN.mfa.empty)).toBeTruthy(),
     )
+    // The removal now confirms itself, naming the factor kind removed.
+    expect(zhCN.mfa.removed).toContain('{{factor}}')
+    expect(
+      await screen.findByText(
+        zhCN.mfa.removed.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+      ),
+    ).toBeTruthy()
     expect(
       rig.calls.filter(
         (call) => call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-1',
@@ -374,6 +381,16 @@ describe('MfaSection', () => {
     )
 
     await waitFor(() => expect(screen.getByText('My authenticator')).toBeTruthy())
+    // The completed enrollment confirms itself, naming the factor kind.
+    expect(zhCN.mfa.enroll.enrolled).toContain('{{factor}}')
+    expect(
+      await screen.findByText(
+        zhCN.mfa.enroll.enrolled.replace(
+          '{{factor}}',
+          zhCN.mfa.factor.kind.totp,
+        ),
+      ),
+    ).toBeTruthy()
     const answers = rig.calls.filter(
       (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
     )

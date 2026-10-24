@@ -104,6 +104,7 @@
     "empty": "No two-step verification method is set up yet.",
     "remove": "Remove",
     "removeAria": "Remove this two-step verification method: {{factor}}",
+    "removed": "{{factor}} removed.",
     "removeConfirm": {
       "title": "Remove this two-step verification method?",
       "message": "Removing it means you will no longer be asked for it. An account must keep at least one sign-in method.",
@@ -130,7 +131,8 @@
       "sms": "Set up text-message verification",
       "other": "Add another verification method",
       "confirmLabel": "Confirm",
-      "cancelLabel": "Cancel"
+      "cancelLabel": "Cancel",
+      "enrolled": "{{factor}} added."
     },
     "stepUp": {
       "title": "Verify your identity",
