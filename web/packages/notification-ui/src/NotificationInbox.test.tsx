@@ -568,9 +568,18 @@ describe('NotificationInbox', () => {
     ]
     const responder = inboxResponder(rows)
     let listReads = 0
+    // The test decides when a list read stays in flight: it is switched on
+    // only for the retry, so the stale refresh itself keeps settling.
+    let holdNextRead = false
+    const heldReads: Array<(response: Response) => void> = []
     const rig = makeRealClientRigWithoutSession((call) => {
       if (call.path === MESSAGES_PATH && call.method === 'GET') {
         listReads += 1
+        if (holdNextRead) {
+          return new Promise<Response>((resolve) => {
+            heldReads.push(resolve)
+          })
+        }
         // The first read settles the list; every later refresh fails.
         if (listReads > 1) {
           return jsonResponse(503, {})
@@ -598,9 +607,21 @@ describe('NotificationInbox', () => {
     expect(screen.queryByText(zhCN.inbox.error.title)).not.toBeInTheDocument()
 
     const retry = screen.getByRole('button', { name: zhCN.inbox.retry })
-    const readsBeforeRetry = listReads
+    holdNextRead = true
     await userEvent.click(retry)
-    await waitFor(() => expect(listReads).toBeGreaterThan(readsBeforeRetry))
+    await waitFor(() => expect(heldReads.length).toBeGreaterThan(0))
+
+    // While the retry is in flight the notice is withdrawn through the
+    // read's own fetching state, not left standing.
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText('Build finished')).toBeInTheDocument()
+
+    holdNextRead = false
+    await act(async () => {
+      for (const settle of heldReads.splice(0)) {
+        settle(jsonResponse(503, {}))
+      }
+    })
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.stale.description,
     )
