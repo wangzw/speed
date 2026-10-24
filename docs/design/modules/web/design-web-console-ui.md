@@ -549,7 +549,7 @@ graph TD
 | 短信模板页（列出、登记、提交、开关、移除） | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/routes.tsx` `smsAdminRoutes` |
 | 短信模板页的读取失败一律落到通用失败面，写入表单不收起 | 未实现 | — |
 | 审计查询页（筛选、游标分页、操作者可读身份） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/routes.tsx` `auditAdminRoutes` |
-| 审计查询页的导出控件（按已应用的筛选下载 NDJSON 文件） | 未实现 | — |
+| 审计查询页的导出控件（按已应用的筛选下载 NDJSON 文件） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`、`startExport`；`web/packages/console-ui/src/operations.tsx` `exportAuditRecords`；`web/packages/console-ui/src/internal/export-file.ts` `exportFileName`、`saveBlob`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 按租户寻址页面的租户选择器 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |
 | 账户选择器（按显示名或登录标识检索，交出账户 id） | 已实现 | `web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
 | 账户的创建、改动、状态变更、MFA 要求、口令重置、标识新增、服务密钥新建 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/operations.tsx` `useCreateAccount`、`usePatchAccount`、`useSetAccountStatus`、`useSetMFARequired`、`useResetPassword`、`useAddIdentifier`、`useCreateSecret` |
