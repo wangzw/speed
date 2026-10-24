@@ -172,11 +172,12 @@ describe('MfaSection', () => {
     await waitFor(() =>
       expect(screen.getByText(zhCN.mfa.empty)).toBeTruthy(),
     )
-    // The removal now confirms itself, naming the factor kind removed.
+    // The removal confirms itself, naming the factor row removed -- its own
+    // label, not just its kind.
     expect(zhCN.mfa.removed).toContain('{{factor}}')
     expect(
       await screen.findByText(
-        zhCN.mfa.removed.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+        zhCN.mfa.removed.replace('{{factor}}', 'My authenticator'),
       ),
     ).toBeTruthy()
     expect(
@@ -400,6 +401,167 @@ describe('MfaSection', () => {
       input: { code: '123456' },
     })
     expect(answers[1]?.body).toEqual({ seq: 2, step: 'complete' })
+  })
+
+  it('names the removed row when two factors share a kind', async () => {
+    // Two authenticator-app factors with different labels: the confirmation
+    // must say which row went, not just its kind.
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: removed
+            ? [factor({ id: 'factor-1', kind: 'totp', label: 'Phone app' })]
+            : [
+                factor({ id: 'factor-1', kind: 'totp', label: 'Phone app' }),
+                factor({ id: 'factor-2', kind: 'totp', label: 'Tablet app' }),
+              ],
+        })
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-2') {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const removeButtons = await screen.findAllByRole('button', {
+      name: zhCN.mfa.removeAria.replace(
+        '{{factor}}',
+        zhCN.mfa.factor.kind.totp,
+      ),
+    })
+    expect(removeButtons).toHaveLength(2)
+    await user.click(removeButtons[1] as HTMLElement)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    expect(
+      await screen.findByText(
+        zhCN.mfa.removed.replace('{{factor}}', 'Tablet app'),
+      ),
+    ).toBeTruthy()
+    // The surviving same-kind row and the bare kind are not what it names.
+    expect(
+      screen.queryByText(
+        zhCN.mfa.removed.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
+      ),
+    ).toBeNull()
+    expect(
+      screen.queryByText(zhCN.mfa.removed.replace('{{factor}}', 'Phone app')),
+    ).toBeNull()
+  })
+
+  it('keeps the enrollment confirmation when a removal settles later', async () => {
+    // Enrollment and removal are two control groups with their own scopes:
+    // settling the removal must not clear the enrollment's confirmation.
+    let enrolled = false
+    let removed = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        if (removed) {
+          return jsonResponse(200, {
+            factors: [
+              factor({ id: 'factor-new', kind: 'totp', label: 'My authenticator' }),
+            ],
+          })
+        }
+        return jsonResponse(200, {
+          factors: enrolled
+            ? [
+                factor({ id: 'factor-old', kind: 'totp', label: 'Old app' }),
+                factor({
+                  id: 'factor-new',
+                  kind: 'totp',
+                  label: 'My authenticator',
+                }),
+              ]
+            : [factor({ id: 'factor-old', kind: 'totp', label: 'Old app' })],
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_START) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'enroll',
+          next: { kind: 'webauthn', options: { otpauth_uri: OTPAUTH_URI } },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number; step: string }
+        if (body.step === 'enroll') {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'ready',
+            next: { kind: 'complete' },
+          })
+        }
+        enrolled = true
+        return jsonResponse(200, { state: 'enrolled' })
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/factors/factor-old') {
+        removed = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.mfa.enroll.totp }),
+    )
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+    )
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.mfa.enroll.confirmLabel }),
+    )
+
+    const enrollText = zhCN.mfa.enroll.enrolled.replace(
+      '{{factor}}',
+      zhCN.mfa.factor.kind.totp,
+    )
+    expect(await screen.findByText(enrollText)).toBeTruthy()
+
+    // Remove the pre-existing row through its own scope.
+    const removeButtons = await screen.findAllByRole('button', {
+      name: zhCN.mfa.removeAria.replace(
+        '{{factor}}',
+        zhCN.mfa.factor.kind.totp,
+      ),
+    })
+    await user.click(removeButtons[0] as HTMLElement)
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: zhCN.mfa.removeConfirm.confirmLabel,
+      }),
+    )
+
+    const removeText = zhCN.mfa.removed.replace('{{factor}}', 'Old app')
+    expect(await screen.findByText(removeText)).toBeTruthy()
+    // Both outcomes stand, each in its own control group's region.
+    const enrollRegion = screen.getByText(enrollText).closest('[role="status"]')
+    const removeRegion = screen.getByText(removeText).closest('[role="status"]')
+    expect(enrollRegion).not.toBeNull()
+    expect(removeRegion).not.toBeNull()
+    expect(enrollRegion).not.toBe(removeRegion)
   })
 
   it('renders no payload when a TOTP step carries no setup URI', async () => {

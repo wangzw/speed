@@ -32,6 +32,9 @@
  *    authn.insufficient_user_authentication, which opens the step-up dialog and, on
  *    success, re-runs the removal exactly once. A 409 (the factor is the
  *    account's last one) renders its code text and the section stays put.
+ *    A landed removal confirms itself below the list, naming the row that
+ *    went -- its own label when it has one, else its kind -- because two
+ *    factors of one kind can stand side by side.
  *
  * Both gated entries share one dialog: the pending action is remembered
  * so a success re-runs exactly that action and a cancel re-runs nothing.
@@ -283,8 +286,15 @@ export function MfaSection({ session }: MfaSectionProps) {
   function removeFactor(factorId: string): Promise<void> {
     // Captured before the write: the refetched list drops the row, so the
     // confirmation's name must be read from the list this attempt acted on.
-    const removedKind =
-      factors?.find((factor) => factor.id === factorId)?.kind ?? ''
+    // It names that row -- its own label when it has one, else its kind --
+    // because two factors of one kind can stand side by side.
+    const removed = factors?.find((factor) => factor.id === factorId)
+    const removedLabel =
+      removed === undefined
+        ? ''
+        : removed.label != null && removed.label !== ''
+          ? removed.label
+          : factorKindLabel(removed.kind ?? '')
     return removeFeedback.run(async () => {
       try {
         await removeMutation.mutateAsync({ id: factorId })
@@ -299,9 +309,9 @@ export function MfaSection({ session }: MfaSectionProps) {
       }
       setRemoveTarget(null)
       await invalidateFactors()
-      // The confirmation names the factor kind removed.
+      // The confirmation names the factor row removed.
       return t('mfa.removed', {
-        factor: factorKindLabel(removedKind),
+        factor: removedLabel,
         interpolation: { escapeValue: false },
       })
     })
