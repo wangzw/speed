@@ -42,6 +42,7 @@ import (
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
@@ -247,7 +248,10 @@ func init() { core.ProcessRegistry.Register(personalModule()) }
 //
 // The module provides the account lifecycle hook: the personal tenant follows
 // the account that owns it, and the account module calls the hooks after its own
-// transaction commits.
+// transaction commits. Where the assembly also carries an event bus, the module
+// subscribes the account events and runs the same idempotent hooks again, so a
+// process that stopped between the account's commit and the hooks leaves nothing
+// for good: the staging outbox delivers the event after the restart.
 //
 // The descriptor declares its OpenAPI fragment on the account endpoint: the
 // contract belongs to the application's own second-level generation, not to a
@@ -266,6 +270,8 @@ func personalModule() core.Module {
 			{Token: (*feature.Board)(nil), Optional: true},
 			{Token: (*authn.Gate)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
+			{Token: (*event.Bus)(nil), Optional: true},
+			{Token: (*authn.Accounts)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.AccountLifecycle)(nil)},
@@ -351,6 +357,14 @@ type personalProduct struct {
 	catalog     authz.Catalog
 	audit       audit.Audit
 	logger      *slog.Logger
+	// accounts is the read the event compensation makes to decide the account's
+	// current state; it is nil in an assembly without the account read surface,
+	// where the event's own target is the best evidence available.
+	accounts personalAccountReader
+	// bus is where the compensation subscribes; nil in an assembly without one,
+	// which leaves the synchronous hooks as the only route.
+	bus  event.Bus
+	seen *personalSeenEvents
 }
 
 // personalProductOf narrows an instance to this module's product. An instance of
@@ -399,9 +413,20 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 		catalog:     catalog,
 		audit:       auditor,
 		logger:      log.Default(),
+		seen:        newPersonalSeenEvents(personalSeenEventsCapacity),
 	}
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(personalModuleName)
+	}
+	if accounts, found, err := optionalPersonal[authn.Accounts](reg, "the account read surface"); err != nil {
+		return nil, err
+	} else if found {
+		p.accounts = accounts
+	}
+	if bus, found, err := optionalPersonal[event.Bus](reg, "the event bus"); err != nil {
+		return nil, err
+	} else if found {
+		p.bus = bus
 	}
 	return p, nil
 }
@@ -409,7 +434,14 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 // wire mounts the route and posts the feature when the switch is on. Every piece
 // is idempotent-by-absence: an off switch or an assembly without an entry point
 // mounts nothing, and the feature is posted only when the route is mounted.
+//
+// The event compensation is subscribed before the switch is read: the hooks are
+// part of what the module provides to the account module whether or not the
+// route is mounted, and a switch that is off withdraws the route, not the
+// tenant's lifecycle. Subscribing it here rather than in New is what the bus
+// requires: it accepts subscriptions in Init.
 func (p *personalProduct) wire(reg *core.Registry) error {
+	p.subscribe()
 	if !p.config.Enabled {
 		p.logger.Info(personalModuleName + ": the personal tenant is off; the route is not mounted")
 		return nil
