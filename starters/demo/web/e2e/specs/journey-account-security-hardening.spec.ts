@@ -30,17 +30,28 @@
  * WHAT IS NOT ASSERTED. The sessions section renders the device summary, the
  * sign-in time, the last-active time (when it differs) and the current-session
  * marker, but no expiry: REQ-security-022's expiry field has no rendered
- * surface, so only the rendered parts are claimed. The step-up's alternate
+ * surface on the account page, and a last-active line appears only once a
+ * coalesced touch moves it past the creation instant. Neither is asserted, so
+ * REQ-security-022 is not claimed; the absence of that surface is a product
+ * gap, not something this spec may cover over. The step-up's alternate
  * branches -- cancelling the dialog, and an account with only one factor that
- * offers a re-login exit (REQ-security-017) -- are unreachable here because the
- * journey enrols two factor kinds and completes the dialog; they stay out of
- * `@covers`. One wrong-current-password check is not driven either.
+ * offers a re-login exit (REQ-security-017) -- are unreachable here because
+ * the journey enrols two factor kinds and completes the dialog. Two
+ * requirement clauses are also left undriven, so their ids stay out of
+ * `@covers`: REQ-security-002's refused-code clause (only the accepted path is
+ * driven), and REQ-security-015's "a method registered during this session is
+ * not offered" clause -- the only kind this account can register after the
+ * session's authentication is the authenticator app, the channel the session
+ * already proved, so its exclusion cannot be told apart from the channel rule;
+ * only the other clause, that a method enabled before the session on a
+ * different channel is offered, is driven. One wrong-current-password check is
+ * not driven either.
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts.
  */
 // @journey journey-account-security-hardening.md
-// @covers REQ-account-007, REQ-security-001, REQ-security-002, REQ-security-003, REQ-security-008, REQ-security-013, REQ-security-014, REQ-security-015, REQ-security-022, REQ-security-023, REQ-security-025, REQ-security-030, REQ-signin-006
+// @covers REQ-account-007, REQ-security-001, REQ-security-003, REQ-security-008, REQ-security-013, REQ-security-014, REQ-security-023, REQ-security-025, REQ-security-030, REQ-signin-006
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts, type Accounts } from '../helpers/accounts'
@@ -55,6 +66,11 @@ import {
 // The account self-service freshness window this server lowers to the
 // setting's domain floor, so the step-up branch is reachable in a browser run.
 test.use({ recentWindow: '1m', viewport: { width: 1440, height: 1200 } })
+
+// The file's per-test bound covers fixture assembly as well as the journey:
+// the server's seed, start and probes run inside the same clock, so a slow
+// assembly reports the harness's own diagnostics instead of a bare timeout.
+test.describe.configure({ timeout: 300_000 })
 
 /** The lowered `authn.mfa.recent-window`, in milliseconds. */
 const RECENT_WINDOW_MS = 60_000
@@ -160,11 +176,19 @@ function signInButton(page: Page): Locator {
  */
 let lastCodeStep = -1
 
+// The tracker belongs to one test's run, not to the module: a second test in
+// this file (or a repeat) must not inherit a window the first one used.
+test.beforeEach(() => {
+  lastCodeStep = -1
+})
+
 /**
  * A code for the next window this spec has not used, computing it at the
  * moment it is typed. The wait is not a render state: it is the authenticator's
  * own thirty-second window, which a second submission in the same window would
- * be refused for.
+ * be refused for. The step is sampled once and the code generated for that
+ * same step, so a window boundary falling between the two would not stamp a
+ * code from one window as the last used in another.
  */
 async function nextTotpCode(secret: string): Promise<string> {
   const stepMs = 30_000
@@ -178,7 +202,7 @@ async function nextTotpCode(secret: string): Promise<string> {
     step = Math.floor(Date.now() / stepMs)
   }
   lastCodeStep = step
-  return totpCode(secret)
+  return totpCode(secret, new Date(step * stepMs))
 }
 
 /**
@@ -259,8 +283,9 @@ test('account-security-hardening: an account enrols two factors, ends another de
   browser,
 }) => {
   // Registration, two sign-ins on device A, a second device, a revoked device,
-  // the freshness window and the step-up's own clicks.
-  test.setTimeout(300_000)
+  // the freshness window and the step-up's own clicks. The file-level
+  // `test.describe.configure` above sets the bound for this test, fixture
+  // assembly included.
 
   const { page, server } = demo
   const accounts: Accounts = demo.accounts
@@ -452,26 +477,24 @@ test('account-security-hardening: an account enrols two factors, ends another de
           exact: true,
         }),
       ).toBeVisible()
-      // The wizard renders a Cancel of its own below the step, so the
-      // ceremony's control is the first of the two.
-      await expect(
-        mfa
-          .getByRole('button', {
-            name: copy('accountUi', 'flowStep.passkeyCancel'),
-            exact: true,
-          })
-          .first(),
-      ).toBeVisible()
+      // The wizard renders a Cancel of its own below the step, and the
+      // ceremony's Cancel carries the same text. Scope to the step's own block
+      // through the prompt it renders, so the choice never depends on DOM
+      // order or on which sentence the two controls happen to share.
+      const ceremony = mfa
+        .getByText(copy('accountUi', 'flowStep.passkeyRegisterPrompt'), {
+          exact: true,
+        })
+        .locator('xpath=..')
+      const ceremonyCancel = ceremony.getByRole('button', {
+        name: copy('accountUi', 'flowStep.passkeyCancel'),
+        exact: true,
+      })
+      await expect(ceremonyCancel).toBeVisible()
 
       // Cancelling the ceremony fails the attempt and offers the retry; the
       // retry completes against the device.
-      await mfa
-        .getByRole('button', {
-          name: copy('accountUi', 'flowStep.passkeyCancel'),
-          exact: true,
-        })
-        .first()
-        .click()
+      await ceremonyCancel.click()
       await expect(
         mfa.getByText(copy('accountUi', 'flowStep.passkeyCancelled'), {
           exact: true,
@@ -595,15 +618,29 @@ test('account-security-hardening: an account enrols two factors, ends another de
       const deviceB = deviceBPage
       const ended = sessionEndedHeading(deviceB)
       // The revocation may also end the frame through the live notification
-      // stream; when it has not, one in-app page open is the request the step
-      // describes. The state-based wait below asserts either way.
-      if (!(await ended.isVisible())) {
+      // stream before this point. Until the ended surface appears, drive the
+      // next request the step describes -- open the account page from the
+      // header -- and retry the attempt, because a click may land while the
+      // shell is swapping identities. The assertion is on the rendered ended
+      // surface, not on the click.
+      await expect(async () => {
+        if (await ended.isVisible()) {
+          return
+        }
         const link = accountLink(deviceB)
         if ((await link.count()) > 0) {
-          await link.click().catch(() => undefined)
+          await link.click({ timeout: 1_000 }).catch(() => undefined)
+        } else {
+          // No header left to click: the next request is the reload.
+          await deviceB.reload().catch(() => undefined)
         }
-      }
-      await expect(ended).toBeVisible({ timeout: 15_000 })
+        if (!(await ended.isVisible())) {
+          throw new Error(
+            'the revoked device still shows an authenticated surface after a request',
+          )
+        }
+      }).toPass({ timeout: 15_000, intervals: [500] })
+      await expect(ended).toBeVisible()
       await expect(
         deviceB.getByRole('button', {
           name: copy('authUi', 'sessionEnded.signInAction'),
@@ -662,7 +699,7 @@ test('account-security-hardening: an account enrols two factors, ends another de
           name: copy('accountUi', 'mfa.factor.kind.webauthn'),
           exact: true,
         }),
-      ).toBeVisible()
+      ).toHaveCount(1)
       await expect(
         dialog.getByRole('button', {
           name: copy('accountUi', 'mfa.factor.kind.totp'),
@@ -677,34 +714,35 @@ test('account-security-hardening: an account enrols two factors, ends another de
         })
         .click()
 
-      // The assertion step: one control drives the ceremony, and a settled
-      // flow parks its ready step as one further confirmation of the same
-      // control. The loop closes the dialog either way.
+      // The passkey step's own control starts the ceremony. Once it settles,
+      // the step is replaced by the parked `complete` step, whose confirmation
+      // carries the same label; waiting for the prompt to leave keeps the
+      // second click off the start control while the ceremony is working.
       const verify = dialog.getByRole('button', {
         name: copy('accountUi', 'mfa.stepUp.confirmLabel'),
         exact: true,
       })
       await expect(verify).toBeVisible()
       await verify.click()
-      await expect(async () => {
-        if (!(await dialog.isVisible())) {
-          return
-        }
-        const parked = dialog.getByRole('button', {
-          name: copy('accountUi', 'mfa.stepUp.confirmLabel'),
+      await expect(
+        dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
           exact: true,
-        })
-        if ((await parked.count()) === 0) {
-          throw new Error(
-            'the step-up dialog is still open without its confirmation',
-          )
-        }
-        await parked.click()
-        await expect(dialog).toHaveCount(0)
-      }).toPass({ timeout: 30_000, intervals: [500] })
+        }),
+      ).toHaveCount(0, { timeout: 30_000 })
+      const parked = dialog.getByRole('button', {
+        name: copy('accountUi', 'mfa.stepUp.confirmLabel'),
+        exact: true,
+      })
+      await expect(parked).toHaveCount(1)
+      await parked.click()
+      await expect(dialog).toHaveCount(0, { timeout: 30_000 })
 
       // The won challenge replays the refused change exactly once; the write
-      // rotates the session token and the page stays signed in.
+      // rotates the session token and the page stays signed in. Staying on the
+      // account surface depends on the product's identity-transition guard
+      // discarding an anonymous read that lands under the rotated credential:
+      // a hole there flashes the shell to the session-ended surface, and these
+      // assertions are where it shows.
       await expect(
         page.getByText(copy('accountUi', 'password.changed'), {
           exact: true,

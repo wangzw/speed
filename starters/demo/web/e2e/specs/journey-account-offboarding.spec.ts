@@ -47,16 +47,18 @@
  * "continue in place". The account's session list then holds one row, the
  * current session: both pre-disable sessions (context A's and context B's
  * earlier one) are gone, so the count is what discriminates a revocation from
- * a stale list. REQ-security-022 is claimed only as far as this surface
- * renders it -- the rows, the current-session marker and the sign-in line; the
- * expiry field of that requirement is not on this page, and the device summary
- * is derived from the user agent, so neither is asserted.
+ * a stale list. REQ-security-022 is not claimed: the rows, the current-session
+ * marker and the sign-in line render, but not the expiry field the requirement
+ * lists, and a last-active line appears only once a coalesced touch moves it
+ * past the creation instant. This surface therefore cannot fail for a product
+ * that omits either, so the id stays out of `@covers`; the registry keeps the
+ * document's full list.
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts.
  */
 // @journey journey-account-offboarding.md
-// @covers REQ-platform-admin-012, REQ-presentation-027, REQ-security-022, REQ-security-025, REQ-signin-006, REQ-signin-007, REQ-signin-030, REQ-tenancy-022
+// @covers REQ-platform-admin-012, REQ-presentation-027, REQ-security-025, REQ-signin-006, REQ-signin-007, REQ-signin-030, REQ-tenancy-022
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts } from '../helpers/accounts'

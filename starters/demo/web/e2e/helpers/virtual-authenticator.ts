@@ -61,6 +61,14 @@ export async function addVirtualAuthenticator(
       })
     },
     async close(): Promise<void> {
+      // Remove the authenticator before detaching, so cleanup does not rest on
+      // the page context being destroyed: a context that outlives this helper
+      // would otherwise keep answering ceremonies with it. A target that is
+      // already gone is the one case the command fails in, and detaching is
+      // then all that remains.
+      await session
+        .send('WebAuthn.removeVirtualAuthenticator', { authenticatorId })
+        .catch(() => undefined)
       await session.detach().catch(() => undefined)
     },
   }

@@ -52,13 +52,15 @@
  * absent from `@covers`: they describe a refused write, a cleared preference,
  * a step-up replay and the write-then-switch ordering, none of which the main
  * success path can observe. The registry keeps the document's full list.
- * REQ-security-022 is claimed only as far as this surface renders it: the
- * session list, its current-session marker and the sign-in time. The same
- * requirement's expiry field is not on this page, and the device summary's
- * text is derived from the user agent, so neither is asserted here.
+ * REQ-security-022 is not claimed: the account page renders the session list,
+ * its current-session marker and the sign-in time, but not the expiry field
+ * the requirement lists, and a last-active line appears only once a coalesced
+ * touch moves it past the creation instant. This surface therefore cannot fail
+ * for a product that omits either, so the id stays out of `@covers`; the
+ * registry keeps the document's full list.
  */
 // @journey journey-personalize-interface.md
-// @covers REQ-account-003, REQ-account-033, REQ-presentation-003, REQ-presentation-004, REQ-presentation-007, REQ-presentation-008, REQ-presentation-010, REQ-presentation-030, REQ-security-022
+// @covers REQ-account-003, REQ-account-033, REQ-presentation-003, REQ-presentation-004, REQ-presentation-007, REQ-presentation-008, REQ-presentation-010, REQ-presentation-030
 import type { Locator, Page } from '@playwright/test'
 
 import { reviewMember } from '../fixtures/config'
