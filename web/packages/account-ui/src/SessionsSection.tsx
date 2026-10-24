@@ -159,7 +159,7 @@ export function SessionsSection() {
 
   const [othersConfirmOpen, setOthersConfirmOpen] = useState(false)
   // One scope for the section: the row revoke and the bulk revoke share the
-  // result position above the list, so a success and a failure never stand
+  // result position below the list, so a success and a failure never stand
   // together. Each success names what changed -- the signed-out session or
   // the count of other devices.
   const feedback = useWriteFeedback()
@@ -314,16 +314,10 @@ export function SessionsSection() {
           )
           return (
           <Box>
-            {/* The section's one result position, above the list: a row
-                revoke and the bulk revoke share it, so a success and a
-                failure never stand together. The success region is always
-                mounted as a polite status, so the notice announces on the
-                empty-to-filled edge. */}
-            <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mb: 1.5 }} />
             {/* The rows are one real list: a screen-reader user hears each
                 session as one item of a numbered set with a boundary
-                between rows, never a flat div stack. The notices above are
-                page-level messages and stay outside the list. role="list"
+                between rows, never a flat div stack. The result region
+                below is page-level and stays outside the list. role="list"
                 keeps the list semantics under WebKit, which strips them
                 from a list-style-none ul. */}
             <Box component="ul" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
@@ -488,8 +482,13 @@ export function SessionsSection() {
                 <Button
                   size="small"
                   variant="outlined"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage(currentPage - 1)}
+                  disabled={busy || currentPage <= 1}
+                  onClick={() => {
+                    // Paging changes what the list describes: the settled
+                    // result would otherwise name a device on another page.
+                    feedback.reset()
+                    setPage(currentPage - 1)
+                  }}
                 >
                   {t('sessions.prevPage')}
                 </Button>
@@ -502,8 +501,11 @@ export function SessionsSection() {
                 <Button
                   size="small"
                   variant="outlined"
-                  disabled={currentPage >= pageCount}
-                  onClick={() => setPage(currentPage + 1)}
+                  disabled={busy || currentPage >= pageCount}
+                  onClick={() => {
+                    feedback.reset()
+                    setPage(currentPage + 1)
+                  }}
                 >
                   {t('sessions.nextPage')}
                 </Button>
@@ -513,6 +515,12 @@ export function SessionsSection() {
           )
         }}
       </AsyncSection>
+      {/* The section's one result position, below the list and its pager whose
+          row and section actions write into it: a row revoke and the bulk
+          revoke share it, so a success and a failure never stand together.
+          It stays outside the settled content, so it is still rendered while
+          the list is empty or a load failed. */}
+      <WriteFeedbackRegion outcome={feedback.outcome} sx={{ mt: 2 }} />
       </SectionCard>
 
       <ConfirmDialog

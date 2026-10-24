@@ -9,8 +9,9 @@
  * session and refetches the list, so the revoked row is gone; the
  * section-top "sign out other devices" action sits behind the danger
  * double-confirm, DELETE-s the collection and surfaces the answer's
- * revoked count; a refused revoke renders its code text above the list;
- * and the settled states split -- an answer listing zero sessions renders
+ * revoked count; a refused revoke renders its code text below the list;
+ * paging clears the settled result and is held while an attempt is in
+ * flight; and the settled states split -- an answer listing zero sessions renders
  * the empty state, a load that failed (and an answer omitting the
  * sessions key) renders the error state with a retry. The display-timezone
  * cases pin the chain: a stored profile time zone outranks the host's
@@ -358,6 +359,137 @@ describe('SessionsSection', () => {
         (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
       ).length,
     ).toBeGreaterThanOrEqual(2)
+    // The confirmation sits below the list whose row action wrote it, not
+    // above it.
+    const confirmation = screen.getByText(
+      zhCN.sessions.revokedOne.replace(
+        '{{device}}',
+        zhCN.sessions.deviceUnknown,
+      ),
+    )
+    expect(
+      screen
+        .getByRole('list')
+        .compareDocumentPosition(confirmation) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('clears a row result when the list pages', async () => {
+    // Paging changes what the list describes: a settled result naming a
+    // device must not stand over the next page's rows.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 12 }, (_, index) =>
+            session({ id: `session-${index}`, user_agent: '' }),
+          ),
+        })
+      }
+      if (call.method === 'DELETE' && call.path === `${SESSIONS_PATH}/session-2`) {
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await screen.findByRole('heading', { name: zhCN.sessions.title })
+    await waitFor(() =>
+      expect(screen.getAllByRole('listitem')).toHaveLength(8),
+    )
+    const revokeButtons = screen.getAllByRole('button', {
+      name: revokeAria(zhCN.sessions.deviceUnknown),
+    })
+    await user.click(revokeButtons[2] as HTMLElement)
+
+    const confirmation = zhCN.sessions.revokedOne.replace(
+      '{{device}}',
+      zhCN.sessions.deviceUnknown,
+    )
+    expect(await screen.findByText(confirmation)).toBeTruthy()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sessions.nextPage }),
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          zhCN.sessions.pageIndicator
+            .replace('{{page}}', '2')
+            .replace('{{total}}', '2'),
+        ),
+      ).toBeTruthy(),
+    )
+    // The previous page's result is gone with the context that produced it.
+    expect(screen.queryByText(confirmation)).toBeNull()
+  })
+
+  it('holds the pager while a revoke attempt is pending', async () => {
+    // Paging is a context change for the section's feedback scope; while an
+    // attempt is in flight (and through the refetch that follows it) the
+    // pager is disabled, so no reset can drop a result still to land.
+    let releaseDelete: ((response: Response) => void) | undefined
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: Array.from({ length: 12 }, (_, index) =>
+            session({ id: `session-${index}`, user_agent: '' }),
+          ),
+        })
+      }
+      if (call.method === 'DELETE' && call.path === `${SESSIONS_PATH}/session-8`) {
+        return new Promise<Response>((resolve) => {
+          releaseDelete = resolve
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+    const user = userEvent.setup()
+
+    await screen.findByRole('heading', { name: zhCN.sessions.title })
+    await waitFor(() =>
+      expect(screen.getAllByRole('listitem')).toHaveLength(8),
+    )
+    // Move to the second page, where the previous-page control is enabled.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sessions.nextPage }),
+    )
+    await waitFor(() =>
+      expect(screen.getAllByRole('listitem')).toHaveLength(4),
+    )
+    expect(
+      screen.getByRole('button', { name: zhCN.sessions.prevPage }),
+    ).not.toBeDisabled()
+
+    await user.click(
+      screen.getAllByRole('button', {
+        name: revokeAria(zhCN.sessions.deviceUnknown),
+      })[0] as HTMLElement,
+    )
+    await waitFor(() => expect(releaseDelete).toBeDefined())
+    expect(
+      screen.getByRole('button', { name: zhCN.sessions.prevPage }),
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: zhCN.sessions.nextPage }),
+    ).toBeDisabled()
+
+    await act(async () => {
+      releaseDelete?.(new Response(null, { status: 204 }))
+    })
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: zhCN.sessions.prevPage }),
+      ).not.toBeDisabled(),
+    )
   })
 
   it('revokes the other sessions behind the double confirm and shows the count', async () => {
