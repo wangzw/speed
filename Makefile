@@ -57,10 +57,13 @@ each-end = if [ -n "$$failed" ]; then echo "failed: $$failed" >&2; exit 1; fi
 
 .PHONY: help modules deps-up deps-down build api-docs test test-race test-integration test-integration-race \
         vet-integration vet-review test-review vet-deploy test-deploy fmt lint tidy tidy-check repo-check tools-test check python-version \
-        modules-present web-check web-a11y web-browser deploy
+        modules-present web-check web-a11y web-browser e2e e2e-install deploy
 
+# A target name may carry a digit (web-a11y, e2e), so the name pattern admits
+# one; the old [a-z-] pattern silently dropped every such entry point from the
+# listing.
 help: ## List the entry points
-	@awk 'BEGIN{FS=":.*## "} /^[a-z][a-z-]*:.*## /{printf "  %-21s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN{FS=":.*## "} /^[a-z0-9][a-z0-9-]*:.*## /{printf "  %-21s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 modules: modules-present ## Print the module directories derived from go.work
 	@for m in $(MODULES); do echo $$m; done
@@ -254,6 +257,19 @@ web-a11y: ## Run the frontend's route-level accessibility sweep
 # (see .github/workflows/browser.yml).
 web-browser: ## Run the frontend's browser tier in Chromium (geometry, focus order, focusability)
 	@pnpm -C web exec vitest run --config vitest.browser.config.ts
+
+# The end-to-end tier: Playwright drives the built demo binary through a real
+# browser, against a real sqlite file and real HTTP. It is deliberately not
+# part of `check` -- it needs Chromium and a built backend and is slower than
+# the commit gate -- and tools/check_e2e_honesty.py holds that `check` does not
+# reach it. The harness builds the frontend and the review binary into /tmp in
+# its global setup; `e2e-install` provisions the one browser it drives.
+e2e-install: ## Install the Chromium build the end-to-end tier drives
+	@pnpm -C web exec playwright install chromium
+
+e2e: ## Run the end-to-end journey specs against the built demo binary
+	@pnpm -C starters/demo/web run typecheck:e2e
+	@pnpm -C starters/demo/web exec playwright test --config e2e/playwright.config.ts
 
 # The deploy leg releases the demo program to Fly.io. It is deliberately not
 # part of `check`: it needs a Fly account and the FLY_API_TOKEN secret, and the

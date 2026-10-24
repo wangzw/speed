@@ -35,6 +35,16 @@ coverage/
 .turbo/
 *.tsbuildinfo
 
+# Playwright (the e2e tier): its config writes the run's artifacts and HTML
+# report under /tmp, but a run that overrides those locations -- or a future
+# config that forgets to -- leaves them beside the config. They are outputs,
+# never committed. tools/check_e2e_honesty.py keeps the configured outputDir
+# under /tmp; these patterns are the backstop for a run that bypasses it.
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/playwright/.cache/
+
 /tmp/
 
 # Local data (standalone deployment mode)

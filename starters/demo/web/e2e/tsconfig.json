@@ -1,0 +1,14 @@
+{
+  // Playwright transpiles the specs without type-checking them, so this
+  // project is the only thing that does (`pnpm typecheck:e2e`). It extends the
+  // workspace's base compiler options and adds the Node ambient types the
+  // fixtures and the Playwright runner need; the app's `tsconfig.json` covers
+  // `src/` only and never sees this directory.
+  "extends": "../../../../web/tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  // The fixtures import the app's locale bundles (JSON) and its source types;
+  // resolveJsonModule and the DOM lib arrive through the base config.
+  "include": ["**/*.ts"]
+}

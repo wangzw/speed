@@ -32,7 +32,15 @@ export default defineConfig({
     // them rather than extending them. src/a11y/** (the route-level
     // accessibility sweep) is excluded here and run by its own config
     // (vitest.a11y.config.ts) as a separate frontend-gate leg, so the two
-    // never scan the same routes twice.
-    exclude: ['**/node_modules/**', '**/dist/**', 'src/a11y/**', '**/*.browser.test.tsx'],
+    // never scan the same routes twice. e2e/** is the Playwright tier
+    // (e2e/playwright.config.ts): its `*.spec.ts` cases drive the built
+    // backend in a real Chromium and are run by `make e2e`, not by vitest.
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      'src/a11y/**',
+      'e2e/**',
+      '**/*.browser.test.tsx',
+    ],
   },
 })

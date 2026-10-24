@@ -24,8 +24,9 @@ export default defineConfig({
     setupFiles: ['./src/test-utils/setup.ts'],
     include: ['src/a11y/**/*.test.tsx'],
     // Vitest's own defaults are restated because naming `exclude` replaces
-    // them rather than extending them.
-    exclude: ['**/node_modules/**', '**/dist/**', '**/*.browser.test.tsx'],
+    // them rather than extending them. e2e/** is the Playwright tier and is
+    // run by `make e2e`, never by this sweep.
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**', '**/*.browser.test.tsx'],
     // The workspace preset's per-case budget (web/vitest.shared.ts): a sweep
     // renders every route of the area it scans, so vitest's 5s default would
     // fail it on the clock under parallel load.

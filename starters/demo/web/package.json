@@ -10,6 +10,7 @@
     "api:gen": "go -C ../server run . --config file:testdata/sqlite-memory.yaml sqlite-memory gen --title speed -o ../../../contracts/api.json --features ../../../contracts/features.json && node scripts/feature-names.mjs ../../../contracts/features.json src/app-api/features.ts && pnpm dlx orval@8.17.0 --config orval.config.ts && node scripts/orval-nodenext-fixup.mjs src/app-api/index.ts src/app-api/runtime.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
+    "typecheck:e2e": "tsc -p e2e/tsconfig.json",
     "test": "vitest run",
     "test:a11y": "vitest run --config vitest.a11y.config.ts"
   },
@@ -38,6 +39,7 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",

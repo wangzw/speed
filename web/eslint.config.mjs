@@ -22,7 +22,13 @@
  * web/eslint-rules/no-dangerous-html.test.mjs) holds the premise the
  * i18n instance's interpolation.escapeValue: false rests on: no runtime
  * layer may consume HTML, so a markup sink added later cannot silently
- * turn a verbatim interpolated value into markup. The react-hooks plugin
+ * turn a verbatim interpolated value into markup. The
+ * no-e2e-bypass rule (web/eslint-rules/no-e2e-bypass.js, tested in
+ * web/eslint-rules/no-e2e-bypass.test.mjs) guards the end-to-end tier's
+ * honesty: it reports network, route-interception, evaluate and non-WebAuthn
+ * CDP calls, allowing only the WebAuthn.* virtual-authenticator setup the
+ * requirements author ruled a browser-device fixture may use. The demo host
+ * turns it on over its e2e/** directory. The react-hooks plugin
  * stays out: no stateful component exists outside ui-kit's controlled
  * set -- state belongs to the host and every interaction reports up
  * through callbacks, the FileUploader queue rendering from host-owned
@@ -32,6 +38,7 @@
 import tseslint from 'typescript-eslint'
 import { noDangerousHtmlRule } from './eslint-rules/no-dangerous-html.js'
 import { noDirectHttpRule } from './eslint-rules/no-direct-http.js'
+import { noE2eBypassRule } from './eslint-rules/no-e2e-bypass.js'
 import { noLiteralTextRule } from './eslint-rules/no-literal-text.js'
 
 /**
@@ -45,6 +52,7 @@ const localPlugin = {
       rules: {
         'no-dangerous-html': noDangerousHtmlRule,
         'no-direct-http': noDirectHttpRule,
+        'no-e2e-bypass': noE2eBypassRule,
         'no-literal-text': noLiteralTextRule,
       },
     },
