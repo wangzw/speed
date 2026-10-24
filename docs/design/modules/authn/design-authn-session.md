@@ -158,7 +158,7 @@ authn 树内取用 `Sessions` 的模块如下（宿主自写的取用者不在�
 |---|---|
 | `authn.login` | `Create`（`browser` 种，`delivery=token` 时建 `token` 种）、`Current`、`Revoke`（登录完成时撤销旧会话）、`StatusFresh`、`Elevate`、`Rotate`、`SetCookie`、`RevokeAccount`（改口令、关联与解绑外部身份、启用因素、改手机之后） |
 | `authn.token` | `Status`、`StatusFresh`、`ForCredential`、`Revoke` |
-| `authn.mfa` | `RevokeAccount`（删除已启用因素之后，由用户面路由发起；重置因素之后） |
+| `authn.mfa` | `RevokeAccount`（删除已启用因素之后，由用户面路由发起；重置因素之后）、`Rotate` 与 `SetCookie`（同一路由在撤销之后轮换发起会话并写回） |
 | `authn.impersonation` | `SetImpersonation`、`SetCookie`、`Status` |
 | `authn.admin` | `Get`、`List`、`Revoke`、`RevocableSessions`（批量撤销在动作前读它要结束的那一组，好逐会话写审计行）、`RevokeAccount` |
 | `authn.gate` | 经 `Verifier` 与 `CookieClearer`，不直接取 `Sessions` |

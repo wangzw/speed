@@ -19,7 +19,7 @@
 - **不执行租户级 MFA 强制。** 登录时账户全局、租户未知，租户级强制只能在请求期判；该判定属于 `tenant.admission`，它读本模块经登录会话行记录的值。
 - **不做授权判定，不写 403。** 管理员重置因素的授权经 `Decider`，其接缝与管理面路由在 [authn-admin](design-authn-admin.md)；本模块不认识角色。
 - **不实现短信验证码引擎与发送方。** 短信因素复用 `authn.sms` 的 `SMSCodes`（[authn-sms](design-authn-sms.md)）。
-- **不持有登录会话。** 加强认证完成后更新会话的是 `Sessions.Elevate`（[authn-session](design-authn-session.md)）；`MFA.Reset` 与删除因素时的撤销只经 `Sessions` 发起。`MFA.Remove` 本身不撤销会话、也不对会话作任何承诺，删除后的撤销由用户面 DELETE 路由编排（见「删除与重置」）。
+- **不持有登录会话。** 加强认证完成后更新会话的是 `Sessions.Elevate`（[authn-session](design-authn-session.md)）；`MFA.Reset` 与删除因素时的撤销、轮换只经 `Sessions` 发起。`MFA.Remove` 本身不撤销会话、也不对会话作任何承诺，删除后的撤销与轮换由用户面 DELETE 路由编排（见「删除与重置」）。
 - **不实现失败退避的算法与存储。** 本模块经 `Throttle` 使用范围 `ScopeFactor`，退避算法与表由 `authn.account` 承载（[authn-account](design-authn-account.md)）。
 - **不提供恢复码、不提供「记住此设备」、不提供短信或邮箱找回。** 找回途径限于本文「找回途径」一节列出的几项。
 - **不核验求助者的身份。** 确认来求助的人就是账户主人是组织流程，不由本模块自动化。
@@ -194,7 +194,7 @@ WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication
 | `Accounts`、`AccountAdmin` | 必需 | 读账户的 `mfa_required` 与手机标识；`Reset` 经 `AccountAdmin.SetMFARequired` 置位。`Accounts` 与 `AccountAdmin` 都由 `authn.account` 交付。 |
 | `Throttle` | 必需 | 范围 `ScopeFactor`，键为因素标识。 |
 | 全部 `Factor` | `ResolveAll` | 因素实现；`authn.mfa` 对因素子包只经根包的 `Factor` 接口，不 import 它们。 |
-| `Sessions` | 可选 | `Reset` 撤销账户的全部会话；用户面删除已启用因素后撤销除发起会话之外的会话。缺席时跳过并写一行 Warn，会话保持有效。 |
+| `Sessions` | 可选 | `Reset` 撤销账户的全部会话；用户面删除已启用因素后先撤销除发起会话之外的会话，再轮换发起会话并写回其 cookie。缺席时跳过并写一行 Warn，会话保持有效。 |
 | `settings.Store` | 可选 | 运行期可调的策略与期限；缺席时取声明的默认值。 |
 | `audit.Audit` | 可选 | 尽力档审计；强制档动作的审计由管理面处理器承担，那里把它当必需。 |
 | `event.Bus` | 可选 | 发布 `authn.factor.changed`，提交之后 `Bus.Publish`，不经发件箱；订阅 `authn.account.deleted` 作补偿。 |
@@ -512,10 +512,10 @@ CREATE TABLE authn_webauthn_credentials (
 
 **删除用户面路由的会话效果。** `DELETE B/factors/:id` 先读被删因素的当前状态（行删掉之后就无处再读），调用 `MFA.Remove`，成功之后按当时的状态决定会话：
 
-1. 被删因素处于启用状态：经 `Sessions.RevokeAccount(ctx, account, 发起会话, authn.ReasonSelf)` 撤销该账户除发起会话之外的其余会话。发起删除的会话因此保持登录；`Sessions` 缺席时跳过并写一行 Warn，会话保持有效。
-2. 待确认或已停用：不撤销。这两种因素不改变账户已有的强度，删掉它们不改变其余会话的可信度。
+1. 被删因素处于启用状态：经 `Sessions.RevokeAccount(ctx, account, 发起会话, authn.ReasonSelf)` 撤销该账户除发起会话之外的其余会话；撤销成功之后经 `Sessions.Rotate` 为发起会话换令牌，并经 `Sessions.SetCookie` 把它写回应答。发起删除的设备因此以新令牌保持登录，旧令牌不再有效。`Sessions` 缺席时跳过并写一行 Warn，会话保持有效。
+2. 待确认或已停用：不撤销、不轮换。这两种因素不改变账户已有的强度，删掉它们不改变其余会话的可信度。
 
-拒绝（`ErrLastFactor`、账户读失败）与删除本身的失败都发生在撤销之前，被拒或失败的删除不动会话。撤销在因素行删掉之后进行；`Sessions.RevokeAccount` 失败时路由答 503，此时因素已经删掉，重发同一请求按「因素已不存在」处理并补完撤销。一个本来就不存在的名字与一个已删掉的名字无从区分，同样按已删处理并结束其余会话——这是重试得以收口的代价，账下本没有这个因素时撤销只是把该账户按更严的方向收口。代价说白：一条把因素标识写错的 DELETE，会结束调用者自己的其他会话。
+拒绝（`ErrLastFactor`、账户读失败）与删除本身的失败都发生在撤销之前，被拒或失败的删除不动会话。撤销与轮换都在因素行删掉之后进行，且撤销先于轮换：`Sessions.RevokeAccount` 或 `Sessions.Rotate` 失败时路由答 503，此时因素已经删掉，发起会话在撤销失败时不被轮换、在轮换失败时保持原令牌，重发同一请求按「因素已不存在」处理并补完撤销与轮换。一个本来就不存在的名字与一个已删掉的名字无从区分，同样按已删处理并结束其余会话、轮换发起会话——这是重试得以收口的代价，账下本没有这个因素时这两步只是把该账户按更严的方向收口。代价说白：一条把因素标识写错的 DELETE，会结束调用者自己的其他会话并换掉自己的令牌。
 
 删除单个因素的原因是账户持有人在改自己的凭据，会话撤销取 `authn.ReasonSelf`，与解绑等自助变更同类；`Reset` 是管理员动作，固定用 `authn.ReasonFactorReset`。
 

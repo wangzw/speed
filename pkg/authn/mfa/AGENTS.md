@@ -23,7 +23,7 @@ factor without a word, so the engine requires `MFA`.
 
 The API is the package's godoc. Read `Module`'s comment before changing the
 descriptor, `Require`'s and `Assurance`'s before changing the policy or the
-level, and `Remove`'s, `removeFactorAndEndOtherSessions`'s and `Reset`'s before
+level, and `Remove`'s, `removeFactorAndSettleSessions`'s and `Reset`'s before
 changing the order of their steps.
 
 The names the module reports under are a closed set — the `authn.factor.changed`
@@ -98,28 +98,35 @@ dashboard or an audit query written against it.
   back-off the module publishes `authn.throttle.engaged` and counts it, once
   (`TestTheFailureThatStartsABackOffIsAnnouncedOnceAndCounted`).
 - **A removal cleans the kind's data and never takes the account below its
-  floor; ending the other sessions is the route's work.** `Remove` calls
-  `Factor.Remove` to clean the kind's data and then deletes the row, and it ends
-  no session: the capability promises nothing about sessions, so a host that
-  calls it directly leaves them alone. The user-facing DELETE route reads the
-  factor's status, calls `Remove`, and only after a successful removal of an
-  active factor revokes the account's other sessions under the `self` class
-  keeping the one that asked, so the device that removed the factor stays signed
-  in while the others are turned away. A pending or disabled factor changes
-  nothing about the account's strength, so removing one ends no session, and the
-  last active factor of an account that requires one is `ErrLastFactor`, refused
-  before any session is touched. The session store is therefore a failure point
-  of that route: a revocation failure after the row is gone answers 503, and
-  repeating the request finishes the revocation, because a name that is no longer
-  there reads as a removal that has already happened and runs the revocation all
-  the same. The price is explicit: a DELETE naming a factor that never existed
-  ends the caller's other sessions too. A module with no session store
+  floor; ending the other sessions and rotating the requesting one is the route's
+  work.** `Remove` calls `Factor.Remove` to clean the kind's data and then deletes
+  the row, and it acts on no session: the capability promises nothing about
+  sessions, so a host that calls it directly leaves them alone. The user-facing
+  DELETE route reads the factor's status, calls `Remove`, and only after a
+  successful removal of an active factor settles the account's sessions under the
+  `self` class: the other sessions are ended keeping the one that asked, and then
+  that session is rotated and its new token written as the answer's cookie, so the
+  device that removed the factor stays signed in on a new token while the others
+  are turned away. The other sessions are ended first, and the rotation runs only
+  when that succeeded: a new token the client could not receive in a failed answer
+  would sign the device out while leaving the failure unfixed. A pending or
+  disabled factor changes nothing about the account's strength, so removing one
+  ends no session and rotates none, and the last active factor of an account that
+  requires one is `ErrLastFactor`, refused before any session is touched. The
+  session store is therefore a failure point of that route: a revocation or
+  rotation failure after the row is gone answers 503, and repeating the request
+  finishes what is left, because a name that is no longer there reads as a removal
+  that has already happened and settles the sessions all the same. The price is
+  explicit: a DELETE naming a factor that never existed ends the caller's other
+  sessions and rotates the caller's own as well. A module with no session store
   removes the factor and logs a warning that the sessions stay valid
   (`TestRemoveHasTheFactorCleanItsDataBeforeTheRowGoes`,
   `TestRemoveEndsNoSessionItself`,
   `TestRemovingAFactorEndsTheAccountsOtherSessionsAndKeepsTheCurrentOne`,
+  `TestRemovingAnActiveFactorRotatesTheRequestingSessionsToken`,
   `TestDeletingAFactorThatIsNotActiveEndsNoSession`,
   `TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes`,
+  `TestADeletionWhoseRotationFailsReportsItAndARetryRotates`,
   `TestDeletingAFactorWithoutASessionModuleRemovesItAndSaysSo`,
   `TestDeletingTheLastFactorOfAnAccountThatRequiresOneIsAConflict`).
 - **`Reset` runs its four steps in order and can be repeated.** The flag is set,

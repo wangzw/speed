@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -210,30 +211,94 @@ func (a *fakeAdmin) SetMFARequired(_ context.Context, id authn.AccountID, requir
 	return nil
 }
 
-// fakeSessions records the revocations it is asked for and keeps the set of live
-// sessions a case gave it, so a case can read which of them a revocation ended.
-// It models RevokeAccount's rule: every live session of the account goes except
-// the one named by except.
+// fakeSessions records the revocations and rotations it is asked for and keeps
+// the set of live sessions a case gave it, so a case can read which of them a
+// revocation ended and which token a session holds. It models RevokeAccount's
+// rule — every live session of the account goes except the one named by except —
+// and Rotate's: a live session gets a new token and keeps its identifier.
 type fakeSessions struct {
 	authn.Sessions
-	mu      sync.Mutex
-	err     error
-	revoked []string
-	live    map[authn.SessionID]authn.AccountID
+	mu        sync.Mutex
+	err       error
+	rotateErr error
+	revoked   []string
+	rotated   []authn.SessionID
+	live      map[authn.SessionID]authn.AccountID
+	tokens    map[authn.SessionID]string
 	// onRevoke runs as the call arrives, so a case can read the state the call
 	// finds.
 	onRevoke func()
 }
 
 func newFakeSessions() *fakeSessions {
-	return &fakeSessions{live: map[authn.SessionID]authn.AccountID{}}
+	return &fakeSessions{
+		live:   map[authn.SessionID]authn.AccountID{},
+		tokens: map[authn.SessionID]string{},
+	}
 }
 
-// add makes a session live for an account, as a completed login would.
+// add makes a session live for an account, as a completed login would, with an
+// initial token a case can read back and check a rotation against.
 func (s *fakeSessions) add(id authn.SessionID, account authn.AccountID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.live[id] = account
+	s.tokens[id] = "original-token-of-" + string(id)
+}
+
+// tokenOf is the token the session holds now.
+func (s *fakeSessions) tokenOf(id authn.SessionID) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tokens[id]
+}
+
+// authenticates reports whether token is still the credential of a live
+// session, which is what a browser presenting it would be let in with.
+func (s *fakeSessions) authenticates(token string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, held := range s.tokens {
+		if held != token {
+			continue
+		}
+		_, live := s.live[id]
+		return live
+	}
+	return false
+}
+
+// rotationCalls reports the Rotate calls in the order they arrived.
+func (s *fakeSessions) rotationCalls() []authn.SessionID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]authn.SessionID(nil), s.rotated...)
+}
+
+// Rotate gives a live session a new token, as the store's conditional update
+// does, and records the call. A session that is not live is ErrSessionNotFound.
+func (s *fakeSessions) Rotate(_ context.Context, id authn.SessionID) (authn.Issued, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rotated = append(s.rotated, id)
+	if s.rotateErr != nil {
+		return authn.Issued{}, s.rotateErr
+	}
+	if _, ok := s.live[id]; !ok {
+		return authn.Issued{}, authn.ErrSessionNotFound
+	}
+	token := "rotated-token-of-" + string(id)
+	s.tokens[id] = token
+	return authn.Issued{ID: id, Token: token}, nil
+}
+
+// SetCookie writes the cookie of an issued token the way the session module
+// does, so a case can read it back from the response.
+func (s *fakeSessions) SetCookie(w http.ResponseWriter, in authn.Issued) {
+	if in.Token == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: "sid", Value: in.Token, Path: "/"})
 }
 
 // isLive reports whether the session is still one a request could use.

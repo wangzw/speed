@@ -67,6 +67,17 @@ func problemOf(t *testing.T, w *httptest.ResponseRecorder) problemBody {
 	return p
 }
 
+// cookieValue is the value of the named cookie in the response, and whether the
+// response carried it.
+func cookieValue(w *httptest.ResponseRecorder, name string) (string, bool) {
+	for _, c := range w.Result().Cookies() {
+		if c.Name == name {
+			return c.Value, true
+		}
+	}
+	return "", false
+}
+
 func TestTheRoutesAreTheTwoTheDesignNamesAndBothAreGuarded(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	got := r.mounter.Registrations()
@@ -205,6 +216,9 @@ func TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere(t *test
 				if r.p.factors[authn.FactorTOTP].(*fakeFactor).count("remove") != 0 {
 					t.Error("the factor was asked to clean its data for a request that was refused")
 				}
+				if got := r.sessions.rotationCalls(); len(got) != 0 {
+					t.Errorf("a refused deletion rotated the requesting session: %v", got)
+				}
 			}
 		})
 	}
@@ -279,22 +293,76 @@ func TestRemovingAFactorEndsTheAccountsOtherSessionsAndKeepsTheCurrentOne(t *tes
 	}
 }
 
+// Removing an enabled factor is a rotation point: the device that made the
+// request stays signed in on a new token, and the token it held before no longer
+// authenticates. The session is rotated, not revoked, and the new token reaches
+// the client as the response's session cookie.
+func TestRemovingAnActiveFactorRotatesTheRequestingSessionsToken(t *testing.T) {
+	for _, kind := range []authn.FactorKind{authn.FactorTOTP, authn.FactorSMS} {
+		t.Run(string(kind), func(t *testing.T) {
+			r := routed(t, kind)
+			id := r.activeFactor(acct, kind, time.Hour)
+			r.sessions.add(sessionUUID, acct)
+			old := r.sessions.tokenOf(sessionUUID)
+			r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+
+			w := r.do(http.MethodDelete, listPath+"/"+id, nil)
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("DELETE = %d %s, want 204", w.Code, w.Body.String())
+			}
+			if got := r.sessions.rotationCalls(); !slices.Equal(got, []authn.SessionID{sessionUUID}) {
+				t.Fatalf("Rotate was called for %v, want the requesting session once", got)
+			}
+			fresh := r.sessions.tokenOf(sessionUUID)
+			if fresh == old {
+				t.Errorf("the requesting session still holds its old token %q: the removal did not rotate it", old)
+			}
+			if r.sessions.authenticates(old) {
+				t.Error("the old token still authenticates after the removal")
+			}
+			if !r.sessions.authenticates(fresh) {
+				t.Error("the new token does not authenticate")
+			}
+			if !r.sessions.isLive(sessionUUID) {
+				t.Error("the requesting session was ended instead of rotated")
+			}
+			if v, ok := cookieValue(w, "sid"); !ok || v != fresh {
+				t.Errorf("the response carries cookie %q (present %v), want the rotated token %q", v, ok, fresh)
+			}
+			if cc := strings.Join(w.Header().Values("Cache-Control"), ", "); !strings.Contains(cc, `no-cache="Set-Cookie"`) {
+				t.Errorf("Cache-Control = %q, want the no-cache directive a response carrying Set-Cookie adds", cc)
+			}
+		})
+	}
+}
+
 // A factor that is not active never added to the account's strength, so removing
-// one ends no session.
+// one ends no session and rotates none.
 func TestDeletingAFactorThatIsNotActiveEndsNoSession(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
 	r.sessions.add(sessionUUID, acct)
 	r.sessions.add("another-session", acct)
+	before := r.sessions.tokenOf(sessionUUID)
 	pending := r.insertRow(acct, authn.FactorTOTP, authn.FactorPending, r.clock.read(), nil)
 	disabled := r.insertRow(acct, authn.FactorTOTP, authn.FactorDisabled, r.clock.read(), nil)
 	for _, id := range []string{pending, disabled} {
-		if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+		w := r.do(http.MethodDelete, listPath+"/"+id, nil)
+		if w.Code != http.StatusNoContent {
 			t.Fatalf("DELETE %s = %d %s, want 204", id, w.Code, w.Body.String())
+		}
+		if v, ok := cookieValue(w, "sid"); ok {
+			t.Errorf("removing %s answered with a session cookie %q, want none", id, v)
 		}
 	}
 	if got := r.sessions.revocations(); len(got) != 0 {
 		t.Errorf("the sessions were revoked as %v, want none for a factor that is not active", got)
+	}
+	if got := r.sessions.rotationCalls(); len(got) != 0 {
+		t.Errorf("the requesting session was rotated for %v, want none for a factor that is not active", got)
+	}
+	if got := r.sessions.tokenOf(sessionUUID); got != before {
+		t.Errorf("the requesting session's token changed to %q, want %q", got, before)
 	}
 	if !r.sessions.isLive("another-session") {
 		t.Error("a session was ended by deleting a factor that is not active")
@@ -319,6 +387,9 @@ func TestADeletionRefusedForAnUnreadableAccountEndsNoSession(t *testing.T) {
 	}
 	if got := r.sessions.revocations(); len(got) != 0 {
 		t.Errorf("a refused deletion revoked the sessions: %v", got)
+	}
+	if got := r.sessions.rotationCalls(); len(got) != 0 {
+		t.Errorf("a refused deletion rotated the requesting session: %v", got)
 	}
 	if !r.sessions.isLive(sessionUUID) || !r.sessions.isLive("another-session") {
 		t.Error("a refused deletion ended a session")
@@ -346,6 +417,9 @@ func TestADeletionThatFailsInTheFactorEndsNoSession(t *testing.T) {
 	if got := r.sessions.revocations(); len(got) != 0 {
 		t.Errorf("a failed deletion revoked the sessions: %v", got)
 	}
+	if got := r.sessions.rotationCalls(); len(got) != 0 {
+		t.Errorf("a failed deletion rotated the requesting session: %v", got)
+	}
 	if !r.sessions.isLive("another-session") {
 		t.Error("a failed deletion ended a session")
 	}
@@ -362,6 +436,7 @@ func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testi
 	r.sessions.add("another-session", acct)
 	r.sessions.err = errors.New("session store down")
 	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+	before := r.sessions.tokenOf(sessionUUID)
 
 	w := r.do(http.MethodDelete, listPath+"/"+id, nil)
 	if w.Code != http.StatusServiceUnavailable || problemOf(t, w).Type != problemType+"unavailable" {
@@ -372,6 +447,15 @@ func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testi
 	}
 	if !r.sessions.isLive("another-session") {
 		t.Error("the other session was ended by a revocation that failed")
+	}
+	if got := r.sessions.rotationCalls(); len(got) != 0 {
+		t.Errorf("a revocation that failed also rotated %v, want no rotation", got)
+	}
+	if v, ok := cookieValue(w, "sid"); ok {
+		t.Errorf("the 503 answer carried a session cookie %q, want none", v)
+	}
+	if got := r.sessions.tokenOf(sessionUUID); got != before {
+		t.Errorf("the requesting session's token changed to %q, want the old one %q still valid", got, before)
 	}
 
 	r.sessions.err = nil
@@ -384,12 +468,63 @@ func TestADeletionWhoseSessionRevocationFailsReportsItAndARetryFinishes(t *testi
 	if !r.sessions.isLive(sessionUUID) {
 		t.Error("the retry ended the session that asked")
 	}
+	if got := r.sessions.rotationCalls(); !slices.Equal(got, []authn.SessionID{sessionUUID}) {
+		t.Errorf("the retry rotated %v, want only the requesting session", got)
+	}
 	want := []string{
 		fmt.Sprintf("revoke-account:%s:except=%q:%s", acct, sessionUUID, authn.ReasonSelf),
 		fmt.Sprintf("revoke-account:%s:except=%q:%s", acct, sessionUUID, authn.ReasonSelf),
 	}
 	if got := r.sessions.revocations(); !slices.Equal(got, want) {
 		t.Errorf("the sessions were revoked as %v, want %v: the attempt that failed and the retry", got, want)
+	}
+}
+
+// A rotation that fails after the row is gone is reported as an outage, like a
+// failed revocation: the factor is already removed and the requesting device
+// still holds its old token, which is valid. Repeating the request rotates it,
+// because a name that is no longer there reads as a removal that has already
+// happened.
+func TestADeletionWhoseRotationFailsReportsItAndARetryRotates(t *testing.T) {
+	r := routed(t, authn.FactorTOTP)
+	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.sessions.add(sessionUUID, acct)
+	r.sessions.add("another-session", acct)
+	old := r.sessions.tokenOf(sessionUUID)
+	r.sessions.rotateErr = errors.New("session store down")
+	r.mounter.As(append(multiAt(time.Minute), authntest.WithSession(sessionUUID))...)
+
+	w := r.do(http.MethodDelete, listPath+"/"+id, nil)
+	if w.Code != http.StatusServiceUnavailable || problemOf(t, w).Type != problemType+"unavailable" {
+		t.Fatalf("DELETE = %d %s, want 503 unavailable", w.Code, w.Body.String())
+	}
+	if _, there := r.status(id); there {
+		t.Error("the factor stayed although the removal had landed")
+	}
+	if got := r.sessions.tokenOf(sessionUUID); got != old {
+		t.Errorf("a rotation that failed changed the token to %q, want the old one still valid", got)
+	}
+	if _, ok := cookieValue(w, "sid"); ok {
+		t.Error("the answer carried a session cookie although the rotation failed")
+	}
+	if r.sessions.isLive("another-session") {
+		t.Error("the other session was not ended before the rotation that failed")
+	}
+
+	r.sessions.rotateErr = nil
+	w = r.do(http.MethodDelete, listPath+"/"+id, nil)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("the retry = %d %s, want 204", w.Code, w.Body.String())
+	}
+	fresh := r.sessions.tokenOf(sessionUUID)
+	if fresh == old {
+		t.Error("the retry did not rotate the requesting session")
+	}
+	if v, ok := cookieValue(w, "sid"); !ok || v != fresh {
+		t.Errorf("the retry carries cookie %q (present %v), want the rotated token %q", v, ok, fresh)
+	}
+	if !r.sessions.isLive(sessionUUID) {
+		t.Error("the retry ended the session that asked")
 	}
 }
 
@@ -436,6 +571,9 @@ func TestDeletingTheLastFactorOfAnAccountThatRequiresOneIsAConflict(t *testing.T
 	}
 	if got := r.sessions.revocations(); len(got) != 0 {
 		t.Errorf("a refused deletion revoked the sessions: %v", got)
+	}
+	if got := r.sessions.rotationCalls(); len(got) != 0 {
+		t.Errorf("a refused deletion rotated the requesting session: %v", got)
 	}
 	if !r.sessions.isLive("another-session") {
 		t.Error("a refused deletion ended a session")

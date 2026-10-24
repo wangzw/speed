@@ -27,6 +27,12 @@ const typePrefix = "urn:speed:authn:"
 // text mount.StepUpRequired writes.
 const stepUpDescription = "A stronger or more recent authentication is required"
 
+// cacheControlSetCookie is the directive an answer that issues a session cookie
+// adds beside the no-store the mounter puts on every response: a cache must not
+// reuse the answer without the cookie. The session capability writes the same
+// directive beside the Cookie it sets.
+const cacheControlSetCookie = `no-cache="Set-Cookie"`
+
 // mountRoutes registers the routes. Both are guarded by the gateway, which is
 // what makes them Required, and neither is registered Impersonable: the gateway
 // refuses an impersonating identity on them, and the handler refuses one too, so
@@ -112,11 +118,12 @@ func (m *product) listFactors(ctx context.Context, _ struct{}) (AuthnMfaFactorLi
 // deleteFactor answers DELETE /factors/:id. It asks for a fresh multi-factor
 // authentication that was verified here: an IdP's declaration of one is not
 // enough to remove an account's own factor. The route is where the account's
-// other sessions are ended after a successful removal of an active factor; the
-// caller's own session is the one kept, so the device that removed the factor
-// stays signed in. A factor that is not the caller's reads as one already gone,
-// because the route has no 404 among its answers and a different answer for
-// another account's identifier would say it exists.
+// other sessions are ended after a successful removal of an active factor and the
+// requesting one is rotated: the device that removed the factor stays signed in
+// on a new token, and the token it held before no longer authenticates. A factor
+// that is not the caller's reads as one already gone, because the route has no
+// 404 among its answers and a different answer for another account's identifier
+// would say it exists.
 func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -132,10 +139,15 @@ func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *spe
 	if in.ID == "" || len(in.ID) > maxFactorIDLen {
 		return nil, authnFailure(http.StatusBadRequest, mount.CodeBadRequest)
 	}
-	err := m.removeFactorAndEndOtherSessions(ctx, id.Account(), in.ID, id.Session())
+	issued, err := m.removeFactorAndSettleSessions(ctx, id.Account(), in.ID, id.Session())
 	switch {
 	case err == nil, errors.Is(err, authn.ErrFactorNotEnrolled):
-		return speedhttp.EmptyReply(http.StatusNoContent), nil
+		reply := speedhttp.EmptyReply(http.StatusNoContent)
+		if cookie := m.issuedCookie(issued); cookie != nil {
+			mount.AddResponseHeader(ctx, "Cache-Control", cacheControlSetCookie)
+			reply = speedhttp.WithCookies(reply, cookie)
+		}
+		return reply, nil
 	default:
 		return nil, m.answerError(id.Account(), err)
 	}
@@ -216,6 +228,34 @@ func challengeScheme(scheme string) string {
 // point writes it as a problem document of the code's status and type.
 func authnFailure(status int, code string) error {
 	return speedhttp.Fault{Status: status, Type: typePrefix + code}
+}
+
+// cookieRecorder is a response writer that keeps the Set-Cookie headers the
+// session capability writes, so a typed handler can attach the cookie to its
+// reply. It writes no status and no body.
+type cookieRecorder struct{ header http.Header }
+
+func (r *cookieRecorder) Header() http.Header            { return r.header }
+func (r *cookieRecorder) Write(body []byte) (int, error) { return len(body), nil }
+func (r *cookieRecorder) WriteHeader(int)                {}
+
+// issuedCookie turns an issued session into the cookie the answer attaches. The
+// sessions capability owns the cookie's name and attributes and writes them to a
+// response writer, so the value is read back from the header it wrote rather than
+// reproduced here. An issued value with no token, which a session that is not a
+// browser's rotation returns, writes no cookie, and nil is returned.
+func (m *product) issuedCookie(issued authn.Issued) *http.Cookie {
+	if issued.Token == "" {
+		return nil
+	}
+	recorder := &cookieRecorder{header: http.Header{}}
+	m.sessions.SetCookie(recorder, issued)
+	response := http.Response{Header: recorder.header}
+	cookies := response.Cookies()
+	if len(cookies) == 0 {
+		return nil
+	}
+	return cookies[0]
 }
 
 // answerError is the answer for an error a route's call returned: a conflict

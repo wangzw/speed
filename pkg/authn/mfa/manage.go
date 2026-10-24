@@ -33,10 +33,11 @@ func (m *product) Kinds() []authn.FactorKind { return slices.Clone(m.kinds) }
 // account's strength away, so it is always allowed. A factor that is not the
 // account's, or not there, is ErrFactorNotEnrolled.
 //
-// Remove promises nothing about the account's sessions and ends none. A caller
-// that wants the other devices signed out does it after the removal of an active
-// factor, keeping the session that asked; the user-facing route does that in
-// removeFactorAndEndOtherSessions.
+// Remove promises nothing about the account's sessions and ends none, rotates
+// none. A caller that wants the other devices signed out and the requesting one
+// given a new token does it after the removal of an active factor, keeping the
+// session that asked; the user-facing route does that in
+// removeFactorAndSettleSessions.
 //
 // A removal that fails in the factor leaves the row where it is and is an
 // outage; repeating it finishes the job, because a factor's removal is
@@ -69,36 +70,63 @@ func (m *product) Remove(ctx context.Context, id authn.AccountID, factorID strin
 	return nil
 }
 
-// removeFactorAndEndOtherSessions removes the caller's factor and ends the
-// account's other sessions when the removed factor was one the account could
-// verify with. It is the route's orchestration rather than MFA.Remove's work:
-// the capability promises nothing about sessions, and a host that calls Remove
-// directly leaves them alone.
+// removeFactorAndSettleSessions removes the caller's factor, ends the account's
+// other sessions and rotates the one that asked. It is the route's orchestration
+// rather than MFA.Remove's work: the capability promises nothing about sessions,
+// and a host that calls Remove directly leaves them alone.
 //
 // The factor is read before the removal, so a pending or disabled row, which never
-// added to the account's strength, ends no session. The removal's refusals and
-// its failures are returned before any session is touched. A name that is not
-// there is a removal that has already happened: the route answers as done and the
-// other sessions are ended all the same, so a retry after the session store failed
-// finishes the revocation the first call could not. When no session module is
-// taken in, the factor is removed and a Warn says the sessions stay valid, as
-// Reset does.
+// added to the account's strength, ends no session and rotates none. The removal's
+// refusals and its failures are returned before any session is touched. A name
+// that is not there is a removal that has already happened: the route answers as
+// done and settles the sessions all the same, so a retry after the session store
+// failed finishes the revocation and the rotation the first call could not. When
+// no session module is taken in, the factor is removed and a Warn says the
+// sessions stay valid, as Reset does.
 //
-// The revocation runs after the row is gone. If it fails, the route answers 503
-// although the factor is already removed; repeating the request completes it.
-func (m *product) removeFactorAndEndOtherSessions(ctx context.Context, id authn.AccountID, factorID string, current authn.SessionID) error {
+// The sessions are settled after the row is gone. The other sessions are ended
+// first, and the requesting one is rotated only once that succeeded: a rotation
+// whose new token the client cannot receive in a failed answer would sign the
+// device out while leaving the failure unfixed. If either call fails the route
+// answers 503 although the factor is already removed; repeating the request
+// completes what is left, because the removal is idempotent.
+func (m *product) removeFactorAndSettleSessions(ctx context.Context, id authn.AccountID, factorID string, current authn.SessionID) (authn.Issued, error) {
 	rec, found, err := m.register.find(ctx, id, factorID)
 	if err != nil {
-		return m.unavailable(err)
+		return authn.Issued{}, m.unavailable(err)
 	}
 	err = m.Remove(ctx, id, factorID)
 	if err != nil && !errors.Is(err, authn.ErrFactorNotEnrolled) {
-		return err
+		return authn.Issued{}, err
 	}
 	if found && rec.Status != authn.FactorActive {
-		return nil
+		return authn.Issued{}, nil
 	}
-	return m.revokeSessions(ctx, id, current, authn.ReasonSelf, "a factor was removed")
+	return m.settleSessions(ctx, id, current, authn.ReasonSelf, "a factor was removed")
+}
+
+// settleSessions ends the account's other sessions and rotates the one named by
+// keep, returning the token the caller writes as the response's cookie. An empty
+// keep leaves RevokeAccount to end every session, as it did before rotation
+// existed, and nothing is rotated. change names what happened, for the log line a
+// module with no session store writes: the change stands and the sessions stay
+// valid.
+//
+// The rotation follows the revocation, and a revocation that fails returns
+// without one: a rotation whose new token the client cannot receive in a failed
+// answer would sign the device out while leaving the failure unfixed.
+func (m *product) settleSessions(ctx context.Context, id authn.AccountID, keep authn.SessionID, reason, change string) (authn.Issued, error) {
+	if err := m.revokeSessions(ctx, id, keep, reason, change); err != nil {
+		return authn.Issued{}, err
+	}
+	if keep == "" || m.sessions == nil {
+		return authn.Issued{}, nil
+	}
+	issued, err := m.sessions.Rotate(ctx, keep)
+	if err != nil {
+		return authn.Issued{}, m.unavailable(err)
+	}
+	return issued, nil
 }
 
 // revokeSessions ends the account's sessions, keeping the one named by keep when

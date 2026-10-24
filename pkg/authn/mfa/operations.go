@@ -115,12 +115,15 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 	"Remove one of the caller's own factors",
 	"Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, "+
 		"then its register row. After an active factor has been removed, the account's other sessions "+
-		"are ended, keeping the one that made the request signed in; a pending or disabled factor ends "+
-		"no session, and a session store that fails after the factor is gone is reported as an outage. "+
+		"are ended first and the session that made the request is then rotated: the 204 carries that "+
+		"session's new cookie, and the token the request was made with no longer authenticates. A "+
+		"pending or disabled factor ends no session and rotates none, and a session store that fails "+
+		"after the factor is gone is reported as an outage. "+
 		"The call requires a fresh multi-factor authentication verified "+
 		"locally, so one merely declared by an identity provider does not satisfy it; an impersonating "+
 		"identity is refused. A factor that is not the caller's answers the same as one already gone, "+
-		"so the route never answers 404 and repeating a removal is idempotent. When the account has "+
+		"so the route never answers 404 and repeating a removal is idempotent: it finishes any session "+
+		"revocation and rotation an earlier attempt could not. When the account has "+
 		"mfa_required set, its last active factor cannot be removed.",
 	nil,
 	speedhttp.Failures(nil,
@@ -135,10 +138,13 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
 			"The removal could not be completed: the factor store, the account data it needs or the "+
 				"session store was unavailable. The cause is logged and not sent. When the factor itself "+
-				"was already removed, repeating the request finishes ending the other sessions"),
+				"was already removed, repeating the request finishes ending the other sessions and "+
+				"rotating the requesting session"),
 		speedhttp.Response{
-			Status:      http.StatusNoContent,
-			Description: "The factor was removed, or is not the caller's and reads as already gone",
+			Status: http.StatusNoContent,
+			Description: "The factor was removed, or is not the caller's and reads as already gone. " +
+				"When an active factor was removed, the answer also sets the requesting session's new " +
+				"cookie, and the token the request was made with no longer authenticates",
 		},
 	),
 )
