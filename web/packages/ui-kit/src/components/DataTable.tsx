@@ -105,6 +105,16 @@
  * row whose `cellFullValue` answers `undefined` is capped without
  * gaining a control.
  *
+ * `rowVerticalAlign` is the table-wide opt-in for a row whose cells
+ * stack more than one line (a primary cell carrying prose beneath its
+ * identity). MUI centers a body row's cells vertically, which drops a
+ * single-line edit control and the `cellFullValue` copy control to the
+ * middle of a tall row while the identity line stays at the top.
+ * `'top'` aligns every body cell to the row's top and aligns the copy
+ * control with the top of the cell content instead of its vertical
+ * centre; omitting it (or passing `'middle'`) keeps the prior centring
+ * byte-for-byte.
+ *
  * The whole table is a CSS container: the root box declares
  * `container-type: inline-size`, so every responsive rule inside it
  * answers to the table's own width -- how wide the host placed it --
@@ -373,6 +383,14 @@ export interface DataTableProps<T> {
   readonly emptyDescription?: ReactNode
   /** Optional action inside the empty placeholder. */
   readonly emptyAction?: ReactNode
+  /**
+   * Opt-in vertical alignment for the body rows: `'top'` aligns every
+   * body cell to the row's top and the `cellFullValue` copy control to
+   * the top of its cell content, for a table whose primary cell stacks
+   * several lines. Omit it (or pass `'middle'`) for MUI's default
+   * centring. See the header note.
+   */
+  readonly rowVerticalAlign?: 'middle' | 'top'
   /** Extra styling applied to the outermost box. */
   readonly sx?: SxProps<Theme>
 }
@@ -496,6 +514,7 @@ export function DataTable<T>({
   emptyHeadingLevel,
   ariaLabel,
   ariaLabelledBy,
+  rowVerticalAlign,
   sx,
 }: DataTableProps<T>) {
   const { t } = useUiKitTranslation()
@@ -765,7 +784,14 @@ export function DataTable<T>({
                   // design draws hover interactions on pointer devices
                   // only), so a touch device gets no highlight that would
                   // otherwise stick after a tap.
+                  // A top-aligned row carries the opt-in on the row itself:
+                  // MUI's TableCell inherits `vertical-align`, so one
+                  // declaration covers the identity cell and every control
+                  // beside it. Omitting the prop spreads nothing.
                   sx={{
+                    ...(rowVerticalAlign === 'top'
+                      ? { verticalAlign: 'top' }
+                      : {}),
                     [POINTER_FINE_HOVER_QUERY]: {
                       '&:hover': { backgroundColor: 'action.hover' },
                     },
@@ -820,7 +846,13 @@ export function DataTable<T>({
                           <Box
                             sx={{
                               display: 'inline-flex',
-                              alignItems: 'center',
+                              // A multi-line cell puts the copy control on
+                              // the identity line; a single-line cell keeps
+                              // the control centred on it.
+                              alignItems:
+                                rowVerticalAlign === 'top'
+                                  ? 'flex-start'
+                                  : 'center',
                               columnGap: 0.5,
                               ...(capped
                                 ? { maxWidth: contentMaxWidthSx(cap) }

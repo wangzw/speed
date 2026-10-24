@@ -1225,6 +1225,47 @@ describe('DataTable', () => {
     })
   })
 
+  describe('row vertical alignment (opt-in)', () => {
+    const fullValueColumns: readonly DataTableColumn<Member>[] = [
+      {
+        id: 'name',
+        header: 'Name',
+        cellFullValue: (row) => `plain-${row.id}`,
+        cell: (row) => row.name,
+      },
+    ]
+
+    const copyWrapperOf = (
+      utils: ReturnType<typeof renderTable>,
+    ): HTMLElement => {
+      const button = utils.getByRole('button', {
+        name: renderTemplate(zhCN.dataTable.copyValue, { value: 'plain-1' }),
+      })
+      return button.parentElement as HTMLElement
+    }
+
+    it('keeps MUI centring when the prop is omitted', () => {
+      const utils = renderTable({ columns: fullValueColumns })
+      expect(copyWrapperOf(utils)).toHaveStyle({ alignItems: 'center' })
+      const row = utils.getByText('Ada').closest('tr') as HTMLElement
+      expect(row).not.toHaveStyle({ verticalAlign: 'top' })
+    })
+
+    it("top-aligns every body row and its copy control with 'top'", () => {
+      const utils = renderTable({
+        columns: fullValueColumns,
+        rowVerticalAlign: 'top',
+      })
+      // The cell inherits the row's alignment, so one declaration covers
+      // the identity cell and every control beside it.
+      const row = utils.getByText('Ada').closest('tr') as HTMLElement
+      expect(row).toHaveStyle({ verticalAlign: 'top' })
+      // The copy control sits on the content's first line instead of the
+      // middle of a multi-line cell.
+      expect(copyWrapperOf(utils)).toHaveStyle({ alignItems: 'flex-start' })
+    })
+  })
+
   describe('column priority (container-triggered reflow)', () => {
     it('renders a column with no priority with no visibility override -- unaffected by the feature', () => {
       // BASE_COLUMNS sets no column's priority; this restates the

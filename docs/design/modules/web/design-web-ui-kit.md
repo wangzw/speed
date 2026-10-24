@@ -89,7 +89,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `FormField` | `name`、`control`、`rules`、`defaultValue`、`required`、`render` | 经 `render` 暴露的绑定字段状态 |
 | `FormLayout` | `form`、子节点、`onSubmit`、动作行、间距、宽度、`columns` | `onSubmit`（经 RHF 校验后） |
 | `PhoneNumberField` | `country`、`nationalNumber`、国家/电话两个标签、帮助文本、`disabled`、`showValidationError`、自动填充标记、`preferredCountries`（置顶列出的国家码，按给定次序；缺省即原次序） | `onCountryChange`、`onNationalNumberChange` |
-| `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`（可选 `label`／`placeholder`）、选择、分页、空态文案、`ariaLabel`／`ariaLabelledBy`（替换命名空间默认的可及名） | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
+| `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`（可选 `label`／`placeholder`）、选择、分页、空态文案、`rowVerticalAlign`（整行纵向对齐，缺省 MUI 的居中）、`ariaLabel`／`ariaLabelledBy`（替换命名空间默认的可及名） | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
 | `FileUploader` | `rows`、选取/取消/重试/移除回调、`multiple`、`accept`、`allowDrop`、`disabled`、标签 | `onSelectFiles`、`onCancel`、`onRetry`、`onRemove` |
 | `InlineError` | `code`、`resolve` | — |
 | `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域；`severity` 恒为 success） | — |
@@ -300,7 +300,7 @@ provider 把活动 MUI 语言保存在状态里，初始取实例当前语言，
 
 ### 单元格的完整值
 
-`DataTableColumn.cellFullValue` 是逐列的选择性声明，供单元格内容可能被截断或只显示一部分的列（标识符、键、码）：它返回一行的完整值，表格把它渲染成单元格的 `title`（悬停可得），并在单元格内容旁放一个可聚焦的复制控件（键盘与触摸可用，复制经实时区域播报），完整文本因此不依赖容器的滚动位置才可达。单元格里显示的内容仍由 `cell` 决定，可以是完整值的缩写。未声明的列逐字节不受影响；对某一行返回 `undefined` 时，该行既没有 `title` 也没有复制控件。标识符列通常同时声明 `cellWrap: 'nowrap'`。`DataTableColumn.contentMaxWidth` 是逐列的选择性声明，取数值，或取 `{ belowMd, fromMd }` 的命名对，包内转成容器查询，调用方不接触容器查询的写法：它约束整个单元格内容，即文本与完整值的复制控件合计，文本在上限内截断，复制控件不被截断也不额外超出；只约束文本会让带复制控件的列总是比声明的上限宽出一个控件的宽度。未声明的列逐字节不受影响。共用的上限值由本包导出：主辨识列的 `PRIMARY_COLUMN_MAX_WIDTH`（`{ belowMd: 160, fromMd: 200 }`）与其余长文本列的 `LONG_TEXT_COLUMN_MAX_WIDTH`（160），各页不内联数字，也不再另导出派生常量。
+`DataTableColumn.cellFullValue` 是逐列的选择性声明，供单元格内容可能被截断或只显示一部分的列（标识符、键、码）：它返回一行的完整值，表格把它渲染成单元格的 `title`（悬停可得），并在单元格内容旁放一个可聚焦的复制控件（键盘与触摸可用，复制经实时区域播报），完整文本因此不依赖容器的滚动位置才可达。单元格里显示的内容仍由 `cell` 决定，可以是完整值的缩写。未声明的列逐字节不受影响；对某一行返回 `undefined` 时，该行既没有 `title` 也没有复制控件。标识符列通常同时声明 `cellWrap: 'nowrap'`。`DataTableColumn.contentMaxWidth` 是逐列的选择性声明，取数值，或取 `{ belowMd, fromMd }` 的命名对，包内转成容器查询，调用方不接触容器查询的写法：它约束整个单元格内容，即文本与完整值的复制控件合计，文本在上限内截断，复制控件不被截断也不额外超出；只约束文本会让带复制控件的列总是比声明的上限宽出一个控件的宽度。未声明的列逐字节不受影响。共用的上限值由本包导出：主辨识列的 `PRIMARY_COLUMN_MAX_WIDTH`（`{ belowMd: 160, fromMd: 200 }`）与其余长文本列的 `LONG_TEXT_COLUMN_MAX_WIDTH`（160），各页不内联数字，也不再另导出派生常量。`DataTable` 的 `rowVerticalAlign` 是整行的纵向对齐开关：缺省保持 MUI 的居中；取 `'top'` 时整行单元格顶对齐，`cellFullValue` 的复制控件也对齐到单元格内容的顶部而不是垂直中点，供主格在标识之下另叠多行散文的表使用（设置页的键与其说明、声明默认值）。
 
 ### 双次确认与锁定窗口
 
@@ -441,6 +441,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 | 数据表与列优先级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`、`columnVisibilitySx` |
 | 数据表的内容宽度上限 `contentMaxWidth`（约束文本与复制控件合计） | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTableColumn` 的 `contentMaxWidth`、`PRIMARY_COLUMN_MAX_WIDTH`、`LONG_TEXT_COLUMN_MAX_WIDTH` |
 | 数据表的完整值访问器 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTableColumn` 的 `cellFullValue` |
+| 数据表的整行纵向对齐 `rowVerticalAlign`（顶对齐时复制控件贴住内容顶部） | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` 的 `DataTableProps.rowVerticalAlign` |
 | 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
 | 文件上传队列 | 已实现 | `web/packages/ui-kit/src/components/FileUploader.tsx` `FileUploader`、`FileUploaderRow` |
 | 跨表面状态原语 | 已实现 | `web/packages/ui-kit/src/components/InlineError.tsx` `InlineError`、`errorCodeOf`；`web/packages/ui-kit/src/components/InlineSuccess.tsx` `InlineSuccess`；`web/packages/ui-kit/src/components/ListSkeleton.tsx` `ListSkeleton`；`web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`；`web/packages/ui-kit/src/visually-hidden.ts` `visuallyHiddenSx`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx` |
