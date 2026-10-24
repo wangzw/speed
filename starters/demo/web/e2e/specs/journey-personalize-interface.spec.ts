@@ -24,17 +24,28 @@
  *
  * The session time is the one value whose text the spec cannot read from a
  * bundle: it is an instant the server stamps when the session is created during
- * this test. The spec therefore captures the wall-clock window around sign-in
- * and derives the set of strings Intl.DateTimeFormat produces for those
- * instants in zh-CN and Asia/Tokyo -- the same call, language and zone the
- * SessionsSection makes -- then asserts the rendered line is one of them. A
- * renderer that ignored the stored zone would fall nine hours outside the set,
- * and one that ignored the interface language would not match zh-CN's format
- * at all. The "last active" line shares the same formatter, but the section
- * renders it only when it differs from the sign-in time; the session's
- * last-seen is its creation instant until the first coalesced touch (the
- * review configuration leaves the default one-minute interval), so this
- * journey observes the sign-in line alone.
+ * this test. The spec captures the wall-clock window around sign-in, extracts
+ * the numeric fields (year, month, day, hour, minute) from the rendered line,
+ * and asks whether any instant in the window, formatted in zh-CN and
+ * Asia/Tokyo -- the language and zone the SessionsSection hands its formatter
+ * -- yields the same fields. Comparing the field values rather than the whole
+ * string keeps the assertion about the instant and the zone the surface
+ * rendered: a renderer that ignored the stored zone moves the hour, and one
+ * that ignored the interface language changes both the field order and the
+ * field set. It also keeps the test independent of this process and the
+ * browser shipping identical ICU/CLDR data, whose separators, spacing and
+ * zero-padding can drift on an upgrade without changing the instant. The "last
+ * active" line shares the same formatter, but the section renders it only when
+ * it differs from the sign-in time; the session's last-seen is its creation
+ * instant until the first coalesced touch (the review configuration leaves the
+ * default one-minute interval), so this journey observes the sign-in line
+ * alone.
+ *
+ * The language names are read from the rendered option, not computed with this
+ * process's Intl.DisplayNames: each option carries its BCP-47 tag as a data
+ * attribute, and the name the product shows -- and repeats in the confirmation
+ * -- is the browser's own rendering of that option, so these assertions
+ * likewise do not depend on Node and Chromium sharing a CLDR snapshot.
  *
  * REQ-account-004, REQ-account-034, REQ-account-058, REQ-presentation-005 and
  * REQ-presentation-006 are listed by the journey document but deliberately
@@ -72,11 +83,6 @@ const CHOSEN_ZONE = 'Asia/Tokyo'
  * still computed in the chosen zone.
  */
 const CLOCK_SKEW_MS = 2_000
-
-/** The language's own name in a UI language, exactly as the product asks Intl. */
-function languageName(tag: string, uiLanguage: string): string {
-  return new Intl.DisplayNames([uiLanguage], { type: 'language' }).of(tag) ?? tag
-}
 
 /** The account page's preferences section, named in the given UI language. */
 function preferencesSection(page: Page, locale: CopyLocale): Locator {
@@ -119,30 +125,93 @@ function signedInLinePattern(locale: CopyLocale): RegExp {
 }
 
 /**
- * The instant strings the product would render for any wall-clock instant in
- * [from, to], in `language` and `timeZone`.
+ * The browser's own label for a language option, read from the rendered
+ * option in the named UI language.
  *
- * The product formats through Intl.DateTimeFormat with the default medium
- * style (medium date, short time). This mirrors that call rather than
- * assembling the text by hand, so the assertion is about which instant and
- * which zone the surface rendered, not about a literal the test invented.
+ * The product labels each option with Intl.DisplayNames in the interface
+ * language. Reading the label back from the rendered control -- addressed by
+ * the tag the product stores as the option's data-value, not by a name either
+ * side's ICU might spell differently -- keeps the assertion about what the
+ * product rendered rather than about whether this process and the browser ship
+ * the same CLDR data.
  */
-function renderingsIn(
+async function languageOptionLabel(
+  page: Page,
+  locale: CopyLocale,
+  tag: string,
+): Promise<string> {
+  await languageSelect(page, locale).click()
+  const option = page.locator(`[role="option"][data-value="${tag}"]`)
+  await expect(option).toBeVisible()
+  const label = ((await option.textContent()) ?? '').trim()
+  await page.keyboard.press('Escape')
+  if (label === '') {
+    throw new Error(`the language option ${tag} rendered no label`)
+  }
+  return label
+}
+
+/**
+ * The numeric date-and-time fields a formatter emits for an instant, in the
+ * locale's own order, as one comparable key.
+ *
+ * Only the numbers are taken: separators, spacing and zero-padding are
+ * rendering choices that can shift between ICU/CLDR snapshots, while the field
+ * values themselves do not. The order still distinguishes a wrong interface
+ * language (en-US and zh-CN order the date fields differently), and the hour
+ * value still distinguishes a wrong zone.
+ */
+function numericFieldKey(
+  formatter: Intl.DateTimeFormat,
+  instant: number,
+): string {
+  return formatter
+    .formatToParts(new Date(instant))
+    .filter(
+      (part) =>
+        part.type === 'year' ||
+        part.type === 'month' ||
+        part.type === 'day' ||
+        part.type === 'hour' ||
+        part.type === 'minute',
+    )
+    .map((part) => String(Number(part.value)))
+    .join(',')
+}
+
+/** The numeric fields of a rendered time, as the same comparable key. */
+function renderedFieldKey(rendered: string): string {
+  return (rendered.match(/\d+/g) ?? [])
+    .map((value) => String(Number(value)))
+    .join(',')
+}
+
+/**
+ * Whether `rendered` names an instant inside [from, to] when formatted in
+ * `language` and `timeZone`: one of the window's instants has the same numeric
+ * fields. The product formats through Intl.DateTimeFormat with the medium date
+ * and short time styles, so this mirrors that call and compares the fields it
+ * yields, never a literal the test invented.
+ */
+function renderedInstantIn(
+  rendered: string,
   language: string,
   timeZone: string,
   from: number,
   to: number,
-): ReadonlySet<string> {
+): boolean {
   const formatter = new Intl.DateTimeFormat(language, {
     dateStyle: 'medium',
     timeStyle: 'short',
     timeZone,
   })
-  const seen = new Set<string>()
+  const key = renderedFieldKey(rendered)
   for (let instant = from; instant <= to; instant += 1_000) {
-    seen.add(formatter.format(new Date(instant)))
+    if (numericFieldKey(formatter, instant) === key) {
+      return true
+    }
   }
-  return seen
+  return false
 }
 
 /**
@@ -184,6 +253,10 @@ test('personalize-interface: the chosen language and time zone take effect and s
   // time as this session's own instant in the chosen zone.
   let signInFrom = 0
   let signInTo = 0
+  // The browser-rendered name of the chosen language, captured once the
+  // interface is in it and reused by the confirmation, the control and the
+  // post-reload assertions.
+  let chosenLanguageLabel = ''
 
   await test.step('the member signs in and opens the account settings page', async () => {
     // The precondition is an enabled, signed-in member with no stored
@@ -248,31 +321,11 @@ test('personalize-interface: the chosen language and time zone take effect and s
   })
 
   await test.step('step 2: choosing a language saves it and switches the interface at once', async () => {
-    // The option is named in the language the interface is currently in, which
-    // is what the control renders before the switch.
+    // The option carries its BCP-47 tag as a data attribute, so the choice is
+    // addressed by the value the product stores, not by a name either side's
+    // ICU might spell differently.
     await languageSelect(page, 'en-US').click()
-    await page
-      .getByRole('option', {
-        name: languageName(CHOSEN_LOCALE, 'en-US'),
-        exact: true,
-      })
-      .click()
-
-    // The confirmation beneath the control names the preference and is
-    // rendered in the language just chosen, because the write's success text
-    // is translated against the target language.
-    const section = preferencesSection(page, CHOSEN_LOCALE)
-    await expect(
-      section.getByText(
-        copy(
-          'accountUi',
-          'preferences.language.saved',
-          { value: languageName(CHOSEN_LOCALE, CHOSEN_LOCALE) },
-          CHOSEN_LOCALE,
-        ),
-        { exact: true },
-      ),
-    ).toBeVisible()
+    await page.locator('[role="option"][data-value="zh-CN"]').click()
 
     // No reload: the page heading, navigation, browser tab title and document
     // language all follow the switch in place.
@@ -283,6 +336,29 @@ test('personalize-interface: the chosen language and time zone take effect and s
         exact: true,
       }),
     ).toBeVisible()
+
+    // The name the product renders for the chosen language, in that language.
+    // Reading it from the rendered option keeps the expected text the
+    // product's own, independent of this process's CLDR. The confirmation
+    // beneath the control and the control itself must both carry it.
+    chosenLanguageLabel = await languageOptionLabel(
+      page,
+      CHOSEN_LOCALE,
+      CHOSEN_LOCALE,
+    )
+    const section = preferencesSection(page, CHOSEN_LOCALE)
+    await expect(
+      section.getByText(
+        copy(
+          'accountUi',
+          'preferences.language.saved',
+          { value: chosenLanguageLabel },
+          CHOSEN_LOCALE,
+        ),
+        { exact: true },
+      ),
+    ).toBeVisible()
+
     await expect(
       page.getByRole('link', {
         name: copy('demo', 'nav.account', {}, CHOSEN_LOCALE),
@@ -296,7 +372,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
 
     // The control holds the stored value, named in the new interface language.
     await expect(languageSelect(page, CHOSEN_LOCALE)).toHaveText(
-      languageName(CHOSEN_LOCALE, CHOSEN_LOCALE),
+      chosenLanguageLabel,
     )
   })
 
@@ -349,20 +425,21 @@ test('personalize-interface: the chosen language and time zone take effect and s
     ).toBeVisible()
 
     const rendered = await currentSessionSignedInTime(page, CHOSEN_LOCALE)
-    const expected = renderingsIn(
-      CHOSEN_LOCALE,
-      CHOSEN_ZONE,
-      signInFrom,
-      signInTo,
-    )
     // The interface is zh-CN, so the line's label and the instant's format are
     // zh-CN's; the instant is the session's creation, inside the sign-in
     // window; the zone is the one just stored. A renderer that used the
-    // device's UTC would fall outside this set.
+    // device's UTC would move the hour, and one that ignored the interface
+    // language would change the field order and set.
     expect(
-      expected.has(rendered),
-      `the session time ${JSON.stringify(rendered)} is not ${CHOSEN_ZONE} ` +
-        `in ${CHOSEN_LOCALE}: expected one of ${JSON.stringify([...expected])}`,
+      renderedInstantIn(
+        rendered,
+        CHOSEN_LOCALE,
+        CHOSEN_ZONE,
+        signInFrom,
+        signInTo,
+      ),
+      `the session time ${JSON.stringify(rendered)} is not an instant in ` +
+        `${CHOSEN_ZONE} rendered in ${CHOSEN_LOCALE} within the sign-in window`,
     ).toBe(true)
   })
 
@@ -393,7 +470,7 @@ test('personalize-interface: the chosen language and time zone take effect and s
     // language select shows the chosen language (not the "not chosen" choice a
     // failed write would leave), and the time zone select shows the zone.
     await expect(languageSelect(page, CHOSEN_LOCALE)).toHaveText(
-      languageName(CHOSEN_LOCALE, CHOSEN_LOCALE),
+      chosenLanguageLabel,
     )
     await expect(timeZoneSelect(page, CHOSEN_LOCALE)).toHaveText(
       CHOSEN_ZONE,
@@ -403,10 +480,15 @@ test('personalize-interface: the chosen language and time zone take effect and s
     // interface language; the session outlived the page's reload.
     const rendered = await currentSessionSignedInTime(page, CHOSEN_LOCALE)
     expect(
-      renderingsIn(CHOSEN_LOCALE, CHOSEN_ZONE, signInFrom, signInTo).has(
+      renderedInstantIn(
         rendered,
+        CHOSEN_LOCALE,
+        CHOSEN_ZONE,
+        signInFrom,
+        signInTo,
       ),
-      `after reload the session time ${JSON.stringify(rendered)} left ${CHOSEN_ZONE}`,
+      `after reload the session time ${JSON.stringify(rendered)} left ` +
+        `${CHOSEN_ZONE} in ${CHOSEN_LOCALE}`,
     ).toBe(true)
   })
 })
