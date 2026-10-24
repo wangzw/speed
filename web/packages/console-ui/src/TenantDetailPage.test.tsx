@@ -675,6 +675,53 @@ describe('TenantDetailPage', () => {
     expect(screen.getByText(zhCN.tenants.disabledBy.account)).toBeInTheDocument()
   })
 
+  it('shows the operator as the source of an operator disable', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () =>
+          Promise.resolve(
+            tenantFixture({
+              id: 'acme',
+              alias: 'Acme',
+              status: 'disabled',
+              disabledBy: 'operator',
+            }),
+          ),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+    expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
+  })
+
+  it('reads a disabled row that carries no source as the operator\'s', async () => {
+    // The view attaches the source to every disabled row, so a missing one is
+    // the operator's closed-set default rather than a reason to show nothing.
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () =>
+          Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme', status: 'disabled' })),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+    expect(screen.getByText(zhCN.tenants.disabledBy.operator)).toBeInTheDocument()
+  })
+
+  it('shows no disable source on a tenant that is not disabled', async () => {
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        getTenant: () => Promise.resolve(tenantFixture({ id: 'acme', alias: 'Acme' })),
+      }),
+    )
+    renderWithProviders(<TenantDetailPage id="acme" />, { operations })
+    await screen.findByText('Acme')
+    expect(screen.queryByText(zhCN.tenantDetail.field.disabledBy)).toBeNull()
+    expect(screen.queryByText(zhCN.tenants.disabledBy.operator)).toBeNull()
+    expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
+  })
+
   it('renders a tombstone read-only with no actions', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({
@@ -687,6 +734,10 @@ describe('TenantDetailPage', () => {
     renderWithProviders(<TenantDetailPage id="gone" />, { operations })
     await screen.findByText('Gone Co')
     expect(screen.getByText(zhCN.tenants.status.deleted)).toBeInTheDocument()
+    // A source describes a disabled tenant, and a tombstone is not one.
+    expect(screen.queryByText(zhCN.tenantDetail.field.disabledBy)).toBeNull()
+    expect(screen.queryByText(zhCN.tenants.disabledBy.operator)).toBeNull()
+    expect(screen.queryByText(zhCN.tenants.disabledBy.account)).toBeNull()
     // Deletion is terminal: the page renders the tenant and no write
     // control at all.
     expect(screen.queryByText(zhCN.tenantDetail.actions.title)).toBeNull()
