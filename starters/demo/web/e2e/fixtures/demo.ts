@@ -59,10 +59,17 @@ export const test = base.extend<{
    * spec starts from the template's own seed.
    */
   seedMember: boolean
+  /**
+   * Seed the impersonation journey's second factors on the operator. A spec sets
+   * `test.use({ seedImpersonation: true })` when it impersonates; every other
+   * spec keeps the operator signing in with one factor.
+   */
+  seedImpersonation: boolean
 }>({
   seedMember: [false, { option: true }],
-  server: async ({ seedMember }, use, testInfo) => {
-    const server = await startReviewServer({ seedMember })
+  seedImpersonation: [false, { option: true }],
+  server: async ({ seedMember, seedImpersonation }, use, testInfo) => {
+    const server = await startReviewServer({ seedMember, seedImpersonation })
     try {
       await use(server)
     } finally {

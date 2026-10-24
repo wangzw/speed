@@ -85,6 +85,13 @@ type seedInput struct {
 	// operator through the settings surface — is left as it stands, so a
 	// later run never overrides a runtime change.
 	Settings []seedSetting `config:"settings"`
+	// Impersonation asks the review build to seed the impersonation journey's
+	// second factors: two judged methods on the platform administrator, one of
+	// them aged past authn.mfa.sensitive-min-age. It is opt-in per deployment
+	// because those factors change how that administrator signs in — every later
+	// sign-in has to complete a second factor. A default build accepts the key
+	// and writes nothing, because it seeds no factor at all.
+	Impersonation bool `config:"impersonation"`
 	// Members are the memberships an account starts with. Each names a tenant
 	// under Tenants and an account under Accounts; the row is written through
 	// the membership seam, so the account has to exist and the tenant is
@@ -473,7 +480,7 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	// cannot finish an enrollment; write-path testing needs a factor added in
 	// account settings first, and the console's step-up gate refuses every write
 	// until then. The review build is the exception, and says so.
-	if !reviewSeedsFactors() {
+	if !reviewSeedsFactors(in) {
 		fmt.Print("note: no second factor is seeded; add one in account settings " +
 			"before testing a write path (see AGENTS.md, \"Exercising a write path\")\n")
 	}

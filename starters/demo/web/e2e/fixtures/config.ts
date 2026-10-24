@@ -34,6 +34,12 @@ export interface ReviewConfigInput {
    * every other spec starts from.
    */
   readonly seedMember?: boolean
+  /**
+   * Seed the impersonation journey's two second factors on the operator. Off by
+   * default: those factors make every later sign-in of that operator complete a
+   * second factor, so only the journey that needs them turns it on.
+   */
+  readonly seedImpersonation?: boolean
 }
 
 export interface ReviewConfig {
@@ -225,11 +231,45 @@ export async function writeReviewConfig(
       `${seedOperatorAccount}\n${seedMemberAccount()}`,
       'seed operator account',
     )
+    // The review template may already carry a members list (the impersonation
+    // fixture seeds its target there). YAML rejects a mapping with the same key
+    // twice, so the entry joins that existing list rather than opening a second
+    // key: it is inserted at the end of the list, which is the line before the
+    // next two-space key after it.
+    const settingsNeedle = '\n  settings:\n'
+    const membersNeedle = '\n  members:\n'
+    const membersAt = body.indexOf(membersNeedle)
+    if (membersAt === -1) {
+      body = replaceOnce(
+        body,
+        settingsNeedle,
+        `\n  members:\n${seedMemberMembership()}\n  settings:\n`,
+        'seed settings section',
+      )
+    } else {
+      const rest = body.slice(membersAt + membersNeedle.length)
+      const nextKeyAt = rest.search(/^ {2}[a-z-]+:/m)
+      if (nextKeyAt === -1) {
+        throw new Error(
+          'the review configuration template ends inside its members list; ' +
+            'the harness cannot tell where that list stops',
+        )
+      }
+      const insertAt = membersAt + membersNeedle.length + nextKeyAt
+      body = `${body.slice(0, insertAt)}${seedMemberMembership()}\n${body.slice(insertAt)}`
+    }
+  }
+
+  // The impersonation fixture's second factors change how the seeded operator
+  // signs in: every later sign-in must complete one. Only the journey that
+  // needs it turns it on; every other server starts from the template's own
+  // seed with the factors off.
+  if (input.seedImpersonation !== true) {
     body = replaceOnce(
       body,
-      '\n  settings:\n',
-      `\n  members:\n${seedMemberMembership()}\n  settings:\n`,
-      'seed settings section',
+      '\n  impersonation: true\n',
+      '\n  impersonation: false\n',
+      'seed impersonation switch',
     )
   }
 

@@ -403,7 +403,7 @@ the next run through the host's seeding surface, so the operator keeps
 everything the process declares while the management surface stays unable to
 change the role.
 
-`seed` writes no second factor in a baseline build. The public `pkg/authn`
+`seed` writes no second factor in a baseline build, and none in a review build either unless the deployment sets `seed.impersonation`: that switch seeds the impersonation journey's two judged methods on the platform administrator, one aged past `authn.mfa.sensitive-min-age`, and it changes how that administrator signs in afterwards. The public `pkg/authn`
 surface hands a host a registration step it does not let that host read, so a
 baseline seed cannot finish an enrollment; the console's step-up gate therefore
 refuses every write until an operator adds a factor in account settings and

@@ -20,5 +20,6 @@ var reviewModules []string
 func reviewSeedExtras(context.Context, *core.Registry, seedInput) error { return nil }
 
 // reviewSeedsFactors reports that the baseline seed writes no second factor,
-// which is what the command's closing note says.
-func reviewSeedsFactors() bool { return false }
+// which is what the command's closing note says, whatever the deployment asked
+// for: the impersonation fixture lives in the review build only.
+func reviewSeedsFactors(seedInput) bool { return false }

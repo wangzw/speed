@@ -58,14 +58,18 @@ const reviewOperatorTOTPSeed = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 // seasoned without an hour of waiting.
 const reviewFactorAge = 2 * time.Hour
 
-// reviewSeedsFactors reports whether the seed command writes second factors.
-// The command's closing note says it does not, and that note is false in the
-// review build.
-func reviewSeedsFactors() bool { return true }
+// reviewSeedsFactors reports whether this seed writes second factors: only a
+// deployment that opted in with seed.impersonation gets them, because they
+// change how its administrator signs in.
+func reviewSeedsFactors(in seedInput) bool { return in.Impersonation }
 
 // reviewSeedExtras seeds the impersonation fixture after the accounts, tenants
-// and memberships are in place. It is a no-op in a default build.
+// and memberships are in place. It is a no-op in a default build, and a no-op
+// here when the deployment did not opt in.
 func reviewSeedExtras(ctx context.Context, reg *core.Registry, in seedInput) error {
+	if !in.Impersonation {
+		return nil
+	}
 	var operator *seedAccount
 	for i := range in.Accounts {
 		if in.Accounts[i].PlatformAdmin {

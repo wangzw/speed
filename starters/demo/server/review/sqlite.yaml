@@ -159,6 +159,12 @@ seed:
     # tenant and an operator outside it.
     - tenant: acme
       account: member
+  # REVIEW: seed the impersonation journey's two second factors on the operator,
+  # the TOTP one aged past authn.mfa.sensitive-min-age. It is opt-in because it
+  # changes how that operator signs in: every later sign-in must complete a
+  # second factor. A walkthrough that is not the impersonation journey turns it
+  # off in its own copy of this configuration.
+  impersonation: true
   settings:
     # REVIEW: signup open, so a first login through SMS can open an account and
     # the methods listing reports signup.enabled.
