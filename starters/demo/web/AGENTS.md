@@ -165,17 +165,15 @@ program beside this directory embeds with `go:embed` and serves through
   `src/main.tsx` registers the extra namespaces (console-ui, account-ui,
   tenancy-ui, notification-ui, demo) beside the four the assembly registers
   automatically.
-- **Registration verification has its own page, banner and ensure gate.**
+- **Registration verification has its own page and banner.**
   `/account/verify` (`src/pages/account-verify-page.tsx`, an account-level
   route) renders account-ui's `ContactVerificationSection` under the session
   gate, and a password registration's automatic sign-in lands there
-  (`src/pages/sign-in-view.tsx`). The tenant frame reads the profile's
-  `verification.state` (`GET /api/v1/auth/me`) and does three things with it:
-  it does not call the personal-tenant ensure while the state is `pending`; on
-  a 409 `workspace.verification-required` it navigates to the verification
-  page rather than rendering the retryable failure placeholder; and it
-  resumes the ensure once the state becomes `verified` (the profile read is
-  invalidated by the verify write). A persistent notice below the app bar
+  (`src/pages/sign-in-view.tsx`). The tenant frame does not read the profile's
+  `verification.state` for the ensure: it calls the personal-tenant ensure
+  whenever an authenticated, non-impersonating viewer has no current tenant,
+  and an unverified account gets its workspace like any other. A persistent
+  notice below the app bar
   (`src/contact-verification-banner.tsx`) shows the target address and the
   verify/change links while pending; verify goes to `/account/verify`, change
   to `/account/verify?change=email`, whose page starts the section in the

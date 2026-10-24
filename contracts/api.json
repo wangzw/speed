@@ -10989,7 +10989,7 @@
                 }
               }
             },
-            "description": "The caller cannot have a personal tenant: it holds an unproved email address (urn:speed:workspace:verification-required), it belongsto another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. The verification-requiredrefusal changes once the account verifies an email address, already-member changes if the other membership is removed, and tenant-unavailable changes if an operator enables the tenant; identifier-unavailable does not change on retry"
+            "description": "The caller cannot have a personal tenant: it belongs to another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. already-member changes if the other membership is removed, tenant-unavailable changes if an operator enables the tenant, and identifier-unavailable does not change on retry"
           },
           "503": {
             "content": {

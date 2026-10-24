@@ -392,9 +392,8 @@ the address is proved. It is separate from the
 once-only "finish account setup" notice: the predicates are
 `contactVerificationPending` and `setupIncomplete` in `src/account-setup.ts`,
 and a password registration is setup-complete while verification is still
-pending. The frame does not call the personal-tenant ensure while verification
-is pending, and a 409 `workspace.verification-required` sends it to
-`/account/verify`; the ensure resumes once the state is `verified`.
+pending. The frame calls the personal-tenant ensure regardless of the
+verification state; the notice is independent of it.
 
 ## What to change when you copy this out
 

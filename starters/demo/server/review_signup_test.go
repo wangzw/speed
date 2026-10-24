@@ -155,22 +155,25 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q before the address is proved, want pending", state)
 	}
 
-	// The registration limit is in force before the address is proved: the
-	// personal ensure answers 409 verification-required and writes no tenant. The
-	// ensure after verification below answers created, which is only possible if
-	// this refused one wrote nothing.
-	refused := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
-	if refused.status != http.StatusConflict {
-		t.Fatalf("the ensure before verification answered %d:\n%s", refused.status, refused.body)
+	// The workspace exists before the address is proved: the ensure creates the
+	// personal tenant, and the verification notice is a separate surface. The
+	// ensure after verification below reads the same tenant back.
+	early := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
+	if early.status != http.StatusOK {
+		t.Fatalf("the ensure before verification answered %d:\n%s", early.status, early.body)
 	}
-	var refusedProblem struct {
-		Type string `json:"type"`
+	var personal struct {
+		Tenant struct {
+			ID   string `json:"id"`
+			Kind string `json:"kind"`
+		} `json:"tenant"`
+		Created bool `json:"created"`
 	}
-	if err := json.Unmarshal(refused.body, &refusedProblem); err != nil {
-		t.Fatalf("the refused ensure's answer is not JSON: %v\n%s", err, refused.body)
+	if err := json.Unmarshal(early.body, &personal); err != nil {
+		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, early.body)
 	}
-	if want := personalProblemPrefix + verificationRequiredCode; refusedProblem.Type != want {
-		t.Errorf("the refused ensure carries type %q, want %q", refusedProblem.Type, want)
+	if !personal.Created || personal.Tenant.ID == "" || personal.Tenant.Kind != personalKind {
+		t.Errorf("the ensure answered %+v, want a created personal tenant", personal)
 	}
 
 	// Adding the address sends the code; the review mail carrier writes it to the
@@ -204,24 +207,25 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q after the code was accepted, want verified", state)
 	}
 
-	// The proved address lifts the registration limit, so the personal tenant can
-	// be ensured.
+	// The proved address lifts the registration limit; the workspace the early
+	// ensure created is read back unchanged.
 	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
 	if ensured.status != http.StatusOK {
 		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)
 	}
-	var personal struct {
+	var again struct {
 		Tenant struct {
 			ID   string `json:"id"`
 			Kind string `json:"kind"`
 		} `json:"tenant"`
 		Created bool `json:"created"`
 	}
-	if err := json.Unmarshal(ensured.body, &personal); err != nil {
+	if err := json.Unmarshal(ensured.body, &again); err != nil {
 		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, ensured.body)
 	}
-	if !personal.Created || personal.Tenant.ID == "" || personal.Tenant.Kind != personalKind {
-		t.Errorf("the ensure answered %+v, want a created personal tenant", personal)
+	if again.Created || again.Tenant.ID != personal.Tenant.ID {
+		t.Errorf("the ensure after verification answered %+v, want the existing tenant %q",
+			again, personal.Tenant.ID)
 	}
 }
 

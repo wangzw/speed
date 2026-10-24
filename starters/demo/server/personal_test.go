@@ -299,36 +299,6 @@ func (fakeCatalog) ObjectAction(authz.Permission) (string, string, bool) {
 	return "", "", false
 }
 
-// fakeSignupVerification answers the acting account's self-registration state
-// with what a case scripts, and counts the reads. The zero value reports
-// SignupNone, which is what an account created outside self-registration reads
-// as.
-type fakeSignupVerification struct {
-	mu    sync.Mutex
-	state authn.SignupState
-	err   error
-	reads int
-}
-
-func (v *fakeSignupVerification) SignupStateOf(context.Context, authn.AccountID) (authn.SignupStatus, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.reads++
-	return authn.SignupStatus{State: v.state}, v.err
-}
-
-// PendingAccountByContact is not part of this surface.
-func (v *fakeSignupVerification) PendingAccountByContact(context.Context, string, string) (string, bool, error) {
-	return "", false, errors.New("workspace.personal: the pending-contact read is not part of this surface")
-}
-
-// answer scripts the state and the failure the next reads report.
-func (v *fakeSignupVerification) answer(state authn.SignupState, err error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	v.state, v.err = state, err
-}
-
 // unitProduct assembles a personal product over the fakes. The verification
 // read reports no self-registration, which is the state the eligibility cases
 // that are not about verification run in.
@@ -339,14 +309,13 @@ func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManage
 	manager := newFakeManager(grants)
 	seeder := newFakeSeeder(grants)
 	return &personalProduct{
-		config:       personalConfig{Enabled: true},
-		roster:       roster,
-		memberships:  memberships,
-		manager:      manager,
-		seeder:       seeder,
-		catalog:      fakeCatalog{},
-		verification: &fakeSignupVerification{},
-		logger:       log.Default(),
+		config:      personalConfig{Enabled: true},
+		roster:      roster,
+		memberships: memberships,
+		manager:     manager,
+		seeder:      seeder,
+		catalog:     fakeCatalog{},
+		logger:      log.Default(),
 	}, roster, memberships, manager, seeder
 }
 
@@ -814,8 +783,7 @@ func assertPersonalType(t *testing.T, recorder *httptest.ResponseRecorder, statu
 }
 
 // assertProblemType holds one answer's status and its problem type, the type
-// given whole rather than under this surface's workspace prefix: the
-// verification-required refusal carries the authentication capability's code.
+// given whole rather than under this surface's workspace prefix.
 func assertProblemType(t *testing.T, recorder *httptest.ResponseRecorder, status int, want string) {
 	t.Helper()
 	if recorder.Code != status {
@@ -1327,144 +1295,66 @@ func TestThePersonalTenantRouteIsAbsentWithTheSwitchOff(t *testing.T) {
 	}
 }
 
-// signupOf narrows the product's verification read to the fake the unit cases
-// deliver, so a case can script the acting account's state.
-func signupOf(t *testing.T, product *personalProduct) *fakeSignupVerification {
-	t.Helper()
-	v, ok := product.verification.(*fakeSignupVerification)
-	if !ok {
-		t.Fatalf("the verification read is %T, not the unit fake", product.verification)
+// TestTheEnsureCreatesForAnUnprovedRegistration holds the eligibility rule: an
+// unproved email address is not a reason to withhold the workspace. The account
+// gets its personal tenant, and the verification gate limits what it may do
+// inside it, not whether it exists.
+func TestTheEnsureCreatesForAnUnprovedRegistration(t *testing.T) {
+	product, roster, memberships, manager, _ := unitProduct()
+	result, err := product.ensure(context.Background(), unitAccount)
+	if err != nil {
+		t.Fatalf("the ensure: %v", err)
 	}
-	return v
-}
-
-// TestTheEnsureRefusesAnUnverifiedRegistration409 holds the registration gate:
-// an account whose self-registration has not proved an email address is answered
-// 409 verification-required and nothing is written — no tenant, no membership,
-// no role, no binding, no seeding. The verified case below creates the same
-// tenant, which is what makes this refusal the gate's.
-func TestTheEnsureRefusesAnUnverifiedRegistration409(t *testing.T) {
-	product, roster, memberships, manager, seeder := unitProduct()
-	signupOf(t, product).answer(authn.SignupPending, nil)
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	c, recorder := ginContext(ctx)
-	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
-	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
-		manager.putBinding != 0 || seeder.seed != 0 {
-		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), %d seeding(s)",
-			roster.creates, memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
+	if !result.Created {
+		t.Errorf("the ensure reports created=false, want true")
+	}
+	if roster.creates != 1 || memberships.puts != 1 || manager.putRole != 1 || manager.putBinding != 1 {
+		t.Errorf("the ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), want one of each",
+			roster.creates, memberships.puts, manager.putRole, manager.putBinding)
 	}
 }
 
-// TestTheEnsureCreatesTheTenantOnceVerificationIsProved holds the recovery: the
-// same account that was refused while pending creates its personal tenant once
-// its email address has been proved.
-func TestTheEnsureCreatesTheTenantOnceVerificationIsProved(t *testing.T) {
-	product, roster, _, _, _ := unitProduct()
-	signup := signupOf(t, product)
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-
-	signup.answer(authn.SignupPending, nil)
-	c, recorder := ginContext(ctx)
-	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
-	if roster.creates != 0 {
-		t.Fatalf("the pending ensure registered %d tenant(s), want none", roster.creates)
-	}
-
-	signup.answer(authn.SignupVerified, nil)
-	c, recorder = ginContext(ctx)
-	serveEnsure(product, c)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("the verified ensure answered %d, want 200:\n%s", recorder.Code, recorder.Body.String())
-	}
-	if roster.creates != 1 {
-		t.Errorf("the verified ensure registered %d tenant(s), want 1", roster.creates)
-	}
-}
-
-// TestAnUnreadableSignupStateIs503 holds the failure direction: a state that
-// cannot be read is a 503 and nothing is written, never read as verified.
-func TestAnUnreadableSignupStateIs503(t *testing.T) {
-	product, roster, memberships, manager, seeder := unitProduct()
-	signupOf(t, product).answer(authn.SignupNone, errors.New("the database is down"))
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	c, recorder := ginContext(ctx)
-	serveEnsure(product, c)
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("the ensure answered %d, want 503:\n%s", recorder.Code, recorder.Body.String())
-	}
-	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
-		manager.putBinding != 0 || seeder.seed != 0 {
-		t.Errorf("the ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), %d seeding(s)",
-			roster.creates, memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
-	}
-}
-
-// TestTheEnsureAnswersAnAccountWithNoRow503 holds the sentinel's chosen
-// direction for this surface: authn.ErrAccountNotFound is the 503 the handler
-// writes, not a state to read past. Unlike the capabilities' management faces,
-// which treat "no account row" as "no self-registration" and let their pipeline
-// answer, this ensure is an authenticated account's own provisioning, so a
-// missing row is an anomaly and no tenant is written for it.
-func TestTheEnsureAnswersAnAccountWithNoRow503(t *testing.T) {
-	product, roster, memberships, manager, seeder := unitProduct()
-	signupOf(t, product).answer(authn.SignupNone, authn.ErrAccountNotFound)
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	c, recorder := ginContext(ctx)
-	serveEnsure(product, c)
-	if recorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("the ensure for an account with no row answered %d, want 503:\n%s",
-			recorder.Code, recorder.Body.String())
-	}
-	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
-		manager.putBinding != 0 || seeder.seed != 0 {
-		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), %d seeding(s)",
-			roster.creates, memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
-	}
-}
-
-// TestTheVerificationGatePrecedesTheEligibilityRefusal holds the order: a
-// pending caller that also belongs to another tenant is answered the
-// verification refusal, not already-member. Without the gate first the answer
-// would carry the workspace's already-member type, so the type distinguishes the
-// two.
-func TestTheVerificationGatePrecedesTheEligibilityRefusal(t *testing.T) {
+// TestAnAccountThatBelongsToAnotherTenantIsAlreadyMember holds the remaining
+// refusal: membership elsewhere, not verification, is what keeps an account out
+// of a personal tenant.
+func TestAnAccountThatBelongsToAnotherTenantIsAlreadyMember(t *testing.T) {
 	product, roster, memberships, _, _ := unitProduct()
 	memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: "acme", Active: true, Source: "invite"},
 	}
-	signupOf(t, product).answer(authn.SignupPending, nil)
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
 	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
+	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+alreadyMemberCode)
 	if roster.creates != 0 || memberships.puts != 0 {
 		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), want none",
 			roster.creates, memberships.puts)
 	}
 }
 
-// TestTheVerificationGatePrecedesThePersonalTenantReadBack holds the order on
-// the reload scene: a pending account that already holds its personal tenant is
-// answered the verification refusal rather than reading the tenant back. The
-// gate runs before the membership read, so no write is attempted either.
-func TestTheVerificationGatePrecedesThePersonalTenantReadBack(t *testing.T) {
+// TestTheEnsureReadsBackAnExistingPersonalTenant holds the reload scene: the
+// account already holds its personal tenant, and the call answers it without
+// writing anything.
+func TestTheEnsureReadsBackAnExistingPersonalTenant(t *testing.T) {
 	product, roster, memberships, manager, seeder := unitProduct()
 	id := personalTenantID(unitAccount)
 	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
 	memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: string(id), Active: true, Source: "personal"},
 	}
-	signupOf(t, product).answer(authn.SignupPending, nil)
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	c, recorder := ginContext(ctx)
-	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+verificationRequiredCode)
-	if roster.creates != 0 || memberships.puts != 0 || manager.putRole != 0 ||
-		manager.putBinding != 0 || seeder.seed != 0 {
-		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), %d role(s), %d binding(s), %d seeding(s)",
-			roster.creates, memberships.puts, manager.putRole, manager.putBinding, seeder.seed)
+	result, err := product.ensure(context.Background(), unitAccount)
+	if err != nil {
+		t.Fatalf("the ensure: %v", err)
 	}
+	if result.Created || result.Tenant.ID != id {
+		t.Errorf("the ensure answered created=%t tenant=%q, want created=false tenant=%q",
+			result.Created, result.Tenant.ID, id)
+	}
+	// The role, its grants and the binding are converged on every call by
+	// design; a read-back writes no tenant row and no membership row.
+	if roster.creates != 0 || memberships.puts != 0 {
+		t.Errorf("the read-back ensure wrote %d tenant(s), %d membership(s), want none",
+			roster.creates, memberships.puts)
+	}
+	_, _, _ = manager, seeder, id
 }

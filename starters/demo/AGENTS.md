@@ -658,17 +658,10 @@ names the fixed part of that wiring, and no configuration file repeats it:
   claimed `/api/v1/workspace` prefix answers the account endpoint's 404. The route
   requires an authenticated caller, refuses an impersonating one 403 (it is
   registered `Impersonable` so the handler, not the gateway's default 401,
-  answers), refuses a service account or a static-credential principal 403,
-  refuses an account that holds an email address it has not proved 409
-  `urn:speed:workspace:verification-required`, without writing anything (its state is read
-  through `authn.SignupVerification`, which the module requires); the
-  verification check runs before the eligibility checks, so a pending caller that
-  also belongs to another tenant, or already holds its own personal tenant, is
-  answered this refusal rather than `already-member` or a read-back. An account
-  with no account row, `authn.ErrAccountNotFound`, is a 503 and not a state read
-  past: the ensure is an authenticated account's own provisioning, so a missing
-  row is an anomaly, and writing a tenant for it would register a workspace the
-  account store does not hold. The route reads back the
+  answers), and refuses a service account or a static-credential principal 403.
+  Registration verification is not an eligibility fact: an unverified account
+  gets its personal tenant, and the verification gate limits what it may do
+  inside the workspace. The route reads back the
   caller's own personal tenant when that membership already
   exists, refuses a caller that belongs to another tenant 409 `already-member`,
   and otherwise ensures the idempotent pieces: the tenant row (identifier and
@@ -681,23 +674,19 @@ names the fixed part of that wiring, and no configuration file repeats it:
   is not enabled answers 409 `tenant-unavailable` without writing anything. An
   alias collision or a derived identifier outside the roster domain answers 409
   `identifier-unavailable`. A dependency failure is a 503 with no part of the
-  result. The module's four 409s — `verification-required`, `already-member`,
-  `tenant-unavailable`, `identifier-unavailable` — carry
-  `urn:speed:workspace:<code>` types, so a frontend that must render them by code
-  can distinguish them; the 409 status is what tells the client to navigate to
-  the account page's verification section rather than read the refusal as a permission denial. `personal.go` demonstrates
+  result. The module's three 409s — `already-member`, `tenant-unavailable`,
+  `identifier-unavailable` — carry `urn:speed:workspace:<code>` types, so a
+  frontend that must render them by code can distinguish them. `personal.go` demonstrates
   that an application module's refusal a product frontend must render by code
   needs that shape, since `@speed/api-client` degrades every other problem type
   to `client.http.<status>`. The frontend calls it from the tenant frame when an
   authenticated, non-impersonating viewer has no current tenant and the feature
-  is served, except while the account's self-registration is still `pending`
-  (the server refuses it, so the frontend waits and shows the verification
-  notice instead); a registration completed through SMS lands on `/` (the
-  tenant home) with a one-time setup notice, and without the feature it lands
-  on `/account/setup`. A password registration lands on `/account?verify=1` in
-  either case, and a `409 verification-required` from the ensure sends the
-  frame to the account page's verification section rather than rendering a
-  failure placeholder.
+  is served, regardless of the account's verification state; a registration
+  completed through SMS lands on `/` (the tenant home) with a one-time setup
+  notice, and without the feature it lands on `/account/setup`. A password
+  registration lands on `/account?verify=1` in either case, and the
+  verification notice is rendered by the account surface independently of the
+  ensure.
 - The journal (`audit.journal`) records the requests its `requests` list names
   on the endpoints its `endpoints` list names. The sample files name no request
   route (`requests: []`): the object store's routes are gone, and the writes a

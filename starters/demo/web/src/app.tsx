@@ -77,7 +77,7 @@ import {
   useRouteLinkProps,
 } from '@speed/route-kit'
 import type { RouteContext, RoutePresence } from '@speed/route-kit'
-import { errorCodeOf, httpStatusOf } from '@speed/ui-kit'
+import { httpStatusOf } from '@speed/ui-kit'
 import type { ReactElement, ReactNode } from 'react'
 import {
   contactVerificationPending,
@@ -401,21 +401,6 @@ function TenantFrame({
   const personalServed = useFeature('workspace.personal')
   const snapshot = useAuthState()
   const authenticated = snapshot.state === 'authenticated'
-  // The caller's own registration-verification state, read from the same
-  // GET /api/v1/auth/me the account surfaces read. A `pending` account must
-  // prove its email before the personal tenant can be ensured, so the ensure
-  // below waits for this answer and skips while the state is pending.
-  const profileQuery = useAuthnProfileGet({
-    query: { enabled: authenticated },
-  })
-  const verificationKnown = profileQuery.data !== undefined
-  const verificationReadFailed = profileQuery.isError
-  // The state itself, not only its pending projection: the ensure effect keys
-  // on it so the answer that lifts a 409 -- a verified address after the
-  // 409's trip to the verification page -- re-runs the ensure. A value that
-  // did not change (a refetch of the same state) leaves the effect alone.
-  const verificationState = profileQuery.data?.verification?.state ?? ''
-  const verificationPending = contactVerificationPending(profileQuery.data ?? {})
   // Whose identity this session acts as right now. A start or end swaps it,
   // and the identity-keyed effects below re-read what was read under the
   // previous one.
@@ -645,9 +630,8 @@ function TenantFrame({
   }, [principalId, generation, impersonating])
 
   // The router's navigate callback changes identity with the location, so an
-  // effect that depended on it would re-run on every route change -- including
-  // the 409's own move to the verification page, which would issue the ensure
-  // a second time. The effect reads the latest callback through a ref instead.
+  // effect that depended on it would re-run on every route change. The effect
+  // reads the latest callback through a ref instead.
   const navigateRef = useRef(navigate)
   useEffect(() => {
     navigateRef.current = navigate
@@ -671,22 +655,6 @@ function TenantFrame({
       return undefined
     }
     if (!rosterSettled || tenantId !== null) {
-      return undefined
-    }
-    // The profile's verification state decides whether the ensure may run at
-    // all: the server refuses a pending account, so the frame does not ask.
-    // An unread profile is not "not pending" -- wait for the answer rather
-    // than issue a request the account may not be eligible for. A read that
-    // failed is different: it says nothing about eligibility, so the ensure
-    // proceeds and the server's own answer decides (a pending account's 409
-    // is routed to the verification page below). A state that changes after
-    // the 409 -- the verify write invalidates the profile and it comes back
-    // `verified` -- re-runs this effect, so the ensure resumes without a
-    // reload; the state is a dependency for exactly that.
-    if (verificationPending) {
-      return undefined
-    }
-    if (!verificationKnown && !verificationReadFailed) {
       return undefined
     }
     let cancelled = false
@@ -722,21 +690,6 @@ function TenantFrame({
         if (cancelled) {
           return
         }
-        if (
-          httpStatusOf(error) === 409 &&
-          errorCodeOf(error) === 'workspace.verification_required'
-        ) {
-          // The account has not proved its email yet. This is not a failure:
-          // the account page's verification section is where it becomes
-          // eligible, and the ensure re-runs by itself once the profile flips
-          // to verified.
-          setPersonalFailure(false)
-          setPersonalTenant(null)
-          setTenantSettled(false)
-          setIdentitySettling(false)
-          navigateRef.current(`${ACCOUNT_PATH}?verify=1`)
-          return
-        }
         if (httpStatusOf(error) === 409) {
           // already-member: the account belongs to another tenant. It gets no
           // personal one, and the placeholder tenant is what makes its reads
@@ -759,10 +712,6 @@ function TenantFrame({
     personalServed,
     rosterSettled,
     tenantId,
-    verificationKnown,
-    verificationReadFailed,
-    verificationPending,
-    verificationState,
     principalId,
     generation,
     personalRetry,
