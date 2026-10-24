@@ -11,15 +11,18 @@ import (
 	"github.com/vislake/speed/pkg/settings"
 )
 
-// TestTheHooksForDisabledAndRevokedSecretsAreNoOps holds the two hooks that touch
-// nothing: a disabled account keeps its challenges, and a revoked service secret
-// has none.
-func TestTheHooksForDisabledAndRevokedSecretsAreNoOps(t *testing.T) {
+// TestTheHooksForEnabledDisabledAndRevokedSecretsAreNoOps holds the hooks that
+// touch nothing: an enabled or disabled account keeps its challenges, and a
+// revoked service secret has none.
+func TestTheHooksForEnabledDisabledAndRevokedSecretsAreNoOps(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
 	r.insert("row-1", authn.SMSPurposeMFA, r.database.BlindIndex(phone), ptr(string(acct)), false, "mac", 0, 5,
 		base, base.Add(time.Minute), nil)
 
+	if err := r.p.AccountEnabled(context.Background(), acct); err != nil {
+		t.Errorf("AccountEnabled returned %v, want nil", err)
+	}
 	if err := r.p.AccountDisabled(context.Background(), acct); err != nil {
 		t.Errorf("AccountDisabled returned %v, want nil", err)
 	}

@@ -83,6 +83,7 @@ var seamSignatures = map[string][]string{
 	},
 	"AccountLifecycle": {
 		"AccountDisabled(ctx context.Context, id AccountID) error",
+		"AccountEnabled(ctx context.Context, id AccountID) error",
 		"AccountDeleted(ctx context.Context, id AccountID) error",
 		"ServiceSecretRevoked(ctx context.Context, id AccountID, credentialID string) error",
 	},

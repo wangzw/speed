@@ -30,6 +30,13 @@ func (p *product) AccountDisabled(ctx context.Context, id authn.AccountID) error
 	return err
 }
 
+// AccountEnabled changes nothing: the browser and token sessions of before the
+// disable were void by the account's valid-after instant, which enabling does
+// not move back, so none of them comes to life again. A service session is not
+// stored until it is asked for: ForCredential issues it again once the account
+// is enabled. The hook is idempotent and returns nil.
+func (p *product) AccountEnabled(context.Context, authn.AccountID) error { return nil }
+
 // AccountDeleted revokes every session of the account and deletes the rows,
 // service sessions included, and clears what this replica cached for it. The
 // rows are revoked before they are deleted, so a failure in between leaves them

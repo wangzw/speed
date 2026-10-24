@@ -102,6 +102,20 @@ func TestADisabledAccountKeepsItsFactors(t *testing.T) {
 	})
 }
 
+// AccountEnabled changes nothing: a disabled account kept its factors, and the
+// enabled account uses the same ones.
+func TestAnEnabledAccountKeepsItsFactors(t *testing.T) {
+	onEachDialect(t, []authn.FactorKind{authn.FactorTOTP}, func(t *testing.T, r *rig) {
+		id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+		if err := r.p.AccountEnabled(context.Background(), acct); err != nil {
+			t.Errorf("AccountEnabled: %v", err)
+		}
+		if s, there := r.status(id); !there || s != authn.FactorActive {
+			t.Error("enabling changed or removed a factor")
+		}
+	})
+}
+
 func deleted(id string, account authn.AccountID) event.Event {
 	return event.Event{ID: id, Type: authn.EventAccountDeleted, Payload: authn.AccountDeleted{AccountID: string(account)}}
 }

@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -60,8 +61,76 @@ func TestEnablingDoesNotRollValidAfterBack(t *testing.T) {
 			t.Errorf("after enabling: status %d, valid_after %v; want active and the disable's %v",
 				after.Status, after.ValidAfter, before.ValidAfter)
 		}
-		if seen := h.hook.seen(); len(seen) != 1 {
-			t.Errorf("the hooks saw %v, want only the disable's", seen)
+		want := []string{"disabled:" + id.String(), "enabled:" + id.String()}
+		if seen := h.hook.seen(); !slices.Equal(seen, want) {
+			t.Errorf("the hooks saw %v, want the disable's and the enable's %v", seen, want)
+		}
+	})
+}
+
+// Enabling calls the enabled hook, so a module that wound something down on the
+// disable winds it back up.
+func TestEnablingCallsTheEnabledHook(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("restored", "correct horse battery")
+		if err := h.p.SetStatus(ctx, id, authn.StatusDisabled, authn.ReasonAdmin); err != nil {
+			t.Fatalf("disabling: %v", err)
+		}
+		if err := h.p.SetStatus(ctx, id, authn.StatusActive, authn.ReasonAdmin); err != nil {
+			t.Fatalf("enabling: %v", err)
+		}
+		want := []string{"disabled:" + id.String(), "enabled:" + id.String()}
+		if seen := h.hook.seen(); !slices.Equal(seen, want) {
+			t.Errorf("the hooks saw %v, want %v", seen, want)
+		}
+	})
+}
+
+// A call that enables an account already active changes nothing and still runs
+// the enabled hook, which is how a call told the cleanup was incomplete is
+// repeated.
+func TestSetStatusToActiveOnAnActiveAccountRunsTheEnabledHook(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("already", "correct horse battery")
+		if err := h.p.SetStatus(ctx, id, authn.StatusActive, authn.ReasonAdmin); err != nil {
+			t.Fatalf("enabling: %v", err)
+		}
+		want := []string{"enabled:" + id.String()}
+		if seen := h.hook.seen(); !slices.Equal(seen, want) {
+			t.Errorf("the hooks saw %v, want %v", seen, want)
+		}
+		if events := h.bus.of(authn.EventAccountStatusChanged); len(events) != 0 {
+			t.Errorf("%d status-changed events, want none for a status the account already had", len(events))
+		}
+	})
+}
+
+// A failing enabled hook leaves the account enabled and the call is
+// ErrCleanupIncomplete; repeating the call finishes the cleanup.
+func TestAFailingEnabledHookLeavesTheStateInForce(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("unlucky-up", "correct horse battery")
+		if err := h.p.SetStatus(ctx, id, authn.StatusDisabled, authn.ReasonAdmin); err != nil {
+			t.Fatalf("disabling: %v", err)
+		}
+		h.hook.fail("enabled:"+id.String(), errors.New("the session store is down"))
+		err := h.p.SetStatus(ctx, id, authn.StatusActive, authn.ReasonAdmin)
+		if !errors.Is(err, authn.ErrCleanupIncomplete) {
+			t.Fatalf("a failing enabled hook gave %v, want ErrCleanupIncomplete", err)
+		}
+		var row accountRow
+		if err := h.handle.Where("id = ?", id.String()).Take(&row).Error; err != nil {
+			t.Fatalf("reading back: %v", err)
+		}
+		if row.Status != statusActive {
+			t.Errorf("the account is status %d, want active in force despite the hook", row.Status)
+		}
+		h.hook.fail("enabled:"+id.String(), nil)
+		if err := h.p.SetStatus(ctx, id, authn.StatusActive, authn.ReasonAdmin); err != nil {
+			t.Fatalf("repeating the call: %v", err)
 		}
 	})
 }

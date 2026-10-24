@@ -20,6 +20,10 @@ const seenCapacity = 1024
 // enabled again, and a disabled account cannot receive or submit a code anyway.
 func (p *product) AccountDisabled(context.Context, authn.AccountID) error { return nil }
 
+// AccountEnabled changes nothing: the challenges of a disabled account stayed
+// where they were, and an enabled account sends and submits codes again.
+func (p *product) AccountEnabled(context.Context, authn.AccountID) error { return nil }
+
 // ServiceSecretRevoked has nothing to do: a service secret is not a challenge.
 func (p *product) ServiceSecretRevoked(context.Context, authn.AccountID, string) error { return nil }
 

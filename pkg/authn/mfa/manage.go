@@ -236,6 +236,10 @@ func (m *product) Seasoned(ctx context.Context, id authn.AccountID) (bool, error
 // that is enabled again has the factors it had.
 func (m *product) AccountDisabled(context.Context, authn.AccountID) error { return nil }
 
+// AccountEnabled changes nothing: a disable kept the factors, and the enabled
+// account uses the same ones again.
+func (m *product) AccountEnabled(context.Context, authn.AccountID) error { return nil }
+
 // ServiceSecretRevoked has nothing to do: a service secret is not a factor.
 func (m *product) ServiceSecretRevoked(context.Context, authn.AccountID, string) error { return nil }
 

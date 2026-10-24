@@ -13,6 +13,12 @@ import (
 // this module anything. The hook is a no-op and idempotent.
 func (p *product) AccountDisabled(context.Context, authn.AccountID) error { return nil }
 
+// AccountEnabled implements authn.AccountLifecycle. A disable leaves the
+// bindings, so enabling has nothing to give back: the account module stops
+// refusing the account and the bindings are in force again. The hook is a no-op
+// and idempotent.
+func (p *product) AccountEnabled(context.Context, authn.AccountID) error { return nil }
+
 // AccountDeleted implements authn.AccountLifecycle: it removes every binding
 // row the account holds, across every tenant.
 //

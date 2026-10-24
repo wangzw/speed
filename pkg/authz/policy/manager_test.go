@@ -334,11 +334,14 @@ func TestEveryMethodRefusesAnEmptyTenant(t *testing.T) {
 	}
 }
 
-// The two lifecycle hooks that hold no policy are no-ops: they return nil for
-// any input and change nothing.
+// The lifecycle hooks that hold no policy are no-ops: they return nil for any
+// input and change nothing.
 func TestLifecycleHooksThatHoldNoPolicyAreNoOps(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
+	if err := f.AccountEnabled(ctx, authn.AccountID("acc1")); err != nil {
+		t.Errorf("AccountEnabled gave %v, want nil", err)
+	}
 	if err := f.AccountDisabled(ctx, authn.AccountID("acc1")); err != nil {
 		t.Errorf("AccountDisabled gave %v, want nil", err)
 	}

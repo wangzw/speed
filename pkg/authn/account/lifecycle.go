@@ -54,10 +54,11 @@ func reasonOK(reason string) error {
 // before which no session is valid, and the event. Moving to disabled moves that
 // instant to the next second after the change and never back, and moving to
 // enabled leaves it, so a session of before is not revived. Once the transaction
-// has committed every lifecycle hook is called, each of them idempotent, and a
-// hook that fails makes the call authn.ErrCleanupIncomplete with the new state in
-// force. Calling again with the same status finishes the cleanup: a status the
-// account already has changes nothing and calls the hooks once more.
+// has committed the hook of the target status is called on every lifecycle
+// implementation, each of them idempotent, and a hook that fails makes the call
+// authn.ErrCleanupIncomplete with the new state in force. Calling again with the
+// same status finishes the cleanup: a status the account already has changes
+// nothing and the hook of that status is called once more.
 func (p *product) SetStatus(ctx context.Context, id authn.AccountID, s authn.AccountStatus, reason string) error {
 	if s != authn.StatusDisabled && s != authn.StatusActive {
 		return fmt.Errorf("%w: a status is set to disabled or enabled, and an account is ended with Delete", authn.ErrInvalidArgument)
@@ -97,7 +98,9 @@ func (p *product) SetStatus(ctx context.Context, id authn.AccountID, s authn.Acc
 			return h.AccountDisabled(hookCtx, id)
 		})
 	}
-	return nil
+	return p.callHooks(ctx, id, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
+		return h.AccountEnabled(hookCtx, id)
+	})
 }
 
 // laterOf is the later of two times.

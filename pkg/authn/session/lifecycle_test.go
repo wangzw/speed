@@ -41,6 +41,29 @@ func TestAccountDisabledRevokesTheCookieAndTokenKindsAndLeavesTheServiceOne(t *t
 	})
 }
 
+// AccountEnabled changes nothing: a session of the enabled account stays as it
+// is, and one the disable revoked does not come back.
+func TestAccountEnabledLeavesTheSessionsAsTheyAre(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, d dialectCase) {
+		f := newFixture(t, d)
+		f.accounts.add(alice, nil)
+		ctx := context.Background()
+		browser := f.create(newBrowser(alice))
+		noErr(t, f.p.AccountEnabled(ctx, alice))
+		if !f.status(browser.ID).Active {
+			t.Error("enabling revoked a session of the enabled account")
+		}
+		f.clock.Advance(time.Minute)
+		f.disable(alice)
+		noErr(t, f.p.AccountDisabled(ctx, alice))
+		f.enable(alice)
+		noErr(t, f.p.AccountEnabled(ctx, alice))
+		if !f.row(browser.ID).RevokedAt.Valid {
+			t.Error("enabling brought back the session the disable revoked")
+		}
+	})
+}
+
 // AccountDeleted deletes every row of the account, service rows included.
 func TestAccountDeletedRemovesEveryRow(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, d dialectCase) {

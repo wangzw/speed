@@ -278,6 +278,10 @@ func (h *recordingHook) AccountDisabled(_ context.Context, id authn.AccountID) e
 	return h.record("disabled:" + id.String())
 }
 
+func (h *recordingHook) AccountEnabled(_ context.Context, id authn.AccountID) error {
+	return h.record("enabled:" + id.String())
+}
+
 func (h *recordingHook) AccountDeleted(_ context.Context, id authn.AccountID) error {
 	return h.record("deleted:" + id.String())
 }

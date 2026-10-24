@@ -510,6 +510,7 @@ var exportedSurface = []string{
 	"method AccountKind.Valid",
 	"method AccountLifecycle.AccountDeleted",
 	"method AccountLifecycle.AccountDisabled",
+	"method AccountLifecycle.AccountEnabled",
 	"method AccountLifecycle.ServiceSecretRevoked",
 	"method AccountQuery.Clone",
 	"method AccountQuery.EffectiveLimit",
