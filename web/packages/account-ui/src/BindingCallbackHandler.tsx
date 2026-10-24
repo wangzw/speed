@@ -19,8 +19,11 @@
  * another answer is finished where it stands. A landed `link` completion
  * confirms itself through the write-feedback region, naming the bound
  * object, so a host that stays (or gave no onBound) is not left on the
- * pending notice. A read that failed, and a completion whose state is not
- * 'linked', render their code text in the InlineError banner under a retry.
+ * pending notice; the region stands in the tree across every phase, empty
+ * until the link settles, so its live region announces the confirmation
+ * rather than being born with it. A read that failed, and a completion whose
+ * state is not 'linked', render their code text in the InlineError banner
+ * under a retry.
  * The `link` flow never signs anyone in
  * (a binding is not a login), so there is no signed-elsewhere outcome.
  * Nothing here navigates: the callbacks are the host's.
@@ -114,6 +117,15 @@ export function BindingCallbackHandler({
   const doneFeedback = useWriteFeedback()
   const succeedDone = doneFeedback.succeed
 
+  // The translation function is read through a ref inside the settle
+  // callback: `t` changes identity on a language switch, and putting it in
+  // the callback's dependencies would re-arm the read effect, re-reading a
+  // flow its done stage already took. The confirmation is translated with
+  // whatever language is active when the link settles -- a snapshot, like
+  // every other success message.
+  const tRef = useRef(t)
+  tRef.current = t
+
   // A running read is not cancelled on cleanup: StrictMode's
   // mount/effect/cleanup/effect cycle would leave one start, so the first
   // must be allowed to finish. Each start takes a run token and a
@@ -143,12 +155,12 @@ export function BindingCallbackHandler({
       })
       if (run === runRef.current) {
         // Translated when the link settles; it names the bound object.
-        succeedDone(t('bindingCallback.done'))
+        succeedDone(tRef.current('bindingCallback.done'))
         setPhase('done')
         onBound?.()
       }
     },
-    [queryClient, onBound, succeedDone, t],
+    [queryClient, onBound, succeedDone],
   )
 
   /** Applies a flow state read off the callback route: a ready flow is
@@ -282,64 +294,63 @@ export function BindingCallbackHandler({
     return <>{absent}</>
   }
 
-  if (phase === 'done') {
-    return (
-      <Box sx={{ width: '100%' }}>
-        <WriteFeedbackRegion outcome={doneFeedback.outcome} />
-      </Box>
-    )
-  }
-
-  if (phase === 'failed') {
-    return (
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          gap: 1.5,
-          width: '100%',
-        }}
-      >
-        <InlineError code={errorCode} />
-        <Button variant="outlined" onClick={retry}>
-          {t('bindingCallback.retry')}
-        </Button>
-      </Box>
-    )
-  }
-
-  if (phase === 'step' && step !== null) {
-    return (
-      <Box sx={{ width: '100%' }}>
-        <Typography variant="body2" color="text.secondary">
-          {t('bindingCallback.pending')}
-        </Typography>
-        <FlowStep
-          key={`${seq ?? 0}-${step.kind}`}
-          step={step}
-          busy={answering}
-          answerStep={challengeStep}
-          submitLabel={t('bindingCallback.continueLabel')}
-          onSubmit={(answer) => void handleAnswer(answer)}
-        />
-      </Box>
-    )
-  }
-
+  // The done stage's success region stands in the tree from the first
+  // render, across every phase, so the confirmation fills a live region the
+  // screen reader already knows rather than arriving in the commit that
+  // mounts it. The slot is empty until a link settles; the phase body below
+  // changes around it.
   return (
-    <Box
-      role="status"
-      sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}
-    >
-      {/* Decorative: the pending text on its own announces the state from
-          the role=status container; naming the spinner too would read the
-          notice twice. The text renders only once `pendingCommitted`
-          arms it, one commit after this region mounts. */}
-      <CircularProgress size={18} aria-hidden={true} />
-      <Typography>
-        {pendingCommitted ? t('bindingCallback.pending') : ''}
-      </Typography>
+    <Box sx={{ width: '100%' }}>
+      <WriteFeedbackRegion outcome={doneFeedback.outcome} />
+      {phase === 'done' ? null : phase === 'failed' ? (
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 1.5,
+            width: '100%',
+          }}
+        >
+          <InlineError code={errorCode} />
+          <Button variant="outlined" onClick={retry}>
+            {t('bindingCallback.retry')}
+          </Button>
+        </Box>
+      ) : phase === 'step' && step !== null ? (
+        <Box sx={{ width: '100%' }}>
+          <Typography variant="body2" color="text.secondary">
+            {t('bindingCallback.pending')}
+          </Typography>
+          <FlowStep
+            key={`${seq ?? 0}-${step.kind}`}
+            step={step}
+            busy={answering}
+            answerStep={challengeStep}
+            submitLabel={t('bindingCallback.continueLabel')}
+            onSubmit={(answer) => void handleAnswer(answer)}
+          />
+        </Box>
+      ) : (
+        <Box
+          role="status"
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            width: '100%',
+          }}
+        >
+          {/* Decorative: the pending text on its own announces the state from
+              the role=status container; naming the spinner too would read the
+              notice twice. The text renders only once `pendingCommitted`
+              arms it, one commit after this region mounts. */}
+          <CircularProgress size={18} aria-hidden={true} />
+          <Typography>
+            {pendingCommitted ? t('bindingCallback.pending') : ''}
+          </Typography>
+        </Box>
+      )}
     </Box>
   )
 }

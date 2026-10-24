@@ -12,8 +12,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { switchLanguage } from '@speed/i18n'
 import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -66,6 +67,91 @@ describe('BindingCallbackHandler', () => {
     )
     // The ready flow is taken with the sequence number the server sent.
     expect(answer?.body).toEqual({ seq: 2, step: 'complete' })
+  })
+
+  it('fills the done region after it is mounted, so the confirmation is announced', async () => {
+    // The success region stands in the tree from the first render; the
+    // confirmation fills an already-mounted polite region rather than
+    // arriving in the commit that mounts it -- a region born with its text
+    // is not announced.
+    let releaseRead: ((response: Response) => void) | undefined
+    const read = new Promise<Response>((resolve) => {
+      releaseRead = resolve
+    })
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+        return read
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return jsonResponse(200, { state: 'linked' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(<BindingCallbackHandler session={rig.session} />)
+
+    // While the flow is still being read, the pending notice occupies its
+    // own status region and the done scope's region is already there, empty.
+    await screen.findByText(zhCN.bindingCallback.pending)
+    const emptyRegions = screen
+      .getAllByRole('status')
+      .filter((element) => element.textContent === '')
+    expect(emptyRegions).toHaveLength(1)
+    const doneRegion = emptyRegions[0] as HTMLElement
+
+    await act(async () => {
+      releaseRead?.(
+        jsonResponse(200, {
+          seq: 2,
+          state: 'ready',
+          next: { kind: 'complete' },
+        }),
+      )
+    })
+    await screen.findByText(zhCN.bindingCallback.done)
+    // The same region now carries the confirmation: it was not born with it.
+    expect(doneRegion).toHaveTextContent(zhCN.bindingCallback.done)
+  })
+
+  it('keeps the done confirmation across a language switch without re-reading the flow', async () => {
+    // The flow is taken once. `t` changing identity on a language switch
+    // must not re-arm the read effect: the flow is gone by then, and a
+    // second read would replace the confirmation with the failure banner.
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+        reads += 1
+        if (reads === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'ready',
+            next: { kind: 'complete' },
+          })
+        }
+        return errorResponse(401, 'authn.flow_invalid')
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return jsonResponse(200, { state: 'linked' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const { i18n } = renderWithProviders(
+      <BindingCallbackHandler session={rig.session} />,
+    )
+
+    await screen.findByText(zhCN.bindingCallback.done)
+    await act(async () => {
+      await switchLanguage(i18n, 'en-US')
+    })
+
+    // The success message is the translation snapshot taken at settle time;
+    // the switch neither rewrites it nor re-reads the flow it already took.
+    expect(screen.getByText(zhCN.bindingCallback.done)).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(reads).toBe(1)
   })
 
   it('holds the pending notice while the flow is still on a step', async () => {
