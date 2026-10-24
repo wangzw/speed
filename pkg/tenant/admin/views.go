@@ -31,16 +31,18 @@ type TenantAdminTenant struct {
 type tenantView = TenantAdminTenant
 
 // tenantViewOf builds the view field by field from a root-package value. The
-// disable source is rendered only for a disabled tenant: tenant.Tenant reads the
-// source as operator for every other state, and copying that onto an active or
-// deleted row would say who stopped a tenant that is not stopped.
+// disable source is rendered whenever the view spells the state as disabled,
+// which includes a value this build does not know: that value reads as disabled
+// everywhere else, so the source it carries belongs with it. Rendering it only
+// for the literal StatusDisabled would leave such a row showing a disabled state
+// and no reason, which is the contradiction the view exists to avoid.
 func tenantViewOf(t tenant.Tenant) TenantAdminTenant {
 	view := TenantAdminTenant{
 		ID:     string(t.ID),
 		Alias:  t.Alias,
 		Status: t.Status.String(),
 	}
-	if t.Status == tenant.StatusDisabled {
+	if t.Status.String() == tenant.StatusDisabled.String() {
 		view.DisabledBy = t.DisabledBy.String()
 	}
 	return view

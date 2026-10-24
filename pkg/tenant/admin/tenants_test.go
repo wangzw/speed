@@ -463,7 +463,10 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 		"rename with a blank identifier":    {http.MethodPatch, pathTenants + "/t%20acme", aliasBody{Alias: "a"}},
 		"rename with an empty alias":        {http.MethodPatch, pathTenants + "/t_acme", aliasBody{}},
 		"status outside the closed set":     {http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "pending"}},
-		"status with a blank identifier":    {http.MethodPost, pathTenants + "/t%20acme/status", statusBody{Status: "active"}},
+		"status the closed set keeps for deletion": {
+			http.MethodPost, pathTenants + "/t_acme/status", statusBody{Status: "deleted"},
+		},
+		"status with a blank identifier": {http.MethodPost, pathTenants + "/t%20acme/status", statusBody{Status: "active"}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -517,15 +520,19 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			wantKeys:   []string{"id", "alias", "status"},
 		},
 		"disabled by an operator": {
-			row: tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
-				DisabledBy: tenant.DisabledByOperator},
+			row: tenant.Tenant{
+				ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
+				DisabledBy: tenant.DisabledByOperator,
+			},
 			wantStatus: "disabled",
 			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
 			disabledBy: "operator",
 		},
 		"disabled by an account": {
-			row: tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
-				DisabledBy: tenant.DisabledByAccount},
+			row: tenant.Tenant{
+				ID: "t_acme", Alias: "acme", Status: tenant.StatusDisabled,
+				DisabledBy: tenant.DisabledByAccount,
+			},
 			wantStatus: "disabled",
 			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
 			disabledBy: "account",
@@ -534,6 +541,15 @@ func TestTheViewCarriesTheNamedFieldsPerState(t *testing.T) {
 			row:        tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusDeleted},
 			wantStatus: "deleted",
 			wantKeys:   []string{"id", "alias", "status"},
+		},
+		"a status this build does not know": {
+			row: tenant.Tenant{
+				ID: "t_acme", Alias: "acme", Status: tenant.Status(7),
+				DisabledBy: tenant.DisabledByOperator,
+			},
+			wantStatus: "disabled",
+			wantKeys:   []string{"id", "alias", "status", "disabledBy"},
+			disabledBy: "operator",
 		},
 	}
 	for name, tc := range cases {
