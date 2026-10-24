@@ -226,8 +226,9 @@ function saveButton(page: Page): Locator {
 /**
  * A `datetime-local` input's value for a wall-clock instant, rendered in UTC.
  * The browser is pinned to UTC by the Playwright config, so the field reads a
- * UTC ``YYYY-MM-DDTHH:mm`` as UTC; the spec's own window is deliberately wider
- * than the two saves so a minute boundary can never cut a write out.
+ * UTC ``YYYY-MM-DDTHH:mm`` as UTC. Truncating to the minute floors a lower
+ * bound and extends an upper bound, so a write near a minute boundary always
+ * stays inside the window measured against it.
  */
 function datetimeBound(instant: Date, slackMs: number): string {
   return new Date(instant.getTime() + slackMs).toISOString().slice(0, 16)
@@ -238,9 +239,10 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
   browser,
 }) => {
   const { page, server } = demo
-  // The audit window covers the whole run: the bound below is taken before
-  // the operator signs in, so every record this journey makes falls inside it.
-  const windowStart = new Date()
+  // The audit window's lower bound is taken immediately before the first
+  // settings save (step 2), so it covers exactly the two writes this journey
+  // makes. Step 6 explains why the bound must not reach further back.
+  let firstSaveAt: Date | undefined
   let visitor: BrowserContext | undefined
 
   try {
@@ -393,6 +395,7 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
       const row = settingRow(page)
 
       await valueField(page).fill(CLOSED)
+      firstSaveAt = new Date()
       await saveButton(page).click()
 
       // The one feedback region under the table carries the success
@@ -436,12 +439,15 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
 
     await test.step('step 3: the anonymous surface keeps the register entry but drops the password form', async () => {
       // The operator's unlogged window: a fresh browser context with no
-      // session. The context carries the tier's language and time zone pins,
-      // which the config applies to the default context but not to a context
-      // the spec creates by hand.
+      // session. The config applies the tier's language and time zone pins to
+      // the default context; a context the spec creates by hand must repeat
+      // them, and it also takes the running page's viewport so the anonymous
+      // surface renders at the same width as the main one instead of
+      // Playwright's default.
       visitor = await browser.newContext({
         locale: 'en-US',
         timezoneId: 'UTC',
+        viewport: page.viewportSize(),
       })
       const anonymous = await visitor.newPage()
       await anonymous.goto(`${server.url}/`)
@@ -522,7 +528,17 @@ test('operator-configuration: a switch is closed and reopened, and the audit tra
     })
 
     await test.step('step 6: the audit query finds both writes in the time window', async () => {
-      const since = datetimeBound(windowStart, -60_000)
+      // The lower bound is the first save's own minute, not a minute-wide
+      // bracket around the run. The review seed writes its settings through
+      // the settings store directly and leaves no `settings.set` audit row --
+      // the precondition this exact-two count rests on. A wider bound would let
+      // a settings.set row written before the journey (were the seeding path
+      // ever to gain an audited write) into the count and fail on a detail
+      // unrelated to this journey.
+      if (firstSaveAt === undefined) {
+        throw new Error('the first save time was never captured')
+      }
+      const since = datetimeBound(firstSaveAt, 0)
       const until = datetimeBound(new Date(), 60_000)
 
       await consoleNav(page)
