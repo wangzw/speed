@@ -134,12 +134,31 @@ objectstore:
 
 seed:
   accounts:
+    # The impersonation journey's operator: a platform administrator that is not
+    # a member of the target tenant. The review build proves this address and
+    # seeds the two second factors in review_seed.go; the walkthrough itself is
+    # in AGENTS.md.
     - identifier: operator@demo.test
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
+    # The impersonation journey's target: an enabled, unprotected member of acme
+    # that holds no platform-domain permission. It is a member through the
+    # members list below and is never the operator's own account. It is seeded as
+    # a username with no email address on purpose: the review notification
+    # fixture dispatches to every member that carries one, and an extra mailbox in
+    # acme would change the mail counts that fixture asserts.
+    - identifier: member
+      password: member-dev-secret
+      display-name: Demo Member
   tenants:
     - acme
+  members:
+    # REVIEW: the target account's membership. The operator is deliberately not
+    # among the members: the impersonation requirement is a target inside the
+    # tenant and an operator outside it.
+    - tenant: acme
+      account: member
   settings:
     # REVIEW: signup open, so a first login through SMS can open an account and
     # the methods listing reports signup.enabled.
@@ -170,6 +189,14 @@ seed:
       value: "30m"
     - key: "authn.mfa.sensitive-min-age"
       value: "1h"
+    # REVIEW: the impersonation start's freshness window, lowered to the
+    # setting's floor of one minute. The walkthrough signs in with password and
+    # TOTP, waits out the floor, and then starts an impersonation whose start is
+    # refused for freshness and replayed after a step-up with SMS. The declared
+    # default is five minutes and the domain is one minute to thirty; a
+    # deployment keeps the declared default.
+    - key: "authn.impersonation.max-auth-age"
+      value: "1m"
     # REVIEW: the official-account entry is assembled but not offered. The
     # method descriptor never reaches /auth/methods, so the sign-in page
     # renders no 微信（公众号）button; the web QR code entry stays.

@@ -439,6 +439,14 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		return err
 	}
 
+	// The review build seeds the impersonation fixture's second factors here,
+	// through the product's own register and encryption seams. A default build
+	// compiles the no-op beside this call and writes no factor; see
+	// review_seed.go and review_off.go.
+	if err := reviewSeedExtras(ctx, reg, in); err != nil {
+		return err
+	}
+
 	if len(administrators) == 0 {
 		return nil
 	}
@@ -460,12 +468,15 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 			}
 		}
 	}
-	// No second factor is seeded. The public authn surface hands back a
-	// registration step it does not let a host read, so a seed cannot finish an
-	// enrollment; write-path testing needs a factor added in account settings
-	// first, and the console's step-up gate refuses every write until then.
-	fmt.Print("note: no second factor is seeded; add one in account settings " +
-		"before testing a write path (see AGENTS.md, \"Exercising a write path\")\n")
+	// No second factor is seeded in a default build. The public authn surface
+	// hands back a registration step it does not let a host read, so a seed
+	// cannot finish an enrollment; write-path testing needs a factor added in
+	// account settings first, and the console's step-up gate refuses every write
+	// until then. The review build is the exception, and says so.
+	if !reviewSeedsFactors() {
+		fmt.Print("note: no second factor is seeded; add one in account settings " +
+			"before testing a write path (see AGENTS.md, \"Exercising a write path\")\n")
+	}
 	return nil
 }
 

@@ -17,12 +17,12 @@ package main
 // external account or a service outside the deployment stack (see main.go). A
 // review of the login surface needs the other kinds on screen, so this build
 // adds them with values that start and a sender that reaches no network. None
-// of it is part of the baseline: the four social methods and the SMS family are
-// imported here and nowhere else, the review modules are a second roster the
-// serve command names beside the baseline, and a default build compiles neither.
-// The configuration the run reads is a copy outside testdata, too —
-// server/review/sqlite.yaml — so the six baselines under testdata stay exactly
-// as they are.
+// of it is part of the baseline: the four social methods, the SMS family and the
+// SMS second factor are imported here and nowhere else, the review modules are a
+// second roster the serve command names beside the baseline, and a default build
+// compiles neither. The configuration the run reads is a copy outside testdata,
+// too — server/review/sqlite.yaml — so the six baselines under testdata stay
+// exactly as they are.
 //
 // The sender is a carrier module built through the same sms.NewModule a real
 // carrier uses: it delivers the Sender and Provider seams exclusively, so the
@@ -61,6 +61,7 @@ import (
 	smslogin "github.com/vislake/speed/pkg/authn/login/sms"
 	wechatmp "github.com/vislake/speed/pkg/authn/login/wechatmp"
 	wechatweb "github.com/vislake/speed/pkg/authn/login/wechatweb"
+	mfasmssms "github.com/vislake/speed/pkg/authn/mfa/sms"
 	authnsms "github.com/vislake/speed/pkg/authn/sms"
 	smsregistry "github.com/vislake/speed/pkg/sms/registry"
 )
@@ -94,10 +95,11 @@ const reviewCarrierName = "review"
 
 // reviewModules is what the review build adds to the serve roster. The four
 // social methods deliver a LoginMethod each and read their credentials from the
-// review configuration; the SMS three are the code state machine, its template
-// registry and the login method over them, with the review sender supplying the
-// carrier; the guard refuses a listening address reachable beyond the machine,
-// where the seeded administrator password and the open signup would be public.
+// review configuration; the SMS four are the code state machine, its template
+// registry, the login method over them and the second factor, with the review
+// sender supplying the carrier; the guard refuses a listening address reachable
+// beyond the machine, where the seeded administrator password and the open
+// signup would be public.
 var reviewModules = []string{
 	googlelogin.ModuleName,
 	githublogin.ModuleName,
@@ -107,6 +109,11 @@ var reviewModules = []string{
 	smsregistry.ModuleName,
 	smslogin.ModuleName,
 	reviewCarrierModuleName,
+	// The SMS second factor: the impersonation fixture's operator holds it beside
+	// TOTP, so a session that signed in with TOTP can raise itself with a kind it
+	// has not already proved. It reads the account's proven phone and sends its
+	// code through authn.sms, which the carrier above resolves.
+	mfasmssms.ModuleName,
 	// Name-and-password registration needs an email channel: authn.emailcode
 	// renders the code into the authn.email.verify messages and hands them to a
 	// mail carrier, and mail.review is that carrier, writing each message to the
