@@ -19,6 +19,11 @@
  * what they assert on.
  */
 
+import { createClient, createMemoryAccessTokenStore } from '@speed/api-client'
+import type { RequestFn } from '@speed/api-client'
+import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { createAuthSession } from '@speed/auth-core'
+import type { AuthSession } from '@speed/auth-core'
 import {
   makeRealClientRig as makeRig,
 } from '@speed/test-utils/real-client'
@@ -92,4 +97,41 @@ export function makeRealClientRig(respond: RealResponder) {
 export function makeRealClientRigWithoutSession(respond: RealResponder) {
   const { store, calls } = makeRig(respond, projectCall, { refresh: false })
   return { store, calls }
+}
+
+/** The cookie-session rig: the client declares cookie credentials and
+ * binds the session's own restore() as its 401 leg -- the composition a
+ * production host builds for a browser session (see @speed/product-shell's
+ * bootstrap). The default rig above binds the token leg (session.refresh(),
+ * no cookie), which never runs restore() and so cannot exercise what a
+ * silent 401 does to the session snapshot. The store starts empty, as a
+ * cookie session leaves it. */
+export function makeCookieSessionRig(respond: RealResponder): {
+  readonly session: AuthSession
+  readonly calls: RealCall[]
+} {
+  const store = createMemoryAccessTokenStore()
+  const session = createAuthSession(store)
+  const calls: RealCall[] = []
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input))
+    const call = projectCall({
+      method: init?.method ?? 'GET',
+      path: url.pathname,
+      query: url.search,
+      authorization: new Headers(init?.headers).get('authorization'),
+      rawBody: typeof init?.body === 'string' ? init.body : null,
+    })
+    calls.push(call)
+    return respond(call)
+  }
+  const client: RequestFn = createClient({
+    baseUrl: 'https://api.test',
+    fetch: fetcher,
+    accessTokenStore: store,
+    credentials: 'same-origin',
+    refreshAccessToken: (issue) => session.restore(issue),
+  })
+  bindRequestFn(client)
+  return { session, calls }
 }
