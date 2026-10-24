@@ -182,3 +182,23 @@ func TestDeleteReportsAWriteThatCouldNotBeReread(t *testing.T) {
 		t.Fatalf("the table holds (%+v, %v), want globex written as deleted", held, ok)
 	}
 }
+
+// Delete writes the status column and nothing else. The disable source is part
+// of "nothing else": a row an account disabled keeps that source through the
+// deletion, read back from the raw column rather than through the normalising
+// accessor. A delete that rewrote the source as the operator's would otherwise
+// be indistinguishable from one that preserved it, because the operator's value
+// is the column's default.
+func TestDeleteKeepsAnAccountsDisableSource(t *testing.T) {
+	r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDisabled, tenant.DisabledByAccount))
+
+	if err := r.Delete(context.Background(), "t_acme"); err != nil {
+		t.Fatalf("deleting a tenant an account disabled: %v", err)
+	}
+	requireRow(t, r, "t_acme", row{
+		ID:         "t_acme",
+		Alias:      "acme",
+		Status:     int(tenant.StatusDeleted),
+		DisabledBy: int(tenant.DisabledByAccount),
+	})
+}
