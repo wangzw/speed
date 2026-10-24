@@ -158,7 +158,8 @@ gates cannot decide for a spec.
   tenant or invitation.
 - **Never assert only on an API response.** An assertion lands on what the
   product renders. A review rule: the gates can see that a spec has a test,
-  not what its assertion reads.
+  not what its assertion reads. The one exception is a registered fixture-type
+  journey, and only for the ids listed in the fixture-type allowance above.
 - **Artifacts stay out of the tree.** Every Playwright artifact path —
   `outputDir`, the HTML reporter's `outputFolder`, any `outputFile` — is under
   the run's own `/tmp` root, and the honesty gate rejects a path that is not.
