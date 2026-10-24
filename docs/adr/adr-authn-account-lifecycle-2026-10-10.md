@@ -66,7 +66,7 @@
 
 **账户事务只写账户的表。** 状态、`valid_after`、墓碑与个人数据的抹除、发件箱事件都在 `authn.account` 的事务里完成；账户事务不写会话、因素、短信各表。
 
-**提交之后同步调用钩子。** 根包定义 `AccountLifecycle`（`AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked`）。持有以账户为键的数据的模块实现它（当前为 `authn.session`、`authn.mfa`、`authn.sms`；判据是持有以账户为键的数据，名单是例举而非封闭集），实现并立、不排他，`authn.account` 经 `ResolveAll` 取用。钩子在账户事务提交之后同步调用；任一钩子失败时，账户的状态已经生效，调用返回 `ErrCleanupIncomplete`，调用方重试同一调用。每个钩子幂等：数据已清、账户已停用或已删除时返回成功。
+**提交之后同步调用钩子。** 根包定义 `AccountLifecycle`（`AccountDisabled`、`AccountEnabled`、`AccountDeleted`、`ServiceSecretRevoked`；恢复方向见 [ADR-authn-account-lifecycle-2026-10-24](adr-authn-account-lifecycle-2026-10-24.md)）。持有以账户为键的数据的模块实现它（当前为 `authn.session`、`authn.mfa`、`authn.sms`、`authz.policy`；判据是持有以账户为键的数据，名单是例举而非封闭集），实现并立、不排他，`authn.account` 经 `ResolveAll` 取用。钩子在账户事务提交之后同步调用；任一钩子失败时，账户的状态已经生效，调用返回 `ErrCleanupIncomplete`，调用方重试同一调用。每个钩子幂等：数据已清、账户已停用、已启用或已删除时返回成功。
 
 **事件补偿。** 发件箱在场时，实现钩子的模块另订阅 `authn.account.status-changed` 与 `authn.account.deleted`，重做自己的清理，至少一次、按 `Event.ID` 去重，处理函数幂等。发件箱缺席的装配里，提交与钩子之间的崩溃窗口没有补偿，抹除不保证；残留行不能用于认证，启动诊断以 Warn 说明。
 

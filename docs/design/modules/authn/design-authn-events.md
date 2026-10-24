@@ -109,7 +109,7 @@
 | 交付 `Verifier` 的校验后端 | `authn.session.revoked`、`authn.account.status-changed`、`authn.account.deleted` | 清账户快照缓存；会话状态缓存归 `authn.session` 自己的订阅，本后端经 `Sessions` 接缝读、不另持一份 |
 | 询问冒充记录是否有效的校验后端 | `authn.impersonation.ended` | 清冒充记录缓存 |
 | `authn.session`、`authn.mfa` | `authn.account.status-changed`、`authn.account.deleted` | 发件箱在场时重做各自的账户清理，补偿同步钩子的失败 |
-| `authn.sms` | `authn.account.deleted` | 发件箱在场时重做账户清理；短信的 `AccountDisabled` 是空操作，不订阅状态变更 |
+| `authn.sms` | `authn.account.deleted` | 发件箱在场时重做账户清理；短信的 `AccountDisabled` 与 `AccountEnabled` 都是空操作，不订阅状态变更 |
 | `authn.sso.saml`、`authn.sso.oidc` | `authn.idp.changed` | 清 `Provider` 与 `ServiceProvider` 缓存 |
 | `tenant.admission` | `authn.membership.changed` | 清成员关系缓存；处理见 [design-tenant-admission](../tenant/design-tenant-admission.md) |
 | 持有可在运行期改动的安全设置的模块（`authn.sms` 在其中） | `settings.changed` | 取值改到更宽松时写 Warn 并记尽力档审计 |

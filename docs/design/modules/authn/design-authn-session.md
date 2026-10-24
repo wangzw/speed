@@ -11,7 +11,7 @@
 - 作为校验后端认领会话 cookie，把 cookie 认成一份 `Principal`：先查进程内缓存，再读库，再核对账户状态与冒充记录（冒充记录的有效性同样经进程内缓存），最后交给网关盖章。
 - 按种类判定会话是否有效：`browser`、`token`、`service` 各有自己的期限语义。
 - 维护唯一的撤销面：撤销一个会话即撤销挂在它上面的访问令牌、刷新令牌与冒充记录，撤销以会话行的 `revoked_at` 为准，不比较时间。
-- 实现 `AccountLifecycle`：账户停用、删除与服务密钥撤销之后清理本模块的行与缓存。
+- 实现 `AccountLifecycle`：账户停用、删除与服务密钥撤销之后清理本模块的行与缓存；账户启用时它没有要恢复的东西，返回 nil。
 - 经 `authn.mount` 登记 `B/session`、`B/logout`、`B/sessions` 一组自助路由（`B` 是路由基路径）。
 - 在 `Start` 起的常驻协程里清扫到期并过了保留期的行。
 - 发布 `authn.session.revoked`，订阅 `authn.session.revoked`、`authn.impersonation.ended`、`authn.account.status-changed`、`authn.account.deleted` 以清缓存与补偿清理。
@@ -41,7 +41,7 @@
 |---|---|---|
 | `Sessions` | 是 | 会话的全部操作，以及 cookie 的写出、清除与读取。 |
 | `Verifier` | 否 | `Name()` 恒为 `session`。`Accepts` 为 `{Cookies: [会话 cookie 名], Accounts: 空串（库命名空间）, Impersonation: true, SSO: true}`，`Schemes` 为空：本模块认领会话 cookie，不认领任何 `Authorization` scheme。 |
-| `AccountLifecycle` | 否 | 见「账户停用、删除与服务密钥撤销之后的清理」一节。 |
+| `AccountLifecycle` | 否 | 见「账户状态迁移与服务密钥撤销之后的清理」一节。 |
 
 同一模块的各能力接口方法名两两不相交：一个模块只有一个实例，`core.Resolve[T]` 对它做类型断言，构造期核对逐个检查 `Provides` 里声明的接口。包内为每个交付的接口加 `var _ authn.X = (*product)(nil)` 编译期断言，`assembly_test` 用真实注册表跑一遍交付核对。
 
@@ -199,6 +199,7 @@ classDiagram
     class AccountLifecycle {
         <<interface>>
         +AccountDisabled(AccountID)
+        +AccountEnabled(AccountID)
         +AccountDeleted(AccountID)
         +ServiceSecretRevoked(AccountID, credentialID)
     }
@@ -505,18 +506,19 @@ stateDiagram-v2
 | 踢下线（自己的） | `DELETE B/sessions/:id` 只能撤销自己的；`DELETE B/sessions` 撤销除当前外的全部；冒充中拒绝。 |
 | 踢下线（他人的）、批量撤销 | 由 `authn.admin` 的管理面路由调用 `Revoke`、`RevokeAccount`；判定与强制审计在 `authn.admin`。 |
 | 超出 `max-per-account` | `Create` 撤销该账户最久未使用的会话，`reason` 为 `evicted`。 |
-| 账户停用、删除与服务密钥撤销 | 经 `AccountLifecycle`，见下节。 |
+| 账户停用、启用、删除与服务密钥撤销 | 经 `AccountLifecycle`，见下节。 |
 | 撤销的生效时延 | 本副本主动清缓存；其他副本经 `authn.session.revoked` 清缓存；上界是 `check-ttl`；账户级 `valid_after` 与账户停用同走这个上界。 |
 
 `reason` 写入 `revoke_reason`，并作为 `authn.session.revoked` 的 `reason_class`；取值是闭集的类别名，不是自由文本，闭集见 [design-authn-events](design-authn-events.md)。`authn.session.revoked` 的载荷在 `scope=all` 时 `session_id` 为空，订阅方按 `account_id` 清除该账户的缓存条目。本模块在 `Create`、`Elevate`、`Revoke`、`RevokeAccount` 之后上报 `authn.session.operations`，取值见 [design-authn-events](design-authn-events.md)。
 
-### 账户停用、删除与服务密钥撤销之后的清理
+### 账户状态迁移与服务密钥撤销之后的清理
 
-每个模块只在自己的事务里写自己的表：`authn.account` 在账户事务里写自己的表并暂存事件，提交之后同步调用全部 `AccountLifecycle`；钩子失败或进程崩在提交与钩子之间时由事件补偿（[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)，账户一侧的流程见 [design-authn-account](design-authn-account.md)）。三个钩子都幂等：账户已停用、已删除、数据已清时返回 nil；调用发生在账户事务提交之后，所以实现不读账户行。
+每个模块只在自己的事务里写自己的表：`authn.account` 在账户事务里写自己的表并暂存事件，提交之后同步调用全部 `AccountLifecycle`；钩子失败或进程崩在提交与钩子之间时由事件补偿（[ADR-authn-account-lifecycle-2026-10-10](../../../adr/adr-authn-account-lifecycle-2026-10-10.md)，账户一侧的流程见 [design-authn-account](design-authn-account.md)）。每个钩子都幂等：账户已停用、已启用、已删除、数据已清时返回 nil；调用发生在账户事务提交之后，所以实现不读账户行。
 
 | 钩子 | 本模块的动作 |
 |---|---|
 | `AccountDisabled` | 调 `RevokeAccount` 撤销该账户的 `browser` 与 `token` 种会话，并清缓存；`service` 种靠 `valid_after` 与账户状态失效，重新启用后经 `ForCredential` 恢复。 |
+| `AccountEnabled` | 无动作。旧会话因 `valid_after` 不回退而不复活，本模块没有要恢复的东西。 |
 | `AccountDeleted` | 撤销并删除该账户的全部会话行，并清缓存。 |
 | `ServiceSecretRevoked` | 调 `RevokeCredential` 撤销该密钥那一行 `service` 种会话。 |
 
@@ -653,7 +655,7 @@ stateDiagram-v2
 | 账户快照的进程内缓存 `internal/acctcache`，供会话校验后端核对账户 | 已实现 | `pkg/authn/internal/acctcache/acctcache.go` `Cache`、`Epoch`、`PutIfEpoch`；`pkg/authn/session/cache.go` |
 | `CookieClearer` | 已实现 | `pkg/authn/session/sessions.go` `ClearCookie`；`pkg/authn/session.go` `CookieClearer` |
 | `service` 种：`ForCredential` 与 `RevokeCredential` | 已实现 | `pkg/authn/session/sessions.go` `ForCredential`、`RevokeCredential` |
-| `AccountLifecycle` 钩子与事件补偿订阅 | 已实现 | `pkg/authn/session/lifecycle.go` `AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked` |
+| `AccountLifecycle` 钩子与事件补偿订阅 | 部分实现 | `pkg/authn/session/lifecycle.go` `AccountDisabled`、`AccountDeleted`、`ServiceSecretRevoked` |
 | 自助路由 `B/session`、`B/logout`、`B/sessions` | 已实现 | `pkg/authn/session/routes.go` |
 | 到期行的清扫协程 | 已实现 | `pkg/authn/session/sweep.go` |
 | `authn.session.revoked` 事件的发布与订阅、`authn.impersonation.ended` 的订阅、`authn.session.operations` 指标 | 已实现 | `pkg/authn/session/lifecycle.go`；`pkg/authn/session/status.go` |

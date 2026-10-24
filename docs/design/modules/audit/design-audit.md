@@ -10,7 +10,7 @@
 
 ### 非职责
 
-- **不提供查询面。** 按条件的检索与导出要先回答「谁可以查谁」，那是授权判定，归 [authz](../design-authz.md) 的承接的权限点（[ADR-audit-scope-2026-09-21](../../../adr/adr-audit-scope-2026-09-21.md)）。框架另有一个可直接纳入的模块 [audit.admin](design-audit-admin.md) 承担检索，判定在它自己的 handler 内经 `authz.guard` 做出；本模块自身仍不提供查询面。
+- **不提供查询面。** 按条件的检索与导出要先回答「谁可以查谁」，那是授权判定，归 [authz](../design-authz.md) 的承接的权限点（[ADR-audit-scope-2026-09-21](../../../adr/adr-audit-scope-2026-09-21.md)）。框架另有一个可直接纳入的模块 [audit.admin](design-audit-admin.md) 承担检索与导出，判定在它自己的 handler 内经 `authz.guard` 做出；本模块自身仍不提供查询面。
 - **不自证。** 记录的不丢失与不可篡改是一个部署形态与一份存储的性质，本模块不对自己作这个断言。
 - **不做归责判定。** 请求级记录写的是请求事实；「谁该为这次拒答负责」由认证模块写在日志里，本模块不复制那份归责（见 [authn-gate](../authn/design-authn-gate.md) 的归因与收口）。
 - **不判定租户，也不读名册。** 租户标识在本模块是字符串，读取发生在实现子包里。语句级捕获不判定一个租户是否存在或停用，它只按上下文里的标识记录——与租户隔离插件同形（见 [tenant](../tenant/design-tenant.md)）。

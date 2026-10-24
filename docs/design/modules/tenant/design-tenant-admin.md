@@ -15,7 +15,7 @@
 - **不为请求认定租户。** 一条请求属于哪个租户由解析层认定（[design-tenant](design-tenant.md)）；本模块在平台域判定（见「访问控制」），不读请求解析出的租户，也不写上下文里的租户。
 - **不给自己授予任何权限。** 本模块向进程声明它自己的权限，但把每条路由登记为开放，让中间件把请求放行到 handler，由 handler 在内部判定。
 - **不管理租户内的账户、成员与角色。** 账户与成员关系归认证，角色归授权（[design-tenant](design-tenant.md) 的非职责、[design-authz](../design-authz.md)）。
-- **不导出、不删除、不搬迁租户数据。** 名册没有删除动作，停用是唯一途径；本模块照此只暴露 `SetStatus`，不提供删除路由，也不触碰受约束表里那个租户的数据（[design-tenant](design-tenant.md)）。
+- **不导出、不删除、不搬迁租户数据，也不提供删除路由。** 名册上的删除是终态标记，由账户生命周期的宿主模块写入；本模块照此只暴露 `SetStatus`，把已删除的行渲染成只读，不提供写进那个状态的路由，也不触碰受约束表里那个租户的数据（[design-tenant](design-tenant.md)）。
 
 ## 外部接口契约
 
@@ -47,11 +47,11 @@
 | `PATCH /tenants/:tenant` | `SetAlias` 换别名 |
 | `POST /tenants/:tenant/status` | `SetStatus`，改一个租户的状态 |
 
-**登记走 `Create`，从不覆盖既有租户。** 开一个租户是一个名册表里尚未持有的标识的插入；一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行、别名与状态一并取新值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。既有租户的改名走 `PATCH`，改状态走状态路由；名册没有删除动作，停用只经 `SetStatus`。
+**登记走 `Create`，从不覆盖既有租户。** 开一个租户是一个名册表里尚未持有的标识的插入；一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行、别名与状态一并取新值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。既有租户的改名走 `PATCH`，改状态走状态路由；状态路由只写启用与停用，删除是名册上的终态标记，本模块不为它开路由。
 
 **别名改写经 `SetAlias`，不写状态。** `Put` 取整行新值——`alias` 与 `status` 一并写回（`pkg/tenant/catalog/roster.go` 的 upsert 赋值两列），所以一次改名会把该次读取到的状态写回去，把另一个副本上刚停用的租户重新启用。名册因此要有一条只改别名的写 `SetAlias`；本模块用它，不用 `Get` 后 `Put`。
 
-**状态的闭集是 `active` 与 `disabled`。** 状态路由的正文给出其中之一，其余取值是本模块拒绝的形状。登记的新租户起于 `active`：登记的正文给出标识与别名，状态不在这里给。
+**状态路由的可写集合是 `active` 与 `disabled`。** 正文给出其中之一，其余取值是本模块拒绝的形状；`deleted` 是终态，不在可写集合里。登记的新租户起于 `active`：登记的正文给出标识与别名，状态不在这里给。改名与改状态遇到已删除的租户，由名册以 `tenant.ErrTenantDeleted` 拒绝，本模块答 409。
 
 ### 访问控制
 
@@ -67,7 +67,7 @@
 
 ### 视图
 
-**读的应答是 200 加一份视图，登记写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `tenant.Tenant` 构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。租户视图的字段：`id`、`alias`、`status`（`active` 或 `disabled`，由 `tenant.Status` 的字符串形式给出）。
+**读的应答是 200 加一份视图，登记写的应答是 201 加一条记录视图，其余落地的写是 204 无正文。** 视图逐字段从根包的 `tenant.Tenant` 构造，从不把值原样交给客户端，记录日后新增一个字段不会因为它在就等于出现在应答里。租户视图的字段：`id`、`alias`、`status`（`active`、`disabled` 或 `deleted`，由 `tenant.Status` 的字符串形式给出），以及 `disabledBy`（`operator` 或 `account`，由 `tenant.DisabledBy` 的字符串形式给出，只在状态是 `disabled` 时出现）。
 
 列出全部租户的应答是 200 加全部租户的视图，按标识排序（名册自身的次序）。名册是一个部署所服务的租户集合，不分页。
 
@@ -84,7 +84,7 @@
 ### 对外接口面
 
 - 模块名 `tenant.admin`、配置键 `tenant.admin.endpoints`、管理面路由的路径与每条路由询问的权限（读 `tenant.read`、写 `tenant.manage`），以及权限常量 `tenant.read`、`tenant.manage` 与 `Problem.Type` 前缀 `urn:speed:tenant:` 及其下的码（`bad-request`、`conflict`），是本模块对宿主的接口面。写路由在发起者为未验证账户时答 403 `contact-required`，同样是接口面。改动它们是宿主可见的破坏性变更。
-- 租户视图的字段名（`id`、`alias`、`status`）与容器成形态是应答形状：宿主与前端据此读应答。
+- 租户视图的字段名（`id`、`alias`、`status`、`disabledBy`）与容器成形态是应答形状：宿主与前端据此读应答。`status` 的取值集合与 `disabledBy` 的取值集合同样是应答形状。
 - 特性名 `tenant.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或名册的代码。
 
@@ -229,3 +229,4 @@ sequenceDiagram
 | 管理面 `tenant.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/tenant/admin/operations.go`；`pkg/tenant/admin/openapi_generated_test.go`；片段 `pkg/tenant/admin/openapi/tenant.admin.json` |
 | 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/feature_test.go` `TestTheModuleDeclaresTheTenantAdminFeature` |
 | 租户写面的注册验证门控（读作 `SignupPending` 时答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/tenant/admin/pipeline.go` `(*product).guardRoute`、`(*product).requireVerifiedAccount`；`pkg/tenant/admin/routes.go` `routes`；`pkg/tenant/admin/gate_test.go` |
+| 租户视图的 `deleted` 状态与 `disabledBy` 字段，以及墓碑上的改名与改状态拒绝 | 未实现 | — |

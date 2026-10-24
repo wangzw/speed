@@ -7,7 +7,7 @@
 | 文档 | 内容 |
 |---|---|
 | [audit](design-audit.md) | 审计：语句、事件、请求与记录接缝的捕获通路、审计表、明细的脱敏 |
-| [audit-admin](design-audit-admin.md) | 审计检索面：跨租户的读、游标分页、平台域判定与记录视图 |
+| [audit-admin](design-audit-admin.md) | 审计检索面：跨租户的读、游标分页、平台域判定、记录视图与导出 |
 
 ## 实现状态
 

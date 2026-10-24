@@ -77,7 +77,7 @@ starters/demo/
 
 `serve` 与 `worker` 各自点名纳入的那组平台能力是**平台基线**，写在 `main.go` 的 `baselineServe` 与 `baselineWorker` 两个列表里。基线的判据是一句话：**一条平台能力若能不要凭据、不要外部账号、不要部署栈之外的外部服务就启动，它就在基线里**；其余留给产品在拿到该依赖时自行加入。模块自己的契约是这个判据的落点——一项必需配置项给不出一个能启动的值，它就不属于基线。
 
-判据的两侧各有一组例证。落在基线里的，是只用进程内实现或栈内后端就起得来的平台能力——入站的身份系统（`authn.gate` 网关、`authn.login`、`authn.login.password`、`authn.mfa.totp`、`authn.session`、`authn.account`）、租户的 `tenant.resolve` 与 `tenant.admission`、`authz.guard` 授权层、`authz.self` 的调用方权限读取、`audit.journal` 审计、`ratelimit` 限流、`settings` 设置、`feature.board` 特性文档的发布，以及任务（`jobs.db`、`jobs.scheduler`）、通知的收件箱、推送、偏好矩阵与投递流水线（`notification.inbox`、`notification.stream`、`notification.preferences`、`notification.delivery`）与对象存储的文件系统后端（`objectstore.fs`）。被判据排除在外的，是一启动就要一份外部凭据或一份栈外服务的：社交与企业身份提供方（`authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`、`authn.sso.oidc`、`authn.sso.saml`）、短信家族（`sms.*`、`authn.login.sms`、`authn.mfa.sms`、`authn.sms`）、SMTP 邮件（`mail.smtp`）、S3 对象存储（`objectstore.s3`）；它们在产品拿到对应依赖后自行加入。
+判据的两侧各有一组例证。落在基线里的，是只用进程内实现或栈内后端就起得来的平台能力——入站的身份系统（`authn.gate` 网关、`authn.login`、`authn.login.password`、`authn.mfa.totp`、`authn.session`、`authn.account`）、租户的 `tenant.resolve`、`tenant.admission` 与 `tenant.self`、`authz.guard` 授权层、`authz.self` 的调用方权限读取、`audit.journal` 审计、`ratelimit` 限流、`settings` 设置、`feature.board` 特性文档的发布，以及任务（`jobs.db`、`jobs.scheduler`）、通知的收件箱、推送、偏好矩阵与投递流水线（`notification.inbox`、`notification.stream`、`notification.preferences`、`notification.delivery`）与对象存储的文件系统后端（`objectstore.fs`）。被判据排除在外的，是一启动就要一份外部凭据或一份栈外服务的：社交与企业身份提供方（`authn.login.google`、`authn.login.github`、`authn.login.wechat-web`、`authn.login.wechat-mp`、`authn.sso.oidc`、`authn.sso.saml`）、短信家族（`sms.*`、`authn.login.sms`、`authn.mfa.sms`、`authn.sms`）、SMTP 邮件（`mail.smtp`）、S3 对象存储（`objectstore.s3`）；它们在产品拿到对应依赖后自行加入。
 
 **口令注册在基线上关闭。** 注册路由 `POST /api/v1/auth/register` 归 `authn.login`，基线装配纳入该模块，但设置项 `authn.account.password-signup` 保持缺省的 `closed`，基线的装配里也没有 `authn.emailcode`、`mail.smtp` 与短信通道；开放注册会产生永远无法验证的账户。此时调用注册路由答 403 `signup-closed`，发现面不出现注册入口。开放它需要装配邮箱验证通道，见「注册与完成设置」；Fly 部署不是这条基线，它用上面的 `deploy` 装配开放注册。
 
@@ -301,11 +301,12 @@ flowchart TD
 
 ### 账户没有成员关系时的租户区
 
-首登开户的账户没有任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），任何还没被加进租户的账户同样如此。客户端没有读取本人成员关系的接口；租户是请求的路由事实，由宿主的路由得出；准入层对不可进入的租户一律答不区分原因的 404（[tenant 准入](tenant/design-tenant-admission.md)）。示范因此不假装知道账户有没有成员关系：
+首登开户的账户没有任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），任何还没被加进租户的账户同样如此。宿主经本人租户读取（`GET /api/v1/auth/me/tenants`，[tenant.self](tenant/design-tenant.md)）拿到账户持有有效成员关系的租户；这份清单是租户选择器的列表，也是租户作用域请求要宣告的别名来源。租户是请求的路由事实，由宿主的路由得出；准入层对不可进入的租户一律答不区分原因的 404（[tenant 准入](tenant/design-tenant-admission.md)）。
 
-- 租户区里取租户数据的面（通知面）把这类裸 404 渲染为「无法访问当前组织」，说明它可能不存在、或账户还不是该组织的成员，并指引联系管理员发送邀请；不渲染成服务没有应答，也不给重试（REQ-tenancy-025；[notification-ui](web/design-web-notification-ui.md)）。
+- 清单为空就是没有成员关系，那是一个应答而不是一次失败。当前租户因此没有可显示的租户，租户区里取租户数据的面（通知面）在路由点名了一个租户时把准入层的裸 404 渲染为「无法访问当前组织」，说明它可能不存在、或账户还不是该组织的成员，并指引联系管理员发送邀请；不渲染成服务没有应答，也不给重试（REQ-tenancy-025；[notification-ui](web/design-web-notification-ui.md)）。
+- 清单读不到时当前租户保持未知，租户作用域的读保持禁用：读的其他失败（5xx、网络、超时）不当作「没有成员关系」，页面的失败与重试沿用该读自己的呈现；已落定的上一份清单留在原处。部署没有纳入 `tenant.self` 时这条读答 404，宿主回落到占位清单（本节之外的既有限制），也不触发个人租户 ensure——是否为账户建户由清单是否为空决定，而 404 不是一个内容为空的清单。
 - 账户级的页面（账户设置、注册后的完成设置页、验证邮箱页）不取租户数据，照常可用；个人租户的 ensure 失败时，失败占位只替换取租户数据的页面，不替换它们。
-- 进入租户的途径是邀请链接与管理员授予的成员关系；示范只在启用个人租户时为没有成员关系的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建，也不提供读取本人成员关系的接口。
+- 进入租户的途径是邀请链接与管理员授予的成员关系；示范只在启用个人租户时为没有成员关系的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建。
 
 ### 个人租户
 
@@ -314,11 +315,27 @@ flowchart TD
 - **服务端是一个宿主模块，不进 `pkg/` 的公共面。** 它在 `account` 端挂一条没有租户解析的路由 `POST /api/v1/workspace/personal`，并声明特性 `workspace.personal`；开关关闭时路由不挂、特性不在场。`/api/v1/workspace` 作为 `account` 端的认领前缀写在每份配置与后端前缀清单里，认领与装配无关，开关关闭时该前缀对已认证调用答 404；未认证调用先被 `account` 端的网关拒绝为 401，这是各端认领前缀的普遍行为。契约属于应用自己的第二级契约：应用所有的操作与特性在合并文档里带所有者标记，平台包的生成面与特性名不含它们（[api-sdk](web/design-web-api-sdk.md)）。
 - **路由对调用方的要求与应答。** 调用方须已认证、不在冒充中、不是静态凭据主体、不是服务账户，不满足答 403。资格由服务端判定：调用方已有自己的个人租户的成员关系时读回它，不论是否还有别的成员关系；没有个人租户而成员关系为空时建；没有个人租户而有其他成员关系答 409 `already-member`，不建；租户行已存在而状态不是启用答 409 `tenant-unavailable`，不写任何东西；别名被别的租户占用或派生的标识越出名册域答 409 `identifier-unavailable`，重试不会成功。注册验证状态不是资格判据：未验证账户同样建出租户，验证只限制其可用能力。成功应答 `{ tenant: { id, alias, kind: "personal" }, created }`，`created` 表示这次调用建了租户。依赖不可用答 503，不带着半份结果放行。
 - **租户标识由账户标识确定性派生。** 标识与别名取同一个由固定前缀加账户标识组成的字符串，不取手机号、显示名或任何个人信息：别名随请求出现在日志、审计与路径里，是请求面标识，不翻译，也不含个人信息。确定性使并发的两次调用撞上同一个唯一约束，后到者读回既有租户。
-- **个人租户与账户同一生命周期。** 账户停用时个人租户随之停用，账户恢复时恢复，但运营者主动停用的租户不被恢复；账户删除时删除其成员关系、所有者角色与绑定，租户行保留为墓碑、标识退役且不得重建；业务模块持有的数据由各模块经账户删除钩子自行清除，审计记录保留。个人租户的创建与删除都写审计行。这些行为当前未实现，见状态表。
+- **个人租户与账户同一生命周期：宿主模块实现 `AccountLifecycle`。** 模块在 `Provides` 里声明 `(*authn.AccountLifecycle)(nil)`，并立、不排他；`AccountDisabled`、`AccountEnabled` 与 `AccountDeleted` 是它的动作，`ServiceSecretRevoked` 是空操作——服务账户没有个人租户，ensure 对它们一律拒绝。钩子在账户事务提交之后同步调用，账户状态已经生效，失败返回 `ErrCleanupIncomplete`，重试同一次调用补齐（[authn-account](authn/design-authn-account.md) 的钩子一节、[ADR-authn-account-lifecycle-2026-10-24](../../adr/adr-authn-account-lifecycle-2026-10-24.md)）。**这条联动是装配的结果**：模块不在这一次运行里时，账户的状态迁移与删除没有这一份收尾，租户行与授权行留在原处，名册的终态没有任何一处替它写入。那个租户继续在册，而账户的成员关系已随账户删除，准入层对它的请求答 404；运营者从名册上看不出它已经没有人。
+- **停用与恢复走名册的账户路径。** `AccountDisabled` 调 `tenant.Catalog.SetStatusByAccount` 把派生的租户停用，`AccountEnabled` 用同一个方法恢复。名册按停用来源约束状态迁移：运营者经 [tenant.admin](tenant/design-tenant-admin.md) 停用的租户不被账户恢复打开，账户造成的停用才随恢复撤销（REQ-tenancy-044、REQ-tenancy-030；[ADR-tenant-suspension-2026-10-24](../../adr/adr-tenant-suspension-2026-10-24.md)）。个人租户的标识由账户标识确定性派生，钩子不读账户行，也不需要另存账户与租户的对应。
+- **两个状态钩子先读名册，读不到那一行或读到墓碑都返回 nil。** 名册上没有派生出来的标识，说明这个账户没有个人租户——发动这一轮联动的是一次普通的账户状态迁移，钩子没有要做的事；把它当成失败会让每一次这样的迁移都以 `ErrCleanupIncomplete` 结束，管理员得为一个不存在的租户重试。读到墓碑时同样返回 nil：删除是终态，账户的状态迁移不把它带回来，`SetStatusByAccount` 的 `ErrTenantDeleted` 在钩子里按无事可做处置。其余失败原样返回，账户调用以 `ErrCleanupIncomplete` 结束。
+- **账户删除的收尾按固定次序做，每一步幂等，墓碑是完成标记。** `AccountDeleted` 先按派生的标识读名册：没有这一行（这个账户从未有过个人租户）即无事可做；已是已删除即跳过整段收尾，重复的钩子不再写任何东西。其余情形按下列次序做：
+  1. 删掉租户内的成员关系：`Memberships.Members` 逐页读，`Remove` 逐条删。账户自己那一行已在账户事务里删除，这一步收掉的是被管理员加进来的其他账户的行。
+  2. 删掉租户内的绑定与所有者角色：`Manager.Bindings` 逐条 `DeleteBinding`，`Manager.DeleteRole` 删掉 `owner` 角色并连带删掉它的授予与绑定。运营者把 `owner` 标成内置角色时 `DeleteRole` 报 `ErrBuiltinRole`，这一步容忍它：内置角色删不掉，租户已是墓碑，没有一条请求解析得到它。
+  3. 写一行删除审计。
+  4. `tenant.Catalog.Delete` 把租户写成已删除，标识与别名留在名册里、不再复用（[ADR-tenant-directory-2026-10-24](../../adr/adr-tenant-directory-2026-10-24.md)）。
+
+  成员关系或绑定、角色的清理失败时，租户仍在册、审计行没写；审计写失败时前面清理的结果留着、租户仍在册；写墓碑失败时审计行已经落下、租户仍在册。重试从头做一遍，成员关系与绑定、角色的清理不再写任何东西，墓碑落定。代价是审计行可能重复一次——审计是只追加的，两行记的是同一次删除，事实不丢。
+- **业务数据与审计行都不由这个模块删除。** 受约束表里那个租户的行归声明它们的模块，每个持有以账户为键的数据的模块在自己的 `AccountDeleted` 里清除；本模块只清成员关系与授权策略。审计行不随任何东西删除，删除之后仍可凭账户与租户查到创建与删除两行（REQ-tenancy-048）。残留的租户数据要清除或导出时，经 `EnterRegistered` 进入墓碑，那是删除之后仍进得去租户的唯一途径（[tenant](tenant/design-tenant.md) 的不经请求面的路径）。
+- **创建与删除各写审计行，审计是模块的必需依赖。** 模块的 `Requires` 加 `(*audit.Audit)(nil)`：装配里没有审计模块时本模块起不来，而不是在没有记录的情况下服务。动作名是 `workspace.personal.tenant.create` 与 `workspace.personal.tenant.delete`，对象是租户标识，结果取 `success` 或 `failed`，明细是一个闭集：`action_id` 把一次动作的允许行与失败行对上，`account` 与 `tenant` 记这条动作的两端（形状与 tenant.admin 的写路径相同）。
+  - **创建在 `Create` 之前写一行强制档审计。** 派生的标识在名册上读不到、这次调用会去建时先写这一行，审计写不进答 503、租户不建；`Create` 或 ensure 后续任一步失败时，另尽力写一行 `failed`，以 `action_id` 与允许行对应，它自己的失败只记日志、不改变应答。并发的两次 ensure 都读不到那一行时各写一行允许行，后到的那次在 `Create` 上撞 `ErrTenantExists`、写一行失败行；先到的那一次建出租户（REQ-tenancy-047）。
+  - **删除在钩子里、写墓碑之前写一行强制档审计。** 主体由审计模块从上下文里的身份取，删除账户的管理员就是实际操作者；审计写不进即返回 `ErrCleanupIncomplete`，租户仍在册，重试补完（REQ-tenancy-048）。
 - **每次调用幂等地核对并补齐，但不覆盖运营者的决定。** 租户行（不存在时经 `Create` 建，已存在则读回，读回前先经 `EnterRegistered` 追平本副本的名册快照）；账户在该租户的成员关系（已有一行，不论状态，就不改写，没有才写）；租户内的非内置角色 `owner`（`Manager.PutRole`）；该角色的授予收敛到宿主声明的允许集（`Seeder.SeedGrants` 补入缺的，多出的撤销）；账户到该角色的绑定（`Manager.PutBinding`，缺才写）。运营者要收回个人租户，停用租户即可，ensure 不替它复原；只删成员关系或绑定不算收回，下一次调用会补回。某一步失败时前面各步留着，下次调用补齐，补齐的那次调用 `created` 为假。
 - **owner 的权限是宿主声明的允许集，不是租户域的全部权限。** 允许集只含个人租户该有的业务资源面，由宿主在代码里显式列出（现为空；通知面不声明权限点）。认证模块的租户级管理动作——成员管理、邀请、身份提供方管理、冒充与客户端管理，以及非成员放行——按租户域决策，授给 owner 会让每个自助注册的账户成为带成员与冒充管理权的租户管理员，并使被它加入的账户永远得不到自己的个人租户，所以不在允许集内。允许集由宿主声明而不由目录推出，进程之后新声明的租户级权限因此不会自动进入 owner。已按旧口径建出的个人租户，其 owner 的多余授予在下一次 ensure 时撤销。
-- **租户框架在已认证、非冒充、没有当前租户且特性 `workspace.personal` 在场时调用它，不看注册验证状态。** 未验证账户同样建立并使用个人租户；验证提示由账户面单独呈现，与 ensure 无关。有当前租户的账户（平台员工经名册读得到租户上下文，或已选定租户者）不触发；名册读被 403 拒绝才算普通成员、没有当前租户而触发，名册读的其他失败（5xx、网络、超时）不触发，沿用该读自己的失败呈现与重试，名册读成功的平台员工默认选中租户切换器能提供的租户中第一个启用且不是个人租户的租户（切换器只列占位清单的租户，选中清单外的租户会让调用方落进既无法命名、也无法离开的租户，而它的每个租户域请求都被拒绝）；成功后把应答的别名挂成当前租户上下文；失败（含 503）时，取租户数据的页面渲染可重试的失败占位，重试再调一次，账户级页面照常渲染；409 时不挂个人租户，租户区回落到占位租户读取（本节之外的既有限制），读答裸 404，按「账户没有成员关系时的租户区」渲染「无法访问当前组织」；租户为空时读被禁用、只会停在加载占位，所以不以空租户收场。
-- **个人租户的展示取前端文案。** 租户记录没有展示名；应答标明 `kind` 为 `personal` 时，租户选择器渲染个人空间的文案（zh-CN 与 en-US 各一键），其余租户渲染别名，别名从不翻译。
+- **租户框架在已认证、非冒充、特性 `workspace.personal` 在场、本人租户读取已落定且为空、当前租户未知时调用它，不看注册验证状态。** 清单非空即账户已有成员关系（个人租户本身也是一条），不触发；平台员工经平台名册落定了一个当前租户时也不触发——个人租户是给没有别的入口的账户准备的；读失败不触发，沿用该读自己的失败呈现与重试。启用个人租户的宿主必须同时纳入 `tenant.self`：触发判据就是那份清单，403 一类授权结果不再充当成员关系的事实。未验证账户同样建立并使用个人租户；验证提示由账户面单独呈现，与 ensure 无关。成功后把应答的租户挂成当前租户上下文并重读清单；失败（含 503）时，取租户数据的页面渲染可重试的失败占位，重试再调一次，账户级页面照常渲染；409 `already-member` 只出现在清单落定与 ensure 之间账户被授予了成员关系的竞态里，这时不挂个人租户，重读清单并按它落定当前租户；租户为空时读被禁用、只会停在加载占位，所以不以空租户收场。
+- **个人租户的展示取前端文案。** 本人租户读取的应答只有标识与别名，不带种类：个人租户是宿主的策略，平台名册不记它（[ADR-tenant-self-2026-10-24](../../adr/adr-tenant-self-2026-10-24.md)）。宿主按账户标识与固定前缀派生出个人租户的标识（与服务端同一个函数），标识与它逐字相等的那一行渲染个人空间的文案（zh-CN 与 en-US 各一键），其余行渲染别名；别名从不翻译。**按相等判定，不按前缀**：另一个账户的个人租户也可以出现在调用方的成员关系里，前缀会把别人的个人空间标成本人的。
+- **租户选择器列出本人有效租户。** 列表就是本人租户读取的应答，按标识升序原样渲染；当前租户那一行由宿主的 `currentTenantId` 相中并不可选中（REQ-tenancy-035、REQ-tenancy-036）。平台员工经决策接缝进入一个自己不是成员的租户时，清单里没有这个租户：宿主从平台名册读的别名缓存补一行当前租户，让触发器能命名它、也能离开它，那一行同样不可选中；缓存里没有那个别名、或平台名册读不在装配里时，触发器显示无当前租户状态，这是既有的一条已知限制。切换仍按「切换租户逐出离任租户的缓存」那一条逐出离任租户的查询子树。
+- **当前租户的落定。** 路由点名了一个租户时以它为准，选择器不覆盖它。没有点名时按次序取第一个能成立的：平台员工经平台名册读到的第一个启用且不是个人租户的租户（名册读归平台员工，普通成员读到 403 或特性缺席），名字取自名册的别名缓存；清单里的个人租户那一行（账户自己的空间）；清单第一行。三者都不成立时当前租户未知。落定的当前租户必须落在选择器能命名的那一份里：清单里的行由清单给出名字，平台名册那一档由名册的别名缓存给出；一个既不在清单里、别名缓存也没有的租户会让调用方落进既无法命名、也无法离开的租户，而它的每个租户域请求都被拒绝。
+- **本人租户读取的时机与失败。** 已认证且非冒充时读一次，身份变更（`applyIdentityChange`）与 ensure 新建个人租户后重读；会话结束时连同当前租户与别名缓存一起清空。切换租户不重读：清单只取决于身份，不取决于当前租户。读失败且已有落定的清单时保留它；没有落定的清单时当前租户保持未知、租户作用域的读保持禁用，选择器按它的属性渲染（见「账户没有成员关系时的租户区」）。
 - **切换租户逐出离任租户的缓存。** 租户是请求的路由事实，不是会话操作：选择器只把选中的租户标识报告一次，宿主随即改自己的路由与租户上下文。每个租户作用域的读都按租户标识分键（auth-core 的 `tenantQueryKey`），所以宿主在切换时用切换之前读到的离任租户标识调 `evictTenantQueries`，把该租户的整棵子树逐出；新租户的标识不逐出任何东西。当前租户未知（`null`）到某个租户的落定不是切换，不逐出。
 - **注册完成后的落点与一次性提示。** 口令注册成功并自动登录后落在账户页的验证节 `/account?verify=1`，与个人租户是否启用无关；账户在验证前不调用 ensure（见上一条）。注册模式下经短信渠道登录成功后，启用个人租户时落在租户区首页，未启用时落在 `/account/setup`。首页顶部的「完成账户设置」提示（可关闭，链接到 `/account/setup`）由 ensure 应答的 `created` 为真触发——账户刚得到个人租户——且 `GET /api/v1/auth/me` 显示账户设置未完成（没有可作登录名的标识或没有口令），提示出现之后仍按账户当前资料实时判定，设置完成即消失，而不由登录屏的注册模式触发，所以直接以新号码走普通短信登录而隐式开户的账户同样得到这条提示。登录完成应答不带「新开户」的事实，平台契约不为它加字段。验证提示与这条一次性提示分开：它由 `verification.state` 为 `pending` 触发，持续到邮箱验证完成，不随会话内关闭而消失。
 
@@ -329,7 +346,7 @@ flowchart TD
 - **横幅。** `TenantFrame` 把 auth-ui 的 `ImpersonationBanner` 经 `ProductShell` 的 `banner` 槽挂在应用栏之下，始终挂载（[auth-ui](web/design-web-auth-ui.md)、[product-shell](web/design-web-product-shell.md)）。`impersonation` 非空当且仅当快照的 `impersonating` 为真。`subject` 取快照 `principal` 的显示名，没有显示名时取账户标识；`tenant` 与 `expiresAt` 取自冒充状态读（`GET /api/v1/auth/impersonation`）应答里 `grant` 对象的 `tenant` 与 `ends_at`，`tenant` 就是租户标识，因为租户名册读属平台管理面、冒充期间不可达。状态读只在 `impersonating` 为真时启用，没有冒充的访问者不发这条读，也就没有一次裸 404。`impersonating` 为真时该读答裸 404，是已落定的「已无冒充」，与 console-ui 同一规则，宿主据此调用 `applyIdentityChange('ended')`；重读由查询客户端缺省的标签页重新可见重读承担（每项 `staleTime` 为 0；该重读只在标签页由隐藏变为可见时触发，窗口失焦再得焦不触发），本设计不另加轮询。其余失败读不到时，`tenant` 与 `expiresAt` 缺省，横幅与结束控件照常。横幅覆盖租户框架内的页面：邀请落点是公开落点页，渲染在租户框架之外，不挂横幅；控制台框架不挂横幅，冒充期间控制台区重定向到租户区，控制台框架不会在冒充期间渲染。
 - **横幅的隐藏、应用栏的身份指示与账户菜单的结束项。** `TenantFrame` 把 auth-ui 的 `ImpersonationNoticeProvider` 挂在 `ProductShell` 之外，三个部件从同一个提供者读：`banner` 槽里的横幅、`userMenu` 槽里账户菜单之前的 `ImpersonationIndicator`（冒充期间租户选择器不挂，它占的就是那个位置）、账户菜单里的 `ImpersonationEndMenuItem`。隐藏状态由提供者持有，是内存状态，不落任何存储，整页重载复位；复位的时刻与不复位的情形由 auth-ui 的「冒充横幅」给出，宿主只负责给出它们的输入：`grantId` 取状态读 `grant.id`，`identityKey` 取快照主体的账户标识加宿主的身份变更代数。结束尝试是宿主持有的一个 `useWriteFeedback` 作用域（`useImpersonationNoticeState`）：横幅的结束控件与菜单项都只调它的 `onEnd`，`pending`、`failureCode` 与 `successMessage` 由它派生后交给提供者。菜单项的文案取 auth-ui 的 `impersonation.end`，在途时取 `impersonation.ending`。
 - **一个身份变更动作。** 宿主绑定 `applyIdentityChange(change)`，`change` 是 `started` 或 `ended`。它依次：整体逐出查询缓存，与会话结束的缺省策略是同一个动作（[product-shell](web/design-web-product-shell.md)）；调用会话的 `restore()` 重读主体与 `impersonating`；重读依赖身份的宿主状态，即两域权限集（它的读取以主体、`impersonating` 与当前租户为键，键变化时在读取自己里先置回未知、再按「宿主侧的特性读取」的门控重读；置回未知不由本动作直接做，否则 `restore()` 挂起或被拒时权限集停在未知，控制台区一直转圈）、当前租户（见下）与租户区的实时订阅（订阅按生效账户登记，身份变更后以变更代数重建 `NotificationStreamProvider`，使它重新按新的生效账户连接，[notification-ui](web/design-web-notification-ui.md)）。`started` 时再把页面带到租户区首页，`ended` 不导航：页面是租户页，结束后控制台重新可达。`restore()` 保留已附上的权限集，也不自行得知身份变了，所以两域权限集的读取以主体、`impersonating` 与当前租户为键，快照翻转即触发，不依赖特性态的变化；身份与当前租户都没有变化时权限集保持原样。调用方是横幅的 `onEnd`、console-ui 冒充页的发起与结束（经 `onImpersonationChange` 接入，[console-ui](web/design-web-console-ui.md)）与到期。本动作在写入落定之后、在该次尝试之外调用，它的失败被包住，不改判已落定的写入；横幅的 `onEnd` 在结束请求落定时兑现，结束请求答裸 404 也当成兑现，不等待本动作。本动作不逐出冒充状态读自己的查询；状态读的裸 404 触发的身份变更每个冒充区间只做一次，做过之后快照仍为冒充，就走与「到期」相同的有界重读，不靠状态读自己重发，否则状态读的新 404 会再触发本动作而成为紧循环。该查询在读取停用、区间结束之后由它的读取钩子逐出，下一个区间从一次新的读开始；上一个区间已结束的 grant 不会留在缓存里，被控制台冒充页这类无守卫的读取当成当前冒充。本动作的标识在租户框架的整个生命期内稳定，不随路由变化，否则换页会重新触发到期的定时与重读。
-- **当前租户。** 冒充期间租户名册读被网关拒绝，当前租户取冒充状态读的 `grant.tenant`（标识），不发名册读，也不回落占位租户；状态读落定之前当前租户保持未知，租户作用域的读保持禁用。开始冒充之后新挂载的租户框架从未知开始，不取模块级单元里运营者的租户，否则状态读落定之前会有一次读带着运营者的别名发出、一条订阅按运营者的租户登记。请求播报用的别名取自此前读到的名册别名缓存里该标识的别名；缓存里没有它（整页重载、新开标签页）时回落占位表，别名与实际不符时租户区的读被准入层答 404，这与没有名册读权限的普通成员是同一条已知限制，不为冒充另造别名来源。结束冒充后当前租户重新由名册读决定。冒充期间租户选择器不挂：冒充限定在一个租户，名册读不可达，选择器既没有可列的租户也无从切换，当前租户由横幅陈述；选择器照常渲染会因为列表里没有相配的行而显示「无当前组织」，与横幅相矛盾（[tenancy-ui](web/design-web-tenancy-ui.md)）。结束冒充后，选择器在名册读重新决定当前租户之后恢复；落定之前同样不挂，否则这段过渡会因列表里没有相配的行而显示「无当前组织」。不是由冒充结束引起的未知（例如没有名册读权限）不在此列，选择器照常显示「无当前组织」。
+- **当前租户。** 冒充期间租户名册读与本人租户读取都被网关拒绝（本人租户读取不登记为可冒充，网关在 handler 之前拒绝），当前租户取冒充状态读的 `grant.tenant`（标识），两条读都不发，也不回落占位租户；状态读落定之前当前租户保持未知，租户作用域的读保持禁用。开始冒充之后新挂载的租户框架从未知开始，不取模块级单元里运营者的租户，否则状态读落定之前会有一次读带着运营者的别名发出、一条订阅按运营者的租户登记。请求播报用的别名取自此前读到的名册别名缓存里该标识的别名；缓存里没有它（整页重载、新开标签页）时回落占位表，别名与实际不符时租户区的读被准入层答 404，这与没有名册读权限的普通成员是同一条已知限制，不为冒充另造别名来源。结束冒充后当前租户重新由名册读与本人租户读取决定。冒充期间租户选择器不挂：冒充限定在一个租户，两条读都不可达，选择器既没有可列的租户也无从切换，当前租户由横幅陈述；选择器照常渲染会因为列表里没有相配的行而显示「无当前组织」，与横幅相矛盾（[tenancy-ui](web/design-web-tenancy-ui.md)）。结束冒充后，选择器在本人租户读取重新落定当前租户之后恢复；落定之前同样不挂，否则这段过渡会因列表里没有相配的行而显示「无当前组织」。不是由冒充结束引起的未知（例如清单读失败）不在此列，选择器照常显示「无当前组织」。
 - **到期。** 横幅给出 `expiresAt` 时，宿主在该时刻调用 `applyIdentityChange('ended')`。冒充记录的有效性判定按 `authn.session.check-ttl` 缓存（缺省 5 秒、取值域 0 到 60 秒），到期没有可发的事件，所以到期之后最长一个 `check-ttl` 内服务端仍可能按冒充处理，`restore()` 可能仍读到 `impersonating` 为真。读回仍为真时，宿主按固定的短间隔再读，总时长不超过 `check-ttl` 的上界；上限内仍为真则停止重试，横幅与结束控件保持可用，等下一次标签页重新可见的重读。定时取自浏览器时钟，与服务器时钟的偏差由这个有界重试吸收。
 - **身份变更窗口里的中间态。** 通则：由写入的结果直接得出的陈述跟随写入，依赖重读到的事实的陈述跟随重读。冒充的结束落定（含裸 404）之后、快照翻转之前，宿主把横幅的 `impersonation` 置为 `null`，不等快照：用户点了结束并成功，横幅就不该再说「正在冒充」。组件不变，`null` 时它只留 live region，「冒充已结束」在这里立即可闻，结束控件随横幅一起撤下，应用栏的身份指示与账户菜单里的结束项在同一时刻撤下，都不会再被点出一次无谓的 404。置空持续到重读读到 `impersonating` 为假，或有界重读用尽而快照仍为真；重读与「到期」同一间隔与上界，因为各副本对记录有效性的缓存使显式结束之后的重读同样可能晚一个 `check-ttl`。后一种情形放开置空，横幅回到由快照驱动，它的结束控件把裸 404 当成兑现并再次触发身份变更，由此收敛。开始冒充没有对应的置空：横幅需要重读之后的主体与状态读，开始落定到重读落定之间宿主保持原样。当前租户、平台权限集与主体这些依赖重读的事实在窗口内按未知渲染，不另造过渡态。
 - **开始冒充时覆盖轮换窗口：暂停宿主的读，并打开会话的身份过渡窗口。** 开始冒充是唯一轮换会话令牌的身份变更，写入落定时仍在途的、带旧令牌的请求会被拒绝。宿主把这段处理的入口接在 console-ui 的 `onImpersonationStarting` 接缝上：冒充页在发出开始写入之前同步调用它，写入被拒、被步进拦截或抛出时调用它返回的放行；写入落定的情形由身份变更动作落定后放行，宿主卸载时也放行，真实离线的客户端放行后仍保持离线——每条路径只放行一次。接到调用时宿主先调会话的 `beginIdentityTransition()`（[auth-core](web/design-web-auth-core.md) 的「外部接口契约」的「会话」），再取消全部在途查询，并把新查询的发出暂停（查询客户端的在线管理器）；放行时一并关闭该窗口。窗口保证即使某个读绕过了取消与暂停（effect 里的直接读、取消未及落地的 401、会话自己的读），它在旧 cookie 下读到的「无人登录」也不会把本地会话翻成匿名——静默恢复丢弃那个应答，原请求保留自己的 401；放行之后的下一次读落定新身份。暂停落在调用之后的一个任务，因为页面在同一轮里紧接着发出开始写入，立即暂停会把这条写入本身停住（缺省网络模式下写入同样排队等待在线），而它正是要放行的那条——暂停要挡的是写入之后才会发出的读。范围只含经查询客户端发出的读，不含 effect 里的直接读、会话自己的读与实时订阅的重连。结束冒充不轮换令牌，不暂停读，也不打开窗口。
@@ -359,9 +376,10 @@ flowchart TD
 | 头部的 `NotificationBell` | 特性 `notification.inbox` 在场才挂 |
 | `NotificationStreamProvider` | `enabled` 取「已认证且特性 `notification.stream` 在场」 |
 | `NotificationPresenceProvider` | `preferences` 取特性 `notification.preferences` 是否在场；`channels` 取 `notification.channel.email`、`notification.channel.sms` 中特性在场的那些所对应的 `email`、`sms` |
-| 租户名册的读取 | 特性态为 `ready` 且特性 `tenant.admin` 在场才读；被 403 拒绝的普通成员在个人租户启用时没有当前租户；`ready` 而该特性缺席时取缺省租户；`pending`、`failed` 时当前租户保持未知，租户作用域的查询保持禁用 |
+| 租户名册的读取（`TenantFrame` 与 `ConsoleAreaGate`） | 特性态为 `ready` 且特性 `tenant.admin` 在场才读；被 403 拒绝的普通成员没有平台名册可读，当前租户改由本人租户读取落定；`ready` 而该特性缺席时取缺省租户；`pending`、`failed` 时当前租户保持未知，租户作用域的查询保持禁用 |
+| 本人有效租户的读取（`TenantFrame`） | 已认证且非冒充时读一次，身份变更与 ensure 新建个人租户后重读；不受特性门控；读答 404（部署没有纳入 `tenant.self`）时回落到占位清单，其他失败沿用该读自己的失败呈现 |
 | 控制台区的当前租户落定（`ConsoleAreaGate`） | 已认证且当前租户未定时读名册并落定默认租户，与租户框架的规则相同，供两域权限集的读取带上租户名；读被拒或失败时当前租户保持未知，区域照常按平台权限集判定 |
-| 个人租户的 ensure（`TenantFrame`） | 特性 `workspace.personal` 在场、已认证、非冒充、没有当前租户且 `verification.state` 不是 `pending` 才调用 |
+| 个人租户的 ensure（`TenantFrame`） | 特性 `workspace.personal` 在场、已认证、非冒充、本人租户读取已落定且为空、当前租户未知、`verification.state` 不是 `pending` 才调用 |
 | 注册模式下短信登录之后的落点（`SignInView`） | 特性 `workspace.personal` 在场去租户区首页，缺席去完成设置页 |
 | 口令注册之后的落点（`SignInView`） | 一律去 `/account?verify=1` 的账户页验证节，与个人租户特性无关 |
 | 平台权限集与租户权限集的读取（`platform-permissions.tsx`） | 特性态为 `ready` 且当前租户已落定时读调用方自身的权限读取路由（`GET /api/v1/authz/me/permissions`）；`pending`、`failed` 或当前租户未定时两域保持未知；读被拒或失败时两域挂空集 |
@@ -371,7 +389,7 @@ flowchart TD
 
 账户页的验证节与验证提示不经特性门控：它们按本人档案的 `verification.state` 渲染，`none` 时不出现。
 
-租户名册与两域权限集的读取以特性态为输入：特性态转为 `ready` 时各读一次；一次身份变更（`applyIdentityChange`）另是两域权限集与当前租户的重读触发；当前租户落定或切换同样重读两域权限集——它的租户域集合是在请求解析到的租户里持有的那一份。特性态此时仍是 `ready`、没有转为 `ready` 这一沿，重读仍受上表的门控约束。两域权限集的读取另以当前租户为门控：租户未落定时不发读，落定之后才读。账户页的 `PasswordSection` 不经特性门控，修改口令的路由由 `authn.login` 恒挂。
+租户名册与两域权限集的读取以特性态为输入：特性态转为 `ready` 时各读一次；一次身份变更（`applyIdentityChange`）另是两域权限集、当前租户与本人有效租户的重读触发；当前租户落定或切换同样重读两域权限集——它的租户域集合是在请求解析到的租户里持有的那一份。特性态此时仍是 `ready`、没有转为 `ready` 这一沿，重读仍受上表的门控约束。**本人有效租户的读取不以特性态为输入**：它是账户的事实，已认证且非冒充即成立，特性态 `pending` 或 `failed` 不改变它；它的失败让当前租户保持未知，只有部署没有这条读取时（404）才按占位清单的既有限制回落。两域权限集的读取另以当前租户为门控：租户未落定时不发读，落定之后才读。账户页的 `PasswordSection` 不经特性门控，修改口令的路由由 `authn.login` 恒挂。
 
 **示范的文案不断言装配。** 哪些登录方式可用由 `GET /api/v1/auth/methods` 决定，哪些面存在由特性文档决定，文案不复述其中任何一项。登录页面向终端用户，不陈述部署运维的事实：第一个管理员账号怎样写入、仓库里有哪些开发文档，属于部署手册与示范的 README，登录页不提 `seed` 命令，也不指向仓库内的开发文档。
 
@@ -439,7 +457,10 @@ flowchart TD
 | 首次进入 `/account?verify=1` 自动发送一次验证码，更换邮箱落地不发送 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
 | ensure 为任何没有成员关系的账户建立个人租户，不看注册验证状态 | 已实现 | `starters/demo/server/personal.go` `personalProduct.ensure`、`handleEnsure`；`starters/demo/server/personal-openapi.json` |
 | 未验证账户上同样调用个人租户 ensure；验证提示由账户面单独呈现 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
-| 个人租户的生命周期：账户停用联动、账户删除时清理平台记录并留下墓碑、标识退役、创建与删除写审计 | 未实现 | — |
+| 个人租户随账户停用而停用、随账户恢复而恢复，运营者的停用不被覆盖 | 未实现 | — |
+| 账户删除时清理个人租户的成员关系、所有者角色与绑定，租户行留作墓碑、标识退役 | 未实现 | — |
+| 个人租户创建与删除的审计行，审计成为模块的必需依赖 | 未实现 | — |
+| 模块实现 `AccountLifecycle`：停用、启用、删除，服务密钥撤销为空操作 | 未实现 | — |
 | Fly 部署的 `mail.smtp` 节、SMTP secret 与开放口令注册（`authn.emailcode`、`authn.account.password-signup`） | 已实现 | `starters/demo/server/deploy.go` `deployModules`；`starters/demo/deploy/fly.yaml.tmpl` `mail` 节与 `seed.settings`；`starters/demo/deploy/entrypoint.sh` |
 | Fly 部署的 Google 与 GitHub 登录（两个方法的 Fly secret、`authn.login` 节与 `authn.account.signup`） | 已实现 | `starters/demo/server/deploy.go` `deployModules`；`starters/demo/deploy/fly.yaml.tmpl` `authn.login` 节；`starters/demo/deploy/entrypoint.sh`；`starters/demo/server/deploy_test.go` `TestTheDeployTemplateCarriesTheSocialCredentials` |
 | 账户页承载验证节的 `?verify=1` 与 `?change=email` 落地 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
@@ -447,7 +468,9 @@ flowchart TD
 | 个人租户端点的 operation 声明与 `personal-openapi.json` 生成 | 已实现 | `starters/demo/server/personal.go`；`starters/demo/server/openapi_generated_test.go`；片段 `starters/demo/server/personal-openapi.json` |
 | 个人租户 owner 的权限取宿主声明的允许集，ensure 把授予收敛到允许集 | 已实现 | `starters/demo/server/personal.go` `personalOwnerPermissions`、`convergeOwnerGrants` |
 | ensure 不覆盖运营者的决定，读回前追平名册快照，已有个人租户的账户读回它，拒绝服务账户与静态凭据主体，别名冲突答 409 | 已实现 | `starters/demo/server/personal.go` `personalModule`、`personalProduct` |
-| ensure 失败占位只替换取租户数据的页面，只有名册读被 403 才触发 ensure，一次性提示按账户当前资料实时判定，员工默认租户排除个人租户，注册落点只在应用登录页生效 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
+| ensure 失败占位只替换取租户数据的页面，一次性提示按账户当前资料实时判定，注册落点只在应用登录页生效 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
+| 本人租户读取 `GET /api/v1/auth/me/tenants` 进入 `serve` 的模块与配置，驱动租户选择器的列表、当前租户落定与租户作用域请求的别名来源 | 未实现 | — |
+| 个人租户 ensure 以本人租户读取的空清单为触发，租户选择器的个人空间文案按派生的标识逐字相等判定 | 未实现 | — |
 | 启用个人租户时注册完成后落在租户区首页，完成设置的提示由 ensure 应答的 `created` 触发 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/personal-tenant-notice.tsx` `PersonalTenantNoticeProvider`；`starters/demo/web/src/account-setup.ts` `setupIncomplete` |
 | 登录页文案不断言装配 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | `backend` 监听上各端的认领前缀（平台默认文档给出的固定命名空间表） | 已实现 | `starters/demo/server/defaults.yaml` `http.endpoints`；`starters/demo/server/claims_test.go` `claimsFromFile`、`readEffective`（经 `config.Load` 读文件与默认文档合并后的生效配置） |

@@ -543,7 +543,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 ### 账户生命周期
 
-`authn.mfa` 实现 `AccountLifecycle`。`AccountDeleted` 对账户的每个因素调 `Factor.Remove`（清 TOTP 种子、通行密钥公钥），再删因素行与 `authn_webauthn_users` 里该账户的行；账户停用不动因素。本模块同时订阅 `authn.account.deleted` 作补偿，处理函数幂等，只做清理。
+`authn.mfa` 实现 `AccountLifecycle`。`AccountDeleted` 对账户的每个因素调 `Factor.Remove`（清 TOTP 种子、通行密钥公钥），再删因素行与 `authn_webauthn_users` 里该账户的行；账户停用与启用都不动因素，`AccountEnabled` 返回 nil。本模块同时订阅 `authn.account.deleted` 作补偿，处理函数幂等，只做清理。
 
 ## 错误与失败语义
 
@@ -623,7 +623,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `ErrFactorNotSeasoned` 与 403 `factor-not-seasoned` | 已实现 | `pkg/authn/errors.go` `ErrFactorNotSeasoned`；`pkg/authn/internal/mount/problem.go` `CodeFactorNotSeasoned` |
 | 待确认行的清扫协程 | 已实现 | `pkg/authn/mfa/sweep.go` |
 | `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 已实现 | `pkg/authn/mfa/mfa.go` `admissionModule` |
-| 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 已实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go` |
+| 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 部分实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go` |
 | `GET B/factors`、`DELETE B/factors/:id` | 已实现 | `pkg/authn/mfa/routes.go` |
 | TOTP 因素 | 已实现 | `pkg/authn/mfa/totp/factor.go`、`config.go`、`register.go`、`migrations/` |
 | 短信因素 | 已实现 | `pkg/authn/mfa/sms/sms.go` |

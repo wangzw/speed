@@ -2,11 +2,11 @@
 
 ## 职责
 
-`audit.admin` 是审计记录的 HTTP 查询面，挂在固定基路径 `/api/v1/system/audit` 下，不交付任何功能接口，只把审计记录的检索暴露成路由。每条路由的动作是经审计实现子包的读面读审计表一次；模块自己不持数据、不持规则——审计表、它的模型与它的写入归审计模块，本模块只决定谁可以问、答案长什么样。
+`audit.admin` 是审计记录的 HTTP 查询面，挂在固定基路径 `/api/v1/system/audit` 下，不交付任何功能接口，只把审计记录的检索与导出暴露成路由。列表与取一行的动作是经审计实现子包的读面读审计表一次，导出是逐页读到游标为空；模块自己不持数据、不持规则——审计表、它的模型与它的写入归审计模块，本模块只决定谁可以问、答案长什么样。
 
 **本模块是框架为审计查询面提供的那个提供者。** 审计能力本身不提供查询面，[design-audit](design-audit.md) 的两处原文是：
 
-> **不提供查询面。** 按条件的检索与导出要先回答「谁可以查谁」，那是授权判定，归 [authz](../design-authz.md) 的承接的权限点（[ADR-audit-scope-2026-09-21](../../../adr/adr-audit-scope-2026-09-21.md)）。框架另有一个可直接纳入的模块 [audit.admin](design-audit-admin.md) 承担检索，判定在它自己的 handler 内经 `authz.guard` 做出；本模块自身仍不提供查询面。
+> **不提供查询面。** 按条件的检索与导出要先回答「谁可以查谁」，那是授权判定，归 [authz](../design-authz.md) 的承接的权限点（[ADR-audit-scope-2026-09-21](../../../adr/adr-audit-scope-2026-09-21.md)）。框架另有一个可直接纳入的模块 [audit.admin](design-audit-admin.md) 承担检索与导出，判定在它自己的 handler 内经 `authz.guard` 做出；本模块自身仍不提供查询面。
 
 > 本模块不交付查询面，宿主要读某个租户的那份轨迹，只能自己读这张表；这份读取的租户隔离全靠这几项承诺。
 
@@ -14,14 +14,13 @@
 
 承载这一面的授权经授权能力的 `Gate` 或 handler 内 API 落到 `audit.read` 上（[design-authz](../design-authz.md) 的承接的权限点）；本模块按 `sms.admin` 的形态取后者，判定在 handler 内做出（见「访问控制」）。
 
-路由挂在配置 `audit.admin.endpoints` 列出的端上，基路径不做可配置。每条路由按审计行的标识寻址，路径里出现的只有行标识这个自然键。
+路由挂在配置 `audit.admin.endpoints` 列出的端上，基路径不做可配置。取一行的路由按审计行的标识寻址，路径里出现的只有行标识这个自然键；列表与导出按查询参数窄化，不进路径。
 
 ### 非职责
 
-- **不持有审计表。** 表、它的迁移、它的模型与它的写入归审计模块；本模块不建表、不缓存、不迁移、不写该表，每条路由的动作是一次读面调用。**审计表仍只由审计模块写入。**
+- **不持有审计表。** 表、它的迁移、它的模型与它的写入归审计模块；本模块不建表、不缓存、不迁移、不写该表，列表与取一行各是一次读面调用，导出是逐页的读面调用。**审计表仍只由审计模块写入。**
 - **不捕获。** 事实经语句级、事件级、请求级与接缝级通路进入审计模块（[design-audit](design-audit.md)）；本模块是读面，不新增通路、不改覆盖面。**一条捕获通路不兼作查询**，查询也不经任何捕获通路。
 - **不给自己授予任何权限。** 本模块不声明自己的权限清单——它问的 `audit.read` 由授权能力自己携带（[design-authz](../design-authz.md)）——并把每条路由登记为开放，让中间件把请求放行到 handler，由 handler 在内部判定。
-- **不做导出。** 导出面（`audit.export`）是另一份权限；本模块只挂检索，路由集里没有导出。
 - **不为租户提供自查自己轨迹的面。** 本模块是平台运营面，判定落在平台域（见「访问控制」）；一个租户读自己的轨迹是另一条路由、另一个域，不在这里。
 - **不判定租户，也不做归责判定。** 一行属于哪个租户在写入时就记在行上（[design-audit](design-audit.md)）；本模块照读，不认定租户，也不回答「谁该为一次拒答负责」。
 
@@ -79,6 +78,9 @@ type Row struct {
 |---|---|
 | `GET /api/v1/system/audit/records` | `audit.read` |
 | `GET /api/v1/system/audit/records/:id` | `audit.read` |
+| `GET /api/v1/system/audit/export` | `audit.read` |
+
+**导出与取一行的路由在路径上不同层。** 导出挂在 `/api/v1/system/audit/export`，是 `/records` 的兄弟段，不经过 `/records/:id` 的路径参数段；导出的请求因而不会被读成一次「标识为 `export` 的取一行」，取一行的匹配也不会把导出请求吃掉。
 
 每条路由的动作是一次 `journal.Reader` 调用：
 
@@ -86,6 +88,7 @@ type Row struct {
 |---|---|
 | `GET /api/v1/system/audit/records` | `Query`，读一页审计记录 |
 | `GET /api/v1/system/audit/records/:id` | `Query`，以行标识为条件取一行（页大小为 1） |
+| `GET /api/v1/system/audit/export` | `Query`，循环读页直到游标为空（页大小取读面的最大页大小） |
 
 **检索读的是审计表，跨租户。** 审计表持有每个租户的行与没有租户的行。本模块的读是平台运营的读，handler 在一个跨租户标记下调用读面，读面因此把租户条件留空，读到的是全部租户的行与没有租户的行。行标识在整张表里唯一，`GET /api/v1/system/audit/records/:id` 因而不需要租户，取到的是那一行，或者什么也没有。
 
@@ -93,17 +96,21 @@ type Row struct {
 
 **判定由本模块在 handler 内做出，不经请求中间件的声明判定。** 查询面路由在中间件的声明表里全部登记为开放，好让中间件把请求放行到 handler；handler 先读调用方的身份，再经 `authz.guard` 的 handler 内判定 API 就本路由的权限 `audit.read` 问一句，不足即回绝。模块不给自己授予任何权限——`audit.read` 是授权能力自己携带的权限，本模块只问它。
 
+**导出与检索问同一份权限。** 导出路由问的也是 `audit.read`，不询问 `audit.export`；导出的权限范围与检索相同（REQ-platform-admin-112、REQ-platform-admin-113；[ADR-audit-export-2026-10-24](../../../adr/adr-audit-export-2026-10-24.md)）。`audit.export` 仍由授权能力携带，本模块不询问它。
+
 **判定顺序固定。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，并带与准入层、授权层同形的 realm 质询，不询问 guard 即返回。再向 guard 要 `audit.read`：不足即由 guard 写出它自己的拒绝——拒绝 403、故障 503——并返回。判定之后才解析查询、调读面、渲染应答。
 
-**判定在平台域做出。** 审计表是平台资产、不是某个租户的：它持有每个租户的行与没有租户的行。一次检索因而是一次平台操作；handler 经 `RequirePermissionIn(c, authz.PermissionAuditRead, authz.PlatformDomain)` 显式指定平台域判定。若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠一个请求头读到别的租户的行。
+**判定在平台域做出。** 审计表是平台资产、不是某个租户的：它持有每个租户的行与没有租户的行。一次检索或导出因而是一次平台操作；handler 经 `RequirePermissionIn(c, authz.PermissionAuditRead, authz.PlatformDomain)` 显式指定平台域判定。若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠一个请求头读到别的租户的行。
 
-**留审计自己的痕。** 本模块的路由都是读，它们**不写审计行**：审计表记的是动作，读审计表不是一个动作，而每读一次写一行会让表随着被读而增长。本模块的操作痕迹落在日志——每次读记一行诊断，带路由、调用方与命中的行数。宿主若要连这些读也留审计行，走审计模块**自己的请求级捕获**：把审计管理面所在的端与本模块的路由写进 `audit.journal` 的 `endpoints` 与 `requests` 配置，这些读就进审计表；本模块不为自己补一条通路（[design-audit](design-audit.md)）。
+**留审计自己的痕。** 本模块的路由都是读，它们**不写审计行**：审计表记的是动作，读审计表不是一个动作，而每读一次写一行会让表随着被读而增长。本模块的操作痕迹落在日志——每次读记一行诊断，带路由、调用方与命中的行数；导出记的一行另带筛选条件与写出的行数。宿主若要连这些读也留审计行，走审计模块**自己的请求级捕获**：把审计管理面所在的端与本模块的路由写进 `audit.journal` 的 `endpoints` 与 `requests` 配置，这些读就进审计表；本模块不为自己补一条通路（[design-audit](design-audit.md)）。
 
 ### 视图
 
 **读的应答是 200 加一份视图。** 视图逐字段从读面的行构造，从不把行原样交给客户端，行日后新增一个字段不会因为它在就等于出现在应答里。记录视图的字段：`id`、`tenant`、`occurred_at`、`actor`、`source`、`action`、`object`、`outcome`、`purpose`、`detail`（键值表），时间按 UTC 写出。`tenant` 为空表示一行没有租户——一行平台操作或系统级操作。
 
 列表的应答是 200 加一页记录视图与下一页的游标：`entries` 是记录视图的列表，`next` 是下一页游标，末页为空串。取一行的应答是 200 加一份记录视图。
+
+**导出的应答是 200 加一份 NDJSON 正文。** 正文一行一条记录视图：每行是一个 JSON 对象，字段与记录视图相同，行尾是一个换行符；没有信封、没有表头行、没有总计行。`detail` 因而是每行里的一个 JSON 对象，键值表的结构在文件里保留下来。媒体类型是 `application/x-ndjson`。应答带 `Content-Disposition: attachment`，文件名由 `mime.FormatMediaType` 从 `audit-records-<导出发起时刻>.ndjson` 生成，时刻按 UTC 写成紧凑形式（如 `20261024T101500Z`）；另带 `Cache-Control: no-store`，一份审计数据不留在任何缓存里。没有匹配行时是 200 与空正文——一个零行的文件仍是一次成功的导出。
 
 ### 查询参数
 
@@ -123,13 +130,15 @@ type Row struct {
 
 **时间边界按 UTC 比对。** 审计模块把每一行的时间按 UTC 写；边界在解析时折到 UTC 再交给读面。
 
+**导出接受同一组筛选参数，不接受 `cursor` 与 `limit`。** 导出读的是筛选匹配的全部记录，一次导出没有「当前页」：`cursor` 与 `limit` 描述的是页，给出即与越出形状的参数一样是 400。`since`、`until`、`action`、`outcome` 与 `actor` 的含义与取值的形状与列表路由相同。
+
 ### 宿主可见面
 
 以下是宿主写进配置文件、或在命令树与网关上点名的面。
 
 - **模块名**：`audit.admin`。宿主的命令树点模块名纳入，配置命名空间取同一取值。
 - **配置命名空间与输入项**：`audit.admin` 下的 `endpoints`（字符串列表，必填，无缺省，只收具体端名、不收 `*`，取主配置源）。
-- **管理端点**：`audit.admin.endpoints` 列出的端，`/api/v1/system/audit/records` 与 `/api/v1/system/audit/records/:id`（路由见「路由」）。
+- **管理端点**：`audit.admin.endpoints` 列出的端，`/api/v1/system/audit/records`、`/api/v1/system/audit/records/:id` 与 `/api/v1/system/audit/export`（路由见「路由」）。
 - **权限**：路由询 `audit.read`；本模块不声明自己的权限，`audit.read` 由授权能力携带。
 - **问题应答**：`Problem.Type` 前缀 `urn:speed:audit:`，其下的码 `bad-request`。
 
@@ -137,6 +146,7 @@ type Row struct {
 
 - 模块名 `audit.admin`、配置键 `audit.admin.endpoints`、管理面路由的路径与它们询问的权限（`audit.read`），以及 `Problem.Type` 前缀 `urn:speed:audit:` 及其下的码（`bad-request`），是本模块对宿主的接口面。改动它们是宿主可见的破坏性变更。
 - 记录视图的字段名（`id`、`tenant`、`occurred_at`、`actor`、`source`、`action`、`object`、`outcome`、`purpose`、`detail`）与列表应答的容器成形态（`entries`、`next`）是应答形状：宿主与前端据此读应答。
+- 导出路由的媒体类型 `application/x-ndjson`、一行一条记录视图的正文形状、`Content-Disposition` 的文件名与 `Cache-Control: no-store` 是应答形状：一个直接取这个路由的调用方据此读文件。
 - 特性名 `audit.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
 - 本模块可替换、可撤掉，不改变调用方或审计模块的代码。
 
@@ -194,6 +204,46 @@ sequenceDiagram
     end
 ```
 
+导出另有一条操作序。判定与形状检查完成后，第一页先读出来：第一次读失败时正文还没有开始写出，因而仍答 503。第一页读到之后，状态码与响应头固定下来，正文随后的每一页写出时状态已经不能再改。图上画不出的约束：导出读的是筛选匹配的全部记录，游标由处理器接着用，不接受调用方的游标与页大小；写出的每一行是同一份记录视图；行数不受一页的大小限制；正文开始写出之后的读失败只放弃连接，不再写成任何状态码。
+
+```mermaid
+sequenceDiagram
+    participant C as 调用方
+    participant H as audit.admin
+    participant G as authz.guard
+    participant J as journal.Reader
+    C->>H: 导出请求（筛选参数）
+    H->>H: 读调用方身份
+    alt 无身份
+        H-->>C: 401 带 realm 质询
+    else 有身份
+        H->>G: RequirePermissionIn(audit.read, 平台域)
+        alt 权限不足
+            G-->>C: 403 或 guard 故障 503
+        else 权限足够
+            H->>H: 解析筛选参数
+            alt 形状不可读
+                H-->>C: 400
+            else 形状可读
+                H->>J: Query(第一页，跨租户上下文)
+                alt 第一次读失败
+                    H-->>C: 503
+                else 读到第一页
+                    H-->>C: 200 与 NDJSON 响应头
+                    loop 逐页读到游标为空
+                        H->>J: Query(下一页，跨租户上下文)
+                        alt 读失败
+                            H-->>C: 放弃连接（正文未完成）
+                        else 读到
+                            H-->>C: 写出这一页的每一行
+                        end
+                    end
+                end
+            end
+        end
+    end
+```
+
 ## 核心数据结构
 
 模块不持数据，只有路由与它的查询参数、以及交出的视图。
@@ -202,9 +252,10 @@ sequenceDiagram
 |---|---|---|
 | 记录视图 | `{id, tenant, occurred_at, actor, source, action, object, outcome, purpose, detail}` | 从读面的行逐字段构造；`tenant` 为空表示一行没有租户；`detail` 是键值表 |
 | 页 | `{entries, next}` | `entries` 是记录视图的列表，`next` 是下一页游标，末页为空串 |
+| 导出行 | 记录视图的 JSON 对象，一行一条，行尾换行 | 与记录视图同形；`detail` 是键值表 |
 | 读面查询 | `journal.Query` | 时间窗、动作集、结果集、操作者集、行标识、游标与页大小（见「外部接口契约」的读面） |
 
-视图与查询都是本模块自己的类型，不是读面的 `Row`：`Row` 是审计表上的一行（含行标识、主体、租户、来源通路、动作、对象、结果、用途与明细），而交出去的是它的字段化视图、收进来的是解析过的查询。
+视图与查询都是本模块自己的类型，不是读面的 `Row`：`Row` 是审计表上的一行（含行标识、主体、租户、来源通路、动作、对象、结果、用途与明细），而交出去的是它的字段化视图、收进来的是解析过的查询。导出的正文也是记录视图，只是每条一行，没有页容器。
 
 ## 核心算法与流程
 
@@ -224,33 +275,49 @@ sequenceDiagram
 
 列表一条一页。读面按最新在前给出行，返回一页与下一页的游标；`next` 为空表示没有下一页。游标对调用方不透明：下一次请求把它原样交回 `cursor`；宿主不拼游标、也不解析它。
 
+### 一次导出请求
+
+导出的操作序（细节见「访问控制」与「错误与失败语义」）：读调用方（无身份 401）→ 向 guard 要 `audit.read`（不足由 guard 写出 403／503）→ 解析筛选参数并做形状检查（越出形状即 400）→ 在一个跨租户上下文里读第一页（读失败即 503）→ 交出流式应答，逐页读到游标为空为止。
+
+**页大小取读面的最大页大小，不取调用方的页大小。** 导出不是交互式的翻页：它固定以读面的最大页大小读，不接受调用方给出页大小。
+
+**第一页在正文开始之前读出来。** 处理器先读第一页，读到才交出应答；这一页随后作为正文的第一批行写出。第一次读失败因而仍是一个 503，而不是一次已经开始的下载。
+
+**每页写出后接着用它的游标读下一页。** 处理器把一页的每一行写成一条记录视图，再用返回的游标读下一页，直到 `next` 为空。行数不设上限：导出写的是筛选匹配的全部记录，不只任何一页。
+
+**写出所用的上下文随请求取消。** 调用方在导出途中断开时，上下文取消，下一次读与随后的写出都以这次取消结束；已经写出的行留在调用方那一侧，文件是不完整的。
+
 ## 错误与失败语义
 
 **回绝映射是封闭的、fail-closed 的。** handler 不把任何读面失败原样透给调用方，也不让一个映射不到的失败落成成功。
 
 | 情形 | 表现 |
 |---|---|
-| 请求在形状上不可读（路径的 `id` 不是数字、时间边界不是 RFC 3339、`limit` 越界、动作、结果或操作者取空值、出现本路由不接受的查询参数） | 400（`Problem.Type` 为 `urn:speed:audit:bad-request`），在读面之前 |
+| 请求在形状上不可读（路径的 `id` 不是数字、时间边界不是 RFC 3339、`limit` 越界、动作、结果或操作者取空值、出现本路由不接受的查询参数——导出路由上的 `cursor` 与 `limit` 在此列） | 400（`Problem.Type` 为 `urn:speed:audit:bad-request`），在读面之前 |
 | `GET /api/v1/system/audit/records/:id` 点名一行审计表不持有 | 404，不带 `Problem.Type` |
-| 读面读表失败 | 503，不带 `Problem.Type`，成因只进日志 |
+| 列表或取一行的读面读表失败 | 503，不带 `Problem.Type`，成因只进日志 |
+| 导出在正文开始之前读第一页失败 | 503，不带 `Problem.Type`，成因只进日志 |
+| 导出在正文开始之后某一页读失败 | 状态码不再改变；连接被放弃，调用方拿到一次未完成的下载，成因只进日志 |
 | guard 的拒答与故障 | 403 / 503，由 guard 写出 |
 | 请求没有身份 | 401，只有状态、无 `Problem.Type`，带 realm 质询 |
 
 **403 与 401 由别处写。** 权限不足的 403 与 guard 故障的 503 由 guard 写出（[design-authz](../design-authz.md)）；无身份的 401 由本模块写出，与准入层、授权层同形（只有状态、无 `Problem.Type`、带 realm 质询）。本模块不重写它们。
 
-**列表为空不是失败。** 一次没有命中的列表读答 200 与一个空的 `entries`；只有取一行路由把无命中答成 404。
+**空结果不是失败。** 一次没有命中的列表读答 200 与一个空的 `entries`；一次没有命中的导出答 200 与空正文；只有取一行路由把无命中答成 404。
 
 ## 并发与事务边界
 
 - 模块不持状态，可被多个协程并发使用。
-- 模块不开事务：一次动作是一次读面调用，读面在自己的句柄上发一条读语句，与任何调用方的事务无关。
+- 模块不开事务：一次动作用一次或多次读面调用，读面在自己的句柄上每次发一条读语句，与任何调用方的事务无关。导出逐页读，页与页之间没有事务，也不构成快照：导出期间新写入的行标识更大、落在游标之前，不进文件；导出期间被删除的行缺席。文件是「导出期间读到的那批行」。
 - 本模块不写任何东西——不写审计表、不写审计行；它的路由都是读。
 
 ## 实现状态
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 管理面 `audit.admin`（路由、判定、日志、回绝映射） | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/routes.go` `routes`、`mount`；`pkg/audit/admin/handlers.go` `handleRecordList`、`handleRecordGet`、`listQuery`、`logRead`；`pkg/audit/admin/pipeline.go` `require`、`answer`、`bad`、`notFound`、`unavailable` |
-| 管理面 `audit.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/audit/admin/operations.go`；`pkg/audit/admin/openapi_generated_test.go`；片段 `pkg/audit/admin/openapi/audit.admin.json` |
+| 管理面 `audit.admin` 的列表与取一行路由（判定、日志、回绝映射） | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/routes.go` `routes`、`mount`；`pkg/audit/admin/handlers.go` `handleRecordList`、`handleRecordGet`、`listQuery`、`logRead`；`pkg/audit/admin/pipeline.go` `require`、`answer`、`bad`、`notFound`、`unavailable` |
+| 列表与取一行的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/audit/admin/operations.go`；`pkg/audit/admin/openapi_generated_test.go`；片段 `pkg/audit/admin/openapi/audit.admin.json` |
+| 导出路由 `GET /api/v1/system/audit/export`（筛选、逐页流式 NDJSON、`Content-Disposition` 与 `Cache-Control`） | 未实现 | — |
+| 导出的 operation 声明与片段 | 未实现 | — |
 | 静态特性 `audit.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/audit/admin/admin.go` `Module`；`pkg/audit/admin/feature_test.go` `TestTheModuleDeclaresTheAuditAdminFeature` |
 | 审计实现子包的读面 `journal.Reader`、`journal.Query`、`journal.Row` | 已实现 | `pkg/audit/journal/read.go` `Reader`、`Query`、`Row`；`pkg/audit/journal/journal.go` `Module` |
