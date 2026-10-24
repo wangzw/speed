@@ -103,6 +103,46 @@ describe('ProfileSection', () => {
     ).toBeGreaterThanOrEqual(2)
   })
 
+  it('keeps the field disabled until the refetch that follows the save settles', async () => {
+    let patchDone = false
+    let releaseRefetch: (() => void) | null = null
+    const respond: RealResponder = async (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        if (patchDone && releaseRefetch === null) {
+          await new Promise<void>((resolve) => {
+            releaseRefetch = resolve
+          })
+        }
+        return jsonResponse(
+          200,
+          profileBody({ display_name: patchDone ? 'Grace' : 'Ada' }),
+        )
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        patchDone = true
+        return jsonResponse(200, {})
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
+
+    // The PATCH settled, but the scope's attempt is still open on the
+    // refetch, so the field stays disabled until the whole attempt settles.
+    await waitFor(() => expect(releaseRefetch).not.toBeNull())
+    expect(field).toBeDisabled()
+
+    releaseRefetch!()
+    await waitFor(() => expect(field).toBeEnabled())
+  })
+
   it('renders a refused save as its code text', async () => {
     const respond: RealResponder = (call: RealCall) => {
       if (call.method === 'GET' && call.path === PROFILE_PATH) {

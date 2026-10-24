@@ -91,6 +91,9 @@ export function ProfileSection({ session }: ProfileSectionProps) {
   })
 
   const pending = isPending && data === undefined
+  // Disabled through the whole attempt, including the refetch that follows
+  // the mutation, so the field cannot change context under a pending scope.
+  const busy = patchProfile.isPending || feedback.pending
   const name = editedName ?? data?.display_name ?? ''
 
   function invalidateProfile(): Promise<void> {
@@ -153,7 +156,7 @@ export function ProfileSection({ session }: ProfileSectionProps) {
                 fullWidth
                 label={t('profile.displayName.label')}
                 value={name}
-                disabled={patchProfile.isPending}
+                disabled={busy}
                 onChange={(event) => setEditedName(event.target.value)}
               />
 
@@ -164,7 +167,7 @@ export function ProfileSection({ session }: ProfileSectionProps) {
                 // a save with nothing changed would fire a no-op PATCH, and the
                 // console account detail's save controls set the same
                 // no-change-disabled convention.
-                disabled={patchProfile.isPending || name === (data?.display_name ?? '')}
+                disabled={busy || name === (data?.display_name ?? '')}
               >
                 {t('profile.save')}
               </Button>
