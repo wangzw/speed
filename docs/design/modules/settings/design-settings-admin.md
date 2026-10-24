@@ -183,7 +183,7 @@ sequenceDiagram
 
 ### 按层判定与域的选取
 
-层由查询串 `layer` 点名，域由层定出：`layer=global` 取 `authz.PlatformDomain`，`layer=tenant` 取 `authz.Domain(tenant)`。判定的主体是调用方的责任键 `Identity.Key()`，对象与动作由权限经进程翻译给出（`settings.read` → `(settings, read)`，`settings.write` → `(settings, write)`），域是层选指名的那个。全局层的写因此要平台域的授予——若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到全局层。租户层的写落到那个租户：一个在该租户获 `settings.write` 的调用方可以改那个租户的层。
+层由查询串 `layer` 点名，域由层定出：`layer=global` 取 `authz.PlatformDomain`，`layer=tenant` 取 `authz.Domain(tenant)`。判定的主体是调用方的生效账户 `Identity.Account()`，对象与动作由权限经进程翻译给出（`settings.read` → `(settings, read)`，`settings.write` → `(settings, write)`），域是层选指名的那个。全局层的写因此要平台域的授予——若按请求解析出的租户判定，一个在某租户获授权的调用方就能靠请求头触到全局层。租户层的写落到那个租户：一个在该租户获 `settings.write` 的调用方可以改那个租户的层。
 
 ### 写一项设置
 

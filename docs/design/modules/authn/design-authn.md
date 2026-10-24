@@ -93,7 +93,7 @@
 | 登录方式 | login method | 第一因素的一种实现，多步，状态在流程记录里。 |
 | 校验后端 | verification backend | 交付 `Verifier` 的一个模块：把一条凭据变成判决，按 `Authorization` scheme 或 cookie 名整条认领，并声明自己可交出的账户命名空间。 |
 | 实际操作者 | actor | 身份上真正动手的账户：不冒充时与生效账户相同，冒充时是发起冒充的管理员。与 db、settings 文档里泛指“执行变更的一方”的“操作者”不是同一个词义。 |
-| 责任键 | accountability key | `Identity.Key()` 的取值，恒为 `string(Actor())`；限流、审计与设置的 `actor` 参数按它归责。 |
+| 责任键 | accountability key | `Identity.Key()` 的取值，恒为 `string(Actor())`；限流、审计与设置的 `actor` 参数按它归责。授权不取它：判定主体是生效账户 `Identity.Account()`。 |
 | 冒充 | impersonation | 管理员在限定的租户内、有期限、被审计地以另一个账户的身份行事；身份上 `Actor()` 不等于 `Account()`。 |
 | 访问级别 | access | 网关对一次请求命中的路由登记的归类：`Open`、`Optional`、`Required`，以及网关没有作过决定的 `Unknown`。 |
 | 注册验证状态 | signup state | 账户的邮箱验证状态，二值：持有至少一条已证明归属的邮箱标识即已验证，持有邮箱而没有一条已证明的即未验证，没有邮箱则不适用本规则。`SignupVerification.SignupStateOf` 从标识与联系方式预留现算，与账户的创建路径无关；`signup_state` 列只记账户怎么来（`0` 非自助注册、`1` 自助注册、`2` 曾证明过），不参与判定。它是账户上的独立事实，与账户状态是两件事，不进入会话、身份或访问令牌。 |

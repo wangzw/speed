@@ -24,12 +24,14 @@ type stubPermissions struct {
 	byDomain map[authz.Domain][]authz.Permission
 	err      error
 	asked    []authz.Domain
+	subjects []string
 }
 
-func (s *stubPermissions) Held(_ context.Context, domain authz.Domain, _ string) ([]authz.Permission, error) {
+func (s *stubPermissions) Held(_ context.Context, domain authz.Domain, subject string) ([]authz.Permission, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.asked = append(s.asked, domain)
+	s.subjects = append(s.subjects, subject)
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -194,5 +196,32 @@ func TestAnUnreadablePolicyIsA503(t *testing.T) {
 	w := serve(t, permissionsOperation.Handle(p.handlePermissions), ctx)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("an unreadable policy answered %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// An impersonating caller is answered for the account the request is taken to
+// be from: the read asks about the impersonated account, never the actor whose
+// hands are on the request.
+func TestTheReadAsksForTheEffectiveAccount(t *testing.T) {
+	stub := &stubPermissions{byDomain: map[authz.Domain][]authz.Permission{}}
+	p := newRig(stub)
+	ctx := authntest.Context(t, tenantContext(t, "acme"),
+		authntest.WithAccount("acct-bob"),
+		authntest.WithActor("acct-alice"),
+		authntest.WithSession("sess-1"),
+		authntest.WithScope("acme"),
+	)
+
+	w := serve(t, permissionsOperation.Handle(p.handlePermissions), ctx)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the read answered %d: %s", w.Code, w.Body.String())
+	}
+	if len(stub.subjects) == 0 {
+		t.Fatal("the read asked the policy about no subject")
+	}
+	for _, subject := range stub.subjects {
+		if subject != "acct-bob" {
+			t.Errorf("the read asked about %q, want the effective account acct-bob", subject)
+		}
 	}
 }

@@ -214,7 +214,7 @@ sequenceDiagram
 
 ### 判定在平台域做出
 
-一次检索是平台操作，handler 经 `RequirePermissionIn` 显式指定 `authz.PlatformDomain`。判定的主体是调用方的责任键 `Identity.Key()`、域是平台域、资源与动作由权限经进程翻译给出（`audit.read` → `(audit, read)`）。不按请求解析出的租户判定：否则一个在某租户获授权的调用方靠一个请求头就能读到别的租户的行。
+一次检索是平台操作，handler 经 `RequirePermissionIn` 显式指定 `authz.PlatformDomain`。判定的主体是调用方的生效账户 `Identity.Account()`、域是平台域、资源与动作由权限经进程翻译给出（`audit.read` → `(audit, read)`）。不按请求解析出的租户判定：否则一个在某租户获授权的调用方靠一个请求头就能读到别的租户的行。
 
 ### 读面在一个跨租户标记下被调用
 

@@ -253,10 +253,11 @@ func TestANonAccessActionDecidesInOneQuery(t *testing.T) {
 	}
 }
 
-// The subject is the actor's accountability key. Under an impersonation the
-// decision is made for the account whose hands are on the request, not for the
-// account the request is taken to be from: the engine is asked about the actor.
-func TestDecideTakesTheActorsKey(t *testing.T) {
+// The subject is the effective account. Under an impersonation the decision is
+// made for the account the request is taken to be from, not for the account
+// whose hands are on the request: the engine is asked about the impersonated
+// account, so the operator's own permissions do not carry.
+func TestDecideTakesTheEffectiveAccount(t *testing.T) {
 	enforcer := &stubEnforcer{}
 	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
 	p := &product{enforcer: enforcer}
@@ -279,8 +280,8 @@ func TestDecideTakesTheActorsKey(t *testing.T) {
 		t.Fatalf("Decide gave an error: %v", err)
 	}
 	got := enforcer.queries()
-	if len(got) != 1 || got[0].Subject != "acct-alice" {
-		t.Fatalf("the engine was asked %v, want the subject acct-alice", got)
+	if len(got) != 1 || got[0].Subject != "acct-bob" {
+		t.Fatalf("the engine was asked %v, want the subject acct-bob", got)
 	}
 }
 
@@ -383,3 +384,100 @@ func TestASecondDeciderFailsTheStartup(t *testing.T) {
 type refusingDecider struct{}
 
 func (refusingDecider) Decide(context.Context, authn.Decision) (bool, error) { return false, nil }
+
+// stubPermissions answers the platform-domain read the impersonation rule makes.
+type stubPermissions struct {
+	held     map[string][]authz.Permission
+	err      error
+	mu       sync.Mutex
+	subjects []string
+	domains  []authz.Domain
+}
+
+func (s *stubPermissions) Held(_ context.Context, domain authz.Domain, subject string) ([]authz.Permission, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.subjects = append(s.subjects, subject)
+	s.domains = append(s.domains, domain)
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.held[subject], nil
+}
+
+// An impersonation may not target an account holding a platform permission:
+// that account is an administrator, and administrators are never impersonated.
+func TestDecideRefusesAnAdministratorTarget(t *testing.T) {
+	enforcer := &stubEnforcer{}
+	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
+	permissions := &stubPermissions{held: map[string][]authz.Permission{
+		"acct-admin": {"tenant.read"},
+	}}
+	p := &product{enforcer: enforcer, permissions: permissions}
+
+	allow, err := p.Decide(t.Context(), authn.Decision{
+		Action:        authn.ActionImpersonateStart,
+		Actor:         identity(t, "acct-ops"),
+		Tenant:        "acme",
+		TargetAccount: "acct-admin",
+	})
+	if err != nil || allow {
+		t.Fatalf("Decide gave (%t, %v), want (false, nil)", allow, err)
+	}
+	if len(permissions.subjects) != 1 || permissions.subjects[0] != "acct-admin" {
+		t.Fatalf("the permission reader was asked %v, want acct-admin", permissions.subjects)
+	}
+	if permissions.domains[0] != authz.PlatformDomain {
+		t.Fatalf("the permission reader was asked in %q, want the platform domain", permissions.domains[0])
+	}
+}
+
+// A target holding no platform permission passes the impersonation rule, and a
+// decision that is not an impersonation start never reads the target's
+// permissions at all.
+func TestDecideAllowsANonAdministratorTargetAndSkipsOtherActions(t *testing.T) {
+	enforcer := &stubEnforcer{}
+	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
+	permissions := &stubPermissions{held: map[string][]authz.Permission{}}
+	p := &product{enforcer: enforcer, permissions: permissions}
+
+	allow, err := p.Decide(t.Context(), authn.Decision{
+		Action:        authn.ActionImpersonateStart,
+		Actor:         identity(t, "acct-ops"),
+		Tenant:        "acme",
+		TargetAccount: "acct-member",
+	})
+	if err != nil || !allow {
+		t.Fatalf("Decide gave (%t, %v), want (true, nil)", allow, err)
+	}
+
+	if _, err := p.Decide(t.Context(), authn.Decision{
+		Action: authn.ActionAccountRead,
+		Actor:  identity(t, "acct-ops"),
+		Tenant: "acme",
+	}); err != nil {
+		t.Fatalf("Decide gave an error: %v", err)
+	}
+	if len(permissions.subjects) != 1 {
+		t.Fatalf("the permission reader was asked %v, want only the impersonation target", permissions.subjects)
+	}
+}
+
+// A permission read that fails is an outage, not an empty set: the target's
+// rank is unknown and the impersonation does not start.
+func TestDecideCarriesAPermissionReadFailure(t *testing.T) {
+	enforcer := &stubEnforcer{}
+	enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
+	failure := errors.New("policy is unavailable")
+	p := &product{enforcer: enforcer, permissions: &stubPermissions{err: failure}}
+
+	allow, err := p.Decide(t.Context(), authn.Decision{
+		Action:        authn.ActionImpersonateStart,
+		Actor:         identity(t, "acct-ops"),
+		Tenant:        "acme",
+		TargetAccount: "acct-member",
+	})
+	if allow || !errors.Is(err, failure) {
+		t.Fatalf("Decide gave (%t, %v), want (false, %v)", allow, err, failure)
+	}
+}

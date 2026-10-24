@@ -296,7 +296,7 @@ speed 不引入进程边界。宿主是单一进程，注册表与全部模块�
 
 认证交付身份系统：登录、会话、令牌、多因素、企业 SSO、冒充与账户存储；授权由 [authz](modules/design-authz.md) 承载，接缝只有 `Decider` 一处（[ADR-authn-scope-2026-10-10](../adr/adr-authn-scope-2026-10-10.md)、[ADR-authn-decision-seam-2026-10-10](../adr/adr-authn-decision-seam-2026-10-10.md)、[ADR-authz-decision-seam-2026-10-12](../adr/adr-authz-decision-seam-2026-10-12.md)）。归属认证的判据是判定所需的输入：只需要凭据、账户、标识、会话、令牌、因素、IdP 配置与冒充记录这类认证事实的归认证，还需要资源、动作与策略的归授权。判定接缝 `Decider` 缺席即全拒：认证自己的管理面与冒充的开始都不在它缺席时放行。网关与 `tenant.admission` 不写 403，认证强度不足答 401，非成员与冒充范围不符答 404，403 出现在认证自己的处理器里与 `authz.guard`（[authn](modules/authn/design-authn.md)、[authn-failure](modules/authn/design-authn-failure.md)、[authz](modules/design-authz.md)）。
 
-**身份由网关盖章。** 校验后端只交出判决，不写请求上下文；网关在出口检查全部成立之后才把身份写进上下文，注入口不导出（[ADR-authn-verdict-2026-10-10](../adr/adr-authn-verdict-2026-10-10.md)）。身份的实际操作者 `Actor()` 是真正动手的账户，冒充时与生效账户 `Account()` 不同；限流、审计与设置的归责一律取责任键 `Key()`，即实际操作者（[ADR-authn-identity-2026-10-10](../adr/adr-authn-identity-2026-10-10.md)）。
+**身份由网关盖章。** 校验后端只交出判决，不写请求上下文；网关在出口检查全部成立之后才把身份写进上下文，注入口不导出（[ADR-authn-verdict-2026-10-10](../adr/adr-authn-verdict-2026-10-10.md)）。身份的实际操作者 `Actor()` 是真正动手的账户，冒充时与生效账户 `Account()` 不同；授权的判定取生效账户 `Account()`，冒充期间替谁行事就按谁的权限判，发起者的权限不生效；限流、审计与设置的归责取责任键 `Key()`，即实际操作者（[ADR-authn-identity-2026-10-10](../adr/adr-authn-identity-2026-10-10.md)）。
 
 **会话与令牌的撤销面只有登录会话。** 登录会话权威存放在 db，撤销以会话行的撤销标记为准；刷新令牌与冒充记录挂在会话上，撤销会话即撤销它们；访问令牌不另设撤销清单，校验时核对它所属的会话与账户的 `valid_after`。账户停用与删除经认证模块自己的事务、`AccountLifecycle` 钩子与事件补偿清理，清理没做完时，`valid_after` 与账户状态兜底，残留的行不能用于认证（[ADR-authn-session-2026-10-10](../adr/adr-authn-session-2026-10-10.md)、[ADR-authn-account-lifecycle-2026-10-10](../adr/adr-authn-account-lifecycle-2026-10-10.md)）。撤销在各副本上的生效有上界，上界取自校验缓存的有效期，属于下文有界放宽的一部分。
 

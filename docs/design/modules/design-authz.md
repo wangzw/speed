@@ -93,7 +93,7 @@ type TranslationSpec struct {
     Rows map[Permission]Translation
 }
 
-// Query 是一次判定请求。Subject 取 Identity.Key()。
+// Query 是一次判定请求。Subject 取身份的被认证账户 Account()：冒充时是被冒充的账户。
 type Query struct {
     Subject string
     Domain  Domain
@@ -245,7 +245,7 @@ const (
 
 ### 动作到查询的翻译
 
-`authz.guard` 把一次判定翻成一次 `Enforcer.Allowed` 调用：中间件翻的是路由声明的 `Permission`，`Decider` 翻的是 `Decision.Action`（`authn.Action` 的取值，与权限常量逐一相同）。两条路径用**同一份权限到（资源，动作）映射**给出 `Query.Object` 与 `Query.Action`。下表是这份映射的**内置行**，即本能力自己携带的行；进程的翻译是内置行与**每个已登记模块经 `authz.TranslationSpec` 声明的行**的并集，由 `authz.policy` 或 `authz.guard` 在各自的 `Init` 里解析一次（在登记窗口关闭之前），此后不再改写。两者的解析是注册表的纯函数且写入幂等，结果必是同一份；两个都解析，是因为任何一个都可能单独在场——写策略数据而不守卫任何路由的命令只纳入 `authz.policy`，而 `authz.guard` 要求 HTTP 入口存在，那种命令没有入口可给。一个模块不得与既有行分歧：同一个权限配两行不同的（资源，动作）是启动失败，包在 `authz.ErrUnknownPermission` 上；与既有行一致的行并入同一行、去重。没有任何行覆盖的权限被拒——`Decider` 收到它时返回 `(false, nil)`，路由声明引用它则在启动期以 `ErrUnknownPermission` 终止。`Query.Subject` 取主体的标识：中间件取 `Identity.Key()`，`Decider` 取 `Decision.Actor.Key()`。
+`authz.guard` 把一次判定翻成一次 `Enforcer.Allowed` 调用：中间件翻的是路由声明的 `Permission`，`Decider` 翻的是 `Decision.Action`（`authn.Action` 的取值，与权限常量逐一相同）。两条路径用**同一份权限到（资源，动作）映射**给出 `Query.Object` 与 `Query.Action`。下表是这份映射的**内置行**，即本能力自己携带的行；进程的翻译是内置行与**每个已登记模块经 `authz.TranslationSpec` 声明的行**的并集，由 `authz.policy` 或 `authz.guard` 在各自的 `Init` 里解析一次（在登记窗口关闭之前），此后不再改写。两者的解析是注册表的纯函数且写入幂等，结果必是同一份；两个都解析，是因为任何一个都可能单独在场——写策略数据而不守卫任何路由的命令只纳入 `authz.policy`，而 `authz.guard` 要求 HTTP 入口存在，那种命令没有入口可给。一个模块不得与既有行分歧：同一个权限配两行不同的（资源，动作）是启动失败，包在 `authz.ErrUnknownPermission` 上；与既有行一致的行并入同一行、去重。没有任何行覆盖的权限被拒——`Decider` 收到它时返回 `(false, nil)`，路由声明引用它则在启动期以 `ErrUnknownPermission` 终止。`Query.Subject` 取主体的标识：中间件取 `Identity.Account()`，`Decider` 取 `Decision.Actor.Account()`。授权看的是被当作请求方的账户：冒充期间按被冒充账户的权限判定，发起者的权限不生效；限流、审计与设置的归责仍取责任键 `Key()`。
 
 | 权限 | `Query.Object` | `Query.Action` |
 |---|---|---|
@@ -350,7 +350,7 @@ const (
 |---|---|
 | `GET /api/v1/authz/me/permissions` | 无（开放路由，要求已认证） |
 
-**应答。** 200 加一份视图：`platform` 是主体在平台域 `system` 持有的权限名，`tenant` 是主体在请求解析出的租户域持有的权限名。两个成员恒在，按权限名升序，空结果写 `[]` 而不是 `null`。请求没有解析出租户时 `tenant` 为空——不回退到平台域，否则平台域的同一份答案会以两个名字各出现一次。主体取 `Identity.Key()`，不经路径参数或正文点名。
+**应答。** 200 加一份视图：`platform` 是主体在平台域 `system` 持有的权限名，`tenant` 是主体在请求解析出的租户域持有的权限名。两个成员恒在，按权限名升序，空结果写 `[]` 而不是 `null`。请求没有解析出租户时 `tenant` 为空——不回退到平台域，否则平台域的同一份答案会以两个名字各出现一次。主体取 `Identity.Account()`，不经路径参数或正文点名。
 
 **访问控制。** 路由不带权限：每个已认证调用方都能读自己的权限，而一条要求权限的路由只能被已经持有该权限的调用方走到——那正是这条读取要回答的问题。路由在声明表上登记为开放，好让强制中间件放行到 handler；认证准入是网关的：路由挂在 `authz.self.endpoints` 列出的端上，受守端上没有豁免登记的路由要求凭据，没有凭据的请求在 handler 之前即被拒。handler 自己在没有身份时写出与其他已认证面相同的 401：只有状态、没有 `Problem.Type`，挑战为 `Bearer` 与 `Cookie`，realm 取该端点的端名。
 
@@ -379,11 +379,11 @@ const (
 | 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
 |---|---|---|---|---|---|---|
 | `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
-| `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
+| `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `SubjectPermissions`、`http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/api/v1/system/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
 | `authz/self` | `authz.self` | 无（只挂 `/api/v1/authz/me/permissions`） | — | `SubjectPermissions` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
 
-`authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（前者排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明面核对不了登记的权限。`Catalog` 是随中间件落地的路由声明面所读的那一项——decider 本期不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域与名册不冲突：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。`authz.admin` 以 `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` 为必需依赖：`Manager` 是它的写面、`Catalog` 是授予的核对面、`guard.Guard` 是它在 handler 内判定所用的 handler 内 API、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由读取发起者注册验证状态的读面——审计或注册验证状态任一缺席，都在任何实例构造之前以 `core.ErrMissingProvider` 失败，而不是留到第一次写才发现。入口模块的路由功能 `http.Router` 在 `Init` 里必需，挂管理面路由而没有入口模块是 `ErrNoRouter`；路由声明面 `authz.Gate`、`i18n.Localizer` 与 `log.Logger` 在 `Init` 里可选取用，没有声明面的装配里管理面路由不带声明、受守的端把它们按未声明处置，没有本地化器的装配里目录视图的说明是空串。`authz.self` 以 `SubjectPermissions` 为唯一必需依赖；入口模块的路由功能在 `Init` 里必需，挂读取路由而没有入口模块是 `ErrNoRouter`，路由声明面与日志可选取用。
+`authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（各自排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明面核对不了登记的权限。`SubjectPermissions` 可选取用：它在场的装配里用于「目标不持平台权限」这一冒充条件；缺席意味着这个进程没有策略，没有账户持有平台权限，条件自然成立。`Catalog` 是随中间件落地的路由声明面所读的那一项——decider 本期不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域与名册不冲突：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。`authz.admin` 以 `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` 为必需依赖：`Manager` 是它的写面、`Catalog` 是授予的核对面、`guard.Guard` 是它在 handler 内判定所用的 handler 内 API、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由读取发起者注册验证状态的读面——审计或注册验证状态任一缺席，都在任何实例构造之前以 `core.ErrMissingProvider` 失败，而不是留到第一次写才发现。入口模块的路由功能 `http.Router` 在 `Init` 里必需，挂管理面路由而没有入口模块是 `ErrNoRouter`；路由声明面 `authz.Gate`、`i18n.Localizer` 与 `log.Logger` 在 `Init` 里可选取用，没有声明面的装配里管理面路由不带声明、受守的端把它们按未声明处置，没有本地化器的装配里目录视图的说明是空串。`authz.self` 以 `SubjectPermissions` 为唯一必需依赖；入口模块的路由功能在 `Init` 里必需，挂读取路由而没有入口模块是 `ErrNoRouter`，路由声明面与日志可选取用。
 
 ### 依赖方向
 
@@ -663,7 +663,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | 声明为需要权限 | 命中一条 `Require` 登记 | 进入身份与引擎判定 |
 | 未声明 | 既没有 `Open` 也没有 `Require` 登记 | `undeclared` 为 `closed`（缺省）：**403** 并记 Error；为 `open`：放行 |
 | 无身份 | 进入判定而上下文里没有身份 | `AccessFromContext` 为 `Open` 或 `Optional`：放行；为 `Required` 或 `Unknown`：**401**（见[非职责](#非职责)的形状） |
-| 有身份 | 上下文里有身份 | 域取 `tenant.FromContext` 的**标识**（不是别名），无租户则 `PlatformDomain`；构造 `Query{Subject: Identity.Key(), Domain, Object, Action}`；`Allowed` 出错 **503**，为假 **403**，为真放行 |
+| 有身份 | 上下文里有身份 | 域取 `tenant.FromContext` 的**标识**（不是别名），无租户则 `PlatformDomain`；构造 `Query{Subject: Identity.Account(), Domain, Object, Action}`；`Allowed` 出错 **503**，为假 **403**，为真放行 |
 
 `Object` 与 `Action` 由与 `Decider` 共用的权限到（资源，动作）映射给出（[动作到查询的翻译](#动作到查询的翻译)），不做字符串拆分。`Query` 交给引擎，与快照里的策略行按 matcher 匹配。
 
@@ -705,7 +705,9 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 ### Decider 的动作分派
 
-`authz.guard` 的产品实现 `authn.Decider`：`var _ authn.Decider = (*product)(nil)`。`Decide` 按[动作到查询的翻译表](#动作到查询的翻译)把 `Decision` 翻成一次 `Enforcer.Allowed`，`Subject` 取 `Decision.Actor.Key()`。它的失败方向：动作不在表里 → `(false, nil)`（拒绝且不报错）；引擎出错 → 返回错误（取用方按 503 处置）；引擎为假 → `(false, nil)`。`Decide` 可被多协程并发调用，`ctx` 结束即返回。
+`authz.guard` 的产品实现 `authn.Decider`：`var _ authn.Decider = (*product)(nil)`。`Decide` 按[动作到查询的翻译表](#动作到查询的翻译)把 `Decision` 翻成一次 `Enforcer.Allowed`，`Subject` 取 `Decision.Actor.Account()`。它的失败方向：动作不在表里 → `(false, nil)`（拒绝且不报错）；引擎出错 → 返回错误（取用方按 503 处置）；引擎为假 → `(false, nil)`。`Decide` 可被多协程并发调用，`ctx` 结束即返回。
+
+`authn.ActionImpersonateStart` 另有一条：目标账户在平台域持有任一权限时拒绝。权限集经 `SubjectPermissions` 读取；读失败是 503，不读作空集。这条与「谁能冒充谁」同属本实现方的判定，authn 只把目标账户交过来。
 
 ### 词表对齐守卫
 
@@ -817,6 +819,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | 路由声明的登记表实现（`Gate` 的 `Require`/`Open`/`Covered`） | 已实现 | `pkg/authz/guard/gate.go` `gate`、`(*gate).verify`；交付经 `pkg/authz/guard/guard.go` `(*product).Require`、`(*product).Open`、`(*product).Covered` |
 | handler 内判定 API `Guard`（`authz.guard` 随中间件交付） | 已实现 | `pkg/authz/guard/guard.go` `Guard`、`(*product).Allowed`、`(*product).RequirePermission`、`(*product).RequirePermissionIn` |
 | `authn.Decider` 的实现与未知动作 fail-closed | 已实现 | `pkg/authz/guard/decide.go` `(*product).Decide` |
+| 授权主体取生效账户；冒充发起拒绝持有平台域权限的目标 | 已实现 | `pkg/authz/guard/guard.go` `(*product).handle`、`(*product).allowedIn`；`pkg/authz/guard/decide.go` `(*product).Decide`、`(*product).targetHoldsPlatformPermission`；`pkg/authz/self/handler.go` `(*product).handlePermissions` |
 | 动作翻译表：内置行、进程级已解析集合与读取 | 已实现 | `pkg/authz/internal/translation/translation.go` `builtin`、`process`、`Lookup`、`Builtin`、`Reset`；解析时机见 `pkg/authz/policy/policy.go` `(*product).wire`、`pkg/authz/guard/guard.go` `(*product).wire`；宿主可见的读取口 `pkg/authz/capabilities.go` `Catalog.ObjectAction`、`pkg/authz/policy/catalog.go` `(*catalog).ObjectAction` |
 | 翻译扩展点：模块经 `authz.TranslationSpec` 声明的行并入进程的翻译，冲突即启动失败 | 已实现 | `pkg/authz/types.go` `Translation`、`TranslationSpec`；`pkg/authz/internal/translation/translation.go` `Resolve`、`process` |
 | 403 与 503 的写出、指标 `authz.guard.decisions` 与拒绝日志 | 已实现 | `pkg/authz/guard/respond.go` `outcome`、`forbidden`、`unavailable`、`noIdentity401`；`pkg/authz/guard/guard.go` `conclude`、`registerMetrics` |

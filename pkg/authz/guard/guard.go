@@ -78,6 +78,7 @@ func Module() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*authz.Enforcer)(nil)},
 			{Token: (*authz.Catalog)(nil)},
+			{Token: (*authz.SubjectPermissions)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 			{Token: (*observability.MeterProvider)(nil), Optional: true},
 		},
@@ -116,12 +117,17 @@ func Module() core.Module {
 			if err != nil {
 				return nil, fmt.Errorf("%s: taking up the permission catalog: %w", ModuleName, err)
 			}
+			permissions, _, err := optional[authz.SubjectPermissions](reg, "the permission reader")
+			if err != nil {
+				return nil, fmt.Errorf("%s: taking up the permission reader: %w", ModuleName, err)
+			}
 			return &product{
-				enforcer: enforcer,
-				catalog:  catalog,
-				gate:     newGate(catalog),
-				cfg:      cfg,
-				logger:   log.Default(),
+				enforcer:    enforcer,
+				catalog:     catalog,
+				permissions: permissions,
+				gate:        newGate(catalog),
+				cfg:         cfg,
+				logger:      log.Default(),
 			}, nil
 		},
 
@@ -199,11 +205,12 @@ type Guard interface {
 // product is this module's product. It implements authn.Decider, the
 // handler-internal Guard, and holds the declaration table the middleware reads.
 type product struct {
-	enforcer authz.Enforcer
-	catalog  authz.Catalog
-	gate     *gate
-	cfg      resolved
-	logger   *slog.Logger
+	enforcer    authz.Enforcer
+	catalog     authz.Catalog
+	permissions authz.SubjectPermissions
+	gate        *gate
+	cfg         resolved
+	logger      *slog.Logger
 
 	// meter is settled in wire, and counts in registerMetrics. Both run before
 	// any request is served; the request path writes counts and reads nothing
@@ -408,7 +415,7 @@ func (p *product) enforce(c *gin.Context, perm authz.Permission, realm string) {
 		return
 	}
 	allow, err := p.enforcer.Allowed(ctx, authz.Query{
-		Subject: id.Key(),
+		Subject: string(id.Account()),
 		Domain:  domainOf(c),
 		Object:  object,
 		Action:  action,
@@ -517,7 +524,7 @@ func (p *product) allowedIn(c *gin.Context, perm authz.Permission, domain authz.
 		return false, nil
 	}
 	return p.enforcer.Allowed(ctx, authz.Query{
-		Subject: id.Key(),
+		Subject: string(id.Account()),
 		Domain:  domain,
 		Object:  object,
 		Action:  action,

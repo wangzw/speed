@@ -49,7 +49,7 @@ func (p *product) handlePermissions(ctx context.Context, _ struct{}) (permission
 		// would say the caller holds nothing.
 		return permissionsBody{}, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
-	platform, err := p.permissions.Held(ctx, authz.PlatformDomain, id.Key())
+	platform, err := p.permissions.Held(ctx, authz.PlatformDomain, string(id.Account()))
 	if err != nil {
 		return permissionsBody{}, p.unavailable(err)
 	}
@@ -58,7 +58,7 @@ func (p *product) handlePermissions(ctx context.Context, _ struct{}) (permission
 		Tenant:   []string{},
 	}
 	if tenantID, ok := tenant.FromContext(ctx); ok {
-		held, err := p.permissions.Held(ctx, authz.Domain(tenantID), id.Key())
+		held, err := p.permissions.Held(ctx, authz.Domain(tenantID), string(id.Account()))
 		if err != nil {
 			return permissionsBody{}, p.unavailable(err)
 		}

@@ -402,10 +402,10 @@ func TestAnUndeclaredRouteIsRefusedByDefaultAndLetThroughWhenOpen(t *testing.T) 
 	})
 }
 
-// The query names the account whose hands are on the request, and the platform
+// The query names the account the request is taken to be from, and the platform
 // domain when the request resolved to no tenant: an impersonation decides for
-// the actor and not for the account the request is taken to be from.
-func TestTheQueryNamesTheAccountsKeyAndThePlatformDomain(t *testing.T) {
+// the impersonated account, not for the actor whose hands are on the request.
+func TestTheQueryNamesTheEffectiveAccountAndThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	r.enforcer.answer = func(authz.Query) (bool, error) { return true, nil }
 	ctx := caller(t,
@@ -418,7 +418,7 @@ func TestTheQueryNamesTheAccountsKeyAndThePlatformDomain(t *testing.T) {
 	if !rp.reached() {
 		t.Fatalf("the request did not reach the handler: %+v", rp)
 	}
-	want := authz.Query{Subject: "acct-alice", Domain: authz.PlatformDomain, Object: "account", Action: "read"}
+	want := authz.Query{Subject: "acct-bob", Domain: authz.PlatformDomain, Object: "account", Action: "read"}
 	got := r.enforcer.queries()
 	if len(got) != 1 || got[0] != want {
 		t.Fatalf("the engine was asked %v, want exactly %v", got, want)
@@ -478,8 +478,8 @@ func TestGuardAllowedAnswersWithoutWriting(t *testing.T) {
 }
 
 // The Guard API puts the same query the middleware would for the same context:
-// the subject is the actor's accountability key and not the account the request
-// is taken to be from, the (object, action) pair is the translation's row, and
+// the subject is the account the request is taken to be from, the (object,
+// action) pair is the translation's row, and
 // the domain is the platform domain when the request carries no tenant. The
 // engine is asked exactly this and nothing else.
 func TestGuardAllowedNamesTheSameQuery(t *testing.T) {
@@ -496,10 +496,10 @@ func TestGuardAllowedNamesTheSameQuery(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("Allowed = (%t, %v), want (true, nil)", ok, err)
 	}
-	want := authz.Query{Subject: "acct-alice", Domain: authz.PlatformDomain, Object: "account", Action: "read"}
+	want := authz.Query{Subject: "acct-bob", Domain: authz.PlatformDomain, Object: "account", Action: "read"}
 	got := r.enforcer.queries()
 	if len(got) != 1 || got[0] != want {
-		t.Fatalf("the engine was asked %v, want exactly %v: the actor's key and the translation's row", got, want)
+		t.Fatalf("the engine was asked %v, want exactly %v: the effective account and the translation's row", got, want)
 	}
 }
 
