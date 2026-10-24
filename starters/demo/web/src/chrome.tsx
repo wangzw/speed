@@ -589,6 +589,12 @@ export function UserMenu({
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         aria-controls={menuOpen ? menuId : undefined}
+        // The trigger's accessible name is the principal's display name when
+        // there is one and the generic account-menu label otherwise, so a
+        // purpose-scoped identifier of its own lets a caller address it
+        // regardless of which name it carries or where it sits among the
+        // bar's other menus.
+        data-testid="user-menu-trigger"
         onClick={(event) => setAnchorEl(event.currentTarget)}
       >
         <Avatar name={displayName} decorative size={narrow ? 28 : 32} />

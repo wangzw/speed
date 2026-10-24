@@ -215,22 +215,15 @@ export function createAccounts({
   }
 
   const signOut = async (): Promise<void> => {
-    // The trigger's accessible name is the display name when the account has
-    // one and the host's account-menu label otherwise. The menu triggers in
-    // the bar are the tenant switcher, then the account menu; the account menu
-    // is the last one, which is the fallback when the display name is set.
-    const bar = page.getByRole('banner')
-    const named = bar.getByRole('button', {
-      name: copy('demo', 'userMenu.accountMenu'),
-      exact: true,
-    })
-    const fallback = bar.locator('button[aria-haspopup="menu"]').last()
-    await fallback.waitFor()
-    if ((await named.count()) > 0) {
-      await named.click()
-    } else {
-      await fallback.click()
-    }
+    // The account menu trigger carries a stable purpose identifier: its
+    // accessible name is the principal's display name when the account has one
+    // and the host's account-menu label otherwise, so the name alone cannot
+    // address it for every account. The data attribute is the trigger's own,
+    // independent of where it sits among the bar's other menus.
+    await page
+      .getByRole('banner')
+      .getByTestId('user-menu-trigger')
+      .click()
     await page
       .getByRole('menuitem', {
         name: copy('demo', 'userMenu.signOut'),
