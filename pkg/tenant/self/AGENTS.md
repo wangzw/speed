@@ -1,0 +1,85 @@
+# pkg/tenant/self
+
+The tenant capability's caller-facing module. It mounts
+`GET /api/v1/auth/me/tenants`, the read that answers which tenants the calling
+account holds an active membership in, and delivers no capability of its own: it
+composes the account module's `authn.Memberships` with the roster's
+`tenant.Catalog`.
+
+The identity is the one the request's credential settled; no path parameter or
+body names a subject. The route resolves no tenant: it is mounted on the account
+endpoint, whose requests carry no tenant name, because the answer is about the
+caller and not about one tenant.
+
+## The answer
+
+```json
+{ "tenants": [ { "id": "acme", "alias": "Acme" }, { "id": "globex", "alias": "Globex" } ] }
+```
+
+A membership enters the answer when it is itself active (`Membership.Active`) and
+its roster row's status is `tenant.StatusActive`. A suspended membership, a
+disabled tenant and an identifier the roster snapshot does not carry are all left
+out. The list is ordered by identifier — `Memberships.Tenants` already lists that
+way, and the filter preserves the order rather than sorting again — and an empty
+result is `[]`, never `null`. The answer carries no kind and no status: the
+personal tenant is a host policy the roster does not record, so a host matches it
+by the identifier it derives itself.
+
+## Access control
+
+The route carries no permission: every authenticated caller may read its own
+memberships, and any permission it could name would have to be held already —
+which is the question the read answers. It is declared open on the route
+declaration surface so the enforcement middleware lets the request through.
+
+Authenticated admission is the gateway's: the route is mounted on the endpoints
+`tenant.self.endpoints` lists, and a route on a guarded endpoint that carries no
+exemption requires a credential, so a request with none is refused before a
+handler runs. The endpoint must be the one claiming `/api/v1/auth`; it must not
+be an endpoint the tenant resolution layer guards, because that layer requires a
+tenant name the account endpoint does not carry. A handler reached without an
+identity — the endpoint is not guarded, or the handler was reached another way —
+answers the same 401 the other authenticated surfaces answer: status alone, no
+problem type, and the realm challenge
+`Bearer realm="<endpoint>", Cookie realm="<endpoint>"`.
+
+The route is not registered as impersonatable, so the gateway refuses an
+impersonating caller before the handler runs.
+
+## Boundaries
+
+- **The module holds no memberships and no roster.** It reads through
+  `authn.Memberships.Tenants` and `tenant.Catalog.Get` and maps nothing: the
+  identifiers and aliases are the roster's, and the order is the membership
+  read's.
+- **A read that cannot answer is a 503, never an empty list.** The cause goes to
+  the log and never to the body. An empty list says the caller holds no active
+  membership, which is a different answer from an outage. A membership read or a
+  roster read that fails, and `tenant.ErrRosterMissing` for a snapshot that has
+  not been published, are all this one 503.
+- **The route set holds no 403 and no 404.** It decides no permission, and it
+  addresses no object that could be absent.
+- **The endpoint list is required and takes concrete names only.** An empty
+  list, an empty name, `*` and a repeated name are refused with
+  `ErrInvalidConfig`; a name the entry point does not declare fails the startup
+  with `tenant.ErrUnknownEndpoint`, and a command with no entry point fails with
+  `tenant.ErrNoRouter`. The list is read from the primary configuration source
+  alone.
+- **The route is mounted on every endpoint the list names.** It is one route
+  under the ordinary API root `/api/v1`, and its OpenAPI fragment is generated
+  from the operation declaration, not written by hand. The fragment is declared
+  against the `account` endpoint because the route only makes sense where the
+  `/api/v1/auth` prefix is claimed.
+
+## Running it
+
+```
+go -C pkg test ./tenant/self/...
+go -C pkg test -race ./tenant/self/...
+env -C pkg golangci-lint run ./tenant/self/...
+```
+
+`TestTheFragmentIsGeneratedFromTheDeclarations` compares the committed fragment
+with the declarations; regenerate it with
+`UPDATE_FRAGMENTS=1 go -C pkg test ./tenant/self -run TestTheFragmentIsGeneratedFromTheDeclarations`.
