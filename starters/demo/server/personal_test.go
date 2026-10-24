@@ -559,10 +559,17 @@ func (a *recordedAudit) rows() []audit.Entry {
 	return append([]audit.Entry(nil), a.entries...)
 }
 
-// unitProduct assembles a personal product over the fakes. The verification
-// read reports no self-registration, which is the state the eligibility cases
-// that are not about verification run in.
+// unitProduct assembles a personal product over the fakes with the switch on.
+// The verification read reports no self-registration, which is the state the
+// eligibility cases that are not about verification run in.
 func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManager, *fakeSeeder) {
+	return unitProductWith(personalConfig{Enabled: true})
+}
+
+// unitProductWith assembles the product over the fakes with a configuration of
+// the case's choosing. The lifecycle hooks must not follow the route's switch,
+// so the cases that hold that build the product with the switch off.
+func unitProductWith(cfg personalConfig) (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManager, *fakeSeeder) {
 	steps := &stepLog{}
 	roster := newFakeRoster()
 	roster.steps = steps
@@ -575,7 +582,7 @@ func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManage
 	auditor := newRecordedAudit()
 	auditor.steps = steps
 	return &personalProduct{
-		config:      personalConfig{Enabled: true},
+		config:      cfg,
 		roster:      roster,
 		memberships: memberships,
 		manager:     manager,
@@ -583,6 +590,7 @@ func unitProduct() (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManage
 		catalog:     fakeCatalog{},
 		audit:       auditor,
 		logger:      log.Default(),
+		seen:        newPersonalSeenEvents(personalSeenEventsCapacity),
 	}, roster, memberships, manager, seeder
 }
 

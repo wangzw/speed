@@ -46,7 +46,13 @@ func auditorOf(t *testing.T, product *personalProduct) *recordedAudit {
 // tenant, one membership, one owner role and one binding.
 func seededPersonal(t *testing.T) (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManager, *recordedAudit) {
 	t.Helper()
-	product, roster, memberships, manager, _ := unitProduct()
+	return seededPersonalWith(t, personalConfig{Enabled: true})
+}
+
+// seededPersonalWith is seededPersonal for a case that chooses the switch.
+func seededPersonalWith(t *testing.T, cfg personalConfig) (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManager, *recordedAudit) {
+	t.Helper()
+	product, roster, memberships, manager, _ := unitProductWith(cfg)
 	if _, err := product.ensure(context.Background(), unitAccount); err != nil {
 		t.Fatalf("seeding the personal tenant: %v", err)
 	}
@@ -577,4 +583,57 @@ func TestThePersonalModuleDeclaresTheLifecycleAndTheAudit(t *testing.T) {
 	if !lifecycleProvided {
 		t.Errorf("the module does not provide the account lifecycle hook")
 	}
+}
+
+// The lifecycle hooks are what the module provides to the account module, and
+// the workspace.personal switch withdraws the route and the feature, not the
+// hooks. Every case above builds the product with the switch on, so a short
+// circuit added at the top of a hook would go unnoticed there; these build it
+// with the switch off and hold the same effects.
+func TestTheLifecycleHooksDoNotFollowTheRouteSwitch(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("deletion", func(t *testing.T) {
+		product, roster, memberships, manager, auditor := seededPersonalWith(t, personalConfig{Enabled: false})
+		id := personalTenantID(unitAccount)
+
+		if err := product.AccountDeleted(ctx, unitAccount); err != nil {
+			t.Fatalf("the delete hook with the switch off: %v", err)
+		}
+		if got := roster.rows[id].Status; got != tenant.StatusDeleted {
+			t.Errorf("the tenant's status is %v with the switch off, want deleted", got)
+		}
+		if held := memberships.rows[unitAccount]; len(held) != 0 {
+			t.Errorf("the account's membership survived the switch-off deletion: %v", held)
+		}
+		if held := manager.bindings[string(id)]; len(held) != 0 {
+			t.Errorf("the tenant's bindings survived the switch-off deletion: %v", held)
+		}
+		if held := manager.roles[string(id)]; len(held) != 0 {
+			t.Errorf("the owner role survived the switch-off deletion: %v", held)
+		}
+		if rows := entriesOfAction(auditor.rows(), deleteAuditAction); len(rows) != 1 {
+			t.Errorf("the switch-off deletion wrote %d audit row(s), want one", len(rows))
+		}
+	})
+
+	t.Run("disable and enable", func(t *testing.T) {
+		product, roster, _, _, _ := seededPersonalWith(t, personalConfig{Enabled: false})
+		id := personalTenantID(unitAccount)
+
+		if err := product.AccountDisabled(ctx, unitAccount); err != nil {
+			t.Fatalf("the disable hook with the switch off: %v", err)
+		}
+		row := roster.rows[id]
+		if row.Status != tenant.StatusDisabled || row.DisabledBy != tenant.DisabledByAccount {
+			t.Errorf("the tenant is %v/%v with the switch off, want disabled by the account",
+				row.Status, row.DisabledBy)
+		}
+		if err := product.AccountEnabled(ctx, unitAccount); err != nil {
+			t.Fatalf("the enable hook with the switch off: %v", err)
+		}
+		if got := roster.rows[id].Status; got != tenant.StatusActive {
+			t.Errorf("the tenant's status is %v after the switch-off enable, want active", got)
+		}
+	})
 }
