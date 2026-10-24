@@ -34,7 +34,7 @@
  * the action and outcome names) are the product's own answers, asserted as the
  * rendered data they are.
  *
- * Two claims in the journey document are narrower here than the document
+ * Three claims in the journey document are narrower here than the document
  * states, and the reasons:
  *
  *  - The console sidebar's "Platform configuration" group heading does not
@@ -51,6 +51,17 @@
  *    region that kept the first result would not look different from a fresh
  *    one, and this spec cannot discriminate the requirement. The success step
  *    still asserts that no failure text stands beside the confirmation.
+ *  - REQ-platform-config-005 (the "Default" / "Overridden" state turns on
+ *    whether the chosen layer holds an explicit row, not on whether the value
+ *    is empty) is left out of @covers. Its discriminating acceptance writes
+ *    empty text into an item, expects "Overridden", then removes that row and
+ *    expects "Default". This journey's settings step writes only a non-empty
+ *    value, to an int item whose declared domain refuses the empty string, and
+ *    its untouched item has no row at all: an implementation that treated a
+ *    stored empty value as "no row" would show "Default" for the never-set item
+ *    and "Overridden" after the non-empty write exactly as the correct one
+ *    does, so the assertions here cannot tell the two apart. The journey
+ *    document lists the id, but its steps never drive the empty-value case.
  *
  * The type column is the table's lowest-priority column and only renders from
  * the container's `lg` width, so the spec opens a desktop viewport wide enough
@@ -61,11 +72,11 @@
  * REQ-platform-admin-001 (staff see the console entry and the home card),
  * 017 (a write from an unproved account is refused with the verification
  * guidance), 029 (audit filters apply on submit) and 031 (the detail's full
- * field set), and REQ-platform-config-001/003/005 are the ids the assertions
- * can fail on.
+ * field set), and REQ-platform-config-001/003 are the ids the assertions can
+ * fail on.
  */
 // @journey journey-operator-first-run.md
-// @covers REQ-signin-006, REQ-account-010, REQ-account-015, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-platform-admin-001, REQ-platform-admin-017, REQ-platform-admin-029, REQ-platform-admin-031, REQ-platform-config-001, REQ-platform-config-003, REQ-platform-config-005, REQ-presentation-027, REQ-presentation-028
+// @covers REQ-signin-006, REQ-account-010, REQ-account-015, REQ-account-016, REQ-account-017, REQ-account-019, REQ-account-020, REQ-platform-admin-001, REQ-platform-admin-017, REQ-platform-admin-029, REQ-platform-admin-031, REQ-platform-config-001, REQ-platform-config-003, REQ-presentation-027, REQ-presentation-028
 import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
