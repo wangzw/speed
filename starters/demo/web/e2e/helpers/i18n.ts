@@ -8,9 +8,14 @@
  * JSON so the harness does not depend on a bundler's JSON handling; the lookup
  * still fails loudly when a key moves, which is what catches drift.
  *
- * The browser is pinned to en-US by the Playwright config, so this module reads
- * that bundle. A journey that asserts a translated string names the bundle and
- * the dot path; `{{name}}` placeholders are filled from the call's variables.
+ * The browser is pinned to en-US by the Playwright config, so a journey that
+ * asserts the starting interface reads the en-US bundle. A journey that
+ * switches the interface's language (the personalization journey chooses
+ * zh-CN) names that language explicitly: the product's copy after the switch
+ * comes from the zh-CN bundle, and asserting it against en-US would be both
+ * wrong and a hardcoded literal. A journey that asserts a translated string
+ * names the bundle, the dot path and optionally the language; `{{name}}`
+ * placeholders are filled from the call's variables.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -27,73 +32,53 @@ export type CopyBundle =
   | 'consoleUi'
   | 'reviewNotice'
 
-const BUNDLES: Record<CopyBundle, URL> = {
-  demo: new URL('../../src/locales/en-US.json', import.meta.url),
-  authUi: new URL(
-    '../../../../../web/packages/auth-ui/src/locales/en-US.json',
-    import.meta.url,
-  ),
-  accountUi: new URL(
-    '../../../../../web/packages/account-ui/src/locales/en-US.json',
-    import.meta.url,
-  ),
-  tenancyUi: new URL(
-    '../../../../../web/packages/tenancy-ui/src/locales/en-US.json',
-    import.meta.url,
-  ),
-  productShell: new URL(
-    '../../../../../web/packages/product-shell/src/locales/en-US.json',
-    import.meta.url,
-  ),
-  layoutKit: new URL(
-    '../../../../../web/packages/layout-kit/src/locales/en-US.json',
-    import.meta.url,
-  ),
-  notificationUi: new URL(
-    '../../../../../web/packages/notification-ui/src/locales/en-US.json',
-    import.meta.url,
-  ),
-  uiKit: new URL(
-    '../../../../../web/packages/ui-kit/src/locales/en-US.json',
-    import.meta.url,
-  ),
-  consoleUi: new URL(
-    '../../../../../web/packages/console-ui/src/locales/en-US.json',
-    import.meta.url,
-  ),
+/** The languages the deployment ships bundles for. */
+export type CopyLocale = 'en-US' | 'zh-CN'
+
+/** The bundle directory; the language's file name is appended to it. */
+const BUNDLES: Record<CopyBundle, string> = {
+  demo: '../../src/locales',
+  authUi: '../../../../../web/packages/auth-ui/src/locales',
+  accountUi: '../../../../../web/packages/account-ui/src/locales',
+  tenancyUi: '../../../../../web/packages/tenancy-ui/src/locales',
+  productShell: '../../../../../web/packages/product-shell/src/locales',
+  layoutKit: '../../../../../web/packages/layout-kit/src/locales',
+  notificationUi: '../../../../../web/packages/notification-ui/src/locales',
+  uiKit: '../../../../../web/packages/ui-kit/src/locales',
+  consoleUi: '../../../../../web/packages/console-ui/src/locales',
   // The review assembly's notification catalog. The delivery pipeline renders
   // an in-app message from "<type_key>.<channel>.<part>" in the module's own
   // catalog, and the review build is where a type exists, so its text is a
   // shipped product string like any other. Its keys carry dots as literal
   // characters; `copyKey` reads them that way.
-  reviewNotice: new URL(
-    '../../../server/review_notification_locales/en-US.json',
-    import.meta.url,
-  ),
+  reviewNotice: '../../../server/review_notification_locales',
 }
 
-const loaded = new Map<CopyBundle, unknown>()
+const loaded = new Map<string, unknown>()
 
-/** Read and cache one bundle. */
-function bundle(name: CopyBundle): unknown {
-  const cached = loaded.get(name)
+/** Read and cache one bundle in one language. */
+function bundle(name: CopyBundle, locale: CopyLocale): unknown {
+  const cacheKey = `${name}\u0000${locale}`
+  const cached = loaded.get(cacheKey)
   if (cached !== undefined) return cached
-  const path = fileURLToPath(BUNDLES[name])
+  const path = fileURLToPath(
+    new URL(`${BUNDLES[name]}/${locale}.json`, import.meta.url),
+  )
   let parsed: unknown
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'))
   } catch (error) {
     throw new Error(
-      `the ${name} locale bundle at ${path} could not be read: ${String(error)}`,
+      `the ${name} ${locale} locale bundle at ${path} could not be read: ${String(error)}`,
     )
   }
-  loaded.set(name, parsed)
+  loaded.set(cacheKey, parsed)
   return parsed
 }
 
 /** Resolve one dot path to its string, failing on a miss or a non-string. */
-function lookup(name: CopyBundle, path: string): string {
-  let current: unknown = bundle(name)
+function lookup(name: CopyBundle, path: string, locale: CopyLocale): string {
+  let current: unknown = bundle(name, locale)
   for (const segment of path.split('.')) {
     if (typeof current !== 'object' || current === null || Array.isArray(current)) {
       throw new Error(
@@ -121,8 +106,9 @@ export function copy(
   name: CopyBundle,
   path: string,
   variables: Readonly<Record<string, string | number>> = {},
+  locale: CopyLocale = 'en-US',
 ): string {
-  const template = lookup(name, path)
+  const template = lookup(name, path, locale)
   return template.replace(/\{\{(\w+)\}\}/g, (match: string, key: string) => {
     const value = variables[key]
     if (value === undefined) {
@@ -143,8 +129,12 @@ export function copy(
  * top-level entry under the exact key. A missing key or a non-string value is
  * a harness error, the same as `copy`.
  */
-export function copyKey(name: CopyBundle, key: string): string {
-  const catalog = bundle(name)
+export function copyKey(
+  name: CopyBundle,
+  key: string,
+  locale: CopyLocale = 'en-US',
+): string {
+  const catalog = bundle(name, locale)
   if (typeof catalog !== 'object' || catalog === null || Array.isArray(catalog)) {
     throw new Error(`the ${name} locale bundle is not an object`)
   }
@@ -176,8 +166,9 @@ export function copyPattern(
   name: CopyBundle,
   path: string,
   patterns: Readonly<Record<string, string>>,
+  locale: CopyLocale = 'en-US',
 ): RegExp {
-  const template = lookup(name, path)
+  const template = lookup(name, path, locale)
   const source = template
     .split(/(\{\{\w+\}\})/)
     .map((part) => {
