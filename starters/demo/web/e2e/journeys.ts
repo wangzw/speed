@@ -188,9 +188,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-impersonation-for-support.md',
-    status: 'pending',
-    reason:
-      'The journey is browser-reachable; the review seed gives the operator TOTP and SMS two-step methods, so no hand enrollment is needed. No spec drives it yet, and its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-notifications-001',
       'REQ-notifications-025',
