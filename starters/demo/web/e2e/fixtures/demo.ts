@@ -65,11 +65,27 @@ export const test = base.extend<{
    * spec keeps the operator signing in with one factor.
    */
   seedImpersonation: boolean
+  /**
+   * Seed the invitation journey's invitee account (an email login name with no
+   * membership). A spec sets `test.use({ seedInvitee: true })` when it invites
+   * and signs that account in; every other spec starts from the template's own
+   * seed.
+   */
+  seedInvitee: boolean
 }>({
   seedMember: [false, { option: true }],
   seedImpersonation: [false, { option: true }],
-  server: async ({ seedMember, seedImpersonation }, use, testInfo) => {
-    const server = await startReviewServer({ seedMember, seedImpersonation })
+  seedInvitee: [false, { option: true }],
+  server: async (
+    { seedMember, seedImpersonation, seedInvitee },
+    use,
+    testInfo,
+  ) => {
+    const server = await startReviewServer({
+      seedMember,
+      seedImpersonation,
+      seedInvitee,
+    })
     try {
       await use(server)
     } finally {

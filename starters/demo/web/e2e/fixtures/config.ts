@@ -40,6 +40,14 @@ export interface ReviewConfigInput {
    * second factor, so only the journey that needs them turns it on.
    */
   readonly seedImpersonation?: boolean
+  /**
+   * Seed the invitation journey's invitee: an enabled user account whose login
+   * name is the address the operator invites, and which holds no membership.
+   * Off by default: only that journey signs the account in, and the account's
+   * address is proved by the acceptance, so every other server starts from the
+   * template's own seed.
+   */
+  readonly seedInvitee?: boolean
 }
 
 export interface ReviewConfig {
@@ -80,6 +88,22 @@ export const reviewMember = {
   displayName: 'Demo Member',
 } as const
 
+/**
+ * The account the invitation journey invites and then signs in as.
+ *
+ * It is seeded by an email address on purpose: the invitation's acceptance
+ * looks the invited address up and hangs the membership on the account that
+ * holds it, and the acceptance is the write that proves the address (the seed
+ * writes it as an administrator's assertion, which is not proof of ownership).
+ * The account holds no membership, so the acceptance is what makes it a member
+ * of the invited tenant. Its password is a review fixture, not a credential.
+ */
+export const reviewInvitee = {
+  identifier: 'invitee@demo.test',
+  password: 'invitee-review-secret',
+  displayName: 'Invitation Invitee',
+} as const
+
 /** The template's seeded operator entry; the member entry is appended to it. */
 const seedOperatorAccount = `    - identifier: operator@demo.test
       password: operator-dev-secret
@@ -97,6 +121,13 @@ function seedMemberAccount(): string {
 function seedMemberMembership(): string {
   return `    - tenant: ${quoted(reviewMember.tenant)}
       account: ${quoted(reviewMember.identifier)}`
+}
+
+/** The invitee's `seed.accounts` entry, indented for the list it joins. */
+function seedInviteeAccount(): string {
+  return `    - identifier: ${quoted(reviewInvitee.identifier)}
+      password: ${quoted(reviewInvitee.password)}
+      display-name: ${quoted(reviewInvitee.displayName)}`
 }
 
 /** Replace exactly one occurrence of a needle, or fail the fixture. */
@@ -217,20 +248,29 @@ export async function writeReviewConfig(
         'the harness opens the browser at http://localhost:<port>',
     )
   }
-  // The member the member-workspace journey signs in as: its account joins the
-  // seeded operator's list, and its membership joins the seed's members. Both
-  // are part of the configuration the binary's own seed command reads, so the
-  // account and the row that binds it to the tenant are the product's writes,
-  // not the fixture's. The membership goes before `settings` so the key order
-  // the template documents is kept. The block is opt-in so a spec that does
-  // not sign the member in starts from the template's own seed.
-  if (input.seedMember === true) {
+  // The accounts a journey signs in as, beyond the seeded operator: their
+  // entries join the operator's list in the same `seed.accounts` item. They are
+  // part of the configuration the binary's own seed command reads, so the
+  // accounts are the product's writes, not the fixture's. Each block is opt-in
+  // so a spec that does not sign the account in starts from the template's own
+  // seed.
+  const extraAccounts: string[] = []
+  if (input.seedMember === true) extraAccounts.push(seedMemberAccount())
+  if (input.seedInvitee === true) extraAccounts.push(seedInviteeAccount())
+  if (extraAccounts.length > 0) {
     body = replaceOnce(
       body,
       seedOperatorAccount,
-      `${seedOperatorAccount}\n${seedMemberAccount()}`,
+      `${seedOperatorAccount}\n${extraAccounts.join('\n')}`,
       'seed operator account',
     )
+  }
+  // The member the member-workspace journey signs in as also gets its
+  // membership: the row that binds it to the tenant joins the seed's members.
+  // The membership goes before `settings` so the key order the template
+  // documents is kept. The invitee deliberately gets no membership: the
+  // acceptance is what makes it a member.
+  if (input.seedMember === true) {
     // The review template may already carry a members list (the impersonation
     // fixture seeds its target there). YAML rejects a mapping with the same key
     // twice, so the entry joins that existing list rather than opening a second
