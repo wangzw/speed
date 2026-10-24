@@ -32,16 +32,25 @@ export interface SelfTenant {
   readonly alias: string
 }
 
-/** The list and whether the last read settled as an answer. */
+/** The list, whether the last read settled as an answer, and whether it
+ * failed. */
 export interface SelfTenantState {
   readonly tenants: readonly SelfTenant[]
   /** True only after a read resolved with the server's answer. A failed read
    * (5xx, network, timeout, a 404 when the deployment does not mount
    * tenant.self) marks it false while keeping `tenants`. */
   readonly settled: boolean
+  /** True when the last read ended in failure. A read that has not answered
+   * yet and a list that was never read are both false; that is what tells an
+   * in-flight read apart from a failed one, which `settled` alone cannot. */
+  readonly failed: boolean
 }
 
-const EMPTY: SelfTenantState = { tenants: [], settled: false }
+const EMPTY: SelfTenantState = {
+  tenants: [],
+  settled: false,
+  failed: false,
+}
 
 let state: SelfTenantState = EMPTY
 // Changes whenever the list stops belonging to the account it was read for.
@@ -90,9 +99,10 @@ export function clearSelfTenants(): void {
 
 /**
  * Reads the caller's memberships. A success replaces the list and marks it
- * settled; a failure keeps the rows already on hand and marks it unsettled,
- * so a failed read is never mistaken for "no memberships". Returns the state
- * the read left behind.
+ * settled; a failure keeps the rows already on hand, marks it unsettled and
+ * records the failure, so a failed read is never mistaken for "no
+ * memberships" and is told apart from a read still in flight. Returns the
+ * state the read left behind.
  */
 export async function loadSelfTenants(): Promise<SelfTenantState> {
   const started = epoch
@@ -102,11 +112,12 @@ export async function loadSelfTenants(): Promise<SelfTenantState> {
       publish({
         tenants: answer.tenants.map(({ id, alias }) => ({ id, alias })),
         settled: true,
+        failed: false,
       })
     }
   } catch {
     if (started === epoch) {
-      publish({ tenants: state.tenants, settled: false })
+      publish({ tenants: state.tenants, settled: false, failed: true })
     }
   }
   return state

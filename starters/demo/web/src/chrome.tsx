@@ -89,8 +89,9 @@ export interface DemoTenant extends TenantOption {
  * state (src/app.tsx) projects it for rendering, and a switch writes both,
  * so the value a request carries and the value the chrome shows agree.
  *
- * It starts empty: the app settles it once the roster is read
- * (src/app.tsx), which is what keeps a tenant-scoped request from firing
+ * It starts empty: the app settles it from the caller tenant list (or, for
+ * platform staff, from the roster's staff default) in src/app.tsx, and until
+ * then no alias is announced, which keeps a tenant-scoped request from firing
  * before the current tenant's alias is known.
  */
 let currentTenantId: string | null = null

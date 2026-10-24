@@ -474,9 +474,10 @@ function TenantFrame({
   // come off it -- the switcher's identity and the alias the request surface
   // carries -- and this state projects the identity for rendering; the setter
   // writes the cell too, so the value a request announces and the value the
-  // chrome shows agree. It starts empty and is settled once the roster below
-  // is read: a tenant-scoped request fired before then would announce the
-  // placeholder's alias, which a rename has left behind, and be refused 404.
+  // chrome shows agree. It starts empty and is settled from the caller tenant
+  // list (the personal row, then its first row) or, for platform staff, from
+  // the roster's staff default first: until that settles, a tenant-scoped
+  // request announces no alias and is refused 404.
   // A frame mounting during an impersonation starts unknown too: the
   // module-level cell still holds the operator's tenant from before the
   // console took over, and a first frame carrying it would issue one read
@@ -664,6 +665,13 @@ function TenantFrame({
     const listUsable = selfState.settled || selfState.tenants.length > 0
     if (!listUsable) {
       setTenantId(null)
+      // A read that has not answered yet has not decided the tenant either.
+      // The identity-change gap stays open until the caller tenant read has
+      // an outcome, or the switcher would state "no current tenant" against a
+      // host that is only still reading.
+      if (!selfState.failed) {
+        return
+      }
       setIdentitySettling(false)
       return
     }
@@ -867,8 +875,8 @@ function TenantFrame({
           once the session is authenticated, the process serves
           notification.stream, AND the tenant context has settled: a new
           account's personal tenant arrives through the ensure, and a
-          connection opened before it settles would carry the placeholder's
-          alias and be refused. An absent feature would otherwise open a
+          connection opened before it settles would announce no alias and be
+          refused. An absent feature would otherwise open a
           connection the server must refuse with a bare 404 on every mount,
           identity change and tab return. */}
       <NotificationStreamProvider
@@ -933,11 +941,11 @@ function TenantFrame({
           // tree and the tab order, and the bar closes over the missing item
           // (the slot is a flex row, so the remaining controls simply sit
           // together). Once the impersonation ends the effect above settles
-          // the tenant from the roster again, and the switcher returns over
-          // that row; until the read lands the identity-change gap keeps it
-          // out of the bar for the same reason -- the host has no tenant to
-          // show yet, and its no-current-tenant text belongs to a host that
-          // settles none.
+          // the tenant again from the caller tenant list and the roster, and
+          // the switcher returns over the settled row; until those reads land
+          // the identity-change gap keeps it out of the bar for the same
+          // reason -- the host has no tenant to show yet, and its
+          // no-current-tenant text belongs to a host that settles none.
           userMenu={(rail) => (
             <>
               {impersonating || identitySettling ? null : (

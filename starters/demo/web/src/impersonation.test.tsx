@@ -292,6 +292,9 @@ interface Backend {
    * counted like a query's). */
   readonly reads: () => number
   readonly rosterReads: () => number
+  /** The caller tenant read (GET /api/v1/auth/me/tenants): the read the
+   * current tenant settles from after an impersonation ends. */
+  readonly selfReads: () => number
   readonly statusReads: () => number
   readonly statusReadsWithGrant: () => number
   readonly recordReads: () => number
@@ -325,6 +328,10 @@ function makeBackend(options: {
   readonly endStatus?: 'ok' | '404' | 'error'
   /** Holds the roster read open until the suite resolves it. */
   readonly rosterGate?: Promise<void>
+  /** Holds the caller tenant read open once the end write has been issued,
+   * until the suite resolves it: the read the current tenant settles from
+   * after an impersonation ends. Reads before the end answer normally. */
+  readonly selfGateAfterEnd?: Promise<void>
   /** Keeps the status read answering the grant after the DELETE settles: a
    * replica whose check-ttl cache has not expired yet. */
   readonly statusLags?: boolean
@@ -356,6 +363,7 @@ function makeBackend(options: {
   let grant = options.grant
   let reads = 0
   let rosterReads = 0
+  let selfReads = 0
   let statusReads = 0
   let statusReadsWithGrant = 0
   let recordReads = 0
@@ -381,7 +389,12 @@ function makeBackend(options: {
       // The caller tenant list: this backend's operator holds no membership
       // the roster default would not already name, so an empty settled list is
       // the answer the settlement needs.
-      return Promise.resolve({ tenants: [] } as T)
+      selfReads += 1
+      const answered = { tenants: [] } as T
+      if (options.selfGateAfterEnd !== undefined && deletes > 0) {
+        return options.selfGateAfterEnd.then(() => answered)
+      }
+      return Promise.resolve(answered)
     }
     if (path === '/api/v1/system/tenants') {
       rosterReads += 1
@@ -496,6 +509,7 @@ function makeBackend(options: {
     fn,
     reads: () => reads,
     rosterReads: () => rosterReads,
+    selfReads: () => selfReads,
     statusReads: () => statusReads,
     statusReadsWithGrant: () => statusReadsWithGrant,
     recordReads: () => recordReads,
@@ -761,6 +775,67 @@ describe('the impersonation shell', () => {
     // The read lands, and the switcher returns over the roster's row.
     await act(async () => {
       roster.resolve()
+    })
+    expect(
+      await screen.findByRole('button', { name: 'acme' }),
+    ).toBeInTheDocument()
+    expect(getCurrentTenantId()).toBe('acme')
+  })
+
+  it('keeps the switcher out of the bar until the caller tenant read settles after an impersonation ends', async () => {
+    window.history.replaceState({}, '', '/')
+    // The roster read is released first, while the caller tenant read is
+    // still held open. The roster settling must not close the
+    // identity-change gap on its own: the current tenant settles from the
+    // caller tenant list, and a switcher mounted before that read answers
+    // would show its no-current-tenant text against a host that is only
+    // still reading (design-starters' impersonation section).
+    const roster = deferred()
+    const self = deferred()
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      rosterGate: roster.promise,
+      selfGateAfterEnd: self.promise,
+    })
+    bindRequestFn(backend.fn)
+    const session = roundTripSession(targetSnapshot(), () => operatorSnapshot())
+    const user = userEvent.setup()
+
+    renderDemoApp({ session })
+
+    const notice = await screen.findByRole('region', {
+      name: tAuth('impersonation.regionLabel'),
+    })
+    await waitFor(() =>
+      expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
+    )
+    expect(backend.selfReads()).toBe(0)
+
+    await user.click(
+      within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
+    )
+
+    await waitFor(() => expect(banner()).toBeNull())
+    await waitFor(() => expect(backend.rosterReads()).toBe(1))
+    await waitFor(() => expect(backend.selfReads()).toBe(1))
+
+    // The roster read lands first. The caller tenant read is still in
+    // flight, so the gap stays open: no switcher and, above all, no
+    // no-current-tenant text.
+    await act(async () => {
+      roster.resolve()
+    })
+    expect(tenantSwitcherTrigger()).toBeNull()
+    expect(
+      screen.queryByRole('button', {
+        name: tTenancy('tenantSwitcher.noCurrentTenant'),
+      }),
+    ).toBeNull()
+
+    // The caller tenant read lands, and the switcher returns over the tenant
+    // it settles from the roster's staff default.
+    await act(async () => {
+      self.resolve()
     })
     expect(
       await screen.findByRole('button', { name: 'acme' }),

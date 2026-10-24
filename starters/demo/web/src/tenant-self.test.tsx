@@ -90,6 +90,7 @@ describe('the caller tenant list store', () => {
         { id: 'globex', alias: 'globex' },
       ],
       settled: true,
+      failed: false,
     })
   })
 
@@ -108,6 +109,35 @@ describe('the caller tenant list store', () => {
     expect(getSelfTenantState()).toEqual({
       tenants: [{ id: 'acme', alias: 'acme-inc' }],
       settled: false,
+      failed: true,
+    })
+  })
+
+  it('tells a read still in flight apart from a failed one', async () => {
+    let resolveRead!: (value: unknown) => void
+    bindSelf(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve
+        }),
+    )
+
+    const pending = loadSelfTenants()
+    // Until the read answers the list is neither settled nor failed: the
+    // identity-change gap waits for an outcome, and a read in flight is not
+    // one.
+    expect(getSelfTenantState()).toEqual({
+      tenants: [],
+      settled: false,
+      failed: false,
+    })
+
+    resolveRead({ tenants: [] })
+    await pending
+    expect(getSelfTenantState()).toEqual({
+      tenants: [],
+      settled: true,
+      failed: false,
     })
   })
 
@@ -117,7 +147,11 @@ describe('the caller tenant list store', () => {
 
     clearSelfTenants()
 
-    expect(getSelfTenantState()).toEqual({ tenants: [], settled: false })
+    expect(getSelfTenantState()).toEqual({
+      tenants: [],
+      settled: false,
+      failed: false,
+    })
   })
 
   it('announces a self-list row alias on the request surface', async () => {
