@@ -201,13 +201,20 @@ describe('the invitation landing', () => {
         name: demoEnUS.home.heading,
       }),
     ).toBeInTheDocument()
-    const confirmation = await screen.findByText(
+    // The page's visible confirmation, inside the tenant shell's main
+    // landmark: the host's live region carries the same sentence outside it.
+    const confirmation = await within(screen.getByRole('main')).findByText(
       demoEnUS.home.membershipNotice.title,
     )
     expect(confirmation).toBeInTheDocument()
-    expect(
-      screen.getByText(demoEnUS.home.membershipNotice.description),
-    ).toBeInTheDocument()
+
+    // The landing unmounted on the way here, so the confirmation takes the
+    // focus: keyboard and screen-reader users otherwise land on the document
+    // body with no signal that the page changed.
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body))
+    expect(document.activeElement).toHaveTextContent(
+      demoEnUS.home.membershipNotice.title,
+    )
 
     // Dismissing it removes the confirmation.
     await user.click(
@@ -240,6 +247,43 @@ describe('the invitation landing', () => {
     expect(
       screen.queryByText(demoEnUS.home.membershipNotice.title),
     ).not.toBeInTheDocument()
+  })
+
+  it('fills one standing live region with the confirmation on acceptance', async () => {
+    const backend = makeInvitationBackend()
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    // The invitation summary settled; the acceptance's live region is the
+    // host's, already in the tree and empty. A region born together with its
+    // text is not reliably announced, so the confirmation has to be a change
+    // to a region the screen reader already knows.
+    await screen.findByRole('button', {
+      name: authEn.acceptInvitation.accept,
+    })
+    const region = screen.getByRole('status', {
+      name: demoEnUS.home.membershipNotice.region,
+    })
+    expect(region).toHaveTextContent('')
+
+    await user.click(
+      screen.getByRole('button', { name: authEn.acceptInvitation.accept }),
+    )
+    await waitFor(() => expect(backend.accepted).toEqual([TOKEN]))
+    await screen.findByRole('heading', {
+      level: 1,
+      name: demoEnUS.home.heading,
+    })
+
+    // One and the same region throughout (never a second one born with its
+    // text), now carrying the confirmation.
+    expect(
+      screen.getByRole('status', {
+        name: demoEnUS.home.membershipNotice.region,
+      }),
+    ).toBe(region)
+    expect(region).toHaveTextContent(demoEnUS.home.membershipNotice.title)
   })
 
   it('stays on the invitation landing after a registration through SMS', async () => {

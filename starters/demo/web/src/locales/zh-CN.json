@@ -26,14 +26,14 @@
     "heading": "开始使用",
     "intro": "本骨架不带业务域；下列是平台开箱即用的能力，先四处看看，再长你自己的业务。",
     "membershipNotice": {
+      "region": "成员确认",
       "title": "你已成为该租户的成员。",
-      "description": "当前租户保持不变，受邀加入的租户已出现在租户切换控件中。",
-      "dismiss": "关闭提示"
+      "dismiss": "关闭加入成员确认"
     },
     "setupNotice": {
       "title": "完成账户设置。",
       "action": "去完成账户设置",
-      "dismiss": "关闭提示"
+      "dismiss": "关闭账户设置提示"
     },
     "cards": {
       "account": {

@@ -29,7 +29,7 @@
  * regression, never that a page is accessible.
  */
 
-import { act, screen } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MockInstance } from 'vitest'
@@ -57,7 +57,7 @@ import {
 import { createBackend } from './backends.js'
 import type { BackendMode } from './backends.js'
 import { formatFinding, formatFindings, isFailing, runBestPracticePass, scanPage } from './scan.js'
-import type { A11yFinding } from './scan.js'
+import type { A11yFinding, A11yScanResult } from './scan.js'
 
 /**
  * Every platform permission code a console page's route guard checks, so the
@@ -156,6 +156,33 @@ async function settle(): Promise<void> {
 }
 
 /**
+ * The two rules that land in axe's indeterminate bucket for reasons this
+ * harness can decide, asserted absent for every scanned state -- the sweep's
+ * routes and the states only a driven case reaches alike.
+ */
+function expectNoDecidableIncomplete(
+  result: A11yScanResult,
+  label: string,
+): void {
+  // The sweep must not surface color-contrast: it is excluded from the gate's
+  // rule set (jsdom performs no color computation, so it is indeterminate for
+  // every node -- see UNSWEEPABLE_RULES in ./scan.ts). A re-added contrast run
+  // would show up here as a regression rather than as the noise it once was.
+  expect(
+    result.incomplete.some((finding) => finding.rule === 'color-contrast'),
+    `${label} swept color-contrast, which jsdom cannot decide`,
+  ).toBe(false)
+  // aria-prohibited-attr lands in axe's indeterminate bucket only because jsdom
+  // does not compute an element's role; the question itself is decidable on a
+  // static tree. Asserting its absence turns the reported warning into a gate:
+  // the one node it named was a generic span carrying aria-label.
+  expect(
+    result.incomplete.some((finding) => finding.rule === 'aria-prohibited-attr'),
+    `${label} put an ARIA attribute on an element that does not permit it`,
+  ).toBe(false)
+}
+
+/**
  * Renders one route in one state, scans it, and records the outcome. Returns
  * the outcome so a caller can assert on it.
  */
@@ -182,22 +209,7 @@ async function scanRoute(
     `route ${path} [${mode}] issued read(s) the scripted backend does not answer`,
   ).toEqual([])
   const result = await scanPage()
-  // The sweep must not surface color-contrast: it is excluded from the gate's
-  // rule set (jsdom performs no color computation, so it is indeterminate for
-  // every node -- see UNSWEEPABLE_RULES in ./scan.ts). A re-added contrast run
-  // would show up here as a regression rather than as the noise it once was.
-  expect(
-    result.incomplete.some((finding) => finding.rule === 'color-contrast'),
-    `route ${path} [${mode}] swept color-contrast, which jsdom cannot decide`,
-  ).toBe(false)
-  // aria-prohibited-attr lands in axe's indeterminate bucket only because jsdom
-  // does not compute an element's role; the question itself is decidable on a
-  // static tree. Asserting its absence turns the reported warning into a gate:
-  // the one node it named was a generic span carrying aria-label.
-  expect(
-    result.incomplete.some((finding) => finding.rule === 'aria-prohibited-attr'),
-    `route ${path} [${mode}] put an ARIA attribute on an element that does not permit it`,
-  ).toBe(false)
+  expectNoDecidableIncomplete(result, `route ${path} [${mode}]`)
   for (const finding of result.incomplete) {
     console.warn(`[route-a11y] ${path} [${mode}] indeterminate: ${formatFinding(finding)}`)
   }
@@ -416,10 +428,17 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     await user.click(
       await screen.findByRole('button', { name: authEn.acceptInvitation.accept }),
     )
-    // The app lands on the tenant home with the confirmation; the scan below
-    // is only meaningful once that state is really on screen.
-    await screen.findByText(demoEnUS.home.membershipNotice.title)
+    // The app lands on the tenant home with the confirmation (the visible
+    // block inside the shell's main landmark; the host's live region repeats
+    // the sentence outside it); the scan below is only meaningful once that
+    // state is really on screen.
+    await within(screen.getByRole('main')).findByText(
+      demoEnUS.home.membershipNotice.title,
+    )
     const result = await scanPage()
+    // This is the only case that reaches the post-accept home state, so it
+    // carries the same decidable-indeterminate gate the sweep applies.
+    expectNoDecidableIncomplete(result, 'route / [data, membership confirmation]')
     records.push({
       path: '/',
       mode: 'data',

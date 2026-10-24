@@ -79,6 +79,24 @@ const tNotifications = textI18n.getFixedT(
   NOTIFICATION_UI_NAMESPACE,
 )
 
+/**
+ * The impersonation banner's standing live region. The app mounts a second
+ * standing status region for the invitation-acceptance confirmation; these
+ * cases assert on the impersonation announcement, so they select the region
+ * that is not the named membership one.
+ */
+function announcementRegion(): HTMLElement {
+  const regions = screen
+    .getAllByRole('status')
+    .filter(
+      (region) =>
+        region.getAttribute('aria-label') !==
+        demoEnUS.home.membershipNotice.region,
+    )
+  expect(regions).toHaveLength(1)
+  return regions[0]!
+}
+
 const TENANT = { id: 'acme', alias: 'acme', status: 'active' as const }
 
 interface GrantFixture {
@@ -885,11 +903,11 @@ describe('the impersonation shell', () => {
     // The finished interval's confirmation does not cover the new
     // interval's announcement in the permanent live region.
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
+      expect(announcementRegion()).toHaveTextContent(
         tAuth('impersonation.actingAs', { subject: 'Target One' }),
       ),
     )
-    expect(screen.getByRole('status')).not.toHaveTextContent(
+    expect(announcementRegion()).not.toHaveTextContent(
       tAuth('impersonation.ended'),
     )
   })
@@ -2214,7 +2232,7 @@ describe('the impersonation shell', () => {
         `section[aria-label="${tAuth('impersonation.regionLabel')}"]`,
       ),
     ).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(announcementRegion()).toHaveTextContent(
       tAuth('impersonation.actingAs', { subject: 'Target One' }),
     )
 
@@ -2402,7 +2420,7 @@ describe('the impersonation shell', () => {
         name: tAuth('impersonation.regionLabel'),
       }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(announcementRegion()).toHaveTextContent(
       tAuth('impersonation.actingAs', { subject: 'Target Two' }),
     )
   })

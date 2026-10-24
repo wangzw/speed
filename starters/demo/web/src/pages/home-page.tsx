@@ -22,6 +22,7 @@
  * useRouteLinkProps decides which click is which).
  */
 
+import { useEffect, useRef } from 'react'
 import type { ReactElement } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -96,6 +97,18 @@ export function HomePage(): ReactElement {
   // here (src/tenant-membership-notice.tsx). It is a one-shot notice: the
   // viewer dismisses it, and the dismissal lasts for the identity's session.
   const membershipNotice = useTenantMembershipNotice()
+  // The acceptance navigated here from the landing, which unmounts on the
+  // way: focus would otherwise fall to the document body with no signal that
+  // the page changed. The confirmation is the journey's result, so it takes
+  // the focus when it is the reason this page mounted. The announcement
+  // itself is the provider's standing live region; this block is its visible
+  // twin and carries no live semantics of its own.
+  const confirmation = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (membershipNotice.visible) {
+      confirmation.current?.focus()
+    }
+  }, [membershipNotice.visible])
   // Once the notice has appeared, the account's CURRENT profile decides
   // whether it still applies: completing setup makes it disappear, whichever
   // page the account finished on. The read runs only while the notice is
@@ -125,16 +138,19 @@ export function HomePage(): ReactElement {
       <PageHeader title={t('home.heading')} description={t('home.intro')} />
       {membershipNotice.visible ? (
         <Alert
+          ref={confirmation}
           severity="success"
-          role="status"
+          // Not a live region: announcing belongs to the provider's standing
+          // status region, which existed before this text did. Rendering the
+          // block as one too would announce the confirmation twice (and a
+          // region born with its text is unreliable anyway).
+          role="none"
+          tabIndex={-1}
           onClose={membershipNotice.dismiss}
           closeText={t('home.membershipNotice.dismiss')}
         >
           <Typography variant="body2">
             {t('home.membershipNotice.title')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {t('home.membershipNotice.description')}
           </Typography>
         </Alert>
       ) : null}

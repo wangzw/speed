@@ -16,6 +16,13 @@
  * clears it, so a confirmation never reaches the next identity. Dismissal
  * lasts while that identity stays mounted: leaving the home page and
  * returning in the same session does not bring the notice back.
+ *
+ * The announcement's live region lives here too, not on the home page: a live
+ * region announces only content changes that follow its own insertion, and
+ * the home page mounts with the notice already visible (the landing announces
+ * before it navigates), so a region rendered there would be born together
+ * with its text. This provider is mounted from the first render of the app,
+ * so its region is already in the tree, empty, when an acceptance fills it.
  */
 
 import {
@@ -27,7 +34,12 @@ import {
   useState,
 } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import { useAuthState } from '@speed/auth-core'
+import { useTranslation } from '@speed/i18n'
+import { visuallyHiddenSx } from '@speed/ui-kit'
+import { DEMO_NAMESPACE } from './resources.js'
 
 /** What the home page reads and the landing writes. */
 export interface TenantMembershipNotice {
@@ -63,6 +75,7 @@ export function TenantMembershipNoticeProvider({
   readonly principal: string
   readonly children: ReactNode
 }): ReactElement {
+  const { t } = useTranslation(DEMO_NAMESPACE)
   const [announcedFor, setAnnouncedFor] = useState<string | null>(null)
   const [dismissed, setDismissed] = useState(false)
   // A different identity makes an earlier announcement stale; the cleared
@@ -86,6 +99,26 @@ export function TenantMembershipNoticeProvider({
   return (
     <TenantMembershipNoticeContext.Provider value={value}>
       {children}
+      {/* One standing, clipped status region for the whole provider life:
+          empty while no acceptance has landed, filled when one does. The
+          visible confirmation on the home page is a separate, non-live
+          block (src/pages/home-page.tsx) -- this region is the announcement.
+          The message slot's `overflow: auto` is overridden so the squeezed
+          box is not a keyboard-scrollable focus stop. */}
+      <Box
+        sx={{
+          ...visuallyHiddenSx,
+          '& .MuiAlert-message': { overflow: 'hidden' },
+        }}
+      >
+        <Alert
+          severity="success"
+          role="status"
+          aria-label={t('home.membershipNotice.region')}
+        >
+          {visible ? t('home.membershipNotice.title') : ''}
+        </Alert>
+      </Box>
     </TenantMembershipNoticeContext.Provider>
   )
 }
