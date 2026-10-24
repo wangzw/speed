@@ -34,6 +34,13 @@ import {
   principal,
 } from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
+import {
+  getCurrentTenantAlias,
+  getCurrentTenantId,
+  setCurrentTenantId,
+  setTenantAliases,
+} from '../chrome.js'
+import { clearSelfTenants } from '../tenant-self.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { authenticatedSnapshot, createTestSession } from '../test-utils/session.js'
 import { INVITATION_PREFIX } from '../paths.js'
@@ -57,6 +64,13 @@ const authEn = authUiResources['en-US'] as unknown as {
 const TOKEN = 'tok-123'
 const PATH = `${INVITATION_PREFIX}/${TOKEN}`
 
+/** The tenant the acceptance reports, and the different alias the caller
+ * tenant read carries for it: the accept answer has no alias, so the landing
+ * resolves one from that read and must announce the read's value, never the
+ * identifier. */
+const INVITED_TENANT_ID = 'tenant-7f3a'
+const INVITED_TENANT_ALIAS = 'acme-renamed'
+
 /** The acceptView answer for a pending invitation. */
 const VIEW = {
   invitation: {
@@ -73,20 +87,41 @@ const VIEW = {
 
 /**
  * The scripted invitation endpoints: a GET answers the pending invitation
- * and a POST accepts it (recording that it was redeemed).
+ * and a POST accepts it (recording that it was redeemed). The caller tenant
+ * read answers `selfBefore` until the acceptance commits and `selfAfter`
+ * from then on, so a case can tell the landing's own read from the one the
+ * app issued on mount.
  */
-function makeInvitationBackend() {
+function makeInvitationBackend(
+  options: {
+    readonly selfBefore?: () => unknown
+    readonly selfAfter?: () => unknown
+  } = {},
+) {
   const accepted: string[] = []
-  const fn: RequestFn = <T,>(path: string, options?: RequestOptions) => {
-    const method = options?.method ?? 'GET'
+  const selfReads: ('before' | 'after')[] = []
+  let acceptedOnce = false
+  const fn: RequestFn = <T,>(path: string, requestOptions?: RequestOptions) => {
+    const method = requestOptions?.method ?? 'GET'
+    if (path === '/api/v1/auth/me/tenants' && method === 'GET') {
+      selfReads.push(acceptedOnce ? 'after' : 'before')
+      const answer = acceptedOnce
+        ? (options.selfAfter ?? (() => ({ tenants: [] })))()
+        : (options.selfBefore ?? (() => ({ tenants: [] })))()
+      if (answer instanceof Error) {
+        return Promise.reject(answer)
+      }
+      return Promise.resolve(answer as T)
+    }
     if (path === `/api/v1/auth/invitations/${TOKEN}` && method === 'GET') {
       return Promise.resolve(VIEW as T)
     }
     if (path === `/api/v1/auth/invitations/${TOKEN}` && method === 'POST') {
       accepted.push(TOKEN)
+      acceptedOnce = true
       return Promise.resolve({
         account: 'acc-1',
-        tenant: 'Acme',
+        tenant: INVITED_TENANT_ID,
         active: true,
         source: 'invite',
         sso_exempt: false,
@@ -94,7 +129,7 @@ function makeInvitationBackend() {
     }
     return Promise.resolve(undefined as T)
   }
-  return { fn, accepted }
+  return { fn, accepted, selfReads }
 }
 
 /**
@@ -131,6 +166,9 @@ function sessionWithFeatures(
 
 beforeEach(() => {
   window.history.replaceState({}, '', PATH)
+  clearSelfTenants()
+  setCurrentTenantId(null)
+  setTenantAliases(new Map())
 })
 
 describe('the invitation landing', () => {
@@ -177,6 +215,70 @@ describe('the invitation landing', () => {
         name: demoEnUS.home.heading,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('lands in the invited tenant and resolves its alias from the caller tenant read', async () => {
+    const backend = makeInvitationBackend({
+      selfBefore: () => ({ tenants: [{ id: 'other-tenant', alias: 'other' }] }),
+      selfAfter: () => ({
+        tenants: [
+          { id: 'other-tenant', alias: 'other' },
+          { id: INVITED_TENANT_ID, alias: INVITED_TENANT_ALIAS },
+        ],
+      }),
+    })
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await user.click(
+      await screen.findByRole('button', { name: authEn.acceptInvitation.accept }),
+    )
+    await waitFor(() => expect(backend.accepted).toEqual([TOKEN]))
+    await screen.findByRole('heading', {
+      level: 1,
+      name: demoEnUS.home.heading,
+    })
+
+    // The acceptance names the tenant by identifier only. The alias is read
+    // from the caller tenant list after it, and the two diverge here: a
+    // landing that announced the identifier (or fell back to an unrelated
+    // tenant) would fail this assertion.
+    expect(backend.selfReads).toContain('after')
+    expect(getCurrentTenantId()).toBe(INVITED_TENANT_ID)
+    expect(getCurrentTenantAlias()).toBe(INVITED_TENANT_ALIAS)
+  })
+
+  it('navigates home with no current tenant when the alias read fails', async () => {
+    const backend = makeInvitationBackend({
+      selfBefore: () => ({ tenants: [] }),
+      selfAfter: () =>
+        Object.assign(new Error('the caller tenant read failed'), {
+          status: 503,
+        }),
+    })
+    bindRequestFn(backend.fn)
+    const user = userEvent.setup()
+    renderDemoApp({ session: createTestSession(authenticatedSnapshot()) })
+
+    await user.click(
+      await screen.findByRole('button', { name: authEn.acceptInvitation.accept }),
+    )
+    await waitFor(() => expect(backend.accepted).toEqual([TOKEN]))
+
+    // The acceptance still lands the viewer home...
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+    // ...but no current tenant is written that the host cannot name: the
+    // alias read failed, so the tenant stays unknown and tenant-scoped reads
+    // stay disabled rather than naming a placeholder.
+    expect(backend.selfReads).toContain('after')
+    expect(getCurrentTenantId()).toBeNull()
+    expect(getCurrentTenantAlias()).toBeNull()
   })
 
   it('confirms the new membership on the tenant home and dismisses once', async () => {

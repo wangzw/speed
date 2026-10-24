@@ -14,26 +14,41 @@
  * signed-in viewer meets auth-ui's AcceptInvitationScreen, whose two
  * invitation operations this page binds to the app's generated SDK surface
  * (src/app-api, the platform document's operations). On acceptance the page
- * announces the new membership to the tenant home and navigates there
- * (src/tenant-membership-notice.tsx): the home page shows the confirmation the
- * journey asks for, which the acceptance's own page cannot keep because the
- * navigation unmounts it.
+ * announces the new membership to the tenant home, resolves the invited
+ * tenant's alias from the caller tenant read, records that tenant as the
+ * current one, and navigates there (src/tenant-membership-notice.tsx): the
+ * home page shows the confirmation the journey asks for, which the
+ * acceptance's own page cannot keep because the navigation unmounts it.
+ *
+ * The accept answer names the written membership's tenant by identifier only,
+ * so the alias the request surface must carry is not in it. The page reads
+ * the caller tenant list once after the acceptance to resolve it. A failed
+ * read still lands the viewer home but leaves the current tenant unknown:
+ * writing a tenant the host cannot name would send every tenant-scoped
+ * request behind an alias no source holds.
  *
  * The route is public and sits outside both shells (the invitee arrives
  * before any session exists), so the app renders its page directly
  * (src/app.tsx) rather than through the shells' content area.
  */
 
-import { useMemo } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import type { ReactElement } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
-import { useAuthState } from '@speed/auth-core'
+import { evictTenantQueries, useAuthState } from '@speed/auth-core'
 import { AcceptInvitationScreen } from '@speed/auth-ui'
 import type { InvitationOperations } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import { authnInviteAccept, authnInviteAcceptView } from '../app-api/index.js'
 import type { AuthnInviteView } from '../app-api/index.js'
+import { useAppServices } from '../app-services.js'
+import {
+  getCurrentTenantId,
+  setCurrentTenantId,
+  setTenantAlias,
+} from '../chrome.js'
+import { loadSelfTenants } from '../tenant-self.js'
 import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 import { SignInView } from './sign-in-view.js'
@@ -49,11 +64,18 @@ export function AcceptInvitationPage({
   const snapshot = useAuthState()
   const navigate = useNavigate()
   const membershipNotice = useTenantMembershipNotice()
+  const { queryClient } = useAppServices()
+  // The tenant the acceptance wrote, as its answer named it. The screen's own
+  // onAccepted callback takes no argument, so the tenant identifier is
+  // captured where the acceptance resolves and read back when it lands.
+  const acceptedTenantId = useRef<string | null>(null)
 
   // The screen drives these two operations; they reach the backend through
   // the generated surface over the request function the assembly bound
   // (src/main.tsx). The object is stable across renders -- the screen reads
-  // it in an effect -- so it is memoized once.
+  // it in an effect -- so it is memoized once. The acceptance records the
+  // tenant it wrote; the answer carries no alias, which the landing resolves
+  // separately.
   const invitations = useMemo<InvitationOperations>(
     () => ({
       readInvitation: (value) => authnInviteAcceptView(value).then(toSummary),
@@ -63,10 +85,41 @@ export function AcceptInvitationPage({
             ? {}
             : { display_name: input.displayName }),
           ...(input.password === undefined ? {} : { password: input.password }),
-        }).then(() => undefined),
+        }).then((answer) => {
+          acceptedTenantId.current = answer.tenant
+          return undefined
+        }),
     }),
     [],
   )
+
+  // The landing the acceptance's own answer cannot complete: the alias is
+  // resolved from the caller tenant read, then written together with the
+  // tenant so every tenant-scoped request announces a name the server
+  // resolves. The announcement comes first -- it is the confirmation the
+  // home page shows -- and the navigation happens either way, including when
+  // the alias read fails.
+  const landInInvitedTenant = useCallback((): void => {
+    membershipNotice.announce()
+    const tenantId = acceptedTenantId.current
+    void resolveInvitedTenantAlias(tenantId).then((alias) => {
+      const previous = getCurrentTenantId()
+      if (tenantId !== null && alias !== null) {
+        if (previous !== null && previous !== tenantId) {
+          evictTenantQueries(queryClient, previous)
+        }
+        setTenantAlias(tenantId, alias)
+        setCurrentTenantId(tenantId)
+      } else if (previous !== null) {
+        // No name for the invited tenant: the outgoing tenant is not this
+        // landing's, so it must not stay current behind an unnameable
+        // context. Drop it and let the frame settle from its own reads.
+        evictTenantQueries(queryClient, previous)
+        setCurrentTenantId(null)
+      }
+      navigate(TENANT_HOME_PATH)
+    })
+  }, [membershipNotice, navigate, queryClient])
 
   // The host renders its sign-in / register surface ahead of the accept
   // screen so the invitee arrives with a session of their own; the accept
@@ -97,14 +150,32 @@ export function AcceptInvitationPage({
         <AcceptInvitationScreen
           token={token}
           invitations={invitations}
-          onAccepted={() => {
-            membershipNotice.announce()
-            navigate(TENANT_HOME_PATH)
-          }}
+          onAccepted={landInInvitedTenant}
         />
       </Card>
     </Box>
   )
+}
+
+/**
+ * One read of the caller tenant list, narrowed to the invited tenant's alias.
+ * Null when the read failed (the list did not settle) or does not name the
+ * tenant: the landing must then leave the current tenant unknown rather than
+ * announcing a name no source holds. The list already holds the tenant -- an
+ * acceptance writes a membership -- so a settled read that omits it is the
+ * same unusable answer as a failure.
+ */
+async function resolveInvitedTenantAlias(
+  tenantId: string | null,
+): Promise<string | null> {
+  if (tenantId === null) {
+    return null
+  }
+  const state = await loadSelfTenants()
+  if (!state.settled) {
+    return null
+  }
+  return state.tenants.find((tenant) => tenant.id === tenantId)?.alias ?? null
 }
 
 /** Narrows the generated acceptView answer to the screen's own summary. */
