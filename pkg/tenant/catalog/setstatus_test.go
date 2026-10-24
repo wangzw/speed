@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/tenant"
@@ -22,14 +23,18 @@ func TestSetStatusRecordsTheOperatorDisableAndClearsItOnEnable(t *testing.T) {
 	if err := r.SetStatus(ctx, "t_acme", tenant.StatusDisabled); err != nil {
 		t.Fatalf("disabling: %v", err)
 	}
-	requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-		Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator)})
+	requireRow(t, r, "t_acme", row{
+		ID: "t_acme", Alias: "acme",
+		Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator),
+	})
 
 	if err := r.SetStatus(ctx, "t_acme", tenant.StatusActive); err != nil {
 		t.Fatalf("enabling: %v", err)
 	}
-	requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-		Status: int(tenant.StatusActive), DisabledBy: int(tenant.DisabledByOperator)})
+	requireRow(t, r, "t_acme", row{
+		ID: "t_acme", Alias: "acme",
+		Status: int(tenant.StatusActive), DisabledBy: int(tenant.DisabledByOperator),
+	})
 }
 
 // The operator disabling a tenant that is already disabled restates the
@@ -45,8 +50,10 @@ func TestSetStatusRestatesTheOperatorSource(t *testing.T) {
 			if err := r.SetStatus(context.Background(), "t_acme", tenant.StatusDisabled); err != nil {
 				t.Fatalf("disabling again: %v", err)
 			}
-			requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-				Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator)})
+			requireRow(t, r, "t_acme", row{
+				ID: "t_acme", Alias: "acme",
+				Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator),
+			})
 		})
 	}
 }
@@ -91,8 +98,10 @@ func TestSetStatusByAccountDisablesOnlyAnActiveTenant(t *testing.T) {
 		if err := r.SetStatusByAccount(context.Background(), "t_acme", tenant.StatusDisabled); err != nil {
 			t.Fatalf("disabling: %v", err)
 		}
-		requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByAccount)})
+		requireRow(t, r, "t_acme", row{
+			ID: "t_acme", Alias: "acme",
+			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByAccount),
+		})
 	})
 	t.Run("an already disabled tenant", func(t *testing.T) {
 		r := rosterOver(t, insertRow("t_acme", "acme", tenant.StatusDisabled, tenant.DisabledByOperator))
@@ -100,8 +109,10 @@ func TestSetStatusByAccountDisablesOnlyAnActiveTenant(t *testing.T) {
 		if err := r.SetStatusByAccount(context.Background(), "t_acme", tenant.StatusDisabled); err != nil {
 			t.Fatalf("disabling an already disabled tenant gave %v, want nil", err)
 		}
-		requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator)})
+		requireRow(t, r, "t_acme", row{
+			ID: "t_acme", Alias: "acme",
+			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByOperator),
+		})
 		if got := reads.Load(); got != 0 {
 			t.Errorf("the no-op reread the whole roster %d times, want none", got)
 		}
@@ -117,8 +128,10 @@ func TestSetStatusByAccountOnlyRestoresAnAccountDisable(t *testing.T) {
 		if err := r.SetStatusByAccount(context.Background(), "t_acme", tenant.StatusActive); err != nil {
 			t.Fatalf("enabling: %v", err)
 		}
-		requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-			Status: int(tenant.StatusActive), DisabledBy: int(tenant.DisabledByOperator)})
+		requireRow(t, r, "t_acme", row{
+			ID: "t_acme", Alias: "acme",
+			Status: int(tenant.StatusActive), DisabledBy: int(tenant.DisabledByOperator),
+		})
 	})
 	for name, source := range map[string]tenant.DisabledBy{
 		"an operator disable":               tenant.DisabledByOperator,
@@ -130,8 +143,10 @@ func TestSetStatusByAccountOnlyRestoresAnAccountDisable(t *testing.T) {
 			if err := r.SetStatusByAccount(context.Background(), "t_acme", tenant.StatusActive); err != nil {
 				t.Fatalf("enabling gave %v, want nil", err)
 			}
-			requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-				Status: int(tenant.StatusDisabled), DisabledBy: int(source)})
+			requireRow(t, r, "t_acme", row{
+				ID: "t_acme", Alias: "acme",
+				Status: int(tenant.StatusDisabled), DisabledBy: int(source),
+			})
 			if got := reads.Load(); got != 0 {
 				t.Errorf("the no-op reread the whole roster %d times, want none", got)
 			}
@@ -159,8 +174,10 @@ func TestSetStatusByAccountIgnoresWhatItDoesNotCause(t *testing.T) {
 		if err := r.SetStatusByAccount(ctx, "t_acme", tenant.StatusDisabled); err != nil {
 			t.Fatalf("disabling again gave %v, want nil", err)
 		}
-		requireRow(t, r, "t_acme", row{ID: "t_acme", Alias: "acme",
-			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByAccount)})
+		requireRow(t, r, "t_acme", row{
+			ID: "t_acme", Alias: "acme",
+			Status: int(tenant.StatusDisabled), DisabledBy: int(tenant.DisabledByAccount),
+		})
 	})
 	t.Run("an identifier no row carries", func(t *testing.T) {
 		r := rosterOver(t, insert("t_acme", "acme"))
@@ -189,12 +206,28 @@ func TestSetStatusByAccountIgnoresWhatItDoesNotCause(t *testing.T) {
 func TestPutAndCreateRefuseWhatOnlyAnotherRouteWrites(t *testing.T) {
 	for name, write := range map[string]func(*roster) error{
 		"Put an account disable": func(r *roster) error {
-			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new",
-				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledByAccount})
+			return r.Put(context.Background(), tenant.Tenant{
+				ID: "t_new", Alias: "new",
+				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledByAccount,
+			})
 		},
 		"Create an account disable": func(r *roster) error {
-			return r.Create(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new",
-				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledByAccount})
+			return r.Create(context.Background(), tenant.Tenant{
+				ID: "t_new", Alias: "new",
+				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledByAccount,
+			})
+		},
+		"Put a source this build does not know": func(r *roster) error {
+			return r.Put(context.Background(), tenant.Tenant{
+				ID: "t_new", Alias: "new",
+				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
+			})
+		},
+		"Create a source this build does not know": func(r *roster) error {
+			return r.Create(context.Background(), tenant.Tenant{
+				ID: "t_new", Alias: "new",
+				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
+			})
 		},
 		"Put the deleted state": func(r *roster) error {
 			return r.Put(context.Background(), tenant.Tenant{ID: "t_new", Alias: "new", Status: tenant.StatusDeleted})
@@ -239,6 +272,59 @@ func TestTheSnapshotNormalisesTheDisableSource(t *testing.T) {
 		}
 		if got.DisabledBy != want {
 			t.Errorf("the snapshot reads %q's source as %s, want %s", id, got.DisabledBy, want)
+		}
+	}
+}
+
+// A refused value is named by the value that was refused, not by the name the
+// display spelling happens to give it: a status this build does not know reads
+// as disabled and a source it does not know reads as operator, so a message that
+// reused those spellings would name a value that is accepted. Each refusal below
+// must carry the underlying number and must not carry the display spelling.
+func TestARefusedValueIsNamedByItsNumber(t *testing.T) {
+	r := rosterOver(t, insert("t_acme", "acme"))
+	ctx := context.Background()
+
+	for name, refused := range map[string]error{
+		"SetStatus":          r.SetStatus(ctx, "t_acme", tenant.Status(7)),
+		"SetStatusByAccount": r.SetStatusByAccount(ctx, "t_acme", tenant.Status(7)),
+	} {
+		if !errors.Is(refused, tenant.ErrInvalidTenant) {
+			t.Fatalf("%s of an unknown status gave %v, want ErrInvalidTenant", name, refused)
+		}
+		if !strings.Contains(refused.Error(), "7") {
+			t.Errorf("%s does not name the refused status 7: %v", name, refused)
+		}
+		if strings.Contains(refused.Error(), "disabled is not a status") {
+			t.Errorf("%s names the display spelling of the refused status instead of its number: %v",
+				name, refused)
+		}
+	}
+
+	for name, write := range map[string]func() error{
+		"Put": func() error {
+			return r.Put(ctx, tenant.Tenant{
+				ID: "t_new", Alias: "new",
+				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
+			})
+		},
+		"Create": func() error {
+			return r.Create(ctx, tenant.Tenant{
+				ID: "t_new", Alias: "new",
+				Status: tenant.StatusDisabled, DisabledBy: tenant.DisabledBy(9),
+			})
+		},
+	} {
+		err := write()
+		if !errors.Is(err, tenant.ErrInvalidTenant) {
+			t.Fatalf("%s of an unknown disable source gave %v, want ErrInvalidTenant", name, err)
+		}
+		if !strings.Contains(err.Error(), "9") {
+			t.Errorf("%s does not name the refused disable source 9: %v", name, err)
+		}
+		if strings.Contains(err.Error(), "source operator") {
+			t.Errorf("%s names the display spelling of the refused source instead of its number: %v",
+				name, err)
 		}
 	}
 }
