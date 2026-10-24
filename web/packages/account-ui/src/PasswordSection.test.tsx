@@ -7,12 +7,14 @@
  * profile says a password is set, and an account without one gets the
  * two new-password fields alone (its first password); the two client-side
  * guards (an empty new password, a mismatched confirmation) render on
- * their fields and send no request; a valid change PUTs the current and
- * new passwords, fills the success live region and clears the fields; a
- * 401 login-failed renders the section's own sentence, which names no
- * cause because the server answers it for a wrong current password and,
- * silently, while the account's back-off is in force; and a
- * change refused with 401 authn.insufficient_user_authentication opens the
+ * their fields, send no request and clear a settled server result; a
+ * valid change PUTs the current and new passwords, reports the success in
+ * the region beneath the form and clears the fields; a 401 login-failed
+ * renders the section's own sentence, which names no cause because the
+ * server answers it for a wrong current password and, silently, while
+ * the account's back-off is in force; a code outside the whitelist
+ * renders the unknown fallback rather than a raw key; and a change
+ * refused with 401 authn.insufficient_user_authentication opens the
  * step-up dialog, a won step-up re-running it exactly once.
  */
 
@@ -236,6 +238,15 @@ describe('PasswordSection', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.password.policyFailure)
     expect(alert).not.toHaveTextContent(zhCN.errors.authn.bad_request)
+    // The section's sentence renders in the same place a success does:
+    // beneath the form, and it is the one settled result (no success stands
+    // beside it).
+    const submit = screen.getByRole('button', { name: zhCN.password.submitFirst })
+    expect(
+      submit.compareDocumentPosition(alert) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.getByRole('status')).toHaveTextContent('')
     // The route's 400 covers a password that is too long and, when
     // changing, one identical to the current password, so the sentence
     // names both without a number.
@@ -246,6 +257,100 @@ describe('PasswordSection', () => {
     expect(enUS.password.policyFailure).toMatch(
       /does not meet the requirements/,
     )
+  })
+
+  it('renders a generic refusal in the region beneath the form', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: true }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        return errorResponse(403, 'authn.forbidden')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.password.current.label),
+      'old-pass',
+    )
+    await user.type(screen.getByLabelText(zhCN.password.new.label), 'new-pass')
+    await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'new-pass')
+    await user.click(screen.getByRole('button', { name: zhCN.password.submit }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
+    // The region's failure sits in the same place as its success.
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.password.submit })
+        .compareDocumentPosition(alert) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.getByRole('status')).toHaveTextContent('')
+  })
+
+  it('renders the unknown fallback for a code outside the whitelist, never a raw key', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: false }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        return errorResponse(400, 'authn.future_code')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    await user.type(
+      await screen.findByLabelText(zhCN.password.new.label),
+      'new-pass',
+    )
+    await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'new-pass')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.password.submitFirst }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.unknown)
+    expect(alert).not.toHaveTextContent('authn.future_code')
+  })
+
+  it('clears a settled server failure when a field guard refuses the next submit', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ password_set: false }))
+      }
+      if (call.method === 'PUT' && call.path === PASSWORD_PATH) {
+        return errorResponse(403, 'authn.forbidden')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const newPassword = await screen.findByLabelText(zhCN.password.new.label)
+    await user.type(newPassword, 'new-pass')
+    await user.type(screen.getByLabelText(zhCN.password.confirm.label), 'new-pass')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.password.submitFirst }),
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.forbidden,
+    )
+
+    // The next submit is refused by a field guard: the settled server
+    // failure belongs to the attempt that just started and must not stay.
+    await user.clear(newPassword)
+    await user.click(
+      screen.getByRole('button', { name: zhCN.password.submitFirst }),
+    )
+    expect(await screen.findByText(zhCN.password.missingNew)).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('')
   })
 
   it('reports a first password as set and names the other devices signed out', async () => {
@@ -277,6 +382,20 @@ describe('PasswordSection', () => {
         zhCN.password.changedFirst,
       ),
     )
+    // The confirmation names the changed object and sits beneath the form
+    // that made it.
+    expect(zhCN.password.changedFirst).toContain(zhCN.password.title)
+    expect(enUS.password.changedFirst.toLowerCase()).toContain(
+      enUS.password.title.toLowerCase(),
+    )
+    // The refetch flips the form to the change-password shape, but the
+    // result still sits beneath the form's submit control.
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.password.submit })
+        .compareDocumentPosition(screen.getByRole('status')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     // The profile's refetch reports the password as set, but the text this
     // write produced is the first-password one. The server rotates this
     // session and revokes the account's others for a first password too, so
@@ -338,6 +457,14 @@ describe('PasswordSection', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(zhCN.password.changed),
     )
+    // The confirmation names the changed object and sits beneath the form.
+    expect(zhCN.password.changed).toContain(zhCN.password.title)
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.password.submit })
+        .compareDocumentPosition(screen.getByRole('status')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     const put = rig.calls.find((call) => call.method === 'PUT')
     expect(put?.body).toEqual({
       current_password: 'old-pass',
@@ -370,6 +497,12 @@ describe('PasswordSection', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.password.currentRejected)
+    expect(
+      screen
+        .getByRole('button', { name: zhCN.password.submit })
+        .compareDocumentPosition(alert) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
     // The code's own sign-in sentence names identifiers and a verification
     // code; none of those belong to this write, so the section must not
     // reuse it.

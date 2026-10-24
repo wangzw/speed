@@ -16,21 +16,28 @@
  *
  * Two client-side guards run before the request -- a non-empty new
  * password and a matching confirmation -- and render on their own fields;
- * a refusal from the server resolves through the code whitelist into the
- * banner. A 400 bad-request on this route is the password policy, which is
- * the route's only other 400 (the client has already checked the fields
- * the answer could name), so it renders the section's policy sentence
- * instead of the generic bad-request text. A failed current-password check
- * is the 401 login-failed the route answers, distinct from the step-up 401;
- * the server answers it for a wrong password and, silently, while the
+ * each submit starts by clearing the settled result, so a server failure
+ * from the previous attempt never stands beside this attempt's field
+ * error. A refusal from the server resolves through the code whitelist
+ * into the section's write-feedback region beneath the form. A 400
+ * bad-request on this route is the password policy, which is the route's
+ * only other 400 (the client has already checked the fields the answer
+ * could name), so it renders the section's policy sentence instead of the
+ * generic bad-request text. A failed current-password check is the 401
+ * login-failed the route answers, distinct from the step-up 401; the
+ * server answers it for a wrong password and, silently, while the
  * account's back-off is in force, so it renders the section's own sentence
  * without naming a cause rather than the code's sign-in text, which names
- * identifiers and verification codes that do not apply to this write. The
- * route asks for a fresh authentication: a 401
- * authn.insufficient_user_authentication opens the step-up dialog with the
- * typed values remembered, and a won challenge re-runs that one change
- * exactly once. A successful change clears the fields and fills the
- * role="status" live region.
+ * identifiers and verification codes that do not apply to this write.
+ * Those two section sentences are the scope's only non-code failure
+ * source: they render where the region's failure does and clear with it,
+ * so the section still shows one result at a time. The route asks for a
+ * fresh authentication: a 401 authn.insufficient_user_authentication opens
+ * the step-up dialog with the typed values remembered, and a won challenge
+ * re-runs that one change exactly once. A successful change clears the
+ * fields and fills the region's role="status" live region with a message
+ * naming the password (and, for a first password, that it was set rather
+ * than changed).
  */
 
 import { useState } from 'react'
@@ -54,14 +61,12 @@ import {
   errorCodeOf,
   FORM_MAX_WIDTH,
   SectionCard,
-  visuallyHiddenSx,
+  useWriteFeedback,
 } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
-
-const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
+import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
 export interface PasswordSectionProps {
   /** The session whose step-up flow the dialog drives. */
@@ -111,20 +116,23 @@ export function PasswordSection({
   const [fieldError, setFieldError] = useState<
     'missingNew' | 'mismatch' | null
   >(null)
-  const [failureCode, setFailureCode] = useState<string | null>(null)
-  const [changed, setChanged] = useState(false)
-  // Whether the completed change set the account's first password. It is read
-  // before the write: the profile refetch that follows reports the password as
-  // set, and the success text must still be the first-password one. A first
-  // password and a change differ only in the verb: the server rotates this
-  // session and revokes the account's other sessions in both cases.
-  const [firstPassword, setFirstPassword] = useState(false)
+  const feedback = useWriteFeedback()
+  // The section's two code-specific sentences (the password policy and the
+  // rejected current password) are the scope's non-code failure source:
+  // they render where the region's failure does, and only one result shows
+  // at a time.
+  const [sectionFailure, setSectionFailure] = useState<
+    'policy' | 'currentRejected' | null
+  >(null)
 
   const gate = useStepUpGate<ChangeAction>((action) => {
     void change(action)
   })
 
   const pending = isPending && data === undefined
+  // Disabled through the whole attempt, including the refetches that follow
+  // the mutation, so no control changes context under a pending scope.
+  const busy = changePassword.isPending || feedback.pending
   // The form is withheld only when the answer says no password is set (a
   // provider-only account); an answer that did not say reads as one that
   // did, so a scalar the surface cannot decide never hides the form -- the
@@ -155,21 +163,43 @@ export function PasswordSection({
     setConfirm('')
   }
 
-  async function change(action: ChangeAction): Promise<void> {
-    setFailureCode(null)
-    setChanged(false)
-    setFieldError(null)
+  function change(action: ChangeAction): Promise<void> {
+    // Read before the write: the profile refetch that follows reports the
+    // password as set, and the success text must still be the first-password
+    // one. A first password and a change differ only in the verb: the server
+    // rotates this session and revokes the account's other sessions in both
+    // cases.
     const settingFirst = !passwordSet
-    try {
-      await changePassword.mutateAsync({
-        data: {
-          ...(passwordSet ? { current_password: action.current } : {}),
-          new_password: action.newPassword,
-        },
-      })
+    return feedback.run(async () => {
+      setSectionFailure(null)
+      setFieldError(null)
+      try {
+        await changePassword.mutateAsync({
+          data: {
+            ...(passwordSet ? { current_password: action.current } : {}),
+            new_password: action.newPassword,
+          },
+        })
+      } catch (error) {
+        if (gate.intercept(error, action)) {
+          return null
+        }
+        const code = errorCodeOf(error)
+        if (code === 'authn.bad_request') {
+          // The write's only 400 is the password policy.
+          setSectionFailure('policy')
+          return null
+        }
+        if (code === 'authn.login_failed') {
+          // The write's only login-failed is a failed current-password
+          // check -- answered for a wrong password and, silently, while the
+          // account's back-off is in force, so the sentence names no cause.
+          setSectionFailure('currentRejected')
+          return null
+        }
+        throw error
+      }
       clearFields()
-      setFirstPassword(settingFirst)
-      setChanged(true)
       // A change rotates this session's token and revokes the others; the
       // account's password_set may also have flipped, so refetch both.
       await Promise.all([
@@ -180,42 +210,28 @@ export function PasswordSection({
           queryKey: getAuthnProfileGetQueryKey(),
         }),
       ])
-    } catch (error) {
-      const code = errorCodeOf(error)
-      if (code === STEP_UP_REQUIRED) {
-        gate.arm(action)
-        return
-      }
-      setFailureCode(code)
-    }
+      return t(settingFirst ? 'password.changedFirst' : 'password.changed')
+    })
   }
 
   function submit(event: FormEvent): void {
     event.preventDefault()
     if (newPassword === '') {
+      // The client guard owns this attempt's result; a settled server result
+      // from the previous attempt must not stand beside the field error.
+      feedback.reset()
+      setSectionFailure(null)
       setFieldError('missingNew')
-      setChanged(false)
       return
     }
     if (confirm !== newPassword) {
+      feedback.reset()
+      setSectionFailure(null)
       setFieldError('mismatch')
-      setChanged(false)
       return
     }
     void change({ current, newPassword })
   }
-
-  // The section answers two of the route's codes with its own sentences:
-  // the write's only 400 is the password policy, and its only login-failed
-  // (the step-up 401 is a different code) is a failed current-password
-  // check -- answered for a wrong password and, silently, while the
-  // account's back-off is in force, so the sentence names no cause.
-  const sectionFailure =
-    failureCode === 'authn.bad_request'
-      ? t('password.policyFailure')
-      : failureCode === 'authn.login_failed'
-        ? t('password.currentRejected')
-        : null
 
   return (
     <>
@@ -250,26 +266,6 @@ export function PasswordSection({
               maxWidth: FORM_MAX_WIDTH,
             }}
           >
-            <Alert
-              severity="success"
-              role="status"
-              sx={changed ? { width: '100%' } : visuallyHiddenSx}
-            >
-              {/* The first password is set, not changed, and the server
-                  signs the other devices out either way. */}
-              {changed
-                ? t(firstPassword ? 'password.changedFirst' : 'password.changed')
-                : ''}
-            </Alert>
-
-            {sectionFailure !== null ? (
-              <Alert severity="error" role="alert" sx={{ width: '100%' }}>
-                {sectionFailure}
-              </Alert>
-            ) : (
-              <InlineError code={failureCode} />
-            )}
-
             {passwordSet && (
               <TextField
                 fullWidth
@@ -277,7 +273,7 @@ export function PasswordSection({
                 autoComplete="current-password"
                 label={t('password.current.label')}
                 value={current}
-                disabled={changePassword.isPending}
+                disabled={busy}
                 onChange={(event) => setCurrent(event.target.value)}
               />
             )}
@@ -288,7 +284,7 @@ export function PasswordSection({
               autoComplete="new-password"
               label={t('password.new.label')}
               value={newPassword}
-              disabled={changePassword.isPending}
+              disabled={busy}
               error={fieldError === 'missingNew'}
               helperText={
                 fieldError === 'missingNew'
@@ -309,7 +305,7 @@ export function PasswordSection({
               autoComplete="new-password"
               label={t('password.confirm.label')}
               value={confirm}
-              disabled={changePassword.isPending}
+              disabled={busy}
               error={fieldError === 'mismatch'}
               helperText={
                 fieldError === 'mismatch' ? t('password.mismatch') : undefined
@@ -320,13 +316,28 @@ export function PasswordSection({
               }}
             />
 
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={changePassword.isPending}
-            >
+            <Button type="submit" variant="contained" disabled={busy}>
               {t(passwordSet ? 'password.submit' : 'password.submitFirst')}
             </Button>
+
+            {/* One scope's result, below the form it confirms. */}
+            <WriteFeedbackRegion
+              outcome={feedback.outcome}
+              sx={{ alignSelf: 'stretch' }}
+            />
+
+            {/* The section's two code-specific sentences share the result
+                position: at most one of them and the region's failure shows
+                at a time. */}
+            {sectionFailure !== null && (
+              <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+                {t(
+                  sectionFailure === 'policy'
+                    ? 'password.policyFailure'
+                    : 'password.currentRejected',
+                )}
+              </Alert>
+            )}
           </Box>
           )
         }
