@@ -15,6 +15,15 @@
  * retryable error placeholder unchanged. The pending, empty and content
  * branches are AsyncSection's own -- only the failure branch differs.
  *
+ * A non-refusal failure over an already settled payload is a failed
+ * refresh: the content stays on screen and AsyncSection's `staleState`
+ * announces that it may be out of date, with the section's own retry
+ * label and callback. The caller passes `refreshing` while a read is in
+ * flight, withdrawing the marker; a retry that fails again re-supplies it,
+ * so the alert mounts anew and announces again. A refusal keeps priority:
+ * once admission refuses the tenant the older data is meaningless, so it
+ * is replaced rather than marked stale.
+ *
  * A typed 404 is not the admission refusal: the notification module's own
  * refusals arrive as `notification.*` codes and keep their own error text.
  *
@@ -31,7 +40,6 @@ import {
   AsyncSection,
   type AsyncSectionEmptyState,
   type AsyncSectionErrorState,
-  type AsyncSectionStaleState,
 } from '@speed/ui-kit'
 import type {
   EmptyStateHeadingLevel,
@@ -59,8 +67,15 @@ export interface TenantAsyncSectionProps<Payload> {
   readonly headingLevel?: EmptyStateHeadingLevel
   /** The empty placeholder's own heading element, or `'none'`. */
   readonly emptyHeadingLevel?: EmptyStateHeadingLevel | EmptyStateNoHeading
-  /** The failed-refresh notice with earlier data still on screen. */
-  readonly staleState?: AsyncSectionStaleState
+  /**
+   * Whether a read is in flight over content already on screen (a
+   * refetch). A failed refresh keeps the content and marks it stale; the
+   * marker is withdrawn while the read is in flight, so every caller
+   * passes its read's fetching state here. Required: a section whose
+   * caller dropped it would keep the marker standing over a read it is
+   * already re-reading.
+   */
+  readonly refreshing: boolean
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
 }
@@ -68,7 +83,9 @@ export interface TenantAsyncSectionProps<Payload> {
 /** The surface async section: an AsyncSection whose failure branch splits the tenant refusal out. */
 export function TenantAsyncSection<Payload>({
   error,
+  errorState,
   headingLevel = 'h2',
+  refreshing,
   ...rest
 }: TenantAsyncSectionProps<Payload>) {
   const { t } = useNotificationUiTranslation()
@@ -85,5 +102,27 @@ export function TenantAsyncSection<Payload>({
       />
     )
   }
-  return <AsyncSection headingLevel={headingLevel} {...rest} />
+  // Every other failure over an already settled payload is a failed
+  // refresh: the content stays with the stale marker above it.
+  // `refreshing` withdraws the marker while the retry runs; a retry that
+  // fails again re-supplies it, and the remounted alert announces again.
+  const staleState =
+    !refreshing &&
+    rest.payload !== undefined &&
+    error !== undefined &&
+    error !== null
+      ? {
+          description: t('stale.description'),
+          retryLabel: errorState.retryLabel,
+          onRetry: errorState.onRetry,
+        }
+      : undefined
+  return (
+    <AsyncSection
+      errorState={errorState}
+      headingLevel={headingLevel}
+      staleState={staleState}
+      {...rest}
+    />
+  )
 }

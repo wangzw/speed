@@ -24,7 +24,9 @@
  * labelled loading placeholder, a retryable error placeholder, an empty
  * placeholder, or the list. The admission layer's bare 404 is split out
  * of the failure branch as the tenant refusal state, which offers no
- * retry.
+ * retry. A failed refresh over the already settled list keeps the list
+ * on screen and marks it stale above with a retry, rather than replacing
+ * it with the error placeholder.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -263,6 +265,7 @@ export function NotificationInbox({
         pending={pending}
         payload={pending ? undefined : page}
         error={messages.error}
+        refreshing={messages.isFetching}
         empty={list.length === 0}
         headingLevel={variant === 'embedded' ? headingLevel : 'h2'}
         emptyHeadingLevel="none"

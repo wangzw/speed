@@ -33,7 +33,11 @@
  * The read is one of the four settled states (ui-kit's AsyncSection), with
  * the admission layer's bare 404 split out as the tenant refusal state and
  * no retry; the section opens with its own h2 so it nests under any page
- * heading.
+ * heading. A failed first read delivered no matrix and renders the
+ * retryable error placeholder, never the empty one, because an empty
+ * placeholder would claim there is nothing to configure. A failed refresh
+ * over an already settled matrix keeps the matrix and marks it stale above
+ * with a retry.
  */
 
 import { Fragment, useState } from 'react'
@@ -237,8 +241,12 @@ export function NotificationPreferences({
     >
       <TenantAsyncSection<readonly NotificationPreference[]>
         pending={pending}
-        payload={pending ? undefined : rows}
+        // A failed first read delivered no matrix, so the payload stays
+        // undefined and renders the retryable error placeholder; falling
+        // back to an empty array would claim there is nothing to configure.
+        payload={pending ? undefined : preferences.data}
         error={preferences.error}
+        refreshing={preferences.isFetching}
         empty={rows.length === 0}
         headingLevel="h3"
         loading={

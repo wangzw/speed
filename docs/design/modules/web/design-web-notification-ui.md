@@ -274,7 +274,7 @@ graph TD
 | 租户作用域读写与失效 | 已实现 | `web/packages/notification-ui/src/internal/queries.ts` `useNotificationMessages`、`useNotificationUnreadCount`、`useNotificationPreferences`、`useMarkNotificationRead`、`useMarkAllNotificationsRead`、`useSetNotificationPreference` |
 | 文案命名空间与双语资源 | 已实现 | `web/packages/notification-ui/src/resources.ts` `NOTIFICATION_UI_NAMESPACE`、`notificationUiResources` |
 | 收件箱与偏好矩阵的反馈作用域与成功确认 | 未实现 | — |
-| 收件箱列表与偏好矩阵读的陈旧提示 | 未实现 | — |
+| 收件箱列表与偏好矩阵读的陈旧提示 | 已实现 | `web/packages/notification-ui/src/internal/tenant-section.tsx` `TenantAsyncSection`；`web/packages/notification-ui/src/NotificationInbox.tsx`、`web/packages/notification-ui/src/NotificationPreferences.tsx` |
 | 特性在场 provider `NotificationPresenceProvider` | 已实现 | `web/packages/notification-ui/src/NotificationPresence.tsx` `NotificationPresenceProvider` |
 | 偏好矩阵的渠道列取 `in_app` 与特性在场的可选渠道 | 已实现 | `web/packages/notification-ui/src/NotificationPreferences.tsx` `columns` |
 | 通知面在特性 `notification.preferences` 缺席时不渲染偏好矩阵、不发其读取 | 已实现 | `web/packages/notification-ui/src/NotificationCenter.tsx` `presence.preferences` 分支 |

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { AsyncSectionErrorState } from '@speed/ui-kit'
+import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { renderWithProviders } from '../../test-utils/render.js'
 import { TenantAsyncSection } from './tenant-section.js'
 
@@ -19,6 +21,7 @@ describe('TenantAsyncSection', () => {
         payload={undefined}
         error={{ status: 404, code: 'client.http.404' }}
         empty={false}
+        refreshing={false}
         loading={<p>loading</p>}
         errorState={errorState}
       >
@@ -45,6 +48,7 @@ describe('TenantAsyncSection', () => {
         payload={undefined}
         error={{ status: 404 }}
         empty={false}
+        refreshing={false}
         loading={<p>loading</p>}
         errorState={errorState}
       >
@@ -65,6 +69,7 @@ describe('TenantAsyncSection', () => {
         payload={undefined}
         error={{ status: 404, code: 'notification.message_not_found' }}
         empty={false}
+        refreshing={false}
         loading={<p>loading</p>}
         errorState={errorState}
       >
@@ -86,6 +91,7 @@ describe('TenantAsyncSection', () => {
         payload={undefined}
         error={{ status: 503, code: 'client.http.503' }}
         empty={false}
+        refreshing={false}
         loading={<p>loading</p>}
         errorState={errorState}
       >
@@ -104,6 +110,7 @@ describe('TenantAsyncSection', () => {
         payload="ready"
         error={undefined}
         empty={false}
+        refreshing={false}
         loading={<p>loading</p>}
         errorState={errorState}
       >
@@ -112,5 +119,89 @@ describe('TenantAsyncSection', () => {
       { language: 'en-US' },
     )
     expect(screen.getByText('content: ready')).toBeInTheDocument()
+  })
+
+  it('keeps the content under a stale notice when a refresh fails', async () => {
+    renderWithProviders(
+      <TenantAsyncSection<string>
+        pending={false}
+        payload="ready"
+        error={{ status: 503, code: 'client.http.503' }}
+        empty={false}
+        refreshing={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+      >
+        {(value) => <p>content: {value}</p>}
+      </TenantAsyncSection>,
+      { language: 'zh-CN' },
+    )
+    expect(screen.getByText('content: ready')).toBeInTheDocument()
+    expect(screen.queryByText('Load failed')).not.toBeInTheDocument()
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(errorState.onRetry).toHaveBeenCalledTimes(1)
+  })
+
+  it('withdraws the stale notice while the retry is in flight', () => {
+    renderWithProviders(
+      <TenantAsyncSection<string>
+        pending={false}
+        payload="ready"
+        error={{ status: 503, code: 'client.http.503' }}
+        empty={false}
+        refreshing
+        loading={<p>loading</p>}
+        errorState={errorState}
+      >
+        {(value) => <p>content: {value}</p>}
+      </TenantAsyncSection>,
+      { language: 'zh-CN' },
+    )
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByText('content: ready')).toBeInTheDocument()
+  })
+
+  it('replaces content with the tenant state on a refusal, not a stale notice', () => {
+    renderWithProviders(
+      <TenantAsyncSection<string>
+        pending={false}
+        payload="ready"
+        error={{ status: 404, code: 'client.http.404' }}
+        empty={false}
+        refreshing={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+      >
+        {(value) => <p>content: {value}</p>}
+      </TenantAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(
+      screen.getByText("Cannot access the current organization's content"),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('content: ready')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('keeps the retryable error placeholder when the first read delivered nothing', () => {
+    renderWithProviders(
+      <TenantAsyncSection<string>
+        pending={false}
+        payload={undefined}
+        error={{ status: 503, code: 'client.http.503' }}
+        empty
+        refreshing={false}
+        loading={<p>loading</p>}
+        errorState={errorState}
+      >
+        {(value) => <p>content: {value}</p>}
+      </TenantAsyncSection>,
+      { language: 'en-US' },
+    )
+    expect(screen.getByText('Load failed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

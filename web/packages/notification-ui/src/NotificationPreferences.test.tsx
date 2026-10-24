@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { ReactElement } from 'react'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { checkboxClasses } from '@mui/material/Checkbox'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -441,6 +441,73 @@ describe('NotificationPreferences', () => {
     expect(
       screen.queryByRole('button', { name: zhCN.preferences.retry }),
     ).not.toBeInTheDocument()
+  })
+
+  it('renders the retryable error placeholder, not the empty one, when the first read fails', async () => {
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.path === PREFERENCES_PATH && call.method === 'GET') {
+        return jsonResponse(503, {})
+      }
+      return jsonResponse(200, { types: [] })
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationPreferences />)
+    // A failed first read delivered no matrix: the empty placeholder would
+    // claim there is nothing to configure, so the retryable error stands.
+    expect(
+      await screen.findByText(zhCN.preferences.error.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.preferences.retry }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.preferences.empty.title),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps the matrix and marks it stale when a refresh fails, offering a retry', async () => {
+    const types: TypeRow[] = [
+      { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
+    ]
+    const responder = preferencesResponder(types)
+    let preferenceReads = 0
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.path === PREFERENCES_PATH && call.method === 'GET') {
+        preferenceReads += 1
+        // The first read settles the matrix; every later refresh fails.
+        if (preferenceReads > 1) {
+          return jsonResponse(503, {})
+        }
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    const { queryClient } = renderWithProviders(<NotificationPreferences />)
+    expect(await screen.findByText('demo.thing.happened')).toBeInTheDocument()
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The refresh failed, but the old matrix stays on screen under the
+    // stale notice rather than being replaced by the error placeholder.
+    expect(screen.getByText('demo.thing.happened')).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(
+      screen.queryByText(zhCN.preferences.error.title),
+    ).not.toBeInTheDocument()
+
+    const retry = screen.getByRole('button', { name: zhCN.preferences.retry })
+    const readsBeforeRetry = preferenceReads
+    await userEvent.click(retry)
+    await waitFor(() => expect(preferenceReads).toBeGreaterThan(readsBeforeRetry))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.stale.description,
+    )
+    expect(screen.getByText('demo.thing.happened')).toBeInTheDocument()
+    await expectNoAxeViolations()
   })
 
   it('renders the tenant sentence in the write banner when the refusal is a bare 404', async () => {

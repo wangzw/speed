@@ -14,7 +14,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { formatInstant } from '@speed/i18n'
 import { DisplayTimeZoneProvider } from '@speed/ui-kit'
@@ -560,6 +560,52 @@ describe('NotificationInbox', () => {
     expect(
       screen.getByRole('button', { name: zhCN.inbox.retry }),
     ).toBeInTheDocument()
+  })
+
+  it('keeps the old list and marks it stale when a refresh fails, offering a retry', async () => {
+    const rows: Row[] = [
+      { id: 'm1', title: 'Build finished', body: '', read: false },
+    ]
+    const responder = inboxResponder(rows)
+    let listReads = 0
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.path === MESSAGES_PATH && call.method === 'GET') {
+        listReads += 1
+        // The first read settles the list; every later refresh fails.
+        if (listReads > 1) {
+          return jsonResponse(503, {})
+        }
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    const { queryClient } = renderWithProviders(<NotificationInbox />)
+    expect(await screen.findByText('Build finished')).toBeInTheDocument()
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The refresh failed, but the old list stays on screen under the stale
+    // notice rather than being replaced by the error placeholder.
+    expect(screen.getByText('Build finished')).toBeInTheDocument()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(
+      alert.compareDocumentPosition(screen.getByText('Build finished')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByText(zhCN.inbox.error.title)).not.toBeInTheDocument()
+
+    const retry = screen.getByRole('button', { name: zhCN.inbox.retry })
+    const readsBeforeRetry = listReads
+    await userEvent.click(retry)
+    await waitFor(() => expect(listReads).toBeGreaterThan(readsBeforeRetry))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.stale.description,
+    )
+    expect(screen.getByText('Build finished')).toBeInTheDocument()
+    await expectNoAxeViolations()
   })
 
   it('renders the tenant sentence in the write banner when the refusal is a bare 404', async () => {

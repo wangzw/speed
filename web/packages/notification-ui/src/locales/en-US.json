@@ -24,6 +24,9 @@
     "title": "Cannot access the current organization's content",
     "description": "It may not exist, or you may not be a member of it yet. To join, ask an administrator to send you an invitation."
   },
+  "stale": {
+    "description": "The content shown may be out of date. Retry to refresh it."
+  },
   "bell": {
     "label": "Notifications",
     "labelWithCount": "Notifications: {{n}} unread"
