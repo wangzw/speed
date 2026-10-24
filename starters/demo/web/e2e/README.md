@@ -153,9 +153,15 @@ gates cannot decide for a spec.
   journey whose precondition the UI cannot reach is registered `unreachable`;
   a journey the UI can reach but whose spec is not written is `pending`.
   Neither state is a licence to bypass the product. The layer split above
-  keeps a spec and a helper away from a database client; the fixtures' own
-  seeding is the operator seed the binary performs, never a journey's account,
-  tenant or invitation.
+  keeps a spec and a helper away from a database client. What the fixtures do
+  seed goes through the binary's own `seed` command reading a configuration
+  the fixture extends: the operator, and, only when a spec opts in, the
+  account or membership that journey signs in as. That is assembly, not a
+  manufactured product state: the seed is the product's documented
+  provisioning path, it runs before the server starts, and it writes what an
+  operator's own provisioning would write. It is not a substitute for the
+  journey -- every state a spec asserts has to be reached from that starting
+  point through the rendered product, and no fixture may answer a request.
 - **Never assert only on an API response.** An assertion lands on what the
   product renders. A review rule: the gates can see that a spec has a test,
   not what its assertion reads. The one exception is a registered fixture-type
