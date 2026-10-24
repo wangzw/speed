@@ -862,10 +862,10 @@ flowchart TD
 | 准入子包 `tenant.admission`、排他交付与定序锚点 `tenant.Admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 本人租户读取：模块 `tenant.self`、`GET /api/v1/auth/me/tenants`、有效成员关系与名册状态的交集、按标识升序、401 与 503 | 已实现 | `pkg/tenant/self/self.go` `Module`、`handler.go` `handleTenants`、`openapi/tenant.self.json` |
 | 名册表与它的迁移集 | 已实现 | `pkg/tenant/catalog/migrations/`；`catalog.go` `migrationsFS` |
-| 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`SetAlias`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot` |
-| 已删除的终态、墓碑的标识与别名不再复用、各条写路径对墓碑的拒绝 | 未实现 | — |
-| 停用来源与账户联动的状态迁移（`DisabledBy`、`SetStatusByAccount`） | 未实现 | — |
-| `ErrTenantDeleted`，以及进入方法对墓碑的处置 | 未实现 | — |
+| 名册的读写面与两个索引的快照 | 已实现 | `pkg/tenant/catalog/roster.go` `Get`、`ByAlias`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`Delete`、`SetAlias`、`List`、`afterWrite`；`snapshot.go` `buildSnapshot`、`disabledByOf`、`counts` |
+| 已删除的终态、墓碑的标识与别名不再复用、各条写路径对墓碑的拒绝 | 已实现 | `pkg/tenant/tenant.go` `StatusDeleted`；`pkg/tenant/catalog/roster.go` `Delete`、`Put`、`Create`、`SetStatus`、`SetStatusByAccount`、`SetAlias`、`enter` |
+| 停用来源与账户联动的状态迁移（`DisabledBy`、`SetStatusByAccount`） | 已实现 | `pkg/tenant/tenant.go` `DisabledBy`、`DisabledByOperator`、`DisabledByAccount`；`pkg/tenant/catalog/roster.go` `SetStatus`、`SetStatusByAccount`、`Put`、`Create`；`pkg/tenant/catalog/migrations/` 的 `0002_tenants_disabled_by.sql` |
+| `ErrTenantDeleted`，以及进入方法对墓碑的处置 | 已实现 | `pkg/tenant/errors.go` `ErrTenantDeleted`；`pkg/tenant/catalog/roster.go` `enter`、`EnterRegistered`、`Delete`；`pkg/tenant/resolve/admit_test.go` `TestADeletedTenantAnswersLikeAnUnknownOne` |
 | 名册的语句经 `Connection` 取交付连接，表不在、取不到连接与其余失败分开作答，PostgreSQL 上在搜索路径列出的模式里读系统目录 | 已实现 | `pkg/tenant/catalog/roster.go` `onConnection`、`connectionWait`、`failedStatement`、`tableAbsent`、`namedSchemas`、`searchPath`、`quotedName`、`answered`、`lookUp`；`pkg/tenant/errors.go` `ErrNoConnection`、`ErrRosterMissing` |
 | 快照的周期刷新与 `Stop` 取消，整表读一次一个、按读的先后发布 | 已实现 | `pkg/tenant/catalog/roster.go` `start`、`stop`、`refreshOnce`、`read`、`acquire` |
 | 内建取法 `header`、`subdomain`、`path` | 已实现 | `pkg/tenant/resolve/extract.go` `headerExtractor`、`subdomainExtractor`、`pathExtractor` |
