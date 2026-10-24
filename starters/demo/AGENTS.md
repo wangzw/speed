@@ -109,9 +109,10 @@ declarations of a module reached this way are collected by the stack node's
 
 `go build -tags review` compiles a second assembly beside the baseline one.
 `server/review.go` adds the login methods that need a provider or a carrier —
-the four social methods, the SMS family with the `sms.review` log carrier, and
+the four social methods, the SMS family with the `sms.review` log carrier,
 name-and-password registration with `authn.emailcode` over the `mail.review` log
-carrier — through `reviewModules`, which `serve` includes after `baselineServe`.
+carrier, and the SMS second factor (`authn.mfa.sms`) — through `reviewModules`,
+which `serve` includes after `baselineServe`.
 `server/review_off.go` compiles in a default build and names nothing, so a
 baseline binary carries none of those modules' code paths.
 
@@ -193,6 +194,82 @@ renders from the catalog, the member turns the email channel off and the write
 succeeds, an anonymous caller is still refused, and the following windows send
 no email.
 
+#### The review build's impersonation fixture
+
+The impersonation journey needs a state a hand walkthrough can only reach by
+waiting an hour: an operator that is not a member of the target tenant, holds two
+two-step methods with at least one seasoned non-SMS method, and can raise a stale
+session with a kind it did not prove at sign-in. The review build seeds that
+state on `seed`, in the review build only, so the journey is walkable from a
+fresh database. This is an explicit review-only exception; a baseline binary
+reads none of it.
+
+- **The two factors, written through the product's seams.** The TOTP factor is
+  registered through the multi-factor register and its seed is written through
+  the TOTP module's own encrypted seed register (`serializer:encrypted`), so the
+  database module seals it exactly as a browser enrollment would. The SMS factor
+  goes through the register too; that factor keeps no data of its own, and it
+  binds the account's proven phone. The seeding helpers are behind
+  `//go:build review` in the owning packages
+  (`pkg/authn/mfa/review_seed.go`, `pkg/authn/mfa/totp/review_seed.go`), and
+  `server/review_seed.go` is the review build's hook into the `seed` command.
+  Nothing here writes a sealed column by hand.
+
+- **The backdated fields.** `authn_factors.activated_at` — and the row's
+  `created_at` — of the TOTP factor are set two hours in the past, far enough
+  past `authn.mfa.sensitive-min-age` (one hour here) that the impersonation gate
+  reads the factor as seasoned. The fixture chooses that instant: `Enroll`
+  activates at the clock's now, so the fixture hands the register's own
+  activation statement a backdated instant through
+  `pkg/authn/mfa/review_seed.go`. Everything else about the row is the
+  register's own `insertPending`; the SMS factor is activated at the current
+  time.
+
+- **The proven contacts.** The operator is seeded with an email address, and the
+  fixture proves it (`email-code`) and adds and proves a phone number
+  (`sms-code`) through the account module's `AddIdentifier`, the same write a
+  completed code flow performs. Both codes have a live path in this build
+  (`mail.review`, `sms.review`), so the fixture starts the journey from the state
+  the flows reach rather than from a verification detour.
+
+- **The assembly's additions.** `reviewModules` now carries `authn.mfa.sms`, so
+  a session signed in with TOTP has a disjoint kind to step up with, and
+  `server/review/sqlite.yaml` lowers `authn.impersonation.max-auth-age` to its
+  one-minute floor (the declared default is five minutes; the domain is one
+  minute to thirty) and seeds the target member of `acme` through
+  `seed.members`. The target is the username `member` with no email address, so
+  the notification fixture's mailbox counts stay what they assert. The operator
+  is deliberately not a member of `acme`, but it does hold the
+  platform-administrator role's binding in every declared tenant domain,
+  `acme` included, because the seed writes one set of bindings per declared
+  domain. It is therefore not permission-less in `acme`; the impersonation gate
+  does not read the sender's permissions in the target tenant, so the journey
+  is still reachable.
+
+The walkthrough: `seed`, then `serve`, then sign in as `operator@demo.test` with
+`operator-dev-secret` and the current code of the fixture's TOTP seed
+(`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`, issuer `demo`, SHA-1, six digits, a
+thirty-second period; import it into an authenticator, or run the
+standard-library one-liner under "Exercising a write path"). The seed is a
+fixture and not a credential, and it is written through the TOTP module's
+encrypted register. Wait out the one-minute freshness window, open the console's
+impersonation page, pick the `acme` tenant and the `member` target, and submit.
+The start is refused for freshness and opens the step-up; complete it with the
+SMS code from the `review sms:` log line, and the start is replayed. The step-up
+offers SMS because the session already proved TOTP; that is the branch this
+fixture exists to make reachable.
+
+`TestReviewImpersonationTOTPFactorIsSeasonedAndSignsIn` is the guard on the
+fixture being real: it seeds, reads the factor and its seed back through the
+register and the encrypted serializer, asserts the register reports the factor
+as seasoned, computes a code from the stored secret, and completes a
+password-and-TOTP login with it. A renamed column, a changed status or a broken
+serializer fails it. `TestReviewImpersonationStepUpOffersSMS` starts a step-up
+after that sign-in and requires the SMS factor (and not TOTP) on the list.
+`review_impersonation_isolation_test.go` holds the default build: no module named
+`authn.mfa.sms` and `authn.impersonation.max-auth-age` still declaring five
+minutes.
+
 ### The token signing key
 
 `authn.token.signing-key-file` names `var/token-signing-key.pem`, a path relative
@@ -226,22 +303,23 @@ in; replace them all before a deployment serves real traffic:
   stack that can deliver a code (the review build, the Fly image) may name an
   email address instead.
 
-  **The review build's and the Fly image's operator starts unverified.** The
-  review build's configuration (`server/review/sqlite.yaml`) names an email
-  address for the operator, and so does the Fly image's rendered configuration
-  (`deploy/fly.yaml.tmpl` fills `seed.accounts` from `DEMO_OPERATOR_EMAIL`).
-  That address is the host's assertion, so the account reads
-  `verification.state = pending` and every management human write answers 403
-  `contact-required` until its holder proves it. The first sign-in after a
-  deployment upgrade therefore has to prove the address: open the account
-  page's verification section, send a code to the operator's address, read it from the
-  review build's `review mail:` line or from the mailbox the Fly image's SMTP
-  relay delivers to, and submit it. Management actions are allowed from then
-  on. This is the expected state of an administrator-provisioned email, not a
-  fault: the rule treats a provisioned address, an imported one and a
-  self-registered one alike. A deployment therefore has to point
-  `DEMO_OPERATOR_EMAIL` at an address that can receive mail, since no other
-  path proves it.
+  **The review build proves its operator's address during the seed; the Fly
+  image's operator starts unverified.** The review build's configuration
+  (`server/review/sqlite.yaml`) names an email address for the operator, and the
+  review seed proves it as part of the impersonation fixture (see "The review
+  build's impersonation fixture"), so management writes answer from the first
+  sign-in. The Fly image's rendered configuration (`deploy/fly.yaml.tmpl` fills
+  `seed.accounts` from `DEMO_OPERATOR_EMAIL`) asserts an address rather than
+  proving it: the account reads `verification.state = pending` and every
+  management human write answers 403 `contact-required` until its holder proves
+  it. The first sign-in after a deployment upgrade therefore has to prove the
+  address: open the account page's verification section, send a code to the
+  operator's address, read it from the mailbox the Fly image's SMTP relay
+  delivers to, and submit it. Management actions are allowed from then on. This
+  is the expected state of an administrator-provisioned email, not a fault: the
+  rule treats a provisioned address, an imported one and a self-registered one
+  alike. A deployment therefore has to point `DEMO_OPERATOR_EMAIL` at an address
+  that can receive mail, since no other path proves it.
 - **The database encryption key** (`db.<engine>.encryption-key`) seals the
   columns a module encrypts at rest. Replace the `dev-only-change-me-…` value.
 - **The lowered factor age** (`seed.settings`:
@@ -325,13 +403,15 @@ the next run through the host's seeding surface, so the operator keeps
 everything the process declares while the management surface stays unable to
 change the role.
 
-`seed` writes no second factor. The public `pkg/authn` surface hands a host a
-registration step it does not let that host read, so a seed cannot finish an
-enrollment; the console's step-up gate therefore refuses every write until an
-operator adds a factor in account settings and signs in again, completing that
-factor at login, and `seed` says so on its way out.
-The alternative — writing the factor's sealed row directly — would bind this
-skeleton to the factor module's internals.
+`seed` writes no second factor in a baseline build. The public `pkg/authn`
+surface hands a host a registration step it does not let that host read, so a
+baseline seed cannot finish an enrollment; the console's step-up gate therefore
+refuses every write until an operator adds a factor in account settings and
+signs in again, completing that factor at login, and `seed` says so on its way
+out. The alternative — writing the factor's sealed row directly — would bind
+this skeleton to the factor module's internals. The review build is the
+exception, and writes its factors through the modules' own registers instead
+(see "The review build's impersonation fixture"): the note is absent there.
 
 ### Exercising a write path
 
@@ -844,9 +924,12 @@ non-SMS factor activated at least `authn.mfa.sensitive-min-age` before now. The
 declared default is 24 hours; the sample configurations lower it to the
 setting's domain minimum of 1h for local demonstration, and production keeps
 the declared default. A factor enrolled minutes ago still cannot start an
-impersonation — it has to mature for an hour under the samples — so a freshly
-seeded copy cannot demonstrate a started impersonation, and a step-up does not
-shorten that wait.
+impersonation — it has to mature for an hour under the samples — so a baseline
+copy cannot demonstrate a started impersonation on the day it is seeded, and a
+step-up does not shorten that wait. The review build is the one exception: its
+impersonation fixture seeds the operator's factors and backdates the TOTP one
+past the minimum, so the journey is walkable from a fresh review database (see
+"The review build's impersonation fixture").
 
 ## The stacks
 
