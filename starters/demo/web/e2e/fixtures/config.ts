@@ -48,6 +48,14 @@ export interface ReviewConfigInput {
    * template's own seed.
    */
   readonly seedInvitee?: boolean
+  /**
+   * Lower `authn.mfa.recent-window` to this duration in the seed settings.
+   * Off by default: the template keeps the declared window, and only a
+   * journey that must observe the window passing asks for a shorter one. The
+   * value is a deployment setting the binary's own seed writes -- assembly,
+   * not a manufactured product state.
+   */
+  readonly recentWindow?: string
 }
 
 export interface ReviewConfig {
@@ -310,6 +318,19 @@ export async function writeReviewConfig(
       '\n  impersonation: true\n',
       '\n  impersonation: false\n',
       'seed impersonation switch',
+    )
+  }
+
+  // A journey that has to observe a self-service freshness window passing
+  // lowers it to the setting's domain floor in the seed settings. The binary's
+  // seed writes it like any other setting, so the spec still waits out a real
+  // window rather than manufacturing a stale session.
+  if (input.recentWindow !== undefined) {
+    body = replaceOnce(
+      body,
+      '\n  settings:\n',
+      `\n  settings:\n    - key: "authn.mfa.recent-window"\n      value: ${quoted(input.recentWindow)}\n`,
+      'recent-window setting',
     )
   }
 

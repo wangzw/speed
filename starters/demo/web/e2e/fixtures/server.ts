@@ -285,15 +285,16 @@ export interface ReviewServer {
  * the port in that window -- so it is retried with a fresh pair, bounded by
  * MAX_BIND_ATTEMPTS.
  *
- * `seedMember`, `seedImpersonation` and `seedInvitee` are passed through to the
- * configuration the binary seeds; a spec that needs none leaves them off, so the
- * template's own seed stays the baseline.
+ * `seedMember`, `seedImpersonation`, `seedInvitee` and `recentWindow` are passed
+ * through to the configuration the binary seeds; a spec that needs none leaves
+ * them off, so the template's own seed stays the baseline.
  */
 export async function startReviewServer(
   options: {
     readonly seedMember?: boolean
     readonly seedImpersonation?: boolean
     readonly seedInvitee?: boolean
+    readonly recentWindow?: string
   } = {},
 ): Promise<ReviewServer> {
   const manifest = await readHarnessManifest()
@@ -345,6 +346,7 @@ export async function startReviewServer(
       seedMember: options.seedMember,
       seedImpersonation: options.seedImpersonation,
       seedInvitee: options.seedInvitee,
+      recentWindow: options.recentWindow,
     })
     await runCommand(
       manifest.binary,
@@ -368,6 +370,7 @@ export async function startReviewServer(
         seedMember: options.seedMember,
         seedImpersonation: options.seedImpersonation,
         seedInvitee: options.seedInvitee,
+        recentWindow: options.recentWindow,
       })
       const configLocator = `file:${config.path}`
       const from = log.mark()

@@ -58,9 +58,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-account-security-hardening.md',
-    status: 'pending',
-    reason:
-      'The journey is browser-reachable, including a passkey through the allowed WebAuthn virtual-authenticator fixture; no spec drives it yet, and its spec is scheduled for a later round.',
+    status: 'covered',
     covers: [
       'REQ-account-007',
       'REQ-security-001',

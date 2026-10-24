@@ -72,12 +72,19 @@ export const test = base.extend<{
    * seed.
    */
   seedInvitee: boolean
+  /**
+   * Lower the account self-service freshness window for this spec's server.
+   * A journey that observes the window passing sets it to the setting's
+   * domain floor; every other spec keeps the template's declared window.
+   */
+  recentWindow: string | undefined
 }>({
   seedMember: [false, { option: true }],
   seedImpersonation: [false, { option: true }],
   seedInvitee: [false, { option: true }],
+  recentWindow: [undefined, { option: true }],
   server: async (
-    { seedMember, seedImpersonation, seedInvitee },
+    { seedMember, seedImpersonation, seedInvitee, recentWindow },
     use,
     testInfo,
   ) => {
@@ -85,6 +92,7 @@ export const test = base.extend<{
       seedMember,
       seedImpersonation,
       seedInvitee,
+      recentWindow,
     })
     try {
       await use(server)
