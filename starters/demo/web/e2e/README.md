@@ -70,7 +70,8 @@ remembering to run it.
   SIGTERM, then SIGKILL if the process has not left within the bound.
 - **Failures keep their evidence.** A failed test attaches the server's whole
   process log and standard error and keeps the server's temporary directory; a
-  passing test removes both.
+  passing test removes both. A run with any failed test keeps its own run
+  directory too and prints its path at the end.
 - **Accounts are driven through the UI** (`helpers/accounts.ts`): registration,
   the email verification section and password sign-in are filled and clicked by
   accessible label and role, never by calling the API.
@@ -193,3 +194,15 @@ by the config for every artifact path. Nothing the tier writes lands in the
 repository. A failed spec also keeps its server's temporary directory (under
 the system temp directory) so the sqlite file and configuration can be
 inspected; the path is attached to the failure.
+
+The run directory is bounded. At the start of every run, global setup removes
+earlier run directories under `/tmp` whose whole name matches
+`speed-e2e-<pid>-<clock>-<nonce>` and whose modification time is older than
+seven days (`RETENTION_WINDOW_MS` in `fixtures/retention.ts`). A name that does
+not match exactly -- including the per-spec `speed-e2e-server-*` directories,
+which share the string prefix -- is never a candidate, nothing outside `/tmp`
+is ever considered, and a symbolic link is never followed. When the whole run
+passes, `fixtures/retention-reporter.ts` removes this run's directory from
+Playwright's `onExit`, after the HTML report has been written. A failed,
+timed-out or interrupted run keeps the directory and the reporter prints its
+path (and the report's) at the end of the run.

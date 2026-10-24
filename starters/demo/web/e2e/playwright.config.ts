@@ -17,6 +17,12 @@
  * leave a file in the tree. The root carries a per-run id, so two concurrent
  * runs never share an output directory (Playwright clears it on startup) or
  * the harness binary the fixtures start.
+ *
+ * The run directory does not accumulate: global setup removes directories
+ * older than the retention window before the run starts, and the last reporter
+ * removes this run's directory once the whole run has passed. A failed or
+ * interrupted run keeps it and the reporter prints where it is
+ * (fixtures/retention-reporter.ts).
  */
 import { defineConfig } from '@playwright/test'
 
@@ -41,6 +47,10 @@ export default defineConfig({
       'html',
       { outputFolder: `${ARTIFACT_ROOT}/report`, open: 'never' },
     ],
+    // Last, and deliberately so, although its own work is in `onExit`: every
+    // reporter's `onEnd` -- the HTML report's included -- has finished by
+    // then. It removes the run directory only when the run passed.
+    ['./fixtures/retention-reporter.ts'],
   ],
   use: {
     screenshot: 'only-on-failure',

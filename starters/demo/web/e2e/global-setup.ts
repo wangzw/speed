@@ -1,5 +1,13 @@
 /**
- * The one build the whole run shares.
+ * The one build the whole run shares, and the sweep that bounds the artifacts.
+ *
+ * The run's own directory is created here, so this is also where the retention
+ * rule runs: before the harness directory is created, every earlier run
+ * directory under /tmp whose modification time is older than the retention
+ * window is removed. The sweep matches the whole run directory name and only
+ * direct children of /tmp, so the per-spec server directories beside it are
+ * left alone. A fresh directory -- this run's, or one belonging to a run
+ * happening in parallel -- is inside the window and is never touched.
  *
  * The Go program embeds starters/demo/server/dist, so the front end is built
  * first; the review binary is built second and lands in the harness directory
@@ -24,6 +32,7 @@ import {
   SERVER_DIR,
   WEB_DIR,
 } from './fixtures/paths'
+import { removeExpiredRunDirectories } from './fixtures/retention'
 
 const BUILD_TIMEOUT_MS = 10 * 60_000
 
@@ -85,6 +94,14 @@ function build(
 }
 
 export default async function globalSetup(): Promise<void> {
+  // Sweep before the harness directory is created: the directory about to be
+  // made is fresh and therefore outside the window, so the only candidates are
+  // runs that have already finished (or died) more than a week ago.
+  const expired = await removeExpiredRunDirectories()
+  for (const path of expired) {
+    process.stderr.write(`[e2e] removed expired run directory: ${path}\n`)
+  }
+
   await mkdir(HARNESS_DIR, { recursive: true })
 
   // The front end first: the Go program embeds the dist directory the build
