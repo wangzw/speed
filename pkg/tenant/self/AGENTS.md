@@ -44,8 +44,13 @@ answers the same 401 the other authenticated surfaces answer: status alone, no
 problem type, and the realm challenge
 `Bearer realm="<endpoint>", Cookie realm="<endpoint>"`.
 
-The route is not registered as impersonatable, so the gateway refuses an
-impersonating caller before the handler runs.
+The route is registered impersonatable. An impersonating caller is confined to
+its grant's tenant, and the handler narrows the answer to that one membership:
+the host needs the tenant's alias after a full page load, when the roster cache
+it read before is gone, while the impersonated account's memberships in other
+tenants stay outside the grant. An impersonating identity with no scope (the
+gateway's exit check never lets one through; only a direct handler call can
+produce one) gets an empty list rather than the full one.
 
 ## Boundaries
 
@@ -58,6 +63,12 @@ impersonating caller before the handler runs.
   membership, which is a different answer from an outage. A membership read or a
   roster read that fails, and `tenant.ErrRosterMissing` for a snapshot that has
   not been published, are all this one 503.
+- **An impersonating caller sees only the grant's tenant.** The route is
+  reachable so a host can name that tenant after a full reload; the answer is
+  filtered by the identity's `Scope()` before the roster lookup, so the
+  impersonated account's memberships elsewhere never leave the handler. The
+  register step that makes the route impersonatable is the gateway's admission
+  surface, taken up optionally in `Init`.
 - **The route set holds no 403 and no 404.** It decides no permission, and it
   addresses no object that could be absent.
 - **The endpoint list is required and takes concrete names only.** An empty

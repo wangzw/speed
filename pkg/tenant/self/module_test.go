@@ -65,6 +65,46 @@ func (g *recordingGate) Open(method, path string) {
 }
 func (*recordingGate) Covered(string, string) bool { return false }
 
+// recordingAdmission records the routes the module tells the gateway admit an
+// impersonating identity. The other methods are the embedded interface's and
+// are never called by this module.
+type recordingAdmission struct {
+	authn.Gate
+	impersonable [][3]string
+}
+
+func (a *recordingAdmission) Impersonable(endpoint, method, path string) {
+	a.impersonable = append(a.impersonable, [3]string{endpoint, method, path})
+}
+
+// TestWireRegistersTheRouteImpersonable holds the host's alias source after a
+// full page load: an impersonating identity reaches the caller tenant read,
+// whose answer is narrowed to the grant tenant. Without the registration the
+// gateway refuses the read before the handler and a reloaded tenant area
+// announces no alias, so every tenant-scoped read is refused 404.
+func TestWireRegistersTheRouteImpersonable(t *testing.T) {
+	admission := &recordingAdmission{}
+	router := routecontract.NewRouter("account")
+	modules := []core.Module{
+		Module(),
+		routecontract.StandIn("stand-in.memberships", &membershipsSeam{}, (*authn.Memberships)(nil)),
+		routecontract.StandIn("stand-in.catalog", &catalogSeam{}, (*tenant.Catalog)(nil)),
+		routecontract.StandIn("stand-in.admission", admission, (*authn.Gate)(nil)),
+		routecontract.StandIn("stand-in.logging", quietLogging{}, (*log.Logger)(nil)),
+		router.Module(),
+	}
+	body := `{"` + ConfigNamespace + `":{"endpoints":["account"]}}`
+	if err := driveInit(t, body, modules...); err != nil {
+		t.Fatalf("driving the module to Init: %v", err)
+	}
+
+	want := [3]string{"account", http.MethodGet, pathTenants}
+	if !slices.Contains(admission.impersonable, want) {
+		t.Errorf("the admission surface records %v, want %s %s on account registered Impersonable",
+			admission.impersonable, http.MethodGet, pathTenants)
+	}
+}
+
 // TestWireDeclaresTheRouteOpen holds the wiring: the module takes the
 // route-declaration surface up in Init and records the route as needing no
 // permission, so the enforcement middleware lets an authenticated request

@@ -163,7 +163,8 @@ func productOf(instance any) (*product, bool) {
 }
 
 // product is the module's instance. It holds the two reads the answer composes
-// and the optional route-declaration surface taken up in Init.
+// and the optional route-declaration and gateway-admission surfaces taken up in
+// Init.
 type product struct {
 	memberships authn.Memberships
 	catalog     tenant.Catalog
@@ -171,8 +172,14 @@ type product struct {
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares the route open on it so that a
 	// guarded endpoint lets the request reach the handler.
-	gate   authz.Gate
-	logger *slog.Logger
+	gate authz.Gate
+	// admission is the gateway's route-admission surface, nil when the
+	// assembly delivers none. When it is there, Init registers the route as
+	// Impersonable: an impersonating identity reads the impersonated account's
+	// membership in the tenant its grant is confined to, which is the alias
+	// source a host has after a full page load.
+	admission authn.Gate
+	logger    *slog.Logger
 
 	cfg resolved
 }
@@ -237,6 +244,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.gate = gate
+	}
+	if admission, found, err := optional[authn.Gate](reg, "the gateway admission surface"); err != nil {
+		return err
+	} else if found {
+		p.admission = admission
 	}
 
 	router, found, err := optional[speedhttp.Router](reg, "the HTTP entry point")

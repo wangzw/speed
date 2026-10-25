@@ -40,6 +40,14 @@ func (p *product) requireIdentity(next gin.HandlerFunc) gin.HandlerFunc {
 // again. A membership enters the answer when it is itself active and its roster
 // row is active. A read that cannot answer — either the membership table or the
 // roster snapshot — is a 503 with its cause in the log, never an empty list.
+//
+// An impersonating caller is confined to the grant's tenant, so only that
+// membership enters its answer. The route is the alias source a host has after
+// a full page load, when the roster cache it read before is gone; the grant
+// already names the tenant, and the answer gives it the name without handing
+// over the impersonated account's memberships in other tenants. The gateway's
+// exit check guarantees an impersonating principal carries a scope; a direct
+// call without one answers nothing rather than everything.
 func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -47,6 +55,8 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 		// identity is refused here rather than answered as an empty list.
 		return tenantsBody{}, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
+	scope, confined := id.Scope()
+	impersonating := id.Impersonating()
 	memberships, err := p.memberships.Tenants(ctx, id.Account())
 	if err != nil {
 		return tenantsBody{}, p.unavailable(err)
@@ -55,6 +65,9 @@ func (p *product) handleTenants(ctx context.Context, _ struct{}) (tenantsBody, e
 	// serialises as [] and never null.
 	out := make([]tenantSelfTenant, 0, len(memberships))
 	for _, membership := range memberships {
+		if impersonating && (!confined || membership.Tenant != scope) {
+			continue
+		}
 		if !membership.Active {
 			continue
 		}

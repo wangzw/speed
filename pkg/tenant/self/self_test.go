@@ -311,6 +311,43 @@ func TestAMissingRosterIsA503(t *testing.T) {
 	}
 }
 
+// TestAnImpersonatingCallerReadsOnlyTheGrantTenant holds the narrowed answer
+// an impersonating caller receives: the host needs the grant tenant's alias
+// after a full page load, when no roster cache survives, and the impersonated
+// account's memberships in other tenants are outside the grant and are not
+// handed over.
+func TestAnImpersonatingCallerReadsOnlyTheGrantTenant(t *testing.T) {
+	memberships := &stubMemberships{byAccount: map[authn.AccountID][]authn.Membership{
+		"acct-bob": {
+			{Account: "acct-bob", Tenant: "acme", Active: true},
+			{Account: "acct-bob", Tenant: "globex", Active: true},
+		},
+	}}
+	catalog := &stubCatalog{rows: map[tenant.ID]tenant.Tenant{
+		"acme":   activeTenant("acme", "Acme"),
+		"globex": activeTenant("globex", "Globex"),
+	}}
+	p := newRig(memberships, catalog)
+	ctx := authntest.Context(t, t.Context(),
+		authntest.WithAccount("acct-bob"),
+		authntest.WithActor("acct-alice"),
+		authntest.WithSession("0190a6f2-3b6c-7c2e-8a4d-5e6f7a8b9c0d"),
+		authntest.WithScope("acme"),
+	)
+
+	w := serve(t, tenantsOperation.Handle(p.handleTenants), ctx)
+	if w.Code != http.StatusOK {
+		t.Fatalf("the read answered %d: %s", w.Code, w.Body.String())
+	}
+	body := decode(t, w)
+	if len(body.Tenants) != 1 {
+		t.Fatalf("tenants = %+v, want only the grant tenant", body.Tenants)
+	}
+	if body.Tenants[0].ID != "acme" || body.Tenants[0].Alias != "Acme" {
+		t.Errorf("the tenant is %+v, want acme/Acme", body.Tenants[0])
+	}
+}
+
 // TestTheReadAsksForTheEffectiveAccount holds an impersonating caller to the
 // account the request is taken to be from: the read asks about the impersonated
 // account, never the actor whose hands are on the request.

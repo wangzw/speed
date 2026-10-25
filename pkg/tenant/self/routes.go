@@ -49,6 +49,14 @@ func realmOf(c *gin.Context) string {
 // realm. Every name is looked up before any route is registered, so a name the
 // entry point does not declare fails the startup naming that endpoint rather
 // than leaving a partial mounting behind.
+//
+// When the assembly delivers the gateway's admission surface, each mounted
+// route is registered Impersonable. An impersonating identity is confined to
+// its grant's tenant; the read's answer is narrowed to that tenant in the
+// handler, so the registration hands the impersonator the one alias the grant
+// already names and none of the impersonated account's other memberships. It is
+// what lets a host name the grant's tenant after a full page load, when the
+// roster cache it read before is gone.
 func (p *product) mount(router speedhttp.Router) error {
 	type target struct {
 		name     string
@@ -65,6 +73,9 @@ func (p *product) mount(router speedhttp.Router) error {
 	handler := p.requireIdentity(tenantsOperation.Handle(p.handleTenants))
 	for _, tgt := range targets {
 		tgt.endpoint.Route(http.MethodGet, pathTenants, withRealm(tgt.name, handler))
+		if p.admission != nil {
+			p.admission.Impersonable(tgt.name, http.MethodGet, pathTenants)
+		}
 	}
 	return nil
 }
