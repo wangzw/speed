@@ -162,6 +162,64 @@ func TestAFalseSuccessIsRefusedAsAMissingProof(t *testing.T) {
 	}
 }
 
+// A refusal the provider states about the proof itself -- missing, invalid,
+// expired or already spent -- is an invalid proof, whatever code of that class
+// it names.
+func TestProofRefusalsAreHumanVerificationRequired(t *testing.T) {
+	for _, code := range []string{"missing-input-response", "invalid-input-response", "timeout-or-duplicate"} {
+		t.Run(code, func(t *testing.T) {
+			srv, pool, _ := siteverify(t, answer{http.StatusOK, `{"success":false,"error-codes":["` + code + `"]}`})
+			p := providerFor(t, srv, pool, nil)
+
+			err := p.Verify(t.Context(), authn.HumanProof{Token: testToken})
+			if !errors.Is(err, authn.ErrHumanVerificationRequired) {
+				t.Fatalf("%s resolved with %v, want ErrHumanVerificationRequired", code, err)
+			}
+			if errors.Is(err, authn.ErrUnavailable) {
+				t.Errorf("%s reads as an outage: %v", code, err)
+			}
+		})
+	}
+}
+
+// A refusal the provider states about its own side -- an internal error, a
+// misconfigured secret or widget, or a code this package does not know -- is an
+// outage: the proof was not judged, so nothing is sent. It must not read as the
+// caller's proof being invalid, and the error the client sees carries neither
+// the token nor the secret.
+func TestProviderFaultsAreUnavailable(t *testing.T) {
+	codes := []string{
+		"internal-error",
+		"missing-input-secret",
+		"invalid-input-secret",
+		"invalid-widget-id",
+		"a-code-this-package-does-not-know",
+	}
+	for _, code := range codes {
+		t.Run(code, func(t *testing.T) {
+			srv, pool, _ := siteverify(t, answer{http.StatusOK, `{"success":false,"error-codes":["` + code + `"]}`})
+			p := providerFor(t, srv, pool, nil)
+			var logged bytes.Buffer
+			ctx := speedlog.WithLogger(t.Context(),
+				slog.New(slog.NewJSONHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
+			err := p.Verify(ctx, authn.HumanProof{Token: testToken, RemoteIP: testRemoteIP})
+			if !errors.Is(err, authn.ErrUnavailable) {
+				t.Fatalf("%s resolved with %v, want ErrUnavailable", code, err)
+			}
+			if errors.Is(err, authn.ErrHumanVerificationRequired) {
+				t.Errorf("%s reads as an invalid proof: %v", code, err)
+			}
+			if strings.Contains(err.Error(), testToken) || strings.Contains(err.Error(), testSecret) {
+				t.Errorf("the client-facing error carries the token or secret: %v", err)
+			}
+			if !strings.Contains(logged.String(), code) {
+				t.Errorf("the provider's error code did not reach the log: %q", logged.String())
+			}
+		})
+	}
+}
+
 // An answer that accepted the proof for another hostname is not trusted: the
 // provider fails closed with the outage answer.
 func TestAHostnameMismatchIsUnavailable(t *testing.T) {

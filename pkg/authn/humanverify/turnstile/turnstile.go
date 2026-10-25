@@ -8,6 +8,14 @@
 // token it has already spent with its duplicate error code, which this package
 // reads as an invalid proof, not as an outage.
 //
+// A refused answer is told apart by the provider's own error codes rather than
+// collapsed into one. The codes that name a problem with the proof -- missing,
+// invalid, expired or already spent -- are an invalid proof. Every other code
+// names a fault on the provider's side or in this deployment's configuration (a
+// bad secret or widget key, an internal error) or is one this package does not
+// recognise; those are an outage: the proof was not judged, so nothing is sent
+// and the client is not told its proof was wrong.
+//
 // The secret never reaches a log line, an error text or a metric: the token is
 // a credential and so is the secret, and the siteverify call carries both in
 // its body alone.
@@ -153,9 +161,12 @@ func (p *Provider) SiteKey() string { return p.siteKey }
 // Verify posts the proof to siteverify and judges the answer.
 //
 // A token is single-use: the provider refuses a token it has already spent with
-// its duplicate code, which reads here as an invalid proof. An answer that is
-// not a 2xx, not the provider's response, or accepted for another hostname or
-// action is an outage: the proof was not judged, so nothing is sent.
+// its duplicate code, which reads here as an invalid proof. A refused answer
+// whose codes all name a problem with the proof is an invalid proof too. An
+// answer that is not a 2xx, not the provider's response, accepted for another
+// hostname or action, or refused for a provider-side reason (its own internal
+// error, a key or widget misconfiguration, a code this package does not know)
+// is an outage: the proof was not judged, so nothing is sent.
 func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof) error {
 	if proof.Token == "" {
 		return fmt.Errorf("%w: turnstile: no proof was presented", authn.ErrHumanVerificationRequired)
@@ -212,7 +223,14 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof) error {
 			slog.String("error_codes", strings.Join(answer.ErrorCodes, ",")))
 	}
 	if !answer.Success {
-		return fmt.Errorf("%w: turnstile: the proof was refused", authn.ErrHumanVerificationRequired)
+		if refusedForProof(answer.ErrorCodes) {
+			return fmt.Errorf("%w: turnstile: the proof was refused", authn.ErrHumanVerificationRequired)
+		}
+		// A refusal that names no proof problem is the provider failing to
+		// judge the proof, or this deployment's configuration being wrong.
+		// Both are an outage: sending on a verdict nobody cast is not an
+		// option, and the client must not be told its proof was invalid.
+		return fmt.Errorf("%w: turnstile: siteverify could not judge the proof", authn.ErrUnavailable)
 	}
 	if !strings.EqualFold(strings.TrimSpace(answer.Hostname), p.hostname) {
 		return fmt.Errorf("%w: turnstile: siteverify accepted a proof for hostname %q",
@@ -223,6 +241,34 @@ func (p *Provider) Verify(ctx context.Context, proof authn.HumanProof) error {
 			authn.ErrUnavailable, answer.Action)
 	}
 	return nil
+}
+
+// proofRefusalCodes are the siteverify codes that name the proof itself as the
+// reason for a refusal: it was absent, it did not verify, or it had expired or
+// already been spent. Every other code names a fault on the provider's side or
+// in this deployment's configuration, and is read as an outage.
+var proofRefusalCodes = map[string]bool{
+	"missing-input-response": true,
+	"invalid-input-response": true,
+	"timeout-or-duplicate":   true,
+}
+
+// refusedForProof reports whether every code the provider gave names a problem
+// with the proof. An answer with no codes at all, or one carrying any code this
+// package does not know, is not judged as a proof refusal: the provider did not
+// tell us the proof was wrong, so the only safe reading is that it could not
+// judge it. A mixed answer is read the same way, because one provider-side code
+// is enough to say the verdict is not about the proof.
+func refusedForProof(codes []string) bool {
+	if len(codes) == 0 {
+		return false
+	}
+	for _, code := range codes {
+		if !proofRefusalCodes[code] {
+			return false
+		}
+	}
+	return true
 }
 
 // siteverifyAnswer is the part of the provider's response this package judges.
