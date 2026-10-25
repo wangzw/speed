@@ -25,14 +25,10 @@ import {
 
 const PROFILE_PATH = '/api/v1/auth/me'
 
-/** Whether the profile read has been answered in the current case. */
-let profileRead = false
-
 /** Binds a request function answering only the profile read. */
 function bindProfile(profile: AuthnProfileProfile): void {
   const request = async <T,>(path: string): Promise<T> => {
     if (path === PROFILE_PATH) {
-      profileRead = true
       return profile as T
     }
     throw new Error(`the suite binds only the profile read: ${path}`)
@@ -50,7 +46,6 @@ function renderFrame() {
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
-  profileRead = false
 })
 
 describe('ContactVerificationBanner', () => {
@@ -96,13 +91,17 @@ describe('ContactVerificationBanner', () => {
 
   it('renders nothing once verification is complete', async () => {
     bindProfile(profileWithVerification('verified', 'ada@x.test'))
-    renderFrame()
+    const { queryClient } = renderFrame()
 
-    // Wait for the profile read to answer, then assert the region is gone.
-    await waitFor(() => expect(profileRead).toBe(true))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    // The notice is derived from the profile read, so the absence assertion
+    // is only meaningful after that read has answered. Wait for the query to
+    // reach success (its answer carries the verified state), then assert the
+    // region is gone. A read that is merely issued proves nothing.
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryState(getAuthnProfileGetQueryKey())?.status,
+      ).toBe('success'),
+    )
     expect(
       screen.queryByRole('region', {
         name: new RegExp(demoEnUS.verificationBanner.region),
@@ -139,12 +138,15 @@ describe('ContactVerificationBanner', () => {
 
   it('renders nothing for an account with no unproved email', async () => {
     bindProfile(profileWithVerification('none', ''))
-    renderFrame()
+    const { queryClient } = renderFrame()
 
-    await waitFor(() => expect(profileRead).toBe(true))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    // Same rule as the verified case: settle the profile read before ruling
+    // the notice out, because the pending read renders no notice either.
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryState(getAuthnProfileGetQueryKey())?.status,
+      ).toBe('success'),
+    )
     expect(
       screen.queryByRole('region', {
         name: new RegExp(demoEnUS.verificationBanner.region),
