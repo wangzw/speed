@@ -77,18 +77,39 @@ function revokeAria(device: string): string {
 /** The instant the default row helper carries. */
 const SESSION_INSTANT = '2026-08-01T02:05:00.000Z'
 
+/** The default row's expiry, distinct from its sign-in instant. */
+const SESSION_EXPIRY = '2026-09-01T02:05:00.000Z'
+
+/** A last-active instant later than the default row's sign-in instant. */
+const SESSION_LAST_SEEN = '2026-08-03T09:12:00.000Z'
+
 /** The row's "signed in" line for a pre-rendered time. */
 function signedInLine(time: string): string {
   return zhCN.sessions.signedIn.replace('{{time}}', time)
 }
 
+/** The row's expiry line for a pre-rendered time. */
+function expiresLine(time: string): string {
+  return zhCN.sessions.expires.replace('{{time}}', time)
+}
+
+/** The row's last-active line for a pre-rendered time. */
+function lastSeenLine(time: string): string {
+  return zhCN.sessions.lastSeen.replace('{{time}}', time)
+}
+
 /** The instant rendered in `zone` (the engine's own zone when absent). */
-function renderedIn(zone?: string): string {
+function renderedInstant(instant: string, zone?: string): string {
   return formatInstant(
-    SESSION_INSTANT,
+    instant,
     'zh-CN',
     zone === undefined ? {} : { timeZone: zone },
   )
+}
+
+/** The default row's sign-in instant rendered in `zone`. */
+function renderedIn(zone?: string): string {
+  return renderedInstant(SESSION_INSTANT, zone)
 }
 
 /**
@@ -149,6 +170,66 @@ describe('SessionsSection', () => {
     ).toBeTruthy()
 
     await expectNoAxeViolations()
+  })
+
+  it("renders each session's expiry instant", async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [session({ id: 'session-2', user_agent: '' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+
+    // The listed session is live and carries an absolute expiry; the row
+    // names that instant in the display zone, beside the sign-in line.
+    expect(
+      await screen.findByText(expiresLine(renderedInstant(SESSION_EXPIRY))),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(signedInLine(renderedInstant(SESSION_INSTANT))),
+    ).toBeTruthy()
+    // The default row's last activity is its sign-in instant, so the row does
+    // not repeat it as a second line.
+    expect(
+      screen.queryByText(lastSeenLine(renderedInstant(SESSION_INSTANT))),
+    ).toBeNull()
+  })
+
+  it('renders the last-active time when it differs from the sign-in time', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        return jsonResponse(200, {
+          sessions: [
+            session({
+              id: 'session-2',
+              user_agent: '',
+              last_seen_at: SESSION_LAST_SEEN,
+            }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mountSection(respond)
+
+    // A coalesced touch moves the row's last activity past its creation, so the
+    // row carries both instants. This is component behaviour independent of the
+    // expiry line.
+    expect(
+      await screen.findByText(lastSeenLine(renderedInstant(SESSION_LAST_SEEN))),
+    ).toBeTruthy()
+    expect(
+      screen.getByText(signedInLine(renderedInstant(SESSION_INSTANT))),
+    ).toBeTruthy()
   })
 
   it('prefers the profile timezone over the host display timezone', async () => {

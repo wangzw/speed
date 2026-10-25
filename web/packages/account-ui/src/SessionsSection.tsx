@@ -12,7 +12,8 @@
  * browser/OS summary the row's user agent parses to ("Chrome · macOS" --
  * never the raw UA string, which would make two sign-ins from one browser
  * read as two identical, truncated walls of text), else the unknown-device
- * label; the client IP, the session kind, and the created/last-seen times.
+ * label; the client IP, the session kind, and the created, last-seen and
+ * expiry times.
  *
  * Actions: a row that is not the current one carries a row-end sign-out
  * button that revokes exactly that session (DELETE /api/v1/auth/sessions/{id}),
@@ -348,11 +349,15 @@ export function SessionsSection() {
                     : null
                 const created = parseDate(session.created_at)
                 const lastSeen = parseDate(session.last_seen_at)
+                const expires = parseDate(session.expires_at)
                 const showLastSeen =
                   lastSeen !== null &&
                   session.last_seen_at !== session.created_at
                 const hasMeta =
-                  session.client_ip != null || created !== null || showLastSeen
+                  session.client_ip != null ||
+                  created !== null ||
+                  showLastSeen ||
+                  expires !== null
                 return (
                   <Box
                     component="li"
@@ -460,6 +465,13 @@ export function SessionsSection() {
                           <Typography variant="body2" color="text.secondary">
                             {t('sessions.lastSeen', {
                               time: formatTime(lastSeen),
+                            })}
+                          </Typography>
+                        )}
+                        {expires !== null && (
+                          <Typography variant="body2" color="text.secondary">
+                            {t('sessions.expires', {
+                              time: formatTime(expires),
                             })}
                           </Typography>
                         )}

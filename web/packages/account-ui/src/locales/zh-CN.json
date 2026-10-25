@@ -44,6 +44,7 @@
     "revokedOne": "已退出会话：{{device}}。",
     "signedIn": "登录于 {{time}}",
     "lastSeen": "上次活跃 {{time}}",
+    "expires": "到期 {{time}}",
     "revokeOthers": {
       "label": "退出其他设备",
       "confirmTitle": "退出其他设备？",
