@@ -12,10 +12,11 @@
  */
 
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { getAuthnAdminAccountsSessionsQueryKey } from '@speed/api-sdk'
 import { switchLanguage } from '@speed/i18n'
 import {
   consoleOperations,
@@ -854,46 +855,71 @@ describe('consoleOperations write invalidation', () => {
   })
 
   it('leaves the sessions read alone when a status write re-enables the account', async () => {
-    const user = userEvent.setup()
-    const calls = bindConsoleRequest(answer)
-    function Probe() {
-      const [settled, setSettled] = useState(false)
-      const sessions = consoleOperations.useAccountSessions({ id: 'acc-1' })
-      const setStatus = consoleOperations.useSetAccountStatus()
-      return (
-        <>
-          <p>{sessions.isSuccess ? (settled ? 'settled' : 'ready') : 'loading'}</p>
-          <button
-            type="button"
-            onClick={() =>
-              setStatus.mutate(
-                { id: 'acc-1', status: 'active' },
-                { onSuccess: () => setSettled(true) },
-              )
-            }
-          >
-            enable
-          </button>
-        </>
-      )
+    // Judging "no second read" needs the write's invalidation work to have
+    // settled; a fixed flush passes while a refetch it scheduled is still
+    // pending, so a refetch on a later tick would slip through. Fake timers
+    // let the case advance past a retry-scale delay, which flushes any
+    // invalidation the write scheduled for a later tick.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+      const calls = bindConsoleRequest(answer)
+      function Probe() {
+        const [settled, setSettled] = useState(false)
+        const sessions = consoleOperations.useAccountSessions({ id: 'acc-1' })
+        const setStatus = consoleOperations.useSetAccountStatus()
+        return (
+          <>
+            <p>{sessions.isSuccess ? (settled ? 'settled' : 'ready') : 'loading'}</p>
+            <button
+              type="button"
+              onClick={() =>
+                setStatus.mutate(
+                  { id: 'acc-1', status: 'active' },
+                  { onSuccess: () => setSettled(true) },
+                )
+              }
+            >
+              enable
+            </button>
+          </>
+        )
+      }
+      const { queryClient } = renderWithProviders(<Probe />, {
+        operations: consoleOperations,
+      })
+      await screen.findByText('ready')
+      const reads = (): number =>
+        calls.filter(
+          (call) =>
+            call.method === 'GET' &&
+            call.path === '/api/v1/system/auth/accounts/acc-1/sessions',
+        ).length
+      expect(reads()).toBe(1)
+      await user.click(screen.getByRole('button', { name: 'enable' }))
+      await screen.findByText('settled')
+      // The write's onSuccess invalidates the reads its result changes; any
+      // refetch that invalidation starts must settle before the counter can
+      // rule a second read out.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+      // The settled state that carries the write's invalidation work is the
+      // query cache: no read may be in flight when the count is judged.
+      await waitFor(() => {
+        expect(queryClient.isFetching()).toBe(0)
+        expect(
+          queryClient.getQueryState(
+            getAuthnAdminAccountsSessionsQueryKey('acc-1'),
+          )?.fetchStatus,
+        ).toBe('idle')
+      })
+      expect(reads()).toBe(1)
+    } finally {
+      vi.useRealTimers()
     }
-    renderWithProviders(<Probe />, { operations: consoleOperations })
-    await screen.findByText('ready')
-    const reads = (): number =>
-      calls.filter(
-        (call) =>
-          call.method === 'GET' &&
-          call.path === '/api/v1/system/auth/accounts/acc-1/sessions',
-      ).length
-    expect(reads()).toBe(1)
-    await user.click(screen.getByRole('button', { name: 'enable' }))
-    await screen.findByText('settled')
-    // The per-call onSuccess runs after the hook's, so by now an
-    // invalidation would have started its refetch.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
-    expect(reads()).toBe(1)
   })
 
   it('re-reads the account sessions after an MFA reset, which revokes them', async () => {
