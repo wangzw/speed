@@ -40,7 +40,9 @@ import type {
   AuthnProfileProfile,
 } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { accountUiResources } from '@speed/account-ui'
 import { authUiResources } from '@speed/auth-ui'
+import { consoleUiResources } from '@speed/console-ui'
 import type { AppShellShellLayout } from '@speed/layout-kit'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { routes } from '../routes.js'
@@ -139,25 +141,96 @@ interface ScanRecord {
   readonly findings: readonly A11yFinding[]
 }
 
+/**
+ * The error-placeholder title each route renders in error mode, read from the
+ * packages' own bundles.
+ *
+ * In error mode every read rejects, but a page reaches its error state only
+ * once react-query reports the failures; a scan taken before that flush
+ * records a half-rendered tree. The sweep asserts this copy is on screen
+ * before scanning these routes, so a pending page is never scanned as if it
+ * were the error state.
+ */
+const ERROR_PLACEHOLDER_BY_PATH: Readonly<Record<string, string>> = {
+  '/account': (
+    accountUiResources['en-US'] as unknown as {
+      readonly profile: { readonly error: { readonly title: string } }
+    }
+  ).profile.error.title,
+  '/console/audit': (
+    consoleUiResources['en-US'] as unknown as {
+      readonly audit: { readonly error: { readonly title: string } }
+    }
+  ).audit.error.title,
+}
+
 const records: ScanRecord[] = []
 
 /**
- * Lets the page's data reads settle before the scan: the scripted backend
- * resolves immediately, so a microtask and a macrotask flushed inside act are
- * enough for react-query to hand the page its data and React to re-render.
+ * How many settle ticks a render may take before the sweep calls it hung.
+ * Each tick flushes pending microtasks and one timer/animation-frame callback
+ * inside act; a stable page returns after two consecutive identical ticks,
+ * so the cap only bounds a page that never stops changing.
+ */
+const SETTLE_TICK_CAP = 50
+
+/**
+ * Lets the page settle before the scan: the scripted backend resolves
+ * immediately, but react-query hands the page its data -- and, in error
+ * mode, flushes its failure notification -- on a batched macrotask that can
+ * land after a fixed one-flush wait. Scanning then would record a pending
+ * tree whose headings and placeholders have not been committed yet, and
+ * axe's cached heading table can no longer be matched against the subtrees
+ * it is about to be replaced with.
+ *
+ * The wait is therefore driven by the render itself: each tick flushes the
+ * pending work inside act and snapshots the document, and the loop returns
+ * only after two consecutive ticks render the same structure. A page that
+ * never stabilises within SETTLE_TICK_CAP fails the case with the cap named,
+ * rather than scanning whatever happened to be on screen.
  */
 async function settle(): Promise<void> {
-  await act(async () => {
-    await Promise.resolve()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await Promise.resolve()
-  })
+  let previous = ''
+  let stableTicks = 0
+  for (let tick = 0; tick < SETTLE_TICK_CAP; tick += 1) {
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(() => resolve())
+        } else {
+          setTimeout(resolve, 0)
+        }
+      })
+    })
+    const current = document.body.innerHTML
+    if (current === previous) {
+      stableTicks += 1
+      if (stableTicks >= 2) {
+        return
+      }
+    } else {
+      stableTicks = 0
+      previous = current
+    }
+  }
+  throw new Error(
+    `settle() reached its ${SETTLE_TICK_CAP}-tick cap without the DOM ` +
+      'stabilising; the scan would run against a page that is still changing',
+  )
 }
 
 /**
  * The two rules that land in axe's indeterminate bucket for reasons this
  * harness can decide, asserted absent for every scanned state -- the sweep's
  * routes and the states only a driven case reaches alike.
+ *
+ * label-content-name-mismatch is deliberately absent: jsdom answers the
+ * rule's canvas getContext probe with null, so axe records "error occurred"
+ * and the rule is indeterminate for every node -- neither a pass nor a
+ * failure is observable here (see ./scan.ts's header). The browser tier
+ * settles it in Chromium; this gate keeps reporting its incomplete result
+ * rather than turning it into an assertion it cannot decide.
  */
 function expectNoDecidableIncomplete(
   result: A11yScanResult,
@@ -179,6 +252,31 @@ function expectNoDecidableIncomplete(
     result.incomplete.some((finding) => finding.rule === 'aria-prohibited-attr'),
     `${label} put an ARIA attribute on an element that does not permit it`,
   ).toBe(false)
+}
+
+/**
+ * The one exit every scanned route and driven case goes through: asserts the
+ * decidable-indeterminate rules absent, prints every remaining indeterminate
+ * result, and records the violation set for the closing report. No scan may
+ * skip it -- a case that only looked at violations would drop a real
+ * incomplete result silently.
+ *
+ * `label` names the route/state in the findings, e.g. `/account [error]` or
+ * `/ [data, membership confirmation]`; `path` and `mode` are the record's
+ * own coordinates for the report.
+ */
+function recordScan(
+  label: string,
+  path: string,
+  mode: BackendMode | 'anonymous',
+  result: A11yScanResult,
+): readonly A11yFinding[] {
+  expectNoDecidableIncomplete(result, `route ${label}`)
+  for (const finding of result.incomplete) {
+    console.warn(`[route-a11y] ${label} indeterminate: ${formatFinding(finding)}`)
+  }
+  records.push({ path, mode, findings: result.violations })
+  return result.violations
 }
 
 /**
@@ -207,13 +305,30 @@ async function scanRoute(
     unscripted,
     `route ${path} [${mode}] issued read(s) the scripted backend does not answer`,
   ).toEqual([])
-  const result = await scanPage()
-  expectNoDecidableIncomplete(result, `route ${path} [${mode}]`)
-  for (const finding of result.incomplete) {
-    console.warn(`[route-a11y] ${path} [${mode}] indeterminate: ${formatFinding(finding)}`)
+  const errorPlaceholder =
+    mode === 'error' ? ERROR_PLACEHOLDER_BY_PATH[path] : undefined
+  if (errorPlaceholder !== undefined) {
+    // The route's own error copy must be on screen before the scan: settle()
+    // returns once the tree stops changing, and a tree that never reached its
+    // error state would otherwise be scanned as if it were settled.
+    expect(
+      screen.queryByText(errorPlaceholder),
+      `route ${path} [${mode}] has not reached its error state: ` +
+        'settle() returned while the read was still pending',
+    ).not.toBeNull()
   }
-  records.push({ path, mode, findings: result.violations })
-  return result.violations
+  const result = await scanPage()
+  if (errorPlaceholder !== undefined) {
+    // A heading table axe can no longer resolve means the scan read a tree
+    // that was still being replaced under it (the failure notification landed
+    // mid-scan), not a real heading-order defect.
+    expect(
+      result.incomplete.some((finding) => finding.rule === 'heading-order'),
+      `route ${path} [${mode}] scanned a heading table axe could not resolve: ` +
+        'the tree was still changing when the scan ran',
+    ).toBe(false)
+  }
+  return recordScan(`${path} [${mode}]`, path, mode, result)
 }
 
 /** Warns and registers every non-failing (moderate/minor/no-impact) finding. */
@@ -349,12 +464,9 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
       'the anonymous sign-in surface issued read(s) the scripted backend does not answer',
     ).toEqual([])
     const result = await scanPage()
-    for (const finding of result.incomplete) {
-      console.warn(`[route-a11y] / (anonymous) indeterminate: ${formatFinding(finding)}`)
-    }
-    records.push({ path: '/', mode: 'anonymous', findings: result.violations })
-    const failing = result.violations.filter(isFailing)
-    warnNonFailing('/', 'anonymous', result.violations.filter((f) => !isFailing(f)))
+    const findings = recordScan('/ (anonymous)', '/', 'anonymous', result)
+    const failing = findings.filter(isFailing)
+    warnNonFailing('/', 'anonymous', findings.filter((f) => !isFailing(f)))
     if (failing.length > 0) {
       expect.fail(
         `route / [anonymous] has ${failing.length} serious/critical axe violation(s):\n` +
@@ -375,9 +487,14 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
       'the not-found fallback issued read(s) the scripted backend does not answer',
     ).toEqual([])
     const result = await scanPage()
-    records.push({ path: '/no-such-route', mode: 'data', findings: result.violations })
-    const failing = result.violations.filter(isFailing)
-    warnNonFailing('/no-such-route', 'data', result.violations.filter((f) => !isFailing(f)))
+    const findings = recordScan(
+      '/no-such-route [data]',
+      '/no-such-route',
+      'data',
+      result,
+    )
+    const failing = findings.filter(isFailing)
+    warnNonFailing('/no-such-route', 'data', findings.filter((f) => !isFailing(f)))
     if (failing.length > 0) {
       expect.fail(
         `route /no-such-route [data] has ${failing.length} serious/critical axe violation(s):\n` +
@@ -439,17 +556,22 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
     await within(screen.getByRole('main')).findByText(
       demoEnUS.home.membershipNotice.title,
     )
+    // The home page mounts its own reads as it lands; wait for the tree to
+    // stop changing so the scan reads the settled post-accept state rather
+    // than a heading table mid-replacement.
+    await settle()
     const result = await scanPage()
     // This is the only case that reaches the post-accept home state, so it
-    // carries the same decidable-indeterminate gate the sweep applies.
-    expectNoDecidableIncomplete(result, 'route / [data, membership confirmation]')
-    records.push({
-      path: '/',
-      mode: 'data',
-      findings: result.violations,
-    })
-    const failing = result.violations.filter(isFailing)
-    warnNonFailing('/', 'data', result.violations.filter((f) => !isFailing(f)))
+    // goes through the sweep's own exit: the decidable-indeterminate gate is
+    // applied and any remaining incomplete result is printed, never dropped.
+    const findings = recordScan(
+      '/ [data, membership confirmation]',
+      '/',
+      'data',
+      result,
+    )
+    const failing = findings.filter(isFailing)
+    warnNonFailing('/', 'data', findings.filter((f) => !isFailing(f)))
     if (failing.length > 0) {
       expect.fail(
         `route / [data, membership confirmation] has ${failing.length} serious/critical axe violation(s):\n` +
@@ -501,14 +623,14 @@ describe('route-level accessibility (WCAG 2.1 AA)', () => {
       'the pending-verification notice issued read(s) the scripted backend does not answer',
     ).toEqual([])
     const result = await scanPage()
-    for (const finding of result.incomplete) {
-      console.warn(
-        `[route-a11y] / [pending-no-target] indeterminate: ${formatFinding(finding)}`,
-      )
-    }
-    records.push({ path: '/', mode: 'data', findings: result.violations })
-    const failing = result.violations.filter(isFailing)
-    warnNonFailing('/', 'data', result.violations.filter((f) => !isFailing(f)))
+    const findings = recordScan(
+      '/ [pending-no-target]',
+      '/',
+      'data',
+      result,
+    )
+    const failing = findings.filter(isFailing)
+    warnNonFailing('/', 'data', findings.filter((f) => !isFailing(f)))
     if (failing.length > 0) {
       expect.fail(
         `route / [pending-no-target] has ${failing.length} serious/critical axe violation(s):\n` +

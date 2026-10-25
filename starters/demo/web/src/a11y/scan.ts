@@ -58,6 +58,20 @@
  * page-has-heading-one and landmark-one-main as page-structure rules, a page
  * that renders no heading fails the gate with a real page-has-heading-one
  * violation rather than passing incomplete.
+ *
+ * One further rule is undecidable here for a different reason:
+ * label-content-name-mismatch (WCAG 2.5.3). It reads a control's visible text
+ * through the canvas text-measurement API -- the probe calls
+ * `document.createElement('canvas').getContext('2d')` and then reads
+ * `canvasContext.canvas`. jsdom returns null from getContext (the demo setup
+ * stubs it to null, starters/demo/web/src/test-utils/setup.ts), so the check
+ * throws and axe records "error occurred": every node comes back
+ * INDETERMINATE, and neither a pass nor a violation is observable here. The
+ * rule is left in the sweep's rule set and its incomplete results are
+ * reported (never filtered or suppressed); it is deliberately NOT part of the
+ * decidable-incomplete assertions in routes.test.tsx. The browser tier settles
+ * it by running the rule alone in Chromium (the notification bell and the
+ * settings row's Remove control).
  */
 
 import axe from 'axe-core'
