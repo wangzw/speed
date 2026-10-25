@@ -520,6 +520,7 @@ var exportedSurface = []string{
 	"method Accounts.Externals",
 	"method Accounts.Get",
 	"method Accounts.Identifiers",
+	"method Accounts.IdentifiersMany",
 	"method Accounts.List",
 	"method Accounts.ListServiceSecrets",
 	"method Accounts.Lookup",

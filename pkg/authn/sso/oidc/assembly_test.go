@@ -43,6 +43,10 @@ func (fakeAccounts) Identifiers(context.Context, authn.AccountID) ([]authn.Ident
 	return nil, nil
 }
 
+func (fakeAccounts) IdentifiersMany(context.Context, []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
+	return nil, nil
+}
+
 func (fakeAccounts) Externals(context.Context, authn.AccountID) ([]authn.ExternalBinding, error) {
 	return nil, nil
 }

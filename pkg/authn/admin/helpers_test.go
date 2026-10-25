@@ -121,6 +121,9 @@ type fakeAccounts struct {
 	listCalls       int
 	secretCalls     int
 	identifierCalls int
+	// identifierBatches counts the batch identifier reads, so a case can hold
+	// that one page costs one read rather than one per row.
+	identifierBatches int
 	// identifierReads counts the identifier reads per account, so a case can
 	// hold that a tombstone's identifiers are never read.
 	identifierReads map[authn.AccountID]int
@@ -166,6 +169,51 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 		return nil, authn.ErrAccountNotFound
 	}
 	return append([]authn.Identifier(nil), a.identifiers[id]...), nil
+}
+
+// IdentifiersMany answers the batch read, omitting an unknown account, a
+// tombstone and one that vanished, the same absence the single read reports as
+// authn.ErrAccountNotFound.
+func (a *fakeAccounts) IdentifiersMany(_ context.Context, ids []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.identifierBatches++
+	if a.identifierErr != nil {
+		return nil, a.identifierErr
+	}
+	out := make(map[authn.AccountID][]authn.Identifier, len(ids))
+	for _, id := range ids {
+		a.identifierReads[id]++
+		acct, ok := a.accounts[id]
+		if !ok || acct.Status == authn.StatusDeleted || a.vanished[id] {
+			continue
+		}
+		out[id] = append([]authn.Identifier{}, a.identifiers[id]...)
+	}
+	return out, nil
+}
+
+// failIdentifiers makes every identifier read fail, so a case can hold what a
+// page does when the store does not answer.
+func (a *fakeAccounts) failIdentifiers(err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.identifierErr = err
+}
+
+// identifierBatchCalls reports how many times the batch identifier read ran.
+func (a *fakeAccounts) identifierBatchCalls() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.identifierBatches
+}
+
+// identifierSingleCalls reports how many times the per-account identifier read
+// ran.
+func (a *fakeAccounts) identifierSingleCalls() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.identifierCalls
 }
 
 // vanish makes the identifier read of one account report it gone while the

@@ -66,6 +66,7 @@ type Accounts interface {
 	Lookup(ctx context.Context, kind IdentifierKind, value string) (AccountID, error)
 	ByExternal(ctx context.Context, provider, subject string) (AccountID, error)
 	Identifiers(ctx context.Context, id AccountID) ([]Identifier, error)
+	IdentifiersMany(ctx context.Context, ids []AccountID) (map[AccountID][]Identifier, error)
 	Externals(ctx context.Context, id AccountID) ([]ExternalBinding, error)
 	List(ctx context.Context, q AccountQuery) ([]Account, string, error)
 	ListServiceSecrets(ctx context.Context, id AccountID) ([]ServiceSecretInfo, error)
@@ -77,10 +78,11 @@ type Accounts interface {
 | 全部 | 账户不存在（含墓碑）返回 `ErrAccountNotFound`。 |
 | `Lookup` | `value` 先规范化；规范化失败返回 `ErrInvalidIdentifier`；按 `authn_identifiers` 的 `(kind, value)` 唯一索引查找。 |
 | `ByExternal` | 以（提供方，主体）为键，不以邮箱为键。 |
+| `Identifiers`、`IdentifiersMany` | 单条读按 `created_at`、`id` 排序返回一个账户的标识。批量读一次取回一组账户的标识，只为存活账户给条目，条目内容与单条读对该账户的返回相同：同一排序、同一字段，`proven` 因此由同一事实派生。未知账户与墓碑不给条目，也不返回 `ErrAccountNotFound`——一页里有一行被删不使整页失败；调用方按缺席读作「没有标识」。空输入返回空映射，不执行语句。 |
 | `List` | 返回下一页游标，空串表示没有下一页。墓碑默认不返回，要看须显式给 `StatusDeleted`。无标识过滤时 `WHERE id > ? ORDER BY id LIMIT n`，走 `authn_accounts` 主键，次序近似创建次序；有标识过滤时先在 `authn_identifiers` 的 `(kind, value)` 唯一索引上取 `value >= 前缀 AND value < 前缀的上界`（范围比较，PostgreSQL 与 SQLite 通用，不用 `LIKE`），再回表按 `id` 排序分页。标识前缀已规范化、至少 3 个字符，防止全表扫描；有显示名前缀过滤时按 `display_name >= 前缀 AND display_name < 前缀的上界` 的范围比较取（同样不用 `LIKE`），前缀是存储值的字节前缀、大小写敏感、不设最短长度，范围两端按字节比较（PostgreSQL 上比较钉在 `C` 排序规则，不随库的默认排序规则折叠大小写与重音；SQLite 本就按字节比较）；上界是前缀的最后一个字符进一位（最后一个字符是 U+D7FF 时跳过代理码点取 U+E000，使上界仍是紧确的最小合法后继），对任何输入都是合法 UTF-8；前缀的每个字符都是最高码点（如 U+10FFFF）时不存在上界，此时只保留下界比较 `display_name >= 前缀`；前缀不是合法 UTF-8 时上界为空串，范围收空、读面不选中任何名字（管理路由以 400 拒绝）。而 `authn_accounts` 上没有覆盖 `display_name` 的索引，这条过滤因此扫全表（见[非保证](#非保证)）；`Limit` 缺省 100、上限 1000。 |
 | `ListServiceSecrets` | 只交回标识、标签、期限与撤销状态，从不含密钥。 |
 
-`Accounts` 没有批量读：按一组标识取多个账户要逐个 `Get`。需要一次取多个账户的展示信息（成员页、联系人属主）的调用方自己组织这些读取，本接口不提供 `GetMany` 一类方法。
+`Accounts` 没有账户的批量读：按一组账户标识取多个账户要逐个 `Get`。需要一次取多个账户的展示信息（成员页、联系人属主）的调用方自己组织这些读取，本接口不提供 `GetMany` 一类方法。`IdentifiersMany` 取的是标识、不是账户，不改变这一条。
 
 ### AccountAdmin
 

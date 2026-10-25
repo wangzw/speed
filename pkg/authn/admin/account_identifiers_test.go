@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"reflect"
 	"testing"
@@ -172,7 +173,8 @@ func TestAnAccountWithNoIdentifiersAnswersAnEmptyArray(t *testing.T) {
 // TestTheAccountViewOrdersIdentifiersByKindThenValue holds the documented order:
 // username, email and phone, and within one kind by value ascending. The stored
 // order is deliberately different, so a view that passed the read through would
-// fail.
+// fail. Both reads are held to it: the list path is the one the batch read now
+// feeds.
 func TestTheAccountViewOrdersIdentifiersByKindThenValue(t *testing.T) {
 	r := newRig(t)
 	r.accounts.putIdentifiers(userID,
@@ -182,7 +184,6 @@ func TestTheAccountViewOrdersIdentifiersByKindThenValue(t *testing.T) {
 		authn.Identifier{Kind: authn.IdentifierEmail, Value: "a@example.com", VerifiedVia: authn.VerifiedViaAdmin},
 		authn.Identifier{Kind: authn.IdentifierUsername, Value: "alpha", VerifiedVia: authn.VerifiedViaAdmin},
 	)
-	got := decodeIdentifiers(t, identifiersField(t, singleAccountView(t, r, userID)))
 	want := []wireIdentifier{
 		{Kind: "username", Value: "alpha"},
 		{Kind: "username", Value: "zeta"},
@@ -190,8 +191,13 @@ func TestTheAccountViewOrdersIdentifiersByKindThenValue(t *testing.T) {
 		{Kind: "email", Value: "b@example.com"},
 		{Kind: "phone", Value: "+15550000001", Proven: true},
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("identifiers = %+v, want %+v", got, want)
+	for _, read := range bothReads {
+		t.Run(read.name, func(t *testing.T) {
+			got := decodeIdentifiers(t, identifiersField(t, read.view(t, r, userID)))
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("identifiers = %+v, want %+v", got, want)
+			}
+		})
 	}
 }
 
@@ -215,6 +221,78 @@ func TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("identifiers = %+v, want %+v", got, want)
+	}
+}
+
+// TestTheAccountListReadsIdentifiersOncePerPage holds the cost of a page: one
+// batch read for the whole page, never one read per row, however many accounts
+// it lists.
+func TestTheAccountListReadsIdentifiersOncePerPage(t *testing.T) {
+	r := newRig(t)
+	other := authn.AccountID("acct-other")
+	r.accounts.put(other, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
+	for id, value := range map[authn.AccountID]string{
+		adminID: "admin@example.com", userID: "user@example.com", other: "other@example.com",
+	} {
+		r.accounts.putIdentifiers(id, authn.Identifier{Kind: authn.IdentifierEmail, Value: value, VerifiedVia: authn.VerifiedViaEmailCode})
+	}
+	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("listing accounts: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	var list struct {
+		Accounts []map[string]json.RawMessage `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decoding the account list: %v", err)
+	}
+	if len(list.Accounts) != 3 {
+		t.Fatalf("the page carries %d accounts, want 3", len(list.Accounts))
+	}
+	if got := r.accounts.identifierBatchCalls(); got != 1 {
+		t.Errorf("the page made %d batch identifier reads, want 1", got)
+	}
+	if got := r.accounts.identifierSingleCalls(); got != 0 {
+		t.Errorf("the page made %d per-account identifier reads, want none", got)
+	}
+}
+
+// TestEveryListedAccountCarriesTheIdentifiersOfItsSingleRead holds that a page's
+// batch read answers each row exactly as the single read answers the same
+// account: the proven flag and the documented order included. The stored order
+// differs from the view's, and the mix of proving and asserting ways makes the
+// proven flag a discriminator, not a constant.
+func TestEveryListedAccountCarriesTheIdentifiersOfItsSingleRead(t *testing.T) {
+	r := newRig(t)
+	other := authn.AccountID("acct-other")
+	r.accounts.put(other, authn.Account{Kind: authn.KindUser, Status: authn.StatusActive})
+	r.accounts.putIdentifiers(userID,
+		authn.Identifier{Kind: authn.IdentifierPhone, Value: "+15550000001", VerifiedVia: authn.VerifiedViaSMSCode},
+		authn.Identifier{Kind: authn.IdentifierEmail, Value: "user@example.com", VerifiedVia: authn.VerifiedViaEmailCode},
+		authn.Identifier{Kind: authn.IdentifierUsername, Value: "user", VerifiedVia: authn.VerifiedViaAdmin},
+	)
+	r.accounts.putIdentifiers(adminID,
+		authn.Identifier{Kind: authn.IdentifierUsername, Value: "admin", VerifiedVia: authn.VerifiedViaAdmin},
+		authn.Identifier{Kind: authn.IdentifierEmail, Value: "admin@example.com", VerifiedVia: authn.VerifiedViaImportUnverified},
+	)
+	for _, id := range []authn.AccountID{adminID, userID, other} {
+		single := decodeIdentifiers(t, identifiersField(t, singleAccountView(t, r, id)))
+		listed := decodeIdentifiers(t, identifiersField(t, listAccountView(t, r, id)))
+		if !reflect.DeepEqual(listed, single) {
+			t.Errorf("%q in the list = %+v, want the single read's %+v", id, listed, single)
+		}
+	}
+}
+
+// TestAFailedIdentifierBatchFailsThePage holds that the batch read's failure is
+// still the page's 503: replacing the per-row read must not turn a store failure
+// into empty arrays.
+func TestAFailedIdentifierBatchFailsThePage(t *testing.T) {
+	r := newRig(t)
+	r.accounts.failIdentifiers(errors.New("the store is down"))
+	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts", nil, fresh()...)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("listing accounts over a failed identifier read: status = %d, want 503; body %s", rec.Code, rec.Body.String())
 	}
 }
 

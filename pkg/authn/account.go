@@ -11,7 +11,8 @@ import (
 //
 // Every method reports an account that does not exist, a deleted one included,
 // as ErrAccountNotFound. A deleted account is a tombstone that holds no personal
-// data.
+// data. IdentifiersMany is the one exception: it leaves such an id out of its
+// map instead, so one account gone from a page does not fail the page.
 type Accounts interface {
 	// Get reads one account.
 	Get(ctx context.Context, id AccountID) (Account, error)
@@ -23,6 +24,11 @@ type Accounts interface {
 	ByExternal(ctx context.Context, provider, subject string) (AccountID, error)
 	// Identifiers lists the identifiers bound to an account.
 	Identifiers(ctx context.Context, id AccountID) ([]Identifier, error)
+	// IdentifiersMany lists the identifiers of several accounts in one read. The
+	// map has an entry for every id that names a live account, each holding what
+	// Identifiers returns for it; an id that names no account, or a tombstone,
+	// has no entry rather than an error. An empty input is an empty map.
+	IdentifiersMany(ctx context.Context, ids []AccountID) (map[AccountID][]Identifier, error)
 	// Externals lists the external identities bound to an account.
 	Externals(ctx context.Context, id AccountID) ([]ExternalBinding, error)
 	// List returns one page of accounts and the cursor of the next, which is

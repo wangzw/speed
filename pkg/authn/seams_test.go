@@ -34,6 +34,7 @@ var seamSignatures = map[string][]string{
 		"Lookup(ctx context.Context, kind IdentifierKind, value string) (AccountID, error)",
 		"ByExternal(ctx context.Context, provider, subject string) (AccountID, error)",
 		"Identifiers(ctx context.Context, id AccountID) ([]Identifier, error)",
+		"IdentifiersMany(ctx context.Context, ids []AccountID) (map[AccountID][]Identifier, error)",
 		"Externals(ctx context.Context, id AccountID) ([]ExternalBinding, error)",
 		"List(ctx context.Context, q AccountQuery) ([]Account, string, error)",
 		"ListServiceSecrets(ctx context.Context, id AccountID) ([]ServiceSecretInfo, error)",

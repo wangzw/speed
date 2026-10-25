@@ -151,6 +151,19 @@ func (p *product) ByExternal(ctx context.Context, provider, subject string) (aut
 	return authn.AccountID(ids[0]), nil
 }
 
+// identifierOf is the identifier one row stands for. The single read and the
+// batch read both build their answers through it, so the two cannot disagree
+// about what an identifier carries.
+func identifierOf(r identifierRow) authn.Identifier {
+	return authn.Identifier{
+		ID:          r.ID,
+		Kind:        authn.IdentifierKind(r.Kind),
+		Value:       r.Value,
+		VerifiedAt:  utc(r.VerifiedAt),
+		VerifiedVia: r.VerifiedVia,
+	}
+}
+
 // Identifiers lists the identifiers bound to an account, the username first and
 // then the rest in the order they were bound.
 func (p *product) Identifiers(ctx context.Context, id authn.AccountID) ([]authn.Identifier, error) {
@@ -165,13 +178,58 @@ func (p *product) Identifiers(ctx context.Context, id authn.AccountID) ([]authn.
 	}
 	out := make([]authn.Identifier, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, authn.Identifier{
-			ID:          r.ID,
-			Kind:        authn.IdentifierKind(r.Kind),
-			Value:       r.Value,
-			VerifiedAt:  utc(r.VerifiedAt),
-			VerifiedVia: r.VerifiedVia,
-		})
+		out = append(out, identifierOf(r))
+	}
+	return out, nil
+}
+
+// IdentifiersMany lists the identifiers of several accounts in one read. The
+// answer has an entry for each id that names a live account, holding what
+// Identifiers returns for it, in the same order and with the same fields. An
+// unknown account and a tombstone have no entry, the same absence the single
+// read reports as authn.ErrAccountNotFound: a page that listed one keeps
+// answering instead of failing as a whole. An empty input is an empty map and no
+// statement.
+func (p *product) IdentifiersMany(ctx context.Context, ids []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
+	out := make(map[authn.AccountID][]authn.Identifier, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	wanted := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if err := checkID(id); err != nil {
+			return nil, err
+		}
+		if !seen[id.String()] {
+			seen[id.String()] = true
+			wanted = append(wanted, id.String())
+		}
+	}
+	conn := p.conn(ctx)
+	// The live accounts among the requested ids. A tombstone is left out here
+	// before its rows are read, the same refusal loadAccount makes for it.
+	var live []string
+	err := conn.Model(&accountRow{}).Where("id IN ?", wanted).Where("status <> ?", statusDeleted).
+		Pluck("id", &live).Error
+	if err != nil {
+		return nil, failed("reading accounts", err)
+	}
+	for _, id := range live {
+		out[authn.AccountID(id)] = []authn.Identifier{}
+	}
+	var rows []identifierRow
+	if err = conn.Where("account_id IN ?", wanted).Order("account_id, created_at, id").Find(&rows).Error; err != nil {
+		return nil, failed("listing identifiers", err)
+	}
+	for _, r := range rows {
+		id := authn.AccountID(r.AccountID)
+		if _, ok := out[id]; !ok {
+			// A tombstone or an account that is gone. Its stale row is not the
+			// answer, exactly as the single read does not read a tombstone's rows.
+			continue
+		}
+		out[id] = append(out[id], identifierOf(r))
 	}
 	return out, nil
 }

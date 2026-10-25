@@ -2,7 +2,6 @@ package admin
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"unicode/utf8"
 
@@ -65,9 +64,8 @@ func identifierKindRank(k authn.IdentifierKind) int {
 	return 3
 }
 
-// viewOf reads the identifiers bound to an account and builds its view. It is
-// the per-account read the list and the single read both make; the caller
-// decides how a failed read is answered.
+// viewOf reads the identifiers bound to one account and builds its view. It is
+// the single-account read's path; a page takes the batch read instead.
 //
 // A tombstone is built without a read: deleting an account erases its
 // identifiers, and the identifier read reports a tombstone as
@@ -118,21 +116,30 @@ func (m *product) handleAccountList(ctx context.Context, in accountListInput) (A
 	if err != nil {
 		return AuthnAdminAccountList{}, m.unavailable("listing accounts", err)
 	}
-	views := make([]AuthnAdminAccount, len(accounts))
-	for i, a := range accounts {
-		view, err := m.viewOf(ctx, a)
-		switch {
-		case errors.Is(err, authn.ErrAccountNotFound):
-			// The account was deleted between the page read and this row's
-			// identifier read. The page is a snapshot and still answers; the row
-			// is shown with no identifiers, the same answer a tombstone gets. The
-			// single read, which names one account and not a page, answers 404
-			// for one that is gone instead.
-			view = accountViewOf(a, nil)
-		case err != nil:
+	// One identifier read for the whole page. A tombstone is left out of it:
+	// deleting an account erases its identifiers, and the batch read leaves such
+	// an id out, so the row answers with an empty array instead of failing the
+	// page. The single read, which names one account and not a page, still
+	// answers 404 for one that is gone.
+	ids := make([]authn.AccountID, 0, len(accounts))
+	for _, a := range accounts {
+		if a.Status != authn.StatusDeleted {
+			ids = append(ids, a.ID)
+		}
+	}
+	var byID map[authn.AccountID][]authn.Identifier
+	if len(ids) > 0 {
+		byID, err = m.accounts.IdentifiersMany(ctx, ids)
+		if err != nil {
 			return AuthnAdminAccountList{}, m.unavailable("listing identifiers", err)
 		}
-		views[i] = view
+	}
+	views := make([]AuthnAdminAccount, len(accounts))
+	for i, a := range accounts {
+		// A row deleted between the page read and the identifier read has no
+		// entry, the same absence a tombstone has, and still answers with an
+		// empty array.
+		views[i] = accountViewOf(a, byID[a.ID])
 	}
 	return AuthnAdminAccountList{Accounts: views, NextCursor: next}, nil
 }
