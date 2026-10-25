@@ -143,6 +143,27 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * The bind write's success notice.
+ *
+ * The console names an account in a success notice by its display name and
+ * first login identifier and never by the opaque account id, so the expected
+ * sentence is the bundle's `bound` filled with the reference the same bundle's
+ * `common.accountReference.nameWithIdentifier` renders. The seeded operator
+ * resolves both, so the named form is the one the product renders; an
+ * implementation that fell back to the neutral sentence or inserted the id
+ * would fail this assertion.
+ */
+function boundNotice(): string {
+  return copy('consoleUi', 'permissions.bindings.bound', {
+    role: ROLE,
+    account: copy('consoleUi', 'common.accountReference.nameWithIdentifier', {
+      name: OPERATOR.displayName,
+      identifier: OPERATOR.identifier,
+    }),
+  })
+}
+
 /** The email-verification notice under the app bar. */
 function verificationBanner(page: Page, email: string): Locator {
   return page.getByRole('region', {
@@ -686,14 +707,10 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
           exact: true,
         })
         .click()
+      // The settled write names the account by its display name and login
+      // identifier.
       await expect(
-        page.getByText(
-          copy('consoleUi', 'permissions.bindings.bound', {
-            account: OPERATOR.displayName,
-            role: ROLE,
-          }),
-          { exact: true },
-        ),
+        page.getByText(boundNotice(), { exact: true }),
       ).toBeVisible()
       const bindingsTable = bindings.getByRole('table')
       await expect(
