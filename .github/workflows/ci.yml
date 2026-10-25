@@ -11,6 +11,14 @@
 # not a command list: actions/setup-go with `go-version-file: go.work`, plus
 # an install step that reads the golangci-lint and python pins out of
 # .mise.toml.
+#
+# This job runs on the organization's self-hosted runner group, labelled
+# `self-hosted-runners`, because hosted GitHub Actions runners are not
+# available to this account. The group is maintained outside this repository;
+# a runner in it has to provide what .mise.toml pins (go, node, pnpm, python)
+# and a Go toolchain reachable through mise. A job that stays queued instead
+# of failing means no runner of that label is online, or the runner group
+# does not grant this repository -- it is not a failed check.
 
 name: check
 
@@ -23,8 +31,21 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-runners
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: jdx/mise-action@v4.3.0
+      # A self-hosted runner's toolchain is whoever set it up, so the first
+      # run of this job prints what it actually got. A missing tool fails
+      # here, naming itself, rather than surfacing later as an obscure make
+      # error.
+      - name: Report the runner and the toolchain it provides
+        run: |
+          echo "runner.os=${{ runner.os }} runner.arch=${{ runner.arch }}"
+          echo "uname=$(uname -srm)"
+          go version
+          node --version
+          pnpm --version
+          python3 --version
+          golangci-lint --version
       - run: make check

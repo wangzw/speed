@@ -1,0 +1,9 @@
+# actionlint configuration.
+#
+# The jobs in ci.yml and e2e.yml run on the organization's self-hosted runner
+# group, whose label is not one of GitHub's hosted images. actionlint has to
+# be told about a custom label before it will accept it:
+# https://github.com/rhysd/actionlint/blob/main/docs/config.md#self-hosted-runner
+self-hosted-runner:
+  labels:
+    - self-hosted-runners

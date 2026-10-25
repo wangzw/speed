@@ -15,6 +15,16 @@
 #
 # The cron is off the hour on purpose, like integration.yml's and
 # browser.yml's.
+#
+# This job runs on the organization's self-hosted runner group, labelled
+# `self-hosted-runners`, because hosted GitHub Actions runners are not
+# available to this account. The group is maintained outside this repository.
+# Besides what .mise.toml pins (go, node, pnpm, python), a runner has to be
+# able to run Chromium: this file installs it, and the browser needs the
+# usual shared libraries, which a Linux runner without root may not have --
+# so the install asks for them only when it can. A job that stays queued
+# rather than failing means no runner of that label is online, or the runner
+# group does not grant this repository.
 
 name: e2e
 
@@ -28,10 +38,31 @@ permissions:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-runners
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: jdx/mise-action@v4.3.0
+      - name: Report the runner and the toolchain it provides
+        run: |
+          echo "runner.os=${{ runner.os }} runner.arch=${{ runner.arch }}"
+          echo "uname=$(uname -srm)"
+          go version
+          node --version
+          pnpm --version
+          python3 --version
       - run: pnpm -C web install --frozen-lockfile
-      - run: pnpm -C web exec playwright install --with-deps chromium
+      # The runner's OS is whoever set it up. On Linux the browser needs
+      # system libraries; installing them needs root, so the job asks for
+      # them only when it can and otherwise installs the browser alone and
+      # says so, rather than failing the tier on a permission it does not
+      # have.
+      - name: Install Chromium
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ] && command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            pnpm -C web exec playwright install --with-deps chromium
+          else
+            echo "installing the browser without system dependencies:" \
+              "runner.os=${{ runner.os }} and no passwordless sudo"
+            pnpm -C web exec playwright install chromium
+          fi
       - run: make e2e
