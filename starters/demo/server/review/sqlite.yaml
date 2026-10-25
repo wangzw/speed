@@ -181,7 +181,9 @@ seed:
     # domains authn.login declares (1-60 an hour and 1-200 a day per inbox, 1-60 an
     # hour and 1-1000 a day per account, 1-10000 an hour and 1-100000 a day per
     # source, 1-1000000 an hour for the deployment), and the resend interval is
-    # lowered to its floor so a person can ask again quickly.
+    # lowered to its floor so a person can ask again quickly. The deployment-wide
+    # hourly budget stays the effective ceiling for an hour's sends whatever the
+    # per-source and per-account values say.
     - key: "authn.login.email-per-address-hourly"
       value: "60"
     - key: "authn.login.email-per-address-daily"
@@ -226,6 +228,17 @@ seed:
     # declared minute would make that device wait it out at every signing.
     - key: "authn.sms.resend-interval"
       value: "30s"
+    # REVIEW: the SMS per-source budgets, raised to their domain ceilings like
+    # the email ones above so a walkthrough is not throttled. They stay inside
+    # the domains authn.sms declares (1-10000 an hour and 1-100000 a day for one
+    # source address). The deployment's global hourly budgets
+    # (authn.sms.global-hourly-login, -mfa and -enroll) remain the effective
+    # ceiling for an hour's sends, so a per-source value above them raises
+    # nothing.
+    - key: "authn.sms.per-source-hourly"
+      value: "10000"
+    - key: "authn.sms.per-source-daily"
+      value: "100000"
 
 # REVIEW: the scheduler's tick. The review notification fixture declares a
 # periodic dispatch and every window it runs is expanded per tenant; a two-second
