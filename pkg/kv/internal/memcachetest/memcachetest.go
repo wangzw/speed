@@ -27,14 +27,17 @@ package memcachetest
 import (
 	"crypto/rand"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
 
 const (
-	// addr is where the compose stack publishes Memcached. It is fixed because
-	// nothing here discovers a port any more.
-	addr = "127.0.0.1:11211"
+	// defaultAddr is where the compose stack publishes Memcached by default. A
+	// deployment that runs the stack elsewhere -- another compose project, or
+	// the same one with other published ports -- points the tests at its
+	// address with SPEED_TEST_MEMCACHED_ADDR; an empty variable means this one.
+	defaultAddr = "127.0.0.1:11211"
 	// readyTimeout bounds the wait for the server to accept connections. The
 	// stack is normally already healthy by the time a test binary starts --
 	// `make deps-up` waits for its healthchecks -- so this window is for the
@@ -47,6 +50,22 @@ const (
 	spaceEnd = "."
 )
 
+// address is where the tests reach Memcached: defaultAddr unless
+// SPEED_TEST_MEMCACHED_ADDR names another address.
+//
+// It is read on each call rather than once at start-up, so a case that sets the
+// variable observes the address it set.
+func address() string { return envOr("SPEED_TEST_MEMCACHED_ADDR", defaultAddr) }
+
+// envOr returns the value of the named environment variable, or fallback when
+// it is unset or empty.
+func envOr(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
 // Addr returns the address of the shared server, failing the case when nothing
 // answers there.
 //
@@ -56,9 +75,9 @@ func Addr(t *testing.T) string {
 	t.Helper()
 	if err := waitReady(); err != nil {
 		t.Fatalf("memcachetest: the Memcached test server at %s did not accept a connection within %s: %v\n"+
-			"run `make deps-up` from the repository root to bring the stack up", addr, readyTimeout, err)
+			"run `make deps-up` from the repository root to bring the stack up", address(), readyTimeout, err)
 	}
-	return addr
+	return address()
 }
 
 // Space returns a key space for one case: a prefix no other call returns, in
@@ -83,7 +102,7 @@ func Space(t *testing.T) string {
 func waitReady() error {
 	deadline := time.Now().Add(readyTimeout)
 	for {
-		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+		conn, err := net.DialTimeout("tcp", address(), 2*time.Second)
 		if err == nil {
 			_ = conn.Close()
 			return nil
