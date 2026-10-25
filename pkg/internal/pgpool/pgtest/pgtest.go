@@ -31,6 +31,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -39,6 +41,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // the database/sql driver the statements below go over
 )
 
@@ -152,7 +155,7 @@ func ensureReady(t *testing.T) {
 		return
 	}
 	if err := waitForServer(); err != nil {
-		t.Fatalf("pgtest: the PostgreSQL test server at %s did not answer within %s: %v\n"+
+		t.Fatalf("pgtest: the PostgreSQL test server at %s did not answer (the wait is bounded at %s): %v\n"+
 			"run `make deps-up` from the repository root to bring the stack up", address(), readyTimeout, err)
 	}
 	if ready.CompareAndSwap(false, true) {
@@ -160,20 +163,65 @@ func ensureReady(t *testing.T) {
 	}
 }
 
-// waitForServer pings the maintenance database until it answers or the bound is
-// up.
+// waitForServer pings the maintenance database until it answers, the ping fails
+// for a reason the wait cannot clear, or the bound is up.
 func waitForServer() error {
-	deadline := time.Now().Add(readyTimeout)
+	return waitForServerUntil(time.Now().Add(readyTimeout), readyInterval, ping)
+}
+
+// waitForServerUntil runs attempt until it succeeds, returns an error that is
+// not about the connection, or reaches the deadline.
+//
+// A connection-level failure is what a server that is still starting answers
+// with — the published port is not listening yet, it takes the connection and
+// closes it, or the server refuses the connection while it initialises — so it
+// is retried. Anything else is a server that answered but is not going to start
+// answering differently, and it is reported at once. attempt and interval are
+// parameters so the loop can be exercised without a server.
+func waitForServerUntil(deadline time.Time, interval time.Duration, attempt func() error) error {
 	for {
-		err := ping()
+		err := attempt()
 		if err == nil {
 			return nil
 		}
-		if time.Now().After(deadline) {
+		if !retryableConnectionError(err) || !time.Now().Before(deadline) {
 			return err
 		}
-		time.Sleep(readyInterval)
+		time.Sleep(interval)
 	}
+}
+
+// cannotConnectNow is PostgreSQL's SQLSTATE for a server that is not accepting
+// connections yet, which it answers with while it is starting up. It is not a
+// kernel refusal, but it reaches the client the same way to the wait: the
+// connection will be accepted once the server finishes initialising.
+const cannotConnectNow = "57P03"
+
+// retryableConnectionError reports whether err is a failure of the connection
+// itself, the kind a server that is still coming up produces before it serves.
+//
+// It is an allowlist of the kernel's connection-level refusals and timeouts,
+// plus the one server reply that says the server is not ready to take
+// connections yet. It is not "any error from a ping": a malformed address, an
+// unresolvable host, a wrong password and a database that does not exist all
+// report through the same call, and none becomes ready by waiting.
+func retryableConnectionError(err error) bool {
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return true
+	case errors.Is(err, syscall.ECONNREFUSED), errors.Is(err, syscall.ECONNRESET),
+		errors.Is(err, syscall.ECONNABORTED), errors.Is(err, syscall.EPIPE),
+		errors.Is(err, syscall.ETIMEDOUT):
+		return true
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		return true
+	}
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return true
+	}
+	var refusal *pgconn.PgError
+	return errors.As(err, &refusal) && refusal.Code == cannotConnectNow
 }
 
 // ping opens a connection to the maintenance database and lets it go.
