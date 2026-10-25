@@ -272,7 +272,7 @@ stateDiagram-v2
 | `expires_at` | 时间戳 | 写入时取设置的有效期 |
 | `consumed_at` | 时间戳，可空 | 消费或作废的时刻 |
 
-索引：`(phone_mac, created_at)` 服务于号码维度的预算统计与重发间隔；`(source_mac, created_at)` 服务于来源维度的预算统计；`expires_at` 上的索引服务于清扫。账户维度与用途维度的统计走 `created_at` 范围，行数上界由预算与清扫共同给出。
+索引：`(phone_mac, created_at)` 服务于号码维度的预算统计与重发间隔；`(source_mac, created_at)` 服务于来源维度的预算统计；`(purpose, suppressed, created_at)`（`authn_challenges_purpose_suppressed`）服务于全局维度按用途统计未抑制行；`(account_id, created_at)`（`authn_challenges_account`）服务于账户维度；`expires_at` 上的索引服务于清扫。行数上界由预算与清扫共同给出。
 
 **摘要。** 验证码空间只有百万量级，不带密钥的摘要等于明文，所以 `code_mac`、`phone_mac` 与 `source_mac` 都经 `db.Database.BlindIndex`（HMAC-SHA256，密钥由 db 根密钥派生）计算：`code_mac` 的输入是 `<挑战标识>|<验证码>`，`phone_mac` 的输入是规范化后的 E.164 号码，`source_mac` 的输入是先经 `netip.ParseAddr` 规范化、再取 `Addr.String()` 的来源地址文本；解析不了的文本按原样参与摘要，因为读不出来源的发送仍要计数。`BlindIndex` 在没有根密钥时 panic，所以 `Start` 里做一次包 `recover` 的自检，缺根密钥即以 `ErrNoEncryptionKey` 终止启动，不降级为无密钥摘要。
 
