@@ -493,6 +493,7 @@
     "title": "Accounts",
     "identifierLabel": "Login identifier",
     "identifierKindLabel": "Identifier kind",
+    "identifiersMore": "+{{count}}",
     "displayNamePrefixLabel": "Display name prefix",
     "identifierKind": {
       "username": "Username",

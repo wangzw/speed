@@ -493,6 +493,7 @@
     "title": "账户",
     "identifierLabel": "登录标识",
     "identifierKindLabel": "标识类型",
+    "identifiersMore": "+{{count}}",
     "displayNamePrefixLabel": "显示名前缀",
     "identifierKind": {
       "username": "用户名",

@@ -621,19 +621,70 @@ export function AccountsPage({
       id: 'displayName',
       header: t('accounts.column.displayName'),
       cellWrap: 'nowrap',
-      cell: (row) => (
-        // The page's primary identity: it never hides, and the shared
-        // primary-column cap keeps it from pushing the actions off screen
-        // in a narrow container. The detail panel carries the full value.
-        <Typography
-          variant="body2"
-          noWrap
-          sx={primaryColumnMaxWidthSx}
-          title={row.display_name}
-        >
-          {row.display_name}
-        </Typography>
-      ),
+      // The complete identifier list, not only the one on the secondary
+      // line: the cell's hover title and copy control hand over every
+      // identifier an operator may need to match the row.
+      cellFullValue: (row) =>
+        row.identifiers.length === 0
+          ? undefined
+          : row.identifiers.map((identifier) => identifier.value).join(', '),
+      // The page's primary identity: it never hides, and the shared
+      // whole-cell cap -- which counts the copy control -- keeps it from
+      // pushing the actions off screen in a narrow container. The detail
+      // panel carries the full value.
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
+      cell: (row) => {
+        const firstIdentifier = row.identifiers[0]
+        const remaining = row.identifiers.length - 1
+        return (
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              rowGap: 0.25,
+              minWidth: 0,
+            }}
+          >
+            <Typography
+              variant="body2"
+              noWrap
+              title={row.display_name}
+            >
+              {row.display_name}
+            </Typography>
+            {firstIdentifier !== undefined && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  columnGap: 0.5,
+                  minWidth: 0,
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  noWrap
+                  sx={{ minWidth: 0 }}
+                >
+                  {firstIdentifier.value}
+                </Typography>
+                {remaining > 0 && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ flexShrink: 0 }}
+                  >
+                    {t('accounts.identifiersMore', {
+                      count: String(remaining),
+                    })}
+                  </Typography>
+                )}
+              </Box>
+            )}
+          </Box>
+        )
+      },
     },
     {
       id: 'status',
@@ -977,6 +1028,11 @@ export function AccountsPage({
               rows={settled}
               columns={columns}
               rowKey={(row) => row.id}
+              // The primary cell stacks the display name over its first
+              // identifier, so the row is top-aligned: the copy control
+              // sits beside the identity line instead of dropping to the
+              // middle of a two-line cell.
+              rowVerticalAlign="top"
               // The table stands in for the async section's empty branch on
               // a later page, so it carries the same wording and heading
               // level.

@@ -2980,14 +2980,107 @@ describe('AccountsPage', () => {
       ]),
     )
 
-    // The display name (no copy control) keeps its text cap: 160px below
-    // `md`, 200px from `md` up.
-    expect(containerMaxWidthOf(screen.getByText('Ada Lovelace'))).toEqual(
+    // The display name's primary cell keeps the shared whole-cell cap:
+    // 160px below `md`, 200px from `md` up.
+    const nameCell = screen.getByText('Ada Lovelace').closest('td')
+    expect(nameCell).not.toBeNull()
+    expect(containerMaxWidthOf(nameCell!.firstElementChild!)).toEqual(
       new Map([
         [0, 160],
         [900, 200],
       ]),
     )
+  })
+
+  it('shows the first login identifier under the display name and keeps the complete list on the cell', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [
+              accountFixture({
+                display_name: 'Ada Lovelace',
+                identifiers: [
+                  { kind: 'username', value: 'ada', proven: true },
+                  { kind: 'email', value: 'ada@example.com', proven: false },
+                ],
+              }),
+            ],
+            next_cursor: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    const name = await screen.findByText('Ada Lovelace')
+    const cell = name.closest('td')
+    expect(cell).not.toBeNull()
+
+    // The secondary line names the account by the first identifier only;
+    // the complete list rides the cell title and the copy control.
+    expect(within(cell as HTMLElement).getByText('ada')).toBeInTheDocument()
+    expect(
+      within(cell as HTMLElement).queryByText('ada@example.com'),
+    ).toBeNull()
+    const complete = 'ada, ada@example.com'
+    expect(cell).toHaveAttribute('title', complete)
+    expect(
+      within(cell as HTMLElement).getByRole('button', {
+        name: fill(COPY_VALUE_TEMPLATE, { value: complete }),
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('appends the number of remaining identifiers to the visible line', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [
+              accountFixture({
+                display_name: 'Ada Lovelace',
+                identifiers: [
+                  { kind: 'username', value: 'ada', proven: true },
+                  { kind: 'email', value: 'ada@example.com', proven: false },
+                ],
+              }),
+            ],
+            next_cursor: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    const cell = (await screen.findByText('Ada Lovelace')).closest('td')
+    expect(cell).not.toBeNull()
+    expect(
+      within(cell as HTMLElement).getByText(
+        fill(zhCN.accounts.identifiersMore, { count: '1' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('renders no identifier line for an account with no identifiers', async () => {
+    const user = userEvent.setup()
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [accountFixture({ display_name: 'Ada Lovelace' })],
+            next_cursor: '',
+          }),
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    const cell = (await screen.findByText('Ada Lovelace')).closest('td')
+    expect(cell).not.toBeNull()
+    // Nothing secondary, and no copy control to hand over an empty list.
+    expect(cell?.textContent).toBe('Ada Lovelace')
+    expect(within(cell as HTMLElement).queryByRole('button')).toBeNull()
+    expect(cell).not.toHaveAttribute('title')
   })
 
   it("applies the designed priorities and caps to the panel's three tables", async () => {
