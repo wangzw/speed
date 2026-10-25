@@ -403,22 +403,26 @@ func TestTheSourceAddressPreThrottleCountsSendsNotStarts(t *testing.T) {
 
 // TestTheSourceAddressPreThrottleCountsEveryReportedSend holds that the counter
 // follows the method's report: a call that reports two sends spends two, so a
-// limit of four is reached after two such calls.
+// limit of ten is reached after five such calls, and the counter reads back a
+// two-digit value on the way.
 func TestTheSourceAddressPreThrottleCountsEveryReportedSend(t *testing.T) {
 	m := &fakeMethod{name: "password"}
 	m.begin = func(authn.Start) (authn.Step, error) {
 		return authn.StepPrompt("code", nil).WithSends(2), nil
 	}
 	r := newRig(t, m)
-	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "4"})
+	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "10"})
 
-	for i := 1; i <= 2; i++ {
+	for i := 1; i <= 5; i++ {
 		if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
 			t.Fatalf("two-send flow %d answered %d, want 200: %s", i, rec.Code, rec.Body.String())
 		}
 	}
 	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusTooManyRequests {
 		t.Errorf("the flow past the limit answered %d, want 429: %s", rec.Code, rec.Body.String())
+	}
+	if m.calls != 5 {
+		t.Errorf("the method ran %d times, want five: the counter did not spend two per call", m.calls)
 	}
 }
 

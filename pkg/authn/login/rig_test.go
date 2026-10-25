@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -170,7 +171,10 @@ func (k *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 		}
 	}
 	cur += delta
-	k.m[key] = []byte(strings.TrimRight(strings.TrimRight(fmt.Sprintf("%g", cur), "0"), "."))
+	// The store keeps the shortest exact decimal encoding, as the kv contract
+	// says, so a counter that reaches two digits reads back as itself. Trimming
+	// trailing zeroes by hand would turn 10 into 1.
+	k.m[key] = []byte(strconv.FormatFloat(cur, 'g', -1, 64))
 	if _, ok := k.exp[key]; !ok && ttl > 0 {
 		k.exp[key] = time.Now().Add(ttl)
 	}
