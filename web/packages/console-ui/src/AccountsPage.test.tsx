@@ -1575,11 +1575,11 @@ describe('AccountsPage', () => {
   })
 
   // The delete confirmation names the account the way the roster shows it:
-  // by display name. The account identifier is a machine value the operator
-  // cannot match against the roster, so it never enters the sentence; an
-  // account whose view carries no display name gets the neutral sentence
-  // instead, because an empty display name does not mean the account has no
-  // login identifiers.
+  // by display name and, when the view carries one, its first login
+  // identifier; an identifier alone names an account with no display name.
+  // The opaque account id is a machine value the operator cannot match
+  // against the roster, so it never enters the sentence; only an account with
+  // neither a display name nor an identifier gets the neutral sentence.
   const DELETE_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
 
   function accountsWith(
@@ -1611,6 +1611,70 @@ describe('AccountsPage', () => {
         fill(zhCN.accounts.deleteMessage, { name: 'Ada Lovelace' }),
       ),
     ).toBeInTheDocument()
+  })
+
+  it('names the account being deleted by its display name and first identifier', async () => {
+    const user = userEvent.setup()
+    const operations = accountsWith(
+      accountFixture({
+        id: DELETE_UUID,
+        display_name: 'Ada Lovelace',
+        identifiers: [
+          { kind: 'username', value: 'ada', proven: true },
+          { kind: 'email', value: 'ada@example.com', proven: false },
+        ],
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: fill(zhCN.accounts.deleteAria, { id: DELETE_UUID }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.accounts.deleteTitle,
+    })
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.accounts.deleteMessageWithIdentifier, {
+          name: 'Ada Lovelace',
+          identifier: 'ada',
+        }),
+      ),
+    ).toBeInTheDocument()
+    // The identifier names the account; the opaque id still never appears.
+    expect(dialog).not.toHaveTextContent(DELETE_UUID)
+  })
+
+  it('names the account being deleted by its first identifier when the display name is empty', async () => {
+    const user = userEvent.setup()
+    const operations = accountsWith(
+      accountFixture({
+        id: DELETE_UUID,
+        display_name: '',
+        identifiers: [
+          { kind: 'username', value: 'ada', proven: true },
+          { kind: 'email', value: 'ada@example.com', proven: false },
+        ],
+      }),
+    )
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await user.click(
+      await screen.findByRole('button', {
+        name: fill(zhCN.accounts.deleteAria, { id: DELETE_UUID }),
+      }),
+    )
+    const dialog = await screen.findByRole('dialog', {
+      name: zhCN.accounts.deleteTitle,
+    })
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.accounts.deleteMessageByIdentifier, { identifier: 'ada' }),
+      ),
+    ).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(DELETE_UUID)
   })
 
   it('keeps the account UUID out of the delete confirmation', async () => {

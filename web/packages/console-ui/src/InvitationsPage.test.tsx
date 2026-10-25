@@ -800,10 +800,12 @@ describe('InvitationsPage', () => {
   })
 
   // The removal confirmation names the member the way the roster shows it:
-  // by display name. The account id is a machine value the operator cannot
-  // match against a roster row, so it never enters the sentence: an identity
-  // the account read resolves no display name for (pending, refused,
-  // missing, or a deployment without authn.admin) gets the neutral sentence.
+  // by display name and, when the account view carries one, its first login
+  // identifier; an identifier alone names an account with no display name.
+  // The account id is a machine value the operator cannot match against a
+  // roster row, so it never enters the sentence: an identity the account read
+  // resolves neither name nor identifier for (pending, refused, missing, or a
+  // deployment without authn.admin) gets the neutral sentence.
   const MEMBER_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
 
   async function openRemovalConfirmation(
@@ -856,6 +858,58 @@ describe('InvitationsPage', () => {
         fill(zhCN.members.removeMessage, { name: 'Ada Lovelace' }),
       ),
     ).toBeInTheDocument()
+  })
+
+  it('names the member being removed by its display name and first identifier', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, {
+      getAccount: () =>
+        Promise.resolve(
+          accountFixture({
+            id: MEMBER_UUID,
+            display_name: 'Ada Lovelace',
+            identifiers: [
+              { kind: 'username', value: 'ada', proven: true },
+              { kind: 'email', value: 'ada@example.com', proven: false },
+            ],
+          }),
+        ),
+      settled: () => screen.findByText('Ada Lovelace'),
+    })
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.members.removeMessageWithIdentifier, {
+          name: 'Ada Lovelace',
+          identifier: 'ada',
+        }),
+      ),
+    ).toBeInTheDocument()
+    // The login identifier names the member; the opaque id still does not.
+    expect(dialog).not.toHaveTextContent(MEMBER_UUID)
+  })
+
+  it('names the member being removed by its first identifier when the display name is empty', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, {
+      getAccount: () =>
+        Promise.resolve(
+          accountFixture({
+            id: MEMBER_UUID,
+            display_name: '',
+            identifiers: [
+              { kind: 'username', value: 'ada', proven: true },
+              { kind: 'email', value: 'ada@example.com', proven: false },
+            ],
+          }),
+        ),
+      settled: () => screen.findByText(MEMBER_UUID),
+    })
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.members.removeMessageByIdentifier, { identifier: 'ada' }),
+      ),
+    ).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(MEMBER_UUID)
   })
 
   it('keeps the member UUID out of the removal confirmation', async () => {

@@ -32,17 +32,22 @@ import { useConsoleOperations } from '../operations.js'
 
 /**
  * The account read's outcome for one identifier, for surfaces that need the
- * readable name without rendering the unit -- a hidden annotation beside the
- * recorded value, for one. `name` is the display name when the read answers a
- * non-empty one; `refused` says the read failed for a reason other than the
- * account not existing (a permission refusal, a transport failure); and
- * `missing` says the read was answered 404 -- the account was deleted, or
- * the identifier never named an account. `gated` says the read was never
- * issued because the authn.admin feature is absent -- the identity is
- * unresolved for that reason, which is neither a refusal nor a deletion.
+ * readable identity without rendering the unit -- a hidden annotation beside the
+ * recorded value, or a confirmation that names the account, for one. `name` is
+ * the display name when the read answers a non-empty one; `identifier` is the
+ * first login identifier's value when the read carries one, so a surface can
+ * name an account that has no display name (the view sorts identifiers by kind
+ * and value, so the first is the one to name the account by); `refused` says
+ * the read failed for a reason other than the account not existing (a
+ * permission refusal, a transport failure); and `missing` says the read was
+ * answered 404 -- the account was deleted, or the identifier never named an
+ * account. `gated` says the read was never issued because the authn.admin
+ * feature is absent -- the identity is unresolved for that reason, which is
+ * neither a refusal nor a deletion.
  */
 export function useAccountIdentity(account: string): {
   readonly name: string | undefined
+  readonly identifier: string | undefined
   readonly refused: boolean
   readonly missing: boolean
   readonly gated: boolean
@@ -56,6 +61,7 @@ export function useAccountIdentity(account: string): {
   const recorded = read.data?.display_name
   return {
     name: recorded !== undefined && recorded !== '' ? recorded : undefined,
+    identifier: read.data?.identifiers[0]?.value,
     refused: read.isError && !isNotFound(read.error),
     missing: isNotFound(read.error),
     gated,
