@@ -7,9 +7,11 @@
 # The ports are the ones the testdata/ stack files point at, so a service
 # brought up here is reachable at the address its configuration already names.
 #
-# The repository's own tests run against a stack of their own, declared by the
-# compose file at the repository root. That one publishes the same ports, so the
-# two cannot be up at the same time.
+# The repository's own tests no longer use this file and no longer compete for
+# these ports: `make deps-up` allocates four free loopback ports for the
+# checkout it runs in and starts the root compose file on them, so a test stack
+# and this one can be up together. Only a bare `docker compose up` against the
+# root file still publishes the defaults below, and only that collides here.
 services:
   postgres:
     image: postgres:17-alpine
