@@ -8,7 +8,7 @@
 
 `pkg` 下多个模块的用例要跑在真服务器上：PostgreSQL 用于数据库、键值与事件的 postgres 实现，Redis 用于键值与事件的 redis 实现，NATS 用于两者的 nats 实现，Memcached 用于键值模块的 memcached 实现。这些服务器都不是被测代码的一部分，而是测试环境：被测的是模块在这类后端上的行为（PostgreSQL 事务内的 DDL、Redis 的流消费组与 `SET` 的 `KEEPTTL`、JetStream 的 compare-and-swap 与拉取消费、Memcached 的 compare-and-swap），换掉后端就是换掉被测对象。
 
-约束来自两处。
+约束来自以下几条。
 
 **提交门禁必须在任何装了 Go 工具链的机器上跑。** 门禁是每次提交的判据，而 `docker` 及其 compose 插件不在 `.mise.toml` 提供的工具链里。
 
