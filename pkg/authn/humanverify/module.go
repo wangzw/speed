@@ -9,11 +9,11 @@
 //
 // The module holds no send state and sends nothing. A send checks the seam
 // before it spends anything, and the token's single-use property belongs to the
-// provider behind the seam. The off mode accepts every proof, and the
-// proof-of-work mode issues a challenge on POST /api/v1/auth/human/challenge and
-// spends it when the proof is accepted. The turnstile provider is constructed and
-// refuses a missing proof, and answers a presented proof with ErrUnavailable,
-// because its proof check is not part of this build.
+// provider behind the seam. The off mode accepts every proof, the proof-of-work
+// mode issues a challenge on POST /api/v1/auth/human/challenge and spends it
+// when the proof is accepted, and the turnstile mode posts the proof to
+// Cloudflare's siteverify endpoint and accepts it once the answer names the
+// deployment's hostname and, when configured, its action.
 package humanverify
 
 import (
@@ -28,7 +28,9 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/internal/literal"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/settings"
 )
 
@@ -74,11 +76,13 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // module does not bundle supplies its own authn.HumanVerifier and leaves this
 // module out.
 //
-// The key-value store, the settings store and the route mounter are required as
-// optional only: the off gate needs none of them, so an assembly that leaves the
-// gate off starts without them. The proof-of-work mode needs the store its
-// challenges live in and a mounter to serve the challenge route, and New or Init
-// names the missing one when the mode asks for it.
+// The key-value store, the settings store, the route mounter and logging are
+// required as optional only: the off gate needs none of them, so an assembly
+// that leaves the gate off starts without them. The proof-of-work mode needs the
+// store its challenges live in and a mounter to serve the challenge route, and
+// New or Init names the missing one when the mode asks for it. The turnstile
+// mode registers its secret as a literal redaction rule when a logging
+// capability is present.
 //
 // Prepare states StateEnabled in every mode, including the default off: a mode
 // the configuration refused stops the startup there, and a command that takes
@@ -91,6 +95,7 @@ func Module() core.Module {
 			{Token: (*kv.KV)(nil), Optional: true},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*mount.Mounter)(nil), Optional: true},
+			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
 			{Token: (*authn.HumanVerifier)(nil), Exclusive: true},
@@ -116,6 +121,11 @@ func Module() core.Module {
 			cfg, err := readConfig(reader)
 			if err != nil {
 				return nil, err
+			}
+			if cfg.Mode == ModeTurnstile {
+				if registerErr := registerSecret(reg, cfg.secretKey); registerErr != nil {
+					return nil, registerErr
+				}
 			}
 			taken, err := dependencies(cfg, reg)
 			if err != nil {
@@ -167,6 +177,25 @@ func dependencies(cfg resolved, reg *core.Registry) (deps, error) {
 		return deps{}, fmt.Errorf("%s: taking up the settings store: %w", ModuleName, err)
 	}
 	return taken, nil
+}
+
+// registerSecret registers the Turnstile secret as a literal redaction rule, so
+// it is masked wherever it turns up in a log line. A secret has no shape to
+// match, so the only thing known about it is the value. The registration runs in
+// New, before any logger binds an attribute, which is the timing a redaction
+// rule needs. With no logging capability there is no log to protect, and the
+// absence is told apart from a failed lookup by the sentinel.
+func registerSecret(reg *core.Registry, secret string) error {
+	delivered, err := core.Resolve[log.Logger](reg)
+	switch {
+	case errors.Is(err, core.ErrMissingProvider):
+		return nil
+	case err != nil:
+		return fmt.Errorf("%s: taking up the logging capability to register the Turnstile secret "+
+			"with: %w", ModuleName, err)
+	}
+	literal.Register(delivered.Redaction(), ModuleName+"."+secretKeyItem, secret)
+	return nil
 }
 
 // readerOf takes up the configuration reader. Its absence is the host's omission

@@ -23,24 +23,53 @@ with `authn.ErrInvalidConfig` naming `authn.humanverify.mode`:
 |---|---|---|---|
 | `off` (default) | the gate is open | false | accepts every proof |
 | `pow` | the self-hosted proof of work | true | `pkg/authn/humanverify/pow` |
-| `turnstile` | Cloudflare Turnstile | true | not part of this build |
+| `turnstile` | Cloudflare Turnstile | true | `pkg/authn/humanverify/turnstile` |
 
 The `off` gate accepts every proof, an empty one included, and reports an empty
 site key. It is the mode an assembly runs when it takes the module in and leaves
 the item out. It needs no key-value store, no settings store and no route
 mounter.
 
-The `turnstile` provider is constructed and reports its name, but its proof
-check is not part of this build. It refuses a missing proof with
-`authn.ErrHumanVerificationRequired` — that half of the contract does not depend
-on the mechanism — and answers a presented proof with `authn.ErrUnavailable`.
-The direction is closed on purpose: an enabled deployment sends nothing rather
-than accepting a token nobody examined. It has no site key in this build.
+The `turnstile` mode needs a site key, a secret key and the expected hostname.
+A command that names the mode without any of them fails the startup with
+`authn.ErrInvalidConfig` naming the absent item. The provider posts the proof to
+Cloudflare's siteverify endpoint and judges the answer; see below.
 
 The `pow` mode needs the key-value store its challenges live in and the route
 mounter that serves the challenge route. A command that names the mode without
 either fails the startup with `authn.ErrInvalidConfig` naming what is absent, in
 `New` for the store and in `Init` for the mounter.
+
+## Cloudflare Turnstile
+
+The provider posts `secret`, `response` and, when the send names one,
+`remoteip` to the configured siteverify endpoint and reads the answer. It
+accepts the proof only when `success` is true, the answer's `hostname` equals
+the expected hostname (case-insensitively), and — when an action is configured —
+the answer's `action` equals it.
+
+The failures answer as the seam's three cases:
+
+- `success` false — the duplicate and timeout codes included, so a replayed
+  token is refused — is `authn.ErrHumanVerificationRequired` (403). The
+  provider's `error-codes` are logged at Warn with the request's logger and
+  never reach the client or the returned error.
+- A non-2xx status, a transport failure, a body that is not the provider's
+  response, or an answer accepted for another hostname or action is
+  `authn.ErrUnavailable` (503): the proof was not judged, so nothing is sent.
+- An empty token is `authn.ErrHumanVerificationRequired`; a token longer than
+  4096 bytes is `authn.ErrInvalidArgument` (400). Neither reaches the network.
+
+The whole call — connection, request and answer — is bounded by the provider's
+timeout. The call goes through the restricted egress client
+(`pkg/authn/internal/egress`), so it speaks https to a public address only. The
+secret is registered with the logging capability as a literal redaction rule in
+`New`; an assembly with no logging capability has nothing to register it with
+and still starts.
+
+The site key is public: `SiteKey()` reports it so a client-side widget can be
+rendered. The secret and the token are credentials and never reach a log line,
+an error text, an event or a metric.
 
 ## The proof of work
 
@@ -89,10 +118,24 @@ decimal digits.
 
 ## Configuration
 
-One input item, under the module's own namespace:
+Input items under the module's own namespace:
 
 - `mode` — `off`, `pow` or `turnstile`; `off` when absent. A section that omits
   it runs the gate off; a section that misspells it stops the startup.
+
+The `turnstile` mode reads these, and judges them only in that mode:
+
+- `site-key` — the public widget key; required in this mode.
+- `secret-key` — the secret that authenticates siteverify; required in this mode,
+  sensitive, and registered as a literal redaction rule.
+- `hostname` — the hostname the widget must have run on; required in this mode.
+- `verify-url` — the siteverify endpoint; default
+  `https://challenges.cloudflare.com/turnstile/v0/siteverify`, and an absolute
+  https URL.
+- `action` — the action the widget was rendered with; optional, empty accepts
+  any.
+- `timeout` — the whole time one verification may take; default 10s, domain 1s
+  to 30s.
 
 The proof-of-work mode reads two settings under `authn.humanverify.pow`:
 

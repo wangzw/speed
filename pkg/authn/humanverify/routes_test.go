@@ -24,7 +24,7 @@ const challengeFullPath = "/api/v1/auth/human/challenge"
 func TestTheChallengeRouteExistsOnlyInTheProofOfWorkMode(t *testing.T) {
 	for _, mode := range []string{ModeOff, ModePoW, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
-			rig := newRig(t, body(t, map[string]any{"mode": mode}))
+			rig := newRig(t, body(t, sectionFor(mode)))
 			rig.drive(t)
 			registration, present := rig.mounter.Registered(http.MethodPost, challengeFullPath)
 			if want := mode == ModePoW; present != want {

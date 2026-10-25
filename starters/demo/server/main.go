@@ -311,7 +311,8 @@ var (
 		// The human-verification gate. It runs with its mode off here, which is the
 		// product default: a send asks the seam nothing, and the challenge route the
 		// proof-of-work mode would serve is absent. A deployment turns it on by
-		// setting authn.humanverify.mode.
+		// setting authn.humanverify.mode and, for the turnstile mode, its site key,
+		// secret and expected hostname.
 		humanverify.ModuleName,
 
 		// Tenancy, the journal, the authorization layer, the limiter and settings.

@@ -96,6 +96,16 @@ func driveVerifier(t *testing.T, document string) authn.HumanVerifier {
 	return newRig(t, document).drive(t)
 }
 
+// sectionFor is the configuration a case runs a mode on: the credentials the
+// Turnstile provider needs, and the mode alone for the mechanisms that need
+// none.
+func sectionFor(mode string) map[string]any {
+	if mode == ModeTurnstile {
+		return turnstileSection()
+	}
+	return map[string]any{"mode": mode}
+}
+
 // The off gate requires nothing and accepts any proof, an empty one included,
 // so a deployment that leaves it off behaves as though the gate were absent.
 func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
@@ -125,7 +135,7 @@ func TestTheOffProviderRequiresNothingAndAcceptsAnyProof(t *testing.T) {
 func TestEveryModeBuildsAProviderThatReportsIt(t *testing.T) {
 	for _, mode := range []string{ModeOff, ModePoW, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
-			v := driveVerifier(t, body(t, map[string]any{"mode": mode}))
+			v := driveVerifier(t, body(t, sectionFor(mode)))
 			if got := v.Provider(); got != mode {
 				t.Errorf("the verifier reports %q, want %q", got, mode)
 			}
@@ -136,12 +146,21 @@ func TestEveryModeBuildsAProviderThatReportsIt(t *testing.T) {
 	}
 }
 
+// The Turnstile provider reports the public site key a client renders its
+// widget with, so the surface can answer with it.
+func TestTurnstileReportsItsSiteKey(t *testing.T) {
+	v := driveVerifier(t, body(t, turnstileSection()))
+	if got, want := v.SiteKey(), "1x00000000000000000000AA"; got != want {
+		t.Errorf("SiteKey = %q, want %q", got, want)
+	}
+}
+
 // A gate that requires a proof refuses a request that presents none, whatever
 // the mechanism, and that refusal is the 403 answer rather than an outage.
 func TestAVerifyingModeRefusesAnEmptyProof(t *testing.T) {
 	for _, mode := range []string{ModePoW, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
-			v := driveVerifier(t, body(t, map[string]any{"mode": mode}))
+			v := driveVerifier(t, body(t, sectionFor(mode)))
 			err := v.Verify(t.Context(), authn.HumanProof{})
 			if !errors.Is(err, authn.ErrHumanVerificationRequired) {
 				t.Fatalf("an empty proof resolved with %v, want ErrHumanVerificationRequired", err)
@@ -153,18 +172,14 @@ func TestAVerifyingModeRefusesAnEmptyProof(t *testing.T) {
 	}
 }
 
-// A mechanism whose proof check is not in this build fails closed: a presented
-// proof is an outage, never an acceptance, so an enabled deployment sends
-// nothing rather than trusting a token nobody examined. The proof-of-work mode
-// has its check now, so this is the Turnstile mode's answer.
-func TestTurnstileWithoutItsCheckFailsClosed(t *testing.T) {
-	v := driveVerifier(t, body(t, map[string]any{"mode": ModeTurnstile}))
-	err := v.Verify(t.Context(), authn.HumanProof{Token: "a token"})
-	if !errors.Is(err, authn.ErrUnavailable) {
-		t.Fatalf("a presented proof resolved with %v, want ErrUnavailable", err)
-	}
-	if errors.Is(err, authn.ErrHumanVerificationRequired) {
-		t.Errorf("a presented proof reads as an invalid one: %v", err)
+// A deployment that names the Turnstile mode without the items its provider
+// needs fails the startup where the configuration is read. It does not come up
+// with a gate that cannot check a proof and send anyway.
+func TestTurnstileWithoutItsCredentialsFailsTheStartup(t *testing.T) {
+	reg := registryWithReader(t, body(t, map[string]any{"mode": ModeTurnstile}))
+	_, err := Module().Prepare(t.Context(), reg)
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("a Turnstile mode without credentials resolved with %v, want ErrInvalidConfig", err)
 	}
 }
 
@@ -186,7 +201,7 @@ func TestProofOfWorkRefusesAnInvalidProofAsAProofFailure(t *testing.T) {
 func TestPrepareStatesEnabledForEveryMode(t *testing.T) {
 	for _, mode := range []string{ModeOff, ModePoW, ModeTurnstile} {
 		t.Run(mode, func(t *testing.T) {
-			reg := registryWithReader(t, body(t, map[string]any{"mode": mode}))
+			reg := registryWithReader(t, body(t, sectionFor(mode)))
 			got, err := Module().Prepare(t.Context(), reg)
 			if err != nil {
 				t.Fatalf("Prepare: %v", err)
