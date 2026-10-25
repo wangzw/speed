@@ -12,8 +12,10 @@
 // The code, the recipient and the message bodies reach no log line, no error
 // text and no metric. Each send is logged once with its outcome, the carrier's
 // receipt and its duration, so a failed or silently dropped delivery can be
-// traced; a carrier failure is passed through exactly as the mail capability
-// classified it, so the caller answers one 503 whatever happened.
+// traced; a carrier failure is passed through as the mail capability classified
+// it, with an uncertain one also wrapped in authn.ErrEmailUncertain, so the
+// caller answers one 503 whatever happened and can still tell whether the message
+// may have left.
 package emailcode
 
 import (
@@ -148,13 +150,33 @@ func (p *product) SendCode(ctx context.Context, to, code string, ttl time.Durati
 			"provider_id", receipt.ProviderID,
 			"duration_ms", elapsed,
 			"cause", err.Error())
-		return err
+		return publishUncertain(err)
 	}
 	logger.Info(ModuleName+": a verification code was sent",
 		"outcome", "sent",
 		"provider_id", receipt.ProviderID,
 		"duration_ms", elapsed)
 	return nil
+}
+
+// publishUncertain wraps a mail failure whose delivery is not known in
+// authn.ErrEmailUncertain, which is the seam's own word for that class. Every
+// other failure is returned as it stands: a throttled call and a refused message
+// both certify that nothing was handed to the carrier.
+func publishUncertain(err error) error {
+	if errors.Is(err, mail.ErrUncertain) {
+		return fmt.Errorf("%w: %w", authn.ErrEmailUncertain, err)
+	}
+	return err
+}
+
+// CertifiesNotSent reports whether err certifies that no message was handed to
+// the carrier. The mail capability's two definite failures do; an uncertain one,
+// and any error it did not classify, does not. The login module reads this
+// through its own optional interface, so a sender that does not publish it is
+// treated as uncertain and keeps the budget its attempt reserved.
+func (*product) CertifiesNotSent(err error) bool {
+	return errors.Is(err, mail.ErrThrottled) || errors.Is(err, mail.ErrRejected)
 }
 
 // outcomeOf names the carrier answer the mail capability classified, so a

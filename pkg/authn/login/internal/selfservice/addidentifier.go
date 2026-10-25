@@ -11,11 +11,14 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/budgetalias"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
@@ -58,19 +61,20 @@ const (
 	emailAttemptKeyPrefix = "authn:email-attempts:"
 
 	// emailResendKeyPrefix starts the key of an address's resend window. The
-	// rest of the key is the SHA-256 of the address's normalized form, so the
-	// window is held against the address and shared across sessions and accounts:
-	// a second session cannot turn the route into a flood of messages to one
-	// address.
+	// rest of the key is the SHA-256 of the address's budget form, so the window
+	// is held against the inbox and shared across sessions and accounts: a second
+	// session cannot turn the route into a flood of messages to one address, and
+	// two writings of one inbox meet the same window.
 	emailResendKeyPrefix = "authn:email-resend:"
 
-	// The prefixes of the email verification code budgets: one counter per
-	// address per hour, one per address per day, one per account per hour and one
-	// for the whole deployment per hour. They are keys of their own rather than
-	// fields of the pending record, so each is advanced by the store's atomic
-	// increment and no read-modify-write can lose a count.
+	// The prefixes of the email verification code budgets: per inbox per hour and
+	// per day, per account per hour and per UTC day, per request source per hour
+	// and per UTC day, and one for the whole deployment per hour. They are keys of
+	// their own rather than fields of the pending record, so each is advanced by
+	// the store's atomic increment and no read-modify-write can lose a count.
 	emailAddressBudgetPrefix = "authn:email-address:"
 	emailAccountBudgetPrefix = "authn:email-account:"
+	emailSourceBudgetPrefix  = "authn:email-source:"
 	emailGlobalBudgetPrefix  = "authn:email-global:"
 )
 
@@ -120,30 +124,63 @@ func emailAttemptKey(codeDigest string) string {
 }
 
 // emailResendKey is the resend-window key of an address: the SHA-256 of its
-// normalized form, shared across the sessions and accounts that name it.
+// budget form, shared across the sessions and accounts that name it. The budget
+// form is what makes two writings of one inbox meet the same window; the address
+// the code is sent to is the normalized one, untouched by this folding.
 func emailResendKey(email string) string {
-	sum := sha256.Sum256([]byte(email))
+	sum := sha256.Sum256([]byte(budgetalias.Canonical(email)))
 	return emailResendKeyPrefix + hex.EncodeToString(sum[:])
 }
 
 // emailAddressHourlyKey is an address's hourly budget key for the window now
-// falls in. The address is digested, so the store carries no address in the
-// clear, exactly as the resend window does.
+// falls in. The address's budget form is digested, so the store carries no
+// address in the clear, exactly as the resend window does, and its alias writings
+// share the count.
 func emailAddressHourlyKey(email string, now time.Time) string {
-	sum := sha256.Sum256([]byte(email))
+	sum := sha256.Sum256([]byte(budgetalias.Canonical(email)))
 	return emailAddressBudgetPrefix + hex.EncodeToString(sum[:]) + ":h:" + now.UTC().Format(emailHourLayout)
 }
 
-// emailAddressDailyKey is an address's daily budget key for the window now falls
-// in.
+// emailAddressDailyKey is an address's daily budget key for the fixed UTC day now
+// falls in.
 func emailAddressDailyKey(email string, now time.Time) string {
-	sum := sha256.Sum256([]byte(email))
+	sum := sha256.Sum256([]byte(budgetalias.Canonical(email)))
 	return emailAddressBudgetPrefix + hex.EncodeToString(sum[:]) + ":d:" + now.UTC().Format(emailDayLayout)
 }
 
 // emailAccountHourlyKey is an account's hourly budget key.
 func emailAccountHourlyKey(account authn.AccountID, now time.Time) string {
-	return emailAccountBudgetPrefix + string(account) + ":" + now.UTC().Format(emailHourLayout)
+	return emailAccountBudgetPrefix + string(account) + ":h:" + now.UTC().Format(emailHourLayout)
+}
+
+// emailAccountDailyKey is an account's daily budget key for the fixed UTC day.
+func emailAccountDailyKey(account authn.AccountID, now time.Time) string {
+	return emailAccountBudgetPrefix + string(account) + ":d:" + now.UTC().Format(emailDayLayout)
+}
+
+// canonicalSource is the address a source budget is counted against. The address
+// is normalized through netip first, so two spellings of one address share a
+// budget; one that does not parse is digested as it stands, because a request
+// whose origin the deployment resolves in an unexpected shape still counts.
+func canonicalSource(source string) string {
+	if addr, err := netip.ParseAddr(source); err == nil {
+		return addr.String()
+	}
+	return source
+}
+
+// emailSourceHourlyKey is a request source's hourly budget key. The normalized
+// address is digested, so the store carries no source address in the clear.
+func emailSourceHourlyKey(source string, now time.Time) string {
+	sum := sha256.Sum256([]byte(canonicalSource(source)))
+	return emailSourceBudgetPrefix + hex.EncodeToString(sum[:]) + ":h:" + now.UTC().Format(emailHourLayout)
+}
+
+// emailSourceDailyKey is a request source's daily budget key for the fixed UTC
+// day.
+func emailSourceDailyKey(source string, now time.Time) string {
+	sum := sha256.Sum256([]byte(canonicalSource(source)))
+	return emailSourceBudgetPrefix + hex.EncodeToString(sum[:]) + ":d:" + now.UTC().Format(emailDayLayout)
 }
 
 // emailGlobalHourlyKey is the deployment-wide hourly budget key.
@@ -302,13 +339,15 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 		return
 	}
 
-	// The four budgets bound what one address, one account and the whole
-	// deployment may be sent. They are counted after the resend window is claimed
-	// and before a code is drawn, so a request that never sends spends none of
-	// them; a counter that cannot be advanced releases the claim and answers 503,
-	// because these budgets are the only bound on messages to an address and a
-	// skipped count would leave none.
-	if !r.emailBudgetsAllow(c, now, email, who.account) {
+	// The budgets bound what one inbox, one account, one request source and the
+	// whole deployment may be sent. They are counted after the resend window is
+	// claimed and before a code is drawn, so a request that never sends spends
+	// none of them, and a refusal gives back every count it took. A counter that
+	// cannot be advanced releases the claim and answers 503, because these budgets
+	// are the only bound on messages to an address and a skipped count would leave
+	// none.
+	reserved, ok := r.reserveEmailBudgets(c, now, email, who.account, c.clientIP)
+	if !ok {
 		r.releaseResend(c.ctx, resendKey)
 		return
 	}
@@ -317,13 +356,20 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	if err != nil {
 		logWarn(c.ctx, "an email verification code could not be drawn", err)
 		r.releaseResend(c.ctx, resendKey)
+		r.refundEmailBudgets(c.ctx, reserved)
 		c.unavailable()
 		return
 	}
 	if err = r.deps.EmailSender.SendCode(c.ctx, email, code, ttl, smsLocale(c.ctx)); err != nil {
-		// The message did not leave, so the address is not held to the interval:
-		// the claim is given back and the caller may ask again at once.
+		// No code was recorded, so the address is not held to the interval: the
+		// claim is given back and the caller may ask again at once. The budget is
+		// another matter: a failure that certifies nothing was sent gives back what
+		// the attempt reserved, while an uncertain one keeps it, because the
+		// message may have gone out.
 		r.releaseResend(c.ctx, resendKey)
+		if r.emailCertifiesNotSent(err) {
+			r.refundEmailBudgets(c.ctx, reserved)
+		}
 		r.fail(c, err)
 		return
 	}
@@ -387,22 +433,52 @@ func (r *routes) emailTakenByAnother(ctx context.Context, email string, who auth
 	return ok && authn.AccountID(reserved) != who, nil
 }
 
-// emailBudgetsAllow counts one send against the email budgets and reports
-// whether every one of them admits it.
+// emailBudget is one dimension of the email send budget: where its count lives,
+// how many sends it admits and the window the count falls in.
+type emailBudget struct {
+	name   string
+	key    string
+	limit  int
+	bucket time.Duration
+}
+
+// notSentCertifier is a channel that can certify a failed send left no message
+// behind. The bundled channel publishes it; a sender that does not is treated as
+// uncertain, so its failures keep the budget the attempt reserved.
+type notSentCertifier interface {
+	CertifiesNotSent(err error) bool
+}
+
+// emailCertifiesNotSent reports whether a failed send certifies that no message
+// left. An error wrapping ErrEmailUncertain is never certified; beyond that, only
+// a channel that publishes the classification is believed. Every other sender,
+// and every error the channel did not certify, counts as uncertain.
+func (r *routes) emailCertifiesNotSent(err error) bool {
+	if errors.Is(err, authn.ErrEmailUncertain) {
+		return false
+	}
+	certifier, ok := r.deps.EmailSender.(notSentCertifier)
+	return ok && certifier.CertifiesNotSent(err)
+}
+
+// reserveEmailBudgets counts one send against the email budgets and reports
+// whether every one of them admits it, returning the keys it took.
 //
-// The order is the narrowest bound first: hour per address, day per address,
-// hour per account, hour for the deployment. Each is one atomic increment on a
-// key of its own window, and a count past its limit is the 429 the caller
-// answers with the time left of that window. A counter that cannot be advanced
-// is a 503 and no send: the failure document's direction for a dependency that
-// cannot answer, and the only bound there is on messages to an address.
-func (r *routes) emailBudgetsAllow(c *call, now time.Time, email string, account authn.AccountID) bool {
-	budgets := []struct {
-		name   string
-		key    string
-		limit  int
-		bucket time.Duration
-	}{
+// The order is the narrowest bound first: hour and day per inbox, hour and day
+// per account, hour and day per request source, hour for the deployment. Each is
+// one atomic increment on a key of its own window. A count past its limit is the
+// 429 the caller answers with the time left of that window, and a counter that
+// cannot be advanced is a 503 and no send: the failure document's direction for a
+// dependency that cannot answer, and the only bound there is on messages to an
+// address.
+//
+// Either way the request sends nothing, so every key it took is given back
+// before the answer. The source dimensions run only when the request carries an
+// address; an empty source is fail-open, because folding every origin-less send
+// into one key would make the budget fail-closed on a deployment that cannot
+// resolve an address.
+func (r *routes) reserveEmailBudgets(c *call, now time.Time, email string, account authn.AccountID, source string) ([]string, bool) {
+	budgets := []emailBudget{
 		{
 			"per-address hourly", emailAddressHourlyKey(email, now),
 			r.budgets.get(c.ctx, keyEmailPerAddressHourly,
@@ -422,12 +498,36 @@ func (r *routes) emailBudgetsAllow(c *call, now time.Time, email string, account
 			emailHourBucket,
 		},
 		{
-			"global hourly", emailGlobalHourlyKey(now),
-			r.budgets.get(c.ctx, keyEmailGlobalHourly,
-				defaultEmailGlobalHourly, minEmailGlobalHourly, maxEmailGlobalHourly),
-			emailHourBucket,
+			"per-account daily", emailAccountDailyKey(account, now),
+			r.budgets.get(c.ctx, keyEmailPerAccountDaily,
+				defaultEmailPerAccountDaily, minEmailPerAccountDaily, maxEmailPerAccountDaily),
+			emailDayBucket,
 		},
 	}
+	if source != "" {
+		budgets = append(budgets,
+			emailBudget{
+				"per-source hourly", emailSourceHourlyKey(source, now),
+				r.budgets.get(c.ctx, keyEmailPerSourceHourly,
+					defaultEmailPerSourceHourly, minEmailPerSourceHourly, maxEmailPerSourceHourly),
+				emailHourBucket,
+			},
+			emailBudget{
+				"per-source daily", emailSourceDailyKey(source, now),
+				r.budgets.get(c.ctx, keyEmailPerSourceDaily,
+					defaultEmailPerSourceDaily, minEmailPerSourceDaily, maxEmailPerSourceDaily),
+				emailDayBucket,
+			},
+		)
+	}
+	budgets = append(budgets, emailBudget{
+		"global hourly", emailGlobalHourlyKey(now),
+		r.budgets.get(c.ctx, keyEmailGlobalHourly,
+			defaultEmailGlobalHourly, minEmailGlobalHourly, maxEmailGlobalHourly),
+		emailHourBucket,
+	})
+
+	taken := make([]string, 0, len(budgets))
 	for _, budget := range budgets {
 		if budget.limit <= 0 {
 			continue
@@ -436,15 +536,66 @@ func (r *routes) emailBudgetsAllow(c *call, now time.Time, email string, account
 		if err != nil {
 			logWarn(c.ctx, "the "+budget.name+" budget of an email verification code cannot be counted, so the "+
 				"address is not sent to", err)
+			r.refundEmailBudgets(c.ctx, taken)
 			c.unavailable()
-			return false
+			return nil, false
 		}
+		taken = append(taken, budget.key)
 		if count > float64(budget.limit) {
+			r.refundEmailBudgets(c.ctx, taken)
 			c.throttled(untilNextEmailBucket(now, budget.bucket))
-			return false
+			return nil, false
 		}
 	}
-	return true
+	return taken, true
+}
+
+// refundEmailBudgetAttempts bounds how often a refund re-reads a count another
+// writer changed between its read and its swap. Each attempt that loses saw a
+// spendable count, so the retry is a real attempt and not a spin.
+const refundEmailBudgetAttempts = 3
+
+// refundEmailBudgets gives back one count on each key the request took. Each is a
+// read followed by a compare-and-swap, never a negative increment: a window that
+// has expired by the time the send falls over has no key left to give back, and
+// an increment would recreate it and mint a send in the current window. A swap
+// that loses a race is judged again against what the other writer left.
+func (r *routes) refundEmailBudgets(ctx context.Context, keys []string) {
+	for _, key := range keys {
+		r.refundEmailBudget(ctx, key)
+	}
+}
+
+// refundEmailBudget gives one count back on one key.
+func (r *routes) refundEmailBudget(ctx context.Context, key string) {
+	for attempt := 0; attempt < refundEmailBudgetAttempts; attempt++ {
+		raw, present, err := r.deps.KV.Get(ctx, key)
+		if err != nil {
+			logWarn(ctx, "an email budget count cannot be read back, so it stays spent", err)
+			return
+		}
+		if !present {
+			return
+		}
+		current, err := strconv.ParseFloat(string(raw), 64)
+		if err != nil {
+			logWarn(ctx, "an email budget count is not a number, so it stays spent", err)
+			return
+		}
+		if current <= 0 {
+			return
+		}
+		swapped, err := r.deps.KV.CompareAndSwap(ctx, key, raw,
+			[]byte(strconv.FormatFloat(current-1, 'g', -1, 64)))
+		if err != nil {
+			logWarn(ctx, "an email budget count cannot be given back, so it stays spent", err)
+			return
+		}
+		if swapped {
+			return
+		}
+	}
+	logWarn(ctx, "an email budget count changed under every refund attempt, so it stays spent", nil)
 }
 
 // untilNextEmailBucket is how long the window a count fell into has left: the

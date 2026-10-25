@@ -1,6 +1,7 @@
 package selfservice_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -310,11 +311,14 @@ type sendEmailCall struct {
 }
 
 // fakeEmail stands in for the email code channel. It records the messages it was
-// handed and fails on demand.
+// handed and fails on demand. certain says whether the failure it answers
+// certifies that no message left the process, which is the classification the
+// bundled channel publishes and a custom sender does not.
 type fakeEmail struct {
-	log  *callLog
-	sent []sendEmailCall
-	err  error
+	log     *callLog
+	sent    []sendEmailCall
+	err     error
+	certain bool
 }
 
 func (f *fakeEmail) SendCode(_ context.Context, to, code string, ttl time.Duration, locale string) error {
@@ -322,6 +326,11 @@ func (f *fakeEmail) SendCode(_ context.Context, to, code string, ttl time.Durati
 	f.sent = append(f.sent, sendEmailCall{to: to, code: code, locale: locale, ttl: ttl})
 	return f.err
 }
+
+// CertifiesNotSent is the classification a channel may publish: whether the
+// failure certifies that nothing was handed to a carrier. A fake that does not
+// stand behind its error answers false, which is the uncertain side.
+func (f *fakeEmail) CertifiesNotSent(error) bool { return f.certain }
 
 // fakeKV is an in-memory kv.KV that keeps the expiry each key was stored with,
 // honours that expiry against the harness clock, and fails on demand. The
@@ -339,6 +348,9 @@ type fakeKV struct {
 	// incrErr fails the atomic increment alone, so a case can make the budgets
 	// unreadable while the resend claim and the pending record still work.
 	incrErr error
+	// casErr fails the compare-and-swap alone, so a case can make a refund
+	// fail while the reads around it still work.
+	casErr  error
 	sets    int
 	deletes int
 }
@@ -465,8 +477,28 @@ func (f *fakeKV) IncrByFloatWithTTL(_ context.Context, key string, delta float64
 	return current, nil
 }
 
-func (f *fakeKV) CompareAndSwap(context.Context, string, []byte, []byte) (bool, error) {
-	return false, errUnused
+// CompareAndSwap replaces the value only when it still equals old, and never
+// changes the expiry. A missing key matches an empty old and is created without
+// one, which is the interface's rule.
+func (f *fakeKV) CompareAndSwap(_ context.Context, key string, old, newVal []byte) (bool, error) {
+	f.log.add("kv.CompareAndSwap")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.casErr != nil {
+		return false, f.casErr
+	}
+	if !f.alive(key) {
+		if len(old) != 0 {
+			return false, nil
+		}
+		f.store(key, newVal, 0)
+		return true, nil
+	}
+	if !bytes.Equal(f.values[key], old) {
+		return false, nil
+	}
+	f.values[key] = append([]byte(nil), newVal...)
+	return true, nil
 }
 
 func (f *fakeKV) SetIfAbsent(_ context.Context, key string, value []byte, ttl time.Duration) (bool, error) {

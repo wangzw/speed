@@ -41,7 +41,7 @@ const (
 	minEmailResendInterval     = 30 * time.Second
 	maxEmailResendInterval     = 10 * time.Minute
 
-	// The four email verification code budgets. authn.login declares them and
+	// The email verification code budgets. authn.login declares them and
 	// this package reads them into the domains the declaring module states.
 	keyEmailPerAddressHourly     = "authn.login.email-per-address-hourly"
 	defaultEmailPerAddressHourly = 5
@@ -57,6 +57,21 @@ const (
 	defaultEmailPerAccountHourly = 10
 	minEmailPerAccountHourly     = 1
 	maxEmailPerAccountHourly     = 60
+
+	keyEmailPerAccountDaily     = "authn.login.email-per-account-daily"
+	defaultEmailPerAccountDaily = 100
+	minEmailPerAccountDaily     = 1
+	maxEmailPerAccountDaily     = 1000
+
+	keyEmailPerSourceHourly     = "authn.login.email-per-source-hourly"
+	defaultEmailPerSourceHourly = 30
+	minEmailPerSourceHourly     = 1
+	maxEmailPerSourceHourly     = 10000
+
+	keyEmailPerSourceDaily     = "authn.login.email-per-source-daily"
+	defaultEmailPerSourceDaily = 100
+	minEmailPerSourceDaily     = 1
+	maxEmailPerSourceDaily     = 100000
 
 	keyEmailGlobalHourly     = "authn.login.email-global-hourly"
 	defaultEmailGlobalHourly = 300

@@ -27,10 +27,15 @@ the seam does.
   duration; the line carries neither the code nor the address nor the message.
   The error a caller receives is the carrier's and carries no code. A test pins
   the two paths that could leak it and the two outcome lines.
-- **A carrier error is passed through exactly as classified.** `mail.ErrThrottled`,
-  `mail.ErrRejected` and `mail.ErrUncertain` reach the caller unchanged, and the
-  caller collapses all of them into one 503 so a client cannot tell whether the
-  message left. This package adds no sentinel of its own.
+- **A carrier error is passed through as classified, and uncertainty is named.**
+  `mail.ErrThrottled` and `mail.ErrRejected` reach the caller unchanged; a
+  `mail.ErrUncertain` reaches it wrapped in `authn.ErrEmailUncertain`, with the
+  mail sentinel still inside. The caller collapses all of them into one 503 so a
+  client cannot tell whether the message left. `CertifiesNotSent` publishes the
+  other half of that classification: it reports true only for the two definite
+  failures, and the caller reads it to decide whether a failed send gives back the
+  budget its attempt reserved. A sender that does not publish it is treated as
+  uncertain.
 - **The messages are checked at startup, not at the first request.** `New`
   renders every message in every locale the embedded catalog carries and fails
   with the missing key and locale when one is absent, so a catalog edited badly

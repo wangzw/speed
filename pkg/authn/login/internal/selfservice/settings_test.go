@@ -32,7 +32,10 @@ func logLines(h *harness, needles ...string) int {
 // wideBudgets leaves only the budget under test in the way of a send.
 func wideBudgets() map[string]int {
 	return map[string]int{
-		budgetAddressHourly: 60, budgetAddressDaily: 200, budgetAccountHourly: 60, budgetGlobalHourly: 1000,
+		budgetAddressHourly: 60, budgetAddressDaily: 200,
+		budgetAccountHourly: 60, budgetAccountDaily: 1000,
+		budgetSourceHourly: 30, budgetSourceDaily: 100,
+		budgetGlobalHourly: 1000,
 	}
 }
 

@@ -106,26 +106,41 @@ does.
   bucket that cannot be written answers `503`, because it is the only bound on an
   open registration. The route reads no cookie, keeps no flow record, makes no
   session and sends no email.
-- **The email branch declares four budgets and refuses an address another
-  account holds.** `authn.login.email-per-address-hourly`,
-  `email-per-address-daily`, `email-per-account-hourly` and
-  `email-global-hourly` are declared here (`config.go`) and read by the
-  self-service package through the settings store; the code lifetime and resend
-  interval are declared the same way. Each send is one atomic increment in a
-  fixed window of its own, and a count past its limit is a 429 `throttled` with
+- **The email branch declares its budgets and refuses an address another account
+  holds.** `authn.login.email-per-address-hourly`,
+  `email-per-address-daily`, `email-per-account-hourly`,
+  `email-per-account-daily`, `email-per-source-hourly`,
+  `email-per-source-daily` and `email-global-hourly` are declared here
+  (`config.go`) and read by the self-service package through the settings store;
+  the code lifetime and resend interval are declared the same way. Each send is
+  one atomic increment in a fixed window of its own — an hour, or a fixed UTC day
+  for the daily dimensions — and a count past its limit is a 429 `throttled` with
   the `Retry-After` that ends that window. A counter that cannot be advanced is
   a 503 and no send: the budgets are the only bound on messages to an address,
-  so none of them is skipped. Before any window is claimed the branch reads
-  `Accounts.Lookup` and `SignupVerification.PendingAccountByContact`; an address
-  another account holds as a proved identifier or as an unproved reservation is
-  answered `409 email-taken`, with no message, no resend window and no budget
-  spent. A read that fails is a 503, never "nobody holds it". The verify route
-  answers a missing record under the same login-failed code as a wrong code; a
-  conflict at the identifier write, where another account took the address after
-  the code went out, is `409 email-taken` as well. Proving an address the account
-  already holds as an unproved identifier brings that row up to proved in place,
-  so re-adding the account's own address after its code comes back succeeds
-  rather than conflicting.
+  so none of them is skipped. The source dimensions are applied only when the
+  request carries an address; an empty source is fail-open. The increments are
+  not one atomic step, so the branch reserves before it sends: a refusal
+  gives back every count this request took, and a send failure gives them back
+  only when the channel certifies that no message left (`CertifiesNotSent`); an
+  uncertain failure keeps them. Refunds read and compare-and-swap, never
+  increment negatively, so an expired window cannot be recreated with a free
+  slot. Address keys and the resend key are built from the budget form of the
+  address (`internal/budgetalias`): the `+` suffix is dropped for every domain,
+  and `gmail.com`/`googlemail.com` fold dots and become one domain. This form
+  changes no identifier semantics — `normalizeEmail`, `Accounts.Lookup`,
+  `PendingAccountByContact`, `AddIdentifier`, the pending record and the address
+  actually mailed all keep the accepted address. Before any window is claimed the
+  branch reads `Accounts.Lookup` and
+  `SignupVerification.PendingAccountByContact`; an address another account holds
+  as a proved identifier or as an unproved reservation is answered
+  `409 email-taken`, with no message, no resend window and no budget spent. A
+  read that fails is a 503, never "nobody holds it". The verify route answers a
+  missing record under the same login-failed code as a wrong code; a conflict at
+  the identifier write, where another account took the address after the code
+  went out, is `409 email-taken` as well. Proving an address the account already
+  holds as an unproved identifier brings that row up to proved in place, so
+  re-adding the account's own address after its code comes back succeeds rather
+  than conflicting.
 - **Removing a login identifier is refused when it would strand a password
   account.** `DELETE /auth/identifiers/:id` maps the account module's
   `ErrIdentifierRequired` to 409 `login-identifier-required`: an account holding a

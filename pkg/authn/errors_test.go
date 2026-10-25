@@ -50,6 +50,7 @@ var designSentinels = map[string]error{
 	"ErrDomainClaimed": ErrDomainClaimed, "ErrAssertionReplay": ErrAssertionReplay,
 	"ErrProviderNotFound": ErrProviderNotFound,
 	"ErrUnavailable":      ErrUnavailable, "ErrBusy": ErrBusy,
+	"ErrEmailUncertain": ErrEmailUncertain,
 }
 
 // declaredSentinels reads the Err variables the non-test files of the root

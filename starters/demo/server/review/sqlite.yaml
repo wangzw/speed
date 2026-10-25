@@ -178,15 +178,22 @@ seed:
       value: "open"
     # REVIEW: the email verification code budgets, widened so a walkthrough can
     # ask for several codes without waiting out a window. They stay inside the
-    # domains authn.login declares (1-60 an hour and 1-200 a day per address, 1-60
-    # an hour per account, 1-1000000 an hour for the deployment), and the resend
-    # interval is lowered to its floor so a person can ask again quickly.
+    # domains authn.login declares (1-60 an hour and 1-200 a day per inbox, 1-60 an
+    # hour and 1-1000 a day per account, 1-10000 an hour and 1-100000 a day per
+    # source, 1-1000000 an hour for the deployment), and the resend interval is
+    # lowered to its floor so a person can ask again quickly.
     - key: "authn.login.email-per-address-hourly"
       value: "60"
     - key: "authn.login.email-per-address-daily"
       value: "200"
     - key: "authn.login.email-per-account-hourly"
       value: "60"
+    - key: "authn.login.email-per-account-daily"
+      value: "1000"
+    - key: "authn.login.email-per-source-hourly"
+      value: "10000"
+    - key: "authn.login.email-per-source-daily"
+      value: "100000"
     - key: "authn.login.email-global-hourly"
       value: "1000"
     - key: "authn.login.email-resend-interval"

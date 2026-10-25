@@ -60,6 +60,18 @@ func TestTheEmailBudgetDomainsAdmitTheirBounds(t *testing.T) {
 			minEmailPerAccountHourly, maxEmailPerAccountHourly, defaults.EmailPerAccountHourly,
 		},
 		{
+			"email-per-account-daily", emailPerAccountDailyInDomain,
+			minEmailPerAccountDaily, maxEmailPerAccountDaily, defaults.EmailPerAccountDaily,
+		},
+		{
+			"email-per-source-hourly", emailPerSourceHourlyInDomain,
+			minEmailPerSourceHourly, maxEmailPerSourceHourly, defaults.EmailPerSourceHourly,
+		},
+		{
+			"email-per-source-daily", emailPerSourceDailyInDomain,
+			minEmailPerSourceDaily, maxEmailPerSourceDaily, defaults.EmailPerSourceDaily,
+		},
+		{
 			"email-global-hourly", emailGlobalHourlyInDomain,
 			minEmailGlobalHourly, maxEmailGlobalHourly, defaults.EmailGlobalHourly,
 		},
@@ -77,10 +89,13 @@ func TestTheEmailBudgetDomainsAdmitTheirBounds(t *testing.T) {
 	// The declared defaults are the design's table; a change here is a change of
 	// the contract, so the numbers are pinned rather than only checked in-domain.
 	if defaults.EmailPerAddressHourly != 5 || defaults.EmailPerAddressDaily != 10 ||
-		defaults.EmailPerAccountHourly != 10 || defaults.EmailGlobalHourly != 300 {
-		t.Errorf("the email budgets default to %d/%d/%d/%d, want 5/10/10/300",
+		defaults.EmailPerAccountHourly != 10 || defaults.EmailPerAccountDaily != 100 ||
+		defaults.EmailPerSourceHourly != 30 || defaults.EmailPerSourceDaily != 100 ||
+		defaults.EmailGlobalHourly != 300 {
+		t.Errorf("the email budgets default to %d/%d/%d/%d/%d/%d/%d, want 5/10/10/100/30/100/300",
 			defaults.EmailPerAddressHourly, defaults.EmailPerAddressDaily,
-			defaults.EmailPerAccountHourly, defaults.EmailGlobalHourly)
+			defaults.EmailPerAccountHourly, defaults.EmailPerAccountDaily,
+			defaults.EmailPerSourceHourly, defaults.EmailPerSourceDaily, defaults.EmailGlobalHourly)
 	}
 }
 

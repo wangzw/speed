@@ -15,6 +15,9 @@ const (
 	budgetAddressHourly = "authn.login.email-per-address-hourly"
 	budgetAddressDaily  = "authn.login.email-per-address-daily"
 	budgetAccountHourly = "authn.login.email-per-account-hourly"
+	budgetAccountDaily  = "authn.login.email-per-account-daily"
+	budgetSourceHourly  = "authn.login.email-per-source-hourly"
+	budgetSourceDaily   = "authn.login.email-per-source-daily"
 	budgetGlobalHourly  = "authn.login.email-global-hourly"
 )
 
@@ -296,8 +299,8 @@ func TestATakenAddressSpendsNoBudget(t *testing.T) {
 	}
 }
 
-// TestEachBudgetStartsFromZeroInANewWindow holds the bucket boundary of each of
-// the four budgets: a count past its limit is refused inside the window, and the
+// TestEachBudgetStartsFromZeroInANewWindow holds the bucket boundary of each
+// budget: a count past its limit is refused inside the window, and the
 // first send of the next window is admitted because the key is a new one and the
 // count starts at zero.
 func TestEachBudgetStartsFromZeroInANewWindow(t *testing.T) {

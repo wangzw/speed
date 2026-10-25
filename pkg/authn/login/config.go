@@ -33,6 +33,9 @@ const (
 	emailPerAddressHourlyKey = "email-per-address-hourly"
 	emailPerAddressDailyKey  = "email-per-address-daily"
 	emailPerAccountHourlyKey = "email-per-account-hourly"
+	emailPerAccountDailyKey  = "email-per-account-daily"
+	emailPerSourceHourlyKey  = "email-per-source-hourly"
+	emailPerSourceDailyKey   = "email-per-source-daily"
 	emailGlobalHourlyKey     = "email-global-hourly"
 
 	disabledMethodsPath = ModuleName + "." + disabledMethodsKey
@@ -77,8 +80,9 @@ const (
 	maxEmailResend = 10 * time.Minute
 
 	// The domains of the email verification code budgets, in sends per window.
-	// The first two count a normalized address, the third the account that asked,
-	// and the last every account and address together.
+	// The first two count an inbox's budget form, the next two the account that
+	// asked, the next two the request's source address, and the last every
+	// account and address together.
 	minEmailPerAddressHourly = 1
 	maxEmailPerAddressHourly = 60
 
@@ -87,6 +91,15 @@ const (
 
 	minEmailPerAccountHourly = 1
 	maxEmailPerAccountHourly = 60
+
+	minEmailPerAccountDaily = 1
+	maxEmailPerAccountDaily = 1000
+
+	minEmailPerSourceHourly = 1
+	maxEmailPerSourceHourly = 10000
+
+	minEmailPerSourceDaily = 1
+	maxEmailPerSourceDaily = 100000
 
 	minEmailGlobalHourly = 1
 	maxEmailGlobalHourly = 1000000
@@ -154,6 +167,9 @@ type options struct {
 	EmailPerAddressHourly int `config:"email-per-address-hourly"`
 	EmailPerAddressDaily  int `config:"email-per-address-daily"`
 	EmailPerAccountHourly int `config:"email-per-account-hourly"`
+	EmailPerAccountDaily  int `config:"email-per-account-daily"`
+	EmailPerSourceHourly  int `config:"email-per-source-hourly"`
+	EmailPerSourceDaily   int `config:"email-per-source-daily"`
 	EmailGlobalHourly     int `config:"email-global-hourly"`
 }
 
@@ -174,6 +190,9 @@ var defaults = options{
 	EmailPerAddressHourly: 5,
 	EmailPerAddressDaily:  10,
 	EmailPerAccountHourly: 10,
+	EmailPerAccountDaily:  100,
+	EmailPerSourceHourly:  30,
+	EmailPerSourceDaily:   100,
 	EmailGlobalHourly:     300,
 }
 
@@ -194,6 +213,18 @@ func emailPerAddressDailyInDomain(n int) bool {
 
 func emailPerAccountHourlyInDomain(n int) bool {
 	return n >= minEmailPerAccountHourly && n <= maxEmailPerAccountHourly
+}
+
+func emailPerAccountDailyInDomain(n int) bool {
+	return n >= minEmailPerAccountDaily && n <= maxEmailPerAccountDaily
+}
+
+func emailPerSourceHourlyInDomain(n int) bool {
+	return n >= minEmailPerSourceHourly && n <= maxEmailPerSourceHourly
+}
+
+func emailPerSourceDailyInDomain(n int) bool {
+	return n >= minEmailPerSourceDaily && n <= maxEmailPerSourceDaily
 }
 
 func emailGlobalHourlyInDomain(n int) bool {
@@ -319,6 +350,27 @@ func settingsSchema() settings.Schema {
 				Domain: settings.DomainOf("whole numbers from "+
 					fmt.Sprint(minEmailPerAccountHourly)+" to "+fmt.Sprint(maxEmailPerAccountHourly),
 					emailPerAccountHourlyInDomain),
+			},
+			emailPerAccountDailyKey: {
+				Description: "how many email verification codes one account may ask for in a UTC day, " +
+					"whatever addresses it names",
+				Domain: settings.DomainOf("whole numbers from "+
+					fmt.Sprint(minEmailPerAccountDaily)+" to "+fmt.Sprint(maxEmailPerAccountDaily),
+					emailPerAccountDailyInDomain),
+			},
+			emailPerSourceHourlyKey: {
+				Description: "how many email verification codes one request source address may ask for in an " +
+					"hour, whatever addresses, accounts or sessions it names",
+				Domain: settings.DomainOf("whole numbers from "+
+					fmt.Sprint(minEmailPerSourceHourly)+" to "+fmt.Sprint(maxEmailPerSourceHourly),
+					emailPerSourceHourlyInDomain),
+			},
+			emailPerSourceDailyKey: {
+				Description: "how many email verification codes one request source address may ask for in a " +
+					"UTC day, whatever addresses, accounts or sessions it names",
+				Domain: settings.DomainOf("whole numbers from "+
+					fmt.Sprint(minEmailPerSourceDaily)+" to "+fmt.Sprint(maxEmailPerSourceDaily),
+					emailPerSourceDailyInDomain),
 			},
 			emailGlobalHourlyKey: {
 				Description: "how many email verification codes the whole deployment may send in an hour, " +

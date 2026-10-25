@@ -146,6 +146,44 @@ func TestASendLogsOneOutcomeLine(t *testing.T) {
 	}
 }
 
+// TestAnUncertainCarrierAnswerIsPublishedAsTheEmailSentinel holds the
+// classification the login module reads: a mail failure whose delivery is not
+// known is wrapped in authn.ErrEmailUncertain, while a definite refusal stays a
+// definite failure and is certified as one that left no message. The original
+// mail sentinel survives inside both, so the log's outcome still names it.
+func TestAnUncertainCarrierAnswerIsPublishedAsTheEmailSentinel(t *testing.T) {
+	sender := &recordingSender{}
+	channel, err := driveEmailcode(t, sender)
+	if err != nil {
+		t.Fatalf("driving the email channel: %v", err)
+	}
+	classifier, ok := channel.(interface{ CertifiesNotSent(error) bool })
+	if !ok {
+		t.Fatal("the channel publishes no not-sent classification")
+	}
+
+	sender.err = mail.Unsettled("recording")
+	uncertain := channel.SendCode(context.Background(), address, testCode, 10*time.Minute, "en-US")
+	if !errors.Is(uncertain, authn.ErrEmailUncertain) {
+		t.Errorf("an uncertain carrier answer returned %v, want one wrapping authn.ErrEmailUncertain", uncertain)
+	}
+	if !errors.Is(uncertain, mail.ErrUncertain) {
+		t.Errorf("the uncertain answer lost the mail classification: %v", uncertain)
+	}
+	if classifier.CertifiesNotSent(uncertain) {
+		t.Error("an uncertain answer was certified as leaving no message")
+	}
+
+	sender.err = fmt.Errorf("%w: the relay refused it", mail.ErrRejected)
+	rejected := channel.SendCode(context.Background(), address, testCode, 10*time.Minute, "en-US")
+	if errors.Is(rejected, authn.ErrEmailUncertain) {
+		t.Errorf("a definite refusal returned %v, want no uncertainty", rejected)
+	}
+	if !classifier.CertifiesNotSent(rejected) {
+		t.Errorf("a definite refusal %v was not certified as leaving no message", rejected)
+	}
+}
+
 // TestTheDescriptorNamesWhatItDeliversAndRequires holds the shape a command
 // tree relies on: the module is authn.emailcode, it delivers the email channel
 // exclusively, it requires the mail sending capability, and it declares its
