@@ -228,6 +228,9 @@ type fakeMFA struct {
 	enroll    func(kind authn.FactorKind, in authn.StepInput) authn.Step
 	enrolls   []authn.StepInput
 	kinds     []authn.FactorKind
+	// challenges counts the times a factor's challenge was started, so a case
+	// can see whether an SMS factor reached its send.
+	challenges int
 }
 
 func (m *fakeMFA) Require(context.Context, authn.AccountID, authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
@@ -239,6 +242,7 @@ func (m *fakeMFA) Factors(context.Context, authn.AccountID) ([]authn.FactorRecor
 }
 func (m *fakeMFA) Assurance(authn.Proof, *authn.Pass) authn.MFAResult { return m.assurance }
 func (m *fakeMFA) Challenge(context.Context, authn.FlowState, string) (authn.Step, error) {
+	m.challenges++
 	return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true}), nil
 }
 

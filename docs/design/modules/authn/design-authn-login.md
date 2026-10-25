@@ -150,14 +150,14 @@ type Proof struct {
 | 方法 路径 | 访问 | 作用 |
 |---|---|---|
 
-| `GET B/methods` | Open | 列出已纳入且未被 `disabled-methods` 关掉的登录方式描述符，并发布注册开关与可用的第二因素种类 |
-| `POST B/flows` | Open | 开始 `login` 流程，body `{method, delivery, return_to, binding, input}`；不读 cookie；流程绑定在此建立 |
+| `GET B/methods` | Open | 列出已纳入且未被 `disabled-methods` 关掉的登录方式描述符，并发布注册开关、可用的第二因素种类与人机验证门槛 |
+| `POST B/flows` | Open | 开始 `login` 流程，body `{method, delivery, return_to, binding, input, human_proof}`；不读 cookie；流程绑定在此建立 |
 | `POST B/register` | Open | 匿名自助注册，body `{username, email, password, display_name?, locale?, time_zone?}`；邮箱必填并作为未证明预留写入；一次事务建号，不建会话、不发邮件 |
 | `POST B/flows/authenticated` | Required | 在已登录的身份上开始 `link`、`step-up` 或 `enroll`（body 同上加 `purpose`）；流程记录绑定当前账户与会话；冒充中拒绝；`enroll` 是因素登记的唯一入口；起始状态与前置要求见「在已登录身份上开始流程」 |
-| `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定 |
+| `POST B/flows/answer` | Open | 答复当前步，body `{seq, step, input, human_proof}`；`step` 取 `answer`、`factor`、`enroll`、`complete`；要求流程绑定 |
 | `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等；要求绑定 |
 | `GET\|POST B/callback/:provider` | Open | OAuth 与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
-| `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required | 账户自助：改口令、添加或更换手机、添加登录标识、删标识、解绑外部身份；改动认证事实的都要新鲜认证并过 CSRF，冒充中一律拒绝；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用 |
+| `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required | 账户自助：改口令、添加或更换手机、添加登录标识、删标识、解绑外部身份；改动认证事实的都要新鲜认证并过 CSRF，冒充中一律拒绝；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
 
 `B/me` 的两条路由——本人的资料视图与它的写——归 [authn-profile](design-authn-profile.md)，本模块不挂。
 
@@ -181,7 +181,7 @@ type Proof struct {
 
 请求体一律 `application/json`，否则 415；拒绝未知字段；体上限 64 KiB（SAML 回跳例外），超过上限归 400 `bad-request`（与体不合法同答，不为超限另立码）。开始请求的 `input`（`Start.Fields`）至多 8 个字段、每个至多 512 字符；答复的 `input`（`StepInput.Fields`）至多 8 个字段，每个的上界更大——通行密钥的凭据 JSON 超过 1 KiB——且仍远小于 64 KiB 的体上限；两者越界一律归 400 `bad-request`。经 `Mounter` 登记的处理器所写的响应带 `Cache-Control: no-store`：`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它（如密钥集自带缓存头）。网关在处理器之前自产的 401/503，以及入口模块对 panic 的缺陷响应，不在这一范围内：前者不经 `Wrap`，后者由入口模块按它自己的缺陷应答形状处置，会删去 `Cache-Control` 一类表示性头。
 
-`GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, binding_providers, fields}], "signup":{"enabled","password":{"enabled"}}, "mfa":{"factors":[...]}}`。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`binding_providers` 是该方法 link 流程把绑定存下的提供方取值或命名空间前缀——`google`、`github`、`wechat` 与 `wechat-openid:`（微信无 union id 时按应用标识存）、`oidc:` 与 `saml:` 之后接提供方标识——为空表示绑定落在方法名下；它是方法的常量命名，不表示任何账户是否已绑定，客户端据此把一条已绑定的 `links` 取值归到方法，`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 在 `authn.account.signup` 或 `authn.account.password-signup` 任一为 `open` 时为真；本模块按路径读取这两个设置项的当前值、只作预检查，不重复声明，注册开关的权威检查在 `Signups.Register`。`signup.password.enabled` 单独发布 `authn.account.password-signup` 的取值。`opens_account` 只描述方法自己的开户能力：口令方法始终不带 `opens_account`，`authn.account.signup` 关闭时短信与社交方法的 `opens_account` 在应答里清为 false，避免前端把已关闭的首登开户显示成入口。`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
+`GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, binding_providers, fields}], "signup":{"enabled","password":{"enabled"}}, "mfa":{"factors":[...]}, "human":{"required","provider","site_key"}}`。`human.required` 是本部署是否要求每次发送先提交人机凭证；`provider` 是校验机制（`off`、`pow` 或 `turnstile`），没有接缝与 `off` 模式都读作 `off`；`site_key` 是客户端控件需要的公开标识，`off` 与 `pow` 不带。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`binding_providers` 是该方法 link 流程把绑定存下的提供方取值或命名空间前缀——`google`、`github`、`wechat` 与 `wechat-openid:`（微信无 union id 时按应用标识存）、`oidc:` 与 `saml:` 之后接提供方标识——为空表示绑定落在方法名下；它是方法的常量命名，不表示任何账户是否已绑定，客户端据此把一条已绑定的 `links` 取值归到方法，`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 在 `authn.account.signup` 或 `authn.account.password-signup` 任一为 `open` 时为真；本模块按路径读取这两个设置项的当前值、只作预检查，不重复声明，注册开关的权威检查在 `Signups.Register`。`signup.password.enabled` 单独发布 `authn.account.password-signup` 的取值。`opens_account` 只描述方法自己的开户能力：口令方法始终不带 `opens_account`，`authn.account.signup` 关闭时短信与社交方法的 `opens_account` 在应答里清为 false，避免前端把已关闭的首登开户显示成入口。`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
 
 **`GET B/methods` 是认证的匿名发现面，只承载登录前就要用的认证事实**：方法描述符、注册开关与可登记的因素种类。进此应答的事实满足匿名发现面的准入判据（[architecture](../../architecture.md#特性与前端定制)）；往此应答加字段是本模块对外接口面的变更。此应答的边界由该准入判据与下列规则一起划定，这些规则是穷举的：
 
@@ -238,7 +238,7 @@ type Proof struct {
 | 401 | `flow-invalid` | 流程过期、已用、绑定不符、步序不符、被并发消费 |
 | 401 | `link-required` | 社交登录无绑定而已验证邮箱命中现有账户 |
 | 401 | `insufficient_user_authentication` | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
-| 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力 |
+| 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力，`human-verification-required` 是部署要求人机验证而请求缺少或提交了无效的凭证且因此不发送 |
 | 409 | `conflict`、`login-identifier-required`、`username-taken`、`email-taken` | 外部身份冲突、解绑最后一种登录方式、删最后一个因素、某种因素已达上限；账户没有可作登录名的标识而设口令，或删除带口令凭据账户的最后一个登录名；自助注册的用户名已被占用；邮箱地址已被别的账户预留或持有 |
 | 415、429、503 | `unsupported-media-type`、`throttled`（带 `Retry-After`）、`unavailable` | `unavailable` 对外不区分是哪个依赖不可用 |
 
@@ -494,6 +494,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 4. 校验并保存 `return_to`，确定 `binding`，生成流程令牌，写入 `first` 状态的记录。kv 不可用时答 503。
 5. 带 `call-budget` 调用方法的 `Begin`，按「答复与迁移」处理它交回的 `Step`。
 
+发送短信的第一步先过人机验证：`input` 带着方法描述符声明的 `phone` 字段且该字段非空时，引擎在写流程记录之前校验 `human_proof`。部署不要求人机验证时整步跳过；缺少、无效、过期或已用的凭证答 403 `human-verification-required`，超过 8 KiB 的答 400 `bad-request`，校验后端或它依赖的存储不可用答 503。三者都不写记录、不调用方法、不发送，也不消耗任何发送预算。
+
 一个浏览器同一时刻只有一个流程 cookie，所以后开始流程的标签页会顶掉先前的流程。
 
 ### 在已登录身份上开始流程
@@ -507,6 +509,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 5. 按下表确定记录的 `method`、起始状态与起始要求；起始要求不满足，401 `insufficient_user_authentication`。
 6. 写记录：`account` 与 `session` 取身份的账户与会话，`delivery` 取会话的种类（`browser` 种为 `session`，`token` 种为 `token`），`binding` 与 `return_to` 取自请求，`answers` 与 `sends` 从零起。
 7. 按起始状态做第一次调用，按「答复与迁移」处理回答：`first` 以 `Start{Purpose, Account, Fields, SendsLeft}` 调方法的 `Begin`；`enroll` 以 `Fields` 调 `MFA.Enroll`；`second` 不调用，应答 `next.kind = factor`，清单即记录里的 `mfa.offered`。
+
+`step-up` 从第一因素起始时，`method` 声明的 `phone` 字段非空同样在写记录之前校验 `human_proof`，判据与拒绝形状同「开始流程」。
 
 下表是各目的在起始阶段的取值，目的取值是封闭集：
 
@@ -528,6 +532,8 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 ### 答复与迁移
 
 `POST B/flows/answer` 先校验绑定，读出记录，再核对：`seq` 等于记录的 `seq`，否则 `ErrStepOutOfOrder`；`step` 与记录状态相容，`answer` 只在 `first`，`factor` 只在 `second`，`enroll` 只在 `enroll`，`complete` 只在 `ready`；`answers` 未达 8。`seq`、`step` 与 `answers` 任一不符都应答 `flow-invalid`。`step=answer` 交给方法的 `Answer`；`step=factor` 与 `step=enroll` 交给 `MFA`，具体字段由因素决定（[authn-mfa](design-authn-mfa.md)）；`step=complete` 由引擎执行终态动作。
+
+答复带着第一因素方法描述符声明的 `phone` 字段且该字段非空时，引擎在进入这一步之前校验 `human_proof`；`step=factor` 选中的因素种类是 `sms` 时，在启动该因素挑战之前校验。两者都在任何发送预算之前，判据与拒绝形状同「开始流程」。
 
 迁移是读出旧字节、改完后 `CompareAndSwap(旧, 新)`。交换落空说明被并发改动，当前请求按流程失效拒绝，不重试。每个方法的 `StepRefused` 只对 `submit` 类的一步保留流程，对 `callback` 类的一步作废流程：授权码与断言一次性，重来要重新开始。
 

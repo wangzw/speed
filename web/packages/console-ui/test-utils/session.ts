@@ -55,6 +55,7 @@ const METHODS: AuthnMethodList = {
   methods: [{ name: 'password', kind: 'form' }],
   signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
+  human: { required: false, provider: 'off' },
 }
 
 /** The completion a started step-up settles as: the cookie rotated, the

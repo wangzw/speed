@@ -73,6 +73,7 @@ var codeTable = []struct {
 	{"forbidden", 403},
 	{"signup-closed", 403},
 	{"contact-required", 403},
+	{"human-verification-required", 403},
 	{"conflict", 409},
 	{"login-identifier-required", 409},
 	{"username-taken", 409},
@@ -114,7 +115,8 @@ func TestTheProblemCodesAreTheDesignsSetWithTheirStatuses(t *testing.T) {
 		CodeBadRequest, CodeUnsupportedRegion, CodeLoginFailed, CodeFlowInvalid, CodeLinkRequired,
 		CodeInsufficientUserAuthentication, CodeMethodDisabled, CodeAccountUnavailable,
 		CodeImpersonationRestricted, CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed,
-		CodeContactRequired, CodeConflict, CodeLoginIdentifierRequired, CodeUsernameTaken, CodeEmailTaken,
+		CodeContactRequired, CodeHumanVerificationRequired, CodeConflict, CodeLoginIdentifierRequired,
+		CodeUsernameTaken, CodeEmailTaken,
 		CodeUnsupportedMediaType, CodeThrottled, CodeUnavailable,
 	}
 	for i, c := range codeTable {
@@ -216,6 +218,7 @@ func TestForbiddenWritesThe403CodesItOwns(t *testing.T) {
 	for _, code := range []string{
 		CodeMethodDisabled, CodeAccountUnavailable, CodeImpersonationRestricted,
 		CodeFactorNotSeasoned, CodeForbidden, CodeSignupClosed, CodeContactRequired,
+		CodeHumanVerificationRequired,
 	} {
 		w := serve(func(c *gin.Context) { Forbidden(c, code) }, http.MethodGet, nil, nil)
 		if w.Code != http.StatusForbidden {

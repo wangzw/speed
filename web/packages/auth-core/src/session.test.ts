@@ -148,6 +148,7 @@ describe('list methods', () => {
       ],
       signup: { enabled: true, password: { enabled: true } },
       mfa: { factors: ['totp'] },
+      human: { required: false, provider: 'off' },
     })
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.path).toBe('/api/v1/auth/methods')
@@ -165,6 +166,7 @@ describe('list methods', () => {
         ],
         signup: { enabled: true, password: { enabled: false } },
         mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
@@ -183,6 +185,7 @@ describe('list methods', () => {
         methods: [{ name: 'password' }],
         signup: { enabled: true, password: { enabled: false } },
         mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
@@ -193,6 +196,7 @@ describe('list methods', () => {
       [LOGIN_METHODS]: () => ({
         methods: [],
         mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
       }),
     })
     await expectProtocolViolation(missingSignup.session.listMethods(), missingSignup)
@@ -200,9 +204,33 @@ describe('list methods', () => {
       [LOGIN_METHODS]: () => ({
         methods: [],
         signup: { enabled: false, password: { enabled: false } },
+        human: { required: false, provider: 'off' },
       }),
     })
     await expectProtocolViolation(missingMFA.session.listMethods(), missingMFA)
+  })
+
+  it('refuses a methods 2xx that drops the human gate', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
+  })
+
+  it('refuses a methods 2xx whose human gate is not a document', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: false, provider: 7 },
+      }),
+    })
+    await expectProtocolViolation(harness.session.listMethods(), harness)
   })
 
   it('refuses a methods 2xx whose signup password switch is not a boolean', async () => {
@@ -211,6 +239,7 @@ describe('list methods', () => {
         methods: [],
         signup: { enabled: true, password: { enabled: 'yes' } },
         mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)

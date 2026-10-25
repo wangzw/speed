@@ -104,11 +104,15 @@ export function methodList(
     signup?: boolean
     signupPassword?: boolean
     mfaFactors?: readonly string[]
+    humanRequired?: boolean
+    humanProvider?: string
+    humanSiteKey?: string
   } = {},
 ): {
   methods: MethodDescriptorBody[]
   signup: { enabled: boolean; password: { enabled: boolean } }
   mfa: { factors: string[] }
+  human: { required: boolean; provider: string; site_key?: string }
 } {
   return {
     methods: methods.map((entry) =>
@@ -119,6 +123,13 @@ export function methodList(
       password: { enabled: overrides.signupPassword ?? false },
     },
     mfa: { factors: [...(overrides.mfaFactors ?? [])] },
+    human: {
+      required: overrides.humanRequired ?? false,
+      provider: overrides.humanProvider ?? 'off',
+      ...(overrides.humanSiteKey === undefined
+        ? {}
+        : { site_key: overrides.humanSiteKey }),
+    },
   }
 }
 

@@ -27,6 +27,7 @@ const FORM_METHODS: AuthnMethodList = {
   methods: [{ name: 'password', kind: 'form' }],
   signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
+  human: { required: false, provider: 'off' },
 }
 
 /** The test session: an AuthSession plus the flip control the suites drive. */

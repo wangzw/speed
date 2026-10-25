@@ -50,6 +50,7 @@ const METHODS: AuthnMethodList = {
   ],
   signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
+  human: { required: false, provider: 'off' },
 }
 
 /** A session whose discovery names a redirect method and whose flow start
@@ -143,6 +144,7 @@ describe('the sign-in surface', () => {
           methods: [{ name: 'password', kind: 'form', opens_account: true }],
           signup: { enabled: true, password: { enabled: false } },
           mfa: { factors: [] },
+          human: { required: false, provider: 'off' },
         }),
     })
     renderDemoApp({ session })

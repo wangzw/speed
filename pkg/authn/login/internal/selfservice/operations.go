@@ -60,9 +60,12 @@ type changePasswordInput struct {
 
 // startPhoneInput is the body of POST /phone.
 type startPhoneInput struct {
-	_ struct{} `description:"The phone number to send a verification code to."`
+	_ struct{} `description:"The phone number to send a verification code to, and the human-verification proof the deployment may require."`
 
 	Phone string "json:\"phone\" description:\"The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request.\""
+	// HumanProof is the proof the deployment's human-verification gate checks
+	// before the code is sent; see the engine's startInput.
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification code: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // verifyPhoneInput is the body of POST /phone/verify.
@@ -74,10 +77,14 @@ type verifyPhoneInput struct {
 
 // addIdentifierInput is the body of POST /identifiers.
 type addIdentifierInput struct {
-	_ struct{} `description:"The login identifier to add: a username or an email address."`
+	_ struct{} `description:"The login identifier to add — a username or an email address — and the human-verification proof the email branch may require."`
 
 	Kind  string `json:"kind" required:"true" description:"The identifier kind to add: username or email; a phone is added through /auth/phone"`
 	Value string "json:\"value\" required:\"true\" description:\"The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 64 characters of [a-z0-9._-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request.\""
+	// HumanProof is the proof the deployment's human-verification gate checks
+	// before an email code is sent. The username branch sends nothing and ignores
+	// it.
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // verifyIdentifierInput is the body of POST /identifiers/verify.
@@ -141,6 +148,15 @@ func busyFailure(description string) speedhttp.Response {
 // identity.
 func impersonation() speedhttp.Response {
 	return speedhttp.ProblemResponse(http.StatusForbidden, "The identity is impersonating, which the route refuses")
+}
+
+// sendImpersonation is the 403 of a route that sends a verification message: the
+// impersonation refusal, and the human-verification refusal a deployment may
+// turn on.
+func sendImpersonation() speedhttp.Response {
+	return speedhttp.ProblemResponse(http.StatusForbidden,
+		"The identity is impersonating, which the route refuses, or a human-verification proof is missing "+
+			"or invalid (human-verification-required)")
 }
 
 // mediaType is the refusal of a body of another media type.
@@ -232,10 +248,10 @@ var startPhoneOperation = speedhttp.NewReplyOperation[startPhoneInput](
 	},
 	[]speedhttp.Response{
 		jsonAnswer(http.StatusOK, "The challenge, and when the code may be resent", AuthnLoginPhoneChallenge{}),
-		badRequest("The body could not be read, or the number is outside its domain"),
+		badRequest("The body could not be read, the number is outside its domain, or the proof is over its limit"),
 		bodyOverLimit,
 		unauthorized("No usable credential"),
-		impersonation(),
+		sendImpersonation(),
 		mediaType(),
 		tooMany(),
 		unavailable("A dependency could not answer"),
@@ -323,10 +339,10 @@ var addIdentifierOperation = speedhttp.NewReplyOperation[addIdentifierInput](
 	[]speedhttp.Response{
 		jsonAnswer(http.StatusOK, "A username was added; or a code was sent to an address and its answer is still to come",
 			AuthnLoginIdentifierState{}),
-		badRequest("The body could not be read, or the kind or the value is outside its domain"),
+		badRequest("The body could not be read, the kind or the value is outside its domain, or the proof is over its limit"),
 		bodyOverLimit,
 		unauthorized("No usable credential, or the freshness a change of what proves the account asks for"),
-		impersonation(),
+		sendImpersonation(),
 		speedhttp.ProblemResponse(http.StatusConflict, "The login name or address belongs to another account"),
 		mediaType(),
 		tooMany(),

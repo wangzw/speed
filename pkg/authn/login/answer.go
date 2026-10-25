@@ -67,6 +67,14 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 		r.fail(c, err)
 		return c.result()
 	}
+	// A submission that carries the phone a first-factor method declares may
+	// send a code, so the gate is checked before the step switch. A second
+	// factor's own send is checked where its challenge starts.
+	if r.methodSubmissionCarriesPhone(rec.Method, in.Input) {
+		if !r.checkHumanProof(c, in.HumanProof) {
+			return c.result()
+		}
+	}
 	// The source-address allowance is checked before any step can reach a
 	// method, so an answer from a source already at its limit sends nothing.
 	if !r.admitSends(c) {
@@ -77,7 +85,7 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 	case stepAnswer:
 		r.applyFirstSubmit(c, token, echo, rec, raw, in.Input)
 	case stepFactor:
-		r.applyFactor(c, token, echo, rec, raw, in.Input)
+		r.applyFactor(c, token, echo, rec, raw, in.Input, in.HumanProof)
 	case stepEnroll:
 		r.applyEnroll(c, token, echo, rec, raw, in.Input["kind"], in.Input)
 	case stepComplete:
@@ -89,7 +97,7 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 // applyFactor handles a second-factor step: the first step for a factor starts
 // its challenge, and a step whose factor is the one already challenged verifies
 // it.
-func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte, fields map[string]string) {
+func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte, fields map[string]string, proof string) {
 	factorID := fields[fieldFactor]
 	if factorID == "" {
 		c.fail(mount.CodeBadRequest)
@@ -100,7 +108,7 @@ func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte
 		return
 	}
 	if rec.MFA.ChallengeRef != factorID {
-		r.challengeFactor(c, token, echo, rec, raw, factorID)
+		r.challengeFactor(c, token, echo, rec, raw, factorID, proof)
 		return
 	}
 	f := r.flowState(rec, token)
@@ -149,7 +157,15 @@ func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte
 // for the step that answers it. It is the only place the engine fills
 // FlowState.Source: the factor has no request of its own, so the address comes
 // from this request and is the send's source when the factor sends a code.
-func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []byte, factorID string) {
+func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []byte, factorID, proof string) {
+	// Choosing an SMS factor sends a code to the account's proven phone, so the
+	// gate is checked before the factor is asked and before any send budget is
+	// spent. The kind comes from the offered factor, never from its name.
+	if factorKindOf(rec.MFA.Offered, factorID) == string(authn.FactorSMS) {
+		if !r.checkHumanProof(c, proof) {
+			return
+		}
+	}
 	f := r.flowState(rec, token)
 	f.Source = c.clientIP
 	got, ok := r.invoke(c.ctx, "factor", func(cctx context.Context) (authn.Step, error) {

@@ -1042,6 +1042,18 @@ function parseMethodList(body: unknown): AuthnMethodList {
   if (!Array.isArray(mfa.factors)) {
     throw protocolViolation('methods mfa carries no factors array')
   }
+  const human = asObject(rec.human, 'methods 2xx carries no human document')
+  if (typeof human.required !== 'boolean') {
+    throw protocolViolation('methods human carries no required boolean')
+  }
+  const humanProvider = requireString(
+    human.provider,
+    'methods human carries no provider string',
+  )
+  const humanSiteKey =
+    human.site_key === undefined
+      ? undefined
+      : requireString(human.site_key, 'methods human site_key is not a string')
   return {
     methods: rec.methods.map((entry) => parseMethodDescriptor(entry)),
     signup: {
@@ -1052,6 +1064,11 @@ function parseMethodList(body: unknown): AuthnMethodList {
       factors: mfa.factors.map((entry) =>
         requireString(entry, 'mfa factor is not a string'),
       ),
+    },
+    human: {
+      required: human.required,
+      provider: humanProvider,
+      ...(humanSiteKey === undefined ? {} : { site_key: humanSiteKey }),
     },
   }
 }

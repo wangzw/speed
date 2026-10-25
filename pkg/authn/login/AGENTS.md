@@ -141,6 +141,25 @@ does.
   holds as an unproved identifier brings that row up to proved in place, so
   re-adding the account's own address after its code comes back succeeds rather
   than conflicting.
+- **A verification-message send presents the deployment's human-verification
+  proof first.** `authn.HumanVerifier` is optional in `Requires` and resolved in
+  `Init`; an assembly without one, or with the off mechanism, sends without
+  asking for a proof. When the gate requires one, the engine checks a non-empty
+  `human_proof` before every send and before any send budget is spent: a start
+  whose method descriptor declares a phone field and whose submission supplies
+  it, the authenticated start for the same case, a first-factor answer that
+  carries it, the SMS second-factor challenge (the kind read from the offered
+  factor), the phone self-service route, and the email branch after the
+  address-taken check and before its resend window. The decision comes from the
+  method descriptor or the factor kind, never from a method name. The field is
+  capped at 8 KiB, and a longer value is a 400 before a provider is called. The
+  seam's failures map to 403 `human-verification-required` for a missing,
+  invalid, expired or used proof, 400 for an over-long proof the provider admits,
+  and 503 for a provider or store that cannot answer; none of the three sends.
+  Registration is not gated, because it sends nothing. The discovery document
+  reports the gate as `human` with `required`, `provider` and, for a mechanism
+  that needs one, `site_key`; no seam and the off mechanism both read
+  `provider: "off"`.
 - **Removing a login identifier is refused when it would strand a password
   account.** `DELETE /auth/identifiers/:id` maps the account module's
   `ErrIdentifierRequired` to 409 `login-identifier-required`: an account holding a

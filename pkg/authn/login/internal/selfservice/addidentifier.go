@@ -265,7 +265,7 @@ func (r *routes) addIdentifier(ctx context.Context, in addIdentifierInput, meta 
 			c.json(http.StatusOK, addIdentifierResponse{State: identifierStateAdded})
 		}
 	case identifierKindEmail:
-		r.addEmail(c, who, in.Value)
+		r.addEmail(c, who, in.Value, in.HumanProof)
 	default:
 		c.fail(mount.CodeBadRequest)
 	}
@@ -286,7 +286,7 @@ func (r *routes) addIdentifier(ctx context.Context, in addIdentifierInput, meta 
 // requested, and for a row written before reservations existed. The write of the
 // identifier at POST /identifiers/verify is the authoritative refusal, and it
 // answers email-taken as well.
-func (r *routes) addEmail(c *call, who caller, raw string) {
+func (r *routes) addEmail(c *call, who caller, raw, proof string) {
 	if r.deps.EmailSender == nil {
 		logWarn(c.ctx, "an email identifier was asked for on a deployment with no email channel", nil)
 		c.unavailable()
@@ -309,6 +309,12 @@ func (r *routes) addEmail(c *call, who caller, raw string) {
 	}
 	if held {
 		c.fail(mount.CodeEmailTaken)
+		return
+	}
+	// The gate is checked after the address is known to be free and before the
+	// resend window, so a refused proof spends no window and no budget, and a
+	// taken address is answered as taken without asking for one.
+	if !r.checkHumanProof(c, proof) {
 		return
 	}
 

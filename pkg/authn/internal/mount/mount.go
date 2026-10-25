@@ -46,6 +46,11 @@ import (
 // the module cannot come to disagree on where the routes are.
 const DefaultBasePath = "/api/v1/auth"
 
+// HumanProofMaxBytes is the longest human-verification proof a send request may
+// carry in its human_proof field. A surface refuses a longer value as a bad
+// request before it asks a provider, so an unbounded field never reaches one.
+const HumanProofMaxBytes = 8 << 10
+
 // The defaults of the management scopes. Each is derived from the same API
 // root and the scope segment, so a deployment that changes none of them gets
 // the path taxonomy the repository publishes.

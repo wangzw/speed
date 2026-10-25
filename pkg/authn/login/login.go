@@ -101,7 +101,8 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // is delivered exclusively by another module, so a command that names this one
 // fails before anything is built unless it names them too. The settings store is
 // required as optional only so that it is initialised first and its snapshot is
-// loaded when Init reads a setting.
+// loaded when Init reads a setting, and the human-verification seam is optional
+// so that an assembly without one sends without asking for a proof.
 //
 // The stance is StateEnabled and never StateAuto: the module is taken in at run
 // level, so it has no way to stand itself down.
@@ -122,6 +123,7 @@ func Module() core.Module {
 			{Token: (*authn.MFA)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
+			{Token: (*authn.HumanVerifier)(nil), Optional: true},
 		},
 		Resources: []any{
 			settingsSchema(),
@@ -188,6 +190,7 @@ type product struct {
 	emailSender authn.EmailCodeSender
 	sso         authn.SSOProviders
 	provisioner authn.Provisioner
+	human       authn.HumanVerifier
 	store       settings.Store
 	audit       audit.Audit
 	bus         event.Bus
@@ -268,6 +271,9 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	}
 	if p.provisioner, err = optional[authn.Provisioner](reg, "the provisioning hook"); err != nil {
+		return err
+	}
+	if p.human, err = optional[authn.HumanVerifier](reg, "the human-verification gate"); err != nil {
 		return err
 	}
 	if p.audit, err = optional[audit.Audit](reg, "the audit capability"); err != nil {
@@ -444,6 +450,7 @@ func (p *product) buildSelfservice() error {
 		Settings:    p.store,
 		Bus:         p.bus,
 		Audit:       p.audit,
+		Human:       p.human,
 		Clock:       p.clock,
 	})
 	if err != nil {

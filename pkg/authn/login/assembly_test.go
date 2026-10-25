@@ -13,6 +13,8 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/log"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // stubMethod is a login method of the given name that answers nothing.
@@ -159,7 +161,9 @@ func TestOneMethodRegistersTheRoutes(t *testing.T) {
 
 // TestTheDescriptorRequiresWhatTheEngineNeeds holds the descriptor's shape: the
 // capabilities another module delivers exclusively are required, and the
-// settings store is the one optional dependency, so it is initialised first.
+// settings store, the logging capability and the human-verification seam are
+// optional, so the first two are initialised first and an assembly without a
+// gate still sends.
 func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 	m := login.Module()
 	if m.Name != login.ModuleName || login.ModuleName != "authn.login" {
@@ -169,8 +173,11 @@ func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 		t.Errorf("Provides = %+v, want none: the engine delivers no capability", m.Provides)
 	}
 	required := map[core.Token]bool{}
+	optional := map[core.Token]bool{}
 	for _, r := range m.Requires {
-		if !r.Optional {
+		if r.Optional {
+			optional[r.Token] = true
+		} else {
 			required[r.Token] = true
 		}
 	}
@@ -184,8 +191,17 @@ func TestTheDescriptorRequiresWhatTheEngineNeeds(t *testing.T) {
 			t.Errorf("Requires is missing %v", tk)
 		}
 	}
-	if len(m.Requires) != len(required)+2 || !m.Requires[len(m.Requires)-2].Optional || !m.Requires[len(m.Requires)-1].Optional {
-		t.Errorf("Requires = %+v, want the settings store and the logging capability as the optional dependencies", m.Requires)
+	for _, tk := range []core.Token{
+		(*settings.Store)(nil), (*log.Logger)(nil), (*authn.HumanVerifier)(nil),
+	} {
+		if !optional[tk] {
+			t.Errorf("Requires does not hold %v as optional", tk)
+		}
+	}
+	if len(m.Requires) != len(required)+3 || !m.Requires[len(m.Requires)-3].Optional ||
+		!m.Requires[len(m.Requires)-2].Optional || !m.Requires[len(m.Requires)-1].Optional {
+		t.Errorf("Requires = %+v, want the settings store, the logging capability and the human-verification "+
+			"seam as the optional dependencies", m.Requires)
 	}
 }
 

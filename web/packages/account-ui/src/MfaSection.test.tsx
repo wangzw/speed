@@ -57,6 +57,7 @@ function methodsDoc(factors: readonly string[]): Record<string, unknown> {
     methods: [],
     signup: { enabled: false, password: { enabled: false } },
     mfa: { factors: [...factors] },
+    human: { required: false, provider: 'off' },
   }
 }
 

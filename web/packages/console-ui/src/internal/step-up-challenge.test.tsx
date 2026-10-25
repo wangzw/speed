@@ -93,6 +93,7 @@ function flowSession(): {
         methods: [{ name: 'password', kind: 'form' }],
         signup: { enabled: false, password: { enabled: false } },
         mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
       }),
     discoverSso: () => Promise.resolve([]),
     register: () => Promise.reject(new Error('unused')),

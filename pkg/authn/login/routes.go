@@ -216,6 +216,8 @@ func (r *routes) fail(c *call, err error) {
 		errors.Is(err, authn.ErrNotProvisioned), errors.Is(err, authn.ErrProvisionRefused),
 		errors.Is(err, authn.ErrNoFactor), errors.Is(err, authn.ErrFactorNotEnrolled):
 		c.unauthorized(mount.CodeLoginFailed)
+	case errors.Is(err, authn.ErrHumanVerificationRequired):
+		c.forbidden(mount.CodeHumanVerificationRequired)
 	case errors.Is(err, authn.ErrUnavailable):
 		log.FromContext(c.ctx).Warn(ModuleName+": a dependency of a login route is unavailable",
 			slog.String("cause", err.Error()))

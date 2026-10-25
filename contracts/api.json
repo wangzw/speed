@@ -424,6 +424,10 @@
                     "description": "How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request.",
                     "type": "string"
                   },
+                  "human_proof": {
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "type": "string"
+                  },
                   "input": {
                     "additionalProperties": {
                       "type": "string"
@@ -498,7 +502,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable"
+            "description": "The method or the account is unavailable, or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -586,6 +590,10 @@
                 "additionalProperties": false,
                 "description": "One answer to the bound flow: which step is being answered, the step number to echo, and the fields the step takes.",
                 "properties": {
+                  "human_proof": {
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "type": "string"
+                  },
                   "input": {
                     "additionalProperties": {
                       "type": "string"
@@ -656,7 +664,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable"
+            "description": "The method or the account is unavailable, or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -752,6 +760,10 @@
                     "description": "Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`.",
                     "type": "string"
                   },
+                  "human_proof": {
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "type": "string"
+                  },
                   "input": {
                     "additionalProperties": {
                       "type": "string"
@@ -826,7 +838,7 @@
                 }
               }
             },
-            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required)"
+            "description": "The method or the account is unavailable, or a `purpose=link` flow is refused because the caller has an email address that is not proved (contact-required), or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -1094,8 +1106,12 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "description": "The login identifier to add: a username or an email address.",
+                "description": "The login identifier to add — a username or an email address — and the human-verification proof the email branch may require.",
                 "properties": {
+                  "human_proof": {
+                    "description": "The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "type": "string"
+                  },
                   "kind": {
                     "description": "The identifier kind to add: username or email; a phone is added through /auth/phone",
                     "type": "string"
@@ -1135,7 +1151,7 @@
                 }
               }
             },
-            "description": "The body could not be read, or the kind or the value is outside its domain"
+            "description": "The body could not be read, the kind or the value is outside its domain, or the proof is over its limit"
           },
           "401": {
             "content": {
@@ -1163,7 +1179,7 @@
                 }
               }
             },
-            "description": "The identity is impersonating, which the route refuses"
+            "description": "The identity is impersonating, which the route refuses, or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "409": {
             "content": {
@@ -2590,8 +2606,12 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "description": "The phone number to send a verification code to.",
+                "description": "The phone number to send a verification code to, and the human-verification proof the deployment may require.",
                 "properties": {
+                  "human_proof": {
+                    "description": "The human-verification proof the deployment may require before it sends a verification code: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "type": "string"
+                  },
                   "phone": {
                     "description": "The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request.",
                     "type": "string"
@@ -2623,7 +2643,7 @@
                 }
               }
             },
-            "description": "The body could not be read, or the number is outside its domain"
+            "description": "The body could not be read, the number is outside its domain, or the proof is over its limit"
           },
           "401": {
             "content": {
@@ -2651,7 +2671,7 @@
                 }
               }
             },
-            "description": "The identity is impersonating, which the route refuses"
+            "description": "The identity is impersonating, which the route refuses, or a human-verification proof is missing or invalid (human-verification-required)"
           },
           "413": {
             "content": {
@@ -12671,6 +12691,28 @@
         ],
         "type": "object"
       },
+      "AuthnLoginHuman": {
+        "description": "The human-verification gate a deployment puts in front of every send of a verification message: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A deployment that takes no gate in reports the off mechanism and requires nothing.",
+        "properties": {
+          "provider": {
+            "description": "The mechanism that checks a proof: `off` when no gate is configured, `pow` for the self-hosted proof of work, or `turnstile`",
+            "type": "string"
+          },
+          "required": {
+            "description": "Whether every send of a verification message must first present a valid, single-use proof",
+            "type": "boolean"
+          },
+          "site_key": {
+            "description": "The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off` and `pow`",
+            "type": "string"
+          }
+        },
+        "required": [
+          "required",
+          "provider"
+        ],
+        "type": "object"
+      },
       "AuthnLoginIdentifierState": {
         "description": "The answer of adding an identifier: `added` when the identifier is written, `pending` when a code was sent to an email address and the answer is still to come. The two durations are present only in the pending state.",
         "properties": {
@@ -12713,8 +12755,12 @@
         "type": "object"
       },
       "AuthnLoginMethods": {
-        "description": "The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.",
+        "description": "The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, the second-factor kinds the deployment takes in, and the human-verification gate this deployment requires before a verification message is sent. Enterprise identity providers are not listed here; they are discovered through the SSO module.",
         "properties": {
+          "human": {
+            "$ref": "#/components/schemas/AuthnLoginHuman",
+            "description": "The human-verification gate a send must satisfy."
+          },
           "methods": {
             "description": "The methods taking part that are not turned off, one descriptor each, sorted by name",
             "items": {
@@ -12734,7 +12780,8 @@
         "required": [
           "methods",
           "signup",
-          "mfa"
+          "mfa",
+          "human"
         ],
         "type": "object"
       },

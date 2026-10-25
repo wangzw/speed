@@ -893,6 +893,18 @@ export interface AuthnLoginToken {
 export type AuthnLoginAnswer = AuthnLoginFlow | AuthnLoginSession | AuthnLoginToken | AuthnLoginActionResult;
 
 /**
+ * The human-verification gate a deployment puts in front of every send of a verification message: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A deployment that takes no gate in reports the off mechanism and requires nothing.
+ */
+export interface AuthnLoginHuman {
+  /** The mechanism that checks a proof: `off` when no gate is configured, `pow` for the self-hosted proof of work, or `turnstile` */
+  provider: string;
+  /** Whether every send of a verification message must first present a valid, single-use proof */
+  required: boolean;
+  /** The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off` and `pow` */
+  site_key?: string;
+}
+
+/**
  * added when the identifier is written; pending when a code was sent to an address and its answer is still to come
  */
 export type AuthnLoginIdentifierStateState = typeof AuthnLoginIdentifierStateState[keyof typeof AuthnLoginIdentifierStateState];
@@ -962,9 +974,11 @@ export interface AuthnLoginSignup {
 }
 
 /**
- * The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module.
+ * The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, the second-factor kinds the deployment takes in, and the human-verification gate this deployment requires before a verification message is sent. Enterprise identity providers are not listed here; they are discovered through the SSO module.
  */
 export interface AuthnLoginMethods {
+  /** The human-verification gate a send must satisfy. */
+  human: AuthnLoginHuman;
   /** The methods taking part that are not turned off, one descriptor each, sorted by name */
   methods: AuthnMethodDescriptor[];
   /** The second-factor kinds the deployment takes in. */
@@ -1869,6 +1883,8 @@ export type AuthnLoginStartBody = {
   binding?: string;
   /** How a completed login is delivered: `session` (the default) sets the session cookie and answers the session view; `token` answers an access and refresh token pair. `token` must be enabled by the deployment and requires the token capability, otherwise the request is a 400 bad-request. */
   delivery?: string;
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  human_proof?: string;
   /** The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request. */
   input?: AuthnLoginStartBodyInput;
   /** The stable name of a login method, as returned in `name` by `GET /auth/methods`. A name the deployment does not take in is a 400 bad-request; a method turned off by the deployment is a 403 method-disabled. */
@@ -1888,6 +1904,8 @@ export type AuthnLoginAnswerBodyInput = {[key: string]: string};
  * One answer to the bound flow: which step is being answered, the step number to echo, and the fields the step takes.
  */
 export type AuthnLoginAnswerBody = {
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  human_proof?: string;
   /** The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing. */
   input?: AuthnLoginAnswerBodyInput;
   /** The `seq` of the flow as last returned. It must equal the record's current step number; a stale or future value is a 401 flow-invalid. */
@@ -1909,6 +1927,8 @@ export type AuthnLoginStartAuthenticatedBody = {
   binding?: string;
   /** Accepted but not read: the delivery mode follows the kind of the request's session. It is accepted so that a client may send this route the same start body it sends to `POST /auth/flows`. */
   delivery?: string;
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  human_proof?: string;
   /** The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes. */
   input?: AuthnLoginStartAuthenticatedBodyInput;
   /** The method to run for `link`, and for a `step-up` of an account that holds no factor. For an enrollment it is not read, and for a step-up the policy answers with usable factors it is not read either; a step-up whose account holds factors but none usable for this session is refused with 401 insufficient_user_authentication before the method is consulted. A name the deployment does not take in is a 400 bad-request. */
@@ -1920,9 +1940,11 @@ export type AuthnLoginStartAuthenticatedBody = {
 };
 
 /**
- * The login identifier to add: a username or an email address.
+ * The login identifier to add — a username or an email address — and the human-verification proof the email branch may require.
  */
 export type AuthnLoginAddIdentifierBody = {
+  /** The human-verification proof the deployment may require before it sends a verification code to an email address: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none or the kind is username. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  human_proof?: string;
   /** The identifier kind to add: username or email; a phone is added through /auth/phone */
   kind: string;
   /** The login name or address to add. A username is NFKC-normalized and lowercased first, then accepted only when it is 3 to 64 characters of [a-z0-9._-] beginning with a letter or a digit and does not carry the reserved static-credential prefix; the stored value is the normalized one. An email address is trimmed and lowercased first, then accepted only when it is ASCII, contains exactly one `@` with no whitespace, and is at most 254 bytes; anything else is a 400 bad-request. */
@@ -2006,9 +2028,11 @@ export type AuthnLoginChangePasswordBody = {
 };
 
 /**
- * The phone number to send a verification code to.
+ * The phone number to send a verification code to, and the human-verification proof the deployment may require.
  */
 export type AuthnLoginStartPhoneBody = {
+  /** The human-verification proof the deployment may require before it sends a verification code: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  human_proof?: string;
   /** The number in international E.164 form: a leading `+`, a non-zero country digit, then 6 to 14 more digits. The value is not parsed, completed or reformatted, so a national-format number is a 400 bad-request. */
   phone?: string;
 };

@@ -163,6 +163,7 @@ describe('the README quick start, exercised over a real api-client', () => {
             ],
             signup: { enabled: false, password: { enabled: false } },
             mfa: { factors: ['totp'] },
+            human: { required: false, provider: 'off' },
           })
       }
       throw new Error(`no scripted answer for ${call.method} ${call.path}`)

@@ -36,14 +36,25 @@ const (
 )
 
 // AuthnLoginMethods is the discovery document: one descriptor per login method
-// taking part and not turned off, whether registration is open, and the kinds of
-// second factor the deployment offers.
+// taking part and not turned off, whether registration is open, the kinds of
+// second factor the deployment offers, and the human-verification gate a send
+// must satisfy.
 type AuthnLoginMethods struct {
-	_ struct{} `description:"The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, and the second-factor kinds the deployment takes in. Enterprise identity providers are not listed here; they are discovered through the SSO module."`
+	_ struct{} `description:"The discovery document of the login surface: one descriptor per login method that takes part and is not turned off, whether registration is open, the second-factor kinds the deployment takes in, and the human-verification gate this deployment requires before a verification message is sent. Enterprise identity providers are not listed here; they are discovered through the SSO module."`
 
 	Methods []AuthnMethodDescriptor `json:"methods" required:"true" description:"The methods taking part that are not turned off, one descriptor each, sorted by name"`
 	Signup  AuthnLoginSignup        "json:\"signup\" required:\"true\" description:\"Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`.\""
 	MFA     AuthnLoginMFA           `json:"mfa" required:"true" description:"The second-factor kinds the deployment takes in."`
+	Human   AuthnLoginHuman         `json:"human" required:"true" description:"The human-verification gate a send must satisfy."`
+}
+
+// AuthnLoginHuman is the human-verification gate the deployment runs.
+type AuthnLoginHuman struct {
+	_ struct{} `description:"The human-verification gate a deployment puts in front of every send of a verification message: whether a proof is required, the mechanism that checks it, and the public identifier a client-side widget needs. A deployment that takes no gate in reports the off mechanism and requires nothing."`
+
+	Required bool   `json:"required" required:"true" description:"Whether every send of a verification message must first present a valid, single-use proof"`
+	Provider string "json:\"provider\" required:\"true\" description:\"The mechanism that checks a proof: `off` when no gate is configured, `pow` for the self-hosted proof of work, or `turnstile`\""
+	SiteKey  string "json:\"site_key,omitempty\" description:\"The public identifier a client-side widget is rendered with, for a mechanism that needs one; absent for `off` and `pow`\""
 }
 
 // AuthnMethodDescriptor is one login method as the discovery document reports
@@ -219,6 +230,7 @@ type (
 	signupView           = AuthnLoginSignup
 	passwordSignupView   = AuthnLoginSignupPassword
 	mfaView              = AuthnLoginMFA
+	humanView            = AuthnLoginHuman
 	registrationReply    = AuthnLoginRegistration
 	verificationView     = AuthnLoginRegistrationContact
 )
@@ -233,6 +245,12 @@ type startInput struct {
 	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string `json:"input" description:"The fields the method's first step takes, as name-to-value strings. At most 8 members, each value at most 512 bytes; anything beyond is a 400 bad-request."`
+	// HumanProof is the proof the deployment's human-verification gate checks
+	// before a verification message is sent. It is flat rather than a member of
+	// input because an input value is capped at 512 bytes and a Turnstile token
+	// can exceed that. It is read only when this request would send a message and
+	// the deployment requires a proof; otherwise it is ignored.
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // startAuthenticatedInput is the body of POST flows/authenticated.
@@ -245,6 +263,9 @@ type startAuthenticatedInput struct {
 	ReturnTo string            "json:\"return_to\" description:\"Where the callback lands the user agent: either a path starting with a single `/`, not `//`, without backslash, control characters or `@` and at most 2048 bytes, or an absolute URL whose origin the deployment trusts; anything else is a 400 bad-request. The callback lands the user agent there for every purpose that reaches ready: a login, a link and a no-factor step-up. An absent or empty value uses the configured `authn.login.default-return-to`, which is held to the same rule and falls back to `/`. The value is stored in the flow record, and no parameter of the callback request can change it.\""
 	Binding  string            "json:\"binding\" description:\"How the flow token is carried: `cookie` (the default) writes the flow cookie (`__Host-authn-flow`, or `authn-flow` when insecure use is allowed) and returns no token in the body; `header` returns the token in `flow_token` and sets no cookie, so the client must send it in the `Authn-Flow` request header on every later call. A callback navigation cannot set a header, so a flow bound this way cannot finish a redirect method.\""
 	Input    map[string]string "json:\"input\" description:\"The fields the started step takes, as name-to-value strings: the method's first step for `link`, the enrollment step for `enroll` where `kind` names the factor kind, and nothing for a step-up that starts at the second factor. At most 8 members, each value at most 512 bytes.\""
+	// HumanProof is the proof the deployment's human-verification gate checks
+	// before a verification message is sent; see startInput.HumanProof.
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // registerInput is the body of POST register.
@@ -266,6 +287,9 @@ type answerInput struct {
 	Seq   int               "json:\"seq\" description:\"The `seq` of the flow as last returned. It must equal the record's current step number; a stale or future value is a 401 flow-invalid.\""
 	Step  string            "json:\"step\" description:\"The step being answered: `answer` for a first-factor submission, only while the flow is at the first factor; `factor` for a second-factor step, only at the second factor; `enroll` for an enrollment step, only at the enroll state; `complete` to take the result of a ready flow. A name outside this set is a 400 bad-request, and a step that does not match the flow's state is a 401 flow-invalid.\""
 	Input map[string]string "json:\"input\" description:\"The fields the step takes, as name-to-value strings. At most 8 members, each value at most 8 KiB; a second-factor step reads `factor` to choose the factor and then the values that factor asks for, an enrollment step reads `kind`, and `complete` reads nothing.\""
+	// HumanProof is the proof the deployment's human-verification gate checks
+	// before a verification message is sent; see startInput.HumanProof.
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
 }
 
 // callbackInput is the path of a provider callback: the provider segment the
@@ -351,12 +375,20 @@ var (
 		"The body could not be read, or a value is outside its domain")
 	forbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable")
+	// sendForbiddenAnswer is the 403 of the routes that send a verification
+	// message: the refusal shared with the other routes, and the
+	// human-verification refusal a deployment may turn on.
+	sendForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
+		"The method or the account is unavailable, or a human-verification proof is missing or invalid "+
+			"(human-verification-required)")
 	// signedInForbiddenAnswer is the 403 of the flow route that runs on an
 	// identity already signed in. It carries the signup gate of `purpose=link`
-	// beside the refusal shared with the other routes.
+	// beside the refusal shared with the other routes, and the
+	// human-verification refusal a deployment may turn on a step-up.
 	signedInForbiddenAnswer = speedhttp.ProblemResponse(http.StatusForbidden,
 		"The method or the account is unavailable, or a `purpose=link` flow is refused because the "+
-			"caller has an email address that is not proved (contact-required)")
+			"caller has an email address that is not proved (contact-required), or a human-verification "+
+			"proof is missing or invalid (human-verification-required)")
 	conflictAnswer = speedhttp.ProblemResponse(http.StatusConflict,
 		"The request conflicts with the account's state")
 	mediaTypeAnswer = capabilityProblem(http.StatusUnsupportedMediaType, mount.CodeUnsupportedMediaType,
@@ -454,7 +486,7 @@ var startOperation = speedhttp.NewReplyOperation[startInput](
 			"The body could not be read, a value is outside its domain, or the method refused the identifier as a region the deployment does not serve (`unsupported-region`) or as one that cannot name an account (`bad-request`)"),
 		bodyOverLimit,
 		unauthorized("The credential did not hold"),
-		forbiddenAnswer,
+		sendForbiddenAnswer,
 		conflictAnswer,
 		mediaTypeAnswer,
 		tooManyAnswer,
@@ -524,7 +556,7 @@ var answerOperation = speedhttp.NewReplyOperation[answerInput](
 		badRequestAnswer,
 		bodyOverLimit,
 		unauthorized("The credential did not hold, or the flow binding is missing or wrong"),
-		forbiddenAnswer,
+		sendForbiddenAnswer,
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The request conflicts with the account's state: a completed link names an external identity another account already holds. A step that does not match the flow's state is a 401 flow-invalid, not a 409."),
 		mediaTypeAnswer,

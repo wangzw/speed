@@ -70,6 +70,14 @@ func (r *routes) startFlow(ctx context.Context, in startInput, meta *speedhttp.M
 		r.fail(c, verr)
 		return c.result()
 	}
+	// The gate is checked before the flow token is minted, so a refused proof
+	// leaves no record behind. It covers a first step that sends a code; a start
+	// that only asks for the number sends nothing and asks for no proof.
+	if r.methodSubmissionCarriesPhone(in.Method, in.Input) {
+		if !r.checkHumanProof(c, in.HumanProof) {
+			return c.result()
+		}
+	}
 
 	token, err := newFlowToken()
 	if err != nil {
@@ -142,6 +150,13 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 	if err := checkFields(in.Input, maxStartFieldBytes); err != nil {
 		r.fail(c, err)
 		return c.result()
+	}
+	// A step-up whose account holds no factor starts at the first factor and may
+	// send a code there; the gate is checked before any flow token is minted.
+	if r.methodSubmissionCarriesPhone(in.Method, in.Input) {
+		if !r.checkHumanProof(c, in.HumanProof) {
+			return c.result()
+		}
 	}
 	if in.ReturnTo != "" {
 		if err := checkReturnTo(in.ReturnTo, r.trustedOrigins); err != nil {

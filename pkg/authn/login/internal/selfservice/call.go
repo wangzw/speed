@@ -195,6 +195,8 @@ func (r *routes) fail(c *call, err error) {
 		c.fail(mount.CodeUnsupportedRegion)
 	case errors.Is(err, authn.ErrInvalidCredentials):
 		c.unauthorized(mount.CodeLoginFailed)
+	case errors.Is(err, authn.ErrHumanVerificationRequired):
+		c.forbidden(mount.CodeHumanVerificationRequired)
 	case errors.Is(err, authn.ErrAccountNotFound), errors.Is(err, authn.ErrSessionNotFound),
 		errors.Is(err, authn.ErrSessionRevoked):
 		c.unauthorized("")

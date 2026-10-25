@@ -29,6 +29,11 @@ const (
 	stateEnrolled = "enrolled"
 )
 
+// humanProviderOff is the mechanism the discovery document names when this
+// deployment has no human-verification gate, either because no seam was
+// delivered or because the seam it was handed is the off mechanism.
+const humanProviderOff = "off"
+
 // wire writes a body as the answer route's union when the call is the answer
 // route, and as the body itself otherwise.
 func (c *call) wire(body any) {
@@ -176,9 +181,21 @@ func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 			Enabled:  signup || password,
 			Password: passwordSignupView{Enabled: password},
 		},
-		MFA: mfaView{Factors: r.factorKinds()},
+		MFA:   mfaView{Factors: r.factorKinds()},
+		Human: r.humanGate(),
 	})
 	return c.result()
+}
+
+// humanGate reports the human-verification gate this deployment runs. No seam
+// and the off mechanism both read as the off mechanism: a caller needs one
+// answer whether the deployment has no gate or has the gate turned off, because
+// in both cases it presents no proof.
+func (r *routes) humanGate() humanView {
+	if r.human == nil {
+		return humanView{Provider: humanProviderOff}
+	}
+	return humanView{Required: r.human.Required(), Provider: r.human.Provider(), SiteKey: r.human.SiteKey()}
 }
 
 // descriptorView copies a method's descriptor into the wire shape. opensAccount
