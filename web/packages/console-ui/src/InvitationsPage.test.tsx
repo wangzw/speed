@@ -110,6 +110,7 @@ function account(overrides: Partial<ConsoleAccount> = {}): ConsoleAccount {
     mfa_required: false,
     protected: false,
     password_set: true,
+    identifiers: [],
     created_at: '2026-10-15T12:00:00Z',
     ...overrides,
   }
