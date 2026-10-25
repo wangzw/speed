@@ -26,7 +26,7 @@
 |---|---|---|---|
 | `pkg/notification/delivery` | `notification.delivery` | 排他交付 `(*notification.Dispatcher)(nil)`；向 `jobs.Handlers` 登记处理器 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*kv.KV)(nil)`；可选 `(*settings.Store)(nil)`、`(*log.Logger)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 
-`kv.KV` 承载投递预算的计数器，是硬依赖：没有它就无法在入队前计数，而不计数的预算会放行每一条投递，方向与要求相反。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时三个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
+`kv.KV` 承载投递预算的计数器，是硬依赖：没有它就无法在入队前计数，而不计数的预算会放行每一条投递，方向与要求相反。`settings.Store` 列为可选依赖，使 settings 模块先于本模块初始化、快照已加载；缺席时每个预算各读自己的声明默认值，是合法装配。可选依赖的缺席都不使本模块启动失败：`log.Logger` 缺席则外部发送记在进程默认 logger 上；`mail.Sender` 缺席则 `email` 渠道不可用，`sms.Registry` 或 `sms.Sender` 缺席则 `sms` 渠道不可用，对应的条件特性也不报告（见「渠道的条件特性」）。**提交面 `notification.Dispatcher` 是本模块交付的功能**，本模块排他交付它（[ADR-notification-delivery-2026-10-15](../../../adr/adr-notification-delivery-2026-10-15.md)）。
 
 ### 交付的功能
 
@@ -147,7 +147,7 @@ idempotency_key = hex(sha256(canonicalJSON{
 | `pkg/db` | `notification_sends` 表与迁移 |
 | `pkg/tenant` | 租户上下文、`tenant.Model`、语句的租户过滤 |
 | `pkg/kv` | 投递预算的计数器：按窗口原子累加，键的过期时间即桶宽 |
-| `pkg/settings` | 三个预算上限的声明与读取；`settings.Store` 是可选依赖，缺席时读声明默认值 |
+| `pkg/settings` | 预算上限的声明与读取；`settings.Store` 是可选依赖，缺席时读声明默认值 |
 | `pkg/authn` | 只用其 `ThrottledError`（读作 `ErrThrottled`，携带 `RetryAfter`）与 `ErrUnavailable` 表达可重试的拒绝；不使用其身份、账户或任何实现 |
 | `pkg/notification` | 根包的类型、哨兵与接缝（`Dispatcher`、`Dispatch`、`Preferences`、`Inbox`、`Channel`） |
 | `pkg/mail` | 可选：`email` 渠道的发送接缝 `mail.Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本模块只引用这条接缝，不设计它的内部 |
@@ -160,11 +160,11 @@ idempotency_key = hex(sha256(canonicalJSON{
 
 **依赖方向。** 本模块 import `pkg/jobs`、`pkg/db`、`pkg/tenant`、`pkg/i18n`、`pkg/log`、`pkg/kv`、`pkg/settings`、`pkg/feature` 根包、`pkg/notification` 根包，并为投递预算的可重试拒绝 import `pkg/authn` 根包的 `ThrottledError` 与 `ErrUnavailable`；也可选 import `pkg/mail` 与 `pkg/sms` 的根包，不 import 通知能力目录内的其他实现子包，也不 import `pkg/authz`。它不 import 任何厂商 SDK：`mail` 与 `sms` 的载体叶子绑定各自的库，本模块只经它们的接口包触达。这些依赖都在本模块之前构造、之后停止。
 
-**本模块不声明配置命名空间，不读任何输入项；它声明 settings。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置。运行期可调的只有「投递预算」一节的三个上限，它们挂在 settings 的 `notification.delivery` 命名空间下。
+**本模块不声明配置命名空间，不读任何输入项；它声明 settings。** 一次发送的作业参数（超时、重试次数、优先级）在入队时由本模块给出确定取值，不来自配置。运行期可调的只有「投递预算」一节的各上限，它们挂在 settings 的 `notification.delivery` 命名空间下。
 
 ## UML 图
 
-本模块的结构是一条提交接缝、一条消费路径、渠道接缝与投递预算的关系。图里的约束不在图中：提交面排他交付，一个进程里至多一条流水线；偏好、收件箱与键值计数器是**必需**依赖，渠道接缝与 settings 存储都是**可选**的，渠道接缝缺席只让对应渠道跳过并让对应的条件特性不报告，settings 存储缺席只让三个预算读声明默认值；`feature.Board` 不是构造期依赖，只在 `Init` 取用，取不到即不报告。
+本模块的结构是一条提交接缝、一条消费路径、渠道接缝与投递预算的关系。图里的约束不在图中：提交面排他交付，一个进程里至多一条流水线；偏好、收件箱与键值计数器是**必需**依赖，渠道接缝与 settings 存储都是**可选**的，渠道接缝缺席只让对应渠道跳过并让对应的条件特性不报告，settings 存储缺席只让各预算读声明默认值；`feature.Board` 不是构造期依赖，只在 `Init` 取用，取不到即不报告。
 
 ```mermaid
 classDiagram
@@ -262,7 +262,7 @@ classDiagram
 
 **顺序与拒绝。** 先查收件人小时窗口，再查日窗口，最后查部署窗口；任一处计数超过上限即以 `*authn.ThrottledError` 拒绝，携带的 `RetryAfter` 是当前桶剩余的时间（不少于一秒），且不写入任何作业。计数发生在比较之前，被拒的派发同样耗掉一个单位：只数放行的量会让已经超限的调用方在不付费的情况下重试。某一窗口拒绝后，其后的窗口不再计数，因此收件人被拒不会连带花掉部署窗口。
 
-**上限来自 settings，每次派发读取。** 三个键挂在 `notification.delivery` 命名空间下，值分别是一个窗口内允许的外部消息数：
+**上限来自 settings，每次派发读取。** 这些键挂在 `notification.delivery` 命名空间下，值分别是一个窗口内允许的外部消息数：
 
 | 键 | 默认 | 取值域 | 约束 |
 |---|---|---|---|
@@ -365,7 +365,7 @@ classDiagram
 ## 并发与事务边界
 
 - **提交面可被多个协程并发调用。** `Dispatcher.Dispatch` 不持可变共享状态；分类法在 `New` 之后只读，入队由队列的提交面自行串行。重复的入队由幂等键收敛。
-- **投递预算的计数由键值后端保证原子。** 每次 `Dispatch` 对三个窗口键各做一次原子自增，同一窗口内并发到达的派发由后端串行累加。计数与入队不在一个事务里：计数在入队之前，一次计数完成而入队失败的调用方耗掉了一个单位。
+- **投递预算的计数由键值后端保证原子。** 每次 `Dispatch` 对每个窗口键各做一次原子自增，同一窗口内并发到达的派发由后端串行累加。计数与入队不在一个事务里：计数在入队之前，一次计数完成而入队失败的调用方耗掉了一个单位。
 - **一条作业由一个处理器消费。** 队列的认领保证一条作业在一个副本上被一个处理器处理；处理器可被队列并发调用于不同作业，各作业的发送互不共享可写状态。
 - **一次渠道落账在一个事务里。** 落账是先按去重键查、无则写一行，这两步在同一事务里，以唯一索引收口：两个并发的同一键写入只留一行。
 - **本模块不发起跨表事务。** 它只写自己的 `notification_sends` 表；收件箱行经 `notification.Inbox` 在收件箱自己的事务里写，投递账与收件箱行不同成不同败——投递账是「发没发」的账，收件箱行是「收件人看得见什么」的账，两者各管各的。

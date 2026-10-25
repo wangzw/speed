@@ -149,7 +149,7 @@ type Message struct {
 | `pkg/notification/delivery` | `notification.delivery` | 出站投递流水线：`Dispatch` 校验、计投递预算并入队、消费 `jobs.Handler`、逐渠道发送、去重落账 | `(*notification.Dispatcher)(nil)` 排他 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*kv.KV)(nil)`；可选 `(*settings.Store)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 | `pkg/notification/stream` | `notification.stream` | SSE 推送：每副本一个 Hub | 不交付功能接口（挂 `/stream` 路由） | 必需 `(*event.Bus)(nil)`；可选 `(*http.Router)(nil)`、`(*log.Logger)(nil)` |
 
-上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每条收件人的生效渠道——提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送——经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题（见「分类法与取材域」）。投递预算的计数落在 `(*kv.KV)(nil)` 的计数器上，三个上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的「投递预算」。
+上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每条收件人的生效渠道——提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送——经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题（见「分类法与取材域」）。投递预算的计数落在 `(*kv.KV)(nil)` 的计数器上，各上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的「投递预算」。
 
 ### 渠道与可用性
 
@@ -217,7 +217,7 @@ type Message struct {
 | `pkg/mail` | `email` 渠道的发送接缝 `Sender`（`Send`、`Message`、`Receipt` 与哨兵 `ErrThrottled`、`ErrRejected`、`ErrUncertain`、`ErrInvalidConfig`）。本设计只引用这条接缝，不设计它的内部 |
 | `pkg/sms` | `sms` 渠道的模板注册表 `Registry` 与发送接缝 `Sender` |
 | `pkg/kv` | 投递预算的计数器：按窗口原子累加，键的过期时间即桶宽 |
-| `pkg/settings` | 投递预算三个上限的声明与读取；`settings.Store` 是投递模块的可选依赖，缺席时读声明默认值 |
+| `pkg/settings` | 投递预算上限的声明与读取；`settings.Store` 是投递模块的可选依赖，缺席时读声明默认值 |
 | `pkg/event` | 收件箱创建事件 `notification.inbox.created`：收件箱发布、推送订阅。可选 |
 | `pkg/http` | 路由登记面。可选 |
 | `pkg/authn` | 请求上下文中的已认定身份：handler 经 `authn.FromContext` 取身份，以其账户为收件人；投递模块另用其 `ThrottledError` 与 `ErrUnavailable` 表达可重试的投递预算拒绝 |

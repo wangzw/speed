@@ -100,7 +100,7 @@ announced twice would push twice to a connected client.
 
 ## Delivery budgets
 
-An external delivery is bounded by three fixed-window budgets, charged in
+An external delivery is bounded by fixed-window budgets, charged in
 `Dispatch` **before** the job is queued:
 
 | Setting (under `notification.delivery`) | Default | Domain | Bounds |
@@ -281,7 +281,7 @@ absence of the recipient, the body and the parameter values.
 
 None. The module declares no configuration namespace and reads no input item: the
 parameters of a delivery job (priority, timeout, retry budget) are fixed by this
-module at enqueue time. The only runtime parameters are the three delivery-budget
+module at enqueue time. The only runtime parameters are the delivery-budget
 settings, under the module's own `notification.delivery` namespace.
 
 ## Routes and permissions
