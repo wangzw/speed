@@ -657,7 +657,7 @@ Location: <落地页>#authn_error=<码>
 - 账户级的退避对调用方不可见：达到阈值后，应答与普通的凭据错误同形（401 `login-failed`），不返回 429；可见的 429 来自标识级、因素级、号码级与客户端级的退避。
 - `Throttle` 读写失败时登录路径答 503、不校验。
 
-**来源地址的前置减负**放 kv，由设置 `authn.login.ip-limit` 控制，缺省每分钟 60 条验证消息。它按实际发出的消息计数，不按打开的流程计数：不发送的流程不消耗额度，一次调用报几条发送就扣几条；报告就是「短信发送的每流程上限」里方法与因素带出的那个条数，短信方法与其因素各报自己的发送条数；自助路由的邮件码不经流程引擎，不计入这一层，由它自己的发送预算约束。入口模块默认不信任任何代理：端及其继承的模块级默认都未列出可信代理时，`ClientIP()` 是对端地址，一个未配置可信代理的代理之后全站共用一个桶——缺省值因此取一个对共享出口留有余量的粗粒度上限，把 0（关闭）留给明确要放开这一层的部署，改到 0 时在启动诊断里点出。它是权威退避之外的一层粗粒度减负，不是防线：kv 不可用时跳过该层并留 Warn 与计数，放宽的上界是自由次数。
+**来源地址的前置减负**放 kv，由设置 `authn.login.ip-limit` 控制，缺省每分钟 60 条验证消息。它按实际发出的消息计数，不按打开的流程计数：一次调用报几条发送就扣几条，不发送的流程不消耗额度；报告就是「短信发送的每流程上限」里方法与因素带出的那个条数，短信方法与其因素各报自己的发送条数。检查在请求入口、调用方法之前做：额度已用尽的来源在本窗口内的登录、注册与应答请求一律答 429，不再调用方法，也不再发出验证消息（一次调用报多条发送时，跨过上限的那一次仍会把它报的几条发出，超出量至多是一次调用的发送条数减一）。自助路由（邮件码与手机号验证）的发码不经流程引擎，不计入这一层，各由自己的发送预算约束。入口模块默认不信任任何代理：端及其继承的模块级默认都未列出可信代理时，`ClientIP()` 是对端地址，一个未配置可信代理的代理之后全站共用一个桶——缺省值因此取一个对共享出口留有余量的粗粒度上限，把 0（关闭）留给明确要放开这一层的部署，改到 0 时在启动诊断里点出。它是权威退避之外的一层粗粒度减负，不是防线：kv 不可用时跳过该层并留 Warn 与计数，放宽的上界是自由次数。
 
 **地址盾与发送预算不是同一件事。** `ratelimit` 的地址盾按来源地址限制单位时间内的请求数，落在身份确定之前，不看消息；发送预算按收件人、来源与账户限制消息数，归发送它的能力（[authn-sms](design-authn-sms.md) 的预算维度、[authn-config](design-authn-config.md) 的设置表）。本节这一层按来源地址限制单位时间内的验证消息数，是登录路径上的粗粒度前置减负，既不替代地址盾，也不替代任何一条发送预算。
 
@@ -863,7 +863,7 @@ Location: <落地页>#authn_error=<码>
 | 账户凭据自助路由与手机号验证 | 已实现 | `pkg/authn/login/internal/selfservice` `Service`、`Deps`；`pkg/authn/login/routes.go` |
 | 登录标识的自助添加（用户名一步写入、邮箱经验证码证明） | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(routes).addIdentifier`、`(routes).verifyIdentifier`；`pkg/authn/email.go` `EmailCodeSender`；`pkg/authn/login/login.go` `(*product).emailSender` |
 | 邮箱验证码回路的各层预算、收件箱别名归一、失败退还与地址占用判定 | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).addEmail`、`reserveEmailBudgets`、`refundEmailBudgets`、`refundEmailBudget`、`emailCertifiesNotSent`、`untilNextEmailBucket`、`emailTakenByAnother`；`pkg/authn/internal/budgetalias` `Canonical`；`pkg/authn/emailcode` `(*product).SendCode`、`(*product).CertifiesNotSent`；`pkg/authn/email.go` `ErrEmailUncertain`；`(*routes).verifyIdentifier` 的 `email-taken` 映射；设置项声明于 `pkg/authn/login/config.go`，读取于 `pkg/authn/login/internal/selfservice/settings.go` `(*counts).get`；`pkg/authn/login/internal/selfservice/emailbudget_test.go`、`emailabuse_test.go` |
-| 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 | `pkg/authn/login/engine.go` `(*routes).recordSends`、`pkg/authn/login/start.go` `(*routes).allowSends`、`pkg/authn/login/answer.go` |
+| 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 | `pkg/authn/login/engine.go` `(*routes).recordSends`、`pkg/authn/login/start.go` `(*routes).admitSends`、`(*routes).chargeSends`、`pkg/authn/login/answer.go` `(*routes).answer` |
 | 口令方法 `authn.login.password` | 已实现 | `pkg/authn/login/password/password.go` `Module`、`(method).Begin`、`(method).Answer`、`(method).Name` |
 | 短信方法 `authn.login.sms` | 已实现 | `pkg/authn/login/sms/sms.go` `Module` |
 | 请求来源地址传到短信引擎：方法取 `Start.Client` 与 `StepInput.Client`，因素取 `FlowState.Source`（只由 `challengeFactor` 填入），自助手机号路由取请求的 `Meta.ClientIP` | 已实现 | `pkg/authn/login/sms/sms.go` `(*method).Begin`、`Answer`、`phone`；`pkg/authn/login/answer.go` `challengeFactor`；`pkg/authn/login/internal/selfservice/call.go` `(*routes).call`、`phone.go` `(*routes).startPhone` |
