@@ -24,7 +24,7 @@
 
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
   AuthSession,
@@ -38,6 +38,7 @@ import { StepUpChallenge } from './step-up-challenge.js'
 import { expectNoAxeViolations } from '../../test-utils/axe.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { bindConsoleRequest } from '../../test-utils/request-rig.js'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import {
   AUTHENTICATED_SNAPSHOT,
   createStepUpSession,
@@ -153,6 +154,78 @@ function refusingStartSession(
 }
 
 describe('StepUpChallenge', () => {
+  it('presents the human proof on an SMS second-factor answer', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const requests: Array<{
+        step: string | undefined
+        input?: Readonly<Record<string, string>>
+        human_proof?: string
+      }> = []
+      const base = flowSession().session
+      const session: AuthSession = {
+        ...base,
+        listMethods: () =>
+          Promise.resolve({
+            methods: [{ name: 'password', kind: 'form' }],
+            signup: { enabled: false, password: { enabled: false } },
+            mfa: { factors: [] },
+            human: { required: true, provider: 'turnstile', site_key: 'site-1' },
+          }),
+        startAuthenticatedFlow: () =>
+          Promise.resolve<AuthnFlowState>({
+            seq: 1,
+            state: 'second',
+            next: {
+              kind: 'factor',
+              factors: [{ id: 'f1', kind: 'sms', label: 'Phone' }],
+            },
+          }),
+        answerFlow: (request) => {
+          requests.push({
+            step: request.step,
+            input: request.input,
+            human_proof: request.human_proof,
+          })
+          return Promise.resolve<AuthnFlowState>({
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'code', required: true }],
+            },
+          })
+        },
+      }
+      renderWithProviders(
+        <StepUpChallenge
+          open
+          session={session}
+          onSuccess={vi.fn()}
+          onCancel={() => undefined}
+        />,
+      )
+      const user = userEvent.setup()
+      await screen.findByRole('button', { name: 'Phone' })
+      // The block renders above the SMS factor choice; its widget yields a
+      // single-use token the answer presents.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      act(() => {
+        fake.token('token-1')
+      })
+      await user.click(screen.getByRole('button', { name: 'Phone' }))
+      await waitFor(() => expect(requests).toHaveLength(1))
+      expect(requests[0]).toMatchObject({
+        step: 'factor',
+        input: { factor: 'f1' },
+        human_proof: 'token-1',
+      })
+    } finally {
+      fake.restore()
+    }
+  })
+
   it('resends the chosen factor alongside the code of its challenge', async () => {
     const user = userEvent.setup()
     const { session, answers } = flowSession()

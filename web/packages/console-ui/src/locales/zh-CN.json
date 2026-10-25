@@ -18,7 +18,8 @@
       "login_failed": "验证未通过，邮箱、手机号、密码或验证码不正确。",
       "flow_invalid": "验证流程已失效，请重新开始。",
       "throttled": "尝试次数过多，请稍后再试。",
-      "unavailable": "服务暂时不可用，请稍后重试。"
+      "unavailable": "服务暂时不可用，请稍后重试。",
+      "human_verification_required": "请先完成人机验证，然后重试。"
     },
     "authz": {
       "bad_request": "服务端无法读取该请求，请检查表单后重试。",

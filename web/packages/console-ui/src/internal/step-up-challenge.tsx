@@ -67,8 +67,9 @@ import {
   useAuthnMfaFactors,
 } from '@speed/api-sdk'
 import type { AuthSession } from '@speed/auth-core'
-import type { AuthnFlowAnswer } from '@speed/auth-core'
-import { useStepUp } from '@speed/auth-core'
+import type { AuthnFlowAnswer, AuthnStep } from '@speed/auth-core'
+import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
+import { HumanVerification } from '@speed/ui-kit'
 import { useConsoleAccountHref } from './account-href.js'
 import { FlowStep } from './flow-step.js'
 import { InlineError } from './inline-error.js'
@@ -187,7 +188,7 @@ function StepUpFlow({
       onSuccess()
     }
   }, [onSuccess])
-  const { phase, step, seq, errorCode, answer } = useStepUp(session, true, elevated)
+  const { phase, step, seq, errorCode, human, answer } = useStepUp(session, true, elevated)
   // The second factor the operator chose. The verification step that
   // follows it (the code challenge) is answered under the `factor` step
   // and must re-name the same factor alongside the code -- a challenge
@@ -280,17 +281,28 @@ function StepUpFlow({
             ) : (
               <Box sx={{ mt: 1 }}>
                 {step !== null ? (
-                  <FlowStep
-                    // A fresh step resets the fields: keying the renderer on
-                    // the step identity clears its per-answer state.
-                    key={`${seq ?? 0}-${step.kind}`}
-                    step={step}
-                    answerStep="factor"
-                    submitLabel={t('stepUp.submit')}
-                    onSubmit={handleAnswer}
-                    ceremonyError={ceremonyError}
-                    onCeremonyError={setCeremonyError}
-                  />
+                  <>
+                    {humanGateNeedsProof(human.gate) && stepMaySend(step) ? (
+                      <HumanVerification
+                        gate={human.gate ?? undefined}
+                        proof={human.proof}
+                        status={human.status}
+                        onToken={human.adoptToken}
+                        onRetry={human.retry}
+                      />
+                    ) : null}
+                    <FlowStep
+                      // A fresh step resets the fields: keying the renderer on
+                      // the step identity clears its per-answer state.
+                      key={`${seq ?? 0}-${step.kind}`}
+                      step={step}
+                      answerStep="factor"
+                      submitLabel={t('stepUp.submit')}
+                      onSubmit={handleAnswer}
+                      ceremonyError={ceremonyError}
+                      onCeremonyError={setCeremonyError}
+                    />
+                  </>
                 ) : null}
               </Box>
             )}
@@ -324,6 +336,19 @@ function ordinaryStartRefusal(
   errorCode: string | null,
 ): boolean {
   return errorCode === 'authn.bad_request' && session.getSnapshot().state === 'authenticated'
+}
+
+/** Whether a step-up step could send a verification message: an SMS second
+ * factor to choose, or a first-factor re-proof that asks for the phone. The
+ * proof block renders above such a step. */
+function stepMaySend(step: AuthnStep): boolean {
+  if (step.kind === 'factor') {
+    return step.factors.some((factor) => factor.kind === 'sms')
+  }
+  if (step.kind === 'challenge') {
+    return step.fields.some((field) => field.kind === 'phone')
+  }
+  return false
 }
 
 /** The factors a factor read names as active, which are the ones a step-up
