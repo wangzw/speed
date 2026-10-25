@@ -344,9 +344,11 @@ func TestNormalStopIsNotAnAnomalousExit(t *testing.T) {
 	if err := l.close(context.Background()); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	// The accept loop returns on its own goroutine, so the absence has to be
-	// given time to become a presence before it is asserted.
-	time.Sleep(50 * time.Millisecond)
+	// The accept loop returns on its own goroutine. Its done signal is what
+	// says the goroutine is over, so the absence below is observed after the
+	// last moment a record could be written rather than after an interval that
+	// a loaded machine may finish first.
+	waitFor(t, l.acceptDone, "the accept loop to return")
 
 	if written := records.at(slog.LevelError); len(written) > 0 {
 		t.Errorf("a clean stop was reported as an anomalous exit: %s", strings.Join(written, "\n"))
