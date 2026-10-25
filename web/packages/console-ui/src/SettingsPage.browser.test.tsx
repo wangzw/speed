@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
+import axe from 'axe-core'
 import { page } from 'vitest/browser'
 import { SettingsPage } from './SettingsPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -12,6 +13,7 @@ import { createConsoleOperations, makeConsoleBackend } from '../test-utils/opera
 import { expectNoHorizontalOverflow } from '../test-utils/browser-overflow.js'
 import { uiKitResources } from '@speed/ui-kit'
 import type { ConsoleSetting } from './operations.js'
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
@@ -147,4 +149,32 @@ describe('SettingsPage declaration layout in Chromium', () => {
       ).toBeLessThan(24)
     })
   }
+})
+
+/** The shipped Remove label for the overridden row the case renders. */
+const REMOVE_KEY = 'mail.retry'
+const REMOVE_LABEL = enUS.settings.removeAria.replace('{{key}}', REMOVE_KEY)
+
+/**
+ * The row's Remove control carries the visible text "Remove" beside its
+ * accessible name; WCAG 2.5.3 requires that text be part of the name. The
+ * rule measures the visible text through a canvas, which jsdom cannot
+ * provide, so this tier settles it for the one row shape that offers the
+ * control.
+ */
+describe('SettingsPage row Remove Label in Name in Chromium', () => {
+  it('keeps the visible Remove text inside the accessible name', async () => {
+    await page.viewport(1200, 900)
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve(SETTINGS) }),
+    )
+    renderWithProviders(<SettingsPage />, { operations, language: 'en-US' })
+
+    const remove = await screen.findByRole('button', { name: REMOVE_LABEL })
+    const result = await axe.run(remove, {
+      runOnly: { type: 'rule', values: ['label-content-name-mismatch'] },
+    })
+    expect(result.incomplete).toEqual([])
+    expect(result.violations).toEqual([])
+  })
 })
