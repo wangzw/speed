@@ -2938,21 +2938,20 @@ describe('AccountsPage', () => {
 
     const header = (label: string): Element =>
       screen.getByRole('columnheader', { name: label })
-    // Identifier columns are low and shed first; the display name (the
-    // primary identity) and the row actions never hide.
+    // The type and identifier columns are low and shed first; the status
+    // column stays high, so a narrow container loses type before status;
+    // the display name (the primary identity) and the row actions never
+    // hide.
     expect(columnVisibility(header(zhCN.accounts.column.id))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,
     })
-    expect(columnVisibility(header(zhCN.accounts.column.kind))).toEqual({
-      hiddenAt: 0,
-      visibleFrom: 900,
-    })
+    const kind = columnVisibility(header(zhCN.accounts.column.kind))
+    const status = columnVisibility(header(zhCN.accounts.column.status))
+    expect(kind).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
+    expect(status).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    expect(kind!.visibleFrom).toBeGreaterThan(status!.visibleFrom)
     expect(columnVisibility(header(zhCN.accounts.column.displayName))).toBeNull()
-    expect(columnVisibility(header(zhCN.accounts.column.status))).toEqual({
-      hiddenAt: 0,
-      visibleFrom: 600,
-    })
     expect(columnVisibility(header(zhCN.accounts.column.mfa))).toEqual({
       hiddenAt: 0,
       visibleFrom: 1200,

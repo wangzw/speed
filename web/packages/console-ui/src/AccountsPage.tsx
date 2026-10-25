@@ -612,7 +612,7 @@ export function AccountsPage({
     {
       id: 'kind',
       header: t('accounts.column.kind'),
-      priority: 'medium',
+      priority: 'low',
       cellWrap: 'nowrap',
       cell: (row) =>
         closedSetLabel('accounts.create.kind', row.kind, t, i18n),
