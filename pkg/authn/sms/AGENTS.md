@@ -95,8 +95,11 @@ compatibility break for a dashboard written against it.
 - **The failure direction is closed.** A database that cannot be read is
   `ErrUnavailable` in `Send` and `Verify`; a carrier that cannot send, and a
   registry that will not resolve a message, are a `Warn`, a metric and a dropped
-  message the user resends. An error from the carrier that is none of the four
-  sentinels is read as uncertain, never as a delivery (`deliverOne`, `send.go`).
+  message the user resends. A registry that will not resolve, and a queue that
+  fills between the pre-check and the enqueue, certainly sent nothing, so both
+  refund the row exactly as the carrier's certain failures do. An error from the
+  carrier that is none of the four sentinels is read as uncertain, never as a
+  delivery (`deliverOne`, `send.go`).
   `sms.ErrUnroutable` is a definite failure recorded under its own `unroutable`
   outcome: the message is not defective, but this deployment cannot carry it to
   that destination, so it is never read as an unknown outcome and never retried.
@@ -106,6 +109,8 @@ compatibility break for a dashboard written against it.
   pass `Verify`. An uncertain outcome, and an error outside the closed set, stay
   counted (`refundChallenge`, `register.refund`,
   `TestACertainCarrierFailureRefundsTheSend`,
+  `TestARegistryRefusalRefundsTheSend`,
+  `TestADropAfterTheRowIsWrittenRefundsTheSend`,
   `TestAnUncertainCarrierFailureStaysCounted`).
 - **Every call to the carrier writes one line, and the line carries no secret.**
   An accepted send writes an `Info` line with `outcome=sent`, the carrier's
@@ -122,13 +127,15 @@ compatibility break for a dashboard written against it.
   path, records one of the ten outcomes and refunds a certain failure's row.
   `Stop` drains the queue within its own bound
   (`pool`, `TestTheWorkersDrainQueuedMessagesOffTheRequestPath`,
-  `TestStopDrainsTheQueueWithinItsBound`, `TestEveryOutcomeIsRecorded`). The one
-  `dropped` path that is reached after the row is written — the queue filling
-  between the pre-check and the enqueue — is not driven by any case: the gap
-  spans a database write and cannot be held open deterministically without a test
-  seam, so it stays covered by inspection, not by a case
-  (`TestAQuedMessageIsDroppedWhenTheQueueIsFull` and `TestANormalEnqueueIsNotRecordedAsADrop`
-  pin the pre-check path on either side of it).
+  `TestStopDrainsTheQueueWithinItsBound`, `TestEveryOutcomeIsRecorded`). The
+  `dropped` path reached after the row is written — the queue filling between the
+  pre-check and the enqueue — refunds the row, as a refusing registry does:
+  nothing reached the carrier, so neither spends the budget. A case holds that
+  window open through the registry's resolving hook
+  (`TestADropAfterTheRowIsWrittenRefundsTheSend`,
+  `TestARegistryRefusalRefundsTheSend`); the pre-check path either side of it is
+  pinned by `TestAQuedMessageIsDroppedWhenTheQueueIsFull` and
+  `TestANormalEnqueueIsNotRecordedAsADrop`.
 - **The sweep keys on the window, not on the state.** It removes rows past the
   longest counting window plus a margin, so no budget inside a window is
   under-counted; it never removes a row by its being spent or expired alone

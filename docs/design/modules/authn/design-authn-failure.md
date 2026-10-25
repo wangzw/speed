@@ -255,7 +255,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 违反冒充的硬性限制；该会话上已有未结束的冒充；结束时没有未结束的记录；调用方没有会话可绑 | 403 `impersonation-restricted`；409；404；403 `impersonation-restricted` |
 | `ErrForbidden`、`ErrAuditRequired` | `Decider` 判否；强制档动作写审计失败 | 403 `forbidden`；503 |
 | `ErrUnsupportedRegion` | 号码前缀不在放行表 | 400 `unsupported-region` |
-| `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUnroutable`、`sms.ErrUncertain` | 发送方限流；模板、签名或号码被拒；当前部署送不到这个目的地（确定失败）；发送后超时、不知是否送达（不得盲目重发）。由本模块的工作池归类 | 不外露，只记指标与日志，对触发发送的请求的应答不变 |
+| `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUnroutable`、`sms.ErrUncertain` | 发送方限流；模板、签名或号码被拒；当前部署送不到这个目的地（确定失败）；发送后超时、不知是否送达（不得盲目重发）。由本模块的工作池归类 | 不外露，只记指标与日志，对触发发送的请求的应答不变；确定失败（`ErrThrottled`、`ErrRejected`、`ErrUnroutable`）退还本次预算并使验证码失效，`ErrUncertain` 保留预算 |
 | `ErrEmailUncertain` | 邮箱验证码的发送结果不确定：载体调用失败的方式使其无法断定消息没有离开。自带的邮箱通道 `authn.emailcode` 把 `mail.ErrUncertain` 包成它；宿主自建的通道不发布分类，一律按不确定处理 | 不外露：与任何发送失败同答 503，成因只进日志；预算上它保留本次尝试占用的计数，只有能证明未发出的失败才退还 |
 | `ErrDomainClaimed`、`ErrAssertionReplay` | 域名已被另一个 IdP 验证过；SAML 断言标识已见过 | 409；登录失败，记 Warn 与指标 |
 | `ErrProviderNotFound` | 点名的身份提供方行不存在（`SSOProviders` 的 `Get`、`Secret`、`Tenant`、`Put` 的更新路径、`Delete`、`ClaimDomain` 如此报告） | 管理面 404：裸 404，不带本能力的 problem 码，与同表内 `ErrAccountNotFound`、`ErrNotImpersonating` 的处置一致 |

@@ -157,6 +157,10 @@ type fakeRegistry struct {
 	// carrier is configured with.
 	declaration       sms.Declaration
 	heldAsDeclaration bool
+	// onResolve, when set, runs at the start of Resolve. A case uses it to hold
+	// the request between the write of the challenge row and the enqueue, which
+	// is the window in which a queue that filled drops the message.
+	onResolve func()
 }
 
 func newRegistry() *fakeRegistry { return &fakeRegistry{declared: declaredTemplates()} }
@@ -199,6 +203,13 @@ func (f *fakeRegistry) setResolveErr(err error) {
 	f.resolveErr = err
 }
 
+// setOnResolve installs the hook Resolve runs before it answers.
+func (f *fakeRegistry) setOnResolve(fn func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onResolve = fn
+}
+
 // Resolve resolves a message against the declared templates, or answers the
 // scripted error.
 func (f *fakeRegistry) Resolve(m sms.Message) (sms.Resolved, error) {
@@ -207,7 +218,11 @@ func (f *fakeRegistry) Resolve(m sms.Message) (sms.Resolved, error) {
 	declared := append([]sms.Template(nil), f.declared...)
 	heldAsDeclaration := f.heldAsDeclaration
 	declaration := f.declaration
+	hook := f.onResolve
 	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	if err != nil {
 		return sms.Resolved{}, err
 	}

@@ -166,11 +166,11 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 	case errors.Is(err, sms.ErrThrottled):
 		p.meters.sent(ctx, outcomeThrottled)
 		p.warnNotSent(ctx, outcomeThrottled, err, carrierAttributes(receipt, elapsed)...)
-		p.refundChallenge(ctx, r)
+		p.refundChallenge(ctx, r.DedupeID)
 	case errors.Is(err, sms.ErrRejected):
 		p.meters.sent(ctx, outcomeRejected)
 		p.warnNotSent(ctx, outcomeRejected, err, carrierAttributes(receipt, elapsed)...)
-		p.refundChallenge(ctx, r)
+		p.refundChallenge(ctx, r.DedupeID)
 	case errors.Is(err, sms.ErrUnroutable):
 		// A message this carrier cannot carry to this destination is a definite
 		// failure, like a rejection and unlike an uncertain outcome: the message is
@@ -180,7 +180,7 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 		// around.
 		p.meters.sent(ctx, outcomeUnroutable)
 		p.warnNotSent(ctx, outcomeUnroutable, err, carrierAttributes(receipt, elapsed)...)
-		p.refundChallenge(ctx, r)
+		p.refundChallenge(ctx, r.DedupeID)
 	default:
 		// An error outside the closed set is a defect of the carrier. It is read
 		// as uncertain — never as a delivery and never as a retry — which is the
@@ -192,18 +192,20 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 
 // refundChallenge gives the send budgets back for a challenge whose message
 // certainly did not reach the carrier, and spends the row in the same statement
-// so a code that was never delivered cannot pass the check. The row is named by
-// the dedupe identifier the send wrote into the resolved message. A message
-// without one was not queued by Send and has no row to refund.
+// so a code that was never delivered cannot pass the check. Every path that
+// knows the send did not leave names the row by the challenge identifier it
+// wrote: the worker's three certain failures, a registry that would not build
+// the message, and a queue that filled before the enqueue. An empty identifier
+// names no row.
 //
 // A refund that cannot be written leaves the row counted and the code valid;
 // the send has already failed, so the outcome is unchanged and the failure is
 // recorded on its own line.
-func (p *product) refundChallenge(ctx context.Context, r sms.Resolved) {
-	if r.DedupeID == "" {
+func (p *product) refundChallenge(ctx context.Context, id string) {
+	if id == "" {
 		return
 	}
-	if err := p.register.refund(ctx, r.DedupeID, p.clock.Now()); err != nil {
+	if err := p.register.refund(ctx, id, p.clock.Now()); err != nil {
 		p.logger.WarnContext(ctx, ModuleName+": a challenge could not be refunded and stays counted",
 			slog.String("cause", err.Error()))
 	}

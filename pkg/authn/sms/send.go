@@ -29,11 +29,14 @@ var errPoolFull = errors.New("the sending queue is full")
 var errBudgetReadFailed = errors.New("a budget could not be read")
 
 // Send checks the allowed table and every budget, writes the challenge row,
-// hands the sending to the bounded worker pool and returns at once. A suppressed
-// request — a number that is not registered while signup is closed — takes the
-// same path and the same lock order as a real one, and differs in two ways the
-// answer hides: its row is marked suppressed, so it does not spend the
-// deployment-wide budget, and nothing is enqueued.
+// hands the sending to the bounded worker pool and returns at once. A send that
+// certainly did not leave — a registry that will not build the message, or a
+// queue that filled before the enqueue — refunds the row, so a message the user
+// never received does not spend the budget. A suppressed request — a number that
+// is not registered while signup is closed — takes the same path and the same
+// lock order as a real one, and differs in two ways the answer hides: its row is
+// marked suppressed, so it does not spend the deployment-wide budget, and
+// nothing is enqueued.
 func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	if err := checkSendCode(in); err != nil {
 		return "", err
@@ -102,7 +105,8 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	// the template is disabled, or its vendor review is not back — answers
 	// ErrNotSendable, and the send records it under its own outcome. The row is
 	// already written, so the answer to the caller is the same shape as a send
-	// the carrier later refuses.
+	// the carrier later refuses; nothing reached the carrier, so the row's spend
+	// is given back and its code is spent.
 	resolved, err := p.registry.Resolve(sms.Message{
 		To:       in.Phone,
 		Template: template,
@@ -114,6 +118,7 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		outcome := resolveOutcome(err)
 		p.meters.sent(ctx, outcome)
 		p.warnNotSent(ctx, outcome, err)
+		p.refundChallenge(ctx, id)
 		return id, nil
 	}
 	if p.enqueue(resolved) {
@@ -121,9 +126,11 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		return id, nil
 	}
 	// The row is written and counted against every budget; only the sending was
-	// dropped, because the queue filled between the check above and here. The
-	// user resends.
+	// dropped, because the queue filled between the check above and here.
+	// Nothing reached the carrier, so the row's spend is given back and its code
+	// is spent; the user resends without being charged twice.
 	p.meters.sent(ctx, outcomeDropped)
+	p.refundChallenge(ctx, id)
 	return id, nil
 }
 
