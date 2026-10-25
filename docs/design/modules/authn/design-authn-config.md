@@ -48,6 +48,8 @@
 | `authn.mfa` | [design-authn-mfa](design-authn-mfa.md) | 设置 |
 | `authn.mfa.totp`、`authn.mfa.webauthn` | [design-authn-mfa](design-authn-mfa.md) | 配置 |
 | `authn.sms` | [design-authn-sms](design-authn-sms.md) | 配置与设置 |
+| `authn.humanverify` | [design-authn](design-authn.md) | 配置 |
+| `authn.humanverify.pow` | [design-authn](design-authn.md) | 设置 |
 | `authn.sso` | [design-authn-sso](design-authn-sso.md) | 配置与设置 |
 | `authn.sso.saml` | [design-authn-sso](design-authn-sso.md) | 配置 |
 | `authn.impersonation` | [design-authn-impersonation](design-authn-impersonation.md) | 设置 |
@@ -118,6 +120,18 @@
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
+
+下表是人机验证的配置项（封闭集合）。`mode` 有缺省值，因此不是必填；Turnstile 的几项由 `mode` 判定，不由加载器判定：闸关闭或运行工作量证明时，它们不必给值，只有 `turnstile` 模式要求站点键、密钥与主机名齐备。
+
+| 键 | 类型 | 缺省 | 来源 | 标记 | 说明 |
+|---|---|---|---|---|---|
+| `authn.humanverify.mode` | 字符串 | `off` | 默认 | | 发送要满足的机制：`off`、`pow` 或 `turnstile`；不在集合内即 `ErrInvalidConfig` |
+| `authn.humanverify.site-key` | 字符串 | 空 | 默认 | | Turnstile 控件的前端公开标识；`turnstile` 模式必填 |
+| `authn.humanverify.secret-key` | 字符串 | 空 | 默认 | 敏 | 认证 siteverify 调用的密钥；`turnstile` 模式必填，登记为日志的字面量脱敏规则 |
+| `authn.humanverify.verify-url` | 字符串 | `https://challenges.cloudflare.com/turnstile/v0/siteverify` | 默认 | | siteverify 端点；须是带主机的绝对 https URL |
+| `authn.humanverify.hostname` | 字符串 | 空 | 默认 | | 控件必须运行的主机名；`turnstile` 模式必填 |
+| `authn.humanverify.action` | 字符串 | 空 | 默认 | | 控件渲染时使用的 action；空接受任意 |
+| `authn.humanverify.timeout` | `time.Duration` | `10s` | 默认 | | 一次校验的总时限，取值 1s 到 30s |
 
 下表是短信、企业 SSO 与租户准入的配置项（封闭集合）。
 
@@ -242,6 +256,8 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.mfa.max-per-kind` | 整数 | `5` | 1 到 20 | | |
 | `authn.mfa.pending-ttl` | `time.Duration` | `1h` | 5m 到 24h | | |
 | `authn.mfa.sensitive-min-age` | `time.Duration` | `24h` | 1h 到 720h | | 减小 |
+| `authn.humanverify.pow.difficulty` | 整数 | `18` | 16 到 22 | | 减小 |
+| `authn.humanverify.pow.challenge-ttl` | `time.Duration` | `5m` | 1m 到 15m | | 增大 |
 
 补充：
 
@@ -251,6 +267,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 - `authn.sms.per-source-hourly` 与 `per-source-daily` 按发送请求的来源地址计数，跨用途累计，窗口分别是滚动一小时与滚动一日；地址先经 `netip.ParseAddr` 规范化再取摘要。`SendCode.Source` 为空（调用方没有可信来源）时不施加这两个维度，见 [design-authn-sms](design-authn-sms.md)。
 - 邮箱验证码的预算由 `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly`、`email-per-account-daily`、`email-per-source-hourly`、`email-per-source-daily` 与 `email-global-hourly` 设置。按地址的预算是 `email-per-address-hourly` 与 `email-per-address-daily`，它们与重发窗口都按**预算形式**计数：局部部分从第一个 `+` 起的后缀在所有域都丢掉，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并视为同一个域；这个折叠只用于预算键与重发键，标识的语义、`Lookup`、待验证记录与真正投递的地址都保持规范化后的原样。按地址的窗口跨会话与账户共享，一个收件箱在一次重发窗口内只发一条码；`email-per-account-hourly` 与 `email-per-account-daily` 按发起的账户计；`email-per-source-hourly` 与 `email-per-source-daily` 按请求的来源地址计，地址先经 `netip.ParseAddr` 规范化再取摘要，来源为空时不施加（fail-open，不落进同一个键）。`email-global-hourly` 是全部账户与地址共享的小时总量。按地址、按账户与按来源的日窗口都是固定的 UTC 日，小时窗口都是固定的 UTC 小时。预算先预留后确认：请求被任一层拒绝时退还本次已占用的全部计数；发送失败只有在通道能证明消息未离开时退还，结果不确定时保留。地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算。
 - `authn.mfa.sensitive-min-age` 是冒充发起与管理员重置因素所要求的因素启用年龄。
+- `authn.humanverify.pow.difficulty` 与 `challenge-ttl` 只在 `pow` 模式读取，请求期取值：设置存储缺席、读取失败或取值越出取值域时都取声明默认值，闸因此不会因设置故障停止签发挑战。`difficulty` 是证明必须达到的前导零位数，加大它使一次证明的代价指数增长；`challenge-ttl` 是一个挑战从签发到失效的时长。
 
 下表是企业 SSO、冒充与租户准入的设置项（封闭集合）。
 
@@ -468,11 +485,12 @@ flowchart TD
 | 签名与验证密钥文件可读、解析成功、算法一致、RSA 至少 2048 位、`kid` 不重复 | `ErrInvalidKey` |
 | 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim`；条目读不了时同时包住 `static.ErrMalformedHash` |
 | `authn.login.wechat-web` 与 `authn.login.wechat-mp` 各自的必填项齐备；`authn.mfa.webauthn.rp-id` 等于基址主机或其父域；短信模板覆盖本模块所需的（模板，语言，参数）组合（在 `New` 核对载体声明）；SAML 的 `sign_requests` 有 SP 密钥；`authn.account.password-memory-budget-mib` 不低于 `m` 取值域上限的两倍 | `ErrInvalidConfig` |
+| `authn.humanverify.mode` 不在 `off`、`pow`、`turnstile` 内；`turnstile` 模式下 `site-key`、`secret-key`、`hostname` 为空，`verify-url` 不是带主机的绝对 https URL，或 `timeout` 不在 1s 到 30s；`pow` 模式下运行没有交付键值存储或路由挂载口 | `ErrInvalidConfig` |
 | 纳入 `authn.login` 而没有任何 `LoginMethod`；纳入 `authn.mfa` 而没有任何 `Factor`，却设了 `global-required` 或库里已有账户登记了某个种类而该种类没有实现 | `ErrNoLoginMethod`、`ErrNoFactor` |
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
 | `Requires` 里的排他功能齐备（在构造之前） | `core.ErrMissingProvider` |
 
-阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoint` 是否被网关所守与是否被 `ScopeGuard` 所守由网关在 `Start` 里核对；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。
+阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoint` 是否被网关所守与是否被 `ScopeGuard` 所守由网关在 `Start` 里核对；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。人机验证的机制与 Turnstile 的必填项在 `Prepare` 判，`pow` 所需的键值存储在 `New` 判、路由挂载口在 `Init` 判。
 
 ### 加密列往返自检
 
@@ -566,13 +584,14 @@ flowchart TD
 | 网关的配置项 | 已实现 | `pkg/authn/gate/config.go` `schema`、`moduleConfig`、`(moduleConfig).resolve` |
 | 口令表后端的配置项与设置 | 已实现 | `pkg/authn/static/config.go` `schema`、`settingsSchema`、`(moduleConfig).resolve` |
 | 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `schema`、`(moduleConfig).resolve`；`pkg/authn/mfa/settings.go` `settingsSchema`、`pkg/authn/mfa/totp/config.go`、`pkg/authn/mfa/webauthn/config.go`；`pkg/authn/login/config.go`；`pkg/authn/login/google/config.go`、`pkg/authn/login/github/config.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go`；`pkg/authn/mount/config.go`；`pkg/authn/sms/config.go`；`pkg/authn/sso/config.go`、`pkg/authn/sso/saml/config.go`；`pkg/tenant/admission/config.go` |
-| 全部设置项的声明与取值域 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema` |
+| 人机验证的配置项与证明机制的设置项 | 已实现 | `pkg/authn/humanverify/config.go` `schema`、`(moduleConfig).resolve`、`resolveTurnstile`；`pkg/authn/humanverify/pow/settings.go` `Schema`、`difficulty`、`challengeTTL` |
+| 全部设置项的声明与取值域 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema`；`pkg/authn/humanverify/pow/settings.go` `Schema` |
 | 设置缺席的降级与读取出错的方向 | 已实现 | `pkg/authn/account/relax.go`、`pkg/authn/account/params.go`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingReader`、`readSetting`；`pkg/authn/mfa/settings.go`；`pkg/authn/sms/settings.go`；`pkg/tenant/admission/config.go`；`pkg/authn/sso/config.go`；`pkg/authn/impersonation/settings.go` `readTuned`、`report`；`pkg/authn/login/sms/sms.go` `signupOpen`、`reportFault`、`clearFault` |
 | 放宽开关的声明与运行期监视：`authn.account.signup`、`authn.account.auto-link`、`authn.token.check-session` | 已实现 | `pkg/authn/account/config.go` `settingsSchema`、`relax.go`；`pkg/authn/token/settings.go` `settingsSchema`、`relax.go`；`pkg/authn/login`（按路径读取 `authn.account.*`）、`pkg/authn/login/sms`（按路径读取 `authn.account.signup`） |
 | 决定守护面的清单只取主配置源 | 已实现 | `pkg/authn/gate/config.go` `schema`；`pkg/tenant/admission/config.go` |
 | 放宽变更的监视与 `authn.settings.relaxed` | 已实现 | `pkg/authn/account/relax.go`；`pkg/authn/{sms,session,token,static,login,mfa,sso,impersonation}/relax.go`；`pkg/tenant/admission/relax.go` |
-| 日志字面量匹配器的登记 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/internal/literal/literal.go` `Register` |
-| 启动期自检 | 已实现 | `pkg/authn/gate/config.go` `(moduleConfig).resolve`；`pkg/authn/account/config.go` `(moduleConfig).resolve`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `(moduleConfig).resolve`、`pkg/authn/token/keys.go` `loadKeySet`、`pkg/authn/token/module.go`（探测表）；`pkg/authn/mfa/settings.go`、`pkg/authn/mfa/totp/config.go` `(moduleConfig).resolve`、`pkg/authn/mfa/webauthn/config.go` `(moduleConfig).resolve`；`pkg/authn/sms/config.go` `(moduleConfig).resolve`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `(moduleConfig).resolve`；`pkg/authn/errors.go`；`pkg/authn/sso/config.go` `readConfig`、`pkg/authn/sso/config_validate.go` `validateConfig`、`pkg/authn/sso/register.go` `probe`、`pkg/authn/sso/saml/config.go` `loadKey` |
+| 日志字面量匹配器的登记 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`；`pkg/internal/literal/literal.go` `Register`；`pkg/authn/humanverify/module.go` `registerSecret` |
+| 启动期自检 | 已实现 | `pkg/authn/gate/config.go` `(moduleConfig).resolve`；`pkg/authn/account/config.go` `(moduleConfig).resolve`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `(moduleConfig).resolve`、`pkg/authn/token/keys.go` `loadKeySet`、`pkg/authn/token/module.go`（探测表）；`pkg/authn/mfa/settings.go`、`pkg/authn/mfa/totp/config.go` `(moduleConfig).resolve`、`pkg/authn/mfa/webauthn/config.go` `(moduleConfig).resolve`；`pkg/authn/sms/config.go` `(moduleConfig).resolve`；`pkg/authn/humanverify/config.go` `(moduleConfig).resolve`、`resolveTurnstile`、`pkg/authn/humanverify/module.go` `dependencies`、`Init`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `(moduleConfig).resolve`；`pkg/authn/errors.go`；`pkg/authn/sso/config.go` `readConfig`、`pkg/authn/sso/config_validate.go` `validateConfig`、`pkg/authn/sso/register.go` `probe`、`pkg/authn/sso/saml/config.go` `loadKey` |
 | 加密列往返自检 | 已实现 | `pkg/authn/mfa/totp/totp.go` `(*factor).start`、`pkg/authn/mfa/totp/register.go` `roundTrip`；`pkg/authn/sms/start.go` `checkEncryptionKey`；`pkg/authn/sso/register.go` `roundTrip` |
 | 启动诊断 | 已实现 | `pkg/authn/gate/gate.go` `diagnose`、`freeze`；`pkg/authn/mount/mount.go`；`pkg/authn/token/product.go` `diagnose`；`pkg/tenant/admission/admission.go`；`pkg/authn/mfa/mfa.go` |
 | 秘密的存放 | 已实现 | `pkg/authn/static/hash.go` `Hash`、`HashPBKDF2`、`ParseHash`；`pkg/authn/internal/password/phc.go` `Parse`；`pkg/authn/token/keys.go` `loadKeySet`；`pkg/authn/sso/saml/config.go` `loadKey` |

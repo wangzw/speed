@@ -60,7 +60,7 @@
 
 下列各条例举本功能目录不承担的事，归属的判据见上文。
 
-- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](../design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充期间被限制的操作）、`factor-not-seasoned`（冒充发起与管理员重置时，发起者名下没有启用已满规定时长的非短信因素）、`contact-required`（未验证账户的人类写与冒充发起）。其余认证强度不足，即重新认证能解的，都是 401 加强认证挑战（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)、[design-authn-failure](design-authn-failure.md)）。
+- **不做授权判定；做认定的中间件层，即网关，从不写 403。** 本功能目录回答“调用方是谁”，“这个调用方能不能做这件事”归授权（[authz.guard](../design-authz.md)），它另立，以中间件或 handler 内的判定接入，取用写进上下文的身份。authn 自己的路由处理器作为它自己资源的所有者，只在转述认证之外的策略的拒绝时写 403，集合封闭：`forbidden`（判定接缝的拒绝）、`method-disabled`（被全局设置关闭的登录方式）、`account-unavailable`（外部登录路径上账户不可用）、`impersonation-restricted`（冒充期间被限制的操作）、`factor-not-seasoned`（冒充发起与管理员重置时，发起者名下没有启用已满规定时长的非短信因素）、`contact-required`（未验证账户的人类写与冒充发起）、`human-verification-required`（部署要求人机验证而发送缺少有效的一次性证明）。其余认证强度不足，即重新认证能解的，都是 401 加强认证挑战（[ADR-authn-scope-2026-10-10](../../../adr/adr-authn-scope-2026-10-10.md)、[design-authn-failure](design-authn-failure.md)）。
 - **不判定请求期的租户成员资格。** 成员关系的事实归本功能目录，请求期的判定在 tenant 目录的 `tenant.admission`（[ADR-tenant-admission-2026-10-10](../../../adr/adr-tenant-admission-2026-10-10.md)）。authn 的任何子包都不 import `pkg/tenant`。
 - **不为身份附加角色、权限与租户。** 身份只回答“谁”；角色按（账户，租户）绑定，归 `authz.policy`（冒充限定的租户范围是唯一例外，它限定的是一次冒充）。
 - **网关不实现、不解释任何凭据。** 口令表、登录会话、访问令牌与服务密钥各是一个校验后端，住在自己的子包里；网关取凭据的原文交给整条认领它的后端，连 `Basic` 也由认领它的后端自己解码；根包不认识其中任何一种。
@@ -114,7 +114,7 @@
 
 每个登记模块的包导出自己的 `ModuleName` 常量，配置与设置的命名空间取同一个取值（形态见 [db](../design-db.md) 的实现子包）。名字的每一段只用小写字母、数字与短横线：`Namespace` 按 `.` 切段后适用配置键的字符集规则，违反它会从环境变量名那一头破坏分层（见 [config](../design-config.md)）。
 
-**命名空间之间的约束。** 两个模块不得声明同一个输入项路径，也不得一个路径是某模块的叶子而另一个模块的内部节点。判据的推论是：一个模块自己的输入项名不得与以它的模块名为前缀的另一个模块的下一段同名。例如 `authn.login` 的叶子不得叫 `password`、`sms`、`google`、`github`、`wechat-web`、`wechat-mp`，`authn.mfa` 的叶子不得叫 `totp`、`sms`、`webauthn`，`authn.sso` 的叶子不得叫 `saml`、`oidc`（例举，判据是上述推论）；`authn` 本身不得是任何模块的叶子。`authn.mount` 不声明输入项：路由挂载的键与跨源检查的受信来源归 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读这几个键，这是已有的跨模块读法，不是重复声明（键表见 [design-authn-config](design-authn-config.md)）。
+**命名空间之间的约束。** 两个模块不得声明同一个输入项路径，也不得一个路径是某模块的叶子而另一个模块的内部节点。判据的推论是：一个模块自己的输入项名不得与以它的模块名为前缀的另一个模块的下一段同名。例如 `authn.login` 的叶子不得叫 `password`、`sms`、`google`、`github`、`wechat-web`、`wechat-mp`，`authn.mfa` 的叶子不得叫 `totp`、`sms`、`webauthn`，`authn.sso` 的叶子不得叫 `saml`、`oidc`，`authn.humanverify` 的叶子不得叫 `pow`（例举，判据是上述推论）；`authn` 本身不得是任何模块的叶子。`authn.mount` 不声明输入项：路由挂载的键与跨源检查的受信来源归 `authn.gate` 声明，`authn.mount` 与需要对外基址的模块在自己的 `Prepare` 里读这几个键，这是已有的跨模块读法，不是重复声明（键表见 [design-authn-config](design-authn-config.md)）。
 
 ### 身份
 
@@ -270,7 +270,7 @@ type Requirement struct {
 - 根包的 `Gate`、`Verifier`、`Accepts`、`Credential`、`Challenger`、`CookieClearer`、`ScopeGuard`、`Verdict` 的构造器、`Principal`、`Identity` 的方法集与 `Access` 的取值；`Key()` 的取值（责任键恒为实际操作者）。
 - 网关层在链上代表的功能标识：中间件的 `Provides` 与描述符里的交付声明同为 `(*Gate)(nil)`，别的模块据它排序，取值与它所属的阶段属于对外接口面，改动它是破坏性变更。
 - 判定接缝、成员关系的只读面、账户生命周期钩子与事件名，这些是授权功能目录依赖的面（[authz.guard](../design-authz.md) 与 `authz.policy`；见 [design-authn-admin](design-authn-admin.md)、[design-authn-events](design-authn-events.md)）。
-- 下列根包接缝接口的方法集属于对外接口面，加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更：`Tokens` 与 `ClaimsContributor`（[design-authn-token](design-authn-token.md)）、`SMSCodes`（[design-authn-sms](design-authn-sms.md)）、`SSOProviders`（[design-authn-sso](design-authn-sso.md)）、`Impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）、`Decider`（[design-authn-admin](design-authn-admin.md)）、`Signups`、`SignupVerification`（[design-authn-account](design-authn-account.md)）与 `EmailCodeSender`；各自的字段、取值集合与取用方式由各自的模块文档承载。
+- 下列根包接缝接口的方法集属于对外接口面，加方法与改签名对取用它们的模块、实现了它们的宿主即是不兼容变更：`Tokens` 与 `ClaimsContributor`（[design-authn-token](design-authn-token.md)）、`SMSCodes`（[design-authn-sms](design-authn-sms.md)）、`SSOProviders`（[design-authn-sso](design-authn-sso.md)）、`Impersonation`（[design-authn-impersonation](design-authn-impersonation.md)）、`Decider`（[design-authn-admin](design-authn-admin.md)）、`HumanVerifier`（[design-authn-config](design-authn-config.md)）、`Signups`、`SignupVerification`（[design-authn-account](design-authn-account.md)）与 `EmailCodeSender`；各自的字段、取值集合与取用方式由各自的模块文档承载。
 
 `Gate` 与 `Verifier` 是宿主可以预置自己实现的接口：对它们加方法或改签名，对预置了自己实现的宿主是不兼容变更。`Key()` 的签名不变而取值随责任键的定义而定，编译通过的调用方因此在取值变化时静默得到新值，变化必须带破坏性变更的标注。
 
@@ -278,7 +278,7 @@ type Requirement struct {
 
 ### 模块清单
 
-下表是本功能目录登记的全部模块。“Requires”列写必需的排他功能与 `db.Database`，网关一行另写它对 `log.Logger` 的 `Optional` 声明；“取用”列是 `Init` 里 `core.Resolve` 或 `core.ResolveAll` 的对象，标 ○ 的取用缺席合法，缺席时对应的子功能不启用，并在启动诊断里写一行，不是到 `Init` 才报缺失。日志功能与指标功能的可选取用除网关一行外不在表里逐行列出：持有秘密配置值的模块为在 `New` 里登记字面量脱敏而对 `log.Logger` 写 `Optional`（例举：`authn.sso` 与两个协议模块、两个微信登录方式，这些行的“Requires”列因此不是完整的声明），产生指标的模块在 `Init` 里取 `observability.MeterProvider`，逐项见各模块文档的依赖表；“表”列写该模块拥有的表，表归声明它的模块。`authn.mount` 与挂路由的模块经内部接口 `mount.Mounter` 协作，它在 `pkg/authn/internal/mount`，只在 authn 树内可见。
+下表是本功能目录登记的全部模块。“Requires”列写必需的排他功能与 `db.Database`，网关一行另写它对 `log.Logger` 的 `Optional` 声明；“取用”列是 `Init` 里 `core.Resolve` 或 `core.ResolveAll` 的对象，标 ○ 的取用缺席合法，缺席时对应的子功能不启用，并在启动诊断里写一行，不是到 `Init` 才报缺失。日志功能与指标功能的可选取用除网关一行外不在表里逐行列出：持有秘密配置值的模块为在 `New` 里登记字面量脱敏而对 `log.Logger` 写 `Optional`（例举：`authn.sso` 与两个协议模块、两个微信登录方式、`authn.humanverify`，这些行的“Requires”列因此不是完整的声明），产生指标的模块在 `Init` 里取 `observability.MeterProvider`，逐项见各模块文档的依赖表；“表”列写该模块拥有的表，表归声明它的模块。`authn.mount` 与挂路由的模块经内部接口 `mount.Mounter` 协作，它在 `pkg/authn/internal/mount`，只在 authn 树内可见。
 
 | 包 | 模块名 | 交付 | 排他 | Requires | 取用 | 表 |
 |---|---|---|---|---|---|---|
@@ -295,6 +295,7 @@ type Requirement struct {
 | `authn/login/google`、`authn/login/github` | `authn.login.google`、`authn.login.github` | `LoginMethod` | 否 | 无 | 无 | 无 |
 | `authn/login/wechatweb` | `authn.login.wechat-web` | `LoginMethod`（名 `wechat.web`） | 否 | 无 | 无 | 无 |
 | `authn/login/wechatmp` | `authn.login.wechat-mp` | `LoginMethod`（名 `wechat.mp`） | 否 | 无 | 无 | 无 |
+| `authn/humanverify` | `authn.humanverify` | `HumanVerifier` | 是 | 无 | `kv.KV` ○（`pow` 的挑战与一次性消费）、`settings.Store` ○（`pow` 的两项设置）、`mount.Mounter` ○（`pow` 的挑战路由）、`log.Logger` ○（登记 Turnstile 密钥的字面量脱敏规则） | 无 |
 | `authn/mfa` | `authn.mfa` | `MFA`；`AccountLifecycle` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Throttle` | 全部 `Factor`、`Sessions` ○（重置时撤销会话；缺席则只停因素）、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | `authn_factors` |
 | `authn/mfa/totp` | `authn.mfa.totp` | `Factor` | 否 | `db.Database`、`MFA` | 无 | `authn_totp_secrets` |
 | `authn/mfa/sms` | `authn.mfa.sms` | `Factor` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
@@ -312,9 +313,11 @@ type Requirement struct {
 
 `authn/guard` 与 `authn/authntest` 不登记模块：`guard.Require` 返回加强认证的 gin 处理器，`authntest` 是测试构造口。
 
+**人机验证闸是排他的发送前接缝。** `authn.humanverify` 排他交付根包的 `HumanVerifier`：`Required` 回答本部署是否要求证明，`Provider` 与 `SiteKey` 回答机制与前端控件需要的公开标识，`Verify` 校验并消费一份证明。机制取封闭集 `off`、`pow`、`turnstile`，`off` 是缺省：关闭时 `Required` 为假、`Verify` 接受任何证明，一次发送都不多问。`pow` 由模块自带，经 `mount.Mounter` 在挂载基址下公开挂出挑战路由（缺省基址是 `POST /api/v1/auth/human/challenge`），挑战存 `kv` 并以比较并交换一次性消费；`turnstile` 把证明交 Cloudflare 的 siteverify，只接受主机名与（配置了时）action 相符的答案。发送方在花费任何发送预算之前问这道闸：登录短信、短信第二因素、添加手机与自助添加邮箱的发送路径各自检查，缺证明、无效、过期、重放答 403 `human-verification-required`，过长的证明答 400，提供方或它的存储不可用答 503 且不发送。闸不持有发送状态、不发送消息，也不消耗任何预算；注册不发送消息，因此不问它。部署换用别的机制时自行交付 `authn.HumanVerifier` 并把本模块从命令树上撤下。键表见 [design-authn-config](design-authn-config.md)，发送路径的判定见 [design-authn-login](design-authn-login.md)，取舍见 [ADR-authn-human-verification-2026-10-25](../../../adr/adr-authn-human-verification-2026-10-25.md)。
+
 租户准入层不在本表：它是 `pkg/tenant` 下的模块 `tenant.admission`，排他交付定序锚点 `tenant.Admission` 与根包的 `ScopeGuard`，方向是它 import 本功能目录的根包（[design-tenant-admission](../tenant/design-tenant-admission.md)）。登录引擎把两块内容放在 `pkg/authn/login/internal` 下：`resolve` 把 `Proof` 解析成账户（开户、绑定、并入外部身份），`selfservice` 挂账户凭据自助路由；两者不登记模块，只被登录引擎构造与调用（[design-authn-login](design-authn-login.md)）。
 
-**排他与并立。** 排他的是“必须恰有一个”的功能；并立的是可以有零个到多个、由消费方在 `Init` 里 `ResolveAll` 取用的功能。并立功能的集合是封闭的：`Verifier`、`LoginMethod`、`Factor`、`SSOMetadataRefresher`、`AccountLifecycle`、`ClaimsContributor`，各自一个模块，一律不排他、不局部违反；其余功能都排他，包括租户准入层交付的 `ScopeGuard`。判定接缝 `Decider`（排他）与首登开户钩子 `Provisioner`（非排他）由宿主或 `authz.guard` 交付，取用方一律以可选取用对待。
+**排他与并立。** 排他的是“必须恰有一个”的功能；并立的是可以有零个到多个、由消费方在 `Init` 里 `ResolveAll` 取用的功能。并立功能的集合是封闭的：`Verifier`、`LoginMethod`、`Factor`、`SSOMetadataRefresher`、`AccountLifecycle`、`ClaimsContributor`，各自一个模块，一律不排他、不局部违反；其余功能都排他，包括租户准入层交付的 `ScopeGuard` 与人机验证闸交付的 `HumanVerifier`。判定接缝 `Decider`（排他）与首登开户钩子 `Provisioner`（非排他）由宿主或 `authz.guard` 交付，取用方一律以可选取用对待。
 
 **`Requires` 只写排他功能与 `db.Database`，从不写非排他功能**（[ADR-authn-wiring-2026-10-10](../../../adr/adr-authn-wiring-2026-10-10.md)）。排他功能不被依赖闭包展开，宿主漏点名即在任何实例构造之前报 `core.ErrMissingProvider`，早于迁移；非排他功能写进 `Requires` 会让闭包替宿主纳入并强制启动它们，命令树上的逐个列举因此失效。取日志、设置、事件、审计的需求写 `Optional: true`：缺席合法，在场时仍参与构造排序，使脱敏规则能在 `New` 里先于任何 logger 绑定登记。网关的 `Requires` 只有 `log.Logger` 的可选声明；网关不依赖 db，不挂业务路由。
 
@@ -339,7 +342,7 @@ type Requirement struct {
 
 ## UML 图
 
-下图给出根包上的接缝类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。
+下图给出根包上的接缝类型与它们的关系。图中画不出的约束是：判决与身份之间的那条边只在判决为通过、且 `Principal` 通过出口检查时成立；请求链上的身份只由网关写入，注入口只在写入方名单内的包里可达（见身份一节）；`Verdict` 与 `Identity` 的字段不导出，读取经包级函数。人机验证闸不在请求的认证路径上：发送路径在花费任何发送预算之前取用 `HumanVerifier`，把 `HumanProof` 交给它校验并消费。
 
 ```mermaid
 classDiagram
@@ -390,6 +393,17 @@ classDiagram
         +Satisfies(r Requirement, now) bool
     }
     class gateway
+    class HumanVerifier {
+        <<interface>>
+        +Required() bool
+        +Provider() string
+        +SiteKey() string
+        +Verify(ctx, p HumanProof) error
+    }
+    class HumanProof {
+        +Token string
+        +RemoteIP string
+    }
     Gate <|.. gateway : 实现
     Verifier --> Accepts : 声明
     Verifier --> Verdict : 作出
@@ -397,6 +411,7 @@ classDiagram
     gateway --> Verifier : 按 scheme 与 cookie 名分派
     gateway ..> Credential : 从头或 cookie 取出
     gateway --> Identity : 核对后盖章
+    HumanVerifier ..> HumanProof : 校验并消费
 ```
 
 `gateway` 未导出，它持有各类登记表、按 scheme 与 cookie 名的分派表与在飞闸门（见 [design-authn-gate](design-authn-gate.md)）。
@@ -406,7 +421,7 @@ classDiagram
 ```mermaid
 flowchart LR
     subgraph root[pkg/authn 根包]
-        R[Gate Verifier Verdict Identity AccountID Principal LoginMethod Factor MFA Decider ScopeGuard AccountLifecycle 能力接口 事件载荷 哨兵]
+        R[Gate Verifier Verdict Identity AccountID Principal LoginMethod Factor MFA Decider ScopeGuard AccountLifecycle HumanVerifier 能力接口 事件载荷 哨兵]
     end
     subgraph internals[pkg/authn/internal 只依赖标准库]
         model[model 值类型]
@@ -439,6 +454,16 @@ flowchart LR
     emailcode[authn/emailcode] --> R
     emailcode --> mailc[pkg/mail]
     emailcode --> i18n[pkg/i18n]
+    humanverify[authn/humanverify] --> R
+    humanverify --> powmod[authn/humanverify/pow]
+    humanverify --> turnstile[authn/humanverify/turnstile]
+    powmod --> R
+    turnstile --> R
+    powmod --> kv
+    powmod -.可选.-> settings
+    turnstile --> egress
+    humanverify --> mount
+    humanverify --> literal
     pwd[authn/internal/password] --> R
     mount[authn/internal/mount]
     egress[authn/internal/egress]
@@ -498,7 +523,7 @@ flowchart LR
     auditj[pkg/audit/journal] --> R
 ```
 
-除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC），`internal/budgetalias` 放邮箱验证码预算键与重发键的收件箱别名归一（只依赖标准库）；`pkg/internal/literal` 不在此列：它是共享单元，被两个短信载体与四个登录叶子共用，持有秘密配置值的模块在自己的 `New` 里调用它；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
+除上文只依赖标准库的 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step` 外，`pkg/authn/internal` 下还有下列包，它们与上述内部包合起来是内部包的封闭名册：`internal/password` 放 PHC 编解码、派生、校验缓存、进程内退避与并发和内存预算，`internal/egress` 放受限的出站 `http.Client`，`internal/mount` 放 `Mounter` 接口、路由登记选项与挂路由模块共用的路由部件（问题码与 `Fail` 一族、请求体解码 `Decode`、每条登记都经过的 `Wrap`、回跳旁路 `AllowCallback`，以及挂载端与可信来源规则 `Endpoint`、`TrustedOrigins`、`CrossOrigin`），`internal/mount/mounttest` 放测试用的 `Mounter`，`internal/acctcache` 放按键有界、带有效期的进程内缓存（值类型是参数，账户快照与口令校验缓存各自取用），`internal/clock` 放写入数据库或绑定为查询参数的时间的来源（一律 UTC），`internal/budgetalias` 放邮箱验证码预算键与重发键的收件箱别名归一（只依赖标准库）；`pkg/internal/literal` 不在此列：它是共享单元，被两个短信载体、四个登录叶子与人机验证模块共用，持有秘密配置值的模块在自己的 `New` 里调用它；只做进程内时长比较的计时（口令校验缓存、失败退避、账户快照缓存的默认时钟）可以直接取单调时钟，并允许测试注入。没有 `internal/configreader`：读取器的构造由 `authntest` 的 `ConfigReader` 承担。内部包名册里的各包都只能被 `pkg/authn` 之下的包 import。
 
 ## 核心数据结构
 
@@ -689,7 +714,7 @@ type Provisioner interface {
 | 判决不可字面构造与零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf`；`pkg/authn/verdict.go` |
 | 判决携带 `Principal` | 已实现 | `pkg/authn/verdict.go` `Authenticated`；`pkg/authn/internal/verdict/verdict.go` `NewAuthenticated`、`PrincipalOf`；`pkg/authn/internal/model/principal.go` `Principal` |
 | 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识、外部绑定、账户、成员关系、会话、令牌、冒充、短信与 SSO 提供方的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
-| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`EmailCodeSender`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SSOProviders`、`SSOMetadataRefresher`，事件类型与载荷，哨兵 | 已实现 | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/email.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
+| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`EmailCodeSender`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SSOProviders`、`SSOMetadataRefresher`、`HumanVerifier`，`HumanProof` 值类型，事件类型与载荷，哨兵 | 已实现 | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/email.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/human.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
 | 属性集的分项上限与检查，账户与会话载荷各一份上限，合计低于盖章处的总上限 | 已实现 | `pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`CheckIDPAttributes`、`TruncateUTF8`；`pkg/authn/gate/attribute_bounds_test.go` |
 | 路由共用部件：问题码与 `Fail` 一族、`Decode`、`Wrap`、`AllowCallback`，与测试用的 `Mounter` | 已实现 | `pkg/authn/internal/mount/problem.go`；`pkg/authn/internal/mount/decode.go`；`pkg/authn/internal/mount/wrap.go`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 身份的类型化字段与责任键 | 已实现 | `pkg/authn/internal/identity/identity.go` `Identity`、`New`、`Key`、`Satisfies`；`pkg/authn/identity.go` `Identity` |
@@ -705,6 +730,7 @@ type Provisioner interface {
 | 登录引擎 `authn.login` 与全部登录方式 | 已实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go`、`pkg/authn/login/sms/sms.go`、`pkg/authn/login/google/google.go`、`pkg/authn/login/github/github.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go` 各自的 `Module` |
 | 多因素编排 `authn.mfa` 与全部因素 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn` |
 | 短信验证码 `authn.sms` | 已实现 | `pkg/authn/sms` 的 `Module` |
+| 人机验证 `authn.humanverify` 与 `pow`、`turnstile` 两个机制 | 已实现 | `pkg/authn/humanverify/module.go` `Module`；`pkg/authn/humanverify/provider.go` `newProvider`；`pkg/authn/humanverify/pow/pow.go` `(*Provider).Issue`、`Verify`；`pkg/authn/humanverify/turnstile/turnstile.go` `(*Provider).Verify` |
 | 企业 SSO `authn.sso` 与 SAML、企业 OIDC | 已实现 | `pkg/authn/sso/module.go` `Module`；`pkg/authn/sso/saml/saml.go`、`pkg/authn/sso/oidc/oidc.go` 各自的 `Module` |
 | 冒充 `authn.impersonation` | 已实现 | `pkg/authn/impersonation/impersonation.go` `Module` |
 | 判定接缝与管理面 `authn.admin` | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action`；`pkg/authn/admin/admin.go` `Module` |
