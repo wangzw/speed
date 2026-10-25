@@ -29,20 +29,18 @@
  * operator's refreshed page then shows the invitation accepted and the invitee
  * in the member table with the invitation source.
  *
- * THE DOCUMENT'S ALTERNATE PATH FOR A RE-OPENED LINK IS NOT RENDERED BY THE
- * PRODUCT, so this spec leaves it undriven. The document says a link opened
- * again after its acceptance reports the invitation as no longer valid. The
- * accept screen instead renders the invitation summary and an Accept action
- * for every stored status: it ignores the `status` and `expires_at` the
- * accept-view read returns, although that operation's own contract tells the
- * client to read them rather than assume the link is redeemable. A second
- * acceptance click is refused with the unavailable result inline, but the
- * summary remains on screen, which is what the document says must not happen.
- * REQ-tenancy-013 and REQ-tenancy-020 are therefore left out of `@covers`: the
- * former is exactly this read path, and the latter's second-redemption
- * observation depends on it. The gap is reported alongside this journey.
+ * The document's alternate path for a re-opened link is driven after the
+ * acceptance: the invitee returns to the same link and meets the "invitation
+ * no longer valid" state, with neither the summary nor an accept action, so a
+ * second acceptance cannot be started from it. REQ-tenancy-013 is claimed for
+ * that "cannot be redeemed" facet -- the missing-link facet and the 409
+ * failure state are the component tier's -- and REQ-tenancy-020 for the
+ * repeated-redemption observation: the consumed link's second open produces
+ * no second membership, and the operator's refreshed member table still holds
+ * the one joined row. REQ-tenancy-020's concurrent-redemption clause is not
+ * driven by this spec.
  *
- * STEP 9's IN-APP HALF IS NOT REACHABLE FROM THE TENANT AREA. The document
+ * STEP 10's IN-APP HALF IS NOT REACHABLE FROM THE TENANT AREA. The document
  * asks for in-app navigation from the tenant area to a console path quietly
  * landing back on the tenant home. The tenant area offers a plain member no
  * console destination at all: the header entry and the start page's console
@@ -75,7 +73,7 @@
  * code from the review process log (fixtures/log.ts).
  */
 // @journey journey-invitation-to-tenant.md
-// @covers REQ-platform-admin-001, REQ-platform-admin-032, REQ-platform-admin-033, REQ-signin-030, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-021, REQ-tenancy-035, REQ-tenancy-043
+// @covers REQ-platform-admin-001, REQ-platform-admin-032, REQ-platform-admin-033, REQ-signin-030, REQ-tenancy-008, REQ-tenancy-011, REQ-tenancy-013, REQ-tenancy-015, REQ-tenancy-016, REQ-tenancy-020, REQ-tenancy-021, REQ-tenancy-035, REQ-tenancy-043
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { reviewInvitee } from '../fixtures/config'
@@ -598,7 +596,43 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       ).toBeHidden()
     })
 
-    await test.step('step 9: a member has no console entry, and a full-page console load stays on the access wait', async () => {
+    await test.step('step 9: the invitee re-opens the accepted link and meets the invalid state', async () => {
+      if (inviteePage === undefined) {
+        throw new Error('the invitee page was never opened')
+      }
+      const invitee = inviteePage
+
+      // The used link's read still returns the stored view; the screen judges
+      // its status before showing anything, so the summary and the accept
+      // action are gone and the link cannot be redeemed a second time.
+      await invitee.goto(acceptanceLink)
+      await expect(
+        invitee.getByRole('heading', {
+          name: copy('authUi', 'acceptInvitation.unavailable.title'),
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        invitee.getByText(
+          copy('authUi', 'acceptInvitation.unavailable.description'),
+          { exact: true },
+        ),
+      ).toBeVisible()
+      await expect(
+        invitee.getByText(
+          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT }),
+          { exact: true },
+        ),
+      ).toHaveCount(0)
+      await expect(
+        invitee.getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.accept'),
+          exact: true,
+        }),
+      ).toHaveCount(0)
+    })
+
+    await test.step('step 10: a member has no console entry, and a full-page console load stays on the access wait', async () => {
       if (inviteePage === undefined) {
         throw new Error('the invitee page was never opened')
       }
@@ -650,7 +684,7 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       }
     })
 
-    await test.step('step 10: the operator sees the invitation accepted and the invitee in the member table', async () => {
+    await test.step('step 11: the operator sees the invitation accepted and the invitee in the member table', async () => {
       // The operator stayed on the page while the invitee accepted; the
       // page's own refresh re-reads both lists.
       await expect(
