@@ -27,7 +27,7 @@
 
 - **验收**：普通成员登录后页头没有控制台入口、首页没有控制台卡片；运营者登录后控制台入口与首页的控制台卡片都出现；同一会话进入冒充后控制台入口与首页的控制台卡片同时消失。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-platform-admin-034
 
@@ -67,7 +67,7 @@
 
 - **验收**：发起冒充后访问控制台根与任一子路径，均落在租户区首页且无控制台内容、无重定向说明；结束冒充后控制台重新可达。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-004
 
@@ -91,7 +91,7 @@
 
 - **验收**：进入控制台后导航呈现概览、身份与访问、租户、平台配置与审计各分组，各分组下的页面可进入。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-platform-admin-038
 
@@ -123,7 +123,7 @@
 
 - **验收**：名册有 N 个租户、其中 E 个已启用时，租户总数、已启用数与已停用数分别显示 N、E 与 N−E；名册为空时租户总数、已启用数与已停用数都显示 0。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-platform-admin-008
 
@@ -219,7 +219,7 @@
 
 - **验收**：名册有租户时，每一行显示该租户的标识、别名与状态。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-platform-admin-050
 
@@ -291,7 +291,7 @@
 
 - **验收**：从名册行进入详情页，看到该租户的标识、别名与状态。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-platform-admin-058
 
@@ -347,7 +347,7 @@
 
 - **验收**：填入任一筛选后提交，请求带上该筛选且列表只含匹配账户；未提交前继续键入不改变列表；有多页时可前进与后退，页面不显示总数。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: an operator disables a member and the member returns after the restore`
 
 ### REQ-platform-admin-013
 
@@ -491,7 +491,7 @@
 
 - **验收**：以带未证明邮箱的运营者执行登记租户、改名、改状态等人类写，均被拒并显示先验证邮箱的说明；打开加强认证并完成后重试，仍被同一说明拒绝。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-platform-admin-018
 
@@ -563,7 +563,7 @@
 
 - **验收**：未冒充时冒充页的当前冒充节显示未冒充任何账户的说明，没有失败占位、没有重试、没有陈旧提示。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-022
 
@@ -571,7 +571,7 @@
 
 - **验收**：未选租户或未选目标账户时发起不可提交；理由留空时提交被拒绝并给出说明；有效期留空时发起成功并按服务端默认时长生效。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-078
 
@@ -579,7 +579,7 @@
 
 - **验收**：发起成功后出现点名该目标账户的确认，页面落到租户区首页，冒充横幅出现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-109
 
@@ -587,7 +587,7 @@
 
 - **验收**：目标持有而发起者不持有的权限，冒充期间可执行；发起者持有而目标不持有的权限，冒充期间被拒绝；结束冒充后，权限集恢复为发起者自己的。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-110
 
@@ -595,7 +595,7 @@
 
 - **验收**：冒充期间执行一个被审计的动作，审计行显示操作者为发起冒充的运营者，并带被冒充账户、组织与会话；结束冒充后执行同一动作，行上不带这些明细。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-080
 
@@ -611,7 +611,7 @@
 
 - **验收**：以单因素会话发起得到加强认证对话框，完成加强认证后可重试；没有已启用因素的运营者发起时看到先添加验证方式的提示；只有刚登记或只有短信因素的运营者发起时看到需要已启用满规定时长非短信因素的说明，且不出现加强认证对话框。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-024
 
@@ -619,7 +619,7 @@
 
 - **验收**：对一个非成员、已停用或受保护的目标发起，得到不点名单一原因的说明；以带未证明邮箱的运营者发起，得到先验证邮箱的说明。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-107
 
@@ -659,7 +659,7 @@
 
 - **验收**：结束成功后横幅撤下，出现冒充已结束的播报，运营者停留在租户页。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-082
 
@@ -667,7 +667,7 @@
 
 - **验收**：结束前后同一会话继续可用，运营者不需要重新登录。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-083
 
@@ -683,7 +683,7 @@
 
 - **验收**：选定租户后，列表逐行显示操作者、被冒充账户、租户、开始时间、结束时间与状态。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-084
 
@@ -691,7 +691,7 @@
 
 - **验收**：一条以非“主动”原因结束的记录显示对应原因；一条生效中的记录显示为生效中。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-085
 
@@ -739,7 +739,7 @@
 
 - **验收**：填入筛选后提交，列表只含匹配记录；未提交前继续键入不触发请求。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-platform-admin-087
 
@@ -795,7 +795,7 @@
 
 - **验收**：打开一条有租户的记录，看到标识、租户、时间、操作者、来源、动作、对象、结果、用途与明细。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-configuration.spec.ts` `operator-configuration: a switch is closed and reopened, and the audit trail carries both writes`
 
 ### REQ-platform-admin-092
 
@@ -859,7 +859,7 @@
 
 - **验收**：只填邮箱即可签发成功；填写过期时间时该邀请按所填时间过期。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-platform-admin-096
 
@@ -891,7 +891,7 @@
 
 - **验收**：选定租户后列表逐行显示邮箱、状态、邀请人与过期时间。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-platform-admin-099
 

@@ -29,7 +29,7 @@
 
 - **验收**：登记一个未被占用的标识与别名成功，租户随即出现在名册读取结果中且状态为启用。标识已被占用，或别名已被别的租户占用时被拒绝，名册不新增任何租户。标识或别名为空、含空白或控制字符时在写入之前被拒绝。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-tenancy-002
 
@@ -37,7 +37,7 @@
 
 - **验收**：把一个租户的别名改为未被占用的值成功，该租户的状态与标识不变。改为另一个租户已用的别名被拒绝，两个租户的别名都不变。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-tenancy-003
 
@@ -61,7 +61,7 @@
 
 - **验收**：名册中有若干租户时，列表包含全部租户且按标识排序。一个租户都没有时，读取成功且列表为空。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-onboards-tenant.spec.ts` `operator-onboards-tenant: an operator registers a tenant, invites its first member, and the member joins`
 
 ### REQ-tenancy-006
 
@@ -85,7 +85,7 @@
 
 - **验收**：租户有成员时，第一页返回一页之内的成员账户，按账户标识升序；继续翻页可取得其余成员，直至遍历全部成员。租户没有成员时，读取成功且列表为空。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-tenancy-009
 
@@ -109,7 +109,7 @@
 
 - **验收**：签发成功时得到一条待接受邀请与一个接受链接，该链接的明文此后不能从任何读取面再次取得。地址不成形时被拒绝，且不产生邀请。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-tenancy-012
 
@@ -141,7 +141,7 @@
 
 - **验收**：租户有邀请时，第一页返回一页之内的邀请，继续翻页可取得其余邀请，直至遍历全部邀请。租户没有邀请时，读取成功且列表为空。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-tenancy-016
 
@@ -149,7 +149,7 @@
 
 - **验收**：匿名访问邀请链接先看到登录面，看不到邀请摘要。登录或注册后看到的租户、地址与有效期与签发时一致。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-tenancy-017
 
@@ -189,7 +189,7 @@
 
 - **验收**：接受成功后界面落在租户区首页，当前租户与邀请摘要中的租户一致，不停留在邀请页或登录面。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-tenancy-022
 
@@ -205,7 +205,7 @@
 
 - **验收**：切换后控件显示新租户，随后打开的租户数据页读取的是新租户的数据，原租户的数据不再出现。切回原租户后读回原租户的数据。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: an operator disables a member and the member returns after the restore`
 
 ### REQ-tenancy-024
 
@@ -213,7 +213,7 @@
 
 - **验收**：冒充开始后，当前租户与冒充横幅中的租户一致。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-tenancy-025
 
@@ -253,7 +253,7 @@
 
 - **验收**：已属于另一个租户的账户触发个人租户创建得到已是成员的拒绝，且不建立第二个租户。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-tenancy-030
 
@@ -357,7 +357,7 @@
 
 - **验收**：打开列表能看到该账户持有有效成员关系的全部租户；当前租户出现在列表之中。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`
 
 ### REQ-tenancy-036
 
@@ -365,7 +365,7 @@
 
 - **验收**：点击当前租户那一项不触发切换。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-tenancy-037
 
@@ -381,7 +381,7 @@
 
 - **验收**：冒充开始后租户区不出现切换控件；冒充结束后切换控件恢复出现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-tenancy-039
 
@@ -421,4 +421,4 @@
 
 - **验收**：接受成功后界面显示已成为该租户成员的确认。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`

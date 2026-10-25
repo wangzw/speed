@@ -34,7 +34,7 @@
 
 - **验收**：每个条目带一个呈现类别，取值限于表单、跳转、企业、通行密钥。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-signin-003
 
@@ -74,7 +74,7 @@
 
 - **验收**：上述任一情形得到同一状态码与同一错误码；界面在口令字段给出同一提示，且不陈述具体成因。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: an operator disables a member and the member returns after the restore`
 
 ### REQ-signin-008
 
@@ -82,7 +82,7 @@
 
 - **验收**：同一标识的失败次数超过自由次数后，等待期内的尝试得到限流拒绝并给出等待时长；等待期内不比对口令。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: an operator disables a member and the member returns after the restore`
 
 ### REQ-signin-009
 
@@ -106,7 +106,7 @@
 
 - **验收**：号码被接受后界面报告验证码已发送；提交正确且未使用的验证码后登录完成；提交错误或已使用的验证码不完成登录。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-signin-012
 
@@ -258,7 +258,7 @@
 
 - **验收**：未登录打开受保护页面看到登录面；在同一页面完成登录后，原页面渲染出内容而不是停在登录面。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: an operator disables a member and the member returns after the restore`
 
 ### REQ-signin-031
 

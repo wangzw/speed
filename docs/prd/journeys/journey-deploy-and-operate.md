@@ -110,4 +110,4 @@ flowchart TD
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`

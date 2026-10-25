@@ -29,7 +29,7 @@
 
 - **验收**：账户甲请求列表，只看到收件人为甲的消息；每条可见行带齐类型、分组、标题、正文、参数、链接、接收时间与已读时刻，未读行的已读时刻为空；账户乙的消息不出现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-033
 
@@ -101,7 +101,7 @@
 
 - **验收**：收件人有三条未读，其中一条已过期，未读数报告为二；把其中一条标为已读后，未读数报告为一；把另一条设为过期后，未读数报告为零。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-004
 
@@ -109,7 +109,7 @@
 
 - **验收**：对一条未读消息标记后，其已读时刻被写下。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-037
 
@@ -189,7 +189,7 @@
 
 - **验收**：某类型原有站内信与邮件两个渠道，关闭邮件后只有邮件一列变化，站内信不变。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-041
 
@@ -413,7 +413,7 @@
 
 - **验收**：全部标记已读三条后，确认信息含三，并在发起写入的面内出现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-051
 
@@ -421,7 +421,7 @@
 
 - **验收**：关闭某类型的邮件渠道后，确认信息点明该类型、邮件与关闭，并在发起写入的面内出现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-029
 
@@ -429,7 +429,7 @@
 
 - **验收**：未读为二时，徽标显示二，按钮的可及名含未读总数，徽标字形对无障碍树隐藏。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-052
 
@@ -445,7 +445,7 @@
 
 - **验收**：部署具备邮件与短信时，渠道列按站内信、邮件、短信的次序排列；宿主以相反次序声明可选渠道，列序不变；部署只具备站内信时只有站内信一列。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-member-workspace.spec.ts` `member-workspace: a member receives, reads and configures notifications`
 
 ### REQ-notifications-031
 

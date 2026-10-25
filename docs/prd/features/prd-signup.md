@@ -35,7 +35,7 @@
 
 - **验收**：口令注册开关开放时「开放口令注册」为真，关闭时为假，且与「开放注册」的取值在同一应答中分别可见。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-002
 
@@ -67,7 +67,7 @@
 
 - **验收**：只提交用户名、邮箱与口令的注册成功；额外提交显示名、语言与时区的注册成功，读回的资料与偏好为提交的值。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-005
 
@@ -83,7 +83,7 @@
 
 - **验收**：注册成功后立即读取会话得到匿名，任何租户资源均不可达；此后以同一份凭据完成一次口令登录才会话建立。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-006
 
@@ -91,7 +91,7 @@
 
 - **验收**：在装配了可观察替身邮件通道的部署上完成一次注册，该替身收到的消息数为零；实现改为发信时该判据失败。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-007
 
@@ -99,7 +99,7 @@
 
 - **验收**：注册刚完成时以该邮箱作口令登录名登录失败；另一账户以同一地址注册得到邮箱占用冲突；本人完成邮箱验证后该邮箱方可作登录名。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-008
 
@@ -131,7 +131,7 @@
 
 - **验收**：令自动登录被拒，界面停在登录表单，用户名已预填为本次注册所用值。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-036
 
@@ -139,7 +139,7 @@
 
 - **验收**：退回登录表单后，本次提交只产生一次注册请求，账户仍然只有一份。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-011
 
@@ -147,7 +147,7 @@
 
 - **验收**：口令注册开关为关闭时提交注册得到「注册已关闭」拒绝；随后不存在该用户名对应的账户。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-012
 
@@ -155,7 +155,7 @@
 
 - **验收**：未登记的手机号走完短信登录即得到一个账户，且会话处于已登录状态。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-signup-013
 
@@ -171,7 +171,7 @@
 
 - **验收**：开户后该账户没有任何可作登录名的标识，也没有口令；完成设置页提供补上用户名与口令的入口，登录名补齐之前口令设置不可用；补齐之后用户名与口令都能用于口令登录。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-signup-015
 
@@ -179,7 +179,7 @@
 
 - **验收**：该说明在可开户的短信渠道下出现，其文本不随号码是否已登记而变化。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-signup-016
 
@@ -295,7 +295,7 @@
 
 - **验收**：管理员预置的账户首次登录后，未证明邮箱期间执行 REQ-signup-025 列明的动作被拒绝；本人证明邮箱后放行。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-signup-028
 
@@ -311,7 +311,7 @@
 
 - **验收**：落点出现时目标邮箱收到一条验证码；停留在该页不触发第二次发送，重发需手动触发。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-039
 
@@ -335,7 +335,7 @@
 
 - **验收**：一个已是某一租户成员的账户请求个人租户时，没有新的租户产生，其成员关系不变。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-signup-031
 

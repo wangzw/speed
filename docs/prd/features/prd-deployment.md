@@ -50,7 +50,7 @@
 
 - **验收**：从部署外部只能经该服务端口取得入口文档与 API 应答；部署中不存在第二条对外发布的服务端口；浏览器对 API 的请求与页面同源。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-003
 
@@ -58,7 +58,7 @@
 
 - **验收**：只部署可执行程序、配置与持久卷时，访问根路径得到前端入口文档；部署中没有独立的前端文件服务。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-004
 
@@ -66,7 +66,7 @@
 
 - **验收**：请求一条未知的无扩展名页面路径得到 200，响应正文是前端入口文档。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-030
 
@@ -82,7 +82,7 @@
 
 - **验收**：启动完成后标准输出出现就绪记录。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-031
 
@@ -98,7 +98,7 @@
 
 - **验收**：删除密钥文件后启动会生成新文件；保留文件重启后，此前签发的令牌仍然有效。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-032
 
@@ -114,7 +114,7 @@
 
 - **验收**：配置点名一个仅带明文口令的账户与一个仅带口令哈希的账户，运行 `seed` 后两者都能经登录流程取得会话；不带 `@` 的标识按用户名种入，带 `@` 的按邮箱种入。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-008
 
@@ -122,7 +122,7 @@
 
 - **验收**：运行后名册包含配置的每个租户，且每个租户处于可用状态。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-033
 
@@ -178,7 +178,7 @@
 
 - **验收**：对一个空数据库直接运行 `seed`，随后运行 `serve` 不需要另跑 `migrate` 即可启动并完成登录。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-013
 
@@ -226,7 +226,7 @@
 
 - **验收**：无凭据请求存活探针得到 200；数据库或任一后端不可达时，该探针仍答 200；该探针在一条独立的运维监听上，该监听不作为对外服务发布。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-018
 
@@ -234,7 +234,7 @@
 
 - **验收**：全部端点可用、数据库可达时探针答 200；停掉一个端点或数据库后探针答 503，正文逐项列出失败的那一项。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-019
 
@@ -242,7 +242,7 @@
 
 - **验收**：规格包含一个不由任何命令运行的模块所声明的操作；该操作存在，而该模块不在任何命令的运行集中。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`
 
 ### REQ-deployment-020
 

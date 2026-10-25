@@ -74,4 +74,4 @@ flowchart TD
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-operator-first-run.spec.ts` `operator-first-run: the operator proves the email and lands the first settings write`

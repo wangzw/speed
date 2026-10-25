@@ -58,7 +58,7 @@
 
 - **验收**：选择一种语言并保存后，重新读取账户资料得到该语言，同时界面语言切换为该语言。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-account-033
 
@@ -66,7 +66,7 @@
 
 - **验收**：选择时区并保存后，重新读取账户资料得到该时区，账户内时间按该时区显示。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-account-034
 
@@ -122,7 +122,7 @@
 
 - **验收**：列表同时出现用户名、邮箱与手机三类行；邮箱与手机行只显示两种归属标记之一，用户名行不带该标记；经管理员或导入写下而未证明的邮箱显示为未验证。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-account-008
 
@@ -130,7 +130,7 @@
 
 - **验收**：无用户名的账户添加合法用户名后，列表中立即出现该用户名且可用于口令登录。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-account-037
 
@@ -186,7 +186,7 @@
 
 - **验收**：提交错误验证码得到拒绝，字段清空且可再次提交；提交过期验证码同样被拒绝且可重新发码。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-042
 
@@ -234,7 +234,7 @@
 
 - **验收**：仅有手机标识的账户提交设口令被拒绝，界面说明需先添加用户名或邮箱；添加用户名后再次提交设口令成功。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-account-013
 
@@ -242,7 +242,7 @@
 
 - **验收**：在设备 A 新增一条登录名后，设备 B 的下一次请求被要求重新登录；设备 A 的当前会话仍然可用；删除标识不触发撤销。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-account-014
 
@@ -290,7 +290,7 @@
 
 - **验收**：未验证账户从「更换邮箱」入口进入时表单已展开，无需再次点击。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-047
 
@@ -298,7 +298,7 @@
 
 - **验收**：从更换邮箱入口进入时，旧地址收不到验证码。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-048
 
@@ -306,7 +306,7 @@
 
 - **验收**：提交新地址并完成验证后，列表出现新地址的已验证行。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-first-run.spec.ts` `operator-first-run: the operator proves the email and lands the first settings write`
 
 ### REQ-account-049
 
@@ -338,7 +338,7 @@
 
 - **验收**：刚获得个人租户且没有可作登录名的标识或没有口令的账户，在首页看到该提示，提示中有进入完成设置页的链接与关闭控件；账户本次并未新获得个人租户时不出现提示。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-055
 
@@ -346,7 +346,7 @@
 
 - **验收**：看到提示后补齐用户名与口令，提示消失且无需重新登录；在账户设置页完成设置后返回首页，提示同样不再出现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
 
 ### REQ-account-056
 
@@ -354,7 +354,7 @@
 
 - **验收**：关闭提示后在页面之间往返均不再出现；在同一浏览器切换到另一个账户的身份会话后，触发判据满足时提示重新出现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-account-057
 
@@ -370,7 +370,7 @@
 
 - **验收**：仅有手机的账户在页面先看到添加用户名，添加后出现口令表单。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-account-050
 
@@ -402,7 +402,7 @@
 
 - **验收**：有口令账户提交错误的当前口令被拒绝且口令不变；提交正确的当前口令与合格新口令后新口令生效；没有口令的账户在新口令合格时直接生效。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-account-024
 

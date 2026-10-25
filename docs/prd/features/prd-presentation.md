@@ -46,7 +46,7 @@
 
 - **验收**：选择后页面文案、导航标签、浏览器标签标题与文档语言标记同时切换；当前页面与所在位置保持不变。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-presentation-004
 
@@ -54,7 +54,7 @@
 
 - **验收**：选择后重新加载页面仍以该语言呈现；浏览器偏好为另一种受支持语言时，设备记录的语言胜出；清除设备记录后回到浏览器偏好或部署默认语言。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-presentation-005
 
@@ -78,7 +78,7 @@
 
 - **验收**：时区下拉列出本机可用的时区名与「未选择」；选择后账户存下该值；选择「未选择」后账户上的时区为空；写入失败时控件退回已存值并给出失败反馈。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-presentation-008
 
@@ -86,7 +86,7 @@
 
 - **验收**：存有一个有效时区时，账户页的时间按该时区显示；存值无效或不被支持时按设备时区显示；设备时区不可用时按 UTC 显示；页面不因时区值异常而失败。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-presentation-009
 
@@ -110,7 +110,7 @@
 
 - **验收**：外观节列出预设，随包固定为默认、传统、时尚、紧凑、液态玻璃与 ASCII 终端，该清单是随包闭集，部署只选择默认项、不改变清单；每项显示名称随界面语言切换；预设清单为空或只有一项时该节仍渲染标题与控件，不塌陷。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-presentation-012
 
@@ -270,7 +270,7 @@
 
 - **验收**：保存设置等表单级动作在对应反馈区出现一条点明种类的成功文案；行内动作与逐项写入进一步点名被改动的对象；含多次请求的动作只在整个动作完成时出一条；部分成功但整体失败的动作不另出成功文案。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: an operator disables a member and the member returns after the restore`
 
 ### REQ-presentation-028
 
@@ -278,7 +278,7 @@
 
 - **验收**：失败时反馈区显示该错误码对应的文本；界面不显示服务端存储的英文消息。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-first-run.spec.ts` `operator-first-run: the operator proves the email and lands the first settings write`
 
 ### REQ-presentation-034
 
@@ -318,7 +318,7 @@
 
 - **验收**：在账户页保存资料或偏好后，对应控件组之下出现点名被改动对象或种类的成功文案；写入失败时同一位置给出失败文案。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-personalize-interface.spec.ts` `personalize-interface: the chosen language and time zone take effect and survive a reload`
 
 ### REQ-presentation-037
 

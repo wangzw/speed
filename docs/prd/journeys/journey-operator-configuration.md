@@ -59,4 +59,4 @@ flowchart TD
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-operator-configuration.spec.ts` `operator-configuration: a switch is closed and reopened, and the audit trail carries both writes`

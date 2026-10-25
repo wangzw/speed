@@ -28,7 +28,7 @@
 
 - **验收**：账户页的两步验证节列出该账户的每一种已登记方式及其状态（已启用、待确认、已停用）；没有登记时显示空态而不是错误。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-002
 
@@ -44,7 +44,7 @@
 
 - **验收**：在支持通行密钥的浏览器上完成设备仪式后，该方式出现在清单中且状态为已启用；浏览器不支持、用户取消或仪式失败时，清单保持不变并给出对应提示，可重试。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-004
 
@@ -84,7 +84,7 @@
 
 - **验收**：这类账户的登录停在第二因素步骤，未通过时不建立已认证会话；通过后进入应用；可选方式是该账户已登记且已启用、本部署有实现、且通道不同于第一因素的那一组。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-009
 
@@ -124,7 +124,7 @@
 
 - **验收**：改口令、改手机号、改邮箱、增删登录标识、新增或移除两步验证方式、绑定或解绑外部身份等操作，在会话不满足新鲜度时被拒绝并显示重新验证入口；满足时操作成功，例如改口令后新口令可用于下一次登录而旧口令被拒绝。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-014
 
@@ -132,7 +132,7 @@
 
 - **验收**：重新验证成功后，原先被拒的操作执行并得到成功反馈；取消重新验证时原操作保持未执行，且之后不自动重放。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-015
 
@@ -140,7 +140,7 @@
 
 - **验收**：在本会话期间刚登记的方式不出现在重新验证的可选清单中；在本会话认证之前启用的另一通道方式可以被选中并完成升级。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-impersonation-for-support.spec.ts` `impersonation-for-support: the operator acts as a member and the record and audit trail survive the end`
 
 ### REQ-security-016
 
@@ -204,7 +204,7 @@
 
 - **验收**：撤销自己的某条会话后，该会话不再可用，列表随之收敛。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`
 
 ### REQ-security-031
 
@@ -228,7 +228,7 @@
 
 - **验收**：在被撤销的设备上发起任何需要登录的请求得到未认证应答；匿名面请求不因该撤销被拒。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-offboarding.spec.ts` `account-offboarding: an operator disables a member and the member returns after the restore`
 
 ### REQ-security-032
 
@@ -268,7 +268,7 @@
 
 - **验收**：改口令、新增登录标识、更改手机号、登记两步验证方式、绑定或解绑外部身份这几种操作中任一成功后，该账户在其他设备上的会话在下一次请求被拒绝，当前设备保持登录。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-signup-to-password-login.spec.ts` `sms-signup: a phone-code first sign-in becomes a username-and-password login`
 
 ### REQ-security-033
 
@@ -284,4 +284,4 @@
 
 - **验收**：退出后当前会话的下一次请求被拒绝，界面回到未登录状态。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`

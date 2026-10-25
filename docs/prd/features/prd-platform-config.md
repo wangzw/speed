@@ -33,7 +33,7 @@
 
 - **验收**：打开设置页后每个已声明项都出现，且分组与它所属的命名空间一致；任一项缺键、类型或当前值即不通过。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-configuration.spec.ts` `operator-configuration: a switch is closed and reopened, and the audit trail carries both writes`
 
 ### REQ-platform-config-032
 
@@ -57,7 +57,7 @@
 
 - **验收**：修改一项的当前值并保存，该项状态从「默认」变为「已覆盖」，当前值显示新值；重新加载设置页后仍显示该状态与值。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-configuration.spec.ts` `operator-configuration: a switch is closed and reopened, and the audit trail carries both writes`
 
 ### REQ-platform-config-004
 
@@ -89,7 +89,7 @@
 
 - **验收**：选择一项会影响请求结果的设置，改为一个会产生不同结果的值并保存，不重启进程；随后的一次请求立刻按新值表现，改回后立刻恢复原表现。需要重启才改变表现即不通过。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-configuration.spec.ts` `operator-configuration: a switch is closed and reopened, and the audit trail carries both writes`
 
 ### REQ-platform-config-008
 
