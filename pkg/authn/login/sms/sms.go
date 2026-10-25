@@ -14,8 +14,9 @@
 //
 // A code is sent to a number registered to an enabled account, or to any number
 // while registration is open; every other number gets a suppressed challenge,
-// which is counted against every budget and answered exactly as a real one, so
-// that the answer tells nobody whether a number is registered.
+// which is counted against every budget but the deployment-wide one and answered
+// exactly as a real one, so that the answer tells nobody whether a number is
+// registered.
 //
 // A host takes the method in by writing ModuleName into a command alongside the
 // login engine, an SMS module and an account module. It delivers the login

@@ -107,10 +107,11 @@ func TestThePerPhoneDailyBudgetThrottles(t *testing.T) {
 	}
 }
 
-// TestTheGlobalBudgetIsPerPurposeAndAnswersUnavailable holds the third dimension:
-// the global budget of the login purpose spent refuses further login sends with
-// ErrUnavailable, while the mfa purpose, with its own budget, still sends.
-func TestTheGlobalBudgetIsPerPurposeAndAnswersUnavailable(t *testing.T) {
+// TestTheGlobalBudgetIsPerPurposeAndThrottles holds the third dimension: the
+// global budget of the login purpose spent refuses further login sends with a
+// throttled error whose Retry-After is close to the window, while the mfa
+// purpose, with its own budget, still sends.
+func TestTheGlobalBudgetIsPerPurposeAndThrottles(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()
 	r.liftBudgets()
@@ -122,14 +123,79 @@ func TestTheGlobalBudgetIsPerPurposeAndAnswersUnavailable(t *testing.T) {
 	}
 	r.clock.advance(31 * time.Second)
 	_, err := r.sendLogin()
-	if !errors.Is(err, authn.ErrUnavailable) {
-		t.Fatalf("the second login send returned %v, want ErrUnavailable (the global budget)", err)
+	if !errors.Is(err, authn.ErrThrottled) {
+		t.Fatalf("the second login send returned %v, want ErrThrottled (the global budget)", err)
+	}
+	var throttled *authn.ThrottledError
+	if !errors.As(err, &throttled) {
+		t.Fatalf("the throttled error is %T, want *ThrottledError", err)
+	}
+	// The oldest real row is 31s into the hour, so the window frees in 59m29s.
+	if want := 59*time.Minute + 29*time.Second; throttled.RetryAfter != want {
+		t.Errorf("RetryAfter = %v, want %v", throttled.RetryAfter, want)
 	}
 	// The mfa purpose has its own budget and is not touched by the login one.
 	if _, err := r.p.Send(context.Background(), authn.SendCode{
 		Purpose: authn.SMSPurposeMFA, Phone: "+8613800138001", Account: acct, Deliver: true,
 	}); err != nil {
 		t.Fatalf("an mfa send was refused by the login budget: %v", err)
+	}
+}
+
+// TestTheGlobalBudgetCountsOnlyRealSends holds the asymmetry between the global
+// dimension and the rest: a suppressed row spends the number, account and source
+// budgets but not the deployment-wide one, so anonymous requests for numbers
+// nobody registered cannot exhaust the deployment. The number, account and
+// source dimensions still count suppressed rows, which is what keeps the point
+// of refusal from telling a registered number from an unregistered one.
+func TestTheGlobalBudgetCountsOnlyRealSends(t *testing.T) {
+	r := newRigSQLite(t)
+	r.allow()
+	r.liftBudgets()
+	r.store.set(resendIntervalPath, 30*time.Second)
+	r.store.set(globalLoginPath, 1)
+
+	for _, number := range []string{"+8613800138010", "+8613800138011"} {
+		if _, err := r.p.Send(context.Background(), authn.SendCode{
+			Purpose: authn.SMSPurposeLogin, Phone: number, Deliver: false,
+		}); err != nil {
+			t.Fatalf("a suppressed send to %s returned %v, want success", number, err)
+		}
+		r.clock.advance(31 * time.Second)
+	}
+
+	// The first real send is the only row the global budget counts, so it is
+	// admitted and fills the limit.
+	if _, err := r.loginTo("+8613800138012"); err != nil {
+		t.Fatalf("the first real send was refused: %v", err)
+	}
+	r.clock.advance(31 * time.Second)
+	_, err := r.loginTo("+8613800138013")
+	if !errors.Is(err, authn.ErrThrottled) {
+		t.Fatalf("the second real send returned %v, want ErrThrottled (the global budget)", err)
+	}
+}
+
+// TestASuppressedSendStillSpendsThePhoneBudget holds the other half of the
+// asymmetry: a suppressed row still counts against the number budget, so a
+// caller meets the same refusal at the same count whether the number is
+// registered or not.
+func TestASuppressedSendStillSpendsThePhoneBudget(t *testing.T) {
+	r := newRigSQLite(t)
+	r.allow()
+	r.liftBudgets()
+	r.store.set(resendIntervalPath, 30*time.Second)
+	r.store.set(perPhoneHourlyPath, 1)
+
+	if _, err := r.p.Send(context.Background(), authn.SendCode{
+		Purpose: authn.SMSPurposeLogin, Phone: phone, Deliver: false,
+	}); err != nil {
+		t.Fatalf("the suppressed send returned %v, want success", err)
+	}
+	r.clock.advance(31 * time.Second)
+	_, err := r.sendLogin()
+	if !errors.Is(err, authn.ErrThrottled) {
+		t.Fatalf("a send after a suppressed one returned %v, want ErrThrottled (the number budget)", err)
 	}
 }
 

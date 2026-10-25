@@ -27,6 +27,37 @@ func TestSendVerifyAndVoidWorkOnEveryDialect(t *testing.T) {
 	})
 }
 
+// TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect holds the global
+// dimension's predicate on both engines: SQLite stores suppressed as an integer
+// and PostgreSQL as a boolean, so the bound false has to select the real row and
+// leave the suppressed one out on each.
+func TestTheDeploymentBudgetCountsOnlyRealRowsOnEveryDialect(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, database db.Database, _ string) {
+		r := newRig(t, database, newSender())
+		r.allow()
+		now := r.clock.read()
+		r.insert("real", purposeLogin, r.database.BlindIndex(phone), nil, false, "mac",
+			0, 5, now, now.Add(5*time.Minute), nil)
+		r.insert("suppressed", purposeLogin, r.database.BlindIndex("+8613800138001"), nil, true, "mac",
+			0, 5, now.Add(-time.Minute), now.Add(4*time.Minute), nil)
+
+		n, err := r.p.register.countRealPurposeSince(r.h, purposeLogin, now.Add(-time.Hour))
+		if err != nil {
+			t.Fatalf("counting the real rows: %v", err)
+		}
+		if n != 1 {
+			t.Errorf("the deployment budget counts %d rows, want 1: the suppressed row is left out", n)
+		}
+		oldest, ok, err := r.p.register.oldestRealPurposeSince(r.h, purposeLogin, now.Add(-time.Hour))
+		if err != nil {
+			t.Fatalf("reading the oldest real row: %v", err)
+		}
+		if !ok || !oldest.Equal(now) {
+			t.Errorf("the oldest real row is %v (present %v), want %v", oldest, ok, now)
+		}
+	})
+}
+
 // TestTheWindowCountingHoldsInAnotherLocalZone holds the design's timezone
 // hypothesis on SQLite: with the process's local zone set elsewhere, the module
 // still writes and binds UTC, so a row inside the hour is counted and one outside

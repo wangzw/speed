@@ -38,14 +38,20 @@ compatibility break for a dashboard written against it.
   digest anybody could reverse (`checkEncryptionKey`,
   `TestStartRefusesWithoutARootKey`).
 - **A suppressed row and a real one go one path.** Deliver false writes a row
-  marked suppressed, spends every budget, and enqueues nothing; the answer is the
-  same shape, and the only difference — a message queued or not — is off the
-  answer. A suppressed row never passes `Verify`, even for the exact code it was
-  written for (`Send`, `Verify`, `TestASuppressedSendTakesTheSamePathAndQueuesNothing`,
+  marked suppressed, spends the number, source and account budgets, and enqueues
+  nothing; the answer is the same shape, and the difference in what is enqueued
+  is off the answer. A suppressed row never passes `Verify`, even
+  for the exact code it was written for (`Send`, `Verify`,
+  `TestASuppressedSendTakesTheSamePathAndQueuesNothing`,
   `TestARegisteredAndASuppressedNumberTakeTheSameCountingPath`,
-  `TestVerifyNeverPassesASuppressedRow`). The phone and account budgets are across
-  purposes and include suppressed, consumed and voided rows; only the sweep takes
-  a row out of a window.
+  `TestVerifyNeverPassesASuppressedRow`). The phone, source and account budgets
+  are across purposes and include suppressed, consumed and voided rows; only the
+  sweep takes a row out of a window. The deployment-wide budget counts only
+  unsuppressed rows, so anonymous requests for numbers nobody registered cannot
+  exhaust it; the other dimensions keep counting suppressed rows, because a
+  refusal that arrived at a different count for an unregistered number would be a
+  phone-enumeration oracle (`TestTheGlobalBudgetCountsOnlyRealSends`,
+  `TestASuppressedSendStillSpendsThePhoneBudget`).
 - **The budget is a hard cap, read under the send's own lock order.** `Send` reads
   every limit before it opens the write transaction, then the transaction takes
   transaction-scoped advisory locks in the fixed order global purpose → number →

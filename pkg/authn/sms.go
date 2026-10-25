@@ -14,9 +14,10 @@ type SMSCodes interface {
 	// Send checks the allowed-prefix table and every budget, writes the challenge
 	// row, hands the sending to a bounded worker pool and returns at once, so the
 	// time it takes does not depend on the carrier. The errors are
-	// ErrUnsupportedRegion, ErrThrottled with its RetryAfter and ErrUnavailable.
-	// Deliver true and false take one path and give one shape of answer, so the
-	// caller cannot tell a suppressed row from a real one by the result.
+	// ErrUnsupportedRegion, ErrThrottled with its RetryAfter when a budget is spent
+	// and ErrUnavailable when a dependency cannot answer. Deliver true and false
+	// take one path and give one shape of answer, so the caller cannot tell a
+	// suppressed row from a real one by the result.
 	//
 	// The caller owes a Purpose from the closed set, a normalized Phone and, for
 	// mfa and enroll, an Account; breaking that is a defect of the caller and an

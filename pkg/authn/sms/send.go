@@ -31,8 +31,9 @@ var errBudgetReadFailed = errors.New("a budget could not be read")
 // Send checks the allowed table and every budget, writes the challenge row,
 // hands the sending to the bounded worker pool and returns at once. A suppressed
 // request — a number that is not registered while signup is closed — takes the
-// same path and the same budgets and differs only in that nothing is enqueued,
-// so its answer is the same shape as a real one.
+// same path and the same lock order as a real one, and differs in two ways the
+// answer hides: its row is marked suppressed, so it does not spend the
+// deployment-wide budget, and nothing is enqueued.
 func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	if err := checkSendCode(in); err != nil {
 		return "", err
@@ -226,9 +227,9 @@ func (p *product) readBudgetLimits(purpose string) budgetLimits {
 }
 
 // isBudgetRefusal reports whether a send error came from the budget check and
-// already carries its answer, rather than from the write itself. A throttled
-// budget and an unavailable one — a spent global budget or a count that could
-// not be read — both arrive already shaped; anything else is a failed write.
+// already carries its answer, rather than from the write itself. Both a throttled
+// budget and a count that could not be read arrive already shaped; anything else
+// is a failed write.
 func isBudgetRefusal(err error) bool {
 	var throttled *authn.ThrottledError
 	return errors.As(err, &throttled) || errors.Is(err, authn.ErrUnavailable)
@@ -238,11 +239,14 @@ func isBudgetRefusal(err error) bool {
 // holds its locks in, and returns the first that is over, or nil. Running on the
 // transaction is what makes the cap hard: every count includes what a concurrent
 // send of a shared dimension has committed, and the row guarded by the same
-// transaction is written only while the ordered locks are held. Every budget is
-// a count over the challenge rows, so a suppressed row pays a real one: a
-// window's rows reach the limit at the same count whether the numbers are
-// registered or not. The source dimension runs only when the send carries a
-// source; an empty source is fail-open and takes no source lock.
+// transaction is written only while the ordered locks are held. The number,
+// source and account budgets count suppressed rows too, so a window's rows reach
+// the limit at the same count whether the numbers are registered or not. The
+// global budget is the exception: it counts only unsuppressed rows, so anonymous
+// requests for numbers nobody registered cannot exhaust the deployment, while the
+// dimensions that stay asymmetric keep that fact unobservable. The source
+// dimension runs only when the send carries a source; an empty source is
+// fail-open and takes no source lock.
 func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string, limits budgetLimits, now time.Time) error {
 	phoneMAC := p.database.BlindIndex(in.Phone)
 
@@ -294,15 +298,18 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 	}
 
 	// The global budget is per purpose: anonymous login traffic cannot exhaust
-	// the budget of a second factor or of an enrollment. It answers unavailable,
-	// not throttled.
+	// the budget of a second factor or of an enrollment. It counts only rows that
+	// are not suppressed, so a request for a number nobody registered does not
+	// spend it; the number, account and source dimensions still count suppressed
+	// rows, because a different point of refusal for a registered and an
+	// unregistered number is a phone-enumeration oracle. A spent global budget
+	// answers the same throttled error and Retry-After as the other dimensions.
 	if limit := limits.globalHourly; limit > 0 {
-		n, err := p.register.countPurposeSince(tx, in.Purpose, hourlySince)
-		if err != nil {
-			return p.budgetReadFailed(err)
-		}
-		if n >= int64(limit) {
-			return p.unavailable(fmt.Errorf("the hourly budget of the %s purpose is spent", in.Purpose))
+		if err := p.throttleOver(
+			func() (int64, error) { return p.register.countRealPurposeSince(tx, in.Purpose, hourlySince) },
+			func() (time.Time, bool, error) { return p.register.oldestRealPurposeSince(tx, in.Purpose, hourlySince) },
+			limit, time.Hour, now); err != nil {
+			return err
 		}
 	}
 

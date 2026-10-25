@@ -244,15 +244,38 @@ func (g *register) oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Ti
 	return clock.UTC(out[0].CreatedAt), true, nil
 }
 
-// countPurposeSince counts the rows of one purpose created after since.
-func (g *register) countPurposeSince(q *gorm.DB, purpose string, since time.Time) (int64, error) {
+// countRealPurposeSince counts the rows of one purpose created after since that
+// are not suppressed. Only the deployment-wide budget reads it: a suppressed row
+// is a request for a number nobody registered, and letting it spend the global
+// budget would let anonymous traffic exhaust the deployment without sending
+// anything. The per-number, per-source and per-account dimensions still count
+// suppressed rows, so the point at which a caller is refused does not say
+// whether the number is registered.
+func (g *register) countRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (int64, error) {
 	var n int64
 	err := q.Table(challengeTable).
-		Where("purpose = ? AND created_at > ?", purpose, clock.UTC(since)).Count(&n).Error
+		Where("purpose = ? AND suppressed = ? AND created_at > ?", purpose, false, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends of a purpose: %w", err)
 	}
 	return n, nil
+}
+
+// oldestRealPurposeSince reads the created_at of the oldest unsuppressed row of
+// the purpose after since, which is when the deployment-wide window frees a
+// slot.
+func (g *register) oldestRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error) {
+	var out []struct{ CreatedAt time.Time }
+	err := q.Table(challengeTable).Select("created_at").
+		Where("purpose = ? AND suppressed = ? AND created_at > ?", purpose, false, clock.UTC(since)).
+		Order("created_at ASC").Limit(1).Scan(&out).Error
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("reading the oldest send of a purpose: %w", err)
+	}
+	if len(out) == 0 {
+		return time.Time{}, false, nil
+	}
+	return clock.UTC(out[0].CreatedAt), true, nil
 }
 
 // countAccountSince counts the rows for the account created after since.

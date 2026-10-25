@@ -91,6 +91,9 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 		tune func(*rig)
 		send func(*rig) error
 		want error
+		// retryAtLeast, when positive, is the least RetryAfter the refusal must
+		// carry; the count row is 31s old, so the window has that much left.
+		retryAtLeast time.Duration
 	}{
 		{
 			name: "phone",
@@ -136,7 +139,8 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 				_, err := r.sendLogin()
 				return err
 			},
-			want: authn.ErrUnavailable,
+			want:         authn.ErrThrottled,
+			retryAtLeast: 59 * time.Minute,
 		},
 		{
 			name: "source",
@@ -195,6 +199,15 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			case err := <-done:
 				if !errors.Is(err, c.want) {
 					t.Fatalf("the send returned %v after the count row committed, want %v", err, c.want)
+				}
+				if c.retryAtLeast > 0 {
+					var throttled *authn.ThrottledError
+					if !errors.As(err, &throttled) {
+						t.Fatalf("the refusal is %T, want *ThrottledError", err)
+					}
+					if throttled.RetryAfter < c.retryAtLeast {
+						t.Errorf("RetryAfter = %v, want at least %v (the window left)", throttled.RetryAfter, c.retryAtLeast)
+					}
 				}
 			case <-time.After(lockWaitBudget):
 				t.Fatalf("the send was still blocked %s after the %s lock was released", lockWaitBudget, c.name)

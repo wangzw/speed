@@ -246,7 +246,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 补充：
 
 - `authn.login.disabled-methods` 在运行期关闭一个登录方式，例如遭遇短信轰炸时关 `sms`；`authn.login.ip-limit` 的缺省值与取值理由见 [design-authn-login](design-authn-login.md)。
-- `authn.sms.global-hourly-*` 按用途分设：登录的预算耗尽不挤占已通过口令的第二因素与因素登记。
+- `authn.sms.global-hourly-*` 按用途分设：登录的预算耗尽不挤占已通过口令的第二因素与因素登记。全局维度只计未抑制的行，抑制行不消耗它，理由与其余维度的口径见 [design-authn-sms](design-authn-sms.md)。
 - `authn.sms.per-account-hourly` 只对 `mfa` 与 `enroll` 用途计数。
 - `authn.sms.per-source-hourly` 与 `per-source-daily` 按发送请求的来源地址计数，跨用途累计，窗口分别是滚动一小时与滚动一日；地址先经 `netip.ParseAddr` 规范化再取摘要。`SendCode.Source` 为空（调用方没有可信来源）时不施加这两个维度，见 [design-authn-sms](design-authn-sms.md)。
 - 邮箱验证码的预算由 `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly`、`email-per-account-daily`、`email-per-source-hourly`、`email-per-source-daily` 与 `email-global-hourly` 设置。按地址的预算是 `email-per-address-hourly` 与 `email-per-address-daily`，它们与重发窗口都按**预算形式**计数：局部部分从第一个 `+` 起的后缀在所有域都丢掉，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并视为同一个域；这个折叠只用于预算键与重发键，标识的语义、`Lookup`、待验证记录与真正投递的地址都保持规范化后的原样。按地址的窗口跨会话与账户共享，一个收件箱在一次重发窗口内只发一条码；`email-per-account-hourly` 与 `email-per-account-daily` 按发起的账户计；`email-per-source-hourly` 与 `email-per-source-daily` 按请求的来源地址计，地址先经 `netip.ParseAddr` 规范化再取摘要，来源为空时不施加（fail-open，不落进同一个键）。`email-global-hourly` 是全部账户与地址共享的小时总量。按地址、按账户与按来源的日窗口都是固定的 UTC 日，小时窗口都是固定的 UTC 小时。预算先预留后确认：请求被任一层拒绝时退还本次已占用的全部计数；发送失败只有在通道能证明消息未离开时退还，结果不确定时保留。地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算。

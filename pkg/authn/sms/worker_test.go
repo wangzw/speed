@@ -145,7 +145,7 @@ func TestEveryOutcomeIsRecorded(t *testing.T) {
 	if _, err := r.loginTo("+8613800138009"); err != nil {
 		t.Fatalf("the first budgeted send returned %v", err)
 	}
-	if _, err := r.loginTo("+8613800138010"); !errors.Is(err, authn.ErrUnavailable) {
+	if _, err := r.loginTo("+8613800138010"); !errors.Is(err, authn.ErrThrottled) {
 		t.Fatalf("the budget-exhausted send returned %v", err)
 	}
 

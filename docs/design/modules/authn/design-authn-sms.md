@@ -29,7 +29,7 @@
 | 术语 | 适用范围 | 定义 |
 |---|---|---|
 | 挑战 | 本文档与 ADR-authn-sms-2026-10-10 | 一次短信验证码的发放记录，落在表 `authn_challenges` 的一行：号码与验证码都只以带密钥摘要留存，附尝试次数与期限。它与校验后端在拒绝响应里发出的质询（`WWW-Authenticate`、`Challenger`）无关。 |
-| 抑制行 | 本文档与 ADR-authn-sms-2026-10-10 | `suppressed` 为真的挑战行：号码未登记且注册关闭时写入，不入队、不发送，但与真实行走同一条计数路径，计入全部预算，对外应答与「已发送」同形。 |
+| 抑制行 | 本文档与 ADR-authn-sms-2026-10-10 | `suppressed` 为真的挑战行：号码未登记且注册关闭时写入，不入队、不发送，但与真实行走同一条计数路径，计入除全局维度以外的全部预算，对外应答与「已发送」同形。 |
 
 ## 外部接口契约
 
@@ -73,7 +73,7 @@ type SendCode struct {
 	Phone   string    // E.164，已规范化
 	Account AccountID // mfa、enroll 必填；login 不填，也不按它计数
 	Locale  string    // 调用方填入的请求语言；空读作配置的默认语言，非空时解析到注册表声明的语言
-	Deliver bool      // 为假：只写抑制行并计入全部预算，不入队不发送
+	Deliver bool      // 为假：只写抑制行并计入除全局维度以外的预算，不入队不发送
 	Source  string    // 请求的来源地址；为空表示调用方没有可信来源，来源预算因此不施加
 }
 
@@ -297,9 +297,9 @@ flowchart TD
     Q -- 是 --> G["生成验证码与挑战标识 计算 phone_mac、source_mac 与 code_mac"]
     G --> L["事务 按 全局 → 号码 → 来源 → 账户 取咨询锁"]
     L --> C{"预算未超"}
-    C -- 间隔或号码维度超 --> E3["ErrThrottled 不写行"]
-    C -- 全局维度超或预算读失败 --> E2
-    C -- 账户维度超 --> E3
+    C -- 间隔、号码、来源或账户维度超 --> E3["ErrThrottled 不写行"]
+    C -- 全局维度超 --> E3
+    C -- 预算读失败 --> E2
     C -- 是 --> H["作废旧行并写新行"]
     H --> I{"Deliver"}
     I -- 真 --> RS["注册表 Resolve 解出 sms.Resolved"]
@@ -314,13 +314,13 @@ flowchart TD
 1. **放行表。** 规范化后的号码前缀不在放行表内，返回 `ErrUnsupportedRegion`，不写行。判定只看前缀，与号码是否登记无关；放行表缺省为空，不明确放行就不发。
 2. **队列容量。** 队列已满，返回 `ErrUnavailable`，不写行、不作废旧行。这一步对真实行与抑制行同样执行，使「队列满」不成为区分已登记与未登记号码的观察点。
 3. **生成。** 生成验证码与挑战标识，计算 `phone_mac`、`source_mac` 与 `code_mac`。各预算的限额在打开写事务之前一次读出，持锁期间不读设置。
-4. **事务：取锁、核对预算、作废与写入。** 在同一个事务里按 **全局（按用途）→ 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再依据 `authn_challenges` 的行数核对下列预算（统计包含抑制行、已消费行与已作废行，只有清扫才使行退出统计）；任一维度超限即回滚、不写行。未超限时把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
+4. **事务：取锁、核对预算、作废与写入。** 在同一个事务里按 **全局（按用途）→ 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再依据 `authn_challenges` 的行数核对下列预算（除全局维度外，统计包含抑制行、已消费行与已作废行，只有清扫才使行退出统计；全局维度只计未抑制的行）；任一维度超限即回滚、不写行。未超限时把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
 5. **解出可发送的形状。** `Deliver` 为真时，把构造的 `sms.Message` 交给注册表的 `Resolve` 解出 `sms.Resolved`；注册表以 `ErrRejected`（消息形状）或 `ErrNotSendable`（模板被禁用或审核未过）拒绝时，记指标与 `Warn`、不入队，`Send` 仍返回 `challengeID`（行已写、预算已计），用户走重发。`Deliver` 为假时不解出。
 6. **入队。** 解出成功后非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见「结果与指标」），`Send` 仍返回 `challengeID`，用户走重发。
 
 ### 预算维度
 
-预算全由 `authn_challenges` 的行数得出。维度是封闭集；窗口自 `created_at` 起算，口径一律含抑制行。一个维度的已有行数达到上限时，再发即超限，所以窗口内至多发放上限条。
+预算全由 `authn_challenges` 的行数得出。维度是封闭集；窗口自 `created_at` 起算。除全局维度外，口径含抑制行；全局维度只计未抑制的行。一个维度的已有行数达到上限时，再发即超限，所以窗口内至多发放上限条。
 
 预算是硬上限。每次发送在自己的写事务里按 **全局（按用途）→ 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再统计下列各维度，未超才作废旧行并写新行；两个并发请求只要共享任一维度，就在同一把锁上串行，后一个读到前一个已提交的行。锁键为 `authn.sms:lock:global:<用途>`、`authn.sms:lock:phone:<phone_mac>`、`authn.sms:lock:source:<source_mac>` 与 `authn.sms:lock:account:<account_id>`，由数据库以 `hashtextextended` 计算，随事务提交或回滚释放；`login` 用途没有账户，不取账户锁；`Source` 为空时没有来源摘要，不取来源锁也不统计来源维度。各维度把限额在打开事务之前读出，持锁期间不读设置。
 
@@ -331,20 +331,21 @@ flowchart TD
 | 每号码每日（`per-phone-daily`） | 同 `phone_mac` 近一日的行数 | 全部 | `ErrThrottled` | 号码锁 `authn.sms:lock:phone:<phone_mac>` |
 | 每来源每小时（`per-source-hourly`） | 同 `source_mac` 近一小时的行数，跨用途 | 全部，`Source` 非空时 | `ErrThrottled` | 来源锁 `authn.sms:lock:source:<source_mac>` |
 | 每来源每日（`per-source-daily`） | 同 `source_mac` 近一日的行数，跨用途 | 全部，`Source` 非空时 | `ErrThrottled` | 来源锁 `authn.sms:lock:source:<source_mac>` |
-| 全局每小时，按用途分设（`global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`） | 同用途近一小时的行数 | 各自的用途 | `ErrUnavailable` | 全局锁 `authn.sms:lock:global:<用途>` |
+| 全局每小时，按用途分设（`global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`） | 同用途近一小时、未抑制的行数 | 各自的用途 | `ErrThrottled` | 全局锁 `authn.sms:lock:global:<用途>` |
 | 每账户每小时（`per-account-hourly`） | 同 `account_id` 近一小时的行数 | 只对 `mfa`、`enroll` 计 | `ErrThrottled` | 账户锁 `authn.sms:lock:account:<account_id>` |
 | 每流程发送数（`per-flow-sends`） | 流程记录的 `sends` | 全部 | 由调用方核对，不在本模块 | 无 |
 
 约束的理由如下：
 
 - **全局预算按用途分设。** 匿名流量耗尽 `login` 的预算，不挤占已通过口令的第二因素与登记的发送。
+- **全局维度只计未抑制的行，其余维度计抑制行。** 抑制行是给未登记号码写的行，不发出任何消息；若它也消耗全局预算，匿名请求不花成本就能耗尽部署的发送量。号码、来源与账户维度若照此只计真实行，未登记号码达到超限所需的次数与已登记号码不同，耗尽速度即成号码枚举的观测点；两个方向的取舍取后者，全局维度省下的额度以其余维度仍计抑制行为代价。
 - **账户维度只对 `mfa` 与 `enroll` 计。** 判据是账户不得由手机号推出：这两种用途的账户由第一因素或会话确定；`login` 用途若按账户计，已登记号码有账户可计、未登记号码没有，应答随之不同。
 - **号码维度跨用途累计。** 同一号码换一个用途不能绕开另一个用途的重发间隔与小时、日上限。
 - **来源维度只对 `Source` 非空的发送计，且跨用途累计。** 一个来源换号码或换用途不能绕开来源的窗口；`Source` 为空时不施加，判据见「`SMSCodes` 的挑战状态机」里 `Source` 的语义。
 
 ### 抑制行与应答同形
 
-号码未登记且注册关闭时，调用方传 `Deliver = false`。本模块照常通过放行表、队列容量与全部预算，照常生成验证码、计算摘要、写一行 `suppressed` 为真的挑战行，只是不入队。随后的 `Verify` 对该行照样条件计数并做一次比对，恒返回 `ErrInvalidCredentials`。判据是：真实发送与否是已登记与未登记号码之间唯一的差别，且不可从应答观察到（[ADR-authn-sms-2026-10-10](../../../adr/adr-authn-sms-2026-10-10.md)，枚举防护的总体规则见 [ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)）。
+号码未登记且注册关闭时，调用方传 `Deliver = false`。本模块照常通过放行表、队列容量与除全局维度以外的全部预算，照常生成验证码、计算摘要、写一行 `suppressed` 为真的挑战行，只是不入队；全局维度只计未抑制的行，所以这一行不消耗它。随后的 `Verify` 对该行照样条件计数并做一次比对，恒返回 `ErrInvalidCredentials`。判据是：真实发送与否是已登记与未登记号码之间唯一的差别，且不可从应答观察到；全局维度与其余维度的口径差异不削弱这条判据，因为其余维度仍计抑制行，超限出现的次数在两种号码上一致（[ADR-authn-sms-2026-10-10](../../../adr/adr-authn-sms-2026-10-10.md)，枚举防护的总体规则见 [ADR-authn-throttling-2026-10-10](../../../adr/adr-authn-throttling-2026-10-10.md)）。
 
 ### 重发与作废
 
@@ -390,8 +391,8 @@ flowchart TD
 |---|---|---|
 | 号码前缀不在放行表 | `unsupported-region` | `ErrUnsupportedRegion`，不写行 |
 | 队列已满（`Send` 起始处的预检） | `dropped` | `ErrUnavailable`，不写行 |
-| 全局预算耗尽 | `budget-exhausted` | `ErrUnavailable`，不写行 |
-| 重发间隔、每号码、每账户任一维度超限 | `budget-exhausted` | `ErrThrottled`，不写行 |
+| 全局预算耗尽 | `budget-exhausted` | `ErrThrottled`，不写行 |
+| 重发间隔、每号码、每来源、每账户任一维度超限 | `budget-exhausted` | `ErrThrottled`，不写行 |
 | `Deliver` 为假，写抑制行 | `suppressed` | 返回 `challengeID`，不入队 |
 | 注册表解不出消息（`ErrRejected`） | `rejected` | 返回 `challengeID`，行已写且计入预算，不入队 |
 | 注册表拒发（`ErrNotSendable`） | `not-sendable` | 返回 `challengeID`，行已写且计入预算，不入队 |
@@ -402,7 +403,7 @@ flowchart TD
 | `sms.ErrRejected` | `rejected` | 工作池记 |
 | `sms.ErrUnroutable` | `unroutable` | 工作池记 |
 
-`dropped` 只表示本进程的队列没有容量，不分预检与提交之后；`throttled` 只表示厂商的答复，`rejected` 表示发送侧不接受这条消息（厂商拒绝，或注册表解不出），`unroutable` 表示当前部署无法把这条消息送到这个目的地（缺权限、资源不存在、配额不足，或身份覆盖不了目的地国家）——它是确定失败，与 `rejected` 一样不被读作未知结局，区别只在消息本身没有缺陷；号码与账户维度的超限归 `budget-exhausted`；`not-sendable` 表示模板被禁用或审核未过，与这条消息无关。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
+`dropped` 只表示本进程的队列没有容量，不分预检与提交之后；`throttled` 只表示厂商的答复，`rejected` 表示发送侧不接受这条消息（厂商拒绝，或注册表解不出），`unroutable` 表示当前部署无法把这条消息送到这个目的地（缺权限、资源不存在、配额不足，或身份覆盖不了目的地国家）——它是确定失败，与 `rejected` 一样不被读作未知结局，区别只在消息本身没有缺陷；号码、来源、账户与全局维度的超限归 `budget-exhausted`；`not-sendable` 表示模板被禁用或审核未过，与这条消息无关。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
 
 ### 厂商适配
 
@@ -426,8 +427,8 @@ flowchart TD
 | 哨兵 | 产生处 | 含义 | 对外 |
 |---|---|---|---|
 | `ErrUnsupportedRegion` | `Send` | 号码前缀不在放行表 | 400 `unsupported-region` |
-| `ErrThrottled`（`ThrottledError` 带 `RetryAfter`） | `Send` | 重发间隔、号码维度或账户维度超限 | 429 与 `Retry-After` |
-| `ErrUnavailable` | `Send`、`Verify` | 队列已满、该用途的全局预算耗尽、db 不可用 | 503 |
+| `ErrThrottled`（`ThrottledError` 带 `RetryAfter`） | `Send` | 重发间隔、号码、来源、账户或全局维度超限 | 429 与 `Retry-After` |
+| `ErrUnavailable` | `Send`、`Verify` | 队列已满、预算读失败、db 不可用 | 503 |
 | `ErrInvalidCredentials` | `Verify` | 码不对、已过期、已消费、已作废、尝试次数用尽、抑制行；不区分成因 | 统一 `login-failed` |
 | `sms.ErrThrottled` | `sms.Sender.Send` | 发送方限流 | 不外露，只记指标与日志 |
 | `sms.ErrRejected` | `sms.Registry.Resolve`、`sms.Sender.Send` | 注册表解不出消息，或模板、签名、号码被厂商拒绝 | 不外露，只记指标与日志 |
@@ -455,11 +456,11 @@ flowchart TD
 
 - **统一应答隐藏失败。** 号码未登记、厂商故障、发送丢失时用户看不到失败，只能重试。
 - **号码维度的预算可被用来拒绝服务。** 对任一已知号码连续请求即可使它在窗口内得到 429，并使该号码在途的验证码被作废；对该号码的错误提交同样触发 `ScopePhone` 键的退避，退避期内该号码的短信登录与登记被拒。受害者可改用口令、社交、SSO 或通行密钥登录。
-- **全局预算耗尽即拒绝该用途的合法请求。** 分设使各用途互不挤占，不使各自的耗尽消失。
+- **全局预算耗尽即拒绝该用途的合法请求。** 分设使各用途互不挤占，不使各自的耗尽消失；全局维度只计真实发送，匿名请求写抑制行不消耗它，代价是抑制行的写放大只由号码、来源与账户维度约束。
 - **来源维度按地址计，不按人计。** 同一个出口地址之后的所有用户共用一个来源窗口：共享 NAT、公司出口或运营商级 NAT 之下，一个人可以把其他人的来源额度用掉；未配置可信代理时入口报告的是对端的直接地址，语义同此。
 - **`Source` 为空的发送不施加来源维度。** 调用方没有可信来源时来源窗口对它不设任何上界，这是 fail-open 的代价；此时受限的仍有号码维度、全局维度与适用的账户维度。
 - **升级后至多一日内来源维度从空窗口计起。** 迁移前的历史行没有 `source_mac`，也不补写；它们在来源窗口里不被计入，旧行在清扫之前仍占表。
-- **抑制行把写放大交给匿名请求。** 未登记号码也写一行，行数上界由预算给出。
+- **抑制行把写放大交给匿名请求。** 未登记号码也写一行，行数上界由号码、来源与账户维度给出，不由全局维度给出。
 - **注册开放时未知号码也真实发送。** 此时没有可隐藏的差别，成本由预算承担。
 - **根密钥轮换使在途挑战失效，也使 `phone_mac` 与旧值不再相等。** 轮换之后至多一日的窗口内，号码维度的预算按新摘要从空窗口计起，旧行在清扫之前仍占表。
 - **耗时只能证否，不能证真。** 抑制行与真实行的耗时差由统一路径压到最小，对照不出差别不构成证明。
@@ -469,7 +470,7 @@ flowchart TD
 
 以下行为未经运行核实。依赖它们的断言写作假设，对应的测试失败即视为该断言的前提不成立。厂商错误码归类与编译兼容的假设在 [design-sms](../design-sms.md)：
 
-- **应答同形。** 假设已登记号码与「未登记且注册关闭」的号码，其 `Send` 在返回值、错误与预算计数增量上相同。契约测试对已登记号码与抑制号码各发一轮，断言应答同形、计数路径一致。
+- **应答同形。** 假设已登记号码与「未登记且注册关闭」的号码，其 `Send` 在返回值、错误以及号码、来源与账户维度的预算计数增量上相同；全局维度只计未抑制的行，抑制行不增加它。契约测试对已登记号码与抑制号码各发一轮，断言应答同形、计数路径一致。
 - **时区无关。** 假设窗口统计在非 UTC 的 `time.Time` 写入下结果仍正确。SQLite 夹具在 `TZ=America/New_York` 下断言预算统计的条件。
 
 ## 并发与事务边界
@@ -494,9 +495,9 @@ flowchart TD
 |---|---|---|
 | 根包接口：`SMSCodes`、`SendCode` 与短信哨兵 | 已实现 | `pkg/authn/sms.go` `SMSCodes`；`pkg/authn/internal/model/sms.go` `SendCode`；`pkg/authn/errors.go` `ErrUnsupportedRegion` |
 | 模板覆盖核对：模板键到用途的映射，启动期经 `registry.Declared()` 核对所需模板、参数与配置的默认语言；请求语言解析到该用途模板声明的语言 | 已实现 | `pkg/authn/sms/templates.go` `templateLocales`、`resolveLocale`、`checkSender`；`pkg/authn/sms/config.go` `readDefaultLocale`；`pkg/authn/sms/module.go` `newProduct` |
-| `authn.sms` 引擎：挑战状态机、预算、抑制行 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`、`config.go`、`module.go` |
+| `authn.sms` 引擎：挑战状态机、预算、抑制行 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`（`countRealPurposeSince`、`oldestRealPurposeSince`）、`config.go`、`module.go` |
 | 来源维度：`source_mac` 的规范化与摘要、每来源小时与日预算、来源锁、`Source` 为空的 fail-open | 已实现 | `pkg/authn/sms/send.go` `sourceMAC`、`checkBudgets`；`pkg/authn/sms/register.go` `countSourceSince`、`oldestSourceSince`、`lock`；`pkg/authn/sms/settings.go` `perSourceHourly`、`perSourceDaily`；`pkg/authn/sms/source_test.go`、`budget_integration_test.go` |
-| `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`；`migrations/sqlite/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql` |
+| `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql`；`migrations/sqlite/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql` |
 | 发送工作池 | 已实现 | `pkg/authn/sms/pool.go` |
 | `AccountLifecycle` 钩子与事件补偿 | 已实现 | `pkg/authn/sms/lifecycle.go`、`subscribe.go`；`pkg/authn/sms/lifecycle_test.go` |
 | `authn_challenges` 清扫 | 已实现 | `pkg/authn/sms/sweep.go` |
