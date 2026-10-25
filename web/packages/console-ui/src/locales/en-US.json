@@ -79,7 +79,12 @@
     "tenantEmpty": "No tenant is registered yet.",
     "emptyValue": "—",
     "accountUnresolved": "Identity unresolved (needs account read)",
-    "accountMissing": "Not an account or deleted"
+    "accountMissing": "Not an account or deleted",
+    "accountReference": {
+      "name": "\"{{name}}\"",
+      "identifier": "\"{{identifier}}\"",
+      "nameWithIdentifier": "\"{{name}}\" ({{identifier}})"
+    }
   },
   "detail": {
     "notFound": {
@@ -470,8 +475,10 @@
       },
       "unbind": "Unbind",
       "unbindAria": "Unbind role {{role}} from account {{account}}",
-      "bound": "Role \"{{role}}\" bound to account \"{{account}}\"",
-      "unbound": "Role \"{{role}}\" unbound from account \"{{account}}\""
+      "bound": "Role \"{{role}}\" bound to account {{account}}",
+      "boundUnnamed": "Role \"{{role}}\" bound to the account",
+      "unbound": "Role \"{{role}}\" unbound from account {{account}}",
+      "unboundUnnamed": "Role \"{{role}}\" unbound from the account"
     },
     "lookup": {
       "title": "Look up an account's bindings",
@@ -535,19 +542,32 @@
     "deleteMessageWithIdentifier": "Deleting the account \"{{name}}\" ({{identifier}}) also removes its login identifiers, secrets and sessions.",
     "deleteMessageByIdentifier": "Deleting the account \"{{identifier}}\" also removes its login identifiers, secrets and sessions.",
     "deleteMessageUnnamed": "Deleting this account also removes its login identifiers, secrets and sessions.",
-    "created": "Account \"{{name}}\" created",
-    "deleted": "Account \"{{id}}\" deleted",
-    "mfaReset": "Factors for account \"{{id}}\" reset",
-    "sessionsRevoked": "Sessions for account \"{{id}}\" revoked",
-    "identifierRemoved": "Login identifier \"{{identifier}}\" removed from account \"{{id}}\"",
-    "secretRevoked": "Service secret \"{{label}}\" revoked for account \"{{id}}\"",
-    "sessionRevoked": "Session \"{{session}}\" revoked for account \"{{id}}\"",
-    "statusSaved": "Status of account \"{{id}}\" saved",
-    "mfaSaved": "MFA requirement of account \"{{id}}\" saved",
-    "patchSaved": "Changes to account \"{{id}}\" saved",
-    "passwordReset": "Password for account \"{{id}}\" reset",
-    "identifierAdded": "Login identifier \"{{identifier}}\" added to account \"{{id}}\"",
-    "secretCreated": "Service secret \"{{label}}\" created for account \"{{id}}\"",
+    "created": "Account {{account}} created",
+    "createdUnnamed": "An account was created",
+    "deleted": "Account {{account}} deleted",
+    "deletedUnnamed": "An account was deleted",
+    "mfaReset": "Factors for account {{account}} reset",
+    "mfaResetUnnamed": "Factors for the account were reset",
+    "sessionsRevoked": "Sessions for account {{account}} revoked",
+    "sessionsRevokedUnnamed": "The account's sessions were revoked",
+    "identifierRemoved": "Login identifier \"{{loginIdentifier}}\" removed from account {{account}}",
+    "identifierRemovedUnnamed": "Login identifier \"{{loginIdentifier}}\" removed from this account",
+    "secretRevoked": "Service secret \"{{label}}\" revoked for account {{account}}",
+    "secretRevokedUnnamed": "Service secret \"{{label}}\" revoked for this account",
+    "sessionRevoked": "Session \"{{session}}\" revoked for account {{account}}",
+    "sessionRevokedUnnamed": "Session \"{{session}}\" revoked for this account",
+    "statusSaved": "Status of account {{account}} saved",
+    "statusSavedUnnamed": "The account's status was saved",
+    "mfaSaved": "MFA requirement of account {{account}} saved",
+    "mfaSavedUnnamed": "The account's MFA requirement was saved",
+    "patchSaved": "Changes to account {{account}} saved",
+    "patchSavedUnnamed": "The account's changes were saved",
+    "passwordReset": "Password for account {{account}} reset",
+    "passwordResetUnnamed": "The account's password was reset",
+    "identifierAdded": "Login identifier \"{{loginIdentifier}}\" added to account {{account}}",
+    "identifierAddedUnnamed": "Login identifier \"{{loginIdentifier}}\" added to this account",
+    "secretCreated": "Service secret \"{{label}}\" created for account {{account}}",
+    "secretCreatedUnnamed": "Service secret \"{{label}}\" created for this account",
     "status": {
       "label": "Status",
       "submit": "Save status",
@@ -808,6 +828,7 @@
     },
     "terminate": "Terminate",
     "terminated": "Terminated the impersonation of account {{account}}.",
+    "terminatedUnnamed": "Terminated the impersonation of the account.",
     "recordsUnavailable": "Impersonation records cannot be read or terminated while impersonating. View them after ending it.",
     "current": {
       "title": "Current impersonation",
@@ -818,7 +839,9 @@
       "ends": "Ends: {{ends}}",
       "end": "End impersonation",
       "started": "Started impersonating account {{account}}.",
+      "startedUnnamed": "Started impersonating the account.",
       "ended": "Ended impersonating account {{account}}.",
+      "endedUnnamed": "Ended impersonating the account.",
       "error": {
         "title": "The impersonation status could not be loaded",
         "description": "The impersonation status could not complete this request."
@@ -924,7 +947,8 @@
       "activeLabel": "Active",
       "ssoExemptLabel": "SSO exempt",
       "submit": "Write membership",
-      "saved": "Membership of account \"{{account}}\" saved"
+      "saved": "Membership of account {{account}} saved",
+      "savedUnnamed": "Membership of the account saved"
     },
     "remove": "Remove",
     "removeTitle": "Remove member",
@@ -932,9 +956,12 @@
     "removeMessageWithIdentifier": "Remove the member \"{{name}}\" ({{identifier}}) from this tenant.",
     "removeMessageByIdentifier": "Remove the member \"{{identifier}}\" from this tenant.",
     "removeMessageUnnamed": "Remove this member from this tenant.",
-    "removed": "Member \"{{account}}\" removed",
-    "ssoExemptSaved": "SSO exemption of member \"{{account}}\" saved",
-    "ssoExemptCleared": "SSO exemption of member \"{{account}}\" cleared"
+    "removed": "Member {{account}} removed",
+    "removedUnnamed": "The member was removed",
+    "ssoExemptSaved": "SSO exemption of member {{account}} saved",
+    "ssoExemptSavedUnnamed": "SSO exemption of the member saved",
+    "ssoExemptCleared": "SSO exemption of member {{account}} cleared",
+    "ssoExemptClearedUnnamed": "SSO exemption of the member cleared"
   },
   "sso": {
     "title": "SSO providers",

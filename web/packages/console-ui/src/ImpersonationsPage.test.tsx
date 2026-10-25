@@ -23,7 +23,7 @@ import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { ImpersonationsPage } from './ImpersonationsPage.js'
 import { ConsoleImpersonationChangeProvider } from './internal/impersonation-change.js'
 import { ConsoleImpersonationStartingProvider } from './internal/impersonation-starting.js'
-import type { ConsoleImpersonation } from './operations.js'
+import type { ConsoleAccount, ConsoleImpersonation } from './operations.js'
 import { renderWithProviders, createConsoleUiI18n } from '../test-utils/render.js'
 import { CONSOLE_UI_NAMESPACE } from './resources.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -58,6 +58,24 @@ function fill(
     (text, [name, value]) => text.replace(`{{${name}}}`, value),
     template,
   )
+}
+
+/** The account reference a notice inserts for a resolved display name. */
+function byName(name: string): string {
+  return fill(zhCN.common.accountReference.name, { name })
+}
+
+/** The account reference a notice inserts for an identifier alone. */
+function byIdentifier(identifier: string): string {
+  return fill(zhCN.common.accountReference.identifier, { identifier })
+}
+
+/** The account reference a notice inserts when both resolve. */
+function byNameAndIdentifier(name: string, identifier: string): string {
+  return fill(zhCN.common.accountReference.nameWithIdentifier, {
+    name,
+    identifier,
+  })
 }
 
 /** The ui-kit copy control's accessible name, from its zh-CN template. */
@@ -461,6 +479,173 @@ describe('ImpersonationsPage', () => {
     // A termination can change what the operator's own status read names,
     // so it is re-read alongside the record list the bundle invalidates.
     await vi.waitFor(() => expect(statusReads).toBeGreaterThan(1))
+  })
+
+  // Every impersonation success notice names the account in the shared four
+  // shapes and never by its opaque id.
+  const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
+    { kind: 'username', value: 'ada', proven: true },
+  ]
+
+  /** The account read the page resolves an identity through, by account id. */
+  function identityBackend(
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+  ): (input: { id?: string }) => Promise<ConsoleAccount> {
+    return ({ id }) =>
+      Promise.resolve(
+        accountFixture({
+          id: id ?? '',
+          display_name: id === 'staff-1' ? 'Staff One' : displayName,
+          identifiers: id === 'staff-1' ? [] : identifiers,
+        }),
+      )
+  }
+
+  /** Waits for `account`'s identity read to land before the action captures it. */
+  async function settleIdentity(
+    getAccount: ReturnType<typeof vi.fn>,
+    account: string,
+  ): Promise<void> {
+    await vi.waitFor(() =>
+      expect(getAccount).toHaveBeenCalledWith({ id: account }),
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+
+  async function driveStartedNotice(
+    user: ReturnType<typeof userEvent.setup>,
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+    expected: string,
+  ): Promise<HTMLElement> {
+    const backend = makeCallerSessionBackend()
+    bindRequestFn(backend.fn)
+    const getAccount = vi.fn(identityBackend(displayName, identifiers))
+    renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage({ getAccount }),
+    })
+    await screen.findByText(zhCN.impersonations.current.none)
+    await pickTenant(user)
+    await user.type(
+      screen.getByLabelText(zhCN.impersonations.start.accountLabel),
+      'acc-1',
+    )
+    await settleIdentity(getAccount, 'acc-1')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.impersonations.start.submit }),
+    )
+    return screen.findByText(expected)
+  }
+
+  async function driveEndedNotice(
+    user: ReturnType<typeof userEvent.setup>,
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+    expected: string,
+  ): Promise<HTMLElement> {
+    const backend = makeCallerSessionBackend()
+    backend.setGrant({
+      id: 'imp-1',
+      target: 'acc-7',
+      tenant: 'acme',
+      starts_at: '2026-10-15T12:00:00Z',
+      ends_at: '2026-10-15T13:00:00Z',
+    })
+    bindRequestFn(backend.fn)
+    const getAccount = vi.fn(identityBackend(displayName, identifiers))
+    renderWithProviders(<ImpersonationsPage />, {
+      operations: withPage({ getAccount }),
+    })
+    await screen.findByRole('button', {
+      name: zhCN.impersonations.current.end,
+    })
+    await settleIdentity(getAccount, 'acc-7')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.impersonations.current.end }),
+    )
+    return screen.findByText(expected)
+  }
+
+  async function driveTerminatedNotice(
+    user: ReturnType<typeof userEvent.setup>,
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+    expected: string,
+  ): Promise<HTMLElement> {
+    const getAccount = vi.fn(identityBackend(displayName, identifiers))
+    const operations = withPage({
+      listImpersonations: () => Promise.resolve([record()]),
+      getAccount,
+      revokeImpersonation: () => Promise.resolve(),
+    })
+    renderWithProviders(<ImpersonationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByRole('button', { name: zhCN.impersonations.terminate })
+    await settleIdentity(getAccount, 'acc-1')
+    await user.click(
+      screen.getByRole('button', { name: zhCN.impersonations.terminate }),
+    )
+    return screen.findByText(expected)
+  }
+
+  describe.each([
+    {
+      label: 'started',
+      named: zhCN.impersonations.current.started,
+      unnamed: zhCN.impersonations.current.startedUnnamed,
+      displayName: 'Target One',
+      drive: driveStartedNotice,
+    },
+    {
+      label: 'ended',
+      named: zhCN.impersonations.current.ended,
+      unnamed: zhCN.impersonations.current.endedUnnamed,
+      displayName: 'Target Seven',
+      drive: driveEndedNotice,
+    },
+    {
+      label: 'terminated',
+      named: zhCN.impersonations.terminated,
+      unnamed: zhCN.impersonations.terminatedUnnamed,
+      displayName: 'Target One',
+      drive: driveTerminatedNotice,
+    },
+  ])('$label notice', ({ named, unnamed, displayName, drive }) => {
+    it('names the account by display name and first identifier, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await drive(
+        user,
+        displayName,
+        NOTICE_IDENTIFIERS,
+        fill(named, {
+          account: byNameAndIdentifier(displayName, 'ada'),
+        }),
+      )
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-7')
+    })
+
+    it('names the account by its first identifier when the display name is empty, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await drive(
+        user,
+        '',
+        NOTICE_IDENTIFIERS,
+        fill(named, { account: byIdentifier('ada') }),
+      )
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-7')
+    })
+
+    it('uses the neutral sentence when neither resolves, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await drive(user, '', [], unnamed)
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-7')
+    })
   })
 
   it('disables the refresh while a record termination is in flight', async () => {
@@ -879,7 +1064,7 @@ describe('ImpersonationsPage', () => {
     expect(onChange).toHaveBeenCalledTimes(1)
     // The success copy rendered while the host action is still pending.
     expect(
-      await screen.findByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
+      await screen.findByText(fill(zhCN.impersonations.current.started, { account: byName('Target One') })),
     ).toBeInTheDocument()
   })
 
@@ -904,7 +1089,7 @@ describe('ImpersonationsPage', () => {
     // No failure rendering: the start landed, and the host's own failure is
     // not the page's to report.
     expect(
-      await screen.findByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
+      await screen.findByText(fill(zhCN.impersonations.current.started, { account: byName('Target One') })),
     ).toBeInTheDocument()
     expect(screen.queryByText('host action failed')).toBeNull()
   })
@@ -936,7 +1121,7 @@ describe('ImpersonationsPage', () => {
     await vi.waitFor(() => expect(onChange).toHaveBeenCalledWith('ended'))
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(
-      await screen.findByText(fill(zhCN.impersonations.current.ended, { account: 'acc-7' })),
+      await screen.findByText(fill(zhCN.impersonations.current.ended, { account: byName('Target Seven') })),
     ).toBeInTheDocument()
   })
 
@@ -989,7 +1174,7 @@ describe('ImpersonationsPage', () => {
     // The same closing path a successful end takes: the success copy, no
     // failure banner, and the section lands on "not impersonating".
     expect(
-      await screen.findByText(fill(zhCN.impersonations.current.ended, { account: 'acc-7' })),
+      await screen.findByText(fill(zhCN.impersonations.current.ended, { account: byName('Target Seven') })),
     ).toBeInTheDocument()
     expect(
       await screen.findByText(zhCN.impersonations.current.none),
@@ -1130,7 +1315,7 @@ describe('ImpersonationsPage', () => {
       .closest('section')
     expect(section).not.toBeNull()
     expect(
-      within(section as HTMLElement).getByText(fill(zhCN.impersonations.current.ended, { account: 'acc-7' })),
+      within(section as HTMLElement).getByText(fill(zhCN.impersonations.current.ended, { account: byName('Target Seven') })),
     ).toBeInTheDocument()
   })
 
@@ -1154,17 +1339,22 @@ describe('ImpersonationsPage', () => {
     )
 
     // The landed start replaces the form with the in-force panel; the
-    // confirmation is not unmounted with the form that produced it.
-    expect(
-      await screen.findByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
-    ).toBeInTheDocument()
+    // confirmation is not unmounted with the form that produced it. The
+    // server's grant names an account other than the typed one, so the
+    // notice resolves no identity and stays neutral rather than borrowing
+    // the typed account's name or inserting either recorded id.
+    const startedNotice = await screen.findByText(
+      zhCN.impersonations.current.startedUnnamed,
+    )
+    expect(startedNotice).not.toHaveTextContent('acc-9')
+    expect(startedNotice).not.toHaveTextContent('acc-1')
     expect(screen.queryByLabelText(zhCN.impersonations.start.accountLabel)).not.toBeInTheDocument()
     const section = screen
       .getByRole('heading', { name: zhCN.impersonations.current.title })
       .closest('section')
     expect(section).not.toBeNull()
     expect(
-      within(section as HTMLElement).getByText(fill(zhCN.impersonations.current.started, { account: 'acc-1' })),
+      within(section as HTMLElement).getByText(zhCN.impersonations.current.startedUnnamed),
     ).toBeInTheDocument()
   })
 

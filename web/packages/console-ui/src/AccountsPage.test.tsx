@@ -60,6 +60,24 @@ function fill(
   )
 }
 
+/** The account reference a notice inserts for a resolved display name. */
+function byName(name: string): string {
+  return fill(zhCN.common.accountReference.name, { name })
+}
+
+/** The account reference a notice inserts for an identifier alone. */
+function byIdentifier(identifier: string): string {
+  return fill(zhCN.common.accountReference.identifier, { identifier })
+}
+
+/** The account reference a notice inserts when both resolve. */
+function byNameAndIdentifier(name: string, identifier: string): string {
+  return fill(zhCN.common.accountReference.nameWithIdentifier, {
+    name,
+    identifier,
+  })
+}
+
 /** The pagination action labels MUI's zh-CN locale gives its own controls. */
 const NEXT_PAGE_LABEL =
   muiZhCN.components?.MuiTablePagination?.defaultProps.getItemAriaLabel?.(
@@ -93,33 +111,39 @@ const REVOKE_SESSION_SESS_1_NAME = fill(zhCN.accounts.sessions.revokeAria, {
 })
 
 /** The succeeded-create notice for the fixture display name. */
-const CREATED_GRACE = fill(zhCN.accounts.created, { name: 'Grace' })
+const CREATED_GRACE = fill(zhCN.accounts.created, { account: byName('Grace') })
 
 /** The succeeded-delete notice for the fixture account. */
-const DELETED_ACC_1 = fill(zhCN.accounts.deleted, { id: ACCOUNT_ID })
+const DELETED_ACC_1 = fill(zhCN.accounts.deleted, {
+  account: byName('Ada Lovelace'),
+})
 
 /** A revoked secret's confirmation, named by label. */
 const SECRET_REVOKED_CI = fill(zhCN.accounts.secretRevoked, {
-  id: ACCOUNT_ID,
+  account: byName('Operator'),
   label: 'ci',
 })
 
 /** A created secret's confirmation, named by label. */
 const SECRET_CREATED_CI = fill(zhCN.accounts.secretCreated, {
-  id: ACCOUNT_ID,
+  account: byName('Operator'),
   label: 'ci',
 })
 
 /** The bulk revocation's confirmation. */
 const SESSIONS_REVOKED = fill(zhCN.accounts.sessionsRevoked, {
-  id: ACCOUNT_ID,
+  account: byName('Operator'),
 })
 
 /** The MFA requirement's saved confirmation. */
-const MFA_SAVED = fill(zhCN.accounts.mfaSaved, { id: ACCOUNT_ID })
+const MFA_SAVED = fill(zhCN.accounts.mfaSaved, {
+  account: byName('Operator'),
+})
 
 /** The status write's saved confirmation. */
-const STATUS_SAVED = fill(zhCN.accounts.statusSaved, { id: ACCOUNT_ID })
+const STATUS_SAVED = fill(zhCN.accounts.statusSaved, {
+  account: byName('Operator'),
+})
 
 /** The one-time secret display for the fixture label and secret value. */
 const HANDED_OVER_CI = fill(zhCN.accounts.createSecret.handedOver, {
@@ -375,7 +399,7 @@ const DETAIL_WRITES: readonly {
 }[] = [
   {
     label: 'reset all MFA factors',
-    success: fill(zhCN.accounts.mfaReset, { id: ACCOUNT_ID }),
+    success: fill(zhCN.accounts.mfaReset, { account: byName('Operator') }),
     operations: (fail) => ({
       resetMFA: () => (fail ? Promise.reject(FORBIDDEN) : Promise.resolve()),
     }),
@@ -420,7 +444,7 @@ const DETAIL_WRITES: readonly {
   {
     label: 'revoke one session',
     success: fill(zhCN.accounts.sessionRevoked, {
-      id: ACCOUNT_ID,
+      account: byName('Operator'),
       session: 'sess-1',
     }),
     operations: (fail) => ({
@@ -440,8 +464,8 @@ const DETAIL_WRITES: readonly {
   {
     label: 'remove one login identifier by name',
     success: fill(zhCN.accounts.identifierRemoved, {
-      id: ACCOUNT_ID,
-      identifier: 'ada@example.com',
+      account: byName('Operator'),
+      loginIdentifier: 'ada@example.com',
     }),
     operations: (fail) => ({
       removeIdentifier: () =>
@@ -511,7 +535,7 @@ const FIELD_WRITES: readonly {
   },
   {
     label: 'patch the account',
-    success: fill(zhCN.accounts.patchSaved, { id: ACCOUNT_ID }),
+    success: fill(zhCN.accounts.patchSaved, { account: byName('Operator') }),
     operations: (fail) => ({
       patchAccount: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(accountFixture()),
@@ -531,7 +555,7 @@ const FIELD_WRITES: readonly {
   },
   {
     label: 'reset the password',
-    success: fill(zhCN.accounts.passwordReset, { id: ACCOUNT_ID }),
+    success: fill(zhCN.accounts.passwordReset, { account: byName('Operator') }),
     operations: (fail) => ({
       resetPassword: () =>
         fail ? Promise.reject(FORBIDDEN) : Promise.resolve(),
@@ -551,8 +575,8 @@ const FIELD_WRITES: readonly {
   {
     label: 'add a login identifier',
     success: fill(zhCN.accounts.identifierAdded, {
-      id: ACCOUNT_ID,
-      identifier: 'ada@example.com',
+      account: byName('Operator'),
+      loginIdentifier: 'ada@example.com',
     }),
     operations: (fail) => ({
       addIdentifier: () =>
@@ -1927,8 +1951,269 @@ describe('AccountsPage', () => {
     },
   )
 
-  it('keeps the detail panel busy while any of its scopes is in flight', async () => {
-    const user = userEvent.setup()
+  // Every account write's success notice names the account in the shared
+  // four shapes and never by its opaque id. The detail writes run with the
+  // selected account's view under test; the create and delete flows take
+  // the account object their write returns or the row it deletes.
+  const WRITE_NOTICES: Readonly<
+    Record<
+      string,
+      {
+        readonly notice: string
+        readonly unnamed: string
+        readonly values?: Readonly<Record<string, string>>
+      }
+    >
+  > = {
+    'reset all MFA factors': {
+      notice: zhCN.accounts.mfaReset,
+      unnamed: zhCN.accounts.mfaResetUnnamed,
+    },
+    'revoke all sessions': {
+      notice: zhCN.accounts.sessionsRevoked,
+      unnamed: zhCN.accounts.sessionsRevokedUnnamed,
+    },
+    'revoke one service secret': {
+      notice: zhCN.accounts.secretRevoked,
+      unnamed: zhCN.accounts.secretRevokedUnnamed,
+      values: { label: 'ci' },
+    },
+    'revoke one session': {
+      notice: zhCN.accounts.sessionRevoked,
+      unnamed: zhCN.accounts.sessionRevokedUnnamed,
+      values: { session: 'sess-1' },
+    },
+    'remove one login identifier by name': {
+      notice: zhCN.accounts.identifierRemoved,
+      unnamed: zhCN.accounts.identifierRemovedUnnamed,
+      values: { loginIdentifier: 'ada@example.com' },
+    },
+    'change the account status': {
+      notice: zhCN.accounts.statusSaved,
+      unnamed: zhCN.accounts.statusSavedUnnamed,
+    },
+    'change the MFA requirement': {
+      notice: zhCN.accounts.mfaSaved,
+      unnamed: zhCN.accounts.mfaSavedUnnamed,
+    },
+    'patch the account': {
+      notice: zhCN.accounts.patchSaved,
+      unnamed: zhCN.accounts.patchSavedUnnamed,
+    },
+    'reset the password': {
+      notice: zhCN.accounts.passwordReset,
+      unnamed: zhCN.accounts.passwordResetUnnamed,
+    },
+    'add a login identifier': {
+      notice: zhCN.accounts.identifierAdded,
+      unnamed: zhCN.accounts.identifierAddedUnnamed,
+      values: { loginIdentifier: 'ada@example.com' },
+    },
+    'create a service secret': {
+      notice: zhCN.accounts.secretCreated,
+      unnamed: zhCN.accounts.secretCreatedUnnamed,
+      values: { label: 'ci' },
+    },
+  }
+
+  /** The notice metadata for one detail write. */
+  function noticeMeta(label: string): {
+    readonly notice: string
+    readonly unnamed: string
+    readonly values?: Readonly<Record<string, string>>
+  } {
+    const meta = WRITE_NOTICES[label]
+    if (meta === undefined) {
+      throw new Error(`no notice metadata for ${label}`)
+    }
+    return meta
+  }
+
+  const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
+    { kind: 'username', value: 'ada', proven: true },
+  ]
+
+  /** Drives one detail write with the selected account's view as given. */
+  async function driveDetailNotice(
+    user: ReturnType<typeof userEvent.setup>,
+    entry: (typeof ALL_DETAIL_WRITES)[number],
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+  ): Promise<HTMLElement> {
+    const operations = withAccounts({
+      ...entry.operations(false),
+      getAccount: () =>
+        Promise.resolve(
+          accountFixture({ display_name: displayName, identifiers }),
+        ),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await openDetail(user)
+    const panel = await screen.findByRole('dialog', {
+      name: DETAIL_PANEL_NAME,
+    })
+    await entry.drive(user, panel)
+    return panel
+  }
+
+  /** Confirms the account delete's two-step guard. */
+  async function confirmDelete(
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<void> {
+    const dialog = await screen.findByRole('dialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_LABEL }),
+    )
+    await act(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONFIRM_ARM_LOCKOUT_MS + 300),
+      )
+    })
+    await user.click(
+      within(dialog).getByRole('button', { name: CONFIRM_AGAIN_LABEL }),
+    )
+  }
+
+  describe.each(ALL_DETAIL_WRITES)(
+    'detail notice: $label',
+    (entry) => {
+      const meta = noticeMeta(entry.label)
+
+      it('names the account by display name and first identifier, never the id', async () => {
+        const user = userEvent.setup()
+        const panel = await driveDetailNotice(
+          user,
+          entry,
+          'Ada',
+          NOTICE_IDENTIFIERS,
+        )
+        const message = await within(panel).findByText(
+          fill(meta.notice, {
+            account: byNameAndIdentifier('Ada', 'ada'),
+            ...meta.values,
+          }),
+        )
+        expect(message).not.toHaveTextContent(ACCOUNT_ID)
+      })
+
+      it('names the account by its first identifier when the display name is empty, never the id', async () => {
+        const user = userEvent.setup()
+        const panel = await driveDetailNotice(
+          user,
+          entry,
+          '',
+          NOTICE_IDENTIFIERS,
+        )
+        const message = await within(panel).findByText(
+          fill(meta.notice, {
+            account: byIdentifier('ada'),
+            ...meta.values,
+          }),
+        )
+        expect(message).not.toHaveTextContent(ACCOUNT_ID)
+      })
+
+      it('uses the neutral sentence when neither resolves, never the id', async () => {
+        const user = userEvent.setup()
+        const panel = await driveDetailNotice(user, entry, '', [])
+        const message = await within(panel).findByText(
+          fill(meta.unnamed, meta.values ?? {}),
+        )
+        expect(message).not.toHaveTextContent(ACCOUNT_ID)
+      })
+    },
+  )
+
+  describe.each<{
+    label: 'create' | 'delete'
+    notice: string
+    unnamed: string
+  }>([
+    {
+      label: 'create',
+      notice: zhCN.accounts.created,
+      unnamed: zhCN.accounts.createdUnnamed,
+    },
+    {
+      label: 'delete',
+      notice: zhCN.accounts.deleted,
+      unnamed: zhCN.accounts.deletedUnnamed,
+    },
+  ])('list notice: $label', ({ label, notice, unnamed }) => {
+    it('names the account by display name and first identifier, never the id', async () => {
+      const user = userEvent.setup()
+      const expected = fill(notice, {
+        account: byNameAndIdentifier('Ada', 'ada'),
+      })
+      await driveListNotice(user, label, 'Ada', NOTICE_IDENTIFIERS)
+      const message = await screen.findByText(expected)
+      expect(message).not.toHaveTextContent(ACCOUNT_ID)
+    })
+
+    it('names the account by its first identifier when the display name is empty, never the id', async () => {
+      const user = userEvent.setup()
+      const expected = fill(notice, { account: byIdentifier('ada') })
+      await driveListNotice(user, label, '', NOTICE_IDENTIFIERS)
+      const message = await screen.findByText(expected)
+      expect(message).not.toHaveTextContent(ACCOUNT_ID)
+    })
+
+    it('uses the neutral sentence when neither resolves, never the id', async () => {
+      const user = userEvent.setup()
+      await driveListNotice(user, label, '', [])
+      const message = await screen.findByText(unnamed)
+      expect(message).not.toHaveTextContent(ACCOUNT_ID)
+    })
+  })
+
+  /** Drives the create or delete flow for one account view. */
+  async function driveListNotice(
+    user: ReturnType<typeof userEvent.setup>,
+    label: 'create' | 'delete',
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+  ): Promise<void> {
+    const view = accountFixture({ display_name: displayName, identifiers })
+    if (label === 'create') {
+      const operations = withAccounts({
+        createAccount: () => Promise.resolve(view),
+      })
+      renderWithProviders(<AccountsPage />, { operations })
+      await search(user)
+      await screen.findByText('Ada Lovelace')
+      const panel = await openCreate(user)
+      await user.type(
+        within(panel).getByLabelText(zhCN.accounts.create.displayNameLabel),
+        'Grace',
+      )
+      await user.type(
+        within(panel).getByLabelText(zhCN.accounts.create.usernameLabel),
+        'grace',
+      )
+      await user.click(
+        within(panel).getByRole('button', { name: zhCN.accounts.create.submit }),
+      )
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('dialog', { name: CREATE_PANEL_NAME }),
+        ).not.toBeInTheDocument()
+      })
+      return
+    }
+
+    const operations = withAccounts({
+      listAccounts: () =>
+        Promise.resolve({ accounts: [view], next_cursor: '' }),
+      deleteAccount: () => Promise.resolve(),
+    })
+    renderWithProviders(<AccountsPage />, { operations })
+    await search(user)
+    await screen.findByRole('button', { name: DELETE_ACCOUNT_NAME })
+    await user.click(screen.getByRole('button', { name: DELETE_ACCOUNT_NAME }))
+    await confirmDelete(user)
+  }
+
+  it('keeps the detail panel busy while any of its scopes is in flight', async () => {    const user = userEvent.setup()
     let finish: (() => void) | undefined
     const operations = withAccounts({
       resetPassword: () =>

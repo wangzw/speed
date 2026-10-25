@@ -53,6 +53,24 @@ function contains(value: string): RegExp {
   return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
 }
 
+/** The account reference a notice inserts for a resolved display name. */
+function byName(name: string): string {
+  return text(zhCN.common.accountReference.name, { name })
+}
+
+/** The account reference a notice inserts for an identifier alone. */
+function byIdentifier(identifier: string): string {
+  return text(zhCN.common.accountReference.identifier, { identifier })
+}
+
+/** The account reference a notice inserts when both resolve. */
+function byNameAndIdentifier(name: string, identifier: string): string {
+  return text(zhCN.common.accountReference.nameWithIdentifier, {
+    name,
+    identifier,
+  })
+}
+
 const TENANT = { id: 'acme', alias: 'Acme', status: 'active' as const }
 
 /** The zh-CN label the confirm button shows once the two-step guard arms. */
@@ -773,7 +791,7 @@ describe('PermissionsPage', () => {
     // The landed unbind fills the bindings scope's success region, naming
     // the account and the role it took away.
     expect(
-      await screen.findByText(text(zhCN.permissions.bindings.unbound, { account: 'acc-1', role: 'editor' })),
+      await screen.findByText(text(zhCN.permissions.bindings.unbound, { account: byName('Operator'), role: 'editor' })),
     ).toBeInTheDocument()
   })
 
@@ -1217,14 +1235,151 @@ describe('PermissionsPage', () => {
       await pending.promise
     })
     expect(
-      await screen.findByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: 'Ada' })),
+      await screen.findByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: byName('Ada') })),
     ).toBeInTheDocument()
 
     // Choosing another account is another context: the confirmation goes.
     await chooseAccount(user, zhCN.permissions.bindings.accountLabel, 'Operator', 'Operator (acc-1)')
     expect(
-      screen.queryByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: 'Ada' })),
+      screen.queryByText(text(zhCN.permissions.bindings.bound, { role: 'viewer', account: byName('Ada') })),
     ).toBeNull()
+  })
+
+  // Both binding writes name the account in the shared four shapes and never
+  // by its opaque id.
+  const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
+    { kind: 'username', value: 'ada', proven: true },
+  ]
+
+  /** Drives one binding write with the given identity and returns its notice. */
+  async function driveBindingNotice(
+    user: ReturnType<typeof userEvent.setup>,
+    action: 'bound' | 'unbound',
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+    expected: string,
+  ): Promise<HTMLElement> {
+    if (action === 'bound') {
+      const operations = withAuthz({
+        listAccounts: () =>
+          Promise.resolve({
+            accounts: [
+              account({ id: 'acc-2', display_name: displayName, identifiers }),
+            ],
+            next_cursor: '',
+          }),
+        bindRole: () => Promise.resolve(),
+      })
+      renderWithProviders(<PermissionsPage />, { operations })
+      await pickTenant(user)
+      await user.type(
+        screen.getByRole('textbox', {
+          name: zhCN.permissions.bindings.roleLabel,
+        }),
+        'viewer',
+      )
+      const optionName =
+        displayName === '' ? 'acc-2' : `${displayName} (acc-2)`
+      await chooseAccount(
+        user,
+        zhCN.permissions.bindings.accountLabel,
+        'Ada',
+        optionName,
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.permissions.bindings.bind }),
+      )
+      return screen.findByText(expected)
+    }
+
+    const getAccount = vi.fn(() =>
+      Promise.resolve(
+        account({
+          id: 'acc-1',
+          display_name: displayName,
+          identifiers,
+        }),
+      ),
+    )
+    const operations = withAuthz({
+      listBindings: () => Promise.resolve([binding()]),
+      getAccount,
+      unbindRole: () => Promise.resolve(),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    // The unbind control resolves the row's account through the shared unit;
+    // wait for that read before the click captures the identity.
+    await vi.waitFor(() => expect(getAccount).toHaveBeenCalled())
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.permissions.bindings.unbindAria, {
+          account: displayName === '' ? 'acc-1' : displayName,
+          role: 'editor',
+        }),
+      }),
+    )
+    return screen.findByText(expected)
+  }
+
+  describe.each([
+    {
+      action: 'bound' as const,
+      named: zhCN.permissions.bindings.bound,
+      unnamed: zhCN.permissions.bindings.boundUnnamed,
+      role: 'viewer',
+    },
+    {
+      action: 'unbound' as const,
+      named: zhCN.permissions.bindings.unbound,
+      unnamed: zhCN.permissions.bindings.unboundUnnamed,
+      role: 'editor',
+    },
+  ])('bindings notice: $action', ({ action, named, unnamed, role }) => {
+    it('names the account by display name and first identifier, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await driveBindingNotice(
+        user,
+        action,
+        'Ada',
+        NOTICE_IDENTIFIERS,
+        text(named, {
+          role,
+          account: byNameAndIdentifier('Ada', 'ada'),
+        }),
+      )
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-2')
+    })
+
+    it('names the account by its first identifier when the display name is empty, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await driveBindingNotice(
+        user,
+        action,
+        '',
+        NOTICE_IDENTIFIERS,
+        text(named, { role, account: byIdentifier('ada') }),
+      )
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-2')
+    })
+
+    it('uses the neutral sentence when neither resolves, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await driveBindingNotice(
+        user,
+        action,
+        '',
+        [],
+        text(unnamed, { role }),
+      )
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-2')
+    })
   })
 
   it('re-reads every enabled body read once on refresh and skips the disabled ones', async () => {

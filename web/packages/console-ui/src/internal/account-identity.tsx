@@ -28,7 +28,89 @@ import { visuallyHiddenSx } from '@speed/ui-kit'
 import { useConsoleUiTranslation } from './translation.js'
 import { isNotFound } from './async-section.js'
 import { useConsoleHasFeature } from './features.js'
-import { useConsoleOperations } from '../operations.js'
+import { useConsoleOperations, type ConsoleAccount } from '../operations.js'
+
+/** The console-ui namespace's translation function. */
+type ConsoleTranslate = ReturnType<typeof useConsoleUiTranslation>['t']
+
+/**
+ * The three reference forms a notice inserts for a resolved identity. The
+ * confirmation dialogs carry the same forms, so an account is named one way
+ * across the console: `"Ada" (ada)` when both resolve, `"ada"` when only the
+ * identifier does, and `"Ada"` when only the display name does.
+ */
+const ACCOUNT_REFERENCE_KEYS = {
+  name: 'common.accountReference.name',
+  identifier: 'common.accountReference.identifier',
+  nameWithIdentifier: 'common.accountReference.nameWithIdentifier',
+} as const
+
+/** A resolved account identity as a notice names it. */
+export type AccountIdentityValue = {
+  readonly name: string | undefined
+  readonly identifier: string | undefined
+}
+
+/** The identity an account view carries, with an empty display name read as none. */
+export function accountIdentityValue(
+  account: Pick<ConsoleAccount, 'display_name' | 'identifiers'>,
+): AccountIdentityValue {
+  return {
+    name: account.display_name === '' ? undefined : account.display_name,
+    identifier: account.identifiers[0]?.value,
+  }
+}
+
+/**
+ * The reference a notice inserts for `identity`: the display name with its
+ * first login identifier when both resolve, either alone otherwise, and
+ * `undefined` when neither does. A notice must never fall back to the opaque
+ * account id -- an operator cannot match it to a row.
+ */
+export function accountReference(
+  t: ConsoleTranslate,
+  identity: AccountIdentityValue,
+): string | undefined {
+  if (identity.name !== undefined) {
+    return identity.identifier === undefined
+      ? t(ACCOUNT_REFERENCE_KEYS.name, { name: identity.name })
+      : t(ACCOUNT_REFERENCE_KEYS.nameWithIdentifier, {
+          name: identity.name,
+          identifier: identity.identifier,
+        })
+  }
+  return identity.identifier === undefined
+    ? undefined
+    : t(ACCOUNT_REFERENCE_KEYS.identifier, {
+        identifier: identity.identifier,
+      })
+}
+
+/** The two bundle keys of a success notice that names an account. */
+export type AccountNoticeKeys = {
+  /** The sentence carrying the account reference in `{{account}}`. */
+  readonly named: string
+  /** The sentence naming no account, for an identity that resolved nothing. */
+  readonly unnamed: string
+}
+
+/**
+ * A success notice that names an account: the named sentence with the
+ * account reference in `{{account}}`, or the neutral sentence when the
+ * identity resolved neither a display name nor a login identifier. The
+ * opaque account id never enters the copy.
+ */
+export function accountNotice(
+  t: ConsoleTranslate,
+  keys: AccountNoticeKeys,
+  identity: AccountIdentityValue,
+  values: Record<string, string> = {},
+): string {
+  const reference = accountReference(t, identity)
+  return reference === undefined
+    ? t(keys.unnamed, values)
+    : t(keys.named, { ...values, account: reference })
+}
 
 /**
  * The account read's outcome for one identifier, for surfaces that need the
@@ -43,9 +125,10 @@ import { useConsoleOperations } from '../operations.js'
  * answered 404 -- the account was deleted, or the identifier never named an
  * account. `gated` says the read was never issued because the authn.admin
  * feature is absent -- the identity is unresolved for that reason, which is
- * neither a refusal nor a deletion.
+ * neither a refusal nor a deletion. An absent account issues no read: the
+ * caller has no identifier to resolve yet.
  */
-export function useAccountIdentity(account: string): {
+export function useAccountIdentity(account: string | undefined): {
   readonly name: string | undefined
   readonly identifier: string | undefined
   readonly refused: boolean
@@ -55,9 +138,12 @@ export function useAccountIdentity(account: string): {
   const hasFeature = useConsoleHasFeature()
   const operations = useConsoleOperations()
   // No feature, no read: the account administration face (and the identity
-  // lookup it carries) does not exist in this process.
+  // lookup it carries) does not exist in this process. An absent identifier
+  // is equally not a lookup: there is nothing to resolve.
   const gated = !hasFeature('authn.admin')
-  const read = operations.useAccount({ id: gated ? undefined : account })
+  const read = operations.useAccount({
+    id: gated || account === undefined || account === '' ? undefined : account,
+  })
   const recorded = read.data?.display_name
   return {
     name: recorded !== undefined && recorded !== '' ? recorded : undefined,

@@ -65,7 +65,13 @@ import {
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
-import { AccountIdentity, useAccountIdentity } from './internal/account-identity.js'
+import {
+  AccountIdentity,
+  accountIdentityValue,
+  accountNotice,
+  useAccountIdentity,
+  type AccountIdentityValue,
+} from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
@@ -276,8 +282,7 @@ export function InvitationsPage({
 
   const requestRemoveMember = (
     member: ConsoleMember,
-    displayName: string | undefined,
-    identifier: string | undefined,
+    identity: AccountIdentityValue,
   ) => {
     confirm.ask({
       title: t('members.removeTitle'),
@@ -289,15 +294,17 @@ export function InvitationsPage({
       // missing or feature-gated account read) keeps the sentence neutral
       // rather than falling back to it.
       message:
-        displayName === undefined
-          ? identifier === undefined
+        identity.name === undefined
+          ? identity.identifier === undefined
             ? t('members.removeMessageUnnamed')
-            : t('members.removeMessageByIdentifier', { identifier })
-          : identifier === undefined
-            ? t('members.removeMessage', { name: displayName })
+            : t('members.removeMessageByIdentifier', {
+                identifier: identity.identifier,
+              })
+          : identity.identifier === undefined
+            ? t('members.removeMessage', { name: identity.name })
             : t('members.removeMessageWithIdentifier', {
-                name: displayName,
-                identifier,
+                name: identity.name,
+                identifier: identity.identifier,
               }),
       confirmLabel: t('common.confirm'),
       run: () => {
@@ -308,9 +315,14 @@ export function InvitationsPage({
               tenant,
               account: member.account,
             })
-            return t('members.removed', {
-              account: displayName ?? member.account,
-            })
+            return accountNotice(
+              t,
+              {
+                named: 'members.removed',
+                unnamed: 'members.removedUnnamed',
+              },
+              identity,
+            )
           } catch (error) {
             setFailedMember({ account: member.account, action: 'remove' })
             throw error
@@ -322,7 +334,7 @@ export function InvitationsPage({
 
   const toggleSsoExempt = (
     member: ConsoleMember,
-    accountName: string,
+    identity: AccountIdentityValue,
   ) => {
     const exempt = !member.sso_exempt
     setFailedMember(null)
@@ -333,9 +345,18 @@ export function InvitationsPage({
           account: member.account,
           sso_exempt: exempt,
         })
-        return t(
-          exempt ? 'members.ssoExemptSaved' : 'members.ssoExemptCleared',
-          { account: accountName },
+        return accountNotice(
+          t,
+          exempt
+            ? {
+                named: 'members.ssoExemptSaved',
+                unnamed: 'members.ssoExemptSavedUnnamed',
+              }
+            : {
+                named: 'members.ssoExemptCleared',
+                unnamed: 'members.ssoExemptClearedUnnamed',
+              },
+          identity,
         )
       } catch (error) {
         setFailedMember({ account: member.account, action: 'sso' })
@@ -716,11 +737,9 @@ export function InvitationsPage({
  * The member row's own actions. The account's readable identity comes from
  * the same account read the row's identity cell renders (one cached read
  * per account), so a landed write names the account the way the row shows
- * it and falls back to the recorded identifier when the read is refused.
- * The removal confirmation takes the resolved display name and first login
- * identifier: the sentence names both, an identifier alone names an account
- * with no display name, and a neutral sentence stands in when the identity is
- * unresolved, so the recorded identifier never appears in its copy.
+ * it: display name and first login identifier in the four shared shapes, a
+ * neutral sentence when neither resolves. The recorded identifier is never
+ * a fallback.
  */
 function MemberRowActions({
   member,
@@ -739,19 +758,16 @@ function MemberRowActions({
   readonly ssoExemption: boolean
   readonly onRemove: (
     member: ConsoleMember,
-    displayName: string | undefined,
-    identifier: string | undefined,
+    identity: AccountIdentityValue,
   ) => void
   readonly onToggleSsoExempt: (
     member: ConsoleMember,
-    accountName: string,
+    identity: AccountIdentityValue,
   ) => void
 }) {
   const { t } = useConsoleUiTranslation()
   const { name, identifier } = useAccountIdentity(member.account)
-  // A landed write names the account by display name, falling back to the
-  // recorded identifier when the read resolves none.
-  const namedAccount = name ?? member.account
+  const identity: AccountIdentityValue = { name, identifier }
   const errorId = `member-error-${encodeURIComponent(member.account)}`
   const ssoFailed = failed === 'sso'
   const removeFailed = failed === 'remove'
@@ -767,7 +783,7 @@ function MemberRowActions({
             aria-describedby={ssoFailed ? errorId : undefined}
             disabled={pending}
             loading={pending}
-            onClick={() => onToggleSsoExempt(member, namedAccount)}
+            onClick={() => onToggleSsoExempt(member, identity)}
           >
             {member.sso_exempt
               ? t('members.ssoExemptClear')
@@ -783,7 +799,7 @@ function MemberRowActions({
           aria-describedby={removeFailed ? errorId : undefined}
           disabled={pending}
           loading={pending}
-          onClick={() => onRemove(member, name, identifier)}
+          onClick={() => onRemove(member, identity)}
         >
           {t('members.remove')}
         </Button>
@@ -957,10 +973,14 @@ function MemberWriteForm({
               setSource('')
               setActive(true)
               setSsoExempt(false)
-              return t('members.write.saved', {
-                account:
-                  target.display_name === '' ? target.id : target.display_name,
-              })
+              return accountNotice(
+                t,
+                {
+                  named: 'members.write.saved',
+                  unnamed: 'members.write.savedUnnamed',
+                },
+                accountIdentityValue(target),
+              )
             })
           }}
         >

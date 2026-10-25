@@ -79,7 +79,12 @@
     "tenantEmpty": "尚未登记任何租户。",
     "emptyValue": "—",
     "accountUnresolved": "身份未解析（需账户读取权限）",
-    "accountMissing": "非账户或已删除"
+    "accountMissing": "非账户或已删除",
+    "accountReference": {
+      "name": "「{{name}}」",
+      "identifier": "「{{identifier}}」",
+      "nameWithIdentifier": "「{{name}}」（{{identifier}}）"
+    }
   },
   "detail": {
     "notFound": {
@@ -470,8 +475,10 @@
       },
       "unbind": "解绑",
       "unbindAria": "解绑账户 {{account}} 的角色 {{role}}",
-      "bound": "已将角色「{{role}}」绑定到账户「{{account}}」",
-      "unbound": "已解除账户「{{account}}」的角色「{{role}}」绑定"
+      "bound": "已将角色「{{role}}」绑定到账户{{account}}",
+      "boundUnnamed": "已为该账户绑定角色「{{role}}」",
+      "unbound": "已解除账户{{account}}的角色「{{role}}」绑定",
+      "unboundUnnamed": "已解除该账户的角色「{{role}}」绑定"
     },
     "lookup": {
       "title": "查询账户的绑定",
@@ -535,19 +542,32 @@
     "deleteMessageWithIdentifier": "删除账户「{{name}}」（{{identifier}}）会一并移除其全部登录标识、密钥与会话。",
     "deleteMessageByIdentifier": "删除账户「{{identifier}}」会一并移除其全部登录标识、密钥与会话。",
     "deleteMessageUnnamed": "删除该账户会一并移除其全部登录标识、密钥与会话。",
-    "created": "账户「{{name}}」已创建",
-    "deleted": "账户「{{id}}」已删除",
-    "mfaReset": "账户「{{id}}」的认证因子已重置",
-    "sessionsRevoked": "账户「{{id}}」的会话已全部撤销",
-    "identifierRemoved": "账户「{{id}}」的登录标识「{{identifier}}」已移除",
-    "secretRevoked": "账户「{{id}}」的服务密钥「{{label}}」已撤销",
-    "sessionRevoked": "账户「{{id}}」的会话「{{session}}」已撤销",
-    "statusSaved": "账户「{{id}}」的状态已保存",
-    "mfaSaved": "账户「{{id}}」的 MFA 要求已保存",
-    "patchSaved": "账户「{{id}}」的资料已保存",
-    "passwordReset": "账户「{{id}}」的口令已重置",
-    "identifierAdded": "账户「{{id}}」已添加登录标识「{{identifier}}」",
-    "secretCreated": "账户「{{id}}」已创建服务密钥「{{label}}」",
+    "created": "账户{{account}}已创建",
+    "createdUnnamed": "已创建一个账户",
+    "deleted": "账户{{account}}已删除",
+    "deletedUnnamed": "已删除一个账户",
+    "mfaReset": "账户{{account}}的认证因子已重置",
+    "mfaResetUnnamed": "该账户的认证因子已重置",
+    "sessionsRevoked": "账户{{account}}的会话已全部撤销",
+    "sessionsRevokedUnnamed": "该账户的会话已全部撤销",
+    "identifierRemoved": "账户{{account}}的登录标识「{{loginIdentifier}}」已移除",
+    "identifierRemovedUnnamed": "该账户的登录标识「{{loginIdentifier}}」已移除",
+    "secretRevoked": "账户{{account}}的服务密钥「{{label}}」已撤销",
+    "secretRevokedUnnamed": "该账户的服务密钥「{{label}}」已撤销",
+    "sessionRevoked": "账户{{account}}的会话「{{session}}」已撤销",
+    "sessionRevokedUnnamed": "该账户的会话「{{session}}」已撤销",
+    "statusSaved": "账户{{account}}的状态已保存",
+    "statusSavedUnnamed": "该账户的状态已保存",
+    "mfaSaved": "账户{{account}}的 MFA 要求已保存",
+    "mfaSavedUnnamed": "该账户的 MFA 要求已保存",
+    "patchSaved": "账户{{account}}的资料已保存",
+    "patchSavedUnnamed": "该账户的资料已保存",
+    "passwordReset": "账户{{account}}的口令已重置",
+    "passwordResetUnnamed": "该账户的口令已重置",
+    "identifierAdded": "账户{{account}}已添加登录标识「{{loginIdentifier}}」",
+    "identifierAddedUnnamed": "已为该账户添加登录标识「{{loginIdentifier}}」",
+    "secretCreated": "账户{{account}}已创建服务密钥「{{label}}」",
+    "secretCreatedUnnamed": "已为该账户创建服务密钥「{{label}}」",
     "status": {
       "label": "状态",
       "submit": "保存状态",
@@ -807,7 +827,8 @@
       "startFailed": "发起失败"
     },
     "terminate": "终止",
-    "terminated": "已终止账户 {{account}} 的冒充记录。",
+    "terminated": "已终止账户{{account}}的冒充记录。",
+    "terminatedUnnamed": "已终止对该账户的冒充记录。",
     "recordsUnavailable": "冒充期间不能读取或终止冒充记录；结束冒充后可在此查看。",
     "current": {
       "title": "当前冒充",
@@ -817,8 +838,10 @@
       "tenant": "租户：{{tenant}}",
       "ends": "结束时间：{{ends}}",
       "end": "结束冒充",
-      "started": "已开始冒充账户 {{account}}。",
-      "ended": "已结束冒充账户 {{account}}。",
+      "started": "已开始冒充账户{{account}}。",
+      "startedUnnamed": "已开始冒充该账户。",
+      "ended": "已结束冒充账户{{account}}。",
+      "endedUnnamed": "已结束冒充该账户。",
       "error": {
         "title": "冒充状态读取失败",
         "description": "冒充状态未能完成这次请求。"
@@ -924,7 +947,8 @@
       "activeLabel": "在册",
       "ssoExemptLabel": "SSO 豁免",
       "submit": "写入成员关系",
-      "saved": "账户「{{account}}」的成员关系已保存"
+      "saved": "账户{{account}}的成员关系已保存",
+      "savedUnnamed": "该账户的成员关系已保存"
     },
     "remove": "移除",
     "removeTitle": "移除成员",
@@ -932,9 +956,12 @@
     "removeMessageWithIdentifier": "从该租户移除成员「{{name}}」（{{identifier}}）。",
     "removeMessageByIdentifier": "从该租户移除成员「{{identifier}}」。",
     "removeMessageUnnamed": "从该租户移除该成员。",
-    "removed": "已移除成员「{{account}}」",
-    "ssoExemptSaved": "已为成员「{{account}}」设置 SSO 豁免",
-    "ssoExemptCleared": "已清除成员「{{account}}」的 SSO 豁免"
+    "removed": "已移除成员{{account}}",
+    "removedUnnamed": "已移除该成员",
+    "ssoExemptSaved": "已为成员{{account}}设置 SSO 豁免",
+    "ssoExemptSavedUnnamed": "已为该成员设置 SSO 豁免",
+    "ssoExemptCleared": "已清除成员{{account}}的 SSO 豁免",
+    "ssoExemptClearedUnnamed": "已清除该成员的 SSO 豁免"
   },
   "sso": {
     "title": "SSO 提供方",

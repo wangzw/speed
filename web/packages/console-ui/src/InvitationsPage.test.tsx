@@ -65,6 +65,24 @@ function fill(
   )
 }
 
+/** The account reference a notice inserts for a resolved display name. */
+function byName(name: string): string {
+  return fill(zhCN.common.accountReference.name, { name })
+}
+
+/** The account reference a notice inserts for an identifier alone. */
+function byIdentifier(identifier: string): string {
+  return fill(zhCN.common.accountReference.identifier, { identifier })
+}
+
+/** The account reference a notice inserts when both resolve. */
+function byNameAndIdentifier(name: string, identifier: string): string {
+  return fill(zhCN.common.accountReference.nameWithIdentifier, {
+    name,
+    identifier,
+  })
+}
+
 /** The ui-kit copy control's accessible name, from its zh-CN template. */
 function copyLabel(value: string): string {
   const template = (
@@ -762,7 +780,7 @@ describe('InvitationsPage', () => {
     })
   })
 
-  it('names the removed member by the resolved display name, falling back to the recorded id', async () => {
+  it('names the removed member by the resolved display name and never the recorded id', async () => {
     const user = userEvent.setup()
     const resolving = withTenant({
       listMembers: () => Promise.resolve([member()]),
@@ -778,12 +796,13 @@ describe('InvitationsPage', () => {
     let dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText(fill(zhCN.members.removed, { account: 'Member One' })),
+      await screen.findByText(fill(zhCN.members.removed, { account: byName('Member One') })),
     ).toBeInTheDocument()
     first.unmount()
 
-    // A refused account read leaves the recorded id as the only name the
-    // page has, so the success copy names that instead.
+    // A refused account read resolves neither a display name nor an
+    // identifier, so the success copy stays neutral: the recorded id is a
+    // machine value the operator cannot match to a roster row.
     const refused = withTenant({
       listMembers: () => Promise.resolve([member()]),
       getAccount: () => Promise.reject(new Error('forbidden')),
@@ -794,9 +813,8 @@ describe('InvitationsPage', () => {
     await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
     dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
-    expect(
-      await screen.findByText(fill(zhCN.members.removed, { account: 'acc-1' })),
-    ).toBeInTheDocument()
+    const notice = await screen.findByText(zhCN.members.removedUnnamed)
+    expect(notice).not.toHaveTextContent('acc-1')
   })
 
   // The removal confirmation names the member the way the roster shows it:
@@ -1003,6 +1021,148 @@ describe('InvitationsPage', () => {
     expect(screen.getByLabelText(zhCN.members.write.accountLabel)).toHaveValue('')
   })
 
+  // The four success notices a member row's writes produce name the account
+  // in the shared four shapes and never by its opaque id. Each case asserts
+  // the recorded id is absent from the notice.
+  const MEMBER_ACTIONS = [
+    {
+      action: 'remove',
+      named: zhCN.members.removed,
+      unnamed: zhCN.members.removedUnnamed,
+    },
+    {
+      action: 'sso-saved',
+      named: zhCN.members.ssoExemptSaved,
+      unnamed: zhCN.members.ssoExemptSavedUnnamed,
+    },
+    {
+      action: 'sso-cleared',
+      named: zhCN.members.ssoExemptCleared,
+      unnamed: zhCN.members.ssoExemptClearedUnnamed,
+    },
+    {
+      action: 'write',
+      named: zhCN.members.write.saved,
+      unnamed: zhCN.members.write.savedUnnamed,
+    },
+  ] as const
+
+  const NOTICE_IDENTIFIERS: ConsoleAccount['identifiers'] = [
+    { kind: 'username', value: 'ada', proven: true },
+  ]
+
+  /** Runs one member write with the given identity and returns its notice. */
+  async function driveMemberNotice(
+    user: ReturnType<typeof userEvent.setup>,
+    action: (typeof MEMBER_ACTIONS)[number]['action'],
+    displayName: string,
+    identifiers: ConsoleAccount['identifiers'],
+    expected: string,
+  ): Promise<HTMLElement> {
+    const getAccount = vi.fn(() =>
+      Promise.resolve(
+        accountFixture({ display_name: displayName, identifiers }),
+      ),
+    )
+    const operations = withTenant({
+      listMembers: () =>
+        Promise.resolve([member({ sso_exempt: action === 'sso-cleared' })]),
+      listAccounts: () =>
+        Promise.resolve({
+          accounts: [account({ display_name: displayName, identifiers })],
+          next_cursor: '',
+        }),
+      getAccount,
+      removeMember: () => Promise.resolve(),
+      setMemberSsoExempt: () => Promise.resolve(),
+      writeMember: () => Promise.resolve(),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+
+    if (action === 'write') {
+      // The picker's option names the account by its display name beside the
+      // id, or by the id alone when it has none.
+      const optionName =
+        displayName === '' ? 'acc-2' : `${displayName} (acc-2)`
+      await chooseAccount(
+        user,
+        zhCN.members.write.accountLabel,
+        'Ada',
+        optionName,
+      )
+      await user.click(
+        screen.getByRole('button', { name: zhCN.members.write.submit }),
+      )
+    } else {
+      // The row's identity cell issues the account read; wait for it to
+      // settle before the action captures the identity.
+      await screen.findByRole('button', { name: zhCN.members.remove })
+      await vi.waitFor(() => expect(getAccount).toHaveBeenCalled())
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      if (action === 'remove') {
+        await user.click(
+          screen.getByRole('button', { name: zhCN.members.remove }),
+        )
+        const dialog = await screen.findByRole('dialog')
+        await user.click(
+          within(dialog).getByRole('button', { name: zhCN.common.confirm }),
+        )
+      } else {
+        await user.click(
+          screen.getByRole('button', {
+            name:
+              action === 'sso-saved'
+                ? zhCN.members.ssoExemptSet
+                : zhCN.members.ssoExemptClear,
+          }),
+        )
+      }
+    }
+
+    return screen.findByText(expected)
+  }
+
+  describe.each(MEMBER_ACTIONS)('members notice: $action', ({ action, named, unnamed }) => {
+    it('names the account by display name and first identifier, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await driveMemberNotice(
+        user,
+        action,
+        'Ada',
+        NOTICE_IDENTIFIERS,
+        fill(named, { account: byNameAndIdentifier('Ada', 'ada') }),
+      )
+      expect(notice).toBeInTheDocument()
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-2')
+    })
+
+    it('names the account by its first identifier when the display name is empty, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await driveMemberNotice(
+        user,
+        action,
+        '',
+        NOTICE_IDENTIFIERS,
+        fill(named, { account: byIdentifier('ada') }),
+      )
+      expect(notice).toBeInTheDocument()
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-2')
+    })
+
+    it('uses the neutral sentence when neither resolves, never the id', async () => {
+      const user = userEvent.setup()
+      const notice = await driveMemberNotice(user, action, '', [], unnamed)
+      expect(notice).toBeInTheDocument()
+      expect(notice).not.toHaveTextContent('acc-1')
+      expect(notice).not.toHaveTextContent('acc-2')
+    })
+  })
+
   it('re-reads the member list after a landed write and leaves it alone after a refusal', async () => {
     const user = userEvent.setup()
     let memberRows = 0
@@ -1062,7 +1222,7 @@ describe('InvitationsPage', () => {
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
-      await screen.findByText(fill(zhCN.members.write.saved, { account: 'Ada' })),
+      await screen.findByText(fill(zhCN.members.write.saved, { account: byName('Ada') })),
     ).toBeInTheDocument()
     expect(await screen.findByText('Ada')).toBeInTheDocument()
     expect(listReads()).toBe(2)
@@ -1222,14 +1382,14 @@ describe('InvitationsPage', () => {
     await chooseAccount(user, zhCN.members.write.accountLabel, 'Ada', 'Ada (acc-2)')
     await user.click(screen.getByRole('button', { name: zhCN.members.write.submit }))
     expect(
-      await screen.findByText(fill(zhCN.members.write.saved, { account: 'Ada' })),
+      await screen.findByText(fill(zhCN.members.write.saved, { account: byName('Ada') })),
     ).toBeInTheDocument()
 
     // The SSO exemption names the member by its readable identity.
     await screen.findAllByText('Operator')
     await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     expect(
-      await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: 'Operator' })),
+      await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: byName('Operator') })),
     ).toBeInTheDocument()
 
     // The removal names the removed member by the same identity.
@@ -1237,7 +1397,7 @@ describe('InvitationsPage', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: zhCN.common.confirm }))
     expect(
-      await screen.findByText(fill(zhCN.members.removed, { account: 'Operator' })),
+      await screen.findByText(fill(zhCN.members.removed, { account: byName('Operator') })),
     ).toBeInTheDocument()
   })
 
@@ -1280,14 +1440,14 @@ describe('InvitationsPage', () => {
     await screen.findAllByText('Operator')
     await user.click(screen.getByRole('button', { name: zhCN.members.ssoExemptSet }))
     expect(
-      await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: 'Operator' })),
+      await screen.findByText(fill(zhCN.members.ssoExemptSaved, { account: byName('Operator') })),
     ).toBeInTheDocument()
 
     // Another tenant makes both results describe a tenant left behind.
     await user.click(screen.getByLabelText(zhCN.common.tenant))
     await user.click(await screen.findByRole('option', { name: 'Globex' }))
     expect(screen.queryByText(fill(zhCN.invitations.issued.confirm, { email: 'ada@example.com' }))).toBeNull()
-    expect(screen.queryByText(fill(zhCN.members.ssoExemptSaved, { account: 'Operator' }))).toBeNull()
+    expect(screen.queryByText(fill(zhCN.members.ssoExemptSaved, { account: byName('Operator') }))).toBeNull()
   })
 
   it('re-reads the invitation and member lists on refresh', async () => {

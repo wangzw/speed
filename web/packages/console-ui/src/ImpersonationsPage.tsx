@@ -115,7 +115,12 @@ import {
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn, WriteFeedback } from '@speed/ui-kit'
-import { AccountIdentity } from './internal/account-identity.js'
+import {
+  AccountIdentity,
+  accountNotice,
+  useAccountIdentity,
+  type AccountIdentityValue,
+} from './internal/account-identity.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import { isZeroInstant } from './internal/datetime.js'
 import {
@@ -136,6 +141,48 @@ import type { ConsoleImpersonation } from './operations.js'
  * settled grant, or a settled "not impersonating" answer. */
 interface ImpersonationStatusView {
   readonly grant: AuthnImpersonationGrant | undefined
+}
+
+/**
+ * The record table's terminate control. It resolves the record's target
+ * through the same account identity unit the row's target cell renders (one
+ * cached read), so a landed termination names the account in the four
+ * shared shapes instead of by its opaque id.
+ */
+function TerminateButton({
+  record,
+  disabled,
+  loading,
+  onTerminate,
+}: {
+  readonly record: ConsoleImpersonation
+  readonly disabled: boolean
+  readonly loading: boolean
+  readonly onTerminate: (
+    record: ConsoleImpersonation,
+    identity: AccountIdentityValue,
+  ) => void
+}) {
+  const { t } = useConsoleUiTranslation()
+  const identity = useAccountIdentity(record.target)
+  return (
+    <Button
+      type="button"
+      size="small"
+      variant="outlined"
+      color="error"
+      disabled={disabled}
+      loading={loading}
+      onClick={() =>
+        onTerminate(record, {
+          name: identity.name,
+          identifier: identity.identifier,
+        })
+      }
+    >
+      {t('impersonations.terminate')}
+    </Button>
+  )
 }
 
 /**
@@ -250,6 +297,11 @@ export function ImpersonationsPage({
       ? undefined
       : { grant: status.data.grant }
   const grant = statusPayload?.grant
+  // The grant's target as a landed end names it. The current section renders
+  // the same identity through the shared unit, so this read is cached and
+  // shared with it; an absent grant resolves nothing and the notice stays
+  // neutral instead of naming the recorded id.
+  const endIdentity = useAccountIdentity(grant?.target)
   const statusPending = status.isPending && statusPayload === undefined
   // A settled read that names a grant is the only evidence of an
   // impersonation; a pending read and a failure are "status unknown" and
@@ -342,10 +394,20 @@ export function ImpersonationsPage({
       // The write settled: the host re-reads the identity, without the
       // page waiting for it.
       notifyIdentityChange(identityChange, 'ended')
-      return t('impersonations.current.ended', { account: grant?.target ?? '' })
+      return accountNotice(
+        t,
+        {
+          named: 'impersonations.current.ended',
+          unnamed: 'impersonations.current.endedUnnamed',
+        },
+        endIdentity,
+      )
     })
 
-  const terminate = (record: ConsoleImpersonation): void => {
+  const terminate = (
+    record: ConsoleImpersonation,
+    identity: AccountIdentityValue,
+  ): void => {
     const attempt = (): Promise<void> =>
       recordsFeedback.run(async () => {
         try {
@@ -354,7 +416,14 @@ export function ImpersonationsPage({
           // name, so that read is refreshed alongside the list the bundle
           // already invalidates.
           void status.refetch()
-          return t('impersonations.terminated', { account: record.target })
+          return accountNotice(
+            t,
+            {
+              named: 'impersonations.terminated',
+              unnamed: 'impersonations.terminatedUnnamed',
+            },
+            identity,
+          )
         } catch (error) {
           if (gate.intercept(error, () => void attempt())) {
             return null
@@ -450,17 +519,12 @@ export function ImpersonationsPage({
       header: t('impersonations.column.actions'),
       cellWrap: 'nowrap',
       cell: (record) => (
-        <Button
-          type="button"
-          size="small"
-          variant="outlined"
-          color="error"
+        <TerminateButton
+          record={record}
           disabled={!isZeroInstant(record.ended_at) || recordsFeedback.pending}
           loading={recordsFeedback.pending}
-          onClick={() => terminate(record)}
-        >
-          {t('impersonations.terminate')}
-        </Button>
+          onTerminate={terminate}
+        />
       ),
     },
   ]
@@ -719,12 +783,19 @@ function StartImpersonationForm({
   const [account, setAccount] = useState('')
   const [reason, setReason] = useState('')
   const [ttl, setTtl] = useState('')
+  // The target account's readable identity, resolved through the same unit
+  // the in-force section renders. An unresolved read leaves the notice
+  // neutral; the recorded id is never its fallback.
+  const identity = useAccountIdentity(
+    account.trim() === '' ? undefined : account.trim(),
+  )
 
   const ttlSeconds = ttl.trim() === '' ? undefined : Number(ttl)
 
   const submit = (): void => {
     // The refused write's body is captured here: a step-up replay must
     // re-fire exactly this request, not whatever the fields hold later.
+    const typedAccount = account
     const body = {
       data: {
         account,
@@ -750,9 +821,21 @@ function StartImpersonationForm({
           // The write settled: the host re-reads the identity and moves
           // the page, without the form waiting for it.
           notifyIdentityChange(identityChange, 'started')
-          return t('impersonations.current.started', {
-            account: answer.grant.target,
-          })
+          // The server's grant is the authority on which account is being
+          // impersonated. The identity read above is keyed to the typed
+          // account, so it names the grant only when the two agree; a grant
+          // naming a different account stays unresolved and the notice stays
+          // neutral rather than borrowing the wrong name.
+          return accountNotice(
+            t,
+            {
+              named: 'impersonations.current.started',
+              unnamed: 'impersonations.current.startedUnnamed',
+            },
+            answer.grant.target === typedAccount
+              ? { name: identity.name, identifier: identity.identifier }
+              : { name: undefined, identifier: undefined },
+          )
         } catch (error) {
           // The gate takes a step-up refusal over; the attempt settles
           // without touching the slot, and a won challenge replays this

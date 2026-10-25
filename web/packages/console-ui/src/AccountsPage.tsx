@@ -135,6 +135,11 @@ import type {
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
 import {
+  accountIdentityValue,
+  accountNotice,
+  type AccountIdentityValue,
+} from './internal/account-identity.js'
+import {
   PendingConfirmDialog,
   usePendingConfirm,
 } from './internal/confirm.js'
@@ -386,6 +391,14 @@ export function AccountsPage({
   const account = operations.useAccount({
     id: selectedId === '' ? undefined : selectedId,
   })
+  // The selected account's readable identity, as a success notice names it.
+  // A detail write can only be started from a settled panel, but the read's
+  // type does not say so; an absent read resolves nothing and the notice
+  // stays neutral instead of naming the recorded identifier.
+  const selectedIdentity: AccountIdentityValue =
+    account.data === undefined
+      ? { name: undefined, identifier: undefined }
+      : accountIdentityValue(account.data)
   // The factors and secrets reads live in their feature-gated sections, so
   // an absent feature takes the read with it. The sessions read stays here:
   // the bulk revoke's confirmation in the action row needs to know whether
@@ -483,8 +496,11 @@ export function AccountsPage({
   // A created account closes the panel; the list's confirmation waits for
   // the exit so it is written into the page after it becomes reachable.
   function accountCreated(created: ConsoleAccount): void {
-    const name = created.display_name === '' ? created.id : created.display_name
-    createSuccess.current = t('accounts.created', { name })
+    createSuccess.current = accountNotice(
+      t,
+      { named: 'accounts.created', unnamed: 'accounts.createdUnnamed' },
+      accountIdentityValue(created),
+    )
     setCreateOpen(false)
   }
 
@@ -501,20 +517,24 @@ export function AccountsPage({
     }
   }
 
-  function deleteOne(id: string): Promise<void> {
+  function deleteOne(row: ConsoleAccount): Promise<void> {
     return listWrite.run(async () => {
       try {
-        await deleteAccount.mutateAsync({ id })
+        await deleteAccount.mutateAsync({ id: row.id })
       } catch (error) {
-        if (gate.intercept(error, () => void deleteOne(id))) {
+        if (gate.intercept(error, () => void deleteOne(row))) {
           return null
         }
         throw error
       }
-      if (selectedId === id) {
+      if (selectedId === row.id) {
         setSelectedId('')
       }
-      return t('accounts.deleted', { id })
+      return accountNotice(
+        t,
+        { named: 'accounts.deleted', unnamed: 'accounts.deletedUnnamed' },
+        accountIdentityValue(row),
+      )
     })
   }
 
@@ -548,7 +568,11 @@ export function AccountsPage({
         }
         throw error
       }
-      return t('accounts.mfaReset', { id: selectedId })
+      return accountNotice(
+        t,
+        { named: 'accounts.mfaReset', unnamed: 'accounts.mfaResetUnnamed' },
+        selectedIdentity,
+      )
     })
   }
 
@@ -562,7 +586,14 @@ export function AccountsPage({
         }
         throw error
       }
-      return t('accounts.sessionsRevoked', { id: selectedId })
+      return accountNotice(
+        t,
+        {
+          named: 'accounts.sessionsRevoked',
+          unnamed: 'accounts.sessionsRevokedUnnamed',
+        },
+        selectedIdentity,
+      )
     })
   }
 
@@ -577,10 +608,15 @@ export function AccountsPage({
         throw error
       }
       setIdentifierToRemove('')
-      return t('accounts.identifierRemoved', {
-        id: selectedId,
-        identifier,
-      })
+      return accountNotice(
+        t,
+        {
+          named: 'accounts.identifierRemoved',
+          unnamed: 'accounts.identifierRemovedUnnamed',
+        },
+        selectedIdentity,
+        { loginIdentifier: identifier },
+      )
     })
   }
 
@@ -594,7 +630,15 @@ export function AccountsPage({
         }
         throw error
       }
-      return t('accounts.secretRevoked', { id: selectedId, label: row.label })
+      return accountNotice(
+        t,
+        {
+          named: 'accounts.secretRevoked',
+          unnamed: 'accounts.secretRevokedUnnamed',
+        },
+        selectedIdentity,
+        { label: row.label },
+      )
     })
   }
 
@@ -611,7 +655,15 @@ export function AccountsPage({
         }
         throw error
       }
-      return t('accounts.sessionRevoked', { id: selectedId, session: row.id })
+      return accountNotice(
+        t,
+        {
+          named: 'accounts.sessionRevoked',
+          unnamed: 'accounts.sessionRevokedUnnamed',
+        },
+        selectedIdentity,
+        { session: row.id },
+      )
     })
   }
 
@@ -766,7 +818,7 @@ export function AccountsPage({
                 // sessions with it and cannot be undone from the interface:
                 // the heavier two-step guard, never the plain single confirm.
                 doubleConfirm: true,
-                run: () => void deleteOne(row.id),
+                run: () => void deleteOne(row),
               })
             }
           >
@@ -2163,6 +2215,8 @@ function AccountDetailWrites({
   const createSecret = operations.useCreateSecret()
 
   const id = account.id
+  // The account's readable identity, as this panel's success notices name it.
+  const identity = accountIdentityValue(account)
   // Every control is seeded from the account as loaded, so a control shows
   // the account's own value and a write fires only for a field the operator
   // actually changed: a status or MFA change goes out only when it differs
@@ -2221,7 +2275,11 @@ function AccountDetailWrites({
         }
         throw error
       }
-      return t('accounts.statusSaved', { id })
+      return accountNotice(
+        t,
+        { named: 'accounts.statusSaved', unnamed: 'accounts.statusSavedUnnamed' },
+        identity,
+      )
     })
   }
 
@@ -2235,7 +2293,11 @@ function AccountDetailWrites({
         }
         throw error
       }
-      return t('accounts.mfaSaved', { id })
+      return accountNotice(
+        t,
+        { named: 'accounts.mfaSaved', unnamed: 'accounts.mfaSavedUnnamed' },
+        identity,
+      )
     })
   }
 
@@ -2257,7 +2319,11 @@ function AccountDetailWrites({
         }
         throw error
       }
-      return t('accounts.patchSaved', { id })
+      return accountNotice(
+        t,
+        { named: 'accounts.patchSaved', unnamed: 'accounts.patchSavedUnnamed' },
+        identity,
+      )
     })
   }
 
@@ -2272,7 +2338,14 @@ function AccountDetailWrites({
         throw error
       }
       setTempPassword('')
-      return t('accounts.passwordReset', { id })
+      return accountNotice(
+        t,
+        {
+          named: 'accounts.passwordReset',
+          unnamed: 'accounts.passwordResetUnnamed',
+        },
+        identity,
+      )
     })
   }
 
@@ -2291,10 +2364,15 @@ function AccountDetailWrites({
         throw error
       }
       setIdentifierValue('')
-      return t('accounts.identifierAdded', {
-        id,
-        identifier: identifierValue,
-      })
+      return accountNotice(
+        t,
+        {
+          named: 'accounts.identifierAdded',
+          unnamed: 'accounts.identifierAddedUnnamed',
+        },
+        identity,
+        { loginIdentifier: identifierValue },
+      )
     })
   }
 
@@ -2323,7 +2401,15 @@ function AccountDetailWrites({
         label: created.label,
         secret: created.secret,
       })
-      return t('accounts.secretCreated', { id, label: created.label })
+      return accountNotice(
+        t,
+        {
+          named: 'accounts.secretCreated',
+          unnamed: 'accounts.secretCreatedUnnamed',
+        },
+        identity,
+        { label: created.label },
+      )
     })
   }
 

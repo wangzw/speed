@@ -88,7 +88,10 @@ import {
 import type { DataTableColumn } from '@speed/ui-kit'
 import {
   AccountIdentity,
+  accountIdentityValue,
+  accountNotice,
   useAccountIdentity,
+  type AccountIdentityValue,
 } from './internal/account-identity.js'
 import { AccountSelector } from './internal/account-selector.js'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -167,10 +170,11 @@ function UnbindButton({
   readonly invalid: boolean
   /** The id of the resolved failure text rendered in this row. */
   readonly describedBy?: string
-  readonly onClick: () => void
+  readonly onClick: (identity: AccountIdentityValue) => void
 }) {
   const { t } = useConsoleUiTranslation()
-  const { name } = useAccountIdentity(binding.account)
+  const { name, identifier } = useAccountIdentity(binding.account)
+  const identity: AccountIdentityValue = { name, identifier }
   return (
     <Button
       type="button"
@@ -185,7 +189,7 @@ function UnbindButton({
       aria-describedby={invalid ? describedBy : undefined}
       disabled={disabled}
       loading={disabled}
-      onClick={onClick}
+      onClick={() => onClick(identity)}
     >
       {t('permissions.bindings.unbind')}
     </Button>
@@ -526,17 +530,26 @@ export function PermissionsPage({
       await bindRole.mutateAsync({ tenant, account: account.id, role })
       setBindAccount(null)
       setBindRoleName('')
-      return t('permissions.bindings.bound', {
-        account: account.display_name === '' ? account.id : account.display_name,
-        role,
-      })
+      return accountNotice(
+        t,
+        {
+          named: 'permissions.bindings.bound',
+          unnamed: 'permissions.bindings.boundUnnamed',
+        },
+        accountIdentityValue(account),
+        { role },
+      )
     })
   }
 
   // The bindings table and the lookup table keep separate scopes and row
   // markers: an unbind in the lookup answers the operator's lookup, not the
   // tenant-wide binding list, so its result lives under the lookup table.
-  const unbind = (binding: ConsoleBinding, lookup: boolean) => {
+  const unbind = (
+    binding: ConsoleBinding,
+    lookup: boolean,
+    identity: AccountIdentityValue,
+  ) => {
     const feedback = lookup ? lookupFeedback : bindingsFeedback
     const key = bindingKey(binding)
     const mark = (value: string | null) => {
@@ -554,10 +567,15 @@ export function PermissionsPage({
           account: binding.account,
           role: binding.role,
         })
-        return t('permissions.bindings.unbound', {
-          account: binding.account,
-          role: binding.role,
-        })
+        return accountNotice(
+          t,
+          {
+            named: 'permissions.bindings.unbound',
+            unnamed: 'permissions.bindings.unboundUnnamed',
+          },
+          identity,
+          { role: binding.role },
+        )
       } catch (error) {
         mark(key)
         throw error
@@ -837,7 +855,7 @@ export function PermissionsPage({
                 disabled={feedback.pending}
                 invalid={failed}
                 describedBy={errorId}
-                onClick={() => unbind(binding, lookup)}
+                onClick={(identity) => unbind(binding, lookup, identity)}
               />
               {failed && failureText !== null && (
                 <Typography
