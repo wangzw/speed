@@ -405,84 +405,93 @@ export function MfaSection({ session }: MfaSectionProps) {
             </Box>
           ) : (
             <Box>
-              <Box
-                component="ul"
-                role="list"
-                sx={{ m: 0, p: 0, listStyle: 'none' }}
-              >
-                {settledFactors.map((factor, index) => {
-                  const id = factor.id ?? null
-                  const kind = factor.kind ?? ''
-                  const kindLabel = KNOWN_FACTOR_KINDS.has(kind)
-                    ? t(`mfa.factor.kind.${kind}`)
-                    : t('mfa.factor.kind.other')
-                  const status =
-                    factor.status != null &&
-                    KNOWN_FACTOR_STATUSES.has(factor.status)
-                      ? factor.status
-                      : null
-                  return (
-                    <Box
-                      component="li"
-                      key={id ?? String(index)}
-                      sx={{
-                        py: 1.5,
-                        minWidth: 0,
-                        ...(index > 0
-                          ? { borderTop: '1px solid', borderColor: 'divider' }
-                          : {}),
-                      }}
-                    >
+              {settledFactors.length > 0 && (
+                <Box
+                  component="ul"
+                  role="list"
+                  sx={{ m: 0, p: 0, listStyle: 'none' }}
+                >
+                  {settledFactors.map((factor, index) => {
+                    const id = factor.id ?? null
+                    const kind = factor.kind ?? ''
+                    const kindLabel = KNOWN_FACTOR_KINDS.has(kind)
+                      ? t(`mfa.factor.kind.${kind}`)
+                      : t('mfa.factor.kind.other')
+                    const status =
+                      factor.status != null &&
+                      KNOWN_FACTOR_STATUSES.has(factor.status)
+                        ? factor.status
+                        : null
+                    return (
                       <Box
-                        sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}
+                        component="li"
+                        key={id ?? String(index)}
+                        sx={{
+                          py: 1.5,
+                          minWidth: 0,
+                          ...(index > 0
+                            ? { borderTop: '1px solid', borderColor: 'divider' }
+                            : {}),
+                        }}
                       >
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                            {factor.label != null && factor.label !== ''
-                              ? factor.label
-                              : kindLabel}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {kindLabel}
-                          </Typography>
-                        </Box>
                         <Box
                           sx={{
-                            marginLeft: 'auto',
-                            flexShrink: 0,
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 1,
+                            gap: 1.5,
                           }}
                         >
-                          {status !== null && (
-                            <Chip
-                              size="small"
-                              variant="outlined"
-                              label={t(`mfa.factor.status.${status}`)}
-                            />
-                          )}
-                          {id !== null && (
-                            <Button
-                              variant="outlined"
-                              color="error"
-                              size="small"
-                              disabled={busy}
-                              aria-label={t('mfa.removeAria', {
-                                factor: kindLabel,
-                                interpolation: { escapeValue: false },
-                              })}
-                              onClick={() => setRemoveTarget(id)}
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography
+                              variant="body1"
+                              sx={{ fontWeight: 500 }}
                             >
-                              {t('mfa.remove')}
-                            </Button>
-                          )}
+                              {factor.label != null && factor.label !== ''
+                                ? factor.label
+                                : kindLabel}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              {kindLabel}
+                            </Typography>
+                          </Box>
+                          <Box
+                            sx={{
+                              marginLeft: 'auto',
+                              flexShrink: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1,
+                            }}
+                          >
+                            {status !== null && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={t(`mfa.factor.status.${status}`)}
+                              />
+                            )}
+                            {id !== null && (
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                size="small"
+                                disabled={busy}
+                                aria-label={t('mfa.removeAria', {
+                                  factor: kindLabel,
+                                  interpolation: { escapeValue: false },
+                                })}
+                                onClick={() => setRemoveTarget(id)}
+                              >
+                                {t('mfa.remove')}
+                              </Button>
+                            )}
+                          </Box>
                         </Box>
                       </Box>
-                    </Box>
-                  )
-                })}
-              </Box>
+                    )
+                  })}
+                </Box>
+              )}
 
               {settledFactors.length === 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>

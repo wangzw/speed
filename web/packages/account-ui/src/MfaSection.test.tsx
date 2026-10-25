@@ -146,6 +146,26 @@ describe('MfaSection', () => {
     ).toBeNull()
   })
 
+  it('renders the empty state without a list container when no factor is set up', async () => {
+    // A role="list" with no listitem child is an ARIA required-children
+    // violation (axe rates it critical): the empty state is plain text and
+    // renders outside any list, so the list container must not exist until
+    // there is a row to hold.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText(zhCN.mfa.empty)).toBeTruthy()
+    expect(screen.queryByRole('list')).toBeNull()
+  })
+
   it('removes a factor behind the confirm and refetches', async () => {
     let removed = false
     const respond: RealResponder = (call: RealCall) => {
