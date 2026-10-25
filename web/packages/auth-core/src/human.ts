@@ -122,6 +122,11 @@ export interface UseHumanVerificationOptions {
   /** A gate the caller already read (the sign-in screen's discovery
    * document), so the hook does not read it again. */
   readonly gate?: AuthnHumanGate
+  /** Whether the hook should read the gate and solve. Defaults to true; a
+   * caller that holds an inactive surface (a closed dialog, a challenge
+   * that has not opened) passes false so nothing is read or solved until
+   * it is needed. */
+  readonly enabled?: boolean
 }
 
 /**
@@ -160,7 +165,8 @@ export function useHumanVerification(
   const [gate, setGate] = useState<AuthnHumanGate | null>(
     options.gate ?? null,
   )
-  const [pending, setPending] = useState(options.gate === undefined)
+  const enabled = options.enabled ?? true
+  const [pending, setPending] = useState(enabled && options.gate === undefined)
   const [proof, setProof] = useState<string | null>(null)
   const [status, setStatus] = useState<HumanVerificationStatus>('idle')
   // Bumped when a solve is superseded, so the effect below starts a solve
@@ -177,10 +183,17 @@ export function useHumanVerification(
   const injectedSiteKey = options.gate?.site_key
 
   useEffect(() => {
-    const injected = injectedRef.current
     generationRef.current += 1
     setProof(null)
     setStatus('idle')
+    if (!enabled) {
+      // An inactive surface reads nothing and solves nothing; it settles on
+      // the off gate until it opens.
+      setGate(null)
+      setPending(false)
+      return
+    }
+    const injected = injectedRef.current
     if (injected !== undefined) {
       setGate(injected)
       setPending(false)
@@ -210,7 +223,7 @@ export function useHumanVerification(
     return () => {
       active = false
     }
-  }, [session, injectedRequired, injectedProvider, injectedSiteKey])
+  }, [session, injectedRequired, injectedProvider, injectedSiteKey, enabled])
 
   const solve = useCallback(async (): Promise<void> => {
     if (solvingRef.current) {

@@ -81,7 +81,8 @@ describe('useStepUp', () => {
       message: 'refused',
       auth: true,
     }
-    const { result } = renderHook(() => useStepUp(session(refusal), true, () => undefined))
+    const driven = session(refusal)
+    const { result } = renderHook(() => useStepUp(driven, true, () => undefined))
     await waitFor(() => {
       expect(result.current.phase).toBe('unavailable')
     })
@@ -99,7 +100,8 @@ describe('useStepUp', () => {
       message: 'refused',
       auth: false,
     }
-    const { result } = renderHook(() => useStepUp(session(refusal), true, () => undefined))
+    const driven = session(refusal)
+    const { result } = renderHook(() => useStepUp(driven, true, () => undefined))
     await waitFor(() => {
       expect(result.current.phase).toBe('failed')
     })
@@ -113,8 +115,9 @@ describe('useStepUp', () => {
       message: 'refused',
       auth: false,
     }
+    const driven = session(refusal, ANONYMOUS)
     const { result } = renderHook(() =>
-      useStepUp(session(refusal, ANONYMOUS), true, () => undefined),
+      useStepUp(driven, true, () => undefined),
     )
     await waitFor(() => {
       expect(result.current.phase).toBe('failed')
@@ -175,7 +178,8 @@ describe('useStepUp', () => {
       message: 'refused',
       auth: false,
     }
-    const { result } = renderHook(() => useStepUp(session(refusal), true, () => undefined))
+    const driven = session(refusal)
+    const { result } = renderHook(() => useStepUp(driven, true, () => undefined))
     await waitFor(() => {
       expect(result.current.phase).toBe('failed')
     })

@@ -61,7 +61,11 @@ never constructs a `QueryClient`). The human-verification client in
 verification-message send presents, and solves a proof-of-work challenge
 off the main thread through the worker in `src/pow-worker*.ts` (falling
 back to the solver in `src/pow.ts` where no `Worker` exists). A methods
-document that omits the gate is read as the off mechanism. The package sits directly above
+document that omits the gate is read as the off mechanism, and a caller
+that holds an inactive surface passes `enabled: false` so nothing is read
+or solved until it opens. The step-up hook in `src/step-up.ts` exposes
+the gate and proof it obtains as `StepUpState.human` and presents the
+proof on an answer that sends a verification message. The package sits directly above
 `@speed/api-client` (an optional access-token store it receives is the
 same store that package reads on every send for a token session; the
 cookie path passes none) and `@speed/api-sdk` (the generated operations

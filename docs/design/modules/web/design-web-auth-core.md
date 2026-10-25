@@ -186,7 +186,7 @@ export function isTenantAdmissionRefusal(error: unknown): boolean
 - **`useFeature` 是纯集合查询，fail-closed**：只在特性态为 `ready` 且集合含该名时为 true；`none`、`pending`、`failed` 与接上会话之前都为 false。参数取 `FeatureName`，拼错的名字编译失败。
 - **`useFeatureState` 交出特性态本身**，接上会话之前为 `none`。宿主需要区分读取中、读取失败与特性缺席时用它。
 - **`featurePresence` 把特性态映射为路由层的在场判定。** 它是纯函数：`ready` 映射为带 `has` 的就绪态，`failed` 映射为失败态，`pending` 与 `none` 都映射为读取中——匿名时没有特性态，按失败即关处理。它的结果与 [route-kit](design-web-route-kit.md) 的 `RoutePresence` 结构相同，本包不 import route-kit。
-- **`useStepUp` 驱动一次步进认证。** `active` 为真时在入参的会话上开一个 `purpose: 'step-up'` 的流程并停在首步；入参可带 `method`：账户没有启用因素时，步进要求的是重新证明第一因素，调用方带上会话建立时用的第一因素的方法名（短信会话带 `sms`，口令会话带 `password`），流程停在该方法的首步，完成后提权刷新认证时刻；账户有因素时不带 `method`；`StepUpState` 的 `answer` 逐步转交答复；流程认定加强完成时 `onElevated` 触发一次，调用方据此重跑被拒的动作；`active` 转为假时放弃在途流程。会话以 401 拒绝开启步进时（有因素，但没有能强化本会话的），`phase` 停在 `unavailable`；其余失败（400 等）停在 `failed` 并带错误码。本 hook 不登录、不导航，不读接上的会话，只用入参的会话。
+- **`useStepUp` 驱动一次步进认证。** `active` 为真时在入参的会话上开一个 `purpose: 'step-up'` 的流程并停在首步；入参可带 `method`：账户没有启用因素时，步进要求的是重新证明第一因素，调用方带上会话建立时用的第一因素的方法名（短信会话带 `sms`，口令会话带 `password`），流程停在该方法的首步，完成后提权刷新认证时刻；账户有因素时不带 `method`；`StepUpState` 的 `answer` 逐步转交答复；流程认定加强完成时 `onElevated` 触发一次，调用方据此重跑被拒的动作；`active` 转为假时放弃在途流程。会话以 401 拒绝开启步进时（有因素，但没有能强化本会话的），`phase` 停在 `unavailable`；其余失败（400 等）停在 `failed` 并带错误码。本 hook 不登录、不导航，不读接上的会话，只用入参的会话。会发送验证消息的答复——选中短信第二因素，或短信第一因素复证提交手机号——先出示部署要求的证明；`StepUpState.human` 暴露门槛与证明，调用方据此在会发送的步骤上渲染证明块，证明出示后消耗。
 - **特性的 hook 与 `featurePresence` 只由宿主使用。** 能力 UI 包不调用它们，特性在场信息由宿主经属性或上下文组件交给它们（[web](design-web.md) 的「特性门控」、ADR-web-feature-state-2026-10-17）。
 - **`useStepUpGate` 记住一次被步进拒绝的动作并在挑战通过后原样重放它一次。** `arm` 记下动作（表单字段、行标识、重发写入的闭包），`succeed` 经 `onRetry` 重放一次并清空，`cancel` 什么都不重放；`intercept(error, action)` 是失败侧的同一条接线：判别为步进短耗时记下动作、置 `open` 并答 true，其余失败答 false 且不动门控。缺省判别认平台自己的拒绝码——`status` 为 401 且 `code` 为 `authn.insufficient_user_authentication`；只看 401 不够，一个结束了会话的 401 没有可提升的会话。会话自身已能区分两者的调用方把 `session.isStepUpShortfall` 作为第二入参传入。`onRetry` 与 `isShortfall` 经 ref 读取，调用方每次渲染传新闭包不会改变 `succeed` 的身份。
 - **`isTenantAdmissionRefusal` 结构判定准入层的裸 404。** 准入层拒绝一个调用者不可进入的租户时答裸 404（不带模块码），`@speed/api-client` 为它合成保留码 `client.http.404`；模块自己的类型化 404（`objectstore.not_found` 等）在同一状态上保留模块码。判定读码不读状态：`code` 为 `client.http.404` 即为准入拒绝；或 `status` 为 404 且 `code` 缺失或落在保留的 `client.` 命名空间里（合成之前同一应答的形态）。带模块码的 404 一律不是它。
@@ -208,7 +208,7 @@ export interface HumanVerification {
 
 export function useHumanVerification(
   session: AuthSession,
-  options?: { readonly gate?: AuthnHumanGate },
+  options?: { readonly gate?: AuthnHumanGate; readonly enabled?: boolean },
 ): HumanVerification
 
 export function humanGateNeedsProof(gate: AuthnHumanGate | null | undefined): boolean
@@ -226,6 +226,7 @@ export type AuthnHumanGate = AuthnLoginHuman
 - **`turnstile` 的 token 由控件交出。** 本包只经 `adoptToken` 存下 ui-kit 控件交来的 token，或在其过期、失败时清空；token 的取得与重置于本包无涉。
 - **证明一次性。** 每次发送之后调用 `consume()`：证明清空，`pow` 立刻取一份新的，`turnstile` 的控件在证明清空时重置。`humanGateNeedsProof` 只对 `pow` 与 `turnstile` 答真；未知机制不阻塞发送，由服务端判定。
 - **发现读失败读作 off，求解失败停在 `failed`。** 发现文档读失败不阻塞发送（服务端仍判定）；挑战读取或求解失败时 `status` 为 `failed`，控件提供重试，发送在取得证明之前保持不可用。`pending` 表示发现读仍在途。
+- **`enabled` 决定是否读发现、求证明。** 缺省为真；持有未激活表面的调用方（关闭的对话框、尚未开启的挑战）传假，hook 不读方法文档也不求解，停在 off 且 `pending` 为假，直到 `enabled` 变真才读一次。
 
 ### 通行密钥仪式（`./webauthn` 子路径）
 
@@ -454,6 +455,7 @@ stateDiagram-v2
 | 身份过渡窗口（`beginIdentityTransition()`）与其期间无人登录应答的丢弃 | 已实现 | `web/packages/auth-core/src/session.ts` `beginIdentityTransition`、`restore` |
 | 步进认证的 hook | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | `useStepUp` 的 `method` 入参 | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp` |
+| `useStepUp` 的短信人机证明（`human` 与会发送答复的 `human_proof`） | 已实现 | `web/packages/auth-core/src/step-up.ts` `useStepUp`、`answerSends`；`web/packages/auth-core/src/human.ts` `useHumanVerification` |
 | 租户上下文、租户作用域 query key 工厂与逐出助手 | 已实现 | `web/packages/auth-core/src/hooks.ts` `TenantProvider`、`useCurrentTenant`；`web/packages/auth-core/src/query-key.ts` `tenantQueryKey`、`useTenantQueryKey`、`evictTenantQueries` |
 | 泛型步进门控 | 已实现 | `web/packages/auth-core/src/step-up-gate.ts` `useStepUpGate` |
 | 租户准入拒绝判定 | 已实现 | `web/packages/auth-core/src/tenant-refusal.ts` `isTenantAdmissionRefusal` |

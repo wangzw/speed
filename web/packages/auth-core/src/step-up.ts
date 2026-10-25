@@ -51,6 +51,15 @@
  * then parks on that method's first step, whose answers travel under the
  * flow's `answer` step. The hook never signs in and never navigates.
  *
+ * A step-up sends a verification message when the chosen second factor is
+ * an SMS one, or when the first-factor re-proof supplies the phone an SMS
+ * method asks for. Those answers present the deployment's
+ * human-verification proof. The hook obtains the gate and the proof
+ * through auth-core's useHumanVerification and exposes them as `human`, so
+ * the caller renders the proof block on the step that may send; a
+ * presented proof is consumed, and an answer that sends nothing leaves it
+ * unspent.
+ *
  * A running start is not cancelled on a re-render: the flow is keyed to
  * the `active` transition (one run per opening), and a resolving start or
  * answer only acts while its opening is still current, so a stale reply
@@ -60,6 +69,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { isApiError } from '@speed/api-client'
 import type { AuthSession, AuthnFlowState, AuthnStep } from './session.js'
+import { humanGateNeedsProof, useHumanVerification } from './human.js'
+import type { HumanVerification } from './human.js'
 
 /**
  * The code a refusal carries when the flow the request named is gone. The
@@ -97,8 +108,43 @@ export interface StepUpState {
   readonly seq: number | null
   /** The last failure's resolved code, or null. */
   readonly errorCode: string | null
-  /** Answer the current step. Ignored while no step is parked. */
+  /** The deployment's human-verification gate and the proof this challenge
+   * holds. A step that may send a verification message renders its block;
+   * an answer that sends presents the proof. */
+  readonly human: HumanVerification
+  /** Answer the current step. Ignored while no step is parked. An answer
+   * that may send a verification message carries the proof the gate
+   * requires. */
   readonly answer: (answer: AuthnFlowAnswer) => void
+}
+
+/**
+ * Whether answering this step with this input may send a verification
+ * message. A step-up sends when the chosen second factor is an SMS one,
+ * or when the first-factor re-proof supplies the phone an SMS method
+ * asks for. It mirrors the server's own rule (pkg/authn/login's
+ * applyFactor and challengeFactor), so a proof is presented exactly when
+ * the answer may spend one.
+ */
+function answerSends(
+  step: AuthnStep | null,
+  value: AuthnFlowAnswer,
+): boolean {
+  if (step === null) {
+    return false
+  }
+  const input = value.input ?? {}
+  if (step.kind === 'factor') {
+    return step.factors.some(
+      (factor) => factor.id === input.factor && factor.kind === 'sms',
+    )
+  }
+  if (step.kind === 'challenge') {
+    return step.fields.some(
+      (field) => field.kind === 'phone' && (input[field.name] ?? '') !== '',
+    )
+  }
+  return false
 }
 
 /** Resolves an answer's failure to a code, the reserved client.unknown
@@ -167,6 +213,13 @@ export function useStepUp(
   // below needs no dependency and never re-registers.
   const sessionRef = useRef(session)
   sessionRef.current = session
+  // The deployment's gate and this challenge's proof. A step that may send
+  // (an SMS second factor, or the SMS first factor a step-up re-proves)
+  // renders the block; the answer that sends presents the proof. The gate
+  // is read here because a caller that opens the challenge has no other
+  // discovery document to hand it, and it is read only while the challenge
+  // is active: a closed challenge reads and solves nothing.
+  const human = useHumanVerification(session, { enabled: active })
 
   useEffect(() => {
     if (!active) {
@@ -274,6 +327,13 @@ export function useStepUp(
     if (submitting || seq === null) {
       return
     }
+    // The proof the answer presents, when it may send. A single-use proof
+    // is consumed once presented, whatever the server answered, so the
+    // block obtains a fresh one for the next attempt.
+    const presented =
+      humanGateNeedsProof(human.gate) && answerSends(step, value)
+        ? human.proof
+        : null
     setSubmitting(true)
     setErrorCode(null)
     const run = runRef.current
@@ -283,6 +343,7 @@ export function useStepUp(
           seq,
           step: value.step,
           input: value.input,
+          ...(presented === null ? {} : { human_proof: presented }),
         })
         if (run !== runRef.current) {
           return
@@ -304,11 +365,14 @@ export function useStepUp(
         }
       } finally {
         if (run === runRef.current) {
+          if (presented !== null) {
+            human.consume()
+          }
           setSubmitting(false)
         }
       }
     })()
   }
 
-  return { phase, step, seq, errorCode, answer }
+  return { phase, step, seq, errorCode, human, answer }
 }
