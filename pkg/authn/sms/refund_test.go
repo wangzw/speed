@@ -212,6 +212,9 @@ func TestARefundIsWrittenAndCountedOnEveryDialect(t *testing.T) {
 		if r.refundedAt(t, id) == nil {
 			t.Errorf("the challenge carries no refund marker")
 		}
+		if v, _ := r.column(id, "consumed_at"); v == nil {
+			t.Errorf("the challenge is still live after the refund: its code was never delivered")
+		}
 		r.clock.advance(31 * time.Second)
 		if _, err := r.sendLogin(); err != nil {
 			t.Fatalf("a send after the refund returned %v, want success", err)
