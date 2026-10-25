@@ -1,12 +1,14 @@
 package delivery
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/settings"
 )
@@ -70,6 +72,32 @@ func TestThePerRecipientHourlyBudgetRefusesPastTheLimit(t *testing.T) {
 	if got := len(r.queue.enqueued()); got != declaredPerRecipientHourly {
 		t.Errorf("the queue holds %d jobs, want %d: a refused dispatch must not enqueue",
 			got, declaredPerRecipientHourly)
+	}
+}
+
+// The per-recipient daily budget refuses the dispatch past its limit on its own:
+// the hourly and deployment-wide windows are raised so that only the daily one
+// can refuse, and the retry time it reports is bounded by the daily bucket rather
+// than the hourly one. The refused dispatch spends and enqueues nothing, so the
+// queue holds the one accepted job.
+func TestThePerRecipientDailyBudgetRefusesPastTheLimit(t *testing.T) {
+	r := newRig(t, func(h *host) { h.mail = true })
+	ctx := r.tenantCtx("t1")
+	r.setBudget(t, perRecipientHourlySetting, 1000)
+	r.setBudget(t, perRecipientDailySetting, 1)
+	r.setBudget(t, globalHourlySetting, 10000000)
+	r.setChannels(notification.ChannelInApp, notification.ChannelEmail)
+
+	if _, err := r.p.Dispatch(ctx, dispatch("u1", "occ-1", validParams())); err != nil {
+		t.Fatalf("the first dispatch inside the daily budget ended with %v", err)
+	}
+	_, err := r.p.Dispatch(ctx, dispatch("u1", "occ-2", validParams()))
+	throttled := throttledBy(t, err)
+	if got := throttled.RetryAfter; got <= 0 || got > 24*time.Hour {
+		t.Errorf("RetryAfter is %v, want a positive delay no longer than the daily window", got)
+	}
+	if got := len(r.queue.enqueued()); got != 1 {
+		t.Errorf("the queue holds %d jobs, want 1: a refused dispatch must not enqueue", got)
 	}
 }
 
@@ -175,5 +203,40 @@ func TestADispatchToAnAbsentExternalSeamDoesNotSpendTheDeliveryBudget(t *testing
 		if _, err := r.p.Dispatch(ctx, dispatch("u1", fmt.Sprintf("occ-%d", i), validParams())); err != nil {
 			t.Fatalf("dispatch %d to an absent external seam spent a delivery budget: %v", i+1, err)
 		}
+	}
+}
+
+// failingCounters is a kv.KV whose counter increment fails, so a case can hold
+// that a budget which cannot be counted refuses the dispatch instead of letting
+// it through. Every other operation is the real store's.
+type failingCounters struct {
+	kv.KV
+	err error
+}
+
+func (f failingCounters) IncrByFloatWithTTL(context.Context, string, float64, time.Duration) (float64, error) {
+	return 0, f.err
+}
+
+// A budget that cannot be counted is an outage, not a pass: the dispatch ends
+// with an error that reads as authn.ErrUnavailable and carries the store's own
+// cause, and nothing is enqueued.
+func TestADispatchWhoseBudgetCannotBeCountedIsRefused(t *testing.T) {
+	r := newRig(t, func(h *host) { h.mail = true })
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelInApp, notification.ChannelEmail)
+
+	storeDown := errors.New("the counter store is down")
+	r.p.counters = failingCounters{KV: r.p.counters, err: storeDown}
+
+	_, err := r.p.Dispatch(ctx, dispatch("u1", "occ-1", validParams()))
+	if !errors.Is(err, authn.ErrUnavailable) {
+		t.Fatalf("Dispatch ended with %v, want authn.ErrUnavailable", err)
+	}
+	if !errors.Is(err, storeDown) {
+		t.Errorf("the error does not carry the counter store's cause: %v", err)
+	}
+	if got := len(r.queue.enqueued()); got != 0 {
+		t.Errorf("a dispatch whose budget could not be counted enqueued %d jobs, want 0", got)
 	}
 }
