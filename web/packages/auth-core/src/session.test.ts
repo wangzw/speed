@@ -210,7 +210,10 @@ describe('list methods', () => {
     await expectProtocolViolation(missingMFA.session.listMethods(), missingMFA)
   })
 
-  it('refuses a methods 2xx that drops the human gate', async () => {
+  it('reads a methods 2xx that drops the human gate as off (an older server)', async () => {
+    // A client newer than its server must not refuse every method: the
+    // absent gate means the deployment predates it, which is the off
+    // mechanism.
     const harness = makeHarness({
       [LOGIN_METHODS]: () => ({
         methods: [],
@@ -218,7 +221,36 @@ describe('list methods', () => {
         mfa: { factors: [] },
       }),
     })
-    await expectProtocolViolation(harness.session.listMethods(), harness)
+    const methods = await harness.session.listMethods()
+    expect(methods.human).toEqual({ required: false, provider: 'off' })
+  })
+
+  it('parses a required proof of work gate and a Turnstile gate', async () => {
+    const pow = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: true, provider: 'pow' },
+      }),
+    })
+    expect((await pow.session.listMethods()).human).toEqual({
+      required: true,
+      provider: 'pow',
+    })
+    const turnstile = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: true, provider: 'turnstile', site_key: 'site-1' },
+      }),
+    })
+    expect((await turnstile.session.listMethods()).human).toEqual({
+      required: true,
+      provider: 'turnstile',
+      site_key: 'site-1',
+    })
   })
 
   it('refuses a methods 2xx whose human gate is not a document', async () => {

@@ -171,6 +171,7 @@ import type {
   AuthnLoginFactor,
   AuthnLoginField,
   AuthnLoginFlow,
+  AuthnLoginHuman,
   AuthnLoginMethods,
   AuthnLoginRegisterBody,
   AuthnLoginRegistration,
@@ -289,6 +290,13 @@ export type AuthnFlowState =
  * settings and the modules in the assembly, so the frontend renders it
  * rather than hard-coding a set. */
 export type AuthnMethodList = AuthnLoginMethods
+
+/** The human-verification gate the discovery document reports: whether a
+ * send must present a proof, which mechanism checks it, and the public
+ * site key a Turnstile widget renders with. A document that omits the
+ * gate is read as the off mechanism (see parseMethodList), because a
+ * client newer than its server must not reject an older server's answer. */
+export type AuthnHumanGate = AuthnLoginHuman
 
 /** One login method as the discovery endpoint reports it (a member of
  * GET /api/v1/auth/methods' `methods`): the generated descriptor. `kind` names
@@ -1022,6 +1030,37 @@ function parseMethodDescriptor(value: unknown): AuthnMethodDescriptorModel {
   return descriptor
 }
 
+/** The gate a methods document that carries no human section is read as:
+ * the off mechanism. A client newer than its server must keep working
+ * against the older answer rather than refusing every method. */
+const HUMAN_GATE_OFF: AuthnHumanGate = { required: false, provider: 'off' }
+
+/** Validates the human-verification gate of a methods answer. The member
+ * is optional on the wire for the reason the off fallback exists; when it
+ * is present, its required and provider members are required. */
+function parseHumanGate(value: unknown): AuthnHumanGate {
+  if (value === undefined) {
+    return { ...HUMAN_GATE_OFF }
+  }
+  const human = asObject(value, 'methods human is not a document')
+  if (typeof human.required !== 'boolean') {
+    throw protocolViolation('methods human carries no required boolean')
+  }
+  const provider = requireString(
+    human.provider,
+    'methods human carries no provider string',
+  )
+  const siteKey =
+    human.site_key === undefined
+      ? undefined
+      : requireString(human.site_key, 'methods human site_key is not a string')
+  return {
+    required: human.required,
+    provider,
+    ...(siteKey === undefined ? {} : { site_key: siteKey }),
+  }
+}
+
 function parseMethodList(body: unknown): AuthnMethodList {
   const rec = asObject(body, 'methods 2xx carries no body document')
   if (!Array.isArray(rec.methods)) {
@@ -1042,18 +1081,7 @@ function parseMethodList(body: unknown): AuthnMethodList {
   if (!Array.isArray(mfa.factors)) {
     throw protocolViolation('methods mfa carries no factors array')
   }
-  const human = asObject(rec.human, 'methods 2xx carries no human document')
-  if (typeof human.required !== 'boolean') {
-    throw protocolViolation('methods human carries no required boolean')
-  }
-  const humanProvider = requireString(
-    human.provider,
-    'methods human carries no provider string',
-  )
-  const humanSiteKey =
-    human.site_key === undefined
-      ? undefined
-      : requireString(human.site_key, 'methods human site_key is not a string')
+  const human = parseHumanGate(rec.human)
   return {
     methods: rec.methods.map((entry) => parseMethodDescriptor(entry)),
     signup: {
@@ -1065,11 +1093,7 @@ function parseMethodList(body: unknown): AuthnMethodList {
         requireString(entry, 'mfa factor is not a string'),
       ),
     },
-    human: {
-      required: human.required,
-      provider: humanProvider,
-      ...(humanSiteKey === undefined ? {} : { site_key: humanSiteKey }),
-    },
+    human,
   }
 }
 

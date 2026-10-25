@@ -35,6 +35,17 @@ operator may tighten it to `Strict`; `None` is refused). In a browser
 deployment the frontend and the API must therefore be same-site. A
 cross-site frontend cannot carry the session cookie on its requests.
 
+The deployment may also put a human-verification gate in front of every
+verification-message send. `useHumanVerification(session)` reads the gate
+from the methods document (a host that already read the document passes
+it as `options.gate`) and holds the single-use proof a send presents.
+For the `pow` mechanism it asks for a challenge and solves it off the
+main thread, falling back to the calling thread where no `Worker`
+exists; for `turnstile` the surface adopts the widget's token. The proof
+is consumed after every send, so the next send obtains a fresh one. A
+methods document that omits the gate is read as the off mechanism, so a
+newer client keeps working against an older server.
+
 The generated authn fragments declare their 2xx response schemas, so
 orval emits the response models. This package re-exports those generated
 types and guards each body at runtime, refusing a contract-violating 2xx
@@ -49,6 +60,8 @@ guards".
 | `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `useFeature(name)`, `useFeatureState()`, `featurePresence(state)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 | `step-up-gate.ts` | `useStepUpGate(onRetry, isShortfall?)`, `StepUpGate` |
+| `human.ts` | `useHumanVerification(session, options?)`, `HumanVerification`, `HumanVerificationStatus`, `UseHumanVerificationOptions`, `humanGateNeedsProof(gate)`, `requestPowProof(requestChallenge?)`, `powProofFromChallenge(answer)` |
+| `pow.ts` | `solvePowChallenge(challenge, difficulty)`, `POW_HASH` |
 | `tenant-refusal.ts` | `isTenantAdmissionRefusal(error)` |
 | `webauthn.ts` (the `@speed/auth-core/webauthn` subpath, not the main entry) | `runWebauthn(options, signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`, `WebauthnFailure` |
 

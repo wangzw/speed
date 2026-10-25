@@ -53,6 +53,7 @@ export const LOGIN_START_AUTHENTICATED = 'POST /api/v1/auth/flows/authenticated'
 export const LOGIN_ANSWER = 'POST /api/v1/auth/flows/answer'
 export const LOGIN_CURRENT = 'GET /api/v1/auth/flows/current'
 export const LOGIN_ABANDON = 'DELETE /api/v1/auth/flows/current'
+export const HUMAN_CHALLENGE = 'POST /api/v1/auth/human/challenge'
 export const SSO_DISCOVER = 'POST /api/v1/auth/sso/discover'
 export const LOGOUT = 'POST /api/v1/auth/logout'
 export const TOKEN_ISSUE = 'POST /api/v1/auth/token'
@@ -130,6 +131,31 @@ export function methodList(
         ? {}
         : { site_key: overrides.humanSiteKey }),
     },
+  }
+}
+
+/** The POST /api/v1/auth/human/challenge body: a proof-of-work challenge the
+ * client solves. The default challenge is 16 base64url-encoded zero bytes
+ * and a difficulty low enough to solve in a test. */
+export function challengeResponse(
+  overrides: {
+    challenge?: string
+    difficulty?: number
+    expires_in?: number
+  } = {},
+): {
+  provider: string
+  algorithm: string
+  challenge: string
+  difficulty: number
+  expires_in: number
+} {
+  return {
+    provider: 'pow',
+    algorithm: 'sha256',
+    challenge: overrides.challenge ?? 'AAAAAAAAAAAAAAAAAAAAAA',
+    difficulty: overrides.difficulty ?? 4,
+    expires_in: overrides.expires_in ?? 300,
   }
 }
 
@@ -305,9 +331,12 @@ type Script = Record<string, (call: ScriptedCall) => unknown>
  * scripts its own: a ready state with no names. Every login commit and
  * every anonymous-start restore reads the document, so a real server
  * always answers it; a test that needs names (or a failed read) scripts
- * the key explicitly. */
+ * the key explicitly. The method list answers the off human gate the same
+ * way: a surface that reads discovery before a send gets a real document
+ * without every test having to script one. */
 const DEFAULT_SCRIPT: Script = {
   [FEATURES_GET]: () => ({ features: [] }),
+  [LOGIN_METHODS]: () => methodList([]),
 }
 
 interface Call {

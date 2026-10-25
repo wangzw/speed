@@ -106,6 +106,18 @@ export type {
 } from './step-up.js'
 export { useStepUpGate } from './step-up-gate.js'
 export type { StepUpGate } from './step-up-gate.js'
+export {
+  humanGateNeedsProof,
+  powProofFromChallenge,
+  requestPowProof,
+  useHumanVerification,
+} from './human.js'
+export type {
+  HumanVerification,
+  HumanVerificationStatus,
+  UseHumanVerificationOptions,
+} from './human.js'
+export { POW_HASH, solvePowChallenge } from './pow.js'
 export { isTenantAdmissionRefusal } from './tenant-refusal.js'
 export type {
   AuthDomain,
@@ -116,6 +128,7 @@ export type {
   AuthnFactorOption,
   AuthnField,
   AuthnFlowState,
+  AuthnHumanGate,
   AuthnIdentifier,
   AuthnLink,
   AuthnLoginRegisterBody,

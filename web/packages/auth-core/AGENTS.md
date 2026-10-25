@@ -55,7 +55,13 @@ in `src/query-key.ts` (`tenantQueryKey`, `useTenantQueryKey`,
 `evictTenantQueries`) sits on the same layer too: it reads the tenant
 through `useCurrentTenant` and shapes a TanStack Query key from it, with
 `@tanstack/react-query` as a peer (the factory calls `removeQueries`,
-never constructs a `QueryClient`). The package sits directly above
+never constructs a `QueryClient`). The human-verification client in
+`src/human.ts` reads the deployment's gate from the methods document
+(a host may pass a gate it already read), holds the single-use proof a
+verification-message send presents, and solves a proof-of-work challenge
+off the main thread through the worker in `src/pow-worker*.ts` (falling
+back to the solver in `src/pow.ts` where no `Worker` exists). A methods
+document that omits the gate is read as the off mechanism. The package sits directly above
 `@speed/api-client` (an optional access-token store it receives is the
 same store that package reads on every send for a token session; the
 cookie path passes none) and `@speed/api-sdk` (the generated operations
@@ -271,7 +277,12 @@ hooks (`attachSession`, `useAuthState`, `usePermission`, `useFeature`,
 `useFeatureState`, `featurePresence`, `TenantProvider`,
 `useCurrentTenant`); and the
 tenant-scoped query-key convention (`tenantQueryKey`,
-`useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`). The
+`useTenantQueryKey`, `TenantQueryKey`, `evictTenantQueries`); and the
+human-verification client (`useHumanVerification(session, options?)`,
+its `HumanVerification` / `HumanVerificationStatus` /
+`UseHumanVerificationOptions` types,
+`humanGateNeedsProof`, `requestPowProof`, `powProofFromChallenge`, and
+the solver's `solvePowChallenge` / `POW_HASH`). The
 `./webauthn` subpath exports its own surface (`runWebauthn(options,
 signal?)`, `webauthnStepOf(options)`, `WebauthnError`, `WebauthnStep`,
 `WebauthnFailure`); those names are not on the main entry.
@@ -294,7 +305,12 @@ to be public.
   behaviour suites. `src/step-up-gate.test.ts` pins the gate's arm /
   cancel / replay-once contract and both shortfall classifiers;
   `src/tenant-refusal.test.ts` pins the admission-refusal predicate
-  against module-coded 404s; `src/webauthn.test.ts` (jsdom, with
+  against module-coded 404s; `src/pow.test.ts` pins the SHA-256 vectors
+  and checks that the solver's proof hashes to the difficulty the
+  provider requires; `src/human.test.ts` (jsdom) pins the
+  challenge-to-proof path and the hook's discovery, off fallback,
+  Turnstile token and fresh-proof-after-consume states;
+  `src/webauthn.test.ts` (jsdom, with
   `navigator.credentials` stubbed) pins the ceremony driver's decoding,
   serialization and failure classification. `src/usage-example.test.tsx` compiles and runs the
   README's session-and-hooks flow and its tenant-scoped query-key flow
