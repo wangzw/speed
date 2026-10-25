@@ -129,6 +129,10 @@ function script(options: {
    * acting account returns the identifier that account's server would derive. */
   readonly ensureTenantId?: () => string
   readonly ensureCalls?: string[]
+  /** Each ensure answer's outcome, recorded when the answer is decided -- an
+   * acceptance or a rejection -- rather than when the request is issued: a
+   * case that judges what the rejection leaves out waits for this. */
+  readonly ensureOutcomes?: ('settled' | 'rejected')[]
   /** The caller tenant read's answer; defaults to an empty, settled list. A
    * function answers per call, so a case can reveal a membership the ensure
    * or the roster settled after the first read. */
@@ -177,22 +181,30 @@ function script(options: {
     }
     if (call.method === 'POST' && path === ENSURE_PATH) {
       options.ensureCalls?.push(ENSURE_PATH)
-      if (ensure === 'conflict') {
-        throw Object.assign(new Error('already a member'), { status: 409 })
-      }
-      if (ensure === 'unavailable') {
-        throw Object.assign(new Error('the store is unavailable'), {
-          status: 503,
-        })
-      }
-      const created =
-        typeof options.ensureCreated === 'function'
-          ? options.ensureCreated()
-          : (options.ensureCreated ?? true)
-      const tenantId = options.ensureTenantId?.() ?? PERSONAL_ID
-      return {
-        tenant: { id: tenantId, alias: tenantId, kind: 'personal' },
-        created,
+      let outcome: 'settled' | 'rejected' = 'settled'
+      try {
+        if (ensure === 'conflict') {
+          throw Object.assign(new Error('already a member'), { status: 409 })
+        }
+        if (ensure === 'unavailable') {
+          throw Object.assign(new Error('the store is unavailable'), {
+            status: 503,
+          })
+        }
+        const created =
+          typeof options.ensureCreated === 'function'
+            ? options.ensureCreated()
+            : (options.ensureCreated ?? true)
+        const tenantId = options.ensureTenantId?.() ?? PERSONAL_ID
+        return {
+          tenant: { id: tenantId, alias: tenantId, kind: 'personal' },
+          created,
+        }
+      } catch (error) {
+        outcome = 'rejected'
+        throw error
+      } finally {
+        options.ensureOutcomes?.push(outcome)
       }
     }
     throw new Error(`unexpected ${call.method ?? 'GET'} ${path}`)
@@ -707,10 +719,12 @@ describe('the tenant frame and the personal tenant', () => {
     // where a new account adds the username and password.
     window.history.replaceState({}, '', ACCOUNT_SETUP_PATH)
     const ensureCalls: string[] = []
+    const ensureOutcomes: ('settled' | 'rejected')[] = []
     script({
       roster: 'refused',
       ensure: 'unavailable',
       ensureCalls,
+      ensureOutcomes,
       profile: () => INCOMPLETE_PROFILE,
     })
     renderDemoApp({
@@ -723,12 +737,10 @@ describe('the tenant frame and the personal tenant', () => {
         name: demoEnUS.accountSetup.title,
       }),
     ).toBeInTheDocument()
-    // Let the ensure's rejection settle and React commit what it makes of
-    // it before judging the page.
+    // The rejection, not the request's issue, is what makes the failure state
+    // real: wait until the answer was decided before judging the page.
     await waitFor(() => expect(ensureCalls).toHaveLength(1))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    await waitFor(() => expect(ensureOutcomes).toEqual(['rejected']))
     expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
     expect(
       screen.getByRole('heading', {
@@ -742,10 +754,12 @@ describe('the tenant frame and the personal tenant', () => {
   it('keeps the account page rendering while the ensure keeps failing', async () => {
     window.history.replaceState({}, '', '/account')
     const ensureCalls: string[] = []
+    const ensureOutcomes: ('settled' | 'rejected')[] = []
     script({
       roster: 'refused',
       ensure: 'unavailable',
       ensureCalls,
+      ensureOutcomes,
       profile: () => INCOMPLETE_PROFILE,
     })
     renderDemoApp({
@@ -758,10 +772,10 @@ describe('the tenant frame and the personal tenant', () => {
         name: demoEnUS.account.title,
       }),
     ).toBeInTheDocument()
+    // The rejection, not the request's issue, is what makes the failure state
+    // real: wait until the answer was decided before judging the page.
     await waitFor(() => expect(ensureCalls).toHaveLength(1))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    await waitFor(() => expect(ensureOutcomes).toEqual(['rejected']))
     expect(screen.queryByText(demoEnUS.workspace.failure.title)).toBeNull()
     expect(
       screen.getByRole('heading', {
