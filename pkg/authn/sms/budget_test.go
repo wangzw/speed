@@ -180,6 +180,12 @@ func TestTheGlobalBudgetCountsOnlyRealSends(t *testing.T) {
 // asymmetry: a suppressed row still counts against the number budget, so a
 // caller meets the same refusal at the same count whether the number is
 // registered or not.
+//
+// It is a pairing guard, not a reproduction: the number dimension counted
+// suppressed rows before the global budget began counting only real sends, so
+// this case passed then too. It guards against over-correcting that change. The
+// reproductions are TestTheGlobalBudgetIsPerPurposeAndThrottles and
+// TestTheGlobalBudgetCountsOnlyRealSends.
 func TestASuppressedSendStillSpendsThePhoneBudget(t *testing.T) {
 	r := newRigSQLite(t)
 	r.allow()

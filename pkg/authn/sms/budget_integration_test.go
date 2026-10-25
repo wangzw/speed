@@ -109,6 +109,22 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			want: authn.ErrThrottled,
 		},
 		{
+			name: "phone-daily",
+			// The daily window shares the number's lock with the hourly one, so
+			// this case pins the second window to the same lock as the first.
+			key: func(r *rig) string { return budgetLockKey("phone", r.database.BlindIndex(phone)) },
+			row: func(r *rig, tx *gorm.DB) {
+				insertCountRow(t, tx, "count-phone-daily", purposeLogin, r.database.BlindIndex(phone), nil, nil, r.clock.read().Add(-31*time.Second))
+			},
+			tune: func(r *rig) { r.store.set(perPhoneDailyPath, 1) },
+			send: func(r *rig) error {
+				_, err := r.sendLogin()
+				return err
+			},
+			want:         authn.ErrThrottled,
+			retryAtLeast: 23 * time.Hour,
+		},
+		{
 			name: "account",
 			key:  func(r *rig) string { return budgetLockKey("account", string(acct)) },
 			row: func(r *rig, tx *gorm.DB) {
@@ -160,6 +176,26 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 				return err
 			},
 			want: authn.ErrThrottled,
+		},
+		{
+			name: "source-daily",
+			// The daily window shares the source's lock with the hourly one, so
+			// this case pins the second window to the same lock as the first.
+			key: func(r *rig) string { return budgetLockKey("source", r.database.BlindIndex(integrationSource)) },
+			row: func(r *rig, tx *gorm.DB) {
+				sourceMac := r.database.BlindIndex(integrationSource)
+				insertCountRow(t, tx, "count-source-daily", purposeLogin,
+					r.database.BlindIndex("+8613800138002"), nil, &sourceMac, r.clock.read().Add(-31*time.Second))
+			},
+			tune: func(r *rig) { r.store.set(perSourceDailyPath, 1) },
+			send: func(r *rig) error {
+				_, err := r.p.Send(context.Background(), authn.SendCode{
+					Purpose: authn.SMSPurposeLogin, Phone: phone, Source: integrationSource, Deliver: true,
+				})
+				return err
+			},
+			want:         authn.ErrThrottled,
+			retryAtLeast: 23 * time.Hour,
 		},
 	}
 
