@@ -23,7 +23,7 @@ import (
 // notices until a case in one of them fails on a key the other cleared.
 func TestConcurrentClaimsNeverHandTwoCallersOneDatabase(t *testing.T) {
 	requireServer(t)
-	addr := serverAddr
+	addr := address()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

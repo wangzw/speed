@@ -35,9 +35,11 @@ import (
 )
 
 const (
-	// serverAddr is where the compose stack publishes Redis. It is fixed
-	// because nothing here discovers a port any more.
-	serverAddr = "127.0.0.1:6379"
+	// defaultAddr is where the compose stack publishes Redis by default. A
+	// deployment that runs the stack elsewhere -- another compose project, or
+	// the same one with other published ports -- points the tests at its
+	// address with SPEED_TEST_REDIS_ADDR; an empty variable means this one.
+	defaultAddr = "127.0.0.1:6379"
 	// databases is how many logical databases a default Redis offers. They are
 	// the unit of isolation here; a key prefix would not do, because some cases
 	// assert on which keys exist. One of them holds the leases and is never
@@ -74,6 +76,22 @@ const acquireTimeout = 2 * time.Minute
 // cleanup, where a failure has nowhere useful to go.
 const releaseTimeout = 5 * time.Second
 
+// address is where the tests reach Redis: defaultAddr unless
+// SPEED_TEST_REDIS_ADDR names another address.
+//
+// It is read on each call rather than once at start-up, so a case that sets the
+// variable observes the address it set.
+func address() string { return envOr("SPEED_TEST_REDIS_ADDR", defaultAddr) }
+
+// envOr returns the value of the named environment variable, or fallback when
+// it is unset or empty.
+func envOr(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
 // Acquire returns a server address and a database index on it that no other
 // caller is using, with that database empty.
 //
@@ -85,7 +103,7 @@ const releaseTimeout = 5 * time.Second
 func Acquire(t *testing.T) (addr string, db int) {
 	t.Helper()
 	requireServer(t)
-	addr = serverAddr
+	addr = address()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -188,7 +206,7 @@ func requireServer(t *testing.T) {
 	t.Helper()
 	if err := waitReady(); err != nil {
 		t.Fatalf("redistest: the Redis test server at %s did not answer within %s: %v\n"+
-			"run `make deps-up` from the repository root to bring the stack up", serverAddr, readyTimeout, err)
+			"run `make deps-up` from the repository root to bring the stack up", address(), readyTimeout, err)
 	}
 }
 
@@ -198,7 +216,7 @@ func waitReady() error {
 	var last error
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		client := redis.NewClient(&redis.Options{Addr: serverAddr})
+		client := redis.NewClient(&redis.Options{Addr: address()})
 		last = client.Ping(ctx).Err()
 		_ = client.Close()
 		cancel()
