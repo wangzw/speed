@@ -26,8 +26,11 @@ package memcachetest
 
 import (
 	"crypto/rand"
+	"errors"
+	"io"
 	"net"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -74,7 +77,7 @@ func envOr(name, fallback string) string {
 func Addr(t *testing.T) string {
 	t.Helper()
 	if err := waitReady(); err != nil {
-		t.Fatalf("memcachetest: the Memcached test server at %s did not accept a connection within %s: %v\n"+
+		t.Fatalf("memcachetest: the Memcached test server at %s did not accept a connection (the wait is bounded at %s): %v\n"+
 			"run `make deps-up` from the repository root to bring the stack up", address(), readyTimeout, err)
 	}
 	return address()
@@ -95,21 +98,61 @@ func Space(t *testing.T) string {
 	return rand.Text() + spaceEnd
 }
 
-// waitReady dials the server until it accepts a connection or the bound is up.
+// waitReady dials the server until it accepts a connection, the dial fails for
+// a reason the wait cannot clear, or the bound is up.
 //
 // A dial is enough here: Memcached answers no greeting and has no ping, and a
 // server that accepts a TCP connection is one the client can write to.
 func waitReady() error {
-	deadline := time.Now().Add(readyTimeout)
-	for {
+	return waitReadyUntil(time.Now().Add(readyTimeout), readyInterval, func() error {
 		conn, err := net.DialTimeout("tcp", address(), 2*time.Second)
 		if err == nil {
 			_ = conn.Close()
+		}
+		return err
+	})
+}
+
+// waitReadyUntil runs attempt until it succeeds, returns an error that is not
+// about the connection, or reaches the deadline.
+//
+// A connection-level failure is what a server that is still starting answers
+// with — the published port is not listening yet, or it takes the connection
+// and closes it before it is serving — so it is retried. Anything else is a
+// dial that will not become ready however long the wait runs, and it is
+// reported at once. attempt and interval are parameters so the loop can be
+// exercised without a server.
+func waitReadyUntil(deadline time.Time, interval time.Duration, attempt func() error) error {
+	for {
+		err := attempt()
+		if err == nil {
 			return nil
 		}
-		if time.Now().After(deadline) {
+		if !retryableConnectionError(err) || !time.Now().Before(deadline) {
 			return err
 		}
-		time.Sleep(readyInterval)
+		time.Sleep(interval)
 	}
+}
+
+// retryableConnectionError reports whether err is a failure of the connection
+// itself, the kind a server that is still coming up produces before it serves.
+//
+// It is an allowlist of the kernel's connection-level refusals and timeouts
+// rather than "any error from a dial": a dial reports a malformed address or an
+// unresolvable host as a *net.OpError too, and neither becomes reachable by
+// waiting.
+func retryableConnectionError(err error) bool {
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return true
+	case errors.Is(err, syscall.ECONNREFUSED), errors.Is(err, syscall.ECONNRESET),
+		errors.Is(err, syscall.ECONNABORTED), errors.Is(err, syscall.EPIPE),
+		errors.Is(err, syscall.ETIMEDOUT):
+		return true
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		return true
+	}
+	var timeout net.Error
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
