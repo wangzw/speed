@@ -71,7 +71,10 @@ const PATH = `${INVITATION_PREFIX}/${TOKEN}`
 const INVITED_TENANT_ID = 'tenant-7f3a'
 const INVITED_TENANT_ALIAS = 'acme-renamed'
 
-/** The acceptView answer for a pending invitation. */
+/** The acceptView answer for a pending invitation: pending and still ahead of
+ * its deadline, so the landing offers the accept action. The deadline is
+ * relative to the run because a fixed instant would one day pass and turn the
+ * landing into its invalid state. */
 const VIEW = {
   invitation: {
     id: 'inv-1',
@@ -79,7 +82,7 @@ const VIEW = {
     email: 'invitee@example.com',
     status: 'pending',
     invited_by: 'acc-1',
-    expires_at: '2026-10-20T12:00:00Z',
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     accepted_at: '0001-01-01T00:00:00Z',
     created_at: '2026-10-15T12:00:00Z',
   },
