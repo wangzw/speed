@@ -88,8 +88,9 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import type { AuthnSessionView } from '@speed/api-sdk'
-import type { AuthSession, AuthnFlowAnswer } from '@speed/auth-core'
-import { useStepUp } from '@speed/auth-core'
+import type { AuthSession, AuthnFlowAnswer, AuthnStep } from '@speed/auth-core'
+import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
+import { HumanVerification } from '@speed/ui-kit'
 import { InlineError } from './inline-error.js'
 import { FlowStep } from './flow-step.js'
 import { useFactorsQuery, useSessionViewQuery } from './queries.js'
@@ -272,7 +273,7 @@ function StepUpFlow({
   readonly reproofMethod?: string
 }): ReactElement {
   const { t } = useAccountUiTranslation()
-  const { phase, step, seq, errorCode, answer } = useStepUp(
+  const { phase, step, seq, errorCode, human, answer } = useStepUp(
     session,
     active,
     onSuccess,
@@ -366,16 +367,27 @@ function StepUpFlow({
             ) : (
               <Box sx={{ mt: 1 }}>
                 {step !== null ? (
-                  <FlowStep
-                    // A fresh step resets the fields: keying the renderer on
-                    // the step identity clears its per-answer state.
-                    key={`${seq ?? 0}-${step.kind}`}
-                    step={step}
-                    busy={false}
-                    answerStep={answerStep}
-                    submitLabel={t('mfa.stepUp.confirmLabel')}
-                    onSubmit={handleAnswer}
-                  />
+                  <>
+                    {humanGateNeedsProof(human.gate) && stepMaySend(step) ? (
+                      <HumanVerification
+                        gate={human.gate ?? undefined}
+                        proof={human.proof}
+                        status={human.status}
+                        onToken={human.adoptToken}
+                        onRetry={human.retry}
+                      />
+                    ) : null}
+                    <FlowStep
+                      // A fresh step resets the fields: keying the renderer on
+                      // the step identity clears its per-answer state.
+                      key={`${seq ?? 0}-${step.kind}`}
+                      step={step}
+                      busy={false}
+                      answerStep={answerStep}
+                      submitLabel={t('mfa.stepUp.confirmLabel')}
+                      onSubmit={handleAnswer}
+                    />
+                  </>
                 ) : null}
               </Box>
             )}
@@ -396,6 +408,19 @@ function StepUpFlow({
       </DialogActions>
     </>
   )
+}
+
+/** Whether a step-up step could send a verification message: an SMS second
+ * factor to choose, or a first-factor re-proof that asks for the phone. The
+ * proof block renders above such a step. */
+function stepMaySend(step: AuthnStep): boolean {
+  if (step.kind === 'factor') {
+    return step.factors.some((factor) => factor.kind === 'sms')
+  }
+  if (step.kind === 'challenge') {
+    return step.fields.some((field) => field.kind === 'phone')
+  }
+  return false
 }
 
 /** The factors a factor read names as active, which are the ones a step-up

@@ -184,7 +184,12 @@ session as a required prop; `PreferencesSection` takes it optionally
    (`readFlow`) and takes a ready flow with `step: 'complete'`;
    `MfaSection` starts `purpose: 'enroll'` and the step-up dialog
    `purpose: 'step-up'`. A flow completion that does not touch the login
-   state (`linked`, `enrolled`) never signs anyone in. The step renderer
+   state (`linked`, `enrolled`) never signs anyone in. The step-up
+   dialog's answers that send a verification message -- choosing an SMS
+   second factor, or re-proving the SMS first factor with a phone -- render
+   the deployment's proof block and present its proof (`useStepUp`'s
+   `human`), consuming it; an enrollment sends nothing (the SMS factor
+   binds a phone the account has already proved) and presents none. The step renderer
    (`src/internal/flow-step.tsx`) is one of three copies (`auth-ui`,
    `account-ui`, `console-ui`) kept in lockstep by hand: a change to how a
    step renders lands in all three in the same change. No compiler check

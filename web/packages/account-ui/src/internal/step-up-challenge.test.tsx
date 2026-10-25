@@ -42,6 +42,8 @@ import {
 } from '../../test-utils/real-client.js'
 import { renderWithProviders } from '../../test-utils/render.js'
 import { captureRefreshWarning } from '../../test-utils/refresh-warning.js'
+import { methodList } from '@speed/test-utils/session-harness'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { StepUpChallenge } from './step-up-challenge.js'
 
 const FLOW_START = '/api/v1/auth/flows/authenticated'
@@ -325,6 +327,74 @@ describe('StepUpChallenge', () => {
       step: 'factor',
       input: { code: '123456', factor: 'factor-1' },
     })
+  })
+
+  it('present the human proof on an SMS second-factor answer', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const respond: RealResponder = (call) => {
+        if (call.method === 'GET' && call.path === '/api/v1/auth/methods') {
+          return jsonResponse(
+            200,
+            methodList(['password'], {
+              humanRequired: true,
+              humanProvider: 'turnstile',
+              humanSiteKey: 'site-1',
+            }),
+          )
+        }
+        if (call.method === 'GET' && call.path === '/api/v1/auth/factors') {
+          return jsonResponse(200, {
+            factors: [{ ...ACTIVE_FACTOR, kind: 'sms', label: 'Phone' }],
+          })
+        }
+        if (call.method === 'POST' && call.path === FLOW_START) {
+          return jsonResponse(200, {
+            seq: 1,
+            state: 'second',
+            next: {
+              kind: 'factor',
+              factors: [{ id: 'factor-1', kind: 'sms', label: 'Phone' }],
+            },
+          })
+        }
+        if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: { kind: 'challenge', fields: [{ name: 'code', kind: 'text' }] },
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond)
+      const user = userEvent.setup()
+
+      await screen.findByRole('button', { name: 'Phone' })
+      // The block renders above the SMS factor choice; its widget yields a
+      // single-use token.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      act(() => {
+        fake.token('token-1')
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Phone' }))
+
+      await waitFor(() => {
+        const body = rig.calls.find(
+          (call) => call.method === 'POST' && call.path === FLOW_ANSWER,
+        )?.body
+        expect(body).toMatchObject({
+          seq: 1,
+          step: 'factor',
+          input: { factor: 'factor-1' },
+          human_proof: 'token-1',
+        })
+      })
+    } finally {
+      fake.restore()
+    }
   })
 
   it('renders a refused answer as code text and stays retryable', async () => {

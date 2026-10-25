@@ -156,8 +156,9 @@ export function PhoneSection({ session, humanGate }: PhoneSectionProps) {
   }, [sentTo])
 
   function sendCode(nextPhone: string): Promise<void> {
-    // A required proof that is not ready, and a gate not yet read, both
-    // keep the send from leaving.
+    // A required proof that is not ready keeps the send from leaving. A gate
+    // still being read does not: the server judges a send that races the
+    // read.
     if (proofBlocked) {
       return Promise.resolve()
     }

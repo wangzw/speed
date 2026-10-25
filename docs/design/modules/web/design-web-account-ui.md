@@ -197,7 +197,7 @@ sequenceDiagram
 
 ### 发送验证码的人机证明
 
-部署要求人机验证时，三处发送验证码的动作都先取一份证明：手机节的发送、验证节的发送与重发、标识节的邮箱添加与行内重发。门槛取自发现文档的 `human`（宿主已经读到时可经 `humanGate` 传入，缺省各节自己读一次），证明的取得、单次使用与重取由 [auth-core](design-web-auth-core.md) 的 `useHumanVerification` 承担，界面只渲染 ui-kit 的 `HumanVerification` 块并交出 `human_proof`。块位于发送控件上方；证明未就绪时发送控件禁用；每次发送之后消耗当前证明并取一份新的，重发因此带的是新证明。用户名写入、验证码提交、删除与改口令不发验证码，不取证明，也不受块约束。验证节的自动发送没有用户的点击来取得证明，因此等块持有证明后才发；块没有证明时保留手动发送。
+部署要求人机验证时，发送验证码的动作都先取一份证明：手机节的发送、验证节的发送与重发、标识节的邮箱添加与行内重发，以及提权对话框的短信发送（选中短信第二因素，或按短信方式复证第一因素时提交手机号）。手机节、验证节与标识节各自经 [auth-core](design-web-auth-core.md) 的 `useHumanVerification` 取得证明；提权对话框的证明由 `useStepUp` 取得并经 `StepUpState.human` 暴露，对话框把门槛与证明渲染成同一个块，会发送的答复自动带 `human_proof`。门槛取自发现文档的 `human`（宿主已经读到时可经 `humanGate` 传入，缺省各节自己读一次），证明的取得、单次使用与重取由 `useHumanVerification` 承担，界面只渲染 ui-kit 的 `HumanVerification` 块并交出 `human_proof`。块位于发送控件上方；证明未就绪时发送控件禁用；每次发送之后消耗当前证明并取一份新的，重发因此带的是新证明。用户名写入、验证码提交、删除与改口令不发验证码，不取证明，也不受块约束；登记多因素不发验证码（短信因素绑定的是账户已证明的手机号），同样不取证明。验证节的自动发送没有用户的点击来取得证明，因此等块持有证明后才发；块没有证明时保留手动发送。
 
 ### 经流程门控的两步验证
 
@@ -290,7 +290,7 @@ sequenceDiagram
 | 口令节 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection` |
 | `login-identifier-required` 的文本覆盖设口令与删除最后一个登录名两种语义 | 已实现 | `web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.login_identifier_required` |
 | 手机号节 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
-| 发送验证码的人机证明（手机节、验证节与标识节邮箱） | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`、`PhoneSectionProps`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
+| 发送验证码的人机证明（手机节、验证节、标识节邮箱与提权对话框） | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`、`PhoneSectionProps`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps`；`web/packages/account-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
 | 轮换点上的身份切换窗口 | 已实现 | `web/packages/account-ui/src/internal/identity-transition.ts` `runIdentityTransition` |
