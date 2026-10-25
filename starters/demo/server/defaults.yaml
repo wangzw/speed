@@ -110,8 +110,17 @@ audit:
   admin:
     endpoints: [admin]
 
+# The two limiting layers name their endpoints separately. endpoints is the
+# quota layer: it charges a settled identity inside a tenant. address-endpoints
+# is the address shield: a coarse load shield, not a per-recipient send limit.
+# It counts requests per client address before any identity is settled, so a
+# source that keeps being refused is shut out before it reaches the
+# authentication backend. The send budgets bound messages per recipient, source
+# and account and live with the capabilities that send; this layer bounds
+# requests per address per interval and knows nothing about a message.
 ratelimit:
   endpoints: [api]
+  address-endpoints: [account]
 
 settings:
   admin:

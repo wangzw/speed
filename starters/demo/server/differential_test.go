@@ -385,6 +385,7 @@ var preGateLayers = map[string]string{
 	"i18n:accept-language":     i18nhttp.ModuleName,
 	"http.cors":                cors.ModuleName,
 	"ratelimit":                ratelimit.ModuleName,
+	"ratelimit.address":        ratelimit.ModuleName,
 }
 
 // moduleClass is what the case does with a baseline module.
@@ -850,6 +851,15 @@ const splitEndpoints = `  endpoints:
 func (topo topology) render(t *testing.T, ports []int) string {
 	t.Helper()
 	body := configBody(t, ports[:listenerCount], ":memory:")
+	// The address shield is left off in this case's configuration. It counts
+	// requests per client address in this process's memory, and the baseline
+	// sends more requests before the matrix than a variant does (the expectation
+	// and comparator warm-ups), so the two runs would compare a 429 against a
+	// 401 for reasons that are about earlier traffic rather than about the
+	// assembled modules. This case's property is endpoint selection; the
+	// shipping default, which does shield the account endpoint, is held by
+	// TestServeAnswersTheProbes.
+	body += "ratelimit:\n  address-endpoints: []\n"
 	if !topo.split {
 		return body
 	}

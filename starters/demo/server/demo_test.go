@@ -588,6 +588,29 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	serve := start(t, config, "sqlite-memory", serveCommand)
 	serve.waitReady(t)
 
+	// The address shield is assembled on the account endpoint. The startup
+	// line lists each endpoint's chain as written, so a run whose configuration
+	// names the account endpoint reports the layer there. Its place before the
+	// gateway is what makes it a shield: it counts a source that has not
+	// identified itself yet.
+	chains := parseChains(strings.Split(serve.output(), "\n"))
+	account, ok := chains["account"]
+	if !ok {
+		t.Fatalf("the run wrote no assembly line for the account endpoint:\n%s", serve.output())
+	}
+	shield, gate := slices.Index(account.layers, "ratelimit.address"), slices.Index(account.layers, "authn.gate")
+	if shield < 0 {
+		t.Fatalf("the account endpoint's chain %v carries no address shield: the configured "+
+			"address-endpoints list did not reach the endpoint", account.layers)
+	}
+	if gate < 0 {
+		t.Fatalf("the account endpoint's chain %v carries no authentication gateway", account.layers)
+	}
+	if shield > gate {
+		t.Errorf("the account endpoint's chain %v runs the address shield inside the gateway, "+
+			"so it would count requests after identity is settled", account.layers)
+	}
+
 	opsBase := fmt.Sprintf("http://127.0.0.1:%d", ports[opsListener])
 
 	health := get(t, opsBase+"/health")

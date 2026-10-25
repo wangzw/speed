@@ -751,15 +751,17 @@ names the fixed part of that wiring, and no configuration file repeats it:
   than `testdata/`; this host's frontend already requests session for every
   login.
 - Tenant resolution (`tenant.resolve`) and admission (`tenant.admission`) guard
-  `api`; the authorization guard (`authz.guard`) enforces `api`; the rate limiter
-  (`ratelimit`) limits `api`. Resolution reads the tenant from the request's
-  `X-Tenant` header (the header extractor `tenant.resolve.extractor` names; the
-  header name itself is the module's own default), so an `api`
-  call without that header is refused 404 -- the tenant is not a claim of the
-  access token, it is a request-time routing fact the caller must announce. The
-  frontend does exactly that: the client built in `bootstrapSpeedApp` announces
-  the host's current tenant as `X-Tenant` (its `tenantProvider`, wired from
-  `starters/demo/web`), read per attempt.
+  `api`; the authorization guard (`authz.guard`) enforces `api`; the rate
+  limiter's quota layer (`ratelimit`) limits `api`, and its address shield
+  (`ratelimit.address`) guards `account` -- a coarse per-source request cap
+  before identity is settled, not a per-recipient send limit. Resolution reads
+  the tenant from the request's `X-Tenant` header (the header extractor
+  `tenant.resolve.extractor` names; the header name itself is the module's own
+  default), so an `api` call without that header is refused 404 -- the tenant is
+  not a claim of the access token, it is a request-time routing fact the caller
+  must announce. The frontend does exactly that: the client built in
+  `bootstrapSpeedApp` announces the host's current tenant as `X-Tenant` (its
+  `tenantProvider`, wired from `starters/demo/web`), read per attempt.
 - The platform's management surfaces mount on `admin`: the roster
   (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
   surface (`settings.admin`) and the journal's query routes (`audit.admin`).
