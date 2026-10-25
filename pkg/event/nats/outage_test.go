@@ -21,6 +21,12 @@ import (
 // answering fails the case rather than hanging it.
 const flushBudget = 10 * time.Second
 
+// queueChecks bounds how many flushes the case spends confirming the outbound
+// queue is empty. The bus's reader issues its own fetch requests on this
+// connection, so one sample can catch such a request mid-flight; a queue that
+// drains across another round trip is that, not the refused publish.
+const queueChecks = 3
+
 // TestAPublishTheCutLinkRefusesIsNotStoredLater is the case for what a failed
 // publish means here, the lower bound design-event states: a publish that
 // returns an error is one the bus did not accept. The publisher of an event
@@ -105,13 +111,31 @@ func TestAPublishTheCutLinkRefusesIsNotStoredLater(t *testing.T) {
 	// have reached the server by now, and the empty outbound queue afterwards
 	// is the observation that none is still waiting to go out. A fixed pause
 	// would instead let a client slow to send what it kept pass this case.
+	//
+	// The queue is checked across more than one flush because this client is
+	// shared: the bus's reader issues its fetch requests on it, and a request
+	// written between the flush and the check would show bytes here that have
+	// nothing to do with the refused publish. Bytes that drain on the next round
+	// trip are that traffic; only a queue that stays non-empty is a kept
+	// publish.
 	if err := bus.nc.FlushTimeout(flushBudget); err != nil {
 		t.Fatalf("flushing the client before reading the stream: %v", err)
 	}
-	if pending, err := bus.nc.Buffered(); err != nil {
-		t.Fatalf("reading the client's outbound queue: %v", err)
-	} else if pending != 0 {
-		t.Fatalf("the client still has %d bytes to send after a flush: the refused publish was kept", pending)
+	for check := 1; ; check++ {
+		pending, err := bus.nc.Buffered()
+		if err != nil {
+			t.Fatalf("reading the client's outbound queue: %v", err)
+		}
+		if pending == 0 {
+			break
+		}
+		if check >= queueChecks {
+			t.Fatalf("the client still has %d bytes to send after %d flushes: the refused publish was kept",
+				pending, check)
+		}
+		if err := bus.nc.FlushTimeout(flushBudget); err != nil {
+			t.Fatalf("flushing the client again before reading the stream: %v", err)
+		}
 	}
 	if after := entries(); after != before {
 		t.Fatalf("the stream holds %d entries after a publish this bus refused, want the %d it held: "+
