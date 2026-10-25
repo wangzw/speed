@@ -39,6 +39,12 @@
     "required": "This field is required.",
     "invalid": "Enter a valid value."
   },
+  "humanVerification": {
+    "working": "Confirming you are human…",
+    "verified": "Human verification complete.",
+    "failed": "Human verification failed. Please try again.",
+    "retry": "Try again"
+  },
   "phoneNumber": {
     "incomplete": "The number is incomplete under +{{code}}.",
     "invalid": "The number is not valid under +{{code}}.",

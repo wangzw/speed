@@ -39,6 +39,12 @@
     "required": "此字段为必填项。",
     "invalid": "请输入有效值。"
   },
+  "humanVerification": {
+    "working": "正在确认你是真人…",
+    "verified": "人机验证已完成。",
+    "failed": "人机验证未通过，请重试。",
+    "retry": "重试"
+  },
   "phoneNumber": {
     "incomplete": "该号码在 +{{code}} 下位数不完整。",
     "invalid": "该号码在 +{{code}} 下无效。",

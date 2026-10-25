@@ -12,7 +12,7 @@ end), and the controlled
 components (`PageHeader`, `EmptyState`, `ConfirmDialog`, `SidePanel`,
 `FormField`, `FormLayout`, `PhoneNumberField`, `DataTable`,
 `FileUploader`, `InlineError`, `InlineSuccess`, `WriteFeedbackRegion`,
-`ListSkeleton`, `AsyncSection`)
+`ListSkeleton`, `AsyncSection`, `HumanVerification`)
 that render only the
 state hosts give them, plus the form family's zod validation bridge
 (`zodFormResolver`), the phone parts' composition helpers (`toE164`,

@@ -6,7 +6,7 @@
  * fully controlled components (PageHeader, SectionCard, EmptyState,
  * ConfirmDialog, SidePanel, FormField, FormLayout, PhoneNumberField,
  * DataTable, FileUploader, InlineError, InlineSuccess,
- * WriteFeedbackRegion, ListSkeleton, AsyncSection) with
+ * WriteFeedbackRegion, ListSkeleton, AsyncSection, HumanVerification) with
  * their ui-kit-namespace translations (UI_KIT_NAMESPACE + uiKitResources)
  * for the host to register —
  * FileUploader renders the queue the host owns as `rows` props while
@@ -81,6 +81,12 @@ export {
   type FormFieldProps,
   type FormFieldRenderState,
 } from './components/FormField.js'
+export {
+  HumanVerification,
+  type HumanVerificationGate,
+  type HumanVerificationProps,
+  type HumanVerificationStatus,
+} from './components/HumanVerification.js'
 export {
   FORM_MAX_WIDTH,
   FormLayout,

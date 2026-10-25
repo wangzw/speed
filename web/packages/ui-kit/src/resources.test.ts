@@ -48,6 +48,7 @@ describe('ui-kit resources', () => {
       'emptyState',
       'fileUploader',
       'form',
+      'humanVerification',
       'oneTimeValuePanel',
       'pageHeader',
       'phoneNumber',

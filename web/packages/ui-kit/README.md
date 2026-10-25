@@ -6,7 +6,8 @@ The platform's first DOM-rendering package: the theme factory that turns
 floor for MUI's base controls), and the controlled components (`PageHeader`,
 `EmptyState`, `ConfirmDialog`, `SidePanel`, `FileUploader`, `FormField`,
 `FormLayout`, `DataTable`, `InlineError`, `InlineSuccess`,
-`WriteFeedbackRegion`, `ListSkeleton`, `AsyncSection`) that render only
+`WriteFeedbackRegion`, `ListSkeleton`, `AsyncSection`,
+`HumanVerification`) that render only
 the state hosts give them --
 FileUploader renders the upload queue the host owns as `rows` props
 while the transfers themselves run in the host's own code. The
@@ -59,6 +60,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `write-feedback.ts` | `useWriteFeedback`, `WriteFeedback`, `WriteOutcome` |
 | `components/ListSkeleton.tsx` | `ListSkeleton`, `ListSkeletonProps` |
 | `components/AsyncSection.tsx` | `AsyncSection`, `AsyncSectionProps`, `AsyncSectionErrorState`, `AsyncSectionEmptyState`, `AsyncSectionStaleState` |
+| `components/HumanVerification.tsx` | `HumanVerification`, `HumanVerificationProps`, `HumanVerificationGate`, `HumanVerificationStatus` |
 | `visually-hidden.ts` | `visuallyHiddenSx` |
 | `touch-target.ts` | `touchTargetSx` |
 | `resources.ts` | `UI_KIT_NAMESPACE`, `uiKitResources` |

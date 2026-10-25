@@ -115,6 +115,10 @@ export const SPEED_PACKAGE_MAP = Object.freeze([
     specifier: '@speed/test-utils/session-harness',
     entry: 'test-utils/src/session-harness.ts',
   },
+  {
+    specifier: '@speed/test-utils/turnstile',
+    entry: 'test-utils/src/turnstile.ts',
+  },
   { specifier: '@speed/test-utils/setup', entry: 'test-utils/src/setup.ts' },
   {
     specifier: '@speed/theme-presets',
