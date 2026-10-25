@@ -10,9 +10,11 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -60,6 +62,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 		(*notification.Preferences)(nil),
 		(*notification.Inbox)(nil),
 		(*i18n.Localizer)(nil),
+		(*kv.KV)(nil),
 	}
 	for _, token := range required {
 		found, optional := requirementOf(m, token)
@@ -72,6 +75,7 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 		}
 	}
 	optional := []core.Token{
+		(*settings.Store)(nil),
 		(*log.Logger)(nil),
 		(*mail.Sender)(nil),
 		(*sms.Registry)(nil),
@@ -93,19 +97,28 @@ func TestTheDescriptorDeclaresTheFixedDependencies(t *testing.T) {
 	}
 }
 
-// The module declares its migrations, its message catalog and its two channel
-// features as resources, and reads no configuration: it declares no schema and
-// no namespace of its own.
+// The module declares its migrations, its message catalog, its delivery-budget
+// settings schema and its two channel features as resources, and reads no
+// configuration: it declares no configuration namespace.
 func TestTheModuleDeclaresItsMigrationsAndCatalog(t *testing.T) {
 	var migrations db.Migrations
 	var catalog i18n.Catalog
 	specs := 0
+	schemas := 0
 	for _, res := range Module().Resources {
 		switch v := res.(type) {
 		case db.Migrations:
 			migrations = v
 		case i18n.Catalog:
 			catalog = v
+		case settings.Schema:
+			schemas++
+			if v.Namespace != ModuleName {
+				t.Errorf("the settings schema's namespace is %q, want %q", v.Namespace, ModuleName)
+			}
+			if len(v.Mounts) != 1 {
+				t.Errorf("the settings schema has %d mounts, want one", len(v.Mounts))
+			}
 		case feature.Spec:
 			specs++
 		default:
@@ -120,6 +133,9 @@ func TestTheModuleDeclaresItsMigrationsAndCatalog(t *testing.T) {
 	}
 	if specs != 2 {
 		t.Errorf("the descriptor declares %d feature specs, want the two channels", specs)
+	}
+	if schemas != 1 {
+		t.Errorf("the descriptor declares %d settings schemas, want the delivery budgets", schemas)
 	}
 }
 

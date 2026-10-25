@@ -20,6 +20,7 @@ import (
 	"github.com/vislake/speed/pkg/internal/configtest"
 	"github.com/vislake/speed/pkg/internal/routecontract"
 	"github.com/vislake/speed/pkg/jobs"
+	kvmemory "github.com/vislake/speed/pkg/kv/memory"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
@@ -129,7 +130,7 @@ func driveWithBoard(t *testing.T, on seams, supplied bool) []string {
 	capture := &featureCapture{}
 	router := routecontract.NewRouter("account")
 	reader := configtest.Reader(t, `{"feature": {"board": {"endpoint": "account"}}}`,
-		featureboard.Module(), Module())
+		featureboard.Module(), kvmemory.Module(), Module())
 
 	reg := core.New()
 	reg.Register(config.Module())
@@ -142,6 +143,7 @@ func driveWithBoard(t *testing.T, on seams, supplied bool) []string {
 		reg.Register(m)
 		participants = append(participants, m.Name)
 	}
+	register(kvmemory.Module())
 	register(standIn("stand-in.queue", featureQueue{}, (*jobs.Queue)(nil)))
 	register(standIn("stand-in.handlers", featureHandlers{}, (*jobs.Handlers)(nil)))
 	register(standIn("stand-in.database", featureDatabase{}, (*db.Database)(nil)))

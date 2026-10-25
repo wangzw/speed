@@ -30,19 +30,25 @@ The dependencies the descriptor requires, non-optionally, are:
 | `(*notification.Preferences)(nil)` | `Effective` answers a recipient's channels. |
 | `(*notification.Inbox)(nil)` | the in-app channel writes through it. |
 | `(*i18n.Localizer)(nil)` | the message text is rendered through it. |
+| `(*kv.KV)(nil)` | the delivery budgets are counted on its counters. |
 
-The optional dependencies are `(*log.Logger)(nil)`, `(*mail.Sender)(nil)`,
-`(*sms.Registry)(nil)` and `(*sms.Sender)(nil)`. No absence fails the startup: a
-channel is available exactly when the seams it sends through are present — email
-on the mail sender, sms only when **both** its seams are there — and a missing
-seam records a `skipped` row rather than a failure. The logging capability is
-taken up in `New` and named after the module; without it the module keeps the
-process default logger, as it did before the capability was declared.
+The optional dependencies are `(*settings.Store)(nil)`, `(*log.Logger)(nil)`,
+`(*mail.Sender)(nil)`, `(*sms.Registry)(nil)` and `(*sms.Sender)(nil)`. No absence
+fails the startup: a channel is available exactly when the seams it sends through
+are present — email on the mail sender, sms only when **both** its seams are
+there — and a missing seam records a `skipped` row rather than a failure. A
+missing settings store leaves each budget at its declared default. The logging
+capability is taken up in `New` and named after the module; without it the module
+keeps the process default logger, as it did before the capability was declared.
+The key-value counters are required and not optional: a budget that cannot count
+would let every dispatch through, which is the direction the requirement forbids.
 
-The descriptor declares nothing else. It names no HTTP entry point — this module
-mounts no route, so declaring one would only carry `pkg/http` into a host's
+The descriptor declares no route and no bus. It names no HTTP entry point — this
+module mounts no route, so declaring one would only carry `pkg/http` into a host's
 closure — and no event bus: the in-app row is announced by the module that wrote
-it, so this module publishes nothing on a bus and has none to reach.
+it, so this module publishes nothing on a bus and has none to reach. Its remaining
+resources are the ledger migration, the message catalog, the two channel features
+and the delivery-budget settings schema.
 
 ## Email
 
@@ -67,13 +73,16 @@ module's own reason, and the carrier is never reached.
 
 ## The two halves
 
-**`Dispatcher.Dispatch` only validates and enqueues.** It runs the shape checks
-(a non-empty `TypeKey`, a recipient whose class is `user`, a non-empty
-`Recipient.UserID`, a non-empty `Locale`), then the taxonomy checks (the type is
-declared, and the parameters do not exceed the type's `RecipientVisibleParams`
-whitelist), then enqueues one job. It resolves no channel, renders no text and
-writes no storage. The tenant comes from the context; a context with none is
-refused with the tenant capability's own error.
+**`Dispatcher.Dispatch` validates, charges the delivery budgets and enqueues.**
+It runs the shape checks (a non-empty `TypeKey`, a recipient whose class is
+`user`, a non-empty `Recipient.UserID`, a non-empty `Locale`), then the taxonomy
+checks (the type is declared, and the parameters do not exceed the type's
+`RecipientVisibleParams` whitelist), resolves the recipient's effective channels
+to decide whether an external send will happen, charges the delivery budgets for
+that, and enqueues one job. It renders no text and writes no ledger. The tenant
+comes from the context; a context with none is refused with the tenant
+capability's own error. A spent budget is a `*authn.ThrottledError` carrying
+`RetryAfter`, and nothing is enqueued.
 
 **The handler consumes the job.** `jobs.db` claims it, enters its tenant and
 hands it over, so the handler's context already carries the tenant. The handler
@@ -88,6 +97,43 @@ the handler returns, which is what makes the job retry.
 `notification.Inbox`, which is the module that publishes `notification.inbox.created`
 once that row has committed. This module publishes no event of its own: one row
 announced twice would push twice to a connected client.
+
+## Delivery budgets
+
+An external delivery is bounded by three fixed-window budgets, charged in
+`Dispatch` **before** the job is queued:
+
+| Setting (under `notification.delivery`) | Default | Domain | Bounds |
+|---|---|---|---|
+| `per-recipient-hourly` | 20 | 1–1000 | external messages to one recipient in an hour |
+| `per-recipient-daily` | 100 | 1–10000 | external messages to one recipient in a day |
+| `global-hourly` | 10000 | 1–10000000 | external messages across the deployment in an hour |
+
+The counters live in `kv.KV`, one key per window bucket, and the key's expiry is
+the bucket width. The per-recipient keys are a digest of the tenant and the
+recipient identifier; the deployment key carries no tenant. The limits are read
+from settings on every dispatch, so an operator's change reaches the next one
+without a restart; a failed or out-of-domain read falls back to the declared
+default and writes one `Error` line.
+
+The budget is charged **after** the recipient's effective channels are resolved,
+and only for the external channels this assembly can actually send on. A
+dispatch whose effective set is `in_app` alone, whose external seam is absent, or
+whose recipient turned the external channels off spends nothing: it produces no
+external message. One delivery spends one unit per external channel it will
+attempt. The increment happens before the comparison, so a refused dispatch
+still spends. A window that is over answers `*authn.ThrottledError` with
+`RetryAfter` set to the rest of the bucket (at least one second) and enqueues
+nothing; windows are checked per-recipient hourly, per-recipient daily, then
+global, and a `Dispatch` that fails the first check does not spend the later
+ones. A counter that cannot be written answers an error carrying
+`authn.ErrUnavailable`, and nothing is enqueued: a budget that cannot count does
+not pass.
+
+The budget is charged per `Dispatch` call, not per distinct logical event: the
+queue's idempotency key settles convergence only at enqueue time, after the
+charge. A caller that can submit can vary the occurrence to create distinct jobs
+anyway, so the budget is the bound and the convergence is not.
 
 ## The idempotency key
 
@@ -177,6 +223,11 @@ package, and callers tell them apart with `errors.Is`:
 | `ErrParamsNotAllowed` | a parameter outside the type's whitelist |
 | `ErrInvalidConfig` | an inconsistent type declaration, or two modules declaring one key — `New` ends the startup |
 
+A spent delivery budget is not one of those sentinels: it is the platform's
+retryable rejection, `*authn.ThrottledError`, which reads as `authn.ErrThrottled`
+and carries `RetryAfter`. A counter that could not be written answers an error
+that reads as `authn.ErrUnavailable`. Both refusals enqueue nothing.
+
 A channel whose seam is absent is **not** an error: it records `skipped` and does
 not enter the joined error.
 
@@ -230,7 +281,8 @@ absence of the recipient, the body and the parameter values.
 
 None. The module declares no configuration namespace and reads no input item: the
 parameters of a delivery job (priority, timeout, retry budget) are fixed by this
-module at enqueue time.
+module at enqueue time. The only runtime parameters are the three delivery-budget
+settings, under the module's own `notification.delivery` namespace.
 
 ## Routes and permissions
 
@@ -260,6 +312,11 @@ env -C pkg golangci-lint run ./notification/delivery/...
 outside the module it prints zero issues without loading the packages.
 
 ## Boundaries
+
+- **Every external delivery is bounded before it is queued.** `Dispatch` charges
+  the per-recipient and deployment budgets on the key-value counters and refuses
+  a spent one with the platform's throttled error and a retry time. A dispatch
+  that resolves to no external channel in this assembly spends nothing.
 
 - **Every external send is logged once, and the line is safe to keep.** A
   carrier call writes one line with its outcome, duration and the carrier's

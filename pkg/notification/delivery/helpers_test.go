@@ -22,10 +22,12 @@ import (
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	kvmemory "github.com/vislake/speed/pkg/kv/memory"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/notification/preferences"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
 	"github.com/vislake/speed/pkg/tenant"
 	"github.com/vislake/speed/pkg/tenant/catalog"
@@ -463,7 +465,7 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 	if h.withPreferences {
 		consumer = preferences.Module()
 	}
-	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), consumer}
+	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), kvmemory.Module(), consumer}
 	for name, spec := range specs {
 		modules = append(modules, declareType(name, spec))
 	}
@@ -538,6 +540,9 @@ type rig struct {
 	local   *stubLocalizer
 	bus     *stubBus
 	catalog tenant.Catalog
+	// settings is the settings store the assembly's settings module delivers, so
+	// a case can write a budget limit and hold that the pipeline reads it.
+	settings settings.Store
 	// mailSender is the mail seam stub, nil when the run did not take the email
 	// channel in.
 	mailSender *stubMailSender
@@ -585,7 +590,7 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 	local := newStubLocalizer()
 	bus := &stubBus{}
 
-	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), Module()}
+	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), kvmemory.Module(), settings.Module(), Module()}
 	for name, spec := range h.specs {
 		modules = append(modules, declareType(name, spec))
 	}
@@ -681,6 +686,10 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 				if err != nil {
 					return err
 				}
+				store, err := core.Resolve[settings.Store](reg)
+				if err != nil {
+					return err
+				}
 				dispatcher, err := core.Resolve[notification.Dispatcher](reg)
 				if err != nil {
 					return err
@@ -689,7 +698,7 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 				if !ok {
 					return fmt.Errorf("the delivered dispatcher is a %T, not this module's product", dispatcher)
 				}
-				r.db, r.catalog, r.p = database, cam, p
+				r.db, r.catalog, r.settings, r.p = database, cam, store, p
 				delivered <- struct{}{}
 				<-release
 				return nil

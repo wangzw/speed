@@ -29,7 +29,9 @@
 //
 // The module declares no configuration namespace and reads no input item: the
 // parameters of a delivery job are fixed by this module at enqueue time, not
-// taken from configuration.
+// taken from configuration. It does declare three runtime settings — the two
+// per-recipient delivery budgets and the deployment-wide one — and charges them
+// against the key-value counters before a dispatch is queued.
 package delivery
 
 import (
@@ -46,9 +48,11 @@ import (
 	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
+	"github.com/vislake/speed/pkg/kv"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/mail"
 	"github.com/vislake/speed/pkg/notification"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/sms"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -112,13 +116,21 @@ var (
 // Module is the descriptor a host registers.
 //
 // The queue, the handler registration face, the database, the tenant roster, the
-// preferences seam, the inbox seam and the message localizer are all required
-// and hard. A pipeline with no queue has nowhere to put a dispatch, one with no
-// registration face cannot be run, one with no table has nowhere to record a
-// send, one with no roster carries no filter to scope its ledger writes by
-// tenant, one with no preferences cannot resolve a recipient's channels, one
-// with no inbox cannot write an in-app message, and one with no localizer cannot
-// render one.
+// preferences seam, the inbox seam, the message localizer and the key-value
+// counters are all required and hard. A pipeline with no queue has nowhere to put
+// a dispatch, one with no registration face cannot be run, one with no table has
+// nowhere to record a send, one with no roster carries no filter to scope its
+// ledger writes by tenant, one with no preferences cannot resolve a recipient's
+// channels, one with no inbox cannot write an in-app message, one with no
+// localizer cannot render one, and one with no counters cannot bound a dispatch.
+// The counters are a hard requirement rather than an absence the module works
+// around: a delivery budget that cannot count would let every dispatch through,
+// which is the direction the requirement forbids.
+//
+// The settings store is optional: a dispatch reads its budget limits through it,
+// and an absence is a legal assembly in which every budget reads its declared
+// default. Declaring it also orders this module after settings, so the snapshot a
+// dispatch reads has been loaded.
 //
 // The mail sender, the sms registry and the sms sender are optional, and none of
 // their absences fails the startup: a channel is available exactly when the seams
@@ -146,6 +158,8 @@ func Module() core.Module {
 			{Token: (*notification.Preferences)(nil)},
 			{Token: (*notification.Inbox)(nil)},
 			{Token: (*i18n.Localizer)(nil)},
+			{Token: (*kv.KV)(nil)},
+			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
 			{Token: (*mail.Sender)(nil), Optional: true},
 			{Token: (*sms.Registry)(nil), Optional: true},
@@ -155,6 +169,7 @@ func Module() core.Module {
 		Resources: []any{
 			db.Migrations{FS: migrationsFS},
 			messageCatalog,
+			settingsSchema(),
 			feature.Spec{Name: featureEmail, Conditional: true},
 			feature.Spec{Name: featureSMS, Conditional: true},
 		},
@@ -232,6 +247,11 @@ type pipeline struct {
 	ledger    *ledger
 	taxonomy  taxonomy
 	seams     channelSeams
+	// counters holds the delivery budgets, one fixed window per key. It is the
+	// key-value capability, whose increment is atomic across replicas.
+	counters kv.KV
+	// settings reads the budget limits on every dispatch.
+	settings *settingReader
 	// logger is where the external-send lines are written. It is the assembly's
 	// logging capability named after this module, or the process default logger
 	// when the assembly delivered none; it is never taken from the handler's
@@ -292,6 +312,14 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
+	counters, err := core.Resolve[kv.KV](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the key-value counters: %w", ModuleName, err)
+	}
+	store, err := optional[settings.Store](reg, "the settings store")
+	if err != nil {
+		return nil, err
+	}
 	return &pipeline{
 		queue:     queue,
 		handlers:  handlers,
@@ -301,6 +329,8 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		ledger:    &ledger{handle: database.DB()},
 		taxonomy:  types,
 		seams:     channelSeams{mailer: mailer, registry: registry, sender: sender},
+		counters:  counters,
+		settings:  newSettingReader(store, logger),
 		logger:    logger,
 	}, nil
 }

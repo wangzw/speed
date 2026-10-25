@@ -10,19 +10,33 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// Dispatch validates and enqueues one dispatch and returns its job identifier;
-// see notification.Dispatcher.
+// Dispatch validates, charges the delivery budgets and enqueues one dispatch and
+// returns its job identifier; see notification.Dispatcher.
 //
-// The operations are fixed: shape, taxonomy, then enqueue. It resolves no
-// effective channel, renders no text and writes no storage — the per-channel
-// work happens when the job is consumed. The tenant comes from the context, and
-// a context carrying none is refused with the tenant capability's own error
+// The operations are fixed: shape, taxonomy, encode, the delivery budget, then
+// enqueue. It renders no text and writes no ledger — the per-channel work
+// happens when the job is consumed. The tenant comes from the context, and a
+// context carrying none is refused with the tenant capability's own error
 // before anything is written.
+//
+// The delivery budget is charged before the job is queued, so a producer that
+// has begun to loop cannot fill the queue: once a window is spent, the dispatch
+// is answered with a *authn.ThrottledError carrying Retry-After and nothing is
+// enqueued. It is charged after the recipient's effective channels are resolved,
+// because a message that goes nowhere outside the process — in_app alone, or an
+// external channel this assembly cannot send on — must not spend a budget that
+// exists to bound external sends. One delivery spends one unit per external
+// channel it will attempt; the counters live in the key-value capability, one
+// fixed window per bucket, and the limits are read from settings on every call.
 //
 // The job's idempotency key is the per-channel formula with the channel
 // dimension dropped, so two dispatches of one logical event — same tenant, type,
 // recipient, language, occurrence and parameters — converge into one job and a
-// repeated call returns the identifier of the job already there.
+// repeated call returns the identifier of the job already there. The budget is
+// charged per dispatch and not per distinct event: the queue is what tells the
+// two apart, and it says so only after the charge. A caller able to submit can
+// vary the occurrence to create distinct jobs anyway, so the budget is the
+// bound and the convergence is not.
 func (p *pipeline) Dispatch(ctx context.Context, d notification.Dispatch) (jobs.JobID, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
@@ -38,6 +52,15 @@ func (p *pipeline) Dispatch(ctx context.Context, d notification.Dispatch) (jobs.
 	key, err := dispatchKey(id, d)
 	if err != nil {
 		return "", fmt.Errorf("%s: deriving the idempotency key of %q: %w", ModuleName, d.TypeKey, err)
+	}
+	deliveries, err := p.externalDeliveries(ctx, d)
+	if err != nil {
+		return "", err
+	}
+	if deliveries > 0 {
+		if err := p.chargeBudgets(ctx, id, d, deliveries); err != nil {
+			return "", err
+		}
 	}
 	jobID, err := p.queue.Enqueue(ctx, jobs.Task{
 		Type:           JobType,
