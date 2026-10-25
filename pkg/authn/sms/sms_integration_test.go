@@ -25,7 +25,7 @@ const (
 )
 
 // aResendIsWaitingForTheLock reports whether a session on this database is
-// blocked on the advisory lock serialize takes. The wait event is named rather
+// blocked on the advisory lock the send's ordered lock set takes. The wait event is named rather
 // than leaving it at any lock wait: a server process of its own — autovacuum,
 // say — can briefly wait on a lock of another kind, and counting that as the
 // resend would let the case pass with the insert never having reached the
@@ -48,7 +48,7 @@ func aResendIsWaitingForTheLock(t *testing.T, h *gorm.DB) bool {
 // theResendReachedTheLock drives the second insert to the one of two states that
 // decides the case. It reports held=true once the insert is seen waiting on the
 // key the first transaction holds, and held=false with the insert's error once
-// the insert completes first (its serialize took no lock). It fails if neither
+// the insert completes first (its lock set was not taken). It fails if neither
 // is reached within the budget, so an insert neither done nor seen waiting
 // cannot pass as serialized: a slow machine that has not run the insert yet is
 // not mistaken for the insert being blocked.
@@ -102,7 +102,7 @@ func TestOverlappingResendsOfOneNumberSerialize(t *testing.T) {
 			_ = txA.Rollback()
 		}
 	}()
-	if err := r.p.register.serialize(txA, phoneMac, purposeLogin); err != nil {
+	if err := r.p.register.lock(txA, challengeRow{Purpose: purposeLogin, PhoneMAC: phoneMac}); err != nil {
 		t.Fatalf("taking the lock: %v", err)
 	}
 	if err := txA.Exec("INSERT INTO "+challengeTable+
@@ -117,7 +117,7 @@ func TestOverlappingResendsOfOneNumberSerialize(t *testing.T) {
 		done <- r.p.register.insert(context.Background(), challengeRow{
 			ID: "B", Purpose: purposeLogin, PhoneMAC: phoneMac, CodeMAC: "mac-b",
 			MaxAttempts: 5, CreatedAt: now, ExpiresAt: now.Add(5 * time.Minute),
-		})
+		}, nil)
 	}()
 
 	// B must wait for A's transaction: while A holds the lock, B's backend is

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/sms"
@@ -46,14 +48,9 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		p.meters.sent(ctx, outcomeDropped)
 		return "", p.unavailable(errPoolFull)
 	}
-	if err := p.checkBudgets(ctx, in, now); err != nil {
-		// A budget that could not be read is an outage, not a spent budget, and
-		// is recorded under no outcome so the two stay apart on the dashboard.
-		if !errors.Is(err, errBudgetReadFailed) {
-			p.meters.sent(ctx, outcomeBudgetExhausted)
-		}
-		return "", err
-	}
+	// The budgets' limits are read once, before the write transaction opens, so
+	// that no settings read happens while an advisory lock is held.
+	limits := p.readBudgetLimits(in.Purpose)
 
 	code, err := generateCode(p.settings.codeLength())
 	if err != nil {
@@ -72,7 +69,21 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 		CreatedAt:   now,
 		ExpiresAt:   now.Add(ttl),
 	}
-	if err = p.register.insert(ctx, row); err != nil {
+	// The budget check runs inside the write transaction, after the locks the
+	// ordered set takes, and the row is written only while those locks are held.
+	// A refusal rolled back the transaction, so it wrote nothing.
+	if err = p.register.insert(ctx, row, func(tx *gorm.DB) error {
+		return p.checkBudgets(tx, in, limits, now)
+	}); err != nil {
+		if isBudgetRefusal(err) {
+			// A budget that could not be read is an outage, not a spent budget,
+			// and is recorded under no outcome so the two stay apart on the
+			// dashboard.
+			if !errors.Is(err, errBudgetReadFailed) {
+				p.meters.sent(ctx, outcomeBudgetExhausted)
+			}
+			return "", err
+		}
 		return "", p.unavailable(err)
 	}
 
@@ -166,15 +177,51 @@ func prefixAllowed(prefixes []string, phone string) bool {
 	return false
 }
 
-// checkBudgets applies the budgets in order and returns the first that is over,
-// or nil. Every budget is a count over the challenge rows, so a suppressed row
-// pays a real one: a window's rows reach the limit at the same count whether the
-// numbers are registered or not.
-func (p *product) checkBudgets(ctx context.Context, in authn.SendCode, now time.Time) error {
+// budgetLimits is every limit the budget check compares against, read once
+// before the write transaction opens. Reading them first is what keeps a
+// settings read out of the span in which an advisory lock is held.
+type budgetLimits struct {
+	resendInterval   time.Duration
+	perPhoneHourly   int
+	perPhoneDaily    int
+	globalHourly     int
+	perAccountHourly int
+}
+
+// readBudgetLimits reads every setting the budget check needs, including the
+// global budget of the purpose the send carries.
+func (p *product) readBudgetLimits(purpose string) budgetLimits {
+	return budgetLimits{
+		resendInterval:   p.settings.resendInterval(),
+		perPhoneHourly:   p.settings.perPhoneHourly(),
+		perPhoneDaily:    p.settings.perPhoneDaily(),
+		globalHourly:     p.settings.globalHourly(purpose),
+		perAccountHourly: p.settings.perAccountHourly(),
+	}
+}
+
+// isBudgetRefusal reports whether a send error came from the budget check and
+// already carries its answer, rather than from the write itself. A throttled
+// budget and an unavailable one — a spent global budget or a count that could
+// not be read — both arrive already shaped; anything else is a failed write.
+func isBudgetRefusal(err error) bool {
+	var throttled *authn.ThrottledError
+	return errors.As(err, &throttled) || errors.Is(err, authn.ErrUnavailable)
+}
+
+// checkBudgets applies the budgets in order against the transaction the send
+// holds its locks in, and returns the first that is over, or nil. Running on the
+// transaction is what makes the cap hard: every count includes what a concurrent
+// send of a shared dimension has committed, and the row guarded by the same
+// transaction is written only while the ordered locks are held. Every budget is
+// a count over the challenge rows, so a suppressed row pays a real one: a
+// window's rows reach the limit at the same count whether the numbers are
+// registered or not.
+func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, limits budgetLimits, now time.Time) error {
 	phoneMAC := p.database.BlindIndex(in.Phone)
 
-	if interval := p.settings.resendInterval(); interval > 0 {
-		last, ok, err := p.register.lastCreatedForPhone(ctx, phoneMAC)
+	if interval := limits.resendInterval; interval > 0 {
+		last, ok, err := p.register.lastCreatedForPhone(tx, phoneMAC)
 		if err != nil {
 			return p.budgetReadFailed(err)
 		}
@@ -188,24 +235,24 @@ func (p *product) checkBudgets(ctx context.Context, in authn.SendCode, now time.
 	hourlySince := now.Add(-time.Hour)
 	dailySince := now.Add(-24 * time.Hour)
 
-	if err := p.throttleOver(ctx,
-		func() (int64, error) { return p.register.countPhoneSince(ctx, phoneMAC, hourlySince) },
-		func() (time.Time, bool, error) { return p.register.oldestPhoneSince(ctx, phoneMAC, hourlySince) },
-		p.settings.perPhoneHourly(), time.Hour, now); err != nil {
+	if err := p.throttleOver(
+		func() (int64, error) { return p.register.countPhoneSince(tx, phoneMAC, hourlySince) },
+		func() (time.Time, bool, error) { return p.register.oldestPhoneSince(tx, phoneMAC, hourlySince) },
+		limits.perPhoneHourly, time.Hour, now); err != nil {
 		return err
 	}
-	if err := p.throttleOver(ctx,
-		func() (int64, error) { return p.register.countPhoneSince(ctx, phoneMAC, dailySince) },
-		func() (time.Time, bool, error) { return p.register.oldestPhoneSince(ctx, phoneMAC, dailySince) },
-		p.settings.perPhoneDaily(), 24*time.Hour, now); err != nil {
+	if err := p.throttleOver(
+		func() (int64, error) { return p.register.countPhoneSince(tx, phoneMAC, dailySince) },
+		func() (time.Time, bool, error) { return p.register.oldestPhoneSince(tx, phoneMAC, dailySince) },
+		limits.perPhoneDaily, 24*time.Hour, now); err != nil {
 		return err
 	}
 
 	// The global budget is per purpose: anonymous login traffic cannot exhaust
 	// the budget of a second factor or of an enrollment. It answers unavailable,
 	// not throttled.
-	if limit := p.settings.globalHourly(in.Purpose); limit > 0 {
-		n, err := p.register.countPurposeSince(ctx, in.Purpose, hourlySince)
+	if limit := limits.globalHourly; limit > 0 {
+		n, err := p.register.countPurposeSince(tx, in.Purpose, hourlySince)
 		if err != nil {
 			return p.budgetReadFailed(err)
 		}
@@ -219,10 +266,10 @@ func (p *product) checkBudgets(ctx context.Context, in authn.SendCode, now time.
 	// registered number from an unregistered one.
 	if in.Purpose != purposeLogin {
 		account := string(in.Account)
-		if err := p.throttleOver(ctx,
-			func() (int64, error) { return p.register.countAccountSince(ctx, account, hourlySince) },
-			func() (time.Time, bool, error) { return p.register.oldestAccountSince(ctx, account, hourlySince) },
-			p.settings.perAccountHourly(), time.Hour, now); err != nil {
+		if err := p.throttleOver(
+			func() (int64, error) { return p.register.countAccountSince(tx, account, hourlySince) },
+			func() (time.Time, bool, error) { return p.register.oldestAccountSince(tx, account, hourlySince) },
+			limits.perAccountHourly, time.Hour, now); err != nil {
 			return err
 		}
 	}
@@ -231,9 +278,9 @@ func (p *product) checkBudgets(ctx context.Context, in authn.SendCode, now time.
 
 // throttleOver reads a count for a window and returns a throttled error when the
 // count has reached the limit, with a retry after the moment the oldest counting
-// row leaves the window. A failed read is an outage and not a pass.
+// row leaves the window. A failed read is an outage and not a pass. Both readers
+// run on the send's transaction, the one its budget locks are held in.
 func (p *product) throttleOver(
-	ctx context.Context,
 	count func() (int64, error),
 	oldest func() (time.Time, bool, error),
 	limit int,

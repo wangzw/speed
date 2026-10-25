@@ -46,6 +46,18 @@ compatibility break for a dashboard written against it.
   `TestVerifyNeverPassesASuppressedRow`). The phone and account budgets are across
   purposes and include suppressed, consumed and voided rows; only the sweep takes
   a row out of a window.
+- **The budget is a hard cap, read under the send's own lock order.** `Send` reads
+  every limit before it opens the write transaction, then the transaction takes
+  transaction-scoped advisory locks in the fixed order global purpose → number →
+  account, re-reads every count, and writes the row only under those locks; a
+  refusal rolls the transaction back and writes nothing (`Send`, `checkBudgets`,
+  `register.insert`, `register.lock`,
+  `TestTheBudgetIsCheckedUnderTheSendsOwnLocks`,
+  `TestConcurrentSendsDoNotOverrunTheBudget`). The keys are
+  `authn.sms:lock:global:<purpose>`, `authn.sms:lock:phone:<phone_mac>` and
+  `authn.sms:lock:account:<account_id>`, hashed by `hashtextextended`; the login
+  purpose has no account and takes no account lock. SQLite takes no advisory lock
+  because it serializes writers itself.
 - **The check counts before it compares.** `Verify` runs one conditional update
   first — the row must be there, unconsumed, unexpired and below its attempt
   limit — and only then compares, so a concurrent submitter cannot get past the

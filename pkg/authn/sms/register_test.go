@@ -54,7 +54,7 @@ func TestAResendLeavesASpentRowsConsumedAtUnchanged(t *testing.T) {
 	if err := r.p.register.insert(context.Background(), challengeRow{
 		ID: "fresh", Purpose: purposeLogin, PhoneMAC: phoneMac, CodeMAC: "mac-new",
 		MaxAttempts: 5, CreatedAt: r.clock.read(), ExpiresAt: r.clock.read().Add(5 * time.Minute),
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("the resend insert: %v", err)
 	}
 

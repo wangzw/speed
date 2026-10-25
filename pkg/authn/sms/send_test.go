@@ -234,7 +234,7 @@ func TestARegisteredAndASuppressedNumberTakeTheSameCountingPath(t *testing.T) {
 		t.Fatalf("the table holds %d rows, want 2 (one per send, whatever the registration)", got)
 	}
 	phoneMac := r.database.BlindIndex(phone)
-	n, err := r.p.register.countPhoneSince(context.Background(), phoneMac, r.clock.read().Add(-time.Hour))
+	n, err := r.p.register.countPhoneSince(r.h, phoneMac, r.clock.read().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("counting the phone budget: %v", err)
 	}

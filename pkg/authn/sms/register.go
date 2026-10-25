@@ -47,13 +47,20 @@ func (g *register) session(ctx context.Context) *gorm.DB { return g.handle.WithC
 // being empty and the row not being past its time, so a row another request
 // already consumed or that has expired is left as it is.
 //
-// The void and the write are serialized per (number, purpose) with serialize, so
-// that two overlapping sends of the same key cannot each read no live row, each
-// write its own and leave two codes valid at once.
-func (g *register) insert(ctx context.Context, row challengeRow) error {
+// The void, the write and, when guard is set, the guard run in one transaction
+// under lock: the guard is where the budget check lives, so the counts it reads
+// and the row it guards are serialized against every send that shares a
+// dimension. A guard error rolls the transaction back, so a refused send writes
+// no row.
+func (g *register) insert(ctx context.Context, row challengeRow, guard func(*gorm.DB) error) error {
 	return g.session(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := g.serialize(tx, row.PhoneMAC, row.Purpose); err != nil {
+		if err := g.lock(tx, row); err != nil {
 			return err
+		}
+		if guard != nil {
+			if err := guard(tx); err != nil {
+				return err
+			}
 		}
 		if err := tx.Exec("UPDATE "+challengeTable+" SET consumed_at = ? "+
 			"WHERE phone_mac = ? AND purpose = ? AND consumed_at IS NULL AND expires_at > ?",
@@ -75,25 +82,32 @@ func (g *register) insert(ctx context.Context, row challengeRow) error {
 	})
 }
 
-// serialize takes a transaction-scoped exclusive lock on the (number, purpose)
-// key, so that the void-then-write of two overlapping sends of one key is
-// serialized: the second waits for the first to commit, then voids the row the
-// first wrote. Without it, under READ COMMITTED, each transaction reads only the
-// committed rows, so neither sees the other's live row and both survive.
+// lock takes the ordered set of transaction-scoped advisory locks a send is
+// serialized under: the global budget of its purpose, then the number, then the
+// account. Every send takes them in this order, so two sends that share any key
+// cannot deadlock, and holding all of them is what lets the budget check and the
+// write be one decision. The keys are namespaced strings hashed by the database
+// itself; the locks are released when the transaction commits or rolls back.
 //
-// The key is hashed by the database itself, so the lock has no Go-side
-// conversion and the same key maps to the same lock on every call. A hash
-// collision between two different keys only over-serializes unrelated resends,
-// which is safe; it never lets two sends of one key run at once. The lock is an
-// advisory one and PostgreSQL-only: SQLite serializes writers at the database
-// itself, so an overlapping second write waits on its own and there is no lock
-// to take.
-func (g *register) serialize(tx *gorm.DB, phoneMAC, purpose string) error {
+// A hash collision between two different keys only over-serializes unrelated
+// sends, which is safe; it never lets two sends of one key run at once. The locks
+// are PostgreSQL-only: SQLite serializes writers at the database itself, so an
+// overlapping second write waits on its own and there is no lock to take.
+func (g *register) lock(tx *gorm.DB, row challengeRow) error {
 	if g.dialect != db.Postgres {
 		return nil
 	}
-	if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", phoneMAC+"/"+purpose).Error; err != nil {
-		return fmt.Errorf("taking the lock that serializes the resends of a number: %w", err)
+	keys := []string{
+		"authn.sms:lock:global:" + row.Purpose,
+		"authn.sms:lock:phone:" + row.PhoneMAC,
+	}
+	if row.AccountID != nil {
+		keys = append(keys, "authn.sms:lock:account:"+*row.AccountID)
+	}
+	for _, key := range keys {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+			return fmt.Errorf("taking the send lock %q: %w", key, err)
+		}
 	}
 	return nil
 }
@@ -147,10 +161,12 @@ func (g *register) consume(ctx context.Context, id string, now time.Time) (bool,
 }
 
 // lastCreatedForPhone reads the most recent row's created_at for the number, of
-// any purpose, which the resend interval is measured from.
-func (g *register) lastCreatedForPhone(ctx context.Context, phoneMAC string) (time.Time, bool, error) {
+// any purpose, which the resend interval is measured from. It reads through the
+// handle it is given, so the budget check can read on the send's own
+// transaction.
+func (g *register) lastCreatedForPhone(q *gorm.DB, phoneMAC string) (time.Time, bool, error) {
 	var out []struct{ CreatedAt time.Time }
-	err := g.session(ctx).Table(challengeTable).Select("created_at").
+	err := q.Table(challengeTable).Select("created_at").
 		Where("phone_mac = ?", phoneMAC).Order("created_at DESC").Limit(1).Scan(&out).Error
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("reading the last send to a number: %w", err)
@@ -163,9 +179,9 @@ func (g *register) lastCreatedForPhone(ctx context.Context, phoneMAC string) (ti
 
 // countPhoneSince counts the rows for the number created after since, of any
 // purpose.
-func (g *register) countPhoneSince(ctx context.Context, phoneMAC string, since time.Time) (int64, error) {
+func (g *register) countPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (int64, error) {
 	var n int64
-	err := g.session(ctx).Table(challengeTable).
+	err := q.Table(challengeTable).
 		Where("phone_mac = ? AND created_at > ?", phoneMAC, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends to a number: %w", err)
@@ -175,9 +191,9 @@ func (g *register) countPhoneSince(ctx context.Context, phoneMAC string, since t
 
 // oldestPhoneSince reads the created_at of the oldest row for the number after
 // since, which is when the counting window frees a slot.
-func (g *register) oldestPhoneSince(ctx context.Context, phoneMAC string, since time.Time) (time.Time, bool, error) {
+func (g *register) oldestPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (time.Time, bool, error) {
 	var out []struct{ CreatedAt time.Time }
-	err := g.session(ctx).Table(challengeTable).Select("created_at").
+	err := q.Table(challengeTable).Select("created_at").
 		Where("phone_mac = ? AND created_at > ?", phoneMAC, clock.UTC(since)).
 		Order("created_at ASC").Limit(1).Scan(&out).Error
 	if err != nil {
@@ -190,9 +206,9 @@ func (g *register) oldestPhoneSince(ctx context.Context, phoneMAC string, since 
 }
 
 // countPurposeSince counts the rows of one purpose created after since.
-func (g *register) countPurposeSince(ctx context.Context, purpose string, since time.Time) (int64, error) {
+func (g *register) countPurposeSince(q *gorm.DB, purpose string, since time.Time) (int64, error) {
 	var n int64
-	err := g.session(ctx).Table(challengeTable).
+	err := q.Table(challengeTable).
 		Where("purpose = ? AND created_at > ?", purpose, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends of a purpose: %w", err)
@@ -201,9 +217,9 @@ func (g *register) countPurposeSince(ctx context.Context, purpose string, since 
 }
 
 // countAccountSince counts the rows for the account created after since.
-func (g *register) countAccountSince(ctx context.Context, account string, since time.Time) (int64, error) {
+func (g *register) countAccountSince(q *gorm.DB, account string, since time.Time) (int64, error) {
 	var n int64
-	err := g.session(ctx).Table(challengeTable).
+	err := q.Table(challengeTable).
 		Where("account_id = ? AND created_at > ?", account, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends to an account: %w", err)
@@ -213,9 +229,9 @@ func (g *register) countAccountSince(ctx context.Context, account string, since 
 
 // oldestAccountSince reads the created_at of the oldest row for the account
 // after since.
-func (g *register) oldestAccountSince(ctx context.Context, account string, since time.Time) (time.Time, bool, error) {
+func (g *register) oldestAccountSince(q *gorm.DB, account string, since time.Time) (time.Time, bool, error) {
 	var out []struct{ CreatedAt time.Time }
-	err := g.session(ctx).Table(challengeTable).Select("created_at").
+	err := q.Table(challengeTable).Select("created_at").
 		Where("account_id = ? AND created_at > ?", account, clock.UTC(since)).
 		Order("created_at ASC").Limit(1).Scan(&out).Error
 	if err != nil {

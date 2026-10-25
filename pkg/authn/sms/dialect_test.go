@@ -49,7 +49,7 @@ func TestTheWindowCountingHoldsInAnotherLocalZone(t *testing.T) {
 	if _, sendErr := r.sendLogin(); sendErr != nil {
 		t.Fatalf("Send: %v", sendErr)
 	}
-	n, err := r.p.register.countPhoneSince(context.Background(), phoneMac, r.clock.read().Add(-time.Hour))
+	n, err := r.p.register.countPhoneSince(r.h, phoneMac, r.clock.read().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("counting the window: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestTheWindowCountingHoldsInAnotherLocalZone(t *testing.T) {
 	}
 	// A row older than the hour is outside the window.
 	r.clock.advance(2 * time.Hour)
-	n, err = r.p.register.countPhoneSince(context.Background(), phoneMac, r.clock.read().Add(-time.Hour))
+	n, err = r.p.register.countPhoneSince(r.h, phoneMac, r.clock.read().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("counting the window: %v", err)
 	}

@@ -205,7 +205,8 @@ sequenceDiagram
     participant V as sms.Sender
     C->>S: Send(SendCode)
     S->>S: 放行表与队列容量
-    S->>D: 统计预算
+    S->>D: 事务：按 全局 → 号码 → 账户 取咨询锁
+    S->>D: 统计预算，超限即回滚
     S->>D: 作废旧行并写新行
     alt Deliver 为真
         S->>R: Resolve(sms.Message)
@@ -288,12 +289,13 @@ flowchart TD
     B -- 否 --> E1["ErrUnsupportedRegion 不写行"]
     B -- 是 --> Q{"队列有空位"}
     Q -- 否 --> E2["ErrUnavailable 不写行"]
-    Q -- 是 --> C{"预算未超"}
+    Q -- 是 --> G["生成验证码与挑战标识 计算 phone_mac 与 code_mac"]
+    G --> L["事务 按 全局 → 号码 → 账户 取咨询锁"]
+    L --> C{"预算未超"}
     C -- 间隔或号码维度超 --> E3["ErrThrottled 不写行"]
-    C -- 全局维度超 --> E2
+    C -- 全局维度超或预算读失败 --> E2
     C -- 账户维度超 --> E3
-    C -- 是 --> G["生成验证码与挑战标识 计算 phone_mac 与 code_mac"]
-    G --> H["事务 作废旧行并写新行"]
+    C -- 是 --> H["作废旧行并写新行"]
     H --> I{"Deliver"}
     I -- 真 --> RS["注册表 Resolve 解出 sms.Resolved"]
     RS -- ErrRejected 或 ErrNotSendable --> RN["记指标与 Warn 不入队"]
@@ -306,8 +308,8 @@ flowchart TD
 
 1. **放行表。** 规范化后的号码前缀不在放行表内，返回 `ErrUnsupportedRegion`，不写行。判定只看前缀，与号码是否登记无关；放行表缺省为空，不明确放行就不发。
 2. **队列容量。** 队列已满，返回 `ErrUnavailable`，不写行、不作废旧行。这一步对真实行与抑制行同样执行，使「队列满」不成为区分已登记与未登记号码的观察点。
-3. **预算。** 依据 `authn_challenges` 的行数统计，见下表；统计包含抑制行、已消费行与已作废行，只有清扫才使行退出统计。被拒绝的请求不写行。
-4. **生成与写入。** 生成验证码与挑战标识，计算 `phone_mac` 与 `code_mac`；在一个事务里把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
+3. **生成。** 生成验证码与挑战标识，计算 `phone_mac` 与 `code_mac`。各预算的限额在打开写事务之前一次读出，持锁期间不读设置。
+4. **事务：取锁、核对预算、作废与写入。** 在同一个事务里按 **全局（按用途）→ 号码 → 账户** 的固定顺序取咨询锁，取齐之后再依据 `authn_challenges` 的行数核对下列预算（统计包含抑制行、已消费行与已作废行，只有清扫才使行退出统计）；任一维度超限即回滚、不写行。未超限时把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
 5. **解出可发送的形状。** `Deliver` 为真时，把构造的 `sms.Message` 交给注册表的 `Resolve` 解出 `sms.Resolved`；注册表以 `ErrRejected`（消息形状）或 `ErrNotSendable`（模板被禁用或审核未过）拒绝时，记指标与 `Warn`、不入队，`Send` 仍返回 `challengeID`（行已写、预算已计），用户走重发。`Deliver` 为假时不解出。
 6. **入队。** 解出成功后非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见「结果与指标」），`Send` 仍返回 `challengeID`，用户走重发。
 
@@ -315,14 +317,16 @@ flowchart TD
 
 预算全由 `authn_challenges` 的行数得出。维度是封闭集；窗口自 `created_at` 起算，口径一律含抑制行。一个维度的已有行数达到上限时，再发即超限，所以窗口内至多发放上限条。
 
-| 维度 | 统计口径 | 适用用途 | 超限的结果 |
-|---|---|---|---|
-| 重发间隔（`resend-interval`） | 同 `phone_mac` 最近一行距今 | 全部 | `ErrThrottled`，`RetryAfter` 为间隔的剩余时间 |
-| 每号码每小时（`per-phone-hourly`） | 同 `phone_mac` 近一小时的行数 | 全部 | `ErrThrottled` |
-| 每号码每日（`per-phone-daily`） | 同 `phone_mac` 近一日的行数 | 全部 | `ErrThrottled` |
-| 全局每小时，按用途分设（`global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`） | 同用途近一小时的行数 | 各自的用途 | `ErrUnavailable` |
-| 每账户每小时（`per-account-hourly`） | 同 `account_id` 近一小时的行数 | 只对 `mfa`、`enroll` 计 | `ErrThrottled` |
-| 每流程发送数（`per-flow-sends`） | 流程记录的 `sends` | 全部 | 由调用方核对，不在本模块 |
+预算是硬上限。每次发送在自己的写事务里按 **全局（按用途）→ 号码 → 账户** 的固定顺序取咨询锁，取齐之后再统计下列各维度，未超才作废旧行并写新行；两个并发请求只要共享任一维度，就在同一把锁上串行，后一个读到前一个已提交的行。锁键为 `authn.sms:lock:global:<用途>`、`authn.sms:lock:phone:<phone_mac>` 与 `authn.sms:lock:account:<account_id>`，由数据库以 `hashtextextended` 计算，随事务提交或回滚释放；`login` 用途没有账户，不取账户锁。各维度把限额在打开事务之前读出，持锁期间不读设置。
+
+| 维度 | 统计口径 | 适用用途 | 超限的结果 | 锁键 |
+|---|---|---|---|---|
+| 重发间隔（`resend-interval`） | 同 `phone_mac` 最近一行距今 | 全部 | `ErrThrottled`，`RetryAfter` 为间隔的剩余时间 | 号码锁 `authn.sms:lock:phone:<phone_mac>` |
+| 每号码每小时（`per-phone-hourly`） | 同 `phone_mac` 近一小时的行数 | 全部 | `ErrThrottled` | 号码锁 `authn.sms:lock:phone:<phone_mac>` |
+| 每号码每日（`per-phone-daily`） | 同 `phone_mac` 近一日的行数 | 全部 | `ErrThrottled` | 号码锁 `authn.sms:lock:phone:<phone_mac>` |
+| 全局每小时，按用途分设（`global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`） | 同用途近一小时的行数 | 各自的用途 | `ErrUnavailable` | 全局锁 `authn.sms:lock:global:<用途>` |
+| 每账户每小时（`per-account-hourly`） | 同 `account_id` 近一小时的行数 | 只对 `mfa`、`enroll` 计 | `ErrThrottled` | 账户锁 `authn.sms:lock:account:<account_id>` |
+| 每流程发送数（`per-flow-sends`） | 流程记录的 `sends` | 全部 | 由调用方核对，不在本模块 | 无 |
 
 约束的理由如下：
 
@@ -442,7 +446,6 @@ flowchart TD
 下列是不保证的事项，按判据例举，不是封闭集；判据是该情形由本模块的取舍或外部系统的性质造成、本模块不为它设防，符合判据的新情形归入非保证，不为此修订列举。各项的代价与取舍见 [ADR-authn-sms-2026-10-10](../../../adr/adr-authn-sms-2026-10-10.md)：
 
 - **统一应答隐藏失败。** 号码未登记、厂商故障、发送丢失时用户看不到失败，只能重试。
-- **预算是软上限。** 统计与写行不在同一条语句里，并发请求可使实际发放超出上限，超出量以同时在途的请求数为界。
 - **号码维度的预算可被用来拒绝服务。** 对任一已知号码连续请求即可使它在窗口内得到 429，并使该号码在途的验证码被作废；对该号码的错误提交同样触发 `ScopePhone` 键的退避，退避期内该号码的短信登录与登记被拒。受害者可改用口令、社交、SSO 或通行密钥登录。
 - **全局预算耗尽即拒绝该用途的合法请求。** 分设使各用途互不挤占，不使各自的耗尽消失。
 - **抑制行把写放大交给匿名请求。** 未登记号码也写一行，行数上界由预算给出。
@@ -460,7 +463,7 @@ flowchart TD
 
 ## 并发与事务边界
 
-- **挑战行的写走原生 SQL。** 作废与写新行在一个事务里；`Verify` 的条件更新是带竞争语义的单语句更新。它们不产生语句级审计行，也不被租户插件触及。
+- **挑战行的写走原生 SQL，并持有有序的咨询锁。** 预算核对、作废与写新行在一个事务里，事务按 全局 → 号码 → 账户 的固定顺序取咨询锁，锁随提交或回滚释放；`Verify` 的条件更新是带竞争语义的单语句更新。它们不产生语句级审计行，也不被租户插件触及。
 - **一次性消费靠条件更新。** 并发提交同一个正确的码，只有 `consumed_at` 仍为空的那条更新受影响一行；败者得到 `ErrInvalidCredentials`。
 - **不跨模块传递事务。** `pkg/db` 没有跨模块的事务通道，本模块只在自己的事务里写自己的表，对账户事务不可见，账户的停用与删除经 `AccountLifecycle` 钩子与事件触达这里。
 - **时钟。** 窗口统计与期限都用写入副本的时钟记 `created_at` 与 `expires_at`，读取副本比较；期限在副本之间偏移同样的偏差，偏差应远小于有效期。
