@@ -36,8 +36,20 @@ make tools-test
 `test_makefile.py` runs there as well. It is not a script's suite: it holds
 the root `Makefile`'s legs that loop over the modules or the gates to running
 every item and failing at the end, driving the real `Makefile` over scratch
-directories with stand-ins for `go` and `golangci-lint` first on `PATH`, so
-it needs `make` and nothing else.
+directories with stand-ins for `go`, `golangci-lint` and `backends.py` first on
+`PATH`, so it needs `make` and nothing else.
+
+## The integration stack
+
+`backends.py` is not a gate and takes no part in `make repo-check`. It brings
+this checkout's integration backends up and down: `up` derives a compose
+project name from the checkout root, allocates four free loopback ports, writes
+them with the project name to `.cache/test-backends.env`, and runs compose,
+retrying with a fresh allocation if a start fails; `down` takes down only that
+project and deletes the state file; `env` prints the four `SPEED_TEST_*`
+addresses for the Makefile to export. The root `Makefile` reaches it through
+`make deps-up`, `make deps-down` and the integration legs. Its suite is
+`test_backends.py`, which `make tools-test` runs as well.
 
 ## The scripts
 

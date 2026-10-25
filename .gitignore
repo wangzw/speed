@@ -58,6 +58,11 @@ coverage/
 # repository root lands it here (the demo's own copy is under server/).
 /var/
 
+# tools/backends.py records this checkout's integration stack -- its compose
+# project name and allocated ports -- under .cache/. That state belongs to one
+# checkout's run, not to the source tree.
+/.cache/
+
 # Hugo build output for docs/site/ (docs/site/README.md) -- generated
 # by `hugo --minify`,
 # never committed. Hugo's default resource cache directory and its build

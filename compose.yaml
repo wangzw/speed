@@ -4,8 +4,8 @@
 # fixture hands a case a database, a logical database index, a key space or a
 # bucket on a server that is already up, and never manages a container itself.
 #
-#   make deps-up        # docker compose up -d --wait
-#   make deps-down      # docker compose down
+#   make deps-up        # tools/backends.py up: allocate ports, docker compose up -d --wait
+#   make deps-down      # tools/backends.py down: this checkout's project only
 #
 # Every service carries a healthcheck, and that is not decoration: `up --wait`
 # waits for a service to be *healthy* only when it declares one, and merely for
@@ -13,11 +13,16 @@
 # running, with the server still initialising behind it, is the cold-start
 # flake the healthchecks exist to remove.
 #
-# The ports are fixed and bound to loopback, because they are the addresses the
-# fixtures dial. Two consequences: a machine already serving PostgreSQL on 5432
-# cannot bring this stack up, and starters/demo/compose.yaml -- the copyable
-# skeleton's own stack, which declares the same four services on the same ports
-# -- cannot be up at the same time as this one.
+# Each service publishes to 127.0.0.1 on the port named by its own variable --
+# SPEED_TEST_PG_PORT, SPEED_TEST_REDIS_PORT, SPEED_TEST_NATS_PORT and
+# SPEED_TEST_MEMCACHED_PORT -- falling back to 5432, 6379, 4222 and 11211 when
+# the variable is unset, so a bare `docker compose up` behaves as it always
+# did. `make deps-up` sets all four: tools/backends.py binds 127.0.0.1:0 to find
+# free ports and runs the stack under the compose project named for this
+# checkout, so two checkouts on one machine, or a machine already serving one of
+# the default ports, each get a stack of their own. A bare `docker compose up`
+# still takes the defaults and therefore conflicts with whatever already holds
+# them.
 #
 # The images are held to a major version rather than to a digest: the cases lean
 # on a PostgreSQL major's DDL behaviour inside a transaction, on Redis stream
@@ -34,7 +39,7 @@ services:
       POSTGRES_PASSWORD: speed
       POSTGRES_DB: speed
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${SPEED_TEST_PG_PORT:-5432}:5432"
     # The server carries every test binary on the machine at once -- go test
     # runs packages in parallel and several checkouts can run at once -- so it
     # takes 500 clients rather than PostgreSQL's default of 100, which is sized
@@ -53,7 +58,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:${SPEED_TEST_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -66,7 +71,7 @@ services:
     image: nats:2-alpine
     command: ["-js"]
     ports:
-      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:${SPEED_TEST_NATS_PORT:-4222}:4222"
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 4222"]
       interval: 2s
@@ -76,7 +81,7 @@ services:
   memcached:
     image: memcached:1.6-alpine
     ports:
-      - "127.0.0.1:11211:11211"
+      - "127.0.0.1:${SPEED_TEST_MEMCACHED_PORT:-11211}:11211"
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 11211"]
       interval: 2s

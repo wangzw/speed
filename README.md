@@ -36,7 +36,7 @@ NATS and memcached — carry the `integration` build tag and are not part of it;
 the backends they need come from the compose stack at the repository root:
 
 ```
-make deps-up             # docker compose up -d --wait
+make deps-up             # allocate this checkout's ports, then docker compose up -d --wait
 make test-integration    # brings that stack up, then runs the tagged cases
 make deps-down
 ```

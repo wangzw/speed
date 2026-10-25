@@ -45,6 +45,14 @@ GATES := $(wildcard tools/check_*.py)
 
 PYTHON ?= python3
 
+# The integration stack's state file and the script that maintains it. The
+# script allocates this checkout's ports and records them with its compose
+# project name; the two variables let a run point the state elsewhere and let
+# the Makefile's own suite stand in for the script instead of starting a
+# daemon.
+TEST_BACKENDS_STATE ?= .cache/test-backends.env
+BACKENDS ?= $(PYTHON) tools/backends.py
+
 # Every leg that loops over a list -- the modules, or the gates -- runs each
 # item even after an earlier one failed, so one module's red result does not
 # hide another's, and fails at the end naming each item that failed.
@@ -83,18 +91,22 @@ api-docs: modules-present ## Regenerate every OpenAPI fragment and the merged co
 
 # The four backends the integration cases run against -- PostgreSQL, Redis,
 # NATS and memcached -- are the test environment, not part of the tests: the
-# compose file at the repository root declares them, this brings that stack up,
-# and every case that needs them only connects. A case that cannot reach its
-# backend fails rather than skipping, which is why the integration legs below
-# depend on this and the unit legs above do not.
+# compose file at the repository root declares them, this runs the script that
+# brings a stack of their own up for this checkout, and every case that needs
+# them only connects. A case that cannot reach its backend fails rather than
+# skipping, which is why the integration legs below depend on this and the unit
+# legs above do not.
 #
-# `up --wait` returns once every service's healthcheck passes, so the cases
-# never race a container that is up but still initialising.
-deps-up: ## Bring the integration cases' backends up
-	@docker compose up -d --wait
+# tools/backends.py names the compose project after the checkout root, so two
+# checkouts (or a machine already holding the default ports) do not share or
+# fight over one stack. It records the project name and the allocated ports in
+# $(TEST_BACKENDS_STATE) and waits for every healthcheck, so the cases never
+# race a container that is up but still initialising.
+deps-up: ## Bring this checkout's integration backends up
+	@$(BACKENDS) up --state '$(TEST_BACKENDS_STATE)'
 
-deps-down: ## Take the integration cases' backends down
-	@docker compose down
+deps-down: ## Take this checkout's integration backends down
+	@$(BACKENDS) down --state '$(TEST_BACKENDS_STATE)'
 
 # A test binary's own deadline bounds how long one module's suite may run; go
 # test's default is ten minutes, which a suite that drives a whole program end
@@ -115,11 +127,28 @@ test-race: modules-present ## Test every module under the race detector (unit ca
 # The integration cases: they need the backends above, they are slower by
 # orders of magnitude, and they are run on a schedule rather than on every
 # commit. `make check` does not reach them.
+#
+# The addresses come from the state file deps-up just wrote, exported into the
+# same shell that runs go test. A missing state file fails here instead of
+# letting the fixtures fall back to the default ports, where they would reach
+# whichever stack owns them -- another checkout's, or none.
 test-integration: modules-present deps-up ## Test every module's integration cases
-	@failed=; $(call each,$(MODULES),test integration,go -C $$it test -tags=integration -timeout 60m ./...); $(each-end)
+	@if [ ! -f '$(TEST_BACKENDS_STATE)' ]; then \
+	  echo "test-integration: no backend state at '$(TEST_BACKENDS_STATE)'; run 'make deps-up' and read its output" >&2; \
+	  exit 1; \
+	fi; \
+	backend_env="$$($(BACKENDS) env --state '$(TEST_BACKENDS_STATE)')" || exit 1; \
+	set -a; eval "$$backend_env"; set +a; \
+	failed=; $(call each,$(MODULES),test integration,go -C $$it test -tags=integration -timeout 60m ./...); $(each-end)
 
 test-integration-race: modules-present deps-up ## Test every module's integration cases under the race detector
-	@failed=; $(call each,$(MODULES),test integration -race,go -C $$it test -race -tags=integration -timeout 90m ./...); $(each-end)
+	@if [ ! -f '$(TEST_BACKENDS_STATE)' ]; then \
+	  echo "test-integration-race: no backend state at '$(TEST_BACKENDS_STATE)'; run 'make deps-up' and read its output" >&2; \
+	  exit 1; \
+	fi; \
+	backend_env="$$($(BACKENDS) env --state '$(TEST_BACKENDS_STATE)')" || exit 1; \
+	set -a; eval "$$backend_env"; set +a; \
+	failed=; $(call each,$(MODULES),test integration -race,go -C $$it test -race -tags=integration -timeout 90m ./...); $(each-end)
 
 # Compiles the tagged files without running them, so the unit gate still says
 # whether they build. Without it a change that breaks an integration case

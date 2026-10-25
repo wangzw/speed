@@ -5,9 +5,10 @@ Each leg that loops over the modules go.work lists, or over the gates in
 tools/, runs every item even after an earlier one failed, and fails at the
 end naming the items that failed, so one module's red result does not hide
 another's. The cases drive the real Makefile with MODULES and GATES pointed
-at scratch directories and with stand-ins for go and golangci-lint first on
-PATH. A stand-in records the directory it ran in and its subcommand, and
-fails in a directory named red.
+at scratch directories, with stand-ins for go and golangci-lint first on
+PATH, and with tools/backends.py replaced by a stand-in that writes the state
+file the integration legs export. A stand-in records the directory it ran in
+and its subcommand, and fails in a directory named red.
 
 Stdlib-only (unittest, subprocess, tempfile). Run directly:
 
@@ -43,6 +44,12 @@ with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
         "dir": os.path.basename(where),
         "args": args,
         "gowork": os.environ.get("GOWORK", ""),
+        "backend_env": {{
+            name: os.environ[name]
+            for name in os.environ
+            if name.startswith("SPEED_TEST_")
+            and (name.endswith("_ADDR") or name.endswith("_URL"))
+        }},
     }}) + "\\n")
 sys.exit(1 if os.path.basename(where) == "red" else 0)
 """
@@ -56,6 +63,40 @@ with open(os.environ["STAND_IN_LOG"], "a", encoding="utf-8") as log:
     log.write(json.dumps({"tool": "gate", "dir": where, "args": [], "gowork": ""}) + "\\n")
 sys.exit(1 if where == "red" else 0)
 """
+
+# Stands in for tools/backends.py. `up` writes the state file the integration
+# legs read their addresses from; `env` prints those addresses. The ports are
+# fixed here, so a case can tell the Makefile exported exactly this state.
+BACKENDS = """\
+#!{python}
+import os, sys
+
+args = sys.argv[1:]
+command = args[0] if args else ""
+state = args[args.index("--state") + 1] if "--state" in args else ""
+if command == "up" and state:
+    os.makedirs(os.path.dirname(state) or ".", exist_ok=True)
+    with open(state, "w", encoding="utf-8") as handle:
+        handle.write("SPEED_TEST_PROJECT=speed-test-0123456789ab\\n")
+        handle.write("SPEED_TEST_PG_PORT=15432\\n")
+        handle.write("SPEED_TEST_REDIS_PORT=16379\\n")
+        handle.write("SPEED_TEST_NATS_PORT=14222\\n")
+        handle.write("SPEED_TEST_MEMCACHED_PORT=11222\\n")
+elif command == "env":
+    print("SPEED_TEST_PG_ADDR=127.0.0.1:15432")
+    print("SPEED_TEST_REDIS_ADDR=127.0.0.1:16379")
+    print("SPEED_TEST_NATS_URL=nats://127.0.0.1:14222")
+    print("SPEED_TEST_MEMCACHED_ADDR=127.0.0.1:11222")
+sys.exit(0)
+"""
+
+# The addresses the integration legs must export from BACKENDS's state.
+EXPECTED_BACKEND_ENV = {
+    "SPEED_TEST_PG_ADDR": "127.0.0.1:15432",
+    "SPEED_TEST_REDIS_ADDR": "127.0.0.1:16379",
+    "SPEED_TEST_NATS_URL": "nats://127.0.0.1:14222",
+    "SPEED_TEST_MEMCACHED_ADDR": "127.0.0.1:11222",
+}
 
 # Each leg that loops over the modules, and the passes it makes over each
 # one: a pass is the tool, its subcommand, every flag the pass must carry, and
@@ -88,22 +129,31 @@ class LoopingLegTests(unittest.TestCase):
         self.scratch = pathlib.Path(tmp.name)
         self.bin = self.scratch / "bin"
         self.bin.mkdir()
-        # docker is here for the same reason as the two below: the test legs
-        # bring the external backends up before they run, and without a stand-in
-        # this gate would drive the real daemon -- starting containers on
-        # whatever machine runs it, or failing where there is none. pnpm is
-        # here for the starter Makefile's build leg, whose frontend step runs
-        # before the Go one.
-        for tool in ("go", "golangci-lint", "docker", "pnpm"):
+        # The test legs bring the external backends up before they run, and the
+        # stand-in for the script that does it writes a state file the legs
+        # export, so no daemon is driven and no container starts. pnpm is here
+        # for the starter Makefile's build leg, whose frontend step runs before
+        # the Go one.
+        for tool in ("go", "golangci-lint", "pnpm"):
             path = self.bin / tool
             path.write_text(STAND_IN.format(python=sys.executable), encoding="utf-8")
             path.chmod(0o755)
+        self.backends = self.scratch / "backends"
+        self.backends.write_text(BACKENDS.format(python=sys.executable), encoding="utf-8")
+        self.backends.chmod(0o755)
+        self.state = self.scratch / "test-backends.env"
         self.log = self.scratch / "calls.jsonl"
         for name in ("red", "green"):
             (self.scratch / name).mkdir()
             (self.scratch / name / f"check_{name}.py").write_text(GATE, encoding="utf-8")
 
-    def make(self, leg: str, *names: str) -> subprocess.CompletedProcess[str]:
+    def make(
+        self,
+        leg: str,
+        *names: str,
+        backends: str | pathlib.Path | None = None,
+        state: str | pathlib.Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         env = {k: v for k, v in os.environ.items() if k not in MAKE_ENVIRONMENT}
         env["PATH"] = f"{self.bin}{os.pathsep}{env.get('PATH', '')}"
         env["STAND_IN_LOG"] = str(self.log)
@@ -119,6 +169,8 @@ class LoopingLegTests(unittest.TestCase):
                 f"MODULES={' '.join(dirs)}",
                 f"GATES={' '.join(gates)}",
                 f"PYTHON={sys.executable}",
+                f"BACKENDS={backends if backends is not None else self.backends}",
+                f"TEST_BACKENDS_STATE={state if state is not None else self.state}",
             ],
             env=env,
             capture_output=True,
@@ -160,6 +212,44 @@ class LoopingLegTests(unittest.TestCase):
                     )
                 self.assertIn(str(self.scratch / "red"), result.stderr)
                 self.assertNotIn(str(self.scratch / "green"), result.stderr)
+
+    def test_the_integration_legs_export_the_state_addresses(self) -> None:
+        for leg in ("test-integration", "test-integration-race"):
+            with self.subTest(leg=leg):
+                self.log.unlink(missing_ok=True)
+                result = self.make(leg, "green")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                calls = [
+                    call
+                    for call in self.calls()
+                    if call["tool"] == "go" and call["args"][:1] == ["test"]
+                ]
+                self.assertTrue(
+                    calls, f"{leg} never ran go test:\n{result.stdout}{result.stderr}"
+                )
+                for call in calls:
+                    self.assertEqual(call["backend_env"], EXPECTED_BACKEND_ENV)
+
+    def test_the_integration_leg_fails_when_the_state_file_is_absent(self) -> None:
+        noop = self.scratch / "noop-backends"
+        noop.write_text(f"#!{sys.executable}\nimport sys\nsys.exit(0)\n", encoding="utf-8")
+        noop.chmod(0o755)
+        missing = self.scratch / "absent.env"
+        for leg in ("test-integration", "test-integration-race"):
+            with self.subTest(leg=leg):
+                self.log.unlink(missing_ok=True)
+                result = self.make(leg, "green", backends=str(noop), state=str(missing))
+                self.assertNotEqual(
+                    result.returncode, 0, f"{leg} passed without a backend state file"
+                )
+                self.assertIn("no backend state", result.stderr)
+                self.assertFalse(
+                    any(
+                        call["tool"] == "go" and call["args"][:1] == ["test"]
+                        for call in self.calls()
+                    ),
+                    "go test ran without a backend state file",
+                )
 
     def starter_make(self, leg: str) -> subprocess.CompletedProcess[str]:
         # The starter's Makefile is the entry point a copy of the skeleton
