@@ -11,6 +11,11 @@ import (
 	"github.com/vislake/speed/pkg/internal/natstest"
 )
 
+// flushBudget bounds the round trip that drains the client's outbound queue.
+// A client with nothing left to send answers at once; one that has stopped
+// answering fails the case rather than hanging it.
+const flushBudget = 10 * time.Second
+
 // TestAWriteTheCutLinkRefusesDoesNotLandLater is the case for what a failed
 // write means here: the capability hands the caller its own failure, and the
 // caller decides whether to retry by whether the operation is idempotent
@@ -21,7 +26,14 @@ import (
 // count taken twice.
 //
 // The case cuts the link, waits until the client knows it is down, writes
-// there, restores the link, and then reads the key: it must be absent.
+// there, restores the link, flushes the client, and then reads the key: it
+// must be absent.
+//
+// The flush is what makes the read judge "nothing was resent" after the client
+// has no work left: it drives whatever the client is holding through a round
+// trip to the server, and the outbound queue must then be empty. A fixed pause
+// would instead let a client that is slow to send what it kept pass the case
+// by landing the write after the read.
 func TestAWriteTheCutLinkRefusesDoesNotLandLater(t *testing.T) {
 	proxy := cutproxy.Start(t, hostPort(natstest.URL(t)))
 	opened, err := open(context.Background(), &Config{
@@ -58,9 +70,19 @@ func TestAWriteTheCutLinkRefusesDoesNotLandLater(t *testing.T) {
 
 	proxy.Restore()
 	cutproxy.Await(t, 30*time.Second, "the connection to come back", s.nc.IsConnected)
-	// Give a client that kept the write the moment it needs to send what it
-	// kept, so a kept write cannot pass this case by landing late.
-	time.Sleep(time.Second)
+	// With the link back, flush the client and confirm it has nothing left to
+	// send before the read: the flush carries everything the client held
+	// through a round trip, so a kept write would have reached the server by
+	// now, and the empty queue afterwards is the observation that no write is
+	// still waiting to go out.
+	if flushErr := s.nc.FlushTimeout(flushBudget); flushErr != nil {
+		t.Fatalf("flushing the client before the read: %v", flushErr)
+	}
+	if pending, bufferedErr := s.nc.Buffered(); bufferedErr != nil {
+		t.Fatalf("reading the client's outbound queue: %v", bufferedErr)
+	} else if pending != 0 {
+		t.Fatalf("the client still has %d bytes to send after a flush: the refused write was kept", pending)
+	}
 	value, present, err := s.Get(context.Background(), key)
 	if err != nil {
 		t.Fatalf("reading back the refused key: %v", err)
