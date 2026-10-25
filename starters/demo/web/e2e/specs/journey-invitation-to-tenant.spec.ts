@@ -596,51 +596,16 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       ).toBeHidden()
     })
 
-    await test.step('step 9: the invitee re-opens the accepted link and meets the invalid state', async () => {
+    await test.step('step 9: a member has no console entry, and a full-page console load stays on the access wait', async () => {
       if (inviteePage === undefined) {
         throw new Error('the invitee page was never opened')
       }
       const invitee = inviteePage
 
-      // The used link's read still returns the stored view; the screen judges
-      // its status before showing anything, so the summary and the accept
-      // action are gone and the link cannot be redeemed a second time.
-      await invitee.goto(acceptanceLink)
-      await expect(
-        invitee.getByRole('heading', {
-          name: copy('authUi', 'acceptInvitation.unavailable.title'),
-          exact: true,
-        }),
-      ).toBeVisible({ timeout: 15_000 })
-      await expect(
-        invitee.getByText(
-          copy('authUi', 'acceptInvitation.unavailable.description'),
-          { exact: true },
-        ),
-      ).toBeVisible()
-      await expect(
-        invitee.getByText(
-          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT }),
-          { exact: true },
-        ),
-      ).toHaveCount(0)
-      await expect(
-        invitee.getByRole('button', {
-          name: copy('authUi', 'acceptInvitation.accept'),
-          exact: true,
-        }),
-      ).toHaveCount(0)
-    })
-
-    await test.step('step 10: a member has no console entry, and a full-page console load stays on the access wait', async () => {
-      if (inviteePage === undefined) {
-        throw new Error('the invitee page was never opened')
-      }
-      const invitee = inviteePage
-
-      // REQ-platform-admin-001's member facet: neither the header entry nor
-      // the start page's card is offered, and the navigation carries no
-      // console destination for the in-app clause to drive.
+      // REQ-platform-admin-001's member facet, checked on the tenant home the
+      // acceptance landed on: this step runs while the viewer is still there,
+      // before the re-opened link below leaves them on the landing, so the
+      // header and start-page assertions observe the member's real home.
       await expect(
         invitee
           .getByRole('banner')
@@ -682,6 +647,42 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         ).toHaveCount(0)
         expect(new URL(invitee.url()).pathname).toBe(path)
       }
+    })
+
+    await test.step('step 10: the invitee re-opens the accepted link and meets the invalid state', async () => {
+      if (inviteePage === undefined) {
+        throw new Error('the invitee page was never opened')
+      }
+      const invitee = inviteePage
+
+      // The used link's read still returns the stored view; the screen judges
+      // its status before showing anything, so the summary and the accept
+      // action are gone and the link cannot be redeemed a second time.
+      await invitee.goto(acceptanceLink)
+      await expect(
+        invitee.getByRole('heading', {
+          name: copy('authUi', 'acceptInvitation.unavailable.title'),
+          exact: true,
+        }),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(
+        invitee.getByText(
+          copy('authUi', 'acceptInvitation.unavailable.description'),
+          { exact: true },
+        ),
+      ).toBeVisible()
+      await expect(
+        invitee.getByText(
+          copy('authUi', 'acceptInvitation.invited', { tenant: TENANT }),
+          { exact: true },
+        ),
+      ).toHaveCount(0)
+      await expect(
+        invitee.getByRole('button', {
+          name: copy('authUi', 'acceptInvitation.accept'),
+          exact: true,
+        }),
+      ).toHaveCount(0)
     })
 
     await test.step('step 11: the operator sees the invitation accepted and the invitee in the member table', async () => {
