@@ -52,15 +52,15 @@
  * absent from `@covers`: they describe a refused write, a cleared preference,
  * a step-up replay and the write-then-switch ordering, none of which the main
  * success path can observe. The registry keeps the document's full list.
- * REQ-security-022 is not claimed: the account page renders the session list,
- * its current-session marker and the sign-in time, but not the expiry field
- * the requirement lists, and a last-active line appears only once a coalesced
- * touch moves it past the creation instant. This surface therefore cannot fail
- * for a product that omits either, so the id stays out of `@covers`; the
- * registry keeps the document's full list.
+ * REQ-security-022 is claimed for the fields this journey drives: the session
+ * list, its current-session marker, the sign-in time and the expiry. A
+ * last-active line appears only once a coalesced touch moves it past the
+ * creation instant, so that clause stays undriven. This surface therefore
+ * fails for a product that omits the expiry; the registry keeps the
+ * document's full list.
  */
 // @journey journey-personalize-interface.md
-// @covers REQ-account-003, REQ-account-033, REQ-presentation-003, REQ-presentation-004, REQ-presentation-007, REQ-presentation-008, REQ-presentation-010, REQ-presentation-030
+// @covers REQ-account-003, REQ-account-033, REQ-presentation-003, REQ-presentation-004, REQ-presentation-007, REQ-presentation-008, REQ-presentation-010, REQ-presentation-030, REQ-security-022
 import type { Locator, Page } from '@playwright/test'
 
 import { reviewMember } from '../fixtures/config'
@@ -124,6 +124,11 @@ function signedInLinePattern(locale: CopyLocale): RegExp {
   // caller's pattern into the bundle's sentence verbatim, so the group that
   // yields the time is the caller's to write.
   return copyPattern('accountUi', 'sessions.signedIn', { time: '(.+)' }, locale)
+}
+
+/** The matcher for a row's expiry line in the given UI language. */
+function expiresLinePattern(locale: CopyLocale): RegExp {
+  return copyPattern('accountUi', 'sessions.expires', { time: '.+' }, locale)
 }
 
 /**
@@ -425,6 +430,10 @@ test('personalize-interface: the chosen language and time zone take effect and s
         exact: true,
       }),
     ).toBeVisible()
+    // The one live row names its absolute expiry.
+    await expect(
+      section.getByText(expiresLinePattern(CHOSEN_LOCALE)),
+    ).toHaveCount(1)
 
     const rendered = await currentSessionSignedInTime(page, CHOSEN_LOCALE)
     // The interface is zh-CN, so the line's label and the instant's format are
@@ -477,6 +486,13 @@ test('personalize-interface: the chosen language and time zone take effect and s
     await expect(timeZoneSelect(page, CHOSEN_LOCALE)).toHaveText(
       CHOSEN_ZONE,
     )
+
+    // The session row's expiry line survives the reload too.
+    await expect(
+      sessionsSection(page, CHOSEN_LOCALE).getByText(
+        expiresLinePattern(CHOSEN_LOCALE),
+      ),
+    ).toHaveCount(1)
 
     // The session row's sign-in time still renders in the stored zone and the
     // interface language; the session outlived the page's reload.

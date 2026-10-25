@@ -28,12 +28,11 @@
  * code; it never re-submits a code.
  *
  * WHAT IS NOT ASSERTED. The sessions section renders the device summary, the
- * sign-in time, the last-active time (when it differs) and the current-session
- * marker, but no expiry: REQ-security-022's expiry field has no rendered
- * surface on the account page, and a last-active line appears only once a
- * coalesced touch moves it past the creation instant. Neither is asserted, so
- * REQ-security-022 is not claimed; the absence of that surface is a product
- * gap, not something this spec may cover over. The step-up's alternate
+ * sign-in time, the last-active time (when it differs), the expiry and the
+ * current-session marker. The last-active line appears only once a coalesced
+ * touch moves it past the creation instant, which this run does not produce, so
+ * it is not asserted. The other fields are, including the expiry, so
+ * REQ-security-022 is claimed. The step-up's alternate
  * branches -- cancelling the dialog, and an account with only one factor that
  * offers a re-login exit (REQ-security-017) -- are unreachable here because
  * the journey enrols two factor kinds and completes the dialog. Two
@@ -51,7 +50,7 @@
  * helpers/i18n.ts.
  */
 // @journey journey-account-security-hardening.md
-// @covers REQ-account-007, REQ-security-001, REQ-security-003, REQ-security-008, REQ-security-013, REQ-security-014, REQ-security-023, REQ-security-025, REQ-security-030, REQ-signin-006
+// @covers REQ-account-007, REQ-security-001, REQ-security-003, REQ-security-008, REQ-security-013, REQ-security-014, REQ-security-022, REQ-security-023, REQ-security-025, REQ-security-030, REQ-signin-006
 import type { BrowserContext, Locator, Page } from '@playwright/test'
 
 import { createAccounts, type Accounts } from '../helpers/accounts'
@@ -583,6 +582,12 @@ test('account-security-hardening: an account enrols two factors, ends another de
           .getByText(copyPattern('accountUi', 'sessions.signedIn', { time: '.+' }))
           .first(),
       ).toBeVisible()
+      // Both live rows name their session's absolute expiry.
+      await expect(
+        sessions.getByText(
+          copyPattern('accountUi', 'sessions.expires', { time: '.+' }),
+        ),
+      ).toHaveCount(2)
       const revoke = sessions.getByRole('button', {
         name: copyPattern('accountUi', 'sessions.revokeAriaWithDevice', {
           device: '.+',
