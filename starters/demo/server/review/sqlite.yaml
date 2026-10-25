@@ -92,6 +92,14 @@ authn:
       rp-name: demo
       origins:
         - "http://localhost:8080"
+  # REVIEW: the human-verification gate stays off. The review build sends SMS
+  # and email codes through carriers that write to the log, and the end-to-end
+  # tier drives those sends; a proof requirement would put a challenge in front
+  # of every one of them. The declared default is off; the mode is stated here
+  # so a change to that default cannot turn the gate on in this assembly without
+  # a matching change to this file.
+  humanverify:
+    mode: off
 
 # The SMS sending family. sms.registry holds the templates the SMS module sends
 # its codes under; the three names and the parameter pair are the contract the

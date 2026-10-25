@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn/emailcode"
+	"github.com/vislake/speed/pkg/authn/humanverify"
 	githublogin "github.com/vislake/speed/pkg/authn/login/github"
 	googlelogin "github.com/vislake/speed/pkg/authn/login/google"
 	"github.com/vislake/speed/pkg/mail/smtp"
@@ -54,5 +55,38 @@ func TestTheDeployTemplateCarriesTheSocialCredentials(t *testing.T) {
 			t.Errorf("%s resolved to %+v, want %+v; the template's placeholder for that item is not "+
 				"where the method reads it", namespace, got, want)
 		}
+	}
+}
+
+// humanverifySection is the part of the human-verification module's section the
+// deployment template carries: the mechanism, the widget's public site key, the
+// siteverify secret and the hostname the widget must have run on.
+type humanverifySection struct {
+	Mode      string `config:"mode"`
+	SiteKey   string `config:"site-key"`
+	SecretKey string `config:"secret-key"`
+	Hostname  string `config:"hostname"`
+}
+
+// TestTheDeployTemplateCarriesTheHumanVerificationSection holds the deployment
+// template to the section the human-verification module decodes. The entrypoint
+// defaults the mode to off and requires the Turnstile credentials only when the
+// mode is turnstile; the template still has to place the mode, both credentials
+// and the expected hostname under the namespace the module reads, so a
+// deployment that turns the mechanism on finds them where it looks. The render
+// here names the turnstile mode because that is the mode every item belongs to.
+func TestTheDeployTemplateCarriesTheHumanVerificationSection(t *testing.T) {
+	locator := writeConfigFile(t, renderDeployTemplate(t))
+	var got humanverifySection
+	readEffective(t, "deploy/fly.yaml.tmpl", locator, humanverify.ConfigNamespace, &got)
+	want := humanverifySection{
+		Mode:      "turnstile",
+		SiteKey:   "turnstile-site-key.example.test",
+		SecretKey: "turnstile-client-secret",
+		Hostname:  "demo.example.test",
+	}
+	if got != want {
+		t.Errorf("%s resolved to %+v, want %+v; the template's placeholders are not where the module "+
+			"reads them", humanverify.ConfigNamespace, got, want)
 	}
 }

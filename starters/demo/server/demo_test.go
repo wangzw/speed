@@ -1657,6 +1657,9 @@ func renderDeployTemplate(t *testing.T) string {
 		"__GOOGLE_CLIENT_SECRET__": "google-client-secret",
 		"__GITHUB_CLIENT_ID__":     "github-client",
 		"__GITHUB_CLIENT_SECRET__": "github-client-secret",
+		"__HUMANVERIFY_MODE__":     "turnstile",
+		"__TURNSTILE_SITE_KEY__":   "turnstile-site-key.example.test",
+		"__TURNSTILE_SECRET_KEY__": "turnstile-client-secret",
 	} {
 		if !strings.Contains(rendered, placeholder) {
 			t.Fatalf("the deployment template carries no %s placeholder to render", placeholder)

@@ -130,6 +130,31 @@ check_scalar DEMO_GOOGLE_CLIENT_SECRET "$DEMO_GOOGLE_CLIENT_SECRET"
 check_scalar DEMO_GITHUB_CLIENT_ID "$DEMO_GITHUB_CLIENT_ID"
 check_scalar DEMO_GITHUB_CLIENT_SECRET "$DEMO_GITHUB_CLIENT_SECRET"
 
+# The human-verification gate runs off unless the deployment names a mode. The
+# proof-of-work mode is self-hosted and needs nothing rendered but the mode; the
+# turnstile mode needs the widget's site key and the secret that authenticates
+# siteverify, so both are required only when that mode is chosen. A deployment
+# that leaves the gate off carries no Turnstile credential, and the expected
+# hostname is always this deployment's own public domain.
+humanverify_mode=${DEMO_HUMANVERIFY_MODE:-off}
+# The Turnstile values are rendered only in the mode that reads them, so a gate
+# that runs off or on the self-hosted proof carries no credential in the
+# rendered configuration even when one is present in the environment.
+turnstile_site_key=
+turnstile_secret_key=
+case $humanverify_mode in
+    off | pow) ;;
+    turnstile)
+        require DEMO_TURNSTILE_SITE_KEY "${DEMO_TURNSTILE_SITE_KEY:-}"
+        require DEMO_TURNSTILE_SECRET_KEY "${DEMO_TURNSTILE_SECRET_KEY:-}"
+        check_scalar DEMO_TURNSTILE_SITE_KEY "$DEMO_TURNSTILE_SITE_KEY"
+        check_scalar DEMO_TURNSTILE_SECRET_KEY "$DEMO_TURNSTILE_SECRET_KEY"
+        turnstile_site_key=$DEMO_TURNSTILE_SITE_KEY
+        turnstile_secret_key=$DEMO_TURNSTILE_SECRET_KEY
+        ;;
+    *) die "DEMO_HUMANVERIFY_MODE must be off, pow or turnstile" ;;
+esac
+
 mkdir -p /data/var /data/objects
 
 # The replacement is literal. awk's gsub is not used because "&" in a
@@ -148,7 +173,10 @@ awk -v origin="$public_origin" \
     -v google_id="$DEMO_GOOGLE_CLIENT_ID" \
     -v google_secret="$DEMO_GOOGLE_CLIENT_SECRET" \
     -v github_id="$DEMO_GITHUB_CLIENT_ID" \
-    -v github_secret="$DEMO_GITHUB_CLIENT_SECRET" '
+    -v github_secret="$DEMO_GITHUB_CLIENT_SECRET" \
+    -v humanverify_mode="$humanverify_mode" \
+    -v turnstile_site_key="$turnstile_site_key" \
+    -v turnstile_secret_key="$turnstile_secret_key" '
     function replace(line, needle, repl,   out, i) {
         out = ""
         while ((i = index(line, needle)) > 0) {
@@ -174,6 +202,9 @@ awk -v origin="$public_origin" \
         line = replace(line, "__GOOGLE_CLIENT_SECRET__", google_secret)
         line = replace(line, "__GITHUB_CLIENT_ID__", github_id)
         line = replace(line, "__GITHUB_CLIENT_SECRET__", github_secret)
+        line = replace(line, "__HUMANVERIFY_MODE__", humanverify_mode)
+        line = replace(line, "__TURNSTILE_SITE_KEY__", turnstile_site_key)
+        line = replace(line, "__TURNSTILE_SECRET_KEY__", turnstile_secret_key)
         print line
     }
 ' "$template" >"$config.new"
@@ -185,11 +216,12 @@ chown demo:demo /data /data/var /data/objects "$config"
 chmod 0600 "$config"
 
 # These are template inputs, not configuration items: the program reports any
-# variable under its prefix that no item reads, and these four would each earn
-# a diagnostic on every start.
+# variable under its prefix that no item reads, and each of them would earn a
+# diagnostic on every start.
 unset DEMO_OPERATOR_EMAIL DEMO_OPERATOR_PASSWORD DEMO_DB_ENCRYPTION_KEY DEMO_PUBLIC_URL \
     DEMO_SMTP_HOST DEMO_SMTP_PORT DEMO_SMTP_TLS DEMO_SMTP_USERNAME DEMO_SMTP_PASSWORD DEMO_SMTP_FROM \
-    DEMO_GOOGLE_CLIENT_ID DEMO_GOOGLE_CLIENT_SECRET DEMO_GITHUB_CLIENT_ID DEMO_GITHUB_CLIENT_SECRET
+    DEMO_GOOGLE_CLIENT_ID DEMO_GOOGLE_CLIENT_SECRET DEMO_GITHUB_CLIENT_ID DEMO_GITHUB_CLIENT_SECRET \
+    DEMO_HUMANVERIFY_MODE DEMO_TURNSTILE_SITE_KEY DEMO_TURNSTILE_SECRET_KEY
 
 su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite seed
 exec su-exec demo /usr/local/bin/demo --config file:///data/config.yaml sqlite serve

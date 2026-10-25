@@ -389,6 +389,12 @@ const deployValues = {
   googleClientSecret: 'review-google-secret',
   githubClientID: 'review-github-client',
   githubClientSecret: 'review-github-secret',
+  // The deploy journey keeps the human-verification gate off, which is the
+  // entrypoint's default. The Turnstile values are rendered empty because the
+  // entrypoint writes them only in the mode that reads them.
+  humanverifyMode: 'off',
+  turnstileSiteKey: '',
+  turnstileSecretKey: '',
 } as const
 
 export interface DeployConfigInput {
@@ -465,7 +471,9 @@ export async function writeDeployConfig(
   // all five follow the browser's origin.
   const replacements: ReadonlyArray<readonly [string, string, number]> = [
     ['__PUBLIC_ORIGIN__', origin, 5],
-    ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 1],
+    // The public domain appears twice: the WebAuthn relying party id and the
+    // hostname the human-verification widget must have run on.
+    ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 2],
     ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 1],
     ['__OPERATOR_PASSWORD__', deployValues.operatorPassword, 1],
     ['__ENCRYPTION_KEY__', deployValues.encryptionKey, 1],
@@ -479,6 +487,9 @@ export async function writeDeployConfig(
     ['__GOOGLE_CLIENT_SECRET__', deployValues.googleClientSecret, 1],
     ['__GITHUB_CLIENT_ID__', deployValues.githubClientID, 1],
     ['__GITHUB_CLIENT_SECRET__', deployValues.githubClientSecret, 1],
+    ['__HUMANVERIFY_MODE__', deployValues.humanverifyMode, 1],
+    ['__TURNSTILE_SITE_KEY__', deployValues.turnstileSiteKey, 1],
+    ['__TURNSTILE_SECRET_KEY__', deployValues.turnstileSecretKey, 1],
   ]
   for (const [needle, replacement, expected] of replacements) {
     body = replaceAll(body, needle, replacement, expected, `deploy ${needle}`)
