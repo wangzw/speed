@@ -251,16 +251,19 @@ Checks the jsdom gate cannot make, recorded so they are not read as
   `aria-required-children`) yet jsdom resolves each only to `incomplete`, so
   the gate warns and registers them (`result.incomplete`) and never fails on
   them. `label-content-name-mismatch` compares a control's visible text
-  against its accessible name and must read the visible text from a rendered
-  box, so it is indeterminate under jsdom — measured at 1 node on nearly every
-  route. `aria-required-children` (axe rates it critical) probes an element's
-  required descendants through visibility, likewise layout-bound — measured at
-  1 node on `/account [empty]`, the headerless empty placeholder's
-  `<ul role="list">`. A genuine 2.5.3 or 1.3.1 defect therefore cannot fail
-  this gate. Note the sweep's guard in `routes.test.tsx` asserts only that
-  `color-contrast` stays out, so these two rules run and report as
-  indeterminate rather than being swept out; both are browser-side / manual
-  checks like contrast.
+  against its accessible name and reads the visible text through the canvas
+  text-measurement API; jsdom's `getContext('2d')` returns null (the test
+  setup stubs it), so axe's probe throws and the rule is indeterminate for
+  every node. The browser tier settles it: `NotificationBell.browser.test.tsx`
+  (unread 1 and 0) and `SettingsPage.browser.test.tsx` (the row's Remove
+  control) run the rule alone in Chromium and assert neither violations nor
+  incomplete results. `aria-required-children` (axe rates it critical) probes
+  an element's required descendants through visibility, likewise layout-bound.
+  A genuine 2.5.3 defect therefore cannot fail the jsdom gate; these two rules
+  run and report as indeterminate rather than being swept out. The sweep's
+  guard in `routes.test.tsx` asserts that `color-contrast` and
+  `aria-prohibited-attr` stay absent from the incomplete set, and neither of
+  these two rules is asserted there.
 - **Touch-target size (≥44px, WCAG 2.5.5)** and **screen-reader behaviour
   (VoiceOver/NVDA)**. Neither is measurable in jsdom. MUI's default
   `IconButton` box is ~40px (and `size="small"` smaller), below the 44px
