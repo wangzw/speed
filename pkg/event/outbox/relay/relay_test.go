@@ -25,7 +25,8 @@ func TestAnEventIsPublishedOnceTheWriteThatStagedItCommits(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
 		l := &ledger{}
-		r := newQuick(t, database, newRecordingBus("only", l), quick)
+		bus := newRecordingBus("only", l)
+		r := newQuick(t, database, bus, quick)
 		r.start(t.Context())
 
 		staging := make(chan struct{})
@@ -47,9 +48,12 @@ func TestAnEventIsPublishedOnceTheWriteThatStagedItCommits(t *testing.T) {
 			})
 		}()
 		<-staging
-		// The relay was told of the staging, and reads the table many times
-		// over while the transaction stays open.
-		time.Sleep(10 * quick.poll)
+		// The table is the source: the open transaction's row is not visible to
+		// the relay, so the outbox it reads holds nothing and no claim is
+		// outstanding. Waiting on that state replaces a fixed pause that a slow
+		// machine could spend before the relay read the table at all; the exact
+		// count taken after the commit is what rules out a second delivery.
+		waitSettled(t, database, bus)
 		if got := l.events(); len(got) != 0 {
 			t.Errorf("the bus accepted %+v while the transaction that staged it was still open", got)
 		}
@@ -61,6 +65,7 @@ func TestAnEventIsPublishedOnceTheWriteThatStagedItCommits(t *testing.T) {
 		if !eventually(func() bool { return l.count() > 0 }) {
 			t.Fatalf("the committed order's event was never published")
 		}
+		waitSettled(t, database, bus)
 		got := l.events()
 		if len(got) != 1 {
 			t.Fatalf("the bus accepted %+v, want the one staged event", got)
@@ -72,9 +77,6 @@ func TestAnEventIsPublishedOnceTheWriteThatStagedItCommits(t *testing.T) {
 		var payload placed
 		if err := event.DecodePayload(evt.Payload, &payload); err != nil || payload != (placed{OrderID: "o1", Amount: pastFloat}) {
 			t.Errorf("the published payload decodes to %+v (%v), want the order with the amount %d", payload, err, pastFloat)
-		}
-		if !eventually(func() bool { return stagedRows(t, database) == 0 }) {
-			t.Errorf("the table still holds %d rows after the bus accepted the event", stagedRows(t, database))
 		}
 	})
 }
@@ -107,7 +109,8 @@ func TestAnEventStagedByAWriteThatRollsBackIsNeverPublished(t *testing.T) {
 	onEachEngine(t, func(t *testing.T, e engine, dsn string) {
 		database := migrated(t, e, dsn)
 		l := &ledger{}
-		r := newQuick(t, database, newRecordingBus("only", l), quick)
+		bus := newRecordingBus("only", l)
+		r := newQuick(t, database, bus, quick)
 		r.start(t.Context())
 
 		abandoned, kept := event.NewID(), event.NewID()
@@ -122,7 +125,11 @@ func TestAnEventStagedByAWriteThatRollsBackIsNeverPublished(t *testing.T) {
 		if !eventually(func() bool { return l.count() > 0 }) {
 			t.Fatalf("the committed order's event was never published")
 		}
-		time.Sleep(10 * quick.poll)
+		// The table is the source: with no row left and none claimed, the relay
+		// has published everything the committed writes staged. A row the
+		// rollback failed to take would be published as part of that pass, not
+		// after an interval.
+		waitSettled(t, database, bus)
 		if got := idsOf(l.events()); len(got) != 1 || got[0] != kept {
 			t.Errorf("the bus accepted %v, want only the committed order's %s and never the rolled-back %s",
 				got, kept, abandoned)
@@ -162,7 +169,9 @@ func TestABusThatRefusesForAWhileDelaysTheEventButNeverLosesIt(t *testing.T) {
 			t.Fatalf("the event was not published once the bus took events again: the bus holds %d, the "+
 				"table %d", l.count(), stagedRows(t, database))
 		}
-		time.Sleep(10 * quick.poll)
+		// Nothing is in flight once the row has left the table and no claim
+		// remains, so the count is final.
+		waitSettled(t, database, bus)
 		if got := idsOf(l.events()); len(got) != 1 || got[0] != id {
 			t.Errorf("the bus accepted %v, want the refused event once, %s", got, id)
 		}

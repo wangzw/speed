@@ -47,6 +47,39 @@ func consumerOf(t *testing.T, js jetstream.JetStream, stream, name string) (jets
 	return c.CachedInfo().Config, true
 }
 
+// consumerDrained reports whether name has taken and acknowledged every message
+// the stream holds: nothing pending, nothing awaiting an acknowledgement, and
+// its acknowledgement floor at the stream's last sequence. A delivery still to
+// come would leave the count above zero, so a case that waits on this judges
+// its count after the source of deliveries has nothing left to hand over.
+func consumerDrained(t *testing.T, js jetstream.JetStream, stream, name string) bool {
+	t.Helper()
+	ctx := context.Background()
+	s, err := js.Stream(ctx, stream)
+	if errors.Is(err, jetstream.ErrStreamNotFound) {
+		return true
+	}
+	if err != nil {
+		t.Fatalf("reading the stream %s: %v", stream, err)
+	}
+	state, err := s.Info(ctx)
+	if err != nil {
+		t.Fatalf("reading the state of %s: %v", stream, err)
+	}
+	c, err := js.Consumer(ctx, stream, name)
+	if errors.Is(err, jetstream.ErrConsumerNotFound) || errors.Is(err, jetstream.ErrStreamNotFound) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("reading the consumer %s on %s: %v", name, stream, err)
+	}
+	info, err := c.Info(ctx)
+	if err != nil {
+		t.Fatalf("reading the state of the consumer %s on %s: %v", name, stream, err)
+	}
+	return info.NumPending == 0 && info.NumAckPending == 0 && info.AckFloor.Stream >= state.State.LastSeq
+}
+
 // TestClosingRemovesTheProcesssOwnConsumer pins what a process leaves on the
 // server once it is gone. A durable named after the process is read by that
 // process alone, so one left behind is never read again, and every start —

@@ -6,7 +6,6 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -14,6 +13,24 @@ import (
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
+
+// deliveredMarked reports whether replica has recorded the outbox entry
+// carrying identifier as delivered to its subscribers. One drain reads the
+// entries it owes in identifier order and marks each after handing it over, so
+// the mark of the entry with the highest identifier means the pass that would
+// have delivered every earlier entry has ended. It is the source-side fact a
+// case waits on: the count taken afterwards cannot be changed by a delivery
+// still to come from that pass.
+func deliveredMarked(t *testing.T, ctx context.Context, b *bus, identifier string) bool {
+	t.Helper()
+	var marked bool
+	if err := b.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM `+table+` o JOIN `+deliveredTable+` d ON d.event_id = o.id
+		 WHERE o.identifier = $1 AND d.replica = $2)`, identifier, b.replica).Scan(&marked); err != nil {
+		t.Fatalf("reading the delivery marks: %v", err)
+	}
+	return marked
+}
 
 // TestOpeningAReplicaWritesNothing pins what a replica costs to start: no rows.
 // A replica that marked every entry already in the outbox as delivered to
@@ -62,11 +79,17 @@ func TestEntriesPublishedBeforeAReplicaOpenedAreNotDelivered(t *testing.T) {
 	if err := late.begin(ctx); err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if err := publisher.Publish(ctx, event.Event{Type: "t"}); err != nil {
+	published := event.NewID()
+	if err := publisher.Publish(ctx, event.Event{ID: published, Type: "t"}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	bussuite.WaitFor(t, "the event published after the replica opened", func() bool { return got.Load() >= 1 })
-	time.Sleep(pollInterval + 500*time.Millisecond)
+	// The entry published after the replica opened is the last one it owes, so
+	// its delivered mark says the replica has finished that pass. A replica
+	// that also took the entries from before it opened would have delivered and
+	// marked them first, in the same pass; the count is therefore taken after
+	// the source has nothing left to hand over, not after an interval.
+	bussuite.WaitFor(t, "the late replica to settle the entry published after it opened",
+		func() bool { return deliveredMarked(t, ctx, late, published) })
 	if n := got.Load(); n != 1 {
 		t.Fatalf("the late replica delivered %d events, want only the 1 published after it opened", n)
 	}
@@ -149,8 +172,8 @@ func TestAnOutboxFromBeforeTheCurrentColumnsIsBroughtUpToDate(t *testing.T) {
 	if err := b.Publish(ctx, event.Event{ID: published, Type: "t"}); err != nil {
 		t.Fatalf("Publish on the older outbox: %v", err)
 	}
-	bussuite.WaitFor(t, "the event published on the older outbox", func() bool { return got.Load() >= 1 })
-	time.Sleep(pollInterval + 500*time.Millisecond)
+	bussuite.WaitFor(t, "the replica to settle the event published on the older outbox",
+		func() bool { return deliveredMarked(t, ctx, b, published) })
 	if n := got.Load(); n != 1 {
 		t.Fatalf("the replica delivered %d events, want only the 1 published after it opened", n)
 	}

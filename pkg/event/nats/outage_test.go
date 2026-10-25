@@ -16,6 +16,11 @@ import (
 	"github.com/vislake/speed/pkg/internal/natstest"
 )
 
+// flushBudget bounds the round trip that drains the client's outbound queue.
+// A client with nothing left to send answers at once; one that has stopped
+// answering fails the case rather than hanging it.
+const flushBudget = 10 * time.Second
+
 // TestAPublishTheCutLinkRefusesIsNotStoredLater is the case for what a failed
 // publish means here, the lower bound design-event states: a publish that
 // returns an error is one the bus did not accept. The publisher of an event
@@ -94,9 +99,20 @@ func TestAPublishTheCutLinkRefusesIsNotStoredLater(t *testing.T) {
 
 	proxy.Restore()
 	cutproxy.Await(t, 30*time.Second, "the connection to come back", bus.nc.IsConnected)
-	// Give a client that kept the publish the moment it needs to send what it
-	// kept, so a kept publish cannot pass this case by arriving late.
-	time.Sleep(time.Second)
+	// With the link back, flush the client and confirm it has nothing left to
+	// send before reading the stream: the flush drives whatever the client is
+	// holding through a round trip to the server, so a publish it kept would
+	// have reached the server by now, and the empty outbound queue afterwards
+	// is the observation that none is still waiting to go out. A fixed pause
+	// would instead let a client slow to send what it kept pass this case.
+	if err := bus.nc.FlushTimeout(flushBudget); err != nil {
+		t.Fatalf("flushing the client before reading the stream: %v", err)
+	}
+	if pending, err := bus.nc.Buffered(); err != nil {
+		t.Fatalf("reading the client's outbound queue: %v", err)
+	} else if pending != 0 {
+		t.Fatalf("the client still has %d bytes to send after a flush: the refused publish was kept", pending)
+	}
 	if after := entries(); after != before {
 		t.Fatalf("the stream holds %d entries after a publish this bus refused, want the %d it held: "+
 			"the refused event was kept and sent once the link was back", after, before)

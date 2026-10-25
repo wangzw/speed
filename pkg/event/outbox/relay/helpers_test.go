@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -215,6 +216,9 @@ type recordingBus struct {
 	ledger *ledger
 	// delay is how long each publish takes.
 	delay time.Duration
+	// busy counts the publishes that have not returned yet, so a case can wait
+	// for the bus to have no delivery in hand before counting what it accepted.
+	busy atomic.Int32
 
 	mu sync.Mutex
 	// refuse decides whether an event is refused; nil accepts every one.
@@ -233,6 +237,8 @@ func newRecordingBus(name string, l *ledger) *recordingBus {
 func (b *recordingBus) Subscribe(string, string, event.Handler) {}
 
 func (b *recordingBus) Publish(ctx context.Context, evt event.Event) error {
+	b.busy.Add(1)
+	defer b.busy.Add(-1)
 	if b.delay > 0 {
 		time.Sleep(b.delay)
 	}
@@ -267,6 +273,9 @@ func (b *recordingBus) setRefuse(refuse func(event.Event) error) {
 	b.mu.Unlock()
 }
 
+// inflight is how many publishes the bus has accepted but not yet returned.
+func (b *recordingBus) inflight() int32 { return b.busy.Load() }
+
 // errRefused is what a steered bus refuses with.
 var errRefused = errors.New("the bus refuses this event for now")
 
@@ -290,6 +299,60 @@ func stagedRows(t *testing.T, database db.Database) int64 {
 		t.Fatalf("counting the staged rows: %v", err)
 	}
 	return n
+}
+
+// claimedRows counts the staged rows a relay currently holds: rows it has taken
+// and has not yet published or given back.
+func claimedRows(t *testing.T, database db.Database) int64 {
+	t.Helper()
+	var n int64
+	if err := database.DB().Raw(`SELECT count(*) FROM ` + tableName + ` WHERE claimed_by IS NOT NULL`).
+		Row().Scan(&n); err != nil {
+		t.Fatalf("counting the claimed rows: %v", err)
+	}
+	return n
+}
+
+// waitSettled waits, within the settle bound, for the table to hold nothing a
+// relay is still working on and for the given buses to have no publish in
+// hand: every staged row has been published and removed, no relay holds a
+// claim, and nothing accepted is still being delivered. It is the source-side
+// condition a count of what the bus accepted is judged on — once the table has
+// nothing left to relay and no delivery is under way, nothing more can be
+// published from it.
+func waitSettled(t *testing.T, database db.Database, buses ...*recordingBus) {
+	t.Helper()
+	quiet := func() bool {
+		if stagedRows(t, database) != 0 || claimedRows(t, database) != 0 {
+			return false
+		}
+		for _, b := range buses {
+			if b.inflight() != 0 {
+				return false
+			}
+		}
+		return true
+	}
+	if !eventually(quiet) {
+		var delivery int32
+		for _, b := range buses {
+			delivery += b.inflight()
+		}
+		t.Fatalf("the table still holds %d rows (%d claimed) and %d deliveries are in hand after the "+
+			"relays should have settled", stagedRows(t, database), claimedRows(t, database), delivery)
+	}
+}
+
+// stopRelays ends the relays and waits for their loops to return, so that no
+// publish can follow the count taken afterwards. stop is idempotent, so the
+// cleanup registered by newQuick runs it again harmlessly.
+func stopRelays(t *testing.T, relays ...*relay) {
+	t.Helper()
+	for _, r := range relays {
+		if err := r.stop(context.Background()); err != nil {
+			t.Fatalf("stopping the relay: %v", err)
+		}
+	}
 }
 
 // refusal is what one staged row records of the refusals it met, and of its

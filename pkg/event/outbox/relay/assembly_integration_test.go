@@ -5,7 +5,6 @@ package relay
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
@@ -79,7 +78,10 @@ func TestAWinWhoseAnnouncementTheBusRefusedIsPublishedOnceItAcceptsAgain(t *test
 			t.Errorf("the announcement never reached its subscriber once the bus accepted again")
 			return errCaseFailed
 		}
-		time.Sleep(time.Second)
+		// The staged table is the source: with no row left and none claimed, the
+		// refused announcement has been published and no second delivery is on
+		// its way.
+		waitSettled(t, database)
 		if got := idsOf(orders.events()); len(got) != 1 || got[0] != id {
 			t.Errorf("the subscriber received %v, want the refused announcement once, %s", got, id)
 		}

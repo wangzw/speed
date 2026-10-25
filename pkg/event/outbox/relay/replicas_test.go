@@ -45,11 +45,17 @@ func TestTwoRelaysOnOneTablePublishEachStagedEventOnce(t *testing.T) {
 		if err != nil {
 			t.Fatalf("staging the backlog: %v", err)
 		}
-		if !eventually(func() bool { return l.count() >= staged && stagedRows(t, first) == 0 }) {
-			t.Fatalf("the replicas published %d of %d staged events, the table holds %d",
-				l.count(), staged, stagedRows(t, first))
+		if !eventually(func() bool {
+			return l.count() >= staged && stagedRows(t, first) == 0 && claimedRows(t, first) == 0 &&
+				busA.inflight() == 0 && busB.inflight() == 0
+		}) {
+			t.Fatalf("the replicas published %d of %d staged events, the table holds %d (%d claimed)",
+				l.count(), staged, stagedRows(t, first), claimedRows(t, first))
 		}
-		time.Sleep(10 * quick.poll)
+		// The relays are the source of these publications: ending their loops
+		// waits for any pass still under way to finish, so the count that
+		// follows cannot be changed by a publish still to come.
+		stopRelays(t, relayA, relayB)
 
 		seen := map[string]int{}
 		byBus := map[string]int{}
@@ -127,13 +133,21 @@ func TestASlowRelayGivesBackTheRowsItsClaimNoLongerCovers(t *testing.T) {
 		if !eventually(func() bool { return claimedBy(t, database, slow.token) > 0 }) {
 			t.Fatalf("the slow relay never claimed the backlog")
 		}
-		fast := newQuick(t, e.open(t, dsn), newRecordingBus("fast", l), quick)
+		fastBus := newRecordingBus("fast", l)
+		fast := newQuick(t, e.open(t, dsn), fastBus, quick)
 		fast.start(t.Context())
 
-		if !eventually(func() bool { return l.count() >= len(ids) && stagedRows(t, database) == 0 }) {
-			t.Fatalf("the relays published %d of %d events", l.count(), len(ids))
+		if !eventually(func() bool {
+			return l.count() >= len(ids) && stagedRows(t, database) == 0 && claimedRows(t, database) == 0 &&
+				slowBus.inflight() == 0 && fastBus.inflight() == 0
+		}) {
+			t.Fatalf("the relays published %d of %d events, the table holds %d (%d claimed)",
+				l.count(), len(ids), stagedRows(t, database), claimedRows(t, database))
 		}
-		time.Sleep(2 * slowTiming.claim)
+		// Both relays are the source of these publications. Ending their loops
+		// lets any pass still under way finish before the count, so an event a
+		// relay was about to publish cannot arrive after it.
+		stopRelays(t, slow, fast)
 		seen := map[string]int{}
 		for _, evt := range l.events() {
 			seen[evt.ID]++

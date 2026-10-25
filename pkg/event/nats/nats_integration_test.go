@@ -90,9 +90,15 @@ func TestTwoAssembliesOnOneServerDoNotSeeEachOther(t *testing.T) {
 	if err := second.Publish(ctx, event.Event{Type: eventType}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
+	js := inspect(t, url)
 	bussuite.WaitFor(t, "the publishing assembly's subscriber to run", func() bool { return gotSecond.Load() == 1 })
-	// Long enough for a delivery that should not happen to have happened.
-	time.Sleep(2 * time.Second)
+	// The first assembly's own consumer is the source of its deliveries: once it
+	// has taken and acknowledged everything its stream holds, anything it was
+	// going to deliver has arrived. On a stream of its own that stream is empty;
+	// a bus that read the other assembly's stream would instead have the event
+	// to deliver before this condition holds.
+	bussuite.WaitFor(t, "the receiving assembly's consumer to drain its stream",
+		func() bool { return consumerDrained(t, js, first.streamName(eventType), first.consumer) })
 	if n := gotFirst.Load(); n != 0 {
 		t.Fatalf("the other assembly's subscriber ran %d times: the two share a stream, so each is "+
 			"receiving the other's events", n)
@@ -190,8 +196,14 @@ func TestTwoInstancesSharingAConsumerSplitTheEvents(t *testing.T) {
 	if err := first.Publish(ctx, event.Event{Type: eventType}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
+	js := inspect(t, url)
 	bussuite.WaitFor(t, "one of the two to take the event", func() bool { return total.Load() >= 1 })
-	time.Sleep(500 * time.Millisecond)
+	// The shared consumer is the source of these deliveries: once it has taken
+	// and acknowledged everything the stream holds, no further delivery is
+	// coming, so the count taken afterwards is final. If the two instances were
+	// each handed the event, both acknowledgements would already be in.
+	bussuite.WaitFor(t, "the shared consumer to drain the stream",
+		func() bool { return consumerDrained(t, js, first.streamName(eventType), shared) })
 	if n := total.Load(); n != 1 {
 		t.Fatalf("the two instances handled the event %d times between them, want exactly 1: they "+
 			"share a consumer, so JetStream balances the stream between them", n)

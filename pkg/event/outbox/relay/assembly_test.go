@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
-	"time"
 
 	"github.com/vislake/speed/pkg/config"
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
@@ -175,7 +174,11 @@ func TestAnAssembledHostAnnouncesACommittedWriteThroughTheOutbox(t *testing.T) {
 			t.Errorf("the committed order's announcement never reached its subscriber")
 			return errCaseFailed
 		}
-		time.Sleep(time.Second)
+		// The outbox is the source: once it holds no row and no relay holds a
+		// claim, every event it staged has been published and none is still on
+		// its way. An announcement the abandoned order should never have staged
+		// would be published as part of that settling, not after a pause.
+		waitSettled(t, database)
 		got := orders.events()
 		if len(got) != 1 || got[0].ID != kept || got[0].TenantID != "acme" {
 			t.Errorf("the subscriber received %+v, want the committed order's %s alone", got, kept)

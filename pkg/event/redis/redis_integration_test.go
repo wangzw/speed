@@ -7,7 +7,6 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/event/internal/bussuite"
@@ -119,12 +118,34 @@ func TestTwoInstancesSharingAGroupSplitTheEvents(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 	bussuite.WaitFor(t, "one of the two to take the event", func() bool { return total.Load() >= 1 })
-	// The event is delivered once between them, not once each.
-	time.Sleep(300 * time.Millisecond)
+	// The group is the source of the delivery: once it has read every entry in
+	// the stream and has none still pending, nothing is left for either
+	// instance to deliver. A second delivery would have been read and
+	// acknowledged before that, so the count taken afterwards judges the
+	// question on a drained stream rather than after an elapsed interval.
+	bussuite.WaitFor(t, "the shared group to drain the stream",
+		func() bool { return groupDrained(t, ctx, first, shared, streamKey("t")) })
 	if n := total.Load(); n != 1 {
 		t.Fatalf("the two instances handled the event %d times between them, want exactly 1: they "+
 			"share a group, so Redis balances the stream between them", n)
 	}
+}
+
+// groupDrained reports whether the named consumer group has taken every entry
+// in stream and acknowledged all of them: nothing lagging behind the stream and
+// nothing still pending an acknowledgement.
+func groupDrained(t *testing.T, ctx context.Context, b *bus, group, stream string) bool {
+	t.Helper()
+	groups, err := b.client.XInfoGroups(ctx, stream).Result()
+	if err != nil {
+		t.Fatalf("reading the consumer groups of %s: %v", stream, err)
+	}
+	for _, g := range groups {
+		if g.Name == group {
+			return g.Lag == 0 && g.Pending == 0
+		}
+	}
+	return false
 }
 
 // TestAnUnserializablePayloadIsRefusedBeforeItReachesTheStream covers the other
