@@ -375,7 +375,7 @@ export const journeys: readonly JourneyEntry[] = [
     journey: 'journey-sms-template-rollout.md',
     status: 'unreachable',
     reason:
-      'The harness cannot provide a vendor that reviews templates: the review SMS carrier declares no per-template review and never changes a review result, so the vendor-driven review steps cannot be driven even though the registration and sending steps are browser-reachable.',
+      'The vendor-review step cannot be driven by any UI: the review SMS carrier declares every template as not requiring review and never changes a review result, so step 3 has no button to press, while the registration and sending steps would be reachable. Adding a reviewable state machine to that carrier was considered and deliberately not done, so this is a product decision rather than a spec that is merely waiting to be written.',
     covers: [
       'REQ-notifications-021',
       'REQ-notifications-023',
