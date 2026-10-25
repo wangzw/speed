@@ -370,12 +370,15 @@ func TestTheHeadersOfAResponseAreBounded(t *testing.T) {
 // can release its idle connections, which the wrapper around the transport must
 // not hide.
 func TestCloseIdleConnectionsReachesTheTransport(t *testing.T) {
-	closed := make(chan struct{}, 4)
+	states := make(chan http.ConnState, 16)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(ok))
+	// The server reclaims a connection left idle. Its timeout is set well
+	// beyond the bound the test waits under, so a client that never carried
+	// the call to the transport fails that wait instead of passing when the
+	// server closes the connection on its own.
+	srv.Config.IdleTimeout = 3 * time.Second
 	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
-		if s == http.StateClosed {
-			closed <- struct{}{}
-		}
+		states <- s
 	}
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
@@ -386,16 +389,46 @@ func TestCloseIdleConnectionsReachesTheTransport(t *testing.T) {
 	if _, err := get(client, srv.URL); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-closed:
-		t.Fatal("the connection closed before it was asked to")
-	case <-time.After(200 * time.Millisecond):
+
+	// StateIdle is the transition that says the connection is in the pool.
+	// Waiting for it rather than for an interval is what keeps a loaded
+	// machine from reading the connection before it has become idle.
+	awaitState(t, states, 5*time.Second, http.StateIdle, "the connection to become idle")
+	// Nothing has asked for a close yet, so a close reported now would be the
+	// transport's own doing and the later one could not be attributed to the
+	// call.
+	for quiet := false; !quiet; {
+		select {
+		case s := <-states:
+			if s == http.StateClosed {
+				t.Fatal("the idle connection was closed before CloseIdleConnections was called")
+			}
+		default:
+			quiet = true
+		}
 	}
+
 	client.CloseIdleConnections()
-	select {
-	case <-closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the idle connection was still open 5s after CloseIdleConnections")
+	awaitState(t, states, time.Second, http.StateClosed, "the idle connection to close after CloseIdleConnections")
+}
+
+// awaitState takes transitions until want arrives, failing when the deadline
+// passes first and when the connection closes while another state is awaited.
+func awaitState(t *testing.T, states <-chan http.ConnState, deadline time.Duration, want http.ConnState, what string) {
+	t.Helper()
+	timeout := time.After(deadline)
+	for {
+		select {
+		case s := <-states:
+			if s == want {
+				return
+			}
+			if s == http.StateClosed {
+				t.Fatalf("the connection closed while waiting for %s", what)
+			}
+		case <-timeout:
+			t.Fatalf("timed out after %s waiting for %s", deadline, what)
+		}
 	}
 }
 
