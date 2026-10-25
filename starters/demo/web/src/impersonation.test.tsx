@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthDomain, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions, SpeedClient } from '@speed/api-client'
 import { FEATURE_NAMES } from '@speed/api-sdk/features'
+import { getAuthnImpersonationStatusQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
 import {
@@ -283,6 +284,33 @@ function gatedSession(
       await act(async () => {
         gate()
       })
+    },
+  }
+}
+
+/**
+ * A session that records each restore() answer's outcome when it settles --
+ * resolved or rejected -- rather than when it is called. The identity change
+ * stays pending until that answer is decided, so a case that judges what the
+ * answer leaves behind has to wait for this outcome, not for the call.
+ */
+function restoreOutcomeSession(
+  session: ReturnType<typeof createTestSession>,
+  outcomes: ('settled' | 'rejected')[],
+): ReturnType<typeof createTestSession> {
+  return {
+    ...session,
+    restore: () => {
+      const answer = session.restore()
+      void answer.then(
+        () => {
+          outcomes.push('settled')
+        },
+        () => {
+          outcomes.push('rejected')
+        },
+      )
+      return answer
     },
   }
 }
@@ -1497,66 +1525,87 @@ describe('the impersonation shell', () => {
   })
 
   it('cancels the read in flight and holds new reads until a delayed start settles', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
-    // The write's round trip is slow, and the record read stays open: one
-    // read is in flight at the moment the start is issued.
-    const post = deferred()
-    const records = deferred()
-    const backend = makeBackend({
-      postGate: post.promise,
-      recordsGate: records.promise,
-    })
-    let phase: 'operator' | 'target' = 'operator'
-    const request: RequestFn = <T,>(
-      path: string,
-      requestOptions?: RequestOptions,
-    ) => {
-      const answer = backend.fn<T>(path, requestOptions)
-      if (path === '/api/v1/auth/impersonation' && requestOptions?.method === 'POST') {
-        phase = 'target'
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+      // The write's round trip is slow, and the record read stays open: one
+      // read is in flight at the moment the start is issued.
+      const post = deferred()
+      const records = deferred()
+      const backend = makeBackend({
+        postGate: post.promise,
+        recordsGate: records.promise,
+      })
+      let phase: 'operator' | 'target' = 'operator'
+      const request: RequestFn = <T,>(
+        path: string,
+        requestOptions?: RequestOptions,
+      ) => {
+        const answer = backend.fn<T>(path, requestOptions)
+        if (path === '/api/v1/auth/impersonation' && requestOptions?.method === 'POST') {
+          phase = 'target'
+        }
+        return answer
       }
-      return answer
+      bindRequestFn(request)
+      const gated = gatedSession(operatorSnapshot(), () =>
+        phase === 'target' ? targetSnapshot() : operatorSnapshot(),
+      )
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+
+      const renderResult = renderDemoApp({ session: gated.session })
+
+      // The start form waits on a settled "not impersonating" answer, and the
+      // record read is in flight.
+      await screen.findByText(tConsole('impersonations.current.none'))
+      await waitFor(() => expect(backend.recordReads()).toBe(1))
+      await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+
+      // The write is issued: the record read in flight is cancelled at that
+      // moment, and the client's queries are paused.
+      await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+      await waitFor(() => expect(backend.postReads()).toBe(1))
+      await waitFor(() => expect(backend.recordsAborted()).toBe(true))
+      expect(onlineManager.isOnline()).toBe(false)
+
+      // From the write's issue onward, no read leaves the browser: the
+      // settled write's invalidations stay parked behind the pause while the
+      // identity change's re-read is held open.
+      const readsWhileHeld = backend.reads()
+      await act(async () => {
+        post.resolve()
+      })
+      await waitFor(() => expect(gated.pendingRestores()).toBe(1))
+      // The settled write invalidated the status read and the client parked
+      // it: the query carries a fetch it cannot issue. That parked read --
+      // not the silence of an arbitrary few milliseconds -- is what the
+      // counters are judged against.
+      await waitFor(() =>
+        expect(
+          renderResult.queryClient.getQueryState(
+            getAuthnImpersonationStatusQueryKey(),
+          )?.fetchStatus,
+        ).toBe('paused'),
+      )
+      // Judge the hold past React Query's retry delay: a read retried at one
+      // second would fall outside a fixed 20 ms window, and this window has
+      // to cover what the hold claims to rule out.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+      expect(backend.reads()).toBe(readsWhileHeld)
+
+      // The re-read settles the impersonated identity and the hold is released
+      // with it: the tenant home's reads run under the new session.
+      await gated.releaseRestore()
+      await waitFor(() => expect(window.location.pathname).toBe('/'))
+      expect(onlineManager.isOnline()).toBe(true)
+      await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
+    } finally {
+      vi.useRealTimers()
     }
-    bindRequestFn(request)
-    const gated = gatedSession(operatorSnapshot(), () =>
-      phase === 'target' ? targetSnapshot() : operatorSnapshot(),
-    )
-    const user = userEvent.setup()
-
-    renderDemoApp({ session: gated.session })
-
-    // The start form waits on a settled "not impersonating" answer, and the
-    // record read is in flight.
-    await screen.findByText(tConsole('impersonations.current.none'))
-    await waitFor(() => expect(backend.recordReads()).toBe(1))
-    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
-
-    // The write is issued: the record read in flight is cancelled at that
-    // moment, and the client's queries are paused.
-    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
-    await waitFor(() => expect(backend.postReads()).toBe(1))
-    await waitFor(() => expect(backend.recordsAborted()).toBe(true))
-    expect(onlineManager.isOnline()).toBe(false)
-
-    // From the write's issue onward, no read leaves the browser: the
-    // settled write's invalidations stay parked behind the pause while the
-    // identity change's re-read is held open.
-    const readsWhileHeld = backend.reads()
-    await act(async () => {
-      post.resolve()
-    })
-    await waitFor(() => expect(gated.pendingRestores()).toBe(1))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
-    expect(backend.reads()).toBe(readsWhileHeld)
-
-    // The re-read settles the impersonated identity and the hold is released
-    // with it: the tenant home's reads run under the new session.
-    await gated.releaseRestore()
-    await waitFor(() => expect(window.location.pathname).toBe('/'))
-    expect(onlineManager.isOnline()).toBe(true)
-    await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
   })
 
   it('releases the hold when the start is refused: no identity change follows', async () => {
@@ -2096,8 +2145,12 @@ describe('the impersonation shell', () => {
     }
     bindRequestFn(request)
     const base = createTestSession(operatorSnapshot())
+    // The re-read is refused: createTestSession's restore() rejects. The
+    // outcome is recorded when the answer is decided, which is what settles
+    // the identity change.
+    const restoreOutcomes: ('settled' | 'rejected')[] = []
     const session = {
-      ...base,
+      ...restoreOutcomeSession(base, restoreOutcomes),
       setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
         const current = base.getSnapshot()
         base.set({
@@ -2127,9 +2180,9 @@ describe('the impersonation shell', () => {
 
     // The re-read was refused, and the identity did not change; the console
     // keeps the set it had rather than waiting on an unknown one forever.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
+    // The refusal has to be decided first: until then the identity change is
+    // still pending, and a pending change leaves the set untouched too.
+    await waitFor(() => expect(restoreOutcomes).toEqual(['rejected']))
     expect(window.location.pathname).toBe('/console/impersonations')
     expect(
       screen.queryByRole('progressbar', {
@@ -2163,13 +2216,16 @@ describe('the impersonation shell', () => {
     }
     bindRequestFn(request)
     // restore() retains the sets the host attached: the re-read names the
-    // same operator and leaves the permission table as it found it.
+    // same operator and leaves the permission table as it found it. Its
+    // outcome is recorded when the answer is decided, which is what settles
+    // the identity change.
     const base = scriptedSession(operatorSnapshot(), () => ({
       ...operatorSnapshot(),
       permissionSets: base.getSnapshot().permissionSets,
     }))
+    const restoreOutcomes: ('settled' | 'rejected')[] = []
     const session = {
-      ...base,
+      ...restoreOutcomeSession(base, restoreOutcomes),
       setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
         const current = base.getSnapshot()
         base.set({
@@ -2199,12 +2255,12 @@ describe('the impersonation shell', () => {
     })
     await user.click(end)
     await waitFor(() => expect(backend.deletes()).toBe(1))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
 
     // The identity did not move, so the set's read did not re-run; the set
-    // must still be the known one, not a value cleared by the change.
+    // must still be the known one, not a value cleared by the change. The
+    // re-read's own outcome is what settles the change: until it answers,
+    // the change is pending and the set is untouched for that reason too.
+    await waitFor(() => expect(restoreOutcomes).toEqual(['settled']))
     expect(window.location.pathname).toBe('/console/impersonations')
     expect(
       screen.queryByRole('progressbar', {
@@ -2218,67 +2274,86 @@ describe('the impersonation shell', () => {
   })
 
   it('starts a newly mounted frame from an unknown tenant during an impersonation', async () => {
-    window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
-    // The operator's tenant is what the module-level cell holds while the
-    // console has the frame unmounted.
-    setCurrentTenantId('acme')
-    setTenantAliases(
-      new Map([
-        ['acme', 'acme'],
-        ['beta', 'beta'],
-      ]),
-    )
-    const status = deferred()
-    const backend = makeBackend({
-      statusGateAfterStart: status.promise,
-      startTenant: 'beta',
-    })
-    const { client, opened, tenants } = streamClient()
-    let phase: 'operator' | 'target' = 'operator'
-    const request: RequestFn = <T,>(
-      path: string,
-      options?: RequestOptions,
-    ) => {
-      const answer = backend.fn<T>(path, options)
-      if (path === '/api/v1/auth/impersonation' && options?.method === 'POST') {
-        phase = 'target'
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      window.history.replaceState({}, '', '/console/impersonations?tenant=acme')
+      // The operator's tenant is what the module-level cell holds while the
+      // console has the frame unmounted.
+      setCurrentTenantId('acme')
+      setTenantAliases(
+        new Map([
+          ['acme', 'acme'],
+          ['beta', 'beta'],
+        ]),
+      )
+      const status = deferred()
+      const backend = makeBackend({
+        statusGateAfterStart: status.promise,
+        startTenant: 'beta',
+      })
+      const { client, opened, tenants } = streamClient()
+      let phase: 'operator' | 'target' = 'operator'
+      const request: RequestFn = <T,>(
+        path: string,
+        options?: RequestOptions,
+      ) => {
+        const answer = backend.fn<T>(path, options)
+        if (path === '/api/v1/auth/impersonation' && options?.method === 'POST') {
+          phase = 'target'
+        }
+        return answer
       }
-      return answer
+      bindRequestFn(request)
+      const session = scriptedSession(operatorSnapshot(), () =>
+        phase === 'target' ? targetSnapshot() : operatorSnapshot(),
+      )
+      const user = userEvent.setup({
+        advanceTimers: vi.advanceTimersByTimeAsync,
+      })
+
+      const renderResult = renderDemoApp({ session, api: client })
+
+      await screen.findByText(tConsole('impersonations.current.none'))
+      await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
+      const tenantBefore = backend.tenantReads()
+      const openedBefore = opened.length
+      await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
+
+      // The frame remounted while the status read is still held: the grant's
+      // tenant is not known, so no tenant-scoped read and no stream may run
+      // under the operator's leftover tenant. The status read being in flight
+      // is the state that carries the claim: the frame has settled on an
+      // unknown tenant because that read has not answered yet.
+      await waitFor(() => expect(window.location.pathname).toBe('/'))
+      await waitFor(() =>
+        expect(
+          renderResult.queryClient.getQueryState(
+            getAuthnImpersonationStatusQueryKey(),
+          )?.fetchStatus,
+        ).toBe('fetching'),
+      )
+      expect(getCurrentTenantId()).toBeNull()
+      // Hold the claim past React Query's retry delay: a tenant read retried
+      // at one second would fall outside a fixed 20 ms window.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+      expect(getCurrentTenantId()).toBeNull()
+      expect(backend.tenantReads()).toBe(tenantBefore)
+      expect(opened.length).toBe(openedBefore)
+
+      // The status read settles the grant's tenant; reads and the stream now
+      // run under it.
+      await act(async () => {
+        status.resolve()
+      })
+      await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
+      expect(backend.unreadTenantIds().every((id) => id === 'beta')).toBe(true)
+      await waitFor(() => expect(opened.length).toBeGreaterThan(openedBefore))
+      expect(tenants.at(-1)).toBe('beta')
+    } finally {
+      vi.useRealTimers()
     }
-    bindRequestFn(request)
-    const session = scriptedSession(operatorSnapshot(), () =>
-      phase === 'target' ? targetSnapshot() : operatorSnapshot(),
-    )
-    const user = userEvent.setup()
-
-    renderDemoApp({ session, api: client })
-
-    await screen.findByText(tConsole('impersonations.current.none'))
-    await user.type(screen.getByLabelText(tConsole('impersonations.start.accountLabel')), 'acc-1')
-    const tenantBefore = backend.tenantReads()
-    const openedBefore = opened.length
-    await user.click(screen.getByRole('button', { name: tConsole('impersonations.start.submit') }))
-
-    // The frame remounted while the status read is still held: the grant's
-    // tenant is not known, so no tenant-scoped read and no stream may run
-    // under the operator's leftover tenant.
-    await waitFor(() => expect(window.location.pathname).toBe('/'))
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
-    expect(getCurrentTenantId()).toBeNull()
-    expect(backend.tenantReads()).toBe(tenantBefore)
-    expect(opened.length).toBe(openedBefore)
-
-    // The status read settles the grant's tenant; reads and the stream now
-    // run under it.
-    await act(async () => {
-      status.resolve()
-    })
-    await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
-    expect(backend.unreadTenantIds().every((id) => id === 'beta')).toBe(true)
-    await waitFor(() => expect(opened.length).toBeGreaterThan(openedBefore))
-    expect(tenants.at(-1)).toBe('beta')
   })
 
   it('falls back to the account identifier when the principal has no display name', async () => {
