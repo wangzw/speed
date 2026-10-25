@@ -51,6 +51,7 @@
  */
 
 import type { ReactElement } from 'react'
+import { useEffect } from 'react'
 import Box from '@mui/material/Box'
 import {
   AppearanceSection,
@@ -70,8 +71,13 @@ import { useTranslation } from '@speed/i18n'
 import { useLocationPath, useNavigate } from '@speed/route-kit'
 import { themePresets } from '@speed/theme-presets'
 import { PageHeader, useAppThemePreset } from '@speed/ui-kit'
+import { useAuthnProfileGet } from '../app-api/index.js'
 import { useAppServices } from '../app-services.js'
 import { persistThemePreset } from '../chrome.js'
+import {
+  forgetInvitationLanding,
+  pendingInvitationLanding,
+} from '../invitation-return.js'
 import { ACCOUNT_CALLBACK_PATH, ACCOUNT_PATH } from '../paths.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
 import { NotFoundPage } from './not-found-page.js'
@@ -89,6 +95,23 @@ export function AccountSettingsPage(): ReactElement {
   // section waits for the visitor to ask.
   const changeOpen = landing.get('change') === 'email'
   const verifyLanding = landing.get('verify') === '1' && !changeOpen
+  const navigate = useNavigate()
+  // A password registration made from an invitation link lands here to prove
+  // the address, and the landing it started from has to survive that detour.
+  // Once the profile reads verified, the visitor goes back to the link to
+  // accept the invitation. The remembered landing is cleared first, so a later
+  // verification does not repeat the move.
+  const profile = useAuthnProfileGet({
+    query: { enabled: verifyLanding },
+  })
+  const returnTo = verifyLanding ? pendingInvitationLanding() : null
+  useEffect(() => {
+    if (returnTo === null || profile.data?.verification?.state !== 'verified') {
+      return
+    }
+    forgetInvitationLanding()
+    navigate(returnTo)
+  }, [navigate, profile.data, returnTo])
   // Only the host reads the feature document; each section is mounted (or
   // told what it may offer) from the names this deployment serves.
   const phoneServed = useFeature('authn.phone')

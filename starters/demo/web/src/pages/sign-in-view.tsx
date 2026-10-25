@@ -51,10 +51,11 @@ import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
 import type { SignInContext, SignInMode } from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
-import { useNavigate } from '@speed/route-kit'
+import { useLocationPath, useNavigate } from '@speed/route-kit'
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useAppServices } from '../app-services.js'
+import { rememberInvitationLanding } from '../invitation-return.js'
 import {
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
@@ -90,6 +91,7 @@ export function SignInView({
   const { session } = useAppServices()
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
+  const { path: pathname } = useLocationPath()
   // The mode the screen presents. Giving `onModeChange` makes the screen
   // controlled, so this state is the single source of what the surface asks
   // for; the page title above the screen follows it.
@@ -132,7 +134,10 @@ export function SignInView({
       // A password registration lands on the account page's verification
       // section whatever the deployment's personal-tenant policy: the account
       // exists but its email address is not proved yet, and that section is
-      // where it is proved.
+      // where it is proved. A visitor who registered from an invitation link
+      // keeps that landing for the way back: the token stays out of the URL,
+      // every request and every server-side record, held in the tab instead.
+      rememberInvitationLanding(pathname)
       navigate(`${ACCOUNT_PATH}?verify=1`)
       return
     }

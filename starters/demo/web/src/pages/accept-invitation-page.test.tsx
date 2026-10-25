@@ -19,6 +19,7 @@ import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
 import type { AuthSession, AuthSnapshot, FeatureState } from '@speed/auth-core'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
+import { accountUiResources } from '@speed/account-ui'
 import { authUiResources } from '@speed/auth-ui'
 import {
   FEATURES_GET,
@@ -52,7 +53,16 @@ import { INVITATION_PREFIX } from '../paths.js'
  */
 const authEn = authUiResources['en-US'] as unknown as {
   readonly acceptInvitation: { readonly title: string; readonly accept: string }
-  readonly mode: { readonly registerEntry: string }
+  readonly mode: {
+    readonly registerEntry: string
+  }
+  readonly register: {
+    readonly usernameLabel: string
+    readonly emailLabel: string
+    readonly passwordLabel: string
+    readonly confirmPasswordLabel: string
+    readonly submit: string
+  }
   readonly smsSignIn: {
     readonly phoneLabel: string
     readonly sendCode: string
@@ -60,6 +70,16 @@ const authEn = authUiResources['en-US'] as unknown as {
     readonly submit: string
   }
 }
+
+/** The account-ui verification section a password registration lands on. */
+const accountEn = accountUiResources['en-US'] as unknown as {
+  readonly verification: {
+    readonly codeLabel: string
+    readonly verify: string
+  }
+}
+
+const REGISTER = 'POST /api/v1/auth/register'
 
 const TOKEN = 'tok-123'
 const PATH = `${INVITATION_PREFIX}/${TOKEN}`
@@ -389,6 +409,121 @@ describe('the invitation landing', () => {
       }),
     ).toBe(region)
     expect(region).toHaveTextContent(demoEnUS.home.membershipNotice.title)
+  })
+
+  it('returns a password registration to the invitation after its address is verified', async () => {
+    // An anonymous visitor on the invitation URL has no feature document yet
+    // (it is readable only to an authenticated caller), so the landing route
+    // is not matched and the tenant shell's own sign-in surface renders. A
+    // password registration there must first prove the address on the account
+    // page, and the invitation token has to survive that detour: the visitor
+    // comes back to the link and can accept it.
+    let verified = false
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'workspace.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList([{ name: 'password', kind: 'form' }], {
+          signup: true,
+          signupPassword: true,
+        }),
+      [REGISTER]: () => ({
+        state: 'registered',
+        account_id: 'acc-1',
+        verification: { state: 'pending', email: VIEW.invitation.email },
+      }),
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () =>
+        principal({
+          verification: verified
+            ? {
+                state: 'verified',
+                email: VIEW.invitation.email,
+                since: '2026-10-25T00:00:00Z',
+              }
+            : { state: 'pending', email: VIEW.invitation.email, since: '' },
+        }),
+      ['POST /api/v1/auth/identifiers']: () => ({
+        state: 'pending',
+        expires_in: 600,
+        resend_after: 0,
+      }),
+      ['POST /api/v1/auth/identifiers/verify']: () => {
+        verified = true
+        return { state: 'verified' }
+      },
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+      [`POST /api/v1/auth/invitations/${TOKEN}`]: () => ({
+        account: 'acc-1',
+        tenant: INVITED_TENANT_ID,
+        active: true,
+        source: 'invite',
+        sso_exempt: false,
+      }),
+      ['GET /api/v1/auth/me/tenants']: () => ({
+        tenants: [{ id: INVITED_TENANT_ID, alias: INVITED_TENANT_ALIAS }],
+      }),
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+
+    // The anonymous surface the visitor meets at the invitation URL.
+    await user.click(
+      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(authEn.register.usernameLabel),
+      'invitee',
+    )
+    await user.type(
+      screen.getByLabelText(authEn.register.emailLabel),
+      VIEW.invitation.email,
+    )
+    await user.type(
+      screen.getByLabelText(authEn.register.passwordLabel),
+      's3cret-pass',
+    )
+    await user.type(
+      screen.getByLabelText(authEn.register.confirmPasswordLabel),
+      's3cret-pass',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authEn.register.submit }),
+    )
+
+    // The password registration's product landing: the account page's email
+    // verification section, which sends one code on arrival.
+    await waitFor(() => expect(window.location.pathname).toBe('/account'))
+    const codeField = await screen.findByLabelText(
+      accountEn.verification.codeLabel,
+    )
+    await user.type(codeField, '123456')
+    await user.click(
+      screen.getByRole('button', { name: accountEn.verification.verify }),
+    )
+
+    // The address is proved, so the detour's purpose is met: the visitor is
+    // back on the link they started from and can accept it.
+    await waitFor(() => expect(window.location.pathname).toBe(PATH))
+    await user.click(
+      await screen.findByRole('button', {
+        name: authEn.acceptInvitation.accept,
+      }),
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.home.heading,
+      }),
+    ).toBeInTheDocument()
+    expect(
+      await within(screen.getByRole('main')).findByText(
+        demoEnUS.home.membershipNotice.title,
+      ),
+    ).toBeInTheDocument()
   })
 
   it('stays on the invitation landing after a registration through SMS', async () => {

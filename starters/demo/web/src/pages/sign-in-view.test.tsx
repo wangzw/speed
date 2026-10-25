@@ -103,13 +103,20 @@ const REGISTER_PATH = '/api/v1/auth/register'
 const REGISTER = `POST ${REGISTER_PATH}`
 
 /** The account-ui explanation the setup page renders while the account has
- * no login name (PasswordSection owns that copy now). */
+ * no login name (PasswordSection owns that copy now), and the verification
+ * section a password registration lands on. */
 const accountEn = accountUiResources['en-US'] as unknown as {
   readonly password: { readonly loginNameRequired: string }
+  readonly verification: {
+    readonly codeLabel: string
+    readonly verify: string
+    readonly verifiedTitle: string
+  }
 }
 
 beforeEach(() => {
   window.history.replaceState({}, '', '/')
+  window.sessionStorage.clear()
   vi.mocked(navigateToAuthorizationUrl).mockClear()
 })
 
@@ -307,6 +314,87 @@ describe('the sign-in surface', () => {
         (call) => call.method === 'POST' && call.path === REGISTER_PATH,
       ),
     ).toBe(true)
+  })
+
+  it('keeps a registration made away from an invitation on the account page after verification', async () => {
+    // A password registration always lands on the verification section, and
+    // a registration that did not start from an invitation has no landing to
+    // return to: proving the address leaves the viewer on the account page.
+    let verified = false
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([{ name: 'password', kind: 'form' }], {
+          signup: true,
+          signupPassword: true,
+        }),
+      [REGISTER]: () => ({
+        state: 'registered',
+        account_id: 'account-1',
+        verification: { state: 'pending', email: 'ada@example.com' },
+      }),
+      [LOGIN_START]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => authenticatedCompletion(),
+      [PROFILE_GET]: () =>
+        principal({
+          verification: verified
+            ? {
+                state: 'verified',
+                email: 'ada@example.com',
+                since: '2026-10-25T00:00:00Z',
+              }
+            : { state: 'pending', email: 'ada@example.com', since: '' },
+        }),
+      ['POST /api/v1/auth/identifiers']: () => ({
+        state: 'pending',
+        expires_in: 600,
+        resend_after: 0,
+      }),
+      ['POST /api/v1/auth/identifiers/verify']: () => {
+        verified = true
+        return { state: 'verified' }
+      },
+    })
+    renderDemoApp({ session: harness.session })
+
+    const user = userEvent.setup()
+    await user.click(
+      await screen.findByRole('button', { name: authEn.mode.registerEntry }),
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.usernameLabel),
+      'ada',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.emailLabel),
+      'ada@example.com',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.passwordLabel),
+      's3cret-pass',
+    )
+    await user.type(
+      screen.getByLabelText(authRegisterEn.register.confirmPasswordLabel),
+      's3cret-pass',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authRegisterEn.register.submit }),
+    )
+
+    await waitFor(() => expect(window.location.pathname).toBe(ACCOUNT_PATH))
+    await user.type(
+      await screen.findByLabelText(accountEn.verification.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: accountEn.verification.verify }),
+    )
+
+    expect(
+      await screen.findByText(accountEn.verification.verifiedTitle),
+    ).toBeInTheDocument()
+    // The verification did not invent a landing: the viewer stays where the
+    // registration put them.
+    expect(window.location.pathname).toBe(ACCOUNT_PATH)
   })
 
   it('lands a registration in the tenant area when the personal tenant is in force', async () => {
