@@ -55,3 +55,47 @@ export function answerStepFor(state: OpenFlowState): AnswerStep {
       return 'answer'
   }
 }
+
+/**
+ * Whether answering this open step with this input may send a verification
+ * message. It mirrors the server's own rule, so a surface presents a proof
+ * exactly when the answer may spend one: choosing an SMS second factor, or
+ * supplying a phone one of the step's own fields declared. An `enroll` step
+ * registers a factor and sends nothing (the SMS factor binds a phone the
+ * account has already proved).
+ */
+export function answerSends(
+  step: OpenFlowState,
+  input: Record<string, string>,
+): boolean {
+  switch (step.next.kind) {
+    case 'factor': {
+      const chosen = step.next.factors.find(
+        (factor) => factor.id === input.factor,
+      )
+      return chosen?.kind === 'sms'
+    }
+    case 'challenge':
+      return step.next.fields.some(
+        (field) => field.kind === 'phone' && (input[field.name] ?? '') !== '',
+      )
+    default:
+      return false
+  }
+}
+
+/**
+ * Whether answering this open step could ever send a verification message,
+ * whatever input is supplied. A surface renders the proof block for such a
+ * step, so a proof is ready before the answer that needs it.
+ */
+export function stepMaySend(step: OpenFlowState): boolean {
+  switch (step.next.kind) {
+    case 'factor':
+      return step.next.factors.some((factor) => factor.kind === 'sms')
+    case 'challenge':
+      return step.next.fields.some((field) => field.kind === 'phone')
+    default:
+      return false
+  }
+}

@@ -36,6 +36,14 @@
  * translated name, an unknown one shows the kind as given (the
  * deployment's own vocabulary), and a server-supplied label wins over
  * both.
+ *
+ * HumanGatedFlowStep wraps this renderer for a step that may send a
+ * verification message. It renders the deployment's proof block above the
+ * step, presents the proof the answer needs, and consumes it once
+ * presented. Which answers send is ./flow's answerSends -- choosing an
+ * SMS second factor, or supplying a phone a challenge declared -- so a
+ * factor the deployment verifies another way answers without a proof and
+ * leaves the current one unspent.
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
@@ -48,11 +56,18 @@ import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
 import type { AuthnField } from '@speed/auth-core'
-import { FormField, FormLayout } from '@speed/ui-kit'
+import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
+import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
+import {
+  FormField,
+  FormLayout,
+  HumanVerification as HumanVerificationBlock,
+} from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel } from './labels.js'
 import { WebauthnError, runWebauthn, webauthnStepOf } from '@speed/auth-core/webauthn'
 import type { OpenFlowState } from './flow.js'
+import { answerSends, stepMaySend } from './flow.js'
 
 /** The factor/enroll kinds the family has wording for. */
 const FACTOR_KINDS = ['totp', 'sms', 'webauthn'] as const
@@ -62,8 +77,75 @@ export interface FlowStepFieldsProps {
   readonly step: OpenFlowState
   /** A request is in flight; the step's own action disables. */
   readonly busy: boolean
-  /** Report the answered fields upward (the driver sends them). */
-  readonly onAnswer: (input: Record<string, string>) => void
+  /** Report the answered fields upward (the driver sends them). The
+   * optional second argument is the proof an answer that may send
+   * presents. */
+  readonly onAnswer: (
+    input: Record<string, string>,
+    humanProof?: string,
+  ) => void
+}
+
+export interface HumanGatedFlowStepProps
+  extends Omit<FlowStepFieldsProps, 'onAnswer'> {
+  /** The session whose human-verification gate and proof the step uses. */
+  readonly session: AuthSession
+  /** The gate a host already read, or omitted to read it here. */
+  readonly humanGate?: AuthnHumanGate
+  /** Report the answered fields upward (the driver sends them), with the
+   * proof an answer that may send presents. */
+  readonly onAnswer: (
+    input: Record<string, string>,
+    humanProof?: string,
+  ) => void
+}
+
+/**
+ * A step renderer with the deployment's human-verification block above it.
+ * The block renders when the step may send a verification message, and an
+ * answer that does send presents the proof the surface holds. The proof is
+ * single-use, so presenting it consumes it and the block obtains the next
+ * one; an answer that sends nothing leaves it unspent.
+ *
+ * The hook lives here rather than in each channel form, so a form whose
+ * own first step sends nothing reads no discovery document until a parked
+ * step actually may send.
+ */
+export function HumanGatedFlowStep({
+  session,
+  humanGate,
+  step,
+  busy,
+  onAnswer,
+}: HumanGatedFlowStepProps) {
+  const human = useHumanVerification(
+    session,
+    humanGate === undefined ? {} : { gate: humanGate },
+  )
+  const needsProof = humanGateNeedsProof(human.gate)
+  const answer = (input: Record<string, string>): void => {
+    const presented =
+      needsProof && answerSends(step, input) ? human.proof : null
+    onAnswer(input, presented ?? undefined)
+    if (presented !== null) {
+      human.consume()
+    }
+  }
+  return (
+    <>
+      {needsProof && stepMaySend(step) ? (
+        <HumanVerificationBlock
+          gate={human.gate ?? undefined}
+          proof={human.proof}
+          status={human.status}
+          onToken={human.adoptToken}
+          onRetry={human.retry}
+          disabled={busy}
+        />
+      ) : null}
+      <FlowStepFields step={step} busy={busy} onAnswer={answer} />
+    </>
+  )
 }
 
 export function FlowStepFields({

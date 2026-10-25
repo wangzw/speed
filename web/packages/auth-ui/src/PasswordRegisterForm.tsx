@@ -64,10 +64,10 @@ import {
   parseEmailAddress,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
-import type { AuthSession } from '@speed/auth-core'
+import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
-import { FlowStepFields } from './internal/flow-step.js'
+import { HumanGatedFlowStep } from './internal/flow-step.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import { allowedToStart } from './internal/start-gate.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
@@ -91,6 +91,12 @@ export interface PasswordRegisterFormProps {
    * again. The context is `{method: 'password', mode: 'register'}`.
    */
   readonly beforeStart?: SignInBeforeStart
+  /**
+   * The human-verification gate the deployment reported, when the host
+   * already read the discovery document (the sign-in screen does). Omitted,
+   * the form reads it when a parked step may send.
+   */
+  readonly humanGate?: AuthnHumanGate
 }
 
 interface RegisterFields {
@@ -148,6 +154,7 @@ export function PasswordRegisterForm({
   onSignedIn,
   onSignInRequired,
   beforeStart,
+  humanGate,
 }: PasswordRegisterFormProps) {
   const { t } = useAuthUiTranslation()
   const form = useForm<RegisterFields>({
@@ -317,14 +324,17 @@ export function PasswordRegisterForm({
 
   // A parked step after the password (a forced password change, a second
   // factor) replaces this form's fields: only one surface renders at a
-  // time.
+  // time. A second factor that sends a code carries the deployment's proof
+  // block above it and presents the proof.
   if (driver.step !== null && !autoSignInFailed && !signedIn) {
     return (
       <>
-        <FlowStepFields
+        <HumanGatedFlowStep
+          session={session}
+          humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input) => void driver.answer(input)}
+          onAnswer={(input, proof) => void driver.answer(input, proof)}
         />
         <InlineError code={failure !== null && 'code' in failure ? failure.code : null} />
       </>

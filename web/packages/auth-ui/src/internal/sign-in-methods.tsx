@@ -34,6 +34,7 @@ import type { SubmitHandler } from 'react-hook-form'
 import type {
   AuthSession,
   AuthnField,
+  AuthnHumanGate,
   AuthnMethodDescriptor,
   AuthnSsoProvider,
 } from '@speed/auth-core'
@@ -41,7 +42,7 @@ import { FormField, FormLayout, errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel, methodLabel } from './labels.js'
 import { InlineError } from './inline-error.js'
-import { FlowStepFields } from './flow-step.js'
+import { HumanGatedFlowStep } from './flow-step.js'
 import { useFlowDriver } from './use-flow-driver.js'
 import { isOpenFlow } from './flow.js'
 import { useGroupHeadingVariant } from './group-heading.js'
@@ -67,6 +68,12 @@ export interface DescriptorSignInFormProps {
   readonly onSignedIn?: () => void
   /** Decides whether the method's flow may begin (see ./start-gate). */
   readonly beforeStart?: SignInBeforeStart
+  /**
+   * The human-verification gate the deployment reported, when the host
+   * already read the discovery document (the sign-in screen does). Omitted,
+   * the form reads it.
+   */
+  readonly humanGate?: AuthnHumanGate
 }
 
 export function DescriptorSignInForm({
@@ -75,6 +82,7 @@ export function DescriptorSignInForm({
   fields,
   onSignedIn,
   beforeStart,
+  humanGate,
 }: DescriptorSignInFormProps) {
   const { t } = useAuthUiTranslation()
   const defaults: Record<string, string> = {}
@@ -109,10 +117,12 @@ export function DescriptorSignInForm({
   if (driver.step !== null) {
     return (
       <>
-        <FlowStepFields
+        <HumanGatedFlowStep
+          session={session}
+          humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input) => void driver.answer(input)}
+          onAnswer={(input, proof) => void driver.answer(input, proof)}
         />
         <InlineError code={errorCode} />
       </>
@@ -340,6 +350,12 @@ export interface PasskeySignInProps {
   readonly onSignedIn?: () => void
   /** Decides whether the method's flow may begin (see ./start-gate). */
   readonly beforeStart?: SignInBeforeStart
+  /**
+   * The human-verification gate the deployment reported, when the host
+   * already read the discovery document (the sign-in screen does). Omitted,
+   * the form reads it when a parked step may send.
+   */
+  readonly humanGate?: AuthnHumanGate
 }
 
 export function PasskeySignIn({
@@ -347,6 +363,7 @@ export function PasskeySignIn({
   method,
   onSignedIn,
   beforeStart,
+  humanGate,
 }: PasskeySignInProps) {
   const { t } = useAuthUiTranslation()
   const headingVariant = useGroupHeadingVariant()
@@ -387,10 +404,12 @@ export function PasskeySignIn({
           {methodLabel(method, t)}
         </Button>
       ) : (
-        <FlowStepFields
+        <HumanGatedFlowStep
+          session={session}
+          humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input) => void driver.answer(input)}
+          onAnswer={(input, proof) => void driver.answer(input, proof)}
         />
       )}
       <InlineError code={errorCode} />

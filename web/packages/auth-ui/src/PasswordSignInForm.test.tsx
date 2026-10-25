@@ -30,6 +30,7 @@ import {
   principal,
 } from '@speed/test-utils/session-harness'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { createAppTheme } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -371,6 +372,82 @@ describe('PasswordSignInForm', () => {
     expect(beforeStart).toHaveBeenCalledWith({ method: 'password' })
     expect(harness.calls).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('carry the human proof on an SMS second-factor answer', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const harness = makeHarness({
+        [LOGIN_START]: () =>
+          openFlow({
+            seq: 1,
+            state: 'second',
+            next: {
+              kind: 'factor',
+              factors: [{ id: 'mfa-1', kind: 'sms' }],
+            },
+          }),
+        [LOGIN_ANSWER]: () =>
+          openFlow({
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'code' }],
+            },
+          }),
+      })
+      renderWithProviders(
+        <PasswordSignInForm
+          session={harness.session}
+          humanGate={{
+            required: true,
+            provider: 'turnstile',
+            site_key: 'site-1',
+          }}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.type(
+        screen.getByLabelText(ZH_LABELS.identifierLabel),
+        'alice@example.com',
+      )
+      await user.type(
+        screen.getByLabelText(ZH_LABELS.passwordLabel),
+        's3cret-pass',
+      )
+      await user.click(screen.getByRole('button', { name: SUBMIT_ZH }))
+      // The flow parks on an SMS second factor: the proof block stands above
+      // the choices.
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      act(() => {
+        fake.token('token-1')
+      })
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.factorKind.sms }),
+      )
+      await waitFor(() =>
+        expect(
+          harness.calls.find(
+            (call) =>
+              call.path === '/api/v1/auth/flows/answer' &&
+              (call.options?.body as { step?: string }).step === 'factor',
+          ),
+        ).toBeDefined(),
+      )
+      const factorAnswer = harness.calls.find(
+        (call) =>
+          call.path === '/api/v1/auth/flows/answer' &&
+          (call.options?.body as { step?: string }).step === 'factor',
+      )
+      expect(factorAnswer?.options?.body).toMatchObject({
+        input: { factor: 'mfa-1' },
+        human_proof: 'token-1',
+      })
+    } finally {
+      fake.restore()
+    }
   })
 
   it('render the TOTP setup URI in the theme’s mono stack', async () => {

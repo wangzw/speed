@@ -343,7 +343,7 @@ sequenceDiagram
 
 `SMSSignInForm` 先以手机号起一条 `method: 'sms'` 的流程，把两步收在同一个表单里：`challenge` 步发出通知用 `role="status"` 报出接收号码；重发以同一号码再起一条流程（发码是方法 `Begin` 的职责，同一条流程内没有重发这一步）；改号退回第一步。一次新的发送（首发送、重发或改号）把验证码字段清空，使对着上一码输入的旧值不能搭上新一码。手机号步用 ui-kit 的两段式控件（`PhoneNumberField`）：国家/地区选择器与本地号码，提交前组装成 E.164。选择器初始取宿主给出的手机号缺省国家/地区（ui-kit 的 `PhoneCountryDefaultProvider`），缺席时取浏览器语言所指的国家/地区（zh-CN → +86，en-US → +1），按国家名、ISO 码或国际区号搜索；粘贴的完整国际号码会自行切换选择器并填入本地部分。号码按所选国家/地区在本地校验，位数不足等失败带出区号（「该号码在 +86 下位数不完整」）、不发起请求；服务端自己的拒绝文案只留给它能判断的失败（地区不支持、发送策略拒绝）。
 
-部署要求人机验证时，手机号步与验证码步的发送控件上方渲染 ui-kit 的 `HumanVerification` 块：首次发送、重发与停在第二因素时选择短信都带 `human_proof`，每次发送之后消耗当前证明并取一份新的，证明未就绪时发送控件禁用。`SignInScreen` 把已读到的发现文档的 `human` 经 `humanGate` 交给表单，单独挂载的表单自行读一次方法文档（[auth-core](design-web-auth-core.md) 的「人机验证证明」）。服务端对缺失、无效、过期或再次出示的证明答 403 `human-verification-required`，表单经错误白名单渲染本节文案；过长的证明答 400，提供方或存储不可用答 503。
+部署要求人机验证时，会发送验证码的步骤上方渲染 ui-kit 的 `HumanVerification` 块并交出 `human_proof`。短信渠道自己的手机号步与验证码步是其中一处：首次发送、重发与停在第二因素时选择短信都带证明，每次发送之后消耗当前证明并取一份新的，证明未就绪时发送控件禁用。短信渠道以外的渠道表单把流程停下的步骤交给共享的 `HumanGatedFlowStep`：步骤可能发送时（选中短信第二因素，或挑战声明了手机号且提交了它）渲染同一个块，由 `answerSends` 判定这一次答复是否发送，发送时把证明交给 `useFlowDriver` 的 `answer`；口令登录与注册、社交回跳、描述符表单与通行密钥因此都覆盖。`SignInScreen` 把已读到的发现文档的 `human` 经 `humanGate` 交给表单，单独挂载的表单自行读一次方法文档（[auth-core](design-web-auth-core.md) 的「人机验证证明」）。服务端对缺失、无效、过期或再次出示的证明答 403 `human-verification-required`，表单经错误白名单渲染本节文案；过长的证明答 400，提供方或存储不可用答 503。
 
 ### 社交登录与回调
 
@@ -465,6 +465,7 @@ sequenceDiagram
 | 邀请受理的新账户输入项取舍、标题层级与显示时区 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps` |
 | 短信通道读取手机号缺省国家/地区 | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm` |
 | 短信渠道的人机验证块与 `human_proof`（首次发送、重发与短信第二因素） | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`、`SMSSignInFormProps`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
+| 各渠道表单停留步骤的人机验证块与 `human_proof`（短信第二因素、声明手机号的挑战） | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `HumanGatedFlowStep`；`web/packages/auth-ui/src/internal/flow.ts` `answerSends`、`stepMaySend`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver` |
 | 通行密钥仪式由 `@speed/auth-core/webauthn` 驱动 | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx`；`web/packages/auth-core/src/webauthn.ts` |
 | 错误码文本经 i18n 共享解析器（含 `client.http.<status>` 族） | 已实现 | `web/packages/auth-ui/src/internal/error-text.ts` |
 | 冒充横幅 `ImpersonationBanner` | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |

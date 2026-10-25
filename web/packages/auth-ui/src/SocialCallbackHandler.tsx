@@ -41,7 +41,7 @@ import type { AuthSession, AuthnMethodList } from '@speed/auth-core'
 import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
-import { FlowStepFields } from './internal/flow-step.js'
+import { HumanGatedFlowStep } from './internal/flow-step.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 
 export interface SocialCallbackHandlerProps {
@@ -224,13 +224,15 @@ export function SocialCallbackHandler({
   }
 
   // A step the flow parked when it was read back is rendered and answered
-  // in place; only the pending read shows the notice below.
+  // in place, with the deployment's proof block above it when the step may
+  // send; only the pending read shows the notice below.
   if (driver.step !== null) {
     return (
-      <FlowStepFields
+      <HumanGatedFlowStep
+        session={session}
         step={driver.step}
         busy={driver.busy}
-        onAnswer={(input) => void driver.answer(input)}
+        onAnswer={(input, proof) => void driver.answer(input, proof)}
       />
     )
   }

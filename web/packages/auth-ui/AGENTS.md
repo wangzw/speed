@@ -83,6 +83,18 @@ account-resolution outcome where the deployment enables that.
   `redirect` step reaching the renderer renders an unavailable notice. A
   step the server answers `authn.flow_invalid` returns the form to its
   channel's first step.
+- **A parked step that may send carries the proof block.**
+  `HumanGatedFlowStep` (in `src/internal/flow-step.tsx`) wraps the shared
+  step renderer: when the deployment's gate requires a proof and the step
+  could send a verification message (an SMS second factor, or a challenge
+  that declares a phone), it renders ui-kit's `HumanVerification` above the
+  step and presents the proof on the answer that sends, consuming it.
+  `answerSends` and `stepMaySend` in `src/internal/flow.ts` mirror the
+  server's rule, so an answer that sends nothing leaves the proof unspent.
+  Every channel form renders it for a parked step, so a password, register,
+  social-callback, descriptor or passkey login reaches an SMS second factor
+  with a proof. `useFlowDriver.answer` carries the proof in the answer
+  body's `human_proof` member.
 - **Headless logic lives in `@speed/auth-core`.** `startFlow`,
   `answerFlow`, `startAuthenticatedFlow`, `readFlow`, `abandonFlow`,
   `register`, `listMethods`, `discoverSso`, `logout`, `refresh` -- the

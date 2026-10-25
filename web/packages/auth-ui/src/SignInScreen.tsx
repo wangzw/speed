@@ -463,6 +463,7 @@ export function SignInScreen({
           <PasswordRegisterForm
             session={session}
             beforeStart={startGate}
+            humanGate={doc.human}
             onSignedIn={onSignedIn}
             onSignInRequired={(username) => {
               // The account exists; the viewer is handed to the sign-in
@@ -480,6 +481,7 @@ export function SignInScreen({
             session={session}
             beforeStart={startGate}
             defaultUsername={prefillUsername}
+            humanGate={doc.human}
             onSignedIn={() => completed('password')}
           />
         )
@@ -499,6 +501,7 @@ export function SignInScreen({
             method={method.name}
             fields={method.fields ?? []}
             beforeStart={startGate}
+            humanGate={doc.human}
             onSignedIn={() => completed(method.name)}
           />
         )
@@ -602,6 +605,7 @@ export function SignInScreen({
                 session={session}
                 method={method}
                 beforeStart={startGate}
+                humanGate={doc.human}
                 onSignedIn={() => completed(method.name)}
               />
             ))}

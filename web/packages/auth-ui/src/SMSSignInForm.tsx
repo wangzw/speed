@@ -91,6 +91,7 @@ import {
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
 import type { OpenFlowState } from './internal/flow.js'
+import { answerSends } from './internal/flow.js'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { FlowStepFields } from './internal/flow-step.js'
@@ -124,28 +125,6 @@ interface SmsFields {
 /** The SMS method's first code prompt: state `first` with a challenge. */
 function isCodePrompt(step: OpenFlowState): boolean {
   return step.state === 'first' && step.next.kind === 'challenge'
-}
-
-/** Whether answering a parked step may send a verification message:
- * choosing an SMS second factor, or supplying a phone one of the step's
- * fields declared. It mirrors the server's own rule, so the proof is
- * consumed exactly when the send may have spent it. */
-function answerSends(
-  step: OpenFlowState,
-  input: Record<string, string>,
-): boolean {
-  if (step.next.kind === 'factor') {
-    const chosen = step.next.factors.find(
-      (factor) => factor.id === input.factor,
-    )
-    return chosen?.kind === 'sms'
-  }
-  if (step.next.kind === 'challenge') {
-    return step.next.fields.some(
-      (field) => field.kind === 'phone' && (input[field.name] ?? '') !== '',
-    )
-  }
-  return false
 }
 
 export function SMSSignInForm({
