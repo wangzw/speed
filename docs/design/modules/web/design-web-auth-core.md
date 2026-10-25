@@ -191,6 +191,42 @@ export function isTenantAdmissionRefusal(error: unknown): boolean
 - **`useStepUpGate` 记住一次被步进拒绝的动作并在挑战通过后原样重放它一次。** `arm` 记下动作（表单字段、行标识、重发写入的闭包），`succeed` 经 `onRetry` 重放一次并清空，`cancel` 什么都不重放；`intercept(error, action)` 是失败侧的同一条接线：判别为步进短耗时记下动作、置 `open` 并答 true，其余失败答 false 且不动门控。缺省判别认平台自己的拒绝码——`status` 为 401 且 `code` 为 `authn.insufficient_user_authentication`；只看 401 不够，一个结束了会话的 401 没有可提升的会话。会话自身已能区分两者的调用方把 `session.isStepUpShortfall` 作为第二入参传入。`onRetry` 与 `isShortfall` 经 ref 读取，调用方每次渲染传新闭包不会改变 `succeed` 的身份。
 - **`isTenantAdmissionRefusal` 结构判定准入层的裸 404。** 准入层拒绝一个调用者不可进入的租户时答裸 404（不带模块码），`@speed/api-client` 为它合成保留码 `client.http.404`；模块自己的类型化 404（`objectstore.not_found` 等）在同一状态上保留模块码。判定读码不读状态：`code` 为 `client.http.404` 即为准入拒绝；或 `status` 为 404 且 `code` 缺失或落在保留的 `client.` 命名空间里（合成之前同一应答的形态）。带模块码的 404 一律不是它。
 
+### 人机验证证明
+
+```ts
+export type HumanVerificationStatus = 'idle' | 'working' | 'ready' | 'failed'
+
+export interface HumanVerification {
+  readonly gate: AuthnHumanGate | null
+  readonly pending: boolean
+  readonly proof: string | null
+  readonly status: HumanVerificationStatus
+  adoptToken(token: string | null): void
+  retry(): void
+  consume(): void
+}
+
+export function useHumanVerification(
+  session: AuthSession,
+  options?: { readonly gate?: AuthnHumanGate },
+): HumanVerification
+
+export function humanGateNeedsProof(gate: AuthnHumanGate | null | undefined): boolean
+export function requestPowProof(
+  requestChallenge?: () => Promise<ChallengeResponse>,
+): Promise<string>
+export function powProofFromChallenge(answer: ChallengeResponse): string | null
+export function solvePowChallenge(challenge: string, difficulty: number): string | null
+export const POW_HASH = 'sha256'
+export type AuthnHumanGate = AuthnLoginHuman
+```
+
+- **门槛取自发现文档的 `human`。** `AuthnHumanGate` 是生成模型 `AuthnLoginHuman`：`required` 表示每次发送是否必须先交证明，`provider` 是 `off`、`pow` 或 `turnstile`，`site_key` 是 Turnstile 控件渲染用的公开标识。文档省略 `human` 时读作 `{required: false, provider: 'off'}`，比服务端新的客户端因此不会拒绝旧服务端的应答；`human` 在场时 `required` 与 `provider` 必填，`site_key` 出现时必须是字符串。宿主已经把文档读到手时经 `options.gate` 传入，hook 不再读一次。
+- **`pow` 在 Worker 中求解。** `requestPowProof` 读 `POST /api/v1/auth/human/challenge`，校验应答的 `provider: 'pow'`、`algorithm: 'sha256'`、挑战与难度，再找满足难度的 nonce；证明是 `challenge.nonce`，与提供方 `Verify` 的解析形状一致。求解默认在 Web Worker 中运行（`src/pow.ts` 的紧凑 SHA-256，难度来自挑战）；平台没有 `Worker`、Worker 构造失败或加载失败时在调用线程求解。`powProofFromChallenge` 是不经 Worker 的同步入口，`solvePowChallenge` 是纯求解器。
+- **`turnstile` 的 token 由控件交出。** 本包只经 `adoptToken` 存下 ui-kit 控件交来的 token，或在其过期、失败时清空；token 的取得与重置于本包无涉。
+- **证明一次性。** 每次发送之后调用 `consume()`：证明清空，`pow` 立刻取一份新的，`turnstile` 的控件在证明清空时重置。`humanGateNeedsProof` 只对 `pow` 与 `turnstile` 答真；未知机制不阻塞发送，由服务端判定。
+- **发现读失败读作 off，求解失败停在 `failed`。** 发现文档读失败不阻塞发送（服务端仍判定）；挑战读取或求解失败时 `status` 为 `failed`，控件提供重试，发送在取得证明之前保持不可用。`pending` 表示发现读仍在途。
+
 ### 通行密钥仪式（`./webauthn` 子路径）
 
 ```ts
@@ -301,6 +337,8 @@ stateDiagram-v2
 | 企业提供方 | `AuthnSsoProvider` | 生成模型：`id`、`name`、`protocol`（oidc 或 saml） |
 | 已校验的签发应答 | `IssuedTokens`（内部） | `accessToken`、`refreshToken`（未铸造时为 null）、`principal` |
 | 落败的竞态 | `OperationSupersededError` | 带当前（胜者）快照的拒绝 |
+| 人机门槛 | `AuthnHumanGate` | 生成模型：`required`、`provider`（`off`／`pow`／`turnstile`）与 `site_key`（Turnstile 控件用）；文档省略时读作 off |
+| 人机证明 | `HumanVerification` | 门槛、发现读在途、当前证明、求解状态与 `adoptToken`／`retry`／`consume` |
 | 租户 query 键 | `TenantQueryKey`（本项） | `tenantId` 与以租户标识为最外层段的键 |
 
 ## 核心算法与流程
@@ -363,6 +401,8 @@ stateDiagram-v2
 | 完成 2xx 违背契约（缺令牌或会话文档、字段畸形） | `status: 200`、`code: client.protocol` 的 `ApiError`，任一状态变更之前拒绝 |
 | 流程操作交回空 2xx 或形状不符的体 | `client.protocol` 拒绝（解析守卫），无状态变更 |
 | `listMethods()` 交回形状不符的发现文档 | `client.protocol` 拒绝（解析守卫），无状态变更 |
+| `listMethods()` 的发现文档省略 `human` | 读作 `{required: false, provider: 'off'}`，不拒绝（旧服务端） |
+| 人机挑战的读取或求解失败 | `requestPowProof` 拒绝；hook 置 `failed`，发送在取得证明之前不可用，控件提供重试 |
 | `discoverSso()` 交回形状不符的提供方列表 | `client.protocol` 拒绝（解析守卫），无状态变更 |
 | `readFlow()` 被拒（流程绑定缺失或流程已失效的 401） | resolve `null`，不拒绝 |
 | `abandonFlow()` 的流程已不在（401） | `DELETE flows/current` 幂等，resolve |
