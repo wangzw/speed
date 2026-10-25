@@ -109,6 +109,7 @@ const ACCOUNT: AuthnAdminAccount = {
   protected: false,
   password_set: true,
   attributes: {},
+  identifiers: [],
   created_at: INSTANT,
 }
 
