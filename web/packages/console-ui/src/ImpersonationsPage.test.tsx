@@ -40,6 +40,7 @@ import {
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import enUS from './locales/en-US.json' with { type: 'json' }
 import { uiKitResources } from '@speed/ui-kit'
 
 const ZERO = '0001-01-01T00:00:00Z'
@@ -759,6 +760,29 @@ describe('ImpersonationsPage', () => {
     expect(
       screen.getByRole('button', { name: zhCN.impersonations.start.submit }),
     ).toBeDisabled()
+  })
+
+  it('states the impersonation precondition without the configuration key or a fixed wait', async () => {
+    const cases = [
+      { language: 'zh-CN', copy: zhCN.impersonations.start.precondition },
+      { language: 'en-US', copy: enUS.impersonations.start.precondition },
+    ] as const
+    for (const { language, copy } of cases) {
+      const { unmount } = renderWithProviders(<ImpersonationsPage />, {
+        language,
+        operations: withPage(),
+      })
+      // The expected text comes from the locale bundle, so this fails if the
+      // shipped copy and the assertion drift apart.
+      const rendered = await screen.findByText(copy)
+      const text = rendered.textContent ?? ''
+      // The configuration key is an implementation detail; the deployment sets
+      // the wait, so the copy must not name the key or pin an hour figure.
+      expect(text).not.toContain('authn.mfa')
+      expect(text).not.toContain('sensitive-min-age')
+      expect(text).not.toMatch(/\d+\s*(?:hours?|hrs?|h\b|小时)/i)
+      unmount()
+    }
   })
 
   it('withholds the start until a tenant is selected', async () => {
