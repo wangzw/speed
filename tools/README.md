@@ -36,8 +36,9 @@ make tools-test
 `test_makefile.py` runs there as well. It is not a script's suite: it holds
 the root `Makefile`'s legs that loop over the modules or the gates to running
 every item and failing at the end, driving the real `Makefile` over scratch
-directories with stand-ins for `go`, `golangci-lint` and `backends.py` first on
-`PATH`, so it needs `make` and nothing else.
+directories with stand-ins for `go` and `golangci-lint` first on `PATH` and a
+stand-in for `backends.py` supplied through the `BACKENDS` variable, so it
+needs `make` and nothing else.
 
 ## The integration stack
 
