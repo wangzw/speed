@@ -276,14 +276,19 @@ export function InvitationsPage({
 
   const requestRemoveMember = (
     member: ConsoleMember,
-    accountName: string,
+    displayName: string | undefined,
   ) => {
     confirm.ask({
       title: t('members.removeTitle'),
-      // The roster names a member by display name, so the confirmation does
-      // too; a member whose account read resolved no display name falls back
-      // to the recorded identifier.
-      message: t('members.removeMessage', { name: accountName }),
+      // The confirmation names the member the roster names it: by display
+      // name. The account id is a machine value the operator cannot match
+      // to a row, so an unresolved identity (a pending, refused, missing or
+      // feature-gated account read) keeps the sentence neutral rather than
+      // falling back to it.
+      message:
+        displayName === undefined
+          ? t('members.removeMessageUnnamed')
+          : t('members.removeMessage', { name: displayName }),
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedMember(null)
@@ -293,7 +298,9 @@ export function InvitationsPage({
               tenant,
               account: member.account,
             })
-            return t('members.removed', { account: accountName })
+            return t('members.removed', {
+              account: displayName ?? member.account,
+            })
           } catch (error) {
             setFailedMember({ account: member.account, action: 'remove' })
             throw error
@@ -698,8 +705,11 @@ export function InvitationsPage({
 /**
  * The member row's own actions. The account's readable identity comes from
  * the same account read the row's identity cell renders (one cached read
- * per account), so a landed action names the account the way the row shows
+ * per account), so a landed write names the account the way the row shows
  * it and falls back to the recorded identifier when the read is refused.
+ * The removal confirmation takes only the resolved display name: a neutral
+ * sentence stands in when the identity is unresolved, so the recorded
+ * identifier never appears in its copy.
  */
 function MemberRowActions({
   member,
@@ -716,7 +726,10 @@ function MemberRowActions({
   readonly pending: boolean
   /** Whether the SSO surface is present, so the toggle exists. */
   readonly ssoExemption: boolean
-  readonly onRemove: (member: ConsoleMember, accountName: string) => void
+  readonly onRemove: (
+    member: ConsoleMember,
+    displayName: string | undefined,
+  ) => void
   readonly onToggleSsoExempt: (
     member: ConsoleMember,
     accountName: string,
@@ -724,7 +737,9 @@ function MemberRowActions({
 }) {
   const { t } = useConsoleUiTranslation()
   const { name } = useAccountIdentity(member.account)
-  const accountName = name ?? member.account
+  // A landed write names the account by display name, falling back to the
+  // recorded identifier when the read resolves none.
+  const namedAccount = name ?? member.account
   const errorId = `member-error-${encodeURIComponent(member.account)}`
   const ssoFailed = failed === 'sso'
   const removeFailed = failed === 'remove'
@@ -740,7 +755,7 @@ function MemberRowActions({
             aria-describedby={ssoFailed ? errorId : undefined}
             disabled={pending}
             loading={pending}
-            onClick={() => onToggleSsoExempt(member, accountName)}
+            onClick={() => onToggleSsoExempt(member, namedAccount)}
           >
             {member.sso_exempt
               ? t('members.ssoExemptClear')
@@ -756,7 +771,7 @@ function MemberRowActions({
           aria-describedby={removeFailed ? errorId : undefined}
           disabled={pending}
           loading={pending}
-          onClick={() => onRemove(member, accountName)}
+          onClick={() => onRemove(member, name)}
         >
           {t('members.remove')}
         </Button>

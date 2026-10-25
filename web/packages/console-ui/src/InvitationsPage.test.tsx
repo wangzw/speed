@@ -8,6 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { FeatureName } from '@speed/api-sdk/features'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { InvitationsPage } from './InvitationsPage.js'
@@ -781,7 +782,7 @@ describe('InvitationsPage', () => {
     first.unmount()
 
     // A refused account read leaves the recorded id as the only name the
-    // page has, so the confirmation names that instead.
+    // page has, so the success copy names that instead.
     const refused = withTenant({
       listMembers: () => Promise.resolve([member()]),
       getAccount: () => Promise.reject(new Error('forbidden')),
@@ -799,31 +800,56 @@ describe('InvitationsPage', () => {
 
   // The removal confirmation names the member the way the roster shows it:
   // by display name. The account id is a machine value the operator cannot
-  // match against the roster, so it stays out of the sentence; only a member
-  // whose account read yields no display name at all falls back to it.
+  // match against a roster row, so it never enters the sentence: an identity
+  // the account read resolves no display name for (pending, refused,
+  // missing, or a deployment without authn.admin) gets the neutral sentence.
   const MEMBER_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
 
   async function openRemovalConfirmation(
     user: ReturnType<typeof userEvent.setup>,
-    displayName: string,
+    options: {
+      readonly getAccount?: ConsoleBackend['getAccount']
+      readonly hasFeature?: (name: FeatureName) => boolean
+      /** Waits for the identity cell to reach the state under test. */
+      readonly settled: () => Promise<unknown>
+    },
   ): Promise<HTMLElement> {
     const operations = withTenant({
       listMembers: () => Promise.resolve([member({ account: MEMBER_UUID })]),
       getAccount: () =>
         Promise.resolve(
-          accountFixture({ id: MEMBER_UUID, display_name: displayName }),
+          accountFixture({ id: MEMBER_UUID, display_name: 'Ada Lovelace' }),
         ),
+      ...(options.getAccount === undefined
+        ? {}
+        : { getAccount: options.getAccount }),
     })
-    renderWithProviders(<InvitationsPage />, { operations })
+    renderWithProviders(<InvitationsPage />, {
+      operations,
+      ...(options.hasFeature === undefined
+        ? {}
+        : { hasFeature: options.hasFeature }),
+    })
     await pickTenant(user)
-    await screen.findByText(displayName === '' ? MEMBER_UUID : displayName)
-    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
+    await options.settled()
+    await user.click(
+      await screen.findByRole('button', { name: zhCN.members.remove }),
+    )
     return screen.findByRole('dialog', { name: zhCN.members.removeTitle })
+  }
+
+  function expectNeutralRemovalConfirmation(dialog: HTMLElement): void {
+    expect(
+      within(dialog).getByText(zhCN.members.removeMessageUnnamed),
+    ).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(MEMBER_UUID)
   }
 
   it('names the member being removed by its display name', async () => {
     const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, 'Ada Lovelace')
+    const dialog = await openRemovalConfirmation(user, {
+      settled: () => screen.findByText('Ada Lovelace'),
+    })
     expect(
       within(dialog).getByText(
         fill(zhCN.members.removeMessage, { name: 'Ada Lovelace' }),
@@ -833,18 +859,65 @@ describe('InvitationsPage', () => {
 
   it('keeps the member UUID out of the removal confirmation', async () => {
     const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, 'Ada Lovelace')
+    const dialog = await openRemovalConfirmation(user, {
+      settled: () => screen.findByText('Ada Lovelace'),
+    })
     expect(dialog).not.toHaveTextContent(MEMBER_UUID)
   })
 
-  it('falls back to the member UUID only when the account has no display name', async () => {
+  it('uses the neutral sentence when the account has no display name', async () => {
     const user = userEvent.setup()
-    const dialog = await openRemovalConfirmation(user, '')
-    expect(
-      within(dialog).getByText(
-        fill(zhCN.members.removeMessage, { name: MEMBER_UUID }),
-      ),
-    ).toBeInTheDocument()
+    const dialog = await openRemovalConfirmation(user, {
+      getAccount: () =>
+        Promise.resolve(
+          accountFixture({ id: MEMBER_UUID, display_name: '' }),
+        ),
+      settled: () => screen.findByText(MEMBER_UUID),
+    })
+    expectNeutralRemovalConfirmation(dialog)
+  })
+
+  it('uses the neutral sentence while the account read is pending', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<ConsoleAccount>()
+    const dialog = await openRemovalConfirmation(user, {
+      getAccount: () => pending.promise,
+      // The identity cell shows the recorded value while the read is pending.
+      settled: () => screen.findByText(MEMBER_UUID),
+    })
+    expectNeutralRemovalConfirmation(dialog)
+  })
+
+  it('uses the neutral sentence when the account read is refused', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, {
+      getAccount: () => Promise.reject(new Error('forbidden')),
+      settled: () => screen.findByTitle(zhCN.common.accountUnresolved),
+    })
+    expectNeutralRemovalConfirmation(dialog)
+  })
+
+  it('uses the neutral sentence when the account read answers 404', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, {
+      getAccount: () => Promise.reject({ status: 404, code: 'client.http.404' }),
+      settled: () => screen.findByTitle(zhCN.common.accountMissing),
+    })
+    expectNeutralRemovalConfirmation(dialog)
+  })
+
+  it('uses the neutral sentence when the authn.admin feature is absent', async () => {
+    const user = userEvent.setup()
+    const getAccount = vi.fn(() =>
+      Promise.reject(new Error('the gated read must not run')),
+    )
+    const dialog = await openRemovalConfirmation(user, {
+      getAccount,
+      hasFeature: (name) => name !== 'authn.admin',
+      settled: () => screen.findByTitle(zhCN.common.accountUnresolved),
+    })
+    expect(getAccount).not.toHaveBeenCalled()
+    expectNeutralRemovalConfirmation(dialog)
   })
 
   it('writes the chosen account id, not the typed name', async () => {

@@ -531,6 +531,7 @@
     "deleteAria": "Delete account {{id}}",
     "deleteTitle": "Delete account",
     "deleteMessage": "Deleting the account \"{{name}}\" also removes its login identifiers, secrets and sessions.",
+    "deleteMessageUnnamed": "Deleting this account also removes its login identifiers, secrets and sessions.",
     "created": "Account \"{{name}}\" created",
     "deleted": "Account \"{{id}}\" deleted",
     "mfaReset": "Factors for account \"{{id}}\" reset",
@@ -925,6 +926,7 @@
     "remove": "Remove",
     "removeTitle": "Remove member",
     "removeMessage": "Remove the member \"{{name}}\" from this tenant.",
+    "removeMessageUnnamed": "Remove this member from this tenant.",
     "removed": "Member \"{{account}}\" removed",
     "ssoExemptSaved": "SSO exemption of member \"{{account}}\" saved",
     "ssoExemptCleared": "SSO exemption of member \"{{account}}\" cleared"

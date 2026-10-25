@@ -1576,8 +1576,10 @@ describe('AccountsPage', () => {
 
   // The delete confirmation names the account the way the roster shows it:
   // by display name. The account identifier is a machine value the operator
-  // cannot match against the roster, so it stays out of the sentence; only
-  // an account with no display name at all falls back to it.
+  // cannot match against the roster, so it never enters the sentence; an
+  // account whose view carries no display name gets the neutral sentence
+  // instead, because an empty display name does not mean the account has no
+  // login identifiers.
   const DELETE_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
 
   function accountsWith(
@@ -1629,7 +1631,7 @@ describe('AccountsPage', () => {
     expect(dialog).not.toHaveTextContent(DELETE_UUID)
   })
 
-  it('falls back to the account UUID only when the account has no display name', async () => {
+  it('keeps the account UUID out of the delete confirmation when the account has no display name', async () => {
     const user = userEvent.setup()
     const operations = accountsWith(
       accountFixture({ id: DELETE_UUID, display_name: '' }),
@@ -1645,10 +1647,9 @@ describe('AccountsPage', () => {
       name: zhCN.accounts.deleteTitle,
     })
     expect(
-      within(dialog).getByText(
-        fill(zhCN.accounts.deleteMessage, { name: DELETE_UUID }),
-      ),
+      within(dialog).getByText(zhCN.accounts.deleteMessageUnnamed),
     ).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(DELETE_UUID)
   })
 
   it('confirms before resetting MFA and revoking sessions', async () => {
