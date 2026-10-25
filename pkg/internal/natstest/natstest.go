@@ -25,18 +25,20 @@ package natstest
 
 import (
 	"net"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
 const (
-	// url is where the compose stack publishes NATS. It is fixed because
-	// nothing here discovers a port any more, and JetStream is on there: both
-	// the key-value store and the event bus are built on it, and a server
-	// started without it answers neither.
-	url = "nats://127.0.0.1:4222"
-	// addr is url without the scheme, which is what a dial takes.
-	addr = "127.0.0.1:4222"
+	// defaultURL is where the compose stack publishes NATS by default, with
+	// JetStream on: both the key-value store and the event bus are built on it,
+	// and a server started without it answers neither. A deployment that runs
+	// the stack elsewhere -- another compose project, or the same one with
+	// other published ports -- points the tests at its URL with
+	// SPEED_TEST_NATS_URL; an empty variable means this one.
+	defaultURL = "nats://127.0.0.1:4222"
 	// readyTimeout bounds the wait for the server to accept connections. The
 	// stack is normally already healthy by the time a test binary starts --
 	// `make deps-up` waits for its healthchecks -- so this window is for the
@@ -46,15 +48,34 @@ const (
 	readyInterval = 150 * time.Millisecond
 )
 
+// serverURL is where the tests reach NATS: defaultURL unless
+// SPEED_TEST_NATS_URL names another URL.
+//
+// It is read on each call rather than once at start-up, so a case that sets the
+// variable observes the URL it set.
+func serverURL() string { return envOr("SPEED_TEST_NATS_URL", defaultURL) }
+
+// dialAddress is serverURL without the scheme, which is what a dial takes.
+func dialAddress() string { return strings.TrimPrefix(serverURL(), "nats://") }
+
+// envOr returns the value of the named environment variable, or fallback when
+// it is unset or empty.
+func envOr(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
 // URL returns the address of a server with JetStream enabled, failing the case
 // when nothing answers there.
 func URL(t *testing.T) string {
 	t.Helper()
 	if err := waitReady(); err != nil {
 		t.Fatalf("natstest: the NATS test server at %s did not accept a connection within %s: %v\n"+
-			"run `make deps-up` from the repository root to bring the stack up", addr, readyTimeout, err)
+			"run `make deps-up` from the repository root to bring the stack up", dialAddress(), readyTimeout, err)
 	}
-	return url
+	return serverURL()
 }
 
 // waitReady dials the server until it accepts a connection or the bound is up.
@@ -64,7 +85,7 @@ func URL(t *testing.T) string {
 func waitReady() error {
 	deadline := time.Now().Add(readyTimeout)
 	for {
-		conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+		conn, err := net.DialTimeout("tcp", dialAddress(), 2*time.Second)
 		if err == nil {
 			_ = conn.Close()
 			return nil
