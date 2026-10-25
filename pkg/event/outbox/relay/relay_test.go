@@ -48,12 +48,18 @@ func TestAnEventIsPublishedOnceTheWriteThatStagedItCommits(t *testing.T) {
 			})
 		}()
 		<-staging
-		// The table is the source: the open transaction's row is not visible to
-		// the relay, so the outbox it reads holds nothing and no claim is
-		// outstanding. Waiting on that state replaces a fixed pause that a slow
-		// machine could spend before the relay read the table at all; the exact
-		// count taken after the commit is what rules out a second delivery.
-		waitSettled(t, database, bus)
+		// The table is the source, but the open transaction's row is invisible to
+		// the relay, so its emptiness says nothing on its own: that state is
+		// observed before the relay need ever have read the table. A completed
+		// pass after the row was staged is what makes the observation mean
+		// something. Two are waited for, because the pass under way when the row
+		// was staged may have read before it existed, and the next one is
+		// entirely after it.
+		settled := r.passes.Load()
+		if !eventually(func() bool { return r.passes.Load() >= settled+2 }) {
+			t.Fatalf("the relay completed only %d passes after the row was staged, want two",
+				r.passes.Load()-settled)
+		}
 		if got := l.events(); len(got) != 0 {
 			t.Errorf("the bus accepted %+v while the transaction that staged it was still open", got)
 		}

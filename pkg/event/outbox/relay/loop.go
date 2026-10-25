@@ -149,8 +149,11 @@ func (r *relay) run() {
 }
 
 // pass relays every row that is due, and reports how long until the next one
-// falls due, zero when nothing more is staged or the relay is stopping.
+// falls due, zero when nothing more is staged or the relay is stopping. Every
+// return counts as a completed pass, so a case can tell that the loop has read
+// the table.
 func (r *relay) pass() (time.Duration, error) {
+	defer r.passes.Add(1)
 	for {
 		if r.isStopping() {
 			return 0, nil

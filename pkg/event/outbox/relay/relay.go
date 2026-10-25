@@ -30,6 +30,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -173,6 +174,10 @@ type relay struct {
 	// nudges carries word that a row was staged here. It holds one, so a
 	// staging never waits and a burst of them wakes the loop once.
 	nudges chan struct{}
+	// passes counts the passes the loop has completed. It is what lets a case
+	// wait for the loop to have read the table since it staged a row, rather
+	// than pausing for a while and hoping it did. Only the loop writes it.
+	passes atomic.Int64
 
 	mu      sync.Mutex
 	started bool
