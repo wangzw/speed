@@ -60,7 +60,7 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 	if err != nil {
 		return jobs.Result{}, err
 	}
-	if err := p.checkDestination(ctx, d); err != nil {
+	if err = p.checkDestination(ctx, d); err != nil {
 		return jobs.Result{}, err
 	}
 	channels, err := p.prefs.Effective(ctx, d.Recipient.UserID, d.TypeKey)

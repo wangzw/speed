@@ -70,7 +70,7 @@ func (p *pipeline) Dispatch(ctx context.Context, d notification.Dispatch) (jobs.
 		return "", err
 	}
 	if deliveries > 0 {
-		if err := p.chargeBudgets(ctx, id, d, deliveries); err != nil {
+		if err = p.chargeBudgets(ctx, id, d, deliveries); err != nil {
 			return "", err
 		}
 	}
