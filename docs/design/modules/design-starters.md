@@ -54,6 +54,8 @@ starters/demo/
 
 **Fly 部署开放注册，口令与社交两种入口都开。** 镜像以 `-tags deploy` 构建，`deployModules` 在基线之上加入 `authn.emailcode`、`mail.smtp`、`authn.login.google` 与 `authn.login.github`；`deploy/fly.yaml.tmpl` 的 `mail.smtp` 与 `authn.login` 节由入口从 Fly secret 渲染，`seed.settings` 把 `authn.account.password-signup` 与 `authn.account.signup` 都写为 `open`，`workspace.personal.enabled` 为真。入口缺 SMTP 主机或发件地址时拒绝启动，因此开放注册不会落在没有投递通道的机器上。社交首登开户时，提供方声明为已验证的邮箱写成邮箱标识；`authn.account.auto-link` 保持缺省 `never`，与既有账户地址相同的一次社交登录答 `link-required`，不接管该账户（REQ-signup-019）。默认构建（不带 `deploy` 标签）仍不含邮件模块与社交方法、注册保持关闭。
 
+**地址盾缺省守在 `account` 端。** 平台默认文档把限流分成两层并各自点名端：配额层守 `api`，地址盾（`ratelimit` 的地址防护层）守 `account`。登录与注册这些身份落定之前的请求落在 `account` 端，地址盾在这里按来源地址限制单位时间内的请求数，让反复被拒的来源在打到认证后端之前被挡下。Fly 部署、基线与审查装配都从这份默认文档继承这组分端，配置文件只写部署差异；审查装配放宽发送预算的数值，但不把地址盾从 `account` 上撤下。发送预算与地址盾不是同一件事：前者按收件人、来源与账户限制消息数，归发送它的能力（[design-ratelimit](design-ratelimit.md)、[authn-login](authn/design-authn-login.md)）。
+
 **卷上的数据库不做数据迁移。** 联系方式预留的 `(kind, value)` 全局唯一由 `0003_contact_claim.sql` 施加；该迁移只加约束、不对账已有数据，已有库里重复的联系方式预留会让它失败。升级到含这条迁移的版本时，Fly 部署删除 Machine 与卷、以空库重新部署，再由 `seed` 写入初始账户与租户；签名密钥与对象存储的本地根随卷一起重建（[ADR-authn-contact-claim-2026-10-22](../../adr/adr-authn-contact-claim-2026-10-22.md)）。
 
 部署门禁是后端监听上 `GET /` 的检查，入口文档由嵌入的前端产物作答；就绪信号是运营端点的 `GET /ready`，以顶层检查声明——运营监听不是对外服务，顶层检查只报告 Machine 健康、不影响路由。`.github/workflows/deploy.yml` 在 `check` 于 `main` 上成功之后、以及手动触发时调用 `make deploy`。

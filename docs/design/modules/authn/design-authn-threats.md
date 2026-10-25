@@ -68,7 +68,7 @@
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
 | 用户名枚举 | 注册先做用户名唯一性检查，冲突答 409 `username-taken`；邮箱冲突答 409 `email-taken`：注册在同一事务里插入联系方式预留，`(kind, value)` 唯一索引是地址的唯一仲裁点，自助添加邮箱在发码前读标识与未证明预留；来源预算、全局小时预算与按用户名的退避限定单位时间内的探测次数 | [design-authn-login](design-authn-login.md)、[design-authn-config](design-authn-config.md) | 匿名者可以确认某个用户名或邮箱地址已被占用，这是显式取舍；预算只给探测次数一个上界，不隐藏占用事实。**接受** |
-| 批量注册 | 按来源地址的分钟预算（`authn.account.signup-ip-limit`）、全局小时预算与 `ratelimit` 的地址盾；注册派生有独立的并发名额；注册不发送任何邮件，不为批量提交附带发送成本 | [design-authn-config](design-authn-config.md)、[design-authn-login](design-authn-login.md)、[design-ratelimit](../design-ratelimit.md) | 预算额度之内仍可批量建号；不做人机验证、行为风控与一次性邮箱识别（见[未覆盖的威胁](#未覆盖的威胁)）。**接受** |
+| 批量注册 | 按来源地址的分钟预算（`authn.account.signup-ip-limit`）、全局小时预算与 `ratelimit` 的地址盾（按来源地址限制单位时间内的请求数，不数消息）；注册派生有独立的并发名额；注册不发送任何邮件，不为批量提交附带发送成本 | [design-authn-config](design-authn-config.md)、[design-authn-login](design-authn-login.md)、[design-ratelimit](../design-ratelimit.md) | 预算额度之内仍可批量建号；不做人机验证、行为风控与一次性邮箱识别（见[未覆盖的威胁](#未覆盖的威胁)）。**接受** |
 | 注册的口令派生（Argon2id）耗尽 CPU 与内存 | 注册使用独立的派生并发上限，耗尽答 503，不挤占口令登录的派生容量；先做用户名唯一性检查，再做派生 | [design-authn-account](design-authn-account.md)、[design-authn-config](design-authn-config.md) | 独立容量之内的占用仍可拖慢注册；注册关闭的部署没有这条路径 |
 | 未验证账户越过能力边界 | 读作未验证（`SignupPending`：有邮箱而没有一条已证明的）的账户在 REQ-signup-025 列明的封闭动作上一律 403 `contact-required`，REQ-signup-024 列明的动作照常放行；判定与账户来源无关（REQ-signup-027）；服务账户与没有任何邮箱的账户（`SignupNone`）豁免；门控在身份确定之后、授权与强度判定之前，只收紧不放行，读状态失败答 503，不按放行处理。平台强制的门控限于这些身份与运营面；`objectstore`、`notification`、`jobs` 一类业务写面的门控由宿主决定，平台不统一拦截 | [design-authn-admin](design-authn-admin.md)、[design-authn-config](design-authn-config.md)、[design-authn](design-authn.md) | 允许的面（登录、本人资料读写、改口令、登记多因素与通行密钥、添加并验证邮箱或手机、退出与撤销本人其他会话、接受邀请、读特性文档）仍是攻击面；未验证账户可以消耗发送预算与允许面内的资源。删除最后一个已证明邮箱会让账户不再有邮箱，判定落到 `SignupNone` 而不再受限，这是「没有邮箱不拦截」的直接结果。**接受** |
 | 未验证邮箱与 pre-hijacking：先用受害者的地址注册 | 联系方式预留 `(kind, value)` 全局唯一，注册插入预留即原子仲裁，未证明预留被接受为占用；预留只由证明、删除标识或未验证账户的清理释放；未证明预留不进 `authn_identifiers`，`Lookup`、口令登录名、社交自动关联与企业并入都看不到它；只有邮箱被证明（`email-code`，或邀请接受命中同一预留）才写入标识并解除限制 | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 受害者地址被一个未验证账户预占时，受害者自己的注册得到 409 `email-taken`，只能等预占账户被删除或经 `unverified-ttl` 清理，或由管理员处理；没有所有者凭证明接管的路径。该账户的持有人登录后可以为这个地址请求验证码，使受害者收到邮件，见下一条。**接受** |
@@ -158,7 +158,7 @@
 | 端点漏守、配置错误 | 默认守全部端，漏写的端同样被守；启动诊断列出展开后的清单与被开出的口子；放宽项各写一行 Warn；缺省值取最严 | [design-authn-gate](design-authn-gate.md)、[design-authn-config](design-authn-config.md) | 链上仍可有层绕过认证（非保证）：声明在鉴别阶段之外各阶段的层、阶段内被 `After`、`Before` 或 `Order` 排到网关之外的层，以及入口模块内建的请求上下文、访问日志与兜底层，都在网关之前；宿主仍可显式放宽 |
 | 管理面被远程滥用 | 默认不可用：`authn.admin` 要宿主纳入并交付 `Decider` 与审计；强制审计 | [design-authn-admin](design-authn-admin.md) | 宿主交付的 `Decider` 有缺陷，则管理面有缺陷 |
 | 设置写权限被滥用来放宽安全项 | 放宽方向的开关（`signup`、`password-signup`、`auto-link`、`check-session`）是设置项，与其余可在运行期修改的安全项走同一控制：经 `settings.admin` 管理面写全局层时由平台域 `settings.write` 判定，管理面在每次写之前落强制档审计；宿主自建的写入口由宿主鉴权；authn 订阅 `settings.changed`，改到更宽松的取值时写 Warn 并记一条尽力档审计；`pkg/authn/AGENTS.md` 写明「`authn.*` 与 `tenant.admission.*` 设置不得对租户或普通管理员开放写权限」 | [design-authn-config](design-authn-config.md)、[design-settings-admin](../settings/design-settings-admin.md) | 事后可见、不能事前阻止；设置没有按键的写控制，拿到全局写权限的主体仍能把放宽开关、`throttle-*` 与短信预算调松。**接受** |
-| 预认证请求使表无界增长 | 每张会增长的表有持有者与清扫协程；`authn_throttles` 的行数上界是失败请求速率乘 `throttle-decay` | [design-authn-account](design-authn-account.md) | 匿名洪泛期间表会变大；缓解是来源地址层的前置减负（缺省关）与入口层限流。**接受** |
+| 预认证请求使表无界增长 | 每张会增长的表有持有者与清扫协程；`authn_throttles` 的行数上界是失败请求速率乘 `throttle-decay` | [design-authn-account](design-authn-account.md) | 匿名洪泛期间表会变大；缓解是 `ratelimit` 的地址盾（按来源地址限制单位时间内的请求数）。登录路径的前置减负按发出的验证消息计数，不按流程开始计数，不给这一项上界。**接受** |
 | 供应链：依赖库的漏洞 | 固定版本；go-jose 与 goxmldsig 设版本下限；每个库隔在叶子包；升级走专门的变更 | [design-authn-token](design-authn-token.md)、[design-authn-sso](design-authn-sso.md) | 新漏洞出现到升级之间的窗口 |
 | 时钟偏差 | 容差有界且可调；撤销不依赖时钟 | [design-authn-failure](design-authn-failure.md) | 偏差超过容差时零星拒绝 |
 
@@ -180,7 +180,7 @@
 | 迁移导入的邮箱由导入方标成 `import-unverified` | 预占抢注的对策 | 未标记的导入邮箱被当作已验证标识，可成为自动关联的依据 |
 | 外部资源服务器读 `imp_tenant`，并按 JWKS 的缓存期刷新密钥 | 冒充范围对外部校验方成立；密钥撤销对外部校验方生效 | 外部资源服务器不受冒充范围约束；撤销的密钥在其缓存期内仍被接受 |
 | 元数据抓取必须经出站代理的网络，由宿主以网络层隔离代替对端地址检查 | 对 IdP 元数据抓取的服务端请求伪造防护 | 对端地址检查被放弃，防护只剩网络层隔离 |
-| 来源地址层的前置减负与入口层限流由宿主装配 | 预认证请求使表无界增长的缓解 | 匿名洪泛期间 `authn_throttles` 表变大，行数上界仍是失败请求速率乘 `throttle-decay` |
+| 来源地址的前置减负与 `ratelimit` 的地址盾由宿主装配 | 预认证请求使表无界增长的缓解 | 地址盾按来源地址限制单位时间内的请求数，发送预算按收件人、来源与账户限制消息数，两者不互相替代；两者都不在场时，匿名洪泛期间 `authn_throttles` 表变大，行数上界仍是失败请求速率乘 `throttle-decay` |
 | 接入真实的邮件投递通道之后才把 `authn.account.password-signup` 设为 `open` | 邮箱的验证与未验证账户的限制解除 | 没有邮件通道时，注册建出的账户与管理员预置、导入的账户都无法证明邮箱，停在受限状态；缺省 `closed` 使注册路径不出现，但预置与导入的账户仍需要投递能力才能解除 |
 
 ### 未覆盖的威胁
