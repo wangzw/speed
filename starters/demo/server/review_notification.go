@@ -68,11 +68,6 @@ const (
 // there and so does the recipient middleware.
 const reviewNotificationEndpoint = "api"
 
-// reviewNotificationLocale is the language a review dispatch renders in. Every
-// catalog carries both interface languages; the review browser is pinned to
-// en-US, so the fixture's system action announces that one.
-const reviewNotificationLocale = "en-US"
-
 // reviewNotificationInterval is the dispatch window. The scheduler enqueues one
 // job per tenant per window, so a tenant's members receive a notice at most
 // once per interval. It is short enough for a walkthrough to observe a notice
@@ -127,11 +122,12 @@ var _ jobs.Handler = (*reviewNotifier)(nil)
 
 // reviewNotificationModule is the fixture's descriptor.
 //
-// The dispatcher, the account store, the membership store and the handler
-// registration face are required: without them the fixture has nowhere to
-// submit a dispatch, no member to address and no place to register its job. The
-// logger is optional, as it is for every module, and the host's default logger
-// carries the fixture's diagnostics when none is delivered.
+// The dispatcher, the account store, the membership store, the locale resolver
+// and the handler registration face are required: without them the fixture has
+// nowhere to submit a dispatch, no member to address, no language to render it
+// in and no place to register its job. The logger is optional, as it is for
+// every module, and the host's default logger carries the fixture's diagnostics
+// when none is delivered.
 func reviewNotificationModule() core.Module {
 	return core.Module{
 		Name: reviewNotificationModuleName,
@@ -139,6 +135,7 @@ func reviewNotificationModule() core.Module {
 			{Token: (*notification.Dispatcher)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*i18n.Resolver)(nil)},
 			{Token: (*jobs.Handlers)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
@@ -175,6 +172,7 @@ type reviewNotifier struct {
 	dispatcher notification.Dispatcher
 	accounts   authn.Accounts
 	members    authn.Memberships
+	resolver   i18n.Resolver
 	logger     *slog.Logger
 }
 
@@ -195,6 +193,11 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 		return nil, fmt.Errorf("%s: taking up the membership store: %w",
 			reviewNotificationModuleName, err)
 	}
+	resolver, err := core.Resolve[i18n.Resolver](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the locale resolver: %w",
+			reviewNotificationModuleName, err)
+	}
 	logger := log.Default()
 	if delivered, logErr := core.Resolve[log.Logger](reg); logErr == nil {
 		logger = delivered.Named(reviewNotificationModuleName)
@@ -203,6 +206,7 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 		dispatcher: dispatcher,
 		accounts:   accounts,
 		members:    members,
+		resolver:   resolver,
 		logger:     logger,
 	}, nil
 }
@@ -213,6 +217,11 @@ func (*reviewNotifier) Type() string { return reviewNotificationJobType }
 // Handle turns one periodic job into one dispatch per active member of the
 // tenant the job belongs to. The scheduler entered the tenant before handing
 // the job over, so the context already carries it.
+//
+// Each dispatch renders in the recipient's own language: the account's stored
+// preference when it has one, and the platform default when it does not. The
+// resolver reads the preference off the account, so two members of one tenant
+// receive the same notice in the languages each of them chose.
 //
 // A member this fixture cannot address — one with no email identifier — is
 // skipped with a log line rather than failed: the type's default channels
@@ -252,7 +261,7 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 				Class:  notification.RecipientUser,
 				UserID: string(member.Account),
 			},
-			Locale:       reviewNotificationLocale,
+			Locale:       string(n.resolver.LocaleFor(ctx, string(member.Account))),
 			Params:       map[string]any{"to": to},
 			OccurrenceID: string(job.ID),
 		})

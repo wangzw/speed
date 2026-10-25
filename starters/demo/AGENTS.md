@@ -167,8 +167,12 @@ counterpart. It adds three things the baseline deliberately lacks.
   platform's scheduler enqueues one job per tenant per window. The module's
   handler turns each job into one dispatch per active member that carries an
   email identifier: the type's default channels include email, so a member
-  without an address is skipped rather than failed. The dispatch is the real
-  one — `notification.Dispatcher` validates it against the collected taxonomy,
+  without an address is skipped rather than failed. Each dispatch renders in
+  the recipient's own language — the account's stored `i18n.locale` preference
+  when it has one, and the platform's default locale when it does not — so one
+  window addresses a member who chose Chinese in Chinese and a member with no
+  preference in the default. The dispatch is the real one —
+  `notification.Dispatcher` validates it against the collected taxonomy,
   the job queue carries it, and the delivery pipeline writes the in-app row and
   renders the email through `mail.review`. There is no HTTP endpoint for it: a
   browser drives the journey with clicks alone, and the "another member or the

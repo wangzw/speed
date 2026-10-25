@@ -5,8 +5,10 @@ package main
 // The review assembly's notification fixture, tested where it is compiled: the
 // type is in the available set both taxonomy consumers read, a dispatch that
 // the worker submits writes an inbox row for the member and renders the email
-// from the module's own catalog, the preference write succeeds because the
-// review build names the recipient, and an anonymous caller is still refused.
+// from the module's own catalog in the recipient's language — Chinese for a
+// member who stored zh-CN, the platform default for a member who stored none —
+// the preference write succeeds because the review build names the recipient,
+// and an anonymous caller is still refused.
 //
 // The dispatch is the worker's: the module declares a jobs.Schedule and the
 // handler turns each window into one dispatch per active tenant member. Nothing
@@ -28,12 +30,24 @@ import (
 	"github.com/vislake/speed/pkg/notification"
 )
 
-// The account the reachable-path case registers. It is not a seed row, and the
-// case's database is a file of its own, so the name collides with nothing.
+// The accounts the notification cases register. They are not seed rows, and
+// each case's database is a file of its own, so the names collide with nothing.
 const (
 	reviewNotifyUsername = "notice-member"
 	reviewNotifyPassword = "review-notify-password-1"
 	reviewNotifyEmail    = "notice-member@example.test"
+
+	reviewNotifyChineseUsername = "notice-member-zh"
+	reviewNotifyChinesePassword = "review-notify-password-2"
+	reviewNotifyChineseEmail    = "notice-member-zh@example.test"
+)
+
+// The languages the notification cases exercise: the one a member stores on the
+// account, and the platform default a member with no stored preference resolves
+// to.
+const (
+	reviewChineseLocale = "zh-CN"
+	reviewDefaultLocale = "en-US"
 )
 
 // notificationTypeView is one entry of GET /notifications/types.
@@ -143,51 +157,14 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	// The member registers, signs in, and ensures a tenant. The account needs an
-	// email identifier for the email channel's destination, and registration is
-	// the UI's own path to one.
-	registered := send(t, client, http.MethodPost, base+"/api/v1/auth/register", map[string]string{
-		"username": reviewNotifyUsername,
-		"email":    reviewNotifyEmail,
-		"password": reviewNotifyPassword,
-	}, nil)
-	if registered.status != http.StatusCreated {
-		t.Fatalf("registering the member answered %d:\n%s", registered.status, registered.body)
-	}
-	token := signIn(t, base, reviewNotifyUsername, reviewNotifyPassword)
-	auth := map[string]string{"Authorization": "Bearer " + token}
-	// Registration leaves the address pending rather than binding it as an
-	// identifier, and the self-service add writes one only once the code is
-	// presented. The address is the email channel's destination, so the member
-	// proves it the way the walkthrough does: the review mail carrier writes the
-	// code to the process log.
-	added := send(t, client, http.MethodPost, base+"/api/v1/auth/identifiers",
-		map[string]string{"kind": "email", "value": reviewNotifyEmail}, auth)
-	if added.status != http.StatusOK {
-		t.Fatalf("adding the member's email identifier answered %d:\n%s", added.status, added.body)
-	}
-	code := reviewMailCode(t, serve)
-	verified := send(t, client, http.MethodPost, base+"/api/v1/auth/identifiers/verify",
-		map[string]string{"code": code}, auth)
-	if verified.status != http.StatusOK {
-		t.Fatalf("verifying the member's address answered %d:\n%s", verified.status, verified.body)
-	}
-	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
-	if ensured.status != http.StatusOK {
-		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)
-	}
-	var personal struct {
-		Tenant struct {
-			ID    string `json:"id"`
-			Alias string `json:"alias"`
-		} `json:"tenant"`
-	}
-	if err := json.Unmarshal(ensured.body, &personal); err != nil || personal.Tenant.Alias == "" {
-		t.Fatalf("the personal ensure named no tenant (%v):\n%s", err, ensured.body)
-	}
+	// The member registers, signs in, proves an email address and ensures a
+	// tenant. The account needs an email identifier for the email channel's
+	// destination, and registration is the UI's own path to one.
+	token := registerReviewMember(t, client, base, serve,
+		reviewNotifyUsername, reviewNotifyEmail, reviewNotifyPassword)
 	headers := map[string]string{
 		"Authorization": "Bearer " + token,
-		"X-Tenant":      personal.Tenant.Alias,
+		"X-Tenant":      ensureReviewTenant(t, client, base, token),
 	}
 
 	// The preferences consumer sees the type with its declared defaults.
@@ -226,18 +203,18 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	if first.TypeKey != reviewNotificationTypeKey {
 		t.Fatalf("the first message is %q, want %q:\n%+v", first.TypeKey, reviewNotificationTypeKey, first)
 	}
-	if want := reviewCatalogEntry(t, "review.notice.in_app.title"); first.Title != want {
+	if want := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.in_app.title"); first.Title != want {
 		t.Errorf("the in-app title is %q, want the catalog's %q", first.Title, want)
 	}
-	if want := reviewCatalogEntry(t, "review.notice.in_app.body"); first.Body != want {
+	if want := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.in_app.body"); first.Body != want {
 		t.Errorf("the in-app body is %q, want the catalog's %q", first.Body, want)
 	}
 
 	// The email channel renders the same message from the catalog. The review
 	// mail carrier writes the rendered subject and body to the process log; a
 	// fallback to the raw key would leave the key in the line instead.
-	subject := reviewCatalogEntry(t, "review.notice.email.subject")
-	body := reviewCatalogEntry(t, "review.notice.email.body_text")
+	subject := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.email.subject")
+	body := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.email.body_text")
 	waitForLogLine(t, serve, subject)
 	if strings.Contains(serve.output(), reviewNotificationTypeKey+".email.subject") {
 		t.Fatalf("the review mail line carries the raw catalog key instead of the rendered subject:\n%s",
@@ -278,7 +255,7 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	// request carrying no credential before the preference handler runs.
 	anonymous := send(t, client, http.MethodPut,
 		base+"/api/v1/notifications/preferences/"+reviewNotificationTypeKey+"/email",
-		map[string]any{"enabled": true}, map[string]string{"X-Tenant": personal.Tenant.Alias})
+		map[string]any{"enabled": true}, map[string]string{"X-Tenant": headers["X-Tenant"]})
 	if anonymous.status != http.StatusUnauthorized {
 		t.Fatalf("an anonymous preference write answered %d, want 401:\n%s",
 			anonymous.status, anonymous.body)
@@ -297,6 +274,123 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 		t.Errorf("the inbox grew after the email channel was turned off, but the notice's email "+
 			"was sent %d more time(s); the stored preference did not reach delivery", afterSecond-afterFirst)
 	}
+}
+
+// TestReviewNotificationRendersInTheRecipientsLanguage holds the dispatch
+// language: a member whose account stores zh-CN receives the notice rendered
+// from the zh-CN catalog, in the inbox and in the email alike. The journey case
+// above holds the other direction — the same fixture with a member who stores no
+// preference, which resolves to the platform default.
+func TestReviewNotificationRendersInTheRecipientsLanguage(t *testing.T) {
+	binary := reviewBinary(t)
+	ports := freePorts(t, listenerCount)
+	path := reviewConfig(t,
+		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
+		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]))
+	config := "file://" + path
+	seedReview(t, binary, config)
+	serve := startReview(t, binary, config)
+	serve.waitReady(t)
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	token := registerReviewMember(t, client, base, serve,
+		reviewNotifyChineseUsername, reviewNotifyChineseEmail, reviewNotifyChinesePassword)
+
+	// The preference is stored before the tenant exists, so every dispatch the
+	// worker makes for it already resolves the recipient's language. The write
+	// goes through the profile route the interface's own personalization uses.
+	stored := send(t, client, http.MethodPatch, base+"/api/v1/auth/me",
+		map[string]string{"locale": reviewChineseLocale},
+		map[string]string{"Authorization": "Bearer " + token})
+	if stored.status != http.StatusOK {
+		t.Fatalf("storing the member's %s language preference answered %d:\n%s",
+			reviewChineseLocale, stored.status, stored.body)
+	}
+
+	headers := map[string]string{
+		"Authorization": "Bearer " + token,
+		"X-Tenant":      ensureReviewTenant(t, client, base, token),
+	}
+
+	// The worker's first window for this tenant renders the notice — and the
+	// email the same dispatch carries — in the recipient's language.
+	page := waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+reviewNotificationGroup,
+		headers, 1, serve)
+	first := page.Messages[0]
+	if first.TypeKey != reviewNotificationTypeKey {
+		t.Fatalf("the first message is %q, want %q:\n%+v", first.TypeKey, reviewNotificationTypeKey, first)
+	}
+	if want := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.in_app.title"); first.Title != want {
+		t.Errorf("the %s recipient's in-app title is %q, want the %s catalog's %q",
+			reviewChineseLocale, first.Title, reviewChineseLocale, want)
+	}
+	if want := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.in_app.body"); first.Body != want {
+		t.Errorf("the %s recipient's in-app body is %q, want the %s catalog's %q",
+			reviewChineseLocale, first.Body, reviewChineseLocale, want)
+	}
+
+	subject := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.email.subject")
+	emailBody := reviewCatalogEntry(t, reviewChineseLocale, "review.notice.email.body_text")
+	waitForLogLine(t, serve, subject)
+	if !strings.Contains(serve.output(), emailBody) {
+		t.Errorf("the review mail line carries no %s body %q", reviewChineseLocale, emailBody)
+	}
+}
+
+// registerReviewMember registers a member over the review binary's own routes
+// and answers its signed-in token. Registration leaves the address pending
+// rather than binding it as an identifier, and the self-service add writes one
+// only once the code is presented; the review mail carrier writes that code to
+// the process log, so the member proves the address the way the walkthrough
+// does.
+func registerReviewMember(t *testing.T, client *http.Client, base string, serve *process,
+	username, email, password string,
+) string {
+	t.Helper()
+	registered := send(t, client, http.MethodPost, base+"/api/v1/auth/register", map[string]string{
+		"username": username,
+		"email":    email,
+		"password": password,
+	}, nil)
+	if registered.status != http.StatusCreated {
+		t.Fatalf("registering the member answered %d:\n%s", registered.status, registered.body)
+	}
+	token := signIn(t, base, username, password)
+	auth := map[string]string{"Authorization": "Bearer " + token}
+	added := send(t, client, http.MethodPost, base+"/api/v1/auth/identifiers",
+		map[string]string{"kind": "email", "value": email}, auth)
+	if added.status != http.StatusOK {
+		t.Fatalf("adding the member's email identifier answered %d:\n%s", added.status, added.body)
+	}
+	code := reviewMailCode(t, serve)
+	verified := send(t, client, http.MethodPost, base+"/api/v1/auth/identifiers/verify",
+		map[string]string{"code": code}, auth)
+	if verified.status != http.StatusOK {
+		t.Fatalf("verifying the member's address answered %d:\n%s", verified.status, verified.body)
+	}
+	return token
+}
+
+// ensureReviewTenant ensures the caller's personal tenant and answers its
+// alias, which the tenant-scoped routes read from the X-Tenant header.
+func ensureReviewTenant(t *testing.T, client *http.Client, base, token string) string {
+	t.Helper()
+	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil,
+		map[string]string{"Authorization": "Bearer " + token})
+	if ensured.status != http.StatusOK {
+		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)
+	}
+	var personal struct {
+		Tenant struct {
+			Alias string `json:"alias"`
+		} `json:"tenant"`
+	}
+	if err := json.Unmarshal(ensured.body, &personal); err != nil || personal.Tenant.Alias == "" {
+		t.Fatalf("the personal ensure named no tenant (%v):\n%s", err, ensured.body)
+	}
+	return personal.Tenant.Alias
 }
 
 // readJSON makes one authorized GET and decodes its answer.
@@ -372,11 +466,11 @@ func waitForLogLine(t *testing.T, serve *process, needle string) {
 	}
 }
 
-// reviewCatalogEntry reads one message from the fixture's own en-US catalog, so
-// the case expects the shipped text rather than a hardcoded copy.
-func reviewCatalogEntry(t *testing.T, key string) string {
+// reviewCatalogEntry reads one message from the fixture's catalog for a
+// language, so the cases expect the shipped text rather than a hardcoded copy.
+func reviewCatalogEntry(t *testing.T, locale, key string) string {
 	t.Helper()
-	raw, err := fs.ReadFile(reviewNotificationLocales, "review_notification_locales/en-US.json")
+	raw, err := fs.ReadFile(reviewNotificationLocales, "review_notification_locales/"+locale+".json")
 	if err != nil {
 		t.Fatalf("reading the fixture catalog: %v", err)
 	}

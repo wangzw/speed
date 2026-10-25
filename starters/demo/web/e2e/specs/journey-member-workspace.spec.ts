@@ -65,7 +65,10 @@
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts -- the interface strings from notification-ui, and the
  * notice's title and body from the review assembly's own notification catalog,
- * whose keys are literal dotted strings.
+ * whose keys are literal dotted strings. The notice is read in en-US because the
+ * worker renders it in the recipient's language: this journey's seeded member
+ * stores no language preference, so the dispatch resolves to the platform
+ * default, en-US.
  */
 // @journey journey-member-workspace.md
 // @covers REQ-notifications-001, REQ-notifications-003, REQ-notifications-004, REQ-notifications-010, REQ-notifications-028, REQ-notifications-029, REQ-notifications-030, REQ-notifications-051, REQ-tenancy-022, REQ-tenancy-036
@@ -73,7 +76,7 @@ import type { Locator, Page } from '@playwright/test'
 
 import { reviewMember } from '../fixtures/config'
 import { expect, test } from '../fixtures/demo'
-import { copy, copyKey, copyPattern } from '../helpers/i18n'
+import { copy, copyKey, copyPattern, type CopyLocale } from '../helpers/i18n'
 
 // This journey signs in as the seeded member, so its server must carry the
 // account and the membership the template does not seed.
@@ -86,9 +89,26 @@ const TYPE_KEY = 'review.notice'
 /** The seeded tenant's name: the alias the switcher renders. */
 const TENANT_NAME = reviewMember.tenant
 
-/** The notice's rendered title and body, from the review catalog. */
-const NOTICE_TITLE = copyKey('reviewNotice', 'review.notice.in_app.title')
-const NOTICE_BODY = copyKey('reviewNotice', 'review.notice.in_app.body')
+/**
+ * The language the worker renders the notice in. The seeded member stores no
+ * language preference, so the dispatch resolves to the platform default.
+ */
+const NOTICE_LOCALE: CopyLocale = 'en-US'
+
+/**
+ * The notice's rendered title and body, from the review catalog in the language
+ * the dispatch resolved for this member.
+ */
+const NOTICE_TITLE = copyKey(
+  'reviewNotice',
+  'review.notice.in_app.title',
+  NOTICE_LOCALE,
+)
+const NOTICE_BODY = copyKey(
+  'reviewNotice',
+  'review.notice.in_app.body',
+  NOTICE_LOCALE,
+)
 
 /**
  * The header bell. Its accessible name is the bare label when the count is
