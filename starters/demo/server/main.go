@@ -72,6 +72,7 @@ import (
 	authnaccount "github.com/vislake/speed/pkg/authn/account"
 	authnadmin "github.com/vislake/speed/pkg/authn/admin"
 	"github.com/vislake/speed/pkg/authn/gate"
+	"github.com/vislake/speed/pkg/authn/humanverify"
 	"github.com/vislake/speed/pkg/authn/impersonation"
 	"github.com/vislake/speed/pkg/authn/invite"
 	"github.com/vislake/speed/pkg/authn/login"
@@ -307,6 +308,11 @@ var (
 		invite.ModuleName,
 		profile.ModuleName,
 		sso.ModuleName,
+		// The human-verification gate. It runs with its mode off here, which is the
+		// product default: a send asks the seam nothing, and the challenge route the
+		// proof-of-work mode would serve is absent. A deployment turns it on by
+		// setting authn.humanverify.mode.
+		humanverify.ModuleName,
 
 		// Tenancy, the journal, the authorization layer, the limiter and settings.
 		resolve.ModuleName,

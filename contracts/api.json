@@ -1041,6 +1041,50 @@
         "x-endpoint": "account"
       }
     },
+    "/api/v1/auth/human/challenge": {
+      "post": {
+        "description": "Issues one human-verification challenge for the proof-of-work mechanism. The client solves the challenge by finding a nonce whose SHA-256 hash, over the decoded challenge followed by the nonce in big-endian, carries at least `difficulty` leading zero bits, then presents `challenge.nonce` as the proof to the send it wants to make. A proof is single-use: the challenge is spent when it is accepted. A source that asks for more challenges than its window allows is answered 429, and a key-value store that cannot answer is answered 503.",
+        "operationId": "authn.humanverify.challenge",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeResponse"
+                }
+              }
+            },
+            "description": "A challenge, its difficulty and its lifetime"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "This source has asked for as many challenges as its window allows; retry later"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The challenge could not be issued because the key-value store was unavailable"
+          }
+        },
+        "security": [],
+        "summary": "Obtain a proof-of-work challenge",
+        "tags": [
+          "authn.humanverify"
+        ],
+        "x-endpoint": "account"
+      }
+    },
     "/api/v1/auth/identifiers": {
       "post": {
         "description": "Adds one login identifier to the caller's account. `kind=username` writes a login name at once, recorded as the account's own assertion; `kind=email` sends a code to the address and answers `state: pending` with how long the code lives and how soon another may be sent, and the address is written only after `POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within the resend interval is a 429 throttled; the window is held against the address and shared across sessions and accounts. The call requires the fresh authentication every change of what proves the account asks for and refuses an impersonating identity; a write rotates the caller's session token and revokes the account's other sessions. A login name or address another account holds is a 409 conflict, and a deployment with no email channel answers the email branch with 503 unavailable.",
@@ -13642,6 +13686,39 @@
         ],
         "type": "object"
       },
+      "ChallengeResponse": {
+        "description": "A proof-of-work challenge, the work it takes to solve, and how long it stays valid.",
+        "properties": {
+          "algorithm": {
+            "description": "The hash a proof is computed with: sha256.",
+            "type": "string"
+          },
+          "challenge": {
+            "description": "The random challenge, base64url without padding. Solve it into a nonce, and present the two joined by a dot as the proof.",
+            "type": "string"
+          },
+          "difficulty": {
+            "description": "The number of leading zero bits the proof's hash must carry; higher values take exponentially more work.",
+            "type": "integer"
+          },
+          "expires_in": {
+            "description": "How long the challenge stays valid, in whole seconds. A proof that names an expired challenge is refused.",
+            "type": "integer"
+          },
+          "provider": {
+            "description": "The mechanism that issued the challenge: the constant pow.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "algorithm",
+          "challenge",
+          "difficulty",
+          "expires_in"
+        ],
+        "type": "object"
+      },
       "Channel": {
         "description": "A delivery channel the capability carries: in_app writes a row the inbox reads, email goes through the mail capability's sender, and sms goes through the SMS registry's sender. The set is closed.",
         "enum": [
@@ -14394,6 +14471,9 @@
       "name": "authn.admin"
     },
     {
+      "name": "authn.humanverify"
+    },
+    {
       "name": "authn.impersonation"
     },
     {
@@ -14468,6 +14548,10 @@
     },
     {
       "module": "authn.admin",
+      "endpoint": "account"
+    },
+    {
+      "module": "authn.humanverify",
       "endpoint": "account"
     },
     {

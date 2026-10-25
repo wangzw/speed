@@ -9,20 +9,27 @@
 //
 // The module holds no send state and sends nothing. A send checks the seam
 // before it spends anything, and the token's single-use property belongs to the
-// provider behind the seam. Only the off mode is complete in this build: the pow
-// and turnstile providers are constructed and refuse a missing proof, and answer
-// a presented proof with ErrUnavailable, because their proof checks are not part
-// of this build. A deployment that enables one of them therefore sends nothing
-// rather than accepting a token nobody checked.
+// provider behind the seam. The off mode accepts every proof, and the
+// proof-of-work mode issues a challenge on POST /api/v1/auth/human/challenge and
+// spends it when the proof is accepted. The turnstile provider is constructed and
+// refuses a missing proof, and answers a presented proof with ErrUnavailable,
+// because its proof check is not part of this build.
 package humanverify
 
 import (
 	"context"
+	_ "embed"
+	"errors"
 	"fmt"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/humanverify/pow"
+	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
+	speedhttp "github.com/vislake/speed/pkg/http"
+	"github.com/vislake/speed/pkg/kv"
+	"github.com/vislake/speed/pkg/settings"
 )
 
 // ModuleName is this module's name in the registry, and the name its
@@ -31,6 +38,29 @@ const ModuleName = "authn.humanverify"
 
 // ConfigNamespace is where this module's input items are mounted.
 const ConfigNamespace = ModuleName
+
+// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares
+// its route for. The endpoint the route is actually mounted on is the one the
+// mounter resolves; the fragment is a static declaration written before that is
+// known, so it carries the conventional name.
+const defaultEndpoint = "account"
+
+// humanverifyFragment is this module's OpenAPI fragment, describing the
+// challenge route.
+//
+//go:embed openapi/humanverify.json
+var humanverifyFragment []byte
+
+// humanverifySpec is the API root this module's fragment and route hang off.
+// Its prefix and version are the common ones; the fragment writes the
+// capability's own segment, so the route's declared path begins with the part of
+// the mounter's base that lies below this root.
+var humanverifySpec = speedhttp.Spec{
+	Endpoint: defaultEndpoint,
+	Prefix:   "api",
+	Version:  "v1",
+	Document: humanverifyFragment,
+}
 
 // init registers this module with the process registry, so a host that imports
 // the package has the gate available to name on a command tree.
@@ -44,6 +74,12 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // module does not bundle supplies its own authn.HumanVerifier and leaves this
 // module out.
 //
+// The key-value store, the settings store and the route mounter are required as
+// optional only: the off gate needs none of them, so an assembly that leaves the
+// gate off starts without them. The proof-of-work mode needs the store its
+// challenges live in and a mounter to serve the challenge route, and New or Init
+// names the missing one when the mode asks for it.
+//
 // Prepare states StateEnabled in every mode, including the default off: a mode
 // the configuration refused stops the startup there, and a command that takes
 // this module in gets a verifier that states whether it requires a proof. The
@@ -51,10 +87,15 @@ func init() { core.ProcessRegistry.Register(Module()) }
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
+		Requires: []core.Requirement{
+			{Token: (*kv.KV)(nil), Optional: true},
+			{Token: (*settings.Store)(nil), Optional: true},
+			{Token: (*mount.Mounter)(nil), Optional: true},
+		},
 		Provides: []core.Provision{
 			{Token: (*authn.HumanVerifier)(nil), Exclusive: true},
 		},
-		Resources: []any{schema()},
+		Resources: []any{schema(), pow.Schema(), humanverifySpec},
 
 		Prepare: func(_ context.Context, reg *core.Registry) (core.Enablement, error) {
 			reader, err := readerOf(reg)
@@ -76,9 +117,56 @@ func Module() core.Module {
 			if err != nil {
 				return nil, err
 			}
-			return newProvider(cfg)
+			taken, err := dependencies(cfg, reg)
+			if err != nil {
+				return nil, err
+			}
+			return newProvider(cfg, taken)
+		},
+
+		Init: func(_ context.Context, reg *core.Registry, instance any) error {
+			provider, ok := instance.(*pow.Provider)
+			if !ok {
+				return nil
+			}
+			mounter, err := core.Resolve[mount.Mounter](reg)
+			if err != nil {
+				return fmt.Errorf("%w: %s.%s is %q, and the challenge route is mounted through the "+
+					"authentication capability's route mounter, which this run did not deliver. Name the "+
+					"route mounter on the command, or run the gate off: %w",
+					authn.ErrInvalidConfig, ConfigNamespace, modeItem, ModePoW, err)
+			}
+			mountChallenge(mounter, provider)
+			return nil
 		},
 	}
+}
+
+// dependencies takes up what the resolved mode needs. The off and turnstile
+// gates need nothing, so a run that carries neither the store nor the mounter
+// still starts with the gate off.
+func dependencies(cfg resolved, reg *core.Registry) (deps, error) {
+	if cfg.Mode != ModePoW {
+		return deps{}, nil
+	}
+	store, err := core.Resolve[kv.KV](reg)
+	if err != nil {
+		return deps{}, fmt.Errorf("%w: %s.%s is %q, and the proof-of-work mechanism keeps its "+
+			"challenges in the key-value store, which this run did not deliver. Name a key-value "+
+			"backend on the command, or run the gate off: %w",
+			authn.ErrInvalidConfig, ConfigNamespace, modeItem, cfg.Mode, err)
+	}
+	taken := deps{store: store}
+	settingsStore, err := core.Resolve[settings.Store](reg)
+	switch {
+	case err == nil:
+		taken.settings = settingsStore
+	case errors.Is(err, core.ErrMissingProvider):
+		// The provider falls back to the declared defaults.
+	default:
+		return deps{}, fmt.Errorf("%s: taking up the settings store: %w", ModuleName, err)
+	}
+	return taken, nil
 }
 
 // readerOf takes up the configuration reader. Its absence is the host's omission

@@ -24,11 +24,16 @@ func TestTheDescriptorDeliversTheHumanVerifierExclusively(t *testing.T) {
 	if p := m.Provides[0]; p.Token != token || !p.Exclusive {
 		t.Errorf("Provides[0] = %+v, want the human-verification seam claimed exclusively", p)
 	}
-	if len(m.Requires) != 0 {
-		t.Errorf("Requires = %+v, want no construction-time dependency", m.Requires)
+	if len(m.Requires) != 3 {
+		t.Fatalf("Requires = %+v, want the three optional dependencies the proof-of-work mode takes up", m.Requires)
 	}
-	if len(m.Resources) != 1 {
-		t.Errorf("Resources = %v, want the one input-item schema", m.Resources)
+	for _, requirement := range m.Requires {
+		if !requirement.Optional {
+			t.Errorf("the requirement %+v is not optional; the off gate starts without it", requirement)
+		}
+	}
+	if len(m.Resources) != 3 {
+		t.Errorf("Resources = %v, want the input-item schema, the proof-of-work settings schema and the fragment", m.Resources)
 	}
 }
 

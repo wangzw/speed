@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/humanverify/pow"
+	"github.com/vislake/speed/pkg/kv"
 )
 
 // errNotImplemented is the cause of a presented proof the build cannot check.
@@ -13,15 +15,30 @@ import (
 // as an outage instead of accepting a token nobody examined.
 var errNotImplemented = errors.New("the proof check is not part of this build")
 
+// deps is what a mechanism constructor needs. The off gate needs nothing; the
+// proof-of-work provider needs the store its challenges live in and the settings
+// reader its parameters come from. A mode that does not use a part leaves it
+// nil.
+type deps struct {
+	store    kv.KV
+	settings pow.SettingReader
+}
+
 // newProvider builds the verifier for a resolved mode. The mode was held to the
 // closed set by resolve, and the default case repeats that judgement for a
 // caller that built resolved by hand.
-func newProvider(cfg resolved) (authn.HumanVerifier, error) {
+func newProvider(cfg resolved, d deps) (authn.HumanVerifier, error) {
 	switch cfg.Mode {
 	case ModeOff:
 		return offVerifier{}, nil
 	case ModePoW:
-		return powVerifier{}, nil
+		if d.store == nil {
+			return nil, fmt.Errorf("%w: %s.%s is %q, and the proof-of-work mechanism keeps its "+
+				"challenges in the key-value store, which this run did not deliver. Name a key-value "+
+				"backend on the command, or run the gate off",
+				authn.ErrInvalidConfig, ConfigNamespace, modeItem, cfg.Mode)
+		}
+		return pow.New(d.store, d.settings)
 	case ModeTurnstile:
 		return turnstileVerifier{}, nil
 	default:
@@ -49,32 +66,6 @@ func (offVerifier) SiteKey() string { return "" }
 // Verify accepts any proof. The check is not skipped as a failure; off means
 // there is nothing to check.
 func (offVerifier) Verify(context.Context, authn.HumanProof) error { return nil }
-
-// powVerifier is the self-hosted proof-of-work gate. It requires a proof and
-// has no site key: the challenge is served by this deployment and no
-// third-party widget obtains the token.
-//
-// The proof check is not part of this build. A missing proof is still refused as
-// such, because that half of the contract does not depend on the mechanism; a
-// presented one is answered as an outage.
-type powVerifier struct{}
-
-var _ authn.HumanVerifier = powVerifier{}
-
-// Required reports true: this gate is a condition of sending.
-func (powVerifier) Required() bool { return true }
-
-// Provider reports the mode the deployment chose.
-func (powVerifier) Provider() string { return ModePoW }
-
-// SiteKey is empty: a self-hosted proof of work needs no widget key.
-func (powVerifier) SiteKey() string { return "" }
-
-// Verify refuses a missing proof and answers a presented one as unavailable,
-// because the check that would accept it is not in this build.
-func (powVerifier) Verify(_ context.Context, p authn.HumanProof) error {
-	return verifyPresented(ModePoW, p)
-}
 
 // turnstileVerifier is the Cloudflare Turnstile gate. It requires a proof. This
 // build carries no item for the client-side widget key, so SiteKey is empty.

@@ -564,6 +564,8 @@ var mayNotStartGroups = map[string]string{}
 var mayLeaveRouteCountUnchanged = map[string]string{
 	"workspace.personal": "its route is mounted only when workspace.personal.enabled is on, " +
 		"and the case's configuration leaves the host switch off (the baseline default)",
+	"authn.humanverify": "its challenge route is mounted only when authn.humanverify.mode is pow, " +
+		"and the case's configuration leaves the gate off (the baseline default)",
 }
 
 // variantStartOutcome decides what a variant's readiness result means. A run
