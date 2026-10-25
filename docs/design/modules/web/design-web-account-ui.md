@@ -50,18 +50,21 @@ interface PasswordSectionProps {
 
 interface PhoneSectionProps {
   readonly session: AuthSession
+  readonly humanGate?: AuthnHumanGate // 已读到的发现文档的人机门槛；缺省由本节读方法文档
 }
 
 interface IdentifiersSectionProps {
   readonly session: AuthSession
   readonly emailAvailable?: boolean // 添加面是否提供邮箱一项；缺省提供
   readonly offerUsername?: boolean // 添加面是否提供用户名一项；缺省提供
+  readonly humanGate?: AuthnHumanGate // 已读到的发现文档的人机门槛；缺省由本节读方法文档
 }
 
 interface ContactVerificationSectionProps {
   readonly session: AuthSession // 提权门控驱动一条 step-up 流程
   readonly initialChangeOpen?: boolean // 进页即展开更换邮箱表单；缺省关闭（停在验证码一步）
   readonly autoSend?: boolean // 未验证且有目标邮箱时于本次挂载自动发一次码；缺省 false
+  readonly humanGate?: AuthnHumanGate // 已读到的发现文档的人机门槛；缺省由本节读方法文档
 }
 
 interface PreferencesSectionProps {
@@ -192,6 +195,10 @@ sequenceDiagram
 
 失败文案：发送与验证两步对已被其他账户预留或持有的地址都答 409 `email-taken`，文案点明该地址已被另一个账户使用并给出更换邮箱；发送一步在发码之前判定，地址被拒时不发信。验证码错误的统一文案是「验证码无效或已过期，请重试或更换邮箱」。
 
+### 发送验证码的人机证明
+
+部署要求人机验证时，三处发送验证码的动作都先取一份证明：手机节的发送、验证节的发送与重发、标识节的邮箱添加与行内重发。门槛取自发现文档的 `human`（宿主已经读到时可经 `humanGate` 传入，缺省各节自己读一次），证明的取得、单次使用与重取由 [auth-core](design-web-auth-core.md) 的 `useHumanVerification` 承担，界面只渲染 ui-kit 的 `HumanVerification` 块并交出 `human_proof`。块位于发送控件上方；证明未就绪时发送控件禁用；每次发送之后消耗当前证明并取一份新的，重发因此带的是新证明。用户名写入、验证码提交、删除与改口令不发验证码，不取证明，也不受块约束。验证节的自动发送没有用户的点击来取得证明，因此等块持有证明后才发；块没有证明时保留手动发送。
+
 ### 经流程门控的两步验证
 
 `MfaSection` 不声明因子状态，状态经读发现（`GET /api/v1/auth/factors`）；它提供的登记入口也只取本部署装配的因素（`GET /api/v1/auth/methods` 的 `mfa.factors`，经 `session.listMethods` 读回）——装配没有通行密钥的部署不显示通行密钥入口，宿主不得提供本部署无法完成的能力。两次入口动作走同一条「先生成流程、再按步答复」的机器：
@@ -234,6 +241,7 @@ sequenceDiagram
 | 情形 | 表现 |
 |---|---|
 | 一次写被拒（`authn.bad_request`、`authn.throttled`、`authn.unavailable`、`client.*`） | 一条横幅渲染错误码文本，相关查询在选择处失效 |
+| 一次发送缺少、无效、过期或已用的人机证明（403 `human-verification-required`） | 一条横幅渲染 `authn.human_verification_required` 的文本；块取得新证明后发送可重试 |
 | 自助写被答 401 `authn.insufficient_user_authentication` | 打开提权对话框，成功后重跑那次被拒的写一次 |
 | 口令写被拒为 400 `authn.bad_request` | 一条横幅渲染口令策略句，覆盖长度不合适（过短或过长）、与账户的用户名、邮箱、手机号相同、与当前口令相同（修改时）；句子不写数字，长度下限是部署的设置 |
 | 加用户名被拒为 409 `authn.conflict` | 一条横幅渲染「用户名已被使用」；添加面在账户已有用户名时不提供用户名，该码在此只意味着被他人占用 |
@@ -282,6 +290,7 @@ sequenceDiagram
 | 口令节 | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection` |
 | `login-identifier-required` 的文本覆盖设口令与删除最后一个登录名两种语义 | 已实现 | `web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `errors.authn.login_identifier_required` |
 | 手机号节 | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection` |
+| 发送验证码的人机证明（手机节、验证节与标识节邮箱） | 已实现 | `web/packages/account-ui/src/PhoneSection.tsx` `PhoneSection`、`PhoneSectionProps`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps`；`web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
 | 登录标识节 | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection` |
 | 自助写的提权门控 | 已实现 | 各节使用 `@speed/auth-core` 的 `useStepUpGate` |
 | 轮换点上的身份切换窗口 | 已实现 | `web/packages/account-ui/src/internal/identity-transition.ts` `runIdentityTransition` |
