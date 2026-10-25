@@ -1,8 +1,9 @@
 // Package redistest hands the tests a Redis server to run against, and gives
 // every caller a database of its own on it.
 //
-// The server is the one the repository's compose stack brings up, at a fixed
-// loopback address; this package starts nothing and manages no container. What
+// The server is the one the repository's compose stack brings up, at the address
+// SPEED_TEST_REDIS_ADDR names and at loopback when it is unset; this package
+// starts nothing and manages no container. What
 // it owns is everything after the server is up: choosing a logical database no
 // other caller holds, clearing it, and giving it back when the case ends.
 //

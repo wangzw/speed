@@ -1,8 +1,9 @@
 // Package memcachetest hands the tests a Memcached server to run against, and
 // every case a key space of its own on it.
 //
-// The server is the one the repository's compose stack brings up, at a fixed
-// loopback address; this package starts nothing and manages no container. That
+// The server is the one the repository's compose stack brings up, at the address
+// SPEED_TEST_MEMCACHED_ADDR names and at loopback when it is unset; this package
+// starts nothing and manages no container. That
 // the stack is the only thing that starts it is what keeps the server's version
 // in one place instead of in the fixture.
 //

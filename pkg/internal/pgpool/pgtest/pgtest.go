@@ -1,8 +1,9 @@
 // Package pgtest hands the tests a PostgreSQL server to run against, and gives
 // every caller a database of its own on it.
 //
-// The server is the one the repository's compose stack brings up, reached at a
-// fixed loopback address; this package starts nothing. Everything it does
+// The server is the one the repository's compose stack brings up, reached at
+// the address SPEED_TEST_PG_ADDR names and at loopback when it is unset; this
+// package starts nothing. Everything it does
 // happens over an ordinary SQL connection: creating a database per call,
 // dropping it when the case ends, and clearing what a dead run left behind.
 //

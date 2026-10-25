@@ -1,8 +1,9 @@
 // Package natstest hands the tests a NATS server to run against.
 //
 // The server is the one the repository's compose stack brings up, with
-// JetStream enabled, at a fixed loopback address; this package starts nothing
-// and manages no container. That the stack is the only thing that starts it is
+// JetStream enabled, at the address SPEED_TEST_NATS_URL names and at loopback
+// when it is unset; this package starts nothing and manages no container. That
+// the stack is the only thing that starts it is
 // what keeps the server's version and its flags in one place instead of in
 // every fixture that needs a server.
 //

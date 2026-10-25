@@ -1,8 +1,9 @@
 # pkg/internal/natstest
 
 A NATS server for tests to run against: the one the repository's compose stack
-brings up, with JetStream on, at a fixed loopback address. Isolation is by
-bucket or stream name rather than by server.
+brings up, with JetStream on, at an address `SPEED_TEST_NATS_URL` names and
+loopback when it is unset. Isolation is by bucket or stream name rather than by
+server.
 
 It registers no module and delivers no capability. It is a shared unit, neither
 a capability directory nor a program, and it exists because the key-value and
@@ -33,11 +34,12 @@ arrangement.
 
 It is exercised through its callers — `go -C pkg test -tags=integration ./kv/...`
 and `go -C pkg test -tags=integration ./event/...` — and needs the external
-backends, which the repository root's compose file declares:
-
-```
-docker compose up -d --wait
-```
+backends the repository root's compose file declares. Bring this checkout's
+stack up with `make deps-up`: it allocates four free loopback ports, records
+them in `.cache/test-backends.env`, and the server is then reached at
+`SPEED_TEST_NATS_URL`. `make test-integration` brings the stack up and exports
+those addresses itself, so it needs no separate step; a direct `go test` needs
+`make deps-up` first and the address exported.
 
 Without the `integration` tag those cases are not compiled, so a unit run needs
 nothing installed.
