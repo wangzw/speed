@@ -268,6 +268,15 @@ var (
 	// configuration defect, a refusal and a failing backend apart, because the
 	// remedies differ.
 	ErrUnavailable = errors.New("authn: a dependency is unavailable")
+
+	// ErrHumanVerificationRequired reports a send that presented no
+	// human-verification proof, or one that is invalid, expired or already used.
+	// Outwardly it is a 403 with a problem code that names human verification,
+	// which tells the client to obtain a fresh proof. It is distinct from
+	// ErrUnavailable, the 503 of a verifier or of the store that keeps its tokens
+	// when either cannot be reached; an over-long proof is a 400 and is
+	// ErrInvalidArgument. No send happens under any of the three.
+	ErrHumanVerificationRequired = errors.New("authn: a valid human-verification proof is required")
 )
 
 // Failures of sessions, flows and second factors.
