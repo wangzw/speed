@@ -43,11 +43,21 @@ import (
 )
 
 const (
-	// addr is where the compose stack publishes PostgreSQL, and it is fixed
-	// because nothing in this package discovers ports any more. A machine
-	// already serving PostgreSQL on 5432 cannot bring the stack up; that is
-	// the stack's problem to report, not this package's to work around.
-	addr = "127.0.0.1:5432"
+	// defaultAddr is where the compose stack publishes PostgreSQL by default.
+	// A deployment that runs the stack elsewhere -- another compose project, or
+	// the same one with other published ports -- points the tests at its
+	// address with SPEED_TEST_PG_ADDR; an empty variable means this one.
+	//
+	// The variable moves the address, not the isolation. The housekeeping tells
+	// a dead run's databases and roles from live ones by asking whether the
+	// process id embedded in their names is alive in this machine's pid
+	// namespace. Two copies of the repository running in parallel on the same
+	// machine therefore leave each other's databases alone: each keeps the ones
+	// whose pid is alive. Two hosts or two containers sharing one PostgreSQL
+	// server are not covered -- a pid alive on one host means nothing on
+	// another, and two hosts can produce the same pid and therefore the same
+	// database name.
+	defaultAddr = "127.0.0.1:5432"
 	// superuser and password are the stack's own credentials, and they are
 	// what creates and drops databases: both need the privilege to change the
 	// server rather than the databases a service uses. They guard a throwaway
@@ -76,6 +86,22 @@ const (
 	readyInterval = 150 * time.Millisecond
 )
 
+// address is where the tests reach PostgreSQL: defaultAddr unless
+// SPEED_TEST_PG_ADDR names another address.
+//
+// It is read on each call rather than once at start-up, so a case that sets the
+// variable observes the address it set.
+func address() string { return envOr("SPEED_TEST_PG_ADDR", defaultAddr) }
+
+// envOr returns the value of the named environment variable, or fallback when
+// it is unset or empty.
+func envOr(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
+}
+
 // databaseCounter numbers the databases this process creates, so two calls in
 // the same test binary cannot collide on one name.
 var databaseCounter atomic.Int64
@@ -88,7 +114,7 @@ func Acquire(t *testing.T) string {
 
 	name := fmt.Sprintf("%s%d%s%d", namePrefix, os.Getpid(), databaseInfix, databaseCounter.Add(1))
 	if err := createDatabase(name); err != nil {
-		t.Fatalf("pgtest: creating the database %s on the PostgreSQL test server at %s: %v", name, addr, err)
+		t.Fatalf("pgtest: creating the database %s on the PostgreSQL test server at %s: %v", name, address(), err)
 	}
 	t.Cleanup(func() {
 		if err := dropDatabase(name); err != nil {
@@ -101,7 +127,7 @@ func Acquire(t *testing.T) string {
 // dsn assembles the connection locator for a database on the shared server.
 func dsn(database string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
-		superuser, password, addr, database)
+		superuser, password, address(), database)
 }
 
 // ready says a test binary has already found the server answering, and is
@@ -127,7 +153,7 @@ func ensureReady(t *testing.T) {
 	}
 	if err := waitForServer(); err != nil {
 		t.Fatalf("pgtest: the PostgreSQL test server at %s did not answer within %s: %v\n"+
-			"run `make deps-up` from the repository root to bring the stack up", addr, readyTimeout, err)
+			"run `make deps-up` from the repository root to bring the stack up", address(), readyTimeout, err)
 	}
 	if ready.CompareAndSwap(false, true) {
 		clearWhatDeadRunsLeft()
@@ -197,7 +223,7 @@ func maintenanceStatement(statement string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), statementTimeout)
 	defer cancel()
 	if _, err := pool.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("running a maintenance statement on %s: %w", addr, err)
+		return fmt.Errorf("running a maintenance statement on %s: %w", address(), err)
 	}
 	return nil
 }
@@ -206,7 +232,7 @@ func maintenanceStatement(statement string) error {
 func maintenance() (*sql.DB, error) {
 	pool, err := sql.Open("pgx", dsn(maintenanceDatabase))
 	if err != nil {
-		return nil, fmt.Errorf("opening the %s database at %s: %w", maintenanceDatabase, addr, err)
+		return nil, fmt.Errorf("opening the %s database at %s: %w", maintenanceDatabase, address(), err)
 	}
 	return pool, nil
 }
