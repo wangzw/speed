@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -40,6 +40,7 @@ import {
   makeRotationRig,
 } from '../test-utils/rotation.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { IdentifiersSection } from './IdentifiersSection.js'
 
@@ -47,11 +48,18 @@ const PROFILE_PATH = '/api/v1/auth/me'
 const FLOW_START = '/api/v1/auth/flows/authenticated'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 
-function mount(respond: RealResponder) {
+function mount(
+  respond: RealResponder,
+  humanGate?: {
+    readonly required: boolean
+    readonly provider: string
+    readonly site_key?: string
+  },
+) {
   const rig = makeRealClientRig(respond)
   rig.store.set('access-1')
   const rendered = renderWithProviders(
-    <IdentifiersSection session={rig.session} />,
+    <IdentifiersSection session={rig.session} humanGate={humanGate} />,
   )
   return { rig, ...rendered }
 }
@@ -2057,5 +2065,74 @@ describe('IdentifiersSection', () => {
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
     expect(rig.endedEdges()).toBe(1)
+  })
+
+  it('refuses an email add until the required verifier holds a token, then sends it', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(200, profileBody({ identifiers: [] }))
+        }
+        if (
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers'
+        ) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 60,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond, {
+        required: true,
+        provider: 'turnstile',
+        site_key: 'site-1',
+      })
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', { name: zhCN.identifiers.add.open }),
+      )
+      await user.type(
+        screen.getByLabelText(zhCN.identifiers.add.value.labelEmail),
+        'new@x.test',
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      const submit = screen.getByRole('button', {
+        name: zhCN.identifiers.add.submitEmail,
+      })
+      expect(submit).toBeDisabled()
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(submit).toBeEnabled())
+      await user.click(submit)
+
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) =>
+              call.method === 'POST' &&
+              call.path === '/api/v1/auth/identifiers',
+          ),
+        ).toHaveLength(1),
+      )
+      const posts = rig.calls.filter(
+        (call) =>
+          call.method === 'POST' &&
+          call.path === '/api/v1/auth/identifiers',
+      )
+      expect(posts).toHaveLength(1)
+      expect(posts[0]?.body).toEqual({
+        kind: 'email',
+        value: 'new@x.test',
+        human_proof: 'token-1',
+      })
+    } finally {
+      fake.restore()
+    }
   })
 })

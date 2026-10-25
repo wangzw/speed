@@ -17,7 +17,8 @@
       "login_identifier_required": "账号需要至少一个登录名（用户名或邮箱地址）。",
       "unsupported_media_type": "请求无法被读取。",
       "throttled": "尝试次数过多，请稍后再试。",
-      "unavailable": "服务暂时不可用，请稍后重试。"
+      "unavailable": "服务暂时不可用，请稍后重试。",
+      "human_verification_required": "请先完成人机验证，然后重试。"
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",

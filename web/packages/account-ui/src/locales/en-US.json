@@ -17,7 +17,8 @@
       "login_identifier_required": "This account needs at least one login name (a username or an email address).",
       "unsupported_media_type": "The request could not be read.",
       "throttled": "Too many attempts. Please try again later.",
-      "unavailable": "The service is temporarily unavailable. Please try again later."
+      "unavailable": "The service is temporarily unavailable. Please try again later.",
+      "human_verification_required": "Please confirm you are human, then try again."
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",

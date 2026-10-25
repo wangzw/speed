@@ -43,6 +43,14 @@
  * The section takes the session as its only prop -- the step-up dialog
  * drives it -- while the two writes travel on the shared access token
  * through the generated calls.
+ *
+ * The send also presents the deployment's human-verification proof when
+ * its gate requires one. The gate comes from the methods document (or
+ * from a `humanGate` a host already read), the block stands above the
+ * send control, and the control stays disabled until a proof is ready.
+ * The proof is single-use, so every attempt -- a refusal included -- is
+ * followed by a fresh one. The verify step sends nothing and presents
+ * none.
  */
 
 import { useEffect, useState } from 'react'
@@ -58,9 +66,10 @@ import {
   useAuthnLoginStartPhone,
   useAuthnLoginVerifyPhone,
 } from '@speed/api-sdk'
-import type { AuthSession } from '@speed/auth-core'
-import { useStepUpGate } from '@speed/auth-core'
+import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
+import { humanGateNeedsProof, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
+  HumanVerification,
   PhoneNumberField,
   FORM_MAX_WIDTH,
   SectionCard,
@@ -76,6 +85,12 @@ import { WriteFeedbackRegion } from './internal/write-feedback.js'
 export interface PhoneSectionProps {
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
+  /**
+   * The human-verification gate the deployment reported, when the host
+   * already read the discovery document. Omitted, the section reads the
+   * methods document itself.
+   */
+  readonly humanGate?: AuthnHumanGate
 }
 
 /** Which step the request came from, so a won step-up re-runs exactly it. */
@@ -83,7 +98,7 @@ type PhoneAction =
   | { readonly kind: 'start'; readonly phone: string }
   | { readonly kind: 'verify'; readonly code: string }
 
-export function PhoneSection({ session }: PhoneSectionProps) {
+export function PhoneSection({ session, humanGate }: PhoneSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const startPhone = useAuthnLoginStartPhone()
@@ -91,6 +106,17 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   // The host's preferred starting country when one is provided, otherwise
   // the browser-locale answer (ui-kit's context does the fallback).
   const defaultCountry = usePhoneCountryDefault()
+  // The deployment's human-verification gate and this section's proof. The
+  // send presents it; the verify step sends nothing, so it does not.
+  const human = useHumanVerification(
+    session,
+    humanGate === undefined ? {} : { gate: humanGate },
+  )
+  const needsProof = humanGateNeedsProof(human.gate)
+  // Only a known gate that requires a proof blocks the send. A gate still
+  // being read does not: the form has long been filled by then, and the
+  // server judges the send if the document arrives late.
+  const proofBlocked = needsProof && human.proof === null
 
   const [country, setCountry] = useState(defaultCountry)
   const [nationalNumber, setNationalNumber] = useState('')
@@ -130,14 +156,35 @@ export function PhoneSection({ session }: PhoneSectionProps) {
   }, [sentTo])
 
   function sendCode(nextPhone: string): Promise<void> {
+    // A required proof that is not ready, and a gate not yet read, both
+    // keep the send from leaving.
+    if (proofBlocked) {
+      return Promise.resolve()
+    }
     return feedback.run(async () => {
+      const presented = needsProof ? human.proof : null
       try {
-        await startPhone.mutateAsync({ data: { phone: nextPhone } })
+        await startPhone.mutateAsync({
+          data:
+            presented === null
+              ? { phone: nextPhone }
+              : { phone: nextPhone, human_proof: presented },
+        })
       } catch (error) {
         if (gate.intercept(error, { kind: 'start', phone: nextPhone })) {
+          // A step-up refusal is decided before the proof is checked, so
+          // the proof is still valid for the re-run.
           return null
         }
+        // Any other refusal reached the send's own checks, and the
+        // single-use proof was spent on the way: obtain a fresh one.
+        if (presented !== null) {
+          human.consume()
+        }
         throw error
+      }
+      if (presented !== null) {
+        human.consume()
       }
       setSentTo(nextPhone)
       setCode('')
@@ -236,10 +283,18 @@ export function PhoneSection({ session }: PhoneSectionProps) {
               disabled={busy}
               autoComplete="tel"
             />
+            <HumanVerification
+              gate={human.gate ?? undefined}
+              proof={human.proof}
+              status={human.status}
+              onToken={human.adoptToken}
+              onRetry={human.retry}
+              disabled={busy}
+            />
             <Button
               type="submit"
               variant="contained"
-              disabled={busy || nationalNumber === ''}
+              disabled={busy || proofBlocked || nationalNumber === ''}
             >
               {t('phone.send')}
             </Button>

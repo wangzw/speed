@@ -25,9 +25,11 @@ import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createAuthSession } from '@speed/auth-core'
 import type { AuthSession } from '@speed/auth-core'
 import {
+  jsonResponse,
   makeRealClientRig as makeRig,
 } from '@speed/test-utils/real-client'
 import type { ObservedRequest } from '@speed/test-utils/real-client'
+import { methodList } from '@speed/test-utils/session-harness'
 
 export {
   errorResponse,
@@ -77,6 +79,36 @@ function projectCall(request: ObservedRequest): RealCall {
   }
 }
 
+/** The path every account surface reads on mount to learn the deployment's
+ * human-verification gate. */
+const METHODS_PATH = '/api/v1/auth/methods'
+
+/**
+ * Answer the methods read with the off gate when the case did not script
+ * it. The sections always read discovery before a send, so an unscripted
+ * path would otherwise settle as a failed read (and a React state update
+ * outside the case's own assertions); a real server always answers the
+ * document.
+ */
+function withDefaultMethods(respond: RealResponder): RealResponder {
+  const fallback = (call: RealCall): Response | undefined =>
+    call.method === 'GET' && call.path === METHODS_PATH
+      ? jsonResponse(200, methodList([]))
+      : undefined
+  return (call) => {
+    const answer = respond(call) as
+      | Response
+      | undefined
+      | Promise<Response | undefined>
+    if (answer instanceof Promise) {
+      return answer.then(
+        (settled) => (settled ?? fallback(call)) as Response,
+      )
+    }
+    return (answer ?? fallback(call)) as Response
+  }
+}
+
 /**
  * Binds a real client whose fetch stand-in answers from the script and
  * returns the shared store and the observed calls; with the default
@@ -84,7 +116,10 @@ function projectCall(request: ObservedRequest): RealCall {
  * binds anew: the runtime seam is last-bind-wins by contract.
  */
 export function makeRealClientRig(respond: RealResponder) {
-  const { session, store, calls } = makeRig(respond, projectCall)
+  const { session, store, calls } = makeRig(
+    withDefaultMethods(respond),
+    projectCall,
+  )
   return { session, store, calls }
 }
 
@@ -123,7 +158,7 @@ export function makeCookieSessionRig(respond: RealResponder): {
       rawBody: typeof init?.body === 'string' ? init.body : null,
     })
     calls.push(call)
-    return respond(call)
+    return withDefaultMethods(respond)(call)
   }
   const client: RequestFn = createClient({
     baseUrl: 'https://api.test',

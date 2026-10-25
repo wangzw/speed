@@ -121,17 +121,26 @@ interface PasswordSectionProps {
 }
 interface PhoneSectionProps {
   readonly session: AuthSession
+  readonly humanGate?: AuthnHumanGate // a gate the host already read
 }
 interface IdentifiersSectionProps {
   readonly session: AuthSession
   readonly emailAvailable?: boolean
   readonly offerUsername?: boolean
+  readonly humanGate?: AuthnHumanGate // a gate the host already read
 }
 interface ContactVerificationSectionProps {
   readonly session: AuthSession
   readonly initialChangeOpen?: boolean // the change-address form starts open
+  readonly humanGate?: AuthnHumanGate // a gate the host already read
 }
 ```
+
+`humanGate` is the discovery document's `human` member. Omitted, each
+section reads the methods document itself; a send that presents a
+verification message renders the `@speed/ui-kit` proof block above its
+send control, waits for a proof the deployment requires, and obtains a
+fresh one after each send because the proof is single-use.
 
 ### ProfileSection
 

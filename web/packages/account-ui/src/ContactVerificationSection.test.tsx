@@ -41,6 +41,7 @@ import {
   makeRotationRig,
 } from '../test-utils/rotation.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { ContactVerificationSection } from './ContactVerificationSection.js'
 import { SessionsSection } from './SessionsSection.js'
 
@@ -66,6 +67,11 @@ function mount(
   props: {
     readonly autoSend?: boolean
     readonly initialChangeOpen?: boolean
+    readonly humanGate?: {
+      readonly required: boolean
+      readonly provider: string
+      readonly site_key?: string
+    }
   } = {},
 ) {
   const rig = makeRealClientRig(respond)
@@ -1409,5 +1415,62 @@ describe('ContactVerificationSection', () => {
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
     expect(rig.endedEdges()).toBe(1)
+  })
+
+  it('refuses the code request until the required verifier holds a token, then sends it', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'GET' && call.path === PROFILE_PATH) {
+          return jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+        }
+        if (call.method === 'POST' && call.path === ADD_PATH) {
+          return jsonResponse(200, {
+            state: 'pending',
+            expires_in: 600,
+            resend_after: 60,
+          })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const { rig } = mount(respond, {
+        humanGate: {
+          required: true,
+          provider: 'turnstile',
+          site_key: 'site-1',
+        },
+      })
+      const user = userEvent.setup()
+
+      const send = await screen.findByRole('button', {
+        name: zhCN.verification.send,
+      })
+      // A proof is required and the widget holds no token yet.
+      expect(send).toBeDisabled()
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(send).toBeEnabled())
+      await user.click(send)
+
+      await waitFor(() =>
+        expect(
+          rig.calls.filter(
+            (call) => call.method === 'POST' && call.path === ADD_PATH,
+          ),
+        ).toHaveLength(1),
+      )
+      const posts = rig.calls.filter(
+        (call) => call.method === 'POST' && call.path === ADD_PATH,
+      )
+      expect(posts).toHaveLength(1)
+      expect(posts[0]?.body).toEqual({
+        kind: 'email',
+        value: 'ada@x.test',
+        human_proof: 'token-1',
+      })
+    } finally {
+      fake.restore()
+    }
   })
 })

@@ -111,6 +111,14 @@
  * The section takes the session (the step-up dialog drives it) and the two
  * optional add-face flags, while the profile read and the writes travel on
  * the shared access token through the generated calls.
+ *
+ * An email code send also presents the deployment's human-verification
+ * proof when its gate requires one. The gate comes from the methods
+ * document (or from a `humanGate` a host already read); the add face and
+ * a row's resend show the block and wait for a proof. A username write
+ * and every verification send no message, so they present none and are
+ * not gated by the block. Each landing or refused send obtains a fresh
+ * proof, because the single-use one was spent.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -131,13 +139,14 @@ import {
   useAuthnLoginRemoveIdentifier,
   useAuthnLoginVerifyIdentifier,
 } from '@speed/api-sdk'
-import type { AuthSession } from '@speed/auth-core'
-import { useStepUpGate } from '@speed/auth-core'
+import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
+import { humanGateNeedsProof, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
   AsyncSection,
   ConfirmDialog,
   errorCodeOf,
   FORM_MAX_WIDTH,
+  HumanVerification,
   ListSkeleton,
   parseEmailAddress,
   SectionCard,
@@ -170,6 +179,12 @@ export interface IdentifiersSectionProps {
    * regardless of this prop.
    */
   readonly offerUsername?: boolean
+  /**
+   * The human-verification gate the deployment reported, when the host
+   * already read the discovery document. Omitted, the section reads the
+   * methods document itself.
+   */
+  readonly humanGate?: AuthnHumanGate
 }
 
 /** The identifier kinds the authn account module records
@@ -223,6 +238,7 @@ export function IdentifiersSection({
   session,
   emailAvailable = true,
   offerUsername = true,
+  humanGate,
 }: IdentifiersSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
@@ -230,6 +246,18 @@ export function IdentifiersSection({
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
+  // The deployment's human-verification gate and this section's proof.
+  // Only an email code send presents it: a username write and every
+  // verification send no message.
+  const human = useHumanVerification(
+    session,
+    humanGate === undefined ? {} : { gate: humanGate },
+  )
+  const needsProof = humanGateNeedsProof(human.gate)
+  // Only a known gate that requires a proof blocks an email send. A gate
+  // still being read does not: the server judges the send if the document
+  // arrives late.
+  const proofBlocked = needsProof && human.proof === null
 
   const [removeTarget, setRemoveTarget] = useState<string | null>(null)
   // The section's one feedback scope: removal, add and both verification
@@ -448,9 +476,14 @@ export function IdentifiersSection({
   }
 
   function add(kind: AddKind, value: string): Promise<void> {
+    // Only the email branch sends a code, so only it needs the proof.
+    if (kind === 'email' && proofBlocked) {
+      return Promise.resolve()
+    }
     setFieldErrorKey(null)
     return feedback.run(async () => {
       setFailureText(null)
+      const presented = kind === 'email' && needsProof ? human.proof : null
       /** Apply the write's answer: an address's code step, or the settled
        * add that refetches the profile. */
       async function settleAdded(result: {
@@ -469,6 +502,10 @@ export function IdentifiersSection({
         return t('identifiers.add.added')
       }
       try {
+        const data =
+          presented === null
+            ? { kind, value }
+            : { kind, value, human_proof: presented }
         // A username is written in one step, and that write rotates this
         // session's credential with it, so it runs inside an
         // identity-transition window whose release waits for the refetch
@@ -477,18 +514,27 @@ export function IdentifiersSection({
         if (kind === 'username') {
           return await runIdentityTransition(
             session,
-            () => addIdentifier.mutateAsync({ data: { kind, value } }),
+            () => addIdentifier.mutateAsync({ data }),
             settleAdded,
           )
         }
-        return await settleAdded(
-          await addIdentifier.mutateAsync({ data: { kind, value } }),
-        )
+        const result = await addIdentifier.mutateAsync({ data })
+        if (presented !== null) {
+          human.consume()
+        }
+        return await settleAdded(result)
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === STEP_UP_REQUIRED) {
+          // A step-up refusal precedes the proof check, so the proof is
+          // still valid for the re-run.
           gate.arm({ step: 'add', kind, value })
           return null
+        }
+        // The send reached its own checks, which spend the single-use
+        // proof: obtain a fresh one.
+        if (presented !== null) {
+          human.consume()
         }
         // A bad request for an email is the server refusing the address's
         // shape -- the same rule the client checked -- so the field carries
@@ -585,13 +631,23 @@ export function IdentifiersSection({
    * account's own address as a re-add of its proof, so this is the same
    * write the add face makes, with the value already known. */
   function rowSend(address: string): Promise<void> {
+    if (proofBlocked) {
+      return Promise.resolve()
+    }
     setRowCodeInvalid(false)
     return feedback.run(async () => {
       setFailureText(null)
+      const presented = needsProof ? human.proof : null
       try {
         const result = await addIdentifier.mutateAsync({
-          data: { kind: 'email', value: address },
+          data:
+            presented === null
+              ? { kind: 'email', value: address }
+              : { kind: 'email', value: address, human_proof: presented },
         })
+        if (presented !== null) {
+          human.consume()
+        }
         const interval =
           typeof result.resend_after === 'number' ? result.resend_after : 0
         setRowResendUntil(interval > 0 ? Date.now() + interval * 1000 : 0)
@@ -604,8 +660,12 @@ export function IdentifiersSection({
       } catch (error) {
         const failure = errorCodeOf(error)
         if (failure === STEP_UP_REQUIRED) {
+          // The proof is not spent by a step-up refusal.
           gate.arm({ step: 'rowSend', value: address })
           return null
+        }
+        if (presented !== null) {
+          human.consume()
         }
         const retryAfter = retryAfterMsOf(error)
         if (retryAfter !== undefined) {
@@ -677,6 +737,20 @@ export function IdentifiersSection({
     formKind === 'email'
       ? t('identifiers.add.value.helperEmail')
       : t('identifiers.add.value.helperUsername')
+
+  // The deployment's human-verification block, above the send control of
+  // whichever email flow is open. It renders nothing when no proof is
+  // required.
+  const humanBlock = (
+    <HumanVerification
+      gate={human.gate ?? undefined}
+      proof={human.proof}
+      status={human.status}
+      onToken={human.adoptToken}
+      onRetry={human.retry}
+      disabled={addBusy}
+    />
+  )
 
   return (
     <>
@@ -846,6 +920,7 @@ export function IdentifiersSection({
                             slotProps={{ htmlInput: { readOnly: true } }}
                             disabled={addBusy}
                           />
+                          {humanBlock}
                           {rowSentTo === null ? null : (
                             <TextField
                               fullWidth
@@ -884,7 +959,7 @@ export function IdentifiersSection({
                                 type="submit"
                                 variant="contained"
                                 size="small"
-                                disabled={addBusy}
+                                disabled={addBusy || proofBlocked}
                                 loading={addIdentifier.isPending}
                               >
                                 {t('identifiers.add.submitEmail')}
@@ -904,7 +979,11 @@ export function IdentifiersSection({
                                   type="button"
                                   variant="outlined"
                                   size="small"
-                                  disabled={addBusy || rowRemainingSeconds > 0}
+                                  disabled={
+                                    addBusy ||
+                                    proofBlocked ||
+                                    rowRemainingSeconds > 0
+                                  }
                                   loading={addIdentifier.isPending}
                                   aria-describedby={
                                     rowRemainingSeconds > 0
@@ -1042,11 +1121,16 @@ export function IdentifiersSection({
                       }
                     }}
                   />
+                  {formKind === 'email' ? humanBlock : null}
                   <Stack direction="row" spacing={1}>
                     <Button
                       type="submit"
                       variant="contained"
-                      disabled={addBusy || addValue.trim() === ''}
+                      disabled={
+                        addBusy ||
+                        (formKind === 'email' && proofBlocked) ||
+                        addValue.trim() === ''
+                      }
                     >
                       {formKind === 'email'
                         ? t('identifiers.add.submitEmail')

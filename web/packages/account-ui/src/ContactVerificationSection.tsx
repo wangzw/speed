@@ -73,6 +73,14 @@
  * The section takes the session and the two optional flags as its props -- the
  * step-up dialog drives the session -- while the reads and writes travel on the
  * shared access token through the generated calls.
+ *
+ * A send also presents the deployment's human-verification proof when its
+ * gate requires one. The gate comes from the methods document (or from a
+ * `humanGate` a host already read), and the block stands above the send
+ * controls; the send waits for a proof, and a resend obtains a fresh one
+ * because the previous proof was spent. The automatic landing send has no
+ * visitor's click to obtain a proof with, so it waits for the block to
+ * hold one before it goes, and stays a manual action otherwise.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -90,11 +98,12 @@ import {
   useAuthnLoginAddIdentifier,
   useAuthnLoginVerifyIdentifier,
 } from '@speed/api-sdk'
-import type { AuthSession } from '@speed/auth-core'
-import { useStepUpGate } from '@speed/auth-core'
+import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
+import { humanGateNeedsProof, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
   errorCodeOf,
   FORM_MAX_WIDTH,
+  HumanVerification,
   SectionCard,
   useWriteFeedback,
   visuallyHiddenSx,
@@ -127,6 +136,12 @@ export interface ContactVerificationSectionProps {
    * send never opens the step-up dialog: a refused send leaves the manual
    * action and its explanation. */
   readonly autoSend?: boolean
+  /**
+   * The human-verification gate the deployment reported, when the host
+   * already read the discovery document. Omitted, the section reads the
+   * methods document itself.
+   */
+  readonly humanGate?: AuthnHumanGate
 }
 
 /** The write a step-up dialog is armed for, so a won challenge re-runs
@@ -140,12 +155,25 @@ export function ContactVerificationSection({
   session,
   initialChangeOpen = false,
   autoSend = false,
+  humanGate,
 }: ContactVerificationSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, refetch } = useProfileQuery()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
+  // The deployment's human-verification gate and this section's proof. The
+  // send (a resend included) presents it; the code's verification sends
+  // nothing, so it does not.
+  const human = useHumanVerification(
+    session,
+    humanGate === undefined ? {} : { gate: humanGate },
+  )
+  const needsProof = humanGateNeedsProof(human.gate)
+  // Only a known gate that requires a proof blocks a manual send. The
+  // automatic send additionally waits for the read to settle (see its
+  // effect), because it has no visitor's click to obtain a proof with.
+  const proofBlocked = needsProof && human.proof === null
 
   // The address a code went to during this mount. Null until a send lands;
   // the target the section displays otherwise comes from the profile's
@@ -269,18 +297,30 @@ export function ContactVerificationSection({
   }
 
   function send(nextEmail: string, automatic = false): Promise<void> {
+    // A send waits for the gate and for a required proof. The automatic
+    // send's effect re-runs when the proof arrives, so it proceeds then
+    // instead of sending blind.
+    if (proofBlocked) {
+      return Promise.resolve()
+    }
     const address = nextEmail.trim()
     setCodeInvalid(false)
     setAutoStepUp(false)
     return sendFeedback.run(async () => {
+      const presented = needsProof ? human.proof : null
       let result
       try {
         result = await addIdentifier.mutateAsync({
-          data: { kind: 'email', value: address },
+          data:
+            presented === null
+              ? { kind: 'email', value: address }
+              : { kind: 'email', value: address, human_proof: presented },
         })
       } catch (error) {
         const failureCode = errorCodeOf(error)
         if (failureCode === STEP_UP_REQUIRED) {
+          // A step-up refusal precedes the proof check, so the proof is
+          // still valid for the re-run.
           // A dialog the visitor did not ask for is not opened for them: the
           // automatic attempt states what happened instead, and the next
           // click on the send action takes the ordinary gated path.
@@ -291,12 +331,20 @@ export function ContactVerificationSection({
           gate.arm({ step: 'send', email: address })
           return null
         }
+        // Any other refusal reached the send's own checks, which spend the
+        // single-use proof on the way: obtain a fresh one.
+        if (presented !== null) {
+          human.consume()
+        }
         const retryAfter = retryAfterMsOf(error)
         if (retryAfter !== undefined) {
           setResendUntil(Date.now() + retryAfter)
           setNow(Date.now())
         }
         throw error
+      }
+      if (presented !== null) {
+        human.consume()
       }
       const interval =
         typeof result.resend_after === 'number' ? result.resend_after : 0
@@ -379,9 +427,14 @@ export function ContactVerificationSection({
     if (state !== 'pending' || targetEmail === '') {
       return
     }
+    // An automatic send has no visitor's click to obtain a proof with; it
+    // waits until the gate is known and the block has one, then goes.
+    if (human.pending || proofBlocked) {
+      return
+    }
     autoSent.current = true
     void send(targetEmail, true)
-  }, [autoSend, entryOpen, state, targetEmail, send])
+  }, [autoSend, entryOpen, state, targetEmail, send, human.pending, proofBlocked])
 
   // The read's own state: a settled answer with no body is the error variant,
   // never "nothing to verify".
@@ -443,6 +496,19 @@ export function ContactVerificationSection({
   const sentNotice = sentTo ?? targetEmail
   const hasTarget = targetEmail !== ''
 
+  // The deployment's human-verification block, above the send control the
+  // current face shows. It renders nothing when no proof is required.
+  const humanBlock = (
+    <HumanVerification
+      gate={human.gate ?? undefined}
+      proof={human.proof}
+      status={human.status}
+      onToken={human.adoptToken}
+      onRetry={human.retry}
+      disabled={busy}
+    />
+  )
+
   // A pending account with no target: the add-email form is the only way back
   // to a verifiable address.
   if (!hasTarget && sentTo === null) {
@@ -478,10 +544,11 @@ export function ContactVerificationSection({
               disabled={busy}
               onChange={(event) => setEmailEntry(event.target.value)}
             />
+            {humanBlock}
             <Button
               type="submit"
               variant="contained"
-              disabled={busy || emailEntry.trim() === ''}
+              disabled={busy || proofBlocked || emailEntry.trim() === ''}
               loading={addIdentifier.isPending}
             >
               {t('verification.addSubmit')}
@@ -588,12 +655,14 @@ export function ContactVerificationSection({
           />
           {verifyFailureBanner}
           {/* The send control group: its own result sits below the resend and
-              change actions. */}
+              change actions. The proof block stands above them, because a
+              resend sends another code. */}
+          {humanBlock}
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
             <Button
               type="button"
               variant="outlined"
-              disabled={busy || remainingSeconds > 0}
+              disabled={busy || proofBlocked || remainingSeconds > 0}
               loading={addIdentifier.isPending}
               aria-describedby={
                 remainingSeconds > 0 ? RESEND_NOTE_ID : undefined
@@ -658,7 +727,7 @@ export function ContactVerificationSection({
               <Button
                 type="submit"
                 variant="contained"
-                disabled={busy || emailEntry.trim() === ''}
+                disabled={busy || proofBlocked || emailEntry.trim() === ''}
               >
                 {t('verification.changeSubmit')}
               </Button>

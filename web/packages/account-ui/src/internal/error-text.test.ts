@@ -108,6 +108,7 @@ const VERBATIM_CODES: readonly string[] = [
   'authn.conflict',
   'authn.throttled',
   'authn.unavailable',
+  'authn.human_verification_required',
 ]
 
 describe('error-text whitelist', () => {

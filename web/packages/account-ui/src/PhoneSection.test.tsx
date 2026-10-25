@@ -20,10 +20,11 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { PhoneCountryDefaultProvider, uiKitResources } from '@speed/ui-kit'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -500,5 +501,57 @@ describe('PhoneSection', () => {
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
     expect(rig.endedEdges()).toBe(1)
+  })
+
+  it('refuses the send until the required verifier holds a token, then sends it', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const respond: RealResponder = (call: RealCall) => {
+        if (call.method === 'POST' && call.path === PHONE_PATH) {
+          return jsonResponse(200, { expires_in: 300, resend_after: 60 })
+        }
+        throw new Error(`unexpected ${call.method} ${call.path}`)
+      }
+      const rig = makeRealClientRig(respond)
+      rig.store.set('access-1')
+      renderWithProviders(
+        <PhoneSection
+          session={rig.session}
+          humanGate={{
+            required: true,
+            provider: 'turnstile',
+            site_key: 'site-1',
+          }}
+        />,
+      )
+      const user = userEvent.setup()
+
+      const send = screen.getByRole('button', { name: zhCN.phone.send })
+      await user.type(
+        screen.getByLabelText(zhCN.phone.phone.label, { selector: 'input' }),
+        US_NATIONAL,
+      )
+      // A proof is required and the widget holds no token yet.
+      expect(send).toBeDisabled()
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(send).toBeEnabled())
+      await user.click(send)
+
+      await waitFor(() =>
+        expect(
+          rig.calls.filter((call) => call.path === PHONE_PATH),
+        ).toHaveLength(1),
+      )
+      expect(rig.calls.find((call) => call.path === PHONE_PATH)?.body).toEqual({
+        phone: US_E164,
+        human_proof: 'token-1',
+      })
+      await screen.findByLabelText(zhCN.phone.code.label)
+    } finally {
+      fake.restore()
+    }
   })
 })

@@ -78,6 +78,7 @@ export const ERROR_TEXT_CODES = [
   'authn.unsupported_media_type',
   'authn.throttled',
   'authn.unavailable',
+  'authn.human_verification_required',
   // Transport-level failures of the api-client contract (see @speed/i18n).
   ...CLIENT_TRANSPORT_ERROR_CODES,
 ] as const
