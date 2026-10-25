@@ -66,6 +66,12 @@ type listener struct {
 	// draining itself, because the drain starts in stop.
 	drained  chan struct{}
 	drainErr error
+	// acceptDone is closed when the accept loop has returned. Nothing in the
+	// shutdown waits on it: stop closes the socket and close waits for the
+	// drain. It exists so that a test proving what a clean stop did not write
+	// can wait for the goroutine to be over instead of for an interval to
+	// pass, which on a loaded machine could end before the goroutine did.
+	acceptDone chan struct{}
 	// reported says drainErr has been handed to a caller already. The module's
 	// Stop waits for the drain and reports it, and its Close comes back to the
 	// same listener afterwards; a failure handed to both would reach the
@@ -175,6 +181,7 @@ func (l *listener) start(s listenerSettings, h nethttp.Handler, logger *slog.Log
 	l.accepting = true
 	l.draining = draining
 	l.drained = make(chan struct{})
+	l.acceptDone = make(chan struct{})
 	l.logger = logger
 	l.mu.Unlock()
 
@@ -216,6 +223,7 @@ func (l *listener) endpointNames() []string {
 // process is for whoever reads Accepting to decide; this module does not judge
 // it and does not restart anything.
 func (l *listener) accept(server *nethttp.Server, socket net.Listener) {
+	defer close(l.acceptDone)
 	err := server.Serve(socket)
 
 	l.mu.Lock()
