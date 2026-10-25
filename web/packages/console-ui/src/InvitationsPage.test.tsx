@@ -797,6 +797,56 @@ describe('InvitationsPage', () => {
     ).toBeInTheDocument()
   })
 
+  // The removal confirmation names the member the way the roster shows it:
+  // by display name. The account id is a machine value the operator cannot
+  // match against the roster, so it stays out of the sentence; only a member
+  // whose account read yields no display name at all falls back to it.
+  const MEMBER_UUID = '01a170b2-7c4d-7e2f-9a11-6b0c2f9e4d31'
+
+  async function openRemovalConfirmation(
+    user: ReturnType<typeof userEvent.setup>,
+    displayName: string,
+  ): Promise<HTMLElement> {
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([member({ account: MEMBER_UUID })]),
+      getAccount: () =>
+        Promise.resolve(
+          accountFixture({ id: MEMBER_UUID, display_name: displayName }),
+        ),
+    })
+    renderWithProviders(<InvitationsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText(displayName === '' ? MEMBER_UUID : displayName)
+    await user.click(screen.getByRole('button', { name: zhCN.members.remove }))
+    return screen.findByRole('dialog', { name: zhCN.members.removeTitle })
+  }
+
+  it('names the member being removed by its display name', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, 'Ada Lovelace')
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.members.removeMessage, { name: 'Ada Lovelace' }),
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps the member UUID out of the removal confirmation', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, 'Ada Lovelace')
+    expect(dialog).not.toHaveTextContent(MEMBER_UUID)
+  })
+
+  it('falls back to the member UUID only when the account has no display name', async () => {
+    const user = userEvent.setup()
+    const dialog = await openRemovalConfirmation(user, '')
+    expect(
+      within(dialog).getByText(
+        fill(zhCN.members.removeMessage, { name: MEMBER_UUID }),
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('writes the chosen account id, not the typed name', async () => {
     const user = userEvent.setup()
     const written: ConsoleWriteMemberInput[] = []

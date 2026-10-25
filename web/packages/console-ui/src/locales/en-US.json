@@ -923,7 +923,7 @@
     },
     "remove": "Remove",
     "removeTitle": "Remove member",
-    "removeMessage": "Remove the member \"{{account}}\" from this tenant.",
+    "removeMessage": "Remove the member \"{{name}}\" from this tenant.",
     "removed": "Member \"{{account}}\" removed",
     "ssoExemptSaved": "SSO exemption of member \"{{account}}\" saved",
     "ssoExemptCleared": "SSO exemption of member \"{{account}}\" cleared"

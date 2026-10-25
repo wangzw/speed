@@ -280,7 +280,10 @@ export function InvitationsPage({
   ) => {
     confirm.ask({
       title: t('members.removeTitle'),
-      message: t('members.removeMessage', { account: member.account }),
+      // The roster names a member by display name, so the confirmation does
+      // too; a member whose account read resolved no display name falls back
+      // to the recorded identifier.
+      message: t('members.removeMessage', { name: accountName }),
       confirmLabel: t('common.confirm'),
       run: () => {
         setFailedMember(null)
