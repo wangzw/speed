@@ -65,6 +65,10 @@ if kind == "up":
         sys.exit(1)
     sys.exit(0)
 
+if kind == "down" and os.environ.get("FAKE_DOCKER_DOWN_FAILS"):
+    print("cannot stop container")
+    sys.exit(1)
+
 sys.exit(0)
 """
 
@@ -174,6 +178,7 @@ class ComposeTests(unittest.TestCase):
         action: str,
         *,
         up_failures: int = 0,
+        down_fails: bool = False,
         ps_output: str = "",
     ) -> tuple[int, str, str]:
         self.ps_output.write_text(ps_output, encoding="utf-8")
@@ -181,6 +186,7 @@ class ComposeTests(unittest.TestCase):
             "FAKE_DOCKER_LOG": str(self.log),
             "FAKE_DOCKER_COUNT": str(self.count),
             "FAKE_DOCKER_UP_FAILURES": str(up_failures),
+            "FAKE_DOCKER_DOWN_FAILS": "1" if down_fails else "",
             "FAKE_DOCKER_PS": str(self.ps_output),
         }
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -212,7 +218,7 @@ class ComposeTests(unittest.TestCase):
         backends.write_state(self.state, backends.project_name(self.root), ports)
         return ports
 
-    def test_up_retries_a_failed_start_with_a_fresh_allocation(self) -> None:
+    def test_up_retries_a_failed_start_and_keeps_the_successful_allocation(self) -> None:
         code, stdout, stderr = self.run_with("up", up_failures=2)
         self.assertEqual(code, 0, stdout + stderr)
         attempts = self.calls("up")
@@ -223,6 +229,11 @@ class ComposeTests(unittest.TestCase):
         self.assertTrue(self.state.exists())
         state = backends.read_state(self.state, self.root)
         self.assertIsNotNone(state)
+        self.assertEqual(
+            [state.ports[variable] for variable in PORT_VARIABLES],
+            [int(attempts[-1]["ports"][variable]) for variable in PORT_VARIABLES],
+            "the state file does not record the allocation the successful attempt used",
+        )
         self.assertIn("started", stdout)
 
     def test_the_final_failure_removes_the_state_and_reports_the_last_output(self) -> None:
@@ -232,6 +243,19 @@ class ComposeTests(unittest.TestCase):
         self.assertFalse(self.state.exists(), "a failed allocation left its state file behind")
         self.assertTrue(self.calls("down"), "the failed project was not taken down")
         self.assertIn("bind: address already in use", stderr)
+        self.assertIn("last output", stderr)
+
+    def test_a_failed_cleanup_keeps_the_state_file_for_deps_down(self) -> None:
+        code, _, stderr = self.run_with("up", up_failures=99, down_fails=True)
+        self.assertNotEqual(code, 0)
+        self.assertTrue(self.calls("down"), "the failed project was not taken down")
+        self.assertTrue(
+            self.state.exists(),
+            "a failed teardown deleted the state file 'make deps-down' needs to finish the job",
+        )
+        self.assertIsNotNone(backends.read_state(self.state, self.root))
+        self.assertIn("cannot stop container", stderr)
+        self.assertIn("make deps-down", stderr)
         self.assertIn("last output", stderr)
 
     def test_a_stale_state_file_is_not_reused(self) -> None:

@@ -11,9 +11,11 @@ from the checkout root, so two checkouts on one machine never share containers.
 When no state file exists, or the project's containers are not all healthy, it
 binds 127.0.0.1:0 four times to obtain free ports, records the project name and
 the ports in the state file, and runs `docker compose -p <project> up -d
---wait`. A failed start is retried with a fresh allocation, at most three
-times; the final failure deletes the state file and prints compose's last
-output. An existing healthy stack is reused instead of started again.
+--wait`. An existing healthy stack is reused instead of started again. A failed
+start is retried with a fresh allocation, at most three times; the final failure
+takes the project down, deletes the state file and prints compose's last output.
+A teardown that fails keeps the state file, so `down` can still find the
+project's leftover containers.
 
 `down` takes down the project named by the state file and deletes the file. It
 never falls back to a project name of its own, so it cannot touch another
@@ -267,11 +269,31 @@ def up(
         print(f"backends: attempt {attempt} failed:\n{last_output}", file=sys.stderr)
 
     # A failed start may have created some of the containers; take the project
-    # down before reporting, so a retry starts from nothing.
+    # down before reporting, so a retry starts from nothing. If that teardown
+    # itself fails, the leftover containers keep this checkout's project name,
+    # so the state file is kept: `down` reads the project from it and can still
+    # finish the job. Deleting it would leave the containers with no pointer.
+    cleanup_failed = False
+    cleanup_output = ""
     try:
-        compose(docker, root, project, "down")
-    except OSError:
-        pass
+        takedown = compose(docker, root, project, "down")
+    except OSError as exc:
+        cleanup_failed = True
+        cleanup_output = f"cannot run {docker}: {exc}"
+    else:
+        if takedown.returncode != 0:
+            cleanup_failed = True
+            cleanup_output = "\n".join(
+                part for part in (takedown.stdout, takedown.stderr) if part
+            ).strip()
+    if cleanup_failed:
+        print(
+            f"backends: no stack for {project} after {ATTEMPTS} attempts; last output:\n{last_output}\n"
+            f"backends: taking the project down failed, so {state_path} is kept for "
+            f"'make deps-down' to retry:\n{cleanup_output}",
+            file=sys.stderr,
+        )
+        return 1
     state_path.unlink(missing_ok=True)
     print(
         f"backends: no stack for {project} after {ATTEMPTS} attempts; last output:\n{last_output}",
