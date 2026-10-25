@@ -343,6 +343,8 @@ sequenceDiagram
 
 `SMSSignInForm` 先以手机号起一条 `method: 'sms'` 的流程，把两步收在同一个表单里：`challenge` 步发出通知用 `role="status"` 报出接收号码；重发以同一号码再起一条流程（发码是方法 `Begin` 的职责，同一条流程内没有重发这一步）；改号退回第一步。一次新的发送（首发送、重发或改号）把验证码字段清空，使对着上一码输入的旧值不能搭上新一码。手机号步用 ui-kit 的两段式控件（`PhoneNumberField`）：国家/地区选择器与本地号码，提交前组装成 E.164。选择器初始取宿主给出的手机号缺省国家/地区（ui-kit 的 `PhoneCountryDefaultProvider`），缺席时取浏览器语言所指的国家/地区（zh-CN → +86，en-US → +1），按国家名、ISO 码或国际区号搜索；粘贴的完整国际号码会自行切换选择器并填入本地部分。号码按所选国家/地区在本地校验，位数不足等失败带出区号（「该号码在 +86 下位数不完整」）、不发起请求；服务端自己的拒绝文案只留给它能判断的失败（地区不支持、发送策略拒绝）。
 
+部署要求人机验证时，手机号步与验证码步的发送控件上方渲染 ui-kit 的 `HumanVerification` 块：首次发送、重发与停在第二因素时选择短信都带 `human_proof`，每次发送之后消耗当前证明并取一份新的，证明未就绪时发送控件禁用。`SignInScreen` 把已读到的发现文档的 `human` 经 `humanGate` 交给表单，单独挂载的表单自行读一次方法文档（[auth-core](design-web-auth-core.md) 的「人机验证证明」）。服务端对缺失、无效、过期或再次出示的证明答 403 `human-verification-required`，表单经错误白名单渲染本节文案；过长的证明答 400，提供方或存储不可用答 503。
+
 ### 社交登录与回调
 
 `SocialSignInSection` 对某个渠道调 `session.startFlow`；开始应答的 `redirect` 步给出授权地址，经 `onAuthorizeUrl` 交给宿主，宿主把提供方的重定向引到该渠道的回调路由，在那里渲染 `SocialCallbackHandler`。**提供方自己的 `redirect_uri` 由服务端按部署的公开地址拼出，客户端不传**；`SocialProviderConfig` 的回调地址是宿主自己的回调路由，作为流程的 `return_to` 发出，使提供方的一次往返最终落回它。回跳以 303 落回 `return_to` 时流程停在就绪步（令牌不能放进回跳 URL）；处理器在挂载时调 `session.readFlow` 读回流程，若应答为 `next.kind = complete` 则以 `step: 'complete'` 取走令牌、登录落地，触发一次 `onSignedIn`；若流程仍停在一步（如需第二因素或登记因素）则渲染该步续接。挂载时会话已是已认证的，是一次登录完成之后重入回调路由：处理器不读流程，再触发一次 `onSignedIn`，由宿主把访客引向别处。
@@ -418,6 +420,7 @@ sequenceDiagram
 | 注册成功 | 先挂空、再填文本的 `role="status"` 播报「账户已创建」，随后进入自动登录 |
 | 口令渠道的口令不符（`authn.login_failed`） | 文本取 `passwordSignIn.loginFailed`，不提验证码，也不说明是不存在还是不符；作为口令字段的说明渲染，字段 `aria-invalid` 且 `aria-describedby` 指向该文本，焦点移到口令字段；不渲染整次尝试横幅。后续步骤（如第二因素）被拒时仍按上一行渲染 |
 | 流程已失（`flow-invalid`：过期、被并发消费、绑定不符）于渠道表单 | 一条横幅渲染该码文本，视图退回渠道第一步重新开始 |
+| 一次发送缺少、无效、过期或已用的人机证明（403 `human-verification-required`） | 一条 `role="alert"` 横幅渲染 `authn.human_verification_required` 的文案；控件取得新证明后发送可重试 |
 | 短信码步骤的验证码已用 | 用过的码渲染 `smsSignIn.codeUsed`，清空字段，对同一码的再提交在本地被拒 |
 | 社交开始被拒（方法关闭、账户不可用） | 一条横幅渲染应答的错误码文本 |
 | 回跳路由上读不到流程 | 一条横幅加一个重试按钮，重跑一次 `session.readFlow` |
@@ -461,6 +464,7 @@ sequenceDiagram
 | 邀请受理面 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen` |
 | 邀请受理的新账户输入项取舍、标题层级与显示时区 | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`、`AcceptInvitationScreenProps` |
 | 短信通道读取手机号缺省国家/地区 | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm` |
+| 短信渠道的人机验证块与 `human_proof`（首次发送、重发与短信第二因素） | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`、`SMSSignInFormProps`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification` |
 | 通行密钥仪式由 `@speed/auth-core/webauthn` 驱动 | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx`；`web/packages/auth-core/src/webauthn.ts` |
 | 错误码文本经 i18n 共享解析器（含 `client.http.<status>` 族） | 已实现 | `web/packages/auth-ui/src/internal/error-text.ts` |
 | 冒充横幅 `ImpersonationBanner` | 已实现 | `web/packages/auth-ui/src/ImpersonationBanner.tsx` `ImpersonationBanner`、`ImpersonationBannerProps`、`ImpersonationBannerState` |
