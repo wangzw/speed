@@ -40,5 +40,6 @@
 | 平台运营 | [平台运营](features/prd-platform-admin.md) |
 | 平台设置与授权 | [平台设置与授权](features/prd-platform-config.md) |
 | 通知 | [通知](features/prd-notifications.md) |
+| 防滥用 | [防滥用](features/prd-abuse.md) |
 | 界面偏好 | [界面偏好](features/prd-presentation.md) |
 | 部署与运维 | [部署与运维](features/prd-deployment.md) |
