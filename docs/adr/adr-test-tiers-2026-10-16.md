@@ -46,7 +46,7 @@
 
 采纳：**仓库根的 `compose.yaml` 声明 PostgreSQL、Redis、NATS 与 Memcached 四个服务，`docker compose up -d --wait` 是把它们起来的唯一方式，也是唯一管它们的东西。** 每个服务自带 healthcheck，`--wait` 因此返回即就绪。
 
-**一套栈属于一个检出，端口按需分配。** 每个服务的宿主端口由 `SPEED_TEST_PG_PORT`、`SPEED_TEST_REDIS_PORT`、`SPEED_TEST_NATS_PORT`、`SPEED_TEST_MEMCACHED_PORT` 指定，变量缺省时取 5432、6379、4222、11211。`make deps-up` 调用 `tools/backends.py up`：项目名由检出根路径的散列派生（`speed-test-<12 位十六进制>`，同一检出稳定、不同检出不同），脚本在 `127.0.0.1` 上绑定 :0 取四个互不相同的空闲端口，把项目名与端口写入仓库根的 `.cache/test-backends.env`，再以该项目名执行 `docker compose up -d --wait`。状态文件存在且该项目的容器全部健康时直接复用；`up` 失败时重新取端口重试，至多三次，最终失败删掉状态文件并报出最后一次完整输出。`make deps-down` 只按状态文件里的项目名取下这一套栈，随后删除状态文件。直接执行 `docker compose up` 仍按默认端口起栈。
+**一套栈属于一个检出，端口按需分配。** 每个服务的宿主端口由 `SPEED_TEST_PG_PORT`、`SPEED_TEST_REDIS_PORT`、`SPEED_TEST_NATS_PORT`、`SPEED_TEST_MEMCACHED_PORT` 指定，变量缺省时取 5432、6379、4222、11211。`make deps-up` 调用 `tools/backends.py up`：项目名由检出根路径的散列派生（`speed-test-<12 位十六进制>`，同一检出稳定、不同检出不同），脚本在 `127.0.0.1` 上绑定 :0 取四个互不相同的空闲端口，把项目名与端口写入仓库根的 `.cache/test-backends.env`，再以该项目名执行 `docker compose up -d --wait`。状态文件存在且该项目的容器全部健康时直接复用；`up` 失败时重新取端口重试，至多三次；最终失败先取下这一套栈，取下成功则删掉状态文件，取下本身失败则保留状态文件供 `make deps-down` 清除残留容器，并报出最后一次完整输出。`make deps-down` 只按状态文件里的项目名取下这一套栈，随后删除状态文件。直接执行 `docker compose up` 仍按默认端口起栈。
 
 **测试夹具只连不管。** 夹具的地址来自 `SPEED_TEST_PG_ADDR`、`SPEED_TEST_REDIS_ADDR`、`SPEED_TEST_NATS_URL`、`SPEED_TEST_MEMCACHED_ADDR`，变量缺省时回落到固定的回环地址。夹具只做协议层的事：每用例一个 PostgreSQL 库、一个 Redis 库序号租约、一个 Memcached 键空间前缀、一个 NATS bucket 或 stream 名。**后端不可达时用例失败，不跳过。**
 
@@ -67,7 +67,7 @@
 - **一个检出一套栈。** 同一台机器上的多个检出各自起四个容器；隔离从按进程扩大到按检出，代价是同时运行的容器更多。
 - **集成层多了 docker 一个前提。** `tools/backends.py` 跑在 tools 套件已经使用、且已在提交门禁里要求的 Python 上；docker 及其 compose 插件不在提交门禁里，因此不影响单元层。
 - **状态文件可能过期。** 容器被外部删除后状态文件仍指向旧端口；`make deps-up` 发现该项目的容器没有全部健康会重新分配，而不是复用。
-- **分配失败最多重试三次。** 之后删掉状态文件、按 compose 最后一次完整输出报告；没有状态文件时 `make test-integration` 直接失败，不回落到默认端口。
+- **分配失败最多重试三次。** 之后先取下这一套栈并删掉状态文件，取下失败则保留状态文件供 `make deps-down` 清除残留容器，并按 compose 最后一次完整输出报告；没有状态文件时 `make test-integration` 直接失败，不回落到默认端口。
 - **骨架自带的 `starters/demo/compose.yaml` 仍用固定端口。** 它与一套按默认端口直接起的栈争端口；与脚本分配了端口的栈可以并存。
 - **后端的镜像与版本集中在 compose 文件里**，改一处同时影响所有用例。
 - 本地跑集成层要先跑 `make deps-up`（`make test-integration` 会自己跑）；集成层的唯一常规执行点是定时任务。
