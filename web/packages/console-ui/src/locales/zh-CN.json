@@ -529,7 +529,7 @@
     "manageAria": "管理账户 {{id}}",
     "deleteAria": "删除账户 {{id}}",
     "deleteTitle": "删除账户",
-    "deleteMessage": "删除账户「{{id}}」会一并移除其全部标识、密钥与会话。",
+    "deleteMessage": "删除账户「{{name}}」会一并移除其全部登录标识、密钥与会话。",
     "created": "账户「{{name}}」已创建",
     "deleted": "账户「{{id}}」已删除",
     "mfaReset": "账户「{{id}}」的认证因子已重置",

@@ -529,7 +529,7 @@
     "manageAria": "Manage account {{id}}",
     "deleteAria": "Delete account {{id}}",
     "deleteTitle": "Delete account",
-    "deleteMessage": "Deleting account \"{{id}}\" also removes its identifiers, secrets and sessions.",
+    "deleteMessage": "Deleting the account \"{{name}}\" also removes its login identifiers, secrets and sessions.",
     "created": "Account \"{{name}}\" created",
     "deleted": "Account \"{{id}}\" deleted",
     "mfaReset": "Factors for account \"{{id}}\" reset",

@@ -685,7 +685,12 @@ export function AccountsPage({
             onClick={() =>
               confirm.ask({
                 title: t('accounts.deleteTitle'),
-                message: t('accounts.deleteMessage', { id: row.id }),
+                // The roster names an account by its display name, so the
+                // confirmation does too; only an account with no name falls
+                // back to the opaque identifier.
+                message: t('accounts.deleteMessage', {
+                  name: row.display_name === '' ? row.id : row.display_name,
+                }),
                 confirmLabel: t('common.confirm'),
                 // Deleting an account takes its identifiers, secrets and
                 // sessions with it and cannot be undone from the interface:
