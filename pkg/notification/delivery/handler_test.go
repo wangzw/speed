@@ -133,7 +133,7 @@ func TestTheEmailChannelRendersAndSendsTheMessage(t *testing.T) {
 	r.local.set(typeName+".email.body_text", "Invoice inv-1 is paid in full.")
 	r.local.set(typeName+".email.body_html", "<p>Invoice inv-1 is paid in full.</p>")
 
-	params := map[string]any{"to": "alice@acme.test", "amount": 100}
+	params := map[string]any{"to": "u1@example.test", "amount": 100}
 	if _, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil); err != nil {
 		t.Fatalf("the delivery failed: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestTheEmailChannelRendersAndSendsTheMessage(t *testing.T) {
 		t.Errorf("Message.From is %q, want it empty: the carrier's own configured default sender is the sender",
 			msg.From)
 	}
-	if !slices.Equal(msg.To, []string{"alice@acme.test"}) {
+	if !slices.Equal(msg.To, []string{"u1@example.test"}) {
 		t.Errorf("Message.To is %v, want the dispatch's destination", msg.To)
 	}
 	if msg.Subject != "Invoice inv-1 is paid" {
@@ -193,7 +193,7 @@ func TestTheEmailChannelOmitsAnAbsentHTMLBody(t *testing.T) {
 	r.local.set(typeName+".email.subject", "Invoice inv-1 is paid")
 	r.local.set(typeName+".email.body_text", "Invoice inv-1 is paid in full.")
 
-	params := map[string]any{"to": "alice@acme.test", "amount": 100}
+	params := map[string]any{"to": "u1@example.test", "amount": 100}
 	if _, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil); err != nil {
 		t.Fatalf("the delivery failed: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestAnEmailFailureDoesNotStarveTheOthers(t *testing.T) {
 	r.setChannels(notification.ChannelInApp, notification.ChannelEmail)
 	r.mailSender.failWith(fmt.Errorf("the carrier did not answer: %w", mail.ErrUncertain))
 
-	params := map[string]any{"to": "alice@acme.test", "amount": 100}
+	params := map[string]any{"to": "u1@example.test", "amount": 100}
 	_, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil)
 	if err == nil {
 		t.Fatal("a failed channel did not fail the delivery")
@@ -325,7 +325,7 @@ func TestOneChannelFailureDoesNotStarveTheOthers(t *testing.T) {
 	r.smsRegistry.resolveErr = sms.ErrRejected
 	r.smsRegistry.mu.Unlock()
 
-	params := map[string]any{"to": "+15550000", "amount": 100}
+	params := map[string]any{"to": "+15550001", "amount": 100}
 	_, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil)
 	if err == nil {
 		t.Fatal("a failed channel did not fail the delivery")
@@ -375,7 +375,7 @@ func TestAFailedChannelIsRetriedIntoSameRow(t *testing.T) {
 	r.smsRegistry.resolveErr = sms.ErrRejected
 	r.smsRegistry.mu.Unlock()
 
-	job := jobOf(t, dispatch("u1", "occ-1", map[string]any{"to": "+15550000", "amount": 100}))
+	job := jobOf(t, dispatch("u1", "occ-1", map[string]any{"to": "+15550001", "amount": 100}))
 	if _, err := r.p.Handle(ctx, job, nil); err == nil {
 		t.Fatal("the failed channel did not fail the delivery")
 	}
@@ -433,6 +433,46 @@ func TestTheHandlerValidatesThePayloadAgain(t *testing.T) {
 	}
 }
 
+// The handler holds a carried destination against the recipient again. The
+// submission seam is where a producer chooses the address, but the worker may
+// meet a payload the submitter never wrote or a row changed afterwards, and the
+// destination is the one field a send cannot survive being wrong: a payload
+// naming another account's address is refused before any channel is walked and
+// nothing reaches the carrier, while the recipient's own address still sends.
+func TestTheHandlerRefusesADestinationTheRecipientDoesNotOwn(t *testing.T) {
+	r := newRig(t, func(h *host) {
+		h.mail = true
+		h.specs = map[string]notification.TypeSpec{"test.declarer": {
+			Key:             typeName,
+			Group:           "billing",
+			DefaultChannels: []notification.Channel{notification.ChannelEmail},
+			Unsubscribable:  true,
+		}}
+	})
+	ctx := r.tenantCtx("t1")
+	r.setChannels(notification.ChannelEmail)
+	r.local.set(typeName+".email.subject", "Invoice inv-1 is paid")
+	r.local.set(typeName+".email.body_text", "Invoice inv-1 is paid in full.")
+
+	_, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", map[string]any{"to": "u2@example.test"})), nil)
+	if !errors.Is(err, notification.ErrInvalidRequest) {
+		t.Fatalf("the handler ended with %v, want ErrInvalidRequest", err)
+	}
+	if got := r.mailSender.sendCount(); got != 0 {
+		t.Errorf("the carrier was reached %d times for another account's destination, want 0", got)
+	}
+	if got := r.rowCount("t1"); got != 0 {
+		t.Errorf("the ledger holds %d rows, want 0: a refused destination is not a channel attempt", got)
+	}
+
+	if _, err := r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-2", map[string]any{"to": "u1@example.test"})), nil); err != nil {
+		t.Fatalf("the dispatch to the recipient's own destination ended with %v", err)
+	}
+	if got := r.mailSender.sendCount(); got != 1 {
+		t.Errorf("the carrier was reached %d times for the recipient's own destination, want 1", got)
+	}
+}
+
 // A handler context that carries no tenant is refused before any storage is
 // touched.
 func TestTheHandlerRefusesAContextWithoutATenant(t *testing.T) {
@@ -450,7 +490,7 @@ func TestTheHandlerRefusesAContextWithoutATenant(t *testing.T) {
 // neither carries the recipient, the message text or a parameter value.
 func TestTheEmailSendWritesOneLineWithoutSecrets(t *testing.T) {
 	const (
-		recipient = "alice@acme.test"
+		recipient = "u1@example.test"
 		body      = "Invoice inv-1 is paid in full."
 		param     = "inv-secret-42"
 	)
@@ -520,7 +560,7 @@ func TestTheEmailSendWritesOneLineWithoutSecrets(t *testing.T) {
 // recipient, body or parameter value on either.
 func TestTheSMSSendWritesOneLineWithoutSecrets(t *testing.T) {
 	const (
-		recipient = "+15550000"
+		recipient = "+15550001"
 		param     = "inv-secret-42"
 	)
 	cases := []struct {
@@ -649,7 +689,11 @@ func TestTheExternalSendLogsToTheModuleLogger(t *testing.T) {
 			}
 			contextLogs, ctx := r.capturingLogger(r.tenantCtx("t1"))
 
-			params := map[string]any{"to": "destination", "invoice_id": "inv-1"}
+			to := "u1@example.test"
+			if c.channel == notification.ChannelSMS {
+				to = "+15550001"
+			}
+			params := map[string]any{"to": to, "invoice_id": "inv-1"}
 			_, _ = r.p.Handle(ctx, jobOf(t, dispatch("u1", "occ-1", params)), nil)
 
 			lines := moduleLogs.lines("channel="+string(c.channel), "outcome="+c.outcome)

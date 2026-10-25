@@ -1,8 +1,9 @@
 // Package delivery is the notification capability's outbound pipeline: one
 // delivery intent goes in, is validated, and is enqueued as one job; when the
-// job is consumed the intent is validated again, the recipient's effective
-// channels are resolved, and each channel is rendered, sent through its seam and
-// recorded as one ledger row.
+// job is consumed the intent is validated again, a carried destination is held
+// to the recipient once more, the recipient's effective channels are resolved,
+// and each channel is rendered, sent through its seam and recorded as one ledger
+// row.
 //
 // The submission seam is notification.Dispatcher, delivered exclusively by this
 // module. Dispatcher.Dispatch validates, holds a carried destination against the

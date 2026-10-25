@@ -2,9 +2,9 @@
 
 The notification capability's outbound delivery pipeline. One delivery intent
 goes in, is validated, and is enqueued as one durable job; when the job is
-consumed the intent is validated again, the recipient's effective channels are
-resolved, and every channel is rendered, sent through its seam and recorded as
-one ledger row.
+consumed the intent is validated again, a carried destination is held to the
+recipient once more, the recipient's effective channels are resolved, and every
+channel is rendered, sent through its seam and recorded as one ledger row.
 
 The descriptor declares the conditional features `notification.channel.email` and
 `notification.channel.sms`. `Init` posts each from the same seam judgement the
@@ -93,11 +93,12 @@ refused with the tenant capability's own error. A spent budget is a
 **The handler consumes the job.** `jobs.db` claims it, enters its tenant and
 hands it over, so the handler's context already carries the tenant. The handler
 decodes the payload, runs the same validation again — a worker can meet a
-payload the submitter never wrote, or a row that has since been changed —
-resolves the recipient's effective channels through `Preferences.Effective`, and
-walks them. A channel that fails does not starve the others and is not hidden by
-their successes: every channel is walked and their errors are joined into what
-the handler returns, which is what makes the job retry.
+payload the submitter never wrote, or a row that has since been changed — holds
+a carried destination against the recipient's identifiers once more, resolves
+the recipient's effective channels through `Preferences.Effective`, and walks
+them. A channel that fails does not starve the others and is not hidden by their
+successes: every channel is walked and their errors are joined into what the
+handler returns, which is what makes the job retry.
 
 **The in-app row is written, not announced.** The handler writes it through
 `notification.Inbox`, which is the module that publishes `notification.inbox.created`
@@ -157,14 +158,18 @@ recipient that holds no address identifier is refused with
 no live account has no identifiers to own a destination and is refused the same
 way. A failed account read is an error and not a pass.
 
+The consuming handler runs the rule once more before it resolves the effective
+channels: the submission seam is the trust boundary for a producer choosing an
+address, and the second read is defence in depth, so a payload written past the
+seam or changed afterwards cannot reach an arbitrary mailbox or number. A failed
+account read fails closed there too.
+
 **What the rule does not cover.** A dispatch with no `to` is not checked: the
 in-app channel needs no destination, and an email or sms dispatch with no `to`
 fails that channel at send time. A `to` that cannot be stringified is likewise
-left to the channel: there is no address to compare. The consuming handler
-re-runs the shape and taxonomy checks but does not read the account store again;
-ownership is the submission seam's rule. The recipient classes are the closed set
-`user` and `external`: `user` is an account and `external` is refused by the
-shape check, so no account-less class reaches the ownership rule; a new
+left to the channel: there is no address to compare. The recipient classes are the
+closed set `user` and `external`: `user` is an account and `external` is refused
+by the shape check, so no account-less class reaches the ownership rule; a new
 account-less class would have to decide its own rule.
 
 ## The idempotency key

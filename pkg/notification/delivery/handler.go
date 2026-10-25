@@ -38,10 +38,15 @@ func (p *pipeline) Type() string { return JobType }
 // over, so the context already carries the tenant the ledger rows belong to. The
 // handler decodes the payload, runs the submission seam's validation again — a
 // worker can meet a payload the submitter never wrote, or a row that has since
-// been changed — resolves the recipient's effective channels, and delivers each
-// of them. A channel that fails does not starve the others and is not hidden by
-// their successes: every channel is walked, and their errors are joined into
-// what the handler returns, which is what makes the job retry.
+// been changed — holds a carried destination against the recipient's identifiers
+// once more, resolves the recipient's effective channels, and delivers each of
+// them. The destination is repeated here rather than left to the submitter: it
+// is the one field a send cannot survive being wrong, and the account store is
+// already a hard dependency, so the worker refuses a payload whose destination
+// the recipient does not own before a channel is walked. A channel that fails
+// does not starve the others and is not hidden by their successes: every channel
+// is walked, and their errors are joined into what the handler returns, which is
+// what makes the job retry.
 func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn) (jobs.Result, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
@@ -53,6 +58,9 @@ func (p *pipeline) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn)
 	}
 	spec, err := p.validate(d)
 	if err != nil {
+		return jobs.Result{}, err
+	}
+	if err := p.checkDestination(ctx, d); err != nil {
 		return jobs.Result{}, err
 	}
 	channels, err := p.prefs.Effective(ctx, d.Recipient.UserID, d.TypeKey)
