@@ -161,6 +161,26 @@ function detailTitle(id: string): string {
   return copy('consoleUi', 'accounts.detail.title', { id })
 }
 
+/**
+ * The settled status write's success notice.
+ *
+ * The console names an account in a success notice by its display name and
+ * first login identifier and never by the opaque account id, so the expected
+ * sentence is the bundle's `statusSaved` filled with the reference the same
+ * bundle's `common.accountReference.nameWithIdentifier` renders. The seeded
+ * member resolves both, so the named form is the one the product renders; an
+ * implementation that fell back to the neutral sentence or inserted the id
+ * would fail this assertion.
+ */
+function statusSavedNotice(): string {
+  return copy('consoleUi', 'accounts.statusSaved', {
+    account: copy('consoleUi', 'common.accountReference.nameWithIdentifier', {
+      name: MEMBER.displayName,
+      identifier: MEMBER.identifier,
+    }),
+  })
+}
+
 /** The detail panel's status line for one status label. */
 function statusLine(panel: Locator, status: string): Locator {
   return panel.getByText(
@@ -453,13 +473,11 @@ test('account-offboarding: an operator disables a member and the member returns 
         })
         .click()
 
-      // The settled write confirms with a message that names the account, and
-      // the detail re-reads the account's own status.
+      // The settled write confirms with a message that names the account by
+      // its display name and login identifier, and the detail re-reads the
+      // account's own status.
       await expect(
-        dialog.getByText(
-          copy('consoleUi', 'accounts.statusSaved', { id: memberId }),
-          { exact: true },
-        ),
+        dialog.getByText(statusSavedNotice(), { exact: true }),
       ).toBeVisible()
       await expect(
         statusLine(dialog, copy('consoleUi', 'accounts.status.disabled')),
@@ -610,10 +628,7 @@ test('account-offboarding: an operator disables a member and the member returns 
         })
         .click()
       await expect(
-        dialog.getByText(
-          copy('consoleUi', 'accounts.statusSaved', { id: memberId }),
-          { exact: true },
-        ),
+        dialog.getByText(statusSavedNotice(), { exact: true }),
       ).toBeVisible()
       await expect(
         statusLine(dialog, copy('consoleUi', 'accounts.status.active')),

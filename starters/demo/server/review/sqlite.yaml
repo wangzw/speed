@@ -247,6 +247,21 @@ seed:
       value: "10000"
     - key: "authn.sms.per-source-daily"
       value: "100000"
+    # REVIEW: the address shield's numbers, widened for the review build. Every
+    # request in this build comes from one loopback address, and this build is
+    # driven by the journey tier's several browser contexts and by a
+    # walkthrough that deliberately makes refused requests. The declared
+    # defaults (four tokens a second, a burst of forty, twenty extra tokens for
+    # a refusal) therefore shut the whole source out with a 429 before it
+    # reaches the backend, which is traffic the review assemblies are meant to
+    # admit. The layer stays assembled -- it is not removed from the endpoint --
+    # and only its thresholds move; a deployment keeps the declared defaults.
+    - key: "ratelimit.address-rate"
+      value: "1000"
+    - key: "ratelimit.address-burst"
+      value: "1000"
+    - key: "ratelimit.address-penalty"
+      value: "0"
 
 # REVIEW: the scheduler's tick. The review notification fixture declares a
 # periodic dispatch and every window it runs is expanded per tenant; a two-second
