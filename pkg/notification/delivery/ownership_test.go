@@ -91,6 +91,53 @@ func TestDispatchRefusesADestinationForARecipientWithNoIdentifiers(t *testing.T)
 	}
 }
 
+// A failure to read the recipient's identifiers is an outage and not a pass: the
+// dispatch ends with the store's own error rather than treating the recipient as
+// owning nothing, the error is not the ownership rule's refusal, and nothing is
+// enqueued.
+func TestDispatchRefusesWhenTheRecipientIdentifiersCannotBeRead(t *testing.T) {
+	r := newRig(t, func(h *host) { h.specs = map[string]notification.TypeSpec{"test.declarer": ownershipSpec()} })
+	ctx := r.tenantCtx("t1")
+	storeDown := errors.New("the account store is down")
+	r.accounts.mu.Lock()
+	r.accounts.idsErr = storeDown
+	r.accounts.mu.Unlock()
+
+	_, err := r.p.Dispatch(ctx, dispatch("u1", "occ-1", destinationParams("u1@example.test")))
+	if !errors.Is(err, storeDown) {
+		t.Fatalf("Dispatch ended with %v, want the account store's error", err)
+	}
+	if errors.Is(err, notification.ErrInvalidRequest) {
+		t.Errorf("a failed identifier read was reported as an ownership refusal: %v", err)
+	}
+	if got := len(r.queue.enqueued()); got != 0 {
+		t.Errorf("a dispatch whose identifier read failed enqueued %d jobs, want 0", got)
+	}
+}
+
+// A failure to look the destination up is the same outage, not a pass: the
+// dispatch ends with the store's own error rather than treating the destination
+// as unowned, and nothing is enqueued.
+func TestDispatchRefusesWhenTheDestinationLookupFails(t *testing.T) {
+	r := newRig(t, func(h *host) { h.specs = map[string]notification.TypeSpec{"test.declarer": ownershipSpec()} })
+	ctx := r.tenantCtx("t1")
+	storeDown := errors.New("the account store is down")
+	r.accounts.mu.Lock()
+	r.accounts.lookErr = storeDown
+	r.accounts.mu.Unlock()
+
+	_, err := r.p.Dispatch(ctx, dispatch("u1", "occ-1", destinationParams("u1@example.test")))
+	if !errors.Is(err, storeDown) {
+		t.Fatalf("Dispatch ended with %v, want the account store's error", err)
+	}
+	if errors.Is(err, notification.ErrInvalidRequest) {
+		t.Errorf("a failed destination lookup was reported as an ownership refusal: %v", err)
+	}
+	if got := len(r.queue.enqueued()); got != 0 {
+		t.Errorf("a dispatch whose destination lookup failed enqueued %d jobs, want 0", got)
+	}
+}
+
 // A dispatch that carries no destination is unaffected: the ownership rule
 // reads a destination, and a channel that needs none has nothing to check.
 func TestDispatchDoesNotCheckAChannelWithoutADestination(t *testing.T) {
