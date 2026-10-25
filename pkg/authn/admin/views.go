@@ -15,15 +15,28 @@ import (
 type AuthnAdminAccount struct {
 	_ struct{} `description:"One account as the management routes show it, built field by field so that a field added to the stored account does not reach a client by being there."`
 
-	ID          string            `json:"id" required:"true" description:"The account's opaque identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
-	Kind        string            `json:"kind" required:"true" enum:"user,service" description:"user for a human account, service for a non-interactive API client."`
-	Status      string            `json:"status" required:"true" enum:"disabled,active,deleted" description:"disabled, active or deleted; deleted is terminal and leaves a tombstone."`
-	DisplayName string            `json:"display_name" required:"true" description:"The account's display name, at most 100 characters and not used for any decision."`
-	MFARequired bool              `json:"mfa_required" required:"true" description:"True when the account must register a factor before it can sign in."`
-	Protected   bool              `json:"protected" required:"true" description:"True when the account may not be impersonated, independent of any Decider."`
-	PasswordSet bool              `json:"password_set" required:"true" description:"True when the account carries a password credential."`
-	Attributes  map[string]string `json:"attributes,omitempty" description:"Absent when the account carries no attribute set"`
-	CreatedAt   time.Time         `json:"created_at" required:"true" description:"When the account was created, as an RFC 3339 instant in UTC."`
+	ID          string                 `json:"id" required:"true" description:"The account's opaque identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive."`
+	Kind        string                 `json:"kind" required:"true" enum:"user,service" description:"user for a human account, service for a non-interactive API client."`
+	Status      string                 `json:"status" required:"true" enum:"disabled,active,deleted" description:"disabled, active or deleted; deleted is terminal and leaves a tombstone."`
+	DisplayName string                 `json:"display_name" required:"true" description:"The account's display name, at most 100 characters and not used for any decision."`
+	MFARequired bool                   `json:"mfa_required" required:"true" description:"True when the account must register a factor before it can sign in."`
+	Protected   bool                   `json:"protected" required:"true" description:"True when the account may not be impersonated, independent of any Decider."`
+	PasswordSet bool                   `json:"password_set" required:"true" description:"True when the account carries a password credential."`
+	Attributes  map[string]string      `json:"attributes,omitempty" description:"Absent when the account carries no attribute set"`
+	Identifiers []AuthnAdminIdentifier `json:"identifiers" required:"true" description:"The account's login identifiers, always an array and never null, empty when it has none. Sorted by kind in the fixed order username, email, phone, and within one kind by value ascending, so the first element is the one to name the account by."`
+	CreatedAt   time.Time              `json:"created_at" required:"true" description:"When the account was created, as an RFC 3339 instant in UTC."`
+}
+
+// AuthnAdminIdentifier is one login identifier of an account as the management
+// routes show it: the kind, the normalized value and whether its ownership was
+// proved. It carries nothing else of the stored row — no identifier of its own,
+// no verification instant and no named way of verification.
+type AuthnAdminIdentifier struct {
+	_ struct{} `description:"One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification."`
+
+	Kind   string `json:"kind" required:"true" enum:"username,email,phone" description:"The identifier kind: username, email or phone."`
+	Value  string `json:"value" required:"true" description:"The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits."`
+	Proven bool   `json:"proven" required:"true" description:"True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge."`
 }
 
 // AuthnAdminAccountEnvelope carries one account.

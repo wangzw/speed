@@ -11443,6 +11443,13 @@
             "description": "The account's opaque identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive.",
             "type": "string"
           },
+          "identifiers": {
+            "description": "The account's login identifiers, always an array and never null, empty when it has none. Sorted by kind in the fixed order username, email, phone, and within one kind by value ascending, so the first element is the one to name the account by.",
+            "items": {
+              "$ref": "#/components/schemas/AuthnAdminIdentifier"
+            },
+            "type": "array"
+          },
           "kind": {
             "description": "user for a human account, service for a non-interactive API client.",
             "enum": [
@@ -11481,6 +11488,7 @@
           "mfa_required",
           "protected",
           "password_set",
+          "identifiers",
           "created_at"
         ],
         "type": "object"
@@ -11681,6 +11689,34 @@
         },
         "required": [
           "factors"
+        ],
+        "type": "object"
+      },
+      "AuthnAdminIdentifier": {
+        "description": "One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification.",
+        "properties": {
+          "kind": {
+            "description": "The identifier kind: username, email or phone.",
+            "enum": [
+              "username",
+              "email",
+              "phone"
+            ],
+            "type": "string"
+          },
+          "proven": {
+            "description": "True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:\u003cprovider\u003e. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge.",
+            "type": "boolean"
+          },
+          "value": {
+            "description": "The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "proven"
         ],
         "type": "object"
       },

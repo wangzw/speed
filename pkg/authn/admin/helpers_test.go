@@ -110,21 +110,46 @@ func (d *fakeDecider) last() (authn.Decision, bool) {
 // fakeAccounts is the account read surface.
 type fakeAccounts struct {
 	authn.Accounts
-	mu          sync.Mutex
-	accounts    map[authn.AccountID]authn.Account
-	order       []authn.AccountID
-	secrets     map[authn.AccountID][]authn.ServiceSecretInfo
-	listErr     error
-	secretErr   error
-	listCalls   int
-	secretCalls int
+	mu              sync.Mutex
+	accounts        map[authn.AccountID]authn.Account
+	order           []authn.AccountID
+	secrets         map[authn.AccountID][]authn.ServiceSecretInfo
+	identifiers     map[authn.AccountID][]authn.Identifier
+	listErr         error
+	secretErr       error
+	identifierErr   error
+	listCalls       int
+	secretCalls     int
+	identifierCalls int
 	// lastQuery is the query the most recent List was handed, so a case can hold
 	// what the handler parsed out of the request.
 	lastQuery authn.AccountQuery
 }
 
 func newAccounts() *fakeAccounts {
-	return &fakeAccounts{accounts: map[authn.AccountID]authn.Account{}, secrets: map[authn.AccountID][]authn.ServiceSecretInfo{}}
+	return &fakeAccounts{
+		accounts:    map[authn.AccountID]authn.Account{},
+		secrets:     map[authn.AccountID][]authn.ServiceSecretInfo{},
+		identifiers: map[authn.AccountID][]authn.Identifier{},
+	}
+}
+
+// putIdentifiers binds identifiers to an account, in the order given, so a case
+// can hold the order the view sorts into against an order that differs.
+func (a *fakeAccounts) putIdentifiers(id authn.AccountID, identifiers ...authn.Identifier) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.identifiers[id] = identifiers
+}
+
+func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.identifierCalls++
+	if a.identifierErr != nil {
+		return nil, a.identifierErr
+	}
+	return append([]authn.Identifier(nil), a.identifiers[id]...), nil
 }
 
 // lastList is the query the most recent List was handed, taken under the lock so

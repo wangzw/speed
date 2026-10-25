@@ -2,14 +2,16 @@ package admin
 
 import (
 	"context"
+	"sort"
 	"unicode/utf8"
 
 	"github.com/vislake/speed/pkg/authn"
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
-// accountViewOf builds one account as the management routes show it.
-func accountViewOf(a authn.Account) AuthnAdminAccount {
+// accountViewOf builds one account as the management routes show it, from the
+// account row and the identifiers bound to it.
+func accountViewOf(a authn.Account, identifiers []authn.Identifier) AuthnAdminAccount {
 	return AuthnAdminAccount{
 		ID:          string(a.ID),
 		Kind:        string(a.Kind),
@@ -19,8 +21,58 @@ func accountViewOf(a authn.Account) AuthnAdminAccount {
 		Protected:   a.Protected,
 		PasswordSet: a.PasswordSet,
 		Attributes:  a.Attributes,
+		Identifiers: identifiersOf(identifiers),
 		CreatedAt:   a.CreatedAt.UTC(),
 	}
+}
+
+// identifiersOf builds the view's identifiers: the kind, the normalized value
+// and whether the way the identifier came to be verified proves ownership. The
+// order is fixed and does not follow the store: by kind as username, email,
+// phone, and within one kind by value ascending. The slice is never nil, so the
+// answer carries an empty array rather than null.
+func identifiersOf(identifiers []authn.Identifier) []AuthnAdminIdentifier {
+	out := make([]AuthnAdminIdentifier, 0, len(identifiers))
+	for _, i := range identifiers {
+		out = append(out, AuthnAdminIdentifier{
+			Kind:   string(i.Kind),
+			Value:  i.Value,
+			Proven: authn.Verification{Via: i.VerifiedVia}.Proves(),
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := identifierKindRank(authn.IdentifierKind(out[i].Kind)), identifierKindRank(authn.IdentifierKind(out[j].Kind))
+		if ri != rj {
+			return ri < rj
+		}
+		return out[i].Value < out[j].Value
+	})
+	return out
+}
+
+// identifierKindRank is the fixed order the account view sorts identifiers by.
+// A kind outside the declared set sorts last, after phone.
+func identifierKindRank(k authn.IdentifierKind) int {
+	switch k {
+	case authn.IdentifierUsername:
+		return 0
+	case authn.IdentifierEmail:
+		return 1
+	case authn.IdentifierPhone:
+		return 2
+	}
+	return 3
+}
+
+// viewOf reads the identifiers bound to an account and builds its view. It is
+// the per-account read the list and the single read both make; the caller
+// decides how a failed read is answered.
+func (m *product) viewOf(ctx context.Context, a authn.Account) (AuthnAdminAccount, error) {
+	identifiers, err := m.accounts.Identifiers(ctx, a.ID)
+	if err != nil {
+		return AuthnAdminAccount{}, err
+	}
+	return accountViewOf(a, identifiers), nil
 }
 
 // accountListParams is the closed set of query parameters the account list
@@ -59,7 +111,11 @@ func (m *product) handleAccountList(ctx context.Context, in accountListInput) (A
 	}
 	views := make([]AuthnAdminAccount, len(accounts))
 	for i, a := range accounts {
-		views[i] = accountViewOf(a)
+		view, err := m.viewOf(ctx, a)
+		if err != nil {
+			return AuthnAdminAccountList{}, m.unavailable("listing identifiers", err)
+		}
+		views[i] = view
 	}
 	return AuthnAdminAccountList{Accounts: views, NextCursor: next}, nil
 }
@@ -180,7 +236,11 @@ func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput
 		m.auditBestEffort(ctx, failedAudit(actionAccountCreate, "", actionID))
 		return AuthnAdminAccountEnvelope{}, m.answer("creating an account", err)
 	}
-	return AuthnAdminAccountEnvelope{Account: accountViewOf(account)}, nil
+	view, err := m.viewOf(ctx, account)
+	if err != nil {
+		return AuthnAdminAccountEnvelope{}, m.unavailable("listing identifiers", err)
+	}
+	return AuthnAdminAccountEnvelope{Account: view}, nil
 }
 
 // handleAccountPatch answers PATCH /admin/accounts/:id: the display name, the
@@ -218,7 +278,11 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 	if err != nil {
 		return m.replyFailure("reading an object", err)
 	}
-	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: accountViewOf(account)}), nil
+	view, err := m.viewOf(ctx, account)
+	if err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
 
 // applyPatch writes each field the request named, in order. A failure closes the
@@ -262,13 +326,17 @@ func (m *product) handleAccountGet(ctx context.Context, in accountIDInput, _ *sp
 	if err != nil {
 		return m.replyFailure("reading an object", err)
 	}
-	if err := m.asks(ctx, authn.Decision{
+	if err = m.asks(ctx, authn.Decision{
 		Action: authn.ActionAccountRead, Actor: id,
 		Target: string(accountID), TargetAccount: string(accountID),
 	}); err != nil {
 		return nil, err
 	}
-	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: accountViewOf(account)}), nil
+	view, err := m.viewOf(ctx, account)
+	if err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
 
 // handleAccountDelete answers DELETE /admin/accounts/:id. The action is
@@ -353,7 +421,11 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 	if err != nil {
 		return m.replyFailure("reading an object", err)
 	}
-	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: accountViewOf(account)}), nil
+	view, err := m.viewOf(ctx, account)
+	if err != nil {
+		return m.replyFailure("reading an object", err)
+	}
+	return speedhttp.JSONReply(200, AuthnAdminAccountEnvelope{Account: view}), nil
 }
 
 // handleIdentifierAdd answers POST /admin/accounts/:id/identifiers: it adds a

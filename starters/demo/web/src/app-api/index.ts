@@ -96,6 +96,30 @@ export const AuthnAdminAccountStatusProperty = {
 } as const;
 
 /**
+ * The identifier kind: username, email or phone.
+ */
+export type AuthnAdminIdentifierKind = typeof AuthnAdminIdentifierKind[keyof typeof AuthnAdminIdentifierKind];
+
+
+export const AuthnAdminIdentifierKind = {
+  username: 'username',
+  email: 'email',
+  phone: 'phone',
+} as const;
+
+/**
+ * One login identifier bound to an account: its kind, its normalized value and whether its ownership was proved. It carries no identifier of its own, no verification instant and no named way of verification.
+ */
+export interface AuthnAdminIdentifier {
+  /** The identifier kind: username, email or phone. */
+  kind: AuthnAdminIdentifierKind;
+  /** True only when the identifier's ownership was proved: sms-code, email-code, invite or idp:<provider>. False for admin, import-unverified and self, which only record a fact an administrator, an import or the account's own holder asserted and are never grounds for automatic linking or an enterprise merge. */
+  proven: boolean;
+  /** The identifier's value in the normalized form the account module stores: a username lower-cased, an email address trimmed and lower-cased, a phone number in E.164 with a leading plus sign and 7 to 15 digits. */
+  value: string;
+}
+
+/**
  * One account as the management routes show it, built field by field so that a field added to the stored account does not reach a client by being there.
  */
 export interface AuthnAdminAccount {
@@ -107,6 +131,8 @@ export interface AuthnAdminAccount {
   display_name: string;
   /** The account's opaque identifier: 1 to 64 bytes from [A-Za-z0-9._-], case-sensitive. */
   id: string;
+  /** The account's login identifiers, always an array and never null, empty when it has none. Sorted by kind in the fixed order username, email, phone, and within one kind by value ascending, so the first element is the one to name the account by. */
+  identifiers: AuthnAdminIdentifier[];
   /** user for a human account, service for a non-interactive API client. */
   kind: AuthnAdminAccountKind;
   /** True when the account must register a factor before it can sign in. */
@@ -2707,7 +2733,7 @@ export function useAuthnMfaFactors<TData = Awaited<ReturnType<typeof authnMfaFac
 
 
 /**
- * Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, then its register row. After an active factor has been removed, the account's other sessions are ended, keeping the one that made the request signed in; a pending or disabled factor ends no session, and a session store that fails after the factor is gone is reported as an outage. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent. When the account has mfa_required set, its last active factor cannot be removed.
+ * Removes one factor of the caller's account: whatever the factor's kind keeps for it is removed, then its register row. After an active factor has been removed, the account's other sessions are ended first and the session that made the request is then rotated: the 204 carries that session's new cookie, and the token the request was made with no longer authenticates. A pending or disabled factor ends no session and rotates none, and a session store that fails after the factor is gone is reported as an outage. The call requires a fresh multi-factor authentication verified locally, so one merely declared by an identity provider does not satisfy it; an impersonating identity is refused. A factor that is not the caller's answers the same as one already gone, so the route never answers 404 and repeating a removal is idempotent: it finishes any session revocation and rotation an earlier attempt could not. When the account has mfa_required set, its last active factor cannot be removed.
  * @summary Remove one of the caller's own factors
  */
 export const authnMfaRemoveFactor = (
