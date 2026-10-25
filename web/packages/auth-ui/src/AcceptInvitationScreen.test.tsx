@@ -16,12 +16,13 @@ import { DisplayTimeZoneProvider } from '@speed/ui-kit'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
-/** The invitation read's success answer for these suites. */
+/** The invitation read's success answer for these suites: pending and still
+ * ahead of its deadline, so the screen reaches its accept action. */
 const INVITATION = {
   tenant: 'Acme',
   email: 'invitee@example.com',
   status: 'pending',
-  expiresAt: '2026-10-20T12:00:00Z',
+  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
 }
 
 function operations(
@@ -52,6 +53,95 @@ describe('AcceptInvitationScreen', () => {
     expect(
       screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
     ).toBeInTheDocument()
+  })
+
+  it('renders the unavailable state for an invitation already accepted', async () => {
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({
+          readInvitation: () =>
+            Promise.resolve({ ...INVITATION, status: 'accepted' }),
+        })}
+      />,
+    )
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.unavailable.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.acceptInvitation.unavailable.description),
+    ).toBeInTheDocument()
+    // A link that can no longer be redeemed shows neither the summary nor the
+    // accept action.
+    expect(
+      screen.queryByText(
+        zhCN.acceptInvitation.invited.replace('{{tenant}}', 'Acme'),
+      ),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.acceptInvitation.accept }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders the unavailable state for a revoked invitation', async () => {
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({
+          readInvitation: () =>
+            Promise.resolve({ ...INVITATION, status: 'revoked' }),
+        })}
+      />,
+    )
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.unavailable.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.acceptInvitation.accept }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders the unavailable state for a pending invitation whose expiry has passed', async () => {
+    const expired = new Date(Date.now() - 60 * 1000).toISOString()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({
+          readInvitation: () =>
+            Promise.resolve({ ...INVITATION, expiresAt: expired }),
+        })}
+      />,
+    )
+    expect(
+      await screen.findByText(zhCN.acceptInvitation.unavailable.title),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        zhCN.acceptInvitation.invited.replace('{{tenant}}', 'Acme'),
+      ),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.acceptInvitation.accept }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('still offers the accept action for a pending invitation whose expiry has not passed', async () => {
+    const unexpired = new Date(Date.now() + 60 * 1000).toISOString()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({
+          readInvitation: () =>
+            Promise.resolve({ ...INVITATION, expiresAt: unexpired }),
+        })}
+      />,
+    )
+    expect(
+      await screen.findByRole('button', { name: zhCN.acceptInvitation.accept }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(zhCN.acceptInvitation.unavailable.title),
+    ).not.toBeInTheDocument()
   })
 
   it('accepts the invitation and fires onAccepted once', async () => {

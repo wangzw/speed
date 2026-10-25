@@ -628,9 +628,11 @@ points to and accepts it through two host-bound operations
 public surface references no generated contract type. The acceptance is
 public -- the token is the whole credential, and the membership lands on
 the invited address's account -- and a host may render its own sign-in
-surface ahead of the screen. A bare 404 renders "invitation not found" and
-a 409 "invitation no longer valid"; any other failure renders its code with
-a retry.
+surface ahead of the screen. The read's own view is judged before it is
+shown: a status other than pending, or a pending deadline at or past,
+renders "invitation no longer valid" without the summary or the accept
+action. A bare 404 renders "invitation not found", a 409 renders that same
+"no longer valid" text, and any other failure renders its code with a retry.
 
 The expiry renders in the host's display time zone when the tree provides
 one (`ui-kit`'s display-time-zone context), else the device zone. When the
@@ -728,7 +730,7 @@ enforced by registration):
 | `socialCallback.*` | the callback handler: the pending notice, the retry action |
 | `signOut.*` | the sign-out button: label and busy state |
 | `sessionEnded.*` | the session-ended screen: title, description, sign-in-again action |
-| `acceptInvitation.*` | the invitation landing: title, loading notice, tenant/email/expiry facts, the accept action, the retry action, and the accepted and not-found states |
+| `acceptInvitation.*` | the invitation landing: title, loading notice, tenant/email/expiry facts, the accept action, the retry action, and the accepted, not-found and no-longer-valid states |
 | `impersonation.*` | the impersonation notice: the region name, the acting-as / tenant / expiry statements, the management-unavailable notice, the end action with its ending and ended messages, the hide control's name, and the header chip's visible text with its hide/show hints |
 | `errors.*` | code-to-text answers (see below) |
 

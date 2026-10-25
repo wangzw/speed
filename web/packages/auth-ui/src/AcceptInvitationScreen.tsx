@@ -29,13 +29,17 @@
  * display time zone when one is provided (ui-kit's display-time-zone
  * context), else the device zone.
  *
- * The two read failures the contract names get their own text: a bare 404
- * ("no such invitation") and a 409 ("expired, revoked or already accepted");
- * any other failure renders the answer's code through the family's error
- * banner with a retry. A refused acceptance renders its code the same way and
- * leaves the accept action ready for another try. Host callbacks (onAccepted)
- * fire after the operation settles and are contained -- a throwing callback
- * is never a failure of the acceptance.
+ * The read's view is judged before it is shown: the acceptView contract
+ * returns the stored state even when the link can no longer be redeemed, so a
+ * status other than pending, or a pending deadline at or past, renders the
+ * same "no longer valid" state as a 409 -- without the summary or the accept
+ * action. The two read failures the contract names get their own text: a bare
+ * 404 ("no such invitation") and a 409 ("expired, revoked or already
+ * accepted"); any other failure renders the answer's code through the
+ * family's error banner with a retry. A refused acceptance renders its code
+ * the same way and leaves the accept action ready for another try. Host
+ * callbacks (onAccepted) fire after the operation settles and are contained
+ * -- a throwing callback is never a failure of the acceptance.
  */
 
 import { useEffect, useState } from 'react'
@@ -115,6 +119,20 @@ type ReadFailure =
   | { readonly kind: 'unavailable' }
   | { readonly kind: 'error'; readonly code: string }
 
+/**
+ * Whether the read's view can still be redeemed: the stored state must be
+ * pending and its deadline ahead. Expiry is not stored, so a pending view at
+ * or past `expiresAt` is judged by that instant; an instant the engine cannot
+ * read leaves the decision to the backend, which refuses the acceptance.
+ */
+function isRedeemable(invitation: InvitationSummary): boolean {
+  if (invitation.status !== 'pending') {
+    return false
+  }
+  const expiresAt = Date.parse(invitation.expiresAt)
+  return Number.isNaN(expiresAt) || expiresAt > Date.now()
+}
+
 function classifyReadFailure(error: unknown): ReadFailure {
   const candidate = (
     typeof error === 'object' && error !== null ? error : {}
@@ -166,7 +184,11 @@ export function AcceptInvitationScreen({
     invitations.readInvitation(token).then(
       (invitation) => {
         if (!cancelled) {
-          setState({ status: 'ready', invitation })
+          setState(
+            isRedeemable(invitation)
+              ? { status: 'ready', invitation }
+              : { status: 'failed', failure: { kind: 'unavailable' } },
+          )
         }
       },
       (error: unknown) => {
