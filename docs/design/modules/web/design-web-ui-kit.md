@@ -96,10 +96,15 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `WriteFeedbackRegion` | `outcome`（`WriteOutcome` 或 `null`）、`resolve`（码到当前语言文本）、`sx`（作用于区域根容器，在根容器的默认上边距之后应用） | — |
 | `ListSkeleton` | `label`、`rows` | — |
 | `AsyncSection` | `pending`、`payload`、`empty`、`loading`、`errorState`、`emptyState`、`headingLevel`、`emptyHeadingLevel`（空占位自己的标题级，含 `none`）、`staleState`（`{description, retryLabel, onRetry}`，由调用方在最近一次刷新失败、数据在屏且读不在进行中时给出，缺省不渲染）、`refusedState`（`{title, description}`，调用方判定为拒绝后给出；非 pending 时替换内容且不提供重试）、`children` | `errorState.onRetry`、`staleState.onRetry` |
+| `HumanVerification` | `gate`（`{required, provider, site_key?}`，缺省、不需证明或 `off` 时不渲染）、`proof`、`status`（`idle`／`working`／`ready`／`failed`）、`onToken`、`onRetry`、`disabled` | `onToken`（Turnstile token 或 null）、`onRetry`（PoW 失败后重试） |
 | `RefreshButton` | `busy`、`disabled`、`writePending`、`describedBy`、`disabledReason`、`ariaLabel`、`label`（可见文字，缺省取命名空间键） | `onClick` |
 | `CopyButton` | `value`、`label`（可及名）、`copiedLabel`（播报文本）、`visibleLabel`（给出即渲染文字按钮）、`pinned` | 写入本机剪贴板并播报（不经网络） |
 | `OneTimeValuePanel` | `message`、`value`、`copyLabel`、`closeLabel`、`closeAriaLabel` | `onClose`（状态归调用方） |
 | `DisplayTimeZoneProvider`／`PhoneCountryDefaultProvider` | 时区名或 `undefined`／国家码或 `undefined` | —（经 `useDisplayTimeZone`／`usePhoneCountryDefault` 读取） |
+
+### 人机验证块
+
+`HumanVerification` 只渲染宿主交来的状态，不发请求、不持有会话、不求解。`gate` 缺省、`required` 为假或 `provider` 为 `off` 时不渲染。`turnstile` 以显式渲染模式加载 Cloudflare 的控件脚本（每页一次），把控件交出的 token 经 `onToken` 上交，并在宿主消费证明、`proof` 清空后重置控件；脚本被拦截或加载失败时不渲染自造的文案，宿主因没有 token 而保持发送不可用。`pow` 显示求解中、已完成或失败，失败时经 `onRetry` 请求重试；求解本身与证明的寿命在 auth-core，本包不 import 它。`disabled` 在宿主发送在途时置上，控件同时不接受指针事件。
 
 ### 写入反馈
 
@@ -446,6 +451,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 | 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
 | 文件上传队列 | 已实现 | `web/packages/ui-kit/src/components/FileUploader.tsx` `FileUploader`、`FileUploaderRow` |
 | 跨表面状态原语 | 已实现 | `web/packages/ui-kit/src/components/InlineError.tsx` `InlineError`、`errorCodeOf`；`web/packages/ui-kit/src/components/InlineSuccess.tsx` `InlineSuccess`；`web/packages/ui-kit/src/components/ListSkeleton.tsx` `ListSkeleton`；`web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`；`web/packages/ui-kit/src/visually-hidden.ts` `visuallyHiddenSx`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx` |
+| 人机验证块 | 已实现 | `web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification`、`HumanVerificationGate`、`HumanVerificationStatus` |
 | 主题层触摸目标下限 | 已实现 | `web/packages/ui-kit/src/theme/touch-floor.ts` `touchFloorComponents`；`web/packages/ui-kit/src/theme/createAppTheme.ts` `createAppTheme` |
 | 文案命名空间与双语资源 | 已实现 | `web/packages/ui-kit/src/resources.ts` `UI_KIT_NAMESPACE`、`uiKitResources`；`web/packages/ui-kit/src/locales/zh-CN.json`、`en-US.json` |
 | `httpStatusOf`（结构判定 HTTP 状态） | 已实现 | `web/packages/ui-kit/src/components/InlineError.tsx` `httpStatusOf` |
