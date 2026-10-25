@@ -25,15 +25,19 @@ const (
 )
 
 // aResendIsWaitingForTheLock reports whether a session on this database is
-// blocked on a lock. Only this case's connections exist on the database it runs
-// on, and the first transaction is the one holding the lock, so the only session
-// that can be waiting is the second insert, held on the key the first took.
+// blocked on the advisory lock serialize takes. The wait event is named rather
+// than leaving it at any lock wait: a server process of its own — autovacuum,
+// say — can briefly wait on a lock of another kind, and counting that as the
+// resend would let the case pass with the insert never having reached the
+// lock. This database is not otherwise shared, and the first transaction is the
+// one holding the key, so the only session that can wait on it is the second
+// insert.
 func aResendIsWaitingForTheLock(t *testing.T, h *gorm.DB) bool {
 	t.Helper()
 	var waiting int64
 	err := h.Raw(
 		"SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database() " +
-			"AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()").
+			"AND wait_event_type = 'Lock' AND wait_event = 'advisory' AND pid <> pg_backend_pid()").
 		Scan(&waiting).Error
 	if err != nil {
 		t.Fatalf("reading the waiting sessions: %v", err)
