@@ -30,6 +30,7 @@ import {
 } from '../test-utils/operations.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 const COPY = zhCN.common as { readonly updatedAt: string; readonly refreshed: string; readonly refresh: string }
 
@@ -550,6 +551,57 @@ describe('AuditPage', () => {
       })
       expect(filters).not.toContainElement(control)
       expect(filters.parentElement).toContainElement(control)
+    })
+
+    it('states the export scope beside the control, whether or not an export is running', async () => {
+      const user = userEvent.setup()
+      let resolveExport!: (blob: Blob) => void
+      const operations = createConsoleOperations(
+        makeConsoleBackend({
+          listRecords: () => Promise.resolve(page([record], 'next')),
+          exportRecords: () =>
+            new Promise<Blob>((resolve) => {
+              resolveExport = resolve
+            }),
+        }),
+      )
+      renderWithProviders(<AuditPage />, { operations })
+      const control = await screen.findByRole('button', {
+        name: zhCN.audit.export.label,
+      })
+      // The explanation the operator needs before acting: the file covers
+      // every matching record, not the page on screen. Its text comes from
+      // the bundle and it sits with the control it explains.
+      const note = screen.getByText(zhCN.audit.export.note)
+      expect(control.parentElement).toContainElement(note)
+      expect(control).toHaveAccessibleDescription(zhCN.audit.export.note)
+      expect(control).not.toHaveAttribute('aria-busy')
+
+      await user.click(control)
+      await vi.waitFor(() => {
+        expect(control).toHaveAttribute('aria-busy', 'true')
+      })
+      expect(screen.getByText(zhCN.audit.export.note)).toBeInTheDocument()
+
+      await act(async () => {
+        resolveExport(new Blob([]))
+      })
+      await vi.waitFor(() => {
+        expect(control).not.toHaveAttribute('aria-busy')
+      })
+      // The explanation is not a progress message: it stays after the
+      // export settles.
+      expect(screen.getByText(zhCN.audit.export.note)).toBeInTheDocument()
+    })
+
+    it('states the export scope from the English bundle in the English UI', async () => {
+      const operations = createConsoleOperations(makeConsoleBackend())
+      renderWithProviders(<AuditPage />, { operations, language: 'en-US' })
+      const control = await screen.findByRole('button', {
+        name: enUS.audit.export.label,
+      })
+      expect(screen.getByText(enUS.audit.export.note)).toBeInTheDocument()
+      expect(control).toHaveAccessibleDescription(enUS.audit.export.note)
     })
 
     it('renders no export control when the bundle carries no export member', async () => {

@@ -9,9 +9,12 @@
  * the applied filters match as one NDJSON file: the control calls the
  * operations bundle's export action once, saves the Blob the streamed
  * route answers under the export's UTC instant, and reports a refusal in
- * the toolbar rather than in the read's placeholder. A download is its
- * own confirmation, so a successful export adds no success message; a
- * bundle without the export action renders no control.
+ * the toolbar rather than in the read's placeholder. A caption under the
+ * control states what the file covers -- every record the applied filters
+ * match, not just the page on screen -- and is the control's accessible
+ * description. A download is its own confirmation, so a successful export
+ * adds no success message; a bundle without the export action renders no
+ * control.
  *
  * The read is an operation on the console operations bundle -- the host
  * binds the generated /api/v1/system/audit operation to it -- so the page builds
@@ -80,6 +83,9 @@ import type { ConsoleAuditRecord } from './operations.js'
 
 /** The default page size (rows per cursor page). */
 const DEFAULT_LIMIT = 25
+
+/** The id binding the export control's scope note as its description. */
+const EXPORT_NOTE_ID = 'audit-export-note'
 
 /**
  * Splits one filter's free text into the set the read takes: comma- or
@@ -405,19 +411,36 @@ export function AuditPage({ basePath }: { readonly basePath?: string }) {
             </Button>
           </Box>
           {operations.exportAuditRecords === undefined ? null : (
-            <Button
-              type="button"
-              variant="outlined"
-              loading={exporting}
-              aria-busy={exporting || undefined}
-              onClick={() => {
-                void startExport()
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                rowGap: 0.5,
               }}
             >
-              {exporting
-                ? t('audit.export.busy')
-                : t('audit.export.label')}
-            </Button>
+              <Button
+                type="button"
+                variant="outlined"
+                loading={exporting}
+                aria-busy={exporting || undefined}
+                aria-describedby={EXPORT_NOTE_ID}
+                onClick={() => {
+                  void startExport()
+                }}
+              >
+                {exporting
+                  ? t('audit.export.busy')
+                  : t('audit.export.label')}
+              </Button>
+              <Typography
+                id={EXPORT_NOTE_ID}
+                variant="caption"
+                color="text.secondary"
+              >
+                {t('audit.export.note')}
+              </Typography>
+            </Box>
           )}
         </Box>
         {exportError === null ? null : (
