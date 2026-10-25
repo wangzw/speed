@@ -63,6 +63,13 @@
  * spent-code memory clears only when a fresh code is actually issued: a
  * resend the send policy refuses issues none, and the exhausted code stays
  * refused locally.
+ *
+ * Every send -- the first code, a resend, and a parked second factor whose
+ * SMS choice sends one -- presents the deployment's human-verification
+ * proof when its gate requires one. The block stands above the step's
+ * send control; a send consumes the single-use proof, so the block obtains
+ * a fresh one for the next attempt. A host that already read the discovery
+ * document passes the gate as `humanGate`; otherwise the form reads it.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -75,12 +82,14 @@ import type { SubmitHandler } from 'react-hook-form'
 import {
   FormField,
   FormLayout,
+  HumanVerification,
   PhoneNumberField,
   toE164,
   usePhoneCountryDefault,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
-import type { AuthSession } from '@speed/auth-core'
+import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
+import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
 import type { OpenFlowState } from './internal/flow.js'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
@@ -99,6 +108,13 @@ export interface SMSSignInFormProps {
    * step) is gated, so a resend that begins a new flow is gated too.
    */
   readonly beforeStart?: SignInBeforeStart
+  /**
+   * The human-verification gate the deployment reported, when the host
+   * already read the discovery document (the sign-in screen does). The
+   * form then renders the proof block and presents the proof on every
+   * send. Omitted, the form reads the methods document itself.
+   */
+  readonly humanGate?: AuthnHumanGate
 }
 
 interface SmsFields {
@@ -110,12 +126,48 @@ function isCodePrompt(step: OpenFlowState): boolean {
   return step.state === 'first' && step.next.kind === 'challenge'
 }
 
+/** Whether answering a parked step may send a verification message:
+ * choosing an SMS second factor, or supplying a phone one of the step's
+ * fields declared. It mirrors the server's own rule, so the proof is
+ * consumed exactly when the send may have spent it. */
+function answerSends(
+  step: OpenFlowState,
+  input: Record<string, string>,
+): boolean {
+  if (step.next.kind === 'factor') {
+    const chosen = step.next.factors.find(
+      (factor) => factor.id === input.factor,
+    )
+    return chosen?.kind === 'sms'
+  }
+  if (step.next.kind === 'challenge') {
+    return step.next.fields.some(
+      (field) => field.kind === 'phone' && (input[field.name] ?? '') !== '',
+    )
+  }
+  return false
+}
+
 export function SMSSignInForm({
   session,
   onSignedIn,
   beforeStart,
+  humanGate,
 }: SMSSignInFormProps) {
   const { t } = useAuthUiTranslation()
+  // The deployment's human-verification gate and this form's proof. A host
+  // that already read the discovery document hands the gate in; otherwise
+  // the form reads it, so a standalone form still presents a proof.
+  const human = useHumanVerification(
+    session,
+    humanGate === undefined ? {} : { gate: humanGate },
+  )
+  // A send waits for a proof when the gate is known to require one. A gate
+  // still being read does not block it: the phone takes longer to type
+  // than the document takes to arrive, and the server judges a send that
+  // races the read.
+  const needsProof = humanGateNeedsProof(human.gate)
+  const proofBlocked = needsProof && human.proof === null
   // The host's preferred starting country, else the browser locale's own
   // region. Read once: it is the selector's starting value, not a value
   // that follows a later provider change.
@@ -208,6 +260,11 @@ export function SMSSignInForm({
   }, [phoneAttempt])
 
   const requestCode = async (phone: string): Promise<void> => {
+    // A required proof that is not ready yet keeps the send from leaving:
+    // the block above the control is already showing why.
+    if (proofBlocked) {
+      return
+    }
     setErrorCode(null)
     // A request does not yet open a new code session: whether one opens is
     // the server's answer -- the used-code notice clears for the attempt,
@@ -216,11 +273,18 @@ export function SMSSignInForm({
     // leaves the previous code spent.
     setCodeUsed(false)
     sentToRef.current = phone
+    // The proof is single-use: the send spends it, so the control obtains
+    // a fresh one for the next send whatever this answer is.
+    const presented = needsProof ? human.proof : null
     const issued = await driver.start({
       method: 'sms',
       binding: 'cookie',
       input: { phone },
+      ...(presented === null ? {} : { human_proof: presented }),
     })
+    if (presented !== null) {
+      human.consume()
+    }
     if (!issued) {
       return
     }
@@ -268,7 +332,28 @@ export function SMSSignInForm({
       return
     }
     lastCodeRef.current = values.code
-    await driver.answer({ code: values.code })
+    // The code answer verifies rather than sends, so the proof rides along
+    // only for a step that may ask for a phone next; the server ignores it
+    // otherwise, and the proof stays unspent.
+    await driver.answer(
+      { code: values.code },
+      needsProof ? (human.proof ?? undefined) : undefined,
+    )
+  }
+
+  /** Answer a further step the flow parked (a second factor, an
+   * enrollment). The proof rides with it, and is consumed when the answer
+   * may have sent a message. */
+  const answerFurther = async (
+    input: Record<string, string>,
+  ): Promise<void> => {
+    const current = driver.step
+    const presented = needsProof ? human.proof : null
+    const sends = current !== null && answerSends(current, input)
+    await driver.answer(input, presented ?? undefined)
+    if (sends && presented !== null) {
+      human.consume()
+    }
   }
 
   const editPhone = (): void => {
@@ -285,16 +370,31 @@ export function SMSSignInForm({
   const onCodeStep =
     driver.step !== null && isCodePrompt(driver.step)
 
+  // The deployment's human-verification block, above whichever send
+  // control the current step shows. It renders nothing when no proof is
+  // required.
+  const humanBlock = (
+    <HumanVerification
+      gate={human.gate ?? undefined}
+      proof={human.proof}
+      status={human.status}
+      onToken={human.adoptToken}
+      onRetry={human.retry}
+      disabled={driver.busy}
+    />
+  )
+
   // A further step the flow parked after the code (a required second
   // factor) is the shared step renderer's, not this form's two-step
   // surface: it renders in place of the SMS form.
   if (driver.step !== null && !onCodeStep) {
     return (
       <>
+        {humanBlock}
         <FlowStepFields
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input) => void driver.answer(input)}
+          onAnswer={(input) => void answerFurther(input)}
         />
         <InlineError code={errorCode} />
       </>
@@ -315,7 +415,11 @@ export function SMSSignInForm({
             {t('smsSignIn.submit')}
           </Button>
         ) : (
-          <Button type="submit" variant="contained" disabled={driver.busy}>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={driver.busy || proofBlocked}
+          >
             {t('smsSignIn.sendCode')}
           </Button>
         )
@@ -356,11 +460,15 @@ export function SMSSignInForm({
               />
             )}
           />
+          {/* The resend action starts a fresh flow that sends another
+              code, so it needs its own proof; the block stays on this step
+              for it. */}
+          {humanBlock}
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button
               size="small"
               onClick={() => void requestCode(sentToRef.current)}
-              disabled={driver.busy}
+              disabled={driver.busy || proofBlocked}
             >
               {t('smsSignIn.resendCode')}
             </Button>
@@ -370,19 +478,22 @@ export function SMSSignInForm({
           </Box>
         </>
       ) : (
-        <Box ref={phoneFieldRef} sx={{ width: '100%' }}>
-          <PhoneNumberField
-            country={country}
-            nationalNumber={nationalNumber}
-            onCountryChange={setCountry}
-            onNationalNumberChange={setNationalNumber}
-            countryLabel={t('smsSignIn.countryLabel')}
-            numberLabel={t('smsSignIn.phoneLabel')}
-            numberHelperText={t('smsSignIn.phoneHint')}
-            showValidationError={phoneAttempted}
-            autoComplete="tel"
-          />
-        </Box>
+        <>
+          <Box ref={phoneFieldRef} sx={{ width: '100%' }}>
+            <PhoneNumberField
+              country={country}
+              nationalNumber={nationalNumber}
+              onCountryChange={setCountry}
+              onNationalNumberChange={setNationalNumber}
+              countryLabel={t('smsSignIn.countryLabel')}
+              numberLabel={t('smsSignIn.phoneLabel')}
+              numberHelperText={t('smsSignIn.phoneHint')}
+              showValidationError={phoneAttempted}
+              autoComplete="tel"
+            />
+          </Box>
+          {humanBlock}
+        </>
       )}
       {codeUsed ? (
         <Alert severity="error" role="alert" sx={{ width: '100%' }}>

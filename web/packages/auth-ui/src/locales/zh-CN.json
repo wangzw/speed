@@ -164,7 +164,8 @@
       "account_unavailable": "该账户当前不可用，请联系管理员。",
       "conflict": "该操作与账户当前状态冲突，请刷新后重试。",
       "throttled": "尝试次数过多，请稍后再试。",
-      "unavailable": "服务暂时不可用，请稍后重试。"
+      "unavailable": "服务暂时不可用，请稍后重试。",
+      "human_verification_required": "请先完成人机验证，然后重试。"
     },
     "client": {
       "network": "网络连接不可用，请检查网络后重试。",

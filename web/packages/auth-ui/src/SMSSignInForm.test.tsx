@@ -17,24 +17,31 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SMSSignInForm } from './SMSSignInForm.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
+  HUMAN_CHALLENGE,
   LOGIN_ANSWER,
+  LOGIN_METHODS,
   LOGIN_START,
   PROFILE_GET,
   apiError,
   authenticatedCompletion,
+  challengeResponse,
   completeFlow,
   makeHarness,
+  methodList,
   openFlow,
   principal,
 } from '@speed/test-utils/session-harness'
+import type { Harness } from '@speed/test-utils/session-harness'
+import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import { uiKitResources, PhoneCountryDefaultProvider } from '@speed/ui-kit'
+import uiKitZhCN from '../../ui-kit/src/locales/zh-CN.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
 
@@ -42,6 +49,13 @@ const CN_NATIONAL = '13800000001'
 const CN_E164 = '+8613800000001'
 const US_NATIONAL = '4155552671'
 const US_E164 = '+14155552671'
+
+/** The login-flow starts a case's own interaction makes. Discovery and the
+ * proof-of-work challenge are separate calls, so they never inflate a
+ * send count. */
+function sends(harness: Harness) {
+  return harness.calls.filter((call) => call.path === '/api/v1/auth/flows')
+}
 const UI_KIT_ZH = uiKitResources['zh-CN'] as {
   readonly phoneNumber: { readonly incomplete: string; readonly invalid: string }
   readonly form: { readonly required: string }
@@ -111,10 +125,10 @@ describe('SMSSignInForm', () => {
         screen.getByLabelText(zhCN.smsSignIn.codeLabel),
       ).toBeInTheDocument(),
     )
-    expect(harness.calls).toHaveLength(1)
-    expect(harness.calls[0]?.method).toBe('POST')
-    expect(harness.calls[0]?.path).toBe('/api/v1/auth/flows')
-    expect(harness.calls[0]?.options?.body).toMatchObject({
+    expect(sends(harness)).toHaveLength(1)
+    expect(sends(harness)[0]?.method).toBe('POST')
+    expect(sends(harness)[0]?.path).toBe('/api/v1/auth/flows')
+    expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
       delivery: 'session',
       binding: 'cookie',
@@ -289,7 +303,7 @@ describe('SMSSignInForm', () => {
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveTextContent(message),
     )
-    expect(harness.calls).toHaveLength(0)
+    expect(sends(harness)).toHaveLength(0)
   })
 
   it('re-announce the same phone refusal on every refused submit', async () => {
@@ -331,7 +345,7 @@ describe('SMSSignInForm', () => {
       // at least a removal and a new insertion (or two text-node rewrites)
       // reached the DOM, so the repeated rejection is spoken again.
       expect(mutations.length).toBeGreaterThanOrEqual(2)
-      expect(harness.calls).toHaveLength(0)
+      expect(sends(harness)).toHaveLength(0)
     } finally {
       observer.disconnect()
     }
@@ -388,7 +402,7 @@ describe('SMSSignInForm', () => {
     await waitFor(() =>
       expect(screen.queryByRole('alert')).not.toBeInTheDocument(),
     )
-    expect(harness.calls).toHaveLength(0)
+    expect(sends(harness)).toHaveLength(0)
   })
 
   it('refuse a number too short for its country locally, naming the calling code', async () => {
@@ -418,7 +432,7 @@ describe('SMSSignInForm', () => {
     expect(phone).toHaveAttribute('aria-invalid', 'true')
     // The invalid number never reaches the server, so its generic refusal
     // copy is not what the viewer meets.
-    expect(harness.calls).toHaveLength(0)
+    expect(sends(harness)).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -444,7 +458,7 @@ describe('SMSSignInForm', () => {
     )
     expect(phone).toHaveAttribute('aria-invalid', 'true')
     // The impossible number never reaches the server.
-    expect(harness.calls).toHaveLength(0)
+    expect(sends(harness)).toHaveLength(0)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
@@ -463,8 +477,8 @@ describe('SMSSignInForm', () => {
       US_NATIONAL,
     )
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
-    await waitFor(() => expect(harness.calls).toHaveLength(1))
-    expect(harness.calls[0]?.options?.body).toMatchObject({
+    await waitFor(() => expect(sends(harness)).toHaveLength(1))
+    expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
       input: { phone: US_E164 },
     })
@@ -488,8 +502,8 @@ describe('SMSSignInForm', () => {
     expect(phone).toHaveValue('138 0000 0001')
 
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
-    await waitFor(() => expect(harness.calls).toHaveLength(1))
-    expect(harness.calls[0]?.options?.body).toMatchObject({
+    await waitFor(() => expect(sends(harness)).toHaveLength(1))
+    expect(sends(harness)[0]?.options?.body).toMatchObject({
       method: 'sms',
       input: { phone: CN_E164 },
     })
@@ -529,8 +543,8 @@ describe('SMSSignInForm', () => {
     const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
     await user.type(code, '123456')
     await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }))
-    await waitFor(() => expect(harness.calls).toHaveLength(2))
-    expect(harness.calls[1]?.options?.body).toMatchObject({
+    await waitFor(() => expect(sends(harness)).toHaveLength(2))
+    expect(sends(harness)[1]?.options?.body).toMatchObject({
       method: 'sms',
       input: { phone: CN_E164 },
     })
@@ -731,7 +745,7 @@ describe('SMSSignInForm', () => {
     await waitFor(() => expect(beforeStart).toHaveBeenCalledTimes(1))
     // A standalone form has no presentational mode to report.
     expect(beforeStart).toHaveBeenCalledWith({ method: 'sms' })
-    expect(harness.calls).toHaveLength(0)
+    expect(sends(harness)).toHaveLength(0)
     // No code step opened and no error rendered: the attempt never left.
     expect(
       screen.queryByLabelText(zhCN.smsSignIn.codeLabel),
@@ -762,7 +776,7 @@ describe('SMSSignInForm', () => {
     // The gate has not answered yet: the control is already busy, so a
     // second click cannot pass the same gate and start another flow.
     expect(send).toBeDisabled()
-    expect(harness.calls).toHaveLength(0)
+    expect(sends(harness)).toHaveLength(0)
     await act(async () => {
       release(true)
     })
@@ -770,6 +784,160 @@ describe('SMSSignInForm', () => {
       expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument(),
     )
     // The flow began once, not once per click.
-    expect(harness.calls).toHaveLength(1)
+    expect(sends(harness)).toHaveLength(1)
+  })
+
+  it('refuse to send until the required verifier holds a token, then send with it', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const harness = makeHarness({
+        [LOGIN_METHODS]: () =>
+          methodList(['sms'], {
+            humanRequired: true,
+            humanProvider: 'turnstile',
+            humanSiteKey: 'site-1',
+          }),
+        [LOGIN_START]: () => codeChallenge(),
+      })
+      renderWithProviders(<SMSSignInForm session={harness.session} />)
+      const user = userEvent.setup()
+      await selectCountry(user, 'CN', '86')
+      await user.type(
+        screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+        CN_NATIONAL,
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      expect(fake.widgets[0]?.siteKey).toBe('site-1')
+      const send = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
+      // The gate requires a proof and the widget holds no token yet.
+      expect(send).toBeDisabled()
+      // A submit that bypasses the disabled control is still refused: the
+      // handler checks the proof before it starts a flow.
+      fireEvent.submit(send.closest('form')!)
+      expect(sends(harness)).toHaveLength(0)
+      // The widget yields its token: the same control now sends it.
+      act(() => {
+        fake.token('token-1')
+      })
+      await waitFor(() => expect(send).toBeEnabled())
+      await user.click(send)
+      await waitFor(() => expect(sends(harness)).toHaveLength(1))
+      expect(sends(harness)[0]?.options?.body).toMatchObject({
+        method: 'sms',
+        input: { phone: CN_E164 },
+        human_proof: 'token-1',
+      })
+    } finally {
+      fake.restore()
+    }
+  })
+
+  it('solve the proof-of-work gate and send the proof it produces', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList(['sms'], {
+          humanRequired: true,
+          humanProvider: 'pow',
+        }),
+      [HUMAN_CHALLENGE]: () => challengeResponse({ difficulty: 4 }),
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    // The block solves on mount; the send waits for it.
+    await waitFor(() =>
+      expect(
+        screen.getByText(uiKitZhCN.humanVerification.verified),
+      ).toBeInTheDocument(),
+    )
+    await sendCode()
+    await waitFor(() => expect(sends(harness)).toHaveLength(1))
+    const body = sends(harness)[0]?.options?.body as
+      | { readonly human_proof?: string }
+      | undefined
+    expect(body?.human_proof).toMatch(/^[A-Za-z0-9_-]+\.\d+$/)
+  })
+
+  it('carry the proof on an answer that may send (an SMS second factor)', async () => {
+    const fake = installFakeTurnstile()
+    try {
+      const harness = makeHarness({
+        [LOGIN_METHODS]: () =>
+          methodList(['sms'], {
+            humanRequired: true,
+            humanProvider: 'turnstile',
+            humanSiteKey: 'site-1',
+          }),
+        [LOGIN_START]: () => codeChallenge(),
+        [LOGIN_ANSWER]: (call) => {
+          const body = call.options?.body as { step?: string }
+          if (body.step === 'answer') {
+            return openFlow({
+              seq: 2,
+              state: 'second',
+              next: {
+                kind: 'factor',
+                factors: [{ id: 'mfa-1', kind: 'sms', label: 'Phone' }],
+              },
+            })
+          }
+          return openFlow({
+            seq: 3,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'code' }],
+            },
+          })
+        },
+      })
+      renderWithProviders(<SMSSignInForm session={harness.session} />)
+      const user = userEvent.setup()
+      await selectCountry(user, 'CN', '86')
+      await user.type(
+        screen.getByLabelText(zhCN.smsSignIn.phoneLabel),
+        CN_NATIONAL,
+      )
+      await waitFor(() => expect(fake.widgets).toHaveLength(1))
+      act(() => {
+        fake.token('token-1')
+      })
+      await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.sendCode }))
+      // The send consumed the first token; the same block has reset and
+      // takes another for the next send.
+      const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+      act(() => {
+        fake.token('token-2')
+      })
+      await user.type(code, '123456')
+      await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+      // The flow parks on the second factor; choosing the SMS factor sends
+      // a code, so the answer carries the proof.
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'Phone' }),
+        ).toBeInTheDocument(),
+      )
+      await user.click(screen.getByRole('button', { name: 'Phone' }))
+      await waitFor(() =>
+        expect(
+          harness.calls.filter(
+            (call) =>
+              call.path === '/api/v1/auth/flows/answer' &&
+              (call.options?.body as { step?: string }).step === 'factor',
+          ),
+        ).toHaveLength(1),
+      )
+      const factorAnswer = harness.calls.find(
+        (call) =>
+          call.path === '/api/v1/auth/flows/answer' &&
+          (call.options?.body as { step?: string }).step === 'factor',
+      )
+      expect(factorAnswer?.options?.body).toMatchObject({
+        input: { factor: 'mfa-1' },
+        human_proof: 'token-2',
+      })
+    } finally {
+      fake.restore()
+    }
   })
 })

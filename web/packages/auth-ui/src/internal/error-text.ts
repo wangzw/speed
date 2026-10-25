@@ -45,6 +45,7 @@ export const ERROR_TEXT_CODES = [
   'authn.unavailable',
   'authn.unsupported_region',
   'authn.bad_request',
+  'authn.human_verification_required',
   // Transport-level failures of the api-client contract.
   'client.network',
   'client.timeout',

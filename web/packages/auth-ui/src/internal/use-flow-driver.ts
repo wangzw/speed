@@ -32,6 +32,12 @@
  * two identity keys from the last answer and merges them into the next
  * one, so a challenge field typed for a chosen factor rides with that
  * factor and nothing else does.
+ *
+ * An answer that may send a verification message (choosing an SMS second
+ * factor, or a step that supplies a phone a method declared) also carries
+ * the human-verification proof the deployment requires. The proof travels
+ * in the answer body's own `human_proof` member, never the input map,
+ * whose values the server caps far below a token's size.
  */
 
 import { useCallback, useRef, useState } from 'react'
@@ -95,8 +101,10 @@ export interface FlowDriver {
   start(request: Parameters<AuthSession['startFlow']>[0]): Promise<boolean>
   /** Drive an externally obtained reply (a readFlow's step). */
   absorb(reply: AuthnFlowState): Promise<boolean>
-  /** Answer the current step with the given input. */
-  answer(input: Record<string, string>): Promise<boolean>
+  /** Answer the current step with the given input and, when the step may
+   * send a verification message, the human-verification proof the
+   * deployment requires. */
+  answer(input: Record<string, string>, humanProof?: string): Promise<boolean>
   /** Drop the current step and its carried identity keys. */
   reset(): void
 }
@@ -208,7 +216,7 @@ export function useFlowDriver(
   )
 
   const answer = useCallback(
-    (input: Record<string, string>): Promise<boolean> => {
+    (input: Record<string, string>, humanProof?: string): Promise<boolean> => {
       const current = stepRef.current
       if (current === null) {
         return Promise.resolve(false)
@@ -220,6 +228,7 @@ export function useFlowDriver(
           seq: current.seq,
           step: answerStepFor(current),
           input: merged,
+          ...(humanProof === undefined ? {} : { human_proof: humanProof }),
         }),
       )
     },

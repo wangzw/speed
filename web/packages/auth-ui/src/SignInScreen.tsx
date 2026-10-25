@@ -489,6 +489,7 @@ export function SignInScreen({
             session={session}
             beforeStart={startGate}
             onSignedIn={() => completed('sms')}
+            humanGate={doc.human}
           />
         )
       default:

@@ -462,11 +462,19 @@ re-submission of that exact code locally -- the server would only answer
 the spent code with the same collapsed refusal, and the form knows better.
 Only a fresh code (a resend, or a request for a changed phone) can sign in.
 
+When the deployment requires a human-verification proof, the form renders
+the `@speed/ui-kit` block above the step's send control and presents the
+proof on every send (the first code, a resend, and an SMS second-factor
+answer). The proof is single-use, so the block obtains a fresh one after
+each attempt. `SMSSignInForm` reads the gate from the methods document
+unless the host passes one it already read.
+
 | Prop | Type | Notes |
 |---|---|---|
 | `session` | `AuthSession` (required) | the session the SMS sign-in drives |
 | `onSignedIn` | `() => void` | fired once after an SMS-code login commits |
 | `beforeStart` | `(context) => boolean \| Promise<boolean>` | gates each flow start (the first send, a resend); a false answer starts nothing and shows no error |
+| `humanGate` | `AuthnHumanGate` | the deployment's gate the host already read; omitted, the form reads the methods document |
 
 ## Social sign-in
 

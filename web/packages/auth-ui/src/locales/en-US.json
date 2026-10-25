@@ -164,7 +164,8 @@
       "account_unavailable": "This account is unavailable. Contact an administrator for help.",
       "conflict": "The request conflicts with the account's current state. Refresh and try again.",
       "throttled": "Too many attempts. Please try again later.",
-      "unavailable": "The service is temporarily unavailable. Please try again later."
+      "unavailable": "The service is temporarily unavailable. Please try again later.",
+      "human_verification_required": "Please confirm you are human, then try again."
     },
     "client": {
       "network": "No network connection. Check your connection and try again.",
