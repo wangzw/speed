@@ -146,7 +146,12 @@ func (p *product) stopPool() error {
 
 // deliverOne calls the carrier for one queued message and records how the send
 // ended. The result never reaches the request that triggered the send: the
-// carrier's answer is a metric and a log line and nothing else.
+// carrier's answer is a metric, a log line, and — when the failure is certain —
+// a refund on the challenge row. A certain failure is one that shows the message
+// did not enter the carrier's pipeline: a rejection, an unroutable destination
+// or a throttled call. An uncertain outcome, and an error outside the closed set,
+// leave the row counted, which is the direction that cannot do harm if the
+// message did go out.
 func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 	started := time.Now()
 	receipt, err := p.sender.Send(ctx, r)
@@ -161,9 +166,11 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 	case errors.Is(err, sms.ErrThrottled):
 		p.meters.sent(ctx, outcomeThrottled)
 		p.warnNotSent(ctx, outcomeThrottled, err, carrierAttributes(receipt, elapsed)...)
+		p.refundChallenge(ctx, r)
 	case errors.Is(err, sms.ErrRejected):
 		p.meters.sent(ctx, outcomeRejected)
 		p.warnNotSent(ctx, outcomeRejected, err, carrierAttributes(receipt, elapsed)...)
+		p.refundChallenge(ctx, r)
 	case errors.Is(err, sms.ErrUnroutable):
 		// A message this carrier cannot carry to this destination is a definite
 		// failure, like a rejection and unlike an uncertain outcome: the message is
@@ -173,12 +180,32 @@ func (p *product) deliverOne(ctx context.Context, r sms.Resolved) {
 		// around.
 		p.meters.sent(ctx, outcomeUnroutable)
 		p.warnNotSent(ctx, outcomeUnroutable, err, carrierAttributes(receipt, elapsed)...)
+		p.refundChallenge(ctx, r)
 	default:
 		// An error outside the closed set is a defect of the carrier. It is read
 		// as uncertain — never as a delivery and never as a retry — which is the
 		// direction that cannot do harm if the message did go out.
 		p.meters.sent(ctx, outcomeUncertain)
 		p.warnNotSent(ctx, outcomeUncertain, err, carrierAttributes(receipt, elapsed)...)
+	}
+}
+
+// refundChallenge gives the send budgets back for a challenge whose message
+// certainly did not reach the carrier, and spends the row in the same statement
+// so a code that was never delivered cannot pass the check. The row is named by
+// the dedupe identifier the send wrote into the resolved message. A message
+// without one was not queued by Send and has no row to refund.
+//
+// A refund that cannot be written leaves the row counted and the code valid;
+// the send has already failed, so the outcome is unchanged and the failure is
+// recorded on its own line.
+func (p *product) refundChallenge(ctx context.Context, r sms.Resolved) {
+	if r.DedupeID == "" {
+		return
+	}
+	if err := p.register.refund(ctx, r.DedupeID, p.clock.Now()); err != nil {
+		p.logger.WarnContext(ctx, ModuleName+": a challenge could not be refunded and stays counted",
+			slog.String("cause", err.Error()))
 	}
 }
 

@@ -246,7 +246,9 @@ func isBudgetRefusal(err error) bool {
 // requests for numbers nobody registered cannot exhaust the deployment, while the
 // dimensions that stay asymmetric keep that fact unobservable. The source
 // dimension runs only when the send carries a source; an empty source is
-// fail-open and takes no source lock.
+// fail-open and takes no source lock. Every dimension leaves out refunded rows:
+// a message the carrier certainly did not take gives its spend back, while an
+// uncertain outcome stays counted.
 func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string, limits budgetLimits, now time.Time) error {
 	phoneMAC := p.database.BlindIndex(in.Phone)
 

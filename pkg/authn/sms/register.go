@@ -169,6 +169,22 @@ func (g *register) consume(ctx context.Context, id string, now time.Time) (bool,
 	return res.RowsAffected == 1, nil
 }
 
+// refund gives a challenge's spend back and invalidates its code. The row is
+// marked refunded, which no budget counts, and spent in the same statement, so a
+// code that never reached the carrier cannot pass the check; a row another
+// request already consumed keeps its own consumption time. A row that is no
+// longer there — swept, or erased with its account — changes nothing and is not
+// an error.
+func (g *register) refund(ctx context.Context, id string, now time.Time) error {
+	res := g.session(ctx).Exec("UPDATE "+challengeTable+
+		" SET refunded_at = ?, consumed_at = COALESCE(consumed_at, ?) WHERE id = ?",
+		clock.UTC(now), clock.UTC(now), id)
+	if res.Error != nil {
+		return fmt.Errorf("refunding a challenge: %w", res.Error)
+	}
+	return nil
+}
+
 // lastCreatedForPhone reads the most recent row's created_at for the number, of
 // any purpose, which the resend interval is measured from. It reads through the
 // handle it is given, so the budget check can read on the send's own
@@ -187,23 +203,25 @@ func (g *register) lastCreatedForPhone(q *gorm.DB, phoneMAC string) (time.Time, 
 }
 
 // countPhoneSince counts the rows for the number created after since, of any
-// purpose.
+// purpose. A refunded row is left out: its message certainly did not reach the
+// carrier, so it did not spend the number's budget.
 func (g *register) countPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (int64, error) {
 	var n int64
 	err := q.Table(challengeTable).
-		Where("phone_mac = ? AND created_at > ?", phoneMAC, clock.UTC(since)).Count(&n).Error
+		Where("phone_mac = ? AND refunded_at IS NULL AND created_at > ?", phoneMAC, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends to a number: %w", err)
 	}
 	return n, nil
 }
 
-// oldestPhoneSince reads the created_at of the oldest row for the number after
-// since, which is when the counting window frees a slot.
+// oldestPhoneSince reads the created_at of the oldest counted row for the number
+// after since, which is when the counting window frees a slot. A refunded row is
+// left out, as it is by the count.
 func (g *register) oldestPhoneSince(q *gorm.DB, phoneMAC string, since time.Time) (time.Time, bool, error) {
 	var out []struct{ CreatedAt time.Time }
 	err := q.Table(challengeTable).Select("created_at").
-		Where("phone_mac = ? AND created_at > ?", phoneMAC, clock.UTC(since)).
+		Where("phone_mac = ? AND refunded_at IS NULL AND created_at > ?", phoneMAC, clock.UTC(since)).
 		Order("created_at ASC").Limit(1).Scan(&out).Error
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("reading the oldest send to a number: %w", err)
@@ -217,23 +235,24 @@ func (g *register) oldestPhoneSince(q *gorm.DB, phoneMAC string, since time.Time
 // countSourceSince counts the rows from one source address created after since,
 // of any purpose. Rows with no source address are not counted: an empty source
 // is not a source, and putting them all under one key would make the budget
-// fail-closed on a deployment that cannot resolve an address.
+// fail-closed on a deployment that cannot resolve an address. A refunded row is
+// left out, because its message certainly did not reach the carrier.
 func (g *register) countSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error) {
 	var n int64
 	err := q.Table(challengeTable).
-		Where("source_mac = ? AND created_at > ?", sourceMAC, clock.UTC(since)).Count(&n).Error
+		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends from a source: %w", err)
 	}
 	return n, nil
 }
 
-// oldestSourceSince reads the created_at of the oldest row from the source after
-// since, which is when the counting window frees a slot.
+// oldestSourceSince reads the created_at of the oldest counted row from the
+// source after since, which is when the counting window frees a slot.
 func (g *register) oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error) {
 	var out []struct{ CreatedAt time.Time }
 	err := q.Table(challengeTable).Select("created_at").
-		Where("source_mac = ? AND created_at > ?", sourceMAC, clock.UTC(since)).
+		Where("source_mac = ? AND refunded_at IS NULL AND created_at > ?", sourceMAC, clock.UTC(since)).
 		Order("created_at ASC").Limit(1).Scan(&out).Error
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("reading the oldest send from a source: %w", err)
@@ -248,26 +267,27 @@ func (g *register) oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Ti
 // are not suppressed. Only the deployment-wide budget reads it: a suppressed row
 // is a request for a number nobody registered, and letting it spend the global
 // budget would let anonymous traffic exhaust the deployment without sending
-// anything. The per-number, per-source and per-account dimensions still count
-// suppressed rows, so the point at which a caller is refused does not say
-// whether the number is registered.
+// anything. A refunded row is left out too, for the same reason the other
+// dimensions leave it out. The per-number, per-source and per-account dimensions
+// still count suppressed rows, so the point at which a caller is refused does not
+// say whether the number is registered.
 func (g *register) countRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (int64, error) {
 	var n int64
 	err := q.Table(challengeTable).
-		Where("purpose = ? AND suppressed = ? AND created_at > ?", purpose, false, clock.UTC(since)).Count(&n).Error
+		Where("purpose = ? AND suppressed = ? AND refunded_at IS NULL AND created_at > ?", purpose, false, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends of a purpose: %w", err)
 	}
 	return n, nil
 }
 
-// oldestRealPurposeSince reads the created_at of the oldest unsuppressed row of
-// the purpose after since, which is when the deployment-wide window frees a
-// slot.
+// oldestRealPurposeSince reads the created_at of the oldest counted,
+// unsuppressed row of the purpose after since, which is when the deployment-wide
+// window frees a slot.
 func (g *register) oldestRealPurposeSince(q *gorm.DB, purpose string, since time.Time) (time.Time, bool, error) {
 	var out []struct{ CreatedAt time.Time }
 	err := q.Table(challengeTable).Select("created_at").
-		Where("purpose = ? AND suppressed = ? AND created_at > ?", purpose, false, clock.UTC(since)).
+		Where("purpose = ? AND suppressed = ? AND refunded_at IS NULL AND created_at > ?", purpose, false, clock.UTC(since)).
 		Order("created_at ASC").Limit(1).Scan(&out).Error
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("reading the oldest send of a purpose: %w", err)
@@ -278,23 +298,24 @@ func (g *register) oldestRealPurposeSince(q *gorm.DB, purpose string, since time
 	return clock.UTC(out[0].CreatedAt), true, nil
 }
 
-// countAccountSince counts the rows for the account created after since.
+// countAccountSince counts the rows for the account created after since,
+// leaving out the refunded ones.
 func (g *register) countAccountSince(q *gorm.DB, account string, since time.Time) (int64, error) {
 	var n int64
 	err := q.Table(challengeTable).
-		Where("account_id = ? AND created_at > ?", account, clock.UTC(since)).Count(&n).Error
+		Where("account_id = ? AND refunded_at IS NULL AND created_at > ?", account, clock.UTC(since)).Count(&n).Error
 	if err != nil {
 		return 0, fmt.Errorf("counting the sends to an account: %w", err)
 	}
 	return n, nil
 }
 
-// oldestAccountSince reads the created_at of the oldest row for the account
-// after since.
+// oldestAccountSince reads the created_at of the oldest counted row for the
+// account after since.
 func (g *register) oldestAccountSince(q *gorm.DB, account string, since time.Time) (time.Time, bool, error) {
 	var out []struct{ CreatedAt time.Time }
 	err := q.Table(challengeTable).Select("created_at").
-		Where("account_id = ? AND created_at > ?", account, clock.UTC(since)).
+		Where("account_id = ? AND refunded_at IS NULL AND created_at > ?", account, clock.UTC(since)).
 		Order("created_at ASC").Limit(1).Scan(&out).Error
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("reading the oldest send to an account: %w", err)

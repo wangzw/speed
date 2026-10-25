@@ -1,0 +1,18 @@
+-- A verification message the carrier certainly did not take gives its send
+-- budgets back. The worker marks the row refunded once the carrier answers with
+-- a rejection, an unroutable message or a throttle. Every budget then stops
+-- counting the row, and the deployment-wide one keeps its separate rule of
+-- counting only unsuppressed rows.
+--
+-- The column is nullable and its null is meaningful: a row was refunded only
+-- when it is set. Historical rows keep the null with no backfill, because
+-- whether a send arrived was never recorded.
+--
+-- A refund also spends the row (the worker sets consumed_at in the same
+-- statement), so a code that never reached the destination cannot pass the
+-- check. An uncertain outcome is not refunded and stays counted.
+--
+-- SQLite has no ADD COLUMN IF NOT EXISTS. A migration is applied once and
+-- recorded, so the plain ADD COLUMN is what a fresh database and an upgrade both
+-- run exactly once.
+ALTER TABLE authn_challenges ADD COLUMN refunded_at TIMESTAMP NULL;

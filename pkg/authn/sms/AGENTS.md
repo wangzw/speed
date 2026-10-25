@@ -45,12 +45,15 @@ compatibility break for a dashboard written against it.
   `TestASuppressedSendTakesTheSamePathAndQueuesNothing`,
   `TestARegisteredAndASuppressedNumberTakeTheSameCountingPath`,
   `TestVerifyNeverPassesASuppressedRow`). The phone, source and account budgets
-  are across purposes and include suppressed, consumed and voided rows; only the
-  sweep takes a row out of a window. The deployment-wide budget counts only
-  unsuppressed rows, so anonymous requests for numbers nobody registered cannot
-  exhaust it; the other dimensions keep counting suppressed rows, because a
-  refusal that arrived at a different count for an unregistered number would be a
-  phone-enumeration oracle (`TestTheGlobalBudgetCountsOnlyRealSends`,
+  are across purposes and include suppressed, consumed and voided rows. Every
+  budget leaves out a refunded row: a message the carrier certainly did not take
+  gives its spend back, and apart from a refund only the sweep takes a row out of
+  a window (`TestARefundedRowCountsAgainstNoBudget`,
+  `TestASuppressedRowKeepsItsCountingRule`). The deployment-wide budget counts
+  only unsuppressed rows, so anonymous requests for numbers nobody registered
+  cannot exhaust it; the other dimensions keep counting suppressed rows, because
+  a refusal that arrived at a different count for an unregistered number would be
+  a phone-enumeration oracle (`TestTheGlobalBudgetCountsOnlyRealSends`,
   `TestASuppressedSendStillSpendsThePhoneBudget`).
 - **The budget is a hard cap, read under the send's own lock order.** `Send` reads
   every limit before it opens the write transaction, then the transaction takes
@@ -97,6 +100,13 @@ compatibility break for a dashboard written against it.
   `sms.ErrUnroutable` is a definite failure recorded under its own `unroutable`
   outcome: the message is not defective, but this deployment cannot carry it to
   that destination, so it is never read as an unknown outcome and never retried.
+  A definite failure — `ErrThrottled`, `ErrRejected` or `ErrUnroutable` — also
+  refunds the challenge row: the row is marked `refunded_at` and spent in the
+  same statement, so no budget counts the send and the undelivered code cannot
+  pass `Verify`. An uncertain outcome, and an error outside the closed set, stay
+  counted (`refundChallenge`, `register.refund`,
+  `TestACertainCarrierFailureRefundsTheSend`,
+  `TestAnUncertainCarrierFailureStaysCounted`).
 - **Every call to the carrier writes one line, and the line carries no secret.**
   An accepted send writes an `Info` line with `outcome=sent`, the carrier's
   `provider_id` and the call's `duration_ms`; a refused one keeps its `Warn`
@@ -109,8 +119,9 @@ compatibility break for a dashboard written against it.
 - **The worker pool is bounded and its outcomes are a closed set.** `Send`
   resolves the message against the registry, writes the row and returns without
   waiting for the carrier; the pool sends the resolved message off the request
-  path and records one of the ten outcomes. `Stop` drains the queue
-  within its own bound (`pool`, `TestTheWorkersDrainQueuedMessagesOffTheRequestPath`,
+  path, records one of the ten outcomes and refunds a certain failure's row.
+  `Stop` drains the queue within its own bound
+  (`pool`, `TestTheWorkersDrainQueuedMessagesOffTheRequestPath`,
   `TestStopDrainsTheQueueWithinItsBound`, `TestEveryOutcomeIsRecorded`). The one
   `dropped` path that is reached after the row is written — the queue filling
   between the pre-check and the enqueue — is not driven by any case: the gap

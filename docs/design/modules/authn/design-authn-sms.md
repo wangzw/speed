@@ -270,7 +270,8 @@ stateDiagram-v2
 | `max_attempts` | 整数 | 写入时取设置的每码尝试上限 |
 | `created_at` | 时间戳 | 发放时刻；预算统计的时间轴 |
 | `expires_at` | 时间戳 | 写入时取设置的有效期 |
-| `consumed_at` | 时间戳，可空 | 消费或作废的时刻 |
+| `consumed_at` | 时间戳，可空 | 消费、作废或退款的时刻；校验对非空值恒失败 |
+| `refunded_at` | 时间戳，可空 | 退款时刻：厂商确定没有收下这条消息时由工作池写入。该行不再计入任何预算，并在同一条语句里置 `consumed_at`，所以从未送达的验证码不能通过校验。历史行为 NULL，不补写 |
 
 索引：`(phone_mac, created_at)` 服务于号码维度的预算统计与重发间隔；`(source_mac, created_at)` 服务于来源维度的预算统计；`(purpose, suppressed, created_at)`（`authn_challenges_purpose_suppressed`）服务于全局维度按用途统计未抑制行；`(account_id, created_at)`（`authn_challenges_account`）服务于账户维度；`expires_at` 上的索引服务于清扫。行数上界由预算与清扫共同给出。
 
@@ -314,13 +315,13 @@ flowchart TD
 1. **放行表。** 规范化后的号码前缀不在放行表内，返回 `ErrUnsupportedRegion`，不写行。判定只看前缀，与号码是否登记无关；放行表缺省为空，不明确放行就不发。
 2. **队列容量。** 队列已满，返回 `ErrUnavailable`，不写行、不作废旧行。这一步对真实行与抑制行同样执行，使「队列满」不成为区分已登记与未登记号码的观察点。
 3. **生成。** 生成验证码与挑战标识，计算 `phone_mac`、`source_mac` 与 `code_mac`。各预算的限额在打开写事务之前一次读出，持锁期间不读设置。
-4. **事务：取锁、核对预算、作废与写入。** 在同一个事务里按 **全局（按用途）→ 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再依据 `authn_challenges` 的行数核对下列预算（除全局维度外，统计包含抑制行、已消费行与已作废行，只有清扫才使行退出统计；全局维度只计未抑制的行）；任一维度超限即回滚、不写行。未超限时把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
+4. **事务：取锁、核对预算、作废与写入。** 在同一个事务里按 **全局（按用途）→ 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再依据 `authn_challenges` 的行数核对下列预算（除全局维度外，统计包含抑制行、已消费行与已作废行；退款行不计入任何维度；全局维度只计未抑制的行）；任一维度超限即回滚、不写行。未超限时把同（`phone_mac`，用途）下尚未消费且未过期的旧行作废（条件更新 `consumed_at`），再写新行，`suppressed` 取 `Deliver` 的反。
 5. **解出可发送的形状。** `Deliver` 为真时，把构造的 `sms.Message` 交给注册表的 `Resolve` 解出 `sms.Resolved`；注册表以 `ErrRejected`（消息形状）或 `ErrNotSendable`（模板被禁用或审核未过）拒绝时，记指标与 `Warn`、不入队，`Send` 仍返回 `challengeID`（行已写、预算已计），用户走重发。`Deliver` 为假时不解出。
 6. **入队。** 解出成功后非阻塞入队；`Deliver` 为假时不入队。事务提交与入队之间队列恰被填满时，该发送被丢弃并计入 `dropped`（见「结果与指标」），`Send` 仍返回 `challengeID`，用户走重发。
 
 ### 预算维度
 
-预算全由 `authn_challenges` 的行数得出。维度是封闭集；窗口自 `created_at` 起算。除全局维度外，口径含抑制行；全局维度只计未抑制的行。一个维度的已有行数达到上限时，再发即超限，所以窗口内至多发放上限条。
+预算全由 `authn_challenges` 的行数得出。维度是封闭集；窗口自 `created_at` 起算。除全局维度外，口径含抑制行；全局维度只计未抑制的行。退款行不计入任何维度。一个维度的已有行数达到上限时，再发即超限，所以窗口内至多发放上限条。重发间隔是独立的一条限制而不是预算维度，退款不重置它。
 
 预算是硬上限。每次发送在自己的写事务里按 **全局（按用途）→ 号码 → 来源 → 账户** 的固定顺序取咨询锁，取齐之后再统计下列各维度，未超才作废旧行并写新行；两个并发请求只要共享任一维度，就在同一把锁上串行，后一个读到前一个已提交的行。锁键为 `authn.sms:lock:global:<用途>`、`authn.sms:lock:phone:<phone_mac>`、`authn.sms:lock:source:<source_mac>` 与 `authn.sms:lock:account:<account_id>`，由数据库以 `hashtextextended` 计算，随事务提交或回滚释放；`login` 用途没有账户，不取账户锁；`Source` 为空时没有来源摘要，不取来源锁也不统计来源维度。各维度把限额在打开事务之前读出，持锁期间不读设置。
 
@@ -342,6 +343,7 @@ flowchart TD
 - **账户维度只对 `mfa` 与 `enroll` 计。** 判据是账户不得由手机号推出：这两种用途的账户由第一因素或会话确定；`login` 用途若按账户计，已登记号码有账户可计、未登记号码没有，应答随之不同。
 - **号码维度跨用途累计。** 同一号码换一个用途不能绕开另一个用途的重发间隔与小时、日上限。
 - **来源维度只对 `Source` 非空的发送计，且跨用途累计。** 一个来源换号码或换用途不能绕开来源的窗口；`Source` 为空时不施加，判据见「`SMSCodes` 的挑战状态机」里 `Source` 的语义。
+- **确定失败退回预算，未确定不退回。** 厂商以 `ErrRejected`、`ErrUnroutable` 或 `ErrThrottled` 答复，说明消息没有进入厂商的处理管线，工作池把该行标为退款并在同一条语句里置为已消费：各维度不再统计它，用户以同一号码在同一窗口内重发即可通过，且这条从未送达的验证码不能通过校验。`ErrUncertain`（以及闭集之外的错误）不退款，该次仍计入预算——消息可能已经送达时，按已发送处理是唯一不会造成伤害的方向。抑制行从不入队，也就从不退款，其计数口径不受本规则影响。
 
 ### 抑制行与应答同形
 
@@ -373,13 +375,16 @@ flowchart TD
 
 ### 发送工作池与失败归类
 
-工作池在 `Start` 起固定个数的协程，从有界队列取 `sms.Resolved` 调 `sms.Sender.Send`。`Send` 立即返回，响应时间与厂商延迟无关。厂商调用的结果只记指标与日志，不回写请求，也不改挑战行：
+工作池在 `Start` 起固定个数的协程，从有界队列取 `sms.Resolved` 调 `sms.Sender.Send`。`Send` 立即返回，响应时间与厂商延迟无关。厂商调用的结果只记指标与日志，不回写请求；确定失败时另把该挑战行标为退款，未确定时不动该行：
 
 | 结果 | 处置 |
 |---|---|
 | 成功 | 记指标 |
-| `sms.ErrUncertain` | 当作已发送，不盲目重发；用户走重发，该次计入预算；记 `Warn` 与指标 |
-| `sms.ErrThrottled`、`sms.ErrRejected` | 当作未送达，不重发；用户收不到码，重新请求时再发；记 `Warn` 与指标 |
+| `sms.ErrUncertain` | 当作已发送，不盲目重发；用户走重发，该次计入预算、不退款；记 `Warn` 与指标 |
+| `sms.ErrThrottled`、`sms.ErrRejected`、`sms.ErrUnroutable` | 当作未送达，不重发；把挑战行标为退款并置为已消费，各维度预算不再统计它，这条验证码也不能通过校验；用户收不到码，重新请求时再发；记 `Warn` 与指标 |
+| 闭集之外的错误 | 当作 `sms.ErrUncertain`，不退款 |
+
+挑战行凭 `sms.Resolved` 的 `DedupeID` 定位：发送路径把挑战标识作为 `DedupeID` 交给注册表，注册表原样保留。退款写失败时该行仍计入预算、验证码仍有效，发送结果已定，所以只另记一行 `Warn`，不改结局。
 
 `Stop` 以自带的 5 秒为界排空队列（`Stop` 收到的上下文已去掉取消）；超出的发送被丢弃，进程在入队之后、发送之前退出同样丢失队列里的发送，这些情形下用户都只能重发。
 
@@ -398,10 +403,10 @@ flowchart TD
 | 注册表拒发（`ErrNotSendable`） | `not-sendable` | 返回 `challengeID`，行已写且计入预算，不入队 |
 | 事务提交与入队之间队列被填满 | `dropped` | 返回 `challengeID`，行已写且计入预算，发送被丢弃 |
 | 厂商调用成功 | `sent` | 工作池记 |
-| `sms.ErrUncertain` | `uncertain` | 工作池记 |
-| `sms.ErrThrottled` | `throttled` | 工作池记 |
-| `sms.ErrRejected` | `rejected` | 工作池记 |
-| `sms.ErrUnroutable` | `unroutable` | 工作池记 |
+| `sms.ErrUncertain` | `uncertain` | 工作池记；不退款，仍计入预算 |
+| `sms.ErrThrottled` | `throttled` | 工作池记；挑战行标为退款 |
+| `sms.ErrRejected` | `rejected` | 工作池记；挑战行标为退款 |
+| `sms.ErrUnroutable` | `unroutable` | 工作池记；挑战行标为退款 |
 
 `dropped` 只表示本进程的队列没有容量，不分预检与提交之后；`throttled` 只表示厂商的答复，`rejected` 表示发送侧不接受这条消息（厂商拒绝，或注册表解不出），`unroutable` 表示当前部署无法把这条消息送到这个目的地（缺权限、资源不存在、配额不足，或身份覆盖不了目的地国家）——它是确定失败，与 `rejected` 一样不被读作未知结局，区别只在消息本身没有缺陷；号码、来源、账户与全局维度的超限归 `budget-exhausted`；`not-sendable` 表示模板被禁用或审核未过，与这条消息无关。`Stop` 排空超时丢弃的与进程退出时丢失的发送不记指标，进程已无法记录。
 
@@ -497,7 +502,8 @@ flowchart TD
 | 模板覆盖核对：模板键到用途的映射，启动期经 `registry.Declared()` 核对所需模板、参数与配置的默认语言；请求语言解析到该用途模板声明的语言 | 已实现 | `pkg/authn/sms/templates.go` `templateLocales`、`resolveLocale`、`checkSender`；`pkg/authn/sms/config.go` `readDefaultLocale`；`pkg/authn/sms/module.go` `newProduct` |
 | `authn.sms` 引擎：挑战状态机、预算、抑制行 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`（`countRealPurposeSince`、`oldestRealPurposeSince`）、`config.go`、`module.go` |
 | 来源维度：`source_mac` 的规范化与摘要、每来源小时与日预算、来源锁、`Source` 为空的 fail-open | 已实现 | `pkg/authn/sms/send.go` `sourceMAC`、`checkBudgets`；`pkg/authn/sms/register.go` `countSourceSince`、`oldestSourceSince`、`lock`；`pkg/authn/sms/settings.go` `perSourceHourly`、`perSourceDaily`；`pkg/authn/sms/source_test.go`、`budget_integration_test.go` |
-| `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql`；`migrations/sqlite/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql` |
+| `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql`、`0004_authn_challenges_refunded.sql`；`migrations/sqlite/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql`、`0004_authn_challenges_refunded.sql` |
 | 发送工作池 | 已实现 | `pkg/authn/sms/pool.go` |
+| 确定失败退款：`refunded_at` 标记、各维度预算排除退款行、退款同时使验证码失效 | 已实现 | `pkg/authn/sms/pool.go` `refundChallenge`；`pkg/authn/sms/register.go` `refund`、各 `count*Since` 与 `oldest*Since`；`pkg/authn/sms/refund_test.go` |
 | `AccountLifecycle` 钩子与事件补偿 | 已实现 | `pkg/authn/sms/lifecycle.go`、`subscribe.go`；`pkg/authn/sms/lifecycle_test.go` |
 | `authn_challenges` 清扫 | 已实现 | `pkg/authn/sms/sweep.go` |
