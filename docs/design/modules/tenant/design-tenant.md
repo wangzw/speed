@@ -386,7 +386,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 | 方法 路径 | 权限 | 要求 |
 |---|---|---|
-| `GET /api/v1/auth/me/tenants` | 无（开放路由） | 已认证；不解析租户；不登记为可冒充 |
+| `GET /api/v1/auth/me/tenants` | 无（开放路由） | 已认证；不解析租户；登记为可冒充，冒充身份的应答收窄到授予的那个租户 |
 
 **这条路由不解析租户。** 它回答的是调用方本人，不是某个租户；它挂在账户端上，请求上没有租户名。路由在路由声明面上登记为开放，让授权中间件放行到 handler；认证准入是网关的：端上的请求没有凭据时在 handler 之前即被拒。handler 自己在没有身份时写出与其他已认证面相同的 401：只有状态、没有 `Problem.Type`，挑战为 `Bearer` 与 `Cookie`，realm 取该端的端名（[ADR-tenant-self-2026-10-24](../../../adr/adr-tenant-self-2026-10-24.md)）。
 
@@ -403,7 +403,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 **应答不带种类，个人租户的文案归宿主。** 个人租户是一条宿主策略，名册不记录它，本模块也不认识它（[ADR-tenant-self-2026-10-24](../../../adr/adr-tenant-self-2026-10-24.md)）。宿主按它派生的个人租户标识与应答里的 `id` 逐字相等来判定；标识前缀是宿主与它自己的服务端之间的约定，不经过平台。
 
-**冒充中的请求到不了这条路由。** 路由不登记为可冒充，账户端也不在准入层所守的端里，网关对冒充身份只放行登记为可冒充的路由，因而在 handler 之前拒绝。被冒充账户在其他租户的成员关系超出冒充授予的那一个租户，不交给冒充者；租户切换器在冒充期间本来也不挂（[tenancy-ui](../web/design-web-tenancy-ui.md)）。
+**冒充中的请求到得了这条路由，应答只有授予的那一个租户。** 路由登记为可冒充：账户端不在准入层所守的端里，不登记时网关在 handler 之前拒绝，宿主在整页重载后就没有任何来源命名当前租户（名册属平台管理面，冒充期间读不到）。handler 自己按身份的 `Scope()` 收窄应答，被冒充账户在其他租户的成员关系超出冒充授予的那一个租户，仍不交给冒充者；授予的那个租户标识与别名本来就由冒充状态读与横幅陈述，这里只是把它的别名再给宿主。没有范围的冒充身份（网关的出口检查不会放行，只有直接调用 handler 才可能）应答空列表，不回落成全量。租户切换器在冒充期间本来也不挂（[tenancy-ui](../web/design-web-tenancy-ui.md)）。
 
 **请求期的失败按两档。** 没有身份：401，形状与其他已认证面相同。成员关系读不出或名册读不出：503，成因只进日志，不当作空列表——空列表是一个关于成员关系的结论，故障不是；名册快照尚未发布（`ErrRosterMissing`）同属这一档。路由集里没有 403 与 404：它不判定权限，也没有寻址对象。
 
@@ -415,7 +415,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 `Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`DisabledBy`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口面。`Catalog` 里 `Delete` 与 `SetStatusByAccount` 的加入、`Status` 多出的取值与 `Tenant` 多出的字段同样是接口面的扩展。`Status` 与 `DisabledBy` 的字符串形式（`active`、`disabled`、`deleted` 与 `operator`、`account`）是管理面视图的取值来源，同样在接口面上。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口面，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口面。
 
-**本人租户读取的路由与应答同样在对外接口面上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `id` 与 `alias`、按标识升序与 `[]` 的空结果写法，以及"要求已认证、不要求权限、不登记为可冒充"这三条；前端与生成的客户端据这些取值分支。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口面上，改动它们是宿主可见的破坏性变更。
+**本人租户读取的路由与应答同样在对外接口面上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `id` 与 `alias`、按标识升序与 `[]` 的空结果写法，以及"要求已认证、不要求权限、登记为可冒充且冒充身份的应答收窄到授予租户"这三条；前端与生成的客户端据这些取值分支。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口面上，改动它们是宿主可见的破坏性变更。
 
 **标识的取值域也在对外接口面内**：非空，且不含空白与控制字符，根包的 `IsIdentifier` 是本模块对这一条的唯一陈述，名册的字段判定（`pkg/tenant/catalog/roster.go` 的 `checkField`）也走它——空值在那次调用之前先判一档，只为挑出两种文本，取值域本身仍只有 `IsIdentifier` 一条陈述。按租户取值的模块各自复述这条判据——设置模块的 `ForTenant` 即一处——而不以 import 本模块的方式取用它（[settings](../settings/design-settings.md) 记有那条依赖为何不存在）。两处是否仍是同一条，由消费方自己的测试包 `pkg/settings/settings_test.go` 的 `TestForTenantAgreesWithTheTenantIdentifierDomain` 拿同一张标识形状表逐形状驱动双方守住。
 
@@ -427,7 +427,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 准入子包同样 import `pkg/authn` 的根包，并只经根包读身份，不 import 认证的任何子包；它的依赖逐项见 [design-tenant-admission](design-tenant-admission.md) 的依赖。
 
-本人租户读取子包 import 根包、`pkg/authn` 根包、`pkg/core`、`pkg/config`、`pkg/http`、`pkg/log` 与 `pkg/authz` 根包（只取路由声明面 `authz.Gate`）。它要求 `authn.Memberships` 与 `tenant.Catalog`，两者都由别的模块排他交付，依赖闭包不替宿主挑；在 `Init` 里取用入口模块的路由功能（缺席即 `tenant.ErrNoRouter`）、可选的声明面与日志。它只经 `pkg/authn` 根包读身份与成员关系，不 import 认证的任何子包，也不改写身份。方向仍是本功能目录指向认证。
+本人租户读取子包 import 根包、`pkg/authn` 根包、`pkg/core`、`pkg/config`、`pkg/http`、`pkg/log` 与 `pkg/authz` 根包（只取路由声明面 `authz.Gate`）。它要求 `authn.Memberships` 与 `tenant.Catalog`，两者都由别的模块排他交付，依赖闭包不替宿主挑；在 `Init` 里取用入口模块的路由功能（缺席即 `tenant.ErrNoRouter`）、可选的声明面与日志，并在装配交付时经 `pkg/authn` 根包的 `authn.Gate` 把路由登记为可冒充。它只经 `pkg/authn` 根包读身份与成员关系，不 import 认证的任何子包，也不改写身份。方向仍是本功能目录指向认证。
 
 名册子包 import 根包、`pkg/core`、`pkg/config`、`pkg/db` 与 `pkg/log`；最后一个用于启动诊断，以及两个进入方法把标识绑上 logger、或在拒绝时撤下的 `log.WithAttrs` 与 `log.WithoutAttrs`。
 
@@ -543,7 +543,7 @@ sequenceDiagram
 
 认证层的收口与豁免、可选认证的匹配不在本图内，它们归认证网关（见 [authn-gate](../authn/design-authn-gate.md) 的请求期判定）。成员准入排在解析层之后、审计与限流之内，判定归准入层，同样不在本图内（见 [design-tenant-admission](design-tenant-admission.md)）。解析层自身 panic 时由它自己 recover 并经 `Fail` 收口 500——这一档要归到解析层名下就得在这里接住，入口模块的兜底层接住 panic 后写出的同样是 500，而不区分崩的是哪一层（见 [http](../http/design-http.md)）；这条路径不经过名册，图中不画。
 
-本人租户读取跨两个模块取事实，因而另画一张时序图。图里画不出的约束：读取不写任何东西，租户状态与别名取自快照而不是表；暂停的成员关系与不在册的租户被滤掉；应答不带种类；冒充身份到不了这条路由。
+本人租户读取跨两个模块取事实，因而另画一张时序图。图里画不出的约束：读取不写任何东西，租户状态与别名取自快照而不是表；暂停的成员关系与不在册的租户被滤掉；应答不带种类；冒充身份的应答在进入名册查找前只剩下授予租户那一条。
 
 ```mermaid
 sequenceDiagram
@@ -637,7 +637,7 @@ flowchart TD
 | `Prepare` | 解析模块、名册模块与本人租户读取模块各取配置读取面并 `Decode` 自己那份配置；配置缺项，或解析模块与本人租户读取模块的端点清单里同一个端名出现两次，即报故障终止启动，齐备则表态 `StateEnabled`。 |
 | `New` | 构造。不读写任何数据。 |
 | `Migrate` | 解析模块打开取法的登记窗口。本模块不迁移任何东西，名册表由本模块声明的迁移集建立、由数据库模块统一施加。 |
-| `Init` | 名册模块装载快照；解析模块取路由功能、在配置列举的每个端点登记中间件；本人租户读取模块取路由功能、在配置列举的每个端点登记读取路由并在声明面上把它登记为开放。取法的登记窗口在整个 `Init` 期间开着。 |
+| `Init` | 名册模块装载快照；解析模块取路由功能、在配置列举的每个端点登记中间件；本人租户读取模块取路由功能、在配置列举的每个端点登记读取路由并在声明面上把它登记为开放，装配交付网关准入面时一并把它登记为可冒充。取法的登记窗口在整个 `Init` 期间开着。 |
 | `Start` | 解析模块关闭登记窗口，逐条校验登记并冻结取法表。 |
 | `Serve` | 无动作。 |
 | `Stop` | 取消快照的刷新。 |
