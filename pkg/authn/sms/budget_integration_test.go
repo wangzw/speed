@@ -15,6 +15,9 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// integrationSource is the client address the source-dimension cases send from.
+const integrationSource = "203.0.113.7"
+
 // budgetLockKey builds one of the advisory-lock keys the design documents, so a
 // case takes the key the module is supposed to take rather than one derived from
 // its implementation.
@@ -24,17 +27,22 @@ func budgetLockKey(dimension, value string) string {
 
 // insertCountRow writes a challenge row in the transaction it is given, so a
 // case can hold a count row uncommitted while another send runs. Time is written
-// in UTC, as the module writes it.
-func insertCountRow(t *testing.T, tx *gorm.DB, id, purpose, phoneMac string, account *string, created time.Time) {
+// in UTC, as the module writes it. sourceMac is the row's source dimension, nil
+// for a row with no source.
+func insertCountRow(t *testing.T, tx *gorm.DB, id, purpose, phoneMac string, account, sourceMac *string, created time.Time) {
 	t.Helper()
 	var accountVal any
 	if account != nil {
 		accountVal = *account
 	}
+	var sourceVal any
+	if sourceMac != nil {
+		sourceVal = *sourceMac
+	}
 	if err := tx.Exec("INSERT INTO "+challengeTable+
-		" (id, purpose, phone_mac, account_id, suppressed, code_mac, attempts, max_attempts, created_at, expires_at) "+
-		"VALUES (?, ?, ?, ?, ?, ?, 0, 5, ?, ?)",
-		id, purpose, phoneMac, accountVal, false, "mac", created.UTC(), created.Add(5*time.Minute).UTC()).Error; err != nil {
+		" (id, purpose, phone_mac, source_mac, account_id, suppressed, code_mac, attempts, max_attempts, created_at, expires_at) "+
+		"VALUES (?, ?, ?, ?, ?, ?, ?, 0, 5, ?, ?)",
+		id, purpose, phoneMac, sourceVal, accountVal, false, "mac", created.UTC(), created.Add(5*time.Minute).UTC()).Error; err != nil {
 		t.Fatalf("inserting a count row: %v", err)
 	}
 }
@@ -88,7 +96,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			name: "phone",
 			key:  func(r *rig) string { return budgetLockKey("phone", r.database.BlindIndex(phone)) },
 			row: func(r *rig, tx *gorm.DB) {
-				insertCountRow(t, tx, "count-phone", purposeLogin, r.database.BlindIndex(phone), nil, r.clock.read().Add(-31*time.Second))
+				insertCountRow(t, tx, "count-phone", purposeLogin, r.database.BlindIndex(phone), nil, nil, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(perPhoneHourlyPath, 1) },
 			send: func(r *rig) error {
@@ -105,7 +113,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 				// one this case exercises, and the send's own number stays empty.
 				account := string(acct)
 				insertCountRow(t, tx, "count-account", authn.SMSPurposeMFA,
-					r.database.BlindIndex("+8613800138002"), &account, r.clock.read().Add(-31*time.Second))
+					r.database.BlindIndex("+8613800138002"), &account, nil, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(perAccountHourlyPath, 1) },
 			send: func(r *rig) error {
@@ -121,7 +129,7 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 			key:  func(*rig) string { return budgetLockKey("global", purposeLogin) },
 			row: func(r *rig, tx *gorm.DB) {
 				insertCountRow(t, tx, "count-global", purposeLogin,
-					r.database.BlindIndex("+8613800138002"), nil, r.clock.read().Add(-31*time.Second))
+					r.database.BlindIndex("+8613800138002"), nil, nil, r.clock.read().Add(-31*time.Second))
 			},
 			tune: func(r *rig) { r.store.set(globalLoginPath, 1) },
 			send: func(r *rig) error {
@@ -129,6 +137,25 @@ func TestTheBudgetIsCheckedUnderTheSendsOwnLocks(t *testing.T) {
 				return err
 			},
 			want: authn.ErrUnavailable,
+		},
+		{
+			name: "source",
+			key:  func(r *rig) string { return budgetLockKey("source", r.database.BlindIndex(integrationSource)) },
+			row: func(r *rig, tx *gorm.DB) {
+				// Another number from the same source: the source dimension is the
+				// one this case exercises, and the send's own number stays empty.
+				sourceMac := r.database.BlindIndex(integrationSource)
+				insertCountRow(t, tx, "count-source", purposeLogin,
+					r.database.BlindIndex("+8613800138002"), nil, &sourceMac, r.clock.read().Add(-31*time.Second))
+			},
+			tune: func(r *rig) { r.store.set(perSourceHourlyPath, 1) },
+			send: func(r *rig) error {
+				_, err := r.p.Send(context.Background(), authn.SendCode{
+					Purpose: authn.SMSPurposeLogin, Phone: phone, Source: integrationSource, Deliver: true,
+				})
+				return err
+			},
+			want: authn.ErrThrottled,
 		},
 	}
 
@@ -228,6 +255,56 @@ func TestConcurrentSendsDoNotOverrunTheBudget(t *testing.T) {
 	}
 	if accepted != limit {
 		t.Errorf("%d sends were accepted, want exactly the account limit %d", accepted, limit)
+	}
+	if n := r.rowCount(); n != limit {
+		t.Errorf("the table holds %d rows, want %d: an over-budget send writes none", n, limit)
+	}
+}
+
+// TestConcurrentSendsFromOneSourceDoNotOverrunTheBudget is the regression guard
+// for the source dimension: many sends from one address race for a small source
+// budget, each to a number of its own, so the source is what they share. The
+// number accepted is the limit and not one more, and the same number of rows is
+// written.
+func TestConcurrentSendsFromOneSourceDoNotOverrunTheBudget(t *testing.T) {
+	database := openDialect(t, "postgres")
+	r := newRig(t, database, newSender())
+	r.allow()
+	r.liftBudgets()
+
+	const limit = 5
+	const concurrent = 40
+	r.store.set(perSourceHourlyPath, limit)
+
+	var wg sync.WaitGroup
+	results := make(chan error, concurrent)
+	for i := range concurrent {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			number := fmt.Sprintf("+86138009%05d", i)
+			_, err := r.p.Send(context.Background(), authn.SendCode{
+				Purpose: authn.SMSPurposeLogin, Phone: number, Source: integrationSource, Deliver: true,
+			})
+			results <- err
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+
+	var accepted int
+	for err := range results {
+		switch {
+		case err == nil:
+			accepted++
+		case errors.Is(err, authn.ErrThrottled):
+			// A send over the budget, as it should be.
+		default:
+			t.Errorf("a losing send returned %v, want ErrThrottled", err)
+		}
+	}
+	if accepted != limit {
+		t.Errorf("%d sends were accepted, want exactly the source limit %d", accepted, limit)
 	}
 	if n := r.rowCount(); n != limit {
 		t.Errorf("the table holds %d rows, want %d: an over-budget send writes none", n, limit)

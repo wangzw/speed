@@ -51,7 +51,7 @@ func TestStartingAVerificationSendsTheCodeAndKeepsTheRecord(t *testing.T) {
 	if len(body) != 2 || body["expires_in"] != float64(300) || body["resend_after"] != float64(60) {
 		t.Errorf("answer = %v, want exactly expires_in 300 and resend_after 60", body)
 	}
-	if want := (authn.SendCode{Purpose: authn.SMSPurposeEnroll, Phone: phoneNumber, Account: account, Deliver: true}); len(h.sms.sent) != 1 || h.sms.sent[0] != want {
+	if want := (authn.SendCode{Purpose: authn.SMSPurposeEnroll, Phone: phoneNumber, Account: account, Deliver: true, Source: "192.0.2.1"}); len(h.sms.sent) != 1 || h.sms.sent[0] != want {
 		t.Errorf("Send was called with %+v, want %+v", h.sms.sent, want)
 	}
 	key := keyOf(session)
@@ -67,6 +67,24 @@ func TestStartingAVerificationSendsTheCodeAndKeepsTheRecord(t *testing.T) {
 	}
 	if ttl := h.kv.ttls[key]; ttl != 5*time.Minute {
 		t.Errorf("record ttl = %v, want the code's five minutes", ttl)
+	}
+}
+
+// TestThePhoneSendCarriesTheRequestAddress holds that the enroll send carries
+// the address the request came from, which the code engine counts against the
+// source budget. The handler discarded the request's meta before this; the
+// address it resolves is now kept on the call and passed down.
+func TestThePhoneSendCarriesTheRequestAddress(t *testing.T) {
+	h := newHarness(t)
+	w := h.do(request{method: http.MethodPost, path: "/phone", body: `{"phone":"` + phoneNumber + `"}`, remote: "203.0.113.7:4567"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST /phone = %d %s", w.Code, w.Body)
+	}
+	if len(h.sms.sent) != 1 {
+		t.Fatalf("Send was called %d times, want once", len(h.sms.sent))
+	}
+	if got := h.sms.sent[0].Source; got != "203.0.113.7" {
+		t.Errorf("the enroll send carried source %q, want the request's address 203.0.113.7", got)
 	}
 }
 

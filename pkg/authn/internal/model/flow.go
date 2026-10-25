@@ -52,6 +52,11 @@ type FlowState struct {
 	Private   []byte    // the method's own, opaque, at most 8 KiB, kept by the engine as it stands
 	SendsLeft int       // how many SMS sends the flow may still make
 	Locale    string    // as Start.Locale, kept in the flow record from the request that started it
+	// Source is the request's client address, filled by the engine where it
+	// starts a factor challenge. An empty source means the engine has no
+	// trustworthy origin for this call, and the code engine applies no source
+	// budget for it.
+	Source string
 }
 
 // Clone returns a copy that shares no slice with f.

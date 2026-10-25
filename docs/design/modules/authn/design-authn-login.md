@@ -79,6 +79,7 @@ type FlowState struct {
 	Private   []byte    // 方法私有、不透明、至多 8 KiB，引擎原样保存
 	SendsLeft int       // 本流程还可发的短信条数，见「短信发送的每流程上限」
 	Locale    string    // 同 Start.Locale，从发起请求沿用
+	Source    string    // 发起因素挑战那次请求的来源地址；引擎只在 challengeFactor 处填入，空表示没有可信来源，发码时不施加来源预算
 }
 
 type StepInput struct {
@@ -404,6 +405,7 @@ classDiagram
         +Private bytes
         +SendsLeft int
         +Locale string
+        +Source string
     }
     class StepInput {
         +Action string
@@ -730,7 +732,7 @@ Location: <落地页>#authn_error=<码>
 
 ### 短信与其他方式
 
-- **短信（`sms`）**：`phone`（E.164）步与 `code` 步。号码前缀必须在放行表里，缺省为空即一律拒绝（`unsupported-region`）。发码、预算、挑战行与抑制行归 [authn-sms](design-authn-sms.md)；方法在发码前后按「短信发送的每流程上限」核对并报告条数；验证码通过时交 `StepProven`，`Proof.Identifier` 是被证明的手机，`Methods = [sms]`。**单凭短信码只算一个因素。**
+- **短信（`sms`）**：`phone`（E.164）步与 `code` 步。号码前缀必须在放行表里，缺省为空即一律拒绝（`unsupported-region`）。发码、预算、挑战行与抑制行归 [authn-sms](design-authn-sms.md)；方法在发码前后按「短信发送的每流程上限」核对并报告条数；验证码通过时交 `StepProven`，`Proof.Identifier` 是被证明的手机，`Methods = [sms]`。**单凭短信码只算一个因素。** 发码时方法把请求的来源地址填进 `SendCode.Source`：`Begin` 取 `Start.Client.IP`，`Answer` 取 `StepInput.Client.IP`；引擎把两者都从本次请求填入，所以短信发送计入来源预算（[authn-sms](design-authn-sms.md) 的「预算维度」）。
 - **通行密钥（`passkey`）**：WebAuthn 仪式数据放在 `FlowState.Private`，由 `StepData` 把选项交给客户端；断言带用户验证时 `Proof.UserVerified` 为真（[authn-mfa](design-authn-mfa.md)）。
 - **企业 OIDC 与 SAML**：提供方是库里的行，不是配置；校验与补充校验归 [authn-sso](design-authn-sso.md)。
 
@@ -861,6 +863,7 @@ Location: <落地页>#authn_error=<码>
 | 失败退避的流程侧、枚举防护与来源地址前置减负 | 已实现 | `pkg/authn/login/engine.go`、`pkg/authn/login/answer.go` |
 | 口令方法 `authn.login.password` | 已实现 | `pkg/authn/login/password/password.go` `Module`、`(method).Begin`、`(method).Answer`、`(method).Name` |
 | 短信方法 `authn.login.sms` | 已实现 | `pkg/authn/login/sms/sms.go` `Module` |
+| 请求来源地址传到短信引擎：方法取 `Start.Client` 与 `StepInput.Client`，因素取 `FlowState.Source`（只由 `challengeFactor` 填入），自助手机号路由取请求的 `Meta.ClientIP` | 已实现 | `pkg/authn/login/sms/sms.go` `(*method).Begin`、`Answer`、`phone`；`pkg/authn/login/answer.go` `challengeFactor`；`pkg/authn/login/internal/selfservice/call.go` `(*routes).call`、`phone.go` `(*routes).startPhone` |
 | Google 方法 `authn.login.google` | 已实现 | `pkg/authn/login/google/google.go` `Module`；`pkg/authn/login/google/method.go` `Begin`、`Answer`、`exchange`；`pkg/authn/login/google/state.go` |
 | GitHub 方法 `authn.login.github` | 已实现 | `pkg/authn/login/github/github.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/github/api.go` `fetchUser`、`fetchPrimaryVerifiedEmail` |
 | 微信方法 `authn.login.wechat-web`、`authn.login.wechat-mp` 与共用客户端 | 已实现 | `pkg/authn/login/wechatweb/wechatweb.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/wechatmp/wechatmp.go` `Module`、`Begin`、`Answer`；`pkg/authn/login/internal/wechat/client.go` `Client`、`Exchange`、`AuthorizeURL`；`pkg/authn/login/internal/wechat/identity.go`、`state.go` |

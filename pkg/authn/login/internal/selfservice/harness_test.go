@@ -183,6 +183,9 @@ type request struct {
 	path   string
 	body   string
 	header map[string]string
+	// remote is the peer address the request is served from. Empty keeps the
+	// standard library's default.
+	remote string
 }
 
 func (h *harness) do(r request) *httptest.ResponseRecorder {
@@ -192,6 +195,9 @@ func (h *harness) do(r request) *httptest.ResponseRecorder {
 		body = strings.NewReader(r.body)
 	}
 	req := httptest.NewRequest(r.method, basePath+r.path, body)
+	if r.remote != "" {
+		req.RemoteAddr = r.remote
+	}
 	if r.body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}

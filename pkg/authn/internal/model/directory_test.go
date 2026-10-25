@@ -320,7 +320,7 @@ func fullStart() Start {
 }
 
 func fullFlowState() FlowState {
-	return FlowState{ID: "f", Purpose: PurposeLogin, Step: "s", Provider: "p", Account: "a", Session: "s", Private: []byte{1, 2}, SendsLeft: 2, Locale: "zh-CN"}
+	return FlowState{ID: "f", Purpose: PurposeLogin, Step: "s", Provider: "p", Account: "a", Session: "s", Private: []byte{1, 2}, SendsLeft: 2, Locale: "zh-CN", Source: "192.0.2.1"}
 }
 
 func fullStepInput() StepInput {

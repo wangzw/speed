@@ -48,6 +48,9 @@ type call struct {
 	ctx      context.Context
 	w        http.ResponseWriter
 	endpoint string
+	// clientIP is the address the entry point resolved for this request, kept
+	// for the sends that carry it to the code engine as their source.
+	clientIP string
 
 	reply speedhttp.Reply
 	err   error
@@ -55,8 +58,11 @@ type call struct {
 
 // call builds the answer builder of one request.
 func (r *routes) call(ctx context.Context, meta *speedhttp.Meta) *call {
-	_ = meta
-	return &call{ctx: ctx, w: writerOf(ctx), endpoint: r.endpoint}
+	c := &call{ctx: ctx, w: writerOf(ctx), endpoint: r.endpoint}
+	if meta != nil {
+		c.clientIP = meta.ClientIP
+	}
+	return c
 }
 
 // result is the answer the entry point writes.

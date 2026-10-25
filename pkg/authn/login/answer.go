@@ -141,9 +141,12 @@ func (r *routes) applyFactor(c *call, token, echo string, rec record, raw []byte
 }
 
 // challengeFactor starts a verification on a chosen factor and keeps its state
-// for the step that answers it.
+// for the step that answers it. It is the only place the engine fills
+// FlowState.Source: the factor has no request of its own, so the address comes
+// from this request and is the send's source when the factor sends a code.
 func (r *routes) challengeFactor(c *call, token, echo string, rec record, raw []byte, factorID string) {
 	f := r.flowState(rec, token)
+	f.Source = c.clientIP
 	got, ok := r.invoke(c.ctx, "factor", func(cctx context.Context) (authn.Step, error) {
 		return r.mfa.Challenge(cctx, f, factorID)
 	})

@@ -22,6 +22,8 @@ const (
 	resendIntervalKey   = "resend-interval"
 	perPhoneHourlyKey   = "per-phone-hourly"
 	perPhoneDailyKey    = "per-phone-daily"
+	perSourceHourlyKey  = "per-source-hourly"
+	perSourceDailyKey   = "per-source-daily"
 	globalLoginKey      = "global-hourly-login"
 	globalMFAKey        = "global-hourly-mfa"
 	globalEnrollKey     = "global-hourly-enroll"
@@ -38,6 +40,8 @@ var (
 	resendIntervalPath   = ModuleName + "." + resendIntervalKey
 	perPhoneHourlyPath   = ModuleName + "." + perPhoneHourlyKey
 	perPhoneDailyPath    = ModuleName + "." + perPhoneDailyKey
+	perSourceHourlyPath  = ModuleName + "." + perSourceHourlyKey
+	perSourceDailyPath   = ModuleName + "." + perSourceDailyKey
 	globalLoginPath      = ModuleName + "." + globalLoginKey
 	globalMFAPath        = ModuleName + "." + globalMFAKey
 	globalEnrollPath     = ModuleName + "." + globalEnrollKey
@@ -65,6 +69,12 @@ const (
 	minPerPhoneDaily = 1
 	maxPerPhoneDaily = 200
 
+	minPerSourceHourly = 1
+	maxPerSourceHourly = 10000
+
+	minPerSourceDaily = 1
+	maxPerSourceDaily = 100000
+
 	minGlobalHourly = 1
 	maxGlobalHourly = 1000000
 
@@ -87,6 +97,8 @@ type options struct {
 	ResendInterval   time.Duration `config:"resend-interval"`
 	PerPhoneHourly   int           `config:"per-phone-hourly"`
 	PerPhoneDaily    int           `config:"per-phone-daily"`
+	PerSourceHourly  int           `config:"per-source-hourly"`
+	PerSourceDaily   int           `config:"per-source-daily"`
 	GlobalLogin      int           `config:"global-hourly-login"`
 	GlobalMFA        int           `config:"global-hourly-mfa"`
 	GlobalEnroll     int           `config:"global-hourly-enroll"`
@@ -105,6 +117,8 @@ var defaults = options{
 	ResendInterval:   60 * time.Second,
 	PerPhoneHourly:   5,
 	PerPhoneDaily:    10,
+	PerSourceHourly:  30,
+	PerSourceDaily:   100,
 	GlobalLogin:      300,
 	GlobalMFA:        300,
 	GlobalEnroll:     100,
@@ -124,8 +138,15 @@ func resendIntervalInDomain(d time.Duration) bool {
 }
 func perPhoneHourlyInDomain(n int) bool { return n >= minPerPhoneHourly && n <= maxPerPhoneHourly }
 func perPhoneDailyInDomain(n int) bool  { return n >= minPerPhoneDaily && n <= maxPerPhoneDaily }
-func globalHourlyInDomain(n int) bool   { return n >= minGlobalHourly && n <= maxGlobalHourly }
-func perFlowSendsInDomain(n int) bool   { return n >= minPerFlowSends && n <= maxPerFlowSends }
+func perSourceHourlyInDomain(n int) bool {
+	return n >= minPerSourceHourly && n <= maxPerSourceHourly
+}
+
+func perSourceDailyInDomain(n int) bool {
+	return n >= minPerSourceDaily && n <= maxPerSourceDaily
+}
+func globalHourlyInDomain(n int) bool { return n >= minGlobalHourly && n <= maxGlobalHourly }
+func perFlowSendsInDomain(n int) bool { return n >= minPerFlowSends && n <= maxPerFlowSends }
 func perAccountHourlyInDomain(n int) bool {
 	return n >= minPerAccountHourly && n <= maxPerAccountHourly
 }
@@ -187,6 +208,16 @@ func settingsSchema() settings.Schema {
 			perPhoneDailyKey: {
 				Description: "the most sends to one number in a day",
 				Domain:      settings.DomainOf("whole numbers from 1 to 200", perPhoneDailyInDomain),
+			},
+			perSourceHourlyKey: {
+				Description: "the most sends from one source address in an hour; a send with no " +
+					"source address is not counted, because no trustworthy origin is known",
+				Domain: settings.DomainOf("whole numbers from 1 to 10000", perSourceHourlyInDomain),
+			},
+			perSourceDailyKey: {
+				Description: "the most sends from one source address in a day; a send with no " +
+					"source address is not counted, because no trustworthy origin is known",
+				Domain: settings.DomainOf("whole numbers from 1 to 100000", perSourceDailyInDomain),
 			},
 			globalLoginKey: {
 				Description: "the most login codes sent in an hour, across every number",
@@ -275,6 +306,14 @@ func (r *reader) perPhoneHourly() int {
 
 func (r *reader) perPhoneDaily() int {
 	return readTuned(r, perPhoneDailyPath, defaults.PerPhoneDaily, perPhoneDailyInDomain)
+}
+
+func (r *reader) perSourceHourly() int {
+	return readTuned(r, perSourceHourlyPath, defaults.PerSourceHourly, perSourceHourlyInDomain)
+}
+
+func (r *reader) perSourceDaily() int {
+	return readTuned(r, perSourceDailyPath, defaults.PerSourceDaily, perSourceDailyInDomain)
 }
 
 func (r *reader) perAccountHourly() int {

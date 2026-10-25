@@ -32,6 +32,8 @@ var relaxing = map[string]string{
 	resendIntervalPath:   dirDecrease,
 	perPhoneHourlyPath:   dirIncrease,
 	perPhoneDailyPath:    dirIncrease,
+	perSourceHourlyPath:  dirIncrease,
+	perSourceDailyPath:   dirIncrease,
 	globalLoginPath:      dirIncrease,
 	globalMFAPath:        dirIncrease,
 	globalEnrollPath:     dirIncrease,
@@ -160,6 +162,10 @@ func declaredNumber(key string) (int64, bool) {
 		return int64(defaults.PerPhoneHourly), true
 	case perPhoneDailyPath:
 		return int64(defaults.PerPhoneDaily), true
+	case perSourceHourlyPath:
+		return int64(defaults.PerSourceHourly), true
+	case perSourceDailyPath:
+		return int64(defaults.PerSourceDaily), true
 	case globalLoginPath:
 		return int64(defaults.GlobalLogin), true
 	case globalMFAPath:

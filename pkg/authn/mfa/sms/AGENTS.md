@@ -37,12 +37,16 @@ The API is the package's godoc, and the `Factor`, `FactorRecord`, `FlowState`,
 - **`Challenge` sends one code, and nothing without budget.** A flow whose
   `SendsLeft` is not positive is answered `StepThrottled(0)` and sends nothing.
   Otherwise the factor asks the engine to `Send` with purpose `mfa`, the account's
-  proven phone, `Deliver` true and the flow's locale, and reports the one send it
-  made with `WithSends(1)`, which the engine folds into the flow's budget. The
-  challenge identifier the engine returned is kept in the answer's private bytes,
-  which the engine keeps as they stand and hands back as `FlowState.Private` when
-  the code is answered; it is the only state the factor keeps between the two
-  calls.
+  proven phone, `Deliver` true, the flow's locale and the flow's source, and
+  reports the one send it made with `WithSends(1)`, which the engine folds into
+  the flow's budget. `FlowState.Source` is the address the engine took from the
+  request that started the challenge; the factor has no request of its own and
+  does not look for one, and an empty source reaches the engine as empty, where it
+  means no trustworthy origin and no source budget
+  (`TestTheChallengeCarriesTheFlowSource`). The challenge identifier the engine
+  returned is kept in the answer's private bytes, which the engine keeps as they
+  stand and hands back as `FlowState.Private` when the code is answered; it is the
+  only state the factor keeps between the two calls.
 - **`Challenge` maps the engine's refusals to answers of its own.** A `Send` that
   reads as `ErrThrottled` is `StepThrottled` carrying its `RetryAfter`; one that
   reads as `ErrUnsupportedRegion` is `StepRefused` (the factor's answers have no

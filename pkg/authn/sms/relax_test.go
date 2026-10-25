@@ -72,6 +72,23 @@ func TestAWidenedAllowedTableIsReported(t *testing.T) {
 	}
 }
 
+// TestAWidenedSourceBudgetIsReported holds the source budgets among the watched
+// settings: raising one is a relaxation, and a first write is compared against
+// the declared default rather than read as no change.
+func TestAWidenedSourceBudgetIsReported(t *testing.T) {
+	r := newRigSQLite(t)
+	r.deliverChange(settings.Change{Key: perSourceHourlyPath, Old: "30", New: "60"})
+	r.deliverChange(settings.Change{Key: perSourceDailyPath, Old: "", New: "200"})
+	if got := len(r.audit.entries()); got != 2 {
+		t.Fatalf("the audit holds %d rows, want 2: raising either source budget is a relaxation", got)
+	}
+	// Lowering one is not.
+	r.deliverChange(settings.Change{Key: perSourceHourlyPath, Old: "60", New: "30"})
+	if got := len(r.audit.entries()); got != 2 {
+		t.Errorf("lowering a source budget wrote an audit row")
+	}
+}
+
 // TestAnUnwatchedOrSensitiveChangeIsIgnored holds the filter: a key this module
 // does not watch and a change whose value was withheld are both dropped.
 func TestAnUnwatchedOrSensitiveChangeIsIgnored(t *testing.T) {

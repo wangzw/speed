@@ -407,6 +407,10 @@ func declaredValue(key string) (any, bool) {
 		return defaults.PerPhoneHourly, true
 	case perPhoneDailyPath:
 		return defaults.PerPhoneDaily, true
+	case perSourceHourlyPath:
+		return defaults.PerSourceHourly, true
+	case perSourceDailyPath:
+		return defaults.PerSourceDaily, true
 	case globalLoginPath:
 		return defaults.GlobalLogin, true
 	case globalMFAPath:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -58,10 +59,12 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	}
 	id := event.NewID()
 	ttl := p.settings.codeTTL()
+	sourceMAC := p.sourceMAC(in.Source)
 	row := challengeRow{
 		ID:          id,
 		Purpose:     in.Purpose,
 		PhoneMAC:    p.database.BlindIndex(in.Phone),
+		SourceMAC:   sourceMAC,
 		AccountID:   accountOf(in),
 		Suppressed:  !in.Deliver,
 		CodeMAC:     p.database.BlindIndex(id + "|" + code),
@@ -73,7 +76,7 @@ func (p *product) Send(ctx context.Context, in authn.SendCode) (string, error) {
 	// ordered set takes, and the row is written only while those locks are held.
 	// A refusal rolled back the transaction, so it wrote nothing.
 	if err = p.register.insert(ctx, row, func(tx *gorm.DB) error {
-		return p.checkBudgets(tx, in, limits, now)
+		return p.checkBudgets(tx, in, sourceMAC, limits, now)
 	}); err != nil {
 		if isBudgetRefusal(err) {
 			// A budget that could not be read is an outage, not a spent budget,
@@ -177,6 +180,24 @@ func prefixAllowed(prefixes []string, phone string) bool {
 	return false
 }
 
+// sourceMAC returns the keyed digest of a request's client address, or nil when
+// the caller gave none. The address is normalised through netip first, so two
+// spellings of one address share a source budget; one that does not parse is
+// hashed as it stands, because a send whose origin the deployment cannot read
+// still counts. The plaintext address is never written to the table and never
+// logged.
+func (p *product) sourceMAC(source string) *string {
+	if source == "" {
+		return nil
+	}
+	normalised := source
+	if addr, err := netip.ParseAddr(source); err == nil {
+		normalised = addr.String()
+	}
+	mac := p.database.BlindIndex(normalised)
+	return &mac
+}
+
 // budgetLimits is every limit the budget check compares against, read once
 // before the write transaction opens. Reading them first is what keeps a
 // settings read out of the span in which an advisory lock is held.
@@ -184,6 +205,8 @@ type budgetLimits struct {
 	resendInterval   time.Duration
 	perPhoneHourly   int
 	perPhoneDaily    int
+	perSourceHourly  int
+	perSourceDaily   int
 	globalHourly     int
 	perAccountHourly int
 }
@@ -195,6 +218,8 @@ func (p *product) readBudgetLimits(purpose string) budgetLimits {
 		resendInterval:   p.settings.resendInterval(),
 		perPhoneHourly:   p.settings.perPhoneHourly(),
 		perPhoneDaily:    p.settings.perPhoneDaily(),
+		perSourceHourly:  p.settings.perSourceHourly(),
+		perSourceDaily:   p.settings.perSourceDaily(),
 		globalHourly:     p.settings.globalHourly(purpose),
 		perAccountHourly: p.settings.perAccountHourly(),
 	}
@@ -216,8 +241,9 @@ func isBudgetRefusal(err error) bool {
 // transaction is written only while the ordered locks are held. Every budget is
 // a count over the challenge rows, so a suppressed row pays a real one: a
 // window's rows reach the limit at the same count whether the numbers are
-// registered or not.
-func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, limits budgetLimits, now time.Time) error {
+// registered or not. The source dimension runs only when the send carries a
+// source; an empty source is fail-open and takes no source lock.
+func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string, limits budgetLimits, now time.Time) error {
 	phoneMAC := p.database.BlindIndex(in.Phone)
 
 	if interval := limits.resendInterval; interval > 0 {
@@ -246,6 +272,25 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, limits budgetLimi
 		func() (time.Time, bool, error) { return p.register.oldestPhoneSince(tx, phoneMAC, dailySince) },
 		limits.perPhoneDaily, 24*time.Hour, now); err != nil {
 		return err
+	}
+
+	// The source dimension is applied only when the caller gave a source. An
+	// empty source is fail-open: no source lock is taken and no source budget is
+	// counted, so a deployment that cannot resolve the client's address does not
+	// put every send under one key.
+	if sourceMAC != nil {
+		if err := p.throttleOver(
+			func() (int64, error) { return p.register.countSourceSince(tx, *sourceMAC, hourlySince) },
+			func() (time.Time, bool, error) { return p.register.oldestSourceSince(tx, *sourceMAC, hourlySince) },
+			limits.perSourceHourly, time.Hour, now); err != nil {
+			return err
+		}
+		if err := p.throttleOver(
+			func() (int64, error) { return p.register.countSourceSince(tx, *sourceMAC, dailySince) },
+			func() (time.Time, bool, error) { return p.register.oldestSourceSince(tx, *sourceMAC, dailySince) },
+			limits.perSourceDaily, 24*time.Hour, now); err != nil {
+			return err
+		}
 	}
 
 	// The global budget is per purpose: anonymous login traffic cannot exhaust

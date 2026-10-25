@@ -49,15 +49,31 @@ compatibility break for a dashboard written against it.
 - **The budget is a hard cap, read under the send's own lock order.** `Send` reads
   every limit before it opens the write transaction, then the transaction takes
   transaction-scoped advisory locks in the fixed order global purpose → number →
-  account, re-reads every count, and writes the row only under those locks; a
-  refusal rolls the transaction back and writes nothing (`Send`, `checkBudgets`,
-  `register.insert`, `register.lock`,
+  source → account, re-reads every count, and writes the row only under those
+  locks; a refusal rolls the transaction back and writes nothing (`Send`,
+  `checkBudgets`, `register.insert`, `register.lock`,
   `TestTheBudgetIsCheckedUnderTheSendsOwnLocks`,
   `TestConcurrentSendsDoNotOverrunTheBudget`). The keys are
-  `authn.sms:lock:global:<purpose>`, `authn.sms:lock:phone:<phone_mac>` and
+  `authn.sms:lock:global:<purpose>`, `authn.sms:lock:phone:<phone_mac>`,
+  `authn.sms:lock:source:<source_mac>` and
   `authn.sms:lock:account:<account_id>`, hashed by `hashtextextended`; the login
-  purpose has no account and takes no account lock. SQLite takes no advisory lock
-  because it serializes writers itself.
+  purpose has no account and takes no account lock, and a send with no source
+  takes no source lock. SQLite takes no advisory lock because it serializes
+  writers itself.
+- **The source dimension counts a request's address only as a digest, and only
+  when there is one.** `SendCode.Source` is the request's client address. A
+  non-empty source is normalised through `netip.ParseAddr` and hashed through
+  `db.Database.BlindIndex`; the row stores `source_mac` and the budget counts it across
+  purposes for an hour and a rolling day, against `per-source-hourly` and
+  `per-source-daily`. The plaintext address is never written and never logged
+  (`sourceMAC`, `checkBudgets`, `countSourceSince`,
+  `TestThePerSourceHourlyBudgetThrottles`,
+  `TestTheSourceAddressIsNormalisedBeforeCounting`,
+  `TestTheSourceIsKeptOnlyAsADigest`). An empty source is fail-open: no source
+  lock, no source budget and a NULL `source_mac`, because putting every
+  origin-less send under one key would make the dimension fail-closed on a
+  deployment that cannot resolve an address
+  (`TestAnEmptySourceIsFailOpen`).
 - **The check counts before it compares.** `Verify` runs one conditional update
   first — the row must be there, unconsumed, unexpired and below its attempt
   limit — and only then compares, so a concurrent submitter cannot get past the

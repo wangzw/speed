@@ -21,6 +21,7 @@ type challengeRow struct {
 	ID          string
 	Purpose     string
 	PhoneMAC    string
+	SourceMAC   *string
 	AccountID   *string
 	Suppressed  bool
 	CodeMAC     string
@@ -71,10 +72,14 @@ func (g *register) insert(ctx context.Context, row challengeRow, guard func(*gor
 		if row.AccountID != nil {
 			account = *row.AccountID
 		}
+		var source any
+		if row.SourceMAC != nil {
+			source = *row.SourceMAC
+		}
 		if err := tx.Exec("INSERT INTO "+challengeTable+
-			" (id, purpose, phone_mac, account_id, suppressed, code_mac, attempts, max_attempts, created_at, expires_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
-			row.ID, row.Purpose, row.PhoneMAC, account, row.Suppressed, row.CodeMAC,
+			" (id, purpose, phone_mac, source_mac, account_id, suppressed, code_mac, attempts, max_attempts, created_at, expires_at) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+			row.ID, row.Purpose, row.PhoneMAC, source, account, row.Suppressed, row.CodeMAC,
 			row.MaxAttempts, clock.UTC(row.CreatedAt), clock.UTC(row.ExpiresAt)).Error; err != nil {
 			return fmt.Errorf("writing a challenge: %w", err)
 		}
@@ -84,10 +89,11 @@ func (g *register) insert(ctx context.Context, row challengeRow, guard func(*gor
 
 // lock takes the ordered set of transaction-scoped advisory locks a send is
 // serialized under: the global budget of its purpose, then the number, then the
-// account. Every send takes them in this order, so two sends that share any key
-// cannot deadlock, and holding all of them is what lets the budget check and the
-// write be one decision. The keys are namespaced strings hashed by the database
-// itself; the locks are released when the transaction commits or rolls back.
+// source address when the send carries one, then the account. Every send takes
+// them in this order, so two sends that share any key cannot deadlock, and
+// holding all of them is what lets the budget check and the write be one
+// decision. The keys are namespaced strings hashed by the database itself; the
+// locks are released when the transaction commits or rolls back.
 //
 // A hash collision between two different keys only over-serializes unrelated
 // sends, which is safe; it never lets two sends of one key run at once. The locks
@@ -100,6 +106,9 @@ func (g *register) lock(tx *gorm.DB, row challengeRow) error {
 	keys := []string{
 		"authn.sms:lock:global:" + row.Purpose,
 		"authn.sms:lock:phone:" + row.PhoneMAC,
+	}
+	if row.SourceMAC != nil {
+		keys = append(keys, "authn.sms:lock:source:"+*row.SourceMAC)
 	}
 	if row.AccountID != nil {
 		keys = append(keys, "authn.sms:lock:account:"+*row.AccountID)
@@ -198,6 +207,36 @@ func (g *register) oldestPhoneSince(q *gorm.DB, phoneMAC string, since time.Time
 		Order("created_at ASC").Limit(1).Scan(&out).Error
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("reading the oldest send to a number: %w", err)
+	}
+	if len(out) == 0 {
+		return time.Time{}, false, nil
+	}
+	return clock.UTC(out[0].CreatedAt), true, nil
+}
+
+// countSourceSince counts the rows from one source address created after since,
+// of any purpose. Rows with no source address are not counted: an empty source
+// is not a source, and putting them all under one key would make the budget
+// fail-closed on a deployment that cannot resolve an address.
+func (g *register) countSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (int64, error) {
+	var n int64
+	err := q.Table(challengeTable).
+		Where("source_mac = ? AND created_at > ?", sourceMAC, clock.UTC(since)).Count(&n).Error
+	if err != nil {
+		return 0, fmt.Errorf("counting the sends from a source: %w", err)
+	}
+	return n, nil
+}
+
+// oldestSourceSince reads the created_at of the oldest row from the source after
+// since, which is when the counting window frees a slot.
+func (g *register) oldestSourceSince(q *gorm.DB, sourceMAC string, since time.Time) (time.Time, bool, error) {
+	var out []struct{ CreatedAt time.Time }
+	err := q.Table(challengeTable).Select("created_at").
+		Where("source_mac = ? AND created_at > ?", sourceMAC, clock.UTC(since)).
+		Order("created_at ASC").Limit(1).Scan(&out).Error
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("reading the oldest send from a source: %w", err)
 	}
 	if len(out) == 0 {
 		return time.Time{}, false, nil

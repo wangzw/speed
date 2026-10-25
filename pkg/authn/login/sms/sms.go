@@ -200,7 +200,7 @@ func (m *method) Begin(ctx context.Context, s authn.Start) (authn.Step, error) {
 	if !servesPurpose(s.Purpose) {
 		return refusePurpose(s.Purpose), nil
 	}
-	return m.phone(ctx, s.Fields, s.SendsLeft, s.Locale), nil
+	return m.phone(ctx, s.Fields, s.SendsLeft, s.Locale, s.Client.IP), nil
 }
 
 // Answer handles the client's answer to the previous step: the phone the method
@@ -216,7 +216,7 @@ func (m *method) Answer(ctx context.Context, f authn.FlowState, in authn.StepInp
 	}
 	switch f.Step {
 	case stepPhone:
-		return m.phone(ctx, in.Fields, f.SendsLeft, f.Locale), nil
+		return m.phone(ctx, in.Fields, f.SendsLeft, f.Locale, in.Client.IP), nil
 	case stepCode:
 		return m.code(ctx, f, in.Fields), nil
 	default:
@@ -255,8 +255,11 @@ func refusePurpose(purpose string) authn.Step {
 // asks for the number when none was given. It checks the per-flow send budget
 // before it sends, so a flow that has spent it is answered without a send. The
 // number the code was sent to and the challenge that carries it are kept in the
-// private bytes, so that the answer step needs neither from the client.
-func (m *method) phone(ctx context.Context, fields map[string]string, sendsLeft int, locale string) authn.Step {
+// private bytes, so that the answer step needs neither from the client. source
+// is the request's client address, passed to the code engine as the send's
+// source; an empty one means the engine has no trustworthy origin and the code
+// engine applies no source budget.
+func (m *method) phone(ctx context.Context, fields map[string]string, sendsLeft int, locale, source string) authn.Step {
 	phone := fields[fieldPhone]
 	if phone == "" {
 		return promptPhone()
@@ -280,6 +283,7 @@ func (m *method) phone(ctx context.Context, fields map[string]string, sendsLeft 
 		Phone:   phone,
 		Locale:  locale,
 		Deliver: deliver,
+		Source:  source,
 	})
 	var throttled *authn.ThrottledError
 	switch {

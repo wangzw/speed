@@ -137,6 +137,7 @@ func (f *factor) Challenge(ctx context.Context, fl authn.FlowState, rec authn.Fa
 		Account: rec.Account,
 		Locale:  fl.Locale,
 		Deliver: true,
+		Source:  fl.Source,
 	})
 	switch {
 	case err == nil:

@@ -16,6 +16,8 @@ import (
 func (r *rig) liftBudgets() {
 	r.store.set(perPhoneHourlyPath, 1000)
 	r.store.set(perPhoneDailyPath, 1000)
+	r.store.set(perSourceHourlyPath, 1000)
+	r.store.set(perSourceDailyPath, 1000)
 	r.store.set(globalLoginPath, 1000000)
 	r.store.set(globalMFAPath, 1000000)
 	r.store.set(globalEnrollPath, 1000000)

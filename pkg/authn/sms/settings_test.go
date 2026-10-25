@@ -113,6 +113,8 @@ func TestEverySettingDomainAdmitsItsBoundsAndRefusesTheNeighbours(t *testing.T) 
 		{"code-attempts", 1, 10, codeAttemptsInDomain},
 		{"per-phone-hourly", 1, 60, perPhoneHourlyInDomain},
 		{"per-phone-daily", 1, 200, perPhoneDailyInDomain},
+		{"per-source-hourly", 1, 10000, perSourceHourlyInDomain},
+		{"per-source-daily", 1, 100000, perSourceDailyInDomain},
 		{"global-hourly", 1, 1000000, globalHourlyInDomain},
 		{"per-flow-sends", 1, 10, perFlowSendsInDomain},
 		{"per-account-hourly", 1, 60, perAccountHourlyInDomain},
@@ -164,7 +166,8 @@ func TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace(t *testing.T) 
 	}
 	want := []string{
 		allowedPrefixesKey, codeLengthKey, codeTTLKey, codeAttemptsKey, resendIntervalKey,
-		perPhoneHourlyKey, perPhoneDailyKey, globalLoginKey, globalMFAKey, globalEnrollKey,
+		perPhoneHourlyKey, perPhoneDailyKey, perSourceHourlyKey, perSourceDailyKey,
+		globalLoginKey, globalMFAKey, globalEnrollKey,
 		perFlowSendsKey, perAccountHourlyKey,
 	}
 	for _, key := range want {

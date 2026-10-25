@@ -130,7 +130,7 @@
 
 | 威胁 | 对策 | 落点 | 残余风险 |
 |---|---|---|---|
-| 短信轰炸与流量泵 | 缺省拒绝所有号码前缀（`allowed-prefixes` 为空）；号码未登记且注册关闭时写抑制行、不发送；重发间隔、每号码每小时与每日的上限由 `authn_challenges` 行数得出，已登记与未登记的号码走同一条计数路径；全局预算按用途分设，登录用途被耗尽不挤占第二因素与登记；每流程至多 `per-flow-sends` 条；每账户每小时的上限只对 `mfa` 与 `enroll` 计；运行期开关 `disabled-methods` 可立刻关掉 `sms`；`sms.ErrUncertain` 不盲目重发；指标 `authn.sms.sends` 的 `budget-exhausted` 取值供告警 | [design-authn-sms](design-authn-sms.md)、[design-authn-login](design-authn-login.md) | 注册开放且前缀放行时，攻击者可对任意允许前缀的号码触发发送，上界是各用途的全局预算；某用途的预算耗尽即拒绝该用途的合法用户，登录、第二因素、登记各有预算，互不挤占。**接受** |
+| 短信轰炸与流量泵 | 缺省拒绝所有号码前缀（`allowed-prefixes` 为空）；号码未登记且注册关闭时写抑制行、不发送；重发间隔、每号码每小时与每日的上限由 `authn_challenges` 行数得出，已登记与未登记的号码走同一条计数路径；按来源地址的每小时与滚动一日上限（`per-source-hourly`、`per-source-daily`）由同一个来源摘要的 `authn_challenges` 行数得出，跨用途累计，`SendCode.Source` 为空时 fail-open 不施加；全局预算按用途分设，登录用途被耗尽不挤占第二因素与登记；每流程至多 `per-flow-sends` 条；每账户每小时的上限只对 `mfa` 与 `enroll` 计；运行期开关 `disabled-methods` 可立刻关掉 `sms`；`sms.ErrUncertain` 不盲目重发；指标 `authn.sms.sends` 的 `budget-exhausted` 取值供告警 | [design-authn-sms](design-authn-sms.md)、[design-authn-login](design-authn-login.md) | 注册开放且前缀放行时，攻击者可对任意允许前缀的号码触发发送，上界是来源、号码、账户与各用途全局预算的最小者；某用途的预算耗尽即拒绝该用途的合法用户，登录、第二因素、登记各有预算，互不挤占；来源维度按地址不按人，共享出口之后的用户共用一个来源窗口，一个发送者可以耗尽同一出口其他人的来源额度；调用方没有可信来源时来源维度不设上界，此时只剩号码、账户与全局维度。**接受** |
 | 验证码重用、重放与暴力 | 每码的尝试次数用尽即作废；单次消费（条件更新）；有效期有界；摘要带密钥 | [design-authn-sms](design-authn-sms.md) | 6 位数字的摘要抗不了离线穷举（库被读走时），只防短期暴露 |
 | 计时侧信道 | 口令诱饵派生（按当前设置懒生成，设置变更时重建）；常量时间比较（口令哈希、验证码摘要、流程令牌、`state`） | [design-authn-account](design-authn-account.md)、[design-authn-login](design-authn-login.md) | 常量时间比较与诱饵派生只使服务端处理时间相等，网络与调度抖动造成的差别不在保证内；设置变更之后到账户下次登录升级哈希之前，已知与未知标识的派生耗时有差；口令表的未知用户名因快速拒绝而快（已接受） |
 | 口令派生耗尽 CPU 与内存 | 并发信号量，满则 503；Argon2 的取值域与解析上限有界，另有按字节计的内存预算，每个口令后端各持一份；解析条目有界限；口令长度有上限 | [design-authn-account](design-authn-account.md)、[design-authn-gate](design-authn-gate.md) | 并发与内存预算以内的占用，各口令后端的预算互相独立，整个进程的上界是各份之和；已知有效用户名的口令表主体仍可被用来消耗派生，受退避约束；并发内存峰值在目标部署规格之内是假设，见[依赖未核实行为的假设](#依赖未核实行为的假设) |
@@ -407,7 +407,7 @@ flowchart LR
 | 访问令牌、刷新令牌轮换与重用检测、签名密钥轮换 | 已实现 | `pkg/authn/token/verify.go` `Verify`、`Accepts`；`pkg/authn/token/refresh.go` `Refresh`、`rotate`、`revokeFamily`；`pkg/authn/token/keys.go` `loadKeySet`、`GenerateKey`；`pkg/authn/token/jwks.go` `JWKS` |
 | 登录流程绑定、`state`、PKCE、`nonce`、`return_to` 校验 | 已实现 | `pkg/authn/login/flow.go`、`pkg/authn/login/engine.go`、`pkg/authn/login/callback.go`；`pkg/authn/login/google/method.go` 与 `pkg/authn/login/github/github.go` 各自的 state 与 PKCE 编解码；`pkg/authn/login/internal/wechat`、`pkg/authn/sso/oidc` 各自的 `state.go` |
 | 多因素的保障等级合成与账户安全类操作的因素门槛 | 已实现 | `pkg/authn/mfa/policy.go` `Assurance`、`Require`；`pkg/authn/mfa/routes.go`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn`；`pkg/authn/guard/guard.go` |
-| 短信的预算、抑制行与号码前缀白名单 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`；`pkg/authn/sms/settings.go` |
+| 短信的预算（含按来源地址的小时与日预算）、抑制行与号码前缀白名单 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`；`pkg/authn/sms/settings.go`；`pkg/authn/sms/source_test.go`、`budget_integration_test.go` |
 | 企业 SSO 的断言补充校验、SHA-1 预扫描与受限出站客户端 | 已实现 | `pkg/authn/sso/saml/assertion.go`、`pkg/authn/sso/saml/sha1.go`；`pkg/authn/internal/egress/egress.go` `New` |
 | 冒充的结构性限制、租户范围与审计先于动作 | 已实现 | `pkg/authn/impersonation/routes.go` `handleStart`、`handleStatus`、`handleEnd`；`active.go`、`end.go`、`store.go`、`settings.go` |
 | 判定接缝 `Decider` 与管理面的强制审计 | 已实现 | `pkg/authn/decide.go` `Decider`；`pkg/authn/admin/audit.go` `mandatory`、`newActionID`；`pkg/authn/admin/admin.go` |

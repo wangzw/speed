@@ -227,6 +227,8 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.sms.resend-interval` | `time.Duration` | `60s` | 30s 到 10m | | 减小 |
 | `authn.sms.per-phone-hourly` | 整数 | `5` | 1 到 60 | | 增大 |
 | `authn.sms.per-phone-daily` | 整数 | `10` | 1 到 200 | | 增大 |
+| `authn.sms.per-source-hourly` | 整数 | `30` | 1 到 10000 | | 增大 |
+| `authn.sms.per-source-daily` | 整数 | `100` | 1 到 100000 | | 增大 |
 | `authn.sms.global-hourly-login` | 整数 | `300` | 1 到 1000000 | | 增大 |
 | `authn.sms.global-hourly-mfa` | 整数 | `300` | 1 到 1000000 | | 增大 |
 | `authn.sms.global-hourly-enroll` | 整数 | `100` | 1 到 1000000 | | 增大 |
@@ -243,6 +245,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 - `authn.login.disabled-methods` 在运行期关闭一个登录方式，例如遭遇短信轰炸时关 `sms`；`authn.login.ip-limit` 的缺省值与取值理由见 [design-authn-login](design-authn-login.md)。
 - `authn.sms.global-hourly-*` 按用途分设：登录的预算耗尽不挤占已通过口令的第二因素与因素登记。
 - `authn.sms.per-account-hourly` 只对 `mfa` 与 `enroll` 用途计数。
+- `authn.sms.per-source-hourly` 与 `per-source-daily` 按发送请求的来源地址计数，跨用途累计，窗口分别是滚动一小时与滚动一日；地址先经 `netip.ParseAddr` 规范化再取摘要。`SendCode.Source` 为空（调用方没有可信来源）时不施加这两个维度，见 [design-authn-sms](design-authn-sms.md)。
 - `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly` 与 `email-global-hourly` 是邮箱验证码的预算：前两项按归一化后的地址计数，窗口跨会话与账户共享，一个地址在一次重发窗口内只发一条码；第三项按发起的账户计；第四项是全部账户与地址共享的小时总量。地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算。
 - `authn.mfa.sensitive-min-age` 是冒充发起与管理员重置因素所要求的因素启用年龄。
 
