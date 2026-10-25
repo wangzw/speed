@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 
+	"gorm.io/gorm"
+
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	dbpostgres "github.com/vislake/speed/pkg/db/postgres"
@@ -14,6 +16,47 @@ import (
 	eventpostgres "github.com/vislake/speed/pkg/event/postgres"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 )
+
+// The bus's tables, as this package's cases read them. The bus keeps its own
+// outbox in the same database as the relay's staged table, so a case that
+// resolves the database can judge what the bus still owes its subscribers.
+const (
+	busOutbox    = "event_outbox"
+	busDelivered = "event_delivered"
+)
+
+// busSettled waits, within the settle bound, for the PostgreSQL bus sharing the
+// case's database to have delivered and marked every entry staged under
+// identifier. Publish writes the entry and returns; the bus's reader hands it
+// to the subscribers later, and records the delivery mark after doing so. A
+// count of what the subscriber received is therefore final only once the mark
+// is there: an entry the reader redelivers — because the mark of an earlier
+// attempt failed, say — is handed over and marked again, and this waits for
+// that last mark. Waiting on the relay's staged table alone would leave exactly
+// that delivery, and any redelivery, outside what the count is judged on.
+func busSettled(t *testing.T, handle *gorm.DB, identifier string) {
+	t.Helper()
+	settled := func() bool {
+		var staged int64
+		if err := handle.Raw(`SELECT count(*) FROM `+busOutbox+` WHERE identifier = ?`, identifier).
+			Row().Scan(&staged); err != nil {
+			t.Fatalf("counting the bus's entries for %s: %v", identifier, err)
+		}
+		if staged == 0 {
+			return false
+		}
+		var undelivered int64
+		if err := handle.Raw(`SELECT count(*) FROM `+busOutbox+` o WHERE o.identifier = ? AND NOT EXISTS (`+
+			`SELECT 1 FROM `+busDelivered+` d WHERE d.event_id = o.id)`, identifier).
+			Row().Scan(&undelivered); err != nil {
+			t.Fatalf("counting the bus's undelivered entries for %s: %v", identifier, err)
+		}
+		return undelivered == 0
+	}
+	if !eventually(settled) {
+		t.Fatalf("the bus still held an entry staged under %s undelivered after it should have settled", identifier)
+	}
+}
 
 // postgresStack is the PostgreSQL engine and the bus whose outbox is a table in
 // the same database.
@@ -78,10 +121,14 @@ func TestAWinWhoseAnnouncementTheBusRefusedIsPublishedOnceItAcceptsAgain(t *test
 			t.Errorf("the announcement never reached its subscriber once the bus accepted again")
 			return errCaseFailed
 		}
-		// The staged table is the source: with no row left and none claimed, the
-		// refused announcement has been published and no second delivery is on
-		// its way.
+		// Both sources have to be quiet before the subscriber's count is final.
+		// The staged table says the relay published the announcement and will
+		// publish nothing more; the bus's delivery mark says its reader has
+		// handed the entry over and will not hand it over again. This bus's
+		// Publish returns before the delivery, so the mark is the only fact
+		// that makes the count below final.
 		waitSettled(t, database)
+		busSettled(t, handle, id)
 		if got := idsOf(orders.events()); len(got) != 1 || got[0] != id {
 			t.Errorf("the subscriber received %v, want the refused announcement once, %s", got, id)
 		}
