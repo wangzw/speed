@@ -509,7 +509,9 @@ describe('the tenant frame and the personal tenant', () => {
             id: 'grant-1',
             target: 'account-1',
             tenant: 'acme',
-            ends_at: '2999-01-01T00:00:00Z',
+            // The contract caps a grant at one hour from its start; a distant
+            // expiry would schedule a timer past JavaScript's delay range.
+            ends_at: new Date(Date.now() + 3_600_000).toISOString(),
           },
         }
       }

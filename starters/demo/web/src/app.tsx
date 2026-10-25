@@ -136,6 +136,7 @@ import {
   loadSelfTenants,
   PERSONAL_TENANT_ID_PREFIX,
   personalTenantId,
+  selfTenantAlias,
   useSelfTenantState,
 } from './tenant-self.js'
 import type { SelfTenantState } from './tenant-self.js'
@@ -224,18 +225,19 @@ export function DemoApp({
   // The caller tenant list belongs to an identity, not to the page. Read it
   // once per acting account here in the always-mounted root -- not in the
   // tenant frame, which the console area and the sign-in surface do not mount
-  // -- after forgetting the previous account's rows. The read is issued only
-  // while not impersonating: an impersonation is confined to the grant's
-  // tenant and the console shows no switcher, so the list has no reader.
+  // -- after forgetting the previous account's rows. It is read while
+  // impersonating too: the answer is narrowed to the grant's tenant on the
+  // server, and it is the alias source the tenant area has after a full page
+  // load, when the roster cache the operator read before is gone. The
+  // switcher stays unmounted during an impersonation, so the list has no
+  // tenant to offer there; the alias it names is what the request surface
+  // announces.
   useEffect(() => {
     if (!authenticated) {
       clearSelfTenants()
       return
     }
     clearSelfTenants()
-    if (impersonating) {
-      return
-    }
     void loadSelfTenants()
   }, [authenticated, principalId, impersonating])
   return (
@@ -623,12 +625,22 @@ function TenantFrame({
     }
     setTenantSettled(false)
     if (impersonating) {
-      // The caller tenant read is not issued for an impersonated session. The
-      // current tenant is the grant's tenant identifier, and stays unknown
-      // until the status read settles, which keeps tenant-scoped queries
-      // disabled.
-      setTenantId(grant?.tenant ?? null)
-      setTenantSettled(grant?.tenant != null)
+      // The grant names the tenant by identifier; the request surface
+      // announces it by ALIAS, and a tenant-scoped read that announces none is
+      // refused 404 by the admission layer. The impersonated account's own
+      // membership list is that alias source -- the roster is a platform read
+      // an impersonated identity cannot make -- and the server narrows it to
+      // the grant's tenant. The current tenant therefore settles only once a
+      // source names the grant's tenant; until then it stays unknown and
+      // tenant-scoped reads stay disabled, rather than going out under a name
+      // the request surface cannot announce.
+      const granted = grant?.tenant ?? null
+      const alias =
+        granted === null
+          ? null
+          : (getRecordedTenantAlias(granted) ?? selfTenantAlias(granted))
+      setTenantId(alias === null ? null : granted)
+      setTenantSettled(alias !== null)
       return
     }
     if (!featuresReady) {

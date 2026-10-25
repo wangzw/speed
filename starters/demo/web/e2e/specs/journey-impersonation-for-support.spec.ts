@@ -175,6 +175,14 @@ function banner(page: Page): Locator {
   })
 }
 
+/** The notification surface's preference matrix. */
+function preferencesMatrix(page: Page): Locator {
+  return page.getByRole('table', {
+    name: copy('notificationUi', 'preferences.title'),
+    exact: true,
+  })
+}
+
 /** The step-up dialog. */
 function stepUpDialog(page: Page): Locator {
   return page.getByRole('dialog', {
@@ -619,16 +627,16 @@ test('impersonation-for-support: the operator acts as a member and the record an
         .getByRole('button', { name: TENANT, exact: true }),
     ).toHaveCount(0)
 
-    // A console path is silently brought back to the tenant home, and the
-    // banner remains the operator's explanation. The visit is an in-app
-    // history navigation, the way the product moves between its own pages: a
-    // full document load while impersonating re-mints the host's module state,
-    // and the host reads neither of its tenant-alias sources during an
-    // impersonation (the roster and the caller's own membership list), so the
-    // grant's tenant can no longer be announced on a request. That
-    // full-load gap is out of this journey's scope and is recorded with the
-    // spec's findings rather than worked around here.
-    await page.goBack()
+    // A console path entered by a full document load is silently brought back
+    // to the tenant home: the impersonation gate runs before the console
+    // shell, and the banner remains the operator's explanation. The load also
+    // keeps the grant's tenant named -- the host reads the impersonated
+    // account's own membership list, which the server narrows to the grant --
+    // so the tenant-scoped surfaces the next steps read keep working across a
+    // reload.
+    await page.goto(
+      new URL('/console/impersonations?tenant=acme', page.url()).toString(),
+    )
     await expect(homeHeading(page)).toBeVisible({ timeout: 15_000 })
     expect(new URL(page.url()).pathname).toBe('/')
     await expect(banner(page)).toBeVisible()
@@ -667,6 +675,37 @@ test('impersonation-for-support: the operator acts as a member and the record an
     ).toBeVisible()
     await expect(
       page.getByText(copy('notificationUi', 'tenantUnavailable.title'), {
+        exact: true,
+      }),
+    ).toHaveCount(0)
+    await expect(banner(page)).toBeVisible()
+  })
+
+  await test.step('step 5b: a full page load keeps the notification surface inside the grant tenant', async () => {
+    // The support operator's job is done in the member's own surfaces, so a
+    // reload has to keep them inside the grant's tenant. A full document load
+    // re-mints every module-level cell; if the grant's tenant could no longer
+    // be named, the tenant-scoped reads would be refused 404 and this page
+    // would show the organization-unavailable state instead of its content.
+    await page.reload()
+    await expect(
+      page.getByRole('heading', {
+        name: copy('notificationUi', 'inbox.title'),
+        exact: true,
+      }),
+    ).toBeVisible()
+
+    // The preference matrix is a tenant-scoped read of its own. The normal
+    // matrix is the proof the reload kept announcing the tenant; the refusal
+    // state is the answer for an identity with no membership there.
+    await expect(preferencesMatrix(page)).toBeVisible()
+    await expect(
+      page.getByText(copy('notificationUi', 'tenantUnavailable.title'), {
+        exact: true,
+      }),
+    ).toHaveCount(0)
+    await expect(
+      page.getByText(copy('notificationUi', 'tenantUnavailable.description'), {
         exact: true,
       }),
     ).toHaveCount(0)

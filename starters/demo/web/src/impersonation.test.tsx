@@ -39,6 +39,7 @@ import { TENANCY_UI_NAMESPACE, tenancyUiResources } from '@speed/tenancy-ui'
 import demoEnUS from './locales/en-US.json' with { type: 'json' }
 import { PlatformPermissions } from './platform-permissions.js'
 import {
+  getCurrentTenantAlias,
   getCurrentTenantId,
   setCurrentTenantId,
   setTenantAliases,
@@ -304,8 +305,12 @@ interface Backend {
   readonly postReads: () => number
   readonly unreadReads: () => number
   /** The current tenant's id at the moment each unread-count read left the
-   * browser: the alias the request surface would have announced. */
+   * browser. */
   readonly unreadTenantIds: () => readonly (string | null)[]
+  /** The alias each unread-count read would have announced as X-Tenant at the
+   * moment it left the browser (the value the assembly's tenantProvider
+   * reads): null when no source names the current tenant. */
+  readonly unreadAliases: () => readonly (string | null)[]
   readonly messagesReads: () => number
   readonly deletes: () => number
   /** A read of a tenant-scoped data surface (the notification centre): what
@@ -346,6 +351,8 @@ function makeBackend(options: {
   readonly statusGateAfterStart?: Promise<void>
   /** The tenant id the start write grants; defaults to the fixture's. */
   readonly startTenant?: string
+  /** The tenants the caller tenant read answers; defaults to none. */
+  readonly selfTenants?: readonly { readonly id: string; readonly alias: string }[]
   /** Refuses the status read once it has been issued more than this many
    * times. A self-driving 404 loop is a microtask storm that would otherwise
    * hang the test until its timeout; this turns it into an answer the test
@@ -371,6 +378,7 @@ function makeBackend(options: {
   let postReads = 0
   let unreadReads = 0
   const unreadTenantIds: (string | null)[] = []
+  const unreadAliases: (string | null)[] = []
   let messagesReads = 0
   let deletes = 0
   let tenantReads = 0
@@ -386,11 +394,11 @@ function makeBackend(options: {
       tenantReads += 1
     }
     if (path === '/api/v1/auth/me/tenants') {
-      // The caller tenant list: this backend's operator holds no membership
-      // the roster default would not already name, so an empty settled list is
-      // the answer the settlement needs.
+      // The caller tenant list. It answers no memberships by default, which is
+      // what the settlement needs for this backend's operator; a case that
+      // needs a named tenant supplies the list.
       selfReads += 1
-      const answered = { tenants: [] } as T
+      const answered = { tenants: options.selfTenants ?? [] } as T
       if (options.selfGateAfterEnd !== undefined && deletes > 0) {
         return options.selfGateAfterEnd.then(() => answered)
       }
@@ -485,6 +493,7 @@ function makeBackend(options: {
     if (path === '/api/v1/notifications/messages/unread-count') {
       unreadReads += 1
       unreadTenantIds.push(getCurrentTenantId())
+      unreadAliases.push(getCurrentTenantAlias())
       return Promise.resolve({ unread: 0 } as T)
     }
     if (path === '/api/v1/notifications/messages') {
@@ -517,6 +526,7 @@ function makeBackend(options: {
     postReads: () => postReads,
     unreadReads: () => unreadReads,
     unreadTenantIds: () => unreadTenantIds,
+    unreadAliases: () => unreadAliases,
     messagesReads: () => messagesReads,
     deletes: () => deletes,
     tenantReads: () => tenantReads,
@@ -809,7 +819,9 @@ describe('the impersonation shell', () => {
     await waitFor(() =>
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
-    expect(backend.selfReads()).toBe(0)
+    // The impersonation's own read settled: the impersonated account's
+    // membership list is the alias source the reload would otherwise lack.
+    await waitFor(() => expect(backend.selfReads()).toBe(1))
 
     await user.click(
       within(notice).getByRole('button', { name: tAuth('impersonation.end') }),
@@ -817,7 +829,9 @@ describe('the impersonation shell', () => {
 
     await waitFor(() => expect(banner()).toBeNull())
     await waitFor(() => expect(backend.rosterReads()).toBe(1))
-    await waitFor(() => expect(backend.selfReads()).toBe(1))
+    // The ended identity re-read the caller's own list; that read is held
+    // open by the suite.
+    await waitFor(() => expect(backend.selfReads()).toBe(2))
 
     // The roster read lands first. The caller tenant read is still in
     // flight, so the gap stays open: no switcher and, above all, no
@@ -1163,6 +1177,43 @@ describe('the impersonation shell', () => {
     expect(backend.rosterReads()).toBe(0)
     // The snapshot's `impersonating` enabled the status read.
     expect(backend.statusReads()).toBeGreaterThan(0)
+  })
+
+  it('keeps the grant tenant named on a full page load while impersonating', async () => {
+    window.history.replaceState({}, '', '/')
+    // A full document load re-mints the host's module state: neither the
+    // current tenant nor the roster's alias cache survives. Only the
+    // impersonated account's own membership list can name the grant's tenant,
+    // and a tenant-scoped read that announces no alias is refused by the
+    // admission layer.
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    const backend = makeBackend({
+      grant: grantFixture(new Date(Date.now() + 3_600_000).toISOString()),
+      selfTenants: [{ id: 'acme', alias: 'acme' }],
+    })
+    bindRequestFn(backend.fn)
+
+    renderDemoApp({
+      session: scriptedSession(targetSnapshot(), () => targetSnapshot()),
+    })
+
+    // The banner settles the impersonated identity and the grant's tenant.
+    await screen.findByRole('region', {
+      name: tAuth('impersonation.regionLabel'),
+    })
+
+    // The caller tenant read ran under the impersonated account: it is the
+    // alias source the reload has left.
+    await waitFor(() => expect(backend.selfReads()).toBeGreaterThan(0))
+
+    // The header's unread count is a tenant-scoped read. Every one of them
+    // ran under the grant's tenant and announced the alias the membership
+    // list named; the identifier alone is not an alias, and a request that
+    // announces none is the 404 the refusal state renders from.
+    await waitFor(() => expect(backend.unreadReads()).toBeGreaterThan(0))
+    expect(backend.unreadTenantIds().every((id) => id === 'acme')).toBe(true)
+    expect(backend.unreadAliases().every((alias) => alias === 'acme')).toBe(true)
   })
 
   it('issues no status read and shows no banner for a visitor who is not impersonating', async () => {
