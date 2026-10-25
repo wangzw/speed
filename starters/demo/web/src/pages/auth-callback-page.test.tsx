@@ -11,7 +11,7 @@
  * carries it rather than only in a scan report.
  */
 
-import { act, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createBackend } from '../a11y/backends.js'
@@ -50,12 +50,12 @@ describe('the auth callback route', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Page not found' }),
     ).toBeInTheDocument()
-    // Let the frame's own post-mount reads settle inside act, so the count
-    // below is the structure the route rests at, not a transient commit.
-    await act(async () => {
-      await Promise.resolve()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    })
+    // The heading is the tenant frame's own content: it is a descendant of the
+    // main landmark AppShell renders around its children, so both arrive in
+    // the commit that resolves this heading. Nothing after that commit adds or
+    // removes a main -- the frame's profile read feeds only the banner region
+    // -- so counting here judges the route's structure, and a page root that
+    // opened a second main would already be counted.
     expect(container.querySelectorAll('main')).toHaveLength(1)
   })
 })
