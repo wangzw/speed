@@ -20,6 +20,21 @@ func (p *plainEmail) SendCode(context.Context, string, string, time.Duration, st
 	return p.err
 }
 
+// steppingEmail is a certifying channel whose call the case scripts. It lets a
+// case move the harness clock while a send is in flight, so the refund runs
+// against a budget window the send itself opened and outlived.
+type steppingEmail struct {
+	send func() error
+}
+
+func (s *steppingEmail) SendCode(context.Context, string, string, time.Duration, string) error {
+	return s.send()
+}
+
+// CertifiesNotSent places the channel on the certifying side: a failure it
+// returns certifies that no message left, so the attempt's budget is refunded.
+func (s *steppingEmail) CertifiesNotSent(error) bool { return true }
+
 // budgetTotal is the sum of the counts the harness store holds under a budget
 // prefix. A key a refund gave back stays there holding zero, so the sum is what
 // the window has actually spent.
@@ -132,6 +147,10 @@ func TestTheSourceDailyBudgetStopsADifferentAddress(t *testing.T) {
 
 // TestDifferentSourcesDoNotShareTheirBudget holds that the source dimension is
 // per address: a source that has spent its allowance does not refuse another.
+//
+// It is a pairing guard, not a reproduction: the code had no source dimension
+// before this change, so both sources passed then too. The reproductions are the
+// source-bound cases above.
 func TestDifferentSourcesDoNotShareTheirBudget(t *testing.T) {
 	h := budgetHarness(t, map[string]int{
 		budgetAddressHourly: 60, budgetAddressDaily: 200,
@@ -254,6 +273,10 @@ func TestGooglemailAndGmailShareTheAddressBudget(t *testing.T) {
 
 // TestDotsAreFoldedOnlyForGmail holds the other side of the rule: at another
 // provider a dot is part of the address, so two writes are two budgets.
+//
+// It is a pairing guard, not a reproduction: the code did not fold dots before
+// this change, so both writings passed then too. The reproduction is
+// TestGmailDotAliasesShareTheAddressBudget.
 func TestDotsAreFoldedOnlyForGmail(t *testing.T) {
 	h := budgetHarness(t, map[string]int{
 		budgetAddressHourly: 1, budgetAddressDaily: 200,
@@ -305,6 +328,10 @@ func TestAFailedSendRefundsItsBudget(t *testing.T) {
 // TestAnUncertainSendKeepsItsBudget holds the other side: a failure that leaves
 // open whether the message left keeps the budget, because the message may have
 // gone out.
+//
+// It is a pairing guard, not a reproduction: the code never refunded a failed
+// send before this change, so the budget stayed spent then too. The
+// reproduction is TestAFailedSendRefundsItsBudget.
 func TestAnUncertainSendKeepsItsBudget(t *testing.T) {
 	h := budgetHarness(t, map[string]int{
 		budgetAddressHourly: 1, budgetAddressDaily: 200,
@@ -333,6 +360,10 @@ func TestAnUncertainSendKeepsItsBudget(t *testing.T) {
 // TestACustomSendersFailureKeepsItsBudget holds the ruling for host-built
 // channels: one that publishes no classification is treated as uncertain, so its
 // failures keep the budget rather than refund it.
+//
+// It is a pairing guard, not a reproduction: the code never refunded a failed
+// send before this change, so the budget stayed spent then too. The refund
+// reproduction is TestAFailedSendRefundsItsBudget.
 func TestACustomSendersFailureKeepsItsBudget(t *testing.T) {
 	h := newHarness(t, func(c *config) {
 		c.email = true
@@ -386,5 +417,91 @@ func TestARefusalReleasesWhatItAlreadyReserved(t *testing.T) {
 	}
 	if got := budgetTotal(h, "authn:email-global:"); got != 1 {
 		t.Errorf("the deployment budget holds %v count(s), want the accepted send's 1", got)
+	}
+}
+
+// TestARefundDoesNotRecreateAnExpiredWindow holds the ruled refund shape: a
+// count is given back by reading the key and swapping the value, never by a
+// negative increment. The send opens the budget keys when it reserves them; if
+// it then outlives the window before failing certifiably, those keys are gone
+// when the refund runs. The refund must leave them gone, not recreate them at
+// zero or below with a fresh expiry, and the window that follows must admit
+// exactly its declared allowance.
+func TestARefundDoesNotRecreateAnExpiredWindow(t *testing.T) {
+	var h *harness
+	sender := &steppingEmail{}
+	sender.send = func() error {
+		// The window the send opened closes while the carrier has the message.
+		h.clockNow = h.clockNow.Add(25 * time.Hour)
+		return errors.New("the carrier refused the message")
+	}
+	h = newHarness(t, func(c *config) {
+		c.email = true
+		c.mutateDeps = func(d *selfservice.Deps) { d.EmailSender = sender }
+	})
+	h.settings.numbers = map[string]int{
+		budgetAddressHourly: 1, budgetAddressDaily: 1,
+		budgetAccountHourly: 1000, budgetAccountDaily: 1000,
+		budgetSourceHourly: 1000, budgetSourceDaily: 1000,
+		budgetGlobalHourly: 1000,
+	}
+
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("the send past the window answered %d %s, want 503", w.Code, w.Body)
+	}
+	// Every count the send reserved belongs to a window that has closed. A refund
+	// that recreated one would leave a key behind; the read-and-swap leaves none.
+	for _, prefix := range []string{"authn:email-address:", "authn:email-account:", "authn:email-global:"} {
+		if hasKey(h, prefix) {
+			t.Errorf("the refund recreated an expired %s key", strings.TrimSuffix(prefix, ":"))
+		}
+		if got := budgetTotal(h, prefix); got != 0 {
+			t.Errorf("the expired %s window holds %v count(s), want none", strings.TrimSuffix(prefix, ":"), got)
+		}
+	}
+
+	// The window that follows admits its declared allowance and not the extra one
+	// a recreated negative count would have minted: one send goes through and the
+	// next in the same hour is refused.
+	sender.send = func() error { return nil }
+	h.reauthenticate()
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusOK {
+		t.Fatalf("the first send of the new window answered %d %s, want 200", w.Code, w.Body)
+	}
+	h.clockNow = h.clockNow.Add(2 * time.Minute)
+	h.reauthenticate()
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("the second send of the new window answered %d %s, want the address 429", w.Code, w.Body)
+	}
+}
+
+// TestARefundThatCannotBeWrittenStaysSpent holds the refund's failure branch: a
+// count that cannot be given back is left spent, so the budget under-counts a
+// send rather than inventing one. The failed channel still answers 503, and the
+// next attempt meets the count the refund could not return.
+func TestARefundThatCannotBeWrittenStaysSpent(t *testing.T) {
+	h := budgetHarness(t, map[string]int{
+		budgetAddressHourly: 1, budgetAddressDaily: 200,
+		budgetAccountHourly: 60, budgetAccountDaily: 1000,
+		budgetSourceHourly: 30, budgetSourceDaily: 100,
+		budgetGlobalHourly: 1000,
+	})
+	h.email.err = errors.New("the carrier refused the message")
+	h.email.certain = true
+	h.kv.casErr = errors.New("the store is unavailable")
+
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("the failed send answered %d %s, want 503", w.Code, w.Body)
+	}
+	if got := budgetTotal(h, "authn:email-address:"); got != 2 {
+		t.Errorf("the address budgets hold %v count(s), want the failed send's hourly and daily count kept", got)
+	}
+
+	// The count stayed spent, so the retry is refused by the budget rather than
+	// refunded twice.
+	h.kv.casErr = nil
+	h.email.err = nil
+	if w := h.post("/identifiers", addBody("email", "ada@example.com")); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("the retry answered %d %s, want the kept budget's 429", w.Code, w.Body)
 	}
 }
