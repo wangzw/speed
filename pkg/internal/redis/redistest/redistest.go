@@ -26,8 +26,12 @@ package redistest
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net"
 	"os"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -205,27 +209,65 @@ func leaseKey(n int) string { return "redistest:lease:" + strconv.Itoa(n) }
 func requireServer(t *testing.T) {
 	t.Helper()
 	if err := waitReady(); err != nil {
-		t.Fatalf("redistest: the Redis test server at %s did not answer within %s: %v\n"+
+		t.Fatalf("redistest: the Redis test server at %s did not answer (the wait is bounded at %s): %v\n"+
 			"run `make deps-up` from the repository root to bring the stack up", address(), readyTimeout, err)
 	}
 }
 
-// waitReady pings the server until it answers or the bound is up.
+// waitReady pings the server until it answers, the ping fails for a reason the
+// wait cannot clear, or the bound is up.
 func waitReady() error {
-	deadline := time.Now().Add(readyTimeout)
-	var last error
-	for {
+	return waitReadyUntil(time.Now().Add(readyTimeout), readyInterval, func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
 		client := redis.NewClient(&redis.Options{Addr: address()})
-		last = client.Ping(ctx).Err()
-		_ = client.Close()
-		cancel()
-		if last == nil {
+		defer func() { _ = client.Close() }()
+		return client.Ping(ctx).Err()
+	})
+}
+
+// waitReadyUntil runs attempt until it succeeds, returns an error that is not
+// about the connection, or reaches the deadline.
+//
+// A connection-level failure is what a server that is still starting answers
+// with — the published port is not listening yet, or it takes the connection
+// and closes it before it is serving — so it is retried. Anything else is a
+// server that answered but is not going to start answering differently, and it
+// is reported at once. attempt and interval are parameters so the loop can be
+// exercised without a server.
+func waitReadyUntil(deadline time.Time, interval time.Duration, attempt func() error) error {
+	for {
+		err := attempt()
+		if err == nil {
 			return nil
 		}
-		if time.Now().After(deadline) {
-			return last
+		if !retryableConnectionError(err) || !time.Now().Before(deadline) {
+			return err
 		}
-		time.Sleep(readyInterval)
+		time.Sleep(interval)
 	}
+}
+
+// retryableConnectionError reports whether err is a failure of the connection
+// itself, the kind a server that is still coming up produces before it serves.
+//
+// It is an allowlist of the kernel's connection-level refusals and timeouts
+// rather than "any error from a ping": the client reports an authentication
+// failure or a malformed address through the same call, and neither becomes
+// ready by waiting. A server reply — including one that says the server is
+// still loading its dataset — is a reply rather than a failed connection, and
+// it ends the wait.
+func retryableConnectionError(err error) bool {
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return true
+	case errors.Is(err, syscall.ECONNREFUSED), errors.Is(err, syscall.ECONNRESET),
+		errors.Is(err, syscall.ECONNABORTED), errors.Is(err, syscall.EPIPE),
+		errors.Is(err, syscall.ETIMEDOUT):
+		return true
+	case errors.Is(err, os.ErrDeadlineExceeded):
+		return true
+	}
+	var timeout net.Error
+	return errors.As(err, &timeout) && timeout.Timeout()
 }
