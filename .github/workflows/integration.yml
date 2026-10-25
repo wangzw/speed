@@ -1,18 +1,26 @@
 # The integration cases, on a schedule.
 #
 # They need PostgreSQL, Redis, NATS and memcached, which the compose file at the
-# repository root declares; `make test-integration` brings that stack up itself
-# and then runs every module's tagged cases. That is why this file carries no
-# command list of its own, exactly as ci.yml does not: the entry points live in
-# the Makefile, and a leg added there runs here without this file changing.
+# repository root declares. `make test-integration` brings that stack up itself,
+# on ports it allocates for this checkout, and then runs every module's tagged
+# cases. That is why this file carries no command list of its own, exactly as
+# ci.yml does not: the entry points live in the Makefile, and a leg added there
+# runs here without this file changing.
 #
 # They are not part of `make check`, and so not part of what gates a commit:
 # they are slower by orders of magnitude, and every case that needs no server is
 # already run on every push. This workflow is the periodic leg that covers the
 # rest.
 #
-# The cron is off the hour on purpose. The repository has no other scheduled
-# job, so this is politeness to the shared runners rather than a rule of its own.
+# This job runs on the organization's self-hosted runner group, labelled
+# `self-hosted-runners`, because hosted GitHub Actions runners are not
+# available to this account. The group is maintained outside this repository.
+# Besides what .mise.toml pins (go, node, pnpm, python), a runner has to
+# provide docker with the compose plugin. A job that stays queued instead of
+# failing means no runner of that label is online, or the runner group does
+# not grant this repository.
+#
+# The cron is off the hour on purpose, like e2e.yml's and browser.yml's.
 
 name: integration
 
@@ -26,7 +34,7 @@ permissions:
 
 jobs:
   integration:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-runners
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: jdx/mise-action@v4.3.0
