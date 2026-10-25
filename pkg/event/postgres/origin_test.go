@@ -16,11 +16,13 @@ import (
 
 // deliveredMarked reports whether replica has recorded the outbox entry
 // carrying identifier as delivered to its subscribers. One drain reads the
-// entries it owes in identifier order and marks each after handing it over, so
-// the mark of the entry with the highest identifier means the pass that would
-// have delivered every earlier entry has ended. It is the source-side fact a
-// case waits on: the count taken afterwards cannot be changed by a delivery
-// still to come from that pass.
+// entries it owes in the order they were staged — the outbox row id, not the
+// event identifier, whose UUIDv7 values within one millisecond are in no
+// particular order — and marks each after handing it over. The mark of the
+// entry staged last therefore means the pass that would have delivered every
+// row staged before it has ended. It is the source-side fact a case waits on:
+// the count taken afterwards cannot be changed by a delivery still to come
+// from that pass.
 func deliveredMarked(t *testing.T, ctx context.Context, b *bus, identifier string) bool {
 	t.Helper()
 	var marked bool
