@@ -114,7 +114,10 @@ func (r *routes) swap(c *call, token string, old []byte, rec record) bool {
 // recordSends folds a method's or factor's send report into the record. It
 // returns false and ends the flow when the report overstates what the call was
 // allowed to send, which would widen the per-flow limit: the record is swapped
-// to its tombstone and the request is answered as the method's outage.
+// to its tombstone and the request is answered as the method's outage. A report
+// is also what spends the source address's allowance, so the pre-throttle counts
+// verification messages rather than flow starts; a call that sent nothing
+// spends nothing.
 func (r *routes) recordSends(c *call, token string, raw []byte, rec *record, got authn.Step) bool {
 	n := step.SendsOf(got)
 	if n < 0 {
@@ -127,6 +130,9 @@ func (r *routes) recordSends(c *call, token string, raw []byte, rec *record, got
 		failed.State = stateFailed
 		_, _ = r.advance(c.ctx, token, raw, failed)
 		c.unavailable()
+		return false
+	}
+	if n > 0 && !r.allowSends(c, n) {
 		return false
 	}
 	rec.Sends += n

@@ -23,9 +23,6 @@ const (
 // in the browser does not stand in the way of logging in.
 func (r *routes) startFlow(ctx context.Context, in startInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
-	if !r.ipAllow(c) {
-		return c.result()
-	}
 	if _, ok := r.method(in.Method); !ok {
 		c.fail(mount.CodeBadRequest)
 		return c.result()
@@ -382,16 +379,21 @@ func checkFields(fields map[string]string, maxBytes int) error {
 	return nil
 }
 
-// ipAllow applies the source-address pre-throttle when it is on. A counter that
-// cannot be read skips the layer and writes a Warn, because the layer is only a
-// coarse pre-throttle and the authority is the failure back-off in the database.
-func (r *routes) ipAllow(c *call) bool {
+// allowSends applies the source-address pre-throttle to the n verification
+// messages one call sent. It counts the sends against the request address's
+// per-minute bucket and reports false, with the reply already set to throttled,
+// when the count passes the limit. A call that sends nothing does not reach it,
+// so opening a flow costs no allowance. A layer that is off (limit 0) allows
+// without counting. A counter that cannot be read skips the layer and writes a
+// Warn, because the layer is only a coarse source-address load shield and the
+// authority is the failure back-off in the database.
+func (r *routes) allowSends(c *call, n int) bool {
 	limit := r.settings.ipLimit()
 	if limit <= 0 {
 		return true
 	}
 	key := "authn:ip:" + c.clientIP + ":" + r.clock.Now().Format("200601021504")
-	count, err := r.kv.IncrByFloatWithTTL(c.ctx, key, 1, time.Minute)
+	count, err := r.kv.IncrByFloatWithTTL(c.ctx, key, float64(n), time.Minute)
 	if err != nil {
 		r.logger.Warn(ModuleName+": the source-address pre-throttle could not count, so it is skipped",
 			"cause", err.Error())

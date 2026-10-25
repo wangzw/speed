@@ -342,21 +342,96 @@ func TestAnActiveFactorRaisesTheLinkRequirement(t *testing.T) {
 }
 
 // TestTheSourceAddressPreThrottleHolds holds the boundary of the source-address
-// pre-throttle: the requests up to the limit are served and the one past it is
+// pre-throttle: the sends up to the limit are served and the one past it is
 // throttled.
 func TestTheSourceAddressPreThrottleHolds(t *testing.T) {
 	m := &fakeMethod{name: "password"}
-	m.begin = func(authn.Start) (authn.Step, error) { return authn.StepPrompt("credentials", nil), nil }
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("code", nil).WithSends(1), nil
+	}
 	r := newRig(t, m)
 	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "2"})
 
 	for i := 1; i <= 2; i++ {
 		if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
-			t.Fatalf("request %d answered %d, want 200: %s", i, rec.Code, rec.Body.String())
+			t.Fatalf("send %d answered %d, want 200: %s", i, rec.Code, rec.Body.String())
 		}
 	}
 	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusTooManyRequests {
-		t.Errorf("the request past the limit answered %d, want 429: %s", rec.Code, rec.Body.String())
+		t.Errorf("the send past the limit answered %d, want 429: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestTheSourceAddressPreThrottleCountsSendsNotStarts holds that the allowance
+// is spent by a verification message, not by opening a flow: a flow that sends
+// nothing spends nothing, and a flow that sends a code spends one.
+func TestTheSourceAddressPreThrottleCountsSendsNotStarts(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(s authn.Start) (authn.Step, error) {
+		if s.Fields["phone"] == "" {
+			return authn.StepPrompt("phone", nil), nil
+		}
+		return authn.StepPrompt("code", nil).WithSends(1), nil
+	}
+	r := newRig(t, m)
+	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "1"})
+
+	// Opening two flows that send nothing must not spend the allowance.
+	for i := 1; i <= 2; i++ {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
+			t.Fatalf("flow %d that sends nothing answered %d, want 200: %s", i, rec.Code, rec.Body.String())
+		}
+	}
+	// A flow that sends one code spends the one available send.
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows",
+		`{"method":"password","input":{"phone":"+15550001111"}}`); rec.Code != http.StatusOK {
+		t.Fatalf("the flow that sends one code answered %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows",
+		`{"method":"password","input":{"phone":"+15550001111"}}`); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("the code past the limit answered %d, want 429: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestTheSourceAddressPreThrottleCountsEveryReportedSend holds that the counter
+// follows the method's report: a call that reports two sends spends two.
+func TestTheSourceAddressPreThrottleCountsEveryReportedSend(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("code", nil).WithSends(2), nil
+	}
+	r := newRig(t, m)
+	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "2"})
+
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
+		t.Fatalf("the flow whose call reports two sends answered %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("the second two-send flow answered %d, want 429: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestAnUnreadablePreThrottleCounterIsSkipped holds the layer's fail-open: a
+// counter that cannot be read skips it and writes a Warn, so the sends are still
+// served.
+func TestAnUnreadablePreThrottleCounterIsSkipped(t *testing.T) {
+	m := &fakeMethod{name: "password"}
+	m.begin = func(authn.Start) (authn.Step, error) {
+		return authn.StepPrompt("code", nil).WithSends(1), nil
+	}
+	r := newRig(t, m)
+	var buf bytes.Buffer
+	r.p.logger = slog.New(slog.NewTextHandler(&buf, nil))
+	r.p.settings = readerWith(map[string]string{ModuleName + "." + ipLimitKey: "1"})
+	r.kv.failIncrPrefix = "authn:ip:"
+
+	for i := 1; i <= 3; i++ {
+		if rec := r.send(http.MethodPost, "/api/v1/auth/flows", `{"method":"password"}`); rec.Code != http.StatusOK {
+			t.Fatalf("send %d with an unreadable counter answered %d, want 200: %s", i, rec.Code, rec.Body.String())
+		}
+	}
+	if !strings.Contains(buf.String(), "could not count") {
+		t.Errorf("the skipped layer wrote no Warn: %s", buf.String())
 	}
 }
 
