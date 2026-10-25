@@ -8,7 +8,8 @@
  * on the button's accessible name (the standards' icon-only rule) and the
  * badge glyph is hidden from the accessibility tree, so assistive
  * technology reads "Notifications: 3 unread" once rather than a stray
- * "3".
+ * "3". Above BADGE_MAX the badge prints "99+" and the name carries that
+ * same text, so the visible badge stays inside the accessible name.
  *
  * The button is controlled: `onClick` is the host's navigation to the
  * notification surface -- the bell carries no routing itself, so it sits
@@ -38,8 +39,11 @@ export function NotificationBell({ onClick, icon }: NotificationBellProps) {
   const { t } = useNotificationUiTranslation()
   const { data } = useNotificationUnreadCount()
   const count = data ?? 0
+  // The badge prints "99+" above the cap, and the accessible name carries the
+  // same text so the visible badge stays part of the name (WCAG 2.5.3).
+  const shownCount = count > BADGE_MAX ? `${BADGE_MAX}+` : String(count)
   const label =
-    count > 0 ? t('bell.labelWithCount', { n: count }) : t('bell.label')
+    count > 0 ? t('bell.labelWithCount', { n: shownCount }) : t('bell.label')
   return (
     <IconButton
       color="inherit"
@@ -51,9 +55,7 @@ export function NotificationBell({ onClick, icon }: NotificationBellProps) {
         max={BADGE_MAX}
         invisible={count === 0}
         badgeContent={
-          <span aria-hidden="true">
-            {count > BADGE_MAX ? `${BADGE_MAX}+` : count}
-          </span>
+          <span aria-hidden="true">{shownCount}</span>
         }
       >
         {icon ?? <BellIcon />}
