@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -23,6 +24,9 @@ const (
 // in the browser does not stand in the way of logging in.
 func (r *routes) startFlow(ctx context.Context, in startInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
+	if !r.admitSends(c) {
+		return c.result()
+	}
 	if _, ok := r.method(in.Method); !ok {
 		c.fail(mount.CodeBadRequest)
 		return c.result()
@@ -176,6 +180,9 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 		delivery = deliveryToken
 	}
 
+	if !r.admitSends(c) {
+		return c.result()
+	}
 	token, err := newFlowToken()
 	if err != nil {
 		r.fail(c, err)
@@ -379,21 +386,55 @@ func checkFields(fields map[string]string, maxBytes int) error {
 	return nil
 }
 
-// allowSends applies the source-address pre-throttle to the n verification
-// messages one call sent. It counts the sends against the request address's
-// per-minute bucket and reports false, with the reply already set to throttled,
-// when the count passes the limit. A call that sends nothing does not reach it,
-// so opening a flow costs no allowance. A layer that is off (limit 0) allows
-// without counting. A counter that cannot be read skips the layer and writes a
-// Warn, because the layer is only a coarse source-address load shield and the
+// admitSends is the read-only half of the source-address pre-throttle, checked
+// at a request's entry before any method runs: a bucket already at its limit
+// refuses the request with 429, so the call that would cross the limit sends
+// nothing. It charges nothing itself; chargeSends adds what a call reports. A
+// layer that is off (limit 0), an empty bucket and a counter that cannot be read
+// all admit. A counter that cannot be read skips the layer and writes a Warn,
+// because the layer is only a coarse source-address load shield and the
 // authority is the failure back-off in the database.
-func (r *routes) allowSends(c *call, n int) bool {
+func (r *routes) admitSends(c *call) bool {
 	limit := r.settings.ipLimit()
 	if limit <= 0 {
 		return true
 	}
-	key := "authn:ip:" + c.clientIP + ":" + r.clock.Now().Format("200601021504")
-	count, err := r.kv.IncrByFloatWithTTL(c.ctx, key, float64(n), time.Minute)
+	value, present, err := r.kv.Get(c.ctx, r.sourceBucketKey(c))
+	if err != nil {
+		r.logger.Warn(ModuleName+": the source-address pre-throttle could not read its count, so it is skipped",
+			"cause", err.Error())
+		return true
+	}
+	if !present {
+		return true
+	}
+	count, err := strconv.ParseFloat(string(value), 64)
+	if err != nil {
+		// A value this layer did not write as a count: skip the layer rather
+		// than guess at it, and say so.
+		r.logger.Warn(ModuleName+": the source-address pre-throttle read a count it could not parse, so it is skipped",
+			"cause", err.Error())
+		return true
+	}
+	if count >= float64(limit) {
+		c.throttled(0)
+		return false
+	}
+	return true
+}
+
+// chargeSends charges the n verification messages one call sent against the
+// request address's per-minute bucket and reports false, with the reply already
+// set to throttled, when the count passes the limit. A call is charged for what
+// it reports, so a call that sent nothing spends nothing and one that reports
+// two sends spends two. A layer that is off (limit 0) charges nothing. A counter
+// that cannot be written skips the layer and writes a Warn, as admitSends does.
+func (r *routes) chargeSends(c *call, n int) bool {
+	limit := r.settings.ipLimit()
+	if limit <= 0 {
+		return true
+	}
+	count, err := r.kv.IncrByFloatWithTTL(c.ctx, r.sourceBucketKey(c), float64(n), time.Minute)
 	if err != nil {
 		r.logger.Warn(ModuleName+": the source-address pre-throttle could not count, so it is skipped",
 			"cause", err.Error())
@@ -404,6 +445,11 @@ func (r *routes) allowSends(c *call, n int) bool {
 		return false
 	}
 	return true
+}
+
+// sourceBucketKey is one source address's one-minute message bucket.
+func (r *routes) sourceBucketKey(c *call) string {
+	return "authn:ip:" + c.clientIP + ":" + r.clock.Now().Format("200601021504")
 }
 
 // isSessionGone reports whether a session error means the session is not usable.

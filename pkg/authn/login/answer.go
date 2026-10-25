@@ -67,6 +67,11 @@ func (r *routes) answer(ctx context.Context, in answerInput, meta *speedhttp.Met
 		r.fail(c, err)
 		return c.result()
 	}
+	// The source-address allowance is checked before any step can reach a
+	// method, so an answer from a source already at its limit sends nothing.
+	if !r.admitSends(c) {
+		return c.result()
+	}
 
 	switch in.Step {
 	case stepAnswer:

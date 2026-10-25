@@ -66,8 +66,8 @@ const (
 	minCallBudget = time.Second
 	maxCallBudget = 60 * time.Second
 
-	// maxIPLimit is the most source-address pre-throttle starts per minute, the
-	// setting's own unit.
+	// maxIPLimit is the most verification messages the source-address
+	// pre-throttle charges a source per minute, the setting's own unit.
 	maxIPLimit = 10000
 
 	// The domain of the self-service email-code lifetime and of the interval
@@ -314,8 +314,8 @@ func settingsSchema() settings.Schema {
 					deliveryModesTextInDomain),
 			},
 			ipLimitKey: {
-				Description: "a coarse per-flow token starts per minute from one source address, zero " +
-					"turning the layer off",
+				Description: "a coarse cap on the verification messages one source address may trigger per " +
+					"minute, zero turning the layer off",
 				Domain: settings.DomainOf("whole numbers from 0 to 10000", ipLimitInDomain),
 			},
 			emailCodeTTLKey: {

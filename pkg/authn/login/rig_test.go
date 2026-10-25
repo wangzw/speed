@@ -34,6 +34,10 @@ type fakeKV struct {
 	// prefix only, so a case can make one budget's counter fail while the other
 	// succeeds.
 	failIncrPrefix string
+	// failGetPrefix arms a failure of Get for the keys under one prefix only,
+	// so a case can make one layer's counter unreadable while the flow store
+	// stays usable.
+	failGetPrefix string
 }
 
 func newKV() *fakeKV {
@@ -59,6 +63,9 @@ func (k *fakeKV) Get(_ context.Context, key string) ([]byte, bool, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.failing {
+		return nil, false, errKV
+	}
+	if k.failGetPrefix != "" && strings.HasPrefix(key, k.failGetPrefix) {
 		return nil, false, errKV
 	}
 	if !k.live(key) {

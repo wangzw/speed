@@ -115,9 +115,10 @@ func (r *routes) swap(c *call, token string, old []byte, rec record) bool {
 // returns false and ends the flow when the report overstates what the call was
 // allowed to send, which would widen the per-flow limit: the record is swapped
 // to its tombstone and the request is answered as the method's outage. A report
-// is also what spends the source address's allowance, so the pre-throttle counts
-// verification messages rather than flow starts; a call that sent nothing
-// spends nothing.
+// is also what spends the source address's allowance: the pre-throttle counts
+// verification messages rather than flow starts, and a call that sent nothing
+// spends nothing. admitSends is the read-only check at request entry that keeps
+// a source already at its limit from reaching the method and sending at all.
 func (r *routes) recordSends(c *call, token string, raw []byte, rec *record, got authn.Step) bool {
 	n := step.SendsOf(got)
 	if n < 0 {
@@ -132,7 +133,7 @@ func (r *routes) recordSends(c *call, token string, raw []byte, rec *record, got
 		c.unavailable()
 		return false
 	}
-	if n > 0 && !r.allowSends(c, n) {
+	if n > 0 && !r.chargeSends(c, n) {
 		return false
 	}
 	rec.Sends += n
