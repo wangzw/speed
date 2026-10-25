@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/config"
 	jsonformat "github.com/vislake/speed/pkg/config/format/json"
 	filesource "github.com/vislake/speed/pkg/config/source/file"
@@ -43,6 +44,7 @@ var (
 	_ i18n.Localizer           = (*stubLocalizer)(nil)
 	_ event.Bus                = (*stubBus)(nil)
 	_ mail.Sender              = (*stubMailSender)(nil)
+	_ authn.Accounts           = (*stubAccounts)(nil)
 )
 
 // stubQueue is a stand-in submission and registration face. It records every
@@ -324,6 +326,124 @@ func (b *stubBus) events() []event.Event {
 	return append([]event.Event(nil), b.published...)
 }
 
+// stubAccounts is a stand-in account store. It answers the two reads the
+// pipeline makes — the recipient's identifiers and the owner of a destination —
+// and leaves every other method of the interface unused. An account an
+// identifier is asked about that was never bound reads as absent, the way the
+// real store reports an unknown or tombstoned account.
+type stubAccounts struct {
+	mu      sync.Mutex
+	byID    map[authn.AccountID][]authn.Identifier
+	idsErr  error
+	lookErr error
+}
+
+func newStubAccounts() *stubAccounts {
+	return &stubAccounts{byID: map[authn.AccountID][]authn.Identifier{}}
+}
+
+// register records a live account that carries no identifier.
+func (s *stubAccounts) register(id authn.AccountID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.byID[id]; !ok {
+		s.byID[id] = nil
+	}
+}
+
+// bind records one identifier for an account. A value is stored normalized, the
+// way the account store keeps it.
+func (s *stubAccounts) bind(id authn.AccountID, kind authn.IdentifierKind, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.byID[id]; !ok {
+		s.byID[id] = nil
+	}
+	s.byID[id] = append(s.byID[id], authn.Identifier{
+		ID:    string(id) + ":" + value,
+		Kind:  kind,
+		Value: value,
+	})
+}
+
+func (s *stubAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]authn.Identifier, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.idsErr != nil {
+		return nil, s.idsErr
+	}
+	ids, ok := s.byID[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", authn.ErrAccountNotFound, id)
+	}
+	return append([]authn.Identifier(nil), ids...), nil
+}
+
+func (s *stubAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, value string) (authn.AccountID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lookErr != nil {
+		return "", s.lookErr
+	}
+	normalized, err := stubNormalize(kind, value)
+	if err != nil {
+		return "", err
+	}
+	for id, ids := range s.byID {
+		for _, identifier := range ids {
+			if identifier.Kind == kind && identifier.Value == normalized {
+				return id, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("%w: the %s identifier belongs to no account", authn.ErrAccountNotFound, kind)
+}
+
+// stubNormalize is the account store's normalization for the two kinds an
+// external channel addresses: an email address is trimmed and lower-cased, and a
+// phone number must already be E.164. It mirrors the shapes the store writes so
+// a case can hold that the pipeline compares normalized values.
+func stubNormalize(kind authn.IdentifierKind, value string) (string, error) {
+	switch kind {
+	case authn.IdentifierEmail:
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if !strings.Contains(normalized, "@") {
+			return "", fmt.Errorf("%w: an email address holds an @", authn.ErrInvalidIdentifier)
+		}
+		return normalized, nil
+	case authn.IdentifierPhone:
+		if !strings.HasPrefix(value, "+") || len(value) < 8 {
+			return "", fmt.Errorf("%w: a phone number is E.164", authn.ErrInvalidIdentifier)
+		}
+		return value, nil
+	}
+	return "", fmt.Errorf("%w: the kind is not one of the two an external channel addresses", authn.ErrInvalidIdentifier)
+}
+
+func (s *stubAccounts) Get(context.Context, authn.AccountID) (authn.Account, error) {
+	return authn.Account{}, authn.ErrAccountNotFound
+}
+
+func (s *stubAccounts) ByExternal(context.Context, string, string) (authn.AccountID, error) {
+	return "", authn.ErrAccountNotFound
+}
+
+func (s *stubAccounts) IdentifiersMany(context.Context, []authn.AccountID) (map[authn.AccountID][]authn.Identifier, error) {
+	return nil, nil
+}
+
+func (s *stubAccounts) Externals(context.Context, authn.AccountID) ([]authn.ExternalBinding, error) {
+	return nil, nil
+}
+
+func (s *stubAccounts) List(context.Context, authn.AccountQuery) ([]authn.Account, string, error) {
+	return nil, "", nil
+}
+
+func (s *stubAccounts) ListServiceSecrets(context.Context, authn.AccountID) ([]authn.ServiceSecretInfo, error) {
+	return nil, nil
+}
+
 // standIn is a module that delivers instance for the tokens named, the way
 // another module delivers its capability exclusively.
 func standIn(name string, instance any, tokens ...core.Token) core.Module {
@@ -473,6 +593,7 @@ func (h host) drive(t *testing.T, action func(ctx context.Context, reg *core.Reg
 		modules = append(modules, standIn("stand-in.queue", newStubQueue(), (*jobs.Queue)(nil), (*jobs.Handlers)(nil)))
 		modules = append(modules, standIn("stand-in.prefs", newDebugPrefs(), (*notification.Preferences)(nil)))
 	}
+	modules = append(modules, standIn("stand-in.accounts", newStubAccounts(), (*authn.Accounts)(nil)))
 	if !h.noInbox {
 		modules = append(modules, standIn("stand-in.inbox", newStubInbox(), (*notification.Inbox)(nil)))
 	}
@@ -540,6 +661,8 @@ type rig struct {
 	local   *stubLocalizer
 	bus     *stubBus
 	catalog tenant.Catalog
+	// accounts is the account store stub the ownership rule reads.
+	accounts *stubAccounts
 	// settings is the settings store the assembly's settings module delivers, so
 	// a case can write a budget limit and hold that the pipeline reads it.
 	settings settings.Store
@@ -589,6 +712,12 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 	inbox := newStubInbox()
 	local := newStubLocalizer()
 	bus := &stubBus{}
+	accounts := newStubAccounts()
+	// The default accounts carry the two identifiers a dispatch in these cases
+	// addresses, so a destination that names one passes the ownership rule.
+	accounts.bind("u1", authn.IdentifierEmail, "u1@example.test")
+	accounts.bind("u1", authn.IdentifierPhone, "+15550001")
+	accounts.bind("u2", authn.IdentifierEmail, "u2@example.test")
 
 	modules := []core.Module{sqlite.Module(), log.Module(), catalog.Module(), kvmemory.Module(), settings.Module(), Module()}
 	for name, spec := range h.specs {
@@ -600,6 +729,7 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 		standIn("stand-in.inbox", inbox, (*notification.Inbox)(nil)),
 		standIn("stand-in.localizer", local, (*i18n.Localizer)(nil)),
 		standIn("stand-in.bus", bus, (*event.Bus)(nil)),
+		standIn("stand-in.accounts", accounts, (*authn.Accounts)(nil)),
 	)
 	var mailSender *stubMailSender
 	if h.mail {
@@ -663,6 +793,7 @@ func newRig(t *testing.T, configure func(*host)) *rig {
 
 	r := &rig{
 		t: t, queue: queue, prefs: prefs, inbox: inbox, local: local, bus: bus,
+		accounts:   accounts,
 		mailSender: mailSender, smsRegistry: smsRegistry, smsSender: smsSender,
 	}
 

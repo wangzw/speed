@@ -56,7 +56,7 @@ type Dispatcher interface {
 
 `Inbox`、`Preferences` 与 `Dispatcher` 的收件人一律**显式传参**：投递是无请求路径，它自己知道收件人；路由从请求上下文取出收件人再传进来。
 
-`Dispatcher.Dispatch` 是发出派发的模块唯一要碰的入口：发出方把 `notification.TypeSpec` 放进自己模块的 `Resources` 声明类型，构造一条 `Dispatch`，交给它；它按分类法校验这条派发的类型在册、收件人类别为 `user`、语言非空、参数不越出该类型的白名单，把这条派发序列化成一次投递作业入队，返回作业标识。它**只入队、不出站**：不渲染、不投递、不写任何账。投递流水线的 handler 在消费这条作业时按分类法与偏好再校验一次并真正投递。
+`Dispatcher.Dispatch` 是发出派发的模块唯一要碰的入口：发出方把 `notification.TypeSpec` 放进自己模块的 `Resources` 声明类型，构造一条 `Dispatch`，交给它；它按分类法校验这条派发的类型在册、收件人类别为 `user`、语言非空、参数不越出该类型的白名单，在派发带外部渠道目的地时经 `authn.Accounts` 核对目的地属于收件人，按有效渠道计投递预算，把这条派发序列化成一次投递作业入队，返回作业标识。它**只入队、不出站**：不渲染、不投递、不写任何账。投递流水线的 handler 在消费这条作业时按分类法与偏好再校验一次并真正投递。
 
 取用写作 `core.Resolve[notification.Inbox](reg)`、`core.Resolve[notification.Preferences](reg)`、`core.Resolve[notification.Dispatcher](reg)`；依赖声明写作 `core.Requirement{Token: (*notification.Inbox)(nil), Optional: true}` 一类。
 
@@ -146,10 +146,10 @@ type Message struct {
 | `pkg/notification` | 不登记 | 接口包与公共类型：`Channel`、`TypeSpec`、`Recipient`、`Dispatch`、`Preference`、`Message`、`Inbox`、`Preferences`、`Dispatcher` 与全部哨兵 | — | — |
 | `pkg/notification/inbox` | `notification.inbox` | 站内信收件箱：`in_app_messages` 表、写行、查、未读数、标记已读 | `(*notification.Inbox)(nil)` 排他 | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*event.Bus)(nil)`、`(*log.Logger)(nil)`、`(*http.Router)(nil)`、`(*i18n.Localizer)(nil)` |
 | `pkg/notification/preferences` | `notification.preferences` | 按类型的渠道偏好矩阵 + 类型分类法的消费点 | `(*notification.Preferences)(nil)` 排他 | 必需 `(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`；可选 `(*http.Router)(nil)`、`(*log.Logger)(nil)`、`(*i18n.Localizer)(nil)` |
-| `pkg/notification/delivery` | `notification.delivery` | 出站投递流水线：`Dispatch` 校验、计投递预算并入队、消费 `jobs.Handler`、逐渠道发送、去重落账 | `(*notification.Dispatcher)(nil)` 排他 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*kv.KV)(nil)`；可选 `(*settings.Store)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
+| `pkg/notification/delivery` | `notification.delivery` | 出站投递流水线：`Dispatch` 校验、核对目的地归属、计投递预算并入队、消费 `jobs.Handler`、逐渠道发送、去重落账 | `(*notification.Dispatcher)(nil)` 排他 | 必需 `(*jobs.Queue)(nil)`、`(*jobs.Handlers)(nil)`、`(*db.Database)(nil)`、`(*tenant.Catalog)(nil)`、`(*notification.Preferences)(nil)`、`(*notification.Inbox)(nil)`、`(*i18n.Localizer)(nil)`、`(*authn.Accounts)(nil)`、`(*kv.KV)(nil)`；可选 `(*settings.Store)(nil)`、`(*mail.Sender)(nil)`、`(*sms.Registry)(nil)`、`(*sms.Sender)(nil)` |
 | `pkg/notification/stream` | `notification.stream` | SSE 推送：每副本一个 Hub | 不交付功能接口（挂 `/stream` 路由） | 必需 `(*event.Bus)(nil)`；可选 `(*http.Router)(nil)`、`(*log.Logger)(nil)` |
 
-上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每条收件人的生效渠道——提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送——经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题（见「分类法与取材域」）。投递预算的计数落在 `(*kv.KV)(nil)` 的计数器上，各上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的「投递预算」。
+上表是各模块的切分与它们的构造期依赖。**`notification.delivery` 与 `notification.preferences` 是类型分类法的两处消费点**，各自在 `New` 里经 `core.Resources[notification.TypeSpec](reg)` 收齐分类法、都取可用集、都不做减法：偏好据以回答 `Types` 与 `Type` 并在写入时校验，投递据以在发送前查类型。投递经 `(*notification.Preferences)(nil)` 读每条收件人的生效渠道——提交时读一次以判定投递预算是否要计，消费作业时再读一次以逐渠道发送——经 `(*notification.Inbox)(nil)` 写站内信行，经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题（见「分类法与取材域」）；提交时另经 `(*authn.Accounts)(nil)` 读收件人的标识符，核对派发携带的目的地是否属于收件人。投递预算的计数落在 `(*kv.KV)(nil)` 的计数器上，各上限由 `(*settings.Store)(nil)` 声明与读取；两者的设计见 [notification.delivery](design-notification-delivery.md) 的「投递预算」。
 
 ### 渠道与可用性
 
@@ -220,10 +220,10 @@ type Message struct {
 | `pkg/settings` | 投递预算上限的声明与读取；`settings.Store` 是投递模块的可选依赖，缺席时读声明默认值 |
 | `pkg/event` | 收件箱创建事件 `notification.inbox.created`：收件箱发布、推送订阅。可选 |
 | `pkg/http` | 路由登记面。可选 |
-| `pkg/authn` | 请求上下文中的已认定身份：handler 经 `authn.FromContext` 取身份，以其账户为收件人；投递模块另用其 `ThrottledError` 与 `ErrUnavailable` 表达可重试的投递预算拒绝 |
+| `pkg/authn` | 请求上下文中的已认定身份：handler 经 `authn.FromContext` 取身份，以其账户为收件人；投递模块另用其 `ThrottledError` 与 `ErrUnavailable` 表达可重试的投递预算拒绝，并经 `Accounts` 的 `Identifiers` 与 `Lookup` 核对派发携带的目的地属于收件人 |
 | `pkg/log` | 可选诊断 |
 
-**依赖方向。** 各模块都 import `pkg/core` 与根包；`notification.delivery` import `pkg/jobs`、`pkg/db`、`pkg/tenant` 的根包，`pkg/i18n`、`pkg/mail`、`pkg/sms`、`pkg/kv`、`pkg/settings` 的根包，并为投递预算的拒绝 import `pkg/authn` 根包的 `ThrottledError` 与 `ErrUnavailable`；`notification.inbox` import `pkg/db`、`pkg/tenant`、`pkg/event`、`pkg/i18n` 与 `pkg/authn`；`notification.stream` import `pkg/event`、`pkg/tenant`、`pkg/http` 与 `pkg/authn`；`notification.preferences` import `pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/config`。本能力**不 import 任何上层功能目录**，也不 import 任何业务模块：它位于底层，任何要发消息的模块引入它，不必背上对方。
+**依赖方向。** 各模块都 import `pkg/core` 与根包；`notification.delivery` import `pkg/jobs`、`pkg/db`、`pkg/tenant` 的根包，`pkg/i18n`、`pkg/mail`、`pkg/sms`、`pkg/kv`、`pkg/settings` 的根包，并经 `pkg/authn` 根包取投递预算拒绝的 `ThrottledError`、`ErrUnavailable` 与目的地归属校验的 `Accounts`；`notification.inbox` import `pkg/db`、`pkg/tenant`、`pkg/event`、`pkg/i18n` 与 `pkg/authn`；`notification.stream` import `pkg/event`、`pkg/tenant`、`pkg/http` 与 `pkg/authn`；`notification.preferences` import `pkg/db`、`pkg/tenant`、`pkg/i18n` 与 `pkg/config`。本能力**不 import 任何上层功能目录**，也不 import 任何业务模块：它位于底层，任何要发消息的模块引入它，不必背上对方。
 
 **渲染经由 i18n 引擎，文案目录归声明它的业务模块。** 一条文案的键形如 `<type_key>.<channel>.<part>`，由**声明该类型的业务模块**以 i18n 目录承载，装配期并入引擎；`notification.delivery` 在投递时按收件人语言经 `(*i18n.Localizer)(nil)` 渲染标题、正文与主题，引擎回落默认语言、再回落键本身，结果永不为空。渲染缝是投递模块的构造期必需依赖。文案的归属与 i18n 的「由产生消息的模块渲染」不冲突：目录归声明方，渲染发生在把文本写出的投递流水线（[design-i18n](../design-i18n.md)）。
 

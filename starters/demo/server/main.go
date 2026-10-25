@@ -354,10 +354,11 @@ var (
 		// notification.preferences.endpoints — so none of them reaches the web
 		// endpoint, whose whole path space the frontend host's catch-all route
 		// covers. The delivery pipeline requires the preference matrix, the
-		// queue and its registration face, the database, the roster and the
-		// message localizer, all of which the baseline names; its mail and sms
-		// seams are optional, so a deployment without them starts and simply
-		// carries no email or sms channel.
+		// queue and its registration face, the database, the roster, the message
+		// localizer, the account store its destination rule reads and the budget
+		// counters, all of which the baseline names; its mail and sms seams are
+		// optional, so a deployment without them starts and simply carries no
+		// email or sms channel.
 		jobsdb.ModuleName,
 		jobsscheduler.ModuleName,
 		notificationinbox.ModuleName,

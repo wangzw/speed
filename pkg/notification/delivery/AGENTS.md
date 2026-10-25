@@ -30,6 +30,7 @@ The dependencies the descriptor requires, non-optionally, are:
 | `(*notification.Preferences)(nil)` | `Effective` answers a recipient's channels. |
 | `(*notification.Inbox)(nil)` | the in-app channel writes through it. |
 | `(*i18n.Localizer)(nil)` | the message text is rendered through it. |
+| `(*authn.Accounts)(nil)` | the recipient's identifiers are read through it, and the account a destination belongs to is looked up through it. |
 | `(*kv.KV)(nil)` | the delivery budgets are counted on its counters. |
 
 The optional dependencies are `(*settings.Store)(nil)`, `(*log.Logger)(nil)`,
@@ -42,6 +43,8 @@ capability is taken up in `New` and named after the module; without it the modul
 keeps the process default logger, as it did before the capability was declared.
 The key-value counters are required and not optional: a budget that cannot count
 would let every dispatch through, which is the direction the requirement forbids.
+The account store is required for the same reason: a destination that cannot be
+held against the recipient's own identifiers would be let through.
 
 The descriptor declares no route and no bus. It names no HTTP entry point — this
 module mounts no route, so declaring one would only carry `pkg/http` into a host's
@@ -66,23 +69,26 @@ file, so nothing here is spent, and the value is never carried across attempts
 either.
 
 **The email destination is a dispatch parameter**, the same `to` the sms channel
-reads: a recipient is an account identifier, and this module reaches no account
-store. A dispatch whose parameters name no `to`, or whose `to` cannot be
+reads. A dispatch whose parameters name no `to`, or whose `to` cannot be
 stringified, fails that channel with `notification.ErrInvalidRequest` and this
-module's own reason, and the carrier is never reached.
+module's own reason, and the carrier is never reached. The destination is not
+free-form: `Dispatch` holds a `to` the dispatch carries against the recipient's
+own identifiers through `authn.Accounts` before the job is queued (see
+[Destination ownership](#destination-ownership)).
 
 ## The two halves
 
-**`Dispatcher.Dispatch` validates, charges the delivery budgets and enqueues.**
-It runs the shape checks (a non-empty `TypeKey`, a recipient whose class is
-`user`, a non-empty `Recipient.UserID`, a non-empty `Locale`), then the taxonomy
-checks (the type is declared, and the parameters do not exceed the type's
-`RecipientVisibleParams` whitelist), resolves the recipient's effective channels
-to decide whether an external send will happen, charges the delivery budgets for
-that, and enqueues one job. It renders no text and writes no ledger. The tenant
-comes from the context; a context with none is refused with the tenant
-capability's own error. A spent budget is a `*authn.ThrottledError` carrying
-`RetryAfter`, and nothing is enqueued.
+**`Dispatcher.Dispatch` validates, holds a destination to the recipient, charges
+the delivery budgets and enqueues.** It runs the shape checks (a non-empty
+`TypeKey`, a recipient whose class is `user`, a non-empty `Recipient.UserID`, a
+non-empty `Locale`), then the taxonomy checks (the type is declared, and the
+parameters do not exceed the type's `RecipientVisibleParams` whitelist), then the
+destination ownership rule when the parameters carry a `to`, resolves the
+recipient's effective channels to decide whether an external send will happen,
+charges the delivery budgets for that, and enqueues one job. It renders no text
+and writes no ledger. The tenant comes from the context; a context with none is
+refused with the tenant capability's own error. A spent budget is a
+`*authn.ThrottledError` carrying `RetryAfter`, and nothing is enqueued.
 
 **The handler consumes the job.** `jobs.db` claims it, enters its tenant and
 hands it over, so the handler's context already carries the tenant. The handler
@@ -134,6 +140,32 @@ The budget is charged per `Dispatch` call, not per distinct logical event: the
 queue's idempotency key settles convergence only at enqueue time, after the
 charge. A caller that can submit can vary the occurrence to create distinct jobs
 anyway, so the budget is the bound and the convergence is not.
+
+## Destination ownership
+
+A dispatch that carries an external destination must carry the recipient's own.
+`Dispatch` reads the recipient's identifiers through `authn.Accounts.Identifiers`
+and, for each kind an external channel can address — `email` and `phone` — asks
+`authn.Accounts.Lookup` which account the destination belongs to. The lookup
+normalises the value the way the account store wrote it, so the rule reuses the
+one normalisation rather than adding a second. A username is a login handle and
+is not a destination.
+
+A destination bound to another account, bound to no account, or named for a
+recipient that holds no address identifier is refused with
+`notification.ErrInvalidRequest`, and nothing is enqueued. A recipient that names
+no live account has no identifiers to own a destination and is refused the same
+way. A failed account read is an error and not a pass.
+
+**What the rule does not cover.** A dispatch with no `to` is not checked: the
+in-app channel needs no destination, and an email or sms dispatch with no `to`
+fails that channel at send time. A `to` that cannot be stringified is likewise
+left to the channel: there is no address to compare. The consuming handler
+re-runs the shape and taxonomy checks but does not read the account store again;
+ownership is the submission seam's rule. The recipient classes are the closed set
+`user` and `external`: `user` is an account and `external` is refused by the
+shape check, so no account-less class reaches the ownership rule; a new
+account-less class would have to decide its own rule.
 
 ## The idempotency key
 
@@ -199,12 +231,13 @@ missing, empty or cannot be stringified fails the channel with
 `notification.ErrInvalidRequest` — no empty string and no placeholder goes onto
 the wire.
 
-**An external channel's destination is a dispatch parameter.** This module
-reaches no account store and takes the destination from nowhere else: a recipient
-is an account identifier to it, not a phone number and not an address. The
-destination therefore travels in the dispatch's parameters under
-`destinationParam` — the constant `"to"`, declared in `render.go` — as an E.164
-number for `sms` and an RFC 5322 address for `email`. A dispatch whose parameters
+**An external channel's destination is a dispatch parameter.** A recipient is an
+account identifier, not a phone number and not an address, so the destination
+travels in the dispatch's parameters under `destinationParam` — the constant
+`"to"`, declared in `render.go` — as an E.164 number for `sms` and an RFC 5322
+address for `email`. The module does not derive it from the account; the account
+store is read only to hold it against the recipient's identifiers (see
+[Destination ownership](#destination-ownership)). A dispatch whose parameters
 name no `to`, or whose `to` cannot be stringified, **fails that channel** with
 `notification.ErrInvalidRequest`, recorded as a `failed` row with this module's
 own reason, and the message never reaches the vendor. `to` is not exempt from
@@ -218,7 +251,7 @@ package, and callers tell them apart with `errors.Is`:
 
 | Sentinel | When |
 |---|---|
-| `ErrInvalidRequest` | an unreadable shape, a parameter that cannot be stringified, a payload that cannot be decoded |
+| `ErrInvalidRequest` | an unreadable shape, a destination the recipient does not own, a parameter that cannot be stringified, a payload that cannot be decoded |
 | `ErrUnknownType` | a type key that is not in the declared taxonomy |
 | `ErrParamsNotAllowed` | a parameter outside the type's whitelist |
 | `ErrInvalidConfig` | an inconsistent type declaration, or two modules declaring one key — `New` ends the startup |
@@ -317,6 +350,12 @@ outside the module it prints zero issues without loading the packages.
   the per-recipient and deployment budgets on the key-value counters and refuses
   a spent one with the platform's throttled error and a retry time. A dispatch
   that resolves to no external channel in this assembly spends nothing.
+
+- **A dispatch's destination must be the recipient's own.** `Dispatch` holds a
+  carried `to` against the recipient's identifiers through `authn.Accounts` and
+  refuses one bound to another account, to no account, or named for a recipient
+  with no address identifier; nothing is enqueued. The rule reads the account
+  store and does not write it (see [Destination ownership](#destination-ownership)).
 
 - **Every external send is logged once, and the line is safe to keep.** A
   carrier call writes one line with its outcome, duration and the carrier's

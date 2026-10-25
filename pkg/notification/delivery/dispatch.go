@@ -19,6 +19,15 @@ import (
 // context carrying none is refused with the tenant capability's own error
 // before anything is written.
 //
+// A dispatch that carries an external destination must carry the recipient's
+// own: after the shape and taxonomy checks, and before a budget is charged, the
+// destination is held against the identifiers the recipient's account holds
+// through the account store, with the store's own normalization. A destination
+// bound to another account, bound to no account, or named for a recipient that
+// holds no address identifier is answered with notification.ErrInvalidRequest
+// and nothing is enqueued. A dispatch that carries no destination is unaffected;
+// a channel that needs one and finds none fails there, as before.
+//
 // The delivery budget is charged before the job is queued, so a producer that
 // has begun to loop cannot fill the queue: once a window is spent, the dispatch
 // is answered with a *authn.ThrottledError carrying Retry-After and nothing is
@@ -43,6 +52,9 @@ func (p *pipeline) Dispatch(ctx context.Context, d notification.Dispatch) (jobs.
 		return "", fmt.Errorf("%s: %w", ModuleName, tenant.ErrNoTenantInContext)
 	}
 	if _, err := p.validate(d); err != nil {
+		return "", err
+	}
+	if err := p.checkDestination(ctx, d); err != nil {
 		return "", err
 	}
 	payload, err := json.Marshal(d)

@@ -28,10 +28,11 @@ const (
 
 // destinationParam is the parameter a dispatch carries an external channel's
 // destination in: an E.164 phone number for sms, an RFC 5322 address for email.
-// Where the destination comes from is not the design's to say — a recipient is an
-// account identifier, and this module reaches no account store — so it travels in
-// the dispatch's parameters under this name; a dispatch that names none fails
-// that channel without reaching the vendor.
+// The destination comes from the submitting module; this module does not derive
+// it from the account, though it does hold it against the recipient's identifiers
+// before the job is queued (see checkDestination). It travels in the dispatch's
+// parameters under this name, and a dispatch that names none fails that channel
+// without reaching the vendor.
 const destinationParam = "to"
 
 // contentKey builds the catalog key one part of one channel's text is carried

@@ -5,10 +5,11 @@
 // recorded as one ledger row.
 //
 // The submission seam is notification.Dispatcher, delivered exclusively by this
-// module. Dispatcher.Dispatch only validates and enqueues — it does not render,
-// does not send and writes no storage. The other half of the pipeline is a
-// jobs.Handler this module registers in its Init; jobs.db claims the job, enters
-// its tenant and hands it over, and the handler does the per-channel work.
+// module. Dispatcher.Dispatch validates, holds a carried destination against the
+// recipient's own identifiers and enqueues — it does not render, does not send
+// and writes no storage. The other half of the pipeline is a jobs.Handler this
+// module registers in its Init; jobs.db claims the job, enters its tenant and
+// hands it over, and the handler does the per-channel work.
 //
 // A channel's availability is a matter of assembly. in_app is always available —
 // the inbox is a required dependency — while email needs a mail sender and sms
@@ -43,6 +44,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/feature"
@@ -116,16 +118,18 @@ var (
 // Module is the descriptor a host registers.
 //
 // The queue, the handler registration face, the database, the tenant roster, the
-// preferences seam, the inbox seam, the message localizer and the key-value
-// counters are all required and hard. A pipeline with no queue has nowhere to put
-// a dispatch, one with no registration face cannot be run, one with no table has
-// nowhere to record a send, one with no roster carries no filter to scope its
-// ledger writes by tenant, one with no preferences cannot resolve a recipient's
-// channels, one with no inbox cannot write an in-app message, one with no
-// localizer cannot render one, and one with no counters cannot bound a dispatch.
-// The counters are a hard requirement rather than an absence the module works
-// around: a delivery budget that cannot count would let every dispatch through,
-// which is the direction the requirement forbids.
+// preferences seam, the inbox seam, the message localizer, the account store and
+// the key-value counters are all required and hard. A pipeline with no queue has
+// nowhere to put a dispatch, one with no registration face cannot be run, one
+// with no table has nowhere to record a send, one with no roster carries no
+// filter to scope its ledger writes by tenant, one with no preferences cannot
+// resolve a recipient's channels, one with no inbox cannot write an in-app
+// message, one with no localizer cannot render one, one with no account store
+// cannot tell whether a destination belongs to the recipient, and one with no
+// counters cannot bound a dispatch. The counters and the account store are hard
+// requirements rather than absences the module works around: a delivery budget
+// that cannot count and an ownership rule that cannot read would each let a
+// message through, which is the direction the requirement forbids.
 //
 // The settings store is optional: a dispatch reads its budget limits through it,
 // and an absence is a legal assembly in which every budget reads its declared
@@ -158,6 +162,7 @@ func Module() core.Module {
 			{Token: (*notification.Preferences)(nil)},
 			{Token: (*notification.Inbox)(nil)},
 			{Token: (*i18n.Localizer)(nil)},
+			{Token: (*authn.Accounts)(nil)},
 			{Token: (*kv.KV)(nil)},
 			{Token: (*settings.Store)(nil), Optional: true},
 			{Token: (*log.Logger)(nil), Optional: true},
@@ -247,6 +252,11 @@ type pipeline struct {
 	ledger    *ledger
 	taxonomy  taxonomy
 	seams     channelSeams
+	// accounts reads the recipient's identifiers and asks which account a
+	// destination belongs to. It is what tells the recipient's own address from
+	// anyone else's, and it is a hard dependency: without it a dispatch carrying
+	// a destination cannot be checked and is refused.
+	accounts authn.Accounts
 	// counters holds the delivery budgets, one fixed window per key. It is the
 	// key-value capability, whose increment is atomic across replicas.
 	counters kv.KV
@@ -292,6 +302,10 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the message localizer: %w", ModuleName, err)
 	}
+	accounts, err := core.Resolve[authn.Accounts](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the account store the destination rule reads: %w", ModuleName, err)
+	}
 	types, err := collectTaxonomy(reg)
 	if err != nil {
 		return nil, err
@@ -326,6 +340,7 @@ func newPipeline(reg *core.Registry) (*pipeline, error) {
 		prefs:     prefs,
 		inbox:     inbox,
 		localizer: localizer,
+		accounts:  accounts,
 		ledger:    &ledger{handle: database.DB()},
 		taxonomy:  types,
 		seams:     channelSeams{mailer: mailer, registry: registry, sender: sender},

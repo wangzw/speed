@@ -299,17 +299,21 @@ type Preferences interface {
 // Dispatch is the only entry the sending module touches. It validates the
 // dispatch against the taxonomy — the type is declared, the recipient class is
 // user, the locale is non-empty, and the parameters do not exceed the type's
-// whitelist — resolves the recipient's effective channels to decide whether the
-// dispatch will reach an external carrier, charges the delivery budgets for that,
-// serializes the dispatch into one delivery job and enqueues it, returning the
-// job identifier. It does not render and does not deliver. A spent budget is a
-// *authn.ThrottledError carrying RetryAfter and nothing is enqueued. The delivery
-// handler validates against the taxonomy and the preferences again when it
-// consumes the job, and delivers.
+// whitelist — holds a destination the dispatch carries against the recipient's
+// own identifiers through the account store (a destination that is not the
+// recipient's own is ErrInvalidRequest), resolves the recipient's effective
+// channels to decide whether the dispatch will reach an external carrier, charges
+// the delivery budgets for that, serializes the dispatch into one delivery job
+// and enqueues it, returning the job identifier. It does not render and does not
+// deliver. A spent budget is a *authn.ThrottledError carrying RetryAfter and
+// nothing is enqueued. The delivery handler validates against the taxonomy and
+// the preferences again when it consumes the job, and delivers.
 type Dispatcher interface {
-	// Dispatch validates, charges the delivery budgets and enqueues one dispatch
-	// and returns its job identifier. The tenant comes from the context. A budget
-	// that is spent answers a *authn.ThrottledError carrying RetryAfter.
+	// Dispatch validates, holds a destination to the recipient's own
+	// identifiers, charges the delivery budgets and enqueues one dispatch and
+	// returns its job identifier. The tenant comes from the context. A budget that
+	// is spent answers a *authn.ThrottledError carrying RetryAfter; a destination
+	// the recipient does not own answers ErrInvalidRequest.
 	Dispatch(ctx context.Context, d Dispatch) (jobs.JobID, error)
 }
 
