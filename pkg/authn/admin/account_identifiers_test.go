@@ -61,7 +61,14 @@ func singleAccountView(t *testing.T, r *rig, id authn.AccountID) map[string]json
 // from the page it answers with.
 func listAccountView(t *testing.T, r *rig, id authn.AccountID) map[string]json.RawMessage {
 	t.Helper()
-	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts", nil, fresh()...)
+	return listAccountViewQuery(t, r, "", id)
+}
+
+// listAccountViewQuery drives GET B/accounts with a query string and returns
+// the view of one account from the page it answers with.
+func listAccountViewQuery(t *testing.T, r *rig, query string, id authn.AccountID) map[string]json.RawMessage {
+	t.Helper()
+	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts"+query, nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("listing accounts: status = %d, want 200; body %s", rec.Code, rec.Body.String())
 	}
@@ -208,5 +215,44 @@ func TestAnIdentifierIsProvenOnlyWhenItsWayProvesOwnership(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("identifiers = %+v, want %+v", got, want)
+	}
+}
+
+// TestTheAccountListShowsATombstoneWithNoIdentifiers holds that a page holding
+// a tombstone still answers: deleting an account erases its identifiers and the
+// identifier read reports a tombstone as authn.ErrAccountNotFound, so the list
+// read must not wait on it. The row carries an empty array.
+func TestTheAccountListShowsATombstoneWithNoIdentifiers(t *testing.T) {
+	r := newRig(t)
+	const gone authn.AccountID = "acct-tombstone"
+	r.accounts.put(gone, authn.Account{Kind: authn.KindUser, Status: authn.StatusDeleted})
+	// An identifier left bound to the row must not be read: deletion erases it,
+	// so the stale row is not the view's answer.
+	r.accounts.putIdentifiers(gone, authn.Identifier{Kind: authn.IdentifierEmail, Value: "gone@example.com", VerifiedVia: authn.VerifiedViaAdmin})
+	view := listAccountViewQuery(t, r, "?status=deleted", gone)
+	if got := string(bytes.TrimSpace(identifiersField(t, view))); got != "[]" {
+		t.Errorf("identifiers = %s, want []", got)
+	}
+	if n := r.accounts.identifiersRead(gone); n != 0 {
+		t.Errorf("the identifier read ran %d time(s) for a tombstone, want none", n)
+	}
+}
+
+// TestTheAccountListShowsARowDeletedMidPageWithoutIdentifiers holds that an
+// account deleted between the page read and its identifier read does not fail
+// the whole page: the row stays in the snapshot and answers with an empty
+// array. The single read still answers 404 for an account that is gone, because
+// it names one account rather than a page.
+func TestTheAccountListShowsARowDeletedMidPageWithoutIdentifiers(t *testing.T) {
+	r := newRig(t)
+	r.accounts.putIdentifiers(userID, authn.Identifier{Kind: authn.IdentifierEmail, Value: "alice@example.com"})
+	r.accounts.vanish(userID)
+	view := listAccountView(t, r, userID)
+	if got := string(bytes.TrimSpace(identifiersField(t, view))); got != "[]" {
+		t.Errorf("identifiers = %s, want []", got)
+	}
+	rec := r.do(http.MethodGet, "/api/v1/system/auth/accounts/"+string(userID), nil, fresh()...)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("the single read of a gone account: status = %d, want 404; body %s", rec.Code, rec.Body.String())
 	}
 }

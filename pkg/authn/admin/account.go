@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"unicode/utf8"
 
@@ -67,7 +68,15 @@ func identifierKindRank(k authn.IdentifierKind) int {
 // viewOf reads the identifiers bound to an account and builds its view. It is
 // the per-account read the list and the single read both make; the caller
 // decides how a failed read is answered.
+//
+// A tombstone is built without a read: deleting an account erases its
+// identifiers, and the identifier read reports a tombstone as
+// authn.ErrAccountNotFound, so the empty list is the answer rather than a
+// failed read.
 func (m *product) viewOf(ctx context.Context, a authn.Account) (AuthnAdminAccount, error) {
+	if a.Status == authn.StatusDeleted {
+		return accountViewOf(a, nil), nil
+	}
 	identifiers, err := m.accounts.Identifiers(ctx, a.ID)
 	if err != nil {
 		return AuthnAdminAccount{}, err
@@ -112,7 +121,15 @@ func (m *product) handleAccountList(ctx context.Context, in accountListInput) (A
 	views := make([]AuthnAdminAccount, len(accounts))
 	for i, a := range accounts {
 		view, err := m.viewOf(ctx, a)
-		if err != nil {
+		switch {
+		case errors.Is(err, authn.ErrAccountNotFound):
+			// The account was deleted between the page read and this row's
+			// identifier read. The page is a snapshot and still answers; the row
+			// is shown with no identifiers, the same answer a tombstone gets. The
+			// single read, which names one account and not a page, answers 404
+			// for one that is gone instead.
+			view = accountViewOf(a, nil)
+		case err != nil:
 			return AuthnAdminAccountList{}, m.unavailable("listing identifiers", err)
 		}
 		views[i] = view

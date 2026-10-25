@@ -121,6 +121,12 @@ type fakeAccounts struct {
 	listCalls       int
 	secretCalls     int
 	identifierCalls int
+	// identifierReads counts the identifier reads per account, so a case can
+	// hold that a tombstone's identifiers are never read.
+	identifierReads map[authn.AccountID]int
+	// vanished holds accounts the page read still returns but whose identifier
+	// read reports gone, modelling a delete between the two reads.
+	vanished map[authn.AccountID]bool
 	// lastQuery is the query the most recent List was handed, so a case can hold
 	// what the handler parsed out of the request.
 	lastQuery authn.AccountQuery
@@ -128,9 +134,11 @@ type fakeAccounts struct {
 
 func newAccounts() *fakeAccounts {
 	return &fakeAccounts{
-		accounts:    map[authn.AccountID]authn.Account{},
-		secrets:     map[authn.AccountID][]authn.ServiceSecretInfo{},
-		identifiers: map[authn.AccountID][]authn.Identifier{},
+		accounts:        map[authn.AccountID]authn.Account{},
+		secrets:         map[authn.AccountID][]authn.ServiceSecretInfo{},
+		identifiers:     map[authn.AccountID][]authn.Identifier{},
+		identifierReads: map[authn.AccountID]int{},
+		vanished:        map[authn.AccountID]bool{},
 	}
 }
 
@@ -146,10 +154,35 @@ func (a *fakeAccounts) Identifiers(_ context.Context, id authn.AccountID) ([]aut
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.identifierCalls++
+	a.identifierReads[id]++
 	if a.identifierErr != nil {
 		return nil, a.identifierErr
 	}
+	// The store reports a missing account and a tombstone as
+	// authn.ErrAccountNotFound; the fake holds the same contract so a case can
+	// exercise a read the real capability would refuse.
+	acct, ok := a.accounts[id]
+	if !ok || acct.Status == authn.StatusDeleted || a.vanished[id] {
+		return nil, authn.ErrAccountNotFound
+	}
 	return append([]authn.Identifier(nil), a.identifiers[id]...), nil
+}
+
+// vanish makes the identifier read of one account report it gone while the
+// page read still returns it, so a case can hold a delete between the two
+// reads.
+func (a *fakeAccounts) vanish(id authn.AccountID) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.vanished[id] = true
+}
+
+// identifiersRead reports how many times the identifier read ran for one
+// account.
+func (a *fakeAccounts) identifiersRead(id authn.AccountID) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.identifierReads[id]
 }
 
 // lastList is the query the most recent List was handed, taken under the lock so
