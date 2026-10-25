@@ -359,7 +359,7 @@ flowchart TD
 - **账户页的验证节与持续验证提示。** 账户页 `/account` 承载 account-ui 的 `ContactVerificationSection`，受会话门保护；`?verify=1` 落地时给它传 `autoSend`：未验证且有目标邮箱时自动发送一次验证码；`?change=email` 落地即展开更换表单，不自动发送；普通访问不传 `autoSend`，只在用户点击时发送。`verification.state` 是账户注册验证状态的读面，不是 `signup_state` 列的投影：`none` 是没有邮箱、`pending` 是有邮箱而没有一条已证明的、`verified` 是已有一条证明。判定与账户来源无关，所以管理员预置的 operator 带着未证明邮箱时同样读 `pending`。`TenantFrame` 在应用栏之下另挂一条持续验证提示（`role=region`，不是 live region），读 `GET /api/v1/auth/me` 的 `verification.state`：`pending` 时显示目标邮箱、去验证与更换邮箱，验证完成后消失；它不随会话内关闭而消失，与个人租户的一次性提示分开。「去验证」落在 `/account?verify=1`，从验证码一步开始；「更换邮箱」落在 `/account?change=email`，账户页据此让验证节直接展开更换邮箱表单。宿主用独立的 `contactVerificationPending` 判据（`verification.state === 'pending'`）决定是否显示，不并进 `setupIncomplete`——验证状态与注册入口无关，管理员预置的账户也在其中。
 - **未验证账户与个人租户。** `verification.state` 为 `pending` 时示范同样调用个人租户 ensure 并建立租户（见「个人租户」），同时在应用栏之下显示持续验证提示；验证状态只限制账户在空间内可用的能力，不决定空间是否存在。验证通过后提示消失，租户与别名不变。未启用个人租户时，账户落在租户区首页，不触发建户。
 - **邮箱解除限制，手机不解除（REQ-signup-026）。** 邮箱验证走标识节的自助回路（`POST /api/v1/auth/identifiers` 与 `/verify`）；手机验证走手机节的两步。手机是登录方式与额外安全因素，验证手机不解除注册限制——只有邮箱被证明才把注册验证状态转为已验证。
-- **短信与社交开户的落点不变。** 注册模式下经短信渠道登录成功（`mode: 'register'`、`channel: 'sms'`）仍按个人租户是否启用决定去租户区首页或完成设置页；这个落点同样只在登录屏是应用登录页本身时生效。社交与企业登录照常进入应用。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
+- **短信与社交开户的落点，以及邀请链接的例外。** 注册模式下经短信渠道登录成功（`mode: 'register'`、`channel: 'sms'`）按个人租户是否启用决定去租户区首页或完成设置页；这个落点只在登录屏是应用登录页本身时生效。登录屏位于邀请链接上时（匿名访客在邀请路径上看到的是租户区的登录面，见「前端的组合次序」），短信注册与短信登录都不导航，留在原地址，等登录提交把特性文档带进来后由邀请声明接管并渲染接受页。重定向与企业方法要替换整个文档去做一次往返：出发前把邀请路径记进本标签页的会话存储（令牌不进 URL 查询），`AuthCallbackPage` 收到成功回调时清掉记录并回到该路径，其它出发地的回调仍落租户区首页。这些渠道由 `authn.account.signup` 控制，与口令注册的开关相互独立。
 - **完成设置页由 account-ui 的两个节组成，用户名先于口令。** `IdentifiersSection` 添加用户名；`PasswordSection` 只在账户已有可作登录名的标识（用户名或邮箱标识）之后可用，在此之前渲染说明：口令登录要有登录名，请先添加用户名。账户已经有登录名与口令时，页面陈述账户设置已完成并给出回到首页的链接。页面带一个回到首页的「稍后设置」链接；跳过不撤销已建的账户，账户仍可经短信登录。
 - **注册建立账户，不建立成员关系。** 开户不建任何成员关系（[authn-account](authn/design-authn-account.md) 的「首登开户」），启用个人租户时，示范为没有成员关系的账户建一个个人租户（见「个人租户」），不提供一般的租户自助创建；未启用时新账户访问任何租户资源得 404，成员关系仍由管理员或邀请授予。
 - **注册的可用性随装配。** 口令注册需要设置项 `authn.account.password-signup` 为 `open`，并装配邮箱验证通道（`authn.emailcode` 与一个 `pkg/mail.Sender`）；短信开户另需 `authn.account.signup` 为 `open` 与可用的短信载体。基线的装配与种子设置里这些都不具备，示范的登录页因此没有注册入口，装配了它们的部署才有。
@@ -380,8 +380,10 @@ flowchart TD
 | 本人有效租户的读取（`TenantFrame`） | 已认证时读一次（冒充期间也读，服务端收窄到授予租户），身份变更、ensure 新建个人租户与邀请受理成功后重读；不受特性门控；任何失败（含部署没有纳入 `tenant.self` 时答的 404）沿用该读自己的失败呈现，当前租户保持未知，不回落到占位清单 |
 | 控制台区的当前租户落定（`ConsoleAreaGate`） | 已认证且当前租户未定时读名册，落定其中第一个启用且不是个人租户的行，供两域权限集的读取带上租户名；读被拒、失败或名册没有这样的行时当前租户保持未知，区域照常按平台权限集判定 |
 | 个人租户的 ensure（`TenantFrame`） | 特性 `workspace.personal` 在场、已认证、非冒充、本人租户读取已落定且为空、当前租户未知，且装配里有租户名册读取时它已落定，才调用；注册验证状态不是判据 |
-| 注册模式下短信登录之后的落点（`SignInView`） | 特性 `workspace.personal` 在场去租户区首页，缺席去完成设置页 |
+| 注册模式下短信登录之后的落点（`SignInView`） | 特性 `workspace.personal` 在场去租户区首页，缺席去完成设置页；登录屏在邀请链接上时留在原地址，等特性文档可读后由邀请声明接管 |
+| 短信登录的落点（`SignInView`） | 不导航：会话翻转后当前地址自行渲染（租户区首页，或邀请声明命中的接受页） |
 | 口令注册之后的落点（`SignInView`） | 一律去 `/account?verify=1` 的账户页验证节，与个人租户特性无关；注册屏在邀请链接上时该邀请路径记入本标签页的会话存储，验证完成后账户页回到它 |
+| 重定向与企业方法的回调落点（`AuthCallbackPage`） | 从邀请链接出发的往返成功后回到该邀请路径（记录在本标签页会话存储，读走即清）；其它出发地落租户区首页 |
 | 平台权限集与租户权限集的读取（`platform-permissions.tsx`） | 特性态为 `ready` 且当前租户已落定时读调用方自身的权限读取路由（`GET /api/v1/authz/me/permissions`）；`pending`、`failed` 或当前租户未定时两域保持未知；读被拒或失败时两域挂空集 |
 | 头部的 `ConsoleEntry` 与首页的控制台卡片 | 持有平台权限、且控制台声明经 `presentDeclarations` 收窄后非空时出现，冒充期间两者都不出现；目标是第一条特性在场、且持有其权限码的控制台导航项 |
 | 首页的通知卡片 | `useHasRoute('/notifications')`：入口跟随目标页 |
@@ -456,6 +458,8 @@ flowchart TD
 | 口令注册成功落地 `/account?verify=1` 的账户页验证节与持续验证提示 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
 | 首次进入 `/account?verify=1` 自动发送一次验证码，更换邮箱落地不发送 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection` |
 | 从邀请链接发起的口令注册在验证完成后回到该邀请链接，令牌只存在本标签页会话存储 | 已实现 | `starters/demo/web/src/invitation-return.ts` `rememberInvitationLanding`、`pendingInvitationLanding`、`forgetInvitationLanding`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage` |
+| 邀请链接上的短信注册与短信登录留在原地址，由邀请声明接管 | 已实现 | `starters/demo/web/src/invitation-return.ts` `isInvitationLanding`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/pages/accept-invitation-page.test.tsx` |
+| 从邀请链接出发的重定向与企业方法往返，回调成功后回到该邀请 | 已实现 | `starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`、`socialSignIn`；`starters/demo/web/src/pages/auth-callback-page.tsx` `AuthCallbackPage`；`starters/demo/web/src/invitation-return.ts` `pendingInvitationLanding`、`forgetInvitationLanding` |
 | ensure 为任何没有成员关系的账户建立个人租户，不看注册验证状态 | 已实现 | `starters/demo/server/personal.go` `personalProduct.ensure`、`handleEnsure`；`starters/demo/server/personal-openapi.json` |
 | 未验证账户上同样调用个人租户 ensure；验证提示由账户面单独呈现 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |
 | 个人租户随账户停用而停用、随账户恢复而恢复，运营者的停用不被覆盖 | 已实现 | `starters/demo/server/personal_lifecycle.go` `personalProduct.AccountDisabled`、`AccountEnabled`、`setAccountStatus`；`starters/demo/server/personal_lifecycle_test.go` `TestAccountDisabledDisablesThePersonalTenant`、`TestTheAccountLifecycleEnableRestoresOnlyTheAccountsDisable` |

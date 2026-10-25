@@ -6,8 +6,11 @@
  * the host mounts auth-ui's SocialCallbackHandler at its own callback route;
  * the handler reads the flow back on the session and finishes it (a required
  * second factor renders in place). The success callback navigates the viewer
- * home. This page sits outside the tenant shell -- the callback arrives
- * before the session exists -- so the app renders it directly (src/app.tsx).
+ * home -- or back to the invitation landing the provider detour started from,
+ * which the sign-in surface remembered before the document left
+ * (src/invitation-return.ts). This page sits outside the tenant shell -- the
+ * callback arrives before the session exists -- so the app renders it
+ * directly (src/app.tsx).
  *
  * The route is unconditional: it is inert until a deployment enables a
  * redirect or enterprise method (`src/routes.tsx`).
@@ -18,6 +21,10 @@ import Box from '@mui/material/Box'
 import { SocialCallbackHandler } from '@speed/auth-ui'
 import { useNavigate } from '@speed/route-kit'
 import { useAppServices } from '../app-services.js'
+import {
+  forgetInvitationLanding,
+  pendingInvitationLanding,
+} from '../invitation-return.js'
 import { TENANT_HOME_PATH } from './not-found-page.js'
 
 export function AuthCallbackPage({
@@ -30,6 +37,19 @@ export function AuthCallbackPage({
 } = {}): ReactElement {
   const { session } = useAppServices()
   const navigate = useNavigate()
+  // The landing a provider detour started from is consumed here, once: a
+  // viewer who left an invitation link comes back to it, and everybody else
+  // -- including a re-entry to this route after the landing was used -- lands
+  // home.
+  const onSignedIn = (): void => {
+    const landing = pendingInvitationLanding()
+    if (landing === null) {
+      navigate(TENANT_HOME_PATH)
+      return
+    }
+    forgetInvitationLanding()
+    navigate(landing)
+  }
   return (
     <Box
       // The host's absent view is the tenant frame's 404, and that frame
@@ -51,7 +71,7 @@ export function AuthCallbackPage({
       <Box sx={{ width: '100%', maxWidth: 400 }}>
         <SocialCallbackHandler
           session={session}
-          onSignedIn={() => navigate(TENANT_HOME_PATH)}
+          onSignedIn={onSignedIn}
           absent={absent}
         />
       </Box>

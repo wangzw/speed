@@ -17,7 +17,6 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { RequestFn, RequestOptions } from '@speed/api-client'
-import type { AuthSession, AuthSnapshot, FeatureState } from '@speed/auth-core'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { accountUiResources } from '@speed/account-ui'
 import { authUiResources } from '@speed/auth-ui'
@@ -153,38 +152,6 @@ function makeInvitationBackend(
     return Promise.resolve(undefined as T)
   }
   return { fn, accepted, selfReads }
-}
-
-/**
- * The harness session with an already-settled feature document. A real page
- * load reads the document while the visitor is still anonymous, so the
- * invitation landing -- whose declaration is feature-gated -- renders before
- * the visitor signs in. The harness session reads features on a login commit
- * only, so this wrapper supplies the same initial answer.
- */
-function sessionWithFeatures(
-  session: AuthSession,
-  names: readonly string[],
-): AuthSession {
-  const features: FeatureState = { state: 'ready', names: new Set(names) }
-  let snapshot: AuthSnapshot = { ...session.getSnapshot(), features }
-  const listeners = new Set<(value: AuthSnapshot) => void>()
-  session.subscribe((next) => {
-    snapshot = { ...next, features }
-    for (const listener of listeners) {
-      listener(snapshot)
-    }
-  })
-  return {
-    ...session,
-    getSnapshot: () => snapshot,
-    subscribe: (listener) => {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
-  }
 }
 
 beforeEach(() => {
@@ -526,10 +493,16 @@ describe('the invitation landing', () => {
     ).toBeInTheDocument()
   })
 
-  it('stays on the invitation landing after a registration through SMS', async () => {
-    // The URL carries the token: the register mode's landing belongs to the
-    // application's own sign-in page, not to a sign-in surface embedded in
-    // this page. The session flip must re-render the accept screen in place.
+  it('returns an SMS registration made on the invitation URL to its accept page', async () => {
+    // The feature document is readable only to an authenticated caller, so
+    // the anonymous visitor who follows the invitation link has none yet: the
+    // invitation declaration is not matched and the tenant shell's own
+    // sign-in surface renders at this URL. That surface is not embedded in
+    // the landing page, so its register mode would take the just-opened
+    // account to the tenant home (or the setup page) and drop the invitation
+    // -- the case the forced feature document used to hide. The registration
+    // has to leave the URL in place so the declaration matches once the login
+    // commit brings the document with it.
     const harness = makeHarness({
       [FEATURES_GET]: () => ({
         features: ['authn.invitations', 'workspace.personal'],
@@ -558,12 +531,17 @@ describe('the invitation landing', () => {
       [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
     })
     const user = userEvent.setup()
-    renderDemoApp({
-      session: sessionWithFeatures(harness.session, [
-        'authn.invitations',
-        'workspace.personal',
-      ]),
-    })
+    renderDemoApp({ session: harness.session })
+
+    // The real anonymous path: the host's sign-in surface, not the accept
+    // screen, because the invitation declaration still lacks its feature
+    // document.
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.signIn.heading,
+      }),
+    ).toBeInTheDocument()
 
     await user.click(
       await screen.findByRole('button', {
@@ -590,6 +568,69 @@ describe('the invitation landing', () => {
 
     // The registration stayed on the invitation URL and the page re-rendered
     // onto its accept screen, which read the token's invitation.
+    await waitFor(() => expect(window.location.pathname).toBe(PATH))
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: authEn.acceptInvitation.title,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('returns an SMS sign-in made on the invitation URL to its accept page', async () => {
+    // The ordinary sign-in path: no register entry is picked, and the
+    // deployment's SMS method opens an account for a number it does not know.
+    // The sign-in lane never takes the register mode's landing, so the
+    // invitation URL must survive the session flip and re-match the
+    // declaration on its own.
+    const harness = makeHarness({
+      [FEATURES_GET]: () => ({
+        features: ['authn.invitations', 'workspace.personal'],
+      }),
+      [LOGIN_METHODS]: () =>
+        methodList(
+          [{ name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true },
+        ),
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [
+              { name: 'code', kind: 'code', required: true, secret: true },
+            ],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) =>
+        (call.options?.body as { step?: string }).step === 'complete'
+          ? authenticatedCompletion()
+          : completeFlow(2),
+      [PROFILE_GET]: () => principal(),
+      [`GET /api/v1/auth/invitations/${TOKEN}`]: () => VIEW,
+    })
+    const user = userEvent.setup()
+    renderDemoApp({ session: harness.session })
+
+    await user.type(
+      await screen.findByLabelText(authEn.smsSignIn.phoneLabel),
+      '+14155550123',
+    )
+    await user.click(
+      screen.getByRole('button', { name: authEn.smsSignIn.sendCode }),
+    )
+    await user.type(
+      await screen.findByLabelText(authEn.smsSignIn.codeLabel),
+      '123456',
+    )
+    const form = screen
+      .getByLabelText(authEn.smsSignIn.codeLabel)
+      .closest('form') as HTMLFormElement
+    await user.click(
+      within(form).getByRole('button', { name: authEn.smsSignIn.submit }),
+    )
+
     await waitFor(() => expect(window.location.pathname).toBe(PATH))
     expect(
       await screen.findByRole('heading', {

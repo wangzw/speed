@@ -1,5 +1,6 @@
 /**
- * The auth callback route's landmark structure.
+ * The auth callback route: its landmark structure and where a completed
+ * provider round trip lands.
  *
  * The route renders outside the tenant shell, so the page itself is the
  * document's main landmark -- except when the host's absent view shows: that
@@ -9,9 +10,13 @@
  * duplicate. The sweep's axe gate runs landmark-no-duplicate-main, but this
  * case pins the structure directly so a regression is named at the route that
  * carries it rather than only in a scan report.
+ *
+ * The success callback lands the viewer home, unless the provider detour
+ * started from an invitation landing: that landing is remembered in the tab
+ * before the provider takes over, returned to once, and then cleared.
  */
 
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { createBackend } from '../a11y/backends.js'
@@ -19,7 +24,12 @@ import {
   setCurrentTenantId,
   setTenantAliases,
 } from '../chrome.js'
+import {
+  pendingInvitationLanding,
+  rememberInvitationLanding,
+} from '../invitation-return.js'
 import { AUTH_CALLBACK_PATH } from '../routes.js'
+import { methodList } from '../test-utils/session-harness.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import {
   authenticatedSnapshot,
@@ -31,8 +41,34 @@ import {
  * be nameable. */
 const TENANT_ID = 'acme'
 
+/**
+ * An authenticated session whose deployment offers a redirect method. The
+ * callback handler's authenticated re-entry consults the discovery document
+ * before it fires the host's success callback: a deployment with no method
+ * that could have returned here settles on the host's absent view instead.
+ */
+function providerSession() {
+  return Object.assign(createTestSession(authenticatedSnapshot()), {
+    listMethods: () =>
+      Promise.resolve(
+        methodList(
+          [
+            {
+              name: 'github',
+              kind: 'redirect',
+              protocol: 'oauth2',
+              label: 'GitHub',
+            },
+          ],
+          { signup: false },
+        ),
+      ),
+  })
+}
+
 beforeEach(() => {
   window.history.replaceState({}, '', AUTH_CALLBACK_PATH)
+  window.sessionStorage.clear()
   setCurrentTenantId(TENANT_ID)
   setTenantAliases(new Map([[TENANT_ID, TENANT_ID]]))
 })
@@ -57,5 +93,27 @@ describe('the auth callback route', () => {
     // -- so counting here judges the route's structure, and a page root that
     // opened a second main would already be counted.
     expect(container.querySelectorAll('main')).toHaveLength(1)
+  })
+
+  it('returns a viewer who left an invitation link to that landing', async () => {
+    // The provider's round trip replaced the document that carried the token,
+    // so the landing has to come from the tab's own record. It is consumed
+    // once: a later re-entry to this route must not repeat the move.
+    const landing = '/invitations/tok-invite'
+    rememberInvitationLanding(landing)
+    bindRequestFn(createBackend('data'))
+    renderDemoApp({ session: providerSession() })
+
+    await waitFor(() => expect(window.location.pathname).toBe(landing))
+    expect(pendingInvitationLanding()).toBeNull()
+  })
+
+  it('lands a viewer home when the provider detour started elsewhere', async () => {
+    bindRequestFn(createBackend('data'))
+    renderDemoApp({ session: providerSession() })
+
+    // The tenant shell's business slot is the destination the callback has
+    // always named when no invitation landing was left behind.
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
   })
 })

@@ -37,6 +37,21 @@
  * username and then a password. Every other outcome leaves the viewer in the
  * app the session flip already opened.
  *
+ * An invitation link is the exception: a registration or sign-in made on one
+ * has to end on that link's accept page, not on the register mode's landing.
+ * The landing declaration is feature-gated, and the feature document is
+ * readable only to an authenticated caller, so an anonymous visitor at that
+ * URL meets this surface through the tenant shell rather than through the
+ * landing page itself. A completed SMS registration therefore stays where
+ * the URL already is, and the declaration matches once the login commit
+ * makes the document readable; the sign-in lane never navigates, so it
+ * reaches the same page the same way. A password registration takes the
+ * verification detour instead and keeps the landing in the tab's session
+ * storage (src/invitation-return.ts). A redirect or enterprise provider
+ * replaces the document for its round trip, so the landing is remembered
+ * before the provider takes over and the callback route sends the viewer
+ * back to it.
+ *
  * A surface that embeds this view inside a flow of its own passes
  * `keepLanding`: the invitation landing and the console area's session gate
  * sign the viewer in place, so a registration completed there leaves the
@@ -49,13 +64,20 @@ import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import Typography from '@mui/material/Typography'
 import { SignInScreen } from '@speed/auth-ui'
-import type { SignInContext, SignInMode } from '@speed/auth-ui'
+import type {
+  SignInContext,
+  SignInMode,
+  SocialSignInOptions,
+} from '@speed/auth-ui'
 import { useTranslation } from '@speed/i18n'
 import { useLocationPath, useNavigate } from '@speed/route-kit'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
 import { useAppServices } from '../app-services.js'
-import { rememberInvitationLanding } from '../invitation-return.js'
+import {
+  isInvitationLanding,
+  rememberInvitationLanding,
+} from '../invitation-return.js'
 import {
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
@@ -68,13 +90,21 @@ import { TENANT_HOME_PATH } from './not-found-page.js'
 
 /** The social / enterprise block this host hands the screen: the provider's
  * round trip comes back to the app's callback route, and the authorization
- * URL replaces the current document. */
-const SOCIAL_SIGN_IN = {
-  returnTo: AUTH_CALLBACK_PATH,
-  onAuthorizeUrl: (_provider: string, authorizeUrl: string): void => {
-    navigateToAuthorizationUrl(authorizeUrl)
-  },
-} as const
+ * URL replaces the current document. The document it leaves is gone for the
+ * round trip, so a viewer who starts from an invitation link has to carry
+ * that landing across it: the landing is remembered before the provider takes
+ * over (the token stays out of the URL) and the callback route sends the
+ * viewer back to it. Starting the flow anywhere else records no landing, so
+ * an earlier one cannot outlive the link it came from. */
+function socialSignIn(pathname: string): SocialSignInOptions {
+  return {
+    returnTo: AUTH_CALLBACK_PATH,
+    onAuthorizeUrl: (_provider: string, authorizeUrl: string): void => {
+      rememberInvitationLanding(pathname)
+      navigateToAuthorizationUrl(authorizeUrl)
+    },
+  }
+}
 
 export function SignInView({
   keepLanding = false,
@@ -92,6 +122,7 @@ export function SignInView({
   const { t } = useTranslation(DEMO_NAMESPACE)
   const navigate = useNavigate()
   const { path: pathname } = useLocationPath()
+  const social = useMemo(() => socialSignIn(pathname), [pathname])
   // The mode the screen presents. Giving `onModeChange` makes the screen
   // controlled, so this state is the single source of what the surface asks
   // for; the page title above the screen follows it.
@@ -144,6 +175,15 @@ export function SignInView({
     if (context.channel !== 'sms') {
       return
     }
+    if (isInvitationLanding(pathname)) {
+      // The viewer registered from an invitation link. This surface is the
+      // tenant shell's own gate at that URL -- the landing declaration cannot
+      // match until the login commit makes the feature document readable --
+      // so the register mode's landing would take the token away. Staying in
+      // place keeps it in the URL, and the declaration matches on the next
+      // render.
+      return
+    }
     const features = session.getSnapshot().features
     const personalServed =
       features.state === 'ready' && features.names.has('workspace.personal')
@@ -190,7 +230,7 @@ export function SignInView({
           mode={mode}
           onModeChange={setMode}
           onSignedIn={onSignedIn}
-          social={SOCIAL_SIGN_IN}
+          social={social}
           initialError={initialError}
         />
       </Card>

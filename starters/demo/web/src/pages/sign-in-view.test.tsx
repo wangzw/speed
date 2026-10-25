@@ -31,7 +31,8 @@ import {
   principal,
 } from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
-import { ACCOUNT_PATH, ACCOUNT_SETUP_PATH } from '../paths.js'
+import { pendingInvitationLanding } from '../invitation-return.js'
+import { ACCOUNT_PATH, ACCOUNT_SETUP_PATH, INVITATION_PREFIX } from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createTestSession } from '../test-utils/session.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
@@ -196,6 +197,25 @@ describe('the sign-in surface', () => {
       binding: 'cookie',
       return_to: '/sign-in/callback',
     })
+  })
+
+  it('remembers an invitation landing before leaving for a provider', async () => {
+    // A provider replaces the document for its round trip, so the URL that
+    // carried the invitation token is gone by the time the callback route
+    // renders. The surface records the landing before the provider takes
+    // over; the callback route reads it back and returns the viewer.
+    const landing = `${INVITATION_PREFIX}/tok-invite`
+    window.history.replaceState({}, '', landing)
+    const { session } = redirectSession()
+    renderDemoApp({ session })
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: 'GitHub' }))
+
+    await waitFor(() =>
+      expect(navigateToAuthorizationUrl).toHaveBeenCalledWith(AUTHORIZE_URL),
+    )
+    expect(pendingInvitationLanding()).toBe(landing)
   })
 
   it('lands a registration completed through SMS on the account setup page', async () => {

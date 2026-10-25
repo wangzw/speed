@@ -22,7 +22,7 @@ const STORAGE_KEY = 'speed.invitation-return'
  * Whether the path is an invitation landing: the prefix, then exactly one
  * non-empty token segment.
  */
-function isInvitationLanding(path: string): boolean {
+export function isInvitationLanding(path: string): boolean {
   const prefix = `${INVITATION_PREFIX}/`
   if (!path.startsWith(prefix)) {
     return false
