@@ -77,17 +77,15 @@ export interface FlowStepFieldsProps {
   readonly step: OpenFlowState
   /** A request is in flight; the step's own action disables. */
   readonly busy: boolean
-  /** Report the answered fields upward (the driver sends them). The
-   * optional second argument is the proof an answer that may send
-   * presents. */
-  readonly onAnswer: (
-    input: Record<string, string>,
-    humanProof?: string,
-  ) => void
+  /** Report the answered fields upward (the driver sends them). */
+  readonly onAnswer: (input: Record<string, string>) => void
 }
 
-export interface HumanGatedFlowStepProps
-  extends Omit<FlowStepFieldsProps, 'onAnswer'> {
+export interface HumanGatedFlowStepProps {
+  /** The open step to render. */
+  readonly step: OpenFlowState
+  /** A request is in flight; the step's own action disables. */
+  readonly busy: boolean
   /** The session whose human-verification gate and proof the step uses. */
   readonly session: AuthSession
   /** The gate a host already read, or omitted to read it here. */
