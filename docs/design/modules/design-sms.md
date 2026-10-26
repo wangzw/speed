@@ -528,7 +528,7 @@ type Spec[C any] struct {
 
 ### 评审装配的短信载体（仅评审构建）
 
-演示程序的评审装配（`-tags review`）挂载 `sms.review` 这一载体：它仍由 `sms.NewModule` 工厂构造并排他交付 `Sender` 与 `Provider`，但声明 `Review.PerTemplate` 为真，运行期模板经 `Register` 或 `Offer` 进入时由注册表把每个语言记为 `Pending`，注册表再按语言轮询载体的 `Approval`。载体的判定保存在进程内一张按厂商编号的表里，未被告知的编号答 `Pending`，`Review(code, state, reason)` 只改一个编号——编号是厂商的逐语言标识，因此改一个语言的判定不影响其余语言；`Offer` 把新编号记为 `Pending`，`Retire` 忘掉它。评审装配另挂一个同受构建标签约束的 `review.sms.control` 模块，其 `Init` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上挂一条写路由，正文 `{code, state, reason}` 经 `Review` 落一个判定，让评审者能为某个语言给出结果；该路由由认证网关识别调用方而不做权限判定，评审装配只绑定环回地址。这一载体与控制只在评审构建里编译和挂载，默认装配不挂任何短信载体，部署中的载体行为不因此改变。
+演示程序的评审装配（`-tags review`）挂载 `sms.review` 这一载体：它仍由 `sms.NewModule` 工厂构造并排他交付 `Sender` 与 `Provider`，但声明 `Review.PerTemplate` 为真，运行期模板经 `Register` 或 `Offer` 进入时由注册表把每个语言记为 `Pending`，注册表再按语言轮询载体的 `Approval`。载体的判定保存在进程内一张按厂商编号的表里，未被告知的编号答 `Pending`，`Review(code, state, reason)` 只改一个编号——编号是厂商的逐语言标识，因此改一个语言的判定不影响其余语言；`Offer` 把新编号记为 `Pending`，`Retire` 忘掉它。评审装配另挂一个同受构建标签约束的 `review.sms.control` 模块，其 `Init` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上挂一条写路由，正文 `{code, state, reason}` 经 `Review` 落一个判定，让评审者能为某个语言给出结果。**这条路由是测试控制，不是产品 API。** 它只在 `review` 构建标签下编译、只由评审装配登记，任何部署或基线二进制都不含它。它由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是评审装配为只监听回环地址的测试进程，而不是它对产品调用方安全。前端对应的判定控件仍由特性门控：特性 `review.sms.control` 不在场时不渲染控件、不发请求。这一载体与控制只在评审构建里编译和挂载，默认装配不挂任何短信载体，部署中的载体行为不因此改变。
 
 ## 错误与失败语义
 

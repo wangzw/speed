@@ -111,6 +111,8 @@ starters/demo/
 
 **审查装配只在回环地址上监听。** `server/review.go` 的 `reviewGuardModule` 在 `Prepare` 里、任何套接字绑定之前，读 `http.listeners` 每一项的地址，主机不是回环就拒绝启动：`localhost` 与 IP 回环地址算回环；空主机（所有网卡）、`0.0.0.0`、`::` 与其它不能判定为回环的写法都拒绝，误拒落在安全一侧。监听地址只能来自主配置文件，环境变量与命令行不能设置它，守卫与 http 模块读同一份配置，没有第二条通道绕过它。理由是审查装配带着公开的种子管理员口令与开放注册，能被网络访问的进程把这两样交给任何人。守卫只限定监听地址，不限定日志的去向：验证码写进进程日志，日志被收集或导出到别处时，验证码随之出机。
 
+**审查装配的两条控制路由是测试控制，不是产品 API。** `review.sms.control` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上落一个语言的审核判定，`review.notification` 在 `api` 端的 `/api/v1/notifications/review/notice` 上为调用方派发一次通知。两条路由都只在 `review` 构建标签下编译、只由审查装配登记，任何部署或基线二进制都不含它们。它们由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是审查装配为只监听回环地址的测试进程，而不是它们对产品调用方安全。前端对应的两个控制仍由特性门控：特性 `review.sms.control` 与 `review.notification.control` 不在场时不渲染控件、不发请求（[ADR-starters-skeleton-2026-10-15](../../adr/adr-starters-skeleton-2026-10-15.md)）。
+
 **构建与运行**：从仓库根执行 `go -C starters/demo/server build -tags review -o demo-review .`，产物是 `starters/demo/server/demo-review`（由 `.gitignore` 挡在树外）；随后在 `starters/demo/server` 下以 `./demo-review --config file:review/sqlite.yaml sqlite seed` 与 `... sqlite serve` 先种入一次、再启动。`seed` 幂等。根 `Makefile` 的 `vet-review` 腿在每次提交以 `go vet -tags=review ./...` 编译这个变体、不运行它，与 `vet-integration` 同理，也是 `check_test_tiers.py` 对树中每个构建标签要求的腿；`make check` 包含它。只在 `review` 标签下编译的用例（回环守卫的用例）不能只被编译：它们在提交门禁里被执行，守卫被删或改坏时门禁变红。
 
 ### `gen` 命令
@@ -436,6 +438,7 @@ flowchart TD
 | 审查装配（`-tags review` 的构建变体与 `server/review/sqlite.yaml`） | 已实现 | `starters/demo/server/review.go` `reviewModules`、`reviewSender`；`starters/demo/server/review_off.go` `reviewModules`；`starters/demo/server/review/sqlite.yaml` |
 | 审查装配的提交门禁腿 | 已实现 | `./Makefile` `vet-review`、`test-review` |
 | 审查装配的回环守卫 | 已实现 | `starters/demo/server/review.go` `reviewGuardModule`、`loopbackAddress` |
+| 审查装配的两条控制路由（短信审核判定、通知派发）是测试控制 | 已实现 | `starters/demo/server/review_sms_control.go` `reviewSMSControlModule`；`starters/demo/server/review_notification.go` `wireReviewControl` |
 | 只在 `review` 标签下编译的用例在提交门禁里被执行 | 已实现 | `./Makefile` `test-review`；`tools/check_test_tiers.py` |
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
 | `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedMembers`、`seedAdministration`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
