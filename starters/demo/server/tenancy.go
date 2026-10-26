@@ -396,29 +396,35 @@ func (p *tenancyProduct) creatorIsBound(ctx context.Context, tenantID, account s
 }
 
 // undoLostRace removes what this call added before it lost the roster row to
-// another replica. A membership or binding that was already there belongs to
-// the winning tenant and is left as it stands; the role and its grants stay for
-// the same reason. A binding that cannot be removed because it is the domain's
-// last one is left in place: the winner is about to add its own, and tearing the
-// domain's administration down to remove this one would be the worse outcome.
+// another replica. The binding goes first, and the membership is removed only
+// when that delete succeeded: two replicas naming one creator write one
+// membership row and one binding, and deleting the binding is refused as the
+// domain's last tenant-admin binding, so the shared membership stays with it. A
+// membership or binding that was already there belongs to the winning tenant
+// and is left as it stands; the role and its grants stay for the same reason.
 func (p *tenancyProduct) undoLostRace(ctx context.Context, tenantID string, creatorID authn.AccountID,
 	creator string, membershipHeld, bindingHeld bool,
 ) {
+	if bindingHeld {
+		// The binding predates this call, so this call added no membership that
+		// the losing cleanup could remove without touching the winner's rows.
+		return
+	}
+	err := p.manager.DeleteBinding(ctx, tenantID, creator, authz.TenantAdminRole)
+	switch {
+	case err == nil:
+	case errors.Is(err, authz.ErrLastTenantAdmin):
+		p.logger.Warn(tenancyModuleName+": a lost tenant-creation race left the creator's binding and membership as the domain's only administration",
+			"tenant", tenantID)
+		return
+	default:
+		p.logger.Error(tenancyModuleName+": a lost tenant-creation race left the creator's binding and membership behind",
+			"tenant", tenantID, "cause", err.Error())
+		return
+	}
 	if !membershipHeld {
 		if err := p.memberships.Remove(ctx, creatorID, tenantID); err != nil {
 			p.logger.Error(tenancyModuleName+": a lost tenant-creation race left the creator's membership behind",
-				"tenant", tenantID, "cause", err.Error())
-		}
-	}
-	if !bindingHeld {
-		err := p.manager.DeleteBinding(ctx, tenantID, creator, authz.TenantAdminRole)
-		switch {
-		case err == nil:
-		case errors.Is(err, authz.ErrLastTenantAdmin):
-			p.logger.Warn(tenancyModuleName+": a lost tenant-creation race left the creator's binding as the domain's last one",
-				"tenant", tenantID)
-		default:
-			p.logger.Error(tenancyModuleName+": a lost tenant-creation race left the creator's binding behind",
 				"tenant", tenantID, "cause", err.Error())
 		}
 	}

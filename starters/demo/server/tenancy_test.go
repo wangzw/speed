@@ -210,6 +210,51 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	}
 }
 
+// TestTheProvisionerKeepsTheSharedMembershipWhenTheSameCreatorLosesTheRace
+// holds the same-creator interleaving: both replicas name one creator, so the
+// winner's membership and binding are the rows the losing call would remove.
+// The binding is the domain's only tenant-administrator binding, so removing it
+// is refused; the membership must stay, because the winner's administrator is
+// still there. Removing the membership first would leave that binding naming an
+// account that is no longer a member.
+func TestTheProvisionerKeepsTheSharedMembershipWhenTheSameCreatorLosesTheRace(t *testing.T) {
+	roster := newFakeRoster()
+	memberships := newFakeMemberships()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	product := tenancyProductOf(roster, memberships, manager, newFakeSeeder(grants), nil)
+	ctx := context.Background()
+
+	if err := memberships.Put(ctx, authn.Membership{
+		Account: "acct-1", Tenant: "acme", Active: true, Source: "admin",
+	}); err != nil {
+		t.Fatalf("writing the shared membership: %v", err)
+	}
+	if err := manager.PutBinding(ctx, authz.Binding{
+		Tenant: "acme", Account: "acct-1", Role: authz.TenantAdminRole,
+	}); err != nil {
+		t.Fatalf("writing the shared binding: %v", err)
+	}
+
+	// The losing call read both before the winner wrote them.
+	product.undoLostRace(ctx, "acme", authn.AccountID("acct-1"), "acct-1", false, false)
+
+	member, err := memberships.IsMember(ctx, authn.AccountID("acct-1"), "acme")
+	if err != nil {
+		t.Fatalf("reading the shared membership: %v", err)
+	}
+	if !member {
+		t.Error("the lost race removed the membership the winner shares")
+	}
+	bindings, err := manager.Bindings(ctx, "acme")
+	if err != nil {
+		t.Fatalf("reading the domain's bindings: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].Account != "acct-1" || bindings[0].Role != authz.TenantAdminRole {
+		t.Errorf("the domain's bindings = %+v, want the shared tenant-admin binding left in place", bindings)
+	}
+}
+
 // TestTheProvisionerMarksTheTenantAdminRoleBuiltin holds the role's frozen
 // state: the management surface may neither rewrite nor delete it, as with the
 // administrator roles the seed writes.
