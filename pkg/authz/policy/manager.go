@@ -573,14 +573,38 @@ func (p *product) requirePlatformMember(ctx context.Context, b authz.Binding) er
 // the writes). A target row that is not there is no removal at all, whatever the
 // count.
 func refuseLastTenantAdmin(ctx context.Context, tx *gorm.DB, tenant, account string) error {
-	var rows []bindingRow
-	err := tx.WithContext(tenancy.CrossTenant(ctx)).
-		Where("tenant_id = ? AND role = ?", tenant, string(authz.TenantAdminRole)).
-		Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
-		Find(&rows).Error
+	rows, err := tenantAdminRows(ctx, tx, tenant, true)
 	if err != nil {
-		return fmt.Errorf("authz/policy: reading the tenant administrators of tenant %q: %w", tenant, err)
+		return err
 	}
+	if lastTenantAdminAfterRemoval(rows, account) {
+		return fmt.Errorf("%w: account %q is the last %q of tenant %q", authz.ErrLastTenantAdmin,
+			account, authz.TenantAdminRole, tenant)
+	}
+	return nil
+}
+
+// tenantAdminRows reads the tenant-administrator bindings of a domain. With
+// lock the rows are taken under an exclusive lock, for a caller that is inside
+// the write transaction whose count must hold until it commits. Without it the
+// read is a plain one, for a check that runs ahead of a write in another module.
+func tenantAdminRows(ctx context.Context, db *gorm.DB, tenant string, lock bool) ([]bindingRow, error) {
+	query := db.WithContext(tenancy.CrossTenant(ctx)).
+		Where("tenant_id = ? AND role = ?", tenant, string(authz.TenantAdminRole))
+	if lock {
+		query = query.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate})
+	}
+	var rows []bindingRow
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("authz/policy: reading the tenant administrators of tenant %q: %w", tenant, err)
+	}
+	return rows, nil
+}
+
+// lastTenantAdminAfterRemoval reports whether removing account's binding would
+// leave the domain with no tenant-administrator binding. A target row that is
+// not among the rows is no removal, whatever the count.
+func lastTenantAdminAfterRemoval(rows []bindingRow, account string) bool {
 	target := false
 	for _, row := range rows {
 		if row.AccountID == account {
@@ -588,11 +612,7 @@ func refuseLastTenantAdmin(ctx context.Context, tx *gorm.DB, tenant, account str
 			break
 		}
 	}
-	if target && len(rows) == 1 {
-		return fmt.Errorf("%w: account %q is the last %q of tenant %q", authz.ErrLastTenantAdmin,
-			account, authz.TenantAdminRole, tenant)
-	}
-	return nil
+	return target && len(rows) == 1
 }
 
 // write runs fn inside one transaction on the cross-tenant-marked session.

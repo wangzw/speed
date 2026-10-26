@@ -6,7 +6,8 @@ Casbin engine snapshot the decisions read, the permission catalog with the
 translation beside it, the management surface over the policy data, and the
 account lifecycle cleanup. It delivers `authz.Enforcer`,
 `authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager` and
-`authz.Seeder`, each exclusively, and implements `authn.AccountLifecycle`.
+`authz.Seeder`, each exclusively, and implements `authn.AccountLifecycle`,
+`authn.MembershipLifecycle` and `authn.MembershipGuard`.
 `SubjectPermissions.Held` reads the same snapshot a decision reads and maps each
 held (object, action) pair back through the catalog's reverse lookup; a pair no
 declared permission translates to is left out of the answer.
@@ -148,6 +149,17 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   per-tenant teardown has `Manager.ClearAccountBindings` beside this hook; the
   hook clears every tenant, while the manager method names one tenant and one
   account.
+- **The membership lifecycle cascades the platform domain and the guard keeps
+  one tenant administrator.** `MembershipRemoved` withdraws an account's
+  platform-domain bindings when its platform-tenant membership is removed, on the
+  ordinary path right after the removal commits; the `authn.membership.changed`
+  subscription runs the same helper as the crash-window compensation. A removal
+  in a business tenant cascades nothing. `CheckMembershipRemoval` refuses with
+  `authn.ErrLastTenantAdmin` when the account is the named tenant's only
+  `TenantAdminRole` binding. Both reuse `tenantAdminRows` and
+  `lastTenantAdminAfterRemoval`, the pair `DeleteBinding`'s own floor reads.
+  `TestMembershipRemovedWithdrawsThePlatformBindings`,
+  `TestCheckMembershipRemovalRefusesTheLastTenantAdmin`.
 - **Both input items are configuration.** `authz.policy.load-timeout` bounds the
   startup load and is read before the snapshot exists.
   `authz.policy.refresh-interval` sizes the ticker `Start` raises and is read at

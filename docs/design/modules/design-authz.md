@@ -9,7 +9,7 @@
 本功能目录由接口包与子包组成，判据同时是依赖闭包（[ADR-authz-packaging-2026-10-12](../../adr/adr-authz-packaging-2026-10-12.md)）：
 
 - **根包 `pkg/authz`** 定义接口、数据类型、权限常量、Casbin 模型文本与哨兵；**自身不登记模块**。根包被每一个使用方 import，把第三方库留在根包里会把它带进每一个使用方的闭包，所以根包只依赖标准库。
-- **`pkg/authz/policy`（模块 `authz.policy`）** 交付策略表与迁移、薄 adapter、Casbin 引擎、主体持有权限的读取、权限目录、`Manager` 与账户生命周期清理。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
+- **`pkg/authz/policy`（模块 `authz.policy`）** 交付策略表与迁移、薄 adapter、Casbin 引擎、主体持有权限的读取、权限目录、`Manager` 与账户生命周期清理，并实现成员关系生命周期与成员关系守卫。它取用 `pkg/db`，因此把库依赖限制在需要策略存储的装配里。
 - **`pkg/authz/guard`（模块 `authz.guard`）** 交付中间件、路由声明登记面、handler 内判定 API，并**实现 `authn.Decider`**。中间件与 `Decider` 共用同一份声明表与同一处租户读取，拆成两个模块要为它们另立接口。
 - **`pkg/authz/admin`（模块 `authz.admin`）** 挂 `/api/v1/system/*` 下的管理面路由，不交付功能；它取用 `policy` 的 `Manager`，把管理面的依赖与业务判定的依赖分开。
 - **`pkg/authz/self`（模块 `authz.self`）** 挂 `/api/v1/authz/me/permissions`，把主体持有的权限读给调用方自身，不交付功能；它取用 `policy` 的 `SubjectPermissions`，因此不需要管理面或强制点。
@@ -55,7 +55,7 @@
 | 登记单元 | 模块名 | 交付 | 排他 |
 |---|---|---|---|
 | `pkg/authz`（根包） | 不登记 | 接口、类型、权限常量、`ModelText`、哨兵 | — |
-| `pkg/authz/policy` | `authz.policy` | 表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager`、`AccountLifecycle` | 是 |
+| `pkg/authz/policy` | `authz.policy` | 表与迁移、薄 adapter、Casbin 引擎、权限目录、`Manager`、`AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard` | 是 |
 | `pkg/authz/guard` | `authz.guard` | 中间件、路由声明登记面、handler 内 API、实现 `authn.Decider` | 是 |
 | `pkg/authz/admin` | `authz.admin` | 管理面 HTTP 路由（不交付功能） | — |
 | `pkg/authz/self` | `authz.self` | 调用方自身权限的读取路由（不交付功能） | — |
@@ -389,7 +389,7 @@ const (
 
 | 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
 |---|---|---|---|---|---|---|
-| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`MembershipChecker` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
+| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle`、`authn.MembershipLifecycle`、`authn.MembershipGuard` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`MembershipChecker` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `SubjectPermissions`、`http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/api/v1/system/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`authz.WriteGuard` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
 | `authz/self` | `authz.self` | 无（只挂 `/api/v1/authz/me/permissions`） | — | `SubjectPermissions` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
@@ -722,7 +722,9 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **被删除的账户经宿主清理路径清空其在某域内的绑定。** `Manager.ClearAccountBindings(ctx, tenant, account)` 删掉该账户在该域内的全部绑定，不受上一条规则约束：那条规则保护的是仍在服务的域，而账户删除收尾要清掉的正是它自己的绑定，其中一条可能恰是该域最后的租户管理员绑定。它作用于一个域与一个账户：同域内其他账户的绑定、该账户在其他域的绑定都不动，角色与授予也不在它的范围内。它是宿主收尾路径而非管理面路由；管理面逐条删除绑定时仍经过最后一条规则。
 
-**移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时，按账户删掉平台域的全部绑定并重载快照。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除，其他租户域的成员变更不触到平台域；没有事件总线的装配里这条联动不执行（[ADR-tenant-administration-2026-10-26](../../adr/adr-tenant-administration-2026-10-26.md)）。
+**移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块把这条清理实现为 `authn.MembershipLifecycle.MembershipRemoved`：成员关系删除提交之后同步调用，按账户删掉平台域的全部绑定并重载快照。删除平台域以外租户的成员关系不触到平台域。钩子幂等，重复执行不删任何行、不报错。本模块同时订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时执行同一清理，作为提交与钩子之间进程崩掉、或另一个副本没做这次删除的补偿。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除；没有事件总线的装配里只有同步钩子，没有补偿（[ADR-tenant-administration-2026-10-26](../../adr/adr-tenant-administration-2026-10-26.md)）。
+
+**移除成员关系前守住租户的最后一个管理员。** 本模块把 `authn.MembershipGuard.CheckMembershipRemoval` 实现为与 `DeleteBinding` 相同的读法：点名租户的 `tenant-admin` 绑定只有一条且属于被移除的账户时，以 `ErrLastTenantAdmin` 拒绝，成员关系不删。检查只读绑定、不看成员是否暂停——规则要的是域内保留一条管理员绑定。它在成员关系删改事务之前询问，不与成员关系存储共用一个事务；宿主路由把拒绝答成 409 `conflict`。
 
 ```go
 // MembershipChecker reports whether an account is an active member of a tenant.
@@ -841,7 +843,7 @@ const (
 - **写路径串行化在一个事务里。** `Manager` 的每次写入落在自己的事务里：需要先核对角色的写（权限授予、角色绑定、角色改写、删角色）把核对与它守护的行放在同一事务，免得并发写落在两者之间——一条授予或绑定落到刚被删、或刚被改成内置的角色上；然后写库、提交、本副本换指针。跨模块的写不共用一个事务——本模块只写自己的表，别的模块的清理走生命周期钩子与事件。
 - **删角色即撤销，不留下孤儿行。** `Manager.DeleteRole` 在一个事务里删掉该租户下这个角色的三处行：`authz_grants` 的授予行、`authz_bindings` 的绑定行与 `authz_roles` 的角色行。引擎只从授予表与绑定表判定、从不读 `authz_roles`，所以残留的授予行或绑定行会替一个已不存在的角色继续判定——三行是一个单位，删除就是撤销。另一个租户的同名角色及其行不受影响。
 - **`LoadPolicy` 是跨租户读，写是租户域内的写。** 读写都走 adapter 构造时那条带跨租户标记的会话（[薄 adapter](#薄-adapter)）；写仍逐条核对规则里的租户，越出调用方租户的写在 adapter 处被 `ErrTenantMismatch` 拒绝，空租户由[薄 adapter](#薄-adapter) 的三层防线挡下。装载没有请求上下文可用，标记因此不能在调用点施加：Casbin 的 Adapter 接口不带 context。
-- **`AccountLifecycle` 清理幂等、至少一次。** 账户删除后本模块按账户订阅事件或经钩子清理其绑定行；清理没做完时残留的绑定行指向一个已无账户的标识，认证侧读不到该账户即可用性不受影响（[authn-account](authn/design-authn-account.md)）。本模块不建指向认证表的外键，清理不依赖外键级联。
+- **`AccountLifecycle` 与 `MembershipLifecycle` 清理幂等、至少一次。** 账户删除后本模块按账户订阅事件或经钩子清理其绑定行；成员关系删除后经 `MembershipLifecycle` 同步清理平台域绑定，并由成员关系事件补偿。清理没做完时残留的绑定行指向一个已无账户或已离开租户的标识，认证侧读不到该账户、准入层读不到成员关系即可用性不受影响（[authn-account](authn/design-authn-account.md)）。本模块不建指向认证表的外键，清理不依赖外键级联。
 - **快照装载不阻塞请求。** `Start` 完成装载之前不接受请求；跨副本重载在后台进行，装载期间旧快照继续服务。
 
 ## 扩展点
@@ -870,7 +872,8 @@ const (
 | 模块 `authz.policy` 的登记与各阶段行为（`Prepare`、`New`、`Init`、`Start`、`Stop`） | 已实现 | `pkg/authz/policy/policy.go` `Module` |
 | 策略表与按方言的迁移集 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0001_authz_policy.sql` |
 | 升级时的数据迁移：撤销平台域以外的 `platform-admin` 角色、授予与绑定，重复施加幂等 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0002_tenant_administration.sql`；`pkg/authz/policy/migrate_test.go` `TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain`；`pkg/authz/policy/migrate_postgres_test.go` `TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain` |
-| 平台域成员关系被移除时撤销该账户在平台域的全部绑定（订阅 `authn.membership.changed`，幂等） | 已实现 | `pkg/authz/policy/policy.go` `(*product).wire`；`pkg/authz/policy/lifecycle.go` `(*product).onMembershipChanged`、`membershipChangeRemoved`；`pkg/authz/policy/membership_cascade_test.go` |
+| 平台域成员关系被移除时撤销该账户在平台域的全部绑定（`authn.MembershipLifecycle.MembershipRemoved` 同步执行，订阅 `authn.membership.changed` 补偿，均幂等） | 已实现 | `pkg/authz/policy/policy.go` `(*product).wire`；`pkg/authz/policy/lifecycle.go` `(*product).MembershipRemoved`、`withdrawPlatformBindings`、`onMembershipChanged`、`membershipChangeRemoved`；`pkg/authz/policy/membership_cascade_test.go`、`membership_lifecycle_test.go` |
+| 显式移除成员关系前的最后租户管理员检查（`authn.MembershipGuard.CheckMembershipRemoval`，拒绝为 `authn.ErrLastTenantAdmin`） | 已实现 | `pkg/authz/policy/lifecycle.go` `(*product).CheckMembershipRemoval`；`pkg/authz/policy/manager.go` `tenantAdminRows`、`lastTenantAdminAfterRemoval`；`pkg/authz/policy/membership_lifecycle_test.go` |
 | 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 已实现 | `pkg/authz/internal/persist/adapter.go` `Adapter`、`New` |
 | Casbin 引擎装载、不可变快照与原子换指针 | 已实现 | `pkg/authz/internal/policy/policy.go` `Snapshot`、`Load`、`Holder`（`Get`/`Swap` 即原子指针的读写） |
 | 启动期模型自检与夹具 | 已实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |

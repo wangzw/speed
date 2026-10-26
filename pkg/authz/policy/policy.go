@@ -5,7 +5,8 @@
 //
 // It delivers the enforcement engine, the subject-permission read, the catalog
 // and the manager, each exclusively, and implements the authentication
-// capability's account lifecycle hook. The Casbin engine and the database it reads live here and nowhere else,
+// capability's account lifecycle hook, membership lifecycle hook and membership
+// guard. The Casbin engine and the database it reads live here and nowhere else,
 // so a host that only guards routes carries no policy store.
 package policy
 
@@ -82,7 +83,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // with no roster has no platform-domain tenant to check, one with no membership
 // checker refuses a platform administrator binding rather than writing it, one
 // with no bus relies on the configured refresh interval, and one with no logger
-// writes through the process default.
+// writes through the process default. The module implements the authentication
+// capability's account lifecycle, membership lifecycle and membership guard on
+// the same instance, so an assembly that takes this module in has all three
+// without naming them apart.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -97,6 +101,8 @@ func Module() core.Module {
 			{Token: (*authz.Manager)(nil), Exclusive: true},
 			{Token: (*authz.Seeder)(nil), Exclusive: true},
 			{Token: (*authn.AccountLifecycle)(nil)},
+			{Token: (*authn.MembershipLifecycle)(nil)},
+			{Token: (*authn.MembershipGuard)(nil)},
 		},
 		Resources: []any{
 			permissions,
@@ -174,12 +180,14 @@ func Module() core.Module {
 }
 
 var (
-	_ authz.Enforcer           = (*product)(nil)
-	_ authz.SubjectPermissions = (*product)(nil)
-	_ authz.Catalog            = (*product)(nil)
-	_ authz.Manager            = (*product)(nil)
-	_ authz.Seeder             = (*product)(nil)
-	_ authn.AccountLifecycle   = (*product)(nil)
+	_ authz.Enforcer            = (*product)(nil)
+	_ authz.SubjectPermissions  = (*product)(nil)
+	_ authz.Catalog             = (*product)(nil)
+	_ authz.Manager             = (*product)(nil)
+	_ authz.Seeder              = (*product)(nil)
+	_ authn.AccountLifecycle    = (*product)(nil)
+	_ authn.MembershipLifecycle = (*product)(nil)
+	_ authn.MembershipGuard     = (*product)(nil)
 )
 
 // product is this module's product and the implementation of the enforcement
