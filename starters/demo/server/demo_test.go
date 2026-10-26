@@ -1242,6 +1242,83 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 			tenantRoles)
 	}
 
+	// The bindings say the same per account, which the roles alone do not: the
+	// platform administrator holds platform-admin and tenant-admin in the system
+	// tenant and only tenant-admin in the business tenant.
+	profile := adminGet(t, seedIdentifier, "/api/v1/auth/me")
+	if profile.status != http.StatusOK {
+		t.Fatalf("reading the administrator's profile answered %d: %s", profile.status, profile.body)
+	}
+	var who struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := json.Unmarshal(profile.body, &who); err != nil || who.AccountID == "" {
+		t.Fatalf("reading the administrator's account identifier: %v\n%s", err, profile.body)
+	}
+	boundRoles := func(domain string) map[string]bool {
+		got := adminGet(t, seedIdentifier,
+			"/api/v1/system/tenants/"+domain+"/bindings/"+who.AccountID)
+		if got.status != http.StatusOK {
+			t.Fatalf("reading the administrator's bindings in %s answered %d: %s",
+				domain, got.status, got.body)
+		}
+		var listed struct {
+			Bindings []struct {
+				Role string `json:"role"`
+			} `json:"bindings"`
+		}
+		if err := json.Unmarshal(got.body, &listed); err != nil {
+			t.Fatalf("reading the administrator's bindings in %s: %v\n%s", domain, err, got.body)
+		}
+		out := make(map[string]bool, len(listed.Bindings))
+		for _, b := range listed.Bindings {
+			out[b.Role] = true
+		}
+		return out
+	}
+	systemBindings := boundRoles(string(authz.PlatformDomain))
+	for _, role := range []authz.Role{platformAdminRole, tenantAdminRole} {
+		if !systemBindings[string(role)] {
+			t.Errorf("the platform administrator holds no %s binding in the system tenant: %v",
+				role, systemBindings)
+		}
+	}
+	tenantBindings := boundRoles(demoTenant)
+	if !tenantBindings[string(tenantAdminRole)] {
+		t.Errorf("the business tenant's administrator holds no tenant-admin binding: %v", tenantBindings)
+	}
+	if tenantBindings[string(platformAdminRole)] {
+		t.Errorf("the business tenant's administrator holds the platform-admin binding: %v", tenantBindings)
+	}
+
+	// The platform binding rests on a system membership: the policy refuses the
+	// binding without one, so finding the account among the system tenant's
+	// members holds the seed's order — the membership is written first.
+	members := adminGet(t, seedIdentifier,
+		"/api/v1/tenants/"+string(authz.PlatformDomain)+"/members")
+	if members.status != http.StatusOK {
+		t.Fatalf("reading the system tenant's members answered %d: %s", members.status, members.body)
+	}
+	var systemMembers struct {
+		Members []struct {
+			Account string `json:"account"`
+			Active  bool   `json:"active"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(members.body, &systemMembers); err != nil {
+		t.Fatalf("reading the system tenant's members: %v\n%s", err, members.body)
+	}
+	foundMember := false
+	for _, m := range systemMembers.Members {
+		if m.Account == who.AccountID && m.Active {
+			foundMember = true
+		}
+	}
+	if !foundMember {
+		t.Errorf("the platform administrator is not an active member of the system tenant: %+v",
+			systemMembers.Members)
+	}
+
 	// The administrator reaches the console's tenant-addressed pages for the
 	// tenant the seed registered. A binding in the platform domain alone does
 	// not answer for a tenant — the role is a per-domain row — so the seed
@@ -1357,6 +1434,159 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 					path, tenant, got.status, got.body)
 			}
 		}
+	}
+}
+
+// TestCreatingATenantWritesTheFirstTenantAdminBinding holds the registration's
+// whole path in the assembled program: the route goes through the host's
+// tenant.Provisioner, the new tenant's domain gets its tenant-admin role, and
+// the caller becomes the tenant's first administrator with a membership and the
+// tenant-admin binding. A route that wrote only the roster row would leave a
+// tenant nobody can enter, which the roster cannot detect on a later removal.
+func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	serve := start(t, config, "sqlite", serveCommand)
+	serve.waitReady(t)
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	client := &http.Client{Timeout: 10 * time.Second}
+	token := signIn(t, base, seedIdentifier, seedPassword)
+	auth := map[string]string{"Authorization": "Bearer " + token}
+
+	profile := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil, auth)
+	if profile.status != http.StatusOK {
+		t.Fatalf("reading the administrator's profile answered %d: %s", profile.status, profile.body)
+	}
+	var who struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := json.Unmarshal(profile.body, &who); err != nil || who.AccountID == "" {
+		t.Fatalf("reading the administrator's account identifier: %v\n%s", err, profile.body)
+	}
+
+	const created = "newco"
+	registered := send(t, client, http.MethodPost, base+"/api/v1/system/tenants",
+		map[string]any{"id": created, "alias": created}, auth)
+	if registered.status != http.StatusCreated {
+		t.Fatalf("registering a tenant answered %d, want 201:\n%s", registered.status, registered.body)
+	}
+
+	bound := send(t, client, http.MethodGet,
+		base+"/api/v1/system/tenants/"+created+"/bindings/"+who.AccountID, nil, auth)
+	if bound.status != http.StatusOK {
+		t.Fatalf("reading the creator's bindings in the new tenant answered %d:\n%s",
+			bound.status, bound.body)
+	}
+	var listed struct {
+		Bindings []struct {
+			Role string `json:"role"`
+		} `json:"bindings"`
+	}
+	if err := json.Unmarshal(bound.body, &listed); err != nil {
+		t.Fatalf("reading the creator's bindings: %v\n%s", err, bound.body)
+	}
+	if len(listed.Bindings) != 1 || listed.Bindings[0].Role != string(authz.TenantAdminRole) {
+		t.Errorf("the creator's bindings = %+v, want one tenant-admin", listed.Bindings)
+	}
+}
+
+// TestRemovingASystemMembershipWithdrawsThePlatformBinding holds the cascade in
+// the assembled program: a platform-administrator binding is written only for an
+// active system member, and removing that membership withdraws the binding in
+// the same request. The event bus this stack runs delivers in-process, so the
+// read after the removal observes what the cascade left.
+func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
+	ports := freePorts(t, listenerCount)
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "demo.db"))
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	serve := start(t, config, "sqlite", serveCommand)
+	serve.waitReady(t)
+
+	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
+	client := &http.Client{Timeout: 10 * time.Second}
+	operator := signIn(t, base, seedIdentifier, seedPassword)
+	auth := map[string]string{"Authorization": "Bearer " + operator}
+
+	const (
+		targetName     = "cascade-target"
+		targetPassword = "cascade-target-secret"
+		system         = string(authz.PlatformDomain)
+	)
+	created := send(t, client, http.MethodPost, base+"/api/v1/system/auth/accounts",
+		map[string]any{"kind": "user", "username": targetName, "password": targetPassword}, auth)
+	if created.status != http.StatusCreated {
+		t.Fatalf("creating the target account answered %d:\n%s", created.status, created.body)
+	}
+	target := signIn(t, base, targetName, targetPassword)
+	profile := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil,
+		map[string]string{"Authorization": "Bearer " + target})
+	var who struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := json.Unmarshal(profile.body, &who); err != nil || who.AccountID == "" {
+		t.Fatalf("reading the target's account identifier: %v\n%s", err, profile.body)
+	}
+
+	// A platform-administrator binding is refused without the membership, so the
+	// membership is written first — the order the seed uses as well.
+	member := send(t, client, http.MethodPut,
+		base+"/api/v1/tenants/"+system+"/members/"+who.AccountID,
+		map[string]any{"active": true}, auth)
+	if member.status != http.StatusNoContent {
+		t.Fatalf("adding the target to the system tenant answered %d:\n%s", member.status, member.body)
+	}
+	bound := send(t, client, http.MethodPut,
+		base+"/api/v1/system/tenants/"+system+"/bindings/"+who.AccountID+"/"+string(authz.PlatformAdminRole),
+		nil, auth)
+	if bound.status != http.StatusNoContent {
+		t.Fatalf("binding the target to platform-admin answered %d:\n%s", bound.status, bound.body)
+	}
+
+	rolesOf := func() map[string]bool {
+		got := send(t, client, http.MethodGet,
+			base+"/api/v1/system/tenants/"+system+"/bindings/"+who.AccountID, nil, auth)
+		if got.status != http.StatusOK {
+			t.Fatalf("reading the target's bindings answered %d:\n%s", got.status, got.body)
+		}
+		var listed struct {
+			Bindings []struct {
+				Role string `json:"role"`
+			} `json:"bindings"`
+		}
+		if err := json.Unmarshal(got.body, &listed); err != nil {
+			t.Fatalf("reading the target's bindings: %v\n%s", err, got.body)
+		}
+		out := make(map[string]bool, len(listed.Bindings))
+		for _, b := range listed.Bindings {
+			out[b.Role] = true
+		}
+		return out
+	}
+	if !rolesOf()[string(authz.PlatformAdminRole)] {
+		t.Fatal("the platform-admin binding did not land")
+	}
+
+	removed := send(t, client, http.MethodDelete,
+		base+"/api/v1/tenants/"+system+"/members/"+who.AccountID, nil, auth)
+	if removed.status != http.StatusNoContent {
+		t.Fatalf("removing the target's system membership answered %d:\n%s", removed.status, removed.body)
+	}
+	// The change reaches the policy module through the outbox relay, which the
+	// baseline runs in the same process: the withdrawal is eventual, bounded by
+	// the relay's poll interval, so the case waits for it rather than reading
+	// once.
+	deadline := time.Now().Add(10 * time.Second)
+	for rolesOf()[string(authz.PlatformAdminRole)] && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if rolesOf()[string(authz.PlatformAdminRole)] {
+		t.Error("the platform-admin binding survived the removal of the system membership")
 	}
 }
 

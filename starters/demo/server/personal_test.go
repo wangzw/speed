@@ -1545,6 +1545,32 @@ func TestTheTenantAdminHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 		t.Errorf("the personal tenant's tenant-admin issued an invitation and answered %d, want 403:\n%s",
 			invited.status, invited.body)
 	}
+
+	// The single holder cannot leave: removing its own membership is the same
+	// membership management the allowlist withholds, so the route refuses it.
+	// The last tenant-admin binding and the self-removal refusal stand behind
+	// that, and the account is the tenant's only member.
+	left := send(t, client, http.MethodDelete,
+		base+"/api/v1/tenants/"+personalID+"/members/"+who.AccountID, nil, memberAuth)
+	if left.status != http.StatusForbidden {
+		t.Errorf("the personal tenant's holder removed its own membership and answered %d, want 403:\n%s",
+			left.status, left.body)
+	}
+
+	// The host's write guard protects the system tenant and every personal
+	// tenant from an operator's disable. The operator reaches the route — it
+	// holds tenant.manage in the platform domain — and the refusal is the guard's
+	// protected type, not a permission denial.
+	for _, id := range []string{string(authz.PlatformDomain), personalID} {
+		refused := send(t, client, http.MethodPost,
+			base+"/api/v1/system/tenants/"+id+"/status",
+			map[string]any{"status": "disabled"}, operatorAuth)
+		if refused.status != http.StatusForbidden ||
+			!strings.Contains(string(refused.body), "urn:speed:tenant:protected") {
+			t.Errorf("disabling the protected tenant %q answered %d, want 403 urn:speed:tenant:protected:\n%s",
+				id, refused.status, refused.body)
+		}
+	}
 }
 
 // TestThePersonalTenantRouteIsAbsentWithTheSwitchOff holds the switch: the
