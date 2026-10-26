@@ -51,8 +51,9 @@
  * The email and phone preconditions are produced through the account page, not
  * seeded: the operator's email is proved from a `mail.review` code and its phone
  * from an `sms.review` code, both read through the allowed code reader. The
- * operator's membership in the seeded tenant is part of every review server's
- * seed: the fixture names it acme's second tenant administrator.
+ * operator's membership in the seeded tenant is part of this server's seed: the
+ * fixture names it acme's second tenant administrator on every server that does
+ * not seed the impersonation factors.
  *
  * `@covers` is narrower than the journey document where an assertion cannot fail
  * on the requirement's whole claim:

@@ -4,14 +4,15 @@ package main
 
 // The review build's impersonation fixture.
 //
-// The impersonation journey needs an operator who holds two two-step methods
-// with at least one seasoned non-SMS method and can raise a stale session with
-// the other. The operator also administers the target tenant: the console's
-// tenant-addressed pages decide in that tenant's policy domain, so a platform
-// administrator with no grant there cannot read or start an impersonation. A
-// browser walkthrough can produce that state by hand, but the review build is
-// also a demonstration: it seeds the two factors here, in the review build
-// only, so the journey is reachable from a fresh database.
+// The impersonation journey needs an operator who is not a member of the target
+// tenant, holds two two-step methods with at least one seasoned non-SMS method,
+// and can raise a stale session with the other method. Impersonation is a
+// platform capability decided in the platform domain, so the operator's
+// platform-administrator role is the permission it needs: the target tenant in
+// the path is the data the record is confined to, not a domain the initiator
+// must hold a grant in. A browser walkthrough can produce that state by hand,
+// but the review build is also a demonstration: it seeds the two factors here,
+// in the review build only, so the journey is reachable from a fresh database.
 //
 // The factors are written through the product's own seams, not by raw inserts
 // chosen here: the TOTP one through the multi-factor register and the TOTP

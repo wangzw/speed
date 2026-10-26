@@ -162,9 +162,12 @@ export const reviewMember = {
  * The platform operator the review template seeds, and the tenant the
  * SMS-template rollout journey drives it in.
  *
- * The account and its credential are the template's own. Every server also
- * names this account acme's second tenant administrator, so the console can
- * address the tenant; see the seed-tenant section of writeReviewConfig.
+ * The template's operator is a platform administrator and deliberately not a
+ * member of the seeded tenant, because the impersonation journey targets that
+ * tenant from outside and its initiator holds no permission there. Every other
+ * server names this account acme's second administrator, and an administrator
+ * is a member of the tenant it administers; see the seed-tenant section of
+ * writeReviewConfig. The account and its credential are the template's own.
  */
 export const smsRolloutOperator = {
   tenant: 'acme',
@@ -487,24 +490,25 @@ export async function writeReviewConfig(
     )
   }
 
-  // The console's tenant-addressed administration pages -- impersonation
-  // records and starts among them -- decide in the tenant's own policy domain.
-  // A platform administrator's role lives in the platform domain and does not
-  // pass such a decision, so the operator is named acme's second administrator
-  // on every server. The template keeps its own single administrator (the
-  // impersonation target); this addition is what lets the console address acme.
-  body = replaceOnce(
-    body,
-    '\n        - member\n',
-    '\n        - member\n        - operator@demo.test\n',
-    'review tenant administrator',
-  )
-
   // The impersonation fixture's second factors change how the seeded operator
   // signs in: every later sign-in must complete one. Only the journey that
   // needs it turns it on; every other server starts from the template's own
   // seed with the factors off.
+  //
+  // The impersonation journey's server is also the one that keeps the operator
+  // outside acme: the requirement is a target inside the tenant and an initiator
+  // who is not a member and holds no permission there. Every other server names
+  // the operator acme's second administrator instead, which is the tenant-domain
+  // grant their tenant-addressed console pages decide on. An administrator is a
+  // member of the tenant it administers; the template keeps its own single
+  // administrator, the impersonation target.
   if (input.seedImpersonation !== true) {
+    body = replaceOnce(
+      body,
+      '\n        - member\n',
+      '\n        - member\n        - operator@demo.test\n',
+      'review tenant administrator',
+    )
     body = replaceOnce(
       body,
       '\n  impersonation: true\n',

@@ -67,14 +67,14 @@ describe('the review configuration', () => {
     expect(body).not.toContain('    allow-private-egress: false')
   })
 
-  it('keeps the operator an acme administrator while it seeds the impersonation factors', async () => {
+  it('keeps the operator out of acme while it seeds the impersonation factors', async () => {
     const body = await rendered({ seedImpersonation: true })
-    // The console's tenant-addressed pages decide in the tenant's own policy
-    // domain, so the operator needs the acme grant even on the impersonation
-    // journey's server. The factors stay on: that switch is the only thing the
-    // impersonation option changes.
+    // The impersonation requirement is a target inside the tenant and an
+    // initiator outside it, so the operator holds no grant in acme on this
+    // journey's server. The factors stay on: the impersonation option seeds
+    // them and turns the switch on, and nothing else.
     expect(body).toContain(
-      '    - name: acme\n      admins:\n        - member\n        - operator@demo.test',
+      '    - name: acme\n      admins:\n        - member\n  members:',
     )
     expect(body).toContain('\n  impersonation: true\n')
   })
