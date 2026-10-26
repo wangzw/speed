@@ -126,6 +126,10 @@ function googleRow(page: Page) {
     .filter({ hasText: copy('accountUi', 'bindings.provider.google') })
 }
 
+// This journey drives the provider's real round trip, so its server starts the
+// local identity provider; no other spec pays for openssl or its two ports.
+test.use({ socialIdentityProvider: true })
+
 test('social-account-linking: a password account links Google, then signs in with it', async ({
   demo,
 }) => {

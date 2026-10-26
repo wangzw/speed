@@ -76,17 +76,21 @@ remembering to run it.
   the email verification section and password sign-in are filled and clicked by
   accessible label and role, never by calling the API.
 - **A real identity provider backs the social journeys**
-  (`fixtures/identity-provider.ts`). Each review server also starts a local
-  OpenID Connect provider: discovery, a key set, a token endpoint, a userinfo
-  endpoint and a browser-facing authorization page for one fixed user. The
-  server fixture points the review configuration's Google method at it through
-  the method's `issuer`, `allow-loopback` and `root-ca-file` settings, and the
-  provider's TLS certificate chains to a CA it mints with openssl into the
-  server's temporary directory. The product's restricted egress client is the only thing
-  that reaches the HTTPS half; the browser reaches the authorization page over
-  plain http on a second loopback port and approves the request with a click,
-  so the round trip is real without weakening Chromium's certificate checking
-  for every journey. A spec never answers the provider's requests; it reads the
+  (`fixtures/identity-provider.ts`). A spec that drives a social method opts its
+  server in with `test.use({ socialIdentityProvider: true })`; only then does
+  the server fixture start a local OpenID Connect provider: discovery, a key
+  set, a token endpoint, a userinfo endpoint and a browser-facing authorization
+  page for one fixed user. Every other spec runs without openssl and without
+  the provider's two extra loopback ports. The server fixture points the review
+  configuration's Google method at the provider through the method's `issuer`,
+  `allow-loopback` and `root-ca-file` settings, and the provider's TLS
+  certificate chains to a CA it mints with openssl into the server's temporary
+  directory; the CA file's certificate is appended to the system roots the
+  product trusts. The product's restricted egress client is the only thing that
+  reaches the HTTPS half; the browser reaches the authorization page over plain
+  http on a second loopback port and approves the request with a click, so the
+  round trip is real without weakening Chromium's certificate checking for
+  every journey. A spec never answers the provider's requests; it reads the
   page and clicks. The provider's own page copy is the fixture's constant, not
   a product locale string.
 

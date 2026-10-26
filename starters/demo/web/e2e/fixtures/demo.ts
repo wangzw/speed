@@ -80,6 +80,13 @@ export const test = base.extend<{
    */
   seedSocialAccount: boolean
   /**
+   * Start the local OpenID Connect provider the social methods are pointed at.
+   * A spec that drives a social method sets `test.use({ socialIdentityProvider:
+   * true })`; every other spec's server runs without openssl and without the
+   * provider's two extra loopback ports.
+   */
+  socialIdentityProvider: boolean
+  /**
    * Lower the account self-service freshness window for this spec's server.
    * A journey that observes the window passing sets it to the setting's
    * domain floor; every other spec keeps the template's declared window.
@@ -90,9 +97,17 @@ export const test = base.extend<{
   seedImpersonation: [false, { option: true }],
   seedInvitee: [false, { option: true }],
   seedSocialAccount: [false, { option: true }],
+  socialIdentityProvider: [false, { option: true }],
   recentWindow: [undefined, { option: true }],
   server: async (
-    { seedMember, seedImpersonation, seedInvitee, seedSocialAccount, recentWindow },
+    {
+      seedMember,
+      seedImpersonation,
+      seedInvitee,
+      seedSocialAccount,
+      socialIdentityProvider,
+      recentWindow,
+    },
     use,
     testInfo,
   ) => {
@@ -101,6 +116,7 @@ export const test = base.extend<{
       seedImpersonation,
       seedInvitee,
       seedSocialAccount,
+      socialIdentityProvider,
       recentWindow,
     })
     try {

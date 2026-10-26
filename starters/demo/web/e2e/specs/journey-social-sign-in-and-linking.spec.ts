@@ -84,6 +84,10 @@ async function openAccountSettings(page: Page): Promise<void> {
   ).toBeVisible()
 }
 
+// This journey drives the provider's real round trip, so its server starts the
+// local identity provider; no other spec pays for openssl or its two ports.
+test.use({ socialIdentityProvider: true })
+
 test.describe('the provider address belongs to no account', () => {
   test('social-sign-in: a first Google sign-in opens an account with the provider-verified email', async ({
     demo,

@@ -255,6 +255,33 @@ function looksLikeBindFailure(log: ProcessLog, stderr: readonly string[]): boole
   )
 }
 
+/** Whether a provider start failed because a loopback port was taken. */
+function looksLikePortTaken(error: unknown): boolean {
+  return /EADDRINUSE|address already in use/i.test(String(error))
+}
+
+/**
+ * Start the local identity provider with the same fresh-pair retry the backend
+ * port uses: the provider probes for two free ports and then binds them, so a
+ * process can take one in the window between. The certificates are minted into
+ * the run's directory again on each attempt and overwrite the same files, so a
+ * retry only re-allocates the listeners.
+ */
+async function startSocialIdentityProvider(
+  dir: string,
+): Promise<IdentityProvider> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= MAX_BIND_ATTEMPTS; attempt += 1) {
+    try {
+      return await startIdentityProvider({ dir })
+    } catch (error) {
+      lastError = error
+      if (!looksLikePortTaken(error)) throw error
+    }
+  }
+  throw lastError
+}
+
 /** A started server. */
 export interface ReviewServer {
   /** The review binary that was built. */
@@ -268,8 +295,11 @@ export interface ReviewServer {
   readonly backendPort: number
   readonly opsPort: number
   readonly config: ReviewConfig
-  /** The local OpenID Connect provider the social methods are pointed at. */
-  readonly identityProvider: IdentityProvider
+  /**
+   * The local OpenID Connect provider the social methods are pointed at, when
+   * this server's spec opted into it; undefined otherwise.
+   */
+  readonly identityProvider?: IdentityProvider
   /** Everything the child wrote to standard output, line by line. */
   readonly log: ProcessLog
   /** Everything the child wrote to standard error, joined. */
@@ -296,11 +326,15 @@ export interface ReviewServer {
  * spec that needs none leaves them off, so the template's own seed stays the
  * baseline.
  *
- * The local OpenID Connect provider starts before the seed and lives as long as
- * this server: the configuration the binary reads names the provider's issuer
- * and the CA file it minted, and a configured CA file that cannot be read stops
- * the start. The provider is part of the environment the social methods run
- * against, not a request the fixture answers on the product's behalf.
+ * A spec that drives a social method turns on `socialIdentityProvider`. Only
+ * then does the fixture start the local OpenID Connect provider, which mints
+ * certificates with openssl and binds two more loopback ports. The provider
+ * starts before the seed and lives as long as this server: the configuration
+ * the binary reads names the provider's issuer and the CA file it minted, and a
+ * configured CA file that cannot be read stops the start. It is part of the
+ * environment the social methods run against, not a request the fixture answers
+ * on the product's behalf. Every other spec runs without it and keeps the
+ * template's public provider defaults.
  */
 export async function startReviewServer(
   options: {
@@ -308,6 +342,7 @@ export async function startReviewServer(
     readonly seedImpersonation?: boolean
     readonly seedInvitee?: boolean
     readonly seedSocialAccount?: boolean
+    readonly socialIdentityProvider?: boolean
     readonly recentWindow?: string
   } = {},
 ): Promise<ReviewServer> {
@@ -348,16 +383,23 @@ export async function startReviewServer(
   }
 
   try {
-    // The provider is the environment the social methods run against. It is
-    // started before the seed so the configuration the binary reads already
+    // The provider is the environment a social spec's methods run against. A
+    // spec that does not drive one leaves it off, so its server depends neither
+    // on openssl nor on the provider's two extra loopback ports. When it is on
+    // it starts before the seed so the configuration the binary reads already
     // names a reachable issuer and an existing CA file: a configured root CA
     // that cannot be read stops the start, so the order is load-bearing.
-    identityProvider = await startIdentityProvider({ dir })
-    const provider = identityProvider
-    const socialProvider = {
-      issuer: provider.issuer,
-      rootCAFile: provider.rootCAPath,
-    }
+    identityProvider =
+      options.socialIdentityProvider === true
+        ? await startSocialIdentityProvider(dir)
+        : undefined
+    const socialProvider =
+      identityProvider === undefined
+        ? undefined
+        : {
+            issuer: identityProvider.issuer,
+            rootCAFile: identityProvider.rootCAPath,
+          }
     // Seed with a provisional pair: the seed command does not listen, and the
     // serve attempt below writes its own configuration with the final ports.
     const [seedBackend, seedOps] = await freePorts(2)
@@ -484,7 +526,7 @@ export async function startReviewServer(
         }
       }
       await terminate()
-      await provider.stop()
+      await identityProvider?.stop()
       if (options.keep !== true) {
         await rm(dir, { recursive: true, force: true })
       }
@@ -498,7 +540,7 @@ export async function startReviewServer(
       backendPort: reviewConfig.backendPort,
       opsPort: reviewConfig.opsPort,
       config: reviewConfig,
-      identityProvider: provider,
+      identityProvider,
       log,
       get stderr(): string {
         return stderrLines.join('\n')
