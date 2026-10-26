@@ -30,12 +30,16 @@
  * WHAT THE TWO FILES PROVE. The list is paged by cursor and the export is not
  * a page: the spec walks every page the list offers, keeps each row's record
  * id (from the row's own detail link) together with the action, object,
- * outcome and actor the row renders, and then requires the exported NDJSON
- * lines to be the same set of ids -- same count, same action, same object,
- * same outcome per id, the one refused write included -- and the second file
- * to be exactly the narrowed list's set and a strict subset of the first.
- * Reading the downloaded file is a named read of the file the browser saved;
- * the spec writes nothing and opens no other channel.
+ * outcome, the raw actor its cell carries as a full value, and the time it
+ * renders, and then requires the exported NDJSON lines to be the same set of
+ * ids -- same count, same action, same object, same outcome and, per id, the
+ * same raw actor the row carries (whose visible text resolves to the
+ * operator's display name) -- and the second file to be exactly the narrowed
+ * list's set and a strict subset of the first. Both sequences must read
+ * newest first, and the downloaded name must name the export instant inside
+ * the window around the click. Reading the downloaded file is a named read of
+ * the file the browser saved; the spec writes nothing and opens no other
+ * channel.
  *
  * DISCLOSURE. The second half of REQ-platform-admin-112 -- a caller without
  * audit.read must be refused the export -- is not reachable through the UI: an
@@ -102,6 +106,13 @@ const FIRST_PHASE_SAVES = 3
 
 const MINUTE_MS = 60_000
 
+/**
+ * How far the export file name may sit outside the click window. The name is
+ * the export's own instant truncated to the whole second, so the truncation
+ * alone can put it just under a second before the click the harness recorded.
+ */
+const EXPORT_NAME_TOLERANCE_MS = 1_000
+
 /** The audit list's path, read from the page's own request. */
 const AUDIT_LIST_PATH = '/api/v1/system/audit/records'
 
@@ -109,6 +120,12 @@ const AUDIT_LIST_PATH = '/api/v1/system/audit/records'
 interface ListedRecord {
   readonly id: string
   readonly outcome: string
+  /** The raw actor the row's cell carries as its full value (the DataTable's
+   * `title` and copy control), which is what the export must repeat. */
+  readonly actor: string
+  /** The row's rendered time parsed back to an instant. The render drops
+   * sub-minute precision, so two rows of one minute compare equal. */
+  readonly occurredAt: number
 }
 
 /** One line of the exported NDJSON file, in the shape the record view has. */
@@ -276,6 +293,67 @@ async function waitUntil(instant: Date): Promise<void> {
   }
 }
 
+/** The zone the audit page renders every instant in (the page pins it to UTC). */
+const RENDERED_TIME_ZONE = ' UTC'
+
+/**
+ * The instant a rendered time cell names, parsed back in UTC. The page renders
+ * the record's `occurred_at` through Intl's medium-date/short-time en-US
+ * formatter pinned to UTC, so the string carries no zone of its own and the
+ * suffix supplies the one the render used. ICU may separate the day period
+ * with a narrow no-break space, which the engine's date parser does not
+ * accept, so those spaces are normalised first.
+ */
+function parseRenderedTime(text: string): number {
+  const normalized = text.replace(/[\u00a0\u202f]/g, ' ').trim()
+  const instant = Date.parse(`${normalized}${RENDERED_TIME_ZONE}`)
+  if (Number.isNaN(instant)) {
+    throw new Error(
+      `the audit row's time ${JSON.stringify(text)} is not the en-US UTC instant the page renders`,
+    )
+  }
+  return instant
+}
+
+/** The instant an exported record's `occurred_at` names (RFC 3339 in UTC). */
+function parseExportedInstant(record: ExportedRecord): number {
+  const instant = Date.parse(record.occurred_at)
+  if (Number.isNaN(instant)) {
+    throw new Error(
+      `exported record ${record.id} has an unparseable occurred_at ${JSON.stringify(record.occurred_at)}`,
+    )
+  }
+  return instant
+}
+
+/**
+ * The body-cell indexes of the two columns this spec reads raw: the time
+ * (rendered text, parsed back) and the actor (the DataTable full value). The
+ * index comes from the rendered header, so a column added ahead of them keeps
+ * the reads aligned instead of silently moving to the wrong cell.
+ */
+async function auditColumnIndexes(
+  page: Page,
+): Promise<{ readonly time: number; readonly actor: number }> {
+  const headers = page.getByRole('table').getByRole('columnheader')
+  const count = await headers.count()
+  let time = -1
+  let actor = -1
+  for (let index = 0; index < count; index += 1) {
+    const label = (await headers.nth(index).innerText()).trim()
+    if (label === copy('consoleUi', 'audit.column.time')) {
+      time = index
+    }
+    if (label === copy('consoleUi', 'audit.column.actor')) {
+      actor = index
+    }
+  }
+  if (time < 0 || actor < 0) {
+    throw new Error('the audit table does not render its time and actor columns')
+  }
+  return { time, actor }
+}
+
 /** The record id an audit row's action link carries. */
 async function rowRecordId(row: Locator): Promise<string> {
   const link = row.getByRole('link', { name: SETTINGS_SET, exact: true })
@@ -291,9 +369,11 @@ async function rowRecordId(row: Locator): Promise<string> {
 
 /**
  * Walk every page the applied filter matches, asserting what each rendered row
- * says and returning the id and outcome of every row. The first page of a
- * match longer than a page must be exactly the page size the page asked for;
- * the later pages carry the rest.
+ * says and returning the id, outcome, raw actor and time of every row. The
+ * rows must read newest first across the pages, and the actor cell must carry
+ * the raw identity the export repeats, not only the readable name it renders.
+ * The first page of a match longer than a page must be exactly the page size
+ * the page asked for; the later pages carry the rest.
  */
 async function collectListedRecords(
   page: Page,
@@ -301,16 +381,24 @@ async function collectListedRecords(
 ): Promise<readonly ListedRecord[]> {
   const listed: ListedRecord[] = []
   const seen = new Set<string>()
+  let columns: { readonly time: number; readonly actor: number } | undefined
+  let previousInstant: number | undefined
 
   for (;;) {
     const rows = auditRows(page)
     await expect(rows.first()).toBeVisible({ timeout: 15_000 })
+    // The header is read once the table is rendered: applying a filter can
+    // leave the section in its loading placeholder for a moment, and a header
+    // read then would find no table at all.
+    columns ??= await auditColumnIndexes(page)
+    const { time: timeColumn, actor: actorColumn } = columns
     const count = await rows.count()
     expect(count).toBeGreaterThan(0)
     expect(count).toBeLessThanOrEqual(pageSize)
 
     for (let index = 0; index < count; index += 1) {
       const row = rows.nth(index)
+      const cells = row.getByRole('cell')
       const id = await rowRecordId(row)
       expect(id).not.toBe('')
       expect(seen.has(id)).toBe(false)
@@ -333,7 +421,44 @@ async function collectListedRecords(
         .getByText(SUCCESS, { exact: true })
         .count()
       expect(failed + success).toBe(1)
-      listed.push({ id, outcome: failed === 1 ? FAILED : SUCCESS })
+
+      // The policy is newest first, and the list is read page by page, so the
+      // order is asserted as the rows accumulate: no row may name a later
+      // instant than the row before it, on this page or the one before.
+      const occurredAt = parseRenderedTime(
+        await cells.nth(timeColumn).innerText(),
+      )
+      if (previousInstant !== undefined) {
+        expect(
+          occurredAt,
+          `audit row ${id} is newer than the row before it; the list must read newest first`,
+        ).toBeLessThanOrEqual(previousInstant)
+      }
+      previousInstant = occurredAt
+
+      // The actor cell's full value is the raw identity the export carries;
+      // the visible text is only the resolved display name. Both channels of
+      // the cell (its title and the copy control's name) must carry the same
+      // raw value, so the export comparison below binds to a real identity
+      // rather than to whatever the export happens to name.
+      const actorCell = cells.nth(actorColumn)
+      const actor = await actorCell.getAttribute('title')
+      if (actor === null || actor === '') {
+        throw new Error(`audit row ${id} carries no actor full value`)
+      }
+      await expect(
+        actorCell.getByRole('button', {
+          name: copy('uiKit', 'dataTable.copyValue', { value: actor }),
+          exact: true,
+        }),
+      ).toBeVisible()
+
+      listed.push({
+        id,
+        outcome: failed === 1 ? FAILED : SUCCESS,
+        actor,
+        occurredAt,
+      })
     }
 
     const next = nextPageButton(page)
@@ -375,26 +500,56 @@ async function collectListedRecords(
 
 /** Read and validate the NDJSON file a download saved. */
 async function readExportedRecords(page: Page): Promise<readonly ExportedRecord[]> {
+  // The export stamps the file name with the instant it starts, captured in
+  // the page between these two reads of the harness clock, so the parsed name
+  // has to fall inside this window (widened by the name's second truncation).
+  const clickedAt = new Date()
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     exportButton(page).click(),
   ])
+  const settledAt = new Date()
 
   const failure = await download.failure()
   expect(failure).toBeNull()
 
+  const name = download.suggestedFilename()
   // The name is the export's own UTC instant, so a stale or fixed name would
   // fail here as well as the contents.
-  expect(download.suggestedFilename()).toMatch(
-    /^audit-records-\d{8}T\d{6}Z\.ndjson$/,
+  expect(name).toMatch(/^audit-records-\d{8}T\d{6}Z\.ndjson$/)
+
+  const stamped =
+    /^audit-records-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.ndjson$/.exec(
+      name,
+    )
+  if (stamped === null) {
+    throw new Error(
+      `the export file name ${JSON.stringify(name)} is not audit-records-<UTC instant>.ndjson`,
+    )
+  }
+  const namedInstant = Date.UTC(
+    Number(stamped[1]),
+    Number(stamped[2]) - 1,
+    Number(stamped[3]),
+    Number(stamped[4]),
+    Number(stamped[5]),
+    Number(stamped[6]),
   )
+  expect(
+    namedInstant,
+    `the export file name ${JSON.stringify(name)} is earlier than the click that produced it`,
+  ).toBeGreaterThanOrEqual(clickedAt.getTime() - EXPORT_NAME_TOLERANCE_MS)
+  expect(
+    namedInstant,
+    `the export file name ${JSON.stringify(name)} is later than the download that carried it`,
+  ).toBeLessThanOrEqual(settledAt.getTime() + EXPORT_NAME_TOLERANCE_MS)
 
   const filePath = await download.path()
   const body = await readFile(filePath, 'utf8')
   const lines = body.split('\n').filter((line) => line !== '')
   expect(lines.length).toBeGreaterThan(0)
 
-  return lines.map((line, index) => {
+  const records = lines.map((line, index) => {
     let parsed: unknown
     try {
       parsed = JSON.parse(line)
@@ -419,6 +574,23 @@ async function readExportedRecords(page: Page): Promise<readonly ExportedRecord[
     }
     return record as ExportedRecord
   })
+
+  // The export mirrors the list's newest-first order: every line's
+  // `occurred_at` parses, and no line names a later instant than the one
+  // before it.
+  let previousInstant: number | undefined
+  for (const record of records) {
+    const instant = parseExportedInstant(record)
+    if (previousInstant !== undefined) {
+      expect(
+        instant,
+        `exported record ${record.id} is newer than the record before it; the export must read newest first`,
+      ).toBeLessThanOrEqual(previousInstant)
+    }
+    previousInstant = instant
+  }
+
+  return records
 }
 
 /** The ids of a record set, sorted for comparison. */
@@ -759,6 +931,10 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
       expect(record.action).toBe(SETTINGS_SET)
       expect(record.object).toBe(SETTING_KEY)
       expect(record.outcome).toBe(listed?.outcome)
+      // The export's actor is the raw identity the list row for this same id
+      // carries, whose visible text resolved to the operator's display name --
+      // so the file names the operator, not merely any one account.
+      expect(record.actor).toBe(listed?.actor)
     }
 
     // Every record names one and the same non-empty actor: the operator who
@@ -820,6 +996,7 @@ test('audit-export: the file carries the whole filtered set, and a narrowed filt
       expect(record.action).toBe(SETTINGS_SET)
       expect(record.object).toBe(SETTING_KEY)
       expect(record.outcome).toBe(SUCCESS)
+      expect(record.actor).toBe(listed?.actor)
     }
 
     const actors = new Set(secondExport.map((record) => record.actor))
