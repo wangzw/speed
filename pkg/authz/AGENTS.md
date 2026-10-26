@@ -96,8 +96,9 @@ before writing a consumer.
   `authz.WriteGuard` and its closed `WriteOp` set live in the root package
   because the host implements it and `authz.admin` takes it up. The module asks
   it after a write's shape checks and before the mandatory audit and the
-  `Manager`; a denial is a 403 and an unreadable answer a 503, and the seam can
-  only narrow what the `Manager` would do. Delivering none is a legal assembly:
+  `Manager`; a denial is a 403 with the `protected` code — the domain is
+  protected, not the caller short a permission — and an unreadable answer a 503,
+  and the seam can only narrow what the `Manager` would do. Delivering none is a legal assembly:
   the write routes then run without it. The policy module's own writes — the
   seeding surface and the host's `Manager.ClearAccountBindings` account-deletion
   path — do not consult it.

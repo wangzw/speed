@@ -317,7 +317,7 @@ const (
 
 **判定顺序固定，写与读在判定之后分叉。** handler 先读调用方：请求没有身份是 401，只有状态、没有 `Type`，不询问 guard 即返回。写路由随后读发起者的注册验证状态（见下），再向 guard 要本条路由的权限：不足即由 guard 写出它自己的拒绝——拒绝 403、故障 503——并返回。判定之后才分叉：写解析正文、跑本条路由的检查（授予的目录核对与翻译、绑定的空账户），再问可选的宿主 `WriteGuard`，落强制档审计，调 `Manager`；读调 `Manager` 并应答。
 
-**宿主写守卫在形状检查之后、审计与 `Manager` 之前。** 角色、授予与绑定的每条写路由都问一次 `authz.WriteGuard`（见[管理员角色](#管理员角色)），把路径里的租户与这次写的类别（`WriteRole`、`WriteGrant`、`WriteBinding`）交给它。答复拒绝即答 403 `urn:speed:authz:forbidden`，不落强制档审计、不触 `Manager`；答复读不出来时答 503，不按放行处理；装配没有提供这个接缝时写照旧执行。它排在形状检查之后：一个在本路由上就不合法的请求不会让宿主的策略被问到。读路由从不询问它。
+**宿主写守卫在形状检查之后、审计与 `Manager` 之前。** 角色、授予与绑定的每条写路由都问一次 `authz.WriteGuard`（见[管理员角色](#管理员角色)），把路径里的租户与这次写的类别（`WriteRole`、`WriteGrant`、`WriteBinding`）交给它。答复拒绝即答 403 `urn:speed:authz:protected`，不落强制档审计、不触 `Manager`；答复读不出来时答 503，不按放行处理；装配没有提供这个接缝时写照旧执行。这个码与强制层的策略拒绝 `urn:speed:authz:forbidden` 分开：被拒的原因是这个域受保护，而不是发起者少了某个权限，沿用 `forbidden` 会让前端与运营者去查一条并不存在的权限。它排在形状检查之后：一个在本路由上就不合法的请求不会让宿主的策略被问到。读路由从不询问它。
 
 **注册验证状态的门控在权限判定之前。** 这条门控执行的是未验证账户不得写管理面这一约束（REQ-platform-admin-017）：写路由（`PUT` 与 `DELETE`）在读完调用方身份之后、权限判定与解析正文、落强制档审计之前，读发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`）：发起者读作未验证（`SignupPending`：有邮箱而没有一条已证明的）时答 403 `contact-required`（`authn.ErrContactRequired`），动作不执行；服务账户与没有任何邮箱的账户（`SignupNone`）豁免，读路由不受这条门控影响。判据与账户怎么创建无关，管理员预置与导入的发起者带着未证明邮箱时同样被拦。读取状态失败答 503，不按放行处理。门控只收紧、不放行：它只多拒绝一类发起者，不改变权限判定本身，也不让任何未通过权限判定的请求通过。这个码属于认证的失败面，不在本模块 `Problem.Type` 前缀的码集之内。
 
@@ -347,7 +347,7 @@ const (
 
 **授出的权限先经目录与翻译，再写。** 一条授予落到 `authz_grants` 的是（资源，动作）对，不是权限本身；目录不持有的权限在 `Manager` 被调用之前就是 400。写入的（资源，动作）由与中间件、`Decider` 共用的那份翻译给出（[动作到查询的翻译](#动作到查询的翻译)）。
 
-**回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:authz:bad-request`）：请求在形状上不可读（路径参数或正文）、授予一条目录不持有的权限、写里的角色未知（`ErrUnknownRole`）、租户不符（`ErrTenantMismatch`）、绑定里的账户不是平台租户的有效成员（`ErrPlatformMembershipRequired`）、绑定写里的空账户。409（`Problem.Type` 为 `urn:speed:authz:conflict`）：写试图删除或改动内置角色（`ErrBuiltinRole`），或删除某域最后一条租户管理员绑定（`ErrLastTenantAdmin`）。403（`Problem.Type` 为 `urn:speed:authz:forbidden`）：宿主 `WriteGuard` 答复拒绝。503：`Manager` 或存储的其余失败、读不出的写守卫，以及没落地的强制档审计；503 不带 `Problem.Type`，它说的是一个依赖答不了而不是一个许可结论，成因只进日志。
+**回绝映射是封闭的、fail-closed 的。** 400（`Problem.Type` 为 `urn:speed:authz:bad-request`）：请求在形状上不可读（路径参数或正文）、授予一条目录不持有的权限、写里的角色未知（`ErrUnknownRole`）、租户不符（`ErrTenantMismatch`）、绑定里的账户不是平台租户的有效成员（`ErrPlatformMembershipRequired`）、绑定写里的空账户。409（`Problem.Type` 为 `urn:speed:authz:conflict`）：写试图删除或改动内置角色（`ErrBuiltinRole`），或删除某域最后一条租户管理员绑定（`ErrLastTenantAdmin`）。403 有两条：强制层的策略拒绝（一条受守路由需要权限而引擎匹配为假，或一条未声明路由在 `undeclared=closed` 下被拒）是 `urn:speed:authz:forbidden`，宿主 `WriteGuard` 答复拒绝是 `urn:speed:authz:protected`——域受保护，不是权限不足才是原因。503：`Manager` 或存储的其余失败、读不出的写守卫，以及没落地的强制档审计；503 不带 `Problem.Type`，它说的是一个依赖答不了而不是一个许可结论，成因只进日志。
 
 **管理面以静态[特性](../../glossary.md) `authz.admin` 声明。** `authz.admin` 描述符的 `Resources` 带 `feature.Spec{Name: "authz.admin"}`；这个特性在场，表示本进程挂出上表的管理面路由（[feature](design-feature.md)）。端清单必填、不接受空清单，没有入口模块即 `ErrNoRouter`，所以模块进入启用集、进程有路由器时这组路由无条件挂出，这个面不再随配置或装配变化，声明为静态特性符合架构不变量 18（[architecture](../architecture.md#架构不变量)）。
 
@@ -381,7 +381,7 @@ const (
 - 管理面路由的路径与每条路由询问的权限（读 `authz.role.read`、写 `authz.role.manage`）；路由集本身随模块是否被点名变化，不在对外接口面内。
 - 调用方自身权限的读取路径 `GET /api/v1/authz/me/permissions`、它的应答成员 `platform` 与 `tenant` 及其含义、`[]` 而非 `null` 的空结果写法，以及它要求已认证、不要求权限这一条；前端与生成的客户端据这些取值分支。
 - `authz.admin` 声明的特性名 `authz.admin`。前端经生成的特性名类型引用它，改名或撤去是宿主可见的破坏性变更。
-- `Problem.Type` 的前缀 `urn:speed:authz:` 与它下面的三个码——403 的 `forbidden`、400 的 `bad-request`、409 的 `conflict`，它们是客户端据以分支的对外接口面；管理面的写路由在发起者为未验证账户时另答 403 `contact-required`，这个码不属于该前缀，同样是客户端据以分支的对外接口面；指标名 `authz.guard.decisions` 与其属性 `outcome` 的取值，以及拒绝状态码的封闭集。
+- `Problem.Type` 的前缀 `urn:speed:authz:` 与它下面的四个码——403 的策略拒绝 `forbidden`、403 的宿主写守卫拒绝 `protected`、400 的 `bad-request`、409 的 `conflict`，它们是客户端据以分支的对外接口面；管理面的写路由在发起者为未验证账户时另答 403 `contact-required`，这个码不属于该前缀，同样是客户端据以分支的对外接口面；指标名 `authz.guard.decisions` 与其属性 `outcome` 的取值，以及拒绝状态码的封闭集。
 
 ## 依赖
 
@@ -734,7 +734,7 @@ type MembershipChecker interface {
 }
 ```
 
-**宿主经可选的 `WriteGuard` 收紧管理面的写。** 哪些租户的策略数据不许经管理面改动是宿主的策略，本模块只知道行与权限，因此把它留作接缝：`authz.admin` 在角色、授予与绑定的每条写路由上，于形状检查之后、强制档审计与 `Manager` 之前问一次 `WriteGuard.Denied(ctx, tenant, op)`，`op` 是 `WriteRole`、`WriteGrant`、`WriteBinding` 之一。答复拒绝时该路由答 403 `urn:speed:authz:forbidden`，不落审计行、不触表；答复读不出来时答 503，绝不当作放行；装配没有提供它时写按既有方式执行。接缝只收紧：它不能让 `Manager` 会拒绝的写通过，读路由也从不询问它。宿主的账户删除路径经 `ClearAccountBindings` 直接写表，不经过管理面，因此不受这条接缝约束。
+**宿主经可选的 `WriteGuard` 收紧管理面的写。** 哪些租户的策略数据不许经管理面改动是宿主的策略，本模块只知道行与权限，因此把它留作接缝：`authz.admin` 在角色、授予与绑定的每条写路由上，于形状检查之后、强制档审计与 `Manager` 之前问一次 `WriteGuard.Denied(ctx, tenant, op)`，`op` 是 `WriteRole`、`WriteGrant`、`WriteBinding` 之一。答复拒绝时该路由答 403 `urn:speed:authz:protected`，不落审计行、不触表；答复读不出来时答 503，绝不当作放行；装配没有提供它时写按既有方式执行。接缝只收紧：它不能让 `Manager` 会拒绝的写通过，读路由也从不询问它。宿主的账户删除路径经 `ClearAccountBindings` 直接写表，不经过管理面，因此不受这条接缝约束。
 
 ```go
 // WriteGuard reports whether a tenant's policy data rejects a management write.
@@ -821,7 +821,7 @@ const (
 - **503** 是依赖不可用：引擎快照损坏、存储读失败、启动自检失败。**引擎或存储不可用一律 503，绝不改判 403。** 把故障读成拒绝会让客户端把一次可恢复的失败当作永久的权限结论，把故障读成放行则更糟。应答不区分是哪个依赖失败，成因只进日志。
 - **管理面的强制档审计是 503 的又一来源。** `authz.admin` 的写在其强制档审计行没落盘时答 503、动作不执行（见[管理面](#管理面)）：审计是这次写的先决条件，一行记录不下来的改动不做。它与「依赖不可用」同类——503 说的是一个依赖答不了，从不说拒了什么。
 - **注册验证状态的门控写 403 `contact-required`，与策略拒绝分开。** `authz.admin` 的写路由在权限判定之前读发起者的注册验证状态；读作未验证（`SignupPending`：有邮箱而没有一条已证明的）的发起者答这个码，服务账户与没有任何邮箱的账户（`SignupNone`）不受影响，读取失败答 503。它只收紧、不放行，不改变引擎的匹配结论，`Problem.Type` 也不取 `urn:speed:authz:forbidden`。
-- **宿主写守卫的拒绝是 403 `forbidden`，读不出是 503。** `authz.admin` 的写路由在形状检查之后问可选的 `WriteGuard`；答复拒绝即 403、`Problem.Type` 为 `urn:speed:authz:forbidden`，动作不执行、审计行不落、`Manager` 不被调用；答复读不出来时与引擎不可用同处置——503，绝不改判放行。装配没有这个接缝时没有这一档拒绝。
+- **宿主写守卫的拒绝是 403 `protected`，读不出是 503。** `authz.admin` 的写路由在形状检查之后问可选的 `WriteGuard`；答复拒绝即 403、`Problem.Type` 为 `urn:speed:authz:protected`（与策略拒绝的 `urn:speed:authz:forbidden` 分开：原因是域受保护，不是权限不足），动作不执行、审计行不落、`Manager` 不被调用；答复读不出来时与引擎不可用同处置——503，绝不改判放行。装配没有这个接缝时没有这一档拒绝。
 
 ### 非保证
 

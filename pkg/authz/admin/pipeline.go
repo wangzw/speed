@@ -20,10 +20,14 @@ import (
 )
 
 // The problem types this module writes. typePrefix is the authorization
-// capability's namespace; badRequest, conflict and forbidden are this surface's
-// codes in it. A 503 is written with no type: it says a dependency could not
-// answer and not what was refused, so naming a kind would separate the failures
-// the answer is meant to keep apart.
+// capability's namespace; badRequest, conflict and protected are this surface's
+// codes in it. protected is the host write guard's refusal: the caller may hold
+// every permission in the domain, and the reason is that the domain is protected
+// rather than that a permission is missing, so reusing the enforcement layer's
+// forbidden code would send a client hunting a permission that does not exist. A
+// 503 is written with no type: it says a dependency could not answer and not what
+// was refused, so naming a kind would separate the failures the answer is meant
+// to keep apart.
 //
 // The contact-required refusal is the authentication capability's, not this surface's:
 // the refusal it names is a fact about the acting account's registration, so a
@@ -35,7 +39,7 @@ const (
 	typePrefix     = "urn:speed:authz:"
 	badRequestCode = "bad-request"
 	conflictCode   = "conflict"
-	forbiddenCode  = "forbidden"
+	protectedCode  = "protected"
 )
 
 // realmOf reads back the endpoint a management route was mounted on, the name
@@ -274,10 +278,12 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 // the mandatory audit and the manager: a refused write lands no audit row and
 // reaches no table.
 //
-// An assembly that delivers no guard permits the write, which is the behaviour
-// the module had before the seam existed. An answer that cannot be read is a
-// 503 and is never read as permission: a dependency that cannot answer must not
-// widen what a caller may do.
+// A denial is a 403 with the protected code, apart from the enforcement layer's
+// forbidden: the guard refuses because the domain is protected, not because the
+// caller lacks a permission. An assembly that delivers no guard permits the
+// write, which is the behaviour the module had before the seam existed. An
+// answer that cannot be read is a 503 and is never read as permission: a
+// dependency that cannot answer must not widen what a caller may do.
 func (p *product) requireWriteAllowed(ctx context.Context, tenant string, op authz.WriteOp) error {
 	if p.writeGuard == nil {
 		return nil
@@ -289,7 +295,7 @@ func (p *product) requireWriteAllowed(ctx context.Context, tenant string, op aut
 		return speedhttp.Fault{Status: http.StatusServiceUnavailable}
 	}
 	if denied {
-		return speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + forbiddenCode}
+		return speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
 	}
 	return nil
 }

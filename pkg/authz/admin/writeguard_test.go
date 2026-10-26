@@ -103,7 +103,7 @@ func TestEveryWriteConsultsTheWriteGuard(t *testing.T) {
 }
 
 // TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager holds the deny direction:
-// the route answers 403 with the capability's forbidden type and neither lands a
+// the route answers 403 with the capability's protected type and neither lands a
 // mandatory audit row nor reaches the manager.
 func TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager(t *testing.T) {
 	for _, c := range writeRouteCases() {
@@ -114,8 +114,8 @@ func TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager(t *testing.T) {
 			if w.Code != http.StatusForbidden {
 				t.Fatalf("a denied write answered %d, want 403", w.Code)
 			}
-			if p := decodeProblem(t, w.Body.String()); p.Type != "urn:speed:authz:forbidden" {
-				t.Fatalf("the refusal's type = %q, want urn:speed:authz:forbidden", p.Type)
+			if p := decodeProblem(t, w.Body.String()); p.Type != "urn:speed:authz:protected" {
+				t.Fatalf("the refusal's type = %q, want urn:speed:authz:protected", p.Type)
 			}
 			if got := r.audit.entries(); len(got) != 0 {
 				t.Fatalf("the denied write landed audit rows %+v, want none", got)

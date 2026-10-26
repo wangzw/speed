@@ -115,7 +115,7 @@ write that lands answers 204 and no body.
   `authz.WriteGrant`, `authz.WriteBinding`). The question sits after the route's
   own shape checks (a grant's catalog and translation checks, a binding's empty
   account) and before the mandatory audit and the `Manager`: a denied write is a
-  403 with the `forbidden` problem type and lands no audit row, and an answer
+  403 with the `protected` problem type and lands no audit row, and an answer
   that cannot be read is a 503 that is never a permit. The seam is optional and
   taken up in `Init`: an assembly that delivers none mounts the routes as it did
   before the seam existed. Reads never consult it.
@@ -156,7 +156,8 @@ write that lands answers 204 and no body.
   and the last tenant administrator of a domain are 409s; any other failure of
   the `Manager` or its store, an unreadable write guard and a mandatory audit
   that did not land are 503s. A write the host's `WriteGuard` denies is a 403
-  with the `forbidden` type. A 503 says a dependency could not answer and never
+  with the `protected` type, kept apart from the enforcement layer's `forbidden`
+  policy denial. A 503 says a dependency could not answer and never
   what was refused, so it carries no problem type. The cause of a 403, a 409 and
   a 503 stays in the log and never reaches the caller; the permission a route
   named never reaches the response.

@@ -1781,7 +1781,7 @@ func TestTheSeedBuildsNoPersonalTenantWithTheSwitchOff(t *testing.T) {
 // TestThePolicyWriteGuardRefusesAPersonalTenantsPolicyWrite holds the host's
 // write guard in the program: the platform administrator may manage an
 // ordinary tenant's bindings, and the same write against a personal tenant is
-// refused with the guard's forbidden answer rather than reaching the manager.
+// refused with the guard's protected answer rather than reaching the manager.
 func TestThePolicyWriteGuardRefusesAPersonalTenantsPolicyWrite(t *testing.T) {
 	base, memberToken := personalServe(t, true)
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -1810,9 +1810,9 @@ func TestThePolicyWriteGuardRefusesAPersonalTenantsPolicyWrite(t *testing.T) {
 		base+"/api/v1/system/tenants/"+reply.Tenant.ID+"/bindings/"+who.AccountID+"/"+string(personalTenantAdminRole),
 		nil, operatorAuth)
 	if refused.status != http.StatusForbidden ||
-		!strings.Contains(string(refused.body), "urn:speed:authz:forbidden") {
+		!strings.Contains(string(refused.body), "urn:speed:authz:protected") {
 		t.Errorf("the administrator wrote a binding into the personal tenant and answered %d, "+
-			"want 403 urn:speed:authz:forbidden:\n%s", refused.status, refused.body)
+			"want 403 urn:speed:authz:protected:\n%s", refused.status, refused.body)
 	}
 
 	// The control: the same write in a business tenant reaches the manager and is
