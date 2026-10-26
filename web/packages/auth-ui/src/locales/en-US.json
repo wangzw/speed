@@ -48,7 +48,7 @@
     "retry": "Try again"
   },
   "mode": {
-    "registerTitle": "Create an account",
+    "registerTitle": "Choose a sign-in method",
     "registerEntry": "Create an account",
     "signInEntry": "Already have an account? Sign in",
     "registerHint": "Signing in with one of these methods for the first time creates your account.",

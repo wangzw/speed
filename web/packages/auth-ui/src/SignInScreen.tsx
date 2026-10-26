@@ -36,9 +36,10 @@
  * -- the form strip, the social buttons, the enterprise entry and the
  * passkey entry -- narrows to the methods that open an account, and the
  * form strip starts on its own default; a channel picked on the other
- * side of the switch does not carry over. The screen names itself "Create
- * an account" and offers the way back as "Already have an account? Sign
- * in". When `discovery.signup.password.enabled` is true, register mode
+ * side of the switch does not carry over. The screen heads its register
+ * block "Choose a sign-in method" and offers the way back as "Already
+ * have an account? Sign in". When `discovery.signup.password.enabled` is
+ * true, register mode
  * adds a synthetic "password registration" channel ahead of the narrowed
  * ones and selects it by default: it is not a discovery method, renders
  * `PasswordRegisterForm`, and reports its completion as

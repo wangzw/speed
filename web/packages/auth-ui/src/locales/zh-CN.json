@@ -48,7 +48,7 @@
     "retry": "重试"
   },
   "mode": {
-    "registerTitle": "创建账户",
+    "registerTitle": "选择登录方式",
     "registerEntry": "创建账户",
     "signInEntry": "已有账户？登录",
     "registerHint": "使用下列方式首次登录时，会为你创建账户。",
