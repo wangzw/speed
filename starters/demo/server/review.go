@@ -34,6 +34,14 @@ package main
 // row and the real verification, so the flow exercises the product's own state
 // machine end to end.
 //
+// Unlike a carrier that reaches no vendor, this one answers a real per-template
+// review: its Model declares Review.PerTemplate, every language it does not know
+// about answers pending, and Review moves one code's verdict. A runtime template
+// therefore starts pending in each language it was registered in and settles
+// language by language. Review is an input the review assembly drives — see
+// review_sms_control.go — and it exists only in this build; the baseline mounts
+// no SMS carrier at all.
+//
 // The mail side is the same shape on the other capability: mail.review is a
 // carrier built through mail.NewModule, it reaches no relay, and it writes each
 // message authn.emailcode rendered to the process log. That is what makes
@@ -48,6 +56,7 @@ import (
 	"net"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
@@ -109,6 +118,10 @@ var reviewModules = []string{
 	smsregistry.ModuleName,
 	smslogin.ModuleName,
 	reviewCarrierModuleName,
+	// The review-only control that moves one language's vendor verdict on the
+	// carrier above. It mounts nothing in a default build; see
+	// review_sms_control.go.
+	reviewSMSControlModuleName,
 	// The SMS second factor: the impersonation fixture's operator holds it beside
 	// TOTP, so a session that signed in with TOTP can raise itself with a kind it
 	// has not already proved. It reads the account's proven phone and sends its
@@ -141,17 +154,7 @@ type reviewMailConfig struct{}
 // all three in the available set, and the serve roster above names them for a
 // run.
 func init() {
-	core.ProcessRegistry.Register(sms.NewModule(sms.Spec[reviewSenderConfig]{
-		ModuleName:      reviewCarrierModuleName,
-		ConfigNamespace: reviewCarrierModuleName,
-		Config:          &reviewSenderConfig{},
-		Stance: func(*reviewSenderConfig) (core.Enablement, error) {
-			return core.Enablement{State: core.StateEnabled}, nil
-		},
-		Open: func(context.Context, *reviewSenderConfig) (sms.Product, error) {
-			return reviewSender{}, nil
-		},
-	}))
+	core.ProcessRegistry.Register(reviewSMSModule(newReviewCarrier()))
 	core.ProcessRegistry.Register(mail.NewModule(mail.Spec[reviewMailConfig]{
 		ModuleName:      reviewMailModuleName,
 		ConfigNamespace: reviewMailModuleName,
@@ -164,6 +167,23 @@ func init() {
 		},
 	}))
 	core.ProcessRegistry.Register(reviewGuardModule())
+}
+
+// reviewSMSModule builds the review SMS carrier's descriptor around one product.
+// The product is passed in so a case can hold the same value the module opens
+// and drive its review control; a run passes the carrier this file constructs.
+func reviewSMSModule(product sms.Product) core.Module {
+	return sms.NewModule(sms.Spec[reviewSenderConfig]{
+		ModuleName:      reviewCarrierModuleName,
+		ConfigNamespace: reviewCarrierModuleName,
+		Config:          &reviewSenderConfig{},
+		Stance: func(*reviewSenderConfig) (core.Enablement, error) {
+			return core.Enablement{State: core.StateEnabled}, nil
+		},
+		Open: func(context.Context, *reviewSenderConfig) (sms.Product, error) {
+			return product, nil
+		},
+	})
 }
 
 // reviewGuardModule refuses a run whose listening addresses are not loopback.
@@ -249,24 +269,40 @@ func loopbackAddress(address string) bool {
 
 // reviewSender is the carrier the review build sends through. It reaches no
 // vendor: Send writes the message it was handed to the process log and answers
-// success, and the template-management calls answer as a vendor with no
-// per-template review would.
-type reviewSender struct{}
+// success.
+//
+// It does review every template and every language. The carrier keeps a verdict
+// per vendor code in memory, answers pending for a code it has not been told
+// about, and Review sets one code's verdict. A code is the vendor's per-language
+// identifier, so moving one code's verdict leaves every other language where it
+// was. The store is an input the review assembly drives, and it exists only in
+// this build: a real carrier reads the same seam from its vendor's own review.
+type reviewSender struct {
+	mu       sync.Mutex
+	verdicts map[string]sms.Approval
+}
+
+// newReviewCarrier builds the carrier with an empty verdict store.
+func newReviewCarrier() *reviewSender {
+	return &reviewSender{verdicts: make(map[string]sms.Approval)}
+}
 
 // reviewSender must deliver both seams the carrier module provides.
-var _ sms.Product = reviewSender{}
+var _ sms.Product = (*reviewSender)(nil)
 
 // Name is the carrier's own name.
-func (reviewSender) Name() string { return reviewCarrierName }
+func (*reviewSender) Name() string { return reviewCarrierName }
 
 // Model declares what this carrier can carry. It writes whatever the registry
 // resolved to the process log, so it accepts both a vendor code and a rendered
-// body; it holds no template at a vendor and therefore reviews none per
-// template, which makes its Approval answer NotRequired. It names no identity:
-// every message goes to the process log, so there is nothing to choose between.
-func (reviewSender) Model() sms.CarrierModel {
+// body. It reviews every template: a code starts pending and Review moves it,
+// which is the state the template registry reads back per language. It names no
+// identity: every message goes to the process log, so there is nothing to choose
+// between.
+func (*reviewSender) Model() sms.CarrierModel {
 	return sms.CarrierModel{
 		Content: sms.ContentSupport{TemplateCode: true, TextBody: true},
+		Review:  sms.ReviewSupport{PerTemplate: true},
 	}
 }
 
@@ -276,7 +312,7 @@ func (reviewSender) Model() sms.CarrierModel {
 // attribute is spelled verification_code rather than code because the gateway
 // registers "code" as a sensitive key name for the process — an authorization
 // code travels under it — and the logging layer would mask this value.
-func (reviewSender) Send(_ context.Context, r sms.Resolved) (sms.Receipt, error) {
+func (*reviewSender) Send(_ context.Context, r sms.Resolved) (sms.Receipt, error) {
 	log.Default().Info("review sms: a verification code was sent",
 		"sender", reviewCarrierName,
 		"to", r.To,
@@ -286,24 +322,62 @@ func (reviewSender) Send(_ context.Context, r sms.Resolved) (sms.Receipt, error)
 	return sms.Receipt{ProviderID: reviewCarrierName + ":" + r.Template + ":" + r.DedupeID}, nil
 }
 
-// Offer answers with a template code derived from the submission's name. The
-// review configuration declares its templates in configuration, which this
-// process holds as admitted without a vendor review, so nothing calls this in the
-// assembly; it exists because a carrier delivers the whole Provider seam.
-func (reviewSender) Offer(_ context.Context, s sms.Submission) (string, error) {
-	return reviewCarrierName + "-" + strings.ReplaceAll(s.Name, " ", "-"), nil
+// Offer answers with a template code derived from the submission's name and
+// records that code as pending: a template just offered to the vendor has not
+// been reviewed yet.
+func (s *reviewSender) Offer(_ context.Context, sub sms.Submission) (string, error) {
+	code := reviewCarrierName + "-" + strings.ReplaceAll(sub.Name, " ", "-")
+	s.mu.Lock()
+	if s.verdicts == nil {
+		s.verdicts = make(map[string]sms.Approval)
+	}
+	s.verdicts[code] = sms.Approval{State: sms.ApprovalPending}
+	s.mu.Unlock()
+	return code, nil
 }
 
-// Approval answers every template as not required: this carrier holds nothing at
-// a vendor, so there is no review to wait on — which is the state a carrier with
-// Review.PerTemplate false reports, and the one a message may be sent under.
-func (reviewSender) Approval(context.Context, string) (sms.Approval, error) {
-	return sms.Approval{State: sms.ApprovalNotRequired}, nil
+// Approval answers one code's review. A code the carrier has not been told about
+// is pending: the vendor has taken the template and has not answered yet, which
+// is the state a language starts in when a runtime template is registered.
+func (s *reviewSender) Approval(_ context.Context, code string) (sms.Approval, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if approval, held := s.verdicts[code]; held {
+		return approval, nil
+	}
+	return sms.Approval{State: sms.ApprovalPending}, nil
 }
 
-// Retire accepts the removal of a template, which this process never holds at a
-// vendor.
-func (reviewSender) Retire(context.Context, string) error { return nil }
+// Review moves one vendor code's verdict, leaving every other code — and
+// therefore every other language — untouched. It is the review assembly's own
+// control over the carrier and exists only in this build. The states it accepts
+// are the per-template review states; Unknown and NotRequired describe carriers
+// whose review this process does not track or that have none.
+func (s *reviewSender) Review(code string, state sms.ApprovalState, reason string) error {
+	if code == "" {
+		return fmt.Errorf("review carrier: a review names no vendor code")
+	}
+	switch state {
+	case sms.ApprovalPending, sms.ApprovalApproved, sms.ApprovalRejected, sms.ApprovalWithdrawn:
+	default:
+		return fmt.Errorf("review carrier: %q is not a per-template review state", state)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.verdicts == nil {
+		s.verdicts = make(map[string]sms.Approval)
+	}
+	s.verdicts[code] = sms.Approval{State: state, Reason: reason}
+	return nil
+}
+
+// Retire forgets one code's verdict, so a code offered again starts pending.
+func (s *reviewSender) Retire(_ context.Context, code string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.verdicts, code)
+	return nil
+}
 
 // reviewMailSender is the mail carrier the review build sends through. It
 // reaches no relay: Send writes the message it was handed to the process log and
