@@ -33,6 +33,20 @@ func TestThePostgresMigrationBuildsTheTenantKeyedTables(t *testing.T) {
 	assertEmptyTenantRefused(t, handle)
 }
 
+// The second PostgreSQL migration is the same data migration as the SQLite one,
+// so the deployment dialect is held to it as well rather than only the SQLite
+// copy the ordinary suite runs.
+func TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain(t *testing.T) {
+	handle := dbtest.Postgres(t, pgtest.Acquire(t), nil).DB()
+	applyMigration(t, handle, "postgres/0001_authz_policy.sql")
+	seedTenantAdministrationRows(t, handle, "system", "acme")
+
+	applyMigration(t, handle, "postgres/0002_tenant_administration.sql")
+	assertPlatformAdministratorWithdrawn(t, handle)
+	applyMigration(t, handle, "postgres/0002_tenant_administration.sql")
+	assertPlatformAdministratorWithdrawn(t, handle)
+}
+
 // assertTenantLeadsTheKeyPostgres is assertTenantLeadsTheKey for PostgreSQL,
 // whose catalog is read through information_schema rather than a PRAGMA. The
 // keying is the same claim on both dialects, so each holds it for itself.

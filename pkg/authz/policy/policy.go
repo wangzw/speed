@@ -259,10 +259,13 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.bus = bus
-		// The subscription belongs to Init: a bus freezes its subscription table
+		// The subscriptions belong to Init: a bus freezes its subscription table
 		// when it starts, so a subscriber that arrived later would miss every
-		// event published before it.
+		// event published before it. The membership subscription is what
+		// withdraws the platform-domain bindings of an account that has left the
+		// platform tenant.
 		bus.Subscribe(policyChangedEventType, ModuleName, p.onChanged)
+		bus.Subscribe(authn.EventMembershipChanged, ModuleName, p.onMembershipChanged)
 	}
 	return nil
 }

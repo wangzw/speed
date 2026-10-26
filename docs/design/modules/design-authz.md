@@ -591,7 +591,9 @@ m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act
 
 ### 表与迁移
 
-策略表都归 `authz.policy`，迁移在 `pkg/authz/policy/migrations/{sqlite,postgres}/0001_authz_policy.sql`。每张表都以 `tenant_id` 领衔主键，都带 `CHECK (tenant_id <> '')`，都不用方言专有类型与函数；`TIMESTAMPTZ`（Postgres）与 `DATETIME`（SQLite）的对照照行本模块自己的建表语句。
+策略表都归 `authz.policy`，建表迁移在 `pkg/authz/policy/migrations/{sqlite,postgres}/0001_authz_policy.sql`。每张表都以 `tenant_id` 领衔主键，都带 `CHECK (tenant_id <> '')`，都不用方言专有类型与函数；`TIMESTAMPTZ`（Postgres）与 `DATETIME`（SQLite）的对照照行本模块自己的建表语句。
+
+**升级时的数据迁移只有一个，且按方言各一份。** `0002_tenant_administration.sql`（`sqlite/` 与 `postgres/`）撤销平台域以外每个租户域的 `platform-admin` 角色、它的授予与绑定：旧模型在每个租户域各建一份并绑定该租户的成员，新模型只在平台域建立该角色，残留的副本会继续替业务租户的成员判定平台权限。三条删除各自点名要删的行，重复施加不删任何别的行，空库上是空操作；`tenant-admin` 属于每个域，不被触碰。名册行（`system`）与个人租户的 `owner` 角色不在这份迁移里：前者由宿主的种入路径建立，后者由个人租户的补齐路径移除（[starters](design-starters.md)）。策略数据仍不在这里种入——迁移只撤销旧模型的残留行。
 
 - **`authz_roles(tenant_id, role, builtin, description_key, created_at)`**，主键 `(tenant_id, role)`。`builtin` 标记内置角色：管理面不可删除、不可改写，也不可改其授权；宿主的种入面 `Seeder.SeedGrants` 只增不删。标记只由 `Manager.MarkRoleBuiltin` 置位，置位后没有清回的通路。`description_key` 是说明文案的 i18n 键。
 
@@ -708,6 +710,8 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 **平台管理员的绑定要求成员关系。** `Manager.PutBinding` 在平台域写 `PlatformAdminRole` 之前，经宿主提供的 `MembershipChecker` 核对被绑定账户是 `system` 租户的有效成员；检查器缺席时该写入以 `ErrMissingMembershipChecker` 拒绝，不按放行处理。`MembershipChecker` 是根包的接口，由宿主经 `authz.policy` 的取用装配，实现通常读 `authn.Memberships`——本模块不 import 认证。
 
 **租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
+
+**移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时，按账户删掉平台域的全部绑定并重载快照。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除，其他租户域的成员变更不触到平台域；没有事件总线的装配里这条联动不执行（[ADR-tenant-administration-2026-10-26](../../adr/adr-tenant-administration-2026-10-26.md)）。
 
 ```go
 // MembershipChecker reports whether an account is an active member of a tenant.
@@ -833,6 +837,8 @@ type MembershipChecker interface {
 | 新哨兵 `ErrPlatformDomainMissing`、`ErrReservedRole`、`ErrLastTenantAdmin`、`ErrMissingMembershipChecker` | 已实现 | `pkg/authz/errors.go` `ErrPlatformDomainMissing`、`ErrReservedRole`、`ErrLastTenantAdmin`、`ErrMissingMembershipChecker` |
 | 模块 `authz.policy` 的登记与各阶段行为（`Prepare`、`New`、`Init`、`Start`、`Stop`） | 已实现 | `pkg/authz/policy/policy.go` `Module` |
 | 策略表与按方言的迁移集 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0001_authz_policy.sql` |
+| 升级时的数据迁移：撤销平台域以外的 `platform-admin` 角色、授予与绑定，重复施加幂等 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0002_tenant_administration.sql`；`pkg/authz/policy/migrate_test.go` `TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain`；`pkg/authz/policy/migrate_postgres_test.go` `TestThePostgresMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain` |
+| 平台域成员关系被移除时撤销该账户在平台域的全部绑定（订阅 `authn.membership.changed`，幂等） | 已实现 | `pkg/authz/policy/policy.go` `(*product).wire`；`pkg/authz/policy/lifecycle.go` `(*product).onMembershipChanged`、`membershipChangeRemoved`；`pkg/authz/policy/membership_cascade_test.go` |
 | 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 已实现 | `pkg/authz/internal/persist/adapter.go` `Adapter`、`New` |
 | Casbin 引擎装载、不可变快照与原子换指针 | 已实现 | `pkg/authz/internal/policy/policy.go` `Snapshot`、`Load`、`Holder`（`Get`/`Swap` 即原子指针的读写） |
 | 启动期模型自检与夹具 | 已实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |

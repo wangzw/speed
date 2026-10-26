@@ -36,6 +36,92 @@ func TestTheSqliteMigrationBuildsTheTenantKeyedTables(t *testing.T) {
 	assertEmptyTenantRefused(t, handle)
 }
 
+// The second SQLite migration withdraws every copy of the platform
+// administrator role outside the platform domain: the role exists only in the
+// system tenant's domain, and an upgraded database still carries a copy in every
+// tenant domain that predates that rule.
+//
+// The case writes both what the migration must remove and what it must keep,
+// applies the file, and then applies it a second time to hold the deletes
+// idempotent: a migration the database driver runs again must not fail and must
+// not take anything else with it.
+func TestTheSqliteMigrationWithdrawsThePlatformAdministratorOutsideTheSystemDomain(t *testing.T) {
+	handle := dbtest.SQLite(t, filepath.Join(t.TempDir(), "authz.db"), nil).DB()
+	applyMigration(t, handle, "sqlite/0001_authz_policy.sql")
+	seedTenantAdministrationRows(t, handle, "system", "acme")
+
+	applyMigration(t, handle, "sqlite/0002_tenant_administration.sql")
+	assertPlatformAdministratorWithdrawn(t, handle)
+	applyMigration(t, handle, "sqlite/0002_tenant_administration.sql")
+	assertPlatformAdministratorWithdrawn(t, handle)
+}
+
+// seedTenantAdministrationRows writes one platform-administrator role, grant and
+// binding into the platform domain and into every named business tenant, plus a
+// tenant-administrator set per domain that the migration must leave alone. The
+// rows go in through the migration's own tables: no manager validation stands
+// between the case and the shape an upgraded database holds.
+func seedTenantAdministrationRows(t *testing.T, handle *gorm.DB, platform string, tenants ...string) {
+	t.Helper()
+	now := time.Now().UTC()
+	domains := append([]string{platform}, tenants...)
+	for _, domain := range domains {
+		for _, role := range []string{"platform-admin", "tenant-admin"} {
+			for _, statement := range []struct {
+				sql  string
+				args []any
+			}{
+				{
+					"INSERT INTO authz_roles (tenant_id, role, builtin, description_key, created_at) VALUES (?,?,?,?,?)",
+					[]any{domain, role, false, "k", now},
+				},
+				{
+					"INSERT INTO authz_grants (tenant_id, role, resource, action, created_at) VALUES (?,?,?,?,?)",
+					[]any{domain, role, "tenant", "read", now},
+				},
+				{
+					"INSERT INTO authz_bindings (tenant_id, account_id, role, granted_at) VALUES (?,?,?,?)",
+					[]any{domain, "acct-" + domain, role, now},
+				},
+			} {
+				if err := handle.Exec(statement.sql, statement.args...).Error; err != nil {
+					t.Fatalf("seeding %s/%s: %v", domain, role, err)
+				}
+			}
+		}
+	}
+}
+
+// assertPlatformAdministratorWithdrawn holds the result both a first and a
+// second application of the migration must produce: no platform-administrator
+// role, grant or binding outside the platform domain, and every other row as it
+// was.
+func assertPlatformAdministratorWithdrawn(t *testing.T, handle *gorm.DB) {
+	t.Helper()
+	for _, c := range []struct {
+		sql  string
+		want int64
+	}{
+		{"SELECT COUNT(*) FROM authz_roles WHERE role = 'platform-admin' AND tenant_id <> 'system'", 0},
+		{"SELECT COUNT(*) FROM authz_grants WHERE role = 'platform-admin' AND tenant_id <> 'system'", 0},
+		{"SELECT COUNT(*) FROM authz_bindings WHERE role = 'platform-admin' AND tenant_id <> 'system'", 0},
+		{"SELECT COUNT(*) FROM authz_roles WHERE role = 'platform-admin' AND tenant_id = 'system'", 1},
+		{"SELECT COUNT(*) FROM authz_grants WHERE role = 'platform-admin' AND tenant_id = 'system'", 1},
+		{"SELECT COUNT(*) FROM authz_bindings WHERE role = 'platform-admin' AND tenant_id = 'system'", 1},
+		{"SELECT COUNT(*) FROM authz_roles WHERE role = 'tenant-admin'", 2},
+		{"SELECT COUNT(*) FROM authz_grants WHERE role = 'tenant-admin'", 2},
+		{"SELECT COUNT(*) FROM authz_bindings WHERE role = 'tenant-admin'", 2},
+	} {
+		var got int64
+		if err := handle.Raw(c.sql).Row().Scan(&got); err != nil {
+			t.Fatalf("%s: %v", c.sql, err)
+		}
+		if got != c.want {
+			t.Errorf("%s = %d, want %d", c.sql, got, c.want)
+		}
+	}
+}
+
 // assertTenantLeadsTheKey reads the table's primary-key order and holds it to
 // the tenant column leading. The migration is the only place the key is stated,
 // so this is what keeps a key that named a non-tenant column first from
