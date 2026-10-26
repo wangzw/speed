@@ -44,7 +44,8 @@ func bindingViewsOf(bindings []authz.Binding) []AuthzAdminBindingView {
 // handleBindingPut answers PUT
 // /api/v1/system/tenants/:tenant/bindings/:account/:role: it binds a role to an
 // account within the tenant. It is a write, so the action is role.manage. The
-// mandatory audit row lands before the manager writes.
+// optional host WriteGuard is asked after the shape checks; the mandatory audit
+// row lands before the manager writes.
 //
 // An empty account is refused on shape before the manager is called: a binding
 // addresses an account, and the empty account names the zero subject, so a
@@ -55,6 +56,9 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 		return struct{}{}, badRequest()
 	}
 	role := authz.Role(in.Role)
+	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteBinding); err != nil {
+		return struct{}{}, err
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionBindingPut, in.Account, map[string]string{
 		detailActionID: actionID,
@@ -75,7 +79,9 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 // handleBindingDelete answers DELETE
 // /api/v1/system/tenants/:tenant/bindings/:account/:role: it removes an account's
 // binding to a role within the tenant. It is a write, so the action is
-// role.manage. The mandatory audit row lands before the manager writes.
+// role.manage. The optional host WriteGuard is asked after the shape checks and
+// the own-binding refusal; the mandatory audit row lands before the manager
+// writes.
 //
 // An empty account is refused on shape before the manager is called, the same
 // as the binding write: the route addresses a binding by its account, and an
@@ -92,6 +98,9 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 	role := authz.Role(in.Role)
 	if role == authz.TenantAdminRole && removingOwnBinding(ctx, in.Account) {
 		return struct{}{}, speedhttp.Fault{Status: http.StatusForbidden}
+	}
+	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteBinding); err != nil {
+		return struct{}{}, err
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionBindingDelete, in.Account, map[string]string{

@@ -228,7 +228,7 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 		"members",
 		"remove:" + unitAccount.String(),
 		"remove:" + other.String(),
-		"unbind-all",
+		"unbind:" + unitAccount.String(),
 		"role:tenant-admin",
 		"audit:" + deleteAuditAction + ":success",
 		"delete",
@@ -275,8 +275,8 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 // the cleanup against the last-tenant-administrator rule. The account's own
 // binding is the personal tenant's only tenant-admin binding whenever the policy
 // module's AccountDeleted has not run first, and the deletion must still finish:
-// the cleanup reaches the domain teardown path rather than removing the binding
-// through the rule-bound single-binding write.
+// the cleanup reaches the host's account-deletion path rather than removing the
+// binding through the rule-bound single-binding write.
 func TestTheAccountLifecycleDeletionClearsTheLastBindingWithoutThePolicyHook(t *testing.T) {
 	product, roster, _, manager, _ := seededPersonal(t)
 	id := personalTenantID(unitAccount)

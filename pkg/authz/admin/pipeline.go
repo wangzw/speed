@@ -20,10 +20,10 @@ import (
 )
 
 // The problem types this module writes. typePrefix is the authorization
-// capability's namespace; badRequest and conflict are this surface's two codes
-// in it. A 503 is written with no type: it says a dependency could not answer
-// and not what was refused, so naming a kind would separate the failures the
-// answer is meant to keep apart.
+// capability's namespace; badRequest, conflict and forbidden are this surface's
+// codes in it. A 503 is written with no type: it says a dependency could not
+// answer and not what was refused, so naming a kind would separate the failures
+// the answer is meant to keep apart.
 //
 // The contact-required refusal is the authentication capability's, not this surface's:
 // the refusal it names is a fact about the acting account's registration, so a
@@ -35,6 +35,7 @@ const (
 	typePrefix     = "urn:speed:authz:"
 	badRequestCode = "bad-request"
 	conflictCode   = "conflict"
+	forbiddenCode  = "forbidden"
 )
 
 // realmOf reads back the endpoint a management route was mounted on, the name
@@ -268,23 +269,51 @@ func (p *product) auditBestEffort(ctx context.Context, e audit.Entry) {
 	}
 }
 
+// requireWriteAllowed asks the host's optional WriteGuard whether the tenant
+// rejects the write op names. It sits after the route's shape checks and before
+// the mandatory audit and the manager: a refused write lands no audit row and
+// reaches no table.
+//
+// An assembly that delivers no guard permits the write, which is the behaviour
+// the module had before the seam existed. An answer that cannot be read is a
+// 503 and is never read as permission: a dependency that cannot answer must not
+// widen what a caller may do.
+func (p *product) requireWriteAllowed(ctx context.Context, tenant string, op authz.WriteOp) error {
+	if p.writeGuard == nil {
+		return nil
+	}
+	denied, err := p.writeGuard.Denied(ctx, tenant, op)
+	if err != nil {
+		p.logger.Error(ModuleName+": the write guard could not answer, so the write was not carried out",
+			slog.String("tenant", tenant), slog.String("cause", err.Error()))
+		return speedhttp.Fault{Status: http.StatusServiceUnavailable}
+	}
+	if denied {
+		return speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + forbiddenCode}
+	}
+	return nil
+}
+
 // failureOf maps a failure the manager returned to the error the entry point
 // answers with.
 //
-// The mapping is closed and fail-closed: an unknown role and a tenant mismatch
-// are 400s because the request named something that is not there or crossed a
-// tenant, a builtin role is a 409 because the target exists but cannot be
-// changed, and any other failure of the manager or its store is a 503 whose
-// cause stays in the log and never reaches the caller. ErrUnknownPermission is
-// not mapped here: it is the startup sentinel for a route declaration naming a
-// permission the catalog does not hold, and no manager write path returns it —
-// a grant naming an undeclared permission is refused by the catalog check before
-// the manager is reached.
+// The mapping is closed and fail-closed: an unknown role, a tenant mismatch and
+// an account that is not a platform member are 400s because the request named
+// something that is not there, crossed a tenant, or asked for a binding the
+// membership check refuses; a builtin role and the last tenant administrator are
+// 409s because the target exists but cannot be changed or left ungoverned; and
+// any other failure of the manager or its store is a 503 whose cause stays in
+// the log and never reaches the caller. ErrUnknownPermission is not mapped here:
+// it is the startup sentinel for a route declaration naming a permission the
+// catalog does not hold, and no manager write path returns it — a grant naming
+// an undeclared permission is refused by the catalog check before the manager is
+// reached.
 func (p *product) failureOf(op string, err error) error {
 	switch {
-	case errors.Is(err, authz.ErrUnknownRole), errors.Is(err, authz.ErrTenantMismatch):
+	case errors.Is(err, authz.ErrUnknownRole), errors.Is(err, authz.ErrTenantMismatch),
+		errors.Is(err, authz.ErrPlatformMembershipRequired):
 		return badRequest()
-	case errors.Is(err, authz.ErrBuiltinRole):
+	case errors.Is(err, authz.ErrBuiltinRole), errors.Is(err, authz.ErrLastTenantAdmin):
 		return conflict()
 	default:
 		p.logger.Error(ModuleName+": "+op+" failed", slog.String("cause", err.Error()))

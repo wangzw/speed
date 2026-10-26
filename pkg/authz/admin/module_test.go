@@ -370,16 +370,20 @@ func TestAFailedWriteLeavesAFailedRow(t *testing.T) {
 }
 
 // TestTheFailureToAnswerMapping holds the closed mapping from a manager failure
-// to its answer.
+// to its answer, including the problem type each refusal carries.
 func TestTheFailureToAnswerMapping(t *testing.T) {
 	for name, tc := range map[string]struct {
-		err  error
-		want int
+		err      error
+		want     int
+		wantType string
 	}{
-		"an unknown role is a 400":   {authz.ErrUnknownRole, http.StatusBadRequest},
-		"a tenant mismatch is a 400": {authz.ErrTenantMismatch, http.StatusBadRequest},
-		"a builtin role is a 409":    {authz.ErrBuiltinRole, http.StatusConflict},
-		"any other failure is a 503": {errors.New("the store is down"), http.StatusServiceUnavailable},
+		"an unknown role is a 400":               {authz.ErrUnknownRole, http.StatusBadRequest, "urn:speed:authz:bad-request"},
+		"a tenant mismatch is a 400":             {authz.ErrTenantMismatch, http.StatusBadRequest, "urn:speed:authz:bad-request"},
+		"a refused platform membership is a 400": {authz.ErrPlatformMembershipRequired, http.StatusBadRequest, "urn:speed:authz:bad-request"},
+		"a missing membership checker is a 503":  {authz.ErrMissingMembershipChecker, http.StatusServiceUnavailable, ""},
+		"a builtin role is a 409":                {authz.ErrBuiltinRole, http.StatusConflict, "urn:speed:authz:conflict"},
+		"the last tenant administrator is a 409": {authz.ErrLastTenantAdmin, http.StatusConflict, "urn:speed:authz:conflict"},
+		"any other failure is a 503":             {errors.New("the store is down"), http.StatusServiceUnavailable, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
@@ -388,6 +392,12 @@ func TestTheFailureToAnswerMapping(t *testing.T) {
 				params("tenant", "t1", "role", "r1"), roleBody{})
 			if w.Code != tc.want {
 				t.Fatalf("the answer = %d, want %d", w.Code, tc.want)
+			}
+			if tc.wantType == "" {
+				return
+			}
+			if p := decodeProblem(t, w.Body.String()); p.Type != tc.wantType {
+				t.Fatalf("the answer's type = %q, want %q", p.Type, tc.wantType)
 			}
 		})
 	}

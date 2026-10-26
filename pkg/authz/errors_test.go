@@ -36,6 +36,7 @@ func TestTheSentinelSetIsClosed(t *testing.T) {
 		{"ErrReservedRole", ErrReservedRole},
 		{"ErrLastTenantAdmin", ErrLastTenantAdmin},
 		{"ErrMissingMembershipChecker", ErrMissingMembershipChecker},
+		{"ErrPlatformMembershipRequired", ErrPlatformMembershipRequired},
 		{"ErrUnknownRole", ErrUnknownRole},
 		{"ErrBuiltinRole", ErrBuiltinRole},
 		{"ErrTenantMismatch", ErrTenantMismatch},

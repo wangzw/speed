@@ -72,6 +72,12 @@ var (
 	// check fails closed: the fix is to supply the checker.
 	ErrMissingMembershipChecker = errors.New("authz: no membership checker is assembled to bind the platform administrator role")
 
+	// ErrPlatformMembershipRequired reports that the account a platform
+	// administrator binding names is not an active member of the platform
+	// tenant. The fix is to make the account a member of that tenant first; a
+	// checker that cannot answer is a different failure and is not this one.
+	ErrPlatformMembershipRequired = errors.New("authz: the account is not an active member of the platform tenant")
+
 	// ErrPolicyUnavailable reports that the policy snapshot, its store or the
 	// startup self-check is not available. The fix is the dependency: it
 	// recovers on its own once the dependency does, and the response does not

@@ -279,8 +279,8 @@ func (m *managerStub) DeleteBinding(_ context.Context, tenant, account string, r
 	return m.errNow()
 }
 
-func (m *managerStub) DeleteBindings(_ context.Context, tenant string) error {
-	m.note(managerCall{op: "DeleteBindings", tenant: tenant})
+func (m *managerStub) ClearAccountBindings(_ context.Context, tenant, account string) error {
+	m.note(managerCall{op: "ClearAccountBindings", tenant: tenant, account: account})
 	return m.errNow()
 }
 

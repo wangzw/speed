@@ -8,9 +8,10 @@
 // wrapper, which makes the decision in front of the typed handler: it reads the
 // caller from the request, asks the handler-internal Guard for authz.role.read
 // on a read or authz.role.manage on a write, and answers a shortfall before
-// anything else runs. A read that is allowed ends there; a write lands a
-// mandatory audit row outside any transaction and before the action, calls the
-// manager, and maps a refusal to its answer.
+// anything else runs. A read that is allowed ends there; a write runs its shape
+// checks, asks the optional host WriteGuard, lands a mandatory audit row outside
+// any transaction and before the action, calls the manager, and maps a refusal
+// to its answer.
 //
 // The routes are mounted on the endpoints the authz.admin.endpoints list names,
 // and the start diagnostics name the endpoints and the groups.
@@ -109,11 +110,12 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // description in the request's language; both are optional, and an assembly
 // without the localizer answers the description as an empty string.
 //
-// The HTTP entry point and the route-declaration surface are taken up in Init
-// rather than declared: a command that mounts routes and has no entry point is a
-// failure to report at wiring time, and the declaration surface's absence is
-// legal — with no gate the routes carry no declaration and a guarded endpoint
-// answers them as undeclared.
+// The HTTP entry point, the route-declaration surface and the host write guard
+// are taken up in Init rather than declared: a command that mounts routes and
+// has no entry point is a failure to report at wiring time, and the declaration
+// surface's absence and the write guard's absence are both legal — with no gate
+// the routes carry no declaration and a guarded endpoint answers them as
+// undeclared, and with no write guard a write route does not consult that seam.
 //
 // The outward declaration carries a speedhttp.Spec resource beside the schema:
 // it holds this module's OpenAPI fragment, which describes the management
@@ -199,6 +201,10 @@ type product struct {
 	// that a guarded endpoint lets the request reach the handler, which makes the
 	// decision.
 	gate authz.Gate
+	// writeGuard is the optional host seam a role, grant or binding write asks
+	// before the mandatory audit and the manager. Nil means the assembly
+	// delivers none, and the writes run as they do without the seam.
+	writeGuard authz.WriteGuard
 	// localizer renders a permission's description into the request's language,
 	// nil when the assembly delivers no i18n engine. With none the catalog route
 	// answers an empty description and a client shows the permission code alone.
@@ -266,9 +272,9 @@ func optional[T any](reg *core.Registry, what string) (T, bool, error) {
 }
 
 // wire runs in Init, where every instance exists. It takes up the optional
-// message localizer, the optional route-declaration surface and the logger,
-// resolves the configured endpoints, mounts the routes, declares them open, and
-// writes the start diagnostic.
+// message localizer, the optional route-declaration surface, the optional host
+// write guard and the logger, resolves the configured endpoints, mounts the
+// routes, declares them open, and writes the start diagnostic.
 //
 // The entry point is required: a command that mounts routes and has no entry
 // point has nothing to mount them on, and the failure names the module so the
@@ -285,6 +291,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.gate = gate
+	}
+	if writeGuard, found, err := optional[authz.WriteGuard](reg, "the write guard"); err != nil {
+		return err
+	} else if found {
+		p.writeGuard = writeGuard
 	}
 	if localizer, found, err := optional[i18n.Localizer](reg, "the message localizer"); err != nil {
 		return err

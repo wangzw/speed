@@ -124,28 +124,34 @@ func TestBindingsOfScopesToOneTenant(t *testing.T) {
 	}
 }
 
-// DeleteBindings is the domain teardown path: it removes the tenant's last
-// tenant-admin binding, which DeleteBinding refuses, and leaves another
-// tenant's bindings alone.
-func TestDeleteBindingsClearsADomainIncludingTheLastTenantAdmin(t *testing.T) {
+// ClearAccountBindings is the host's account-deletion path: it removes every
+// binding the account holds within one tenant, including a tenant-admin binding
+// DeleteBinding would refuse as the last one, and leaves another account's
+// bindings in that tenant and the same account's rows in another tenant alone.
+func TestClearAccountBindingsClearsOneAccountWithinOneTenant(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 	mustPutRole(t, ctx, f, "acme", string(authz.TenantAdminRole))
+	mustPutRole(t, ctx, f, "acme", "editor")
 	mustPutRole(t, ctx, f, "globex", string(authz.TenantAdminRole))
 	mustPutBinding(t, ctx, f, "acme", "acc1", string(authz.TenantAdminRole))
+	mustPutBinding(t, ctx, f, "acme", "acc2", "editor")
 	mustPutBinding(t, ctx, f, "globex", "acc1", string(authz.TenantAdminRole))
 
 	if err := f.DeleteBinding(ctx, "acme", "acc1", authz.TenantAdminRole); !errors.Is(err, authz.ErrLastTenantAdmin) {
 		t.Fatalf("DeleteBinding of the last tenant-admin = %v, want ErrLastTenantAdmin", err)
 	}
-	if err := f.DeleteBindings(ctx, "acme"); err != nil {
-		t.Fatalf("DeleteBindings(acme): %v", err)
+	if err := f.ClearAccountBindings(ctx, "acme", "acc1"); err != nil {
+		t.Fatalf("ClearAccountBindings(acme, acc1): %v", err)
 	}
-	if bindings, err := f.Bindings(ctx, "acme"); err != nil || len(bindings) != 0 {
-		t.Errorf("Bindings(acme) = %v, %v, want none", bindings, err)
+	if bindings, err := f.BindingsOf(ctx, "acme", "acc1"); err != nil || len(bindings) != 0 {
+		t.Errorf("BindingsOf(acme, acc1) = %v, %v, want none", bindings, err)
 	}
-	if other, err := f.Bindings(ctx, "globex"); err != nil || len(other) != 1 {
-		t.Errorf("Bindings(globex) = %v, %v, want the other tenant's binding untouched", other, err)
+	if kept, err := f.BindingsOf(ctx, "acme", "acc2"); err != nil || len(kept) != 1 {
+		t.Errorf("BindingsOf(acme, acc2) = %v, %v, want the other account's binding untouched", kept, err)
+	}
+	if other, err := f.BindingsOf(ctx, "globex", "acc1"); err != nil || len(other) != 1 {
+		t.Errorf("BindingsOf(globex, acc1) = %v, %v, want the other tenant's binding untouched", other, err)
 	}
 }
 
@@ -351,7 +357,7 @@ func TestEveryMethodRefusesAnEmptyTenant(t *testing.T) {
 		}},
 		{"PutBinding", func() error { return f.PutBinding(ctx, authz.Binding{Account: "acc1", Role: "roleA"}) }},
 		{"DeleteBinding", func() error { return f.DeleteBinding(ctx, "", "acc1", "roleA") }},
-		{"DeleteBindings", func() error { return f.DeleteBindings(ctx, "") }},
+		{"ClearAccountBindings", func() error { return f.ClearAccountBindings(ctx, "", "acc1") }},
 	}
 	for _, c := range cases {
 		if err := c.call(); !errors.Is(err, authz.ErrTenantMismatch) {

@@ -146,6 +146,9 @@ func TestPutBindingOfThePlatformAdministratorChecksMembership(t *testing.T) {
 		if errors.Is(err, authz.ErrMissingMembershipChecker) {
 			t.Fatalf("a refused membership was reported as a missing checker: %v", err)
 		}
+		if !errors.Is(err, authz.ErrPlatformMembershipRequired) {
+			t.Fatalf("a refused membership gave %v, want ErrPlatformMembershipRequired", err)
+		}
 		bindings, err := f.Bindings(ctx, platform)
 		if err != nil {
 			t.Fatalf("Bindings(platform): %v", err)

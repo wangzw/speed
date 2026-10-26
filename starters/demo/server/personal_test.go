@@ -482,17 +482,25 @@ func (m *fakeManager) DeleteBinding(_ context.Context, tenantID, account string,
 	return nil
 }
 
-// DeleteBindings removes every binding of a tenant, the domain teardown path
-// that the last-tenant-administrator rule does not constrain.
-func (m *fakeManager) DeleteBindings(_ context.Context, tenantID string) error {
+// ClearAccountBindings removes one account's bindings within a tenant, the
+// host's account-deletion path that the last-tenant-administrator rule does not
+// constrain.
+func (m *fakeManager) ClearAccountBindings(_ context.Context, tenantID, account string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.steps.add("unbind-all")
+	m.steps.add("unbind:" + account)
 	if m.deleteBindingsErr != nil {
 		return m.deleteBindingsErr
 	}
-	m.deletedBindings += len(m.bindings[tenantID])
-	delete(m.bindings, tenantID)
+	kept := m.bindings[tenantID][:0]
+	for _, binding := range m.bindings[tenantID] {
+		if binding.Account == account {
+			m.deletedBindings++
+			continue
+		}
+		kept = append(kept, binding)
+	}
+	m.bindings[tenantID] = kept
 	return nil
 }
 

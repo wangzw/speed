@@ -26,11 +26,14 @@ func (p *product) handleRoleList(ctx context.Context, in tenantInput) (roleListB
 
 // handleRolePut answers PUT /api/v1/system/tenants/:tenant/roles/:role: it creates
 // or rewrites a role without the builtin mark. It is a write, so the action is
-// role.manage. The mandatory audit row lands before the manager is called; a
-// builtin role the manager refuses is a 409 with a failed row beside the
-// permitted one.
+// role.manage. The optional host WriteGuard is asked after the shape checks;
+// the mandatory audit row lands before the manager is called. A builtin role
+// the manager refuses is a 409 with a failed row beside the permitted one.
 func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{}, error) {
 	role := authz.Role(in.Role)
+	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteRole); err != nil {
+		return struct{}{}, err
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionRolePut, string(role), map[string]string{
 		detailActionID: actionID,
@@ -54,9 +57,13 @@ func (p *product) handleRolePut(ctx context.Context, in roleWriteInput) (struct{
 
 // handleRoleDelete answers DELETE /api/v1/system/tenants/:tenant/roles/:role: it
 // removes a role, which revokes its grants and bindings with it. It is a write,
-// so the action is role.manage. A builtin role the manager refuses is a 409.
+// so the action is role.manage. The optional host WriteGuard is asked after the
+// shape checks. A builtin role the manager refuses is a 409.
 func (p *product) handleRoleDelete(ctx context.Context, in roleInput) (struct{}, error) {
 	role := authz.Role(in.Role)
+	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteRole); err != nil {
+		return struct{}{}, err
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionRoleDelete, string(role), map[string]string{
 		detailActionID: actionID,

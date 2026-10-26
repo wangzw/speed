@@ -51,9 +51,14 @@ type rig struct {
 	manager *stubManager
 	catalog *stubCatalog
 	guard   *stubGuard
-	audit   *recordingAudit
-	router  *stubRouter
-	logs    *logBuffer
+	// writeGuard is the optional host seam the write routes consult. The zero
+	// value permits and records, so the rig always has a guard a case can
+	// observe or redirect; a case that holds the absent-seam behaviour sets the
+	// product's own field back to nil.
+	writeGuard *stubWriteGuard
+	audit      *recordingAudit
+	router     *stubRouter
+	logs       *logBuffer
 	// signup answers the acting account's self-registration state. Its zero
 	// value reports SignupNone, which is what an account created outside
 	// self-registration reads as.
@@ -70,19 +75,21 @@ func newRig(t *testing.T, perms ...authz.Permission) *rig {
 	t.Helper()
 	logs := &logBuffer{}
 	r := &rig{
-		t:       t,
-		manager: &stubManager{},
-		catalog: newStubCatalog(perms...),
-		guard:   &stubGuard{allow: true},
-		audit:   &recordingAudit{},
-		router:  newStubRouter("public"),
-		logs:    logs,
-		signup:  &fakeSignupVerification{},
+		t:          t,
+		manager:    &stubManager{},
+		catalog:    newStubCatalog(perms...),
+		guard:      &stubGuard{allow: true},
+		writeGuard: &stubWriteGuard{},
+		audit:      &recordingAudit{},
+		router:     newStubRouter("public"),
+		logs:       logs,
+		signup:     &fakeSignupVerification{},
 	}
 	r.p = &product{
 		manager:      r.manager,
 		catalog:      r.catalog,
 		guard:        r.guard,
+		writeGuard:   r.writeGuard,
 		audit:        r.audit,
 		verification: r.signup,
 		logger:       logs.logger(),

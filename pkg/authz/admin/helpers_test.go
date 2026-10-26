@@ -27,6 +27,7 @@ import (
 var (
 	_ authz.Manager      = (*stubManager)(nil)
 	_ authz.Catalog      = (*stubCatalog)(nil)
+	_ authz.WriteGuard   = (*stubWriteGuard)(nil)
 	_ guard.Guard        = (*stubGuard)(nil)
 	_ audit.Audit        = (*recordingAudit)(nil)
 	_ speedhttp.Router   = (*stubRouter)(nil)
@@ -144,9 +145,55 @@ func (m *stubManager) DeleteBinding(_ context.Context, tenant, account string, r
 	return m.errNow()
 }
 
-func (m *stubManager) DeleteBindings(_ context.Context, tenant string) error {
-	m.record(managerCall{op: "DeleteBindings", tenant: tenant})
+func (m *stubManager) ClearAccountBindings(_ context.Context, tenant, account string) error {
+	m.record(managerCall{op: "ClearAccountBindings", tenant: tenant, account: account})
 	return m.errNow()
+}
+
+// writeGuardCall is one question the stand-in write guard was asked: the tenant
+// the write named and the kind of write it was.
+type writeGuardCall struct {
+	tenant string
+	op     authz.WriteOp
+}
+
+// stubWriteGuard is a stand-in authz.WriteGuard. Its zero value permits every
+// write and records what it was asked, so a case can hold both that a route
+// consults the seam and what the route named. A case refuses a write with
+// refuse and breaks the answer with fail.
+type stubWriteGuard struct {
+	mu     sync.Mutex
+	calls  []writeGuardCall
+	denied bool
+	err    error
+}
+
+func (g *stubWriteGuard) Denied(_ context.Context, tenant string, op authz.WriteOp) (bool, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.calls = append(g.calls, writeGuardCall{tenant: tenant, op: op})
+	return g.denied, g.err
+}
+
+// asked returns the questions the guard recorded.
+func (g *stubWriteGuard) asked() []writeGuardCall {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]writeGuardCall(nil), g.calls...)
+}
+
+// refuse makes the guard deny every write.
+func (g *stubWriteGuard) refuse() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.denied = true
+}
+
+// fail makes the guard unable to answer.
+func (g *stubWriteGuard) fail(err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.err = err
 }
 
 // stubCatalog is a stand-in authz.Catalog over a fixed set of permissions. It

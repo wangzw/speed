@@ -81,6 +81,10 @@ type managementAssembly struct {
 	router speedhttp.Router
 	// gate is the optional route-declaration surface, taken up in Init when set.
 	gate authz.Gate
+	// writeGuard is the optional host seam a write route consults; set it to
+	// hold that Init takes up what the assembly delivers, nil to hold the
+	// absent-seam assembly.
+	writeGuard authz.WriteGuard
 	// logger is the logging capability, taken up in Init; nil uses a recorder.
 	logger *slog.Logger
 	// record, when set, receives the product New built.
@@ -155,6 +159,10 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	if a.gate != nil {
 		reg.Register(standIn("stand-in.gate", a.gate, (*authz.Gate)(nil)))
 		names = append(names, "stand-in.gate")
+	}
+	if a.writeGuard != nil {
+		reg.Register(standIn("stand-in.write-guard", a.writeGuard, (*authz.WriteGuard)(nil)))
+		names = append(names, "stand-in.write-guard")
 	}
 	if action == nil {
 		action = func(context.Context, *core.Registry) error { return nil }

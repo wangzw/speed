@@ -7,10 +7,10 @@ package main
 // The two status hooks move the tenant through the roster's account-driven
 // transition, which writes the disable source as the account's; an operator's
 // disable is therefore never lifted by an account's recovery. The deletion
-// removes the tenant's memberships, bindings and tenant-admin role, records the
-// deletion, and then writes the tombstone, in that order. Every hook is
-// idempotent, and the tombstone is the completion marker: a repeated call finds
-// the row already deleted and writes nothing.
+// removes the tenant's memberships, the deleted account's bindings and its
+// tenant-admin role, records the deletion, and then writes the tombstone, in
+// that order. Every hook is idempotent, and the tombstone is the completion
+// marker: a repeated call finds the row already deleted and writes nothing.
 //
 // A host module implements the hook only when it is in the run. Without it, an
 // account's state change leaves the tenant row and its policy in place, and the
@@ -119,7 +119,8 @@ func (p *personalProduct) setAccountStatus(ctx context.Context, id authn.Account
 // order:
 //
 //  1. every membership of the tenant is removed,
-//  2. every binding is removed and then the tenant-admin role,
+//  2. the deleted account's bindings are cleared and then the tenant-admin role
+//     is removed, which takes its remaining bindings with it,
 //  3. the deletion's audit row is written,
 //  4. the tenant's tombstone is written.
 //
@@ -140,7 +141,7 @@ func (p *personalProduct) AccountDeleted(ctx context.Context, id authn.AccountID
 	if err := p.clearMemberships(ctx, tenantID); err != nil {
 		return err
 	}
-	if err := p.clearPolicy(ctx, tenantID); err != nil {
+	if err := p.clearPolicy(ctx, tenantID, string(id)); err != nil {
 		return err
 	}
 	if err := p.auditRequired(ctx, personalAudit(personalDeleteAction, id, personalID, newPersonalActionID())); err != nil {
@@ -203,18 +204,18 @@ func (p *personalProduct) clearMemberships(ctx context.Context, tenantID string)
 	}
 }
 
-// clearPolicy deletes every binding of the tenant and then its tenant-admin
-// role. The bindings go through the domain teardown path, which the
-// last-tenant-administrator rule does not constrain: the account's own binding
-// is often the tenant's only one when the policy module's AccountDeleted has
-// not run first, and the cleanup must not depend on that hook's order. The rule
-// protects a domain still in service; this one is about to become a tombstone.
-// The role follows in its own transaction, and a role marked builtin cannot be
-// deleted; that refusal is tolerated, because no request resolves to the domain
-// again.
-func (p *personalProduct) clearPolicy(ctx context.Context, tenantID string) error {
-	if err := p.manager.DeleteBindings(ctx, tenantID); err != nil {
-		return fmt.Errorf("deleting the personal tenant's bindings: %w", err)
+// clearPolicy clears the deleted account's bindings in the tenant and then
+// removes its tenant-admin role. The bindings go through the host's
+// account-deletion path, which the last-tenant-administrator rule does not
+// constrain: the account's own binding is often the tenant's only one when the
+// policy module's AccountDeleted has not run first, and the cleanup must not
+// depend on that hook's order. The rule protects a domain still in service; this
+// one is about to become a tombstone. The role follows in its own transaction,
+// and a role marked builtin cannot be deleted; that refusal is tolerated,
+// because no request resolves to the domain again.
+func (p *personalProduct) clearPolicy(ctx context.Context, tenantID, account string) error {
+	if err := p.manager.ClearAccountBindings(ctx, tenantID, account); err != nil {
+		return fmt.Errorf("clearing the deleted account's bindings in the personal tenant: %w", err)
 	}
 	if err := p.manager.DeleteRole(ctx, tenantID, personalTenantAdminRole); err != nil && !errors.Is(err, authz.ErrBuiltinRole) {
 		return fmt.Errorf("deleting the personal tenant's tenant-admin role: %w", err)

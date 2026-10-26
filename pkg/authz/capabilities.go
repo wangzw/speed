@@ -137,12 +137,16 @@ type Manager interface {
 	PutBinding(ctx context.Context, b Binding) error
 	// DeleteBinding removes a subject's binding to a role within a tenant.
 	DeleteBinding(ctx context.Context, tenant, account string, role Role) error
-	// DeleteBindings removes every binding of a tenant. It is the host's
-	// domain-teardown path: the tenant is being deleted, so the
-	// last-tenant-administrator rule, which protects a domain still in service,
-	// does not apply. It acts on one tenant alone, leaves the roles and grants
-	// in place, and is idempotent: a tenant with no bindings is no work.
-	DeleteBindings(ctx context.Context, tenant string) error
+	// ClearAccountBindings removes every binding the account holds within the
+	// tenant in one statement. It is the host's account-deletion path, called
+	// while an account is being deleted, so the last-tenant-administrator rule
+	// that DeleteBinding enforces does not apply: the rule keeps a domain still
+	// in service governable, and the deleted account's own winding-up is not a
+	// removal from a domain it must leave governed. The write acts on one tenant
+	// and one account: the tenant's other bindings and the account's bindings in
+	// other tenants stay, and so do the roles and grants. It is idempotent: an
+	// account with no binding in the tenant writes nothing.
+	ClearAccountBindings(ctx context.Context, tenant, account string) error
 }
 
 // MembershipChecker reports whether an account is an active member of a tenant.
@@ -157,6 +161,37 @@ type Manager interface {
 type MembershipChecker interface {
 	IsMember(ctx context.Context, tenant string, account string) (bool, error)
 }
+
+// WriteGuard reports whether a tenant's policy data rejects a management write.
+//
+// The capability knows which tenants and roles a deployment must protect no
+// more than it knows which accounts are their members, so the answer is a host
+// seam. The management module asks it before a role, grant or binding write; a
+// write the guard refuses is not carried out. The answer only narrows: it cannot
+// make a write the Manager would refuse succeed.
+//
+// The seam is optional. An assembly that delivers no WriteGuard mounts the
+// management routes as it did before the seam existed; an answer that cannot be
+// read is a 503 and is never read as permission.
+type WriteGuard interface {
+	// Denied reports whether the tenant rejects the write op names. An error
+	// means the answer could not be read, and a caller treats it as a refusal to
+	// proceed rather than a pass.
+	Denied(ctx context.Context, tenant string, op WriteOp) (bool, error)
+}
+
+// WriteOp names a management write a WriteGuard protects. The set is closed.
+type WriteOp int
+
+const (
+	// WriteRole is a role create, rewrite or delete. It is the zero value, so a
+	// value nobody chose reads as the write that can remove a role.
+	WriteRole WriteOp = iota
+	// WriteGrant adds or removes a permission a role holds.
+	WriteGrant
+	// WriteBinding binds or unbinds an account to a role.
+	WriteBinding
+)
 
 // Seeder is the host's seeding surface over the policy data: it adds the grants
 // a role is declared to hold, and it is the one write that reaches a builtin

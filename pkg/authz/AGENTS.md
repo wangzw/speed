@@ -92,6 +92,15 @@ before writing a consumer.
   surface and a builtin role's grant set is the capability the module holds,
   not a branch in a handler. A management route would reach `SeedGrants` only
   if the module were given a `Seeder`, and its descriptor names none.
+- **The management surface's write guard is a host seam, not a capability.**
+  `authz.WriteGuard` and its closed `WriteOp` set live in the root package
+  because the host implements it and `authz.admin` takes it up. The module asks
+  it after a write's shape checks and before the mandatory audit and the
+  `Manager`; a denial is a 403 and an unreadable answer a 503, and the seam can
+  only narrow what the `Manager` would do. Delivering none is a legal assembly:
+  the write routes then run without it. The policy module's own writes — the
+  seeding surface and the host's `Manager.ClearAccountBindings` account-deletion
+  path — do not consult it.
 - **The translation is this capability's rows unioned with every module's
   declared rows, and a permission no row covers is refused.** `internal/translation`
   carries the rows for this capability's own permissions, and a module that

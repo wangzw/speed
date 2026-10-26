@@ -481,24 +481,27 @@ func (p *product) DeleteBinding(ctx context.Context, tenant, account string, rol
 	return p.afterWrite(ctx)
 }
 
-// DeleteBindings removes every binding of a tenant in one statement. It is the
-// host's domain-teardown path, called while a tenant is being deleted, so the
-// last-tenant-administrator rule that DeleteBinding enforces does not apply:
-// the rule keeps a domain in service governable, and a domain being torn down
-// has no request that resolves to it. The roles and grants stay; the caller
-// removes them with DeleteRole.
+// ClearAccountBindings removes every binding the account holds within the
+// tenant in one statement. It is the host's account-deletion path, called while
+// an account is being deleted, so the last-tenant-administrator rule that
+// DeleteBinding enforces does not apply: the rule keeps a domain still in
+// service governable, and the deleted account's own winding-up is not a removal
+// from a domain it must leave governed. The write acts on one tenant and one
+// account; the tenant's other bindings and the account's bindings in other
+// tenants stay, and so do the roles and grants.
 //
-// The delete is one transaction and idempotent: a tenant with no bindings
-// writes nothing and publishes nothing.
-func (p *product) DeleteBindings(ctx context.Context, tenant string) error {
+// The delete is one transaction and idempotent: an account with no binding in
+// the tenant writes nothing and publishes nothing.
+func (p *product) ClearAccountBindings(ctx context.Context, tenant, account string) error {
 	if err := requireTenant(tenant); err != nil {
 		return err
 	}
 	removed := false
 	err := p.write(ctx, func(tx *gorm.DB) error {
-		result := tx.Where("tenant_id = ?", tenant).Delete(&bindingRow{})
+		result := tx.Where("tenant_id = ? AND account_id = ?", tenant, account).Delete(&bindingRow{})
 		if result.Error != nil {
-			return fmt.Errorf("authz/policy: deleting the bindings of tenant %q: %w", tenant, result.Error)
+			return fmt.Errorf("authz/policy: clearing the bindings of account %q in tenant %q: %w",
+				account, tenant, result.Error)
 		}
 		removed = result.RowsAffected > 0
 		return nil
@@ -554,8 +557,8 @@ func (p *product) requirePlatformMember(ctx context.Context, b authz.Binding) er
 		return fmt.Errorf("authz/policy: checking whether the account is a member of tenant %q: %w", b.Tenant, err)
 	}
 	if !member {
-		return fmt.Errorf("authz/policy: the account is not an active member of tenant %q, so the role %q "+
-			"cannot be bound there", b.Tenant, b.Role)
+		return fmt.Errorf("%w: the account is not an active member of tenant %q, so the role %q "+
+			"cannot be bound there", authz.ErrPlatformMembershipRequired, b.Tenant, b.Role)
 	}
 	return nil
 }

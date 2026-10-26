@@ -109,6 +109,22 @@ write that lands answers 204 and no body.
   route refuses it with a 403 before the mandatory audit and before the
   `Manager`, which cannot enforce the rule because it reads no actor. Another
   administrator removes the binding. `TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused`.
+- **An optional host `WriteGuard` may refuse a write after the shape checks.** A
+  role, grant or binding write asks `authz.WriteGuard.Denied` once, naming the
+  tenant the path carries and the kind of write (`authz.WriteRole`,
+  `authz.WriteGrant`, `authz.WriteBinding`). The question sits after the route's
+  own shape checks (a grant's catalog and translation checks, a binding's empty
+  account) and before the mandatory audit and the `Manager`: a denied write is a
+  403 with the `forbidden` problem type and lands no audit row, and an answer
+  that cannot be read is a 503 that is never a permit. The seam is optional and
+  taken up in `Init`: an assembly that delivers none mounts the routes as it did
+  before the seam existed. Reads never consult it.
+  `TestEveryWriteConsultsTheWriteGuard`,
+  `TestADeniedWriteIsRefusedBeforeTheAuditAndTheManager`,
+  `TestAWriteGuardThatCannotAnswerIsA503`,
+  `TestReadsDoNotConsultTheWriteGuard`, `TestTheWriteGuardIsOptional`,
+  `TestTheWriteGuardIsTakenUpFromTheAssembly`,
+  `TestTheWriteGuardIsAskedAfterTheShapeChecks`.
 - **The mandatory audit of a write lands before the action, outside any
   transaction.** A write's audit row is written before the `Manager` is called; a
   row that does not land is answered 503 and the action is not carried out, so a
@@ -135,13 +151,15 @@ write that lands answers 204 and no body.
   does not carry before the entry point binds the declared input, the typed
   handler builds its record from the declared field alone, and `PutRole` refuses
   a record that carries the mark.
-- **The refusal mapping is closed and fail-closed.** An unknown role and a
-  tenant mismatch — a request that named something that is not there, or crossed
-  a tenant — are 400s; a builtin role is a 409; any other failure of the `Manager`
-  or its store, and a mandatory audit that did not land, are 503s. A 503 says a
-  dependency could not answer and never what was refused, so it carries no
-  problem type. The cause of a 403, a 409 and a 503 stays in the log and never
-  reaches the caller; the permission a route named never reaches the response.
+- **The refusal mapping is closed and fail-closed.** An unknown role, a tenant
+  mismatch and a platform membership the checker refuses are 400s; a builtin role
+  and the last tenant administrator of a domain are 409s; any other failure of
+  the `Manager` or its store, an unreadable write guard and a mandatory audit
+  that did not land are 503s. A write the host's `WriteGuard` denies is a 403
+  with the `forbidden` type. A 503 says a dependency could not answer and never
+  what was refused, so it carries no problem type. The cause of a 403, a 409 and
+  a 503 stays in the log and never reaches the caller; the permission a route
+  named never reaches the response.
 - **The binding writes refuse an empty account on shape, after the decision and
   before the manager.** The route addresses a binding by its account, and the
   empty account names the zero subject, so a request that carries one is a 400
@@ -169,9 +187,11 @@ write that lands answers 204 and no body.
   every route with a refusal or a write that cannot land. The HTTP entry point is
   taken up in `Init` and is required — a command that mounts the management
   routes and has no entry point has nothing to mount on, which is
-  `authz.ErrNoRouter`. The logger and the message localizer are the optional
-  requirements, and the route-declaration surface is taken up optionally in
-  `Init`. With no localizer the catalog view's description is the empty string.
+  `authz.ErrNoRouter`. The logger, the message localizer and the host's
+  `authz.WriteGuard` are the optional requirements; the logger, the localizer,
+  the write guard and the route-declaration surface are taken up in `Init`. With
+  no localizer the catalog view's description is the empty string; with no write
+  guard a write route does not consult that seam.
 - **The answer is a view, built field by field.** Every route answers with a view
   assembled from a root-package value and never the value as it stands, so a field
   added to a record later does not reach a client by being there.

@@ -30,7 +30,8 @@ func (p *product) handleGrantList(ctx context.Context, in roleInput) (grantListB
 // translated to the (resource, action) pair the engine matches on before the
 // manager is called; a permission the catalog does not hold, or one the
 // translation has no row for, is a 400 and the manager is not touched. The
-// mandatory audit row lands before the manager writes.
+// optional host WriteGuard is asked after those checks; the mandatory audit row
+// lands before the manager writes.
 func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)
@@ -40,6 +41,9 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 	resource, action, ok := p.catalog.ObjectAction(permission)
 	if !ok {
 		return struct{}{}, badRequest()
+	}
+	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteGrant); err != nil {
+		return struct{}{}, err
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionGrantPut, string(permission), map[string]string{
@@ -64,13 +68,17 @@ func (p *product) handleGrantPut(ctx context.Context, in grantInput) (struct{}, 
 //
 // The permission named in the path is translated to the (resource, action) pair
 // before the manager is called; a permission the translation has no row for is a
-// 400. The mandatory audit row lands before the manager writes.
+// 400. The optional host WriteGuard is asked after that check; the mandatory
+// audit row lands before the manager writes.
 func (p *product) handleGrantDelete(ctx context.Context, in grantInput) (struct{}, error) {
 	role := authz.Role(in.Role)
 	permission := authz.Permission(in.Permission)
 	resource, action, ok := p.catalog.ObjectAction(permission)
 	if !ok {
 		return struct{}{}, badRequest()
+	}
+	if err := p.requireWriteAllowed(ctx, in.Tenant, authz.WriteGrant); err != nil {
+		return struct{}{}, err
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionGrantDelete, string(permission), map[string]string{
