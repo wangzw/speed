@@ -144,6 +144,45 @@ test.describe('the provider address belongs to no account', () => {
         }),
       ).toBeVisible()
     })
+
+    await test.step('the same Google account signs in again to the same account', async () => {
+      // The result section says the account opened here stays reachable through
+      // the same Google account. Signing out and walking the provider's round
+      // trip again is what proves that second half; the first sign-in alone
+      // leaves it unverified.
+      await demo.accounts.signOut()
+      await demo.accounts.openSignIn()
+      await expect(signInHeading(page)).toBeVisible()
+
+      await googleButton(page).click()
+      await approveSocialSignIn(page)
+      await expect(homeHeading(page)).toBeVisible()
+
+      // The provider's address is still this account's proved email
+      // identifier. An identifier belongs to one account, and the binding the
+      // first sign-in wrote is what resolved this sign-in, so the account read
+      // here is the one the first sign-in opened rather than a second one.
+      await openAccountSettings(page)
+      await expect(
+        page.getByRole('region', {
+          name: copy('accountUi', 'verification.verifiedTitle'),
+          exact: true,
+        }),
+      ).toBeVisible()
+      const identifiers = page.getByRole('region', {
+        name: copy('accountUi', 'identifiers.title'),
+        exact: true,
+      })
+      const row = identifiers
+        .getByRole('listitem')
+        .filter({ hasText: identityProviderUser.email })
+      await expect(row).toBeVisible()
+      await expect(
+        row.getByText(copy('accountUi', 'identifiers.verified'), {
+          exact: true,
+        }),
+      ).toBeVisible()
+    })
   })
 })
 
