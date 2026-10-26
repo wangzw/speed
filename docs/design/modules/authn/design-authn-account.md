@@ -236,9 +236,9 @@ type AccountLifecycle interface {
 }
 ```
 
-根包定义，持有以账户为键的数据的模块实现（`authn.session`、`authn.mfa`、`authn.sms`、`authz.policy` 是实现者；判据是持有以账户为键的数据，这份名单是例举而非封闭集）。实现并立、不排他，本模块在 `Init` 里经 `core.ResolveAll` 取用，不写进 `Requires`。每个方法幂等：账户已停用、已启用、已删除、数据已清时返回 nil。调用发生在账户事务提交之后，实现不得读账户行（墓碑之外的内容已抹除）。
+根包定义，持有以账户为键的数据的模块实现（`authn.session`、`authn.mfa`、`authn.sms`、`authz.policy` 是实现者；判据是持有以账户为键的数据，这份名单是例举而非封闭集）。实现并立、不排他，本模块在 `Init` 里经 `core.ResolveAll` 取用，不写进 `Requires`。每个方法幂等：账户已停用、已启用、已删除、数据已清时返回 nil。调用发生在账户事务提交之后，状态迁移与删除的实现不得读账户行（墓碑之外的内容已抹除）；`AccountCreated` 不受这条约束，它读得到刚提交的账户。
 
-**`AccountCreated` 在账户创建之后调用。** `Create` 与 `Signups.Register` 在事务提交之后同步调用它，失败返回 `ErrCleanupIncomplete`：账户已存在，重试同一次调用幂等地补完。创建是账户生命周期的一个事件，而个人租户在账户存在的那一刻就要存在（[ADR-starters-personal-tenant-2026-10-18](../../adr/adr-starters-personal-tenant-2026-10-18.md)）。实现要容忍账户已被删除：重试可能晚于一次删除，此时它什么也不做；只持有状态数据的实现（会话、因素、短信挑战、策略）返回 nil。
+**`AccountCreated` 在账户创建之后调用。** `Create` 与 `Signups.Register` 在事务提交之后同步调用它，失败返回 `ErrCleanupIncomplete`：账户已存在，重试同一次调用幂等地补完。创建是账户生命周期的一个事件，而个人租户在账户存在的那一刻就要存在（[ADR-starters-personal-tenant-2026-10-18](../../adr/adr-starters-personal-tenant-2026-10-18.md)）。实现可以读账户行：账户已经提交，读得到。实现要容忍账户已被删除：重试可能晚于一次删除，此时它什么也不做；只持有状态数据的实现（会话、因素、短信挑战、策略）返回 nil。
 
 **`SetStatus` 按目标状态调用对应的钩子，不论那一行是否真的改了。** 转停用调 `AccountDisabled`，转启用调 `AccountEnabled`；账户已经是目标状态时同样调用一次，失败之后重复同一次调用补齐清理，停用与启用因而都成立（[ADR-authn-account-lifecycle-2026-10-24](../../../adr/adr-authn-account-lifecycle-2026-10-24.md)）。
 
@@ -265,7 +265,7 @@ type MembershipGuard interface {
 根包定义。`authz.policy` 实现 `MembershipLifecycle`，并实现最后租户管理员这一档的 `MembershipGuard`；宿主可以再并立一个自己的守卫，拒绝它的租户政策要拒绝的删除——示范宿主拒绝个人租户里的每一次删除。`MembershipLifecycle` 与 `MembershipGuard` 的实现都并立、不排他，本模块在 `Init` 里分别经 `core.ResolveAll` 取用；缺席合法，空列表就是没有守卫。两者都不写进 `Requires`。
 
 - **`MembershipRemoved` 在一次显式的成员关系删除提交之后同步调用。** 删除已生效，实现不得读成员关系行；它幂等，账户在租户里已无数据时返回 nil。钩子失败使本次调用返回 `ErrCleanupIncomplete`，重试同一调用幂等地补完。`authn.membership.changed` 事件仍在，作为提交与钩子之间进程崩掉的补偿。账户删除不调用它：删除由 `AccountDeleted` 与逐租户的成员关系事件处理。
-- **`CheckMembershipRemoval` 在显式删除之前询问。** 删除会让租户不再有任何 `tenant-admin` 绑定时返回 `ErrLastTenantAdmin`，删除不执行；宿主自己的守卫返回它要拒绝的那一类。每个守卫都问一次，任何一个拒绝即拒绝，任何一个读不出即按检查不可用、按拒绝处理，不按放行。账户删除是明示的例外，不问这些守卫。守卫在删除事务之前询问，因此它们的读不与成员关系存储共用事务。
+- **`CheckMembershipRemoval` 在显式删除之前询问。** 删除会让租户不再有任何 `tenant-admin` 绑定时返回 `ErrLastTenantAdmin`，删除不执行；宿主自己的守卫返回它要拒绝的那一类。每个守卫都问一次，任何一个拒绝即拒绝，任何一个读不出即按检查不可用、按拒绝处理，不按放行。账户删除是明示的例外，不问这些守卫，因此一个租户的最后一名租户管理员被删除后可能没有管理员，直到有人写入一条新绑定。守卫在删除事务之前询问，因此它们的读不与成员关系存储共用事务。
 
 ### 对外接口面
 
@@ -995,7 +995,7 @@ flowchart TD
 
 - **每个模块只在自己的事务里写自己的表。** `pkg/db` 没有跨模块传递事务句柄的通道，别的模块的表可能因模块未纳入而不存在。账户事务只写本模块的表与暂存的发件箱事件；会话、因素、短信挑战的清理在提交之后经钩子与事件完成。
 - **自助注册是一次事务。** `Signups.Register` 在一个事务里写账户、用户名标识、口令凭据与未证明预留；不发邮件、不建会话、不写别的模块的表。预留的插入是地址的唯一仲裁点，用户名唯一性检查与口令派生的次序、独立派生预算见「自助注册与注册验证状态」。
-- **钩子在事务之外。** 钩子在账户事务提交之后同步调用，不在事务里；实现不得读账户行。
+- **钩子在事务之外。** 钩子在账户事务提交之后同步调用，不在事务里；状态迁移与删除的实现不得读账户行，`AccountCreated` 可以读它。
 - **审计接缝不在账户事务里调用。** 接缝级审计写入另占一条连接，在调用方事务里调用它在 SQLite 上会等锁失败；强制档审计由调用方在事务之外、动作之前写。
 - **并发的仲裁靠唯一约束与条件更新。** `UNIQUE (kind, value)`（标识与联系方式预留各一个）、`UNIQUE (provider, subject)`、`secret_hash` 的唯一约束、成员关系的主键、部分唯一索引都是仲裁点；口令哈希的再哈希是对旧哈希的比较并替换。
 - **高频与带竞争语义的写走原生 SQL。** `authn_throttles` 的递增是单语句原子更新；`Touch` 与 `last_used_at` 不进事务。

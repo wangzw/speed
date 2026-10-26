@@ -45,9 +45,11 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   modules.** A tenant is a string here; the cross-module cleanup goes the other
   way, through `AccountLifecycle` and `MembershipLifecycle`, which the cleaning
   modules implement and this one takes up with `core.ResolveAll`. A hook runs
-  after the transaction it cleans up after has committed, never inside it, and an
-  implementation must not read the account row beyond the tombstone or the
-  membership row, which is gone.
+  after the transaction it cleans up after has committed, never inside it. A
+  state-change or deletion hook must not read the account row beyond the
+  tombstone, and a membership hook must not read the membership row, which is
+  gone; `AccountCreated` runs while the account exists, may read it, and does
+  nothing when a retry finds the account deleted.
 - **An explicit membership removal is guarded before it deletes and cleaned
   after it commits.** `Memberships.Remove` asks every optional
   `authn.MembershipGuard` (they stand side by side, taken up with
