@@ -923,12 +923,16 @@ names the fixed part of that wiring, and no configuration file repeats it:
   personal tenant reject a disable or a delete), `authn.MembershipGuard` (a
   personal tenant refuses every membership removal, and an ordinary tenant
   refuses the removal that would leave it with no tenant-admin binding; its
-  `Lock` serialises the check and the removal's commit — an in-process
-  per-tenant semaphore on SQLite, a session-level advisory lock on PostgreSQL),
-  and `tenant.Provisioner` (a tenant opens with its creator as its first
-  tenant-admin: the tenant-admin role, every declared permission and the
-  creator's binding are written before the roster row, and a refused roster row
-  removes them).
+  `Lock` takes the host's `authz.TenantLock` — an in-process per-tenant
+  semaphore on SQLite, a session-level advisory lock on PostgreSQL — so the
+  check and the removal's commit are one serialised step),
+  `authz.TenantLock` (the same object the policy module takes as its binding
+  delete's lock, so `authz.Manager.DeleteBinding` and both guards exclude each
+  other; `MembershipLock` answers this product so the account module takes the
+  one object once for a removal), and `tenant.Provisioner` (a tenant opens with
+  its creator as its first tenant-admin: the tenant-admin role, every declared
+  permission and the creator's binding are written before the roster row, and a
+  refused roster row removes them).
   `tenant.admin` requires the guard and the provisioner, and the policy module
   consults the checker before binding `platform-admin` in the platform domain,
   so a serve assembly names this module or does not start. The membership guard
@@ -1091,11 +1095,17 @@ Under every stack:
 - **`serve`** runs the whole lifecycle and accepts traffic: the entry point, the
   platform baseline (`baselineServe` in `main.go`), the stack's two backends and
   the telemetry providers.
-- **`worker`** runs the background capabilities — the roster, settings, the job
-  queue and its scheduler, and the outbox relay, beside the two backends and the
-  telemetry providers — with no HTTP entry point (`baselineWorker` in `main.go`).
-  A module whose routes or request lists are read wherever it runs belongs to
-  `serve`, which stands the entry point up.
+- **`worker`** runs the background capabilities — the roster, settings, the
+  audit journal, the job queue and its scheduler, and the outbox relay, beside
+  the two backends and the telemetry providers — with no HTTP entry point
+  (`baselineWorker` in `main.go`). The audit journal is part of the worker
+  baseline because background paths write audit rows: the account-deletion
+  cleanup and the personal tenant's create and delete in the event compensation.
+  A run with no entry point serves no request, so request capture is skipped
+  while statement- and record-level capture continue; an endpoint name the
+  entry point does not declare is still a startup failure where the entry point
+  is present. A module whose routes or request lists are read wherever it runs
+  belongs to `serve`, which stands the entry point up.
 - **`migrate`** runs the engine alone and reaches every module's declarations to
   build every table.
 - **`seed`** writes the accounts under `seed.accounts`, each with the credential

@@ -275,10 +275,13 @@ const webuiModuleName = webui.ModuleName
 // What differs between the two lists is the entry point. serve stands up the
 // HTTP entry point and names every module with a route or a middleware; worker
 // names the background modules that need neither a router nor a gateway — the
-// roster, settings, the job queue and its scheduler, and the outbox relay. The
-// stack's engine, key-value backend, event backend and export provider are named
-// on the commands themselves, not here, and not on the stack node: migrate runs
-// the engine alone (see addStack).
+// roster, settings, the audit journal, the job queue and its scheduler, and the
+// outbox relay. A worker carries the audit journal because background paths
+// write audit rows; with no router it serves no request, so request capture is
+// skipped while statement- and record-level capture continue. The stack's
+// engine, key-value backend, event backend and export provider are named on the
+// commands themselves, not here, and not on the stack node: migrate runs the
+// engine alone (see addStack).
 var (
 	baselineServe = []string{
 		// The entry point and the surfaces it carries.
@@ -403,6 +406,12 @@ var (
 		jobsdb.ModuleName,
 		jobsscheduler.ModuleName,
 		outboxrelay.ModuleName,
+		// Background paths write audit rows: the account-deletion cleanup and
+		// the personal tenant's create and delete in the event compensation. A
+		// worker without the journal loses them silently. Without an HTTP entry
+		// point the run serves no request, so request capture is skipped while
+		// statement- and record-level capture continue.
+		auditjournal.ModuleName,
 	}
 )
 
