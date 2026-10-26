@@ -436,16 +436,4 @@ export const journeys: readonly JourneyEntry[] = [
       'REQ-signup-019',
     ],
   },
-  {
-    journey: 'journey-audit-export.md',
-    status: 'pending',
-    reason:
-      'The path is reachable through the console: the operator makes a batch of setting writes, filters the audit list to them, exports from a page other than the first and checks that the file holds every matching record. The spec that drives it is being written next.',
-    covers: [
-      'REQ-platform-admin-029',
-      'REQ-platform-admin-111',
-      'REQ-platform-admin-112',
-      'REQ-platform-admin-113',
-    ],
-  },
 ]
