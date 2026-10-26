@@ -49,7 +49,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { formatInstant } from '@speed/i18n'
-import { errorCodeOf, useDisplayTimeZone } from '@speed/ui-kit'
+import { errorCodeOf, useDisplayTimeZone, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { nextHeadingLevel } from './internal/heading.js'
@@ -277,6 +277,7 @@ export function AcceptInvitationScreen({
   // ready or accepted: the invitation summary and either the accept action or
   // the acceptance confirmation.
   const { invitation } = state
+  const accepted = state.status === 'accepted'
   const expiry = formatInstant(invitation.expiresAt, i18n.language, {
     timeZone,
   })
@@ -301,19 +302,32 @@ export function AcceptInvitationScreen({
         </Typography>
       )}
 
-      {state.status === 'accepted' ? (
-        <Box
-          role="status"
-          sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}
-        >
-          <Typography component={nextHeadingLevel(headingLevel)} variant="h6">
-            {t('acceptInvitation.accepted.title')}
-          </Typography>
-          <Typography color="text.secondary">
-            {t('acceptInvitation.accepted.description')}
-          </Typography>
-        </Box>
-      ) : (
+      {/* The acceptance confirmation's status region stands for the whole
+          ready and accepted life, born empty (and visually silent) while
+          the form is up: a live region announces only content changes
+          that follow its own insertion, so a confirmation born together
+          with its region would be silent. The acceptance fills the text
+          into a region the screen reader already knows. */}
+      <Box
+        role="status"
+        sx={
+          accepted
+            ? { display: 'flex', flexDirection: 'column', gap: 0.5 }
+            : visuallyHiddenSx
+        }
+      >
+        {accepted ? (
+          <>
+            <Typography component={nextHeadingLevel(headingLevel)} variant="h6">
+              {t('acceptInvitation.accepted.title')}
+            </Typography>
+            <Typography color="text.secondary">
+              {t('acceptInvitation.accepted.description')}
+            </Typography>
+          </>
+        ) : null}
+      </Box>
+      {accepted ? null : (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {showDisplayName ? (
             <TextField

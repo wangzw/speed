@@ -38,7 +38,7 @@ import type {
   AuthnMethodDescriptor,
   AuthnSsoProvider,
 } from '@speed/auth-core'
-import { FormField, FormLayout, errorCodeOf } from '@speed/ui-kit'
+import { FormField, FormLayout, errorCodeOf, visuallyHiddenSx } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel, methodLabel } from './labels.js'
 import {
@@ -287,70 +287,81 @@ export function EnterpriseSignIn({
     setProviders(null)
   }
 
-  if (providers === null) {
-    return (
-      <FormLayout
-        form={form}
-        onSubmit={discover}
-        actions={
-          <Button type="submit" variant="contained" disabled={busy}>
-            {t('enterprise.continue')}
-          </Button>
-        }
-      >
-        <FormField
-          name="email"
-          required
-          render={({ field, invalid, errorText }) => (
-            <TextField
-              {...field}
-              label={t('enterprise.emailLabel')}
-              type="email"
-              autoComplete="email"
-              fullWidth
-              error={invalid}
-              helperText={errorText ?? undefined}
-            />
-          )}
-        />
-        <ChannelFeedbackRegion feedback={feedback} />
-      </FormLayout>
-    )
-  }
+  // The discovery result's notice in the entry's one status region. The
+  // region stands for the whole life of the entry, born empty: a live
+  // region announces only content changes that follow its own insertion,
+  // so a notice that mounted together with its region -- the no-match
+  // notice or the providers title -- would be silent. Returning to the
+  // email field clears it, making a repeated identical result a change
+  // again rather than a rewrite.
+  const notice =
+    providers === null
+      ? null
+      : providers.length === 0
+        ? t('enterprise.noProviders')
+        : t('enterprise.providersTitle')
 
-  if (providers.length === 0) {
-    return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
-        <Alert severity="info" role="status" sx={{ width: '100%' }}>
-          {t('enterprise.noProviders')}
-        </Alert>
+  return (
+    <Box
+      sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}
+    >
+      <Alert
+        severity="info"
+        role="status"
+        sx={notice === null ? visuallyHiddenSx : { width: '100%' }}
+      >
+        {notice ?? ''}
+      </Alert>
+      {providers === null ? (
+        <FormLayout
+          form={form}
+          onSubmit={discover}
+          actions={
+            <Button type="submit" variant="contained" disabled={busy}>
+              {t('enterprise.continue')}
+            </Button>
+          }
+        >
+          <FormField
+            name="email"
+            required
+            render={({ field, invalid, errorText }) => (
+              <TextField
+                {...field}
+                label={t('enterprise.emailLabel')}
+                type="email"
+                autoComplete="email"
+                fullWidth
+                error={invalid}
+                helperText={errorText ?? undefined}
+              />
+            )}
+          />
+          <ChannelFeedbackRegion feedback={feedback} />
+        </FormLayout>
+      ) : providers.length === 0 ? (
         <Button variant="text" onClick={editEmail}>
           {t('enterprise.editEmail')}
         </Button>
-      </Box>
-    )
-  }
-
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
-      <Alert severity="info" role="status" sx={{ width: '100%' }}>
-        {t('enterprise.providersTitle')}
-      </Alert>
-      {providers.map((provider) => (
-        <Button
-          key={provider.id}
-          variant="outlined"
-          fullWidth
-          disabled={busy}
-          onClick={() => void authorize(provider)}
-        >
-          {provider.name}
-        </Button>
-      ))}
-      <Button variant="text" onClick={editEmail}>
-        {t('enterprise.editEmail')}
-      </Button>
-      <ChannelFeedbackRegion feedback={feedback} />
+      ) : (
+        <>
+          {providers.map((provider) => (
+            <Button
+              key={provider.id}
+              variant="outlined"
+              fullWidth
+              disabled={busy}
+              onClick={() => void authorize(provider)}
+            >
+              {provider.name}
+            </Button>
+          ))}
+          <Button variant="text" onClick={editEmail}>
+            {t('enterprise.editEmail')}
+          </Button>
+          <ChannelFeedbackRegion feedback={feedback} />
+        </>
+      )}
     </Box>
   )
 }

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AcceptInvitationScreen } from './AcceptInvitationScreen.js'
 import type { InvitationOperations } from './AcceptInvitationScreen.js'
@@ -165,6 +165,37 @@ describe('AcceptInvitationScreen', () => {
       await screen.findByText(zhCN.acceptInvitation.accepted.title),
     ).toBeInTheDocument()
     expect(onAccepted).toHaveBeenCalledTimes(1)
+  })
+
+  it('fill a status region that stood empty with the acceptance confirmation', async () => {
+    // The confirmation's role="status" region must already exist and be
+    // empty when the acceptance lands: a live region announces only
+    // content changes that follow its own insertion, so a confirmation
+    // born together with its region would be silent. The region stands
+    // for the whole ready state, and the same node receives the text.
+    const acceptInvitation = vi.fn(() => Promise.resolve())
+    const user = userEvent.setup()
+    renderWithProviders(
+      <AcceptInvitationScreen
+        token="tok-1"
+        invitations={operations({ acceptInvitation })}
+      />,
+    )
+    await screen.findByRole('button', { name: zhCN.acceptInvitation.accept })
+    const region = screen.getByRole('status')
+    expect(region).toBeEmptyDOMElement()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.acceptInvitation.accept }),
+    )
+    await waitFor(() =>
+      expect(region).toHaveTextContent(zhCN.acceptInvitation.accepted.title),
+    )
+    expect(region).toHaveTextContent(
+      zhCN.acceptInvitation.accepted.description,
+    )
+    // The same node carried both frames: it was not replaced by one that
+    // mounted together with the text.
+    expect(screen.getByRole('status')).toBe(region)
   })
 
   it('passes a display name and password for an address with no account yet', async () => {

@@ -486,7 +486,7 @@ sequenceDiagram
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 已实现 | `web/packages/auth-ui/src/internal/write-feedback.tsx` `useChannelFeedback`、`ChannelFeedbackRegion`；`web/packages/auth-ui/src/PasswordSignInForm.tsx` `PasswordSignInForm`；`web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`；`web/packages/auth-ui/src/SocialSignInSection.tsx` `SocialSignInSection`；`web/packages/auth-ui/src/internal/sign-in-methods.tsx` `DescriptorSignInForm`、`EnterpriseSignIn`、`PasskeySignIn`；`web/packages/auth-ui/src/internal/flow-step.tsx` `PasskeyFields` |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 已实现 | `web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler` |
 | 重发的「验证码已发送」可闻，步骤切换后的焦点 | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`；`web/packages/auth-ui/src/internal/step-focus.ts` `useStepFocus`、`stepKey`、`firstControl`；`web/packages/auth-ui/src/PasswordSignInForm.tsx` `PasswordSignInForm`；`web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-ui/src/internal/sign-in-methods.tsx` `DescriptorSignInForm`、`PasskeySignIn` |
-| 交互之后出现的结果用先挂空区域、再填文本的 live region | 未实现 | — |
+| 交互之后出现的结果用先挂空区域、再填文本的 live region | 已实现 | `web/packages/auth-ui/src/AcceptInvitationScreen.tsx` `AcceptInvitationScreen`；`web/packages/auth-ui/src/internal/sign-in-methods.tsx` `EnterpriseSignIn` |
 | 不支持的步骤的出口 | 未实现 | — |
 | 命名空间资源 | 已实现 | `web/packages/auth-ui/src/resources.ts` |
 | 本部署不提供回调落点时渲染 `absent` | 已实现 | `web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler` |
