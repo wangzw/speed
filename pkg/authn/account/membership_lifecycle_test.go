@@ -137,7 +137,7 @@ func TestTheGuardRefusesTheRemovalAndLeavesTheMembership(t *testing.T) {
 		}
 		guard := &recordingMembershipGuard{err: authn.ErrLastTenantAdmin}
 		hook := &recordingMembershipHook{}
-		h.p.membershipGuard = guard
+		h.p.membershipGuards = []authn.MembershipGuard{guard}
 		h.p.membershipHooks = []authn.MembershipLifecycle{hook}
 
 		if err := h.p.Remove(ctx, id, "acme"); !errors.Is(err, authn.ErrLastTenantAdmin) {
@@ -156,6 +156,33 @@ func TestTheGuardRefusesTheRemovalAndLeavesTheMembership(t *testing.T) {
 	})
 }
 
+// The guards stand side by side: every one is asked, and one refusal is enough
+// even when another allows the removal.
+func TestEveryMembershipGuardIsAsked(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("two-guards", "")
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: authn.ReasonAdmin}); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		allow := &recordingMembershipGuard{}
+		refuse := &recordingMembershipGuard{err: authn.ErrLastTenantAdmin}
+		h.p.membershipGuards = []authn.MembershipGuard{allow, refuse}
+
+		if err := h.p.Remove(ctx, id, "acme"); !errors.Is(err, authn.ErrLastTenantAdmin) {
+			t.Fatalf("a removal one guard refused gave %v, want ErrLastTenantAdmin", err)
+		}
+		for name, guard := range map[string]*recordingMembershipGuard{"allowing": allow, "refusing": refuse} {
+			if got := guard.seen(); len(got) != 1 {
+				t.Errorf("the %s guard was asked %v, want one question", name, got)
+			}
+		}
+		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 1 {
+			t.Errorf("%d membership row(s) left, want the one a guard protected", n)
+		}
+	})
+}
+
 // A guard that cannot answer is an unavailable dependency and not a pass: the
 // removal is not carried out.
 func TestAGuardThatCannotAnswerRefusesTheRemoval(t *testing.T) {
@@ -165,7 +192,7 @@ func TestAGuardThatCannotAnswerRefusesTheRemoval(t *testing.T) {
 		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: authn.ReasonAdmin}); err != nil {
 			t.Fatalf("joining: %v", err)
 		}
-		h.p.membershipGuard = &recordingMembershipGuard{err: errors.New("the policy store is down")}
+		h.p.membershipGuards = []authn.MembershipGuard{&recordingMembershipGuard{err: errors.New("the policy store is down")}}
 
 		err := h.p.Remove(ctx, id, "acme")
 		if !errors.Is(err, authn.ErrUnavailable) {
@@ -189,7 +216,7 @@ func TestRemovingAnAbsentMembershipDoesNotAskTheGuard(t *testing.T) {
 		id := h.user("absent", "")
 		guard := &recordingMembershipGuard{err: authn.ErrLastTenantAdmin}
 		hook := &recordingMembershipHook{}
-		h.p.membershipGuard = guard
+		h.p.membershipGuards = []authn.MembershipGuard{guard}
 		h.p.membershipHooks = []authn.MembershipLifecycle{hook}
 
 		if err := h.p.Remove(ctx, id, "acme"); err != nil {
@@ -216,7 +243,7 @@ func TestDeletingAnAccountDoesNotConsultTheMembershipGuardOrHook(t *testing.T) {
 		}
 		guard := &recordingMembershipGuard{err: authn.ErrLastTenantAdmin}
 		hook := &recordingMembershipHook{}
-		h.p.membershipGuard = guard
+		h.p.membershipGuards = []authn.MembershipGuard{guard}
 		h.p.membershipHooks = []authn.MembershipLifecycle{hook}
 
 		if err := h.p.Delete(ctx, id, authn.ReasonAdmin); err != nil {

@@ -62,13 +62,16 @@ type MembershipLifecycle interface {
 
 // MembershipGuard is asked before an explicit membership removal, so that a
 // module which holds a tenant's policy can refuse a removal that would leave the
-// tenant with nobody who may govern it. The policy module implements it: the
-// removal is refused with ErrLastTenantAdmin when the account is the tenant's
-// only holder of the tenant-administrator role.
+// tenant with nobody who may govern it, or leave a space that must stay single
+// member. The policy module implements the last-administrator floor, and a host
+// that declares policy of its own adds a guard beside it — the demo host refuses
+// every removal in a personal tenant.
 //
-// The seam is optional. An assembly with no guard removes memberships as it did
+// The implementations stand side by side: the account module takes every one
+// with core.ResolveAll, each is asked, and any refusal refuses the removal. The
+// seam is optional. An assembly with no guard removes memberships as it did
 // before the seam existed, and an answer that cannot be read is a refusal to
-// proceed rather than a pass. Account deletion does not consult the guard: the
+// proceed rather than a pass. Account deletion does not consult the guards: the
 // rule keeps a domain that stays in service governable, while a deleted
 // account's erasure is its own terminal winding-up and clears its bindings on
 // that path.

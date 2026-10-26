@@ -188,13 +188,13 @@ func (p *product) Put(ctx context.Context, m authn.Membership) error {
 // Remove deletes one membership. One that is not there is already removed, and the
 // call is nil.
 //
-// An explicit removal is asked of the MembershipGuard first: one that would
+// An explicit removal is asked of every MembershipGuard first: one that would
 // leave the tenant with no tenant-administrator binding is refused with
-// authn.ErrLastTenantAdmin rather than carried out. The question is put only
-// when there is a row to remove, because a removal that takes nothing away
-// cannot leave a tenant less governed and the retry of a removal whose cleanup
-// failed must stay a success. Account deletion does not come through here and
-// does not consult the guard.
+// authn.ErrLastTenantAdmin rather than carried out, and a host guard may add
+// refusals of its own. The question is put only when there is a row to remove,
+// because a removal that takes nothing away cannot leave a tenant less governed
+// and the retry of a removal whose cleanup failed must stay a success. Account
+// deletion does not come through here and does not consult the guards.
 //
 // After the transaction commits the membership lifecycle hooks are called, for
 // the row just removed and for a retry whose row is already gone. A failing hook
@@ -253,14 +253,14 @@ func (p *product) membershipExists(ctx context.Context, id authn.AccountID, tena
 	return n > 0, nil
 }
 
-// checkMembershipRemoval asks the optional guard whether the explicit removal
-// may proceed. A guard that cannot answer is ErrUnavailable, never a pass.
+// checkMembershipRemoval asks every optional guard whether the explicit removal
+// may proceed. The guards stand side by side and any one of them may refuse; a
+// guard that cannot answer is ErrUnavailable, never a pass.
 func (p *product) checkMembershipRemoval(ctx context.Context, id authn.AccountID, tenant string) error {
-	if p.membershipGuard == nil {
-		return nil
-	}
-	if err := p.membershipGuard.CheckMembershipRemoval(ctx, id, tenant); err != nil {
-		return failed("checking a membership removal", err)
+	for _, guard := range p.membershipGuards {
+		if err := guard.CheckMembershipRemoval(ctx, id, tenant); err != nil {
+			return failed("checking a membership removal", err)
+		}
 	}
 	return nil
 }

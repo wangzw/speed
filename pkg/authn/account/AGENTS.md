@@ -8,9 +8,9 @@ service accounts, and the failure back-off; it delivers seven capabilities
 exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
 `Passwords`, `Memberships` and `Throttle` — and it creates an account and moves
 it between disabled, enabled and deleted, calling every `AccountLifecycle` hook
-after the transaction commits. An explicit membership removal asks the optional
-`MembershipGuard` first and calls every `MembershipLifecycle` hook after the
-removal commits.
+after the transaction commits. An explicit membership removal asks every
+optional `MembershipGuard` first and calls every `MembershipLifecycle` hook after
+the removal commits.
 
 No other module reads these tables. Every module that needs an account, a
 credential, a membership or a back-off takes one of the seven interfaces from the
@@ -49,10 +49,11 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   implementation must not read the account row beyond the tombstone or the
   membership row, which is gone.
 - **An explicit membership removal is guarded before it deletes and cleaned
-  after it commits.** `Memberships.Remove` asks the optional
-  `authn.MembershipGuard` only when a membership row is there to remove: a
-  guard's `authn.ErrLastTenantAdmin` leaves the row in place, and any other
-  guard error is `ErrUnavailable`, never a pass. It then calls every
+  after it commits.** `Memberships.Remove` asks every optional
+  `authn.MembershipGuard` (they stand side by side, taken up with
+  `core.ResolveAll`; any refusal refuses) only when a membership row is there to
+  remove: a guard's `authn.ErrLastTenantAdmin` leaves the row in place, and any
+  other guard error is `ErrUnavailable`, never a pass. It then calls every
   `authn.MembershipLifecycle` hook, including on a retry whose row is already
   gone, and a failing hook makes the call `ErrCleanupIncomplete`. Account
   deletion does not come through `Remove`, so it consults neither the guard nor

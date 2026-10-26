@@ -10,7 +10,7 @@
 - 规范化标识：用户名、邮箱、手机在写入与查询两侧经同一个函数规范化。
 - 持有口令类凭据的全部校验细节：口令规范化、查找、PHC 编解码与界限、诱饵派生、再哈希、服务密钥的摘要比对。
 - 执行账户的创建与状态迁移：创建、停用、启用、删除在本模块的事务里写自己的表，提交之后同步调用全部 `AccountLifecycle`。
-- 执行成员关系的显式删除：删除之前询问可选的 `MembershipGuard`，提交之后同步调用全部 `MembershipLifecycle`。
+- 执行成员关系的显式删除：删除之前询问全部可选的 `MembershipGuard`，提交之后同步调用全部 `MembershipLifecycle`。
 - 持有失败退避的算法与表，以及 `authn_throttles`、`authn_service_secrets` 的清扫协程。
 - 承载外部身份绑定、自动关联、首登开户、自助注册开户与 JIT 并入的规则。规则约束的是本模块的数据（绑定、标识、联系方式预留、成员关系）与账户的会话和口令；首登开户与 JIT 并入的执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)），自助注册开户经本模块的 `Signups.Register`。
 
@@ -196,7 +196,7 @@ type Memberships interface {
 | `Tenants` | 跨租户列出账户的全部成员关系，按租户标识升序；按 `authn_memberships_account` 索引走。 |
 | `Members` | 按租户分页，`Limit` 缺省 100、上限 1000。 |
 | `Put` | 幂等：新增、暂停、恢复。账户不存在（含墓碑）返回 `ErrAccountNotFound`：表间没有外键，由本方法核对。 |
-| `Remove` | 删除一条成员关系。删除之前先问可选的 `MembershipGuard`：会让租户不再有任何租户管理员绑定时以 `ErrLastTenantAdmin` 拒绝，不删行；没有行可删时不问。事务提交之后同步调用全部 `MembershipLifecycle.MembershipRemoved`，失败返回 `ErrCleanupIncomplete`（删除已生效，重试同一调用幂等地补完）。账户删除不走本方法，因而不问守卫，也不调成员关系生命周期钩子（见下）。 |
+| `Remove` | 删除一条成员关系。删除之前先问每一个可选的 `MembershipGuard`，任何一个拒绝即拒绝：会让租户不再有任何租户管理员绑定时以 `ErrLastTenantAdmin` 拒绝，宿主守卫按它自己的政策拒绝，都不删行；没有行可删时不问。事务提交之后同步调用全部 `MembershipLifecycle.MembershipRemoved`，失败返回 `ErrCleanupIncomplete`（删除已生效，重试同一调用幂等地补完）。账户删除不走本方法，因而不问守卫，也不调成员关系生命周期钩子（见下）。 |
 | 实现 | 每条语句显式写 `tenant_id`；`authn_memberships` 由 `Memberships` 的实现独占，`authz.policy` 与准入层经接口读，不直接读表。 |
 
 ### Throttle
@@ -262,10 +262,10 @@ type MembershipGuard interface {
 }
 ```
 
-根包定义，由持有以成员关系为键的数据的模块实现（`authz.policy` 实现两者）。`MembershipLifecycle` 的实现并立、不排他，本模块在 `Init` 里经 `core.ResolveAll` 取用；`MembershipGuard` 是单个可选接缝，经 `core.Resolve` 取用，缺席合法。两者都不写进 `Requires`。
+根包定义。`authz.policy` 实现 `MembershipLifecycle`，并实现最后租户管理员这一档的 `MembershipGuard`；宿主可以再并立一个自己的守卫，拒绝它的租户政策要拒绝的删除——示范宿主拒绝个人租户里的每一次删除。`MembershipLifecycle` 与 `MembershipGuard` 的实现都并立、不排他，本模块在 `Init` 里分别经 `core.ResolveAll` 取用；缺席合法，空列表就是没有守卫。两者都不写进 `Requires`。
 
 - **`MembershipRemoved` 在一次显式的成员关系删除提交之后同步调用。** 删除已生效，实现不得读成员关系行；它幂等，账户在租户里已无数据时返回 nil。钩子失败使本次调用返回 `ErrCleanupIncomplete`，重试同一调用幂等地补完。`authn.membership.changed` 事件仍在，作为提交与钩子之间进程崩掉的补偿。账户删除不调用它：删除由 `AccountDeleted` 与逐租户的成员关系事件处理。
-- **`CheckMembershipRemoval` 在显式删除之前询问。** 删除会让租户不再有任何 `tenant-admin` 绑定时返回 `ErrLastTenantAdmin`，删除不执行；其余错误是检查不可用，按拒绝处理，不按放行。账户删除是明示的例外，不问这个接缝。守卫在删除事务之前询问，因此它的读不与成员关系存储共用事务。
+- **`CheckMembershipRemoval` 在显式删除之前询问。** 删除会让租户不再有任何 `tenant-admin` 绑定时返回 `ErrLastTenantAdmin`，删除不执行；宿主自己的守卫返回它要拒绝的那一类。每个守卫都问一次，任何一个拒绝即拒绝，任何一个读不出即按检查不可用、按拒绝处理，不按放行。账户删除是明示的例外，不问这些守卫。守卫在删除事务之前询问，因此它们的读不与成员关系存储共用事务。
 
 ### 对外接口面
 
@@ -282,7 +282,7 @@ type MembershipGuard interface {
 | `audit.Audit` | 可选 | 在场时经模型路径的写留下语句级审计行。 |
 | 全部 `AccountLifecycle` | 非排他，`ResolveAll` | 账户创建之后建立、状态迁移之后清理。 |
 | 全部 `MembershipLifecycle` | 非排他，`ResolveAll` | 成员关系删除提交之后清理。 |
-| `MembershipGuard` | 可选，`Resolve` | 显式删除成员关系之前的最后租户管理员检查。 |
+| 全部 `MembershipGuard` | 非排他，`ResolveAll` | 显式删除成员关系之前的检查：最后租户管理员，以及宿主自己的拒绝（示范宿主拒绝个人租户里的删除）。 |
 | `pkg/authn/internal/password` | 内部 | PHC 编解码、派生、校验、进程内退避、并发与内存预算。 |
 | `pkg/authn/internal/acctcache` | 内部 | 账户快照的进程内缓存，校验后端读它；它按有效期过期，并在订阅到 `authn.account.status-changed` 与 `authn.account.deleted` 时清除。 |
 | `pkg/authn/internal/clock` | 内部 | 写入数据库与绑定为查询参数的时间的来源，一律 UTC。 |
@@ -1041,7 +1041,7 @@ type Provisioner interface {
 | 账户状态迁移、墓碑抹除与 `AccountLifecycle` 钩子调用、事件暂存 | 已实现 | `pkg/authn/account/lifecycle.go` `SetStatus`、`Delete`、`RevokeServiceSecret`；`pkg/authn/account/events.go`；`pkg/authn/account/sweep.go` |
 | 账户创建之后的 `AccountLifecycle.AccountCreated` 调用（`Create` 与 `Signups.Register`） | 已实现 | `pkg/authn/lifecycle.go` `AccountLifecycle.AccountCreated`；`pkg/authn/account/admin.go` `(*product).Create`；`pkg/authn/account/signup.go` `(*product).Register`；`pkg/authn/session/lifecycle.go`、`pkg/authn/mfa/manage.go`、`pkg/authn/sms/lifecycle.go`、`pkg/authz/policy/lifecycle.go` 的 `AccountCreated`；`pkg/authn/account/created_hook_test.go` `TestCreateCallsTheCreatedHook`、`TestRegisterCallsTheCreatedHook`、`TestAFailingCreatedHookLeavesTheAccountAndTheRetryCompletes`、`TestTheCreatedHookToleratesAnAccountDeletedBeforeItRuns` |
 | `AccountEnabled` 钩子与启用之后的恢复调用 | 已实现 | `pkg/authn/lifecycle.go` `AccountLifecycle.AccountEnabled`；`pkg/authn/account/lifecycle.go` `SetStatus`；`pkg/authn/session/lifecycle.go`、`pkg/authn/mfa/manage.go`、`pkg/authn/sms/lifecycle.go`、`pkg/authz/policy/lifecycle.go` 的 `AccountEnabled`；`pkg/authn/account/lifecycle_test.go` `TestEnablingCallsTheEnabledHook`、`TestSetStatusToActiveOnAnActiveAccountRunsTheEnabledHook` |
-| 显式成员关系删除的守卫与生命周期钩子 | 已实现 | `pkg/authn/membership.go` `MembershipLifecycle`、`MembershipGuard`；`pkg/authn/account/memberships.go` `(*product).Remove`、`membershipExists`、`checkMembershipRemoval`；`pkg/authn/account/lifecycle.go` `callMembershipHooks`；`pkg/authz/policy/lifecycle.go` `MembershipRemoved`、`CheckMembershipRemoval`；`pkg/authn/account/membership_lifecycle_test.go` |
+| 显式成员关系删除的守卫与生命周期钩子 | 已实现 | `pkg/authn/membership.go` `MembershipLifecycle`、`MembershipGuard`；`pkg/authn/account/account.go` `(*product).membershipGuards`、`wire`；`pkg/authn/account/memberships.go` `(*product).Remove`、`membershipExists`、`checkMembershipRemoval`；`pkg/authn/account/lifecycle.go` `callMembershipHooks`；`pkg/authz/policy/lifecycle.go` `MembershipRemoved`、`CheckMembershipRemoval`；`starters/demo/server/tenancy.go` `(*tenancyProduct).CheckMembershipRemoval`；`pkg/authn/account/membership_lifecycle_test.go` `TestEveryMembershipGuardIsAsked` |
 | 外部身份绑定与自动关联的规则、首登开户（执行在 `authn.login` 的账户解析步） | 已实现 | `pkg/authn/account/admin.go` `LinkExternal`、`UnlinkExternal`、`AddIdentifier`、`RemoveIdentifier`；`pkg/authn/account/accounts.go` `ByExternal`；`pkg/authn/account/admin.go` `Create`；`pkg/authn/login/internal/resolve` |
 | 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 已实现 | `pkg/authn/account/password.go` `Verify`；`pkg/authn/account/credentials.go` `Set`、`Clear`、`ImportHash`；`pkg/authn/internal/password` `Parse`、`Params`、`Governor`、`Decoy` |
 | 口令凭据的删除（规则 A10） | 已实现 | `pkg/authn/account/credentials.go` `Clear`；`pkg/authn/account.go` `Passwords.Clear` |

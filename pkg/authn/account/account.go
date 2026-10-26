@@ -233,11 +233,12 @@ type product struct {
 	audit           audit.Audit
 	hooks           []authn.AccountLifecycle
 	membershipHooks []authn.MembershipLifecycle
-	// membershipGuard is the optional check an explicit membership removal
-	// passes before it deletes the row. It is nil when the assembly has none.
-	membershipGuard authn.MembershipGuard
-	meters          meters
-	logger          *slog.Logger
+	// membershipGuards are the optional checks an explicit membership removal
+	// passes before it deletes the row, in module-name order. Every one has to
+	// allow the removal; an empty list is the assembly with none.
+	membershipGuards []authn.MembershipGuard
+	meters           meters
+	logger           *slog.Logger
 
 	// mu guards reported, which holds for each fault the one last written, so that
 	// a setting read on every request is reported once and not on each.
@@ -287,9 +288,7 @@ func (p *product) wire(reg *core.Registry) error {
 	}
 	p.hooks = core.ResolveAll[authn.AccountLifecycle](reg)
 	p.membershipHooks = core.ResolveAll[authn.MembershipLifecycle](reg)
-	if p.membershipGuard, err = optional[authn.MembershipGuard](reg, "the membership guard"); err != nil {
-		return err
-	}
+	p.membershipGuards = core.ResolveAll[authn.MembershipGuard](reg)
 
 	provider, err := optional[observability.MeterProvider](reg, "the metric capability")
 	if err != nil {

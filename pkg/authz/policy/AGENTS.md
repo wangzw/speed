@@ -7,7 +7,8 @@ translation beside it, the management surface over the policy data, and the
 account lifecycle cleanup. It delivers `authz.Enforcer`,
 `authz.SubjectPermissions`, `authz.Catalog`, `authz.Manager` and
 `authz.Seeder`, each exclusively, and implements `authn.AccountLifecycle`,
-`authn.MembershipLifecycle` and `authn.MembershipGuard`.
+`authn.MembershipLifecycle` and the last-administrator `authn.MembershipGuard`
+(a host may add guards beside it; every guard is asked and any refusal refuses).
 `SubjectPermissions.Held` reads the same snapshot a decision reads and maps each
 held (object, action) pair back through the catalog's reverse lookup; a pair no
 declared permission translates to is left out of the answer.
