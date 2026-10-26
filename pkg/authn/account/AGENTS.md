@@ -6,9 +6,9 @@ found by, the contact reservations they own, their external
 identities and tenant memberships, their password credentials, the secrets of
 service accounts, and the failure back-off; it delivers seven capabilities
 exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
-`Passwords`, `Memberships` and `Throttle` — and it moves an account between
-disabled, enabled and deleted, calling every `AccountLifecycle` hook after the
-change is committed.
+`Passwords`, `Memberships` and `Throttle` — and it creates an account and moves
+it between disabled, enabled and deleted, calling every `AccountLifecycle` hook
+after the transaction commits.
 
 No other module reads these tables. Every module that needs an account, a
 credential, a membership or a back-off takes one of the seven interfaces from the

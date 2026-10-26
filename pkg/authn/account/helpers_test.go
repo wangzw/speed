@@ -274,6 +274,10 @@ func (h *recordingHook) record(call string) error {
 	return h.failWith[call]
 }
 
+func (h *recordingHook) AccountCreated(_ context.Context, id authn.AccountID) error {
+	return h.record("created:" + id.String())
+}
+
 func (h *recordingHook) AccountDisabled(_ context.Context, id authn.AccountID) error {
 	return h.record("disabled:" + id.String())
 }
@@ -288,6 +292,14 @@ func (h *recordingHook) AccountDeleted(_ context.Context, id authn.AccountID) er
 
 func (h *recordingHook) ServiceSecretRevoked(_ context.Context, id authn.AccountID, credential string) error {
 	return h.record("revoked:" + id.String() + ":" + credential)
+}
+
+// reset forgets the calls recorded so far, so that a case reads only the
+// transition it drives and not the account creation that set it up.
+func (h *recordingHook) reset() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = nil
 }
 
 func (h *recordingHook) seen() []string {
@@ -447,6 +459,9 @@ func (h *harness) user(name, plaintext string) authn.AccountID {
 	if err != nil {
 		h.t.Fatalf("creating %s: %v", name, err)
 	}
+	// The creation's own hook call has its own case; a case that reads the hook
+	// is about the transition it drives.
+	h.hook.reset()
 	return account.ID
 }
 

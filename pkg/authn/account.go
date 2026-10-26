@@ -56,7 +56,10 @@ type AccountAdmin interface {
 	// import. An empty ID generates one; a given one is for an import. An
 	// identifier, a login name or a binding that breaks a uniqueness constraint
 	// is ErrAccountExists, and a contact another account reserved or proved is
-	// ErrContactTaken.
+	// ErrContactTaken. Once the transaction has committed, every
+	// AccountLifecycle.AccountCreated hook is called: a hook that fails makes the
+	// call return the created account with ErrCleanupIncomplete, and repeating the
+	// hook finishes the cleanup.
 	Create(ctx context.Context, in CreateAccount) (Account, error)
 	// SetStatus moves an account between disabled and enabled, and Delete ends
 	// it. Both write the account's own tables in one transaction and then call

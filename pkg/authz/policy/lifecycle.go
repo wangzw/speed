@@ -7,6 +7,11 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
+// AccountCreated implements authn.AccountLifecycle. A new account holds no
+// binding yet; the binding its creator is given belongs to the tenant that
+// creator builds, not to this module. The hook is a no-op and idempotent.
+func (p *product) AccountCreated(context.Context, authn.AccountID) error { return nil }
+
 // AccountDisabled implements authn.AccountLifecycle. This module holds nothing
 // keyed by an account's enabled state: a disabled account's bindings stay, and
 // the account module is what refuses a disabled account before a request asks

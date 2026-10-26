@@ -48,7 +48,10 @@ type Signups interface {
 	// Deriving the password uses the signup-concurrency capacity of its own, so
 	// a full capacity is ErrBusy and never takes a place from a password login.
 	// No email is sent, no session is created and no identifier awaits
-	// verification. The account.created event carries via signup.
+	// verification. The account.created event carries via signup. Once the
+	// transaction has committed, every AccountLifecycle.AccountCreated hook is
+	// called: a hook that fails makes the call return the created account with
+	// ErrCleanupIncomplete, and repeating the hook finishes the cleanup.
 	Register(ctx context.Context, in RegisterAccount) (Account, error)
 }
 

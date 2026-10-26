@@ -20,6 +20,10 @@ import (
 // second delivery from a new event.
 const recentEventsCapacity = 4096
 
+// AccountCreated changes nothing: a new account has no session, and a session is
+// stored only when one is asked for. The hook is idempotent and returns nil.
+func (p *product) AccountCreated(context.Context, authn.AccountID) error { return nil }
+
 // AccountDisabled revokes the account's browser and token sessions and clears
 // what this replica cached for the account. A service session is left: it lapses
 // with the account's status and its valid-after instant, and comes back through

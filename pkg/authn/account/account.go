@@ -15,10 +15,11 @@
 //
 // An account is global and never reused. Ending one leaves a tombstone, so every
 // reference to it from a session, an audit row or a role binding stays pointing
-// at the same account. A state change is written in a transaction of this module
-// and then announced to every AccountLifecycle hook, which cleans what the other
-// modules hold for the account; the account's status and its valid-after instant
-// are what keep a session void when that cleanup has not finished.
+// at the same account. A creation and a state change are written in a transaction
+// of this module and then announced to every AccountLifecycle hook, which builds
+// or cleans what the other modules hold for the account; the account's status and
+// its valid-after instant are what keep a session void when a cleanup has not
+// finished.
 //
 // A host takes the module in by writing ModuleName into a command alongside a
 // database engine. The command that applies the migrations has to take it in

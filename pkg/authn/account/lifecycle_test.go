@@ -403,5 +403,8 @@ func (h *harness) service(name string) authn.AccountID {
 	if err != nil {
 		h.t.Fatalf("creating the service account: %v", err)
 	}
+	// The creation's own hook call has its own case; a case that reads the hook
+	// is about the transition it drives.
+	h.hook.reset()
 	return created.ID
 }

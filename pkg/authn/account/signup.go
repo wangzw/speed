@@ -157,7 +157,18 @@ func (p *product) Register(ctx context.Context, in authn.RegisterAccount) (authn
 	if err = p.Succeed(ctx, authn.ScopeSignupUsername, username); err != nil {
 		p.logger.Warn(ModuleName+": the failure count of a username could not be cleared", slogCause(err))
 	}
-	return toAccount(row, true)
+	account, err := toAccount(row, true)
+	if err != nil {
+		return authn.Account{}, err
+	}
+	if err := p.callHooks(ctx, account.ID, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
+		return h.AccountCreated(hookCtx, account.ID)
+	}); err != nil {
+		// The account is in being; only the hook that builds what shares its life
+		// is unfinished, and the same call repeated finishes it.
+		return account, err
+	}
+	return account, nil
 }
 
 // signupAttributes is the attribute set a registration writes: the caller's

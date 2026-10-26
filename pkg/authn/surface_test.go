@@ -514,6 +514,7 @@ var exportedSurface = []string{
 	"method AccountID.IsStatic",
 	"method AccountID.String",
 	"method AccountKind.Valid",
+	"method AccountLifecycle.AccountCreated",
 	"method AccountLifecycle.AccountDeleted",
 	"method AccountLifecycle.AccountDisabled",
 	"method AccountLifecycle.AccountEnabled",

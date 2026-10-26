@@ -15,6 +15,11 @@ import (
 // is simply cleaned again.
 const seenCapacity = 1024
 
+// AccountCreated has nothing to build: a new account has no challenge, and a
+// challenge is stored only when one is asked for. The hook is idempotent and
+// returns nil.
+func (p *product) AccountCreated(context.Context, authn.AccountID) error { return nil }
+
 // AccountDisabled leaves the account's challenges where they are: the login rows
 // carry no account, the mfa and enroll rows belong to an account that may be
 // enabled again, and a disabled account cannot receive or submit a code anyway.

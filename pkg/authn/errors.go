@@ -212,9 +212,9 @@ var (
 	// login-identifier-required.
 	ErrIdentifierRequired = errors.New("authn: the account has no identifier to log in with")
 
-	// ErrCleanupIncomplete reports that an account's state or a service secret's
-	// state is in force and an AccountLifecycle hook failed. Repeating the same
-	// call finishes the cleanup. Outwardly it is a 503.
+	// ErrCleanupIncomplete reports that an account's creation or state, or a
+	// service secret's state, is in force and an AccountLifecycle hook failed.
+	// Repeating the same call finishes the cleanup. Outwardly it is a 503.
 	ErrCleanupIncomplete = errors.New("authn: the state is in force and a cleanup hook failed")
 
 	// ErrBindingConflict reports an external identity that another account holds.

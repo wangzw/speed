@@ -148,7 +148,18 @@ func (p *product) Create(ctx context.Context, in authn.CreateAccount) (authn.Acc
 		return authn.Account{}, failed("creating an account", err)
 	}
 	p.publish(ctx, b)
-	return toAccount(row, phc != "")
+	account, err := toAccount(row, phc != "")
+	if err != nil {
+		return authn.Account{}, err
+	}
+	if err := p.callHooks(ctx, account.ID, nil, func(hookCtx context.Context, h authn.AccountLifecycle) error {
+		return h.AccountCreated(hookCtx, account.ID)
+	}); err != nil {
+		// The account is in being; only the hook that builds what shares its life
+		// is unfinished, and the same call repeated finishes it.
+		return account, err
+	}
+	return account, nil
 }
 
 // creation is what Create has judged before it writes anything.

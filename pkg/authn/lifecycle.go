@@ -19,6 +19,12 @@ import "context"
 // state in force, and a repeated call finishes the cleanup; the same cleanup is
 // also driven by the account events, where an outbox is present.
 type AccountLifecycle interface {
+	// AccountCreated builds what the module holds for the whole of the account's
+	// life, such as the account's personal tenant. It is called after the account
+	// has been committed, and its retry may arrive after the account has been
+	// deleted: a tombstone is then no work and nil. A module that holds only state
+	// data, with nothing to build at creation, returns nil.
+	AccountCreated(ctx context.Context, id AccountID) error
 	// AccountDisabled revokes the account's browser and token sessions and clears
 	// their cache. Service sessions lapse with the account's status and its
 	// valid-after instant, and come back through Sessions.ForCredential after the

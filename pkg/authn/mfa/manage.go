@@ -260,6 +260,11 @@ func (m *product) Seasoned(ctx context.Context, id authn.AccountID) (bool, error
 	return ok, nil
 }
 
+// AccountCreated changes nothing: a new account has no factor, and a factor is
+// enrolled only when its owner asks for one. The hook is idempotent and returns
+// nil.
+func (m *product) AccountCreated(context.Context, authn.AccountID) error { return nil }
+
 // AccountDisabled leaves the account's factors where they are: a disabled account
 // that is enabled again has the factors it had.
 func (m *product) AccountDisabled(context.Context, authn.AccountID) error { return nil }

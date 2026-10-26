@@ -83,6 +83,7 @@ var seamSignatures = map[string][]string{
 		"Succeed(ctx context.Context, scope ThrottleScope, key string) error",
 	},
 	"AccountLifecycle": {
+		"AccountCreated(ctx context.Context, id AccountID) error",
 		"AccountDisabled(ctx context.Context, id AccountID) error",
 		"AccountEnabled(ctx context.Context, id AccountID) error",
 		"AccountDeleted(ctx context.Context, id AccountID) error",
