@@ -363,6 +363,65 @@ describe('the console area follows the path, not the feature document', () => {
   })
 })
 
+describe('a console page whose feature is absent is not reachable', () => {
+  // The SMS page is gated on sms.admin (console-ui's smsAdminRoutes). The
+  // baseline binary imports that module for the API contract but names it on
+  // no command, so the deployment's own document omits it while serving every
+  // other console page. These two cases pin the consequence: the page is not
+  // reachable at all, rather than reachable and merely empty.
+
+  it('renders the not-found fallback at /console/sms and never mounts the page', async () => {
+    window.history.replaceState({}, '', '/console/sms')
+    // The console area is up (settings.admin is served), but sms.admin is not:
+    // the route guard withholds the declaration, so the URL renders the same
+    // fallback an unregistered path gets.
+    renderDemoApp({
+      session: sessionWith(
+        readyFeatures('tenant.admin', 'settings.admin'),
+        // The dashboard declaration owns the console prefix, so it is the
+        // entry selected at /console/sms; holding its code lets the page
+        // guard settle and the route fallback show.
+        { system: ['tenant.read'] },
+      ),
+    })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: demoEnUS.notFound.heading,
+      }),
+    ).toBeInTheDocument()
+    // The page's view never ran: neither its title nor its register form is
+    // in the document. An excerpt of the page showing here would mean the
+    // absent-feature route was reachable.
+    expect(
+      screen.queryByRole('heading', { level: 1, name: tConsole('sms.title') }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: tConsole('sms.register.submit') }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders the SMS page at /console/sms when the document serves sms.admin', async () => {
+    // The positive half: the absent case above cannot pass by hiding the page
+    // always.
+    window.history.replaceState({}, '', '/console/sms')
+    renderDemoApp({
+      session: sessionWith(
+        readyFeatures('sms.admin', 'settings.admin', 'tenant.admin'),
+        { system: ['sms.template.read'] },
+      ),
+    })
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 1,
+        name: tConsole('sms.title'),
+      }),
+    ).toBeInTheDocument()
+  })
+})
+
 describe('the console entry and home card follow the served declarations', () => {
   it('targets the first served console page whose permission the principal holds', async () => {
     // tenant.admin is not served, so the dashboard and roster are out; the
