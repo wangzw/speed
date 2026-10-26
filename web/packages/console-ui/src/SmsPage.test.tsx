@@ -193,6 +193,8 @@ describe('SmsPage', () => {
 
     await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
     await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.localeLabel), 'zh-CN')
     await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
     expect(refresh).toBeDisabled()
 
@@ -234,6 +236,132 @@ describe('SmsPage', () => {
     }
   })
 
+  it('keeps each create submit disabled until its required fields carry text', async () => {
+    const user = userEvent.setup()
+    const operations = withTemplates()
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+
+    const register = section(zhCN.sms.register.title)
+    const offer = section(zhCN.sms.offer.title)
+    const registerSubmit = within(register).getByRole('button', {
+      name: zhCN.sms.register.submit,
+    })
+    const offerSubmit = within(offer).getByRole('button', {
+      name: zhCN.sms.offer.submit,
+    })
+    expect(registerSubmit).toBeDisabled()
+    expect(offerSubmit).toBeDisabled()
+
+    // Whitespace alone is not a name.
+    await user.type(
+      within(register).getByLabelText(zhCN.sms.register.nameLabel),
+      '   ',
+    )
+    expect(registerSubmit).toBeDisabled()
+    await user.type(
+      within(register).getByLabelText(zhCN.sms.register.nameLabel),
+      'welcome',
+    )
+    expect(registerSubmit).toBeEnabled()
+
+    // An offer names a template, its content, its kind and its language.
+    await user.type(within(offer).getByLabelText(zhCN.sms.offer.nameLabel), 'welcome')
+    expect(offerSubmit).toBeDisabled()
+    await user.type(within(offer).getByLabelText(zhCN.sms.offer.contentLabel), '   ')
+    expect(offerSubmit).toBeDisabled()
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.contentLabel),
+      'your code is ${code}',
+    )
+    expect(offerSubmit).toBeDisabled()
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.kindLabel),
+      'verification',
+    )
+    expect(offerSubmit).toBeDisabled()
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.localeLabel),
+      'zh-CN',
+    )
+    expect(offerSubmit).toBeEnabled()
+  })
+
+  it('returns both create forms to their initial state after a landed write', async () => {
+    const user = userEvent.setup()
+    const operations = withTemplates()
+    renderWithProviders(<SmsPage />, { operations })
+    await screen.findByText('login-code')
+
+    const register = section(zhCN.sms.register.title)
+    await user.type(
+      within(register).getByLabelText(zhCN.sms.register.nameLabel),
+      'welcome',
+    )
+    await user.type(
+      within(register).getByLabelText(zhCN.sms.register.paramsLabel),
+      'code, name',
+    )
+    await user.type(
+      within(register).getByLabelText(zhCN.sms.register.codesLabel),
+      'zh-CN:1001',
+    )
+    await user.click(
+      within(register).getByRole('button', { name: zhCN.sms.register.submit }),
+    )
+    expect(
+      await screen.findByText(text(zhCN.sms.registered, { name: 'welcome' })),
+    ).toBeInTheDocument()
+    expect(
+      within(register).getByLabelText(zhCN.sms.register.nameLabel),
+    ).toHaveValue('')
+    expect(
+      within(register).getByLabelText(zhCN.sms.register.paramsLabel),
+    ).toHaveValue('')
+    expect(
+      within(register).getByLabelText(zhCN.sms.register.codesLabel),
+    ).toHaveValue('')
+
+    const offer = section(zhCN.sms.offer.title)
+    await user.type(within(offer).getByLabelText(zhCN.sms.offer.nameLabel), 'welcome')
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.contentLabel),
+      'your code is ${code}',
+    )
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.kindLabel),
+      'verification',
+    )
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.localeLabel),
+      'zh-CN',
+    )
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.paramsLabel),
+      'code',
+    )
+    await user.type(
+      within(offer).getByLabelText(zhCN.sms.offer.remarkLabel),
+      'for login',
+    )
+    await user.click(
+      within(offer).getByRole('button', { name: zhCN.sms.offer.submit }),
+    )
+    expect(
+      await screen.findByText(text(zhCN.sms.offered, { name: 'welcome' })),
+    ).toBeInTheDocument()
+    for (const label of [
+      zhCN.sms.offer.nameLabel,
+      zhCN.sms.offer.contentLabel,
+      zhCN.sms.offer.kindLabel,
+      zhCN.sms.offer.localeLabel,
+      zhCN.sms.offer.paramsLabel,
+      zhCN.sms.offer.remarkLabel,
+    ]) {
+      expect(within(offer).getByLabelText(label)).toHaveValue('')
+    }
+  })
+
   it('registers a template through the bundle', async () => {
     const user = userEvent.setup()
     const registered: string[] = []
@@ -271,6 +399,8 @@ describe('SmsPage', () => {
     await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
     // Two name fields exist (register + offer); the offer one is second.
     await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.localeLabel), 'zh-CN')
     await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
     await vi.waitFor(() => {
       expect(offered).toEqual(['welcome'])
@@ -368,8 +498,10 @@ describe('SmsPage', () => {
     expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.register.title)).toBeInTheDocument()
     expect(screen.getByText(zhCN.sms.offer.title)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toBeEnabled()
-    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toBeEnabled()
+    // Both forms are still there; their submits start disabled because
+    // neither has a required field filled yet.
+    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toBeDisabled()
   })
 
   it('renders the retryable error placeholder when the read fails', async () => {
@@ -481,6 +613,8 @@ describe('SmsPage', () => {
     // Offer names the template it hands to the vendor.
     await user.type(screen.getByLabelText(zhCN.sms.offer.contentLabel), 'your code is {code}')
     await user.type(screen.getAllByLabelText(zhCN.sms.offer.nameLabel)[1]!, 'welcome')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.kindLabel), 'verification')
+    await user.type(screen.getByLabelText(zhCN.sms.offer.localeLabel), 'zh-CN')
     await user.click(screen.getByRole('button', { name: zhCN.sms.offer.submit }))
     expect(
       await screen.findByText(text(zhCN.sms.offered, { name: 'welcome' })),

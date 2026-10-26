@@ -281,6 +281,45 @@ describe('PermissionsPage', () => {
     })
   })
 
+  it('disables the role create submit without a trimmed name and clears both drafts after a save', async () => {
+    const user = userEvent.setup()
+    const operations = withAuthz({
+      listRoles: () => Promise.resolve([role()]),
+    })
+    renderWithProviders(<PermissionsPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('editor')
+
+    const name = screen.getByLabelText(
+      zhCN.permissions.roles.create.roleLabel,
+    )
+    const description = screen.getByLabelText(
+      zhCN.permissions.roles.create.descriptionLabel,
+    )
+    const submit = screen.getByRole('button', {
+      name: zhCN.permissions.roles.create.submit,
+    })
+    expect(submit).toBeDisabled()
+
+    // Whitespace alone is not a name.
+    await user.type(name, '   ')
+    expect(submit).toBeDisabled()
+    await user.clear(name)
+    await user.type(name, 'auditor')
+    await user.type(description, 'reads audit records')
+    expect(submit).toBeEnabled()
+
+    await user.click(submit)
+    expect(
+      await screen.findByText(
+        text(zhCN.permissions.roles.saved, { role: 'auditor' }),
+      ),
+    ).toBeInTheDocument()
+    // A landed create returns both fields to their initial values.
+    expect(name).toHaveValue('')
+    expect(description).toHaveValue('')
+  })
+
   it('disables the refresh while the grants scope is in flight', async () => {
     const user = userEvent.setup()
     const pending = deferred<void>()

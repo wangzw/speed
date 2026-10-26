@@ -236,6 +236,17 @@ export function SmsPage() {
   const [offerParams, setOfferParams] = useState('')
   const [offerRemark, setOfferRemark] = useState('')
 
+  // A create submit stays disabled until every required field carries text,
+  // judged after trimming: a registration needs its template name, and a
+  // submission needs the template name, the content, the kind and the
+  // language. The parameters and the reviewer's note may be empty.
+  const registerReady = name.trim() !== ''
+  const offerReady =
+    offerName.trim() !== '' &&
+    offerContent.trim() !== '' &&
+    offerKind.trim() !== '' &&
+    offerLocale.trim() !== ''
+
   // A closed-set source or review state renders its own label; a value the
   // set does not name is shown as the record carries it.
   const closedSetLabel = (key: string, value: string): string =>
@@ -422,7 +433,7 @@ export function SmsPage() {
             <Button
               type="button"
               variant="contained"
-              disabled={registerFeedback.pending}
+              disabled={registerFeedback.pending || !registerReady}
               loading={registerFeedback.pending}
               onClick={register}
             >
@@ -486,7 +497,7 @@ export function SmsPage() {
             <Button
               type="button"
               variant="contained"
-              disabled={offerFeedback.pending}
+              disabled={offerFeedback.pending || !offerReady}
               loading={offerFeedback.pending}
               onClick={offer}
             >
