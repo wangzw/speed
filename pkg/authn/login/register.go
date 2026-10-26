@@ -50,6 +50,7 @@ const (
 func (r *routes) register(ctx context.Context, in registerInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	if !r.passwordSignupEnabled() {
+		r.auditSignup(c, "", outcomeRefused)
 		c.forbidden(mount.CodeSignupClosed)
 		return c.result()
 	}
@@ -57,6 +58,7 @@ func (r *routes) register(ctx context.Context, in registerInput, meta *speedhttp
 		return c.result()
 	}
 	if in.Username == "" || in.Email == "" || in.Password == "" {
+		r.auditSignup(c, "", outcomeRefused)
 		c.fail(mount.CodeBadRequest)
 		return c.result()
 	}
@@ -72,6 +74,7 @@ func (r *routes) register(ctx context.Context, in registerInput, meta *speedhttp
 		r.failRegister(c, err)
 		return c.result()
 	}
+	r.auditSignup(c, acct.ID, outcomeSuccess)
 	c.json(http.StatusCreated, registrationReply{
 		State:     stateRegistered,
 		AccountID: string(acct.ID),
@@ -102,6 +105,7 @@ func (r *routes) signupSourceAllow(c *call) bool {
 		return true
 	}
 	if count > float64(limit) {
+		r.auditSignup(c, "", outcomeThrottled)
 		c.throttled(untilNextBucket(now, signupSourceBucket))
 		return false
 	}
@@ -124,6 +128,7 @@ func (r *routes) signupGlobalAllow(c *call) bool {
 		return false
 	}
 	if count > float64(limit) {
+		r.auditSignup(c, "", outcomeThrottled)
 		c.throttled(untilNextBucket(now, signupGlobalBucket))
 		return false
 	}
@@ -149,6 +154,9 @@ func untilNextBucket(now time.Time, bucket time.Duration) time.Duration {
 // are the one 429; and a database that cannot answer, or a derivation capacity
 // that is full, are the 503s.
 func (r *routes) failRegister(c *call, err error) {
+	if outcome, named := signupAuditOutcome(err); named {
+		r.auditSignup(c, "", outcome)
+	}
 	var throttled *authn.ThrottledError
 	switch {
 	case errors.As(err, &throttled):

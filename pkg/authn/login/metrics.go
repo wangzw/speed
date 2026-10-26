@@ -13,13 +13,15 @@ import (
 )
 
 // The meter every module of the capability directory reports under, the
-// instrument this module reports through, and the two attributes it carries,
-// whose sets design-authn-events.md makes a closed set.
+// instruments this module reports through, and the attributes they carry, whose
+// sets design-authn-events.md makes a closed set.
 const (
-	meterName             = "authn"
-	completionsInstrument = "authn.login.completions"
-	methodAttribute       = "method"
-	outcomeAttribute      = "outcome"
+	meterName               = "authn"
+	completionsInstrument   = "authn.login.completions"
+	auditFailuresInstrument = "authn.audit.write-failures"
+	methodAttribute         = "method"
+	outcomeAttribute        = "outcome"
+	mandatoryAttribute      = "mandatory"
 )
 
 // The outcomes of a login, the closed set of the instrument's outcome attribute.
@@ -39,10 +41,11 @@ const (
 // meters is the instrument this module reports through. The zero value reports
 // nothing, which is the state of an assembly with no metric capability.
 type meters struct {
-	logins metric.Int64Counter
+	logins        metric.Int64Counter
+	auditFailures metric.Int64Counter
 }
 
-// newMeters creates the instrument on the meter of the capability directory.
+// newMeters creates the instruments on the meter of the capability directory.
 func newMeters(provider observability.MeterProvider) (meters, error) {
 	var m meters
 	meter := provider.Meter(meterName)
@@ -53,6 +56,13 @@ func newMeters(provider observability.MeterProvider) (meters, error) {
 		return meters{}, fmt.Errorf("creating the %s counter: %w", completionsInstrument, err)
 	}
 	m.logins = counter
+	failures, err := meter.Int64Counter(auditFailuresInstrument,
+		metric.WithUnit("{failure}"),
+		metric.WithDescription("Audit rows that could not be written, by whether the action required one"))
+	if err != nil {
+		return meters{}, fmt.Errorf("creating the %s counter: %w", auditFailuresInstrument, err)
+	}
+	m.auditFailures = failures
 	return m, nil
 }
 
@@ -64,6 +74,15 @@ func (m meters) login(ctx context.Context, method, outcome string) {
 			attribute.String(methodAttribute, method),
 			attribute.String(outcomeAttribute, outcome)))
 	}
+}
+
+// auditFailed counts one audit row that could not be written. Every row this
+// module writes is in the best-effort tier, so the mandatory attribute is false.
+func (m meters) auditFailed(ctx context.Context) {
+	if m.auditFailures == nil {
+		return
+	}
+	m.auditFailures.Add(ctx, 1, metric.WithAttributes(attribute.Bool(mandatoryAttribute, false)))
 }
 
 // reportLogin counts a terminal outcome of a login flow. A flow of any other

@@ -378,15 +378,19 @@ func (a *fakeAdmin) Touch(context.Context, authn.AccountID, time.Time) error {
 	return nil
 }
 
-// auditing is an audit sink that records the acting account of the context each
-// row was written under, so a case can see which identity reached it.
+// auditing is an audit sink that records the entries it was handed and the
+// acting account of the context each row was written under, so a case can see
+// both what was written and which identity reached it. An armed err is returned
+// to the caller, which is how a case makes a best-effort write fail.
 type auditing struct {
 	audit.Audit
-	mu   sync.Mutex
-	acts []string // the account string of each row's identity; "" when there was none
+	mu      sync.Mutex
+	acts    []string // the account string of each row's identity; "" when there was none
+	entries []audit.Entry
+	err     error
 }
 
-func (a *auditing) Record(ctx context.Context, _ audit.Entry) error {
+func (a *auditing) Record(ctx context.Context, e audit.Entry) error {
 	account := ""
 	if id, ok := authn.FromContext(ctx); ok {
 		account = string(id.Account())
@@ -394,13 +398,20 @@ func (a *auditing) Record(ctx context.Context, _ audit.Entry) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.acts = append(a.acts, account)
-	return nil
+	a.entries = append(a.entries, e)
+	return a.err
 }
 
 func (a *auditing) identities() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return append([]string(nil), a.acts...)
+}
+
+func (a *auditing) rows() []audit.Entry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]audit.Entry(nil), a.entries...)
 }
 
 // stub types satisfy an interface with a nil method set, for the dependencies a
