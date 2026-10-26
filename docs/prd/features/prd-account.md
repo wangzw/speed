@@ -266,7 +266,7 @@
 
 - **验收**：没有邮箱的账户读作不适用；持有未验证邮箱（含管理员写入）的账户读作未验证；持有至少一条已验证邮箱的账户读作已验证；任何来源的同状态账户得到相同结论。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-operator-first-run.spec.ts` `operator-first-run: the operator proves the email and lands the first settings write`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`
 
 ### REQ-account-016
 

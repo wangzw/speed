@@ -26,7 +26,7 @@
 
 - **验收**：未认证调用读取该文档得到成功应答；增删一个登录模块或在运行期关闭一个方式后，同一应答里对应条目随之出现或消失。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-deploy-and-operate.spec.ts` `deploy-and-operate: a deployment serves, seeds, and refuses an unproved operator write`；`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-signin-002
 
@@ -50,7 +50,7 @@
 
 - **验收**：只改部署装配或方式开关、不改前端产物，刷新登录面后渠道集合随之变化。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-signin-005
 

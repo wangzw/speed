@@ -835,7 +835,7 @@
 
 - **验收**：以运营者身份完成一次设置写入与一次被拒绝的写入，审计记录中分别出现成功与失败两行，各行含动作、对象与实际操作者；冒充期间的动作另带被冒充账户等明细（REQ-platform-admin-110）。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-audit-export.spec.ts` `audit-export: the file carries the whole filtered set, and a narrowed filter narrows it`（成功与被拒各一行由该旅程的设置写入驱动；冒充期间的明细由冒充旅程覆盖）
 
 ### REQ-platform-admin-112
 

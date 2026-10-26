@@ -196,7 +196,7 @@
 
 - **验收**：会话节逐行显示设备摘要、登录时间、最近活跃时间与到期时间，当前会话被标记；没有其他会话时显示空态；读取失败时显示错误与重试。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-account-security-hardening.spec.ts` `account-security-hardening: an account enrols two factors, ends another device and changes its password through a step-up`（该 spec 不断言最近活跃一行；设备摘要、登录时间与到期时间被驱动）
 
 ### REQ-security-023
 

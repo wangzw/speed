@@ -271,7 +271,7 @@
 
 - **验收**：未验证账户执行 REQ-account-006 列明的每个动作、登记多因素、登记通行密钥、接受他人发来的邀请均成功；执行 REQ-signup-025 列明的动作被拒绝。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：未实现
 
 ### REQ-signup-025
 

@@ -125,7 +125,7 @@
 
 - **验收**：不存在的链接提示链接无效或已被删除；已过期、已撤销与已接受的链接共用同一条邀请已失效的提示，不点名是哪一种终态。不存在与不可再兑现都不展示邀请摘要，也都不产生账户或成员关系。未失效的待接受链接则进入接受流程。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`（已接受与已撤销的终态在被驱动；不存在的链接与 409 分支由组件层用例覆盖）
 
 ### REQ-tenancy-014
 
@@ -181,7 +181,7 @@
 
 - **验收**：同一链接先后接受两次，第二次得到已接受的结果。并发接受同一链接时恰好一次成功，且只产生一条成员关系。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-invitation-to-tenant.spec.ts` `invitation-to-tenant: an operator invites an address and the invitee joins the tenant`（先后的重复兑换被驱动；并发兑换由后端用例覆盖）
 
 ### REQ-tenancy-021
 
@@ -237,7 +237,7 @@
 
 - **验收**：个人租户的所有者能执行允许集内的业务动作。执行允许集外的租户级管理动作被拒绝。进程后来新声明的租户级权限不自动进入该角色。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：未实现
 
 ### REQ-tenancy-028
 
@@ -245,7 +245,7 @@
 
 - **验收**：以邮箱尚未证明的账户进入租户区，个人租户建立成功，界面同时呈现验证提示；该账户仍被未验证状态限制：绑定外部身份被拒绝并提示先证明邮箱。证明邮箱后同一绑定可进行，个人租户的标识与别名不变。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：未实现
 
 ### REQ-tenancy-029
 
