@@ -286,7 +286,21 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	// Two windows after the write send no email. The first is waited out so an
 	// in-flight window enqueued before the write cannot be mistaken for a
 	// post-write one; the count is taken again at the second.
-	emailLines := func() int { return strings.Count(serve.output(), subject) }
+	//
+	// The operator owns a personal tenant of its own by now, and a personal
+	// tenant is a real workspace that receives notices too. Every window
+	// therefore carries one more email, addressed to the operator rather than
+	// to the member this case registered. Count only the lines addressed to the
+	// member, which is the delivery the preference governs.
+	emailLines := func() int {
+		count := 0
+		for _, line := range strings.Split(serve.output(), "\n") {
+			if strings.Contains(line, subject) && strings.Contains(line, reviewNotifyEmail) {
+				count++
+			}
+		}
+		return count
+	}
 	waitForMessages(t, client, base+"/api/v1/notifications/messages?group="+reviewNotificationGroup,
 		headers, 2, serve)
 	afterFirst := emailLines()
