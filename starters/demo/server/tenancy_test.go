@@ -135,18 +135,48 @@ func TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding(t *testing.T) {
 	}
 }
 
-// TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses holds the failure
-// path: a roster that refuses the row leaves no role, grant or binding behind.
-func TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses(t *testing.T) {
+// TestTheProvisionerWritesTheCreatorMembership holds the requirement that
+// opening a tenant writes the creator's membership together with the
+// tenant-admin binding: a binding without the membership names an administrator
+// who cannot enter the tenant it administers.
+func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
 	roster := newFakeRoster()
-	roster.createErr = errors.New("the roster is unavailable")
+	memberships := newFakeMemberships()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	seeder := newFakeSeeder(grants)
 	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
 		"crm.deal.read": {"deal", "read"},
 	}}
-	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
+	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
+
+	if err := product.Provision(context.Background(),
+		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	member, err := memberships.IsMember(context.Background(), authn.AccountID("acct-1"), "acme")
+	if err != nil {
+		t.Fatalf("reading the creator's membership: %v", err)
+	}
+	if !member {
+		t.Error("the creator is not an active member of the tenant it created")
+	}
+}
+
+// TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses holds the failure
+// path: a roster that refuses the row leaves no role, grant, binding or
+// membership behind.
+func TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses(t *testing.T) {
+	roster := newFakeRoster()
+	roster.createErr = errors.New("the roster is unavailable")
+	memberships := newFakeMemberships()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	seeder := newFakeSeeder(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	err := product.Provision(context.Background(),
 		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1")
@@ -163,6 +193,9 @@ func TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses(t *testing.T) {
 	}
 	if held := grants.held("acme", authz.TenantAdminRole); len(held) != 0 {
 		t.Errorf("the failed provision left %d grant(s) behind", len(held))
+	}
+	if member, _ := memberships.IsMember(context.Background(), authn.AccountID("acct-1"), "acme"); member {
+		t.Error("the failed provision left the creator's membership behind")
 	}
 }
 

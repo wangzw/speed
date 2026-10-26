@@ -47,7 +47,7 @@
 | `PATCH /tenants/:tenant` | `SetAlias` 换别名 |
 | `POST /tenants/:tenant/status` | `SetStatus`，改一个租户的状态 |
 
-**登记走 `Provisioner`，一个租户与它的首任管理员一起建立。** 开一个租户不是一个孤立的插入：租户的创建者是它的第一个租户管理员，租户与那条绑定必须一同成立。本模块把这件事交给宿主提供的 `tenant.Provisioner`，它写租户域的角色、授予与创建者的绑定，最后经 `Catalog.Create` 写名册行；写名册行之前失败时它清掉自己写过的策略行，路由答 503 且不留租户。一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行、别名与状态一并取新值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。既有租户的改名走 `PATCH`，改状态走状态路由；状态路由只写启用与停用，删除是名册上的终态标记，本模块不为它开路由。
+**登记走 `Provisioner`，一个租户与它的首任管理员一起建立。** 开一个租户不是一个孤立的插入：租户的创建者是它的第一个租户管理员，租户、创建者的成员关系与那条绑定必须一同成立。本模块把这件事交给宿主提供的 `tenant.Provisioner`，它写租户域的角色、授予、创建者的成员关系与创建者的绑定，最后经 `Catalog.Create` 写名册行；写名册行之前失败时它清掉自己写过的策略行与成员关系，路由答 503 且不留租户。一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行、别名与状态一并取新值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。既有租户的改名走 `PATCH`，改状态走状态路由；状态路由只写启用与停用，删除是名册上的终态标记，本模块不为它开路由。
 
 **别名改写经 `SetAlias`，不写状态。** `Put` 取整行新值——`alias` 与 `status` 一并写回（`pkg/tenant/catalog/roster.go` 的 upsert 赋值两列），所以一次改名会把该次读取到的状态写回去，把另一个副本上刚停用的租户重新启用。名册因此要有一条只改别名的写 `SetAlias`；本模块用它，不用 `Get` 后 `Put`。
 

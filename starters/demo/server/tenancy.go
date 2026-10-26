@@ -157,9 +157,12 @@ func protectedTenant(id tenant.ID) bool {
 }
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's
-// tenant-admin role, every declared permission on it, and the creator's
-// binding, then registers the roster row last. A refusal of the roster row
-// removes the policy rows this call wrote, so no tenant is left half-built.
+// tenant-admin role, every declared permission on it, the creator's membership
+// and the creator's binding, then registers the roster row last. The membership
+// is written with the binding because the creator is the tenant's first
+// administrator: a binding without it names an administrator who cannot enter
+// the tenant. A refusal of the roster row removes what this call wrote, so no
+// tenant is left half-built.
 //
 // A tenant the roster already holds is refused before any policy write: the
 // identifier's domain belongs to that tenant, and writing this call's role and
@@ -169,6 +172,10 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		return fmt.Errorf("%s: reading whether the tenant %q is registered: %w", tenancyModuleName, t.ID, err)
 	} else if found {
 		return fmt.Errorf("%w: identifier %q", tenant.ErrTenantExists, t.ID)
+	}
+	creatorID, err := authn.ParseAccountID(creator)
+	if err != nil {
+		return fmt.Errorf("%s: the creator %q is not an account identifier: %w", tenancyModuleName, creator, err)
 	}
 	tenantID := string(t.ID)
 	role := authz.Role(authz.TenantAdminRole)
@@ -182,8 +189,17 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 	}
 	grants := declaredGrants(p.catalog)
 	if _, err := p.seeder.SeedGrants(ctx, tenantID, role, grants); err != nil {
-		p.removePolicy(ctx, tenantID)
+		p.removeProvision(ctx, tenantID, creatorID)
 		return fmt.Errorf("%s: granting the declared permissions to the tenant-admin role: %w", tenancyModuleName, err)
+	}
+	if err := p.memberships.Put(ctx, authn.Membership{
+		Account: creatorID,
+		Tenant:  tenantID,
+		Active:  true,
+		Source:  authn.ReasonAdmin,
+	}); err != nil {
+		p.removeProvision(ctx, tenantID, creatorID)
+		return fmt.Errorf("%s: writing the creator's membership in the tenant: %w", tenancyModuleName, err)
 	}
 	if err := p.manager.PutBinding(ctx, authz.Binding{
 		Tenant:    tenantID,
@@ -191,20 +207,24 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		Role:      role,
 		GrantedAt: time.Now().UTC(),
 	}); err != nil {
-		p.removePolicy(ctx, tenantID)
+		p.removeProvision(ctx, tenantID, creatorID)
 		return fmt.Errorf("%s: binding the creator to the tenant-admin role: %w", tenancyModuleName, err)
 	}
 	if err := p.roster.Create(ctx, t); err != nil {
-		p.removePolicy(ctx, tenantID)
+		p.removeProvision(ctx, tenantID, creatorID)
 		return fmt.Errorf("%s: registering the tenant %q: %w", tenancyModuleName, t.ID, err)
 	}
 	return nil
 }
 
-// removePolicy removes the policy rows a provision wrote. It is best effort: a
-// failure is logged, because the roster refusal is the answer the caller
+// removeProvision removes what a failed provision wrote. It is best effort: a
+// failure is logged, because the write's own failure is the answer the caller
 // receives, and there is no second failure to report beside it.
-func (p *tenancyProduct) removePolicy(ctx context.Context, tenantID string) {
+func (p *tenancyProduct) removeProvision(ctx context.Context, tenantID string, creator authn.AccountID) {
+	if err := p.memberships.Remove(ctx, creator, tenantID); err != nil {
+		p.logger.Error(tenancyModuleName+": a failed provision left the creator's membership behind",
+			"tenant", tenantID, "cause", err.Error())
+	}
 	if err := p.manager.DeleteRole(ctx, tenantID, authz.TenantAdminRole); err != nil &&
 		!errors.Is(err, authz.ErrUnknownRole) {
 		p.logger.Error(tenancyModuleName+": a failed provision left its policy rows behind",

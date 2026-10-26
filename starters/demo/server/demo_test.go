@@ -1492,6 +1492,33 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 	if len(listed.Bindings) != 1 || listed.Bindings[0].Role != string(authz.TenantAdminRole) {
 		t.Errorf("the creator's bindings = %+v, want one tenant-admin", listed.Bindings)
 	}
+
+	// The binding names the creator the tenant's first administrator, and the
+	// membership is what lets it enter the tenant: a binding alone names an
+	// account the admission layer refuses.
+	members := send(t, client, http.MethodGet,
+		base+"/api/v1/tenants/"+created+"/members", nil, auth)
+	if members.status != http.StatusOK {
+		t.Fatalf("reading the new tenant's members answered %d:\n%s", members.status, members.body)
+	}
+	var roster struct {
+		Members []struct {
+			Account string `json:"account"`
+			Active  bool   `json:"active"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(members.body, &roster); err != nil {
+		t.Fatalf("reading the new tenant's members: %v\n%s", err, members.body)
+	}
+	found := false
+	for _, member := range roster.Members {
+		if member.Account == who.AccountID && member.Active {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the creator is not an active member of the tenant it created: %+v", roster.Members)
+	}
 }
 
 // TestRemovingASystemMembershipWithdrawsThePlatformBinding holds the cascade in
