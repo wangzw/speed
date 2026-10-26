@@ -173,6 +173,36 @@ describe('DataTable', () => {
     expect(container).toHaveStyle({ overflowX: 'auto' })
   })
 
+  it('pins the last column only when the host opts in', () => {
+    // The pin is a per-table opt-in, never the default: an unopted table
+    // keeps its last column in normal flow, while the opted one makes
+    // both the header cell and the body cells stick to the scroll
+    // container's right edge (the browser tier proves the movement).
+    const withActions: readonly DataTableColumn<Member>[] = [
+      ...BASE_COLUMNS,
+      { id: 'actions', header: 'Actions', cell: () => 'open' },
+    ]
+
+    const off = renderTable({ columns: withActions })
+    const offHeaders = off.container.querySelectorAll('thead th')
+    expect(offHeaders[offHeaders.length - 1]).not.toHaveStyle({
+      position: 'sticky',
+    })
+    off.unmount()
+
+    const on = renderTable({ columns: withActions, pinLastColumn: true })
+    const headers = on.container.querySelectorAll('thead th')
+    expect(headers[headers.length - 1]).toHaveStyle({
+      position: 'sticky',
+      right: '0px',
+    })
+    const bodyCells = on.container.querySelectorAll('tbody tr:first-child td')
+    expect(bodyCells[bodyCells.length - 1]).toHaveStyle({
+      position: 'sticky',
+      right: '0px',
+    })
+  })
+
   it('applies column alignment and width to cells', () => {
     const utils = renderTable()
     const creditCells = utils.container.querySelectorAll(

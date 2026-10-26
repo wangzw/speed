@@ -63,6 +63,19 @@
  * "horizontal-scroll container" test for the proof (a refactor that
  * drops `TableContainer` would fail it).
  *
+ * `pinLastColumn` is the opt-in that keeps one column visible while that
+ * scroll happens: the table's last column -- the position a host gives
+ * its row-actions column, so its controls stay reachable as the main
+ * columns pass under them -- is declared `position: sticky` with a right
+ * offset of zero on its header and body cells. Both get the surface
+ * background, so the columns scrolling beneath stay hidden behind it,
+ * and a hairline separator on the pinned cell's start edge marks the
+ * boundary; the cells remain ordinary table cells, so no overlay or
+ * second layout layer is introduced. The pin only does anything when the
+ * table is actually wider than its container (otherwise the column sits
+ * where it already was), and it defaults to off: a host that does not
+ * pass it renders byte-for-byte the table it rendered before.
+ *
  * That fallback only exists when a cell refuses to squeeze: under normal
  * text flow a value breaks mid-token and shrinks the table back to its
  * container, so the wrapper never overflows and the scroll fallback
@@ -391,6 +404,16 @@ export interface DataTableProps<T> {
    * centring. See the header note.
    */
   readonly rowVerticalAlign?: 'middle' | 'top'
+  /**
+   * Opt-in right-edge pinning of the table's last column (see the header
+   * note): the column's header and body cells stay at the right edge of
+   * the horizontal scroll container while the main columns scroll under
+   * them. Hosts place their row-actions column last, so this is how the
+   * row controls stay reachable in a narrow container. Defaults to off;
+   * a host that does not pass it keeps the prior rendering, and a table
+   * that fits its container sees no change either way.
+   */
+  readonly pinLastColumn?: boolean
   /** Extra styling applied to the outermost box. */
   readonly sx?: SxProps<Theme>
 }
@@ -493,6 +516,39 @@ function columnCellWrapSx(
 }
 
 /**
+ * Renders the opt-in pinning of the table's last column into a cell's sx
+ * value (see the header note). The pinned cell sticks to the scroll
+ * container's right edge; its background takes the theme's container
+ * surface -- the single surface the table is designed to sit on, so the
+ * pinned band reads as part of the table rather than as a second
+ * surface -- and must be opaque, or the columns scrolling beneath it
+ * would show through. The inset shadow draws the separator on its start
+ * edge without depending on collapsed table borders. The header cell
+ * takes a higher stacking order than body cells so the pinned band keeps
+ * one surface. Returns undefined for an unpinned column, making the
+ * spread a no-op -- the exact prior sx.
+ */
+function pinnedColumnSx(
+  pinned: boolean,
+  header: boolean,
+): {
+  position: 'sticky'
+  right: number
+  zIndex: number
+  backgroundColor: (theme: Theme) => string
+  boxShadow: (theme: Theme) => string
+} | undefined {
+  if (!pinned) return undefined
+  return {
+    position: 'sticky',
+    right: 0,
+    zIndex: header ? 3 : 1,
+    backgroundColor: (theme) => theme.surface.container.fill,
+    boxShadow: (theme) => `inset 1px 0 0 ${theme.palette.divider}`,
+  }
+}
+
+/**
  * The controlled table view. See the header note for the ownership
  * contract -- every knob here is props in, callbacks out.
  */
@@ -515,6 +571,7 @@ export function DataTable<T>({
   ariaLabel,
   ariaLabelledBy,
   rowVerticalAlign,
+  pinLastColumn = false,
   sx,
 }: DataTableProps<T>) {
   const { t } = useUiKitTranslation()
@@ -552,6 +609,14 @@ export function DataTable<T>({
   const someSelected = !allSelected && pageKeys.some((key) => selected.has(key))
 
   const span = columns.length + (selectable ? 1 : 0)
+
+  // The pin applies to the last declared column only -- the host's
+  // row-actions column by the placement convention -- and only when the
+  // host opted in.
+  const lastColumnId =
+    columns.length === 0 ? undefined : columns[columns.length - 1]?.id
+  const isPinnedColumn = (column: DataTableColumn<T>): boolean =>
+    pinLastColumn && column.id === lastColumnId
 
   const toggleAll = () => {
     if (!selectable) return
@@ -676,6 +741,7 @@ export function DataTable<T>({
                       width: column.width,
                       ...columnVisibilitySx(column.priority),
                       ...columnCellWrapSx(column.cellWrap),
+                      ...pinnedColumnSx(isPinnedColumn(column), true),
                     }}
                     aria-sort={
                       activeDirection === 'asc'
@@ -825,6 +891,7 @@ export function DataTable<T>({
                           width: column.width,
                           ...columnVisibilitySx(column.priority),
                           ...columnCellWrapSx(column.cellWrap),
+                          ...pinnedColumnSx(isPinnedColumn(column), false),
                         }}
                       >
                         {fullValue === undefined ? (

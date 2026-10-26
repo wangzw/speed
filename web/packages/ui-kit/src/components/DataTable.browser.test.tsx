@@ -142,3 +142,99 @@ describe('DataTable content caps in Chromium', () => {
     )
   })
 })
+
+/** One pixel of tolerance for subpixel layout rounding. */
+const PIN_TOLERANCE = 0.5
+
+describe('DataTable row-actions pinning in Chromium', () => {
+  interface PinRow {
+    readonly name: string
+    readonly email: string
+  }
+
+  const PIN_ROW: PinRow = { name: LONG_TEXT, email: LONG_ID }
+
+  /** Two unbroken main columns plus the row-actions column the host
+   * places last, as the accounts page does. */
+  const PIN_COLUMNS: readonly DataTableColumn<PinRow>[] = [
+    {
+      id: 'name',
+      header: 'Name',
+      cellWrap: 'nowrap',
+      cell: (row) => row.name,
+    },
+    {
+      id: 'email',
+      header: 'Email',
+      cellWrap: 'nowrap',
+      cell: (row) => row.email,
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      cellWrap: 'nowrap',
+      cell: () => (
+        <div style={{ display: 'flex', columnGap: 8 }}>
+          <button type="button">Manage</button>
+          <button type="button">Delete</button>
+        </div>
+      ),
+    },
+  ]
+
+  it('pins the last column to the right edge while the main columns scroll', async () => {
+    await page.viewport(1280, 900)
+    renderWithProviders(
+      <div style={{ width: 280 }}>
+        <DataTable
+          rows={[PIN_ROW]}
+          columns={PIN_COLUMNS}
+          rowKey={(row) => row.email}
+          pinLastColumn
+        />
+      </div>,
+      { language: 'en-US' },
+    )
+
+    const manage = await screen.findByRole('button', { name: 'Manage' })
+    const remove = screen.getByRole('button', { name: 'Delete' })
+    await waitFor(() => {
+      expect(manage.getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+    await document.fonts.ready
+
+    const container = manage.closest<HTMLElement>(
+      `.${tableContainerClasses.root}`,
+    )
+    expect(container).not.toBeNull()
+    // The table is genuinely wider than its host box, so the wrapper can
+    // scroll horizontally and the pin is observable.
+    expect(container?.scrollWidth).toBeGreaterThan(container?.clientWidth ?? 0)
+
+    const box = container?.getBoundingClientRect() as DOMRect
+    for (const control of [manage, remove]) {
+      const rect = control.getBoundingClientRect()
+      expect(rect.left).toBeGreaterThanOrEqual(box.left - PIN_TOLERANCE)
+      expect(rect.right).toBeLessThanOrEqual(box.right + PIN_TOLERANCE)
+    }
+
+    const before = manage.getBoundingClientRect().left
+    if (container !== null) {
+      container.scrollLeft = 40
+    }
+    await waitFor(() => {
+      expect(container?.scrollLeft ?? 0).toBeGreaterThan(0)
+    })
+
+    // The main columns have moved under the pinned column; the pinned
+    // controls have not moved with them.
+    await waitFor(() => {
+      expect(
+        Math.abs(manage.getBoundingClientRect().left - before),
+      ).toBeLessThanOrEqual(PIN_TOLERANCE)
+    })
+    const after = manage.getBoundingClientRect()
+    expect(after.left).toBeGreaterThanOrEqual(box.left - PIN_TOLERANCE)
+    expect(after.right).toBeLessThanOrEqual(box.right + PIN_TOLERANCE)
+  })
+})
