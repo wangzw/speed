@@ -50,7 +50,7 @@
 - **删除提交之后同步调用全部 `MembershipLifecycle.MembershipRemoved`。** 任一钩子失败使本次调用返回 `ErrCleanupIncomplete`，删除保持生效；重试同一个调用幂等地补完，钩子第二次执行不写任何东西也不报错。钩子在删除事务之外、租户锁释放之后运行，一次慢清理不阻塞同租户的后续删除，只延迟本次调用的应答。
 - **`authn.membership.changed` 保留，只作补偿。** 它覆盖进程在提交与钩子之间崩溃、以及另一个副本没有执行这次删除的情形。正常路径不依赖它；处理器与钩子执行同一段幂等清理，重复投递不产生任何写入。
 - **账户删除是明示例外。** 账户删除不询问 `MembershipGuard`，也不调用 `MembershipLifecycle`：它的收尾经 `MembershipCleanup.RemoveMembershipForDeletion` 删除管理员加进来的成员关系行，抹除本身就是这一路的清理。这些行仍然发布事件，订阅者照常收到。账户删除因此可以让一个仍在服务的租户没有租户管理员绑定，直到有人写入一条新绑定。
-- **判底的两条路径取同一把按租户的锁，锁归授权模块。** `Manager.DeleteBinding` 在数最后一条租户管理员绑定之前取 `authz.TenantLock`，提交之后释放；成员关系删除在问守卫之前取同一个对象，`MembershipGuard.Lock` 委托给它。宿主不装配时用进程内按租户的默认实现，单实例无需配置即正确；多副本的串行由宿主改成数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内。不共享数据库的副本之间不保证串行。锁不可重入：账户删除的收尾与成员关系删除的级联经 `ClearAccountBindings` 清绑定，它不取锁；把这两条改走 `DeleteBinding` 会重入同一把锁而死锁。锁取不到即返回 `ErrUnavailable`，删除不发生，绝不按放行处理。
+- **判底的两条路径取同一把按租户的锁，锁归授权模块。** `Manager.DeleteBinding` 在数最后一条租户管理员绑定之前取 `authz.TenantLock`，提交之后释放；成员关系删除在问守卫之前取同一个对象，`MembershipGuard.Lock` 委托给它。宿主不装配时用进程内按租户的默认实现，单实例无需配置即正确；多副本的串行由宿主改成数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内。不共享数据库的副本之间不保证串行。锁不可重入：账户删除的收尾与成员关系删除的级联走**不取锁的清理路径**——`ClearAccountBindings`，或模块内部同等的直接删除；不得经 `DeleteBinding`，那会重入同一把锁而死锁。锁取不到即返回 `ErrUnavailable`，删除不发生，绝不按放行处理。
 
 ## 后果
 
