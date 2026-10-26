@@ -7,28 +7,32 @@
  * (name, protocol, enabled state, version), creates and edits one
  * (SsoProviderWriteForm, choosing create or an existing provider),
  * deletes one, refreshes a provider's metadata, re-verifies every claimed
- * domain, and -- for a named provider -- claims, verifies or removes one
- * domain.
+ * domain, and -- for a named provider -- claims a domain and verifies or
+ * removes its declared domains.
  *
- * The provider view carries no domain list (the module exposes domain
- * operations but not the domains themselves on the read), so the domain
- * controls name the provider from the loaded list and the domain by
- * hand: the operator types the domain to claim, verify or remove.
+ * The provider read carries the provider's declared email domains and
+ * their verification state, so the domain section lists them under the
+ * selected provider: one row per declared domain with its state, a
+ * verification control on an unverified row and a removal control on
+ * every row. The text field claims a domain the provider does not declare
+ * yet. A claim, a verify and a removal each re-read the provider list, so
+ * the row appears, turns verified or leaves in place.
  *
  * The page's three titled control groups are its three feedback scopes:
  * the provider list (delete, refresh metadata, re-verify domains) reports
  * under its table; the provider write form reports under itself; the domain
- * bar (claim, verify, remove) reports under its controls. A refusal marks
- * the affected provider row inline with the same resolved text the region
- * shows and brings that region into view; a success names the provider or
- * provider-and-domain it changed. The tenant seeds every write, so changing
- * it resets all three scopes and disables the tenant selector while any of
- * them is in flight; the provider selectors follow the scope they drive and
- * are disabled only while that one is pending.
+ * section (claim, verify, remove) reports under its controls. A refusal
+ * marks the affected provider row inline with the same resolved text the
+ * region shows and brings that region into view; a success names the
+ * provider or provider-and-domain it changed. The tenant seeds every
+ * write, so changing it resets all three scopes and disables the tenant
+ * selector while any of them is in flight; the provider selectors follow
+ * the scope they drive and are disabled only while that one is pending.
  *
- * A claimed domain's verification token is handed out once. Its display
- * panel is the page's own state, rendered beside the domain group's region
- * and outside that scope's slot, so a reset, a later failure or a context
+ * A claimed domain's verification token is handed out once, together with
+ * the DNS record name and value to publish. Its display panel is the
+ * page's own state, rendered beside the domain section's region and
+ * outside that scope's slot, so a reset, a later failure or a context
  * change never drops the only copy; it stays until the operator closes it.
  *
  * The page's refresh action re-reads the provider list, so its accessible
@@ -175,9 +179,10 @@ export function SsoPage({
     readonly id: string
     readonly action: ProviderAction
   } | null>(null)
-  const [busyDomainAction, setBusyDomainAction] = useState<DomainAction | null>(
-    null,
-  )
+  const [busyDomainAction, setBusyDomainAction] = useState<{
+    readonly action: DomainAction
+    readonly domain?: string
+  } | null>(null)
 
   // The one resolver every region binds: a row's inline marker resolves the
   // same failure code through it, so the two can never carry different copy.
@@ -255,9 +260,12 @@ export function SsoPage({
 
   const runDomainAction = (
     action: DomainAction,
+    target: string | undefined,
     attempt: () => Promise<string>,
   ) => {
-    setBusyDomainAction(action)
+    setBusyDomainAction(
+      target === undefined ? { action } : { action, domain: target },
+    )
     void domainsFeedback.run(async () => {
       try {
         return await attempt()
@@ -300,8 +308,11 @@ export function SsoPage({
 
   const requestClaimDomain = () => {
     const name = providerName(domainProvider)
-    const claimed = domain
-    runDomainAction('claim', async () => {
+    // The module trims the domain before it stores it. Trimming the claim
+    // here keeps the hand-off's record name free of surrounding whitespace
+    // and equal to the domain that was stored.
+    const claimed = domain.trim()
+    runDomainAction('claim', undefined, async () => {
       const answer = await claimDomain.mutateAsync({
         id: domainProvider,
         tenant,
@@ -317,34 +328,32 @@ export function SsoPage({
     })
   }
 
-  const requestVerifyDomain = () => {
+  const requestVerifyDomain = (domainToVerify: string) => {
     const name = providerName(domainProvider)
-    const verified = domain
-    runDomainAction('verify', async () => {
+    runDomainAction('verify', domainToVerify, async () => {
       await verifyDomain.mutateAsync({
         id: domainProvider,
         tenant,
-        domain: verified,
+        domain: domainToVerify,
       })
-      return t('sso.domains.verified', { name, domain: verified })
+      return t('sso.domains.verified', { name, domain: domainToVerify })
     })
   }
 
-  const requestRemoveDomain = () => {
+  const requestRemoveDomain = (domainToRemove: string) => {
     const name = providerName(domainProvider)
-    const removed = domain
     confirm.ask({
       title: t('sso.domains.removeTitle'),
-      message: t('sso.domains.removeMessage', { domain: removed }),
+      message: t('sso.domains.removeMessage', { domain: domainToRemove }),
       confirmLabel: t('common.confirm'),
       run: () => {
-        runDomainAction('remove', async () => {
+        runDomainAction('remove', domainToRemove, async () => {
           await removeDomain.mutateAsync({
             id: domainProvider,
             tenant,
-            domain: removed,
+            domain: domainToRemove,
           })
-          return t('sso.domains.removed', { name, domain: removed })
+          return t('sso.domains.removed', { name, domain: domainToRemove })
         })
       },
     })
@@ -464,6 +473,11 @@ export function SsoPage({
   const rows = providers.data
   const pending = providers.isPending && rows === undefined
   const domainReady = domainProvider !== '' && domain.trim() !== ''
+  // The declared domains of the provider the domain section names. Absent
+  // while no provider is chosen or until the read settles.
+  const declaredDomains =
+    (rows ?? []).find((provider) => provider.id === domainProvider)?.domains ??
+    []
 
   return (
     <Box>
@@ -588,9 +602,126 @@ export function SsoPage({
           </SectionCard>
 
           <SectionCard title={t('sso.domains.title')} sx={{ mb: 3 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               {t('sso.domains.note')}
             </Typography>
+            <TextField
+              select
+              size="small"
+              value={domainProvider}
+              disabled={domainsFeedback.pending}
+              onChange={(event) => selectDomainProvider(event.target.value)}
+              label={t('sso.domains.providerLabel')}
+              sx={{ minWidth: 200, mb: 2 }}
+            >
+              {(rows ?? []).map((provider) => (
+                <MenuItem key={provider.id} value={provider.id}>
+                  {provider.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            {domainProvider === '' ? (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mb: 2 }}
+              >
+                {t('sso.domains.chooseProvider')}
+              </Typography>
+            ) : (
+              <Box
+                component="ul"
+                role="list"
+                aria-label={t('sso.domains.listLabel')}
+                sx={{ listStyle: 'none', m: 0, p: 0, mb: 2 }}
+              >
+                {declaredDomains.length === 0 ? (
+                  <Typography
+                    component="li"
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ py: 1 }}
+                  >
+                    {t('sso.domains.empty')}
+                  </Typography>
+                ) : (
+                  declaredDomains.map((declared) => (
+                    <Box
+                      component="li"
+                      key={declared.domain}
+                      sx={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        columnGap: 2,
+                        rowGap: 1,
+                        py: 1,
+                        borderBottom: 1,
+                        borderColor: 'divider',
+                        '&:last-of-type': { borderBottom: 0 },
+                      }}
+                    >
+                      <Typography
+                        variant="body2"
+                        sx={(theme) => ({
+                          fontFamily: theme.typography.fontFamilyMono,
+                          wordBreak: 'break-all',
+                        })}
+                      >
+                        {declared.domain}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        color={declared.verified ? 'success.main' : 'text.secondary'}
+                      >
+                        {declared.verified
+                          ? t('sso.domains.state.verified')
+                          : t('sso.domains.state.unverified')}
+                      </Typography>
+                      <Box sx={{ display: 'flex', columnGap: 1, ml: 'auto' }}>
+                        {!declared.verified && (
+                          <Button
+                            type="button"
+                            size="small"
+                            variant="outlined"
+                            aria-label={t('sso.domains.verifyAria', {
+                              domain: declared.domain,
+                            })}
+                            disabled={domainsFeedback.pending}
+                            loading={
+                              busyDomainAction?.action === 'verify' &&
+                              busyDomainAction.domain === declared.domain
+                            }
+                            onClick={() => requestVerifyDomain(declared.domain)}
+                          >
+                            {t('sso.domains.verify')}
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          aria-label={t('sso.domains.removeAria', {
+                            domain: declared.domain,
+                          })}
+                          disabled={domainsFeedback.pending}
+                          loading={
+                            busyDomainAction?.action === 'remove' &&
+                            busyDomainAction.domain === declared.domain
+                          }
+                          onClick={() => requestRemoveDomain(declared.domain)}
+                        >
+                          {t('sso.domains.remove')}
+                        </Button>
+                      </Box>
+                    </Box>
+                  ))
+                )}
+              </Box>
+            )}
+
             <Box
               sx={{
                 display: 'flex',
@@ -601,21 +732,6 @@ export function SsoPage({
               }}
             >
               <TextField
-                select
-                size="small"
-                value={domainProvider}
-                disabled={domainsFeedback.pending}
-                onChange={(event) => selectDomainProvider(event.target.value)}
-                label={t('sso.domains.providerLabel')}
-                sx={{ minWidth: 200 }}
-              >
-                {(rows ?? []).map((provider) => (
-                  <MenuItem key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-              <TextField
                 size="small"
                 value={domain}
                 onChange={(event) => setDomain(event.target.value)}
@@ -625,29 +741,10 @@ export function SsoPage({
                 type="button"
                 variant="contained"
                 disabled={domainsFeedback.pending || !domainReady}
-                loading={busyDomainAction === 'verify'}
-                onClick={requestVerifyDomain}
-              >
-                {t('sso.domains.verify')}
-              </Button>
-              <Button
-                type="button"
-                variant="outlined"
-                disabled={domainsFeedback.pending || !domainReady}
-                loading={busyDomainAction === 'claim'}
+                loading={busyDomainAction?.action === 'claim'}
                 onClick={requestClaimDomain}
               >
                 {t('sso.domains.claim')}
-              </Button>
-              <Button
-                type="button"
-                variant="outlined"
-                color="error"
-                disabled={domainsFeedback.pending || !domainReady}
-                loading={busyDomainAction === 'remove'}
-                onClick={requestRemoveDomain}
-              >
-                {t('sso.domains.remove')}
               </Button>
             </Box>
             {claimToken !== null && (
@@ -670,14 +767,16 @@ export function SsoPage({
 }
 
 /**
- * ClaimTokenNotice: the display of a domain's verification token, a value
- * handed out once.
+ * ClaimTokenNotice: the display of a domain's verification token and the
+ * DNS TXT record that hands it over -- values handed out once.
  *
  * Its state is the page's (`SsoPage` holds it), so a scope reset, a later
  * failure or a context change cannot drop the only copy. The panel is one
  * polite live region with an explicit close control whose accessible name
- * names the tenant, the provider and the domain it belongs to, and its copy
- * control hands over the complete token.
+ * names the tenant, the provider and the domain it belongs to. Beside the
+ * token it carries the record name (`_speed-authn.<domain>`) and the full
+ * record value (`speed-authn=<token>`), each with its own copy control, so
+ * the operator can publish the record from the panel alone.
  */
 function ClaimTokenNotice({
   notice,
@@ -694,12 +793,26 @@ function ClaimTokenNotice({
   const copyLabel = i18n.exists(copyKey, { ns: CONSOLE_UI_NAMESPACE })
     ? t(copyKey)
     : t('invitations.issued.copy')
+  const recordName = `_speed-authn.${notice.domain}`
+  const recordValue = `speed-authn=${notice.token}`
   return (
     <Box sx={{ mt: 1 }}>
       <OneTimeValuePanel
         message={t('sso.domains.claimToken')}
         value={notice.token}
         copyLabel={copyLabel}
+        details={[
+          {
+            label: t('sso.domains.claimRecordName'),
+            value: recordName,
+            copyLabel: t('sso.domains.claimRecordNameCopy'),
+          },
+          {
+            label: t('sso.domains.claimRecordValue'),
+            value: recordValue,
+            copyLabel: t('sso.domains.claimRecordValueCopy'),
+          },
+        ]}
         closeLabel={t('sso.domains.claimTokenClose')}
         closeAriaLabel={t('sso.domains.claimTokenCloseAria', {
           tenant: notice.tenant,

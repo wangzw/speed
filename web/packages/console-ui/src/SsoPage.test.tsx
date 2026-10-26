@@ -417,15 +417,120 @@ describe('SsoPage', () => {
     })
   })
 
-  it('verifies and removes a named domain through the bundle', async () => {
+  it("lists a selected provider's domains with their verification state", async () => {
     const user = userEvent.setup()
-    const verified: string[] = []
-    const removed: string[] = []
     const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            domains: [
+              { domain: 'acme.example', verified: true },
+              { domain: 'beta.example', verified: false },
+            ],
+          }),
+        ]),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+
+    const list = await screen.findByRole('list', {
+      name: zhCN.sso.domains.listLabel,
+    })
+    expect(within(list).getByText('acme.example')).toBeInTheDocument()
+    expect(within(list).getByText('beta.example')).toBeInTheDocument()
+    expect(
+      within(list).getByText(zhCN.sso.domains.state.verified),
+    ).toBeInTheDocument()
+    expect(
+      within(list).getByText(zhCN.sso.domains.state.unverified),
+    ).toBeInTheDocument()
+
+    // Only an unverified domain offers verification; every declared domain
+    // offers removal.
+    expect(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.verifyAria, { domain: 'beta.example' }),
+      }),
+    ).toBeInTheDocument()
+    expect(
+      within(list).queryByRole('button', {
+        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.example' }),
+      }),
+    ).toBeNull()
+    expect(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.removeAria, { domain: 'acme.example' }),
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('marks a declared domain verified in place after a successful verify', async () => {
+    const user = userEvent.setup()
+    let verified = false
+    const verifies: string[] = []
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            domains: [{ domain: 'acme.example', verified }],
+          }),
+        ]),
       verifySsoDomain: (input) => {
-        verified.push(input.domain)
+        verifies.push(input.domain)
+        verified = true
         return Promise.resolve()
       },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+
+    const before = await screen.findByRole('list', {
+      name: zhCN.sso.domains.listLabel,
+    })
+    expect(
+      within(before).getByText(zhCN.sso.domains.state.unverified),
+    ).toBeInTheDocument()
+
+    await user.click(
+      within(before).getByRole('button', {
+        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.example' }),
+      }),
+    )
+
+    // The write re-reads the provider list, so the same row turns verified
+    // without a new one appearing.
+    await vi.waitFor(() => {
+      const list = screen.getByRole('list', {
+        name: zhCN.sso.domains.listLabel,
+      })
+      expect(
+        within(list).getByText(zhCN.sso.domains.state.verified),
+      ).toBeInTheDocument()
+      expect(
+        within(list).queryByText(zhCN.sso.domains.state.unverified),
+      ).toBeNull()
+      expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    })
+    expect(verifies).toEqual(['acme.example'])
+  })
+
+  it('removes a declared domain through its row control', async () => {
+    const user = userEvent.setup()
+    const removed: string[] = []
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            domains: [{ domain: 'acme.example', verified: true }],
+          }),
+        ]),
       removeSsoDomain: (input) => {
         removed.push(input.domain)
         return Promise.resolve()
@@ -435,15 +540,141 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
-    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
-    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.remove }))
+
+    const list = await screen.findByRole('list', {
+      name: zhCN.sso.domains.listLabel,
+    })
+    await user.click(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.removeAria, { domain: 'acme.example' }),
+      }),
+    )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     await vi.waitFor(() => {
-      expect(verified).toEqual(['acme.com'])
-      expect(removed).toEqual(['acme.com'])
+      expect(removed).toEqual(['acme.example'])
     })
+  })
+
+  it('shows a claimed domain in the provider domain list', async () => {
+    const user = userEvent.setup()
+    const claimedDomains: { domain: string; verified: boolean }[] = []
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({ name: 'Acme IdP', domains: [...claimedDomains] }),
+        ]),
+      claimSsoDomain: (input) => {
+        claimedDomains.push({ domain: input.domain, verified: false })
+        return Promise.resolve({ verify_token: 'tok-1' })
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      'acme.example',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sso.domains.claim }),
+    )
+
+    // The re-read list carries the new claim, unverified until its record is
+    // published and verified.
+    const list = await screen.findByRole('list', {
+      name: zhCN.sso.domains.listLabel,
+    })
+    expect(await within(list).findByText('acme.example')).toBeInTheDocument()
+    expect(
+      within(list).getByText(zhCN.sso.domains.state.unverified),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the DNS record name and value beside the claim token, each copyable', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    const operations = withProviders({
+      claimSsoDomain: () => Promise.resolve({ verify_token: 'tok-1' }),
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      'acme.example',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sso.domains.claim }),
+    )
+
+    // The panel hands over the complete record: the operator publishes
+    // exactly this name and value and needs nothing else.
+    const recordName = '_speed-authn.acme.example'
+    const recordValue = 'speed-authn=tok-1'
+    expect(await screen.findByText(recordName)).toBeInTheDocument()
+    expect(screen.getByText(recordValue)).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.sso.domains.claimRecordName),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.sso.domains.claimRecordValue),
+    ).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sso.domains.claimRecordNameCopy,
+      }),
+    )
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenLastCalledWith(recordName)
+    })
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.sso.domains.claimRecordValueCopy,
+      }),
+    )
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenLastCalledWith(recordValue)
+    })
+  })
+
+  it('hands over the record for the domain the claim stores, without surrounding spaces', async () => {
+    const user = userEvent.setup()
+    const claims: ConsoleClaimSsoDomainInput[] = []
+    const operations = withProviders({
+      claimSsoDomain: (input) => {
+        claims.push(input)
+        return Promise.resolve({ verify_token: 'tok-1' })
+      },
+    })
+    renderWithProviders(<SsoPage />, { operations })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      '  acme.example  ',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sso.domains.claim }),
+    )
+
+    // The module stores the trimmed domain, so the published record name
+    // must be the trimmed one as well.
+    expect(
+      await screen.findByText('_speed-authn.acme.example'),
+    ).toBeInTheDocument()
+    expect(claims).toEqual([
+      { id: 'idp-1', tenant: 'acme', domain: 'acme.example' },
+    ])
   })
 
   it('creates a provider through the bundle', async () => {
@@ -733,6 +964,13 @@ describe('SsoPage', () => {
   it('confirms the domain writes with the provider and domain they changed', async () => {
     const user = userEvent.setup()
     const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            domains: [{ domain: 'acme.com', verified: false }],
+          }),
+        ]),
       verifySsoDomain: () => Promise.resolve(),
       claimSsoDomain: () => Promise.resolve({ verify_token: 'tok-1' }),
       removeSsoDomain: () => Promise.resolve(),
@@ -741,19 +979,33 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
 
-    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
+    const list = await screen.findByRole('list', {
+      name: zhCN.sso.domains.listLabel,
+    })
+    await user.click(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.com' }),
+      }),
+    )
     expect(
       await screen.findByText(text(zhCN.sso.domains.verified, { name: 'Acme IdP', domain: 'acme.com' })),
     ).toBeInTheDocument()
 
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      'acme.com',
+    )
     await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
     expect(
       await screen.findByText(text(zhCN.sso.domains.claimed, { name: 'Acme IdP', domain: 'acme.com' })),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.remove }))
+    await user.click(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.removeAria, { domain: 'acme.com' }),
+      }),
+    )
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: CONFIRM_LABEL }))
     expect(
@@ -764,6 +1016,13 @@ describe('SsoPage', () => {
   it('reports a domain refusal in the domain region', async () => {
     const user = userEvent.setup()
     const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            domains: [{ domain: 'acme.com', verified: false }],
+          }),
+        ]),
       verifySsoDomain: () =>
         Promise.reject({ status: 403, code: 'authn.forbidden' }),
     })
@@ -771,19 +1030,31 @@ describe('SsoPage', () => {
     await pickTenant(user)
     await screen.findByText('Acme IdP')
     await pickProvider(user)
-    await user.type(screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }), 'acme.com')
-    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
+
+    const list = await screen.findByRole('list', {
+      name: zhCN.sso.domains.listLabel,
+    })
+    await user.click(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.com' }),
+      }),
+    )
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(zhCN.errors.authn.forbidden)
-    expect(alert.closest('section')).toContainElement(
-      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
-    )
+    expect(alert.closest('section')).toContainElement(list)
   })
 
   it('shows the claim token in a named, closable panel that survives a scope reset', async () => {
     const user = userEvent.setup()
     const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            domains: [{ domain: 'acme.com', verified: false }],
+          }),
+        ]),
       claimSsoDomain: () => Promise.resolve({ verify_token: 'tok-1' }),
       verifySsoDomain: () =>
         Promise.reject({ status: 403, code: 'authn.forbidden' }),
@@ -806,7 +1077,12 @@ describe('SsoPage', () => {
 
     // A second attempt in the domain scope resets its slot and settles as a
     // failure; the token is page state, not slot state, and stays.
-    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.verify }))
+    const list = screen.getByRole('list', { name: zhCN.sso.domains.listLabel })
+    await user.click(
+      within(list).getByRole('button', {
+        name: text(zhCN.sso.domains.verifyAria, { domain: 'acme.com' }),
+      }),
+    )
     expect(await screen.findByRole('alert')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
@@ -1050,10 +1326,28 @@ describe('SsoPage', () => {
 
   it('has no axe violations', async () => {
     const user = userEvent.setup()
-    const operations = withProviders()
+    const operations = withProviders({
+      listSsoProviders: () =>
+        Promise.resolve([
+          providerFixture({
+            name: 'Acme IdP',
+            domains: [{ domain: 'acme.example', verified: false }],
+          }),
+        ]),
+      claimSsoDomain: () => Promise.resolve({ verify_token: 'tok-1' }),
+    })
     renderWithProviders(<SsoPage />, { operations })
     await pickTenant(user)
     await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      'beta.example',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sso.domains.claim }),
+    )
+    await screen.findByText('_speed-authn.beta.example')
     await expectNoAxeViolations()
   })
 })

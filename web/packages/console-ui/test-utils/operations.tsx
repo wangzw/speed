@@ -908,6 +908,9 @@ export function createConsoleOperations(
         mutationFn: (input: ConsoleSsoDomainRef) => backend.verifySsoDomain(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: ssoProviderKey(input.id) })
+          void client.invalidateQueries({
+            queryKey: ssoProvidersKey(input.tenant),
+          })
         },
       })
     },
@@ -929,6 +932,9 @@ export function createConsoleOperations(
         mutationFn: (input: ConsoleSsoProviderRef) => backend.reverifySsoDomains(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: ssoProviderKey(input.id) })
+          void client.invalidateQueries({
+            queryKey: ssoProvidersKey(input.tenant),
+          })
         },
       })
     },
@@ -964,6 +970,9 @@ export function createConsoleOperations(
           backend.claimSsoDomain(input),
         onSuccess: (_answer, input) => {
           void client.invalidateQueries({ queryKey: ssoProviderKey(input.id) })
+          void client.invalidateQueries({
+            queryKey: ssoProvidersKey(input.tenant),
+          })
         },
       })
     },
