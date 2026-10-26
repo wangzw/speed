@@ -220,6 +220,38 @@ type Extractor interface {
 
 **名册的读与写都不经隔离插件。** 名册表自己不内嵌受租户约束的模型约定，读写它的语句走的是与任何全局表相同的路径，既不要求上下文里有租户，也不因缺租户而失败。这一点与跨租户的途径无关：`CrossTenant` 是为受约束模型的语句设的，名册的语句本来就不在它的管界之内。
 
+**哪些租户不可停用、不可删除由宿主决定。** 名册不认识平台域，也不认识个人租户；它提供一个写保护的接缝，由宿主实现，`tenant.admin` 的停用与删除在写入之前问它。
+
+```go
+// WriteGuard reports whether a tenant rejects a given write.
+type WriteGuard interface {
+	Denied(ctx context.Context, id ID, op WriteOp) (bool, error)
+}
+
+type WriteOp int
+
+const (
+	WriteDisable WriteOp = iota
+	WriteDelete
+)
+```
+
+- **答复失败按拒绝处置。** 读不出一个答复时写入口答 503，不写任何东西。
+- **答复只收紧、不放行。** 它不能把一条名册本来拒绝的写变成允许。
+- **只作用于运营者的写路径。** `SetStatusByAccount` 是账户生命周期联动，不经过它：账户停用时个人租户随账户停用，这条联动不能因为租户不可停用而被拦下。
+- **挂载写路由的装配必须提供它。** `tenant.admin` 缺 `WriteGuard` 时以缺提供者终止启动；一条没有保护的停用路径可以停掉 `system` 租户。只读的名册命令不需要它。
+
+**首任管理员由宿主建立。** 租户的创建者是它的第一个租户管理员，这条跨模块的写由宿主的 `Provisioner` 承担：
+
+```go
+// Provisioner creates a tenant together with its first administrator.
+type Provisioner interface {
+	Provision(ctx context.Context, t Tenant, creator string) error
+}
+```
+
+它写该租户域的 `tenant-admin` 角色、授予与创建者的绑定，最后经 `Catalog.Create` 写名册行；写名册行之前失败时清掉自己写过的策略行，不留半个租户。名册不认识这条角色，只提供 `Create`；角色的名字与允许集归授权与宿主。
+
 ### 受租户约束的模型
 
 ```go
@@ -413,7 +445,7 @@ func CrossTenant(ctx context.Context) context.Context
 
 ### 对外接口面
 
-`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`DisabledBy`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口面。`Catalog` 里 `Delete` 与 `SetStatusByAccount` 的加入、`Status` 多出的取值与 `Tenant` 多出的字段同样是接口面的扩展。`Status` 与 `DisabledBy` 的字符串形式（`active`、`disabled`、`deleted` 与 `operator`、`account`）是管理面视图的取值来源，同样在接口面上。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口面，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口面。
+`Resolution`、`Catalog`、`Extractor`、`Tenant`、`ID`、`IsIdentifier`、`Status`、`DisabledBy`、`Model` 与 `CrossTenant`、`FromContext` 是本模块与其他模块之间的接口面。`WriteGuard`、`WriteOp` 与它的两个取值同样在这个面上：宿主据它决定哪些租户拒绝停用与删除。`Provisioner` 的签名同样在面上：宿主据它把租户与首任管理员一次建立。`Catalog` 里 `Delete` 与 `SetStatusByAccount` 的加入、`Status` 多出的取值与 `Tenant` 多出的字段同样是接口面的扩展。`Status` 与 `DisabledBy` 的字符串形式（`active`、`disabled`、`deleted` 与 `operator`、`account`）是管理面视图的取值来源，同样在接口面上。中间件在链上代表的那个功能标识与描述符里的交付标识同为 `(*Resolution)(nil)`，别的模块据它排序，取值属于对外接口面，改动它是破坏性变更。约定里那一列的名字 `tenant_id`、它的非空约束与它在主键里的位置同样在这个面上：迁移文件由声明方写，改名或改键都是一次全库迁移。准入层的定序锚点 `Admission` 与它交付的守卫见 [design-tenant-admission](design-tenant-admission.md) 的对外接口面。
 
 **本人租户读取的路由与应答同样在对外接口面上**：路径 `GET /api/v1/auth/me/tenants`、应答成员 `tenants`、每项的 `id` 与 `alias`、按标识升序与 `[]` 的空结果写法，以及"要求已认证、不要求权限、登记为可冒充且冒充身份的应答收窄到授予租户"这三条；前端与生成的客户端据这些取值分支。配置键 `tenant.self.endpoints` 与它的必填、只收具体端名同样在接口面上，改动它们是宿主可见的破坏性变更。
 

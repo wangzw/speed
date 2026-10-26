@@ -21,7 +21,7 @@
 
 ### 登记
 
-`tenant.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 名册功能 `(*tenant.Catalog)(nil)`、handler 内判定 `(*guard.Guard)(nil)`、审计 `(*audit.Audit)(nil)` 与注册验证状态读面 `(*authn.SignupVerification)(nil)`，并可选取 `log.Logger`。名册与 guard 各由唯一模块排他交付，命令的闭合不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
+`tenant.admin` 不交付任何功能接口（`Provides` 为空）。它 `Requires` 名册功能 `(*tenant.Catalog)(nil)`、handler 内判定 `(*guard.Guard)(nil)`、审计 `(*audit.Audit)(nil)`、注册验证状态读面 `(*authn.SignupVerification)(nil)`、写保护 `(*tenant.WriteGuard)(nil)` 与首任管理员的建立 `(*tenant.Provisioner)(nil)`，并可选取 `log.Logger`。名册与 guard 各由唯一模块排他交付，命令的闭合不把它们拉进来，宿主在命令树上写下它们。表态是 `StateEnabled`、永不 `StateAuto`：挂不挂这面管理面是一个命令树上的决定，不是一个配置能推出的结论。HTTP 入口点与路由声明面在 `Init` 里取用而非声明——一个挂路由而没有入口点的命令是要在接线期报出的故障，而声明面的缺席是合法的：没有 gate 时路由不带声明，受守护的端把它们当未声明处理，所以挂这面路由的命令应同时点名授权模块。
 
 **本模块声明静态[特性](../../../glossary.md) `tenant.admin`。** 描述符的 `Resources` 带 `feature.Spec{Name: "tenant.admin"}`；这个特性在场，表示本进程挂出名册管理面的路由（[feature](../design-feature.md)）。`tenant.admin.endpoints` 必填、不接受空清单，挂路由而没有入口点是接线期故障，所以模块进入启用集、进程有路由器时这组路由无条件挂出，声明为静态特性符合架构不变量 18（[architecture](../../architecture.md#架构不变量)）。
 
@@ -42,16 +42,18 @@
 | 路由 | 名册动作 |
 |---|---|
 | `GET /tenants` | `List`，列出全部租户，按标识排序 |
-| `POST /tenants` | `Create`，登记一个尚未登记的标识 |
+| `POST /tenants` | `Provisioner`，建立租户与它的首任管理员 |
 | `GET /tenants/:tenant` | `Get`，按标识取一个租户 |
 | `PATCH /tenants/:tenant` | `SetAlias` 换别名 |
 | `POST /tenants/:tenant/status` | `SetStatus`，改一个租户的状态 |
 
-**登记走 `Create`，从不覆盖既有租户。** 开一个租户是一个名册表里尚未持有的标识的插入；一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行、别名与状态一并取新值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。既有租户的改名走 `PATCH`，改状态走状态路由；状态路由只写启用与停用，删除是名册上的终态标记，本模块不为它开路由。
+**登记走 `Provisioner`，一个租户与它的首任管理员一起建立。** 开一个租户不是一个孤立的插入：租户的创建者是它的第一个租户管理员，租户与那条绑定必须一同成立。本模块把这件事交给宿主提供的 `tenant.Provisioner`，它写租户域的角色、授予与创建者的绑定，最后经 `Catalog.Create` 写名册行；写名册行之前失败时它清掉自己写过的策略行，路由答 503 且不留租户。一个已被持有的标识由 `Create` 以 `tenant.ErrTenantExists` 拒绝，本模块把它答成 409。这是 `Create` 与 `Put` 的分工：`Put` 改写既有行、别名与状态一并取新值，`Create` 只插入、什么也不覆盖（[design-tenant](design-tenant.md)）。既有租户的改名走 `PATCH`，改状态走状态路由；状态路由只写启用与停用，删除是名册上的终态标记，本模块不为它开路由。
 
 **别名改写经 `SetAlias`，不写状态。** `Put` 取整行新值——`alias` 与 `status` 一并写回（`pkg/tenant/catalog/roster.go` 的 upsert 赋值两列），所以一次改名会把该次读取到的状态写回去，把另一个副本上刚停用的租户重新启用。名册因此要有一条只改别名的写 `SetAlias`；本模块用它，不用 `Get` 后 `Put`。
 
 **状态路由的可写集合是 `active` 与 `disabled`。** 正文给出其中之一，其余取值是本模块拒绝的形状；`deleted` 是终态，不在可写集合里。登记的新租户起于 `active`：登记的正文给出标识与别名，状态不在这里给。改名与改状态遇到已删除的租户，由名册以 `tenant.ErrTenantDeleted` 拒绝，本模块答 409。
+
+**受保护的租户拒绝停用。** 状态路由在形状检查之后、审计之前问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行。`system` 租户与个人租户由宿主的实现声明为受保护（[design-tenant](design-tenant.md) 的写保护）。
 
 ### 访问控制
 
@@ -92,7 +94,7 @@
 
 | 依赖 | 用途 |
 |---|---|
-| `pkg/tenant` | `tenant.Catalog`（名册的读写面）、`tenant.Tenant`、`tenant.ID`、`tenant.IsIdentifier`、`tenant.Status` 与哨兵 `tenant.ErrTenantExists`、`tenant.ErrAliasConflict`、`tenant.ErrInvalidTenant` |
+| `pkg/tenant` | `tenant.Catalog`（名册的读写面）、`tenant.Tenant`、`tenant.ID`、`tenant.IsIdentifier`、`tenant.Status`、写保护 `tenant.WriteGuard`、首任管理员建立 `tenant.Provisioner` 与哨兵 `tenant.ErrTenantExists`、`tenant.ErrAliasConflict`、`tenant.ErrInvalidTenant` |
 | `pkg/authz`、`pkg/authz/guard` | 权限声明与翻译（`authz.PermissionSpec`、`authz.TranslationSpec`）、handler 内判定（`guard.Guard.RequirePermissionIn`）、平台域 `authz.PlatformDomain`、路由声明面 `authz.Gate` |
 | `pkg/audit` | 强制档审计 |
 | `pkg/authn` | 读请求上的身份（`authn.FromContext`）与发起者的注册验证状态（`authn.SignupVerification.SignupStateOf`） |
@@ -178,7 +180,7 @@ sequenceDiagram
 1. 读发起者的注册验证状态：读作未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
 2. 形状检查：`id` 与 `alias` 都要落在 `tenant.IsIdentifier` 的取值域内，否则 400。
 3. 落强制档审计（动作 `tenant.create`）。
-4. `Catalog.Create(Tenant{ID: id, Alias: alias, Status: tenant.StatusActive})`。
+4. `Provisioner.Provision(Tenant{ID: id, Alias: alias, Status: tenant.StatusActive}, 发起者的账户标识)`。
 5. `ErrTenantExists` → 409；`ErrAliasConflict` → 409；其余 → 503。落地 → 201 加视图。
 
 ### 改名
@@ -194,8 +196,9 @@ sequenceDiagram
 
 1. 读发起者的注册验证状态：读作未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
 2. 形状检查：路径的 `id` 落在取值域内，正文的 `status` 是 `active` 或 `disabled`，否则 400。
-3. 落强制档审计（动作 `tenant.status`）。
-4. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；`ErrTenantDeleted`（该租户是墓碑）→ 409；其余 → 503。落地 → 204。
+3. 问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行；读失败答 503。
+4. 落强制档审计（动作 `tenant.status`）。
+5. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；`ErrTenantDeleted`（该租户是墓碑）→ 409；其余 → 503。落地 → 204。
 
 ## 错误与失败语义
 
@@ -209,6 +212,7 @@ sequenceDiagram
 | `GET`／`PATCH`／状态路由点名一个名册不持有的标识 | 404，不带 `Problem.Type` |
 | 改名或改状态点名一个已删除的租户 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantDeleted` |
 | 发起者读作未验证（`SignupPending`），而这是写路由 | 403 `contact-required`（`authn.ErrContactRequired`），动作不执行 |
+| 状态路由点名一个受保护的租户 | 403（`urn:speed:tenant:protected`），`WriteGuard` 答复拒绝，动作不执行；读失败答 503 |
 | 注册验证状态读取失败 | 503，动作不执行，成因只进日志 |
 | 强制档审计写不进 | 503，动作不执行 |
 | 名册的其余失败、guard 的故障 | 503，不带 `Problem.Type`，成因只进日志 |
@@ -230,4 +234,6 @@ sequenceDiagram
 | 管理面 `tenant.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/tenant/admin/operations.go`；`pkg/tenant/admin/openapi_generated_test.go`；片段 `pkg/tenant/admin/openapi/tenant.admin.json` |
 | 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/feature_test.go` `TestTheModuleDeclaresTheTenantAdminFeature` |
 | 租户写面的注册验证门控（读作 `SignupPending` 时答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/tenant/admin/pipeline.go` `(*product).guardRoute`、`(*product).requireVerifiedAccount`；`pkg/tenant/admin/routes.go` `routes`；`pkg/tenant/admin/gate_test.go` |
+| 登记经 `tenant.Provisioner` 建立租户与它的首任租户管理员 | 未实现 | — |
+| 状态路由经 `tenant.WriteGuard` 拒绝受保护租户（`system`、个人租户） | 未实现 | — |
 | 租户视图的 `deleted` 状态与 `disabledBy` 字段，以及墓碑上的改名与改状态拒绝 | 已实现 | `pkg/tenant/admin/views.go` `tenantViewOf`；`pkg/tenant/admin/pipeline.go` `(*product).failureOf`；`pkg/tenant/admin/tenants_test.go` `TestTheViewCarriesTheNamedFieldsPerState`、`TestTheFailureMappingIsClosed` |

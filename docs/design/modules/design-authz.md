@@ -40,7 +40,7 @@
 | 权限 | permission | `Permission` 的取值，一个字符串；判定时经[动作到查询的翻译](#动作到查询的翻译)映射到一对（资源，动作）。角色是一组权限的集合。 |
 | 角色 | role | 一个策略域内的权限集合的名字，`Role` 的取值；把一组权限授予一个账户要先经角色间接表达。 |
 | 策略域 | domain | 策略行的归属范围，`Domain` 的取值；一个租户是一个策略域。角色绑定与权限授予都带域。 |
-| 平台域 | platform domain | 保留域 `"system"`，承载平台运营的角色、权限授予与绑定。名册里不得有同名租户，启动期核对。 |
+| 平台域 | platform domain | 策略域 `"system"`，承载平台运营的角色、权限授予与绑定。名册里必须有一个标识相同的租户，启动期核对。 |
 | 权限授予 | grant | 一行 `p` 策略：某个域里的某个角色拥有某个权限。落在 `authz_grants` 表。 |
 | 角色绑定 | binding | 一行 `g` 策略：某个域里的某个账户具有某个角色。落在 `authz_bindings` 表。 |
 | 查询 | query | 一次判定请求 `Query{Subject, Domain, Object, Action}`，交给引擎做匹配。 |
@@ -73,8 +73,16 @@ type Permission string
 type Role string
 type Domain string
 
-// PlatformDomain 是平台运营的保留域。启动时核对名册里没有同名租户，否则终止启动。
+// PlatformDomain 是平台运营的策略域。启动时核对名册里有一个标识为 system
+// 的租户，没有则终止启动。
 const PlatformDomain Domain = "system"
+
+// 两个管理角色的名字。PlatformAdminRole 只在平台域存在；TenantAdminRole 在
+// 每个租户域各一份，是那个租户的最高权限。
+const (
+	PlatformAdminRole Role = "platform-admin"
+	TenantAdminRole   Role = "tenant-admin"
+)
 
 // PermissionSpec 是一个模块对自己声明的权限的形状：清单，以及每个权限的说明文案的 i18n 键。
 type PermissionSpec struct {
@@ -295,7 +303,7 @@ const (
 - **把 `authz.guard`、`authz.policy` 的模块名写进需要授权的命令。** 只挂中间件而不点名 `policy` 时，`guard` 的 `Enforcer` 缺席，本模块判定不可用，全部受守路由答 503；两者要么一起点名，要么都不点。
 - **`endpoints` 写成业务端。** 与 `tenant.admission.endpoints` 一致；`authz.guard` 只在它守的端上登记中间件。
 - **策略数据由宿主写入。** 迁移只建表，不种角色、不种权限授予、不种绑定；平台域 `system` 的运营角色、口令表主体的绑定、各租户的角色与绑定都经 `Manager` 或管理面路由写入。一个已置 `builtin` 的角色，其授权只经 `Seeder.SeedGrants` 增补：`Manager` 与 `authz.admin` 的写路由都拒绝它。
-- **名册里不得有名为 `system` 的租户。** 平台域的保留值与本模块的判定绑定；`authz.policy` 在启动时经 `tenant.Catalog` 读名册，有同名租户即以 `ErrPlatformDomainTaken` 终止启动。没有租户模块的装配里没有名册，这条核对不执行。
+- **名册里必须有标识为 `system` 的租户。** 平台域的策略行挂在这个标识上；`authz.policy` 在启动时经 `tenant.Catalog` 读名册，没有即以 `ErrPlatformDomainMissing` 终止启动。没有租户模块的装配里没有名册，这条核对不执行。该租户不可停用、不可删除，由名册的写保护拒绝。
 - **想让权限随撤销尽快生效的装配里要提供事件总线。** 没有 `event.Bus` 时，策略变更靠 `refresh-interval` 兜底，撤销的生效延迟以它为界。
 - **想挂管理面的命令点名 `authz.admin` 并配 `authz.admin.endpoints`。** 不点名时没有 `/api/v1/system/*` 下的任何路由；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。这条命令还要纳入 `authn.account`：写路由经 `authn.SignupVerification` 读发起者的注册验证状态，缺席时依赖解析以缺提供者终止启动。
 - **想挂调用方自身权限读取的命令点名 `authz.self`、配 `authz.self.endpoints`，并把该端纳入网关所守的端。** 不点名时没有 `/api/v1/authz/me/permissions`；点名而清单为空、为空名或含 `*` 是 `authn.ErrInvalidConfig`。端不在网关的准入清单里时路由仍挂出，但没有身份检查之外的准入，任何已认证调用方都能读自己的权限。
@@ -378,12 +386,12 @@ const (
 
 | 包 | 模块名 | 交付 | 排他 | `Requires` | 在 `Init` 里取用（缺席合法者标 ○） | 表 |
 |---|---|---|---|---|---|---|
-| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
+| `authz/policy` | `authz.policy` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder`；`authn.AccountLifecycle` | `Enforcer`、`SubjectPermissions`、`Catalog`、`Manager`、`Seeder` 各自是 | `db.Database` | `tenant.Catalog` ○、`MembershipChecker` ○、`event.Bus` ○、`log.Logger` ○ | `authz_roles`、`authz_grants`、`authz_bindings` |
 | `authz/guard` | `authz.guard` | `Guard`、`Gate`；`authn.Decider` | 各自是 | `Enforcer`、`Catalog` | `SubjectPermissions`、`http.Router`、`tenant` 的上下文读取、`log.Logger` ○、`observability.MeterProvider` ○ | 无 |
 | `authz/admin` | `authz.admin` | 无（只挂 `/api/v1/system/*` 下的路由） | — | `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` | `http.Router`、`authz.Gate` ○、`i18n.Localizer` ○、`log.Logger` ○ | 无 |
 | `authz/self` | `authz.self` | 无（只挂 `/api/v1/authz/me/permissions`） | — | `SubjectPermissions` | `http.Router`、`authz.Gate` ○、`log.Logger` ○ | 无 |
 
-`authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（各自排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明面核对不了登记的权限。`SubjectPermissions` 可选取用：它在场的装配里用于「目标不持平台权限」这一冒充条件；缺席意味着这个进程没有策略，没有账户持有平台权限，条件自然成立。`Catalog` 是随中间件落地的路由声明面所读的那一项——decider 本期不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域与名册不冲突：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。`authz.admin` 以 `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` 为必需依赖：`Manager` 是它的写面、`Catalog` 是授予的核对面、`guard.Guard` 是它在 handler 内判定所用的 handler 内 API、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由读取发起者注册验证状态的读面——审计或注册验证状态任一缺席，都在任何实例构造之前以 `core.ErrMissingProvider` 失败，而不是留到第一次写才发现。入口模块的路由功能 `http.Router` 在 `Init` 里必需，挂管理面路由而没有入口模块是 `ErrNoRouter`；路由声明面 `authz.Gate`、`i18n.Localizer` 与 `log.Logger` 在 `Init` 里可选取用，没有声明面的装配里管理面路由不带声明、受守的端把它们按未声明处置，没有本地化器的装配里目录视图的说明是空串。`authz.self` 以 `SubjectPermissions` 为唯一必需依赖；入口模块的路由功能在 `Init` 里必需，挂读取路由而没有入口模块是 `ErrNoRouter`，路由声明面与日志可选取用。
+`authz/guard` 以 `Enforcer` 与 `Catalog` 为必需依赖（各自排他），缺任一个即 `core.ErrMissingProvider`，早于迁移：没有引擎的中间件只能把所有受守路由答成 503，没有目录的路由声明面核对不了登记的权限。`SubjectPermissions` 可选取用：它在场的装配里用于「目标不持平台权限」这一冒充条件；缺席意味着这个进程没有策略，没有账户持有平台权限，条件自然成立。`Catalog` 是随中间件落地的路由声明面所读的那一项——decider 本期不读它，但它与 `Enforcer` 同为必需依赖：一个必需能力没有提供方，无论哪个回调读它，启动都失败。`authn.Decider` 由 `authz.guard` 交付——它是排他功能，取用方（`authn.admin`、`authn.impersonation`、`tenant.admission`）在 `Init` 里以 `Optional` 取用，`authz.guard` 在场即提供了它。`authz.policy` 取 `tenant.Catalog` 只为启动期核对平台域对应的 `system` 租户存在：它是可选取用，没有租户模块的装配里没有名册可核对，这条检查不执行，也不因此启动失败。它另可选取用 `MembershipChecker`：缺席时平台域的 `PlatformAdminRole` 绑定写入以 `ErrMissingMembershipChecker` 拒绝，不按放行处理；装配里没有平台管理员绑定的路径时，缺席不阻碍启动。`authz.admin` 以 `Manager`、`Catalog`、`guard.Guard`、`audit.Audit`、`authn.SignupVerification` 为必需依赖：`Manager` 是它的写面、`Catalog` 是授予的核对面、`guard.Guard` 是它在 handler 内判定所用的 handler 内 API、`audit.Audit` 是强制档审计的落点、`authn.SignupVerification` 是写路由读取发起者注册验证状态的读面——审计或注册验证状态任一缺席，都在任何实例构造之前以 `core.ErrMissingProvider` 失败，而不是留到第一次写才发现。入口模块的路由功能 `http.Router` 在 `Init` 里必需，挂管理面路由而没有入口模块是 `ErrNoRouter`；路由声明面 `authz.Gate`、`i18n.Localizer` 与 `log.Logger` 在 `Init` 里可选取用，没有声明面的装配里管理面路由不带声明、受守的端把它们按未声明处置，没有本地化器的装配里目录视图的说明是空串。`authz.self` 以 `SubjectPermissions` 为唯一必需依赖；入口模块的路由功能在 `Init` 里必需，挂读取路由而没有入口模块是 `ErrNoRouter`，路由声明面与日志可选取用。
 
 ### 依赖方向
 
@@ -689,9 +697,25 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 回退是**唯一的平台域回退分支**：先按 `Decision.Tenant` 构造查询在租户域判一次，无匹配时改用 `PlatformDomain` 判第二次，两次都不匹配即拒绝。其余动作没有回退——租户级动作只在租户域判，账户级动作只在平台域判。
 
-**平台域与真实租户同名是一处配置冲突，在开始服务之前拦下。** `authz.policy` 在 `Start` 时经 `tenant.Catalog` 查一次标识为 `system` 的租户，存在即以 `ErrPlatformDomainTaken` 终止启动。这道核对只在有租户模块的装配里执行：一个真实租户叫 `system` 时，本模块的账户级动作会落到那个租户的策略行上，方向是安全的一侧，但语义不是设计所声明的那一个。策略行里的 `tenant_id` 是否对应一个真实租户不由本模块核对（见[非保证](#非保证)）。
+**平台域由名册中的 `system` 租户承载。** 这个标识同时是名册中的一行，平台域的授予与被授予者的成员关系因此挂在同一个租户标识上。`authz.policy` 在 `Start` 时经 `tenant.Catalog` 核对这个租户存在，不存在即以 `ErrPlatformDomainMissing` 终止启动；该租户不可停用、不可删除，由名册的写保护拒绝。
 
 **平台域的绑定由宿主写，不在迁移里种。** 内置的运营角色只在 `authz_roles` 里建立形状（`builtin=true`，由宿主的种入步骤在其权限写完之后经 `Manager.MarkRoleBuiltin` 置上），谁的账户获得哪个运营角色由宿主经 `Manager.PutBinding` 在 `system` 域写入。角色置上标记之后，进程新声明的一条权限由宿主的种入面写入该角色（[种入面](#种入面)）。
+
+### 管理员角色
+
+**两个管理角色的域是封闭的。** `PlatformAdminRole` 只在平台域建立：`Manager.PutRole` 收到其他域的该角色以 `ErrReservedRole` 拒绝，`Manager.PutBinding` 收到其他域的该角色同样拒绝。`TenantAdminRole` 在每个租户域各一份，平台域也有一份，它是 `system` 租户自己的租户管理员。
+
+**平台管理员的绑定要求成员关系。** `Manager.PutBinding` 在平台域写 `PlatformAdminRole` 之前，经宿主提供的 `MembershipChecker` 核对被绑定账户是 `system` 租户的有效成员；检查器缺席时该写入以 `ErrMissingMembershipChecker` 拒绝，不按放行处理。`MembershipChecker` 是根包的接口，由宿主经 `authz.policy` 的取用装配，实现通常读 `authn.Memberships`——本模块不 import 认证。
+
+**租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
+
+```go
+// MembershipChecker reports whether an account is an active member of a tenant.
+// The host supplies it; pkg/authz does not import pkg/authn.
+type MembershipChecker interface {
+	IsMember(ctx context.Context, tenant string, account string) (bool, error)
+}
+```
 
 ### 种入面
 
@@ -742,7 +766,10 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | `ErrNoRouter` | 启动期 | `Init` 里取不到入口模块的路由功能 | 把入口模块的 `ModuleName` 写进这条命令 |
 | `ErrUnknownEndpoint` | 启动期 | `endpoints` 里的端名在入口模块里不存在 | 改端名，或在入口模块的配置里声明这个端 |
 | `ErrUnknownPermission` | 启动期 | 一条路由登记引用了目录里没有的权限；一条路由声明了一个进程翻译没有行的权限；一个模块的翻译行与已有的行给出不同的（资源，动作）；一个模块的翻译行是空的（资源，动作）；两个模块把同一对（资源，动作）配给不同的权限 | 登记一个声明过的权限并给它一条翻译行，或改掉冲突的模块行 |
-| `ErrPlatformDomainTaken` | 启动期 | 经 `tenant.Catalog` 核对出名册里有一个名为 `system` 的租户 | 改名册里的那个租户，平台域是保留值 |
+| `ErrPlatformDomainMissing` | 启动期 | 经 `tenant.Catalog` 核对出名册里没有标识为 `system` 的租户 | 建立该租户，平台域的策略行挂在它上面 |
+| `ErrReservedRole` | 写入期 | `PutRole` 或 `PutBinding` 在平台域以外的域使用 `PlatformAdminRole` | 平台管理员只在平台域存在；租户管理员用 `TenantAdminRole` |
+| `ErrLastTenantAdmin` | 写入期 | 删除某域最后一条 `TenantAdminRole` 绑定 | 先绑定另一个账户为租户管理员 |
+| `ErrMissingMembershipChecker` | 写入期 | 在平台域写 `PlatformAdminRole` 绑定，而装配没有提供 `MembershipChecker` | 提供 `MembershipChecker`；这条检查 fail-closed |
 | `ErrUnknownRole` | 写入期 | `PutGrant`、`PutBinding`、`SeedGrants` 里的角色在 `authz_roles` 里不存在 | 先建立角色，或改用已存在的角色 |
 | `ErrBuiltinRole` | 写入期 | 试图删除或修改 `builtin=true` 的角色，或经 `Manager` 改其授权；`PutRole` 的记录携带 `builtin` 标记 | 内置角色对管理面与 `Manager` 固定；经 `Seeder.SeedGrants` 增补授权，撤销则给账户绑别的角色。标记由 `Manager.MarkRoleBuiltin` 置位，角色写入不携带它 |
 | `ErrTenantMismatch` | 写入期 | adapter 从 `rule` 取出的租户与调用方给的租户不一致 | 一次写入只作用一个租户；核对调用点的租户 |
@@ -797,10 +824,13 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Grant`、`Enforcer`、`SubjectPermissions`、`Catalog`（含 `ObjectAction`、`DescriptionKey`）、`Gate`、`Manager`、`Seeder` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go` |
-| 权限常量与 `authn.Action` 的对齐、平台域保留值 | 已实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
-| 平台域与真实租户同名的启动期核对 | 已实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain` |
+| 权限常量与 `authn.Action` 的对齐、平台域 | 已实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
+| 平台域对应的 `system` 租户的启动期核对（反转现有核对） | 未实现 | — |
+| 两个管理角色名 `PlatformAdminRole`、`TenantAdminRole` 与它们的域约束 | 未实现 | — |
+| 平台管理员绑定前的 `MembershipChecker` 核对、租户管理员最后一条绑定的拒绝 | 未实现 | — |
 | `ModelText` 模型文本常量 | 已实现 | `pkg/authz/model.go` `ModelText` |
 | 哨兵 | 已实现 | `pkg/authz/errors.go` `ErrNoRouter`、`ErrUnknownEndpoint`、`ErrUndeclaredRoute`、`ErrUnknownPermission`、`ErrUnknownRole`、`ErrBuiltinRole`、`ErrTenantMismatch`、`ErrPlatformDomainTaken`、`ErrPolicyUnavailable` |
+| 新哨兵 `ErrPlatformDomainMissing`、`ErrReservedRole`、`ErrLastTenantAdmin`、`ErrMissingMembershipChecker` | 未实现 | — |
 | 模块 `authz.policy` 的登记与各阶段行为（`Prepare`、`New`、`Init`、`Start`、`Stop`） | 已实现 | `pkg/authz/policy/policy.go` `Module` |
 | 策略表与按方言的迁移集 | 已实现 | `pkg/authz/policy/migrations/{postgres,sqlite}/0001_authz_policy.sql` |
 | 薄 adapter（`persist.Adapter`）、跨租户读与租户核对的写 | 已实现 | `pkg/authz/internal/persist/adapter.go` `Adapter`、`New` |
