@@ -31,11 +31,11 @@
  *     log (the sanctioned verification-code read). The journey's precondition is
  *     an operator whose address is proved, and the console's human writes are
  *     gated on it.
- *   - The DNS publication is a FIXTURE ACTION. The product renders the token;
- *     the spec publishes `speed-authn=<token>` at `_speed-authn.<domain>` into
- *     the running DNS stub with the stub's own `setTXT`, standing in for the
- *     operator's act at the domain's DNS. The stub answers only that record name,
- *     so nothing else becomes reachable.
+ *   - The DNS publication is a FIXTURE ACTION. The product renders the
+ *     record name and the value to publish; the spec copies that value at
+ *     `_speed-authn.<domain>` into the running DNS stub with the stub's own
+ *     `setTXT`, standing in for the operator's act at the domain's DNS. The
+ *     stub answers only that record name, so nothing else becomes reachable.
  *
  * No route is intercepted, no request is faked, and no API is called from the
  * spec: the provider is a real OpenID Connect server the fixtures start, and the
@@ -71,6 +71,7 @@ import {
   enterpriseIdentityProviderClaims,
   enterpriseIdentityProviderClient,
   enterpriseIdentityProviderDomain,
+  enterpriseIdentityProviderRecordName,
   enterpriseIdentityProviderUser,
 } from '../fixtures/identity-provider'
 import { waitForVerificationCode } from '../fixtures/log'
@@ -101,11 +102,6 @@ const PROVIDER_NAME = 'Globex Workforce'
 const EMPLOYEE_DISPLAY_NAME = 'Globex Employee'
 
 const EMPLOYEE_EMAIL = enterpriseIdentityProviderUser.email
-
-/** The DNS TXT record's value, as the destination requirement states it. */
-function txtRecordValue(token: string): string {
-  return `speed-authn=${token}`
-}
 
 /** The product's sign-in surface heading. */
 function signInHeading(page: Page): Locator {
@@ -468,18 +464,26 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
       ),
     ).toBeVisible()
 
-    // The one-time panel carries the DNS token and its copy control. The panel
-    // is the page's own state, rendered outside the write scope.
+    // The one-time panel carries the DNS token and, beside it, the record
+    // name and full record value the operator publishes -- each with its own
+    // copy control. The panel is the page's own state, rendered outside the
+    // write scope.
     const panel = page.getByRole('status').filter({
       hasText: copy('consoleUi', 'sso.domains.claimToken'),
     })
     await expect(panel).toBeVisible()
-    await expect(
-      panel.getByRole('button', {
-        name: copy('consoleUi', 'sso.domains.claimTokenCopy'),
-        exact: true,
-      }),
-    ).toBeVisible()
+    for (const copyLabel of [
+      'sso.domains.claimTokenCopy',
+      'sso.domains.claimRecordNameCopy',
+      'sso.domains.claimRecordValueCopy',
+    ]) {
+      await expect(
+        panel.getByRole('button', {
+          name: copy('consoleUi', copyLabel),
+          exact: true,
+        }),
+      ).toBeVisible()
+    }
 
     // The token is the monospace value the panel hands out: one hex run of the
     // module's own token length, on a line of its own.
@@ -488,14 +492,34 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     const token = ((await value.textContent()) ?? '').trim()
     expect(token, 'the claim panel rendered no verification token').not.toBe('')
 
-    // FIXTURE ACTION: the operator's own act at the domain's DNS is to publish
-    // the token. The stub stands in for that DNS zone and answers only this
-    // record name; the spec writes the record through the stub's handle.
-    stub.setTXT([txtRecordValue(token)])
+    // The record name and value are handed over complete, so the operator
+    // publishes without deriving either.
+    await expect(
+      panel.getByText(enterpriseIdentityProviderRecordName, {
+        exact: true,
+      }),
+    ).toBeVisible()
+    const recordValue = panel.getByText(/^speed-authn=[0-9a-f]{64}$/)
+    await expect(recordValue).toBeVisible()
+    const publishedValue = ((await recordValue.textContent()) ?? '').trim()
 
-    await domains
+    // FIXTURE ACTION: the operator's own act at the domain's DNS is to publish
+    // the record value the panel shows. The stub stands in for that DNS zone
+    // and answers only this record name; the spec writes the record through
+    // the stub's handle.
+    stub.setTXT([publishedValue])
+
+    // The declared domain is listed for the provider; its row carries the
+    // verification action and turns verified in place.
+    const domainRow = domains
+      .getByRole('listitem')
+      .filter({ hasText: enterpriseIdentityProviderDomain })
+    await expect(domainRow).toHaveCount(1)
+    await domainRow
       .getByRole('button', {
-        name: copy('consoleUi', 'sso.domains.verify'),
+        name: copy('consoleUi', 'sso.domains.verifyAria', {
+          domain: enterpriseIdentityProviderDomain,
+        }),
         exact: true,
       })
       .click()
@@ -508,8 +532,14 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
         { exact: true },
       ),
     ).toBeVisible()
+    await expect(
+      domainRow.getByText(copy('consoleUi', 'sso.domains.state.verified'), {
+        exact: true,
+      }),
+    ).toBeVisible()
 
-    // Closing the one-time panel drops the only copy of the token.
+    // Closing the one-time panel drops the only copy of the token and the
+    // record it handed over.
     await panel
       .getByRole('button', {
         name: copy('consoleUi', 'sso.domains.claimTokenCloseAria', {
