@@ -37,3 +37,11 @@ func (p SSOProvider) Clone() SSOProvider {
 	p.Config = slices.Clone(p.Config)
 	return p
 }
+
+// SSOProviderDomain is one email domain a provider has claimed. Verified reads
+// true only once the domain owner has published the claim's token in the DNS
+// TXT record; an unverified claim takes no part in domain discovery.
+type SSOProviderDomain struct {
+	Domain   string
+	Verified bool
+}

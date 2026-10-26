@@ -39,7 +39,7 @@ func (m *product) mountRoutes() {
 		m.groups = append(m.groups, "secrets")
 		m.postFeature(featureServiceKeys)
 	}
-	if m.ssoProviders != nil {
+	if m.ssoProviders != nil && m.domainClaims != nil {
 		m.mountSSORoutes()
 		m.groups = append(m.groups, "sso-providers")
 		m.postFeature(featureSSO)

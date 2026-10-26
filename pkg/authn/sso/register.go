@@ -279,6 +279,33 @@ func (g *register) removeDomain(ctx context.Context, idpID, domain string) error
 	return nil
 }
 
+// domains reads every claim of a provider, verified or not, in ascending
+// domain order.
+func (g *register) domains(ctx context.Context, idpID string) ([]domainRow, error) {
+	var rows []domainRow
+	err := g.session(ctx).Table(domainTable).
+		Where("idp_id = ?", idpID).Order("domain ASC").Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("reading the domains of an identity provider: %w", err)
+	}
+	return rows, nil
+}
+
+// domainsMany reads every claim of several providers in one statement. A
+// provider with no claim contributes no row.
+func (g *register) domainsMany(ctx context.Context, ids []string) ([]domainRow, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var rows []domainRow
+	err := g.session(ctx).Table(domainTable).
+		Where("idp_id IN ?", ids).Order("idp_id ASC, domain ASC").Scan(&rows).Error
+	if err != nil {
+		return nil, fmt.Errorf("reading the domains of several identity providers: %w", err)
+	}
+	return rows, nil
+}
+
 // verifiedDomains reads the verified claims of a provider.
 func (g *register) verifiedDomains(ctx context.Context, idpID string) ([]domainRow, error) {
 	var rows []domainRow

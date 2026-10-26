@@ -9,10 +9,23 @@ import (
 	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
+// domainClaims is the narrow shape the provider views read domains through. The
+// published SSOProviders method set carries no domain read, so the SSO provider
+// group is mounted only when the delivered register also answers this.
+type domainClaims interface {
+	Domains(ctx context.Context, idpID string) ([]authn.SSOProviderDomain, error)
+	DomainsMany(ctx context.Context, ids []string) (map[string][]authn.SSOProviderDomain, error)
+}
+
 // providerViewOf builds one SSO provider as the management routes show it. The
 // encrypted client secret never appears; the warnings name the settings that
-// loosen a default, so an administrator sees them on the response that set them.
-func providerViewOf(p authn.SSOProvider) AuthnAdminProvider {
+// loosen a default, so an administrator sees them on the response that set them;
+// domains carries every claim with its verification state.
+func providerViewOf(p authn.SSOProvider, domains []authn.SSOProviderDomain) AuthnAdminProvider {
+	claims := make([]AuthnAdminProviderDomain, len(domains))
+	for i, d := range domains {
+		claims[i] = AuthnAdminProviderDomain{Domain: d.Domain, Verified: d.Verified}
+	}
 	return AuthnAdminProvider{
 		ID:                p.ID,
 		Tenant:            p.Tenant,
@@ -27,7 +40,19 @@ func providerViewOf(p authn.SSOProvider) AuthnAdminProvider {
 		Config:            p.Config,
 		Version:           p.Version,
 		Warnings:          providerWarnings(p),
+		Domains:           claims,
 	}
+}
+
+// readDomains reads one provider's email-domain claims. Every failure is the
+// dependency being unavailable: the provider itself was resolved before the
+// decision.
+func (m *product) readDomains(ctx context.Context, idpID string) ([]authn.SSOProviderDomain, error) {
+	domains, err := m.domainClaims.Domains(ctx, idpID)
+	if err != nil {
+		return nil, m.unavailable("reading a provider's domains", err)
+	}
+	return domains, nil
 }
 
 // providerWarnings names each setting of a provider that loosens a default:
@@ -145,9 +170,17 @@ func (m *product) handleProviderList(ctx context.Context, in tenantInput) (Authn
 	if err != nil {
 		return AuthnAdminProviderList{}, m.unavailable("listing providers", err)
 	}
+	ids := make([]string, len(providers))
+	for i, p := range providers {
+		ids[i] = p.ID
+	}
+	claims, err := m.domainClaims.DomainsMany(ctx, ids)
+	if err != nil {
+		return AuthnAdminProviderList{}, m.unavailable("reading provider domains", err)
+	}
 	views := make([]AuthnAdminProvider, len(providers))
 	for i, p := range providers {
-		views[i] = providerViewOf(p)
+		views[i] = providerViewOf(p, claims[p.ID])
 	}
 	return AuthnAdminProviderList{Providers: views}, nil
 }
@@ -184,7 +217,7 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 		m.auditBestEffort(ctx, failedAudit(actionIDPPut, "", actionID))
 		return m.replyFailure("creating a provider", err)
 	}
-	return speedhttp.JSONReply(201, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider)}), nil
+	return speedhttp.JSONReply(201, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, nil)}), nil
 }
 
 // handleProviderGet answers GET /admin/sso/providers/:id. The decision's tenant
@@ -194,10 +227,14 @@ func (m *product) handleProviderGet(ctx context.Context, in providerIDInput, _ *
 	if err != nil {
 		return m.lookupFailure(err)
 	}
-	if err := m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: p.Tenant, Target: p.ID}); err != nil {
+	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: p.Tenant, Target: p.ID}); err != nil {
 		return nil, err
 	}
-	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(p)}), nil
+	domains, err := m.readDomains(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(p, domains)}), nil
 }
 
 // handleProviderUpdate answers PUT /admin/sso/providers/:id. The tenant is the
@@ -227,7 +264,11 @@ func (m *product) handleProviderUpdate(ctx context.Context, in providerUpdateInp
 		m.auditBestEffort(ctx, failedAudit(actionIDPPut, in.ID, actionID))
 		return m.replyFailure("updating a provider", err)
 	}
-	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider)}), nil
+	domains, err := m.readDomains(ctx, provider.ID)
+	if err != nil {
+		return nil, err
+	}
+	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(provider, domains)}), nil
 }
 
 // handleProviderDelete answers DELETE /admin/sso/providers/:id. The action is
@@ -415,7 +456,11 @@ func (m *product) handleMetadataRefresh(ctx context.Context, in providerIDInput,
 		m.auditBestEffort(ctx, failedAudit(actionIDPPut, provider.ID, actionID))
 		return m.replyFailure("refreshing provider metadata", err)
 	}
-	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(refreshed)}), nil
+	domains, err := m.readDomains(ctx, refreshed.ID)
+	if err != nil {
+		return nil, err
+	}
+	return speedhttp.JSONReply(200, AuthnAdminProviderEnvelope{Provider: providerViewOf(refreshed, domains)}), nil
 }
 
 // refresherFor returns the refresher of a protocol, or nil when none is there.

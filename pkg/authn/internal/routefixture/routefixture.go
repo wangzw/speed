@@ -158,6 +158,18 @@ func (ssoProviders) RememberAssertion(context.Context, string, string, time.Time
 	return errors.New("routefixture: no request is served")
 }
 
+// Domains is the single-provider domain read the management surface asserts the
+// register to have. It is never called.
+func (ssoProviders) Domains(context.Context, string) ([]authn.SSOProviderDomain, error) {
+	return nil, errors.New("routefixture: no request is served")
+}
+
+// DomainsMany is the batch domain read the management surface asserts the
+// register to have. It is never called.
+func (ssoProviders) DomainsMany(context.Context, []string) (map[string][]authn.SSOProviderDomain, error) {
+	return nil, errors.New("routefixture: no request is served")
+}
+
 // standIns maps a capability token to the module that stands in for it. The
 // keys are typed nil pointers, so two of them naming one capability compare
 // equal.

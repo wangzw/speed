@@ -434,7 +434,17 @@ export interface AuthnAdminPasswordReset {
 }
 
 /**
- * One SSO provider. The encrypted client secret never appears, and warnings names each setting that loosens a default.
+ * One email domain a provider has claimed, and whether its ownership was proved.
+ */
+export interface AuthnAdminProviderDomain {
+  /** The domain in its normalized form: lower-case ASCII (punycode). */
+  domain: string;
+  /** True when the domain's DNS TXT record proved ownership; only verified domains take part in sign-in discovery. */
+  verified: boolean;
+}
+
+/**
+ * One SSO provider. The encrypted client secret never appears, warnings names each setting that loosens a default, and domains lists every email domain the provider has claimed.
  */
 export interface AuthnAdminProvider {
   /** True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against. */
@@ -443,6 +453,8 @@ export interface AuthnAdminProvider {
   allow_sha1: boolean;
   /** The protocol's own configuration; absent when the provider carries none */
   config?: unknown;
+  /** Every email domain the provider has claimed, verified or not, in ascending domain order; always an array and never null, empty when it has none. */
+  domains: AuthnAdminProviderDomain[];
   /** True when the provider may be used for sign-in. */
   enabled: boolean;
   /** The provider's identifier. */

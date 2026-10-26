@@ -603,23 +603,64 @@ type fakeTokens struct{ authn.Tokens }
 // fakeProviders is the SSO provider register.
 type fakeProviders struct {
 	authn.SSOProviders
-	mu        sync.Mutex
-	byID      map[string]authn.SSOProvider
-	order     []string
-	puts      []authn.SSOProvider
-	deletes   int
-	domains   []string
-	reverify  int
-	listCalls int
-	putErr    error
-	getErr    error
-	claimErr  error
-	claimTok  string
-	onPutCall func()
+	mu          sync.Mutex
+	byID        map[string]authn.SSOProvider
+	order       []string
+	puts        []authn.SSOProvider
+	deletes     int
+	domains     []string
+	reverify    int
+	listCalls   int
+	domainReads int
+	putErr      error
+	getErr      error
+	claimErr    error
+	domainErr   error
+	claimTok    string
+	onPutCall   func()
+	claims      map[string][]authn.SSOProviderDomain
 }
 
 func newProviders() *fakeProviders {
-	return &fakeProviders{byID: map[string]authn.SSOProvider{}, claimTok: "verify-token"}
+	return &fakeProviders{
+		byID:     map[string]authn.SSOProvider{},
+		claims:   map[string][]authn.SSOProviderDomain{},
+		claimTok: "verify-token",
+	}
+}
+
+// claimDomain records one email domain a provider has claimed, verified or not,
+// so the views' domain read has something to report.
+func (f *fakeProviders) claimDomain(id string, domain authn.SSOProviderDomain) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.claims[id] = append(f.claims[id], domain)
+}
+
+// Domains answers the single-provider domain read.
+func (f *fakeProviders) Domains(_ context.Context, id string) ([]authn.SSOProviderDomain, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.domainErr != nil {
+		return nil, f.domainErr
+	}
+	f.domainReads++
+	return append([]authn.SSOProviderDomain{}, f.claims[id]...), nil
+}
+
+// DomainsMany answers the batch domain read the list builds from.
+func (f *fakeProviders) DomainsMany(_ context.Context, ids []string) (map[string][]authn.SSOProviderDomain, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.domainErr != nil {
+		return nil, f.domainErr
+	}
+	f.domainReads++
+	out := make(map[string][]authn.SSOProviderDomain, len(ids))
+	for _, id := range ids {
+		out[id] = append([]authn.SSOProviderDomain{}, f.claims[id]...)
+	}
+	return out, nil
 }
 
 func (f *fakeProviders) put(p authn.SSOProvider) {
@@ -831,14 +872,15 @@ type rig struct {
 type leaveOut string
 
 const (
-	noSessions  leaveOut = "sessions"
-	noMFA       leaveOut = "mfa"
-	noTokens    leaveOut = "tokens"
-	noProviders leaveOut = "providers"
-	noRefresher leaveOut = "refresher"
-	noRecords   leaveOut = "records"
-	noAudit     leaveOut = "audit"
-	noDecider   leaveOut = "decider"
+	noSessions        leaveOut = "sessions"
+	noMFA             leaveOut = "mfa"
+	noTokens          leaveOut = "tokens"
+	noProviders       leaveOut = "providers"
+	noProviderDomains leaveOut = "provider-domains"
+	noRefresher       leaveOut = "refresher"
+	noRecords         leaveOut = "records"
+	noAudit           leaveOut = "audit"
+	noDecider         leaveOut = "decider"
 )
 
 // newRig builds the module over a mounttest Mounter with every capability
@@ -894,6 +936,9 @@ func newRig(t *testing.T, omit ...leaveOut) *rig {
 	}
 	if !left[noProviders] {
 		p.ssoProviders = r.providers
+	}
+	if !left[noProviderDomains] {
+		p.domainClaims = r.providers
 	}
 	if !left[noRefresher] {
 		p.refreshers = []authn.SSOMetadataRefresher{r.refresher}

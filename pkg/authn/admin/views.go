@@ -152,24 +152,35 @@ type AuthnAdminMemberList struct {
 	Members []AuthnAdminMember `json:"members" required:"true" description:"The memberships on this page; the empty array when the tenant has none."`
 }
 
+// AuthnAdminProviderDomain is one email domain a provider has claimed, with its
+// verification state. A claim is written by the domain-claim route and becomes
+// verified when the verification route finds its DNS TXT record.
+type AuthnAdminProviderDomain struct {
+	_ struct{} `description:"One email domain a provider has claimed, and whether its ownership was proved."`
+
+	Domain   string `json:"domain" required:"true" description:"The domain in its normalized form: lower-case ASCII (punycode)."`
+	Verified bool   `json:"verified" required:"true" description:"True when the domain's DNS TXT record proved ownership; only verified domains take part in sign-in discovery."`
+}
+
 // AuthnAdminProvider is one SSO provider. The encrypted client secret never
 // appears.
 type AuthnAdminProvider struct {
-	_ struct{} `description:"One SSO provider. The encrypted client secret never appears, and warnings names each setting that loosens a default."`
+	_ struct{} `description:"One SSO provider. The encrypted client secret never appears, warnings names each setting that loosens a default, and domains lists every email domain the provider has claimed."`
 
-	ID                string          `json:"id" required:"true" description:"The provider's identifier."`
-	Tenant            string          `json:"tenant" required:"true" description:"The owning tenant's identifier; immutable after creation."`
-	Protocol          string          `json:"protocol" required:"true" description:"The protocol: oidc or saml."`
-	Name              string          `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
-	Enabled           bool            `json:"enabled" required:"true" description:"True when the provider may be used for sign-in."`
-	Provisioning      string          `json:"provisioning" required:"true" description:"jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created."`
-	TrustIDPMFA       bool            `json:"trust_idp_mfa" required:"true" description:"True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list."`
-	AllowIDPInitiated bool            `json:"allow_idp_initiated" required:"true" description:"True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against."`
-	AllowSHA1         bool            `json:"allow_sha1" required:"true" description:"True when SHA-1 signed assertions are accepted; the route then warns about the downgrade."`
-	MergeExisting     bool            `json:"merge_existing" required:"true" description:"True when just-in-time sign-up may merge into an existing account; the route then warns about it."`
-	Config            json.RawMessage `json:"config,omitempty" description:"The protocol's own configuration; absent when the provider carries none"`
-	Version           int             `json:"version" required:"true" description:"The provider's version, raised by every write."`
-	Warnings          []string        `json:"warnings,omitempty" description:"Absent when no setting loosens a default"`
+	ID                string                     `json:"id" required:"true" description:"The provider's identifier."`
+	Tenant            string                     `json:"tenant" required:"true" description:"The owning tenant's identifier; immutable after creation."`
+	Protocol          string                     `json:"protocol" required:"true" description:"The protocol: oidc or saml."`
+	Name              string                     `json:"name" required:"true" description:"The provider's display name; 1 to 64 characters."`
+	Enabled           bool                       `json:"enabled" required:"true" description:"True when the provider may be used for sign-in."`
+	Provisioning      string                     `json:"provisioning" required:"true" description:"jit creates an account on first sign-in; preprovisioned matches only an account an administrator has already created."`
+	TrustIDPMFA       bool                       `json:"trust_idp_mfa" required:"true" description:"True when the provider's assertion may count as a multi-factor proof, and only when its acr (or SAML AuthnContextClassRef) is in the configured list."`
+	AllowIDPInitiated bool                       `json:"allow_idp_initiated" required:"true" description:"True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against."`
+	AllowSHA1         bool                       `json:"allow_sha1" required:"true" description:"True when SHA-1 signed assertions are accepted; the route then warns about the downgrade."`
+	MergeExisting     bool                       `json:"merge_existing" required:"true" description:"True when just-in-time sign-up may merge into an existing account; the route then warns about it."`
+	Config            json.RawMessage            `json:"config,omitempty" description:"The protocol's own configuration; absent when the provider carries none"`
+	Version           int                        `json:"version" required:"true" description:"The provider's version, raised by every write."`
+	Warnings          []string                   `json:"warnings,omitempty" description:"Absent when no setting loosens a default"`
+	Domains           []AuthnAdminProviderDomain `json:"domains" required:"true" description:"Every email domain the provider has claimed, verified or not, in ascending domain order; always an array and never null, empty when it has none."`
 }
 
 // AuthnAdminProviderEnvelope carries one SSO provider.

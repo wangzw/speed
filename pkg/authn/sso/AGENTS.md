@@ -75,6 +75,14 @@ The API is the package's godoc. Read the `SSOProviders` comments in
   consumption `authn.ErrAssertionReplay`, and the condition is the earlier of the
   assertion's and its bearer confirmation's (`RememberAssertion`,
   `rememberAssertion`, `TestRememberAssertionRecordsOnceAndRefusesAReplay`).
+- **The management surface reads domain claims through an extension shape.**
+  The register answers `Domains` and `DomainsMany` beyond the `SSOProviders`
+  method set, because the published method set is fixed and the provider views
+  need every claim with its verification state. Each answer is
+  `authn.SSOProviderDomain`, sorted by domain; the batch read gives every
+  provider named an entry, empty when it has none. `authn.admin` asserts the
+  delivered register to this shape and mounts no SSO provider group without it
+  (`Domains`, `DomainsMany`, `TestDomainsReportsEachClaimAndItsState`).
 - **The module knows no tenant and imports no protocol library.** No file here
   imports `pkg/tenant`; the tables embed no tenant model, because the discovery
   and the callback route have no tenant context. `authn.sso` imports neither

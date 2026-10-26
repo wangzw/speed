@@ -59,11 +59,19 @@ The API is the package's godoc.
 - **The groups follow their capabilities.** The account and membership groups
   are always mounted. The session group follows the session store, the factor
   and password group the multi-factor module, the secret group the token
-  module, the SSO provider group the SSO module, the metadata refresh group an
-  SSO metadata refresher, and the impersonation record group an impersonation
-  capability that answers the extended read the routes need. A group whose
-  capability is absent is not mounted; the start diagnostic names the groups
-  that were.
+  module, the SSO provider group an SSO register that also answers the
+  domain-read extended shape its provider views need, the metadata refresh
+  group an SSO metadata refresher, and the impersonation record group an
+  impersonation capability that answers the extended read the routes need. A
+  group whose capability is absent is not mounted; the start diagnostic names
+  the groups that were.
+- **The provider views read domain claims through an extended shape.** Every
+  provider view (list rows, get, create, update and metadata-refresh answers)
+  carries `domains`: each claimed email domain with its `verified` state, an
+  array that is never null and is empty when the provider has none. The list
+  reads them in one batch (`DomainsMany`), a single-provider answer in one read
+  (`Domains`). Neither is on the published `SSOProviders` interface; the group's
+  capability is asserted to the narrow shape that carries them.
 - **The impersonation record routes read the capability through an extended
   shape.** They need reading one record by its identifier, which the published
   `authn.Impersonation` interface does not carry, so the group is mounted only

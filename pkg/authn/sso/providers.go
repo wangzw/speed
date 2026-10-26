@@ -100,6 +100,56 @@ func (p *product) List(ctx context.Context, tenant string) ([]authn.SSOProvider,
 	return out, nil
 }
 
+// Domains lists every email domain a provider has claimed, verified or not, in
+// ascending domain order. It is beyond the SSOProviders method set: the
+// management surface reaches it through the narrow shape it asserts the
+// delivered register to, and a provider that does not exist is
+// ErrProviderNotFound.
+func (p *product) Domains(ctx context.Context, idpID string) ([]authn.SSOProviderDomain, error) {
+	if _, ok, err := p.register.readIDP(ctx, idpID); err != nil {
+		return nil, p.unavailable(err)
+	} else if !ok {
+		return nil, ErrProviderNotFound
+	}
+	rows, err := p.register.domains(ctx, idpID)
+	if err != nil {
+		return nil, p.unavailable(err)
+	}
+	return domainsOf(rows), nil
+}
+
+// DomainsMany lists the claims of several providers in one read, for a list
+// that would otherwise read each provider in turn. Every provider named has an
+// entry, empty when it has claimed nothing.
+func (p *product) DomainsMany(ctx context.Context, ids []string) (map[string][]authn.SSOProviderDomain, error) {
+	rows, err := p.register.domainsMany(ctx, ids)
+	if err != nil {
+		return nil, p.unavailable(err)
+	}
+	out := make(map[string][]authn.SSOProviderDomain, len(ids))
+	for _, id := range ids {
+		out[id] = []authn.SSOProviderDomain{}
+	}
+	for _, row := range rows {
+		out[row.IDPID] = append(out[row.IDPID], domainOf(row))
+	}
+	return out, nil
+}
+
+// domainsOf maps claim rows to the value handed out.
+func domainsOf(rows []domainRow) []authn.SSOProviderDomain {
+	out := make([]authn.SSOProviderDomain, len(rows))
+	for i, row := range rows {
+		out[i] = domainOf(row)
+	}
+	return out
+}
+
+// domainOf maps one claim row to the value handed out.
+func domainOf(row domainRow) authn.SSOProviderDomain {
+	return authn.SSOProviderDomain{Domain: row.Domain, Verified: row.VerifiedAt != nil}
+}
+
 // Tenant answers which tenant a provider belongs to.
 func (p *product) Tenant(ctx context.Context, id string) (string, error) {
 	row, ok, err := p.register.readIDP(ctx, id)

@@ -443,3 +443,8 @@ const (
 // holds no client secret, and Config holds none either. Its Clone returns a copy
 // that shares no slice with it.
 type SSOProvider = model.SSOProvider
+
+// SSOProviderDomain is one email domain a provider has claimed, with its
+// verification state. A claim is written by ClaimDomain and becomes verified
+// once VerifyDomain finds its DNS TXT record.
+type SSOProviderDomain = model.SSOProviderDomain

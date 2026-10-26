@@ -353,6 +353,7 @@ export function providerFixture(
     allow_sha1: false,
     merge_existing: false,
     version: 1,
+    domains: [],
     ...overrides,
   }
 }

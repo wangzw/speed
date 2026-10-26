@@ -208,6 +208,7 @@ type product struct {
 	mfa           authn.MFA
 	tokens        authn.Tokens
 	ssoProviders  authn.SSOProviders
+	domainClaims  domainClaims
 	refreshers    []authn.SSOMetadataRefresher
 	impersonation authn.Impersonation
 	// records is the impersonation capability read through the extended shape
@@ -312,6 +313,9 @@ func (m *product) wire(reg *core.Registry) error {
 	}
 	if m.ssoProviders, err = optional[authn.SSOProviders](reg, "the SSO provider register"); err != nil {
 		return err
+	}
+	if claims, ok := m.ssoProviders.(domainClaims); ok {
+		m.domainClaims = claims
 	}
 	if m.impersonation, err = optional[authn.Impersonation](reg, "the impersonation capability"); err != nil {
 		return err

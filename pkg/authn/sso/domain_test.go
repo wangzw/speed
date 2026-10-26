@@ -3,6 +3,7 @@ package sso
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 
@@ -68,6 +69,57 @@ func TestClaimAndVerifyDomain(t *testing.T) {
 	}
 	if got := r.bus.changes(idp.ID); !hasChange(got, changeDomainRemoved) {
 		t.Errorf("the changes are %v, want domain-removed", got)
+	}
+}
+
+// TestDomainsReportsEachClaimAndItsState holds the domain read the management
+// surface builds its list from: every claim is reported, a claim still awaiting
+// its DNS record as unverified and the one that record proved as verified. The
+// batch read reports the same state for every provider named.
+func TestDomainsReportsEachClaimAndItsState(t *testing.T) {
+	r := newRigSQLite(t)
+	idp := r.putOIDC("tenant-a", "idp")
+	other := r.putOIDC("tenant-b", "other")
+
+	if _, err := r.p.ClaimDomain(context.Background(), idp.ID, "claimed.example"); err != nil {
+		t.Fatalf("ClaimDomain claimed.example: %v", err)
+	}
+	token, err := r.p.ClaimDomain(context.Background(), idp.ID, "proved.example")
+	if err != nil {
+		t.Fatalf("ClaimDomain proved.example: %v", err)
+	}
+	r.publishTXT("proved.example", token)
+	if err = r.p.VerifyDomain(context.Background(), idp.ID, "proved.example"); err != nil {
+		t.Fatalf("VerifyDomain proved.example: %v", err)
+	}
+	if _, err = r.p.ClaimDomain(context.Background(), other.ID, "other.example"); err != nil {
+		t.Fatalf("ClaimDomain other.example: %v", err)
+	}
+
+	want := []authn.SSOProviderDomain{
+		{Domain: "claimed.example", Verified: false},
+		{Domain: "proved.example", Verified: true},
+	}
+	got, err := r.p.Domains(context.Background(), idp.ID)
+	if err != nil {
+		t.Fatalf("Domains: %v", err)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("Domains = %+v, want %+v", got, want)
+	}
+
+	many, err := r.p.DomainsMany(context.Background(), []string{idp.ID, other.ID, "absent"})
+	if err != nil {
+		t.Fatalf("DomainsMany: %v", err)
+	}
+	if !slices.Equal(many[idp.ID], want) {
+		t.Errorf("the batch read's claims for %s = %+v, want %+v", idp.ID, many[idp.ID], want)
+	}
+	if got := many[other.ID]; !slices.Equal(got, []authn.SSOProviderDomain{{Domain: "other.example", Verified: false}}) {
+		t.Errorf("the batch read's claims for %s = %+v, want one unverified claim", other.ID, got)
+	}
+	if got, ok := many["absent"]; !ok || len(got) != 0 {
+		t.Errorf("the batch read's claims for an unknown provider = %+v (present %t), want an empty entry", got, ok)
 	}
 }
 

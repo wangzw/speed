@@ -497,6 +497,11 @@ func TestRouteGroupsFollowTheirCapabilities(t *testing.T) {
 			present: [][2]string{{http.MethodPost, "/api/v1/system/auth/accounts/:id/revoke-sessions"}},
 		},
 		{
+			omit:    noProviderDomains,
+			absent:  [][2]string{{http.MethodGet, "/api/v1/tenants/:tenant/sso/providers/:id"}, {http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/domains"}},
+			present: [][2]string{{http.MethodPost, "/api/v1/system/auth/accounts/:id/revoke-sessions"}},
+		},
+		{
 			omit:    noRefresher,
 			absent:  [][2]string{{http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh"}},
 			present: [][2]string{{http.MethodGet, "/api/v1/tenants/:tenant/sso/providers/:id"}},

@@ -174,7 +174,7 @@
         "type": "object"
       },
       "AuthnAdminProvider": {
-        "description": "One SSO provider. The encrypted client secret never appears, and warnings names each setting that loosens a default.",
+        "description": "One SSO provider. The encrypted client secret never appears, warnings names each setting that loosens a default, and domains lists every email domain the provider has claimed.",
         "properties": {
           "allow_idp_initiated": {
             "description": "True when an unsolicited assertion from the provider is accepted; the route then warns that login CSRF cannot be defended against.",
@@ -186,6 +186,13 @@
           },
           "config": {
             "description": "The protocol's own configuration; absent when the provider carries none"
+          },
+          "domains": {
+            "description": "Every email domain the provider has claimed, verified or not, in ascending domain order; always an array and never null, empty when it has none.",
+            "items": {
+              "$ref": "#/components/schemas/AuthnAdminProviderDomain"
+            },
+            "type": "array"
           },
           "enabled": {
             "description": "True when the provider may be used for sign-in.",
@@ -242,7 +249,26 @@
           "allow_idp_initiated",
           "allow_sha1",
           "merge_existing",
-          "version"
+          "version",
+          "domains"
+        ],
+        "type": "object"
+      },
+      "AuthnAdminProviderDomain": {
+        "description": "One email domain a provider has claimed, and whether its ownership was proved.",
+        "properties": {
+          "domain": {
+            "description": "The domain in its normalized form: lower-case ASCII (punycode).",
+            "type": "string"
+          },
+          "verified": {
+            "description": "True when the domain's DNS TXT record proved ownership; only verified domains take part in sign-in discovery.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "domain",
+          "verified"
         ],
         "type": "object"
       },
