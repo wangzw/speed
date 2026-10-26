@@ -9,15 +9,20 @@ package main
 //   - whether an account is an active member of a tenant before a
 //     platform-administrator binding is written (authz.MembershipChecker),
 //   - which removals of a membership a tenant refuses (authn.MembershipGuard),
+//   - the per-tenant lock that judges a tenant's administrator floor
+//     (authz.TenantLock),
 //   - which domains the management surface may not change (authz.WriteGuard).
 //
-// The demo host answers the first four from one module because they are one
+// The demo host answers the first five from one module because they are one
 // policy: system and every personal tenant are protected; a tenant opens with a
 // tenant-admin bound to its creator; platform administration is confined to
-// accounts that belong to system; and a personal tenant refuses every membership
-// removal while an ordinary tenant keeps at least one tenant-admin. The fifth is
-// a module of its own: tenant.WriteGuard and authz.WriteGuard both name their
-// method Denied, and one Go type cannot carry both. None holds state of its own.
+// accounts that belong to system; a personal tenant refuses every membership
+// removal while an ordinary tenant keeps at least one tenant-admin; and one
+// per-tenant lock carries the floor both of those guards judge. The last is a
+// module of its own: tenant.WriteGuard and authz.WriteGuard both name their
+// method Denied, and one Go type cannot carry both. The tenancy product holds
+// one piece of state, the removal lock, because the policy module's binding
+// delete and both guards must wait on the same object.
 
 import (
 	"context"
@@ -54,7 +59,8 @@ func init() {
 	core.ProcessRegistry.Register(policyWriteGuardModule())
 }
 
-// tenancyModule delivers the host's four tenancy-policy seams.
+// tenancyModule delivers the host's tenancy-policy seams, including the
+// per-tenant lock the policy module's binding delete takes.
 //
 // The roster, the memberships and the policy manager, seeding surface and
 // catalog are required: the membership checker reads the memberships, the
@@ -78,6 +84,13 @@ func tenancyModule() core.Module {
 			{Token: (*tenant.WriteGuard)(nil)},
 			{Token: (*tenant.Provisioner)(nil)},
 			{Token: (*authn.MembershipGuard)(nil)},
+			// The one lock every path that judges a tenant's administrator
+			// floor takes: the policy module's binding delete and both the
+			// policy module's and this module's membership guard. The policy
+			// module takes it up optionally and otherwise uses its in-process
+			// default, so a host that names no lock still serialises a single
+			// instance.
+			{Token: (*authz.TenantLock)(nil)},
 		},
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newTenancyProduct(reg)
@@ -85,7 +98,7 @@ func tenancyModule() core.Module {
 	}
 }
 
-// tenancyProduct implements the three seams over the capabilities the
+// tenancyProduct implements the host's seams over the capabilities the
 // descriptor requires.
 type tenancyProduct struct {
 	roster      tenant.Catalog
@@ -97,12 +110,14 @@ type tenancyProduct struct {
 	logger      *slog.Logger
 }
 
-// The four interfaces are one product.
+// The interfaces are one product.
 var (
-	_ authz.MembershipChecker = (*tenancyProduct)(nil)
-	_ tenant.WriteGuard       = (*tenancyProduct)(nil)
-	_ tenant.Provisioner      = (*tenancyProduct)(nil)
-	_ authn.MembershipGuard   = (*tenancyProduct)(nil)
+	_ authz.MembershipChecker    = (*tenancyProduct)(nil)
+	_ tenant.WriteGuard          = (*tenancyProduct)(nil)
+	_ tenant.Provisioner         = (*tenancyProduct)(nil)
+	_ authn.MembershipGuard      = (*tenancyProduct)(nil)
+	_ authn.SharedMembershipLock = (*tenancyProduct)(nil)
+	_ authz.TenantLock           = (*tenancyProduct)(nil)
 )
 
 func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {

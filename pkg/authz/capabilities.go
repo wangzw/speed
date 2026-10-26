@@ -136,10 +136,23 @@ type Manager interface {
 	// PutBinding binds a role that exists in the tenant to a subject.
 	PutBinding(ctx context.Context, b Binding) error
 	// DeleteBinding removes a subject's binding to a role within a tenant.
+	// The last tenant administrator of a domain is not removable: the domain
+	// would be left with no one who may govern it. The whole removal takes the
+	// host's TenantLock, the same per-tenant object every MembershipGuard.Lock
+	// takes, before the count and releases it after the commit, so a binding
+	// delete and an explicit membership removal cannot each see enough bindings
+	// and then together leave the domain with none.
+	//
+	// The membership-removal cascade and the account-deletion cleanup must not
+	// come through here: they clear bindings with ClearAccountBindings, which
+	// takes no lock, because this call would re-enter the lock their removal
+	// already holds and deadlock.
 	DeleteBinding(ctx context.Context, tenant, account string, role Role) error
 	// ClearAccountBindings removes every binding the account holds within the
-	// tenant in one statement. It is the host's account-deletion path, called
-	// while an account is being deleted, so the last-tenant-administrator rule
+	// tenant in one statement. It is the host's account-deletion path and the
+	// membership-removal cascade, called while a removal already holds the
+	// tenant lock, so it takes no lock: routing either through DeleteBinding
+	// would re-enter that lock and deadlock. The last-tenant-administrator rule
 	// that DeleteBinding enforces does not apply: the rule keeps a domain still
 	// in service governable, and the deleted account's own winding-up is not a
 	// removal from a domain it must leave governed. The write acts on one tenant

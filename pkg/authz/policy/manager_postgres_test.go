@@ -11,6 +11,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/internal/pgpool/pgtest"
 	"github.com/vislake/speed/pkg/log"
@@ -37,10 +38,12 @@ func newPostgresFixture(t *testing.T) *fixture {
 	reg.Register(Module())
 	p := &product{
 		handle:      handle,
+		dialect:     db.Postgres,
 		text:        authz.ModelText,
 		loadTimeout: 5 * time.Second,
 		catalog:     buildCatalog(reg),
 		logger:      log.Default(),
+		tenantLock:  authz.NewInProcessTenantLock(),
 	}
 	if err := p.begin(t.Context()); err != nil {
 		t.Fatalf("starting the product: %v", err)

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 )
@@ -233,6 +234,67 @@ func TestEveryMembershipGuardIsAsked(t *testing.T) {
 		}
 		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 1 {
 			t.Errorf("%d membership row(s) left, want the one a guard protected", n)
+		}
+	})
+}
+
+// sharedGuardLock is one non-reentrant per-tenant lock two guards take.
+type sharedGuardLock struct {
+	gate chan struct{}
+}
+
+func newSharedGuardLock() *sharedGuardLock {
+	return &sharedGuardLock{gate: make(chan struct{}, 1)}
+}
+
+func (l *sharedGuardLock) take(ctx context.Context) (func(), error) {
+	select {
+	case l.gate <- struct{}{}:
+		var once sync.Once
+		return func() { once.Do(func() { <-l.gate }) }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// sharingGuard is a guard wired to a lock another guard is wired to as well.
+type sharingGuard struct {
+	lock *sharedGuardLock
+}
+
+func (g *sharingGuard) MembershipLock() any { return g.lock }
+
+func (g *sharingGuard) Lock(ctx context.Context, _ string) (func(), error) {
+	return g.lock.take(ctx)
+}
+
+func (g *sharingGuard) CheckMembershipRemoval(context.Context, authn.AccountID, string) error {
+	return nil
+}
+
+// Two guards wired to one lock object take it once for a removal. A second
+// acquisition of the same non-reentrant lock would wait on the removal itself
+// until its context ended, turning every such removal into ErrUnavailable.
+func TestTwoGuardsSharingOneLockTakeItOnce(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("shared-lock-member", "")
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: authn.ReasonAdmin}); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		lock := newSharedGuardLock()
+		h.p.membershipGuards = []authn.MembershipGuard{
+			&sharingGuard{lock: lock},
+			&sharingGuard{lock: lock},
+		}
+
+		bounded, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		if err := h.p.Remove(bounded, id, "acme"); err != nil {
+			t.Fatalf("removing beside two guards sharing one lock: %v", err)
+		}
+		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 0 {
+			t.Errorf("%d membership row(s) left after the removal, want none", n)
 		}
 	})
 }

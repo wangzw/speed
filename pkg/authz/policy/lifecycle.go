@@ -36,6 +36,10 @@ func (p *product) AccountEnabled(context.Context, authn.AccountID) error { retur
 // authentication side can no longer produce, so the account is unusable there
 // whether or not the row arrived; the cleanup is what keeps the table from
 // growing rows for accounts that are gone.
+//
+// The write takes no tenant lock: account deletion is the terminal erasure of
+// the account, not a removal that judges a domain's floor, and a lock here
+// would re-enter one a membership removal already holds.
 func (p *product) AccountDeleted(ctx context.Context, id authn.AccountID) error {
 	err := p.crossing(ctx).Where("account_id = ?", string(id)).Delete(&bindingRow{}).Error
 	if err != nil {

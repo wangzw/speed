@@ -455,16 +455,30 @@ func (p *product) PutBinding(ctx context.Context, b authz.Binding) error {
 //
 // The last tenant administrator of a domain is not removable: the domain would
 // be left with no one who may govern it. The check and the delete are one
-// transaction, and the check locks the domain's tenant-administrator bindings,
-// so two concurrent removals cannot each see enough rows and leave the domain
-// with none. A removal naming no such binding changes nothing and is not
-// refused: it does not take the last one away.
+// transaction, and the whole removal runs under the tenant lock
+// authz.TenantLock names, which an explicit membership removal's guard takes as
+// well. The lock is taken before the count and released after the commit, so two
+// concurrent removals — of bindings, of memberships, or one of each — cannot each
+// read enough bindings and then together leave the domain with none. A removal
+// naming no such binding changes nothing and is not refused: it does not take the
+// last one away.
+//
+// The account-deletion cascade must not come through here: it clears bindings
+// with ClearAccountBindings, which takes no lock, because this call would
+// re-enter the lock its removal already holds and deadlock.
 func (p *product) DeleteBinding(ctx context.Context, tenant, account string, role authz.Role) error {
 	if err := requireTenant(tenant); err != nil {
 		return err
 	}
+	release, err := p.tenantLock.Lock(ctx, tenant)
+	if err != nil {
+		return err
+	}
+	// The release is idempotent, so the deferred call covers the error paths
+	// while the explicit one gives the lock back as soon as the write commits.
+	defer release()
 	rule := []string{account, string(role), tenant}
-	err := p.write(ctx, func(tx *gorm.DB) error {
+	if err := p.write(ctx, func(tx *gorm.DB) error {
 		if role == authz.TenantAdminRole {
 			if err := refuseLastTenantAdmin(ctx, tx, tenant, account); err != nil {
 				return err
@@ -474,10 +488,10 @@ func (p *product) DeleteBinding(ctx context.Context, tenant, account string, rol
 			return fmt.Errorf("authz/policy: removing the binding of tenant %q: %w", tenant, err)
 		}
 		return nil
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
+	release()
 	return p.afterWrite(ctx)
 }
 
@@ -492,6 +506,10 @@ func (p *product) DeleteBinding(ctx context.Context, tenant, account string, rol
 //
 // The delete is one transaction and idempotent: an account with no binding in
 // the tenant writes nothing and publishes nothing.
+//
+// The call takes no tenant lock. It is the account-deletion cleanup, and the
+// membership-removal cascade uses the same statement; both can run while the
+// removal holds the tenant lock, so a lock here would re-enter it and deadlock.
 func (p *product) ClearAccountBindings(ctx context.Context, tenant, account string) error {
 	if err := requireTenant(tenant); err != nil {
 		return err

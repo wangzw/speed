@@ -78,15 +78,16 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // startup.
 //
 // The database is the one hard dependency: the policy lives in its own tables
-// and there is no engine without it. The roster, the membership checker, the bus
-// and the logger are taken up in Init and each is optional — a policy module
-// with no roster has no platform-domain tenant to check, one with no membership
-// checker refuses a platform administrator binding rather than writing it, one
-// with no bus relies on the configured refresh interval, and one with no logger
-// writes through the process default. The module implements the authentication
-// capability's account lifecycle, membership lifecycle and membership guard on
-// the same instance, so an assembly that takes this module in has all three
-// without naming them apart.
+// and there is no engine without it. The roster, the membership checker, the
+// tenant lock, the bus and the logger are taken up in Init and each is optional
+// — a policy module with no roster has no platform-domain tenant to check, one
+// with no membership checker refuses a platform administrator binding rather
+// than writing it, one with no tenant lock serialises its removals in-process,
+// one with no bus relies on the configured refresh interval, and one with no
+// logger writes through the process default. The module implements the
+// authentication capability's account lifecycle, membership lifecycle and
+// membership guard on the same instance, so an assembly that takes this module
+// in has all three without naming them apart.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -144,7 +145,7 @@ func Module() core.Module {
 				refreshInterval: cfg.refreshInterval,
 				catalog:         buildCatalog(reg),
 				logger:          log.Default(),
-				removalLocks:    newTenantRemovalLocks(),
+				tenantLock:      authz.NewInProcessTenantLock(),
 			}, nil
 		},
 
@@ -213,10 +214,12 @@ type product struct {
 	membership authz.MembershipChecker
 
 	holder policy.Holder
-	// removalLocks serialises membership removals per tenant in this process;
-	// on PostgreSQL the database's advisory lock serialises the replicas that
-	// share it instead. See lock.go.
-	removalLocks *tenantRemovalLocks
+	// tenantLock serialises the writes that judge a tenant's
+	// tenant-administrator floor: this product's binding deletes and every
+	// membership guard's removal lock. The host supplies authz.TenantLock; with
+	// none, the in-process default serialises this process only. See lock.go and
+	// authz.TenantLock.
+	tenantLock authz.TenantLock
 	// reloadMu serialises the reload path, a read of the table followed by a
 	// swap, so that two concurrent loads cannot install their results out of
 	// order and leave a staler snapshot in place.
@@ -269,6 +272,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.membership = checker
+	}
+	if lock, found, err := optional[authz.TenantLock](reg, "the tenant lock"); err != nil {
+		return err
+	} else if found {
+		p.tenantLock = lock
 	}
 	if bus, found, err := optional[event.Bus](reg, "the event bus"); err != nil {
 		return err

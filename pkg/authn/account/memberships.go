@@ -240,8 +240,14 @@ func (p *product) Remove(ctx context.Context, id authn.AccountID, tenant string)
 // already taken so that a later failure releases what it did take; a lock that
 // cannot be taken is the call's error, and none of the guards is asked its
 // check.
+//
+// Guards wired to one lock object report it through authn.SharedMembershipLock,
+// and the object is taken once: a non-reentrant lock taken a second time by the
+// same removal would wait on itself until its context ended. Guards whose locks
+// are their own are taken as they are asked.
 func (p *product) lockMembershipRemoval(ctx context.Context, tenant string) (func(), error) {
 	releases := make([]func(), 0, len(p.membershipGuards))
+	shared := make(map[any]struct{}, len(p.membershipGuards))
 	var once sync.Once
 	releaseAll := func() {
 		once.Do(func() {
@@ -251,6 +257,14 @@ func (p *product) lockMembershipRemoval(ctx context.Context, tenant string) (fun
 		})
 	}
 	for _, guard := range p.membershipGuards {
+		if holder, ok := guard.(authn.SharedMembershipLock); ok {
+			if object := holder.MembershipLock(); object != nil {
+				if _, taken := shared[object]; taken {
+					continue
+				}
+				shared[object] = struct{}{}
+			}
+		}
 		release, err := guard.Lock(ctx, tenant)
 		if err != nil {
 			releaseAll()

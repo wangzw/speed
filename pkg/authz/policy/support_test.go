@@ -13,6 +13,7 @@ import (
 
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/internal/dbtest"
 	"github.com/vislake/speed/pkg/log"
@@ -52,10 +53,12 @@ func newProductOver(t *testing.T) *product {
 	reg.Register(Module())
 	return &product{
 		handle:      handle,
+		dialect:     db.SQLite,
 		text:        authz.ModelText,
 		loadTimeout: 5 * time.Second,
 		catalog:     buildCatalog(reg),
 		logger:      log.Default(),
+		tenantLock:  authz.NewInProcessTenantLock(),
 	}
 }
 

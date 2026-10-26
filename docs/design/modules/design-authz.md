@@ -720,11 +720,22 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
 
+**判底的两条路径共用一把按租户的锁。** 根包定义 `TenantLock`；`Manager.DeleteBinding` 在数租户管理员绑定之前取它，提交之后释放，`authn.MembershipGuard.CheckMembershipRemoval` 所在的成员关系删除路径取的是同一个对象——本模块的守卫 `Lock` 直接委托给这个 `TenantLock`，宿主自己的守卫必须接同一个对象，两个各锁各的等于没锁。装配没有提供它时，本模块用进程内按租户的默认实现（`authz.InProcessTenantLock`）：单实例无需配置即正确。多副本的正确性由宿主改提供数据库级锁承担——PostgreSQL 上是会话级 advisory lock，SQLite 仍是进程内（[ADR-authn-membership-cleanup-2026-10-27](../../adr/adr-authn-membership-cleanup-2026-10-27.md)）。锁不可重入：账户删除的收尾与成员关系删除的级联都经 `ClearAccountBindings` 清绑定，它不取锁；把它们改走 `DeleteBinding` 会重入删除自己已持有的锁而死锁。每个持有中的数据库锁占一条池化连接，删除事务再占一条，N 个并发管理员删除因此至少要 2N+1 条连接，不足时取锁等待并以 503 结束；进程内默认不额外占连接。这是装配级的非保证，写在 [tenant](../tenant/design-tenant.md) 的串行化一节。
+
 **被删除的账户经宿主清理路径清空其在某域内的绑定。** `Manager.ClearAccountBindings(ctx, tenant, account)` 删掉该账户在该域内的全部绑定，不受上一条规则约束：那条规则保护的是仍在服务的域，而账户删除收尾要清掉的正是它自己的绑定，其中一条可能恰是该域最后的租户管理员绑定。它作用于一个域与一个账户：同域内其他账户的绑定、该账户在其他域的绑定都不动，角色与授予也不在它的范围内。它是宿主收尾路径而非管理面路由；管理面逐条删除绑定时仍经过最后一条规则。账户删除收尾因此可以让一个仍在服务的域没有租户管理员绑定，这是这条路径的明示例外：域之后要由一条新绑定恢复治理。
 
 **移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块把这条清理实现为 `authn.MembershipLifecycle.MembershipRemoved`：成员关系删除提交之后同步调用，按账户删掉平台域的全部绑定并重载快照。删除平台域以外租户的成员关系不触到平台域。钩子幂等，重复执行不删任何行、不报错。本模块同时订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时执行同一清理，作为提交与钩子之间进程崩掉、或另一个副本没做这次删除的补偿。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除；没有事件总线的装配里只有同步钩子，没有补偿（[ADR-tenant-administration-2026-10-26](../../adr/adr-tenant-administration-2026-10-26.md)）。
 
-**移除成员关系前守住租户的最后一个管理员。** 本模块把 `authn.MembershipGuard.CheckMembershipRemoval` 实现为与 `DeleteBinding` 相同的读法：点名租户的 `tenant-admin` 绑定只有一条且属于被移除的账户时，以 `ErrLastTenantAdmin` 拒绝，成员关系不删。检查只读绑定、不看成员是否暂停——规则要的是域内保留一条管理员绑定。它在成员关系删改事务之前询问，不与成员关系存储共用一个事务；宿主路由把拒绝答成 409 `conflict`。账户删除不走这条守卫，因此它可以把一个租户的最后一个租户管理员一并带走。
+**移除成员关系前守住租户的最后一个管理员。** 本模块把 `authn.MembershipGuard.CheckMembershipRemoval` 实现为与 `DeleteBinding` 相同的读法：点名租户的 `tenant-admin` 绑定只有一条且属于被移除的账户时，以 `ErrLastTenantAdmin` 拒绝，成员关系不删。检查只读绑定、不看成员是否暂停——规则要的是域内保留一条管理员绑定。它在成员关系删改事务之前询问，不与成员关系存储共用一个事务；宿主路由把拒绝答成 409 `conflict`。`MembershipGuard.Lock` 取的是上一条的 `TenantLock`，`DeleteBinding` 取的也是它。账户删除不走这条守卫，因此它可以把一个租户的最后一个租户管理员一并带走。
+
+```go
+// TenantLock serialises the per-tenant writes that decide the
+// tenant-administrator floor. The host supplies it; with none,
+// InProcessTenantLock is the default.
+type TenantLock interface {
+	Lock(ctx context.Context, tenant string) (release func(), err error)
+}
+```
 
 ```go
 // MembershipChecker reports whether an account is an active member of a tenant.
@@ -861,11 +872,12 @@ const (
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Grant`、`Enforcer`、`SubjectPermissions`、`Catalog`（含 `ObjectAction`、`DescriptionKey`）、`Gate`、`Manager`、`Seeder`、`WriteGuard`、`WriteOp` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go` |
+| 根包的类型与判定接口：`Permission`、`Role`、`Domain`、`PermissionSpec`、`Translation`、`TranslationSpec`、`Query`、`Requirement`、`Binding`、`RoleRecord`、`GrantRecord`、`Grant`、`Enforcer`、`SubjectPermissions`、`Catalog`（含 `ObjectAction`、`DescriptionKey`）、`Gate`、`Manager`、`Seeder`、`WriteGuard`、`WriteOp`、`TenantLock` | 已实现 | `pkg/authz/types.go`；`pkg/authz/capabilities.go`；`pkg/authz/tenantlock.go` |
 | 权限常量与 `authn.Action` 的对齐、平台域 | 已实现 | `pkg/authz/permissions.go` `PermissionAccountRead` …、`PlatformDomain` |
 | 平台域对应的 `system` 租户的启动期核对 | 已实现 | `pkg/authz/policy/platform.go` `checkPlatformDomain`；`pkg/authz/policy/policy.go` `(*product).begin` |
 | 两个管理角色名 `PlatformAdminRole`、`TenantAdminRole` 与它们的域约束 | 已实现 | `pkg/authz/permissions.go` `PlatformAdminRole`、`TenantAdminRole`；`pkg/authz/policy/manager.go` `refuseReservedRole`、`(*product).PutRole`、`(*product).PutBinding` |
 | 平台管理员绑定前的 `MembershipChecker` 核对（不是成员时以 `ErrPlatformMembershipRequired` 拒绝）、租户管理员最后一条绑定的拒绝、管理面拒绝调用方移除自己的租户管理员绑定 | 已实现 | `pkg/authz/capabilities.go` `MembershipChecker`；`pkg/authz/policy/policy.go` `(*product).wire`；`pkg/authz/policy/manager.go` `(*product).requirePlatformMember`、`refuseLastTenantAdmin`、`(*product).DeleteBinding`；`pkg/authz/admin/binding.go` `(*product).handleBindingDelete`、`removingOwnBinding` |
+| 按租户的判定锁：根包接缝 `TenantLock`、进程内默认实现、`Manager.DeleteBinding` 与 `MembershipGuard.Lock` 共用同一对象 | 已实现 | `pkg/authz/tenantlock.go` `TenantLock`、`InProcessTenantLock`、`NewInProcessTenantLock`；`pkg/authz/policy/manager.go` `(*product).DeleteBinding`；`pkg/authz/policy/lock.go` `(*product).Lock`、`(*product).MembershipLock`；`pkg/authz/policy/binding_lock_test.go` |
 | `ModelText` 模型文本常量 | 已实现 | `pkg/authz/model.go` `ModelText` |
 | 哨兵 | 已实现 | `pkg/authz/errors.go` `ErrNoRouter`、`ErrUnknownEndpoint`、`ErrUndeclaredRoute`、`ErrUnknownPermission`、`ErrUnknownRole`、`ErrBuiltinRole`、`ErrTenantMismatch`、`ErrPolicyUnavailable` |
 | 新哨兵 `ErrPlatformDomainMissing`、`ErrReservedRole`、`ErrLastTenantAdmin`、`ErrMissingMembershipChecker`、`ErrPlatformMembershipRequired` | 已实现 | `pkg/authz/errors.go` `ErrPlatformDomainMissing`、`ErrReservedRole`、`ErrLastTenantAdmin`、`ErrMissingMembershipChecker`、`ErrPlatformMembershipRequired` |

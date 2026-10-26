@@ -59,7 +59,12 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   membership row is there to remove, and holds the locks across the removal's
   commit; a guard's `authn.ErrLastTenantAdmin` leaves the row in place, any
   other guard error is `ErrUnavailable`, never a pass, and a lock that cannot be
-  taken is `ErrUnavailable` too, with neither the guard nor the row touched. It then calls every
+  taken is `ErrUnavailable` too, with neither the guard nor the row touched. A
+  guard implementing `authn.SharedMembershipLock` names the lock object it
+  takes, and several guards wired to one object have it taken once: a
+  non-reentrant lock taken twice by the same removal would wait on itself. That
+  object is the authorization module's `authz.TenantLock`, which
+  `Manager.DeleteBinding` takes as well. It then calls every
   `authn.MembershipLifecycle` hook, including on a retry whose row is already
   gone, and a failing hook makes the call `ErrCleanupIncomplete`. Account
   deletion does not come through `Remove`, so it consults neither the guard nor

@@ -109,6 +109,11 @@ type MembershipGuard interface {
 	// serialises replicas that do not share a database, which is a
 	// non-guarantee of the assembly rather than of this seam.
 	//
+	// Two guards that decide one tenant's floor must take the same lock object
+	// the authorization module's binding delete takes, and report it through
+	// SharedMembershipLock: two locks are no lock, while a non-reentrant lock
+	// taken twice by one removal waits on itself.
+	//
 	// An error means the lock could not be taken and the removal must not
 	// proceed: it is neither a refusal nor a pass. A release may be called more
 	// than once — the removal releases it after the commit and again on its
@@ -120,4 +125,16 @@ type MembershipGuard interface {
 	// tenant-administrator binding, and nil when it would not. Any other error
 	// is the check being unavailable.
 	CheckMembershipRemoval(ctx context.Context, id AccountID, tenant string) error
+}
+
+// SharedMembershipLock is implemented by a guard whose Lock takes a lock object
+// another guard takes too. The removal path takes each distinct object once:
+// guards that judge the same tenant's floor must exclude each other, while a
+// non-reentrant lock taken twice by one removal would wait on itself.
+//
+// MembershipLock answers the object the guard's Lock takes, or nil when the lock
+// is the guard's own. The value must be comparable — guards wired to one object
+// answer the same pointer.
+type SharedMembershipLock interface {
+	MembershipLock() any
 }

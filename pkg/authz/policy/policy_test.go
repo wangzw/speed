@@ -51,10 +51,12 @@ func newFixture(t *testing.T) *fixture {
 	reg.Register(Module())
 	p := &product{
 		handle:      handle,
+		dialect:     db.SQLite,
 		text:        authz.ModelText,
 		loadTimeout: 5 * time.Second,
 		catalog:     buildCatalog(reg),
 		logger:      log.Default(),
+		tenantLock:  authz.NewInProcessTenantLock(),
 	}
 	if err := p.begin(t.Context()); err != nil {
 		t.Fatalf("starting the product: %v", err)

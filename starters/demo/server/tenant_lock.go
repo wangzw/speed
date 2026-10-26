@@ -1,10 +1,10 @@
 package main
 
-// The host's per-tenant membership-removal lock. The host's MembershipGuard
-// answers the last-administrator floor, and the account module takes this lock
-// before it asks that check and holds it across the removal's commit: two
-// concurrent removals cannot both pass the check and leave the tenant with no
-// administrator.
+// The host's per-tenant lock for the tenant-administrator floor. The host's
+// MembershipGuard and the policy module's MembershipGuard both take it, and the
+// policy module takes the same object as its authz.TenantLock, so its binding
+// delete and both guards exclude each other: two concurrent removals cannot both
+// pass the floor's check and leave the tenant with no administrator.
 //
 // SQLite has no lock a second process can see, so the lock is an in-process
 // per-tenant semaphore. PostgreSQL takes a session-level advisory lock, which
@@ -23,8 +23,8 @@ import (
 	"github.com/vislake/speed/pkg/db"
 )
 
-// tenantLockNamespace keeps this host's advisory locks apart from the policy
-// module's on the same tenant.
+// tenantLockNamespace keeps this host's advisory locks apart from every other
+// advisory lock in the same database.
 const tenantLockNamespace = "host.tenancy.membership-removal"
 
 // tenantLockTimeout bounds the release and the fallback close, not the wait for
@@ -132,8 +132,16 @@ func tenantLockKey(tenant string) int64 {
 	return int64(h.Sum64() & (1<<63 - 1))
 }
 
-// Lock implements authn.MembershipGuard: it takes the tenant's removal lock so
-// the guard's check and the removal's commit are one serialised step.
+// Lock implements authn.MembershipGuard and authz.TenantLock: it takes the
+// tenant's removal lock so the guard's check and the removal's commit are one
+// serialised step. The policy module takes this same object as its
+// authz.TenantLock, so its binding delete and its own guard wait on the lock
+// this host supplies rather than on a second lock of their own.
 func (p *tenancyProduct) Lock(ctx context.Context, tenant string) (func(), error) {
 	return p.removalLock.lock(ctx, tenant)
 }
+
+// MembershipLock implements authn.SharedMembershipLock: it names this product,
+// which is the one lock object both guards and the policy module's binding
+// delete take, so the account module takes it once for a removal.
+func (p *tenancyProduct) MembershipLock() any { return p }

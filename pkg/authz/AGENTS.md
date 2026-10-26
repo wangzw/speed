@@ -21,6 +21,16 @@ its own. `authz.self` mounts the caller's permission read under
 The API is the package's godoc. Read the capability interfaces' comments
 before writing a consumer.
 
+The root package also defines `TenantLock`, the per-tenant lock that decides the
+tenant-administrator floor: `Manager.DeleteBinding` and every
+`MembershipGuard.Lock` take one object, so a binding delete and a membership
+removal exclude each other. `InProcessTenantLock` is the default an assembly
+gets when the host supplies none and serialises one process; a multi-replica
+deployment supplies a database lock, which costs one pooled connection per held
+lock. The lock is not reentrant: the membership-removal cascade and the
+account-deletion cleanup clear bindings through `Manager.ClearAccountBindings`,
+which takes no lock.
+
 ## Modules and namespaces
 
 - **The root package `pkg/authz` registers no module and exports no

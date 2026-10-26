@@ -132,16 +132,20 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   supplied none, so the check fails closed; a checker that answers "not a
   member" refuses with `authz.ErrPlatformMembershipRequired`. `DeleteBinding`
   refuses removing the last `TenantAdminRole` binding of a domain with
-  `authz.ErrLastTenantAdmin`, and the check and the delete share one transaction
-  with the binding rows locked, so two concurrent removals cannot both pass the
-  check. `ClearAccountBindings` is the host's account-deletion path beside
-  `DeleteBinding`: it clears one account's bindings in one tenant and skips the
-  last-administrator rule, which protects a domain still in service.
+  `authz.ErrLastTenantAdmin`; it takes the host's `authz.TenantLock` before the
+  count and releases it after the commit, and the membership guard takes the same
+  object, so a binding delete and a membership removal cannot each see enough
+  bindings and together leave the domain with none. `ClearAccountBindings` is the
+  host's account-deletion path and the membership-removal cascade beside
+  `DeleteBinding`: it clears one account's bindings in one tenant, skips the
+  last-administrator rule, which protects a domain still in service, and takes no
+  lock, because either caller already holds it and re-entering would deadlock.
   `TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain`,
   `TestPutBindingOfThePlatformAdministratorNeedsAMembershipChecker`,
   `TestPutBindingOfThePlatformAdministratorChecksMembership`,
   `TestDeletingTheLastTenantAdministratorBindingIsRefused`,
-  `TestClearAccountBindingsClearsOneAccountWithinOneTenant`.
+  `TestClearAccountBindingsClearsOneAccountWithinOneTenant`,
+  `TestABindingDeleteWaitsForTheMembershipRemovalLock`.
 - **The account lifecycle cleanup is idempotent and crosses tenants.** A
   deleted account's binding rows are removed across every tenant; running the
   cleanup again is no work and no error. A binding row that outlives the
@@ -157,10 +161,12 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   subscription runs the same helper as the crash-window compensation. A removal
   in a business tenant cascades nothing. `CheckMembershipRemoval` refuses with
   `authn.ErrLastTenantAdmin` when the account is the named tenant's only
-  `TenantAdminRole` binding. `Lock` serialises the check and the removal's
-  commit for one tenant: an in-process per-tenant semaphore on SQLite, a
-  session-level advisory lock on PostgreSQL (which also serialises the replicas
-  that share the database). Both reuse `tenantAdminRows` and
+  `TenantAdminRole` binding. `Lock` delegates to the product's `authz.TenantLock`,
+  the same lock `DeleteBinding` takes: the host supplies that object and the
+  policy module uses its in-process default when the host supplies none, so the
+  guard's lock and the binding delete serialise together. `MembershipLock`
+  answers that object for `authn.SharedMembershipLock`, so a removal holding
+  several guards wired to one lock takes it once. Both reuse `tenantAdminRows` and
   `lastTenantAdminAfterRemoval`, the pair `DeleteBinding`'s own floor reads.
   `TestMembershipRemovedWithdrawsThePlatformBindings`,
   `TestCheckMembershipRemovalRefusesTheLastTenantAdmin`.
