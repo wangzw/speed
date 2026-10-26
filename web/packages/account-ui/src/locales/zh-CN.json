@@ -27,6 +27,9 @@
     },
     "unknown": "出了点问题，请稍后重试。"
   },
+  "stale": {
+    "description": "所示内容可能已过期，请重试刷新。"
+  },
   "sessions": {
     "title": "登录会话",
     "prevPage": "上一页",

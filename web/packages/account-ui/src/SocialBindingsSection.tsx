@@ -103,13 +103,13 @@ import {
 import { useMutation } from '@tanstack/react-query'
 import type { AuthnMethodDescriptor, AuthSession } from '@speed/auth-core'
 import {
-  AsyncSection,
   ConfirmDialog,
   ListSkeleton,
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { WriteOutcome } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
@@ -278,7 +278,7 @@ export function SocialBindingsSection({
 }: SocialBindingsSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useProfileQuery()
+  const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const unbindMutation = useMutation({
     mutationFn: (id: string) => authnLoginUnlink(id),
   })
@@ -471,10 +471,12 @@ export function SocialBindingsSection({
           a chapter. It renders headerless as one role="status" region
           (emptyHeadingLevel="none") instead, and the page's heading order is
           left to its real headings. */}
-      <AsyncSection
+      <AccountAsyncSection
         pending={pending}
         payload={rows}
         empty={showEmptyState}
+        error={error}
+        refreshing={isFetching}
         loading={<BindingListSkeleton label={t('bindings.loading')} />}
         errorState={{
           title: t('bindings.error.title'),
@@ -624,7 +626,7 @@ export function SocialBindingsSection({
             )}
           </Box>
         )}
-      </AsyncSection>
+      </AccountAsyncSection>
       {/* The unlink control group's result, below the list and the add area
           whose row actions and flow starts write into it, and outside the
           settled content, so it survives the list becoming empty when the

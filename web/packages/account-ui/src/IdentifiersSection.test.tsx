@@ -2135,4 +2135,47 @@ describe('IdentifiersSection', () => {
       fake.restore()
     }
   })
+
+  it('keeps the identifier rows and marks them stale when a refresh fails', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        reads += 1
+        return reads === 1
+          ? jsonResponse(
+              200,
+              profileBody({
+                identifiers: [
+                  identifier({
+                    id: 'id-email',
+                    kind: 'email',
+                    value: 'ada@x.test',
+                  }),
+                ],
+              }),
+            )
+          : errorResponse(500, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mount(respond)
+
+    expect(await screen.findByText('ada@x.test')).toBeTruthy()
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The failed refresh keeps the settled rows on screen under the stale
+    // notice rather than replacing them with the error placeholder.
+    expect(screen.getByText('ada@x.test')).toBeTruthy()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(screen.queryByText(zhCN.identifiers.error.title)).toBeNull()
+
+    const readsBeforeRetry = reads
+    await user.click(screen.getByRole('button', { name: zhCN.identifiers.retry }))
+    await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
 })

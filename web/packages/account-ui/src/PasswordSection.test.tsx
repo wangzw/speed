@@ -19,7 +19,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import enUS from './locales/en-US.json' with { type: 'json' }
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -726,5 +726,39 @@ describe('PasswordSection', () => {
     await rig.session.restore()
     expect(rig.session.getSnapshot().state).toBe('anonymous')
     expect(rig.endedEdges()).toBe(1)
+  })
+
+  it('keeps the form and marks it stale when a refresh fails', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        reads += 1
+        return reads === 1
+          ? jsonResponse(200, profileBody({ password_set: true }))
+          : errorResponse(500, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mount(respond)
+
+    expect(
+      await screen.findByLabelText(zhCN.password.current.label),
+    ).toBeTruthy()
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The failed refresh keeps the settled form on screen under the stale
+    // notice rather than the error placeholder.
+    expect(screen.getByLabelText(zhCN.password.current.label)).toBeTruthy()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(screen.queryByText(zhCN.password.error.title)).toBeNull()
+
+    const readsBeforeRetry = reads
+    await user.click(screen.getByRole('button', { name: zhCN.password.retry }))
+    await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
   })
 })

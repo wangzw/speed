@@ -108,6 +108,7 @@ import {
   useWriteFeedback,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
@@ -159,7 +160,7 @@ export function ContactVerificationSection({
 }: ContactVerificationSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useProfileQuery()
+  const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
   // The deployment's human-verification gate and this section's proof. The
@@ -436,51 +437,11 @@ export function ContactVerificationSection({
     void send(targetEmail, true)
   }, [autoSend, entryOpen, state, targetEmail, send, human.pending, proofBlocked])
 
-  // The read's own state: a settled answer with no body is the error variant,
-  // never "nothing to verify".
-  if (isPending && data === undefined) {
-    return (
-      <SectionCard title={t('verification.title')}>
-        <Box aria-busy="true" sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Skeleton variant="text" width="40%" />
-          <Skeleton variant="text" width="70%" />
-        </Box>
-      </SectionCard>
-    )
-  }
-  if (data === undefined) {
-    return (
-      <SectionCard title={t('verification.error.title')}>
-        <Typography variant="body2" color="text.secondary">
-          {t('verification.error.description')}
-        </Typography>
-        <Button
-          variant="outlined"
-          size="small"
-          sx={{ mt: 1 }}
-          onClick={() => void refetch()}
-        >
-          {t('verification.retry')}
-        </Button>
-      </SectionCard>
-    )
-  }
-  if (state === '' || state === 'none') {
+  // A settled answer with no body is the error variant, never "nothing to
+  // verify" (the async section below renders the retry). A settled state
+  // carrying no verification renders nothing at all.
+  if (data !== undefined && (state === '' || state === 'none')) {
     return null
-  }
-  if (state === 'verified') {
-    return (
-      <SectionCard title={t('verification.verifiedTitle')}>
-        <Alert severity="success" role="status">
-          {targetEmail === ''
-            ? t('verification.verifiedDescriptionNoEmail')
-            : t('verification.verifiedDescription', {
-                email: targetEmail,
-                interpolation: { escapeValue: false },
-              })}
-        </Alert>
-      </SectionCard>
-    )
   }
 
   // The verify group's non-code failure, beside its region and mutually
@@ -509,69 +470,75 @@ export function ContactVerificationSection({
     />
   )
 
+  // The settled verification states. The read's pending and failure
+  // branches belong to the async section below, so a failed refresh over
+  // already rendered content keeps that content under its stale notice.
+  const verifiedCard = (
+    <SectionCard title={t('verification.verifiedTitle')}>
+      <Alert severity="success" role="status">
+        {targetEmail === ''
+          ? t('verification.verifiedDescriptionNoEmail')
+          : t('verification.verifiedDescription', {
+              email: targetEmail,
+              interpolation: { escapeValue: false },
+            })}
+      </Alert>
+    </SectionCard>
+  )
+
   // A pending account with no target: the add-email form is the only way back
   // to a verifiable address.
-  if (!hasTarget && sentTo === null) {
-    return (
-      <>
-        <SectionCard
-          title={t('verification.addTitle')}
-          description={t('verification.addDescription')}
-        >
-          <Box
-            component="form"
-            noValidate
-            onSubmit={(event) => {
-              event.preventDefault()
-              if (emailEntry.trim() !== '') {
-                void send(emailEntry)
-              }
-            }}
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              gap: 2,
-              maxWidth: FORM_MAX_WIDTH,
-            }}
-          >
-            <TextField
-              fullWidth
-              type="email"
-              autoComplete="email"
-              label={t('verification.addLabel')}
-              value={emailEntry}
-              disabled={busy}
-              onChange={(event) => setEmailEntry(event.target.value)}
-            />
-            {humanBlock}
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={busy || proofBlocked || emailEntry.trim() === ''}
-              loading={addIdentifier.isPending}
-            >
-              {t('verification.addSubmit')}
-            </Button>
-            {/* The add form is the send group's control here: its result
-                sits below the action that made it. */}
-            <WriteFeedbackRegion
-              outcome={sendFeedback.outcome}
-              sx={{ alignSelf: 'stretch', width: '100%' }}
-            />
-          </Box>
-        </SectionCard>
-        <StepUpChallenge
-          open={gate.open}
-          session={session}
-          onSuccess={gate.succeed}
-          onCancel={gate.cancel}
+  const addForm = (
+    <SectionCard
+      title={t('verification.addTitle')}
+      description={t('verification.addDescription')}
+    >
+      <Box
+        component="form"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (emailEntry.trim() !== '') {
+            void send(emailEntry)
+          }
+        }}
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: 2,
+          maxWidth: FORM_MAX_WIDTH,
+        }}
+      >
+        <TextField
+          fullWidth
+          type="email"
+          autoComplete="email"
+          label={t('verification.addLabel')}
+          value={emailEntry}
+          disabled={busy}
+          onChange={(event) => setEmailEntry(event.target.value)}
         />
-      </>
-    )
-  }
+        {humanBlock}
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={busy || proofBlocked || emailEntry.trim() === ''}
+          loading={addIdentifier.isPending}
+        >
+          {t('verification.addSubmit')}
+        </Button>
+        {/* The add form is the send group's control here: its result
+            sits below the action that made it. */}
+        <WriteFeedbackRegion
+          outcome={sendFeedback.outcome}
+          sx={{ alignSelf: 'stretch', width: '100%' }}
+        />
+      </Box>
+    </SectionCard>
+  )
 
-  return (
+  const verificationForm = (
     <>
       <SectionCard
         title={t('verification.title')}
@@ -743,6 +710,45 @@ export function ContactVerificationSection({
           sx={{ alignSelf: 'stretch', width: '100%' }}
         />
       </SectionCard>
+    </>
+  )
+
+  return (
+    <>
+      <AccountAsyncSection
+        pending={isPending && data === undefined}
+        payload={data}
+        empty={false}
+        error={error}
+        refreshing={isFetching}
+        loading={
+          <SectionCard title={t('verification.title')}>
+            <Box
+              aria-busy="true"
+              sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}
+            >
+              <Skeleton variant="text" width="40%" />
+              <Skeleton variant="text" width="70%" />
+            </Box>
+          </SectionCard>
+        }
+        errorState={{
+          title: t('verification.error.title'),
+          description: t('verification.error.description'),
+          retryLabel: t('verification.retry'),
+          onRetry: () => void refetch(),
+        }}
+      >
+        {() =>
+          state === 'verified' ? (
+            verifiedCard
+          ) : !hasTarget && sentTo === null ? (
+            addForm
+          ) : (
+            verificationForm
+          )
+        }
+      </AccountAsyncSection>
 
       <StepUpChallenge
         open={gate.open}

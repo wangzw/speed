@@ -47,11 +47,11 @@ import {
 import type { AuthSession } from '@speed/auth-core'
 import { useStepUpGate } from '@speed/auth-core'
 import {
-  AsyncSection,
   FORM_MAX_WIDTH,
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { useProfileQuery } from './internal/queries.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -75,7 +75,7 @@ function ProfileSkeleton({ label }: { readonly label: string }) {
 export function ProfileSection({ session }: ProfileSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useProfileQuery()
+  const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const patchProfile = useAuthnProfilePatch()
 
   // The field's local edit, or null while it still tracks the loaded value
@@ -124,10 +124,12 @@ export function ProfileSection({ session }: ProfileSectionProps) {
   return (
     <>
       <SectionCard title={t('profile.title')}>
-        <AsyncSection
+        <AccountAsyncSection
           pending={pending}
           payload={data}
           empty={false}
+          error={error}
+          refreshing={isFetching}
           loading={<ProfileSkeleton label={t('profile.loading')} />}
           errorState={{
             title: t('profile.error.title'),
@@ -179,7 +181,7 @@ export function ProfileSection({ session }: ProfileSectionProps) {
               />
             </Box>
           )}
-        </AsyncSection>
+        </AccountAsyncSection>
       </SectionCard>
 
       <StepUpChallenge

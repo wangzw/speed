@@ -988,4 +988,51 @@ describe('SocialBindingsSection', () => {
     expect(rig.session.getSnapshot().state).toBe('anonymous')
     expect(rig.endedEdges()).toBe(1)
   })
+
+  it('keeps the bound rows and marks them stale when a refresh fails', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        reads += 1
+        return reads === 1
+          ? jsonResponse(
+              200,
+              profile([
+                { id: 'github-1', provider: 'github', email: 'ada@example.test' },
+              ]),
+            )
+          : errorResponse(500, 'authn.unavailable')
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const { queryClient } = renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+
+    expect(await screen.findByText('ada@example.test')).toBeTruthy()
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The failed refresh keeps the settled rows on screen under the stale
+    // notice rather than replacing them with the error placeholder.
+    expect(screen.getByText('ada@example.test')).toBeTruthy()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(screen.queryByText(zhCN.bindings.error.title)).toBeNull()
+
+    const readsBeforeRetry = reads
+    await user.click(screen.getByRole('button', { name: zhCN.bindings.retry }))
+    await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
 })

@@ -60,13 +60,13 @@ import {
   useAuthnSessionRevokeOthers,
 } from '@speed/api-sdk'
 import {
-  AsyncSection,
   ConfirmDialog,
   ListSkeleton,
   SectionCard,
   useDisplayTimeZone,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { useProfileQuery, useSessionsQuery } from './internal/queries.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { summarizeUserAgent } from './internal/ua-summary.js'
@@ -154,7 +154,7 @@ function SessionListSkeleton({ label }: { readonly label: string }) {
 export function SessionsSection() {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useSessionsQuery()
+  const { data, isPending, isFetching, error, refetch } = useSessionsQuery()
   const revokeOneMutation = useAuthnSessionRevokeOne()
   const revokeOthersMutation = useAuthnSessionRevokeOthers()
 
@@ -291,10 +291,12 @@ export function SessionsSection() {
           ) : undefined
         }
       >
-        <AsyncSection
+        <AccountAsyncSection
         pending={pending}
         payload={sessions}
         empty={sessions !== undefined && sessions.length === 0}
+        error={error}
+        refreshing={isFetching}
         loading={<SessionListSkeleton label={t('sessions.loading')} />}
         errorState={{
           title: t('sessions.error.title'),
@@ -526,7 +528,7 @@ export function SessionsSection() {
           </Box>
           )
         }}
-      </AsyncSection>
+      </AccountAsyncSection>
       {/* The section's one result position, below the list and its pager whose
           row and section actions write into it: a row revoke and the bulk
           revoke share it, so a success and a failure never stand together.

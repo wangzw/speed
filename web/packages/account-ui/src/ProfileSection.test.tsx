@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { profileBody } from '../test-utils/fixtures.js'
@@ -315,5 +315,52 @@ describe('ProfileSection', () => {
     expect(
       await screen.findByRole('textbox', { name: zhCN.profile.displayName.label }),
     ).toHaveValue('Grace')
+  })
+
+  it('keeps the loaded profile and marks it stale when a refresh fails', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        reads += 1
+        // The first read settles the field; every later refresh fails.
+        return reads === 1
+          ? jsonResponse(200, profileBody({ display_name: 'Grace Hopper' }))
+          : errorResponse(500, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mount(respond)
+
+    expect(
+      await screen.findByRole('textbox', {
+        name: zhCN.profile.displayName.label,
+      }),
+    ).toHaveValue('Grace Hopper')
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The failed refresh keeps the settled field on screen under the stale
+    // notice, rather than replacing it with the error placeholder.
+    expect(
+      screen.getByRole('textbox', { name: zhCN.profile.displayName.label }),
+    ).toHaveValue('Grace Hopper')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(
+      alert.compareDocumentPosition(
+        screen.getByRole('textbox', {
+          name: zhCN.profile.displayName.label,
+        }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.queryByText(zhCN.profile.error.title)).toBeNull()
+
+    // The stale notice's retry is the section's own retry: it re-reads.
+    const readsBeforeRetry = reads
+    await user.click(screen.getByRole('button', { name: zhCN.profile.retry }))
+    await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
   })
 })

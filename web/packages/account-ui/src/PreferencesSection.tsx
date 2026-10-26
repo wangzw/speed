@@ -77,10 +77,10 @@ import {
   switchLanguage,
 } from '@speed/i18n'
 import {
-  AsyncSection,
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
@@ -119,7 +119,7 @@ function supportedTimeZones(): readonly string[] {
 export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
   const { t, i18n } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useProfileQuery()
+  const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const patchProfile = useAuthnProfilePatch()
   // One scope per select: each control group owns its own result slot, so
   // the language outcome and the timezone outcome never clear each other.
@@ -236,10 +236,12 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
   return (
     <>
       <SectionCard title={t('preferences.title')}>
-        <AsyncSection
+        <AccountAsyncSection
         pending={pending}
         payload={data}
         empty={false}
+        error={error}
+        refreshing={isFetching}
         loading={
           <Box
             role="status"
@@ -343,7 +345,7 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
             </Box>
           </Box>
         )}
-      </AsyncSection>
+      </AccountAsyncSection>
       </SectionCard>
 
       {session !== undefined && (

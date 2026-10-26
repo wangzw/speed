@@ -27,6 +27,9 @@
     },
     "unknown": "Something went wrong. Please try again later."
   },
+  "stale": {
+    "description": "The content shown may be out of date. Retry to refresh it."
+  },
   "sessions": {
     "title": "Sessions",
     "prevPage": "Previous",

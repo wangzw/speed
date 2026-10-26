@@ -142,7 +142,6 @@ import {
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { humanGateNeedsProof, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
-  AsyncSection,
   ConfirmDialog,
   errorCodeOf,
   FORM_MAX_WIDTH,
@@ -152,6 +151,7 @@ import {
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { retryAfterMsOf } from './internal/retry-after.js'
@@ -242,7 +242,7 @@ export function IdentifiersSection({
 }: IdentifiersSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useProfileQuery()
+  const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const removeIdentifier = useAuthnLoginRemoveIdentifier()
   const addIdentifier = useAuthnLoginAddIdentifier()
   const verifyIdentifier = useAuthnLoginVerifyIdentifier()
@@ -755,10 +755,12 @@ export function IdentifiersSection({
   return (
     <>
       <SectionCard title={showHeader ? t('identifiers.title') : undefined}>
-        <AsyncSection
+        <AccountAsyncSection
         pending={pending}
         payload={rows}
         empty={rows !== undefined && rows.length === 0}
+        error={error}
+        refreshing={isFetching}
         loading={<IdentifierListSkeleton label={t('identifiers.loading')} />}
         errorState={{
           title: t('identifiers.error.title'),
@@ -1025,7 +1027,7 @@ export function IdentifiersSection({
             </Box>
           </Box>
         )}
-      </AsyncSection>
+      </AccountAsyncSection>
 
       <Box sx={{ mt: 2 }}>
         {addKinds.length === 0 ? null : !addOpen ? (

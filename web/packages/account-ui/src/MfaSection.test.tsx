@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import {
@@ -1106,5 +1106,40 @@ describe('MfaSection', () => {
       name: zhCN.mfa.removeAria.replace('{{factor}}', zhCN.mfa.factor.kind.totp),
     })
     expect(hasCoarsePointerTouchTarget(remove)).toBe(true)
+  })
+
+  it('keeps the factor rows and marks them stale when a refresh fails', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        reads += 1
+        return reads === 1
+          ? jsonResponse(200, { factors: [factor({})] })
+          : errorResponse(500, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mount(respond)
+
+    expect(await screen.findByText('My authenticator')).toBeTruthy()
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The failed refresh keeps the settled rows on screen under the stale
+    // notice rather than replacing them with the error placeholder.
+    expect(screen.getByText('My authenticator')).toBeTruthy()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(screen.queryByText(zhCN.mfa.error.title)).toBeNull()
+
+    const readsBeforeRetry = reads
+    await user.click(screen.getByRole('button', { name: zhCN.mfa.retry }))
+    await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
   })
 })

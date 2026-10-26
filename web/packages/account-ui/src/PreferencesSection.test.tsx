@@ -21,7 +21,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { formControlClasses } from '@mui/material/FormControl'
 import { inputLabelClasses } from '@mui/material/InputLabel'
@@ -605,5 +605,48 @@ describe('PreferencesSection', () => {
         name: zhCN.preferences.timezone.label,
       }),
     ).toHaveTextContent('Asia/Tokyo')
+  })
+
+  it('keeps the selects and marks them stale when a refresh fails', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        reads += 1
+        return reads === 1
+          ? jsonResponse(
+              200,
+              profileBody({ locale: 'en-US', time_zone: 'Asia/Tokyo' }),
+            )
+          : errorResponse(500, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mountSection(respond)
+
+    expect(
+      await screen.findByRole('combobox', {
+        name: zhCN.preferences.timezone.label,
+      }),
+    ).toHaveTextContent('Asia/Tokyo')
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The failed refresh keeps the settled controls on screen under the
+    // stale notice rather than replacing them with the error placeholder.
+    expect(
+      screen.getByRole('combobox', {
+        name: zhCN.preferences.timezone.label,
+      }),
+    ).toHaveTextContent('Asia/Tokyo')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(screen.queryByText(zhCN.preferences.error.title)).toBeNull()
+
+    const readsBeforeRetry = reads
+    await user.click(screen.getByRole('button', { name: zhCN.preferences.retry }))
+    await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
   })
 })

@@ -1473,4 +1473,40 @@ describe('ContactVerificationSection', () => {
       fake.restore()
     }
   })
+
+  it('keeps the pending target under a stale notice when a refresh fails', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        reads += 1
+        // The first read settles the pending target; every later refresh
+        // fails.
+        return reads === 1
+          ? jsonResponse(200, profileVerification('pending', 'ada@x.test'))
+          : errorResponse(500, 'authn.unavailable')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { queryClient } = mount(respond)
+    const target = zhCN.verification.target.replace('{{email}}', 'ada@x.test')
+
+    expect(await screen.findByText(target)).toBeTruthy()
+
+    await act(async () => {
+      await queryClient.invalidateQueries()
+    })
+
+    // The failed refresh keeps the settled target and the code step on
+    // screen under the stale notice, not the error placeholder.
+    expect(screen.getByText(target)).toBeTruthy()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(screen.queryByText(zhCN.verification.error.title)).toBeNull()
+
+    // The stale notice's retry re-reads the profile.
+    const readsBeforeRetry = reads
+    await user.click(screen.getByRole('button', { name: zhCN.verification.retry }))
+    await waitFor(() => expect(reads).toBeGreaterThan(readsBeforeRetry))
+  })
 })

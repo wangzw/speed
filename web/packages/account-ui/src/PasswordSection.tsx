@@ -62,12 +62,12 @@ import {
 import type { AuthSession } from '@speed/auth-core'
 import { useStepUpGate } from '@speed/auth-core'
 import {
-  AsyncSection,
   errorCodeOf,
   FORM_MAX_WIDTH,
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
@@ -111,7 +111,7 @@ export function PasswordSection({
 }: PasswordSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useProfileQuery()
+  const { data, isPending, isFetching, error, refetch } = useProfileQuery()
   const changePassword = useAuthnLoginChangePassword()
 
   const [current, setCurrent] = useState('')
@@ -255,10 +255,12 @@ export function PasswordSection({
   return (
     <>
       <SectionCard title={t('password.title')}>
-        <AsyncSection
+        <AccountAsyncSection
         pending={pending}
         payload={data}
         empty={false}
+        error={error}
+        refreshing={isFetching}
         loading={<PasswordSkeleton label={t('password.loading')} />}
         errorState={{
           title: t('password.error.title'),
@@ -360,7 +362,7 @@ export function PasswordSection({
           </Box>
           )
         }
-      </AsyncSection>
+      </AccountAsyncSection>
       </SectionCard>
 
       <StepUpChallenge

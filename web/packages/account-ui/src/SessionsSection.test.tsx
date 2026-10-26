@@ -700,4 +700,60 @@ describe('SessionsSection', () => {
       await screen.findByRole('heading', { name: zhCN.sessions.title }),
     ).toBeTruthy()
   })
+
+  it('keeps the old rows under a stale notice when the refetch after a revoke fails', async () => {
+    const user = userEvent.setup()
+    let revoked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.path === PROFILE_PATH) {
+        return PROFILE
+      }
+      if (call.method === 'GET' && call.path === SESSIONS_PATH) {
+        // The first read settles the list; the refetch after the revoke
+        // fails, so the section keeps the rows it already had.
+        return revoked
+          ? errorResponse(500, 'authn.unavailable')
+          : jsonResponse(200, {
+              sessions: [session({ id: 'session-2', user_agent: '' })],
+            })
+      }
+      if (
+        call.method === 'DELETE' &&
+        call.path === `${SESSIONS_PATH}/session-2`
+      ) {
+        revoked = true
+        return new Response(null, { status: 204 })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const { rig } = mountSection(respond)
+
+    await screen.findByRole('heading', { name: zhCN.sessions.title })
+    const target = () =>
+      screen.queryByRole('button', {
+        name: revokeAria(zhCN.sessions.deviceUnknown),
+      })
+    await waitFor(() => expect(target()).not.toBeNull())
+    await user.click(target() as HTMLElement)
+
+    // The refresh failed, but the old row stays on screen under the stale
+    // notice rather than being replaced by the error placeholder.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.stale.description)
+    expect(target()).not.toBeNull()
+    expect(screen.queryByText(zhCN.sessions.error.title)).toBeNull()
+
+    // The retry is the section's own retry: it re-reads the list.
+    const readsBeforeRetry = rig.calls.filter(
+      (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
+    ).length
+    await user.click(screen.getByRole('button', { name: zhCN.sessions.retry }))
+    await waitFor(() =>
+      expect(
+        rig.calls.filter(
+          (call) => call.method === 'GET' && call.path === SESSIONS_PATH,
+        ).length,
+      ).toBeGreaterThan(readsBeforeRetry),
+    )
+  })
 })

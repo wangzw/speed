@@ -70,13 +70,13 @@ import {
 } from '@speed/api-sdk'
 import type { AuthSession, AuthnStep } from '@speed/auth-core'
 import {
-  AsyncSection,
   ConfirmDialog,
   errorCodeOf,
   ListSkeleton,
   SectionCard,
   useWriteFeedback,
 } from '@speed/ui-kit'
+import { AccountAsyncSection } from './internal/async-section.js'
 import { FlowStep } from './internal/flow-step.js'
 import type { FlowStepAnswer } from './internal/flow-step.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
@@ -140,7 +140,7 @@ function FactorListSkeleton({ label }: { readonly label: string }) {
 export function MfaSection({ session }: MfaSectionProps) {
   const { t } = useAccountUiTranslation()
   const queryClient = useQueryClient()
-  const { data, isPending, refetch } = useFactorsQuery()
+  const { data, isPending, isFetching, error, refetch } = useFactorsQuery()
   const removeMutation = useAuthnMfaRemoveFactor()
 
   // The action a won step-up re-runs, if any.
@@ -361,10 +361,12 @@ export function MfaSection({ session }: MfaSectionProps) {
   return (
     <>
       <SectionCard title={t('mfa.title')}>
-        <AsyncSection
+        <AccountAsyncSection
         pending={pending}
         payload={factors}
         empty={false}
+        error={error}
+        refreshing={isFetching}
         loading={<FactorListSkeleton label={t('mfa.loading')} />}
         errorState={{
           title: t('mfa.error.title'),
@@ -546,7 +548,7 @@ export function MfaSection({ session }: MfaSectionProps) {
             </Box>
           )
         }
-      </AsyncSection>
+      </AccountAsyncSection>
       </SectionCard>
 
       <ConfirmDialog
