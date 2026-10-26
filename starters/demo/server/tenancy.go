@@ -165,7 +165,10 @@ func protectedTenant(id tenant.ID) bool {
 // who cannot enter the tenant. A refusal of the roster row removes what this
 // call wrote, so no tenant is left half-built — except ErrTenantExists, which is
 // another replica registering the identifier first: that domain is the winner's,
-// and the losing call leaves it untouched.
+// and the losing call leaves it untouched. A builtin tenant-admin role found
+// before the roster row is the same race seen one step earlier: when the table
+// carries the identifier, the call answers ErrTenantExists rather than a
+// builtin-role failure.
 //
 // A tenant the roster already holds is refused before any policy write: the
 // identifier's domain belongs to that tenant, and writing this call's role and
@@ -188,6 +191,19 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		DescriptionKey: tenantAdminDescriptionKey,
 		CreatedAt:      time.Now().UTC(),
 	}); err != nil {
+		// A builtin tenant-admin role means this domain was provisioned before.
+		// When the roster's table carries the identifier, another replica won
+		// the race and froze the role; the answer is the already-exists refusal,
+		// not a builtin-role failure.
+		if errors.Is(err, authz.ErrBuiltinRole) {
+			held, checkErr := p.rosterHolds(ctx, t.ID)
+			if checkErr != nil {
+				return fmt.Errorf("%s: reading whether the tenant %q is registered: %w", tenancyModuleName, t.ID, checkErr)
+			}
+			if held {
+				return fmt.Errorf("%w: identifier %q", tenant.ErrTenantExists, t.ID)
+			}
+		}
 		return fmt.Errorf("%s: writing the tenant's tenant-admin role: %w", tenancyModuleName, err)
 	}
 	grants := declaredGrants(p.catalog)
@@ -233,6 +249,20 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		return fmt.Errorf("%s: marking the tenant-admin role builtin: %w", tenancyModuleName, err)
 	}
 	return nil
+}
+
+// rosterHolds reports whether the roster's table carries the identifier. It
+// reads through EnterRegistered, which falls back to the table when this
+// replica's snapshot predates another replica's row: the snapshot Get at the top
+// of Provision is exactly what a racing creation may have missed.
+func (p *tenancyProduct) rosterHolds(ctx context.Context, id tenant.ID) (bool, error) {
+	if _, err := p.roster.EnterRegistered(ctx, id); err != nil {
+		if errors.Is(err, tenant.ErrInvalidTenant) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 // removeProvision removes what a failed provision wrote. It is best effort: a

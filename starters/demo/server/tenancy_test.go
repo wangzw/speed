@@ -231,6 +231,44 @@ func TestTheProvisionerMarksTheTenantAdminRoleBuiltin(t *testing.T) {
 	}
 }
 
+// TestTheProvisionerAnswersATakenIdentifierWhenTheWinnerFrozeTheRole holds the
+// same race one step later: the winning replica had already marked its role
+// builtin, so the losing call's PutRole is refused before Create is reached.
+// The identifier is registered, so the answer is the already-exists refusal, not
+// a builtin-role failure, and the winner's policy is untouched.
+func TestTheProvisionerAnswersATakenIdentifierWhenTheWinnerFrozeTheRole(t *testing.T) {
+	roster := newFakeRoster()
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	roster.lagging["acme"] = true
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.roles["acme"] = []authz.RoleRecord{
+		{Tenant: "acme", Role: authz.TenantAdminRole, Builtin: true},
+	}
+	manager.bindings["acme"] = []authz.Binding{
+		{Tenant: "acme", Account: "winner", Role: authz.TenantAdminRole},
+	}
+	seeder := newFakeSeeder(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
+
+	err := product.Provision(context.Background(),
+		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-loser")
+	if !errors.Is(err, tenant.ErrTenantExists) {
+		t.Fatalf("Provision of an identifier whose role is already builtin = %v, want ErrTenantExists", err)
+	}
+	roles, _ := manager.Roles(context.Background(), "acme")
+	if len(roles) != 1 || !roles[0].Builtin {
+		t.Errorf("the winner's role = %+v, want the builtin tenant-admin left in place", roles)
+	}
+	bindings, _ := manager.Bindings(context.Background(), "acme")
+	if len(bindings) != 1 || bindings[0].Account != "winner" {
+		t.Errorf("the winner's bindings = %+v, want only its own binding", bindings)
+	}
+}
+
 // TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses holds the failure
 // path: a roster that refuses the row leaves no role, grant, binding or
 // membership behind.
