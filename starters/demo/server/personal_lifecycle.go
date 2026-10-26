@@ -184,7 +184,11 @@ func (p *personalProduct) lifecycleTenant(ctx context.Context, id tenant.ID) (te
 
 // clearMemberships removes every membership of the tenant, one page at a time.
 // The account's own row is already gone with its account in the account module's
-// transaction; this step collects the rows an administrator added.
+// transaction; this step collects the rows an administrator added. The removal
+// goes through the account module's account-deletion path rather than the
+// explicit removal: the host's membership guard refuses every removal in a
+// personal tenant, and the deleted account's winding-up is not an explicit
+// removal from a domain that must stay governed.
 func (p *personalProduct) clearMemberships(ctx context.Context, tenantID string) error {
 	page := authn.Page{Limit: personalMemberPage}
 	for {
@@ -193,7 +197,7 @@ func (p *personalProduct) clearMemberships(ctx context.Context, tenantID string)
 			return fmt.Errorf("listing the personal tenant's members: %w", err)
 		}
 		for _, membership := range members {
-			if err := p.memberships.Remove(ctx, membership.Account, tenantID); err != nil {
+			if err := p.membershipCleanup.RemoveMembershipForDeletion(ctx, membership.Account, tenantID); err != nil {
 				return fmt.Errorf("removing a membership from the personal tenant: %w", err)
 			}
 		}

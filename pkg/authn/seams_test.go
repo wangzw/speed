@@ -92,6 +92,9 @@ var seamSignatures = map[string][]string{
 	"MembershipLifecycle": {
 		"MembershipRemoved(ctx context.Context, id AccountID, tenant string) error",
 	},
+	"MembershipCleanup": {
+		"RemoveMembershipForDeletion(ctx context.Context, id AccountID, tenant string) error",
+	},
 	"MembershipGuard": {
 		"CheckMembershipRemoval(ctx context.Context, id AccountID, tenant string) error",
 	},
@@ -337,7 +340,8 @@ var moduleDeliveries = map[string][]reflect.Type{
 	"account": {
 		reflect.TypeFor[Accounts](), reflect.TypeFor[AccountAdmin](),
 		reflect.TypeFor[Signups](), reflect.TypeFor[SignupVerification](),
-		reflect.TypeFor[Passwords](), reflect.TypeFor[Memberships](), reflect.TypeFor[Throttle](),
+		reflect.TypeFor[Passwords](), reflect.TypeFor[Memberships](),
+		reflect.TypeFor[MembershipCleanup](), reflect.TypeFor[Throttle](),
 	},
 	"session": {
 		reflect.TypeFor[Sessions](), reflect.TypeFor[Verifier](), reflect.TypeFor[CookieClearer](),

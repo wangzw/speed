@@ -223,6 +223,17 @@ func (m *fakeMemberships) Remove(_ context.Context, id authn.AccountID, tenantID
 	if m.removeErr != nil {
 		return m.removeErr
 	}
+	m.removeRow(id, tenantID)
+	return nil
+}
+
+// RemoveMembershipForDeletion deletes one membership without asking a guard, as
+// the account module's account-deletion path does.
+func (m *fakeMemberships) RemoveMembershipForDeletion(ctx context.Context, id authn.AccountID, tenantID string) error {
+	return m.Remove(ctx, id, tenantID)
+}
+
+func (m *fakeMemberships) removeRow(id authn.AccountID, tenantID string) {
 	held := m.rows[id]
 	kept := held[:0]
 	for _, membership := range held {
@@ -235,7 +246,6 @@ func (m *fakeMemberships) Remove(_ context.Context, id authn.AccountID, tenantID
 	} else {
 		m.rows[id] = kept
 	}
-	return nil
 }
 
 func (m *fakeMemberships) Tenants(_ context.Context, id authn.AccountID) ([]authn.Membership, error) {
@@ -685,10 +695,11 @@ func unitProductWith(cfg personalConfig) (*personalProduct, *fakeRoster, *fakeMe
 	auditor := newRecordedAudit()
 	auditor.steps = steps
 	return &personalProduct{
-		config:      cfg,
-		roster:      roster,
-		memberships: memberships,
-		manager:     manager,
+		config:            cfg,
+		roster:            roster,
+		memberships:       memberships,
+		membershipCleanup: memberships,
+		manager:           manager,
 		seeder:      seeder,
 		catalog:     fakeCatalog{},
 		audit:       auditor,

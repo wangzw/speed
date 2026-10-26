@@ -293,6 +293,7 @@ func personalModule() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*tenant.Catalog)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*authn.MembershipCleanup)(nil)},
 			{Token: (*authz.Manager)(nil)},
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
@@ -383,7 +384,12 @@ type personalProduct struct {
 	config      personalConfig
 	roster      tenant.Catalog
 	memberships authn.Memberships
-	manager     authz.Manager
+	// membershipCleanup is the account-deletion removal path, which does not ask
+	// the membership guard: the host's own guard refuses every removal in a
+	// personal tenant, and the deletion's cleanup still has to collect the rows
+	// an administrator added.
+	membershipCleanup authn.MembershipCleanup
+	manager           authz.Manager
 	seeder      authz.Seeder
 	catalog     authz.Catalog
 	audit       audit.Audit
@@ -419,6 +425,10 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the memberships: %w", personalModuleName, err)
 	}
+	membershipCleanup, err := core.Resolve[authn.MembershipCleanup](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the account-deletion membership removal: %w", personalModuleName, err)
+	}
 	manager, err := core.Resolve[authz.Manager](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the policy manager: %w", personalModuleName, err)
@@ -436,15 +446,16 @@ func newPersonalProduct(reg *core.Registry) (*personalProduct, error) {
 		return nil, fmt.Errorf("%s: taking up the audit capability: %w", personalModuleName, err)
 	}
 	p := &personalProduct{
-		config:      cfg,
-		roster:      roster,
-		memberships: memberships,
-		manager:     manager,
-		seeder:      seeder,
-		catalog:     catalog,
-		audit:       auditor,
-		logger:      log.Default(),
-		seen:        newPersonalSeenEvents(personalSeenEventsCapacity),
+		config:            cfg,
+		roster:            roster,
+		memberships:       memberships,
+		membershipCleanup: membershipCleanup,
+		manager:           manager,
+		seeder:            seeder,
+		catalog:           catalog,
+		audit:             auditor,
+		logger:            log.Default(),
+		seen:              newPersonalSeenEvents(personalSeenEventsCapacity),
 	}
 	if delivered, err := core.Resolve[log.Logger](reg); err == nil {
 		p.logger = delivered.Named(personalModuleName)

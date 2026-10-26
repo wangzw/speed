@@ -70,6 +70,37 @@ func (g *recordingMembershipGuard) seen() []string {
 	return append([]string(nil), g.calls...)
 }
 
+// RemoveMembershipForDeletion is the account-deletion path: it neither asks the
+// guard nor calls the membership lifecycle hook. The deletion's own cleanup
+// withdraws what the modules hold, and a guard keeps a domain that stays in
+// service governable rather than one whose owner is being erased.
+func TestRemoveMembershipForDeletionSkipsTheGuardAndTheHook(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("wound-up-member", "")
+		if err := h.p.Put(ctx, authn.Membership{Account: id, Tenant: "acme", Active: true, Source: authn.ReasonAdmin}); err != nil {
+			t.Fatalf("joining: %v", err)
+		}
+		guard := &recordingMembershipGuard{err: authn.ErrLastTenantAdmin}
+		hook := &recordingMembershipHook{}
+		h.p.membershipGuards = []authn.MembershipGuard{guard}
+		h.p.membershipHooks = []authn.MembershipLifecycle{hook}
+
+		if err := h.p.RemoveMembershipForDeletion(ctx, id, "acme"); err != nil {
+			t.Fatalf("the deletion's removal was refused: %v", err)
+		}
+		if n := h.count(tableMemberships, "account_id = ? AND tenant_id = ?", id.String(), "acme"); n != 0 {
+			t.Errorf("%d membership row(s) left after the deletion's removal, want none", n)
+		}
+		if got := guard.seen(); len(got) != 0 {
+			t.Errorf("the guard was asked about %v on the deletion path, want nothing", got)
+		}
+		if got := hook.seen(); len(got) != 0 {
+			t.Errorf("the membership hook ran %v on the deletion path, want nothing", got)
+		}
+	})
+}
+
 // Remove calls the membership lifecycle hook after the removal commits, so a
 // module that holds data keyed by the membership cleans it on the ordinary path.
 func TestRemoveCallsTheMembershipHook(t *testing.T) {

@@ -4,13 +4,14 @@ The account store of the authentication capability, registered as
 `authn.account`. It owns the tables for the accounts, the identifiers they are
 found by, the contact reservations they own, their external
 identities and tenant memberships, their password credentials, the secrets of
-service accounts, and the failure back-off; it delivers seven capabilities
+service accounts, and the failure back-off; it delivers eight capabilities
 exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
-`Passwords`, `Memberships` and `Throttle` — and it creates an account and moves
-it between disabled, enabled and deleted, calling every `AccountLifecycle` hook
-after the transaction commits. An explicit membership removal asks every
-optional `MembershipGuard` first and calls every `MembershipLifecycle` hook after
-the removal commits.
+`Passwords`, `Memberships`, `MembershipCleanup` and `Throttle` — and it creates
+an account and moves it between disabled, enabled and deleted, calling every
+`AccountLifecycle` hook after the transaction commits. An explicit membership
+removal asks every optional `MembershipGuard` first and calls every
+`MembershipLifecycle` hook after the removal commits; the account-deletion
+cleanup removes through `MembershipCleanup`, which asks neither.
 
 No other module reads these tables. Every module that needs an account, a
 credential, a membership or a back-off takes one of the seven interfaces from the
@@ -20,13 +21,13 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
 
 ## Boundaries
 
-- **The seven interfaces are one instance.** The method names of `Accounts`,
-  `AccountAdmin`, `Signups`, `SignupVerification`, `Passwords`, `Memberships` and
-  `Throttle` are pairwise disjoint, which is what lets the one `*product` satisfy
-  all of them. `Memberships` reads one membership as `Membership` and writes as
-  `Put`, never `Get` or `Set`, so that a name never collides with `Accounts.Get`
-  or `Passwords.Set`. A new method must not reuse a name another of the seven
-  already has.
+- **The eight interfaces are one instance.** The method names of `Accounts`,
+  `AccountAdmin`, `Signups`, `SignupVerification`, `Passwords`, `Memberships`,
+  `MembershipCleanup` and `Throttle` are pairwise disjoint, which is what lets
+  the one `*product` satisfy all of them. `Memberships` reads one membership as
+  `Membership` and writes as `Put`, never `Get` or `Set`, so that a name never
+  collides with `Accounts.Get` or `Passwords.Set`. A new method must not reuse a
+  name another of the eight already has.
 - **A table's name is one constant in three places.** A migration file, the
   model's `TableName` and the `table…` constant in `rows.go` all name the same
   table, and the `tables` list is what `Start` probes. A change to a name
@@ -60,7 +61,8 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   gone, and a failing hook makes the call `ErrCleanupIncomplete`. Account
   deletion does not come through `Remove`, so it consults neither the guard nor
   the membership hooks; its own `AccountDeleted` hook and the membership events
-  are its paths.
+  are its paths, and its cleanup collects rows through
+  `MembershipCleanup.RemoveMembershipForDeletion`, which asks neither.
 - **Every time written to the database or bound to a query goes through
   `internal/clock` and is converted to UTC.** The SQLite driver compares times
   as text, so a non-UTC value makes `valid_after`, a back-off's lock and an

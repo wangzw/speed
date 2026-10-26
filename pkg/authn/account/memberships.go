@@ -213,6 +213,28 @@ func (p *product) Remove(ctx context.Context, id authn.AccountID, tenant string)
 			return err
 		}
 	}
+	if err := p.removeMembership(ctx, id, tenant); err != nil {
+		return err
+	}
+	return p.callMembershipHooks(ctx, id, tenant)
+}
+
+// RemoveMembershipForDeletion deletes one membership on the account-deletion
+// path. It asks no guard and calls no membership lifecycle hook: the deletion's
+// own cleanup is the winding-up, and a guard keeps a domain that stays in service
+// governable, not one whose owner is being erased. One that is not there is
+// already removed, and the call is nil.
+func (p *product) RemoveMembershipForDeletion(ctx context.Context, id authn.AccountID, tenant string) error {
+	if id.IsStatic() || tenant == "" {
+		return nil
+	}
+	return p.removeMembership(ctx, id, tenant)
+}
+
+// removeMembership deletes one membership row and publishes the change. A row
+// that is not there is already removed, and the call is nil. The caller decides
+// whether the guards and the membership lifecycle hooks apply.
+func (p *product) removeMembership(ctx context.Context, id authn.AccountID, tenant string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		var held membershipRow
@@ -236,7 +258,7 @@ func (p *product) Remove(ctx context.Context, id authn.AccountID, tenant string)
 		return failed("removing a membership", err)
 	}
 	p.publish(ctx, b)
-	return p.callMembershipHooks(ctx, id, tenant)
+	return nil
 }
 
 // membershipExists reports whether the account holds a membership row in the

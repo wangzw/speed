@@ -297,7 +297,58 @@ func TestTheAccountLifecycleDeletionClearsTheLastBindingWithoutThePolicyHook(t *
 	}
 }
 
-// TestTheAccountLifecycleDeletionToleratesABuiltinTenantAdminRole holds the tolerance the design
+// guardedMemberships mirrors the account module's explicit removal over the unit
+// stand-in: the removal asks the guard first, and a refusal comes back wrapped
+// the way the account module's lifecycle call wraps it. The deletion's removal
+// path does not ask the guard.
+type guardedMemberships struct {
+	*fakeMemberships
+	guard authn.MembershipGuard
+}
+
+func (m *guardedMemberships) Remove(ctx context.Context, id authn.AccountID, tenantID string) error {
+	if err := m.guard.CheckMembershipRemoval(ctx, id, tenantID); err != nil {
+		return fmt.Errorf("%w: %w", authn.ErrCleanupIncomplete, err)
+	}
+	return m.fakeMemberships.Remove(ctx, id, tenantID)
+}
+
+func (m *guardedMemberships) RemoveMembershipForDeletion(ctx context.Context, id authn.AccountID, tenantID string) error {
+	return m.fakeMemberships.Remove(ctx, id, tenantID)
+}
+
+// TestTheAccountLifecycleDeletionIsNotBlockedByThePersonalGuard holds the
+// deletion's exception to the membership guard. The host guard refuses every
+// removal in a personal tenant, which is what keeps the space single-member on
+// the management surface; a deleted account's winding-up is not an explicit
+// removal, and the cleanup must collect the rows an administrator added.
+func TestTheAccountLifecycleDeletionIsNotBlockedByThePersonalGuard(t *testing.T) {
+	product, roster, memberships, manager, _ := seededPersonal(t)
+	id := personalTenantID(unitAccount)
+	tenantID := string(id)
+	other := authn.AccountID("zz-other-member")
+	memberships.rows[other] = []authn.Membership{
+		{Account: other, Tenant: tenantID, Active: true, Source: "invite"},
+	}
+
+	// The real host guard refuses every removal in a personal tenant.
+	guard := tenancyProductOf(roster, memberships, manager, nil, nil)
+	guarded := &guardedMemberships{fakeMemberships: memberships, guard: guard}
+	product.memberships = guarded
+	product.membershipCleanup = guarded
+
+	if err := product.AccountDeleted(context.Background(), unitAccount); err != nil {
+		t.Fatalf("the delete hook was blocked by the personal-domain guard: %v", err)
+	}
+	if held := memberships.rows[other]; len(held) != 0 {
+		t.Errorf("the other account's membership survived: %v", held)
+	}
+	if got := roster.rows[id].Status; got != tenant.StatusDeleted {
+		t.Errorf("the tenant's status is %v, want deleted", got)
+	}
+}
+
+
 // names: a role an operator marked builtin cannot be deleted, and the deletion
 // carries on — the bindings are cleared and the tombstone lands.
 func TestTheAccountLifecycleDeletionToleratesABuiltinTenantAdminRole(t *testing.T) {

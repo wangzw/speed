@@ -60,6 +60,23 @@ type MembershipLifecycle interface {
 	MembershipRemoved(ctx context.Context, id AccountID, tenant string) error
 }
 
+// MembershipCleanup removes a membership on the account-deletion path. The
+// account module delivers it beside Memberships.
+//
+// The removal through Memberships asks every MembershipGuard, which keeps a
+// domain that stays in service governable or a space that must stay single
+// member. Account deletion is the account's terminal winding-up, and the
+// deletions its own cleanup collects are the rows an administrator added, so it
+// removes through this interface instead: no guard is asked, and no
+// MembershipLifecycle hook runs, because the deletion's own cleanup is what
+// withdraws the data the modules hold. An implementation is idempotent: a row
+// that is not there is already removed.
+type MembershipCleanup interface {
+	// RemoveMembershipForDeletion deletes one membership without asking the
+	// guards or calling the membership lifecycle hooks.
+	RemoveMembershipForDeletion(ctx context.Context, id AccountID, tenant string) error
+}
+
 // MembershipGuard is asked before an explicit membership removal, so that a
 // module which holds a tenant's policy can refuse a removal that would leave the
 // tenant with nobody who may govern it, or leave a space that must stay single

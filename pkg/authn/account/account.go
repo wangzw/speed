@@ -124,6 +124,7 @@ func Module() core.Module {
 			{Token: (*authn.SignupVerification)(nil), Exclusive: true},
 			{Token: (*authn.Passwords)(nil), Exclusive: true},
 			{Token: (*authn.Memberships)(nil), Exclusive: true},
+			{Token: (*authn.MembershipCleanup)(nil), Exclusive: true},
 			{Token: (*authn.Throttle)(nil), Exclusive: true},
 		},
 		Resources: []any{schema(), settingsSchema(), db.Migrations{FS: migrationsFS}},
