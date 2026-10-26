@@ -1066,6 +1066,38 @@ func TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist(t *testing.T) {
 	}
 }
 
+// TestThePersonalTenantAdminRoleIsNotBuiltin holds the one builtin difference
+// from a business tenant: the host adds the personal tenant's grants with the
+// seeding surface and revokes the ones outside the allowlist with the manager,
+// and a builtin role refuses the revocation.
+func TestThePersonalTenantAdminRoleIsNotBuiltin(t *testing.T) {
+	product, _, _, manager, _ := unitProduct()
+	ctx := context.Background()
+	tenantID := string(personalTenantID(unitAccount))
+
+	if _, err := product.ensure(ctx, unitAccount); err != nil {
+		t.Fatalf("the ensure: %v", err)
+	}
+	roles, err := manager.Roles(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("reading the personal tenant's roles: %v", err)
+	}
+	found := false
+	for _, role := range roles {
+		if role.Role != personalTenantAdminRole {
+			continue
+		}
+		found = true
+		if role.Builtin {
+			t.Error("the personal tenant's tenant-admin role is builtin, so the manager " +
+				"cannot revoke a grant outside the allowlist")
+		}
+	}
+	if !found {
+		t.Errorf("the personal tenant holds no tenant-admin role: %+v", roles)
+	}
+}
+
 // TestTheEnsureRefusesAServiceAccount holds the account-kind refusal: a
 // client-secret identity is a non-interactive API client and gets no workspace,
 // and nothing is written for it.
@@ -1396,11 +1428,12 @@ type personalCallReply struct {
 }
 
 // TestThePersonalTenantUnblocksTheTenantScopedRoutes is the fail-before case:
-// an account with no membership reads a tenant-scoped route as a 404, the ensure
-// creates its personal tenant, and the same read then succeeds under that
-// tenant. A second ensure after the fact, which is what a page reload makes,
-// reads the same tenant back. The object store's client-facing routes are gone,
-// so an account with a tenant still reaches no object API.
+// an account with no membership in the tenant a request names reads that
+// tenant-scoped route as a 404; the account's own personal tenant, built by the
+// seed's account-creation hook, then answers the same read. A second ensure,
+// which is what a page reload makes, reads the same tenant back and creates
+// nothing. The object store's client-facing routes are gone, so an account with
+// a tenant still reaches no object API.
 func TestThePersonalTenantUnblocksTheTenantScopedRoutes(t *testing.T) {
 	base, token := personalServe(t, true)
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -1425,8 +1458,10 @@ func TestThePersonalTenantUnblocksTheTenantScopedRoutes(t *testing.T) {
 	if err := json.Unmarshal(first.body, &reply); err != nil {
 		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, reply.Tenant.ID)
 	}
-	if !reply.Created {
-		t.Errorf("the first ensure answered created=false, want true")
+	// The seed already built the personal tenant while it wrote the account, so
+	// the ensure reads it back rather than creating a second one.
+	if reply.Created {
+		t.Error("the seed already built the personal tenant, but the ensure reported created=true")
 	}
 	if reply.Tenant.Kind != personalKind {
 		t.Errorf("the ensure's kind is %q, want %q", reply.Tenant.Kind, personalKind)
@@ -1637,6 +1672,206 @@ func TestTheTenantAdminHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 			t.Errorf("disabling the protected tenant %q answered %d, want 403 urn:speed:tenant:protected:\n%s",
 				id, refused.status, refused.body)
 		}
+	}
+}
+
+// TestTheSeedBuildsAPersonalTenantForEveryPresetAccount holds the seed's
+// inclusion of the personal module: the account creation hook runs while the
+// seed writes the preset accounts, so no seeded account is left without its
+// space until a browser happens to call the backfill.
+func TestTheSeedBuildsAPersonalTenantForEveryPresetAccount(t *testing.T) {
+	base, memberToken := personalServe(t, true)
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	for name, token := range map[string]string{
+		"operator": signIn(t, base, seedIdentifier, seedPassword),
+		"ops":      memberToken,
+	} {
+		self := send(t, client, http.MethodGet, base+"/api/v1/auth/me/tenants", nil,
+			map[string]string{"Authorization": "Bearer " + token})
+		if self.status != http.StatusOK {
+			t.Fatalf("reading %s's tenants answered %d:\n%s", name, self.status, self.body)
+		}
+		var answer struct {
+			Tenants []struct {
+				ID string `json:"id"`
+			} `json:"tenants"`
+		}
+		if err := json.Unmarshal(self.body, &answer); err != nil {
+			t.Fatalf("reading %s's tenants: %v\n%s", name, err, self.body)
+		}
+		found := false
+		for _, held := range answer.Tenants {
+			if strings.HasPrefix(held.ID, personalIDPrefix) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s has no personal tenant before any backfill: %s", name, self.body)
+		}
+	}
+}
+
+// TestTheSeedBuildsNoPersonalTenantWithTheSwitchOff holds the other half of the
+// seed's inclusion: the creation hook honours the switch, so a deployment that
+// does not serve the feature gets no personal tenant rows.
+func TestTheSeedBuildsNoPersonalTenantWithTheSwitchOff(t *testing.T) {
+	base, memberToken := personalServe(t, false)
+	read := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
+		base+"/api/v1/auth/me/tenants", nil,
+		map[string]string{"Authorization": "Bearer " + memberToken})
+	if read.status != http.StatusOK {
+		t.Fatalf("reading the account's tenants answered %d:\n%s", read.status, read.body)
+	}
+	var answer struct {
+		Tenants []struct {
+			ID string `json:"id"`
+		} `json:"tenants"`
+	}
+	if err := json.Unmarshal(read.body, &answer); err != nil {
+		t.Fatalf("the answer is not JSON: %v\n%s", err, read.body)
+	}
+	for _, held := range answer.Tenants {
+		if strings.HasPrefix(held.ID, personalIDPrefix) {
+			t.Errorf("the switch is off and the seed built the personal tenant %q", held.ID)
+		}
+	}
+}
+
+// TestThePolicyWriteGuardRefusesAPersonalTenantsPolicyWrite holds the host's
+// write guard in the program: the platform administrator may manage an
+// ordinary tenant's bindings, and the same write against a personal tenant is
+// refused with the guard's forbidden answer rather than reaching the manager.
+func TestThePolicyWriteGuardRefusesAPersonalTenantsPolicyWrite(t *testing.T) {
+	base, memberToken := personalServe(t, true)
+	client := &http.Client{Timeout: 10 * time.Second}
+	memberAuth := map[string]string{"Authorization": "Bearer " + memberToken}
+
+	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, memberAuth)
+	if ensured.status != http.StatusOK {
+		t.Fatalf("the ensure answered %d, want 200:\n%s", ensured.status, ensured.body)
+	}
+	var reply personalCallReply
+	if err := json.Unmarshal(ensured.body, &reply); err != nil {
+		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, ensured.body)
+	}
+
+	operatorToken := signIn(t, base, seedIdentifier, seedPassword)
+	operatorAuth := map[string]string{"Authorization": "Bearer " + operatorToken}
+	profile := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil, operatorAuth)
+	var who struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := json.Unmarshal(profile.body, &who); err != nil || who.AccountID == "" {
+		t.Fatalf("reading the administrator's account identifier: %v\n%s", err, profile.body)
+	}
+
+	refused := send(t, client, http.MethodPut,
+		base+"/api/v1/system/tenants/"+reply.Tenant.ID+"/bindings/"+who.AccountID+"/"+string(personalTenantAdminRole),
+		nil, operatorAuth)
+	if refused.status != http.StatusForbidden ||
+		!strings.Contains(string(refused.body), "urn:speed:authz:forbidden") {
+		t.Errorf("the administrator wrote a binding into the personal tenant and answered %d, "+
+			"want 403 urn:speed:authz:forbidden:\n%s", refused.status, refused.body)
+	}
+
+	// The control: the same write in a business tenant reaches the manager and is
+	// idempotent over the binding the seed already wrote.
+	allowed := send(t, client, http.MethodPut,
+		base+"/api/v1/system/tenants/"+demoTenant+"/bindings/"+who.AccountID+"/"+string(personalTenantAdminRole),
+		nil, operatorAuth)
+	if allowed.status != http.StatusNoContent {
+		t.Errorf("the administrator's binding write in %s answered %d, want 204:\n%s",
+			demoTenant, allowed.status, allowed.body)
+	}
+}
+
+// TestThePersonalTenantRefusesAMembershipAddition holds the addition half of the
+// single-member rule: the platform administrator has no membership.manage in the
+// personal tenant's domain, and the tenant's own tenant-admin holds an
+// allowlist without it, so neither can add a member.
+func TestThePersonalTenantRefusesAMembershipAddition(t *testing.T) {
+	base, memberToken := personalServe(t, true)
+	client := &http.Client{Timeout: 10 * time.Second}
+	memberAuth := map[string]string{"Authorization": "Bearer " + memberToken}
+
+	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, memberAuth)
+	if ensured.status != http.StatusOK {
+		t.Fatalf("the ensure answered %d, want 200:\n%s", ensured.status, ensured.body)
+	}
+	var reply personalCallReply
+	if err := json.Unmarshal(ensured.body, &reply); err != nil {
+		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, ensured.body)
+	}
+
+	operatorToken := signIn(t, base, seedIdentifier, seedPassword)
+	operatorAuth := map[string]string{"Authorization": "Bearer " + operatorToken}
+	profile := send(t, client, http.MethodGet, base+"/api/v1/auth/me", nil, operatorAuth)
+	var who struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := json.Unmarshal(profile.body, &who); err != nil || who.AccountID == "" {
+		t.Fatalf("reading the administrator's account identifier: %v\n%s", err, profile.body)
+	}
+
+	added := send(t, client, http.MethodPut,
+		base+"/api/v1/tenants/"+reply.Tenant.ID+"/members/"+who.AccountID,
+		map[string]any{"active": true}, operatorAuth)
+	if added.status != http.StatusForbidden {
+		t.Errorf("the platform administrator added a member to the personal tenant and answered %d, "+
+			"want 403:\n%s", added.status, added.body)
+	}
+}
+
+// TestThePersonalTenantAdminRoleIsNotBuiltinThroughTheAPI holds the builtin
+// distinction the host relies on: a personal tenant's tenant-admin is not
+// builtin, because the host revokes grants outside the allowlist through the
+// manager, while a business tenant's is.
+func TestThePersonalTenantAdminRoleIsNotBuiltinThroughTheAPI(t *testing.T) {
+	base, memberToken := personalServe(t, true)
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil,
+		map[string]string{"Authorization": "Bearer " + memberToken})
+	if ensured.status != http.StatusOK {
+		t.Fatalf("the ensure answered %d, want 200:\n%s", ensured.status, ensured.body)
+	}
+	var reply personalCallReply
+	if err := json.Unmarshal(ensured.body, &reply); err != nil {
+		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, ensured.body)
+	}
+
+	operatorAuth := map[string]string{
+		"Authorization": "Bearer " + signIn(t, base, seedIdentifier, seedPassword),
+	}
+	builtinOf := func(tenantID string) bool {
+		got := send(t, client, http.MethodGet,
+			base+"/api/v1/system/tenants/"+tenantID+"/roles", nil, operatorAuth)
+		if got.status != http.StatusOK {
+			t.Fatalf("reading the roles of %s answered %d:\n%s", tenantID, got.status, got.body)
+		}
+		var listed struct {
+			Roles []struct {
+				Role    string `json:"role"`
+				Builtin bool   `json:"builtin"`
+			} `json:"roles"`
+		}
+		if err := json.Unmarshal(got.body, &listed); err != nil {
+			t.Fatalf("reading the roles of %s: %v\n%s", tenantID, err, got.body)
+		}
+		for _, role := range listed.Roles {
+			if role.Role == string(personalTenantAdminRole) {
+				return role.Builtin
+			}
+		}
+		t.Fatalf("the tenant %s holds no tenant-admin role: %s", tenantID, got.body)
+		return false
+	}
+	if builtinOf(reply.Tenant.ID) {
+		t.Error("the personal tenant's tenant-admin role is builtin")
+	}
+	if !builtinOf(demoTenant) {
+		t.Error("the business tenant's tenant-admin role is not builtin")
 	}
 }
 

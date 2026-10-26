@@ -381,11 +381,16 @@ var (
 
 		// The host's tenancy policy seams: the membership check a
 		// platform-administrator binding asks, the write guard protecting system
-		// and personal tenants, and the provisioner that opens a tenant with its
-		// first tenant-admin. The management surface requires the guard and the
-		// provisioner, so a run that names tenant.admin without this module does
-		// not start. See tenancy.go.
+		// and personal tenants, the membership-removal guard, and the provisioner
+		// that opens a tenant with its first tenant-admin. The management surface
+		// requires the guard and the provisioner, so a run that names tenant.admin
+		// without this module does not start. See tenancy.go.
 		tenancyModuleName,
+		// The management surface's write guard: it refuses every policy write in a
+		// personal tenant's domain. It is named apart from the module above because
+		// tenant.WriteGuard and authz.WriteGuard both declare a Denied method, which
+		// one Go type cannot carry twice. See tenancy.go.
+		policyWriteGuardModuleName,
 
 		objectstorefs.ModuleName,
 		objectstoremeta.ModuleName,
@@ -580,10 +585,23 @@ func addStack(root *config.Command, s stack) {
 	// membership) are staged into it, and because an account module with a bus
 	// and no outbox says so at startup. The key-value backend is left out —
 	// nothing this command runs reaches for one.
+	//
+	// It names the personal-tenant module and the audit journal that module
+	// requires, so the account-creation hook runs while this command writes the
+	// preset accounts. A deployment that enables the feature then has every
+	// seeded account's personal tenant before the first request arrives; without
+	// the module, the accounts exist with no space until a browser calls the
+	// backfill. The hook honours the feature switch, so a deployment with it off
+	// builds no personal tenant here either.
+	//
+	// The journal's read surface names an entry point, so the entry-point module
+	// comes with it. It binds no address here: this command drives to Start, and
+	// only Serve binds. The journal writes the create and delete rows the
+	// personal module records, and those rows are part of seeding an account.
 	seed := node.Sub(seedCommand)
 	seed.Include(seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
 		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName,
-		tenancyModuleName)
+		tenancyModuleName, speedhttp.ModuleName, auditjournal.ModuleName, personalModuleName)
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes

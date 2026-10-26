@@ -8,10 +8,13 @@ package main
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -304,6 +307,139 @@ func TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses(t *testing.T) {
 	}
 	if member, _ := memberships.IsMember(context.Background(), authn.AccountID("acct-1"), "acme"); member {
 		t.Error("the failed provision left the creator's membership behind")
+	}
+}
+
+// TestTheMembershipCheckerTrustsAConfiguredStaticPrincipal holds the host's
+// exception for the static credential table: its subjects are operators the
+// deployment configured, not accounts that registered themselves, so they hold
+// no membership row and the checker answers true rather than reading a row that
+// does not exist.
+func TestTheMembershipCheckerTrustsAConfiguredStaticPrincipal(t *testing.T) {
+	memberships := newFakeMemberships()
+	product := tenancyProductOf(newFakeRoster(), memberships, nil, nil, nil)
+
+	for _, tenantID := range []string{"system", "acme"} {
+		member, err := product.IsMember(context.Background(), tenantID, "static.ops")
+		if err != nil {
+			t.Fatalf("IsMember(static.ops, %q): %v", tenantID, err)
+		}
+		if !member {
+			t.Errorf("the configured static principal static.ops is not a member of %q", tenantID)
+		}
+	}
+	// The exception is the static namespace, not every unparseable subject.
+	member, err := product.IsMember(context.Background(), "system", "not an account id")
+	if err != nil {
+		t.Fatalf("IsMember of an unparseable subject: %v", err)
+	}
+	if member {
+		t.Error("a subject outside the account-identifier domain read as a member")
+	}
+}
+
+// TestThePolicyWriteGuardRefusesEveryPersonalDomainWrite holds the host's
+// protection of a personal tenant's policy data: every management write of a
+// role, a grant or a binding is refused in a domain whose identifier starts
+// with the personal prefix, and an ordinary or system domain is left alone.
+func TestThePolicyWriteGuardRefusesEveryPersonalDomainWrite(t *testing.T) {
+	guard := policyWriteGuard{}
+	ctx := context.Background()
+	ops := []authz.WriteOp{authz.WriteRole, authz.WriteGrant, authz.WriteBinding}
+	for _, op := range ops {
+		for _, domain := range []string{personalIDPrefix + "acct-1", personalIDPrefix} {
+			denied, err := guard.Denied(ctx, domain, op)
+			if err != nil {
+				t.Fatalf("Denied(%q, %d): %v", domain, op, err)
+			}
+			if !denied {
+				t.Errorf("Denied(%q, %d) = false, want the personal domain refused", domain, op)
+			}
+		}
+		for _, domain := range []string{"acme", string(authz.PlatformDomain)} {
+			denied, err := guard.Denied(ctx, domain, op)
+			if err != nil {
+				t.Fatalf("Denied(%q, %d): %v", domain, op, err)
+			}
+			if denied {
+				t.Errorf("Denied(%q, %d) = true, want an ordinary domain allowed", domain, op)
+			}
+		}
+	}
+}
+
+// TestTheMembershipGuardRefusesAPersonalDomainRemoval holds the personal tenant
+// as a single-member space: a removal of any membership in it is refused, even
+// when another tenant-administrator binding would satisfy the last-admin floor.
+func TestTheMembershipGuardRefusesAPersonalDomainRemoval(t *testing.T) {
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	personalID := personalIDPrefix + "acct-1"
+	manager.bindings[personalID] = []authz.Binding{
+		{Tenant: personalID, Account: "acct-2", Role: authz.TenantAdminRole},
+	}
+	product := tenancyProductOf(newFakeRoster(), newFakeMemberships(), manager, newFakeSeeder(grants), nil)
+
+	err := product.CheckMembershipRemoval(context.Background(), authn.AccountID("acct-2"), personalID)
+	if !errors.Is(err, authn.ErrLastTenantAdmin) {
+		t.Fatalf("CheckMembershipRemoval in a personal domain = %v, want a refusal", err)
+	}
+}
+
+// TestTheMembershipGuardRefusesTheLastTenantAdmin holds the floor outside the
+// personal prefix: the removal of a tenant's only tenant-administrator is
+// refused, while another administrator or a role that is not tenant-admin keeps
+// it satisfied.
+func TestTheMembershipGuardRefusesTheLastTenantAdmin(t *testing.T) {
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.bindings["acme"] = []authz.Binding{
+		{Tenant: "acme", Account: "acct-1", Role: authz.TenantAdminRole},
+	}
+	product := tenancyProductOf(newFakeRoster(), newFakeMemberships(), manager, newFakeSeeder(grants), nil)
+	ctx := context.Background()
+
+	err := product.CheckMembershipRemoval(ctx, authn.AccountID("acct-1"), "acme")
+	if !errors.Is(err, authn.ErrLastTenantAdmin) {
+		t.Fatalf("CheckMembershipRemoval of the last tenant administrator = %v, want ErrLastTenantAdmin", err)
+	}
+
+	manager.bindings["acme"] = append(manager.bindings["acme"],
+		authz.Binding{Tenant: "acme", Account: "acct-2", Role: authz.TenantAdminRole})
+	if err := product.CheckMembershipRemoval(ctx, authn.AccountID("acct-1"), "acme"); err != nil {
+		t.Errorf("CheckMembershipRemoval beside another tenant administrator = %v, want nil", err)
+	}
+
+	manager.bindings["beta"] = []authz.Binding{
+		{Tenant: "beta", Account: "acct-3", Role: "viewer"},
+	}
+	if err := product.CheckMembershipRemoval(ctx, authn.AccountID("acct-3"), "beta"); err != nil {
+		t.Errorf("CheckMembershipRemoval of an account with no tenant-admin binding = %v, want nil", err)
+	}
+}
+
+// TestTheHostModulesProvideTheTwoGuards holds the wiring: the tenancy module
+// delivers the membership guard, and a module of its own delivers the policy
+// write guard, because one Go type cannot carry both Denied methods.
+func TestTheHostModulesProvideTheTwoGuards(t *testing.T) {
+	provides := func(module core.Module, token any) bool {
+		want := reflect.TypeOf(token)
+		for _, provision := range module.Provides {
+			if reflect.TypeOf(provision.Token) == want {
+				return true
+			}
+		}
+		return false
+	}
+	if !provides(tenancyModule(), (*authn.MembershipGuard)(nil)) {
+		t.Error("the tenancy module does not provide authn.MembershipGuard")
+	}
+	if !provides(policyWriteGuardModule(), (*authz.WriteGuard)(nil)) {
+		t.Error("the policy write guard module does not provide authz.WriteGuard")
+	}
+	if !strings.Contains(policyWriteGuardModuleName, tenancyModuleName) {
+		t.Errorf("the policy write guard module is named %q, want a name under %q",
+			policyWriteGuardModuleName, tenancyModuleName)
 	}
 }
 

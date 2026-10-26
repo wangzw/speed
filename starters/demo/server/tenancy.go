@@ -7,13 +7,17 @@ package main
 //   - how a tenant is opened together with its first administrator
 //     (tenant.Provisioner),
 //   - whether an account is an active member of a tenant before a
-//     platform-administrator binding is written (authz.MembershipChecker).
+//     platform-administrator binding is written (authz.MembershipChecker),
+//   - which removals of a membership a tenant refuses (authn.MembershipGuard),
+//   - which domains the management surface may not change (authz.WriteGuard).
 //
-// The demo host answers all three from one module because they are one policy:
-// system and every personal tenant are protected; a tenant opens with a
+// The demo host answers the first four from one module because they are one
+// policy: system and every personal tenant are protected; a tenant opens with a
 // tenant-admin bound to its creator; platform administration is confined to
-// accounts that belong to system. The module delivers the three capabilities
-// and holds no state of its own.
+// accounts that belong to system; and a personal tenant refuses every membership
+// removal while an ordinary tenant keeps at least one tenant-admin. The fifth is
+// a module of its own: tenant.WriteGuard and authz.WriteGuard both name their
+// method Denied, and one Go type cannot carry both. None holds state of its own.
 
 import (
 	"context"
@@ -34,17 +38,28 @@ import (
 // tenancyModuleName is the name the host registers this module under.
 const tenancyModuleName = "host.tenancy"
 
-// init registers the module. It is named on serve, which stands the
-// management surface up, and on seed, which writes the platform administrator
-// binding that asks the membership checker.
-func init() { core.ProcessRegistry.Register(tenancyModule()) }
+// policyWriteGuardModuleName is the name of the module that delivers the
+// management surface's write guard. It is a module of its own because a Go type
+// cannot carry two methods named Denied, and tenant.WriteGuard and
+// authz.WriteGuard each declare one.
+const policyWriteGuardModuleName = tenancyModuleName + ".policy-write"
 
-// tenancyModule delivers the host's three tenancy-policy seams.
+// init registers the two modules. The tenancy module is named on serve, which
+// stands the management surface up, and on seed, which writes the platform
+// administrator binding that asks the membership checker. The write-guard module
+// is named on serve, where the management surface asks it.
+func init() {
+	core.ProcessRegistry.Register(tenancyModule())
+	core.ProcessRegistry.Register(policyWriteGuardModule())
+}
+
+// tenancyModule delivers the host's four tenancy-policy seams.
 //
 // The roster, the memberships and the policy manager, seeding surface and
-// catalog are required: the membership checker reads the memberships, and the
+// catalog are required: the membership checker reads the memberships, the
 // provisioner writes a role, its grants and a binding through the policy
-// seams. The logger is optional.
+// seams, and the membership guard reads the bindings through the manager. The
+// logger is optional.
 func tenancyModule() core.Module {
 	return core.Module{
 		Name: tenancyModuleName,
@@ -60,6 +75,7 @@ func tenancyModule() core.Module {
 			{Token: (*authz.MembershipChecker)(nil)},
 			{Token: (*tenant.WriteGuard)(nil)},
 			{Token: (*tenant.Provisioner)(nil)},
+			{Token: (*authn.MembershipGuard)(nil)},
 		},
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newTenancyProduct(reg)
@@ -78,11 +94,12 @@ type tenancyProduct struct {
 	logger      *slog.Logger
 }
 
-// The three interfaces are one product.
+// The four interfaces are one product.
 var (
 	_ authz.MembershipChecker = (*tenancyProduct)(nil)
 	_ tenant.WriteGuard       = (*tenancyProduct)(nil)
 	_ tenant.Provisioner      = (*tenancyProduct)(nil)
+	_ authn.MembershipGuard   = (*tenancyProduct)(nil)
 )
 
 func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
@@ -125,12 +142,61 @@ func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
 // IsMember implements authz.MembershipChecker: it reads the account
 // membership store, and a subject no account identifier can name is not a
 // member rather than an unavailable check.
+//
+// A subject of the static credential table is the one exception: it is an
+// operator the deployment configured in its own table, not an account that
+// registered itself, so it holds no membership row and the answer is true. The
+// deployment is the party that decides which static principals exist, and it is
+// the same party that writes the platform-administrator binding the check
+// guards.
 func (p *tenancyProduct) IsMember(ctx context.Context, tenantID, account string) (bool, error) {
 	id, err := authn.ParseAccountID(account)
 	if err != nil {
 		return false, nil
 	}
+	if id.IsStatic() {
+		return true, nil
+	}
 	return p.memberships.IsMember(ctx, id, tenantID)
+}
+
+// CheckMembershipRemoval implements authn.MembershipGuard. A personal tenant is
+// a single-member space, so every removal of a membership in it is refused; an
+// ordinary tenant refuses the removal that would leave it with no
+// tenant-administrator binding, because nobody could govern it afterwards.
+//
+// The answer reads the bindings through the policy manager, which is the same
+// data DeleteBinding's own floor reads. It counts bindings rather than active
+// memberships: the rule is that a domain keeps an administrator binding, and a
+// suspended member's binding still exists.
+func (p *tenancyProduct) CheckMembershipRemoval(ctx context.Context, id authn.AccountID, tenantID string) error {
+	if strings.HasPrefix(tenantID, personalIDPrefix) {
+		return fmt.Errorf("%w: the personal tenant %q is a single-member space",
+			authn.ErrLastTenantAdmin, tenantID)
+	}
+	if tenantID == "" {
+		return nil
+	}
+	bindings, err := p.manager.Bindings(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("%s: reading the bindings of %q: %w", tenancyModuleName, tenantID, err)
+	}
+	admins := 0
+	holdsAdmin := false
+	for _, binding := range bindings {
+		if binding.Role != authz.TenantAdminRole {
+			continue
+		}
+		admins++
+		if binding.Account == id.String() {
+			holdsAdmin = true
+		}
+	}
+	if holdsAdmin && admins == 1 {
+		return fmt.Errorf("%w: account %q is the last %q of tenant %q",
+			authn.ErrLastTenantAdmin, id, authz.TenantAdminRole, tenantID)
+	}
+	return nil
 }
 
 // Denied implements tenant.WriteGuard. The system tenant and every personal
@@ -154,6 +220,38 @@ func (p *tenancyProduct) Denied(_ context.Context, id tenant.ID, op tenant.Write
 func protectedTenant(id tenant.ID) bool {
 	return string(id) == string(authz.PlatformDomain) ||
 		strings.HasPrefix(string(id), personalIDPrefix)
+}
+
+// policyWriteGuardModule delivers authz.WriteGuard. It is a module of its own
+// because tenant.WriteGuard's Denied and authz.WriteGuard's Denied share a
+// name, and one Go type cannot implement both.
+func policyWriteGuardModule() core.Module {
+	return core.Module{
+		Name: policyWriteGuardModuleName,
+		Provides: []core.Provision{
+			{Token: (*authz.WriteGuard)(nil)},
+		},
+		New: func(context.Context, *core.Registry) (any, error) {
+			return policyWriteGuard{}, nil
+		},
+	}
+}
+
+// policyWriteGuard implements authz.WriteGuard: the management surface may not
+// add, rewrite or remove a role, a grant or a binding in a domain whose
+// identifier starts with the personal prefix. That domain's policy belongs to
+// the host that built the space, and the tenant's own administrator holds an
+// allowlist that excludes the management permissions, so nobody reaches the
+// route for a legitimate reason.
+//
+// The answer reads the identifier alone and never fails.
+type policyWriteGuard struct{}
+
+var _ authz.WriteGuard = policyWriteGuard{}
+
+// Denied implements authz.WriteGuard.
+func (policyWriteGuard) Denied(_ context.Context, tenantID string, _ authz.WriteOp) (bool, error) {
+	return strings.HasPrefix(tenantID, personalIDPrefix), nil
 }
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,7 +89,8 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 	}
 
 	// The personal assembly answers the read through the program: the seeded
-	// account with no membership reads an empty list rather than a 404.
+	// account reads its own personal tenant, which the seed's account-creation
+	// hook built before any browser called the backfill.
 	base, token := personalServe(t, true)
 	read := send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
 		base+"/api/v1/auth/me/tenants", nil,
@@ -98,13 +100,15 @@ func TestThePersonalAssemblyCarriesTheCallerTenantRead(t *testing.T) {
 			read.status, read.body)
 	}
 	var answer struct {
-		Tenants []json.RawMessage `json:"tenants"`
+		Tenants []struct {
+			ID string `json:"id"`
+		} `json:"tenants"`
 	}
 	if err := json.Unmarshal(read.body, &answer); err != nil {
 		t.Fatalf("the answer is not JSON: %v\n%s", err, read.body)
 	}
-	if len(answer.Tenants) != 0 {
-		t.Errorf("the account with no membership answered %d tenant(s), want none:\n%s",
+	if len(answer.Tenants) != 1 || !strings.HasPrefix(answer.Tenants[0].ID, personalIDPrefix) {
+		t.Errorf("the seeded account answered %d tenant(s), want its one personal tenant:\n%s",
 			len(answer.Tenants), read.body)
 	}
 }

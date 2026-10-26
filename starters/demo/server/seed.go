@@ -86,10 +86,11 @@ type seedInput struct {
 	// Tenants are the business tenants this deployment serves. Each is
 	// registered in the roster, and each names the accounts that administer it:
 	// the first is the tenant's first tenant-admin, and every one of them holds
-	// that role in the tenant's domain. The system tenant is not named here — the
-	// seed always registers it, and a platform-administrator account administers
-	// it — but naming it is legal and writes administrators for it like any other
-	// tenant.
+	// that role in the tenant's domain. The system tenant must not be named here:
+	// the seed registers it itself, and a list entry naming it is refused. Every
+	// administrator's membership and tenant-admin binding are reconciled on every
+	// run — a missing one is written — which is where this differs from
+	// seed.members.
 	Tenants []seedTenantEntry `config:"tenants"`
 	// Settings are the runtime settings a deployment starts with, each
 	// written into the global layer while that layer holds no explicit row
@@ -211,19 +212,39 @@ func (a seedAccount) check() error {
 }
 
 // validateSeedInput runs every check on the configuration, in the order the
-// command has to know them: an account, then a tenant list, then a member list.
-// Both the module's Init callback and the seed action call it, so a run that
-// refuses the configuration has written nothing in either place.
+// command has to know them: an account, then the platform administrator, then a
+// tenant list, then a member list. Both the module's Init callback and the seed
+// action call it, so a run that refuses the configuration has written nothing
+// in either place.
 func validateSeedInput(in seedInput) error {
 	for _, a := range in.Accounts {
 		if err := a.check(); err != nil {
 			return err
 		}
 	}
+	if err := checkPlatformAdministrator(in); err != nil {
+		return err
+	}
 	if err := checkTenants(in); err != nil {
 		return err
 	}
 	return checkMembers(in)
+}
+
+// checkPlatformAdministrator refuses an account list with nobody the console
+// admits. The platform-administrator role is the only way to reach the
+// management surface, and no migration or later command writes a binding for an
+// account the configuration does not mark, so a copy seeded without one has a
+// console nobody can enter and no second run that repairs it.
+func checkPlatformAdministrator(in seedInput) error {
+	for _, a := range in.Accounts {
+		if a.PlatformAdmin {
+			return nil
+		}
+	}
+	return fmt.Errorf("seed: no account under seed.%s is marked platform-admin, and a deployment "+
+		"needs at least one platform administrator to reach the console; mark one entry with "+
+		"platform-admin: true", accountsItem)
 }
 
 // checkTenants refuses a tenant list the seed cannot write, before anything is
@@ -252,6 +273,10 @@ func checkTenants(in seedInput) error {
 		}
 		if !tenant.IsIdentifier(name) {
 			return fmt.Errorf("seed: the tenant %q is outside the roster's identifier domain", name)
+		}
+		if name == string(authz.PlatformDomain) {
+			return fmt.Errorf("seed: the tenant %q is the system tenant, which the command registers "+
+				"itself and must not be listed under seed.%s", name, tenantsItem)
 		}
 		if seenTenants[name] {
 			return fmt.Errorf("seed: the tenant %q is declared twice under seed.%s", name, tenantsItem)
@@ -355,13 +380,14 @@ func seedSchema() config.Schema {
 				Sensitive: true,
 				Description: "the accounts a copy starts with, each with its login name, its " +
 					"credential as a plaintext password or as a hash, and whether it holds " +
-					"the platform-administrator role",
+					"the platform-administrator role; at least one account must hold it",
 			},
 			tenantsItem: {
 				Origins: config.OriginPrimary,
 				Description: "the business tenants this deployment serves, each with its name and " +
-					"the accounts that administer it; each is registered in the roster and each " +
-					"named administrator gets a membership and a tenant-admin binding",
+					"the accounts that administer it; the system tenant must not be listed, each " +
+					"is registered in the roster, and each named administrator's membership and " +
+					"tenant-admin binding are written whenever either is missing",
 			},
 			settingsItem: {
 				Origins: config.OriginPrimary,
@@ -431,13 +457,16 @@ func seedModule() core.Module {
 // command is safe to run at every deployment. On an existing database it
 // corrects two things per administration role: it marks the role builtin when an
 // earlier seed wrote the row without the mark, and it adds the declared grants
-// the role does not hold. A membership is written only while the run is creating
-// its account. An administrator's membership follows the same rule: an account
-// that already exists keeps whatever membership the operator gave it, and a
-// missing row is the operator's removal rather than a gap for the seed to fill,
-// so that administrator gets no binding either. Nothing else is touched — an
-// account, a tenant, an administrator or a membership the configuration no
-// longer names is not disabled, deleted or demoted.
+// the role does not hold. A membership under seed.members is written only while
+// the run is creating its account: an account that already exists keeps whatever
+// membership the operator gave it, and a missing row is the operator's removal
+// rather than a gap for the seed to fill. A tenant administrator named under
+// seed.tenants (and a platform administrator's system membership) is reconciled
+// on every run instead: a missing membership is written and a missing
+// tenant-admin binding is added, because the configuration names that account an
+// administrator and the binding has no effect without the membership. Nothing
+// else is touched — an account, a tenant, an administrator or a membership the
+// configuration no longer names is not disabled, deleted or demoted.
 //
 // The system tenant is always registered: the platform policy domain is that
 // tenant's domain, and the policy module refuses to start without it. Its
@@ -601,7 +630,7 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	// written first.
 	for _, admin := range administrators {
 		member, err := seedAdminMembership(ctx, memberships, string(authz.PlatformDomain),
-			admin.id, created[admin.name])
+			admin.id)
 		if err != nil {
 			return err
 		}
@@ -619,7 +648,9 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 
 	// Then each business tenant's administrators, in the order the configuration
 	// names them: the first entry is written first, so it is the tenant's first
-	// administrator.
+	// administrator. A missing membership or tenant-admin binding is added on
+	// every run, so an account the configuration names keeps administering its
+	// tenant after an operator removes one of the two.
 	for _, t := range in.Tenants {
 		for _, adminName := range t.Admins {
 			_, name, err := seedLoginName(adminName)
@@ -633,7 +664,7 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 				return fmt.Errorf("seed: the administrator %q of the tenant %q is not under seed.%s",
 					adminName, t.Name, accountsItem)
 			}
-			member, err := seedAdminMembership(ctx, memberships, t.Name, id, created[name])
+			member, err := seedAdminMembership(ctx, memberships, t.Name, id)
 			if err != nil {
 				return err
 			}
@@ -660,16 +691,19 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 }
 
 // seedAdminMembership ensures an administrator is an active member of the
-// tenant they administer, unless the row is already there. An existing row is
-// left as it stands: a suspension or a source the operator set is runtime state,
-// not a gap for the seed to fill. A missing row is written only while the run is
-// creating its account; for an account that already existed, a missing row is
-// the operator's removal and is not put back.
+// tenant they administer. A missing row is written on every run: the
+// configuration names the account an administrator of that tenant, and a
+// membership is what lets the binding take effect, so its absence is a gap the
+// seed fills rather than an operator's decision it preserves. This is the one
+// place the rule differs from seed.members, where a missing row is the
+// operator's removal and is left as it stands.
 //
-// It answers whether the account is an active member, because the binding that
-// follows has no effect without one.
+// An existing row is left as it stands: a suspension or a source the operator
+// set is runtime state, not a gap for the seed to fill. It answers whether the
+// account is an active member, because the binding that follows has no effect
+// without one; a suspended administrator's binding is reported and not written.
 func seedAdminMembership(ctx context.Context, memberships authn.Memberships,
-	tenantName string, id authn.AccountID, created bool,
+	tenantName string, id authn.AccountID,
 ) (bool, error) {
 	held, found, err := memberships.Membership(ctx, tenantName, id)
 	if err != nil {
@@ -678,10 +712,6 @@ func seedAdminMembership(ctx context.Context, memberships authn.Memberships,
 	if found {
 		fmt.Printf("skipped: member %s in %s (exists)\n", id, tenantName)
 		return held.Active, nil
-	}
-	if !created {
-		fmt.Printf("skipped: member %s in %s (account already present)\n", id, tenantName)
-		return false, nil
 	}
 	if err := memberships.Put(ctx, authn.Membership{
 		Account: id,

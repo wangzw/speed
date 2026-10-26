@@ -437,23 +437,39 @@ with SIGINT or SIGTERM; it drains in-flight requests first.
 `seed` writes the initial operators `seed.accounts` names, always registers the
 system tenant, registers the business tenants `seed.tenants` names with their
 administrators, writes the memberships `seed.members` names, and writes the
-runtime settings `seed.settings` names. A tenant entry gives `name` and
-`admins`; every named administrator gets a membership and the tenant-admin role
-in that tenant's domain, and the first entry is written first. An account marked
-`platform-admin` becomes a member of the system tenant and holds
-`platform-admin` in the platform domain (the system tenant's domain) plus
-`tenant-admin` in the system domain; a business tenant never holds
-`platform-admin`, which exists only in the platform domain. A member entry names
-a tenant under `seed.tenants` and an account under `seed.accounts`; it is an
-active membership unless it carries `suspended: true`. A setting is written
-into the global layer only while that layer holds no explicit row for its key,
-so a value an operator changed through the settings surface survives a later
-seed run. It carries the migrations with it, so it is the whole of what a fresh
-copy does to a database before serving from it; running it again writes nothing
-and says so. A permission a module declares after an earlier run is added on
-the next run through the host's seeding surface, so each administration role
-keeps everything the process declares while the management surface stays unable
-to change it.
+runtime settings `seed.settings` names. At least one account must carry
+`platform-admin: true`: the command refuses the account list otherwise and
+names `seed.accounts`, because a console with no platform administrator has no
+path back. An account marked `platform-admin` becomes a member of the system
+tenant and holds `platform-admin` in the platform domain (the system tenant's
+domain) plus `tenant-admin` in the system domain; a business tenant never holds
+`platform-admin`, which exists only in the platform domain. A tenant entry gives
+`name` and `admins`; every named administrator gets a membership and the
+tenant-admin role in that tenant's domain, and the first entry is written first.
+The system tenant must not be listed under `seed.tenants`: the command
+registers it itself and refuses an entry naming it. A member entry names a
+tenant under `seed.tenants` and an account under `seed.accounts`; it is an
+active membership unless it carries `suspended: true`. The two membership rules
+differ: a `seed.members` row is written only while the run creates its account,
+so an operator's add, suspend, resume or remove survives a later run; an
+administrator named under a tenant entry (and a platform administrator's system
+membership) is reconciled on every run — a missing membership is written and a
+missing tenant-admin binding is added — because the configuration names that
+account an administrator and the binding has no effect without the membership.
+A setting is written into the global layer only while that layer holds no
+explicit row for its key, so a value an operator changed through the settings
+surface survives a later seed run. It carries the migrations with it, so it is
+the whole of what a fresh copy does to a database before serving from it; a run
+with nothing to reconcile writes nothing and says so. A permission a module declares
+after an earlier run is added on the next run through the host's seeding
+surface, so each administration role keeps everything the process declares while
+the management surface stays unable to change it. The command names the personal
+tenant module too, so its account-creation hook builds every seeded account's
+personal tenant at seed time when `workspace.personal.enabled` is on; with the
+switch off the hook builds nothing. The tenant-admin role the seed writes in a
+business tenant is builtin; the personal tenant's tenant-admin is not, because
+the host adds its grants with the seeding surface and revokes the ones outside
+the allowlist with the manager.
 
 `seed` writes no second factor in a baseline build, and none in a review build either unless the deployment sets `seed.impersonation`: that switch seeds the impersonation journey's two judged methods on the platform administrator, one aged past `authn.mfa.sensitive-min-age`, and it changes how that administrator signs in afterwards. The public `pkg/authn`
 surface hands a host a registration step it does not let that host read, so a
@@ -893,14 +909,27 @@ names the fixed part of that wiring, and no configuration file repeats it:
   authorization capabilities leave open (`server/tenancy.go`, named in
   `baselineServe` and in the `seed` command). The module provides
   `authz.MembershipChecker` (whether an account is an active member of a tenant,
-  read from `authn.Memberships`), `tenant.WriteGuard` (the system tenant and
-  every personal tenant reject a disable or a delete), and `tenant.Provisioner`
-  (a tenant opens with its creator as its first tenant-admin: the tenant-admin
-  role, every declared permission and the creator's binding are written before
-  the roster row, and a refused roster row removes them). `tenant.admin`
-  requires the guard and the provisioner, and the policy module consults the
-  checker before binding `platform-admin` in the platform domain, so a serve
-  assembly names this module or does not start.
+  read from `authn.Memberships`; a subject of the static credential table is the
+  exception — it is an operator the deployment configured, holds no membership
+  row and answers true), `tenant.WriteGuard` (the system tenant and every
+  personal tenant reject a disable or a delete), `authn.MembershipGuard` (a
+  personal tenant refuses every membership removal, and an ordinary tenant
+  refuses the removal that would leave it with no tenant-admin binding), and
+  `tenant.Provisioner` (a tenant opens with its creator as its first tenant-admin:
+  the tenant-admin role, every declared permission and the creator's binding are
+  written before the roster row, and a refused roster row removes them).
+  `tenant.admin` requires the guard and the provisioner, and the policy module
+  consults the checker before binding `platform-admin` in the platform domain,
+  so a serve assembly names this module or does not start. The membership guard
+  stands beside the policy module's own: the account module asks every guard and
+  any refusal refuses the removal.
+- **The policy write guard** (`authz.WriteGuard`) refuses every role, grant and
+  binding write in a domain whose identifier starts with `personal-`. It is a
+  module of its own (`host.tenancy.policy-write`, named in `baselineServe`)
+  because `tenant.WriteGuard` and `authz.WriteGuard` both declare a `Denied`
+  method, which one Go type cannot carry twice. The personal tenant's own
+  tenant-admin holds no membership-management permission, so that space cannot
+  grow a second member through either the membership route or the policy one.
 - The journal (`audit.journal`) records the requests its `requests` list names
   on the endpoints its `endpoints` list names. The sample files name no request
   route (`requests: []`): the object store's routes are gone, and the writes a

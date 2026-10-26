@@ -278,9 +278,22 @@ func withMemberships(t *testing.T, dsn string,
 // seeded with.
 func operatorID(t *testing.T, ctx context.Context, accounts authn.Accounts) authn.AccountID {
 	t.Helper()
-	id, err := accounts.Lookup(ctx, authn.IdentifierUsername, "operator")
+	return accountIDByName(t, ctx, accounts, "operator")
+}
+
+// memberID is the account identifier of the configuration's second account,
+// the one the seed.members cases use: it administers no tenant, so a membership
+// the operator removes is not reconciled back as an administrator's.
+func memberID(t *testing.T, ctx context.Context, accounts authn.Accounts) authn.AccountID {
+	t.Helper()
+	return accountIDByName(t, ctx, accounts, "ops")
+}
+
+func accountIDByName(t *testing.T, ctx context.Context, accounts authn.Accounts, name string) authn.AccountID {
+	t.Helper()
+	id, err := accounts.Lookup(ctx, authn.IdentifierUsername, name)
 	if err != nil {
-		t.Fatalf("looking up the seeded operator: %v", err)
+		t.Fatalf("looking up the seeded account %q: %v", name, err)
 	}
 	return id
 }
@@ -290,17 +303,17 @@ func operatorID(t *testing.T, ctx context.Context, accounts authn.Accounts) auth
 func TestSeedWritesAnActiveMembership(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "members.db")
-	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"operator\"\n")
+	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n")
 
 	res := runCommand(t, config, "sqlite", "seed")
 	if res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	if !strings.Contains(res.stdout, "seeded: member operator in demo") {
+	if !strings.Contains(res.stdout, "seeded: member ops in demo") {
 		t.Errorf("the seed did not report the membership it wrote:\n%s", res.stdout)
 	}
 	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
-		id := operatorID(t, ctx, accounts)
+		id := memberID(t, ctx, accounts)
 		member, err := memberships.IsMember(ctx, id, "demo")
 		if err != nil {
 			t.Fatalf("IsMember: %v", err)
@@ -324,18 +337,18 @@ func TestSeedWritesAnActiveMembership(t *testing.T) {
 func TestSeedWritesASuspendedMembership(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "suspended.db")
-	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"operator\"\n"+
+	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n"+
 		"      suspended: true\n")
 
 	res := runCommand(t, config, "sqlite", "seed")
 	if res.err != nil {
 		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	if !strings.Contains(res.stdout, "seeded: member operator in demo (suspended)") {
+	if !strings.Contains(res.stdout, "seeded: member ops in demo (suspended)") {
 		t.Errorf("the seed did not report the suspended membership it wrote:\n%s", res.stdout)
 	}
 	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
-		id := operatorID(t, ctx, accounts)
+		id := memberID(t, ctx, accounts)
 		member, err := memberships.IsMember(ctx, id, "demo")
 		if err != nil {
 			t.Fatalf("IsMember: %v", err)
@@ -367,7 +380,7 @@ func TestSeedRefusesAMemberListItCannotWrite(t *testing.T) {
 	}{
 		{
 			name:    "unknown tenant",
-			members: "  members:\n    - tenant: \"ghost\"\n      account: \"operator\"\n",
+			members: "  members:\n    - tenant: \"ghost\"\n      account: \"ops\"\n",
 			want:    []string{"ghost", "seed.tenants"},
 		},
 		{
@@ -377,9 +390,9 @@ func TestSeedRefusesAMemberListItCannotWrite(t *testing.T) {
 		},
 		{
 			name: "duplicate pair",
-			members: "  members:\n    - tenant: \"demo\"\n      account: \"operator\"\n" +
-				"    - tenant: \"demo\"\n      account: \"operator\"\n",
-			want: []string{"operator", "demo", "twice"},
+			members: "  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n" +
+				"    - tenant: \"demo\"\n      account: \"ops\"\n",
+			want: []string{"ops", "demo", "twice"},
 		},
 	}
 	for _, c := range cases {
@@ -407,7 +420,7 @@ func TestSeedRefusesAMemberListItCannotWrite(t *testing.T) {
 func TestSeedMembershipsAreIdempotent(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "idempotent.db")
-	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"operator\"\n")
+	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n")
 
 	if res := runCommand(t, config, "sqlite", "seed"); res.err != nil {
 		t.Fatalf("the first seed run failed: %v\n%s", res.err, res.combined())
@@ -416,16 +429,23 @@ func TestSeedMembershipsAreIdempotent(t *testing.T) {
 	if res.err != nil {
 		t.Fatalf("the second seed run failed: %v\n%s", res.err, res.combined())
 	}
-	if !strings.Contains(res.stdout, "skipped: member operator in demo (exists)") {
+	if !strings.Contains(res.stdout, "skipped: member ops in demo (exists)") {
 		t.Errorf("the second run did not report the membership as skipped:\n%s", res.stdout)
 	}
-	withMemberships(t, dsn, func(ctx context.Context, _ authn.Accounts, memberships authn.Memberships) {
+	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
+		id := memberID(t, ctx, accounts)
 		members, err := memberships.Members(ctx, "demo", authn.Page{})
 		if err != nil {
 			t.Fatalf("Members: %v", err)
 		}
-		if len(members) != 1 {
-			t.Errorf("the tenant holds %d memberships, want one: %+v", len(members), members)
+		held := 0
+		for _, member := range members {
+			if member.Account == id {
+				held++
+			}
+		}
+		if held != 1 {
+			t.Errorf("the account holds %d memberships in demo, want one: %+v", held, members)
 		}
 	})
 }
@@ -436,13 +456,13 @@ func TestSeedMembershipsAreIdempotent(t *testing.T) {
 func TestSeedLeavesAnOperatorsSuspendedMembershipSuspended(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "suspended-by-operator.db")
-	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"operator\"\n")
+	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n")
 
 	if res := runCommand(t, config, "sqlite", "seed"); res.err != nil {
 		t.Fatalf("the first seed run failed: %v\n%s", res.err, res.combined())
 	}
 	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
-		id := operatorID(t, ctx, accounts)
+		id := memberID(t, ctx, accounts)
 		held, found, err := memberships.Membership(ctx, "demo", id)
 		if err != nil {
 			t.Fatalf("Membership: %v", err)
@@ -459,19 +479,19 @@ func TestSeedLeavesAnOperatorsSuspendedMembershipSuspended(t *testing.T) {
 	if res.err != nil {
 		t.Fatalf("the second seed run failed: %v\n%s", res.err, res.combined())
 	}
-	if !strings.Contains(res.stdout, "skipped: member operator in demo (exists)") {
+	if !strings.Contains(res.stdout, "skipped: member ops in demo (exists)") {
 		t.Errorf("the second run did not report the membership as skipped:\n%s", res.stdout)
 	}
-	withMemberships(t, dsn, func(ctx context.Context, _ authn.Accounts, memberships authn.Memberships) {
-		members, err := memberships.Members(ctx, "demo", authn.Page{})
+	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
+		held, found, err := memberships.Membership(ctx, "demo", memberID(t, ctx, accounts))
 		if err != nil {
-			t.Fatalf("Members: %v", err)
+			t.Fatalf("Membership: %v", err)
 		}
-		if len(members) != 1 {
-			t.Fatalf("the tenant holds %d memberships, want one: %+v", len(members), members)
+		if !found {
+			t.Fatal("the membership row is gone")
 		}
-		if members[0].Active {
-			t.Errorf("the seed resumed a membership the operator suspended: %+v", members[0])
+		if held.Active {
+			t.Errorf("the seed resumed a membership the operator suspended: %+v", held)
 		}
 	})
 }
@@ -482,13 +502,13 @@ func TestSeedLeavesAnOperatorsSuspendedMembershipSuspended(t *testing.T) {
 func TestSeedDoesNotWriteBackAMembershipTheOperatorRemoved(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "removed.db")
-	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"operator\"\n")
+	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n")
 
 	if res := runCommand(t, config, "sqlite", "seed"); res.err != nil {
 		t.Fatalf("the first seed run failed: %v\n%s", res.err, res.combined())
 	}
 	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
-		if err := memberships.Remove(ctx, operatorID(t, ctx, accounts), "demo"); err != nil {
+		if err := memberships.Remove(ctx, memberID(t, ctx, accounts), "demo"); err != nil {
 			t.Fatalf("removing the seeded membership: %v", err)
 		}
 	})
@@ -496,11 +516,11 @@ func TestSeedDoesNotWriteBackAMembershipTheOperatorRemoved(t *testing.T) {
 	if res.err != nil {
 		t.Fatalf("the second seed run failed: %v\n%s", res.err, res.combined())
 	}
-	if !strings.Contains(res.stdout, "skipped: member operator in demo (account already present)") {
+	if !strings.Contains(res.stdout, "skipped: member ops in demo (account already present)") {
 		t.Errorf("the second run did not report the removed membership as skipped:\n%s", res.stdout)
 	}
 	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
-		id := operatorID(t, ctx, accounts)
+		id := memberID(t, ctx, accounts)
 		member, err := memberships.IsMember(ctx, id, "demo")
 		if err != nil {
 			t.Fatalf("IsMember: %v", err)
@@ -522,14 +542,14 @@ func TestSeedDoesNotWriteBackAMembershipTheOperatorRemoved(t *testing.T) {
 func TestSeedLeavesAMembershipsSourceAndExemptionAlone(t *testing.T) {
 	t.Parallel()
 	dsn := filepath.Join(t.TempDir(), "source-kept.db")
-	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"operator\"\n")
+	config := memberConfig(t, dsn, "  members:\n    - tenant: \"demo\"\n      account: \"ops\"\n")
 
 	if res := runCommand(t, config, "sqlite", "seed"); res.err != nil {
 		t.Fatalf("the first seed run failed: %v\n%s", res.err, res.combined())
 	}
 	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
 		err := memberships.Put(ctx, authn.Membership{
-			Account:   operatorID(t, ctx, accounts),
+			Account:   memberID(t, ctx, accounts),
 			Tenant:    "demo",
 			Active:    false,
 			Source:    "invite",
@@ -543,15 +563,14 @@ func TestSeedLeavesAMembershipsSourceAndExemptionAlone(t *testing.T) {
 	if res.err != nil {
 		t.Fatalf("the second seed run failed: %v\n%s", res.err, res.combined())
 	}
-	withMemberships(t, dsn, func(ctx context.Context, _ authn.Accounts, memberships authn.Memberships) {
-		members, err := memberships.Members(ctx, "demo", authn.Page{})
+	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
+		held, found, err := memberships.Membership(ctx, "demo", memberID(t, ctx, accounts))
 		if err != nil {
-			t.Fatalf("Members: %v", err)
+			t.Fatalf("Membership: %v", err)
 		}
-		if len(members) != 1 {
-			t.Fatalf("the tenant holds %d memberships, want one: %+v", len(members), members)
+		if !found {
+			t.Fatal("the membership row is gone")
 		}
-		held := members[0]
 		if held.Active {
 			t.Errorf("the seed resumed the membership: %+v", held)
 		}
@@ -642,6 +661,187 @@ func TestSeedRefusesAnAdministratorItCannotName(t *testing.T) {
 	if !strings.Contains(err.Error(), "ghost") || !strings.Contains(err.Error(), "seed.accounts") {
 		t.Errorf("the refusal = %q, want it to name the offender and seed.accounts", err)
 	}
+}
+
+// TestSeedRefusesAConfigurationWithNoPlatformAdministrator holds the deployment
+// floor: a copy with no platform administrator would start a console nobody can
+// reach, so the command refuses the account list and names the entries to
+// correct.
+func TestSeedRefusesAConfigurationWithNoPlatformAdministrator(t *testing.T) {
+	t.Parallel()
+	original := configBody(t, freePorts(t, listenerCount), ":memory:")
+	body := strings.Replace(original, "      platform-admin: true\n", "", 1)
+	if body == original {
+		t.Fatal("the configuration template carries no platform-admin line to remove")
+	}
+	config := writeConfigFile(t, body)
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err == nil {
+		t.Fatalf("the seed accepted a configuration with no platform administrator:\n%s", res.combined())
+	}
+	for _, want := range []string{"seed.accounts", "platform-admin"} {
+		if !strings.Contains(res.stderr, want) {
+			t.Errorf("the refusal does not name %q:\n%s", want, res.combined())
+		}
+	}
+	if strings.Contains(res.stdout, "seeded:") {
+		t.Errorf("the seed wrote something before refusing the account list:\n%s", res.stdout)
+	}
+}
+
+// TestSeedRefusesTheSystemTenantInTheTenantList holds the system tenant apart
+// from the configured ones: the command registers it itself, and a list entry
+// naming it would let the run claim it administers a row it already wrote.
+func TestSeedRefusesTheSystemTenantInTheTenantList(t *testing.T) {
+	t.Parallel()
+	in := seedInput{
+		Accounts: []seedAccount{{
+			Identifier: "operator", Password: "operator-dev-secret", PlatformAdmin: true,
+		}},
+		Tenants: []seedTenantEntry{{
+			Name: string(authz.PlatformDomain), Admins: []string{"operator"},
+		}},
+	}
+	err := checkTenants(in)
+	if err == nil {
+		t.Fatal("checkTenants accepted the system tenant in seed.tenants")
+	}
+	for _, want := range []string{string(authz.PlatformDomain), "seed.tenants"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal = %q, want it to name %q", err, want)
+		}
+	}
+}
+
+// TestSeedWritesAMissingAdministratorsMembershipOnEveryRun holds the
+// reconciliation of seed.tenants[].admins: unlike seed.members, a missing
+// administrator membership is a gap the seed fills, not an operator's removal
+// it preserves.
+func TestSeedWritesAMissingAdministratorsMembershipOnEveryRun(t *testing.T) {
+	t.Parallel()
+	memberships := newFakeMemberships()
+	id := authn.AccountID("acct-1")
+	ctx := context.Background()
+
+	active, err := seedAdminMembership(ctx, memberships, "acme", id)
+	if err != nil {
+		t.Fatalf("seedAdminMembership: %v", err)
+	}
+	if !active {
+		t.Error("the administrator's written membership did not read back active")
+	}
+	member, err := memberships.IsMember(ctx, id, "acme")
+	if err != nil {
+		t.Fatalf("IsMember: %v", err)
+	}
+	if !member {
+		t.Error("the seed did not write the administrator's membership")
+	}
+
+	active, err = seedAdminMembership(ctx, memberships, "acme", id)
+	if err != nil {
+		t.Fatalf("the second seedAdminMembership: %v", err)
+	}
+	if !active {
+		t.Error("the existing administrator's membership did not read back active")
+	}
+	members, err := memberships.Members(ctx, "acme", authn.Page{})
+	if err != nil {
+		t.Fatalf("Members: %v", err)
+	}
+	if len(members) != 1 {
+		t.Errorf("the tenant holds %d memberships, want one", len(members))
+	}
+}
+
+// TestSeedLeavesASuspendedAdministratorsMembershipSuspended holds the other
+// side of reconciliation: an existing row is the operator's state, so the seed
+// neither resumes it nor writes the binding its suspension makes ineffective.
+func TestSeedLeavesASuspendedAdministratorsMembershipSuspended(t *testing.T) {
+	t.Parallel()
+	memberships := newFakeMemberships()
+	id := authn.AccountID("acct-1")
+	ctx := context.Background()
+	if err := memberships.Put(ctx, authn.Membership{
+		Account: id, Tenant: "acme", Active: false, Source: "admin",
+	}); err != nil {
+		t.Fatalf("writing the suspended membership: %v", err)
+	}
+
+	active, err := seedAdminMembership(ctx, memberships, "acme", id)
+	if err != nil {
+		t.Fatalf("seedAdminMembership: %v", err)
+	}
+	if active {
+		t.Error("the seed resumed a membership the operator suspended")
+	}
+	held, found, err := memberships.Membership(ctx, "acme", id)
+	if err != nil {
+		t.Fatalf("Membership: %v", err)
+	}
+	if !found || held.Active {
+		t.Errorf("the membership = %+v found %t, want the suspension left in place", held, found)
+	}
+}
+
+// TestSeedAddsAMissingAdministratorsBindingOnEveryRun holds the binding half of
+// the reconciliation: the tenant-admin binding is added when it is missing and
+// a second run writes nothing.
+func TestSeedAddsAMissingAdministratorsBindingOnEveryRun(t *testing.T) {
+	t.Parallel()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	ctx := context.Background()
+
+	if err := seedBinding(ctx, manager, "acme", tenantAdminRole, authn.AccountID("acct-1")); err != nil {
+		t.Fatalf("seedBinding: %v", err)
+	}
+	if err := seedBinding(ctx, manager, "acme", tenantAdminRole, authn.AccountID("acct-1")); err != nil {
+		t.Fatalf("the second seedBinding: %v", err)
+	}
+	bindings, err := manager.BindingsOf(ctx, "acme", "acct-1")
+	if err != nil {
+		t.Fatalf("BindingsOf: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].Role != tenantAdminRole {
+		t.Errorf("the administrator's bindings = %+v, want one tenant-admin", bindings)
+	}
+}
+
+// TestSeedRestoresARemovedTenantAdministratorsMembership runs the
+// reconciliation through the program: the administrator's membership and
+// binding are runtime state the seed reconciles on every run, unlike a
+// seed.members row.
+func TestSeedRestoresARemovedTenantAdministratorsMembership(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "admin-restored.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
+
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("the first seed run failed: %v\n%s", res.err, res.combined())
+	}
+	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
+		if err := memberships.Remove(ctx, operatorID(t, ctx, accounts), "demo"); err != nil {
+			t.Fatalf("removing the administrator's membership: %v", err)
+		}
+	})
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err != nil {
+		t.Fatalf("the second seed run failed: %v\n%s", res.err, res.combined())
+	}
+	if !strings.Contains(res.stdout, "seeded: member ") {
+		t.Errorf("the second run did not report the restored administrator membership:\n%s", res.stdout)
+	}
+	withMemberships(t, dsn, func(ctx context.Context, accounts authn.Accounts, memberships authn.Memberships) {
+		member, err := memberships.IsMember(ctx, operatorID(t, ctx, accounts), "demo")
+		if err != nil {
+			t.Fatalf("IsMember: %v", err)
+		}
+		if !member {
+			t.Error("the seed did not restore the removed administrator's membership")
+		}
+	})
 }
 
 // TestSeedFailsOnASystemAliasConflict holds the upgrade case where a business
