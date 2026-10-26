@@ -405,9 +405,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-social-account-linking.md',
-    status: 'pending',
-    reason:
-      'The local identity provider now completes a real Google round trip, so the browser tier can drive this journey; its spec is scheduled and not written yet.',
+    status: 'covered',
     covers: [
       'REQ-account-027',
       'REQ-account-028',
