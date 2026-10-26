@@ -72,12 +72,15 @@ export const ERROR_TEXT_CODES = [
   // with.
   'tenant.bad_request',
   'tenant.conflict',
-  // authz admin: a 400 shape refusal, the 409 a role or binding
-  // collision is answered with, and the 403 the authorization guard
-  // refuses a write the caller is not permitted to make with.
+  // authz admin: a 400 shape refusal, the 409 a role or binding collision
+  // is answered with, the 403 the authorization guard refuses a write the
+  // caller is not permitted to make with, and the 403 the host's write
+  // guard answers a write into a protected domain with (distinct from
+  // forbidden: the caller may hold every permission in that domain).
   'authz.bad_request',
   'authz.conflict',
   'authz.forbidden',
+  'authz.protected',
   // authn admin (accounts, impersonations, invitations, members, sso): a
   // 400 shape refusal, the 400 an unsupported region is answered with,
   // the 409 an account, domain or factor collision is answered with, the

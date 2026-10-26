@@ -24,7 +24,8 @@
     "authz": {
       "bad_request": "The server could not read this request. Check the form and try again.",
       "conflict": "That change conflicts with an existing role or binding.",
-      "forbidden": "You do not have permission to do that."
+      "forbidden": "You do not have permission to do that.",
+      "protected": "This domain is protected. Its roles, grants and bindings cannot be managed here."
     },
     "audit": {
       "bad_request": "The server could not read this request. Check the form and try again."

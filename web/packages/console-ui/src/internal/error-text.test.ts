@@ -129,6 +129,7 @@ describe('console-ui error text', () => {
       'authz.bad_request',
       'authz.conflict',
       'authz.forbidden',
+      'authz.protected',
       'authn.bad_request',
       'authn.unsupported_region',
       'authn.conflict',
