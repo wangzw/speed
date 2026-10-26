@@ -152,6 +152,7 @@ export {
 } from './components/CopyButton.js'
 export {
   OneTimeValuePanel,
+  type OneTimeValuePanelDetail,
   type OneTimeValuePanelProps,
 } from './components/OneTimeValuePanel.js'
 export {

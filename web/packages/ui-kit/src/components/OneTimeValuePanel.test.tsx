@@ -20,6 +20,19 @@ const COPY_LABEL = 'Copy link'
 const CLOSE_LABEL = 'Close'
 const CLOSE_ARIA = 'Close the invitation link for ada@example.com'
 
+const DETAILS = [
+  {
+    label: 'Record name',
+    value: '_speed-authn.acme.example',
+    copyLabel: 'Copy record name',
+  },
+  {
+    label: 'Record value',
+    value: 'speed-authn=abc',
+    copyLabel: 'Copy record value',
+  },
+] as const
+
 function stubClipboard() {
   const writeText = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', {
@@ -73,6 +86,45 @@ describe('OneTimeValuePanel', () => {
     expect(await screen.findByText(zhCN.oneTimeValuePanel.copied)).toHaveAttribute(
       'role',
       'status',
+    )
+  })
+
+  it('renders labelled details with their own copy controls and values', async () => {
+    const user = userEvent.setup()
+    const writeText = stubClipboard()
+    const { container } = renderWithProviders(
+      <OneTimeValuePanel
+        message={MESSAGE}
+        value={VALUE}
+        copyLabel={COPY_LABEL}
+        details={DETAILS}
+        closeLabel={CLOSE_LABEL}
+        closeAriaLabel={CLOSE_ARIA}
+        onClose={() => undefined}
+      />,
+    )
+
+    // Every detail renders its label and its complete value inside the
+    // panel's one live region, so the hand-off is announced as a whole.
+    const panel = container.querySelector(':scope > [role="status"]')
+    expect(panel).not.toBeNull()
+    for (const detail of DETAILS) {
+      expect(panel).toHaveTextContent(detail.label)
+      expect(panel).toHaveTextContent(detail.value)
+      expect(
+        screen.getByRole('button', { name: detail.copyLabel }),
+      ).toBeInTheDocument()
+    }
+
+    // Each copy control hands over exactly its own value, not the primary
+    // value and not another detail's.
+    await user.click(screen.getByRole('button', { name: DETAILS[0].copyLabel }))
+    await vi.waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(DETAILS[0].value),
+    )
+    await user.click(screen.getByRole('button', { name: DETAILS[1].copyLabel }))
+    await vi.waitFor(() =>
+      expect(writeText).toHaveBeenLastCalledWith(DETAILS[1].value),
     )
   })
 

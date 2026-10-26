@@ -175,6 +175,7 @@ const PUBLIC_EXPORTS = [
   'ListSkeleton',
   'ListSkeletonProps',
   'OneTimeValuePanel',
+  'OneTimeValuePanelDetail',
   'OneTimeValuePanelProps',
   'PRIMARY_COLUMN_MAX_WIDTH',
   'PageHeader',

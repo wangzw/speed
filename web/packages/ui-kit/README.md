@@ -53,7 +53,7 @@ string lives in the bilingual `ui-kit` namespace registered through
 | `components/RefreshButton.tsx` | `RefreshButton`, `RefreshButtonProps` |
 | `use-page-refresh.ts` | `usePageRefresh`, `pageRefreshRead`, `PageRefresh`, `PageRefreshRead`, `PageRefreshReadHandle`, `PageRefreshSettled` |
 | `components/CopyButton.tsx` | `CopyButton`, `CopyButtonProps` |
-| `components/OneTimeValuePanel.tsx` | `OneTimeValuePanel`, `OneTimeValuePanelProps` |
+| `components/OneTimeValuePanel.tsx` | `OneTimeValuePanel`, `OneTimeValuePanelProps`, `OneTimeValuePanelDetail` |
 | `display-time-zone.tsx` | `DisplayTimeZoneProvider`, `DisplayTimeZoneProviderProps`, `useDisplayTimeZone` |
 | `phone-country-default.tsx` | `PhoneCountryDefaultProvider`, `PhoneCountryDefaultProviderProps`, `usePhoneCountryDefault` |
 | `components/WriteFeedbackRegion.tsx` | `WriteFeedbackRegion`, `WriteFeedbackRegionProps` |
@@ -1282,10 +1282,13 @@ control silent rather than failing the surface.
 `OneTimeValuePanel` is the presentation of a value handed out once -- an
 invitation's acceptance link, a token. The caller owns the value and its
 lifetime; the panel holds no state and takes `message`, `value`,
-`copyLabel`, `closeLabel`, `closeAriaLabel` and `onClose`. It is one
-polite live region (`role="status"`), renders the value in the theme's
-monospace stack (`theme.typography.fontFamilyMono`), breaks unbroken
-values anywhere, and announces its own copy.
+`copyLabel`, `details`, `closeLabel`, `closeAriaLabel` and `onClose`. It
+is one polite live region (`role="status"`), renders the value in the
+theme's monospace stack (`theme.typography.fontFamilyMono`), breaks
+unbroken values anywhere, and announces its own copy. `details` carries
+further labelled values the same hand-off needs -- a DNS record's name
+and the value to publish, say -- each with its own label, monospace value
+and copy control named by that detail's `copyLabel`.
 
 ### Display preferences (contexts)
 
