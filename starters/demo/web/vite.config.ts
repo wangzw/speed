@@ -25,8 +25,8 @@
  * endpoints claim onto that port -- overridable through
  * DEMO_WEB_BACKEND_PROXY when a run moves it. The claimed namespaces come from
  * backend-prefixes.json (src/backend-prefixes.ts) -- a hand-kept mirror of the
- * claims in the server configuration; the test comparing the two is not written
- * yet.
+ * claims in the server configuration, held to them by the server's
+ * TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims.
  */
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'

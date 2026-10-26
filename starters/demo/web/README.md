@@ -21,9 +21,9 @@ pnpm dev                            # vite dev server
 `pnpm dev` serves the app with hot module replacement on vite's own port. The
 app talks to its own origin by default (the client base URL falls back to
 `window.location.origin`), and the dev server proxies the namespaces the
-backend endpoints claim onto the demo's backend listener: the api, account and
-admin endpoints all answer on one port. The claimed prefixes live in
-`backend-prefixes.json` beside this package (`/api`; `/api/v1/auth`,
+backend endpoints claim onto the demo's backend listener: the api, account,
+admin and content endpoints all answer on one port. The claimed prefixes live in
+`backend-prefixes.json` beside this package (`/api`, `/content`; `/api/v1/auth`,
 `/api/v1/features`, `/api/v1/workspace`, `/api/v1/tenants` and `/api/v1/system/auth`;
 `/api/v1/system/audit`, `/api/v1/system/permissions`, `/api/v1/system/settings`,
 `/api/v1/system/sms` and `/api/v1/system/tenants`), and

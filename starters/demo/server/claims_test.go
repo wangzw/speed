@@ -306,16 +306,9 @@ func checkClaimsCover(t *testing.T, configName, documentName string,
 // the api, account, admin and web endpoints.
 const platformListener = "backend"
 
-// checkClaimsExact holds one configuration's claim table to the platform's
-// ownership table in the direction checkClaimsCover does not read: on the
-// backend listener, the non-root prefixes and the endpoint each belongs to
-// have to equal expectedOwners. checkClaimsCover reports a namespace that lost
-// its claim; this reports a namespace claimed from outside the table. Such a
-// claim is invisible to every other case — the frontend matches its routes
-// against the manifest, not against the configuration — and at run time the
-// claiming endpoint answers paths the platform leaves to the bundle.
-func checkClaimsExact(t *testing.T, configName string, claims map[string]endpointClaim) {
-	t.Helper()
+// nonRootBackendClaims collects one configuration's non-root claims on the
+// backend listener, grouped by the prefix they claim.
+func nonRootBackendClaims(claims map[string]endpointClaim) map[string][]string {
 	claimed := map[string][]string{}
 	for endpoint, claim := range claims {
 		if claim.listener != platformListener {
@@ -331,6 +324,20 @@ func checkClaimsExact(t *testing.T, configName string, claims map[string]endpoin
 	for prefix := range claimed {
 		sort.Strings(claimed[prefix])
 	}
+	return claimed
+}
+
+// checkClaimsExact holds one configuration's claim table to the platform's
+// ownership table in the direction checkClaimsCover does not read: on the
+// backend listener, the non-root prefixes and the endpoint each belongs to
+// have to equal expectedOwners. checkClaimsCover reports a namespace that lost
+// its claim; this reports a namespace claimed from outside the table. Such a
+// claim is invisible to every other case — the frontend matches its routes
+// against the manifest, not against the configuration — and at run time the
+// claiming endpoint answers paths the platform leaves to the bundle.
+func checkClaimsExact(t *testing.T, configName string, claims map[string]endpointClaim) {
+	t.Helper()
+	claimed := nonRootBackendClaims(claims)
 	for prefix, owner := range expectedOwners {
 		endpoints, ok := claimed[prefix]
 		switch {
@@ -352,6 +359,128 @@ func checkClaimsExact(t *testing.T, configName string, claims map[string]endpoin
 		t.Errorf("%s: %s claims %q on the %s listener, which the ownership table gives to no endpoint: "+
 			"paths under it would reach that endpoint instead of the bundle",
 			configName, strings.Join(endpoints, ", "), prefix, platformListener)
+	}
+}
+
+// backendPrefixManifestPath is the dev-proxy manifest the frontend package
+// carries, relative to this module's directory (starters/demo/server).
+const backendPrefixManifestPath = "../web/backend-prefixes.json"
+
+// readPrefixManifest decodes that manifest into one prefix-to-endpoint table.
+// The file groups prefixes by the endpoint that claims them, which is the shape
+// the dev proxy and the frontend's route guard read; the comparisons below work
+// on the flat table, because that is the claim the configuration makes.
+func readPrefixManifest(t *testing.T) map[string]string {
+	t.Helper()
+	doc, err := os.ReadFile(filepath.Clean(backendPrefixManifestPath))
+	if err != nil {
+		t.Fatalf("reading %s: %v", backendPrefixManifestPath, err)
+	}
+	var parsed map[string][]string
+	if err := json.Unmarshal(doc, &parsed); err != nil {
+		t.Fatalf("%s is not a JSON object of endpoint to prefixes: %v", backendPrefixManifestPath, err)
+	}
+	if len(parsed) == 0 {
+		t.Fatalf("%s lists no endpoint", backendPrefixManifestPath)
+	}
+	owners := make(map[string]string)
+	for endpoint, prefixes := range parsed {
+		for _, prefix := range prefixes {
+			if prefix == "/" {
+				t.Errorf("%s: %q lists the root, which the web fallback endpoint claims and no API namespace owns",
+					backendPrefixManifestPath, endpoint)
+				continue
+			}
+			if other, duplicate := owners[prefix]; duplicate {
+				t.Errorf("%s: both %q and %q list %q", backendPrefixManifestPath, other, endpoint, prefix)
+				continue
+			}
+			owners[prefix] = endpoint
+		}
+	}
+	return owners
+}
+
+// checkManifestAgainstOwnership holds the manifest to the differential case's
+// ownership table in both directions: the table is the case's written claim
+// about which endpoint answers each namespace, and the manifest is the
+// frontend's copy of the same fact.
+func checkManifestAgainstOwnership(t *testing.T, owners map[string]string) {
+	t.Helper()
+	for prefix, endpoint := range owners {
+		expected, listed := expectedOwners[prefix]
+		switch {
+		case !listed:
+			t.Errorf("%s: %q lists %q, which the ownership table gives to no endpoint",
+				backendPrefixManifestPath, endpoint, prefix)
+		case expected != endpoint:
+			t.Errorf("%s: %q lists %q, but the ownership table gives it to %q",
+				backendPrefixManifestPath, endpoint, prefix, expected)
+		}
+	}
+	for prefix, endpoint := range expectedOwners {
+		if _, listed := owners[prefix]; !listed {
+			t.Errorf("%s: no endpoint lists %q, which the ownership table gives to %q",
+				backendPrefixManifestPath, prefix, endpoint)
+		}
+	}
+}
+
+// checkManifestAgainstClaims holds the manifest to one configuration's claims on
+// the backend listener, prefix for prefix and endpoint for endpoint.
+func checkManifestAgainstClaims(t *testing.T, configName string, owners map[string]string, claims map[string]endpointClaim) {
+	t.Helper()
+	claimed := nonRootBackendClaims(claims)
+	for prefix, endpoint := range owners {
+		endpoints, ok := claimed[prefix]
+		switch {
+		case !ok:
+			t.Errorf("%s: %s lists %q for %q, but the %s listener claims no such prefix",
+				configName, backendPrefixManifestPath, prefix, endpoint, platformListener)
+		case len(endpoints) > 1:
+			t.Errorf("%s: %s lists %q for %q, but the %s listener claims it from more than one endpoint (%s)",
+				configName, backendPrefixManifestPath, prefix, endpoint, platformListener, strings.Join(endpoints, ", "))
+		case endpoints[0] != endpoint:
+			t.Errorf("%s: %s lists %q for %q, but the %s listener claims it for %q",
+				configName, backendPrefixManifestPath, prefix, endpoint, platformListener, endpoints[0])
+		}
+	}
+	for prefix, endpoints := range claimed {
+		if _, listed := owners[prefix]; listed {
+			continue
+		}
+		t.Errorf("%s: the %s listener claims %q for %s, but %s lists no such prefix",
+			configName, platformListener, prefix, strings.Join(endpoints, ", "), backendPrefixManifestPath)
+	}
+}
+
+// TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims holds the
+// three statements of the backend claim table together: the frontend's
+// dev-proxy manifest, the differential case's written ownership table, and each
+// configuration's non-root claims on the backend listener. The design requires
+// them equal; a manifest entry the configuration does not claim makes the dev
+// proxy forward a namespace the run never answers, and a claim the manifest
+// omits leaves the page paths unchecked against it.
+//
+// The case is static — it reads the manifest, the table and the configurations
+// without starting a process — so the three are held together even when the
+// cases that run the program are not.
+func TestThePrefixManifestAgreesWithTheDifferentialTableAndTheClaims(t *testing.T) {
+	owners := readPrefixManifest(t)
+	checkManifestAgainstOwnership(t, owners)
+	configurations := []namedClaims{{
+		name:   "the rendered template",
+		claims: claimsFromConfig(t, "the rendered template", []byte(configBody(t, []int{8080, 8083}, ":memory:"))),
+	}}
+	for _, sample := range testdataFiles {
+		configurations = append(configurations, namedClaims{
+			name:   "testdata/" + sample,
+			claims: claimsFromFile(t, filepath.Join("testdata", sample)),
+		})
+	}
+	for _, configuration := range configurations {
+		checkClaimsExact(t, configuration.name, configuration.claims)
+		checkManifestAgainstClaims(t, configuration.name, owners, configuration.claims)
 	}
 }
 
