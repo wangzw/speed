@@ -68,9 +68,10 @@ type MembershipLifecycle interface {
 //
 // The seam is optional. An assembly with no guard removes memberships as it did
 // before the seam existed, and an answer that cannot be read is a refusal to
-// proceed rather than a pass. Account deletion does not consult the guard: it is
-// a documented exception, because an account being wound up is leaving a tenant
-// that is still in service, and the deletion's own path clears its bindings.
+// proceed rather than a pass. Account deletion does not consult the guard: the
+// rule keeps a domain that stays in service governable, while a deleted
+// account's erasure is its own terminal winding-up and clears its bindings on
+// that path.
 type MembershipGuard interface {
 	// CheckMembershipRemoval reports ErrLastTenantAdmin when removing the
 	// account's membership of the tenant would leave the tenant with no
