@@ -39,35 +39,63 @@ const waitLimit = 10 * time.Second
 // route.
 const endpointName = "public"
 
+// standInLoggerName is the name the stand-in logger is registered under. A
+// command that names the entry point names this one beside it, because the
+// bound address it records is the only way a client outside the process learns
+// the port the system picked.
+const standInLoggerName = "stand-in.logger"
+
 // host is one assembly that is serving.
 type host struct {
 	addr string
+	reg  *core.Registry
 }
 
 // startHost builds an assembly that serves fsys through this module, and runs
-// it until the entry point is listening. The run is ended when the case is, and
-// a run that ends with an error fails the case.
+// it until the entry point is listening. Every registered module takes part.
+// The run is ended when the case is, and a run that ends with an error fails
+// the case.
 func startHost(t *testing.T, fsys fs.FS) *host {
+	t.Helper()
+	return startAssembly(t, fsys, loadReader(t), nil)
+}
+
+// startAssembly builds the assembly and runs it until the entry point is
+// listening. participants is what the command tree names: nil lets every
+// registered module take part, and a list drives only those modules, leaving
+// the rest registered and unnamed, as a command that does not take a module in
+// leaves it. extra modules are registered in addition to this package's own.
+//
+// The run is ended when the case is, and a run that ends with an error fails
+// the case.
+func startAssembly(t *testing.T, fsys fs.FS, reader config.Reader, participants []string, extra ...core.Module) *host {
 	t.Helper()
 	logs := &entryRecorder{}
 
 	reg := core.New()
 	reg.Register(config.Module())
-	reg.Supply(loadReader(t), config.ModuleName)
+	reg.Supply(reader, config.ModuleName)
 	reg.Register(speedhttp.Module())
 	reg.Register(core.Module{
-		Name:     "stand-in.logger",
+		Name:     standInLoggerName,
 		Provides: []core.Provision{{Token: (*log.Logger)(nil)}},
 		New:      func(context.Context, *core.Registry) (any, error) { return standInLogger{logs: logs}, nil },
 	})
 	reg.Register(New(fsys))
+	for _, m := range extra {
+		reg.Register(m)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var runErr error
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runErr = reg.Run(ctx)
+		if participants == nil {
+			runErr = reg.Run(ctx)
+			return
+		}
+		runErr = reg.Drive(ctx, core.Drive{Depth: core.StageServe, Participants: participants})
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -87,7 +115,7 @@ func startHost(t *testing.T, fsys fs.FS) *host {
 	deadline := time.Now().Add(waitLimit)
 	for {
 		if addr := logs.address(); addr != "" {
-			return &host{addr: addr}
+			return &host{addr: addr, reg: reg}
 		}
 		select {
 		case <-done:

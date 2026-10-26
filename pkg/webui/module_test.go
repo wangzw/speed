@@ -9,6 +9,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	speedhttp "github.com/vislake/speed/pkg/http"
@@ -217,6 +219,120 @@ func TestAnEndpointThatDoesNotClaimTheRootFailsTheStartup(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the startup error %q does not name %q", err, want)
 		}
+	}
+}
+
+// TestAnEndpointWithoutTheModuleStillStartsAsTheFallback pins the assembly
+// property the design states: when the command tree does not name this module,
+// the endpoint it would have served on has no route of this module's, yet the
+// endpoint starts normally and stays its listener's fallback. A path under no
+// other endpoint's claim runs through that endpoint's chain and gets the entry
+// point's no-match answer, not the entry document. The module stays out of the
+// participating set because nothing requires it: its Provides is empty, so the
+// dependency closure cannot pull it in.
+//
+// The fallback's own 404 and the dispatch's no-fallback 404 render the same on
+// the wire, so a probe layer on the endpoint leaves a header behind: without
+// it the case could not tell the endpoint's chain from a listener that dropped
+// the endpoint.
+func TestAnEndpointWithoutTheModuleStillStartsAsTheFallback(t *testing.T) {
+	document, err := json.Marshal(map[string]any{
+		"http": map[string]any{
+			"listeners": map[string]any{
+				endpointName: map[string]any{"address": "127.0.0.1:0"},
+			},
+			"endpoints": map[string]any{
+				// The endpoint this module would serve on: it claims "/", which
+				// makes it the listener's fallback.
+				endpointName: map[string]any{"listener": endpointName},
+				"api":        map[string]any{"listener": endpointName, "prefixes": []string{"/api"}},
+			},
+		},
+		// webui is registered but not named on this command, so its required
+		// endpoint is not judged and the host need not write it.
+	})
+	if err != nil {
+		t.Fatalf("marshalling the config document: %v", err)
+	}
+
+	h := startAssembly(t, bundle(), loadDocument(t, document), []string{
+		speedhttp.ModuleName,
+		standInLoggerName,
+		fallbackMarkerName,
+	}, fallbackMarkerModule())
+
+	if h.reg.Participating(ModuleName) {
+		t.Fatalf("the module took part although the command tree did not name it: " +
+			"an empty Provides is what keeps the dependency closure from pulling it in")
+	}
+
+	t.Run("a path under no other claim runs through the fallback endpoint's chain", func(t *testing.T) {
+		got := h.get(t, "/a/client/route")
+		if got.status != nethttp.StatusNotFound {
+			t.Fatalf("GET an unclaimed path answered %d, want 404 from the entry point", got.status)
+		}
+		if ct := got.header.Get("Content-Type"); ct != "application/problem+json" {
+			t.Fatalf("GET an unclaimed path answered media type %q, want a problem document", ct)
+		}
+		if got.body == entryDoc {
+			t.Fatalf("GET an unclaimed path answered the entry document; the unnamed module answered")
+		}
+		if marker := got.header.Get(fallbackMarker); marker != fallbackMarkerValue {
+			t.Fatalf("GET an unclaimed path carries %s %q, want %q: the answer did not run through "+
+				"the fallback endpoint's chain", fallbackMarker, marker, fallbackMarkerValue)
+		}
+	})
+
+	t.Run("a path under another endpoint's claim does not reach the fallback", func(t *testing.T) {
+		got := h.get(t, "/api/v1/things")
+		if got.status != nethttp.StatusNotFound {
+			t.Fatalf("GET a path under the api claim answered %d, want the api endpoint's own 404", got.status)
+		}
+		if marker := got.header.Get(fallbackMarker); marker != "" {
+			t.Fatalf("GET a path under the api claim carries %s %q: the fallback answered a path "+
+				"another endpoint claims", fallbackMarker, marker)
+		}
+	})
+}
+
+// fallbackMarkerName is the probe module the unnamed-module case names beside
+// the entry point. It registers one layer on the fallback endpoint so the case
+// can tell an answer that ran that endpoint's chain from the dispatch's own
+// 404.
+const fallbackMarkerName = "probe.marks-the-fallback"
+
+// fallbackMarker and fallbackMarkerValue are the header and value the probe's
+// layer writes.
+const (
+	fallbackMarker      = "X-Fallback-Chain"
+	fallbackMarkerValue = "ran"
+)
+
+// fallbackMarkerModule delivers the probe: a layer on the fallback endpoint
+// that marks every request reaching it.
+func fallbackMarkerModule() core.Module {
+	return core.Module{
+		Name:     fallbackMarkerName,
+		Requires: []core.Requirement{{Token: (*speedhttp.Router)(nil)}},
+		Init: func(_ context.Context, reg *core.Registry, _ any) error {
+			router, err := core.Resolve[speedhttp.Router](reg)
+			if err != nil {
+				return err
+			}
+			endpoint, err := router.Endpoint(endpointName)
+			if err != nil {
+				return err
+			}
+			endpoint.Use(speedhttp.Middleware{
+				Name:  "probe.fallback-marker",
+				Stage: speedhttp.StageGuard,
+				Handler: func(c *gin.Context) {
+					c.Header(fallbackMarker, fallbackMarkerValue)
+					c.Next()
+				},
+			})
+			return nil
+		},
 	}
 }
 

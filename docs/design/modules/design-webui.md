@@ -205,4 +205,4 @@ sequenceDiagram
 | 客户端路由回退 | 已实现 | `pkg/webui/handler.go` `handler.miss`、`resourceShaped`、`handler.underResourcePrefix`、`handler.serveEntry` |
 | 路径限定 | 已实现 | `pkg/webui/handler.go` `handler.lookupKey`、`handler.handle` 拒绝 `!fs.ValidPath` 的分支 |
 | 所在端认领 `/` 的启动期核对 | 已实现 | `pkg/http/dispatch.go` `(*dispatch).verifyRoutes`、`literalLeadingPath`，`pkg/http/module.go` `(*router).serve`；`pkg/webui/module_test.go` `TestAnEndpointThatDoesNotClaimTheRootFailsTheStartup` |
-| 本模块未被点名时所在端作为兜底端点照常启动 | 未实现 | — |
+| 本模块未被点名时所在端作为兜底端点照常启动 | 已实现 | `pkg/http/dispatch.go` `buildDispatch` 的兜底端选择、`(*dispatch).handler` 的 `NoRoute`，`pkg/http/assemble.go` `newEngine` 的 `NoRoute`；`pkg/webui/module_test.go` `TestAnEndpointWithoutTheModuleStillStartsAsTheFallback` |
