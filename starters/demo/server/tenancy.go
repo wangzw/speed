@@ -419,8 +419,12 @@ func (p *tenancyProduct) creatorIsBound(ctx context.Context, tenantID, account s
 // when that delete succeeded: two replicas naming one creator write one
 // membership row and one binding, and deleting the binding is refused as the
 // domain's last tenant-admin binding, so the shared membership stays with it. A
-// membership or binding that was already there belongs to the winning tenant
-// and is left as it stands; the role and its grants stay for the same reason.
+// binding that is not there is no delete at all, and the membership belongs to
+// the winner: the provisioning order writes the winner's membership before its
+// binding, so the losing call can find that membership while the binding has not
+// landed yet. A membership or binding that was already there belongs to the
+// winning tenant and is left as it stands; the role and its grants stay for the
+// same reason.
 func (p *tenancyProduct) undoLostRace(ctx context.Context, tenantID string, creatorID authn.AccountID,
 	creator string, membershipHeld, bindingHeld bool,
 ) {
@@ -429,7 +433,18 @@ func (p *tenancyProduct) undoLostRace(ctx context.Context, tenantID string, crea
 		// the losing cleanup could remove without touching the winner's rows.
 		return
 	}
-	err := p.manager.DeleteBinding(ctx, tenantID, creator, authz.TenantAdminRole)
+	held, err := p.creatorIsBound(ctx, tenantID, creator)
+	if err != nil {
+		p.logger.Error(tenancyModuleName+": a lost tenant-creation race could not read the creator's binding",
+			"tenant", tenantID, "cause", err.Error())
+		return
+	}
+	if !held {
+		// There is no binding of this creator to remove, so there is nothing this
+		// call added; the membership belongs to the winner.
+		return
+	}
+	err = p.manager.DeleteBinding(ctx, tenantID, creator, authz.TenantAdminRole)
 	switch {
 	case err == nil:
 	case errors.Is(err, authz.ErrLastTenantAdmin):

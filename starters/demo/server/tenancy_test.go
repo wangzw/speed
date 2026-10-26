@@ -375,6 +375,36 @@ func TestTheProvisionerKeepsTheSharedMembershipWhenTheSameCreatorLosesTheRace(t 
 	}
 }
 
+// TestTheProvisionerKeepsAMembershipWhoseBindingHasNotLanded holds the window
+// the provisioning order opens: the winner writes its membership before its
+// binding, so a losing call can find the shared membership without a binding to
+// delete. With no binding to remove there is nothing this call added, and the
+// membership stays.
+func TestTheProvisionerKeepsAMembershipWhoseBindingHasNotLanded(t *testing.T) {
+	roster := newFakeRoster()
+	memberships := newFakeMemberships()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	product := tenancyProductOf(roster, memberships, manager, newFakeSeeder(grants), nil)
+	ctx := context.Background()
+
+	if err := memberships.Put(ctx, authn.Membership{
+		Account: "acct-1", Tenant: "acme", Active: true, Source: "admin",
+	}); err != nil {
+		t.Fatalf("writing the shared membership: %v", err)
+	}
+
+	product.undoLostRace(ctx, "acme", authn.AccountID("acct-1"), "acct-1", false, false)
+
+	member, err := memberships.IsMember(ctx, authn.AccountID("acct-1"), "acme")
+	if err != nil {
+		t.Fatalf("reading the shared membership: %v", err)
+	}
+	if !member {
+		t.Error("the lost race removed a membership whose binding had not landed")
+	}
+}
+
 // TestTheProvisionerMarksTheTenantAdminRoleBuiltin holds the role's frozen
 // state: the management surface may neither rewrite nor delete it, as with the
 // administrator roles the seed writes.
