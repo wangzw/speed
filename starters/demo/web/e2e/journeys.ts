@@ -79,6 +79,16 @@ export const journeys: readonly JourneyEntry[] = [
     ],
   },
   {
+    journey: 'journey-audit-export.md',
+    status: 'covered',
+    covers: [
+      'REQ-platform-admin-029',
+      'REQ-platform-admin-111',
+      'REQ-platform-admin-112',
+      'REQ-platform-admin-113',
+    ],
+  },
+  {
     journey: 'journey-deploy-and-operate.md',
     status: 'covered',
     covers: [
