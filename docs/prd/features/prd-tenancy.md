@@ -93,7 +93,7 @@
 
 - **验收**：加入后，该账户带着这个租户的业务请求被准入，不再得到非成员的不可访问结果。对同一账户重复加入成功，成员列表里该账户只出现一次。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-tenancy-010
 

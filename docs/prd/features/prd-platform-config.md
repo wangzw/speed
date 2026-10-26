@@ -201,7 +201,7 @@
 
 - **验收**：在租户 A 下登记一个提供方后，租户 A 的列表出现它、租户 B 的列表不出现；保存成功但列表不出现，或出现在其他租户的列表即不通过。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-platform-config-037
 
@@ -217,7 +217,7 @@
 
 - **验收**：启用一个已验证邮箱域的提供方后，用该域邮箱发起登录发现能找到它；停用后同一发现不再返回它；重新启用后再次返回。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-platform-config-019
 
@@ -233,7 +233,7 @@
 
 - **验收**：声明一个域后取得令牌，该域显示为未验证；用该域邮箱发起登录发现找不到该提供方。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-platform-config-038
 
@@ -241,7 +241,7 @@
 
 - **验收**：在 `_speed-authn.<域>` 的 DNS TXT 记录写入 `speed-authn=<令牌>` 后执行验证，该域变为已验证并开始参与发现；记录内容不匹配时验证失败，该域显示为未验证且不参与发现。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-platform-config-021
 

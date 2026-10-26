@@ -13,6 +13,7 @@
 - 该企业的邮箱域可以由运营者发布 DNS TXT 记录。
 - 企业身份提供方一侧已登记本部署为该提供方生成的回调地址：OIDC 的 redirect_uri，或 SAML 的 ACS 与 SP 元数据。
 - 运营者的账户已证明本人邮箱。
+- 企业员工在目标租户之外已经是另一个组织的成员，因此租户切换器里至少有两个可进入的租户，当前租户是其中之一。
 
 ## 步骤
 
@@ -66,4 +67,4 @@ flowchart TD
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`

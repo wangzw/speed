@@ -203,7 +203,7 @@
 
 - **验收**：预置开通按 REQ-signin-021 的验收判定；即时开通按 REQ-signin-022 的验收判定；提供方声明的开通方式不是这两种之一时登录失败且不建户。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`（仅驱动预置开通；即时开通与非法开通方式由后端测试覆盖）
 
 ### REQ-signup-019
 

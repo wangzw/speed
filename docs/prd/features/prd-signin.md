@@ -42,7 +42,7 @@
 
 - **验收**：同一部署对任意匿名调用者返回相同的登录方式条目集合，不随提交的邮箱或账户变化；企业提供方只能经按邮箱域的发现请求取得。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-signin-004
 
@@ -178,7 +178,7 @@
 
 - **验收**：提交未配置或未验证域的地址得到空列表；提交已配置、已验证且所属提供方已启用的域的地址得到该租户的提供方；两种情形的应答同形同时，耗时一致而不随是否有匹配变化。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-signin-021
 
@@ -186,7 +186,7 @@
 
 - **验收**：提供方为预置模式时，匹配不到预置账户的登录以统一的登录失败结束，且不新建账户。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`（仅驱动预置账户命中的正向分支；匹配不到预置账户时拒绝由后端测试覆盖）
 
 ### REQ-signin-022
 

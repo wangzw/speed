@@ -355,7 +355,7 @@
 
 - **验收**：用户账户只填显示名时新建动作被禁用；补齐一个登录标识后可提交并创建成功。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-enterprise-sso-onboarding.spec.ts` `enterprise-sso-onboarding: an operator connects an OIDC provider and an employee signs in with the work email`
 
 ### REQ-platform-admin-064
 
