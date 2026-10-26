@@ -17,7 +17,7 @@
 
 ### 非职责
 
-- **不判定「谁有权冒充谁」。** 这一判定经判定接缝 `Decider` 取得（由 `authz.guard` 实现，[design-authz](../design-authz.md)），接缝、动作常量与管理面路由由 [design-authn-admin](design-authn-admin.md) 承载；`Decider` 缺席时本模块全拒。
+- **不判定「谁有权冒充谁」。** 这一判定经判定接缝 `Decider` 取得（由 `authz.guard` 实现，[design-authz](../design-authz.md)），接缝、动作常量与管理面路由由 [design-authn-admin](design-authn-admin.md) 承载；`Decider` 缺席时本模块全拒。三个冒充动作是平台能力，在平台域上判定：`Decision.Tenant` 是记录被限定的数据，不是策略域，发起者不需要在目标租户持有权限，平台管理员也不必是该租户的成员。
 - **不认识角色。** 「不得冒充权限更高或同级的账户」不是身份层面的事实，本模块无从核对；它由 `Decider` 的实现方负责。
 - **不执行网关的范围规则，也不执行准入层的范围核对。** 网关对冒充身份只放进准入层所守的端与登记为 `Impersonable` 的路由（[design-authn-gate](design-authn-gate.md)）；准入层核对 `Scope()` 与请求的租户（[design-tenant-admission](../tenant/design-tenant-admission.md)）。本模块只持有必需依赖 `ScopeGuard`，使网关与准入层的范围执行在装配里必然有落点。
 - **不持有登录会话与访问令牌。** 会话行上的冒充记录标识由 `Sessions.SetImpersonation` 写（[design-authn-session](design-authn-session.md)），冒充用的访问令牌由 `Tokens.Issue` 签发（[design-authn-token](design-authn-token.md)）；本模块只调用它们。
@@ -321,7 +321,7 @@ CREATE UNIQUE INDEX authn_imp_one_active ON authn_impersonations (session_id) WH
 
 通过结构性限制之后，开始按下列顺序进行，次序即依赖关系。`Decider` 询问、强制档审计与记录事务在 `Start` 之内，载体挂接与事件由处理器在 `Start` 返回之后完成：
 
-1. **询问 `Decider`。** 以 `Decision{Action: ActionImpersonateStart, Actor: actor, Target: 目标, TargetAccount: 目标, Tenant: 租户, Params: {reason, ttl}}` 调 `Decide`。返回 `false` 即 403 `forbidden`；返回 error 或 panic 即 503，不当作放行；`Decider` 缺席等同全拒。
+1. **询问 `Decider`。** 以 `Decision{Action: ActionImpersonateStart, Actor: actor, Target: 目标, TargetAccount: 目标, Tenant: 租户, Params: {reason, ttl}}` 调 `Decide`。判定在平台域进行：`Tenant` 是记录被限定的数据，不是策略域，发起者不需要在该租户持有权限；目标必须在该租户有效这条限制已在组 b 核对，不受判定域影响。返回 `false` 即 403 `forbidden`；返回 error 或 panic 即 503，不当作放行；`Decider` 缺席等同全拒。
 2. **强制档审计，事务之外。** `audit.Record`，动作 `authn.impersonation.start`，对象是目标账户，结果 `granted`，明细含租户、TTL、发起者会话标识与预先生成的 `grant_id`，理由放 `Purpose`。写失败（含 `ErrNotAccepting`）即 `ErrAuditRequired`、503，不开事务，冒充不开始。
 3. **记录事务。** 先把本会话上已失效而 `ended_at IS NULL` 的记录落库结束，再插入新记录，`Start` 随后返回记录。事务内只写本模块的表，不调 `audit.Record`，不调 `Bus.Publish`。
 4. **载体挂接，处理器完成。** 凭据种类按身份的 `Backend()` 分：`session` 是 cookie 凭据，`token` 是 Bearer 凭据。cookie 凭据：`Sessions.SetImpersonation(sid, grantID)` 换出会话令牌，再 `Sessions.SetCookie`，应答带 `{grant:{id, target, tenant, ends_at}}`。Bearer 凭据：不改会话，经 `Tokens.Issue` 签发冒充访问令牌，应答额外带这枚令牌。令牌的声明为 `sub`（目标）、`act.sub`（发起者）、`imp`（记录标识）、`imp_tenant`（租户）、`sid`（发起者的会话）、`acr` 恒为 `"1"`，另经 `IssueToken` 带上发起者的方式集（`amr`）与认证时刻（`auth_time`），与会话端对称；有效期取 `min(authn.token.access-ttl, 记录剩余时限)`，而记录的硬上限是 1 小时，所以令牌有效期至多 1 小时；不签发刷新令牌。挂接失败时处理器补偿：以条件更新结束记录，结束原因 `start-failed`，不经 `End`，其处置见「开始失败的处置」。

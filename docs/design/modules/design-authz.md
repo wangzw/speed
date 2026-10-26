@@ -250,7 +250,7 @@ const (
 - **审计的检索与导出**：权限 `audit.read` 与 `audit.export`。审计不提供查询面（[audit](audit/design-audit.md)），检索与导出的端点由审计的检索单元 [audit.admin](audit/design-audit-admin.md) 挂出，两者的判定都经本模块的 handler 内 API 落到 `audit.read` 上；`audit.export` 仍由本模块携带，框架内没有模块询问它，一个按另一份权限判定的导出由宿主自建（[ADR-audit-export](../../adr/adr-audit-export.md)）。
 - **设置的写入面**：权限 `settings.read` 与 `settings.write`。设置的写入面没有访问控制，由宿主经本模块鉴权（[settings](settings/design-settings.md)）。
 - **口令表主体（`static.*`）的角色**：本模块只提供形状——保留的平台域 `system`、内置的运营角色、以及绑定表；口令表主体的平台角色由宿主写入，不在迁移里种。`Identity.Account().IsStatic()` 的主体读不到任何成员关系，其权限只来自平台域上的绑定。
-- **谁有权冒充谁**：权限 `authn.impersonation.start`、`authn.impersonation.read`、`authn.impersonation.revoke`，在租户域上判定。冒充的结构性限制（发起者、目标、参数、并发）由 `authn.impersonation` 核对，本模块在其之上收紧「谁能冒充谁」（[authn-impersonation](authn/design-authn-impersonation.md)）。
+- **谁有权冒充谁**：权限 `authn.impersonation.start`、`authn.impersonation.read`、`authn.impersonation.revoke`，在平台域上判定。冒充是平台能力：请求路径或正文里的租户是冒充记录被限定的数据，不是策略域，调用方不需要在目标租户持有任何权限；只在目标租户持有 `tenant-admin` 的调用方不通过，平台管理员不必是目标租户的成员。目标必须是目标租户的有效成员这条结构性限制不变。冒充的结构性限制（发起者、目标、参数、并发）由 `authn.impersonation` 核对，本模块在其之上收紧「谁能冒充谁」（[authn-impersonation](authn/design-authn-impersonation.md)）。
 
 ### 动作到查询的翻译
 
@@ -282,7 +282,7 @@ const (
 
 翻译与[权限目录](#类型与接口)的取材域相同：两者都取**全部已登记模块**（前者取各模块的 `TranslationSpec`、后者取各模块的 `PermissionSpec`），而不是只取本次命令的参与模块。因此两者由同一批登记单元构成，不会因取材域不同而分叉——不会出现一个权限被更宽的目录看到、却被更窄的翻译漏掉的情形。
 
-**域。** 中间件的 `Query.Domain` 取 `tenant.FromContext` 的标识（无租户则 `PlatformDomain`）。`Decider` 的 `Query.Domain` 取 `Decision.Tenant`，其中 `authn.account.*` 在 `Decision.Tenant` 为空时取 `PlatformDomain`；`authn.tenant.access` 是唯一带平台域回退的动作，见[平台域与跨租户回退](#平台域与跨租户回退)。
+**域。** 中间件的 `Query.Domain` 取 `tenant.FromContext` 的标识（无租户则 `PlatformDomain`）。`Decider` 的 `Query.Domain` 取 `Decision.Tenant`，其中 `authn.account.*` 在 `Decision.Tenant` 为空时取 `PlatformDomain`；三个 `authn.impersonation.*` 动作无论 `Decision.Tenant` 取什么都在 `PlatformDomain` 判定，那个租户是记录被限定的数据；`authn.tenant.access` 是唯一带平台域回退的动作，见[平台域与跨租户回退](#平台域与跨租户回退)。
 
 **未知动作 fail-closed。** `Decider` 收到的 `Decision.Action` 不在解析出的翻译集里时返回 `(false, nil)`：拒绝而不报错。`Action` 是开放的字符串类型，认证新增一个常量时，本模块在对齐更新之前对它的回答是拒绝，方向取拒绝（[ADR-authz-decision-seam](../../adr/adr-authz-decision-seam.md)）。
 
@@ -554,13 +554,15 @@ sequenceDiagram
 
 审计记录层在授权阶段之外，本阶段内的拒绝由它看到并记入审计行（[http](http/design-http.md)）。
 
-下图给出 `Decider` 对动作的分派、平台域回退与未知动作的 fail-closed。它固定的是：未知动作走拒绝分支且不报错；平台域回退只属于 `authn.tenant.access`，在租户域判空之后发生；其余动作按翻译表构造一次查询，出错是 503。
+下图给出 `Decider` 对动作的分派、平台域回退与未知动作的 fail-closed。它固定的是：未知动作走拒绝分支且不报错；三个 `authn.impersonation.*` 动作固定在平台域判定，`Decision.Tenant` 只作为记录被限定的数据被忽略；平台域回退只属于 `authn.tenant.access`，在租户域判空之后发生；其余动作按翻译表构造一次查询，出错是 503。
 
 ```mermaid
 flowchart TD
     start(["Decide 收到一次判定"]) --> known{"动作在翻译表里?"}
     known -- 否 --> denyNoErr["返回 (false, nil)：拒绝且不报错"]
-    known -- 是 --> access{"是 authn.tenant.access?"}
+    known -- 是 --> platform{"是 authn.impersonation.*?"}
+    platform -- 是 --> domPlatformOnly["在平台域判定"]
+    platform -- 否 --> access{"是 authn.tenant.access?"}
     access -- 是 --> domTenant["在租户域判定"]
     domTenant --> hit{"租户域命中?"}
     hit -- 是 --> allow["允许"]
@@ -570,6 +572,7 @@ flowchart TD
     hitP -- 否 --> deny["拒绝"]
     access -- 否 --> build["按翻译表构造 Query，域取 Decision.Tenant，空则平台域"]
     build --> judge["调用 Enforcer.Allowed"]
+    domPlatformOnly --> judge
     judge --> err{"出错?"}
     err -- 是 --> unavailable["返回错误，取用方收口 503"]
     err -- 否 --> result{"允许?"}
@@ -706,7 +709,7 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 `Decision.Tenant` 为空表示平台域，取保留值 `PlatformDomain`（`"system"`）。平台策略行 `tenant_id = 'system'`，主体可以是账户标识或 `static.<subject>`。跨租户的客服与平台管理员在这种装配里落地：**`Decider` 对 `authn.tenant.access` 在租户域判空之后回退平台域再判一次。**
 
-回退是**唯一的平台域回退分支**：先按 `Decision.Tenant` 构造查询在租户域判一次，无匹配时改用 `PlatformDomain` 判第二次，两次都不匹配即拒绝。其余动作没有回退——租户级动作只在租户域判，账户级动作只在平台域判。
+回退是**唯一的平台域回退分支**：先按 `Decision.Tenant` 构造查询在租户域判一次，无匹配时改用 `PlatformDomain` 判第二次，两次都不匹配即拒绝。三个 `authn.impersonation.*` 动作不在租户域判，只在平台域判一次，`Decision.Tenant` 是被限定的数据；其余动作没有回退——租户级动作只在租户域判，账户级动作只在平台域判。
 
 **平台域由名册中的 `system` 租户承载。** 这个标识同时是名册中的一行，平台域的授予与被授予者的成员关系因此挂在同一个租户标识上。`authz.policy` 在 `Start` 时经 `tenant.Catalog` 核对这个租户存在，不存在即以 `ErrPlatformDomainMissing` 终止启动；该租户不可停用、不可删除，由名册的写保护拒绝。
 

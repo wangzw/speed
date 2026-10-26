@@ -298,9 +298,13 @@ func (m *product) checkConcurrency(ctx context.Context, actor authn.Identity, no
 	return nil
 }
 
-// decide asks the Decider whether the actor may start this impersonation. An
-// absent Decider refuses everything; a panic is a refusal that is neither a
-// permission nor a decline, so it is ErrUnavailable and no action follows.
+// decide asks the Decider whether the actor may start this impersonation. The
+// decision is a platform capability and decides in the platform domain: Tenant
+// is the data the record is confined to, not the policy domain, so the initiator
+// needs no permission in it; the target's membership in it is checked before the
+// decision. An absent Decider refuses everything; a panic is a refusal that is
+// neither a permission nor a decline, so it is ErrUnavailable and no action
+// follows.
 func (m *product) decide(ctx context.Context, actor authn.Identity, r authn.ImpersonationRequest, ttl time.Duration) (bool, error) {
 	if m.decider == nil {
 		return false, nil

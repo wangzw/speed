@@ -38,7 +38,9 @@ func grantViewOf(g authn.ImpersonationGrant) AuthnAdminImpersonation {
 }
 
 // handleImpersonationList answers GET /tenants/:tenant/impersonations: it lists
-// the records of the tenant the path names. The action is impersonation.read.
+// the records of the tenant the path names. The action is impersonation.read,
+// decided in the platform domain: the path's tenant is the data the records are
+// confined to, and the caller needs no permission in it.
 func (m *product) handleImpersonationList(ctx context.Context, in impersonationListInput) (AuthnAdminImpersonationList, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -71,7 +73,9 @@ func (m *product) handleImpersonationList(ctx context.Context, in impersonationL
 
 // handleImpersonationRevoke answers DELETE /admin/impersonations/:id: it reads
 // the record to learn its tenant and target, asks the Decider with those, and
-// revokes it. The action is impersonation.revoke. It writes no mandatory audit:
+// revokes it. The action is impersonation.revoke, decided in the platform
+// domain: the record's tenant is the data the record is confined to, and the
+// caller needs no permission in it. It writes no mandatory audit:
 // the revocation is a move in the safe direction and the impersonation module
 // writes its own best-effort row, so a failed audit does not stop the
 // revocation. Revoking a record that has already ended is a no-op and gets the

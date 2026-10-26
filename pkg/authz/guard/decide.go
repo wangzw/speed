@@ -14,10 +14,13 @@ import (
 // permission-to-(object, action) mapping the whole process decides by from
 // pkg/authz/internal/translation, where the policy module resolves it. The
 // subject is the actor's accountability key and the domain is the tenant the
-// decision names, or the platform domain when it names none. An action with no
-// row in the translation is refused without an error: the authentication side
-// may add an action this mapping does not know, and the safe answer is a denial
-// rather than an allow or a failure the caller reads as an outage.
+// decision names, or the platform domain when it names none. The three
+// impersonation actions are a second exception: they are platform capabilities,
+// so they decide in the platform domain whatever tenant the decision names. An
+// action with no row in the translation is refused without an error: the
+// authentication side may add an action this mapping does not know, and the safe
+// answer is a denial rather than an allow or a failure the caller reads as an
+// outage.
 //
 // authn.tenant.access is the one action with a platform-domain fallback: a
 // cross-tenant operator holds their role in the platform domain, so a query
@@ -33,7 +36,7 @@ func (p *product) Decide(ctx context.Context, d authn.Decision) (bool, error) {
 	}
 	subject := string(d.Actor.Account())
 	domain := authz.Domain(d.Tenant)
-	if domain == "" {
+	if domain == "" || platformCapability(d.Action) {
 		domain = authz.PlatformDomain
 	}
 
@@ -60,6 +63,22 @@ func (p *product) Decide(ctx context.Context, d authn.Decision) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// platformCapability reports whether an action is a platform capability, whose
+// decision is made in the platform domain whatever tenant it names. The tenant
+// of an impersonation is the data the record is confined to, not the policy
+// domain: the operator needs no grant in it, and the target's membership in it
+// is a structural restriction the impersonation capability enforces, not a
+// permission. A platform administrator holds platform-admin in the platform
+// domain; a tenant administrator's role lives in the tenant domain and carries
+// no permission here.
+func platformCapability(action authn.Action) bool {
+	switch action {
+	case authn.ActionImpersonateStart, authn.ActionImpersonationRead, authn.ActionImpersonationRevoke:
+		return true
+	}
+	return false
 }
 
 // targetHoldsPlatformPermission reports whether an impersonation target holds

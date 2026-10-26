@@ -37,10 +37,13 @@ const (
 // Tenant is the tenant the action is about. The empty string means platform
 // scope and is for account-level actions only: for a tenant-level action the
 // administration module resolves the tenant of the object itself and fills it
-// in, so a Decider never receives a tenant-level action with no tenant. Target
-// names the object the action is on, TargetAccount the account it is on where
-// there is one, and Params carries a few more parameters such as reason or ttl,
-// never a credential.
+// in, so a Decider never receives a tenant-level action with no tenant. The
+// tenant is the object the action operates on, not by itself the policy domain:
+// the Decider decides which domain to judge in, and the three impersonation
+// actions are platform capabilities, decided in the platform domain whatever
+// tenant they name. Target names the object the action is on, TargetAccount the
+// account it is on where there is one, and Params carries a few more parameters
+// such as reason or ttl, never a credential.
 type Decision struct {
 	Action        Action
 	Actor         Identity

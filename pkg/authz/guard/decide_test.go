@@ -253,6 +253,62 @@ func TestANonAccessActionDecidesInOneQuery(t *testing.T) {
 	}
 }
 
+// The three impersonation actions decide in the platform domain whatever tenant
+// the decision names. The tenant an impersonation is confined to is the data the
+// action operates on, not the policy domain: a platform administrator needs no
+// grant in it, and a tenant administrator's role, held in the tenant domain,
+// carries no platform permission. The engine is asked once, in the platform
+// domain; a miss there denies and is not retried in the named tenant.
+func TestImpersonationDecidesInThePlatformDomain(t *testing.T) {
+	for _, c := range []struct {
+		action authn.Action
+		want   string
+	}{
+		{authn.ActionImpersonateStart, "start"},
+		{authn.ActionImpersonationRead, "read"},
+		{authn.ActionImpersonationRevoke, "revoke"},
+	} {
+		t.Run(string(c.action), func(t *testing.T) {
+			enforcer := &stubEnforcer{}
+			enforcer.answer = func(q authz.Query) (bool, error) {
+				return q.Domain == authz.PlatformDomain && q.Object == "impersonation" && q.Action == c.want, nil
+			}
+			p := &product{enforcer: enforcer}
+
+			// The platform administrator holds no binding in acme. The decision
+			// must still be allowed, because it is asked in the platform domain.
+			allow, err := p.Decide(t.Context(), authn.Decision{
+				Action: c.action,
+				Actor:  identity(t, "acct-platform"),
+				Tenant: "acme",
+			})
+			if err != nil || !allow {
+				t.Fatalf("Decide gave (%t, %v), want (true, nil) for a platform administrator with no acme grant", allow, err)
+			}
+			got := enforcer.queries()
+			if len(got) != 1 || got[0].Domain != authz.PlatformDomain {
+				t.Fatalf("the engine was asked %v, want one query in the platform domain", got)
+			}
+
+			// The tenant administrator holds the grant in acme only. The
+			// decision must refuse it, and a query in acme would be the defect.
+			enforcer.answer = func(q authz.Query) (bool, error) { return q.Domain == "acme", nil }
+			allow, err = p.Decide(t.Context(), authn.Decision{
+				Action: c.action,
+				Actor:  identity(t, "acct-tenant-admin"),
+				Tenant: "acme",
+			})
+			if err != nil || allow {
+				t.Fatalf("Decide gave (%t, %v), want (false, nil) for a tenant administrator with no platform permission", allow, err)
+			}
+			got = enforcer.queries()
+			if len(got) != 2 || got[1].Domain != authz.PlatformDomain {
+				t.Fatalf("the engine was asked %v, want a second query in the platform domain", got)
+			}
+		})
+	}
+}
+
 // The subject is the effective account. Under an impersonation the decision is
 // made for the account the request is taken to be from, not for the account
 // whose hands are on the request: the engine is asked about the impersonated
