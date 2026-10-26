@@ -102,7 +102,10 @@ const TENANT_HINT_ID = 'sso-tenant-hint'
 /** The provider-row action a row's inline failure marker belongs to. */
 type ProviderAction = 'refresh' | 'reverify' | 'delete'
 
-/** The domain-bar action the shared button row is running. */
+/**
+ * A domain action in flight: claim runs from the shared button row, while
+ * verify and remove run from each declared domain's own row controls.
+ */
 type DomainAction = 'claim' | 'verify' | 'remove'
 
 /** The one-time verification token a claim hands out, with its owner. */
