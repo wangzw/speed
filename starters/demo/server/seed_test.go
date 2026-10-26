@@ -17,6 +17,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db/sqlite"
+	"github.com/vislake/speed/pkg/tenant"
 )
 
 // roleManager answers the manager calls the seed's role steps make. The
@@ -640,6 +641,28 @@ func TestSeedRefusesAnAdministratorItCannotName(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ghost") || !strings.Contains(err.Error(), "seed.accounts") {
 		t.Errorf("the refusal = %q, want it to name the offender and seed.accounts", err)
+	}
+}
+
+// TestSeedFailsOnASystemAliasConflict holds the upgrade case where a business
+// tenant already holds the alias "system": the system tenant's identifier is
+// free, so the read finds nothing, and Create refuses the alias. Treating that
+// refusal as "the tenant exists" skips the row the policy module requires and
+// fails the startup later, far from the cause; the seed reports the conflict
+// and names the tenant it was registering.
+func TestSeedFailsOnASystemAliasConflict(t *testing.T) {
+	roster := newFakeRoster()
+	roster.createErr = fmt.Errorf("%w: alias %q is held by tenant %q",
+		tenant.ErrAliasConflict, string(authz.PlatformDomain), "legacy")
+	err := seedTenant(context.Background(), roster, string(authz.PlatformDomain))
+	if err == nil {
+		t.Fatal("seedTenant accepted an alias conflict as an existing tenant")
+	}
+	if !errors.Is(err, tenant.ErrAliasConflict) {
+		t.Errorf("the refusal = %v, want it to carry ErrAliasConflict", err)
+	}
+	if !strings.Contains(err.Error(), string(authz.PlatformDomain)) {
+		t.Errorf("the refusal = %q, want it to name the tenant whose alias conflicts", err)
 	}
 }
 

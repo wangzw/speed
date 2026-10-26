@@ -698,6 +698,13 @@ func seedAdminMembership(ctx context.Context, memberships authn.Memberships,
 // seedTenant registers one tenant the configuration names unless the roster
 // already holds it. The alias is the identifier, so a request carrying the
 // tenant's name on its surface resolves to it.
+//
+// A repeated run reads the row and skips. A create that loses the identifier to
+// another run between the read and the write is the same answer: the tenant is
+// there, which is what this command is for. An alias conflict is not: the
+// identifier is free and another tenant holds the alias, so the tenant is not
+// registered, and skipping it would let the startup fail later without naming
+// the cause.
 func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
 	_, found, err := roster.Get(ctx, tenant.ID(id))
 	if err != nil {
@@ -709,10 +716,10 @@ func seedTenant(ctx context.Context, roster tenant.Catalog, id string) error {
 	}
 	record := tenant.Tenant{ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive}
 	if err := roster.Create(ctx, record); err != nil {
-		if errors.Is(err, tenant.ErrTenantExists) || errors.Is(err, tenant.ErrAliasConflict) {
-			// Another run took the identifier or the alias between the read and
-			// the write. The tenant is there, which is what this command is for,
-			// so the race is the answer and not a failure.
+		if errors.Is(err, tenant.ErrTenantExists) {
+			// Another run took the identifier between the read and the write.
+			// The tenant is there, which is what this command is for, so the
+			// race is the answer and not a failure.
 			fmt.Printf("skipped: tenant %s (exists)\n", id)
 			return nil
 		}
