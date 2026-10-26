@@ -318,14 +318,37 @@ func (*reviewSender) Model() sms.CarrierModel {
 // attribute is spelled verification_code rather than code because the gateway
 // registers "code" as a sensitive key name for the process — an authorization
 // code travels under it — and the logging layer would mask this value.
+//
+// The line names the message's kind. A verification message carries the code
+// the recipient proves and keeps the verification_code field; a notice carries
+// no code, so its line says a message was sent and omits that field rather than
+// claiming a verification that never happened.
 func (*reviewSender) Send(_ context.Context, r sms.Resolved) (sms.Receipt, error) {
-	log.Default().Info("review sms: a verification code was sent",
+	msg, attrs := reviewSMSRecord(r)
+	log.Default().Info(msg, attrs...)
+	return sms.Receipt{ProviderID: reviewCarrierName + ":" + r.Template + ":" + r.DedupeID}, nil
+}
+
+// reviewSMSRecord builds the log record one resolved message produces: the
+// message text and its attributes. The kind is the template's, set by the
+// registry from the declaration, so a configured authn code template and a
+// runtime notice template are told apart even when both arrive through this
+// same carrier.
+func reviewSMSRecord(r sms.Resolved) (string, []any) {
+	attrs := []any{
 		"sender", reviewCarrierName,
 		"to", r.To,
 		"template", r.Template,
 		"locale", r.Locale,
-		"verification_code", r.Params["code"])
-	return sms.Receipt{ProviderID: reviewCarrierName + ":" + r.Template + ":" + r.DedupeID}, nil
+	}
+	if r.Kind != sms.KindVerification {
+		// The kind is what the vendor would be told; a carrier that writes to
+		// the log instead must not report a code a non-verification message
+		// never carried.
+		return "review sms: a message was sent", attrs
+	}
+	return "review sms: a verification code was sent",
+		append(attrs, "verification_code", r.Params["code"])
 }
 
 // Offer answers with a template code derived from the submission's name and

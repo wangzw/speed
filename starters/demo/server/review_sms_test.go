@@ -227,6 +227,61 @@ func TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage(t *testing.T) {
 	}
 }
 
+// TestReviewCarrierNamesTheMessageKindItSent holds the carrier's log record:
+// a notice says a message was sent and carries no verification_code, while a
+// verification message keeps the verification-code line and its code. The two
+// kinds travel through one carrier, so the declaration's kind is what keeps a
+// reader from reading a notice as a code.
+func TestReviewCarrierNamesTheMessageKindItSent(t *testing.T) {
+	notice := sms.Resolved{
+		To:       reviewSMSTestPhone,
+		Template: reviewNotificationSMSTemplate,
+		Locale:   reviewDefaultLocale,
+		Kind:     sms.KindNotification,
+		Params:   map[string]string{"to": reviewSMSTestPhone},
+	}
+	msg, attrs := reviewSMSRecord(notice)
+	if strings.Contains(msg, "verification") {
+		t.Errorf("the notice line is %q; a notification must not claim to be a verification code", msg)
+	}
+	if value, ok := reviewSMSAttr(attrs, "verification_code"); ok {
+		t.Errorf("the notice line carries verification_code=%q; a notification carries no code", value)
+	}
+	for _, key := range []string{"to", "template", "locale"} {
+		if _, ok := reviewSMSAttr(attrs, key); !ok {
+			t.Errorf("the notice line carries no %q attribute: %v", key, attrs)
+		}
+	}
+
+	verification := sms.Resolved{
+		To:       reviewSMSTestPhone,
+		Template: "authn.code.login",
+		Locale:   reviewDefaultLocale,
+		Kind:     sms.KindVerification,
+		Params:   map[string]string{"code": "123456", "ttl_minutes": "5"},
+	}
+	msg, attrs = reviewSMSRecord(verification)
+	if want := "review sms: a verification code was sent"; msg != want {
+		t.Errorf("the verification line is %q, want %q", msg, want)
+	}
+	if value, ok := reviewSMSAttr(attrs, "verification_code"); !ok || value != "123456" {
+		t.Errorf("the verification line carries verification_code=%q (present %t), want %q",
+			value, ok, "123456")
+	}
+}
+
+// reviewSMSAttr reads one string attribute out of the pair list a log record is
+// built from.
+func reviewSMSAttr(attrs []any, key string) (string, bool) {
+	for i := 0; i+1 < len(attrs); i += 2 {
+		if name, ok := attrs[i].(string); ok && name == key {
+			value, ok := attrs[i+1].(string)
+			return value, ok
+		}
+	}
+	return "", false
+}
+
 // recordNamed answers one record from a list by name.
 func recordNamed(records []sms.Record, name string) (sms.Record, bool) {
 	for _, record := range records {

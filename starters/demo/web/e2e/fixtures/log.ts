@@ -1,18 +1,21 @@
 /**
- * The review process's standard output, and the one thing the tests read out
- * of it: a verification code.
+ * The review process's standard output, and the two things the tests read out
+ * of it: a verification code, and the line that records a message handed to
+ * the review SMS carrier.
  *
  * The review assembly writes its logfmt records to standard output (pkg/log's
- * bootstrap chain). The verification code is the single test-side read the
- * honesty rules allow: the carriers reach no vendor or relay, so the process log
- * is the only place a person running the review would see the code. Nothing
- * else in this directory may interpret log lines; the server fixture hands its
- * captured lines to `ProcessLog`, and the helpers ask this module for a code by
- * kind and destination address.
+ * bootstrap chain). These are the test-side reads the honesty rules allow: the
+ * carriers reach no vendor or relay, so the process log is the only place a
+ * person running the review would see a code or a notice leave. Nothing else in
+ * this directory may interpret log lines; the server fixture hands its captured
+ * lines to `ProcessLog`, and the helpers ask this module for a code by kind and
+ * destination address, or for a carrier message by destination, template and
+ * language.
  *
- * The code is read from the `verification_code` field, never from `code`: the
- * gateway registers `code` as a sensitive key name and the logging layer masks
- * its value, so a line logged under that name would carry no usable code.
+ * A verification code is read from the `verification_code` field, never from
+ * `code`: the gateway registers `code` as a sensitive key name and the logging
+ * layer masks its value, so a line logged under that name would carry no usable
+ * code. A notification message carries no code and writes no such field.
  *
  * The parser is a small logfmt reader rather than a split on spaces because
  * the mail record carries quoted bodies: `text` and `html` may contain spaces,
@@ -35,6 +38,18 @@ const CODE_MESSAGE: Record<VerificationKind, string> = {
   sms: 'review sms: a verification code was sent',
   mail: 'review mail: a verification message was sent',
 }
+
+/**
+ * The `msg` the review SMS carrier writes for a resolved message. The carrier
+ * sends two kinds: a verification code, which keeps the line above, and a
+ * notification, whose line does not claim to carry a code. A caller tells the
+ * kinds apart by the template and the language the line names, never by the
+ * message text alone.
+ */
+const SMS_CARRIER_MESSAGES: ReadonlySet<string> = new Set([
+  CODE_MESSAGE.sms,
+  'review sms: a message was sent',
+])
 
 /** The `msg` notification.delivery writes for an external send it accepted. */
 const OUTBOUND_SENT_MESSAGE =
@@ -340,10 +355,15 @@ function carrierMessageOnLine(
   options: { readonly to?: string; readonly template?: string; readonly locale?: string },
 ): CarrierMessage | undefined {
   const fields = parseLogfmt(line)
-  if (fields.msg !== CODE_MESSAGE.sms) return undefined
+  if (!SMS_CARRIER_MESSAGES.has(fields.msg ?? '')) return undefined
   const to = fields.to ?? ''
   const template = fields.template ?? ''
   const locale = fields.locale ?? ''
+  // A carrier line is identified by what the send resolved to: the template and
+  // the language. Both message kinds carry them, so a caller can await either
+  // without one being mistaken for the other, and a line missing them is not a
+  // message this reader can attribute.
+  if (template === '' || locale === '') return undefined
   if (options.to !== undefined && to !== options.to) return undefined
   if (options.template !== undefined && template !== options.template) {
     return undefined
