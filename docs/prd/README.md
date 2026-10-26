@@ -24,6 +24,7 @@
 | 冒充一位成员排障后结束冒充 | [冒充一位成员排障后结束冒充](journeys/journey-impersonation-for-support.md) |
 | 运营者首次登录并解除管理写入的限制 | [运营者首次登录并解除管理写入的限制](journeys/journey-operator-first-run.md) |
 | 调整运行期设置并在出错时回退 | [调整运行期设置并在出错时回退](journeys/journey-operator-configuration.md) |
+| 导出一批变更的审计记录 | [导出一批变更的审计记录](journeys/journey-audit-export.md) |
 | 上线一条短信模板并投入发送 | [上线一条短信模板并投入发送](journeys/journey-sms-template-rollout.md) |
 | 按偏好调整界面 | [按偏好调整界面](journeys/journey-personalize-interface.md) |
 | 把 demo 部署到云主机并让运营者能登录 | [把 demo 部署到云主机并让运营者能登录](journeys/journey-deploy-and-operate.md) |
