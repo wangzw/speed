@@ -110,22 +110,21 @@ describe('AuditPage', () => {
     renderWithProviders(<AuditPage />, { operations })
     await screen.findByText('tenant.create')
     // The table's container is 1184px wide beside the console nav at a
-    // 1512px viewport: the object, the actor AND the outcome must all clear
-    // that width, so a failed record is distinguishable without widening
-    // the window. Under a still narrower container the object column hides
-    // again below sm -- the restore is the low end of its tier, not an
-    // always-on column.
+    // 1512px viewport: the object column is the first shed (it needs lg),
+    // while the actor and the outcome both clear that width, so a failed
+    // record is distinguishable without widening the window. Below sm the
+    // outcome hides too, leaving only the two anchor columns.
     expect(
       columnVisibility(
         screen.getByRole('columnheader', { name: zhCN.audit.column.object }),
       ),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
     // The header and the body each apply the column's visibility rule on
     // their own, so assert the body cells too: a divergence between the two
     // would otherwise pass with only the header checked.
     expect(
       columnVisibility(screen.getByText('tenant/acme').closest('td')!),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
     expect(
       columnVisibility(
         screen.getByRole('columnheader', { name: zhCN.audit.column.actor }),
@@ -135,10 +134,10 @@ describe('AuditPage', () => {
       columnVisibility(
         screen.getByRole('columnheader', { name: zhCN.audit.column.outcome }),
       ),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
       columnVisibility(screen.getByText('ok').closest('td')!),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     // The anchors never hide.
     expect(
       columnVisibility(

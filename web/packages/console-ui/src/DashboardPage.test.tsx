@@ -166,23 +166,24 @@ describe('DashboardPage', () => {
     )
     renderDashboard({ operations })
     await screen.findByText('tenant.read')
-    // The list carries the same set as the audit query page: action and
-    // object identify the record, so the object column outranks the actor
-    // and the outcome, which share the md tier so a failure stays visible.
+    // The list carries the same set as the audit query page: the outcome
+    // outranks everything so a failure stays visible on the narrowest
+    // table that still shows a prioritized column, the actor follows at
+    // md, and the object is the first column shed.
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.object })),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
     // The body cell carries its own copy of the rule; assert it too so a
     // header/body divergence cannot pass with only the header checked.
     expect(
       columnVisibility(screen.getByText('acme').closest('td')!),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 1200 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.actor })),
     ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.outcome })),
-    ).toEqual({ hiddenAt: 0, visibleFrom: 900 })
+    ).toEqual({ hiddenAt: 0, visibleFrom: 600 })
     expect(
       columnVisibility(screen.getByRole('columnheader', { name: zhCN.dashboard.recent.column.time })),
     ).toBeNull()

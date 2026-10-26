@@ -187,25 +187,42 @@ export function KpiCard({
 }
 
 /**
- * The KPI row: the list of cards, wrapping when the row itself runs out of
- * width. The wrap is intrinsic -- each card's `flex-basis` is a fixed
- * length and flex lines break against the row's own available width -- so
- * the row follows its container without a breakpoint or a container query.
+ * The KPI row: a card grid that answers to its own container width, the
+ * layout design's component-level response for card grids. It is one
+ * column below `sm`, two columns from `sm`, and `columns` columns from
+ * `md` -- the tenant overview's four cards therefore read 2x2 at a 768px
+ * overview and one row on a wide console, while the two-card
+ * platform-health row is always two-up once the container clears `sm`.
+ * The outer box is the container (an element cannot query itself); the
+ * list keeps its `ul`/`li` semantics inside it.
  */
-export function KpiRow({ children }: { readonly children: ReactNode }) {
+export function KpiRow({
+  columns = 4,
+  children,
+}: {
+  /** How many cards share a line from the container's `md` tier up. */
+  readonly columns?: 2 | 4
+  readonly children: ReactNode
+}) {
   return (
-    <Box
-      component="ul"
-      sx={{
-        listStyle: 'none',
-        margin: 0,
-        padding: 0,
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 2,
-      }}
-    >
-      {children}
+    <Box sx={{ width: '100%', containerType: 'inline-size' }}>
+      <Box
+        component="ul"
+        sx={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          display: 'grid',
+          gridTemplateColumns: {
+            '@': 'minmax(0, 1fr)',
+            '@sm': 'repeat(2, minmax(0, 1fr))',
+            '@md': `repeat(${columns}, minmax(0, 1fr))`,
+          },
+          gap: 2,
+        }}
+      >
+        {children}
+      </Box>
     </Box>
   )
 }
@@ -539,7 +556,7 @@ function DashboardWithAudit({
         >
           {(settled) => (
             <>
-              <KpiRow>
+              <KpiRow columns={2}>
                 <KpiCard
                   label={t('dashboard.health.logins')}
                   value={settled.logins}

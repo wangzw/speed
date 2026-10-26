@@ -80,7 +80,7 @@
 - **列表页**：页头、工具栏、表格、分页。工具栏在行被选中时整条切换为批量操作条。
 - **详情页**：标题区、标签页，其下分主栏与侧栏——主栏承载主体，侧栏（固定宽）承载元信息。
 - **设置页**：二级导航（比主侧栏窄）与一张占满内容区的表并列，底部固定一条保存条。
-- **仪表盘**：一行等宽的指标块，其下是图表区与活动列表。
+- **仪表盘**：等宽的指标块网格，其下是图表区与活动列表。
 
 ### 次级任务的容器
 
@@ -107,7 +107,7 @@
 
 - **外壳级响应走视口。** 整体形态的变化——导航在常驻与抽屉之间切换、侧栏是否显示——由视口宽度决定，读 MUI 主题的 `breakpoints`；`AppShell` 以 `useMediaQuery(theme.breakpoints.up('md'))` 在两态之间选择。外壳形态本身是装配期选择（`shellLayout`），不随视口切换；窄视口只改变该形态的降级表现。
 - **组件级响应走容器。** 会随可用宽度改变自身排布的组件——数据表、表单、卡片网格——按**所在容器**的宽度响应，不按视口。容器上下文由组件自建：组件在自身根节点声明 `container-type: inline-size`。
-- **一次一行的组件用内在换行。** 有些行的排布既不需要断点，也不需要容器上下文：固定 `flex-basis` 配 `flex-wrap`，换行点自然跟随所在容器的可用宽度。控制台仪表盘的指标行是这个形态（`DashboardPage` 的 `KpiRow`）——它是「组件级响应」的免查询形态：判据与容器查询相同（按自身可用宽度重排），只是不必声明容器上下文。
+- **一次一行的组件用内在换行。** 有些行的排布既不需要断点，也不需要容器上下文：固定 `flex-basis` 配 `flex-wrap`，换行点自然跟随所在容器的可用宽度。页头的标题与动作行、`SectionCard` 的标题块是这个形态——它是「组件级响应」的免查询形态：判据与容器查询相同（按自身可用宽度重排），只是不必声明容器上下文。仪表盘的指标行不是这一形态：它的列数按档位切换，属于下面的卡片网格。
 - **指针能力走能力查询。** 依赖悬停的交互（悬停展开、悬停显出的操作）只在指针设备上启用；触摸设备上这些操作常显。触摸设备上**所有可点击目标**不小于 44×44——不分是否依赖悬停；下限由主题层对基础控件统一给出，各包继承，不逐处指定。判据是 `hover` 与 `pointer` 媒体查询，不是视口宽度——带键盘的平板与触屏笔记本都是宽视口下的触摸设备。
 - **页面骨架按视口取档。** 详情页的主栏与侧栏、设置页的二级导航与内容并列，都是**页型骨架**：它们占满内容区，内容区的宽度由视口与外壳状态（侧栏是否常驻）决定，宿主不会把它们放进任意窄容器。因此它们按视口断点取档（`console-ui` 的 `DetailLayout`、`SettingsPage`），是「组件级响应走容器」的例外。
 
@@ -120,7 +120,7 @@
 - **侧栏**：从常驻变为覆盖式抽屉。
 - **数据表**：先隐藏低优先级列，仍放不下时在容器内横向滚动兜底。短值列与标识符列按列声明不折行，单元格因此不会被拆行压扁；内容撑不住容器宽度时，滚动兜底才实际发生。行操作列与主辨识列（名称、标题）不设优先级、永不隐藏（REQ-presentation-022）。优先级阈值所在的每个断点档（`sm`、`md`、`lg`），在该档的下限宽度下可见列的不可断宽度之和不得超过该档下限，使滚动兜底出现之前主辨识列与行操作总是同屏，不被横向滚动分开；容器窄于 `sm` 时只剩不设优先级的列，放不下由横向滚动兜底，不适用这条。某一档放不下时按次序处理：先降低该档新增列中最不重要的列的优先级；再给主辨识列与长文本列设按容器档位取值的宽度上限，超出的内容截断，完整值经悬停或详情可得；已是 `low` 的列才移出列表。一档里只剩不设优先级的列、降优先级无从下手时（例如 `sm` 档只剩名称、状态与操作），只有宽度上限这一种办法，不移列。主辨识列的宽度上限在 `md` 以下取 160px、`md` 起取 200px，各页不各自另定；上限约束整个单元格内容，带完整值复制控件的列把控件计入（[ui-kit](design-web-ui-kit.md) 的 `contentMaxWidth`）。主辨识格在标识之下另叠散文副行时（设置页的键与其说明、声明默认值），上限只管标识行与复制控件，副行按单元格可用宽度换行，不压进主辨识上限。主辨识列之外的长文本列（审计的对象与操作者、对象存储的内容类型）取 160px，不随档位增大，使一张表里多个长文本列的合计不随容器变宽而超出该档下限。
 - **表单**：由多列收为单列。
-- **卡片网格**：由多列收为单列；档位取网格所在容器的宽度，不取视口。
+- **卡片网格**：在窄档位收为单列、在更高档位展开为多列；档位取网格所在容器的宽度，不取视口。控制台仪表盘的指标块（`DashboardPage` 的 `KpiRow`）是这一形态：容器窄于 `sm` 时一列，`sm` 起两列，`md` 起租户指标四列、平台健康度两列。768px 的概览因此把四张租户指标排成 2x2。
 - **侧边面板**：从定宽收为占满视口宽度，档位取视口的 `sm`。
 
 ## 依赖
@@ -214,9 +214,9 @@ graph TD
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 侧边面板的层级与视口宽度档 | 已实现 | `web/packages/ui-kit/src/components/SidePanel.tsx` `SidePanel` |
-| 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 卡片网格的多列收为单列 | 已实现 | `starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/console-ui/src/DashboardPage.tsx` `KpiRow` |
 | 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
-| 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
-| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 组件级容器查询 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable`；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/console-ui/src/DashboardPage.tsx` `KpiRow` |
+| 窄视口逐档降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx`；`web/packages/layout-kit/src/components/AppShell.tsx` `AppShell`（收起为仅图标的窄栏）；`web/packages/ui-kit/src/components/FormLayout.tsx` `containerSx`；`starters/demo/web/src/pages/home-page.tsx` `HomePage`；`web/packages/console-ui/src/DashboardPage.tsx` `KpiRow` |
 | 收起窄栏不小于 44px | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `COLLAPSED_SIDEBAR_MIN_WIDTH`、`collapsedSidebarWidth` |
 | 指针能力查询 | 已实现 | `web/packages/ui-kit/src/internal/pointer.ts`；`web/packages/ui-kit/src/theme/touch-floor.ts` `touchFloorComponents`（基础控件的主题级下限，各包继承）；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx`（主题覆盖不到的裸控件兜底） |
