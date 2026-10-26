@@ -97,7 +97,12 @@ remembering to run it.
   (`fixtures/identity-provider.ts`, `fixtures/dns-stub.ts`). A spec that drives
   that journey opts its server in with `test.use({ enterpriseSSO: true })`;
   only then does the server fixture start the enterprise provider and the UDP
-  DNS stub. The review configuration's `authn.sso` block is pointed at them:
+  DNS stub. The login method itself is assembled for every review server, not
+  only the opted-in one: `authn.sso.oidc` is part of the review build's module
+  roster, so every review sign-in surface carries the enterprise entry even
+  when the configuration names no provider. The opt-in starts the provider and
+  DNS fixtures and points the seams at them; it does not add the method. The
+  review configuration's `authn.sso` block is pointed at them:
   `dns-resolver` at the stub's loopback address, `oidc-ca-file` at the CA the
   provider minted, and `allow-private-egress` on so the restricted egress
   client can reach the provider on loopback. The stub answers TXT queries for
@@ -265,6 +270,14 @@ Every spec declares, in its header comment:
   `UTC` by the Playwright config.
 - Step labels (`test.step`) follow the journey document's own steps, so a
   failing run names the step a person would have been on.
+- **Sign-in locators are scoped to the surface they belong to.** Every review
+  sign-in surface carries the enterprise entry beside the form channels, so a
+  role query over the whole page can match more than one control with the same
+  accessible name — the second-factor step's "Continue" and the enterprise
+  entry's "Continue" are the pair. A locator addresses the container the
+  control renders in: the form channel's own panel, the enterprise entry, the
+  step region. An unscoped role query over the sign-in page is a defect in the
+  spec, not a reason to change the assembly.
 
 `journeys.ts` is the registry of every journey document and how the tier
 relates to it. A journey is `covered` by a spec; `pending` when the browser

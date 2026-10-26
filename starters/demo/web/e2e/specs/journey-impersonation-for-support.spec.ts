@@ -293,13 +293,21 @@ test('impersonation-for-support: the operator acts as a member and the record an
       identifier: OPERATOR.identifier,
       password: OPERATOR.password,
     })
-    await page
+    // The step belongs to the password channel, which renders in its own
+    // panel. The enterprise entry sits on the same sign-in page and carries
+    // its own "Continue", so every control of the step is addressed within
+    // that panel.
+    const passwordPanel = page.getByRole('tabpanel', {
+      name: copy('authUi', 'passwordSignIn.title'),
+      exact: true,
+    })
+    await passwordPanel
       .getByRole('button', {
         name: copy('authUi', 'signInFlow.factorKind.totp'),
         exact: true,
       })
       .click()
-    const codeField = page.getByRole('textbox', {
+    const codeField = passwordPanel.getByRole('textbox', {
       name: copy('authUi', 'smsSignIn.codeLabel'),
       exact: true,
     })
@@ -307,7 +315,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // The code is computed at the moment it is typed, from the fixed review
     // seed; the thirty-second step is the one the server verifies.
     await codeField.fill(totpCode(TOTP_SEED))
-    await page
+    await passwordPanel
       .getByRole('button', {
         name: copy('authUi', 'signInFlow.submit'),
         exact: true,

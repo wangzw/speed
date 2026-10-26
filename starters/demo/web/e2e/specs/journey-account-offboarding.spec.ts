@@ -307,19 +307,27 @@ test('account-offboarding: an operator disables a member and the member returns 
         identifier: OPERATOR.identifier,
         password: OPERATOR.password,
       })
-      await page
+      // The step belongs to the password channel, which renders in its own
+      // panel. The enterprise entry sits on the same sign-in page and carries
+      // its own "Continue", so every control of the step is addressed within
+      // that panel.
+      const passwordPanel = page.getByRole('tabpanel', {
+        name: copy('authUi', 'passwordSignIn.title'),
+        exact: true,
+      })
+      await passwordPanel
         .getByRole('button', {
           name: copy('authUi', 'signInFlow.factorKind.totp'),
           exact: true,
         })
         .click()
-      const operatorCode = page.getByRole('textbox', {
+      const operatorCode = passwordPanel.getByRole('textbox', {
         name: copy('authUi', 'smsSignIn.codeLabel'),
         exact: true,
       })
       await expect(operatorCode).toBeVisible()
       await operatorCode.fill(totpCode(TOTP_SEED))
-      await page
+      await passwordPanel
         .getByRole('button', {
           name: copy('authUi', 'signInFlow.submit'),
           exact: true,

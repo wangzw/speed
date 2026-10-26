@@ -210,20 +210,27 @@ async function nextTotpCode(secret: string): Promise<string> {
  * app opens its six-digit challenge.
  */
 async function completeTotpFactor(page: Page, secret: string): Promise<void> {
-  const choice = page.getByRole('button', {
+  // The step belongs to the password channel, which renders in its own panel.
+  // The enterprise entry sits on the same sign-in page and carries its own
+  // "Continue", so every control of the step is addressed within that panel.
+  const panel = page.getByRole('tabpanel', {
+    name: copy('authUi', 'passwordSignIn.title'),
+    exact: true,
+  })
+  const choice = panel.getByRole('button', {
     name: copy('authUi', 'signInFlow.factorKind.totp'),
     exact: true,
   })
   await expect(choice).toBeVisible()
   await choice.click()
 
-  const codeField = page.getByRole('textbox', {
+  const codeField = panel.getByRole('textbox', {
     name: copy('authUi', 'smsSignIn.codeLabel'),
     exact: true,
   })
   await expect(codeField).toBeVisible()
   await codeField.fill(await nextTotpCode(secret))
-  await page
+  await panel
     .getByRole('button', {
       name: copy('authUi', 'signInFlow.submit'),
       exact: true,
