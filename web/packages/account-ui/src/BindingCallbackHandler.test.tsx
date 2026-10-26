@@ -11,6 +11,8 @@
  * flow.
  */
 
+import { useState } from 'react'
+import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -30,6 +32,34 @@ import { BindingCallbackHandler } from './BindingCallbackHandler.js'
 
 const FLOW_CURRENT = '/api/v1/auth/flows/current'
 const FLOW_ANSWER = '/api/v1/auth/flows/answer'
+
+/**
+ * A host that re-renders on demand with fresh inline props, the way the app
+ * shell does when an unrelated read lands (a profile refetch, a notification).
+ * The handler is a child of this host, so the re-render hands it a new
+ * `onBound` and a new `absent` element without remounting it.
+ */
+function RerenderingHost({
+  session,
+  onBound,
+}: {
+  readonly session: ComponentProps<typeof BindingCallbackHandler>['session']
+  readonly onBound: () => void
+}) {
+  const [tick, setTick] = useState(0)
+  return (
+    <>
+      <button type="button" onClick={() => setTick((value) => value + 1)}>
+        rerender {tick}
+      </button>
+      <BindingCallbackHandler
+        session={session}
+        onBound={() => onBound()}
+        absent={<p>No such page</p>}
+      />
+    </>
+  )
+}
 
 describe('BindingCallbackHandler', () => {
   it('takes a ready flow, commits the link and fires onBound once', async () => {
@@ -152,6 +182,50 @@ describe('BindingCallbackHandler', () => {
     expect(screen.getByText(zhCN.bindingCallback.done)).toBeTruthy()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(reads).toBe(1)
+  })
+
+  it('takes the flow once when the host re-renders with a new callback', async () => {
+    // A host passes its callbacks inline, so any parent re-render hands the
+    // handler new `onBound` and `absent` props. That must not re-arm the read
+    // effect: the flow was taken once and is gone, and a second read would
+    // even try to complete it again.
+    let reads = 0
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === FLOW_CURRENT) {
+        reads += 1
+        if (reads === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'ready',
+            next: { kind: 'complete' },
+          })
+        }
+        return errorResponse(401, 'authn.flow_invalid')
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        return jsonResponse(200, { state: 'linked' })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    const onBound = vi.fn()
+    renderWithProviders(
+      <RerenderingHost session={rig.session} onBound={onBound} />,
+    )
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(onBound).toHaveBeenCalledTimes(1))
+
+    // The unrelated re-render: the host re-renders itself with a fresh
+    // inline callback and a fresh absent element.
+    await user.click(screen.getByRole('button', { name: /rerender/ }))
+    // Give a re-armed read effect time to issue its request.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(reads).toBe(1)
+    expect(onBound).toHaveBeenCalledTimes(1)
+    expect(screen.getByText(zhCN.bindingCallback.done)).toBeTruthy()
   })
 
   it('holds the pending notice while the flow is still on a step', async () => {

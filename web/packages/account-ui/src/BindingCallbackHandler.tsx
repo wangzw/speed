@@ -117,14 +117,23 @@ export function BindingCallbackHandler({
   const doneFeedback = useWriteFeedback()
   const succeedDone = doneFeedback.succeed
 
-  // The translation function is read through a ref inside the settle
-  // callback: `t` changes identity on a language switch, and putting it in
-  // the callback's dependencies would re-arm the read effect, re-reading a
-  // flow its done stage already took. The confirmation is translated with
-  // whatever language is active when the link settles -- a snapshot, like
-  // every other success message.
+  // The translation function and the host's two props are read through refs
+  // inside the callbacks. `t` changes identity on a language switch, and hosts
+  // pass `onBound` and `absent` inline, so any unrelated parent re-render
+  // hands the handler new values. Putting any of them in the callbacks'
+  // dependencies would re-arm the read effect, re-reading a flow its done
+  // stage already took: the second read answers 401 (the flow is gone), which
+  // the silent-refresh path turns into a restore whose notification re-renders
+  // the host again, closing a loop that never reaches the callback's
+  // completion. The confirmation is translated with whatever language is
+  // active when the link settles -- a snapshot, like every other success
+  // message.
   const tRef = useRef(t)
   tRef.current = t
+  const onBoundRef = useRef(onBound)
+  onBoundRef.current = onBound
+  const absentRef = useRef(absent)
+  absentRef.current = absent
 
   // A running read is not cancelled on cleanup: StrictMode's
   // mount/effect/cleanup/effect cycle would leave one start, so the first
@@ -157,10 +166,10 @@ export function BindingCallbackHandler({
         // Translated when the link settles; it names the bound object.
         succeedDone(tRef.current('bindingCallback.done'))
         setPhase('done')
-        onBound?.()
+        onBoundRef.current?.()
       }
     },
-    [queryClient, onBound, succeedDone],
+    [queryClient, succeedDone],
   )
 
   /** Applies a flow state read off the callback route: a ready flow is
@@ -173,7 +182,7 @@ export function BindingCallbackHandler({
         // redirect method: without one nothing can reach this callback and
         // the host's 404 answers. A discovery read that fails cannot settle
         // it, so the failure banner stays.
-        if (absent !== undefined) {
+        if (absentRef.current !== undefined) {
           let offersRedirect = true
           try {
             const doc = await session.listMethods()
@@ -219,7 +228,7 @@ export function BindingCallbackHandler({
       }
       await applySettled(settled, run)
     },
-    [session, applySettled, absent],
+    [session, applySettled],
   )
 
   // The pending live region must never mount together with its text: a
