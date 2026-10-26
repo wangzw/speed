@@ -195,7 +195,7 @@
 
 - **验收**：用一个可开户的社交方式首次登录后账户存在；提供方声明该邮箱已验证时，账户的邮箱标识为提供方声明的地址、证明渠道为对应提供方；提供方未声明邮箱已验证时不写入邮箱标识。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`
 
 ### REQ-signup-018
 
@@ -211,7 +211,7 @@
 
 - **验收**：自动绑定为关闭时，该场景得到「请先绑定」的拒绝；原账户的登录方式与凭据保持不变，没有新账户产生。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
 
 ### REQ-signup-020
 

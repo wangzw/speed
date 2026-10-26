@@ -42,4 +42,4 @@
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-social-account-linking.spec.ts` `social-account-linking: a password account links Google, then signs in with it`

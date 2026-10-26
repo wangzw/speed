@@ -52,4 +52,4 @@ flowchart TD
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`、`social-sign-in: a Google email already on an account is refused with link-required`

@@ -266,7 +266,7 @@
 
 - **验收**：没有邮箱的账户读作不适用；持有未验证邮箱（含管理员写入）的账户读作未验证；持有至少一条已验证邮箱的账户读作已验证；任何来源的同状态账户得到相同结论。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`
 
 ### REQ-account-016
 
@@ -274,7 +274,7 @@
 
 - **验收**：未验证账户看到目标地址与发送控件；已验证账户看到完成文案且没有验证码输入；没有邮箱的账户看不到该节。
 - **状态**：已实现
-- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-first-registration-to-personal-workspace.spec.ts` `first-registration: a new visitor reaches a personal workspace, and occupancy is refused`；`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`
 
 ### REQ-account-017
 
@@ -434,7 +434,7 @@
 
 - **验收**：已绑定某一提供方的账户在列表看到该行，添加区不再提供该渠道；部署未启用的方法既不出现在列表也不出现在添加区。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-account-linking.spec.ts` `social-account-linking: a password account links Google, then signs in with it`
 
 ### REQ-account-028
 
@@ -442,7 +442,7 @@
 
 - **验收**：已验证账户绑定某一提供方后回到本应用，列表出现该行。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-account-linking.spec.ts` `social-account-linking: a password account links Google, then signs in with it`
 
 ### REQ-account-053
 
@@ -450,7 +450,7 @@
 
 - **验收**：绑定完成后回到账户页，登录状态与绑定前相同，原有会话未被替换。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-account-linking.spec.ts` `social-account-linking: a password account links Google, then signs in with it`
 
 ### REQ-account-054
 

@@ -138,7 +138,7 @@
 
 - **验收**：装配对应方式后，选择该方式得到提供方的授权地址；在提供方完成授权并回跳后，无后续步骤的登录直接完成并回到发起页。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`（仅驱动 Google 跳转；GitHub 与微信未在浏览器层驱动）
 
 ### REQ-signin-016
 
@@ -154,7 +154,7 @@
 
 - **验收**：自动绑定未接管本次登录时，该情形得到「需先绑定」的专用拒绝；自动绑定接管时登录完成，且不出现该拒绝。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
 
 ### REQ-signin-018
 
@@ -234,7 +234,7 @@
 
 - **验收**：会话交付、无后续步骤的回跳应答为重定向到发起页，且同一次应答设置会话凭据。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a first Google sign-in opens an account with the provider-verified email`
 
 ### REQ-signin-028
 
@@ -242,7 +242,7 @@
 
 - **验收**：该情形下浏览器落在一个产品内页面，页面显示这次拒绝对应的文案，而不是原始拒绝码。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
 
 ### REQ-signin-029
 
