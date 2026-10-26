@@ -16,6 +16,8 @@ import (
 // before a request arrives.
 type seams struct {
 	tenant.Catalog
+	tenant.WriteGuard
+	tenant.Provisioner
 	guard.Guard
 	audit.Audit
 	authn.SignupVerification
@@ -33,7 +35,8 @@ func TestTheDeclaredOperationsAreTheRoutesTheModuleRegisters(t *testing.T) {
 		Endpoints: []string{"admin"},
 		Stubs: []core.Module{
 			routecontract.StandIn("stand-in.seams", &seams{},
-				(*tenant.Catalog)(nil), (*guard.Guard)(nil), (*audit.Audit)(nil),
+				(*tenant.Catalog)(nil), (*tenant.WriteGuard)(nil), (*tenant.Provisioner)(nil),
+				(*guard.Guard)(nil), (*audit.Audit)(nil),
 				(*authn.SignupVerification)(nil)),
 		},
 		Config: map[string]any{

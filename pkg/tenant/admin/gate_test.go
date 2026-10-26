@@ -106,8 +106,8 @@ func TestAVerifiedOrGivenAccountWrites(t *testing.T) {
 			if w.Code != http.StatusCreated {
 				t.Fatalf("status = %d, want 201: %s", w.Code, w.Body.String())
 			}
-			if calls := r.catalog.recorded(); len(calls) != 1 || calls[0].op != "Create" {
-				t.Errorf("the roster recorded %v, want the registration", calls)
+			if calls := r.provisioner.recorded(); len(calls) != 1 {
+				t.Errorf("the provisioner recorded %v, want the registration", calls)
 			}
 		})
 	}
@@ -214,8 +214,8 @@ func TestAnAccountWithNoSignupRecordWrites(t *testing.T) {
 	if asked := r.guard.askedFor(); len(asked) != 1 {
 		t.Errorf("the guard was asked for %v, want the one decision", asked)
 	}
-	if calls := r.catalog.recorded(); len(calls) != 1 || calls[0].op != "Create" {
-		t.Errorf("the roster recorded %v, want the registration", calls)
+	if calls := r.provisioner.recorded(); len(calls) != 1 {
+		t.Errorf("the provisioner recorded %v, want the registration", calls)
 	}
 }
 
@@ -302,7 +302,7 @@ func TestAnAccountCreatedOutsideSelfRegistrationIsExemptAfterTheRead(t *testing.
 	if reads := r.signup.readCount(); reads != 1 {
 		t.Errorf("the state was read %d time(s), want once: an account outside self-registration is exempt on its state, not on its kind", reads)
 	}
-	if calls := r.catalog.recorded(); len(calls) != 1 || calls[0].op != "Create" {
-		t.Errorf("the roster recorded %v, want the registration", calls)
+	if calls := r.provisioner.recorded(); len(calls) != 1 {
+		t.Errorf("the provisioner recorded %v, want the registration", calls)
 	}
 }

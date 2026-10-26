@@ -169,6 +169,16 @@ before writing a scoped model.
   or holding a value a later build does not know, has to read as not served. A
   change that puts the zero on the serving side inverts the direction a value
   nobody chose falls, and `scope_test.go` fails when it does.
+- **`WriteGuard` and `Provisioner` are host seams, not capabilities.** The root
+  package names them so a host can supply one per process and the management
+  surface can require it; no module of this directory delivers either, and the
+  roster never consults them. Which tenants an operator may not disable or
+  delete is a host policy, and creating a tenant with its first tenant-admin is
+  a cross-capability write the host owns. `SetStatusByAccount` is the account
+  lifecycle's path and must keep disabling a personal tenant whose account is
+  disabled, so the guard belongs to the management surface's operator route
+  alone; `protection_test.go` scans the roster's identifiers so a check placed
+  "once for every status write" fails there.
 - **The registration window spans the global `Init` stage, not this module's
   own callback.** It opens in `Migrate` and shuts in `Start` for that reason: a
   module registering an extractor declares no dependency on this one, so it may

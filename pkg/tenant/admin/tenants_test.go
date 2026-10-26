@@ -86,9 +86,9 @@ func TestTheCreateAnswersCreatedAndPassesTheRowOn(t *testing.T) {
 	if got.Tenant.ID != "t_acme" || got.Tenant.Alias != "acme" || got.Tenant.Status != "active" {
 		t.Errorf("tenant = %+v, want the registration, active", got.Tenant)
 	}
-	calls := r.catalog.recorded()
-	if len(calls) != 1 || calls[0].op != "Create" {
-		t.Fatalf("roster calls = %+v, want one Create", calls)
+	calls := r.provisioner.recorded()
+	if len(calls) != 1 {
+		t.Fatalf("the provisioner was asked %+v, want one registration", calls)
 	}
 	want := tenant.Tenant{ID: "t_acme", Alias: "acme", Status: tenant.StatusActive}
 	if calls[0].tenant != want {
@@ -278,6 +278,9 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 					t.Fatalf("the action ran though its mandatory audit row did not land: %+v", r.catalog.recorded())
 				}
 			}
+			if calls := r.provisioner.recorded(); len(calls) != 0 {
+				t.Fatalf("the registration ran though its mandatory audit row did not land: %+v", calls)
+			}
 			if len(r.audit.entries()) != 0 {
 				t.Errorf("a failed row was written beside a mandatory row that never landed: %+v", r.audit.entries())
 			}
@@ -289,7 +292,7 @@ func TestTheMandatoryAuditLandingIsRequired(t *testing.T) {
 // one by the action identifier, and the answer is the mapped one.
 func TestAFailedWriteClosesWithALinkedRow(t *testing.T) {
 	r := newRig(t)
-	r.catalog.createErr = tenant.ErrTenantExists
+	r.provisioner.fail(tenant.ErrTenantExists)
 	w := r.do(http.MethodPost, pathTenants, createBody{ID: "t_acme", Alias: "acme"})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 (body %s)", w.Code, w.Body.String())
@@ -368,7 +371,7 @@ func TestTheFailureMappingIsClosed(t *testing.T) {
 		} {
 			t.Run(name, func(t *testing.T) {
 				r := newRig(t)
-				r.catalog.createErr = tc.err
+				r.provisioner.fail(tc.err)
 				w := r.do(http.MethodPost, pathTenants, createBody{ID: "t", Alias: "a"})
 				if w.Code != tc.status {
 					t.Fatalf("status = %d, want %d (body %s)", w.Code, tc.status, w.Body.String())
@@ -483,6 +486,9 @@ func TestAShapeRefusalReachesNeitherTheRosterNorTheAudit(t *testing.T) {
 				if call.op != "Get" {
 					t.Errorf("a shape-refused request reached the roster: %+v", call)
 				}
+			}
+			if calls := r.provisioner.recorded(); len(calls) != 0 {
+				t.Errorf("a shape-refused registration reached the provisioner: %+v", calls)
 			}
 			if len(r.audit.entries()) != 0 {
 				t.Error("a shape-refused request wrote an audit row")

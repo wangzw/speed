@@ -57,13 +57,19 @@ func recordingModule(record *any) core.Module {
 type managementAssembly struct {
 	// body is the configuration. The zero value uses managementBody.
 	body string
-	// noCatalog, noGuard, noAudit and noVerification leave out the stand-in for
-	// the required capability named, so the drive reaches resolution without it.
-	noCatalog, noGuard, noAudit, noVerification bool
+	// noCatalog, noGuard, noAudit, noVerification, noWriteGuard and
+	// noProvisioner leave out the stand-in for the required capability named, so
+	// the drive reaches resolution without it.
+	noCatalog, noGuard, noAudit, noVerification, noWriteGuard, noProvisioner bool
 	// noRouter leaves the entry point out, which fails Init.
 	noRouter bool
 	// catalog is the roster stand-in delivered as that capability.
 	catalog tenant.Catalog
+	// writeGuard and provisioner are the host-supplied seams delivered as those
+	// capabilities; nil uses a permissive guard and a provisioner that accepts
+	// every registration.
+	writeGuard  tenant.WriteGuard
+	provisioner tenant.Provisioner
 	// verification is the signup-state read stand-in; nil uses one that reports
 	// no self-registration.
 	verification authn.SignupVerification
@@ -107,6 +113,22 @@ func (a managementAssembly) drive(t *testing.T, depth core.Stage, action func(ct
 	if !a.noGuard {
 		reg.Register(standIn("stand-in.guard", &stubGuard{allow: true}, (*guard.Guard)(nil)))
 		names = append(names, "stand-in.guard")
+	}
+	if !a.noWriteGuard {
+		w := a.writeGuard
+		if w == nil {
+			w = &stubWriteGuard{}
+		}
+		reg.Register(standIn("stand-in.write-guard", w, (*tenant.WriteGuard)(nil)))
+		names = append(names, "stand-in.write-guard")
+	}
+	if !a.noProvisioner {
+		p := a.provisioner
+		if p == nil {
+			p = &stubProvisioner{}
+		}
+		reg.Register(standIn("stand-in.provisioner", p, (*tenant.Provisioner)(nil)))
+		names = append(names, "stand-in.provisioner")
 	}
 	if !a.noAudit {
 		reg.Register(standIn("stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)))
@@ -162,16 +184,18 @@ func TestThisModuleDeliversNothing(t *testing.T) {
 	}
 }
 
-// The three required capabilities are each another module's to deliver: a
-// command that brings this one in without the roster, the guard or the audit
-// capability fails resolution with ErrMissingProvider, before New builds
-// anything.
+// The required capabilities are each another module's or the host's to deliver:
+// a command that brings this one in without the roster, the guard, the audit
+// capability, the verification read, the write guard or the provisioner fails
+// resolution with ErrMissingProvider, before New builds anything.
 func TestAMissingRequiredCapabilityFailsResolution(t *testing.T) {
 	for name, missing := range map[string]managementAssembly{
 		"no catalog":      {noCatalog: true},
 		"no guard":        {noGuard: true},
 		"no audit":        {noAudit: true},
 		"no verification": {noVerification: true},
+		"no write guard":  {noWriteGuard: true},
+		"no provisioner":  {noProvisioner: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var built any
@@ -213,22 +237,32 @@ func TestAnUnknownEndpointIsErrUnknownEndpoint(t *testing.T) {
 	}
 }
 
-// New takes the roster, the guard and the audit capability up, and Init takes
-// the entry point and the optional route-declaration surface.
+// New takes the roster, the guard, the audit capability, the verification read
+// and the host's two seams up, and Init takes the entry point and the optional
+// route-declaration surface.
 func TestTheAssemblyTakesUpItsDependenciesAtTheStageThatReadsThem(t *testing.T) {
 	catalog := &stubCatalog{}
+	writeGuard := &stubWriteGuard{}
+	provisioner := &stubProvisioner{}
 	gate := authztest.NewGate()
 	logger := (&logBuffer{}).logger()
 
 	t.Run("New takes the required capabilities up", func(t *testing.T) {
 		var instance any
-		err := managementAssembly{catalog: catalog, record: &instance}.drive(t, core.StageNew, nil)
+		err := managementAssembly{catalog: catalog, writeGuard: writeGuard, provisioner: provisioner, record: &instance}.
+			drive(t, core.StageNew, nil)
 		if err != nil {
 			t.Fatalf("the drive failed: %v", err)
 		}
 		p := productOfAssembly(t, instance)
 		if any(p.catalog) != any(catalog) {
 			t.Errorf("New took up catalog %v, want the delivered %v", p.catalog, catalog)
+		}
+		if any(p.writeGuard) != any(writeGuard) {
+			t.Errorf("New took up write guard %v, want the delivered %v", p.writeGuard, writeGuard)
+		}
+		if any(p.provisioner) != any(provisioner) {
+			t.Errorf("New took up provisioner %v, want the delivered %v", p.provisioner, provisioner)
 		}
 		if p.audit == nil || p.guard == nil {
 			t.Error("New did not take up the guard or the audit capability")
@@ -377,6 +411,8 @@ func TestTheDeclaredRowsReachTheProcessTranslation(t *testing.T) {
 		{"stand-in.enforcer", enforcer, (*authz.Enforcer)(nil)},
 		{"stand-in.catalog", catalog, (*authz.Catalog)(nil)},
 		{"stand-in.roster", &stubCatalog{}, (*tenant.Catalog)(nil)},
+		{"stand-in.write-guard", &stubWriteGuard{}, (*tenant.WriteGuard)(nil)},
+		{"stand-in.provisioner", &stubProvisioner{}, (*tenant.Provisioner)(nil)},
 		{"stand-in.audit", &recordingAudit{}, (*audit.Audit)(nil)},
 		{"stand-in.verification", &fakeSignupVerification{}, (*authn.SignupVerification)(nil)},
 		{"stand-in.router", newStubRouter("public"), (*speedhttp.Router)(nil)},

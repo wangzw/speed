@@ -15,9 +15,11 @@
 // proved with 403 contact-required, then asks the handler-internal authz.guard
 // API for tenant.read on a read or tenant.manage on a write, in the platform
 // domain, and answers a shortfall before anything else runs. A read that is
-// allowed ends there; a write lands a mandatory audit row outside any
-// transaction and before the action, calls the roster, and maps a refusal to
-// its answer.
+// allowed ends there; a write runs its shape checks, asks the host's
+// tenant.WriteGuard on the status route, lands a mandatory audit row outside any
+// transaction and before the action, calls the roster — or, for a registration,
+// the host's tenant.Provisioner, which creates the tenant and its first
+// administrator together — and maps a refusal to its answer.
 //
 // The routes are mounted on the endpoints the tenant.admin.endpoints list
 // names, and the start diagnostics name the endpoints and the groups.
@@ -110,15 +112,19 @@ func init() { core.ProcessRegistry.Register(Module()) }
 
 // Module is the descriptor a host registers.
 //
-// The roster, the handler-internal guard, the audit capability and the
-// email-verification read are required. That the guard is required is
-// what makes the per-request decision available; that the audit capability is
-// required is what makes an assembly without one fail before any instance is
-// built, rather than at the first write; the verification read is what lets a
-// write refuse an account whose email address is not proved. The roster is
-// delivered exclusively by the roster module and the
-// guard by the enforcement module, so the closure of a command that takes this
-// one in does not pull them in: the host writes them down. The logger is the one
+// The roster, the handler-internal guard, the audit capability, the
+// email-verification read and the host's two write seams are required. That the
+// guard is required is what makes the per-request decision available; that the
+// audit capability is required is what makes an assembly without one fail
+// before any instance is built, rather than at the first write; the
+// verification read is what lets a write refuse an account whose email address
+// is not proved; the write guard is what lets the host declare a tenant that
+// may not be disabled; and the provisioner is what creates a tenant together
+// with its first administrator. The roster is delivered exclusively by the
+// roster module and the guard by the enforcement module, so the closure of a
+// command that takes this one in does not pull them in: the host writes them
+// down. The write guard and the provisioner are host-supplied seams, so a
+// command that mounts every write route names them too. The logger is the one
 // optional requirement, taken up so that it is initialised first.
 //
 // The HTTP entry point and the route-declaration surface are taken up in Init
@@ -144,6 +150,8 @@ func Module() core.Module {
 			{Token: (*guard.Guard)(nil)},
 			{Token: (*audit.Audit)(nil)},
 			{Token: (*authn.SignupVerification)(nil)},
+			{Token: (*tenant.WriteGuard)(nil)},
+			{Token: (*tenant.Provisioner)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Resources: []any{
@@ -204,6 +212,12 @@ type product struct {
 	// got. A write route reads it before the permission decision, so an account
 	// whose email address is not proved cannot change the roster.
 	verification authn.SignupVerification
+	// writeGuard is the host's answer to whether a tenant refuses an operator
+	// write. The status route asks it before the audit and the roster write.
+	writeGuard tenant.WriteGuard
+	// provisioner creates a tenant together with its first administrator, so
+	// the registration route never calls Catalog.Create itself.
+	provisioner tenant.Provisioner
 
 	// gate is the route-declaration surface, nil when the assembly delivers
 	// none. When it is there, Init declares every management route open on it so
@@ -233,6 +247,14 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the signup-verification read: %w", ModuleName, err)
 	}
+	writeGuard, err := core.Resolve[tenant.WriteGuard](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the tenant write guard: %w", ModuleName, err)
+	}
+	provisioner, err := core.Resolve[tenant.Provisioner](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the tenant provisioner: %w", ModuleName, err)
+	}
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the configuration reader: %w", ModuleName, err)
@@ -246,6 +268,8 @@ func newProduct(reg *core.Registry) (*product, error) {
 		guard:        guardAPI,
 		audit:        auditor,
 		verification: verification,
+		writeGuard:   writeGuard,
+		provisioner:  provisioner,
 		logger:       log.Default(),
 		cfg:          cfg,
 	}, nil

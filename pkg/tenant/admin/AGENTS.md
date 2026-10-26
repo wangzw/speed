@@ -1,10 +1,12 @@
 # pkg/tenant/admin
 
 The tenant capability's management module. It mounts the roster-management routes
-under `/api/v1/system/tenants` and delivers no capability of its own: every route's
-action is a call on the roster, reached through the `tenant.Catalog` capability,
-and the module holds no tenant, no rule and no data of its own. It builds no
-table, caches nothing and migrates nothing.
+under `/api/v1/system/tenants` and delivers no capability of its own: a route's
+action is a call on the roster — reached through the `tenant.Catalog` capability —
+except registration, which goes through the host's `tenant.Provisioner` so a
+tenant and its first administrator come into being together. The module holds no
+tenant, no rule and no data of its own. It builds no table, caches nothing and
+migrates nothing.
 
 The descriptor declares the static feature `tenant.admin`, present whenever the
 module is in force.
@@ -46,10 +48,10 @@ route's action is one `tenant.Catalog` call:
 | Route | Roster action |
 |---|---|
 | `GET /tenants` | `List`, every tenant, in the roster's order (by identifier) |
-| `POST /tenants` | `Create`, a tenant not registered yet |
+| `POST /tenants` | `Provisioner`, a tenant and its first tenant-admin |
 | `GET /tenants/:id` | `Get`, one tenant by identifier |
 | `PATCH /tenants/:id` | `SetAlias`, a new alias |
-| `POST /tenants/:id/status` | `SetStatus`, a new state |
+| `POST /tenants/:id/status` | `SetStatus`, a new state; a disable asks the host's `WriteGuard` first |
 
 A read answers 200 with a view; a write that creates a record answers 201 with the
 record's view, and a write that lands without one (rename, status) answers 204 and
@@ -69,13 +71,18 @@ key.
 
 ## Boundaries
 
-- **Register goes through `Create`, and never overwrites.** Opening a tenant is an
-  insert of an identifier the roster's table does not hold yet. An identifier it
-  already holds is refused by `Create` with `tenant.ErrTenantExists`, answered a
-  409; nothing is written. This is where `Create` and `Put` divide: `Put` rewrites
-  the row its identifier names, alias and status together, which is a seed's
-  action, while `Create` only inserts. A registration starts the tenant `active`;
-  there is no delete, and disabling is the only way to retire one.
+- **Register goes through the host's `tenant.Provisioner`, and never overwrites.**
+  Opening a tenant is not an isolated insert: its creator is the tenant's first
+  tenant-admin, so the tenant's `tenant-admin` role, that role's grants and the
+  creator's binding have to exist with the roster row. The provisioner writes
+  those policy rows first and the roster row last through `Create`, removing
+  what it wrote if it fails before the row; a refusal of `Create` stays readable
+  through `errors.Is`. An identifier the table already holds is
+  `tenant.ErrTenantExists`, answered a 409, and nothing is written. This is
+  where `Create` and `Put` divide: `Put` rewrites the row its identifier names,
+  alias and status together, which is a seed's action, while `Create` only
+  inserts. A registration starts the tenant `active`; there is no delete, and
+  disabling is the only way to retire one.
 - **The rename goes through `SetAlias`, never `Put`.** `Put` takes the whole row's
   new values and writes the status back with the alias, so a rename through it
   would carry whatever status this process last read, and a tenant another replica
@@ -91,7 +98,13 @@ key.
   bullet). Then it asks the guard for the route's permission: a shortfall is the
   guard's own refusal, a 403 for a denial and a 503 for an outage. Only past the
   decision does a write parse its body, run its checks, land its audit and call
-  the roster, or a read call the roster and answer. The wrapper sits in front of
+  the roster, or a read call the roster and answer. A status write that disables
+  the tenant has its shape checked first, then asks the host's
+  `tenant.WriteGuard`, and only then lands the audit: an
+  answer the guard reads as a denial is a 403 `urn:speed:tenant:protected`, and
+  an answer it cannot read is a 503; neither writes an audit row or reaches the
+  roster. An enable is not a write the guard protects, so it asks nothing. The
+  wrapper sits in front of
   the declared handler because the entry point binds a typed operation's input
   before it calls the handler.
 - **A write from an unverified self-registration is refused before the
@@ -143,7 +156,9 @@ key.
   in the log and never reaches the caller. A 404 and a 503 carry no problem type —
   they say something is not there or a dependency could not answer and not which
   refusal it was — while a 409 carries the capability's type prefix
-  `urn:speed:tenant:`. `tenant.ErrTenantDisabled` and `tenant.ErrNoTenantInContext`
+  `urn:speed:tenant:`. The write guard's refusal is the capability's third code,
+  a 403 `urn:speed:tenant:protected`: the tenant exists and the host declares it
+  off-limits to a disable by the operator. `tenant.ErrTenantDisabled` and `tenant.ErrNoTenantInContext`
   are not mapped: they are the resolution and scoping paths' sentinels, and no
   roster write reached from a management route answers them, so one that arrives
   here falls to the same 503 an unknown failure gets.
@@ -169,12 +184,16 @@ key.
   is the framework-provided provider for the roster: the tenant capability itself
   mounts no management face, and a host that wants one writes this module into its
   command rather than hand-writing the same routes, decision and audit preamble.
-- **It requires the roster, the handler-internal guard, the audit capability and
-  the registration-verification read.** A command that brings this one in without
-  the roster to act on, the guard to decide with, the audit to record through, or
-  the `authn.SignupVerification` read to gate a write on fails the startup before
-  any route is mounted, rather than answering every route with a refusal or a
-  write that cannot land. The HTTP entry point is taken up in `Init` and is
+- **It requires the roster, the handler-internal guard, the audit capability, the
+  registration-verification read and the host's two write seams.** A command that
+  brings this one in without the roster to act on, the guard to decide with, the
+  audit to record through, the `authn.SignupVerification` read to gate a write
+  on, the `tenant.WriteGuard` to protect a tenant, or the `tenant.Provisioner` to
+  open a tenant with its first administrator, fails the startup before any route
+  is mounted, rather than answering every route with a refusal or a write that
+  cannot land. The write guard and the provisioner are the host's to supply:
+  neither is a `pkg/` capability, and the roster knows neither. The HTTP entry
+  point is taken up in `Init` and is
   required — a command that mounts the management routes and has no entry point
   has nothing to mount on, which is `authz.ErrNoRouter`. The logger is the one
   optional requirement, and the route-declaration surface is taken up optionally

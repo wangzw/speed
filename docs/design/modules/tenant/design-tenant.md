@@ -913,6 +913,7 @@ flowchart TD
 | 取值域之外的标识拒绝被绑定 | 已实现 | `pkg/tenant/tenant.go` `ID.Value` |
 | 租户标识作为关联字段绑上 logger，替换与撤下 | 已实现 | `pkg/tenant/resolve/resolve.go` `admit`；`pkg/tenant/catalog/roster.go` `enter`；`internal/tenantctx/tenantctx.go` `Bind`、`WithCrossTenant` |
 | 启动诊断：快照规模、状态分布与受守护的端点 | 已实现 | `pkg/tenant/catalog/roster.go` `load`；`pkg/tenant/resolve/resolve.go` `seal` |
+| 写保护与首任管理员建立的宿主接缝（`WriteGuard`、`WriteOp`、`Provisioner`） | 已实现 | `pkg/tenant/protection.go` `WriteGuard`、`WriteOp`、`WriteDisable`、`WriteDelete`、`Provisioner` |
 | 哨兵错误 | 已实现 | `pkg/tenant/errors.go` |
 
 模块内的性质由各自的包守住：隔离插件的分档判定在 `pkg/tenant/catalog/plugin_test.go` 里跑真实的 `*gorm.DB`，

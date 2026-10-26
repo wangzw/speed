@@ -2,8 +2,10 @@ package admin
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
+	"github.com/vislake/speed/pkg/authn"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -53,17 +55,23 @@ func (p *product) handleTenantGet(ctx context.Context, in getTenantInput, _ *spe
 // tenant whose identifier the roster does not hold yet. It is a write, so the
 // action is tenant.manage.
 //
-// The registration goes through Catalog.Create, which never overwrites: an
-// identifier the roster's table already holds is refused with
-// tenant.ErrTenantExists and answered a 409, and nothing is written. Create and
-// Put divide here — Put rewrites the row its identifier names, alias and status
-// together, which is a seed's action, while Create only inserts, which is how a
-// route that opens a tenant is written. Both fields are checked against the
-// identifier domain before the roster is called; a registration starts the
-// tenant active, and the mandatory audit row lands before Create runs.
+// The registration goes through tenant.Provisioner, which creates the tenant's
+// tenant-admin role, its grants and the creator's binding and writes the roster
+// row last; this route never calls Catalog.Create itself, because a tenant and
+// its first administrator have to come into being together. A refusal of the
+// roster's Create is reported by the provisioner with its sentinel intact: an
+// identifier the roster's table already holds is answered a 409, and an alias
+// another tenant holds is a 409. Both fields are checked against the identifier
+// domain before the provisioner is called; a registration starts the tenant
+// active, the mandatory audit row lands before the provisioner runs, and a
+// failure of the provisioner is closed with a linked failed row.
 func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenantCreatedBody, error) {
 	if !tenant.IsIdentifier(in.ID) || !tenant.IsIdentifier(in.Alias) {
 		return tenantCreatedBody{}, badRequest()
+	}
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return tenantCreatedBody{}, speedhttp.Fault{Status: http.StatusUnauthorized}
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionTenantCreate, in.ID, map[string]string{
@@ -73,7 +81,7 @@ func (p *product) handleTenantCreate(ctx context.Context, in createBody) (tenant
 		return tenantCreatedBody{}, err
 	}
 	created := tenant.Tenant{ID: tenant.ID(in.ID), Alias: in.Alias, Status: tenant.StatusActive}
-	if err := p.catalog.Create(ctx, created); err != nil {
+	if err := p.provisioner.Provision(ctx, created, id.Actor().String()); err != nil {
 		p.auditBestEffort(ctx, failedAudit(actionTenantCreate, in.ID, actionID))
 		return tenantCreatedBody{}, p.failureOf("registering a tenant", err)
 	}
@@ -135,9 +143,14 @@ type statusBody struct {
 // changes one tenant's state. It is a write, so the action is tenant.manage.
 //
 // The state is a closed set: active or disabled, anything else a 400 before the
-// roster is called. Deletion is not in this surface's writable set — it is the
-// roster's terminal marker, reached through Catalog.Delete by the host that
-// winds an account up — so this route never writes the deleted state. An
+// guard and the roster are called. Deletion is not in this surface's writable
+// set — it is the roster's terminal marker, reached through Catalog.Delete by
+// the host that winds an account up — so this route never writes the deleted
+// state. A disable is one of the operator writes the host may protect, so when
+// the target is disabled the route asks tenant.WriteGuard past the shape checks
+// and before the audit: a denied write is a 403 with the protected type, and a
+// guard that cannot answer is a 503; neither writes an audit row or reaches the
+// roster. An enable is not a write the guard protects, so it asks nothing. An
 // identifier no row carries comes back with tenant.ErrInvalidTenant, answered a
 // 404, and a tombstone comes back with tenant.ErrTenantDeleted, answered a 409:
 // deletion is terminal and no status change revives it. The mandatory audit row
@@ -149,6 +162,17 @@ func (p *product) handleTenantSetStatus(ctx context.Context, in setStatusInput, 
 	}
 	if !tenant.IsIdentifier(in.ID) {
 		return nil, badRequest()
+	}
+	if status == tenant.StatusDisabled {
+		denied, err := p.writeGuard.Denied(ctx, tenant.ID(in.ID), tenant.WriteDisable)
+		if err != nil {
+			p.logger.Error(ModuleName+": the write guard could not answer, so the status change was not carried out",
+				slog.String("tenant", in.ID), slog.String("cause", err.Error()))
+			return nil, speedhttp.Fault{Status: http.StatusServiceUnavailable}
+		}
+		if denied {
+			return nil, speedhttp.Fault{Status: http.StatusForbidden, Type: typePrefix + protectedCode}
+		}
 	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionTenantStatus, in.ID, map[string]string{

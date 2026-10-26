@@ -31,6 +31,8 @@ import (
 // cannot drift apart without failing the build.
 var (
 	_ tenant.Catalog     = (*stubCatalog)(nil)
+	_ tenant.WriteGuard  = (*stubWriteGuard)(nil)
+	_ tenant.Provisioner = (*stubProvisioner)(nil)
 	_ guard.Guard        = (*stubGuard)(nil)
 	_ audit.Audit        = (*recordingAudit)(nil)
 	_ speedhttp.Router   = (*stubRouter)(nil)
@@ -62,7 +64,6 @@ type stubCatalog struct {
 	err   error
 
 	getErr       error
-	createErr    error
 	setAliasErr  error
 	setStatusErr error
 }
@@ -115,7 +116,7 @@ func (s *stubCatalog) Put(_ context.Context, t tenant.Tenant) error {
 
 func (s *stubCatalog) Create(_ context.Context, t tenant.Tenant) error {
 	s.record(catalogCall{op: "Create", id: t.ID, tenant: t})
-	return s.errOr(s.createErr)
+	return errors.New("the management surface must not register through Catalog.Create; it goes through the Provisioner")
 }
 
 func (s *stubCatalog) SetStatus(_ context.Context, id tenant.ID, st tenant.Status) error {
@@ -390,14 +391,16 @@ func standIn(name string, instance any, tokens ...core.Token) core.Module {
 // real path parameters and the real JSON binding, with the roster and the other
 // capabilities stood in for.
 type rig struct {
-	t       *testing.T
-	p       *product
-	catalog *stubCatalog
-	guard   *stubGuard
-	audit   *recordingAudit
-	router  *stubRouter
-	logs    *logBuffer
-	engine  *gin.Engine
+	t           *testing.T
+	p           *product
+	catalog     *stubCatalog
+	writeGuard  *stubWriteGuard
+	provisioner *stubProvisioner
+	guard       *stubGuard
+	audit       *recordingAudit
+	router      *stubRouter
+	logs        *logBuffer
+	engine      *gin.Engine
 	// signup answers the acting account's self-registration state. Its zero
 	// value reports SignupNone, which is what an account created outside
 	// self-registration reads as.
@@ -410,16 +413,20 @@ func newRig(t *testing.T) *rig {
 	t.Helper()
 	logs := &logBuffer{}
 	r := &rig{
-		t:       t,
-		catalog: &stubCatalog{},
-		guard:   &stubGuard{allow: true},
-		audit:   &recordingAudit{},
-		router:  newStubRouter("public"),
-		logs:    logs,
-		signup:  &fakeSignupVerification{},
+		t:           t,
+		catalog:     &stubCatalog{},
+		writeGuard:  &stubWriteGuard{},
+		provisioner: &stubProvisioner{},
+		guard:       &stubGuard{allow: true},
+		audit:       &recordingAudit{},
+		router:      newStubRouter("public"),
+		logs:        logs,
+		signup:      &fakeSignupVerification{},
 	}
 	r.p = &product{
 		catalog:      r.catalog,
+		writeGuard:   r.writeGuard,
+		provisioner:  r.provisioner,
 		guard:        r.guard,
 		audit:        r.audit,
 		verification: r.signup,

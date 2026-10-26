@@ -108,10 +108,11 @@ var createOperation = speedhttp.NewOperation[createBody, tenantCreatedBody](
 	http.MethodPost,
 	pathTenantsFragment,
 	"Register an active tenant",
-	"Registers a tenant the roster does not hold yet. The body gives the identifier and the alias; the new "+
-		"tenant starts active. Registration never overwrites: an identifier or an alias already taken is "+
-		"answered 409 and nothing is written. A mandatory audit row must land before the roster is called; if "+
-		"it cannot, the registration does not run and the request is answered 503.",
+	"Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the "+
+		"acting account. The body gives the identifier and the alias; the new tenant starts active. Registration "+
+		"never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A "+
+		"mandatory audit row must land before the provisioner is called; if it cannot, the registration does not "+
+		"run and the request is answered 503.",
 	&speedhttp.RequestBody{
 		MediaType: "application/json",
 		Description: "The registration: the identifier to insert and the alias the request surface will address " +
@@ -214,7 +215,10 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 	"Change one tenant's state",
 	"Changes one tenant's state, which is one of the closed set active and disabled. This surface does not "+
 		"write the deleted state: deletion is the roster's terminal marker, written by the host that winds an "+
-		"account up, and the deleted tenant is rendered read-only here. An identifier the roster does not hold "+
+		"account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, "+
+		"before the audit the route asks the host's write guard whether the tenant refuses the write: a "+
+		"protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An "+
+		"identifier the roster does not hold "+
 		"is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no "+
 		"status change revives it. A mandatory audit row lands before the write; if it cannot, the state is "+
 		"unchanged and the request is answered 503.",
@@ -232,7 +236,8 @@ var setStatusOperation = speedhttp.NewReplyOperation[setStatusInput](
 			"The identifier is outside the identifier domain or the status is outside the closed set active/disabled"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
+			"The caller holds no tenant.manage in the platform domain, the caller has not proved an email "+
+				"address (contact-required), or the tenant is protected against disabling (urn:speed:tenant:protected)"),
 		{
 			Status:      http.StatusNotFound,
 			Description: "No tenant carries the identifier",

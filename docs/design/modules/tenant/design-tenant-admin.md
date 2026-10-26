@@ -53,7 +53,7 @@
 
 **状态路由的可写集合是 `active` 与 `disabled`。** 正文给出其中之一，其余取值是本模块拒绝的形状；`deleted` 是终态，不在可写集合里。登记的新租户起于 `active`：登记的正文给出标识与别名，状态不在这里给。改名与改状态遇到已删除的租户，由名册以 `tenant.ErrTenantDeleted` 拒绝，本模块答 409。
 
-**受保护的租户拒绝停用。** 状态路由在形状检查之后、审计之前问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行。`system` 租户与个人租户由宿主的实现声明为受保护（[design-tenant](design-tenant.md) 的写保护）。
+**受保护的租户拒绝停用。** 状态路由在一次停用的形状检查之后、审计之前问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行。`system` 租户与个人租户由宿主的实现声明为受保护（[design-tenant](design-tenant.md) 的写保护）。启用不是写保护的写，不经过它。
 
 ### 访问控制
 
@@ -196,7 +196,7 @@ sequenceDiagram
 
 1. 读发起者的注册验证状态：读作未验证（`SignupPending`）时答 403 `contact-required`，读取失败答 503，动作不执行。
 2. 形状检查：路径的 `id` 落在取值域内，正文的 `status` 是 `active` 或 `disabled`，否则 400。
-3. 问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行；读失败答 503。
+3. 停用时问 `tenant.WriteGuard`；答复为拒绝时答 403 `urn:speed:tenant:protected`，动作不执行；读失败答 503。
 4. 落强制档审计（动作 `tenant.status`）。
 5. `Catalog.SetStatus(id, 状态)`；`ErrInvalidTenant`（标识无名册行）→ 404；`ErrTenantDeleted`（该租户是墓碑）→ 409；其余 → 503。落地 → 204。
 
@@ -212,7 +212,7 @@ sequenceDiagram
 | `GET`／`PATCH`／状态路由点名一个名册不持有的标识 | 404，不带 `Problem.Type` |
 | 改名或改状态点名一个已删除的租户 | 409（`urn:speed:tenant:conflict`），名册报 `tenant.ErrTenantDeleted` |
 | 发起者读作未验证（`SignupPending`），而这是写路由 | 403 `contact-required`（`authn.ErrContactRequired`），动作不执行 |
-| 状态路由点名一个受保护的租户 | 403（`urn:speed:tenant:protected`），`WriteGuard` 答复拒绝，动作不执行；读失败答 503 |
+| 状态路由停用一个受保护的租户 | 403（`urn:speed:tenant:protected`），`WriteGuard` 答复拒绝，动作不执行；读失败答 503 |
 | 注册验证状态读取失败 | 503，动作不执行，成因只进日志 |
 | 强制档审计写不进 | 503，动作不执行 |
 | 名册的其余失败、guard 的故障 | 503，不带 `Problem.Type`，成因只进日志 |
@@ -234,6 +234,6 @@ sequenceDiagram
 | 管理面 `tenant.admin` 的 operation 声明、`speedhttp.Spec` 资源与片段生成 | 已实现 | `pkg/tenant/admin/operations.go`；`pkg/tenant/admin/openapi_generated_test.go`；片段 `pkg/tenant/admin/openapi/tenant.admin.json` |
 | 静态特性 `tenant.admin` 的 `feature.Spec` 声明 | 已实现 | `pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/admin/feature_test.go` `TestTheModuleDeclaresTheTenantAdminFeature` |
 | 租户写面的注册验证门控（读作 `SignupPending` 时答 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取） | 已实现 | `pkg/tenant/admin/pipeline.go` `(*product).guardRoute`、`(*product).requireVerifiedAccount`；`pkg/tenant/admin/routes.go` `routes`；`pkg/tenant/admin/gate_test.go` |
-| 登记经 `tenant.Provisioner` 建立租户与它的首任租户管理员 | 未实现 | — |
-| 状态路由经 `tenant.WriteGuard` 拒绝受保护租户（`system`、个人租户） | 未实现 | — |
+| 登记经 `tenant.Provisioner` 建立租户与它的首任租户管理员 | 已实现 | `pkg/tenant/admin/tenants.go` `handleTenantCreate`；`pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/protection.go` `Provisioner` |
+| 状态路由经 `tenant.WriteGuard` 拒绝受保护租户（`system`、个人租户） | 已实现 | `pkg/tenant/admin/tenants.go` `handleTenantSetStatus`；`pkg/tenant/admin/admin.go` `Module`；`pkg/tenant/protection.go` `WriteGuard`、`WriteOp` |
 | 租户视图的 `deleted` 状态与 `disabledBy` 字段，以及墓碑上的改名与改状态拒绝 | 已实现 | `pkg/tenant/admin/views.go` `tenantViewOf`；`pkg/tenant/admin/pipeline.go` `(*product).failureOf`；`pkg/tenant/admin/tenants_test.go` `TestTheViewCarriesTheNamedFieldsPerState`、`TestTheFailureMappingIsClosed` |
