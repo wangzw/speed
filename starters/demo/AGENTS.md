@@ -129,9 +129,18 @@ the logging layer would mask it.
 `authn.account.signup` and `authn.account.password-signup` open, widens the four
 `authn.login.email-*` budgets and lowers the resend interval to its floor so a
 person can walk the flow, points the database, key and object root under
-`var/`, and names the endpoints `sms.admin` mounts on. Baseline `serve` names
-none of these modules and leaves registration closed, so the baseline login page
-advertises no registration entry.
+`var/`, names the endpoints `sms.admin` mounts on, and lowers
+`sms.registry.poll-interval` so a verdict the review control moves is reflected
+on the next list read. Baseline `serve` names none of these modules and leaves
+registration closed, so the baseline login page advertises no registration
+entry.
+
+`server/review_sms_control.go` is the review-only control over the review
+carrier's per-template review. It mounts
+`POST /api/v1/system/sms/review/verdicts`, moves one vendor code's verdict, and
+declares the static feature `review.sms.control`. The console's SMS page renders
+the host's verdict control only while the feature is served, so a baseline
+deployment carries neither the route nor the control.
 
 The walkthrough is: register a username, email and password; sign in with the
 password through the ordinary flow; add the email under the account's own

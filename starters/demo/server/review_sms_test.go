@@ -24,6 +24,7 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db/sqlite"
+	"github.com/vislake/speed/pkg/feature"
 	"github.com/vislake/speed/pkg/sms"
 	smsregistry "github.com/vislake/speed/pkg/sms/registry"
 )
@@ -92,6 +93,26 @@ func TestReviewSMSControlMovesOneVerdict(t *testing.T) {
 	if code := post(`{"code":"","state":"approved"}`); code != http.StatusBadRequest {
 		t.Errorf("the control answered %d for an empty code, want %d", code, http.StatusBadRequest)
 	}
+}
+
+// TestReviewSMSControlDeclaresItsFeature holds the review-only gate the console
+// control reads: the module that mounts the verdict route declares the feature
+// statically, so a review run publishes it and a baseline run, which compiles no
+// such module, does not.
+func TestReviewSMSControlDeclaresItsFeature(t *testing.T) {
+	for _, resource := range core.Resources[feature.Spec](core.ProcessRegistry) {
+		if resource.Module != reviewSMSControlModuleName ||
+			resource.Value.Name != reviewSMSControlFeature {
+			continue
+		}
+		if resource.Value.Conditional {
+			t.Errorf("the control feature %q is conditional, so a review run that does not "+
+				"post it offers no control", resource.Value.Name)
+		}
+		return
+	}
+	t.Fatalf("the review SMS control module declares no %q feature, so the console never "+
+		"offers the verdict control", reviewSMSControlFeature)
 }
 
 // TestReviewSMSTemplateStartsPendingAndSettlesOneLanguage drives the real

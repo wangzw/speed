@@ -119,6 +119,11 @@ authn:
 # configuration item, so this file carries no section for it.
 sms:
   registry:
+    # REVIEW: the vendor's review state is read back per template on this
+    # interval, so a verdict the review control moves is visible on the next
+    # list refresh instead of after the declared minute. The poll is a read of
+    # the carrier's own state; the declared default is unchanged.
+    poll-interval: 200ms
     templates:
       authn.code.login:
         params: ["code", "ttl_minutes"]

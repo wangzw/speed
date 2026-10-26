@@ -8,6 +8,7 @@
 declare module '@speed/api-sdk/features' {
   interface FeatureNameRegistry {
     'review.notification.control': true
+    'review.sms.control': true
   }
 }
 

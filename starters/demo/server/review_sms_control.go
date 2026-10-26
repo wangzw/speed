@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/sms"
@@ -45,6 +46,11 @@ const reviewSMSControlEndpoint = "admin"
 // reviewSMSControlPath is the control route. It is a review-only path: no other
 // assembly mounts anything under it.
 const reviewSMSControlPath = "/api/v1/system/sms/review/verdicts"
+
+// reviewSMSControlFeature is the static feature the console's verdict control
+// reads. It is present exactly while this module is in force, which is only in
+// a review run, so a baseline deployment offers no such control.
+const reviewSMSControlFeature = "review.sms.control"
 
 // init registers the control module. The import is the wiring; reviewModules is
 // what names it for a run.
@@ -71,6 +77,9 @@ func reviewSMSControlModule() core.Module {
 		Requires: []core.Requirement{
 			{Token: (*sms.Provider)(nil)},
 			{Token: (*speedhttp.Router)(nil)},
+		},
+		Resources: []any{
+			feature.Spec{Name: reviewSMSControlFeature},
 		},
 		Init: func(_ context.Context, reg *core.Registry, _ any) error {
 			provider, err := core.Resolve[sms.Provider](reg)

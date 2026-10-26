@@ -14,6 +14,7 @@ import { useAuthState } from '@speed/auth-core'
 import { consoleRoutes } from '@speed/console-ui'
 import type { ConsoleRoute, ConsoleRouteTable } from '@speed/console-ui'
 import { CONSOLE_PREFIX } from './paths.js'
+import { ReviewSmsPage } from './review-sms-page.js'
 
 /**
  * The console's declarations mapped onto their prefixed URLs. The
@@ -24,6 +25,9 @@ export const consoleShellRoutes: ConsoleRouteTable = consoleRoutes.map(
   (route) => ({
     ...route,
     path: route.path === '/' ? CONSOLE_PREFIX : `${CONSOLE_PREFIX}${route.path}`,
+    // The SMS page is the host's composition of the package page and the
+    // review build's verdict control; every other page is the package's own.
+    ...(route.id === 'sms' ? { view: ReviewSmsPage } : {}),
   }),
 )
 
