@@ -126,6 +126,8 @@ type SSOMetadataRefresher interface {
 输入项的键、类型、缺省值、取值范围与来源限制只在 [design-authn-config](design-authn-config.md) 给全，本节只写语义，所列的是与本功能有关的输入项，不是全部输入项的清单。
 
 - **`authn.sso.allow-private-egress`**：放开受限出站客户端对回环地址的拒绝，只用于开发。只取主配置源，环境变量与命令行都改不了；开启时启动诊断写一行 `Warn`。
+- **`authn.sso.dns-resolver`**：域所有权证明查 TXT 记录所用的解析器地址（`host:port`），只取主配置源。缺省为空，用系统解析器；配置后由这个解析器作答，TXT 记录的内容与比对不随之改变。
+- **`authn.sso.oidc-ca-file`**：企业 OIDC 出站客户端在系统根证书之外额外信任的 PEM 根证书文件，只取主配置源。缺省为空，只用系统根证书；配置后文件里的证书追加到系统根证书，证书校验本身不关闭。
 - **`authn.sso.saml.sp-key-file`、`sp-cert-file`、`sp-next-cert-file`**：整个部署共用的 SP 私钥、当前证书与下一张证书的文件路径，可缺省。私钥只在提供方要求签名 AuthnRequest（`sign_requests` 为真）时用到；加密断言一律拒收（见「SAML：断言消费」），所以解密路径不启用。`sign_requests` 为真而私钥未配置，以 `ErrInvalidConfig` 拒绝。
 - **`authn.sso.assertion-max-age`**：SAML 断言的 `IssueInstant` 允许早于当前时刻的最大间隔。设置，请求期读。
 - **`authn.sso.provider-cache-ttl`**：进程内缓存的 `*oidc.Provider`、`*oauth2.Config` 与 SAML `ServiceProvider` 的有效期。设置，请求期读。
@@ -373,7 +375,7 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 
 **域的规范化。** 邮箱的域取小写 ASCII 的 punycode 形式，规范化规则与标识的规范化同一套（[design-authn-account](design-authn-account.md)）；含非 ASCII 字符而无法规范化的域，发现请求以 400 `bad-request` 拒绝，声明写入同样拒绝。
 
-**声明与验证。** `ClaimDomain` 写一行未验证声明，生成随机 `verify_token`，由租户管理员写进 `_speed-authn.<域>` 的 TXT 记录，内容为 `speed-authn=<token>`。`VerifyDomain` 经 `net.Resolver.LookupTXT` 查该记录，超时 5 秒，命中则置 `verified_at`。验证不要求 DNSSEC，解析器被投毒时验证可被骗过，写进非保证；验证失败不改状态。
+**声明与验证。** `ClaimDomain` 写一行未验证声明，生成随机 `verify_token`，由租户管理员写进 `_speed-authn.<域>` 的 TXT 记录，内容为 `speed-authn=<token>`。`VerifyDomain` 经 `net.Resolver.LookupTXT` 查该记录，超时 5 秒，命中则置 `verified_at`。解析器缺省是系统解析器，配置 `authn.sso.dns-resolver` 时改为该地址上的解析器；记录的内容与比对不随之改变。验证不要求 DNSSEC，解析器被投毒时验证可被骗过，写进非保证；验证失败不改状态。
 
 **已验证的域全局唯一**，由 `authn_idp_domains_verified` 唯一索引保证，所以并发地为同一个域验证两个提供方，败者得到 `ErrDomainClaimed`。未验证的声明可以并存，抢注占不了名额，久未验证的声明由清扫回收。
 
@@ -458,7 +460,8 @@ Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Goog
 | 目的地址 | `net.Dialer.Control` 在**实际连接的地址**上判，每次连接尝试都判，所以 DNS 重绑定与多记录无从绕过。白名单思路：只放行 `netip.Addr.IsGlobalUnicast()` 为真、且不落在下列特殊用途段的地址，IPv6 地址另须落在已分配给全球单播的 `2000::/3` 内；IPv4 映射的 IPv6 先还原再判；NAT64 的 `64:ff9b::/96` 与 6to4 的 `2002::/16` 抽出内嵌的 IPv4 再按 IPv4 判（IPv6-only 网络里经 DNS64 合成的真实公网地址因此仍可达）；Teredo 的 `2001::/32` 与 `64:ff9b:1::/48` 一律拒绝 |
 | 方案与重定向 | 只许 `https`，其他方案在建立连接之前失败；不跟随重定向，3xx 应答原样返回，发现文档不应重定向 |
 | 超时与大小 | 总期限取 `authn.sso.egress-timeout`，每次调用用 `context` 的期限，调用方必须带期限：不带期限的调用只受握手超时与对端约束。名称解析与每次连接尝试随调用的期限与取消而结束，每次尝试分得剩余期限的均分份额，第一个不可达的地址耗不尽后面的地址要用的时间；连接按地址逐个尝试，不做并行回退。响应体上限 1 MiB，超出的读失败，不静默截断；响应头上限 64 KiB |
-| TLS 与代理 | 系统根证书，从不关闭校验，TLS 1.2 为下限；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
+| TLS 与代理 | 信任根缺省是系统根证书；配置 `authn.sso.oidc-ca-file` 时把文件里的证书追加到系统根证书。从不关闭校验，TLS 1.2 为下限；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
+| 额外信任根 | `authn.sso.oidc-ca-file`（仅主配置源，缺省空）给企业 OIDC 的出站客户端追加根证书；文件读不到或没有证书时启动失败，不回落到系统根证书 |
 | 观测 | 追踪头由调用方在客户端的 `Transport` 外自行套 `observability.Transport` 注入，`internal/egress` 不提供这层包装；`authn.sso.oidc` 与 `authn.sso.saml` 的客户端在 `observability.Transport` 之内再套 `log.Transport`，每次出站请求写一条记录（方法、主机、不含 query 的路径、对端状态、`outcome`、耗时，无应答时带底层成因），不记 query、请求头与正文；微信客户端同样套这两层，它 query 里的 `secret` 与授权码不进记录 |
 | 开发开关 | `authn.sso.allow-private-egress`（仅主配置源，缺省假）放开回环 |
 
@@ -541,6 +544,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 - **JIT 缺省不并入现有账户。** 已有账户的员工第一次企业 SSO 登录得到 `link-required`，要先用原方式登录再关联。`merge_existing` 开启即接受跨租户并入的风险：并入后该 IdP 对该账户有永久的登录能力，直到绑定被解除。
 - **租户的 IdP 管理员对自己租户新建的账户有登录控制权。** 这是企业 SSO 的信任边界；IdP 声明的多因素只在该提供方所属租户内算数。
 - **域所有权转手后有窗口。** 旧认领继续有效，直到管理者移除或重验失败；DNS TXT 验证不要求 DNSSEC，解析器被投毒时验证可被骗过。
+- **配置的解析器与额外信任根把校验交给部署。** `authn.sso.dns-resolver` 让域所有权证明采信该解析器的 TXT 答案，`authn.sso.oidc-ca-file` 让企业 OIDC 出站客户端采信文件里的根证书；恶意解析器或自签根证书等价于部署自己击败了它的校验，信任属于部署，不属于平台。两者的缺省都是系统解析器与系统根证书，所以两项都不配置的部署行为不变（[ADR-authn-sso-2026-10-26](../../../adr/adr-authn-sso-2026-10-26.md)）。
 - **证书轮换靠管理员。** 手工更新或触发元数据刷新；刷新失败期间旧证书继续被接受。
 - **时间条件不设容差。** 副本与 IdP 的时钟偏差超过几秒就会零星拒掉合法断言，部署必须保证时间同步。
 - **整个部署共用一组 SP 密钥对。** 租户的 IdP 要登记统一 `public-url` 下的 ACS 与 `redirect_uri`；不支持按租户子域名的回调，不支持经出站代理访问 IdP。
@@ -587,6 +591,8 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | `authn.sso` 提供方登记：`Put`、`Get`、`List`、`Secret`、`Tenant`、`Delete`、`config` 校验、`version` | 已实现 | `pkg/authn/sso/providers.go` `Get`、`Secret`、`List`、`Tenant`、`Put`、`Delete`、`checkPutShape`；`pkg/authn/sso/register.go` `readIDP`、`readSecret`、`insertIDP`、`saveIDP`；`pkg/authn/sso/config_validate.go` `validateConfig` |
 | `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` 迁移集 | 已实现 | `pkg/authn/sso/migrations/{postgres,sqlite}/0001_authn_idps.sql` |
 | 域所有权：`ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains` | 已实现 | `pkg/authn/sso/providers.go` `ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains`、`normalizeDomain`、`txtName` |
+| 域所有权证明的解析器来源：`authn.sso.dns-resolver` | 已实现 | `pkg/authn/sso/config.go` `moduleConfig`、`validateResolverAddress`；`pkg/authn/sso/module.go` `resolverLookup`、`lookupTXT` |
+| 企业 OIDC 出站客户端的额外信任根：`authn.sso.oidc-ca-file` | 已实现 | `pkg/authn/sso/oidc/config.go` `trustRoots`；`pkg/authn/sso/oidc/oidc.go` `newProduct` |
 | 发现：`Discover` 与 `POST B/sso/discover` | 已实现 | `pkg/authn/sso/providers.go` `Discover`；`pkg/authn/sso/routes.go` `handleDiscover`、`mountRoutes` |
 | 清扫：未验证的域声明与过期的断言标识 | 已实现 | `pkg/authn/sso/sweep.go` `startSweep`、`sweepClaims`、`sweepAssertions`；`pkg/authn/sso/register.go` `removeStaleClaims`、`removeExpiredAssertions` |
 | `Start` 的表存在性探测与加密列探针 | 已实现 | `pkg/authn/sso/start.go` `start`；`pkg/authn/sso/register.go` `probe`、`roundTrip` |

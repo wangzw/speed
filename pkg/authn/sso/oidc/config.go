@@ -2,8 +2,11 @@ package oidc
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -13,19 +16,21 @@ import (
 
 // The configuration keys this module reads: the gateway's public address and
 // base path, from which the redirect target is built, and the SSO module's
-// developer relaxation, which the restricted egress client is built with. They
-// are read at construction, before any provider is reached.
+// egress items, which the restricted egress client is built with. They are read
+// at construction, before any provider is reached.
 const (
 	gateNamespace     = "authn.gate"
 	gateMountPath     = "mount"
 	gatePublicURLItem = "mount.public-url"
 
-	ssoNamespace = "authn.sso"
+	ssoNamespace   = "authn.sso"
+	oidcCAFileItem = "oidc-ca-file"
 )
 
 // moduleConfig is the part of the SSO module's section this module reads.
 type moduleConfig struct {
-	AllowPrivateEgress bool `config:"allow-private-egress"`
+	AllowPrivateEgress bool   `config:"allow-private-egress"`
+	OIDCCAFile         string `config:"oidc-ca-file"`
 }
 
 // gateMount is the part of the gateway's configuration this module reads.
@@ -40,6 +45,9 @@ type gateMount struct {
 type resolved struct {
 	redirect           redirectBase
 	allowPrivateEgress bool
+	// rootCAs carries the system roots plus the extra roots the deployment
+	// named. Nil means the system roots alone.
+	rootCAs *x509.CertPool
 }
 
 // redirectBase builds the redirect target of a provider: the gateway's public
@@ -57,8 +65,9 @@ func (r redirectBase) callback(id string) string {
 	return strings.TrimRight(r.publicURL, "/") + "/" + strings.Trim(r.basePath, "/") + "/callback/" + id
 }
 
-// readConfig decodes the gateway's mount items and the SSO module's relaxation,
-// and validates the public address the redirect target is built from.
+// readConfig decodes the gateway's mount items and the SSO module's egress
+// items, validates the public address the redirect target is built from, and
+// loads the extra roots the egress client trusts when the deployment named one.
 func readConfig(reader config.Reader) (resolved, error) {
 	var gm gateMount
 	if err := reader.Decode(gateNamespace+"."+gateMountPath, &gm); err != nil {
@@ -81,10 +90,40 @@ func readConfig(reader config.Reader) (resolved, error) {
 	if base == "" {
 		base = mount.DefaultBasePath
 	}
+	roots, err := trustRoots(sso.OIDCCAFile)
+	if err != nil {
+		return resolved{}, err
+	}
 	return resolved{
 		redirect:           redirectBase{publicURL: publicURL, basePath: base},
 		allowPrivateEgress: sso.AllowPrivateEgress,
+		rootCAs:            roots,
 	}, nil
+}
+
+// trustRoots returns the system roots with the certificates of the named PEM
+// file added. An empty path returns nil, which leaves the egress client on the
+// system roots alone. A file the deployment named has to be readable and to hold
+// at least one certificate: falling back to the system roots would silently make
+// the deployment's trust decision a no-op.
+func trustRoots(path string) (*x509.CertPool, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s cannot be read: %w", authn.ErrInvalidConfig, oidcCAFileItem, err)
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("%w: the system roots cannot be read, so %s cannot extend them: %w",
+			authn.ErrInvalidConfig, oidcCAFileItem, err)
+	}
+	if !pool.AppendCertsFromPEM(data) {
+		return nil, fmt.Errorf("%w: %s holds no PEM certificate", authn.ErrInvalidConfig, oidcCAFileItem)
+	}
+	return pool, nil
 }
 
 // providerConfig is the shape of an OIDC provider's stored configuration. It is

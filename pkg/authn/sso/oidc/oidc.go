@@ -163,7 +163,7 @@ type product struct {
 
 // newProduct takes up what the descriptor requires and assembles the product.
 // The restricted egress client is built here, from the SSO module's developer
-// relaxation.
+// relaxation and the extra roots the deployment named.
 func newProduct(reg *core.Registry) (*product, error) {
 	reader, err := readerOf(reg)
 	if err != nil {
@@ -187,7 +187,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := egress.New(egress.Options{AllowLoopback: cfg.allowPrivateEgress})
+	client := egress.New(egress.Options{AllowLoopback: cfg.allowPrivateEgress, RootCAs: cfg.rootCAs})
 	// The restricted client is wrapped from outside, so a discovery, key-set or
 	// token request carries the span of the call's context across the hop to the
 	// identity provider; internal/egress offers no constructor of its own for it.
@@ -263,8 +263,8 @@ func optional[T any](reg *core.Registry, what string) (T, error) {
 }
 
 // readerOf takes up the configuration reader. It reads the gateway's public
-// address and the SSO module's developer relaxation, so its absence is the
-// host's omission and is carried out as it stands.
+// address and the SSO module's egress items, so its absence is the host's
+// omission and is carried out as it stands.
 func readerOf(reg *core.Registry) (config.Reader, error) {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {

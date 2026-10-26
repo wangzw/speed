@@ -140,6 +140,8 @@
 | `authn.sms.workers` | 整数 | `4` | 默认 | | 异步发送的有界工作池的协程数 |
 | `authn.sms.queue-size` | 整数 | `1024` | 默认 | | 异步发送队列的容量 |
 | `authn.sso.allow-private-egress` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放开出站调用对回环地址的拒绝；改动要重启 |
+| `authn.sso.dns-resolver` | 字符串，`host:port` | 空 | 主 | | 域所有权证明查 TXT 记录所用的 DNS 解析器地址；空时用系统解析器，配置后该查询由这个解析器作答 |
+| `authn.sso.oidc-ca-file` | 字符串，文件路径 | 空 | 主 | | 企业 OIDC 出站客户端在系统根证书之外额外信任的 PEM 根证书文件；空时只用系统根证书，配置后文件里的证书追加到系统根证书 |
 | `authn.sso.saml.sp-key-file` | 字符串，文件路径 | 无 | 默认 | 敏 | 服务提供方私钥；只在 IdP 配了 `sign_requests` 或要加密断言时需要，缺则 `Validate` 拒绝 |
 | `authn.sso.saml.sp-cert-file` | 字符串，文件路径 | 无 | 默认 | | 服务提供方证书，条件同上 |
 | `authn.sso.saml.sp-next-cert-file` | 字符串，文件路径 | 无 | 默认 | | 先发布的下一张证书，轮换时用 |

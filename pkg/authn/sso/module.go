@@ -275,9 +275,15 @@ func newProduct(reg *core.Registry) (*product, error) {
 
 // build assembles a product from its parts. The optional parts start absent and
 // the logger starts as the process's, so that a product that has not been through
-// Init is still one that does not panic.
+// Init is still one that does not panic. The TXT lookup goes through the
+// configured resolver when there is one, and through the system resolver when
+// there is none.
 func build(database db.Database, mounter mount.Mounter, cfg resolved, reader config.Reader) *product {
 	logger := log.Default()
+	lookup := systemLookup
+	if cfg.DNSResolver != "" {
+		lookup = resolverLookup(cfg.DNSResolver)
+	}
 	return &product{
 		database:           database,
 		handle:             database.DB(),
@@ -285,7 +291,7 @@ func build(database db.Database, mounter mount.Mounter, cfg resolved, reader con
 		mounter:            mounter,
 		reader:             reader,
 		logger:             logger,
-		lookup:             systemLookup,
+		lookup:             lookup,
 		allowPrivateEgress: cfg.AllowPrivateEgress,
 		claimsEvery:        claimsEvery,
 		assertionsEvery:    assertionsEvery,
@@ -296,9 +302,32 @@ func build(database db.Database, mounter mount.Mounter, cfg resolved, reader con
 // systemLookup resolves the TXT records of a name through the system resolver,
 // under a deadline of dnsTimeout.
 func systemLookup(ctx context.Context, name string) ([]string, error) {
+	return lookupTXT(ctx, net.DefaultResolver, name)
+}
+
+// resolverLookup resolves the TXT records of a name through the resolver at
+// address (host:port), under a deadline of dnsTimeout. The resolver is a Go
+// resolver whose dial always reaches address, whatever resolver address the
+// system configuration would otherwise name.
+func resolverLookup(address string) func(context.Context, string) ([]string, error) {
+	resolver := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var dialer net.Dialer
+			return dialer.DialContext(ctx, network, address)
+		},
+	}
+	return func(ctx context.Context, name string) ([]string, error) {
+		return lookupTXT(ctx, resolver, name)
+	}
+}
+
+// lookupTXT is the one TXT lookup the ownership proof makes, through whichever
+// resolver it was handed.
+func lookupTXT(ctx context.Context, resolver *net.Resolver, name string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, dnsTimeout)
 	defer cancel()
-	return net.DefaultResolver.LookupTXT(ctx, name)
+	return resolver.LookupTXT(ctx, name)
 }
 
 // wire runs in Init, where every instance exists: it takes up the optional

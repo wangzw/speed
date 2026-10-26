@@ -51,7 +51,11 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   bounded by the deadline of the context the engine hands in (and, per call, by
   `authn.sso.egress-timeout`). A call that does not inject the client would use
   the library's own client and is a defect. The client is built here, from the
-  SSO module's `allow-private-egress` developer relaxation. Its transport also
+  SSO module's `allow-private-egress` developer relaxation; its trust roots are
+  the system roots plus the certificates of `authn.sso.oidc-ca-file` when the
+  deployment names one (`trustRoots`, `TestAnUnsetCAFileLeavesTheSystemRoots`,
+  `TestAConfiguredCAFileIsTrustedForTheOIDCCall`), and certificate verification is
+  never switched off. Its transport also
   carries `log.Transport` inside `observability.Transport`, so every discovery,
   key-set and token request leaves one record naming the endpoint, the status
   and the time — and carrying neither the query, where an authorization code, a

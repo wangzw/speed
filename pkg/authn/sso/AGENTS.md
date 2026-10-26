@@ -12,8 +12,9 @@ An IdP is data and not a module: it appears at run time, its number is not fixed
 and it carries a secret, so it lives in a table rather than in the settings or
 the configuration. The client secret of an OIDC provider sits in an encrypted
 column; the module also declares the `authn.sso` namespace's inputs
-(`allow-private-egress` and the `assertion-max-age`, `provider-cache-ttl` and
-`egress-timeout` settings) that the protocol modules read.
+(`allow-private-egress`, `dns-resolver`, `oidc-ca-file` and the
+`assertion-max-age`, `provider-cache-ttl` and `egress-timeout` settings) that the
+protocol modules read.
 
 The API is the package's godoc. Read the `SSOProviders` comments in
 [`pkg/authn/sso.go`](../sso.go) before changing an interface.
@@ -46,6 +47,18 @@ The API is the package's godoc. Read the `SSOProviders` comments in
   `ErrUnavailable` on every method; a domain verification that finds no record
   changes nothing; a re-verification whose lookup fails keeps the verification and
   returns the failure (`TestReverifyKeepsAPageableLookupFailure`).
+- **The TXT lookup has one path and one comparison.** `VerifyDomain` and
+  `ReverifyDomains` go through `p.lookup`; an unset `authn.sso.dns-resolver`
+  leaves `net.DefaultResolver` in place, and a set one replaces only the resolver
+  the lookup dials (`systemLookup`, `resolverLookup`, `lookupTXT`,
+  `TestAnUnsetResolverUsesTheSystemResolver`,
+  `TestAConfiguredResolverCarriesTheTXTLookup`). The TXT name, the
+  `speed-authn=<token>` comparison and the failure direction do not change.
+  `authn.sso.oidc-ca-file` is declared here because this module owns the
+  namespace; the enterprise OIDC method reads it and appends its certificates to
+  the system roots (`trustRoots`). Both items take the primary configuration
+  source alone and default to the system resolver and the system roots, so a
+  deployment that configures neither behaves as before.
 - **The sweep is bounded and each table has its own period.** Unverified claims
   go after seven days (hourly), assertion identifiers as soon as their condition
   passes (every ten minutes), a batch at a time until one comes back short, and
