@@ -1094,6 +1094,12 @@ export function AccountsPage({
               rows={settled}
               columns={columns}
               rowKey={(row) => row.id}
+              // The row-actions column is last, and at the mobile floor
+              // the primary cell and the actions together can be wider
+              // than the page content. Pinning the actions keeps Manage
+              // and Delete reachable while the main columns scroll under
+              // them; where the table already fits, the pin is inert.
+              pinLastColumn
               // The primary cell stacks the display name over its first
               // identifier, so the row is top-aligned: the copy control
               // sits beside the identity line instead of dropping to the
