@@ -638,17 +638,18 @@ func TestThePublishedNamesAreLiterals(t *testing.T) {
 	if callbackPath != "/callback/google" {
 		t.Errorf("callbackPath = %q, want /callback/google", callbackPath)
 	}
-	if issuer != "https://accounts.google.com" {
-		t.Errorf("issuer = %q, want https://accounts.google.com", issuer)
+	if defaultIssuer != "https://accounts.google.com" {
+		t.Errorf("defaultIssuer = %q, want https://accounts.google.com", defaultIssuer)
 	}
 }
 
-// TestNewMethodUsesTheIssuerConstant holds that newMethod builds the provider
-// cache over the issuer constant, so a mistyped issuer would be caught.
-func TestNewMethodUsesTheIssuerConstant(t *testing.T) {
-	m := newMethod(resolved{clientID: "id"}, nil)
-	if m.provider.issuer != issuer {
-		t.Errorf("the provider cache issuer = %q, want the issuer constant %q", m.provider.issuer, issuer)
+// TestNewMethodUsesTheResolvedIssuer holds that newMethod builds the provider
+// cache over the issuer the configuration resolved, so a mistyped issuer would
+// be caught.
+func TestNewMethodUsesTheResolvedIssuer(t *testing.T) {
+	m := newMethod(resolved{clientID: "id", issuer: defaultIssuer}, nil)
+	if m.provider.issuer != defaultIssuer {
+		t.Errorf("the provider cache issuer = %q, want %q", m.provider.issuer, defaultIssuer)
 	}
 }
 

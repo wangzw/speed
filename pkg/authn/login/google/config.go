@@ -1,10 +1,15 @@
 package google
 
 import (
+	"crypto/x509"
+	"errors"
 	"fmt"
+	"net/netip"
+	"net/url"
 	"strings"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/internal/egress"
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/config"
 )
@@ -13,9 +18,12 @@ import (
 // are configuration and not settings because the provider is built at
 // construction, before any database or settings store is reachable.
 const (
-	clientIDItem     = "client-id"
-	clientSecretItem = "client-secret"
-	hostedDomainItem = "hosted-domain"
+	clientIDItem      = "client-id"
+	clientSecretItem  = "client-secret"
+	hostedDomainItem  = "hosted-domain"
+	issuerItem        = "issuer"
+	allowLoopbackItem = "allow-loopback"
+	rootCAFileItem    = "root-ca-file"
 )
 
 // gateNamespace and the two mount items the gateway declares, read here because
@@ -39,6 +47,16 @@ type moduleConfig struct {
 	// the hd parameter on the authorization request is a display optimization
 	// and is not the check.
 	HostedDomain string `config:"hosted-domain"`
+	// Issuer, when non-empty, is the OpenID Connect issuer the provider is
+	// discovered at. Empty discovers the built-in Google issuer.
+	Issuer string `config:"issuer"`
+	// AllowLoopback admits loopback addresses through the restricted egress
+	// client. It is a development and local-testing relaxation; production
+	// leaves it off.
+	AllowLoopback bool `config:"allow-loopback"`
+	// RootCAFile is a PEM file whose certificates replace the system roots the
+	// provider's certificate is verified against. Empty uses the system roots.
+	RootCAFile string `config:"root-ca-file"`
 }
 
 // configDefaults is what this module is worth without a configuration file. The
@@ -55,10 +73,14 @@ type gateMount struct {
 
 // resolved is the configuration the method runs on.
 type resolved struct {
-	clientID     string
-	clientSecret string
-	hostedDomain string
-	redirectURL  string
+	clientID      string
+	clientSecret  string
+	hostedDomain  string
+	redirectURL   string
+	issuer        string
+	allowLoopback bool
+	rootCAFile    string
+	rootCAs       *x509.CertPool
 }
 
 // resolve holds the configuration to what the flow and the redirect target are
@@ -83,12 +105,62 @@ func (c moduleConfig) resolve(gm gateMount) (resolved, error) {
 		return resolved{}, fmt.Errorf("%w: %s.%s is not an origin: %w",
 			authn.ErrInvalidConfig, gateNamespace, gatePublicURLItem, err)
 	}
+	issuer, err := resolveIssuer(c.Issuer, c.AllowLoopback)
+	if err != nil {
+		return resolved{}, fmt.Errorf("%w: %s.%s: %w", authn.ErrInvalidConfig, ConfigNamespace, issuerItem, err)
+	}
 	return resolved{
-		clientID:     clientID,
-		clientSecret: c.ClientSecret,
-		hostedDomain: strings.TrimSpace(c.HostedDomain),
-		redirectURL:  redirectTarget(publicURL, gm.Bases.Default),
+		clientID:      clientID,
+		clientSecret:  c.ClientSecret,
+		hostedDomain:  strings.TrimSpace(c.HostedDomain),
+		redirectURL:   redirectTarget(publicURL, gm.Bases.Default),
+		issuer:        issuer,
+		allowLoopback: c.AllowLoopback,
+		rootCAFile:    strings.TrimSpace(c.RootCAFile),
 	}, nil
+}
+
+// resolveIssuer returns the issuer the provider is discovered at. An empty value
+// takes the built-in Google issuer. An explicit value is an absolute https
+// address; a plain http address is accepted only on a loopback host with the
+// loopback switch on, because that is the development shape of a provider
+// running on the same machine.
+func resolveIssuer(raw string, allowLoopback bool) (string, error) {
+	issuer := strings.TrimSpace(raw)
+	if issuer == "" {
+		return defaultIssuer, nil
+	}
+	u, err := url.Parse(issuer)
+	if err != nil {
+		return "", fmt.Errorf("it is not a URL: %w", err)
+	}
+	if u.Host == "" {
+		return "", errors.New("it names no host")
+	}
+	switch u.Scheme {
+	case "https":
+		return issuer, nil
+	case "http":
+		if !allowLoopback {
+			return "", errors.New("it is not https")
+		}
+		if !loopbackHost(u.Hostname()) {
+			return "", errors.New("a plain http issuer is only accepted on a loopback host with the loopback switch on")
+		}
+		return issuer, nil
+	default:
+		return "", fmt.Errorf("scheme %q is not https", u.Scheme)
+	}
+}
+
+// loopbackHost reports whether host is the literal localhost name or a loopback
+// address.
+func loopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
 }
 
 // redirectTarget is the redirect URI the provider sends the user agent back to:
@@ -123,13 +195,26 @@ func schema() config.Schema {
 				Description: "a Google Workspace domain the identity token's hd claim must equal; empty accepts an " +
 					"identity from any domain",
 			},
+			issuerItem: {
+				Description: "the OpenID Connect issuer the provider is discovered at; empty uses " + defaultIssuer,
+			},
+			allowLoopbackItem: {
+				Description: "whether the restricted egress client admits loopback addresses, for a provider " +
+					"running on the same machine; production leaves it off",
+			},
+			rootCAFileItem: {
+				Description: "a PEM file whose certificates replace the system roots the provider's certificate is " +
+					"verified against; empty uses the system roots",
+			},
 		},
 	}
 }
 
 // readConfig decodes this module's section and the gateway's mount items, and
 // validates both. Prepare and New both go through it, so the two see one
-// configuration.
+// configuration. A configured root CA file is read here, so a file that does not
+// work stops the start rather than leaving verification on the system roots
+// without saying so.
 func readConfig(reader config.Reader) (resolved, error) {
 	var cfg moduleConfig
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
@@ -139,5 +224,14 @@ func readConfig(reader config.Reader) (resolved, error) {
 	if err := reader.Decode(gateNamespace+"."+gateMountPath, &gm); err != nil {
 		return resolved{}, err
 	}
-	return cfg.resolve(gm)
+	r, err := cfg.resolve(gm)
+	if err != nil {
+		return resolved{}, err
+	}
+	roots, err := egress.RootCAsFromFile(r.rootCAFile)
+	if err != nil {
+		return resolved{}, fmt.Errorf("%w: %s.%s: %w", authn.ErrInvalidConfig, ConfigNamespace, rootCAFileItem, err)
+	}
+	r.rootCAs = roots
+	return r, nil
 }

@@ -185,6 +185,7 @@
 | [短信验证码：挑战状态机归 SMSCodes，发送归顶层能力 sms.Sender](adr-authn-sms-2026-10-10.md) | 2026-10-10 | 已接受 |
 | [微信登录自写薄客户端，网站应用与公众号拆成两个模块](adr-authn-wechat-2026-10-10.md) | 2026-10-10 | 已接受 |
 | [社交与企业 OIDC 的校验桥：go-oidc 加 x/oauth2，state、PKCE、nonce 自做](adr-authn-oauth-flow-2026-10-10.md) | 2026-10-10 | 已接受 |
+| [社交登录提供方的端点与出站信任作为部署配置，缺省不变](adr-authn-social-endpoints-2026-10-26.md) | 2026-10-26 | 已接受 |
 | [多因素：因素是并立的接缝，编排与保障等级只在 authn.mfa 一处合成](adr-authn-mfa-2026-10-10.md) | 2026-10-10 | 已接受 |
 | [没有恢复码时的找回途径与接受的代价](adr-authn-mfa-recovery-2026-10-10.md) | 2026-10-10 | 已接受 |
 

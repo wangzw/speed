@@ -60,8 +60,9 @@ const methodName = "google"
 // the method's own name, in the namespace of the external bindings.
 const providerName = "google"
 
-// issuer is the OpenID Connect issuer the provider is discovered at.
-const issuer = "https://accounts.google.com"
+// defaultIssuer is the OpenID Connect issuer the provider is discovered at when
+// the configuration names none.
+const defaultIssuer = "https://accounts.google.com"
 
 // callbackPath is where the engine mounts the redirect the provider sends the
 // user agent back to; the redirect URI is built from the public address and the
@@ -137,7 +138,7 @@ func newProduct(reg *core.Registry) (*product, error) {
 	if err := registerSecret(reg, cfg.clientSecret); err != nil {
 		return nil, err
 	}
-	client := egress.New(egress.Options{})
+	client := egress.New(egress.Options{AllowLoopback: cfg.allowLoopback, RootCAs: cfg.rootCAs})
 	// The restricted client is wrapped from outside, so a discovery, key-set or
 	// token request carries the span of the call's context across the hop to the
 	// provider; internal/egress offers no constructor of its own for it. The
@@ -175,7 +176,7 @@ func newMethod(cfg resolved, client *http.Client) *product {
 	return &product{
 		config:   cfg,
 		client:   client,
-		provider: &providerCache{issuer: issuer, client: client},
+		provider: &providerCache{issuer: cfg.issuer, client: client},
 	}
 }
 

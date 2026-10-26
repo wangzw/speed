@@ -1,11 +1,180 @@
 package google
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authn/authntest"
+	"github.com/vislake/speed/pkg/config"
+	"github.com/vislake/speed/pkg/core"
 )
+
+// gateDefaults is the stand-in gateway module's carrier for the keys this module
+// reads from the gateway's section, under the same mount path the real gateway
+// declares.
+type gateDefaults struct {
+	Mount struct {
+		PublicURL string `config:"public-url"`
+		Bases     struct {
+			Default string `config:"default"`
+		} `config:"bases"`
+	} `config:"mount"`
+}
+
+// gateStandIn declares the authn.gate keys this module reads, so a case's body
+// may configure them without pulling the whole gateway in.
+func gateStandIn() core.Module {
+	d := &gateDefaults{}
+	d.Mount.Bases.Default = "/api/v1/auth"
+	return core.Module{
+		Name:      "standin.gate",
+		Resources: []any{config.Schema{Namespace: gateNamespace, Mounts: []config.Mount{{Value: d}}}},
+	}
+}
+
+// readerOver builds the real configuration loader over a body, with this
+// module's schema and the gateway keys it reads declared.
+func readerOver(t *testing.T, body string) config.Reader {
+	t.Helper()
+	return authntest.ConfigReaderAll(t, body, Module(), gateStandIn())
+}
+
+// googleBody is a complete configuration body with extra items appended to this
+// module's section.
+func googleBody(extra string) string {
+	items := `"client-id":"the-id","client-secret":"the-secret"`
+	if extra != "" {
+		items += "," + extra
+	}
+	return `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}},` +
+		`"login":{"google":{` + items + `}}}}`
+}
+
+// writeRootCA writes a self-signed root certificate in PEM and returns its path.
+func writeRootCA(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating a key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "the test root"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating a certificate: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "root.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("writing the root CA file: %v", err)
+	}
+	return path
+}
+
+// TestTheReaderAcceptsTheConfiguredIssuer drives the real loader: the issuer is
+// an item this module accepts, and the value reaches the provider cache.
+func TestTheReaderAcceptsTheConfiguredIssuer(t *testing.T) {
+	reader := readerOver(t, googleBody(`"issuer":"https://idp.example"`))
+	var built *product
+	if err := driveWith(t, reader, func(_ context.Context, reg *core.Registry) error {
+		for _, m := range core.ResolveAll[authn.LoginMethod](reg) {
+			if p, ok := m.(*product); ok {
+				built = p
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("drive: %v", err)
+	}
+	if built == nil {
+		t.Fatal("the registry delivered no product")
+	}
+	if built.provider.issuer != "https://idp.example" {
+		t.Errorf("the provider cache issuer = %q, want the configured issuer", built.provider.issuer)
+	}
+}
+
+// TestTheReaderAcceptsTheLoopbackSwitch holds that the loopback switch is an
+// item this module accepts.
+func TestTheReaderAcceptsTheLoopbackSwitch(t *testing.T) {
+	if _, err := readConfig(readerOver(t, googleBody(`"allow-loopback":true`))); err != nil {
+		t.Fatalf("reading a section with the loopback switch: %v", err)
+	}
+}
+
+// TestTheReaderAcceptsTheRootCAFile holds that a readable root CA file is an
+// item this module accepts.
+func TestTheReaderAcceptsTheRootCAFile(t *testing.T) {
+	if _, err := readConfig(readerOver(t, googleBody(fmt.Sprintf(`"root-ca-file":%q`, writeRootCA(t))))); err != nil {
+		t.Fatalf("reading a section with a root CA file: %v", err)
+	}
+}
+
+// TestTheReaderRefusesAnUnreadableRootCAFile holds that a root CA file that
+// cannot be read fails the start rather than leaving verification on the system
+// roots without saying so.
+func TestTheReaderRefusesAnUnreadableRootCAFile(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.pem")
+	_, err := readConfig(readerOver(t, googleBody(fmt.Sprintf(`"root-ca-file":%q`, missing))))
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("an unreadable root CA file gave %v, want one wrapping ErrInvalidConfig", err)
+	}
+}
+
+// TestAnExplicitIssuerMustBeHTTPS holds the issuer's scheme rule: https in
+// general, and a loopback http issuer only while the loopback switch is on.
+func TestAnExplicitIssuerMustBeHTTPS(t *testing.T) {
+	cases := []struct {
+		name     string
+		issuer   string
+		loopback bool
+		wantErr  bool
+	}{
+		{name: "an https issuer", issuer: "https://idp.example", wantErr: false},
+		{name: "an http issuer", issuer: "http://idp.example", wantErr: true},
+		{name: "an http loopback issuer without the switch", issuer: "http://127.0.0.1:8080", wantErr: true},
+		{name: "an http loopback issuer with the switch", issuer: "http://127.0.0.1:8080", loopback: true, wantErr: false},
+		{name: "an https loopback issuer with the switch", issuer: "https://127.0.0.1:8080", loopback: true, wantErr: false},
+		{name: "another scheme", issuer: "ftp://idp.example", wantErr: true},
+		{name: "no host", issuer: "https://", wantErr: true},
+		{name: "blank falls back to the default", issuer: "  ", wantErr: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := googleBody(fmt.Sprintf(`"issuer":%q,"allow-loopback":%t`, tc.issuer, tc.loopback))
+			_, err := readConfig(readerOver(t, body))
+			if tc.wantErr {
+				if !errors.Is(err, authn.ErrInvalidConfig) {
+					t.Fatalf("issuer %q with loopback %t gave %v, want one wrapping ErrInvalidConfig",
+						tc.issuer, tc.loopback, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("issuer %q with loopback %t: %v", tc.issuer, tc.loopback, err)
+			}
+		})
+	}
+}
 
 // TestResolveBuildsTheRedirectTarget holds the shape of the redirect URI: the
 // public address, the base path and this provider's callback path.
@@ -114,21 +283,33 @@ func TestTheSchemaMarksTheClientItems(t *testing.T) {
 	if s.Items[hostedDomainItem].Required {
 		t.Error("hosted-domain is marked required")
 	}
+	for _, key := range []string{issuerItem, allowLoopbackItem, rootCAFileItem} {
+		item := s.Items[key]
+		if item.Required {
+			t.Errorf("%s is marked required", key)
+		}
+		if item.Description == "" {
+			t.Errorf("%s carries no description", key)
+		}
+	}
 }
 
 // TestTheConfigKeysMatchTheSchemaAndTags holds the naming contract: the module's
-// namespace is its name, the three item keys are the schema's keys, and each is
-// the config tag the mount struct reads it by. A drift between the two would let
-// the schema declare a key the reader never fills.
+// namespace is its name, the item keys are the schema's keys, and each is the
+// config tag the mount struct reads it by. A drift between the two would let the
+// schema declare a key the reader never fills.
 func TestTheConfigKeysMatchTheSchemaAndTags(t *testing.T) {
 	if ConfigNamespace != ModuleName {
 		t.Errorf("ConfigNamespace = %q, want the module name %q", ConfigNamespace, ModuleName)
 	}
 	s := schema()
 	want := map[string]string{
-		clientIDItem:     "client-id",
-		clientSecretItem: "client-secret",
-		hostedDomainItem: "hosted-domain",
+		clientIDItem:      "client-id",
+		clientSecretItem:  "client-secret",
+		hostedDomainItem:  "hosted-domain",
+		issuerItem:        "issuer",
+		allowLoopbackItem: "allow-loopback",
+		rootCAFileItem:    "root-ca-file",
 	}
 	if len(s.Items) != len(want) {
 		t.Errorf("the schema declares %d items, want %d", len(s.Items), len(want))

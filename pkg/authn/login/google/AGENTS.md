@@ -3,10 +3,11 @@
 The Google login method, registered as `authn.login.google`. It is one
 `authn.LoginMethod` among the first factors: it proves an external identity by
 an OpenID Connect authorization-code flow against `https://accounts.google.com`
-and answers the engine a `Step`. It delivers the login-method capability
-non-exclusively, so it stands beside every other method, and requires no
-capability of another module — the provider is reached over the restricted
-egress client this module builds itself.
+by default (a deployment may name another issuer through
+`authn.login.google.issuer`) and answers the engine a `Step`. It delivers the
+login-method capability non-exclusively, so it stands beside every other method,
+and requires no capability of another module — the provider is reached over the
+restricted egress client this module builds itself.
 
 The method is this package's whole surface. In `Begin` it draws the state, the
 PKCE verifier and the nonce, keeps them in the flow's private state and answers
@@ -39,11 +40,22 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   which.
 - **Every outbound request goes through `internal/egress`, injected through
   `oidc.ClientContext`.** Discovery, the key set and the token endpoint all use
-  the same restricted client, so each is https-only, at a public address, and
-  bounded by the deadline of the context the engine hands in. A call that does
+  the same restricted client, so each is https-only, at a public address (a
+  loopback address only when the deployment turns the switch on), and bounded by
+  the deadline of the context the engine hands in. A call that does
   not inject the client would use the library's own client and is a defect; the
   test serves a loopback provider and the production client refuses it, so an
   uninjected call fails the suite.
+- **The issuer and the egress relaxation are configuration, and their defaults
+  keep today's validation.** `authn.login.google.issuer` names the issuer to
+  discover; empty uses `https://accounts.google.com`, and an explicit issuer must
+  be an absolute https address, except a loopback http issuer, which is accepted
+  only with `authn.login.google.allow-loopback`. `allow-loopback` and
+  `root-ca-file` shape the restricted client this module builds: off and empty
+  leave loopback refused and the system roots, and a configured root CA file
+  replaces the system roots and must be readable with at least one certificate at
+  startup. A deployment that points the method at its own provider bears the
+  trust in that provider and its certificate.
 - **The client carries the trace and logging transports.** `New` wraps the
   restricted client's transport in `observability.Transport` and, inside it,
   `log.Transport`, so every discovery, key-set and token request carries the

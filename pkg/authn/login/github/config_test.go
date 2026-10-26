@@ -1,8 +1,19 @@
 package github
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"golang.org/x/oauth2/endpoints"
 
@@ -55,6 +66,15 @@ func TestTheSchemaCarriesTheDesignsFlags(t *testing.T) {
 	secret := s.Items[clientSecretItem]
 	if !secret.Required || !secret.Sensitive || secret.Description == "" {
 		t.Errorf("client-secret = %+v, want required, sensitive and described", secret)
+	}
+	for _, key := range []string{authorizeURLItem, tokenURLItem, apiBaseItem, allowLoopbackItem, rootCAFileItem} {
+		item := s.Items[key]
+		if item.Required {
+			t.Errorf("%s is marked required", key)
+		}
+		if item.Description == "" {
+			t.Errorf("%s carries no description", key)
+		}
 	}
 }
 
@@ -162,5 +182,105 @@ func TestAGateDecodeErrorIsRefused(t *testing.T) {
 	_, err := readConfig(stubReader{cfg: moduleConfig{ClientID: "the-id", ClientSecret: "the-secret"}, gateErr: boom})
 	if !errors.Is(err, boom) {
 		t.Fatalf("a gateway decode error gave %v, want it propagated", err)
+	}
+}
+
+// githubBody is a complete configuration body with extra items appended to this
+// module's section.
+func githubBody(extra string) string {
+	items := `"client-id":"the-id","client-secret":"the-secret"`
+	if extra != "" {
+		items += "," + extra
+	}
+	return `{"authn":{"gate":{"mount":{"public-url":"https://app.example"}},` +
+		`"login":{"github":{` + items + `}}}}`
+}
+
+// writeRootCA writes a self-signed root certificate in PEM and returns its path.
+func writeRootCA(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating a key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "the test root"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating a certificate: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "root.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatalf("writing the root CA file: %v", err)
+	}
+	return path
+}
+
+// TestTheReaderAcceptsTheEndpointOverrides drives the real loader: the three
+// endpoint items are accepted and replace the built-in GitHub addresses.
+func TestTheReaderAcceptsTheEndpointOverrides(t *testing.T) {
+	body := githubBody(`"authorize-url":"https://idp.example/authorize",` +
+		`"token-url":"https://idp.example/token","api-base":"https://idp.example/api/v3"`)
+	got, err := readConfig(readerOver(t, body))
+	if err != nil {
+		t.Fatalf("reading a section with endpoint overrides: %v", err)
+	}
+	if got.endpoint.AuthURL != "https://idp.example/authorize" {
+		t.Errorf("authorize URL = %q, want the configured one", got.endpoint.AuthURL)
+	}
+	if got.endpoint.TokenURL != "https://idp.example/token" {
+		t.Errorf("token URL = %q, want the configured one", got.endpoint.TokenURL)
+	}
+	if got.apiBase != "https://idp.example/api/v3" {
+		t.Errorf("apiBase = %q, want the configured one", got.apiBase)
+	}
+}
+
+// TestTheReaderAcceptsTheEgressSeamKeys holds that the loopback switch and the
+// root CA file are items this module accepts.
+func TestTheReaderAcceptsTheEgressSeamKeys(t *testing.T) {
+	body := githubBody(fmt.Sprintf(`"allow-loopback":true,"root-ca-file":%q`, writeRootCA(t)))
+	if _, err := readConfig(readerOver(t, body)); err != nil {
+		t.Fatalf("reading a section with the egress seam: %v", err)
+	}
+}
+
+// TestTheReaderRefusesAnUnreadableRootCAFile holds that a root CA file that
+// cannot be read fails the start rather than leaving verification on the system
+// roots without saying so.
+func TestTheReaderRefusesAnUnreadableRootCAFile(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.pem")
+	_, err := readConfig(readerOver(t, githubBody(fmt.Sprintf(`"root-ca-file":%q`, missing))))
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("an unreadable root CA file gave %v, want one wrapping ErrInvalidConfig", err)
+	}
+}
+
+// TestTheEndpointOverridesMustBeHTTPS holds that every endpoint override is an
+// absolute https address, so a custom endpoint cannot quietly downgrade the
+// transport.
+func TestTheEndpointOverridesMustBeHTTPS(t *testing.T) {
+	cases := []struct {
+		key   string
+		value string
+	}{
+		{key: "authorize-url", value: "http://idp.example/authorize"},
+		{key: "token-url", value: "ftp://idp.example/token"},
+		{key: "api-base", value: "https://"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			_, err := readConfig(readerOver(t, githubBody(fmt.Sprintf(`%q:%q`, tc.key, tc.value))))
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Fatalf("%s %q gave %v, want one wrapping ErrInvalidConfig", tc.key, tc.value, err)
+			}
+		})
 	}
 }

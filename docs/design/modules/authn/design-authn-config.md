@@ -108,8 +108,16 @@
 | `authn.login.google.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识 |
 | `authn.login.google.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥 |
 | `authn.login.google.hosted-domain` | 字符串 | 空 | 默认 | | 非空时要求 ID 令牌的 `hd` 声明相等 |
+| `authn.login.google.issuer` | 字符串 | `https://accounts.google.com` | 默认 | | 发现用的 OIDC issuer；非空时须是绝对 https 地址，回环主机的 http 地址仅在 `allow-loopback` 为真时接受 |
+| `authn.login.google.allow-loopback` | 布尔 | `false` | 默认 | | 仅开发用：放开受限出站客户端对回环地址的拒绝；不放开明文 http |
+| `authn.login.google.root-ca-file` | 字符串，文件路径 | 无 | 默认 | | 替换系统根的 PEM 文件；启动时须可读且含至少一张证书，空用系统根 |
 | `authn.login.github.client-id` | 字符串 | 无 | 默认 | 必填 | 提供方的客户端标识 |
 | `authn.login.github.client-secret` | 字符串 | 无 | 默认 | 必填、敏 | 提供方的客户端密钥 |
+| `authn.login.github.authorize-url` | 字符串 | `https://github.com/login/oauth/authorize` | 默认 | | 授权端点；非空时须是绝对 https 地址 |
+| `authn.login.github.token-url` | 字符串 | `https://github.com/login/oauth/access_token` | 默认 | | 令牌端点；非空时须是绝对 https 地址 |
+| `authn.login.github.api-base` | 字符串 | `https://api.github.com` | 默认 | | `/user` 与 `/user/emails` 的基址；非空时须是绝对 https 地址 |
+| `authn.login.github.allow-loopback` | 布尔 | `false` | 默认 | | 仅开发用：放开受限出站客户端对回环地址的拒绝；不放开明文 http |
+| `authn.login.github.root-ca-file` | 字符串，文件路径 | 无 | 默认 | | 替换系统根的 PEM 文件；启动时须可读且含至少一张证书，空用系统根 |
 | `authn.login.wechat-web.app-id` | 字符串 | 无 | 默认 | 必填 | 网站应用扫码登录的应用标识；纳入即必填，缺则 `ErrInvalidConfig` |
 | `authn.login.wechat-web.app-secret` | 字符串 | 无 | 默认 | 必填、敏 | 同上的应用密钥 |
 | `authn.login.wechat-mp.app-id` | 字符串 | 无 | 默认 | 必填 | 公众号网页授权登录的应用标识；与网站应用各自一份配置，没有联合判定 |
@@ -118,6 +126,8 @@
 | `authn.mfa.webauthn.rp-id` | 字符串 | `authn.gate.mount.public-url` 的主机名 | 默认 | | 依赖方标识；须等于基址主机或其父域 |
 | `authn.mfa.webauthn.rp-name` | 字符串 | `speed` | 默认 | | 依赖方的显示名 |
 | `authn.mfa.webauthn.origins` | 字符串列表 | `authn.gate.mount.public-url` 的来源 | 默认 | | 依赖方接受的来源 |
+
+登录方式的端点覆盖项与根证书文件由部署方给出：指向自定义端点即由部署方承担对该端点与其证书的信任，缺省仍是内置端点、拒回环与系统根（[ADR-authn-social-endpoints-2026-10-26](../../../adr/adr-authn-social-endpoints-2026-10-26.md)）。
 
 `authn.mfa.webauthn` 的 `Timeouts.*.Enforce` 固定为真，不做成配置项。
 

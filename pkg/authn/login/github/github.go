@@ -163,7 +163,7 @@ func Module() core.Module {
 			if err := registerSecret(reg, cfg.clientSecret); err != nil {
 				return nil, err
 			}
-			client := egress.New(egress.Options{})
+			client := egress.New(egress.Options{AllowLoopback: cfg.allowLoopback, RootCAs: cfg.rootCAs})
 			// The restricted client is wrapped from outside, so the token
 			// exchange and the two API reads carry the span of the call's context
 			// across the hop; internal/egress offers no constructor of its own

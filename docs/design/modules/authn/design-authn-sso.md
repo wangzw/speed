@@ -460,10 +460,10 @@ Google 与企业 OIDC 走同一条代码路径，差别只在配置来源：Goog
 | 目的地址 | `net.Dialer.Control` 在**实际连接的地址**上判，每次连接尝试都判，所以 DNS 重绑定与多记录无从绕过。白名单思路：只放行 `netip.Addr.IsGlobalUnicast()` 为真、且不落在下列特殊用途段的地址，IPv6 地址另须落在已分配给全球单播的 `2000::/3` 内；IPv4 映射的 IPv6 先还原再判；NAT64 的 `64:ff9b::/96` 与 6to4 的 `2002::/16` 抽出内嵌的 IPv4 再按 IPv4 判（IPv6-only 网络里经 DNS64 合成的真实公网地址因此仍可达）；Teredo 的 `2001::/32` 与 `64:ff9b:1::/48` 一律拒绝 |
 | 方案与重定向 | 只许 `https`，其他方案在建立连接之前失败；不跟随重定向，3xx 应答原样返回，发现文档不应重定向 |
 | 超时与大小 | 总期限取 `authn.sso.egress-timeout`，每次调用用 `context` 的期限，调用方必须带期限：不带期限的调用只受握手超时与对端约束。名称解析与每次连接尝试随调用的期限与取消而结束，每次尝试分得剩余期限的均分份额，第一个不可达的地址耗不尽后面的地址要用的时间；连接按地址逐个尝试，不做并行回退。响应体上限 1 MiB，超出的读失败，不静默截断；响应头上限 64 KiB |
-| TLS 与代理 | 信任根缺省是系统根证书；配置 `authn.sso.oidc-ca-file` 时把文件里的证书追加到系统根证书。从不关闭校验，TLS 1.2 为下限；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
-| 额外信任根 | `authn.sso.oidc-ca-file`（仅主配置源，缺省空）给企业 OIDC 的出站客户端追加根证书；文件读不到或没有证书时启动失败，不回落到系统根证书 |
+| TLS 与代理 | 信任根缺省是系统根证书；配置 `authn.sso.oidc-ca-file`、`authn.login.google.root-ca-file` 或 `authn.login.github.root-ca-file` 时，文件里的证书追加到系统根证书，不替换系统根。从不关闭校验，TLS 1.2 为下限；`Proxy` 置空：经代理时 `Control` 看到的是代理地址，目的地判断失效，所以不支持经出站代理访问 IdP |
+| 额外信任根 | `authn.sso.oidc-ca-file`（仅主配置源，缺省空）给企业 OIDC 的出站客户端追加根证书；`authn.login.google.root-ca-file` 与 `authn.login.github.root-ca-file`（缺省空）给对应社交方法的出站客户端追加根证书。空值都只用系统根证书；文件读不到或没有证书时启动失败，不回落到系统根证书 |
 | 观测 | 追踪头由调用方在客户端的 `Transport` 外自行套 `observability.Transport` 注入，`internal/egress` 不提供这层包装；`authn.sso.oidc` 与 `authn.sso.saml` 的客户端在 `observability.Transport` 之内再套 `log.Transport`，每次出站请求写一条记录（方法、主机、不含 query 的路径、对端状态、`outcome`、耗时，无应答时带底层成因），不记 query、请求头与正文；微信客户端同样套这两层，它 query 里的 `secret` 与授权码不进记录 |
-| 开发开关 | `authn.sso.allow-private-egress`（仅主配置源，缺省假）放开回环 |
+| 开发开关 | `authn.sso.allow-private-egress`（仅主配置源，缺省假）放开回环；`authn.login.google` 与 `authn.login.github` 的 `allow-loopback`（缺省假）同样只放开回环地址 |
 
 **每次出站调用都留下一条记录。** `authn.sso.oidc` 与 `authn.sso.saml` 建客户端时把 `log.Transport` 套在 `observability.Transport` 之内：发现文档、密钥集、令牌与 SAML 元数据的每一次请求，成功与失败各写一条记录，经操作上下文里的 logger 写出，上下文没有 logger 时落在 `Default()` 的引导链上。记录记方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时记 `url.Error` 之下的底层成因；授权码、令牌、`state`、断言与正文都不进记录。
 
