@@ -146,6 +146,18 @@ var reviewModules = []string{
 	reviewGuardModuleName,
 }
 
+// reviewFeatureNames is the feature vocabulary the review controls declare and
+// the baseline build does not. gen and contracts/features.json describe the
+// baseline build, so the vocabulary case compares their exact contents with
+// this binary's declarations less these names, and holds the difference to this
+// list name for name: a review control that starts declaring a feature the list
+// does not name, or a listed name whose declaration is gone, fails the case
+// instead of being read as a baseline feature.
+var reviewFeatureNames = []string{
+	reviewSMSControlFeature,
+	reviewNotificationControlFeature,
+}
+
 // reviewSenderConfig is the review sender's configuration. It declares no item:
 // the sender needs no credential and no endpoint, and every message goes to the
 // process log.

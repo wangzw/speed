@@ -14,6 +14,11 @@ import (
 // theirs. See review.go.
 var reviewModules []string
 
+// reviewFeatureNames is empty in a default build: the review controls and the
+// features they declare are compiled only under the review build tag. See
+// review.go.
+var reviewFeatureNames []string
+
 // reviewSeedExtras seeds nothing in a default build: the impersonation fixture's
 // second factors are a review-only exception, and the baseline seed writes no
 // factor at all.

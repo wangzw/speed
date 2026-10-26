@@ -181,11 +181,28 @@ func reviewBinary(t *testing.T) string {
 // The token signing key is minted at the path the written file names.
 func reviewConfig(t *testing.T, backendAddress, opsAddress string) string {
 	t.Helper()
+	root := t.TempDir()
+	body := reviewConfigBody(t, root, backendAddress, opsAddress,
+		filepath.Join(root, "review.db"))
+	path := filepath.Join(root, "review.yaml")
+	if writeErr := os.WriteFile(path, []byte(body), 0o600); writeErr != nil {
+		t.Fatalf("writing the configuration: %v", writeErr)
+	}
+	return path
+}
+
+// reviewConfigBody returns the review configuration with the listener addresses
+// a case chooses, its token signing key and object store under root, and the
+// database locator the caller gives. It is the review assembly's own file —
+// server/review/sqlite.yaml — because every module the review tag adds reads its
+// configuration from it: a case that runs that assembly over a baseline template
+// starts modules whose required items have no value.
+func reviewConfigBody(t *testing.T, root, backendAddress, opsAddress, dsn string) string {
+	t.Helper()
 	review, err := os.ReadFile(filepath.Join("review", "sqlite.yaml"))
 	if err != nil {
 		t.Fatalf("reading the review configuration: %v", err)
 	}
-	root := t.TempDir()
 	key := filepath.Join(root, "token-signing-key.pem")
 	if err := ensureSigningKey(key); err != nil {
 		t.Fatalf("minting the case's token signing key: %v", err)
@@ -197,7 +214,7 @@ func reviewConfig(t *testing.T, backendAddress, opsAddress string) string {
 		// The needles carry the YAML key: the file's header comments name the
 		// same paths, and replacing the first occurrence would leave the
 		// configured locator pointing into the source tree.
-		{`dsn: "./var/review.db"`, fmt.Sprintf("dsn: %q", filepath.Join(root, "review.db"))},
+		{`dsn: "./var/review.db"`, fmt.Sprintf("dsn: %q", dsn)},
 		{`signing-key-file: var/token-signing-key.pem`, fmt.Sprintf("signing-key-file: %q", key)},
 		{`root: "./var/objects"`, fmt.Sprintf("root: %q", filepath.Join(root, "objects"))},
 	} {
@@ -206,11 +223,7 @@ func reviewConfig(t *testing.T, backendAddress, opsAddress string) string {
 		}
 		body = strings.Replace(body, edit[0], edit[1], 1)
 	}
-	path := filepath.Join(root, "review.yaml")
-	if writeErr := os.WriteFile(path, []byte(body), 0o600); writeErr != nil {
-		t.Fatalf("writing the configuration: %v", writeErr)
-	}
-	return path
+	return body
 }
 
 // seedReview runs the seed command of the review binary over the configuration

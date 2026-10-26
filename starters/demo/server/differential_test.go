@@ -45,9 +45,11 @@ import (
 
 const serveWithoutEnv = "DEMO_SERVE_WITHOUT"
 
-// serveWithout drops the named modules from baselineServe and reports the final
-// list. It runs before the command tree is built, so the serve command assembles
-// what the list names and nothing else.
+// serveWithout drops the named modules from the serve roster — the baseline
+// list and the review build's additions — and reports the final list. It runs
+// before the command tree is built, so the serve command assembles what the
+// lists name and nothing else. A review module leaves with the baseline module
+// whose capability it requires; the variant would not start otherwise.
 func serveWithout(list string) {
 	drop := map[string]bool{}
 	for _, name := range strings.Split(list, ",") {
@@ -55,13 +57,18 @@ func serveWithout(list string) {
 			drop[name] = true
 		}
 	}
-	kept := make([]string, 0, len(baselineServe))
-	for _, name := range baselineServe {
-		if !drop[name] {
-			kept = append(kept, name)
+	without := func(roster []string) []string {
+		kept := make([]string, 0, len(roster))
+		for _, name := range roster {
+			if !drop[name] {
+				kept = append(kept, name)
+			}
 		}
+		return kept
 	}
-	baselineServe = kept
+	baselineServe = without(baselineServe)
+	reviewModules = without(reviewModules)
+	kept := append(slices.Clone(baselineServe), reviewModules...)
 	fmt.Fprintln(os.Stderr, "serve-without: "+strings.Join(kept, ","))
 }
 
@@ -405,14 +412,20 @@ type baselineModule struct {
 	specEndpoints []string
 }
 
-// baselineDescriptors reads the modules baselineServe names, with their
-// dependency declarations and the endpoints their fragments describe. A name in
-// baselineServe that no module registers is a failure: the list and the
-// registry would otherwise drift apart silently.
+// baselineDescriptors reads the modules the reference run assembles — the
+// baseline list and, under the review tag, the review build's additions — with
+// their dependency declarations and the endpoints their fragments describe. The
+// review additions are in the graph so that a variant dropping the baseline
+// module a review module requires leaves that module out too; the reference run
+// is the whole roster. A listed name that no module registers is a failure: the
+// lists and the registry would otherwise drift apart silently.
 func baselineDescriptors(t *testing.T) map[string]*baselineModule {
 	t.Helper()
 	named := map[string]bool{}
 	for _, name := range baselineServe {
+		named[name] = true
+	}
+	for _, name := range reviewModules {
 		named[name] = true
 	}
 	modules := map[string]*baselineModule{}
@@ -434,6 +447,11 @@ func baselineDescriptors(t *testing.T) map[string]*baselineModule {
 	for _, name := range baselineServe {
 		if modules[name] == nil {
 			t.Errorf("baselineServe names %q, which no module registers", name)
+		}
+	}
+	for _, name := range reviewModules {
+		if modules[name] == nil {
+			t.Errorf("reviewModules names %q, which no module registers", name)
 		}
 	}
 	for layer, module := range preGateLayers {
@@ -562,8 +580,9 @@ var mayNotStartGroups = map[string]string{}
 // real module from a name that registered nothing. The check stays
 // fail-closed otherwise: every other vacuous removal fails.
 var mayLeaveRouteCountUnchanged = map[string]string{
-	"workspace.personal": "its route is mounted only when workspace.personal.enabled is on, " +
-		"and the case's configuration leaves the host switch off (the baseline default)",
+	"workspace.personal": "its route is mounted only when workspace.personal.enabled is on; " +
+		"the baseline template leaves the host switch off (the baseline default), which is the " +
+		"only configuration where this removal is vacuous",
 	"authn.humanverify": "its challenge route is mounted only when authn.humanverify.mode is pow, " +
 		"and the case's configuration leaves the gate off (the baseline default)",
 }
@@ -632,12 +651,18 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 	}
 }
 
-// buildGroups writes the variants: one per routing module with its dependents,
-// plus the group that leaves one endpoint with no routes at all.
+// buildGroups writes the variants: one per baseline routing module with its
+// dependents, plus the group that leaves one endpoint with no routes at all.
+// The seeds are the baseline list's modules only; the review build's additions
+// join a variant as dependents of the module they hang from, never as a group
+// of their own. They are constant across the reference run and the variants, so
+// leaving them in changes neither side of the comparison.
 func buildGroups(modules map[string]*baselineModule, classes map[string]moduleClass) []variantGroup {
-	names := make([]string, 0, len(modules))
-	for name := range modules {
-		names = append(names, name)
+	names := make([]string, 0, len(baselineServe))
+	for _, name := range baselineServe {
+		if modules[name] != nil {
+			names = append(names, name)
+		}
 	}
 	sort.Strings(names)
 
@@ -852,7 +877,7 @@ const splitEndpoints = `  endpoints:
 // of its own.
 func (topo topology) render(t *testing.T, ports []int) string {
 	t.Helper()
-	body := configBody(t, ports[:listenerCount], ":memory:")
+	body := differentialConfigBody(t, ports[:listenerCount])
 	// The address shield is left off in this case's configuration. It counts
 	// requests per client address in this process's memory, and the baseline
 	// sends more requests before the matrix than a variant does (the expectation

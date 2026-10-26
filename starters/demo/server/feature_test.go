@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -196,10 +197,61 @@ func declaredVocabulary() ([]vocabularyEntry, error) {
 	return entries, nil
 }
 
+// holdBaselineVocabulary holds one baseline artifact — the file gen wrote, or
+// the committed one — to this binary's declarations. The artifact describes the
+// baseline build, so under the review tag the only names this binary declares
+// beyond it must be exactly reviewFeatureNames; the entries the two share are
+// compared whole. In a default build the list is empty, so both comparisons are
+// the exact ones they always were: the artifact is neither more nor less than
+// the baseline build's vocabulary.
+func holdBaselineVocabulary(t *testing.T, artifact []vocabularyEntry) {
+	t.Helper()
+	declared, err := declaredVocabulary()
+	if err != nil {
+		t.Fatalf("reading this binary's declarations: %v", err)
+	}
+	reviewOnly := make(map[string]bool, len(reviewFeatureNames))
+	for _, name := range reviewFeatureNames {
+		if reviewOnly[name] {
+			t.Errorf("reviewFeatureNames names %q more than once", name)
+		}
+		reviewOnly[name] = true
+	}
+	inArtifact := make(map[string]bool, len(artifact))
+	for _, entry := range artifact {
+		inArtifact[entry.Name] = true
+	}
+	var added []string
+	baseline := make([]vocabularyEntry, 0, len(declared))
+	for _, entry := range declared {
+		if !inArtifact[entry.Name] {
+			added = append(added, entry.Name)
+		}
+		if reviewOnly[entry.Name] {
+			continue
+		}
+		baseline = append(baseline, entry)
+	}
+	wantAdded := slices.Clone(reviewFeatureNames)
+	slices.Sort(added)
+	slices.Sort(wantAdded)
+	if !slices.Equal(added, wantAdded) {
+		t.Errorf("this binary declares %v beyond the baseline artifact, want exactly reviewFeatureNames %v: "+
+			"a review control's feature must be named in reviewFeatureNames beside reviewModules, "+
+			"and every name there must be one the build declares", added, wantAdded)
+	}
+	if !reflect.DeepEqual(baseline, artifact) {
+		t.Errorf("the baseline vocabulary is out of step with this binary's baseline declarations:\n"+
+			"artifact: %+v\ndeclared: %+v", artifact, baseline)
+	}
+}
+
 // TestGenWritesTheFeatureVocabulary runs gen with --features and reads what it
-// wrote: the same declarations this binary carries, sorted by name. The
+// wrote: the same declarations the baseline build carries, sorted by name. The
 // committed artifact is a copy of this output, so a case that only compared the
-// two would not say the flag works; this one runs the command.
+// two would not say the flag works; this one runs the command. Under the review
+// tag the binary declares the review-only features as well;
+// holdBaselineVocabulary holds that difference to its own list.
 func TestGenWritesTheFeatureVocabulary(t *testing.T) {
 	config := writeConfig(t, freePorts(t, listenerCount))
 	out := filepath.Join(t.TempDir(), "features.json")
@@ -217,13 +269,7 @@ func TestGenWritesTheFeatureVocabulary(t *testing.T) {
 	if err = json.Unmarshal(raw, &written); err != nil {
 		t.Fatalf("the vocabulary gen wrote is not JSON: %v\n%s", err, raw)
 	}
-	declared, err := declaredVocabulary()
-	if err != nil {
-		t.Fatalf("reading this binary's declarations: %v", err)
-	}
-	if !reflect.DeepEqual(written.Features, declared) {
-		t.Errorf("gen wrote\n%+v\nwant\n%+v", written.Features, declared)
-	}
+	holdBaselineVocabulary(t, written.Features)
 }
 
 // TestCommittedFeatureVocabulary holds the committed vocabulary to this
@@ -244,15 +290,7 @@ func TestCommittedFeatureVocabulary(t *testing.T) {
 	if err = json.Unmarshal(raw, &committed); err != nil {
 		t.Fatalf("%s is not JSON: %v", committedVocabularyPath, err)
 	}
-	declared, err := declaredVocabulary()
-	if err != nil {
-		t.Fatalf("reading this binary's declarations: %v", err)
-	}
-	if !reflect.DeepEqual(committed.Features, declared) {
-		t.Errorf("the committed feature vocabulary is out of step with this binary's declarations:\n"+
-			"committed: %+v\ndeclared:  %+v\nregenerate it with the gen command's --features flag",
-			committed.Features, declared)
-	}
+	holdBaselineVocabulary(t, committed.Features)
 	// The ownership split is the reason the artifact carries an owner at all:
 	// the host's own module must be application-owned so the platform package
 	// does not register its name, and a platform module must be
