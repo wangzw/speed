@@ -104,9 +104,15 @@ remembering to run it.
   the one record name on the test domain and NXDOMAINs every other name, type
   and class; nothing is forwarded. A spec publishes the record the product
   renders through the stub's `setTXT`, which is the operator's own act at the
-  domain's DNS. Every other spec keeps the block's empty defaults — the system
-  resolver and the system roots — which is what a deployment keeps. This opt-in
-  is separate from `socialIdentityProvider`.
+  domain's DNS. The same opt-in adds a second tenant (`globex`) to the seed
+  beside the template's `acme`: the journey's last step switches the employee
+  from the organization they already belong to into the tenant the provider
+  serves, and the seed writes the operator's platform-administrator role into
+  both. The employee's memberships are still product writes through the
+  console's member page. Every other spec keeps the block's empty defaults —
+  the system resolver and the system roots, which is what a deployment keeps —
+  and the template's single seeded tenant. This opt-in is separate from
+  `socialIdentityProvider`.
 
 ## The sanctioned non-UI reads
 

@@ -26,6 +26,14 @@
  * enterprise provider minted, and the loopback switch the restricted egress
  * client needs to reach that provider. Without that input the template stands,
  * and a deployment keeps it as it is.
+ *
+ * The enterprise journey also switches organizations at its end, which needs a
+ * second organization the employee already belongs to. The template seeds one
+ * tenant (acme); the same opt-in registers a second one (globex) through the
+ * binary's seed command, so the seed writes the platform-administrator role
+ * into it like any other tenant and the operator can manage its provider and
+ * memberships. The employee's memberships themselves are product writes: the
+ * spec adds them through the console's member page, never through this file.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -396,6 +404,19 @@ export async function writeReviewConfig(
     dns-resolver: ${quoted(input.ssoProvider.dnsResolver)}
     oidc-ca-file: ${quoted(input.ssoProvider.rootCAFile)}`,
       'enterprise SSO seams',
+    )
+    // The journey's last step moves the employee from the organization they
+    // already belong to into the tenant the provider was registered in. That
+    // second organization is part of the deployment's start state: the seed
+    // registers it and writes the operator's platform-administrator role into
+    // it, exactly as it does for the template's own tenant. The employee's
+    // membership in either organization is written through the console by the
+    // spec, so nothing here manufactures a membership.
+    body = replaceOnce(
+      body,
+      '  tenants:\n    - acme',
+      '  tenants:\n    - acme\n    - globex',
+      'seed tenants',
     )
   }
   // The WebAuthn relying party is the browser's host. The review template

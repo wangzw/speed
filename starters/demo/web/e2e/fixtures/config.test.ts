@@ -50,6 +50,7 @@ describe('the review configuration', () => {
     expect(body).toContain(
       '    allow-private-egress: false\n    dns-resolver: ""\n    oidc-ca-file: ""',
     )
+    expect(body).toContain('  tenants:\n    - acme\n  members:')
   })
 
   it('points the enterprise SSO seams at the local fixtures on request', async () => {
@@ -61,5 +62,13 @@ describe('the review configuration', () => {
     expect(body).toContain('    dns-resolver: "127.0.0.1:5353"')
     expect(body).toContain(`    oidc-ca-file: ${JSON.stringify(caFile)}`)
     expect(body).not.toContain('    allow-private-egress: false')
+  })
+
+  it("registers the enterprise journey's second organization on request", async () => {
+    const body = await rendered({
+      ssoProvider: { dnsResolver: '127.0.0.1:5353', rootCAFile: '/tmp/ca.pem' },
+    })
+    expect(body).toContain('  tenants:\n    - acme\n    - globex\n  members:')
+    expect(body.match(/^    - globex$/gm)).toHaveLength(1)
   })
 })
