@@ -8,8 +8,8 @@
  * ownership, and the invitation capability refuses a management write an
  * account with an unproved email makes. The spec therefore reaches the
  * journey's precondition the way a person does: the standing verification
- * notice, the code from the review process log (the one non-UI read the tier
- * allows), and the verify action. The operator then enters the console, opens
+ * notice, the code from the review process log (the one non-UI read this spec
+ * makes), and the verify action. The operator then enters the console, opens
  * the invitation-and-members page, selects the seeded tenant and finds the
  * tenant's existing member.
  *

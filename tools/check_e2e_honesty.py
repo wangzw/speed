@@ -21,9 +21,12 @@ only. Six things can quietly falsify that claim, and this gate holds each:
      any other CDP domain is a finding.
   4. Layers. The harness may assemble its environment (build, seed, probe) in
      fixtures/, but a spec or a helper may not reach around the product: it may
-     not spawn processes, write files, open a database client, or interpret the
-     process log. The only log reader a spec or helper may import is
-     `waitForVerificationCode`; only fixtures/log.ts parses logfmt lines.
+     not spawn processes, write files, open a database client, or read the
+     process log beyond the sanctioned reads -- a verification code, the review
+     SMS carrier's accepted-message line, and the delivery pipeline's
+     external-send record. Only fixtures/log.ts parses logfmt lines; a spec or
+     helper may import only `waitForVerificationCode` and asks the server
+     fixture for the other two.
   5. Artifacts. Every Playwright artifact path -- outputDir, the HTML
      reporter's outputFolder, any outputFile -- must resolve under /tmp (or
      through the harness's own /tmp ARTIFACT_ROOT), so a run leaves nothing in
@@ -225,7 +228,9 @@ FS_WRITE_FUNCTIONS = {
     "writeSync",
 }
 
-# The one log reader a spec or helper may import.
+# The one log reader a spec or helper may import directly. The review carrier's
+# accepted-message and the pipeline's external-send line are read through the
+# server fixture, so they never appear on this import surface.
 ALLOWED_LOG_EXPORTS = {"waitForVerificationCode"}
 LOG_READ = re.compile(r"\.\s*log\s*\.\s*(?:text|lines)\b")
 LOG_WAIT = re.compile(r"\.\s*log\s*\.\s*waitFor\s*\(")
@@ -768,7 +773,7 @@ def check_restricted_layer(relative: str, text: str) -> list[str]:
                     findings.append(
                         f"{relative}:{line}: layer: a spec or helper may not "
                         f"import {', '.join(forbidden)} from the log fixture; "
-                        "only `waitForVerificationCode` interprets log lines"
+                        "only `waitForVerificationCode` is on the import surface"
                     )
 
     for match in SIDE_EFFECT_IMPORT.finditer(stripped):
@@ -803,7 +808,8 @@ def check_restricted_layer(relative: str, text: str) -> list[str]:
         for match in pattern.finditer(stripped):
             findings.append(
                 f"{relative}:{line_of(stripped, match.start())}: layer: a spec "
-                f"or helper {label}; ask `waitForVerificationCode` instead"
+                f"or helper {label}; ask `waitForVerificationCode` for a code, or "
+                "the server fixture for a carrier or outbound record"
             )
 
     for match in PARSE_LOGFMT.finditer(stripped):

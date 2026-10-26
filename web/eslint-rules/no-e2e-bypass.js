@@ -21,8 +21,12 @@
  *     that mutates the page hides what the product actually renders.
  *   - Layer. A spec or helper may not reach around the product: no process
  *     spawning, no filesystem writes, no database client, and no reading of
- *     the raw process log. The harness assembles its environment in fixtures/,
- *     so those pass `{ allowAssembly: true }`.
+ *     the raw process log beyond the sanctioned reads. Those reads are a
+ *     verification code (the one export a spec or helper may import from the
+ *     log fixture) and, through the server fixture, the review SMS carrier's
+ *     accepted-message line and the delivery pipeline's external-send record.
+ *     The harness assembles its environment in fixtures/, so those pass
+ *     `{ allowAssembly: true }`.
  *
  * Detection is binding-based, not name-equality-based: `page`, `context` and
  * `request` are seeded from the test callback's destructured parameters, and
@@ -137,7 +141,7 @@ const FS_WRITE_FUNCTIONS = new Set([
   'writeSync',
 ])
 
-/** The only log export a spec or helper may import. */
+/** The only log export a spec or helper may import directly. */
 const ALLOWED_LOG_EXPORTS = new Set(['waitForVerificationCode'])
 
 /** The environment objects whose fetch member is the global fetch. */
@@ -302,7 +306,7 @@ export const noE2eBypassRule = {
       assemblyOnly:
         'A spec or helper may not use {{what}}: the harness assembles its environment in fixtures/, and the journey itself must go through the rendered UI.',
       logInterpretation:
-        'A spec or helper may not read raw process-log text; only fixtures/log.ts interprets log lines, through waitForVerificationCode.',
+        'A spec or helper may not read raw process-log text: import waitForVerificationCode for a code, or ask the server fixture for the review carrier message or the outbound delivery record.',
     },
     schema: [
       {

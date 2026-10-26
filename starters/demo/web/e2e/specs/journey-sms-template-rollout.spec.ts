@@ -21,7 +21,8 @@
  * reads are not UI, and each is the harness's own:
  *
  *   - The email and SMS verification codes come from the process log through
- *     `waitForVerificationCode`, the one log read the honesty rules allow.
+ *     `waitForVerificationCode`, one of the three log reads the honesty rules
+ *     allow.
  *   - The messages the review SMS carrier accepted and the delivery pipeline's
  *     external-send records come from their process-log lines through the
  *     fixture's `waitForCarrierMessage` and `waitForOutboundRecord`. The carrier

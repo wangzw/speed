@@ -19,9 +19,9 @@
  * into the running database, and no test calls the API.
  *
  * The one thing the browser cannot show is the mailbox: the review mail
- * carrier reaches no relay, and the process log is not a journey's read (only
- * the verification code is). The note "without an email" is therefore
- * asserted as far as the product renders it -- the matrix's effective channel
+ * carrier reaches no relay, and the process log is not a journey's read (this
+ * journey reads only the verification code). The note "without an email" is
+ * therefore asserted as far as the product renders it -- the matrix's effective channel
  * set is the in-app channel alone after the write, and the next notice still
  * arrives in the inbox -- and no further. REQ-notifications-057 is left out
  * of `@covers` for that reason: a delivery that ignored the stored preference

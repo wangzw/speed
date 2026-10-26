@@ -96,20 +96,30 @@ remembering to run it.
 
 ## The sanctioned non-UI reads
 
-The review assembly's carriers reach no vendor or relay. The mail and SMS
-senders write each message's verification code to the process log as logfmt, so
-that is where a person running the review reads it. `fixtures/log.ts` is the
-**only** module allowed to interpret those lines; it finds the latest code for a
-given kind (`sms`/`mail`) and destination address. The field is
-`verification_code`, never `code`: the gateway treats `code` as a sensitive key
-name and the logging layer masks its value.
+The review assembly's carriers reach no vendor or relay, so the process log is
+the only place a person running the review reads a code or sees a message leave.
+The tier allows exactly three reads from it:
 
-Two more reads are sanctioned for the SMS template journey, both read from the
-process log and served by the server fixture. The review SMS carrier writes one
-line per message it accepts, and that line — destination, template and language
-— is the evidence a browser tier can read that the message left the process. The
-delivery pipeline writes one external-send record per message that leaves, and
-`waitForCarrierMessage` and `waitForOutboundRecord` are the fixture methods.
+- **A verification code.** The mail and SMS senders write each message's code to
+  the process log as logfmt. `fixtures/log.ts` is the **only** module allowed to
+  interpret those lines; it finds the latest code for a given kind
+  (`sms`/`mail`) and destination address. The field is `verification_code`,
+  never `code`: the gateway treats `code` as a sensitive key name and the
+  logging layer masks its value.
+- **The review SMS carrier's accepted-message line**, for the SMS template
+  rollout journey only. The carrier writes one line per message it accepts, and
+  that line — destination, template and language — is the evidence a browser
+  tier can read that the message left the process. `waitForCarrierMessage` and
+  `countCarrierMessages` are the server fixture's reads.
+- **The delivery pipeline's external-send record line**, for the same journey
+  only. The pipeline writes one record per message that leaves, and
+  `waitForOutboundRecord` and `countOutboundRecords` are the server fixture's
+  reads.
+
+A spec or helper may import only `waitForVerificationCode` from `fixtures/log`;
+the carrier and outbound reads are server-fixture methods because
+`fixtures/log.ts` is the only module that parses logfmt. Every other test-side
+read of the process log is forbidden.
 
 **This tier does not read the delivery ledger.** `notification_sends` is a table
 the design keeps off the product's interface, and the rollout spec does not claim
@@ -175,13 +185,14 @@ gates cannot decide for a spec.
   `e2e/fixtures/**` (and the global setup) may spawn processes, write files,
   open socket or database clients, or interpret log lines; the eslint rule
   runs those files with `{ allowAssembly: true }` and the honesty gate enforces
-  the same split by directory. The one log reader a spec or helper may import
-  is `waitForVerificationCode`; `fixtures/log.ts` is the only module that
-  parses logfmt lines. A journey that must observe a message a review carrier
-  accepted, or an external-send record, asks the server fixture instead:
-  `waitForCarrierMessage` and `waitForOutboundRecord` are the line reads. No spec
-  or fixture method reads the delivery ledger; the one case that asserts on it is
-  the review-tagged Go case named above.
+  the same split by directory. The allowed log reads are the three named above:
+  a spec or helper imports only `waitForVerificationCode`, and asks the server
+  fixture for a review carrier's accepted message or the delivery pipeline's
+  external-send record (`waitForCarrierMessage`, `waitForOutboundRecord` and
+  their count forms). `fixtures/log.ts` is the only module that parses logfmt
+  lines, and every other test-side log read is forbidden. No spec or fixture
+  method reads the delivery ledger; the one case that asserts on it is the
+  review-tagged Go case named above.
 - **The backend is real**: the built review binary, a fresh sqlite file, real
   HTTP. Fixtures may assemble the environment (builds, temporary directories,
   random ports, seeding the operator, probes); they may not fake a response.

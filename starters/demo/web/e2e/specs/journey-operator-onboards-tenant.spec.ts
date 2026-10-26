@@ -8,7 +8,7 @@
  * authorization surface and the invitation surface -- refuses an account whose
  * email address is unproved. The spec therefore reaches the journey's
  * precondition the way a person does: the standing verification notice, the
- * code from the review process log (the one non-UI read the tier allows), and
+ * code from the review process log (the one non-UI read this spec makes), and
  * the verify action.
  *
  * A NEW TENANT GETS NO ROLE FOR ITS CREATOR. The seed binds the administrator's

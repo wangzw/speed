@@ -14,7 +14,7 @@
  * reads "Default" and the current value is still the declaration. The operator
  * returns to the tenant area, follows the notice's verify entry (which sends one
  * code on arrival), reads that code out of the review process log -- the one
- * non-UI read the tier allows -- and proves the address. The identifiers list
+ * non-UI read this spec makes -- and proves the address. The identifiers list
  * flips the same row to verified and the notice goes.
  *
  * Back on the settings page, the same item and the same value are written

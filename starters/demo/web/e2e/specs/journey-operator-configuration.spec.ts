@@ -5,7 +5,7 @@
  *
  * The platform administrator's email is proved first (the account page's
  * verification section, whose code comes from the review process log -- the
- * one non-UI read the tier allows), because a settings write from an
+ * one non-UI read this spec makes), because a settings write from an
  * unproved account is refused. The operator then enters the console, opens
  * the settings page, narrows it to the setting's namespace and finds the
  * password-signup switch: current value "open", state "Overridden" (the

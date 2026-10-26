@@ -536,7 +536,7 @@ test('impersonation-for-support: the operator acts as a member and the record an
     // which FlowStep renders as the input's label; it is protocol data, not
     // interface copy, so there is no locale bundle key behind it and the
     // literal is the field's own name. The review carrier writes the code to
-    // the process log, the tier's one non-UI read.
+    // the process log, this spec's one non-UI read.
     const codeField = dialog.getByRole('textbox', {
       name: 'code',
       exact: true,

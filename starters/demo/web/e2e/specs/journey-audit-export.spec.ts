@@ -7,7 +7,7 @@
  * and a settings write from an unproved account is refused, so the spec first
  * reaches the journey's precondition the way a person does: the standing
  * notice's verify entry, the code from the review process log (the one non-UI
- * read the tier allows), and the verify action.
+ * read this spec makes), and the verify action.
  *
  * PAGE SIZE. The spec must know how many saves exceed one audit page, and the
  * size belongs to the product, not to the test. The audit page asks its list

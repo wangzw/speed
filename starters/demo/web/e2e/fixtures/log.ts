@@ -1,16 +1,17 @@
 /**
- * The review process's standard output, and the two things the tests read out
- * of it: a verification code, and the line that records a message handed to
- * the review SMS carrier.
+ * The review process's standard output, and the three things the tests read out
+ * of it: a verification code, the line that records a message accepted by the
+ * review SMS carrier, and the line the delivery pipeline writes for an external
+ * send.
  *
  * The review assembly writes its logfmt records to standard output (pkg/log's
  * bootstrap chain). These are the test-side reads the honesty rules allow: the
  * carriers reach no vendor or relay, so the process log is the only place a
  * person running the review would see a code or a notice leave. Nothing else in
  * this directory may interpret log lines; the server fixture hands its captured
- * lines to `ProcessLog`, and the helpers ask this module for a code by kind and
- * destination address, or for a carrier message by destination, template and
- * language.
+ * lines to `ProcessLog`, and the callers ask this module for a code by kind and
+ * destination address, a carrier message by destination, template and language,
+ * or an outbound record by channel, type and outcome.
  *
  * A verification code is read from the `verification_code` field, never from
  * `code`: the gateway registers `code` as a sensitive key name and the logging
