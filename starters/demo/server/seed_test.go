@@ -714,6 +714,30 @@ func TestSeedRefusesTheSystemTenantInTheTenantList(t *testing.T) {
 	}
 }
 
+// TestSeedRefusesAPersonalPrefixedTenantInTheTenantList holds the personal
+// domain apart from the configured business tenants: personal tenants come from
+// account creation, and a configured one would be a second, unmanaged copy.
+func TestSeedRefusesAPersonalPrefixedTenantInTheTenantList(t *testing.T) {
+	t.Parallel()
+	in := seedInput{
+		Accounts: []seedAccount{{
+			Identifier: "operator", Password: "operator-dev-secret", PlatformAdmin: true,
+		}},
+		Tenants: []seedTenantEntry{{
+			Name: personalIDPrefix + "opaque", Admins: []string{"operator"},
+		}},
+	}
+	err := checkTenants(in)
+	if err == nil {
+		t.Fatal("checkTenants accepted a personal-prefixed tenant in seed.tenants")
+	}
+	for _, want := range []string{personalIDPrefix, "seed.tenants", "account creation"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal = %q, want it to name %q", err, want)
+		}
+	}
+}
+
 // TestSeedWritesAMissingAdministratorsMembershipOnEveryRun holds the
 // reconciliation of seed.tenants[].admins: unlike seed.members, a missing
 // administrator membership is a gap the seed fills, not an operator's removal

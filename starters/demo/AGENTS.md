@@ -447,7 +447,9 @@ domain) plus `tenant-admin` in the system domain; a business tenant never holds
 `name` and `admins`; every named administrator gets a membership and the
 tenant-admin role in that tenant's domain, and the first entry is written first.
 The system tenant must not be listed under `seed.tenants`: the command
-registers it itself and refuses an entry naming it. A member entry names a
+registers it itself and refuses an entry naming it. A `personal-` prefixed name
+is refused too: the list names the deployment's business tenants, and personal
+tenants are built from account creation. A member entry names a
 tenant under `seed.tenants` and an account under `seed.accounts`; it is an
 active membership unless it carries `suspended: true`. The two membership rules
 differ: a `seed.members` row is written only while the run creates its account,
@@ -466,7 +468,10 @@ surface, so each administration role keeps everything the process declares while
 the management surface stays unable to change it. The command names the personal
 tenant module too, so its account-creation hook builds every seeded account's
 personal tenant at seed time when `workspace.personal.enabled` is on; with the
-switch off the hook builds nothing. The tenant-admin role the seed writes in a
+switch off the hook builds nothing. The run has no HTTP entry point: the
+personal module skips its backfill route and the audit journal skips its
+request-level layer, while the account lifecycle hooks and the statement-level
+audit rows keep working. Routes belong to the serve command. The tenant-admin role the seed writes in a
 business tenant is builtin; the personal tenant's tenant-admin is not, because
 the host adds its grants with the seeding surface and revokes the ones outside
 the allowlist with the manager.

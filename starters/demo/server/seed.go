@@ -278,6 +278,11 @@ func checkTenants(in seedInput) error {
 			return fmt.Errorf("seed: the tenant %q is the system tenant, which the command registers "+
 				"itself and must not be listed under seed.%s", name, tenantsItem)
 		}
+		if strings.HasPrefix(name, personalIDPrefix) {
+			return fmt.Errorf("seed: the tenant %q carries the personal prefix; seed.%s lists the "+
+				"deployment's business tenants, and personal tenants are built from account creation",
+				name, tenantsItem)
+		}
 		if seenTenants[name] {
 			return fmt.Errorf("seed: the tenant %q is declared twice under seed.%s", name, tenantsItem)
 		}

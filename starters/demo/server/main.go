@@ -536,11 +536,11 @@ func addStack(root *config.Command, s stack) {
 	// worker runs the background capabilities and no HTTP entry point. It names
 	// the modules that need neither a router nor a gateway to start: the roster,
 	// settings, the job queue and its scheduler, the outbox relay, the stack's
-	// two backends and the telemetry providers. A module whose routes or request
-	// lists are read wherever it runs — the journal, the inbox, the outbox's
-	// consumers behind a router — belongs to serve, which stands the entry point
-	// up; a worker on this process-wide configuration would fail their
-	// resolution for want of one.
+	// two backends and the telemetry providers. A module whose whole purpose is
+	// its routes — the inbox, the outbox's consumers behind a router — belongs to
+	// serve, which stands the entry point up; the audit journal is not among them
+	// because it skips its request-level layer when the run has no router, and a
+	// worker does not need that layer.
 	worker := node.Sub(workerCommand)
 	worker.Include(baselineWorker...)
 	worker.Include(s.kv, s.event, log.ModuleName, otel.ModuleName, s.exporter)
@@ -594,14 +594,14 @@ func addStack(root *config.Command, s stack) {
 	// backfill. The hook honours the feature switch, so a deployment with it off
 	// builds no personal tenant here either.
 	//
-	// The journal's read surface names an entry point, so the entry-point module
-	// comes with it. It binds no address here: this command drives to Start, and
-	// only Serve binds. The journal writes the create and delete rows the
-	// personal module records, and those rows are part of seeding an account.
+	// Neither module needs an HTTP entry point here: the journal skips its
+	// request-level layer and the personal module skips its backfill route when
+	// the run has no router, while the account lifecycle hooks keep working.
+	// Routes belong to the serve command.
 	seed := node.Sub(seedCommand)
 	seed.Include(seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
 		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName,
-		tenancyModuleName, speedhttp.ModuleName, auditjournal.ModuleName, personalModuleName)
+		tenancyModuleName, auditjournal.ModuleName, personalModuleName)
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes
