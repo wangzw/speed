@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import axe from 'axe-core'
+import { useTheme } from '@mui/material/styles'
 import { page } from 'vitest/browser'
 import { SettingsPage } from './SettingsPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -162,6 +163,88 @@ const REMOVE_LABEL = enUS.settings.removeAria.replace('{{key}}', REMOVE_KEY)
  * provide, so this tier settles it for the one row shape that offers the
  * control.
  */
+/**
+ * The theme's container surface painted onto a reference element, so the
+ * cases compare against the role the page is supposed to use rather than
+ * against values written into the test.
+ */
+function ContainerSurfaceProbe() {
+  const theme = useTheme()
+  const role = theme.surface.container
+  return (
+    <div
+      data-testid="container-surface-probe"
+      style={{
+        backgroundColor: role.fill,
+        borderColor: role.borderColor,
+        borderStyle: 'solid',
+        borderWidth: role.borderWidth,
+        borderRadius: theme.shape.borderRadius,
+      }}
+    />
+  )
+}
+
+/**
+ * The settings page's two blocks -- the namespace navigation and the
+ * settings register -- are content sections: each renders through
+ * `SectionCard` as a `<section>` painted with the theme's container role.
+ * The register is a flush table section, so the table reaches the
+ * section's rim. A hand-written outlined `Card` paints the same colors,
+ * so only the section element and the flush geometry distinguish the two.
+ */
+describe('SettingsPage content surfaces in Chromium', () => {
+  it('renders both blocks on the container surface, the register flush', async () => {
+    await page.viewport(1200, 900)
+    const operations = createConsoleOperations(
+      makeConsoleBackend({ listSettings: () => Promise.resolve(SETTINGS) }),
+    )
+    renderWithProviders(
+      <>
+        <ContainerSurfaceProbe />
+        <SettingsPage />
+      </>,
+      { operations, language: 'en-US' },
+    )
+
+    const key = await screen.findByText(SETTINGS[0].key)
+    const table = key.closest('table')
+    expect(table).not.toBeNull()
+    const register = table?.closest('section')
+    expect(register, 'the settings register is a SectionCard section').not.toBeNull()
+
+    const navigation = screen.getByRole('navigation', {
+      name: enUS.settings.nav.label,
+    })
+    const navigationSection = navigation.querySelector('section')
+    expect(
+      navigationSection,
+      'the namespace navigation is a SectionCard section',
+    ).not.toBeNull()
+
+    const expected = getComputedStyle(
+      screen.getByTestId('container-surface-probe'),
+    )
+    for (const block of [navigationSection, register] as Element[]) {
+      const paint = getComputedStyle(block)
+      expect(paint.backgroundColor).toBe(expected.backgroundColor)
+      expect(paint.borderTopWidth).toBe(expected.borderTopWidth)
+      expect(paint.borderTopStyle).toBe(expected.borderTopStyle)
+      expect(paint.borderTopColor).toBe(expected.borderTopColor)
+      expect(paint.borderTopLeftRadius).toBe(expected.borderTopLeftRadius)
+    }
+
+    // Flush content: outside the 1px rim, the table touches every edge of
+    // the section, so the surface clips its corners rather than the table
+    // floating on a padded card.
+    const tableRect = table!.getBoundingClientRect()
+    const registerRect = register!.getBoundingClientRect()
+    expect(Math.abs(tableRect.left - registerRect.left)).toBeLessThanOrEqual(1.5)
+    expect(Math.abs(tableRect.right - registerRect.right)).toBeLessThanOrEqual(1.5)
+    expect(Math.abs(tableRect.top - registerRect.top)).toBeLessThanOrEqual(1.5)
+  })
+})
+
 describe('SettingsPage row Remove Label in Name in Chromium', () => {
   it('keeps the visible Remove text inside the accessible name', async () => {
     await page.viewport(1200, 900)

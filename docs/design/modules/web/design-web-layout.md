@@ -205,7 +205,7 @@ graph TD
 | 侧栏的分组与二级嵌套 | 已实现 | `web/packages/layout-kit/src/components/AppShell.tsx` `AppShellNavGroup`、`AppShellNavItem.children`；`web/packages/console-ui/src/nav-groups.tsx` `consoleNavGroups` |
 | 断点标度等于所装 MUI 主题默认 | 已实现 | `web/packages/tokens/src/breakpoints.ts` `breakpointTokens` |
 | 内容区的宽度（页型占满内容区） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout` |
-| 控制台内容块落在 SectionCard 容器表面 | 未实现 | — |
+| 控制台内容块落在 SectionCard 容器表面 | 已实现 | `web/packages/ui-kit/src/components/SectionCard.tsx` `SectionCard`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
 | 列表页骨架 | 已实现 | `web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage` |
 | 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
 | 设置页骨架（二级导航与表） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |

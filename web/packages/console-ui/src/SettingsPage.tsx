@@ -86,7 +86,6 @@ import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
-import Card from '@mui/material/Card'
 import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -94,11 +93,12 @@ import {
   DataTable,
   ListSkeleton,
   PageHeader,
+  SectionCard,
   primaryColumnMaxWidthSx,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import type { DataTableColumn } from '@speed/ui-kit'
-import { ConsoleAsyncSection } from './internal/async-section.js'
+import { ConsoleAsyncSection, isForbidden } from './internal/async-section.js'
 import { PendingConfirmDialog, usePendingConfirm } from './internal/confirm.js'
 import { useConsoleUiErrorText } from './internal/error-text.js'
 import { RefreshButton } from '@speed/ui-kit'
@@ -240,12 +240,24 @@ export function SettingsPage() {
 
   const items = settings.data
   const pending = settings.isPending && items === undefined
-
+  // The register branch of the async section: the table and the save bar
+  // that writes it render only for a settled, non-empty, non-refused read.
+  // A refusal replaces the content, so a cached payload left over from the
+  // previous read must not leave the bar standing beside the placeholder.
+  const registerItems =
+    items !== undefined && items.length > 0 && !isForbidden(settings.error)
+      ? items
+      : undefined
   const changedItems = (settled: readonly ConsoleSetting[]): readonly ConsoleSetting[] =>
     settled.filter(
       (setting) =>
         drafts[setting.key] !== undefined && drafts[setting.key] !== setting.value,
     )
+  // The rows a batch save would write. The save bar and its count live
+  // beside the register rather than inside the clipping table section, so
+  // both read the settled payload through one derivation.
+  const changedRows =
+    registerItems === undefined ? [] : changedItems(registerItems)
 
   const save = (settled: readonly ConsoleSetting[]) => {
     const changed = changedItems(settled)
@@ -505,7 +517,11 @@ export function SettingsPage() {
             flexShrink: 0,
           }}
         >
-          <Card variant="outlined">
+          {/* The secondary navigation is one of the page's content blocks:
+              it takes the same SectionCard container surface as the
+              register beside it, with the list running flush so its own
+              row padding stays the only inset. */}
+          <SectionCard flushContent>
             <List dense>
               <ListItem disablePadding>
                 <ListItemButton
@@ -528,53 +544,50 @@ export function SettingsPage() {
                 </ListItem>
               ))}
             </List>
-          </Card>
+          </SectionCard>
         </Box>
 
-        {/* The settings fill the content area beside the namespace nav (a
-            register takes the width it is given). The card keeps its
-            surface but not Card's overflow clipping: the save bar below is
-            sticky, and a clipping ancestor would pin it to the card
-            instead of the viewport. */}
-        <Card
-          variant="outlined"
-          sx={{ flex: 1, minWidth: 0, overflow: 'visible', p: 3 }}
-        >
-          <ConsoleAsyncSection
-            pending={pending}
-            payload={items}
-            error={settings.error}
-            refreshing={settings.isFetching}
-            empty={items !== undefined && items.length === 0}
-            headingLevel="h2"
-            loading={
-              <ListSkeleton
-                label={t('settings.loading')}
-                rows={[
-                  <Skeleton key="a" variant="text" width="58%" />,
-                  <Skeleton key="b" variant="text" width="44%" />,
-                ]}
-              />
-            }
-            errorState={{
-              title: t('settings.error.title'),
-              description: t('settings.error.description'),
-              retryLabel: t('settings.retry'),
-              onRetry: () => void settings.refetch(),
-            }}
-            emptyState={{
-              title: t('settings.empty.title'),
-              description: t('settings.empty.description'),
-            }}
-          >
-            {(settled) => {
-              const changed = changedItems(settled)
-              const pageRows = settled.slice(
-                page * rowsPerPage,
-                page * rowsPerPage + rowsPerPage,
-              )
-              return (
-                <Box>
+        {/* The register fills the content area beside the namespace nav (a
+            register takes the width it is given). Its table section is
+            flush, so the section's own clipping rounds the table's
+            corners; the sticky save bar therefore sits under the section
+            rather than inside it, where the clipping would pin it to the
+            card instead of the viewport. */}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <SectionCard flushContent>
+            <ConsoleAsyncSection
+              pending={pending}
+              payload={items}
+              error={settings.error}
+              refreshing={settings.isFetching}
+              empty={items !== undefined && items.length === 0}
+              headingLevel="h2"
+              loading={
+                <ListSkeleton
+                  label={t('settings.loading')}
+                  rows={[
+                    <Skeleton key="a" variant="text" width="58%" />,
+                    <Skeleton key="b" variant="text" width="44%" />,
+                  ]}
+                />
+              }
+              errorState={{
+                title: t('settings.error.title'),
+                description: t('settings.error.description'),
+                retryLabel: t('settings.retry'),
+                onRetry: () => void settings.refetch(),
+              }}
+              emptyState={{
+                title: t('settings.empty.title'),
+                description: t('settings.empty.description'),
+              }}
+            >
+              {(settled) => {
+                const pageRows = settled.slice(
+                  page * rowsPerPage,
+                  page * rowsPerPage + rowsPerPage,
+                )
+                return (
                   <DataTable
                     rows={pageRows}
                     columns={columns}
@@ -602,57 +615,62 @@ export function SettingsPage() {
                       },
                     }}
                   />
+                )
+              }}
+            </ConsoleAsyncSection>
+          </SectionCard>
 
-                  {/* The sticky save bar: one write per changed item. It
-                      paints the card's own surface rather than an opaque
-                      palette color, so a glass theme keeps the bar on the
-                      same material as the table; the backdrop filter keeps
-                      the rows that scroll underneath from showing through
-                      crisply. Outside a glass theme the container fill is
-                      the opaque paper color, unchanged. */}
-                  <Box
-                    component="div"
-                    sx={{
-                      position: 'sticky',
-                      bottom: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      gap: 2,
-                      paddingY: 2,
-                      borderTop: 1,
-                      borderColor: 'divider',
-                      backgroundColor: (theme) => theme.surface.container.fill,
-                      backdropFilter: (theme) =>
-                        theme.surface.container.backdropFilter ?? 'none',
-                      WebkitBackdropFilter: (theme) =>
-                        theme.surface.container.backdropFilter ?? 'none',
-                    }}
-                  >
-                    {changed.length > 0 && (
-                      <Typography variant="body2" color="text.secondary">
-                        {t('settings.saveBar.pending', { count: changed.length })}
-                      </Typography>
-                    )}
-                    <Button
-                      type="button"
-                      variant="contained"
-                      loading={feedback.pending}
-                      disabled={changed.length === 0 || feedback.pending}
-                      onClick={() => save(settled)}
-                    >
-                      {t('settings.saveBar.save')}
-                    </Button>
-                  </Box>
+          {registerItems !== undefined && (
+            <>
+              {/* The sticky save bar: one write per changed item. It
+                  paints the content block's own surface rather than an
+                  opaque palette color, so a glass theme keeps the bar on
+                  the same material as the table; the backdrop filter keeps
+                  the rows that scroll underneath from showing through
+                  crisply. Outside a glass theme the container fill is the
+                  opaque paper color, unchanged. */}
+              <Box
+                component="div"
+                sx={{
+                  position: 'sticky',
+                  bottom: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  gap: 2,
+                  paddingY: 2,
+                  paddingX: 3,
+                  borderTop: 1,
+                  borderColor: 'divider',
+                  backgroundColor: (theme) => theme.surface.container.fill,
+                  backdropFilter: (theme) =>
+                    theme.surface.container.backdropFilter ?? 'none',
+                  WebkitBackdropFilter: (theme) =>
+                    theme.surface.container.backdropFilter ?? 'none',
+                }}
+              >
+                {changedRows.length > 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    {t('settings.saveBar.pending', { count: changedRows.length })}
+                  </Typography>
+                )}
+                <Button
+                  type="button"
+                  variant="contained"
+                  loading={feedback.pending}
+                  disabled={changedRows.length === 0 || feedback.pending}
+                  onClick={() => save(registerItems)}
+                >
+                  {t('settings.saveBar.save')}
+                </Button>
+              </Box>
 
-                  <Box ref={feedbackRef}>
-                    <WriteFeedbackRegion outcome={feedback.outcome} />
-                  </Box>
-                </Box>
-              )
-            }}
-          </ConsoleAsyncSection>
-        </Card>
+              <Box ref={feedbackRef}>
+                <WriteFeedbackRegion outcome={feedback.outcome} />
+              </Box>
+            </>
+          )}
+        </Box>
       </Box>
 
       <PendingConfirmDialog state={confirm} cancelLabel={t('common.cancel')} />
