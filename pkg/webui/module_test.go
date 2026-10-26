@@ -174,6 +174,52 @@ func TestAMissingEndpointFailsTheStartup(t *testing.T) {
 	}
 }
 
+// TestAnEndpointThatDoesNotClaimTheRootFailsTheStartup holds the assembly
+// premise: this module registers a catch-all, whose literal leading path is
+// empty and which only the endpoint claiming "/" can answer. An endpoint that
+// claims another prefix leaves that route unreachable, so the startup ends with
+// the entry point's ErrUnclaimedRoute instead of serving a frontend no request
+// can reach.
+func TestAnEndpointThatDoesNotClaimTheRootFailsTheStartup(t *testing.T) {
+	document, err := json.Marshal(map[string]any{
+		"http": map[string]any{
+			"listeners": map[string]any{
+				endpointName: map[string]any{"address": "127.0.0.1:0"},
+			},
+			"endpoints": map[string]any{
+				endpointName: map[string]any{
+					"listener": endpointName,
+					// Claiming a non-root prefix means this endpoint is not the
+					// listener's fallback, which is what a catch-all needs.
+					"prefixes": []string{"/shell"},
+				},
+			},
+		},
+		"webui": map[string]any{"endpoint": endpointName},
+	})
+	if err != nil {
+		t.Fatalf("marshalling the config document: %v", err)
+	}
+
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Supply(loadDocument(t, document), config.ModuleName)
+	reg.Register(speedhttp.Module())
+	reg.Register(New(bundle()))
+
+	ctx, cancel := context.WithTimeout(t.Context(), waitLimit)
+	defer cancel()
+	err = reg.Run(ctx)
+	if !errors.Is(err, speedhttp.ErrUnclaimedRoute) {
+		t.Fatalf("the startup answered %v, want it to wrap http.ErrUnclaimedRoute", err)
+	}
+	for _, want := range []string{wildcardRoute, endpointName} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the startup error %q does not name %q", err, want)
+		}
+	}
+}
+
 // TestNewRefusesANilFilesystem holds the constructor premise: a nil bundle is a
 // startup failure, reported before anything is read.
 func TestNewRefusesANilFilesystem(t *testing.T) {
