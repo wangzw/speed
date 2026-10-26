@@ -236,6 +236,37 @@ func TestTheProvisionerMarksTheTenantAdminRoleBuiltin(t *testing.T) {
 	}
 }
 
+// TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen holds the other half of
+// the builtin distinction: the host identifies a personal domain by the
+// identifier's prefix in every seam, so a tenant opened with such an identifier
+// carries the same unfrozen role the host-built personal tenant does.
+func TestTheProvisionerLeavesAPersonalPrefixesRoleUnfrozen(t *testing.T) {
+	roster := newFakeRoster()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	seeder := newFakeSeeder(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
+
+	id := tenant.ID(personalIDPrefix + "acme")
+	if err := product.Provision(context.Background(),
+		tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}, "acct-1"); err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	roles, err := manager.Roles(context.Background(), string(id))
+	if err != nil {
+		t.Fatalf("reading the tenant's roles: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Role != authz.TenantAdminRole {
+		t.Fatalf("the tenant's roles = %+v, want one tenant-admin", roles)
+	}
+	if roles[0].Builtin {
+		t.Error("the personal-prefixed tenant's tenant-admin role is builtin")
+	}
+}
+
 // TestTheProvisionerAnswersATakenIdentifierWhenTheWinnerFrozeTheRole holds the
 // same race one step later: the winning replica had already marked its role
 // builtin, so the losing call's PutRole is refused before Create is reached.

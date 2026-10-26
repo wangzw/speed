@@ -355,8 +355,15 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 	// the roster row so the role is complete — its grants and the creator's
 	// binding are written — before it is frozen, and so a failure before the row
 	// can still remove it.
-	if err := p.manager.MarkRoleBuiltin(ctx, tenantID, role); err != nil {
-		return fmt.Errorf("%s: marking the tenant-admin role builtin: %w", tenancyModuleName, err)
+	//
+	// A personal-prefixed identifier is not a business tenant: the host treats it
+	// as a personal domain in every other seam, and the personal tenant's
+	// tenant-admin is not builtin because the host revokes grants outside the
+	// allowlist through the manager. Leave that role unfrozen for the same reason.
+	if !strings.HasPrefix(tenantID, personalIDPrefix) {
+		if err := p.manager.MarkRoleBuiltin(ctx, tenantID, role); err != nil {
+			return fmt.Errorf("%s: marking the tenant-admin role builtin: %w", tenancyModuleName, err)
+		}
 	}
 	return nil
 }
