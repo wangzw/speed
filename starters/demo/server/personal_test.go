@@ -1528,8 +1528,14 @@ func TestThePersonalTenantUnblocksTheTenantScopedRoutes(t *testing.T) {
 
 // TestTheEnsureCreatesForAnAccountOfAnotherTenant runs the backfill rule through
 // the program: the configuration's second account is given a membership in the
-// deployment's tenant, and the ensure still creates its personal tenant rather
+// deployment's tenant, and the ensure still answers its personal tenant rather
 // than refusing it.
+//
+// The seed runs the personal module's creation hook while it writes the
+// configured accounts, so the member already owns its personal tenant when the
+// backfill runs. The call reads that tenant back by the identifier derived from
+// the account, with created=false; the creating branch is the unit case
+// TestTheBackfillCreatesBesideAnotherMembership, which starts without the hook.
 //
 // The seed wires the administrator's authorization bindings but no authn
 // membership for either account, so the membership is written through the
@@ -1569,8 +1575,13 @@ func TestTheEnsureCreatesForAnAccountOfAnotherTenant(t *testing.T) {
 	if err := json.Unmarshal(res.body, &reply); err != nil {
 		t.Fatalf("the backfill's answer is not JSON: %v\n%s", err, res.body)
 	}
-	if !reply.Created {
-		t.Error("the backfill beside a business membership answered created=false, want true")
+	wantID := string(personalTenantID(authn.AccountID(who.AccountID)))
+	if reply.Created {
+		t.Error("the seed's creation hook already built the member's personal tenant, but the backfill reported created=true")
+	}
+	if reply.Tenant.ID != wantID || reply.Tenant.Alias != wantID {
+		t.Errorf("the backfill answered tenant %q/%q, want the derived identifier %q for both",
+			reply.Tenant.ID, reply.Tenant.Alias, wantID)
 	}
 }
 
