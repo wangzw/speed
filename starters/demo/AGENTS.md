@@ -109,10 +109,11 @@ declarations of a module reached this way are collected by the stack node's
 
 `go build -tags review` compiles a second assembly beside the baseline one.
 `server/review.go` adds the login methods that need a provider or a carrier —
-the four social methods, the SMS family with the `sms.review` log carrier,
-name-and-password registration with `authn.emailcode` over the `mail.review` log
-carrier, and the SMS second factor (`authn.mfa.sms`) — through `reviewModules`,
-which `serve` includes after `baselineServe`.
+the four social methods, the SMS family with the `sms.review` log carrier and
+the `sms.admin` template page, name-and-password registration with
+`authn.emailcode` over the `mail.review` log carrier, and the SMS second factor
+(`authn.mfa.sms`) — through `reviewModules`, which `serve` includes after
+`baselineServe`.
 `server/review_off.go` compiles in a default build and names nothing, so a
 baseline binary carries none of those modules' code paths.
 
@@ -127,9 +128,10 @@ the logging layer would mask it.
 `server/review/sqlite.yaml` is the configuration the build reads. It keeps
 `authn.account.signup` and `authn.account.password-signup` open, widens the four
 `authn.login.email-*` budgets and lowers the resend interval to its floor so a
-person can walk the flow, and points the database, key and object root under
-`var/`. Baseline `serve` names none of these modules and leaves registration
-closed, so the baseline login page advertises no registration entry.
+person can walk the flow, points the database, key and object root under
+`var/`, and names the endpoints `sms.admin` mounts on. Baseline `serve` names
+none of these modules and leaves registration closed, so the baseline login page
+advertises no registration entry.
 
 The walkthrough is: register a username, email and password; sign in with the
 password through the ordinary flow; add the email under the account's own

@@ -2,9 +2,9 @@
 # on the sqlite stack. It is an override document like the six under testdata/ —
 # the platform topology comes from the compiled-in defaults.yaml — plus the
 # sections the review build's modules read: the social login methods, the SMS
-# family and the review SMS sender. It lives outside testdata so the six
-# baselines stay untouched. It carries fake credentials on purpose: nothing here
-# reaches a provider or a carrier.
+# family with its template management page, and the review SMS sender. It lives
+# outside testdata so the six baselines stay untouched. It carries fake
+# credentials on purpose: nothing here reaches a provider or a carrier.
 #
 # Run both commands from starters/demo/server, so that every relative path in
 # this file — the token signing key, the object store's root, the database —
@@ -135,6 +135,13 @@ sms:
         codes:
           en-US: "review-enroll"
           zh-CN: "review-enroll-zh"
+  # REVIEW: the SMS template page. The baseline imports sms.admin for its OpenAPI
+  # fragment and names it on no command, so a normal deployment serves no page;
+  # the review build mounts the management routes on the admin endpoint so the
+  # console's navigation offers the page. The template set it manages is the
+  # registry above, and sms.review answers the vendor's per-template review.
+  admin:
+    endpoints: [admin]
 
 # REVIEW: the personal tenant the review walkthrough exercises. A registration
 # completed through the SMS sign-in lands in the tenant area with a personal
