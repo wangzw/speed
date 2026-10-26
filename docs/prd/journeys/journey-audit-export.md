@@ -33,4 +33,4 @@
 
 ## 端到端测试
 
-未实现
+`starters/demo/web/e2e/specs/journey-audit-export.spec.ts` `audit-export: the file carries the whole filtered set, and a narrowed filter narrows it`

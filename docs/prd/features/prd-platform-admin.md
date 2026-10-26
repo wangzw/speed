@@ -843,7 +843,7 @@
 
 - **验收**：持有审计检索权限的运营者在审计页以一组筛选条件检索后使用导出动作成功；不持该权限的调用方导出被拒绝，且不产生文件。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-audit-export.spec.ts` `audit-export: the file carries the whole filtered set, and a narrowed filter narrows it`（仅覆盖持有审计检索权限的运营者成功导出的路径；不持该权限的调用方导出被拒绝由后端测试覆盖）
 
 ### REQ-platform-admin-113
 
@@ -851,7 +851,7 @@
 
 - **验收**：构造一个匹配记录多于一页的筛选条件，检索后停在其中一页并导出，文件中的记录集合等于该筛选匹配的全部记录，包含当前页之外的记录；换一组筛选条件重复导出，文件中的记录集合随之变化。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-audit-export.spec.ts` `audit-export: the file carries the whole filtered set, and a narrowed filter narrows it`
 
 ### REQ-platform-admin-032
 
