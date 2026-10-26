@@ -481,7 +481,7 @@ sequenceDiagram
 | 注册表单邮箱字段的服务端同规则本地校验（`register.invalidEmail`，不发请求） | 已实现 | `web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm`；`web/packages/ui-kit/src/email-address.ts` `parseEmailAddress`；`web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json` `register.invalidEmail` |
 | 注册表单的 429 `Retry-After` 等待与到点恢复、已登录态、400 走通用文案 | 已实现 | `web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm` |
 | 注册模式默认渠道不沿用登录模式选中的渠道 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`（`pickChannel`） |
-| 注册模式下经短信渠道开户的验证码重发倒计时 | 未实现 | — |
+| 注册模式下经短信渠道开户的验证码重发倒计时 | 已实现 | `web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`；`web/packages/auth-ui/src/internal/use-flow-driver.ts` `useFlowDriver`；`web/packages/auth-ui/src/internal/retry-wait.ts` `retryWaitMs`；`web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json` `smsSignIn.resendIn` |
 | `register` i18n 节（zh-CN 与 en-US 键集一致） | 已实现 | `web/packages/auth-ui/src/locales/zh-CN.json`、`web/packages/auth-ui/src/locales/en-US.json`；`web/packages/auth-ui/src/resources.test.ts` |
 | 渠道组件的反馈作用域，答复一步清掉失败横幅，仪式失败与服务端失败横幅互斥 | 未实现 | — |
 | 社交回跳路由上的步骤失败原地保留，没有停着步骤时的重试 | 未实现 | — |

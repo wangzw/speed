@@ -19,6 +19,7 @@
     "loginFailed": "验证码不正确或已失效，请重新输入或重新获取。",
     "codeUsed": "该验证码已被使用，请重新获取。",
     "resendCode": "重新发送",
+    "resendIn": "{{seconds}} 秒后可重新获取验证码。",
     "editPhone": "更换手机号"
   },
   "signInFlow": {

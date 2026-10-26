@@ -19,6 +19,7 @@
     "loginFailed": "The code is incorrect or has expired. Enter it again or request a new one.",
     "codeUsed": "That code has already been used. Request a new one.",
     "resendCode": "Resend code",
+    "resendIn": "You can request another code in {{seconds}} seconds.",
     "editPhone": "Change phone number"
   },
   "signInFlow": {

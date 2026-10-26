@@ -8,7 +8,10 @@
  * (`session.answerFlow`). The `challenge` step the server answers with is
  * what tells the form a code was issued; the sent notice announces the
  * receiving number, resend begins the flow again against the same number,
- * and changing the phone returns to the first step. A fresh code starts
+ * and changing the phone returns to the first step. A resend is held for
+ * the interval the server states -- the `resend_after` a challenge carried,
+ * or the `Retry-After` of a 429 -- and the control states how many seconds
+ * remain; the countdown timer stops at its own expiry. A fresh code starts
  * the code field empty: a successful send (the first, a resend, or a
  * request for a changed phone) resets any code typed against the one it
  * invalidates, so a stale code can never ride along to a new code session.
@@ -77,6 +80,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
+import Typography from '@mui/material/Typography'
 import { useForm } from 'react-hook-form'
 import type { SubmitHandler } from 'react-hook-form'
 import {
@@ -95,6 +99,7 @@ import { answerSends } from './internal/flow.js'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { FlowStepFields } from './internal/flow-step.js'
+import { retryWaitMs } from './internal/retry-wait.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
 
@@ -121,6 +126,9 @@ export interface SMSSignInFormProps {
 interface SmsFields {
   code: string
 }
+
+/** The resend note's id, referenced by the resend control while it counts down. */
+const RESEND_NOTE_ID = 'sms-sign-in-resend-note'
 
 /** The SMS method's first code prompt: state `first` with a challenge. */
 function isCodePrompt(step: OpenFlowState): boolean {
@@ -174,6 +182,10 @@ export function SMSSignInForm({
   const [phoneNotice, setPhoneNotice] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
+  // The instant the resend control becomes usable again, and the ticking
+  // clock its note reads.
+  const [resendUntil, setResendUntil] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
   // The used-code notice: the current code session's last answer lost a
   // concurrent sign-in race after its code verified server-side -- the
   // code is SPENT (see the file header) -- or re-submitted the very code
@@ -191,9 +203,22 @@ export function SMSSignInForm({
   // against it rather than trusting a re-typed field.
   const sentToRef = useRef<string>('')
 
+  /** Hold the resend control for the interval the server asked for: a
+   * positive `resend_after` from the challenge, or a 429's `Retry-After`. */
+  function holdResend(waitMs: number): void {
+    setResendUntil(waitMs > 0 ? Date.now() + waitMs : 0)
+    setNow(Date.now())
+  }
+
   const driver = useFlowDriver(session, {
     beforeStart,
-    onFailure: setErrorCode,
+    onFailure: (code, error) => {
+      setErrorCode(code)
+      const wait = retryWaitMs(error)
+      if (wait !== undefined) {
+        holdResend(wait)
+      }
+    },
     onSuperseded: () => {
       const code = lastCodeRef.current
       if (code === null) {
@@ -238,6 +263,29 @@ export function SMSSignInForm({
     setPhoneNotice(message)
   }, [phoneAttempt])
 
+  // Tick the countdown only while one is running, and stop the timer at its
+  // own expiry rather than leaving it ticking for the rest of the mount.
+  useEffect(() => {
+    if (resendUntil <= Date.now()) {
+      return undefined
+    }
+    const timer = setInterval(() => {
+      const current = Date.now()
+      setNow(current)
+      if (current >= resendUntil) {
+        clearInterval(timer)
+      }
+    }, 1000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [resendUntil])
+
+  const remainingSeconds = Math.max(
+    0,
+    Math.ceil((resendUntil - now) / 1000),
+  )
+
   const requestCode = async (phone: string): Promise<void> => {
     // A required proof that is not ready yet keeps the send from leaving:
     // the block above the control is already showing why.
@@ -273,6 +321,15 @@ export function SMSSignInForm({
     setSpentCode(null)
     form.resetField('code', { defaultValue: '' })
     setSentTo(phone)
+    // The reply's challenge may state how long to wait before another code
+    // may be requested. It is read from the driver's parked step, because
+    // this handler's state copy predates the reply's render.
+    const parked = driver.currentStep()
+    const seconds =
+      parked !== null && parked.next.kind === 'challenge'
+        ? parked.next.resend_after
+        : undefined
+    holdResend(typeof seconds === 'number' ? seconds * 1000 : 0)
   }
 
   const onSubmit: SubmitHandler<SmsFields> = async (values) => {
@@ -447,7 +504,10 @@ export function SMSSignInForm({
             <Button
               size="small"
               onClick={() => void requestCode(sentToRef.current)}
-              disabled={driver.busy || proofBlocked}
+              disabled={driver.busy || proofBlocked || remainingSeconds > 0}
+              aria-describedby={
+                remainingSeconds > 0 ? RESEND_NOTE_ID : undefined
+              }
             >
               {t('smsSignIn.resendCode')}
             </Button>
@@ -455,6 +515,17 @@ export function SMSSignInForm({
               {t('smsSignIn.editPhone')}
             </Button>
           </Box>
+          {/* The server's stated wait, filled while the control is held and
+              removed when it ends. */}
+          {remainingSeconds > 0 ? (
+            <Typography
+              id={RESEND_NOTE_ID}
+              variant="body2"
+              color="text.secondary"
+            >
+              {t('smsSignIn.resendIn', { seconds: remainingSeconds })}
+            </Typography>
+          ) : null}
         </>
       ) : (
         <>

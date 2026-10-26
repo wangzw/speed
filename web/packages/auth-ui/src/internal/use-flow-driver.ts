@@ -71,8 +71,10 @@ function pickCarry(input: Record<string, string>): Record<string, string> {
 }
 
 export interface FlowDriverCallbacks {
-  /** A failure's code; the component renders its namespace text. */
-  readonly onFailure: (code: string) => void
+  /** A failure's code and the rejection it came from; the component
+   * renders the namespace text for the code and may read facts the
+   * rejection itself carries (a 429's stated wait). */
+  readonly onFailure: (code: string, error: unknown) => void
   /** The flow settled with a completion outcome (fired once). */
   readonly onSettled: (state: SettledFlowState) => void
   /**
@@ -93,6 +95,10 @@ export interface FlowDriverCallbacks {
 export interface FlowDriver {
   /** The open step the view renders, or null when idle or settled. */
   readonly step: OpenFlowState | null
+  /** The step the driver has parked right now, read synchronously: a
+   * handler's awaited call may resolve after the render that parked it,
+   * so the state copy above is not yet the reply's step. */
+  readonly currentStep: () => OpenFlowState | null
   /** A request is in flight. */
   readonly busy: boolean
   /** Begin a login flow and drive its first reply. Resolves true when
@@ -178,7 +184,7 @@ export function useFlowDriver(
           carryRef.current = {}
           park(null)
         }
-        callbacksRef.current.onFailure(code)
+        callbacksRef.current.onFailure(code, error)
         return false
       } finally {
         setBusy(false)
@@ -240,5 +246,7 @@ export function useFlowDriver(
     park(null)
   }, [park])
 
-  return { step, busy, start, absorb, answer, reset }
+  const currentStep = useCallback((): OpenFlowState | null => stepRef.current, [])
+
+  return { step, currentStep, busy, start, absorb, answer, reset }
 }

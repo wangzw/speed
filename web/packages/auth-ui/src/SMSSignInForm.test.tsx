@@ -19,6 +19,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ApiError } from '@speed/api-client'
 import { SMSSignInForm } from './SMSSignInForm.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
@@ -78,16 +79,24 @@ async function selectCountry(
   )
 }
 
-/** The server's code challenge for the sms method. */
-function codeChallenge() {
+/** The server's code challenge for the sms method, optionally stating how
+ * long the client must wait before another code may be requested. */
+function codeChallenge(resendAfter?: number) {
   return openFlow({
     seq: 1,
     state: 'first',
     next: {
       kind: 'challenge',
       fields: [{ name: 'code', kind: 'code', required: true, secret: true }],
+      ...(resendAfter === undefined ? {} : { resend_after: resendAfter }),
     },
   })
+}
+
+/** The resend-countdown note's expected text for a whole second count. */
+function resendNote(seconds: number): string {
+  const [before = '', after = ''] = zhCN.smsSignIn.resendIn.split('{{seconds}}')
+  return `${before}${seconds}${after}`
 }
 
 async function sendCode(national: string = CN_NATIONAL): Promise<void> {
@@ -549,6 +558,75 @@ describe('SMSSignInForm', () => {
       input: { phone: CN_E164 },
     })
     await waitFor(() => expect(code).toHaveValue(''))
+  })
+
+  it('hold the resend control for the server interval and state why', async () => {
+    // The send's challenge states the wait before another code may be
+    // asked for: the resend control is disabled and says how long.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(60),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const resend = await screen.findByRole('button', {
+      name: zhCN.smsSignIn.resendCode,
+    })
+    expect(resend).toBeDisabled()
+    expect(resend).toHaveAttribute('aria-describedby')
+    expect(screen.getByText(resendNote(60))).toBeInTheDocument()
+  })
+
+  it('hold a throttled resend for the stated wait and release it when the wait ends', async () => {
+    let starts = 0
+    const harness = makeHarness({
+      [LOGIN_START]: () => {
+        starts += 1
+        if (starts === 1) {
+          return codeChallenge()
+        }
+        throw new ApiError({
+          status: 429,
+          code: 'authn.throttled',
+          retryAfterMs: 2000,
+          attempts: 1,
+        })
+      },
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const resend = await screen.findByRole('button', {
+      name: zhCN.smsSignIn.resendCode,
+    })
+    expect(resend).toBeEnabled()
+
+    // The first send settled on the real clock; the resend's stated wait
+    // runs on the fake one so the two seconds pass instantly.
+    vi.useFakeTimers()
+    try {
+      await act(async () => {
+        fireEvent.click(resend)
+        for (let turn = 0; turn < 10; turn += 1) {
+          await Promise.resolve()
+        }
+      })
+      expect(resend).toBeDisabled()
+      expect(screen.getByText(resendNote(2))).toBeInTheDocument()
+      expect(sends(harness)).toHaveLength(2)
+      // One tick before the stated wait it is still held, so an
+      // implementation that waits less than the answer said cannot pass.
+      act(() => {
+        vi.advanceTimersByTime(1999)
+      })
+      expect(resend).toBeDisabled()
+      // At the boundary it is usable again and the note is gone.
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+      expect(resend).toBeEnabled()
+      expect(screen.queryByText(resendNote(2))).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('return to the phone step on change phone', async () => {
