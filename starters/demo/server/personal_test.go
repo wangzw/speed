@@ -376,6 +376,10 @@ func (m *fakeManager) PutRole(_ context.Context, record authz.RoleRecord) error 
 	held := m.roles[record.Tenant]
 	for i := range held {
 		if held[i].Role == record.Role {
+			if held[i].Builtin {
+				return fmt.Errorf("%w: the role %q of tenant %q is builtin",
+					authz.ErrBuiltinRole, record.Role, record.Tenant)
+			}
 			held[i] = record
 			m.roles[record.Tenant] = held
 			return nil
@@ -383,6 +387,23 @@ func (m *fakeManager) PutRole(_ context.Context, record authz.RoleRecord) error 
 	}
 	m.roles[record.Tenant] = append(held, record)
 	return nil
+}
+
+// MarkRoleBuiltin sets the builtin mark on an existing role; an absent role is
+// ErrUnknownRole, and an already-builtin role is no work.
+func (m *fakeManager) MarkRoleBuiltin(_ context.Context, tenantID string, role authz.Role) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.steps.add("mark:" + string(role))
+	held := m.roles[tenantID]
+	for i := range held {
+		if held[i].Role == role {
+			held[i].Builtin = true
+			m.roles[tenantID] = held
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: the role %q of tenant %q is not there", authz.ErrUnknownRole, role, tenantID)
 }
 
 func (m *fakeManager) BindingsOf(_ context.Context, tenantID, account string) ([]authz.Binding, error) {
@@ -486,6 +507,12 @@ func (m *fakeManager) DeleteRole(_ context.Context, tenantID string, role authz.
 		return m.deleteRoleErr
 	}
 	held := m.roles[tenantID]
+	for _, record := range held {
+		if record.Role == role && record.Builtin {
+			return fmt.Errorf("%w: the role %q of tenant %q is builtin",
+				authz.ErrBuiltinRole, role, tenantID)
+		}
+	}
 	kept := held[:0]
 	for _, record := range held {
 		if record.Role != role {

@@ -1519,6 +1519,15 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 	if !found {
 		t.Errorf("the creator is not an active member of the tenant it created: %+v", roster.Members)
 	}
+
+	// The provisioned role carries the builtin mark, as the seeded
+	// administrator roles do: the management surface may not delete it.
+	deleted := send(t, client, http.MethodDelete,
+		base+"/api/v1/system/tenants/"+created+"/roles/"+string(authz.TenantAdminRole), nil, auth)
+	if deleted.status != http.StatusConflict {
+		t.Errorf("deleting the provisioned tenant-admin role answered %d, want 409:\n%s",
+			deleted.status, deleted.body)
+	}
 }
 
 // TestRemovingASystemMembershipWithdrawsThePlatformBinding holds the cascade in

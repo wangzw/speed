@@ -158,13 +158,14 @@ func protectedTenant(id tenant.ID) bool {
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's
 // tenant-admin role, every declared permission on it, the creator's membership
-// and the creator's binding, then registers the roster row last. The membership
-// is written with the binding because the creator is the tenant's first
-// administrator: a binding without it names an administrator who cannot enter
-// the tenant. A refusal of the roster row removes what this call wrote, so no
-// tenant is left half-built — except ErrTenantExists, which is another replica
-// registering the identifier first: that domain is the winner's, and the losing
-// call leaves it untouched.
+// and the creator's binding, registers the roster row, and marks the role
+// builtin once the row is written so the management surface cannot rewrite or
+// delete it. The membership is written with the binding because the creator is
+// the tenant's first administrator: a binding without it names an administrator
+// who cannot enter the tenant. A refusal of the roster row removes what this
+// call wrote, so no tenant is left half-built — except ErrTenantExists, which is
+// another replica registering the identifier first: that domain is the winner's,
+// and the losing call leaves it untouched.
 //
 // A tenant the roster already holds is refused before any policy write: the
 // identifier's domain belongs to that tenant, and writing this call's role and
@@ -222,6 +223,14 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 			p.removeProvision(ctx, tenantID, creatorID)
 		}
 		return fmt.Errorf("%s: registering the tenant %q: %w", tenancyModuleName, t.ID, err)
+	}
+	// The mark freezes the role against the management surface's rewrite and
+	// delete paths, as the seed freezes the administrator roles. It comes after
+	// the roster row so the role is complete — its grants and the creator's
+	// binding are written — before it is frozen, and so a failure before the row
+	// can still remove it.
+	if err := p.manager.MarkRoleBuiltin(ctx, tenantID, role); err != nil {
+		return fmt.Errorf("%s: marking the tenant-admin role builtin: %w", tenancyModuleName, err)
 	}
 	return nil
 }

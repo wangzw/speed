@@ -205,6 +205,32 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	}
 }
 
+// TestTheProvisionerMarksTheTenantAdminRoleBuiltin holds the role's frozen
+// state: the management surface may neither rewrite nor delete it, as with the
+// administrator roles the seed writes.
+func TestTheProvisionerMarksTheTenantAdminRoleBuiltin(t *testing.T) {
+	roster := newFakeRoster()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	seeder := newFakeSeeder(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
+
+	if err := product.Provision(context.Background(),
+		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	roles, err := manager.Roles(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("reading the tenant's roles: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Role != authz.TenantAdminRole || !roles[0].Builtin {
+		t.Errorf("the tenant's roles = %+v, want one builtin tenant-admin", roles)
+	}
+}
+
 // TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses holds the failure
 // path: a roster that refuses the row leaves no role, grant, binding or
 // membership behind.
