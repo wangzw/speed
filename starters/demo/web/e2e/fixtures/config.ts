@@ -77,6 +77,23 @@ export interface ReviewConfigInput {
    * not a manufactured product state.
    */
   readonly recentWindow?: string
+  /**
+   * Seed the SMS-template rollout journey's membership: the template's
+   * platform operator joins the seeded tenant. Off by default, because the
+   * impersonation fixture requires that operator to stay outside the tenant it
+   * acts on. The account itself is the template's own; only the membership row
+   * is added, and the binary's own seed writes it.
+   */
+  readonly seedSmsRollout?: boolean
+  /**
+   * Replace the scheduler's tick with this duration. Off by default: the
+   * template's two-second tick feeds the member-workspace journey's worker. A
+   * journey whose dispatch is a control click and whose only intended sends are
+   * its own turns the periodic trigger off with `0s`, which the scheduler
+   * treats as no trigger at all; the job queue that carries the click's
+   * dispatch polls independently.
+   */
+  readonly schedulerTick?: string
 }
 
 export interface ReviewConfig {
@@ -115,6 +132,23 @@ export const reviewMember = {
   identifier: 'member@demo.test',
   password: 'member-review-secret',
   displayName: 'Demo Member',
+} as const
+
+/**
+ * The platform operator the review template seeds, and the tenant the
+ * SMS-template rollout journey makes it a member of.
+ *
+ * The template's operator is a platform administrator and deliberately not a
+ * member of the seeded tenant, because the impersonation journey targets that
+ * tenant from outside. The rollout journey's actor holds both halves, so its
+ * server adds this one membership row; the account and its credential are the
+ * template's own.
+ */
+export const smsRolloutOperator = {
+  tenant: 'acme',
+  identifier: 'operator@demo.test',
+  password: 'operator-dev-secret',
+  displayName: 'Demo Operator',
 } as const
 
 /**
@@ -174,6 +208,12 @@ function seedSocialAccount(): string {
   return `    - identifier: ${quoted(reviewSocialAccount.identifier)}
       password: ${quoted(reviewSocialAccount.password)}
       display-name: ${quoted(reviewSocialAccount.displayName)}`
+}
+
+/** The rollout operator's `seed.members` entry. */
+function seedSmsRolloutMembership(): string {
+  return `    - tenant: ${quoted(smsRolloutOperator.tenant)}
+      account: ${quoted(smsRolloutOperator.identifier)}`
 }
 
 /** The invitee's `seed.accounts` entry, indented for the list it joins. */
@@ -343,17 +383,20 @@ export async function writeReviewConfig(
       'seed operator account',
     )
   }
-  // The member the member-workspace journey signs in as also gets its
-  // membership: the row that binds it to the tenant joins the seed's members.
-  // The membership goes before `settings` so the key order the template
-  // documents is kept. The invitee deliberately gets no membership: the
-  // acceptance is what makes it a member.
-  if (input.seedMember === true) {
+  // An account a journey signs in as, when that journey also needs it to be a
+  // member, gets a membership row appended to the seed's members. The rows go
+  // before `settings` so the key order the template documents is kept. The
+  // invitee deliberately gets none: the acceptance is what makes it a member.
+  const memberships: string[] = []
+  if (input.seedMember === true) memberships.push(seedMemberMembership())
+  if (input.seedSmsRollout === true) memberships.push(seedSmsRolloutMembership())
+  if (memberships.length > 0) {
+    const entries = memberships.join('\n')
     // The review template may already carry a members list (the impersonation
     // fixture seeds its target there). YAML rejects a mapping with the same key
-    // twice, so the entry joins that existing list rather than opening a second
-    // key: it is inserted at the end of the list, which is the line before the
-    // next two-space key after it.
+    // twice, so the entries join that existing list rather than opening a
+    // second key: they are inserted at the end of the list, which is the line
+    // before the next two-space key after it.
     const settingsNeedle = '\n  settings:\n'
     const membersNeedle = '\n  members:\n'
     const membersAt = body.indexOf(membersNeedle)
@@ -361,7 +404,7 @@ export async function writeReviewConfig(
       body = replaceOnce(
         body,
         settingsNeedle,
-        `\n  members:\n${seedMemberMembership()}\n  settings:\n`,
+        `\n  members:\n${entries}\n  settings:\n`,
         'seed settings section',
       )
     } else {
@@ -374,8 +417,23 @@ export async function writeReviewConfig(
         )
       }
       const insertAt = membersAt + membersNeedle.length + nextKeyAt
-      body = `${body.slice(0, insertAt)}${seedMemberMembership()}\n${body.slice(insertAt)}`
+      body = `${body.slice(0, insertAt)}${entries}\n${body.slice(insertAt)}`
     }
+  }
+
+  // A journey whose dispatch is its own click turns the periodic scheduler off:
+  // the template's tick feeds the member-workspace worker, and a worker that
+  // addressed the same tenant would send the rollout journey's notice on its own
+  // windows. A tick at or below zero starts no trigger at all; the job queue
+  // that carries the click's dispatch polls on its own interval.
+
+  if (input.schedulerTick !== undefined) {
+    body = replaceOnce(
+      body,
+      'tick: 2s',
+      `tick: ${quoted(input.schedulerTick)}`,
+      'scheduler tick',
+    )
   }
 
   // The impersonation fixture's second factors change how the seeded operator

@@ -94,7 +94,7 @@ remembering to run it.
   page and clicks. The provider's own page copy is the fixture's constant, not
   a product locale string.
 
-## The one non-UI read: the verification code
+## The sanctioned non-UI reads
 
 The review assembly's carriers reach no vendor or relay. The mail and SMS
 senders write each message's verification code to the process log as logfmt, so
@@ -103,6 +103,17 @@ that is where a person running the review reads it. `fixtures/log.ts` is the
 given kind (`sms`/`mail`) and destination address. The field is
 `verification_code`, never `code`: the gateway treats `code` as a sensitive key
 name and the logging layer masks its value.
+
+Two more reads are sanctioned for the SMS template journey, both surfaced by the
+server fixture rather than imported by a spec. The review SMS carrier writes one
+line per message it accepts, and that line — destination, template and language
+— is the only evidence a browser tier can read that the message left the
+process. And `notification.delivery` records each channel's terminal state in
+`notification_sends`, a table the design keeps off the product's interface; a
+refusal that never reached a carrier writes no log line at all, so that ledger
+is the only place its status and reason are recorded. `waitForCarrierMessage`,
+`waitForOutboundRecord` and `waitForDeliveryRecord` are the fixture methods; the
+ledger connection is read-only, and the fixture never writes a row.
 
 Everything else is an assertion on rendered behaviour: visible text, accessible
 roles and names, focus, URL, disabled/selected state, banners and empty states.
@@ -161,7 +172,11 @@ gates cannot decide for a spec.
   runs those files with `{ allowAssembly: true }` and the honesty gate enforces
   the same split by directory. The one log reader a spec or helper may import
   is `waitForVerificationCode`; `fixtures/log.ts` is the only module that
-  parses logfmt lines.
+  parses logfmt lines. A journey that must observe a message a review carrier
+  accepted, or a channel's delivery record, asks the server fixture instead:
+  `waitForCarrierMessage` and `waitForOutboundRecord` are the line reads, and
+  `waitForDeliveryRecord` reads `notification_sends`. The fixture parses and
+  queries; the spec names the message and reads the answer.
 - **The backend is real**: the built review binary, a fresh sqlite file, real
   HTTP. Fixtures may assemble the environment (builds, temporary directories,
   random ports, seeding the operator, probes); they may not fake a response.

@@ -92,6 +92,18 @@ export const test = base.extend<{
    * domain floor; every other spec keeps the template's declared window.
    */
   recentWindow: string | undefined
+  /**
+   * Add the template operator's membership in the seeded tenant. Off by
+   * default: the impersonation journey requires that operator to stay outside
+   * the tenant it acts on.
+   */
+  seedSmsRollout: boolean
+  /**
+   * Replace the scheduler tick for this spec's server. A journey whose only
+   * sends are its own control clicks turns the periodic trigger off with `0s`;
+   * every other spec keeps the template's two-second tick.
+   */
+  schedulerTick: string | undefined
 }>({
   seedMember: [false, { option: true }],
   seedImpersonation: [false, { option: true }],
@@ -99,6 +111,8 @@ export const test = base.extend<{
   seedSocialAccount: [false, { option: true }],
   socialIdentityProvider: [false, { option: true }],
   recentWindow: [undefined, { option: true }],
+  seedSmsRollout: [false, { option: true }],
+  schedulerTick: [undefined, { option: true }],
   server: async (
     {
       seedMember,
@@ -107,6 +121,8 @@ export const test = base.extend<{
       seedSocialAccount,
       socialIdentityProvider,
       recentWindow,
+      seedSmsRollout,
+      schedulerTick,
     },
     use,
     testInfo,
@@ -118,6 +134,8 @@ export const test = base.extend<{
       seedSocialAccount,
       socialIdentityProvider,
       recentWindow,
+      seedSmsRollout,
+      schedulerTick,
     })
     try {
       await use(server)

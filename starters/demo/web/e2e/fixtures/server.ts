@@ -28,7 +28,22 @@ import {
   startIdentityProvider,
   type IdentityProvider,
 } from './identity-provider'
-import { ProcessLog, waitForReady } from './log'
+import {
+  deliveryMark,
+  waitForDeliveryRecord,
+  type DeliveryFilter,
+  type DeliveryRecord,
+} from './delivery'
+import {
+  countCarrierMessages,
+  countOutboundRecords,
+  ProcessLog,
+  waitForCarrierMessage,
+  waitForOutboundRecord,
+  waitForReady,
+  type CarrierMessage,
+  type OutboundRecord,
+} from './log'
 import { MANIFEST_PATH } from './paths'
 
 // Every bound below is strictly inside the Playwright test timeout (120s in
@@ -304,6 +319,36 @@ export interface ReviewServer {
   readonly log: ProcessLog
   /** Everything the child wrote to standard error, joined. */
   readonly stderr: string
+  /**
+   * Wait for the review SMS carrier line recording one message. The row the
+   * delivery ledger keeps is not this: the carrier line is the message itself,
+   * with its destination, template and language.
+   */
+  waitForCarrierMessage(
+    options: Parameters<typeof waitForCarrierMessage>[1],
+  ): Promise<CarrierMessage>
+  /** Count the carrier lines a filter names, at or after `after`. */
+  countCarrierMessages(
+    options: Parameters<typeof countCarrierMessages>[1],
+  ): number
+  /** Wait for one external-send record the delivery pipeline wrote. */
+  waitForOutboundRecord(
+    options: Parameters<typeof waitForOutboundRecord>[1],
+  ): Promise<OutboundRecord>
+  /** Count the external-send records a filter names, at or after `after`. */
+  countOutboundRecords(
+    options: Parameters<typeof countOutboundRecords>[1],
+  ): number
+  /** The newest delivery-ledger rowid for a channel, before an action. */
+  deliveryMark(filter: DeliveryFilter): number
+  /** Wait for a delivery-ledger row a channel filter names. */
+  waitForDeliveryRecord(
+    options: DeliveryFilter & {
+      readonly status?: string
+      readonly after?: number
+      readonly timeoutMs?: number
+    },
+  ): Promise<DeliveryRecord>
   /** Run a hook before SIGTERM; hooks run in reverse registration order. */
   beforeStop(hook: () => Promise<void> | void): void
   /** Request shutdown, wait for exit, and clean up unless kept. */
@@ -344,6 +389,8 @@ export async function startReviewServer(
     readonly seedSocialAccount?: boolean
     readonly socialIdentityProvider?: boolean
     readonly recentWindow?: string
+    readonly seedSmsRollout?: boolean
+    readonly schedulerTick?: string
   } = {},
 ): Promise<ReviewServer> {
   const manifest = await readHarnessManifest()
@@ -416,6 +463,8 @@ export async function startReviewServer(
       seedSocialAccount: options.seedSocialAccount,
       socialProvider,
       recentWindow: options.recentWindow,
+      seedSmsRollout: options.seedSmsRollout,
+      schedulerTick: options.schedulerTick,
     })
     await runCommand(
       manifest.binary,
@@ -442,6 +491,8 @@ export async function startReviewServer(
         seedSocialAccount: options.seedSocialAccount,
         socialProvider,
         recentWindow: options.recentWindow,
+        seedSmsRollout: options.seedSmsRollout,
+        schedulerTick: options.schedulerTick,
       })
       const configLocator = `file:${config.path}`
       const from = log.mark()
@@ -544,6 +595,24 @@ export async function startReviewServer(
       log,
       get stderr(): string {
         return stderrLines.join('\n')
+      },
+      waitForCarrierMessage(options) {
+        return waitForCarrierMessage(log, options)
+      },
+      countCarrierMessages(options) {
+        return countCarrierMessages(log, options)
+      },
+      waitForOutboundRecord(options) {
+        return waitForOutboundRecord(log, options)
+      },
+      countOutboundRecords(options) {
+        return countOutboundRecords(log, options)
+      },
+      deliveryMark(filter) {
+        return deliveryMark(reviewConfig.dsn, filter)
+      },
+      waitForDeliveryRecord(options) {
+        return waitForDeliveryRecord(reviewConfig.dsn, options)
       },
       beforeStop(hook: () => Promise<void> | void): void {
         hooks.push(hook)

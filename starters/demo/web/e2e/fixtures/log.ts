@@ -36,6 +36,14 @@ const CODE_MESSAGE: Record<VerificationKind, string> = {
   mail: 'review mail: a verification message was sent',
 }
 
+/** The `msg` notification.delivery writes for an external send it accepted. */
+const OUTBOUND_SENT_MESSAGE =
+  'notification.delivery: an external message was sent'
+
+/** The `msg` notification.delivery writes for an external send it did not. */
+const OUTBOUND_FAILED_MESSAGE =
+  'notification.delivery: an external message was not sent'
+
 /** The startup record the server fixture waits for. */
 const READY_MESSAGE = 'ready'
 
@@ -292,4 +300,200 @@ export async function waitForVerificationCode(
     if (code !== undefined) latest = { code, address, line, index }
   }
   return latest
+}
+
+/** One carrier line: the message the carrier wrote when it sent, and where. */
+export interface CarrierMessage {
+  /** The destination the carrier was handed. */
+  readonly to: string
+  /** The logical template the message was sent under. */
+  readonly template: string
+  /** The language the message was resolved in. */
+  readonly locale: string
+  /** The whole line, for a failure attachment. */
+  readonly line: string
+  /** The line's position, so a caller can continue from it. */
+  readonly index: number
+}
+
+/** One external-send record the delivery pipeline wrote. */
+export interface OutboundRecord {
+  /** The channel the attempt was for: in_app, email or sms. */
+  readonly channel: string
+  /** The notification type the dispatch carried. */
+  readonly typeKey: string
+  /** The closed outcome the pipeline classified the attempt as. */
+  readonly outcome: string
+  /** The carrier's own receipt identifier, empty for a refusal. */
+  readonly providerID: string
+  /** The call's duration in milliseconds. */
+  readonly durationMS: number
+  /** The whole line, for a failure attachment. */
+  readonly line: string
+  /** The line's position, so a caller can continue from it. */
+  readonly index: number
+}
+
+/** A carrier line this kind of message wrote, if the line is one. */
+function carrierMessageOnLine(
+  line: string,
+  options: { readonly to?: string; readonly template?: string; readonly locale?: string },
+): CarrierMessage | undefined {
+  const fields = parseLogfmt(line)
+  if (fields.msg !== CODE_MESSAGE.sms) return undefined
+  const to = fields.to ?? ''
+  const template = fields.template ?? ''
+  const locale = fields.locale ?? ''
+  if (options.to !== undefined && to !== options.to) return undefined
+  if (options.template !== undefined && template !== options.template) {
+    return undefined
+  }
+  if (options.locale !== undefined && locale !== options.locale) return undefined
+  return { to, template, locale, line, index: -1 }
+}
+
+/** An external-send line the pipeline wrote, if the line is one. */
+function outboundRecordOnLine(
+  line: string,
+  options: {
+    readonly channel?: string
+    readonly typeKey?: string
+    readonly outcome?: string
+  },
+): OutboundRecord | undefined {
+  const fields = parseLogfmt(line)
+  const msg = fields.msg
+  if (msg !== OUTBOUND_SENT_MESSAGE && msg !== OUTBOUND_FAILED_MESSAGE) {
+    return undefined
+  }
+  const channel = fields.channel ?? ''
+  const typeKey = fields.type_key ?? ''
+  const outcome = fields.outcome ?? ''
+  if (options.channel !== undefined && channel !== options.channel) {
+    return undefined
+  }
+  if (options.typeKey !== undefined && typeKey !== options.typeKey) {
+    return undefined
+  }
+  if (options.outcome !== undefined && outcome !== options.outcome) {
+    return undefined
+  }
+  const duration = Number(fields.duration_ms ?? '')
+  return {
+    channel,
+    typeKey,
+    outcome,
+    providerID: fields.provider_id ?? '',
+    durationMS: Number.isFinite(duration) ? duration : 0,
+    line,
+    index: -1,
+  }
+}
+
+/**
+ * Wait for the carrier line that records one SMS being handed to it. The line
+ * carries the destination, the logical template and the language it was
+ * resolved in; the review carrier writes it instead of reaching a vendor, so it
+ * is the only evidence a browser tier can read that the message left.
+ */
+export async function waitForCarrierMessage(
+  log: ProcessLog,
+  options: {
+    readonly to?: string
+    readonly template?: string
+    readonly locale?: string
+    readonly timeoutMs?: number
+    readonly after?: number
+  },
+): Promise<CarrierMessage> {
+  const found = await log.waitFor(
+    (line) => carrierMessageOnLine(line, options) !== undefined,
+    {
+      timeoutMs: options.timeoutMs ?? 30_000,
+      after: options.after ?? 0,
+      what:
+        'the review SMS carrier line' +
+        (options.template === undefined ? '' : ` for ${options.template}`),
+    },
+  )
+  const message = carrierMessageOnLine(found.line, options)
+  if (message === undefined) {
+    throw new Error(`the line that answered the wait is not a carrier line: ${found.line}`)
+  }
+  return { ...message, index: found.index }
+}
+
+/** Count the carrier lines a filter names, at or after `after`. */
+export function countCarrierMessages(
+  log: ProcessLog,
+  options: {
+    readonly to?: string
+    readonly template?: string
+    readonly locale?: string
+    readonly after?: number
+  },
+): number {
+  const after = Math.max(0, options.after ?? 0)
+  let count = 0
+  for (let index = after; index < log.lines.length; index += 1) {
+    const line = log.lines[index]
+    if (line !== undefined && carrierMessageOnLine(line, options) !== undefined) {
+      count += 1
+    }
+  }
+  return count
+}
+
+/**
+ * Wait for one external-send record the delivery pipeline wrote. A channel that
+ * did not reach a carrier — a local refusal before the send — writes none, which
+ * is what a caller counts instead of waiting when the send is expected to be
+ * refused.
+ */
+export async function waitForOutboundRecord(
+  log: ProcessLog,
+  options: {
+    readonly channel?: string
+    readonly typeKey?: string
+    readonly outcome?: string
+    readonly timeoutMs?: number
+    readonly after?: number
+  },
+): Promise<OutboundRecord> {
+  const found = await log.waitFor(
+    (line) => outboundRecordOnLine(line, options) !== undefined,
+    {
+      timeoutMs: options.timeoutMs ?? 30_000,
+      after: options.after ?? 0,
+      what:
+        'an external-send record' +
+        (options.channel === undefined ? '' : ` on ${options.channel}`),
+    },
+  )
+  const record = outboundRecordOnLine(found.line, options)
+  if (record === undefined) {
+    throw new Error(`the line that answered the wait is not an outbound record: ${found.line}`)
+  }
+  return { ...record, index: found.index }
+}
+
+/** Count the external-send records a filter names, at or after `after`. */
+export function countOutboundRecords(
+  log: ProcessLog,
+  options: {
+    readonly channel?: string
+    readonly typeKey?: string
+    readonly outcome?: string
+    readonly after?: number
+  },
+): number {
+  const after = Math.max(0, options.after ?? 0)
+  let count = 0
+  for (let index = after; index < log.lines.length; index += 1) {
+    const line = log.lines[index]
+    if (line !== undefined && outboundRecordOnLine(line, options) !== undefined) {
+      count += 1
+    }
+  }
+  return count
 }
