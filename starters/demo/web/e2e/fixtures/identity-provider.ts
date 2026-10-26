@@ -1,5 +1,6 @@
 /**
- * A real OpenID Connect provider on loopback, for the social journeys.
+ * A real OpenID Connect provider on loopback, for the social and enterprise
+ * journeys.
  *
  * The review assembly used to carry fake client credentials and no provider, so
  * a social method could build an authorization URL but no callback could ever
@@ -8,6 +9,14 @@
  * userinfo endpoint, and an authorization page a person reaches and approves in
  * the browser. The round trip is genuine -- the browser leaves for this page,
  * clicks its control, and comes back to the product's own callback route.
+ *
+ * The same machinery serves the enterprise journey through
+ * `startEnterpriseIdentityProvider`: a second provider with its own issuer,
+ * certificate material and fixed user, whose work address is on the domain the
+ * DNS stub fixture answers for. The enterprise provider is not a second
+ * implementation; it is the same provider started from another definition, so
+ * the TLS, discovery, authorization, token and userinfo halves have one
+ * behaviour to keep true.
  *
  * The provider has two listeners:
  *
@@ -74,14 +83,65 @@ export const identityProviderCopy = {
   accountSentence: (email: string): string => `Continue as ${email}`,
 } as const
 
-/** The provider a started review server points the Google method at. */
-export interface IdentityProvider {
+/**
+ * The fixed user the enterprise provider authenticates.
+ *
+ * The address is on `enterpriseIdentityProviderDomain`, the one domain the DNS
+ * stub answers for. It is deliberately not the social user's address: the two
+ * journeys must not be able to pass by each other's fixtures.
+ */
+export const enterpriseIdentityProviderUser = {
+  subject: 'enterprise-signin-user',
+  email: 'employee@enterprise.e2e.test',
+  name: 'Enterprise Employee',
+} as const
+
+/** The enterprise user's email domain, and the TXT name the DNS stub answers. */
+export const enterpriseIdentityProviderDomain = 'enterprise.e2e.test'
+export const enterpriseIdentityProviderRecordName = `_speed-authn.${enterpriseIdentityProviderDomain}`
+
+/** The enterprise provider's client, which a spec writes into the provider row. */
+export const enterpriseIdentityProviderClient = {
+  id: 'review-enterprise-client',
+  secret: 'review-enterprise-secret',
+} as const
+
+/**
+ * The claim mapping an enterprise provider row needs to find the user's address
+ * and display name. Without it the product reads the subject alone, and the
+ * journey's email-domain matching has nothing to match.
+ */
+export const enterpriseIdentityProviderClaims = {
+  email: 'email',
+  name: 'display_name',
+} as const
+
+/** The copy the enterprise provider's own authorization page renders. */
+export const enterpriseIdentityProviderCopy = {
+  heading: 'Sign in with your enterprise account',
+  approve: 'Continue',
+  accountSentence: (email: string): string => `Continue as ${email}`,
+} as const
+
+/** What one started provider answers in common. */
+export interface StartedIdentityProvider {
   /** The OpenID Connect issuer: the HTTPS listener the product discovers. */
   readonly issuer: string
   /** The CA certificate the product verifies the issuer's leaf against. */
   readonly rootCAPath: string
-  readonly user: typeof identityProviderUser
   stop(): Promise<void>
+}
+
+/** The provider a started review server points the Google method at. */
+export interface IdentityProvider extends StartedIdentityProvider {
+  readonly user: typeof identityProviderUser
+}
+
+/** The provider an enterprise journey registers in its provider row. */
+export interface EnterpriseIdentityProvider extends StartedIdentityProvider {
+  readonly user: typeof enterpriseIdentityProviderUser
+  readonly clientID: string
+  readonly claims: typeof enterpriseIdentityProviderClaims
 }
 
 export interface IdentityProviderInput {
@@ -221,8 +281,19 @@ function writeJSON(
   response.end(payload)
 }
 
+/** The copy one provider's own authorization page renders. */
+interface AuthorizePageCopy {
+  readonly heading: string
+  readonly approve: string
+  readonly accountSentence: (email: string) => string
+}
+
 /** The authorization page: the fixed user and the one control to approve. */
-function authorizePage(params: URLSearchParams): string {
+function authorizePage(
+  params: URLSearchParams,
+  email: string,
+  copy: AuthorizePageCopy,
+): string {
   const hidden = [
     'redirect_uri',
     'state',
@@ -243,17 +314,15 @@ function authorizePage(params: URLSearchParams): string {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>${escapeHTML(identityProviderCopy.heading)}</title>
+    <title>${escapeHTML(copy.heading)}</title>
   </head>
   <body>
     <main>
-      <h1>${escapeHTML(identityProviderCopy.heading)}</h1>
-      <p>${escapeHTML(
-        identityProviderCopy.accountSentence(identityProviderUser.email),
-      )}</p>
+      <h1>${escapeHTML(copy.heading)}</h1>
+      <p>${escapeHTML(copy.accountSentence(email))}</p>
       <form method="get" action="/approve">
       ${hidden}
-      <button type="submit">${escapeHTML(identityProviderCopy.approve)}</button>
+      <button type="submit">${escapeHTML(copy.approve)}</button>
       </form>
     </main>
   </body>
@@ -262,24 +331,25 @@ function authorizePage(params: URLSearchParams): string {
 }
 
 /**
- * Start the provider: certificates, two listeners, one fixed user.
+ * Mint a private CA and a server leaf under `directory`, and answer the leaf
+ * and the CA path.
  *
- * The certificates are minted with openssl into `dir/identity-provider`, so
- * stopping the server's temporary directory cleans them up with everything
- * else. The CA file is the value the review configuration names as the Google
- * method's `root-ca-file`.
+ * The CA file is what a review configuration names for the restricted egress
+ * client, whose certificate verification is extended with it. The leaf's
+ * subject alternative names cover the loopback host the issuer is written with.
+ * Each provider gets its own directory, so one run's providers never overwrite
+ * each other's material.
  */
-export async function startIdentityProvider(
-  input: IdentityProviderInput,
-): Promise<IdentityProvider> {
-  const tlsDir = join(input.dir, 'identity-provider')
-  await mkdir(tlsDir, { recursive: true })
-  const caKeyPath = join(tlsDir, 'ca-key.pem')
-  const caPath = join(tlsDir, 'ca.pem')
-  const leafKeyPath = join(tlsDir, 'server-key.pem')
-  const csrPath = join(tlsDir, 'server.csr')
-  const leafPath = join(tlsDir, 'server.pem')
-  const extensionPath = join(tlsDir, 'server.ext')
+async function mintServerCertificate(
+  directory: string,
+): Promise<{ certificate: string; privateKeyPEM: string; caPath: string }> {
+  await mkdir(directory, { recursive: true })
+  const caKeyPath = join(directory, 'ca-key.pem')
+  const caPath = join(directory, 'ca.pem')
+  const leafKeyPath = join(directory, 'server-key.pem')
+  const csrPath = join(directory, 'server.csr')
+  const leafPath = join(directory, 'server.pem')
+  const extensionPath = join(directory, 'server.ext')
   await writeFile(
     extensionPath,
     [
@@ -351,9 +421,20 @@ export async function startIdentityProvider(
     readFile(leafPath, 'utf8'),
     readFile(leafKeyPath, 'utf8'),
   ])
+  return { certificate, privateKeyPEM, caPath }
+}
 
-  // The identity token's signing key. Its public half is the key set the
-  // product fetches; the private half never leaves this process.
+/**
+ * The one signing key a provider mints identity tokens with. Its public half is
+ * the key set the product fetches; the private half never leaves this process.
+ */
+interface SigningKey {
+  readonly jwks: unknown
+  sign(payload: Record<string, unknown>): string
+}
+
+/** Create a fresh ES256 signing key under the given key identifier. */
+function createSigningKey(keyID: string): SigningKey {
   const keyPair = generateKeyPairSync('ec', { namedCurve: 'P-256' })
   const publicJWK = keyPair.publicKey.export({ format: 'jwk' })
   if (publicJWK.x === undefined || publicJWK.y === undefined) {
@@ -361,7 +442,6 @@ export async function startIdentityProvider(
       'the identity provider could not read the signing key public coordinates',
     )
   }
-  const keyID = 'e2e-identity-provider-key'
   const jwks = {
     keys: [
       {
@@ -375,6 +455,52 @@ export async function startIdentityProvider(
       },
     ],
   }
+  return {
+    jwks,
+    sign(payload: Record<string, unknown>): string {
+      const header = base64url(
+        JSON.stringify({ alg: 'ES256', kid: keyID, typ: 'JWT' }),
+      )
+      const body = base64url(JSON.stringify(payload))
+      const signature = signPayload(
+        'sha256',
+        Buffer.from(`${header}.${body}`),
+        { key: keyPair.privateKey, dsaEncoding: 'ieee-p1363' },
+      )
+      return `${header}.${body}.${base64url(signature)}`
+    },
+  }
+}
+
+/** What one provider serves: its user, its client, its page copy and its key. */
+interface ProviderDefinition {
+  readonly directory: string
+  readonly user: {
+    readonly subject: string
+    readonly email: string
+    readonly name: string
+  }
+  readonly client: { readonly id: string; readonly secret: string }
+  readonly copy: AuthorizePageCopy
+  readonly keyID: string
+}
+
+/**
+ * Start one provider: certificates, two listeners, one fixed user.
+ *
+ * The certificate material is minted into `<dir>/<definition.directory>`, so
+ * stopping the server's temporary directory cleans it up with everything else.
+ * The CA path is what a review configuration names as the CA file; the issuer
+ * is the HTTPS listener the product discovers.
+ */
+async function startProvider(
+  definition: ProviderDefinition,
+  input: IdentityProviderInput,
+): Promise<StartedIdentityProvider> {
+  const tlsDir = join(input.dir, definition.directory)
+  const { certificate, privateKeyPEM, caPath } =
+    await mintServerCertificate(tlsDir)
+  const signer = createSigningKey(definition.keyID)
 
   const [httpsPort, httpPort] = await freePorts(2)
   if (httpsPort === undefined || httpPort === undefined) {
@@ -384,33 +510,22 @@ export async function startIdentityProvider(
   const authorizeOrigin = `http://127.0.0.1:${httpPort}`
 
   const codes = new Map<string, AuthorizationRequest>()
-  const accessTokens = new Map<string, typeof identityProviderUser>()
+  const accessTokens = new Map<string, ProviderDefinition['user']>()
 
   /** Mint one identity token for the fixed user. */
   function idToken(nonce: string): string {
     const now = Math.floor(Date.now() / 1000)
-    const header = base64url(
-      JSON.stringify({ alg: 'ES256', kid: keyID, typ: 'JWT' }),
-    )
-    const payload = base64url(
-      JSON.stringify({
-        iss: issuer,
-        sub: identityProviderUser.subject,
-        aud: identityProviderClient.id,
-        exp: now + 3600,
-        iat: now,
-        email: identityProviderUser.email,
-        email_verified: true,
-        name: identityProviderUser.name,
-        nonce,
-      }),
-    )
-    const signature = signPayload(
-      'sha256',
-      Buffer.from(`${header}.${payload}`),
-      { key: keyPair.privateKey, dsaEncoding: 'ieee-p1363' },
-    )
-    return `${header}.${payload}.${base64url(signature)}`
+    return signer.sign({
+      iss: issuer,
+      sub: definition.user.subject,
+      aud: definition.client.id,
+      exp: now + 3600,
+      iat: now,
+      email: definition.user.email,
+      email_verified: true,
+      name: definition.user.name,
+      nonce,
+    })
   }
 
   /** The client credentials a token request carries. */
@@ -479,7 +594,7 @@ export async function startIdentityProvider(
           response.writeHead(400).end('a S256 code challenge is required')
           return
         }
-        const page = authorizePage(params)
+        const page = authorizePage(params, definition.user.email, definition.copy)
         response.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Content-Length': Buffer.byteLength(page),
@@ -539,7 +654,7 @@ export async function startIdentityProvider(
           return
         }
         if (url.pathname === '/jwks') {
-          writeJSON(response, 200, jwks)
+          writeJSON(response, 200, signer.jwks)
           return
         }
         if (url.pathname === '/userinfo') {
@@ -572,8 +687,8 @@ export async function startIdentityProvider(
           }
           const client = clientOf(request, form)
           if (
-            client.id !== identityProviderClient.id ||
-            client.secret !== identityProviderClient.secret
+            client.id !== definition.client.id ||
+            client.secret !== definition.client.secret
           ) {
             writeJSON(response, 401, { error: 'invalid_client' })
             return
@@ -598,7 +713,7 @@ export async function startIdentityProvider(
             return
           }
           const accessToken = base64url(randomBytes(24))
-          accessTokens.set(accessToken, identityProviderUser)
+          accessTokens.set(accessToken, definition.user)
           writeJSON(response, 200, {
             access_token: accessToken,
             token_type: 'Bearer',
@@ -634,11 +749,68 @@ export async function startIdentityProvider(
   return {
     issuer,
     rootCAPath: caPath,
-    user: identityProviderUser,
     async stop(): Promise<void> {
       if (stopped) return
       stopped = true
       await Promise.all([close(httpsServer), close(httpServer)])
     },
+  }
+}
+
+/**
+ * Start the social provider: the Google method the review configuration points
+ * at, one fixed user, its certificate material under `dir/identity-provider`.
+ */
+export async function startIdentityProvider(
+  input: IdentityProviderInput,
+): Promise<IdentityProvider> {
+  const started = await startProvider(
+    {
+      directory: 'identity-provider',
+      user: identityProviderUser,
+      client: identityProviderClient,
+      copy: identityProviderCopy,
+      keyID: 'e2e-identity-provider-key',
+    },
+    input,
+  )
+  return {
+    issuer: started.issuer,
+    rootCAPath: started.rootCAPath,
+    user: identityProviderUser,
+    stop: started.stop,
+  }
+}
+
+/**
+ * Start the enterprise provider: an OIDC issuer on a concrete https loopback
+ * URL with one fixed user whose work address is on the domain the DNS stub
+ * answers for.
+ *
+ * Its certificate material lives under `dir/enterprise-identity-provider`, so
+ * it neither shares nor overwrites the social provider's material when both
+ * run in one server. The client identity and claim mapping it answers are the
+ * values an enterprise provider row is created with.
+ */
+export async function startEnterpriseIdentityProvider(
+  input: IdentityProviderInput,
+): Promise<EnterpriseIdentityProvider> {
+  const started = await startProvider(
+    {
+      directory: 'enterprise-identity-provider',
+      user: enterpriseIdentityProviderUser,
+      client: enterpriseIdentityProviderClient,
+      copy: enterpriseIdentityProviderCopy,
+      keyID: 'e2e-enterprise-identity-provider-key',
+    },
+    input,
+  )
+  return {
+    issuer: started.issuer,
+    rootCAPath: started.rootCAPath,
+    user: enterpriseIdentityProviderUser,
+    clientID: enterpriseIdentityProviderClient.id,
+    claims: enterpriseIdentityProviderClaims,
+    stop: started.stop,
   }
 }
