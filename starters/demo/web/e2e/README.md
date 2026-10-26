@@ -104,16 +104,21 @@ given kind (`sms`/`mail`) and destination address. The field is
 `verification_code`, never `code`: the gateway treats `code` as a sensitive key
 name and the logging layer masks its value.
 
-Two more reads are sanctioned for the SMS template journey, both surfaced by the
-server fixture rather than imported by a spec. The review SMS carrier writes one
+Two more reads are sanctioned for the SMS template journey, both read from the
+process log and served by the server fixture. The review SMS carrier writes one
 line per message it accepts, and that line — destination, template and language
-— is the only evidence a browser tier can read that the message left the
-process. And `notification.delivery` records each channel's terminal state in
-`notification_sends`, a table the design keeps off the product's interface; a
-refusal that never reached a carrier writes no log line at all, so that ledger
-is the only place its status and reason are recorded. `waitForCarrierMessage`,
-`waitForOutboundRecord` and `waitForDeliveryRecord` are the fixture methods; the
-ledger connection is read-only, and the fixture never writes a row.
+— is the evidence a browser tier can read that the message left the process. The
+delivery pipeline writes one external-send record per message that leaves, and
+`waitForCarrierMessage` and `waitForOutboundRecord` are the fixture methods.
+
+**This tier does not read the delivery ledger.** `notification_sends` is a table
+the design keeps off the product's interface, and the rollout spec does not claim
+to cover it: an end-to-end spec asserts rendered behaviour, and a fixture may
+read the ledger but may not be the basis of its assertion. The record that a
+locally refused send is failed with a refusal reason is asserted by the
+review-tagged Go case `TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger`
+(`starters/demo/server/review_notification_ledger_test.go`), which queries the
+table directly.
 
 Everything else is an assertion on rendered behaviour: visible text, accessible
 roles and names, focus, URL, disabled/selected state, banners and empty states.
@@ -173,10 +178,10 @@ gates cannot decide for a spec.
   the same split by directory. The one log reader a spec or helper may import
   is `waitForVerificationCode`; `fixtures/log.ts` is the only module that
   parses logfmt lines. A journey that must observe a message a review carrier
-  accepted, or a channel's delivery record, asks the server fixture instead:
-  `waitForCarrierMessage` and `waitForOutboundRecord` are the line reads, and
-  `waitForDeliveryRecord` reads `notification_sends`. The fixture parses and
-  queries; the spec names the message and reads the answer.
+  accepted, or an external-send record, asks the server fixture instead:
+  `waitForCarrierMessage` and `waitForOutboundRecord` are the line reads. No spec
+  or fixture method reads the delivery ledger; the one case that asserts on it is
+  the review-tagged Go case named above.
 - **The backend is real**: the built review binary, a fresh sqlite file, real
   HTTP. Fixtures may assemble the environment (builds, temporary directories,
   random ports, seeding the operator, probes); they may not fake a response.

@@ -12,24 +12,29 @@
  * recipient's language (the platform default) and the approved English code
  * carries it to the review SMS carrier, which writes the message to the process
  * log. Disabling the template and repeating the click is refused locally: the
- * carrier is never called, no external-send record appears, and the delivery
- * ledger keeps a failed row naming the refusal.
+ * carrier is never called and no external-send record appears.
  *
  * Everything the person does is a mouse or keyboard action on the rendered
  * product: the account controls that prove the email and phone the dispatch
  * needs, the console navigation, the register and enable/disable controls, the
- * review-only verdict control, the tenant switcher and the notice control. Three
+ * review-only verdict control, the tenant switcher and the notice control. Two
  * reads are not UI, and each is the harness's own:
  *
  *   - The email and SMS verification codes come from the process log through
  *     `waitForVerificationCode`, the one log read the honesty rules allow.
- *   - The message the review SMS carrier accepted comes from its process-log
- *     line through the fixture's `waitForCarrierMessage`. The carrier reaches no
- *     vendor, so that line is the only evidence that the message left.
- *   - The channel's delivery record comes from `notification_sends` through the
- *     fixture's ledger reader. The design keeps that table off the product's
- *     interface, and a refusal that never reached a carrier writes no log line,
- *     so the ledger is the only place its status and reason are recorded.
+ *   - The messages the review SMS carrier accepted and the delivery pipeline's
+ *     external-send records come from their process-log lines through the
+ *     fixture's `waitForCarrierMessage` and `waitForOutboundRecord`. The carrier
+ *     reaches no vendor, so those lines are the evidence that a message left or
+ *     did not leave the process.
+ *
+ * This spec does not claim to cover the delivery ledger. `notification_sends`
+ * stays off the product's interface, and an end-to-end spec asserts rendered
+ * behaviour rather than a table a fixture reads. The record that a locally
+ * refused send is failed with its refusal reason is asserted by the
+ * review-tagged Go case `TestReviewRefusedSMSTemplateIsRecordedFailedInTheLedger`
+ * (`starters/demo/server/review_notification_ledger_test.go`), which queries
+ * the ledger directly.
  *
  * The review verdict is driven by a control the review assembly alone compiles
  * and mounts; the page renders it only while the review build publishes the
@@ -71,7 +76,7 @@
  * the verification and verdict sentences follow the bundle when it changes.
  */
 // @journey journey-sms-template-rollout.md
-// @covers REQ-notifications-023, REQ-notifications-044, REQ-platform-config-010, REQ-platform-config-012, REQ-platform-config-013, REQ-platform-config-014, REQ-platform-config-015, REQ-platform-config-034, REQ-platform-config-036, REQ-presentation-027, REQ-presentation-028
+// @covers REQ-notifications-023, REQ-platform-config-010, REQ-platform-config-012, REQ-platform-config-013, REQ-platform-config-014, REQ-platform-config-015, REQ-platform-config-034, REQ-platform-config-036, REQ-presentation-027, REQ-presentation-028
 import type { Locator, Page } from '@playwright/test'
 
 import { smsRolloutOperator } from '../fixtures/config'
@@ -586,10 +591,6 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     ).toBeVisible()
 
     const logAfter = server.log.mark()
-    const ledgerAfter = server.deliveryMark({
-      typeKey: TYPE_KEY,
-      channel: 'sms',
-    })
     await notice
       .getByRole('button', {
         name: copy('demo', 'home.reviewNotice.action'),
@@ -619,18 +620,9 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     })
     expect(outbound.providerID).not.toBe('')
     expect(outbound.durationMS).toBeGreaterThanOrEqual(0)
-
-    // The ledger's one row for the channel, settled on the carrier's receipt.
-    const record = await server.waitForDeliveryRecord({
-      typeKey: TYPE_KEY,
-      channel: 'sms',
-      status: 'succeeded',
-      after: ledgerAfter,
-    })
-    expect(record.providerReceiptID).not.toBeNull()
   })
 
-  await test.step('a disabled template is refused locally and the ledger names the refusal', async () => {
+  await test.step('a disabled template is refused locally and no message leaves', async () => {
     await openSmsPage(page)
     const row = templateRow(page, TEMPLATE)
     await row
@@ -661,10 +653,6 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
     await switchToTenant(page)
 
     const logAfter = server.log.mark()
-    const ledgerAfter = server.deliveryMark({
-      typeKey: TYPE_KEY,
-      channel: 'sms',
-    })
     await page
       .getByRole('button', {
         name: copy('demo', 'home.reviewNotice.action'),
@@ -675,21 +663,11 @@ test('sms-template-rollout: an operator settles one language and a disabled temp
       page.getByText(copy('demo', 'home.reviewNotice.sent'), { exact: true }),
     ).toBeVisible()
 
-    // The channel failed at the local gate: the row names the template and
-    // records no carrier receipt, because no carrier was called.
-    const record = await server.waitForDeliveryRecord({
-      typeKey: TYPE_KEY,
-      channel: 'sms',
-      status: 'failed',
-      after: ledgerAfter,
-    })
-    expect(record.error).not.toBeNull()
-    expect(record.error ?? '').toContain(TEMPLATE)
-    expect(record.providerReceiptID).toBeNull()
-
     // Nothing left the process: no carrier line and no external-send record
-    // after the click. The failed row above is the signal that the channel was
-    // attempted; a line a carrier wrote would have preceded that row.
+    // after the click. The SMS page above still renders the template as
+    // disabled with its review states unchanged, which is the refusal the
+    // participant observes. The ledger row that records the refusal is covered
+    // by the review-tagged Go case named in this spec's header, not here.
     expect(
       server.countCarrierMessages({
         to: PHONE_E164,
