@@ -127,18 +127,27 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   `TenantAdminRole` belongs to every domain. A platform administrator binding
   asks the optional `authz.MembershipChecker` about the account in the platform
   tenant and refuses with `authz.ErrMissingMembershipChecker` when the assembly
-  supplied none, so the check fails closed. `DeleteBinding` refuses removing the
-  last `TenantAdminRole` binding of a domain with `authz.ErrLastTenantAdmin`,
-  and the check and the delete share one transaction with the binding rows
-  locked, so two concurrent removals cannot both pass the check.
+  supplied none, so the check fails closed; a checker that answers "not a
+  member" refuses with `authz.ErrPlatformMembershipRequired`. `DeleteBinding`
+  refuses removing the last `TenantAdminRole` binding of a domain with
+  `authz.ErrLastTenantAdmin`, and the check and the delete share one transaction
+  with the binding rows locked, so two concurrent removals cannot both pass the
+  check. `ClearAccountBindings` is the host's account-deletion path beside
+  `DeleteBinding`: it clears one account's bindings in one tenant and skips the
+  last-administrator rule, which protects a domain still in service.
   `TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain`,
   `TestPutBindingOfThePlatformAdministratorNeedsAMembershipChecker`,
-  `TestDeletingTheLastTenantAdministratorBindingIsRefused`.
+  `TestPutBindingOfThePlatformAdministratorChecksMembership`,
+  `TestDeletingTheLastTenantAdministratorBindingIsRefused`,
+  `TestClearAccountBindingsClearsOneAccountWithinOneTenant`.
 - **The account lifecycle cleanup is idempotent and crosses tenants.** A
   deleted account's binding rows are removed across every tenant; running the
   cleanup again is no work and no error. A binding row that outlives the
   deletion names an account the authentication side can no longer produce, so
-  the account is unusable there whether or not the row arrived.
+  the account is unusable there whether or not the row arrived. The host's
+  per-tenant teardown has `Manager.ClearAccountBindings` beside this hook; the
+  hook clears every tenant, while the manager method names one tenant and one
+  account.
 - **Both input items are configuration.** `authz.policy.load-timeout` bounds the
   startup load and is read before the snapshot exists.
   `authz.policy.refresh-interval` sizes the ticker `Start` raises and is read at
