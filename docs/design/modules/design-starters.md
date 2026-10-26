@@ -101,9 +101,11 @@ starters/demo/
 
 ### 审查装配
 
-审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。`server/review.go` 的 `reviewModules` 给 `serve` 的点名集加上基线判据排除在外的登录方式：社交登录方法（`authn.login.google`、`authn.login.github`、`authn.login.wechat-mp`、`authn.login.wechat-web`）与短信家族（`authn.sms`、`sms.registry`、`authn.login.sms`），外加载体 `sms.review`；口令注册另加邮箱验证模块 `authn.emailcode` 与它的日志载体 `mail.review`。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这些模块的代码路径；基线的判据与点名集不因它改变。
+审查装配是示范程序的构建变体，只在以 `-tags review` 构建时存在。`server/review.go` 的 `reviewModules` 给 `serve` 的点名集加上基线判据排除在外的登录方式：社交登录方法（`authn.login.google`、`authn.login.github`、`authn.login.wechat-mp`、`authn.login.wechat-web`）、企业 OIDC 登录方法 `authn.sso.oidc` 与短信家族（`authn.sms`、`sms.registry`、`authn.login.sms`），外加载体 `sms.review`；口令注册另加邮箱验证模块 `authn.emailcode` 与它的日志载体 `mail.review`。默认构建编译 `server/review_off.go`，`reviewModules` 为空，二进制不含这些模块的代码路径；基线的判据与点名集不因它改变。
 
-**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 与 `authn.account.password-signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。`authn.humanverify.mode` 显式写为 `off`：缺省值就是它，写出来使审查与端到端走查里的每次发送都不经证明，并在缺省值将来改变时保持这条路径不变。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
+**配置是 `server/review/sqlite.yaml`，位于 `testdata/` 之外。** 它是一份覆盖文档，与 `testdata/` 的 sqlite 配置同形：只写部署差异，平台拓扑取自编译进二进制的 `server/defaults.yaml`；此外再加上这些模块需要的节：社交方法的一组假凭据（方法因此起得来并拼得出授权地址，对端不会被访问）、企业 OIDC 方法的出口接缝（`authn.sso`，缺省取系统解析器与系统根证书）、短信模板注册表（zh-CN 与 en-US 各一组模板码）、种子设置里的 `authn.account.signup` 与 `authn.account.password-signup` 为 `open`、`workspace.personal.enabled` 为真，以及放宽到可送达号码的 `authn.sms.allowed-prefixes`。`authn.humanverify.mode` 显式写为 `off`：缺省值就是它，写出来使审查与端到端走查里的每次发送都不经证明，并在缺省值将来改变时保持这条路径不变。库落在 `server/var/review.db`，与基线的 `var/demo.db` 分开；`testdata/` 里的基线配置保持原样。
+
+**企业登录入口在每个审查服务的登录页上都出现。** `authn.sso.oidc` 在 `reviewModules` 里，审查装配因此始终挂载企业方法；`review/sqlite.yaml` 的 `authn.sso` 三项只写出口接缝的缺省值，缺省没有企业提供方。发现文档总带一条企业方法，登录页始终渲染企业入口——工作邮箱与「继续」——即使没有任何提供方可选。端到端走查的定位器因此落在它所在的那个面上：第二因素的「继续」定位到密码渠道的面板，企业入口的「继续」定位到企业入口本身；在整张登录页上做不设边界的角色查询会同时选中第二因素的「继续」与企业入口的「继续」，这是走查规格的缺陷，产品与审查装配不因此改变。
 
 **验证码由短信模块生成，不写死。** `sms.review` 经 `sms.NewModule` 提供载体的发送与模板两条接缝，不读任何配置项；短信模块把消息的 `code` 参数交给它，它把这一行写进进程日志的 `verification_code` 字段。该字段不叫 `code`，因为 `code` 是进程已登记的敏感键名，日志层会把值打码。号码仍经过真实的预算、挑战行与校验，流程跑的是产品自己的状态机。
 
