@@ -215,6 +215,25 @@ func TestAcceptFaceIsPublicAndTokenAddressed(t *testing.T) {
 	}
 }
 
+// TestAnIncompleteCleanupOnAcceptanceAnswers503 holds the acceptance face's
+// mapping of the propagated cleanup failure: the account exists and the
+// invitation is back to pending, and the caller is told the dependency could
+// not finish rather than that the token is a conflict.
+func TestAnIncompleteCleanupOnAcceptanceAnswers503(t *testing.T) {
+	h := newHarness(t)
+	h.mounter.AsAnonymous()
+	h.admin.err = authn.ErrCleanupIncomplete
+	issued := h.issue("tenant-a", "zoe@example.com")
+
+	w := h.request(http.MethodPost, "/api/v1/auth/invitations/"+issued.Token, map[string]string{"display_name": "Zoe"})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("accept status = %d, want 503: %s", w.Code, w.Body.String())
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("status after the 503 = %d, want back to pending", got)
+	}
+}
+
 // TestAnUnknownObjectIsAnsweredWithABare404 holds the answer the fragment
 // declares for both faces: a missing invitation is a 404 with no problem
 // document, not the problem shape the other refusals use.

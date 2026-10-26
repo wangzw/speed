@@ -89,6 +89,12 @@ var seamSignatures = map[string][]string{
 		"AccountDeleted(ctx context.Context, id AccountID) error",
 		"ServiceSecretRevoked(ctx context.Context, id AccountID, credentialID string) error",
 	},
+	"MembershipLifecycle": {
+		"MembershipRemoved(ctx context.Context, id AccountID, tenant string) error",
+	},
+	"MembershipGuard": {
+		"CheckMembershipRemoval(ctx context.Context, id AccountID, tenant string) error",
+	},
 	"Provisioner": {
 		"Provision(ctx context.Context, p CreateAccount, via string) (CreateAccount, error)",
 	},

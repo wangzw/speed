@@ -10,6 +10,7 @@
 - 规范化标识：用户名、邮箱、手机在写入与查询两侧经同一个函数规范化。
 - 持有口令类凭据的全部校验细节：口令规范化、查找、PHC 编解码与界限、诱饵派生、再哈希、服务密钥的摘要比对。
 - 执行账户的创建与状态迁移：创建、停用、启用、删除在本模块的事务里写自己的表，提交之后同步调用全部 `AccountLifecycle`。
+- 执行成员关系的显式删除：删除之前询问可选的 `MembershipGuard`，提交之后同步调用全部 `MembershipLifecycle`。
 - 持有失败退避的算法与表，以及 `authn_throttles`、`authn_service_secrets` 的清扫协程。
 - 承载外部身份绑定、自动关联、首登开户、自助注册开户与 JIT 并入的规则。规则约束的是本模块的数据（绑定、标识、联系方式预留、成员关系）与账户的会话和口令；首登开户与 JIT 并入的执行者是 `authn.login` 的账户解析步（[design-authn-login](design-authn-login.md)），自助注册开户经本模块的 `Signups.Register`。
 
@@ -20,7 +21,7 @@
 - **不建立登录会话，不签发令牌。** 会话归 `authn.session`，令牌归 `authn.token`；本模块只在账户创建与状态迁移之后调用它们实现的 `AccountLifecycle`（[design-authn-session](design-authn-session.md)、[design-authn-token](design-authn-token.md)）。
 - **不做授权。** 本模块的成员关系只回答「账户是否属于某租户」；角色按（账户，租户）绑定，归 `authz.policy`（[design-authz](../design-authz.md)），它经 `Memberships` 读成员关系，不读 `authn_memberships` 表。
 - **不 import `pkg/tenant`。** 租户标识在本模块里是字符串；成员关系的请求期判定归 `tenant.admission`，它在 tenant 目录里经 `Memberships` 读取（[design-tenant-admission](../tenant/design-tenant-admission.md)）。
-- **不写别的模块的表。** 会话、因素、短信挑战各归 `authn.session`、`authn.mfa`、`authn.sms`；跨模块的清理走 `AccountLifecycle` 与事件，不进账户事务。
+- **不写别的模块的表。** 会话、因素、短信挑战各归 `authn.session`、`authn.mfa`、`authn.sms`；跨模块的清理走 `AccountLifecycle`、`MembershipLifecycle` 与事件，不进账户事务。
 - **不挂路由，不实现登录方式。** 登录路由与账户解析归 `authn.login`，自助与管理路由归 `authn.login`、`authn.session`、`authn.mfa`、`authn.admin` 各自的处理器；本模块只交付它们调用的接口。
 - **注册是用户名＋口令＋邮箱的匿名请求，开户后验证邮箱（REQ-signup-004、REQ-signup-028）。** 本模块不为短信首登、社交登录与企业 JIT 新增开户路径，但新增自助注册的开户入口 `Signups.Register`：一次事务写入启用的账户、`via = self` 的用户名标识、口令凭据与一条邮箱未证明预留。注册路由归 `authn.login`，邮箱验证复用已认证账户的自助回路，只有邮箱被证明才解除限制（REQ-signup-026；[ADR-authn-signup-2026-10-22](../../../adr/adr-authn-signup-2026-10-22.md)）。口令账户也可由管理面或宿主代码创建。**验证状态的判定不区分账户来源**（REQ-signup-023、REQ-account-015）：本模块按同一条判据读同一个状态，不为来源开例外。
 - **不解析手机号，不做口令泄露库比对，不折叠邮箱别名。** 手机号只接受 E.164，转换由客户端做。
@@ -195,7 +196,7 @@ type Memberships interface {
 | `Tenants` | 跨租户列出账户的全部成员关系，按租户标识升序；按 `authn_memberships_account` 索引走。 |
 | `Members` | 按租户分页，`Limit` 缺省 100、上限 1000。 |
 | `Put` | 幂等：新增、暂停、恢复。账户不存在（含墓碑）返回 `ErrAccountNotFound`：表间没有外键，由本方法核对。 |
-| `Remove` | 删除一条成员关系。 |
+| `Remove` | 删除一条成员关系。删除之前先问可选的 `MembershipGuard`：会让租户不再有任何租户管理员绑定时以 `ErrLastTenantAdmin` 拒绝，不删行；没有行可删时不问。事务提交之后同步调用全部 `MembershipLifecycle.MembershipRemoved`，失败返回 `ErrCleanupIncomplete`（删除已生效，重试同一调用幂等地补完）。账户删除不走本方法，因而不问守卫，也不调成员关系生命周期钩子（见下）。 |
 | 实现 | 每条语句显式写 `tenant_id`；`authn_memberships` 由 `Memberships` 的实现独占，`authz.policy` 与准入层经接口读，不直接读表。 |
 
 ### Throttle
@@ -249,6 +250,23 @@ type AccountLifecycle interface {
 | `AccountDeleted` | 抹除本模块持有的该账户数据：会话行、因素与其子表数据、短信挑战行。 |
 | `ServiceSecretRevoked` | 撤销该密钥对应的 service 种会话。 |
 
+### MembershipLifecycle 与 MembershipGuard（本模块取用的钩子）
+
+```go
+type MembershipLifecycle interface {
+	MembershipRemoved(ctx context.Context, id AccountID, tenant string) error
+}
+
+type MembershipGuard interface {
+	CheckMembershipRemoval(ctx context.Context, id AccountID, tenant string) error
+}
+```
+
+根包定义，由持有以成员关系为键的数据的模块实现（`authz.policy` 实现两者）。`MembershipLifecycle` 的实现并立、不排他，本模块在 `Init` 里经 `core.ResolveAll` 取用；`MembershipGuard` 是单个可选接缝，经 `core.Resolve` 取用，缺席合法。两者都不写进 `Requires`。
+
+- **`MembershipRemoved` 在一次显式的成员关系删除提交之后同步调用。** 删除已生效，实现不得读成员关系行；它幂等，账户在租户里已无数据时返回 nil。钩子失败使本次调用返回 `ErrCleanupIncomplete`，重试同一调用幂等地补完。`authn.membership.changed` 事件仍在，作为提交与钩子之间进程崩掉的补偿。账户删除不调用它：删除由 `AccountDeleted` 与逐租户的成员关系事件处理。
+- **`CheckMembershipRemoval` 在显式删除之前询问。** 删除会让租户不再有任何 `tenant-admin` 绑定时返回 `ErrLastTenantAdmin`，删除不执行；其余错误是检查不可用，按拒绝处理，不按放行。账户删除是明示的例外，不问这个接缝。守卫在删除事务之前询问，因此它的读不与成员关系存储共用事务。
+
 ### 对外接口面
 
 上述接口的方法集、哨兵与表名是宿主可见面：增删方法、改签名与改表名都是破坏性变更。根包只放这些接口与数据类型，实现与 `*gorm.DB` 留在本模块内；其他 authn 子包与授权功能目录拿不到数据库句柄。
@@ -263,6 +281,8 @@ type AccountLifecycle interface {
 | `event.Bus`、`outbox.Outbox` | 可选 | 发布账户与成员关系事件；发件箱在场时在写入的同一事务里暂存。 |
 | `audit.Audit` | 可选 | 在场时经模型路径的写留下语句级审计行。 |
 | 全部 `AccountLifecycle` | 非排他，`ResolveAll` | 账户创建之后建立、状态迁移之后清理。 |
+| 全部 `MembershipLifecycle` | 非排他，`ResolveAll` | 成员关系删除提交之后清理。 |
+| `MembershipGuard` | 可选，`Resolve` | 显式删除成员关系之前的最后租户管理员检查。 |
 | `pkg/authn/internal/password` | 内部 | PHC 编解码、派生、校验、进程内退避、并发与内存预算。 |
 | `pkg/authn/internal/acctcache` | 内部 | 账户快照的进程内缓存，校验后端读它；它按有效期过期，并在订阅到 `authn.account.status-changed` 与 `authn.account.deleted` 时清除。 |
 | `pkg/authn/internal/clock` | 内部 | 写入数据库与绑定为查询参数的时间的来源，一律 UTC。 |
@@ -890,7 +910,8 @@ flowchart TD
 | `ErrInvalidIdentifier` | 标识规范化失败：用户名、邮箱、手机格式不合 | 400 `bad-request` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界（条目数、键值形状、总字节）、显示名过长、`via` 不在接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；也会在会话载荷的 `idp.*` 越界处出现，那时是写载荷一方的缺陷，503 |
 | `ErrIdentifierRequired` | 账户没有可作登录名的标识而要设口令；或带口令凭据的账户删除后不再剩下可作登录名的标识 | 409 `login-identifier-required` |
-| `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效，而某个 `AccountLifecycle` 钩子失败；重试同一调用幂等地补完 | 503 |
+| `ErrCleanupIncomplete` | 账户状态、服务密钥状态或成员关系删除已生效，而某个 `AccountLifecycle` 或 `MembershipLifecycle` 钩子失败；重试同一调用幂等地补完 | 503 |
+| `ErrLastTenantAdmin` | 显式删除成员关系会让租户不再有任何 `tenant-admin` 绑定（由 `MembershipGuard` 判出） | 409 `conflict` |
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 标识级退避中；注册的 `signup-username` 退避中 | 429 `throttled`，带 `Retry-After` |
 | `ErrBindingConflict` | 外部身份已被别的账户占用 | 409 |
 | `ErrLastLoginMethod` | 解绑最后一种登录方式 | 409 |
@@ -1020,6 +1041,7 @@ type Provisioner interface {
 | 账户状态迁移、墓碑抹除与 `AccountLifecycle` 钩子调用、事件暂存 | 已实现 | `pkg/authn/account/lifecycle.go` `SetStatus`、`Delete`、`RevokeServiceSecret`；`pkg/authn/account/events.go`；`pkg/authn/account/sweep.go` |
 | 账户创建之后的 `AccountLifecycle.AccountCreated` 调用（`Create` 与 `Signups.Register`） | 已实现 | `pkg/authn/lifecycle.go` `AccountLifecycle.AccountCreated`；`pkg/authn/account/admin.go` `(*product).Create`；`pkg/authn/account/signup.go` `(*product).Register`；`pkg/authn/session/lifecycle.go`、`pkg/authn/mfa/manage.go`、`pkg/authn/sms/lifecycle.go`、`pkg/authz/policy/lifecycle.go` 的 `AccountCreated`；`pkg/authn/account/created_hook_test.go` `TestCreateCallsTheCreatedHook`、`TestRegisterCallsTheCreatedHook`、`TestAFailingCreatedHookLeavesTheAccountAndTheRetryCompletes`、`TestTheCreatedHookToleratesAnAccountDeletedBeforeItRuns` |
 | `AccountEnabled` 钩子与启用之后的恢复调用 | 已实现 | `pkg/authn/lifecycle.go` `AccountLifecycle.AccountEnabled`；`pkg/authn/account/lifecycle.go` `SetStatus`；`pkg/authn/session/lifecycle.go`、`pkg/authn/mfa/manage.go`、`pkg/authn/sms/lifecycle.go`、`pkg/authz/policy/lifecycle.go` 的 `AccountEnabled`；`pkg/authn/account/lifecycle_test.go` `TestEnablingCallsTheEnabledHook`、`TestSetStatusToActiveOnAnActiveAccountRunsTheEnabledHook` |
+| 显式成员关系删除的守卫与生命周期钩子 | 已实现 | `pkg/authn/membership.go` `MembershipLifecycle`、`MembershipGuard`；`pkg/authn/account/memberships.go` `(*product).Remove`、`membershipExists`、`checkMembershipRemoval`；`pkg/authn/account/lifecycle.go` `callMembershipHooks`；`pkg/authz/policy/lifecycle.go` `MembershipRemoved`、`CheckMembershipRemoval`；`pkg/authn/account/membership_lifecycle_test.go` |
 | 外部身份绑定与自动关联的规则、首登开户（执行在 `authn.login` 的账户解析步） | 已实现 | `pkg/authn/account/admin.go` `LinkExternal`、`UnlinkExternal`、`AddIdentifier`、`RemoveIdentifier`；`pkg/authn/account/accounts.go` `ByExternal`；`pkg/authn/account/admin.go` `Create`；`pkg/authn/login/internal/resolve` |
 | 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 已实现 | `pkg/authn/account/password.go` `Verify`；`pkg/authn/account/credentials.go` `Set`、`Clear`、`ImportHash`；`pkg/authn/internal/password` `Parse`、`Params`、`Governor`、`Decoy` |
 | 口令凭据的删除（规则 A10） | 已实现 | `pkg/authn/account/credentials.go` `Clear`；`pkg/authn/account.go` `Passwords.Clear` |

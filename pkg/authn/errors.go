@@ -225,6 +225,11 @@ var (
 	// to log in. Outwardly it is a 409.
 	ErrLastLoginMethod = errors.New("authn: this is the account's last way to log in")
 
+	// ErrLastTenantAdmin reports a membership removal a MembershipGuard refused
+	// because it would leave the tenant with no tenant-administrator binding.
+	// Outwardly it is a 409.
+	ErrLastTenantAdmin = errors.New("authn: the last tenant administrator binding of a tenant cannot be removed")
+
 	// ErrAccountUnavailable reports a disabled account on an external login path,
 	// where the caller has already proved who they are at the provider. Outwardly
 	// it is a 403 account-unavailable.

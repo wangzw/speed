@@ -237,7 +237,8 @@ func (m *product) answer(op string, err error) error {
 		return authnFailure(http.StatusConflict, mount.CodeEmailTaken)
 	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),
 		errors.Is(err, authn.ErrDomainClaimed), errors.Is(err, authn.ErrLastLoginMethod),
-		errors.Is(err, authn.ErrFactorLimit), errors.Is(err, authn.ErrLastFactor):
+		errors.Is(err, authn.ErrLastTenantAdmin), errors.Is(err, authn.ErrFactorLimit),
+		errors.Is(err, authn.ErrLastFactor):
 		return authnFailure(http.StatusConflict, mount.CodeConflict)
 	case errors.Is(err, authn.ErrUnsupportedRegion):
 		return authnFailure(http.StatusBadRequest, mount.CodeUnsupportedRegion)

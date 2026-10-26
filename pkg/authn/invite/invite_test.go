@@ -234,6 +234,62 @@ func TestAcceptSettlesATakenContactAsRevoked(t *testing.T) {
 	}
 }
 
+// TestAcceptPropagatesACleanupIncomplete holds that an account the acceptance
+// created and whose lifecycle cleanup failed is that failure and not an
+// unavailable dependency: the caller reads the same sentinel the account call
+// returned, and the invitation goes back to pending so a retry is not locked
+// out.
+func TestAcceptPropagatesACleanupIncomplete(t *testing.T) {
+	h := newHarness(t)
+	h.admin.err = authn.ErrCleanupIncomplete
+	issued := h.issue(tenant, "karl@example.com")
+
+	_, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
+	if !errors.Is(err, authn.ErrCleanupIncomplete) {
+		t.Fatalf("accepting over a failing lifecycle hook gave %v, want ErrCleanupIncomplete", err)
+	}
+	if errors.Is(err, authn.ErrUnavailable) {
+		t.Error("the cleanup failure was merged into ErrUnavailable instead of being propagated")
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusPending {
+		t.Errorf("status after a cleanup failure = %d, want back to pending: the retry finishes the cleanup", got)
+	}
+}
+
+// A CleanupIncomplete is transient: once the account the failed acceptance
+// created is visible, the retry accepts the invitation without creating a
+// second account, and the hook is what the earlier call left to finish.
+func TestAcceptRetriesAfterACleanupIncomplete(t *testing.T) {
+	h := newHarness(t)
+	h.admin.err = authn.ErrCleanupIncomplete
+	issued := h.issue(tenant, "lena@example.com")
+	if _, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token}); !errors.Is(err, authn.ErrCleanupIncomplete) {
+		t.Fatalf("the first acceptance gave %v, want ErrCleanupIncomplete", err)
+	}
+
+	// The account exists though its hook failed, which is the state the account
+	// module leaves in force.
+	h.accounts.put("lena@example.com", "acct-lena")
+	h.admin.err = nil
+
+	mem, err := h.p.Accept(context.Background(), AcceptInvite{Token: issued.Token})
+	if err != nil {
+		t.Fatalf("retrying the acceptance: %v", err)
+	}
+	if mem.Account != "acct-lena" {
+		t.Errorf("the retry accepted for %q, want the account the first call created", mem.Account)
+	}
+	if h.admin.creates != 1 {
+		t.Errorf("the retry created %d account(s) in all, want the one create of the first call", h.admin.creates)
+	}
+	if got := h.row(issued.Invitation.ID).Status; got != statusAccepted {
+		t.Errorf("status after the retry = %d, want accepted", got)
+	}
+	if h.members.count != 1 {
+		t.Errorf("memberships written = %d, want one", h.members.count)
+	}
+}
+
 func TestRevokeIsIdempotentAndRefusesAnAcceptedInvitation(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()

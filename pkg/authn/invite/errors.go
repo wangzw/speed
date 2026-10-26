@@ -26,6 +26,7 @@ var domainErrors = []error{
 	authn.ErrInvalidArgument,
 	authn.ErrInvalidIdentifier,
 	authn.ErrBindingConflict,
+	authn.ErrCleanupIncomplete,
 	authn.ErrUnavailable,
 }
 

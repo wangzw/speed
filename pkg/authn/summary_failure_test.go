@@ -591,6 +591,7 @@ var runtimeSentinels = []error{
 	authn.ErrSessionRevoked, authn.ErrThrottled, authn.ErrFlowInvalid, authn.ErrStepOutOfOrder,
 	authn.ErrLinkRequired, authn.ErrNotProvisioned, authn.ErrSignupClosed, authn.ErrDomainMismatch,
 	authn.ErrProvisionRefused, authn.ErrBindingConflict, authn.ErrLastLoginMethod, authn.ErrLastFactor,
+	authn.ErrLastTenantAdmin,
 	authn.ErrFactorNotEnrolled, authn.ErrReplay, authn.ErrStepUpRequired, authn.ErrFactorNotSeasoned,
 	authn.ErrFactorFlagged,
 	authn.ErrSessionNotFound, authn.ErrCSRF, authn.ErrTokenInvalid, authn.ErrInvalidGrant,

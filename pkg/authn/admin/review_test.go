@@ -1467,6 +1467,7 @@ func TestMemberRemoveMapsCapabilityFailuresToItsDeclaredAnswers(t *testing.T) {
 		{"invalid argument", authn.ErrInvalidArgument, http.StatusBadRequest, mount.CodeBadRequest},
 		{"no such account", authn.ErrAccountNotFound, http.StatusNotFound, ""},
 		{"conflict", authn.ErrAccountExists, http.StatusConflict, mount.CodeConflict},
+		{"last tenant administrator", authn.ErrLastTenantAdmin, http.StatusConflict, mount.CodeConflict},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

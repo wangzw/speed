@@ -38,6 +38,7 @@ var designSentinels = map[string]error{
 	"ErrSignupClosed": ErrSignupClosed, "ErrContactRequired": ErrContactRequired,
 	"ErrDomainMismatch": ErrDomainMismatch, "ErrProvisionRefused": ErrProvisionRefused,
 	"ErrBindingConflict": ErrBindingConflict, "ErrLastLoginMethod": ErrLastLoginMethod, "ErrLastFactor": ErrLastFactor,
+	"ErrLastTenantAdmin":   ErrLastTenantAdmin,
 	"ErrFactorNotEnrolled": ErrFactorNotEnrolled, "ErrReplay": ErrReplay, "ErrStepUpRequired": ErrStepUpRequired,
 	"ErrFactorNotSeasoned": ErrFactorNotSeasoned,
 	"ErrFactorFlagged":     ErrFactorFlagged,

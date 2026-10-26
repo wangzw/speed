@@ -8,7 +8,9 @@ service accounts, and the failure back-off; it delivers seven capabilities
 exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
 `Passwords`, `Memberships` and `Throttle` — and it creates an account and moves
 it between disabled, enabled and deleted, calling every `AccountLifecycle` hook
-after the transaction commits.
+after the transaction commits. An explicit membership removal asks the optional
+`MembershipGuard` first and calls every `MembershipLifecycle` hook after the
+removal commits.
 
 No other module reads these tables. Every module that needs an account, a
 credential, a membership or a back-off takes one of the seven interfaces from the
@@ -41,10 +43,21 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   error or an event; only a PHC entry or a digest is ever stored.
 - **The module imports neither `pkg/tenant` nor the session, factor or SMS
   modules.** A tenant is a string here; the cross-module cleanup goes the other
-  way, through `AccountLifecycle`, which the cleaning modules implement and this
-  one takes up with `core.ResolveAll`. A hook runs after the account transaction
-  has committed, never inside it, and an implementation must not read the
-  account row beyond the tombstone.
+  way, through `AccountLifecycle` and `MembershipLifecycle`, which the cleaning
+  modules implement and this one takes up with `core.ResolveAll`. A hook runs
+  after the transaction it cleans up after has committed, never inside it, and an
+  implementation must not read the account row beyond the tombstone or the
+  membership row, which is gone.
+- **An explicit membership removal is guarded before it deletes and cleaned
+  after it commits.** `Memberships.Remove` asks the optional
+  `authn.MembershipGuard` only when a membership row is there to remove: a
+  guard's `authn.ErrLastTenantAdmin` leaves the row in place, and any other
+  guard error is `ErrUnavailable`, never a pass. It then calls every
+  `authn.MembershipLifecycle` hook, including on a retry whose row is already
+  gone, and a failing hook makes the call `ErrCleanupIncomplete`. Account
+  deletion does not come through `Remove`, so it consults neither the guard nor
+  the membership hooks; its own `AccountDeleted` hook and the membership events
+  are its paths.
 - **Every time written to the database or bound to a query goes through
   `internal/clock` and is converted to UTC.** The SQLite driver compares times
   as text, so a non-UTC value makes `valid_after`, a back-off's lock and an

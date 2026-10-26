@@ -237,6 +237,32 @@ func (p *product) callHooks(ctx context.Context, id authn.AccountID, name *strin
 	return fmt.Errorf("%w: %w", authn.ErrCleanupIncomplete, errors.Join(failures...))
 }
 
+// callMembershipHooks calls one method of every membership lifecycle hook once
+// the removal it cleans up after is in force. Every hook is called whatever the
+// ones before it did, and the failures are returned together as
+// authn.ErrCleanupIncomplete. The hooks run to the end whatever becomes of the
+// caller's context, within the same bound the account hooks take.
+func (p *product) callMembershipHooks(ctx context.Context, id authn.AccountID, tenant string) error {
+	if len(p.membershipHooks) == 0 {
+		return nil
+	}
+	hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), hookTimeout)
+	defer cancel()
+	var failures []error
+	for _, h := range p.membershipHooks {
+		if err := h.MembershipRemoved(hookCtx, id, tenant); err != nil {
+			p.logger.Warn(ModuleName+": a membership lifecycle hook failed after the membership was removed, "+
+				"and repeating the call finishes the cleanup",
+				slog.String("account", id.String()), slog.String("tenant", tenant), slog.String("cause", describe(err)))
+			failures = append(failures, err)
+		}
+	}
+	if len(failures) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", authn.ErrCleanupIncomplete, errors.Join(failures...))
+}
+
 // RevokeServiceSecret revokes a secret and then calls
 // AccountLifecycle.ServiceSecretRevoked on every hook. A secret that is already
 // revoked is revoked as it was, and the hooks are called again: that is how a
