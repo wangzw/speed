@@ -157,7 +157,10 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   subscription runs the same helper as the crash-window compensation. A removal
   in a business tenant cascades nothing. `CheckMembershipRemoval` refuses with
   `authn.ErrLastTenantAdmin` when the account is the named tenant's only
-  `TenantAdminRole` binding. Both reuse `tenantAdminRows` and
+  `TenantAdminRole` binding. `Lock` serialises the check and the removal's
+  commit for one tenant: an in-process per-tenant semaphore on SQLite, a
+  session-level advisory lock on PostgreSQL (which also serialises the replicas
+  that share the database). Both reuse `tenantAdminRows` and
   `lastTenantAdminAfterRemoval`, the pair `DeleteBinding`'s own floor reads.
   `TestMembershipRemovedWithdrawsThePlatformBindings`,
   `TestCheckMembershipRemovalRefusesTheLastTenantAdmin`.

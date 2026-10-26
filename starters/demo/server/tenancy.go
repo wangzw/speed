@@ -31,6 +31,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -69,6 +70,7 @@ func tenancyModule() core.Module {
 			{Token: (*authz.Manager)(nil)},
 			{Token: (*authz.Seeder)(nil)},
 			{Token: (*authz.Catalog)(nil)},
+			{Token: (*db.Database)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
 		},
 		Provides: []core.Provision{
@@ -91,6 +93,7 @@ type tenancyProduct struct {
 	manager     authz.Manager
 	seeder      authz.Seeder
 	catalog     authz.Catalog
+	removalLock *tenantRemovalLock
 	logger      *slog.Logger
 }
 
@@ -123,12 +126,17 @@ func newTenancyProduct(reg *core.Registry) (*tenancyProduct, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the permission catalog: %w", tenancyModuleName, err)
 	}
+	database, err := core.Resolve[db.Database](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the database: %w", tenancyModuleName, err)
+	}
 	product := &tenancyProduct{
 		roster:      roster,
 		memberships: memberships,
 		manager:     manager,
 		seeder:      seeder,
 		catalog:     catalog,
+		removalLock: newTenantRemovalLock(database),
 		logger:      log.Default(),
 	}
 	if delivered, found, takeErr := optionalPersonal[log.Logger](reg, "the logger"); takeErr != nil {

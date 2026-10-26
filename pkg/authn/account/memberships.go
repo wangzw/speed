@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode"
 
 	"gorm.io/gorm"
@@ -200,10 +201,21 @@ func (p *product) Put(ctx context.Context, m authn.Membership) error {
 // the row just removed and for a retry whose row is already gone. A failing hook
 // makes the call authn.ErrCleanupIncomplete with the removal in force; calling
 // again finishes the cleanup.
+//
+// Every guard's tenant lock is taken before the row is read and the checks are
+// asked, and held across the removal's commit: two removals that both passed a
+// check on the same tenant cannot then both commit and leave the tenant with no
+// administrator. A lock that cannot be taken is ErrUnavailable and the removal
+// does not happen — it is never read as permission to proceed.
 func (p *product) Remove(ctx context.Context, id authn.AccountID, tenant string) error {
 	if id.IsStatic() || tenant == "" {
 		return nil
 	}
+	release, err := p.lockMembershipRemoval(ctx, tenant)
+	if err != nil {
+		return failed("taking the tenant's membership-removal lock", err)
+	}
+	defer release()
 	held, readErr := p.membershipExists(ctx, id, tenant)
 	if readErr != nil {
 		return failed("reading a membership", readErr)
@@ -216,14 +228,48 @@ func (p *product) Remove(ctx context.Context, id authn.AccountID, tenant string)
 	if err := p.removeMembership(ctx, id, tenant); err != nil {
 		return err
 	}
+	// The commit is behind us; the hooks run outside the serialised section so
+	// that a slow cleanup does not hold the tenant's removals up. The guard
+	// locks no longer protect anything once the row is gone.
+	release()
 	return p.callMembershipHooks(ctx, id, tenant)
+}
+
+// lockMembershipRemoval takes every optional guard's lock for the tenant and
+// answers one function that releases them all. A guard's lock joins the ones
+// already taken so that a later failure releases what it did take; a lock that
+// cannot be taken is the call's error, and none of the guards is asked its
+// check.
+func (p *product) lockMembershipRemoval(ctx context.Context, tenant string) (func(), error) {
+	releases := make([]func(), 0, len(p.membershipGuards))
+	var once sync.Once
+	releaseAll := func() {
+		once.Do(func() {
+			for i := len(releases) - 1; i >= 0; i-- {
+				releases[i]()
+			}
+		})
+	}
+	for _, guard := range p.membershipGuards {
+		release, err := guard.Lock(ctx, tenant)
+		if err != nil {
+			releaseAll()
+			return nil, err
+		}
+		if release != nil {
+			releases = append(releases, release)
+		}
+	}
+	return releaseAll, nil
 }
 
 // RemoveMembershipForDeletion deletes one membership on the account-deletion
 // path. It asks no guard and calls no membership lifecycle hook: the deletion's
 // own cleanup is the winding-up, and a guard keeps a domain that stays in service
-// governable, not one whose owner is being erased. One that is not there is
-// already removed, and the call is nil.
+// governable, not one whose owner is being erased. The row it removes still
+// publishes authn.membership.changed, so an event subscriber cleans it like a
+// row removed explicitly. One that is not there is already removed, and the call
+// is nil.
 func (p *product) RemoveMembershipForDeletion(ctx context.Context, id authn.AccountID, tenant string) error {
 	if id.IsStatic() || tenant == "" {
 		return nil

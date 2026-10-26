@@ -591,6 +591,7 @@ var exportedSurface = []string{
 	"method MFA.Verify",
 	"method MembershipCleanup.RemoveMembershipForDeletion",
 	"method MembershipGuard.CheckMembershipRemoval",
+	"method MembershipGuard.Lock",
 	"method MembershipLifecycle.MembershipRemoved",
 	"method Memberships.IsMember",
 	"method Memberships.Members",

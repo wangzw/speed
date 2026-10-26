@@ -69,11 +69,14 @@ type MembershipLifecycle interface {
 // deletions its own cleanup collects are the rows an administrator added, so it
 // removes through this interface instead: no guard is asked, and no
 // MembershipLifecycle hook runs, because the deletion's own cleanup is what
-// withdraws the data the modules hold. An implementation is idempotent: a row
-// that is not there is already removed.
+// withdraws the data the modules hold. Each removed row still publishes
+// authn.membership.changed, so a subscriber that cleans on that event keeps
+// working on this path too. An implementation is idempotent: a row that is not
+// there is already removed.
 type MembershipCleanup interface {
 	// RemoveMembershipForDeletion deletes one membership without asking the
-	// guards or calling the membership lifecycle hooks.
+	// guards or calling the membership lifecycle hooks; the membership.changed
+	// event is still published for the row.
 	RemoveMembershipForDeletion(ctx context.Context, id AccountID, tenant string) error
 }
 
@@ -93,6 +96,25 @@ type MembershipCleanup interface {
 // account's erasure is its own terminal winding-up and clears its bindings on
 // that path.
 type MembershipGuard interface {
+	// Lock takes the tenant's removal lock and answers the function that
+	// releases it. The removal route takes every guard's lock before it asks
+	// any guard's check, holds them across the checks and the removal's commit,
+	// and releases them after. An implementation that holds no data a
+	// concurrent removal could race may take no lock and answer a release that
+	// does nothing.
+	//
+	// The lock is per tenant and process-wide or wider: an in-process lock
+	// serialises the removals this process serves, and a lock the shared
+	// database carries serialises the replicas that share it too. Nothing
+	// serialises replicas that do not share a database, which is a
+	// non-guarantee of the assembly rather than of this seam.
+	//
+	// An error means the lock could not be taken and the removal must not
+	// proceed: it is neither a refusal nor a pass. A release may be called more
+	// than once — the removal releases it after the commit and again on its
+	// error path — so an implementation must make it idempotent.
+	Lock(ctx context.Context, tenant string) (release func(), err error)
+
 	// CheckMembershipRemoval reports ErrLastTenantAdmin when removing the
 	// account's membership of the tenant would leave the tenant with no
 	// tenant-administrator binding, and nil when it would not. Any other error

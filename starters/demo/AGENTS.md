@@ -922,10 +922,13 @@ names the fixed part of that wiring, and no configuration file repeats it:
   row and answers true), `tenant.WriteGuard` (the system tenant and every
   personal tenant reject a disable or a delete), `authn.MembershipGuard` (a
   personal tenant refuses every membership removal, and an ordinary tenant
-  refuses the removal that would leave it with no tenant-admin binding), and
-  `tenant.Provisioner` (a tenant opens with its creator as its first tenant-admin:
-  the tenant-admin role, every declared permission and the creator's binding are
-  written before the roster row, and a refused roster row removes them).
+  refuses the removal that would leave it with no tenant-admin binding; its
+  `Lock` serialises the check and the removal's commit — an in-process
+  per-tenant semaphore on SQLite, a session-level advisory lock on PostgreSQL),
+  and `tenant.Provisioner` (a tenant opens with its creator as its first
+  tenant-admin: the tenant-admin role, every declared permission and the
+  creator's binding are written before the roster row, and a refused roster row
+  removes them).
   `tenant.admin` requires the guard and the provisioner, and the policy module
   consults the checker before binding `platform-admin` in the platform domain,
   so a serve assembly names this module or does not start. The membership guard

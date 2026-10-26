@@ -16,6 +16,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/db"
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/tenant"
 )
@@ -34,6 +35,7 @@ func tenancyProductOf(
 		manager:     manager,
 		seeder:      seeder,
 		catalog:     catalog,
+		removalLock: &tenantRemovalLock{dialect: db.SQLite, byTenant: make(map[string]chan struct{})},
 		logger:      log.Default(),
 	}
 }

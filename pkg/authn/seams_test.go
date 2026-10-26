@@ -97,6 +97,7 @@ var seamSignatures = map[string][]string{
 	},
 	"MembershipGuard": {
 		"CheckMembershipRemoval(ctx context.Context, id AccountID, tenant string) error",
+		"Lock(ctx context.Context, tenant string) (release func(), err error)",
 	},
 	"Provisioner": {
 		"Provision(ctx context.Context, p CreateAccount, via string) (CreateAccount, error)",

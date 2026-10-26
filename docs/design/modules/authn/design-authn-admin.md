@@ -177,7 +177,7 @@ type ScopeGuard interface {
 | 会话 | `GET B/accounts/:id/sessions`、`POST B/accounts/:id/revoke-sessions`、`DELETE B/sessions/:id` | `session.read`、`session.revoke` | `GET B/accounts/:id/sessions` 的每一行带 `current` 标记：该行是调用方自己的会话时为真，取自调用方身份的会话标识，其余为假，与自助路由 `GET B/sessions` 的同名标记同义；`DELETE B/sessions/:id` 先 `Sessions.Get` 解析会话所属账户，`Decision.Target` 填会话标识、`TargetAccount` 填账户；强制审计 |
 | 因素与口令 | `GET B/accounts/:id/factors`、`POST B/accounts/:id/mfa-required`、`POST B/accounts/:id/mfa-reset` | `account.read`、`account.update`、`mfa.reset` | 清单只交回种类、标签、状态；重置要新鲜的本地非短信多因素与 `MFA.Seasoned`；强制审计 |
 | 服务密钥 | `GET\|POST B/accounts/:id/secrets`、`DELETE B/accounts/:id/secrets/:secret` | `client.manage`（`GET` 为 `account.read`） | `GET` 经 `ListServiceSecrets`，只交标识、标签、期限与撤销状态；创建与撤销要新鲜的本地多因素；密钥只在创建应答里出现一次；撤销后同步撤销该密钥的 service 会话；强制审计 |
-| 成员关系 | `GET Bt/:tenant/members`、`PUT\|DELETE Bt/:tenant/members/:account`、`PUT Bt/:tenant/members/:account/sso-exempt` | `membership.manage` | `Decision.Tenant` 取路径里的租户标识，不是别名，所以 `authn.admin` 不依赖租户名册；强制审计。`DELETE` 若会让该租户不再有任何租户管理员绑定，答 409 `conflict`（`ErrLastTenantAdmin`），成员关系不删 |
+| 成员关系 | `GET Bt/:tenant/members`、`PUT\|DELETE Bt/:tenant/members/:account`、`PUT Bt/:tenant/members/:account/sso-exempt` | `membership.manage` | `Decision.Tenant` 取路径里的租户标识，不是别名，所以 `authn.admin` 不依赖租户名册；强制审计。`DELETE` 先取该租户的成员删除锁，再问每个 `MembershipGuard`，把检查与删除的提交一起持在锁里：若会让该租户不再有任何租户管理员绑定，答 409 `conflict`（`ErrLastTenantAdmin`），成员关系不删；锁取不到答 503，删除不执行 |
 | SSO 提供方 | `GET\|POST Bt/:tenant/sso/providers`、`GET\|PUT\|DELETE Bt/:tenant/sso/providers/:id`、`POST\|DELETE Bt/:tenant/sso/providers/:id/domains[/:domain]`、`POST Bt/:tenant/sso/providers/:id/domains/:domain/verify`、`POST Bt/:tenant/sso/providers/:id/reverify-domains` | `idp.manage` | `Decision.Tenant` 取 `SSOProviders.Tenant(id)`；路径带租户的路由核对路径、请求体与已存记录的租户一致，不一致 400，`PUT` 时租户不可变；加密列从不回显；IdP 发起登录开启与 `merge_existing` 开启时应答带警告；强制审计 |
 | 元数据刷新 | `POST Bt/:tenant/sso/providers/:id/metadata/refresh` | `idp.manage` | `Decision` 的填法同 SSO 提供方组；经 `SSOMetadataRefresher` 按 `Protocol` 分派；强制审计 |
 | 冒充记录 | `GET Bt/:tenant/impersonations`、`DELETE Bt/:tenant/impersonations/:id` | `impersonation.read`、`impersonation.revoke` | `GET` 的租户取路径段，`Decision.Tenant` 取它，并作为 `GrantQuery.Tenant` 传给 `Impersonation.List`；`DELETE` 先经单条读取 `Get`（依赖表登记的扩展形状）按标识读记录（含已结束的），记录不存在 404，`Decision.Tenant` 取记录的租户，`Target` 与 `TargetAccount` 取记录的目标；已结束的记录经 `Decider` 放行后 `Revoke` 无操作，应答与首次撤销相同；这一组的审计是尽力档：撤销是向安全方向的动作，审计由 `Impersonation.Revoke` 自己写，写失败只记 Error，不阻止撤销，处理器不另写强制档审计，也不补 `failed` 行 |
@@ -412,6 +412,7 @@ flowchart TD
 
 ### 非保证
 
+- **成员删除的串行化以共享数据库为界。** `DELETE Bt/:tenant/members/:account` 先取该租户的成员删除锁，再问 `MembershipGuard`，并把它与删除的提交一起持在锁里，所以同一租户上两次并发删除不会都通过检查后各自提交。SQLite 上这把锁是进程内按租户的互斥量，只串行本进程；PostgreSQL 上是会话级 advisory lock，共享同一个数据库的各副本一起串行。**不共享数据库的副本之间不保证串行**，两个副本可能各自通过检查——这是装配级的非保证，本模块与守卫都无从知道另一台副本连的是哪个库。锁取不到时删除答 503，绝不按放行处理。
 - **`Decider` 的实现质量由宿主承担。** authn 保证它收到的输入，不保证它的判定；一个对 `authn.tenant.access` 一律返回 `true` 的实现，使每个租户对所有已认证的非成员敞开。准入层缓存判定结果，策略撤销在缓存期内不生效，期限由设置承载，见 [tenant.admission](../tenant/design-tenant-admission.md)。
 - **Go 接口的直接调用不经 `Decider`。** 宿主命令里的运维操作，其强度完全取决于宿主命令自己的访问控制。
 - **`Decider` 的拒绝不进网关的收口计数。** 询问发生在处理函数里、请求已过网关，拒绝只进各自的日志与审计。

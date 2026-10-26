@@ -307,6 +307,11 @@ type guardedMemberships struct {
 }
 
 func (m *guardedMemberships) Remove(ctx context.Context, id authn.AccountID, tenantID string) error {
+	release, err := m.guard.Lock(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("%w: %w", authn.ErrUnavailable, err)
+	}
+	defer release()
 	if err := m.guard.CheckMembershipRemoval(ctx, id, tenantID); err != nil {
 		return fmt.Errorf("%w: %w", authn.ErrCleanupIncomplete, err)
 	}

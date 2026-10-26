@@ -9,9 +9,10 @@ exclusively — `Accounts`, `AccountAdmin`, `Signups`, `SignupVerification`,
 `Passwords`, `Memberships`, `MembershipCleanup` and `Throttle` — and it creates
 an account and moves it between disabled, enabled and deleted, calling every
 `AccountLifecycle` hook after the transaction commits. An explicit membership
-removal asks every optional `MembershipGuard` first and calls every
-`MembershipLifecycle` hook after the removal commits; the account-deletion
-cleanup removes through `MembershipCleanup`, which asks neither.
+removal takes every optional `MembershipGuard`'s tenant lock, then asks the
+guards, and holds the locks across the removal's commit before calling every
+`MembershipLifecycle` hook; the account-deletion cleanup removes through
+`MembershipCleanup`, which asks neither.
 
 No other module reads these tables. Every module that needs an account, a
 credential, a membership or a back-off takes one of the eight interfaces from the
@@ -51,12 +52,14 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   tombstone, and a membership hook must not read the membership row, which is
   gone; `AccountCreated` runs while the account exists, may read it, and does
   nothing when a retry finds the account deleted.
-- **An explicit membership removal is guarded before it deletes and cleaned
-  after it commits.** `Memberships.Remove` asks every optional
-  `authn.MembershipGuard` (they stand side by side, taken up with
-  `core.ResolveAll`; any refusal refuses) only when a membership row is there to
-  remove: a guard's `authn.ErrLastTenantAdmin` leaves the row in place, and any
-  other guard error is `ErrUnavailable`, never a pass. It then calls every
+- **An explicit membership removal is locked, guarded, and cleaned after it
+  commits.** `Memberships.Remove` takes every optional `authn.MembershipGuard`'s
+  `Lock(ctx, tenant)` before it reads the row, asks the guards (they stand side
+  by side, taken up with `core.ResolveAll`; any refusal refuses) only when a
+  membership row is there to remove, and holds the locks across the removal's
+  commit; a guard's `authn.ErrLastTenantAdmin` leaves the row in place, any
+  other guard error is `ErrUnavailable`, never a pass, and a lock that cannot be
+  taken is `ErrUnavailable` too, with neither the guard nor the row touched. It then calls every
   `authn.MembershipLifecycle` hook, including on a retry whose row is already
   gone, and a failing hook makes the call `ErrCleanupIncomplete`. Account
   deletion does not come through `Remove`, so it consults neither the guard nor

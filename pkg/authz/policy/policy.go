@@ -138,11 +138,13 @@ func Module() core.Module {
 			}
 			return &product{
 				handle:          database.DB(),
+				dialect:         database.Dialect(),
 				text:            authz.ModelText,
 				loadTimeout:     cfg.loadTimeout,
 				refreshInterval: cfg.refreshInterval,
 				catalog:         buildCatalog(reg),
 				logger:          log.Default(),
+				removalLocks:    newTenantRemovalLocks(),
 			}, nil
 		},
 
@@ -195,6 +197,7 @@ var (
 // lifecycle hook.
 type product struct {
 	handle      *gorm.DB
+	dialect     db.Dialect
 	text        string
 	loadTimeout time.Duration
 	// refreshInterval sizes the ticker Start raises. Zero turns the periodic
@@ -210,6 +213,10 @@ type product struct {
 	membership authz.MembershipChecker
 
 	holder policy.Holder
+	// removalLocks serialises membership removals per tenant in this process;
+	// on PostgreSQL the database's advisory lock serialises the replicas that
+	// share it instead. See lock.go.
+	removalLocks *tenantRemovalLocks
 	// reloadMu serialises the reload path, a read of the table followed by a
 	// swap, so that two concurrent loads cannot install their results out of
 	// order and leave a staler snapshot in place.
