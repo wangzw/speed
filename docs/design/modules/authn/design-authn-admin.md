@@ -152,7 +152,7 @@ type ScopeGuard interface {
 | 会话 | `Sessions` 在场 | `authn.admin.sessions`（条件） |
 | 因素与口令 | `MFA` 在场（这些路由要核对 `MFA.Seasoned`）；其中管理员重置口令的路由还要 `Passwords` 在场 | `authn.admin.factors`（条件） |
 | 服务密钥 | `Tokens` 在场 | `authn.admin.secrets`（条件） |
-| SSO 提供方 | `SSOProviders` 在场 | `authn.admin.sso`（条件） |
+| SSO 提供方 | `SSOProviders` 在场，且交付的注册另答域读扩展形状（`Domains`／`DomainsMany`） | `authn.admin.sso`（条件） |
 | 元数据刷新 | 至少一个 `SSOMetadataRefresher` 在场，且 SSO 提供方组已挂 | `authn.admin.sso.metadata`（条件） |
 | 冒充记录 | `Impersonation` 在场，且交付了单条读取（`Get`） | `authn.admin.impersonations`（条件） |
 
