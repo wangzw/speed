@@ -243,6 +243,20 @@ func TestTheReaderAcceptsTheEndpointOverrides(t *testing.T) {
 	}
 }
 
+// TestATrailingSlashOnTheAPIBaseIsRemoved holds that the configured base is
+// normalized on read: the two reads join a path that starts with a slash, so a
+// base ending in one would produce a doubled slash and a different address.
+func TestATrailingSlashOnTheAPIBaseIsRemoved(t *testing.T) {
+	body := githubBody(`"api-base":"https://idp.example/api/v3/"`)
+	got, err := readConfig(readerOver(t, body))
+	if err != nil {
+		t.Fatalf("reading a section with a trailing slash: %v", err)
+	}
+	if got.apiBase != "https://idp.example/api/v3" {
+		t.Errorf("apiBase = %q, want the trailing slash removed", got.apiBase)
+	}
+}
+
 // TestTheReaderAcceptsTheEgressSeamKeys holds that the loopback switch and the
 // root CA file are items this module accepts.
 func TestTheReaderAcceptsTheEgressSeamKeys(t *testing.T) {

@@ -44,14 +44,16 @@ type moduleConfig struct {
 	// TokenURL, when non-empty, replaces GitHub's token endpoint.
 	TokenURL string `config:"token-url"`
 	// APIBase, when non-empty, replaces the base the two reads are resolved
-	// against. A GitHub Enterprise API base carries its own path.
+	// against. A GitHub Enterprise API base carries its own path; trailing
+	// slashes are removed on read so the joined read path has exactly one.
 	APIBase string `config:"api-base"`
 	// AllowLoopback admits loopback addresses through the restricted egress
 	// client. It is a development and local-testing relaxation; production
 	// leaves it off.
 	AllowLoopback bool `config:"allow-loopback"`
-	// RootCAFile is a PEM file whose certificates replace the system roots the
-	// provider's certificate is verified against. Empty uses the system roots.
+	// RootCAFile is a PEM file whose certificates are appended to the system
+	// roots the provider's certificate is verified against, not a replacement
+	// for them. Empty uses the system roots alone.
 	RootCAFile string `config:"root-ca-file"`
 }
 
@@ -162,6 +164,11 @@ func readConfig(reader config.Reader) (resolved, error) {
 	}
 	apiBase := githubAPIBase
 	if v := strings.TrimSpace(cfg.APIBase); v != "" {
+		// The two reads join a path that begins with a slash, so a base ending
+		// in one would produce a doubled slash and an address the provider does
+		// not serve. The value is normalized once, here, so every read joins the
+		// same way whatever the deployment wrote.
+		v = strings.TrimRight(v, "/")
 		if err := checkEndpointURL(apiBaseItem, v); err != nil {
 			return resolved{}, err
 		}
