@@ -50,6 +50,17 @@
  * Expected product copy is read from the shipped en-US bundles through
  * helpers/i18n.ts. The provider's own authorization-page copy belongs to the
  * provider, so it is the fixture's constant and the helper asserts it.
+ *
+ * `@covers` is narrower than the journey document where an assertion cannot
+ * fail on the requirement's whole claim: the spec drives each requirement's
+ * positive branch only. It enables a provider that was never disabled (so it
+ * cannot prove that a disabled provider leaves discovery), verifies a domain
+ * that no other provider holds (so it cannot prove the conflict refusal), uses
+ * pre-provisioned onboarding against an account the operator created (so it
+ * cannot prove the just-in-time branch and never exercises "no prepared
+ * account"), and signs in once with a domain that is verified (so it cannot
+ * prove the refusal a foreign domain or an unverified domain produces). Those
+ * alternative paths stay with their own requirements and are not claimed here.
  */
 // @journey journey-enterprise-sso-onboarding.md
 // @covers REQ-platform-admin-013, REQ-platform-config-017, REQ-platform-config-018, REQ-platform-config-020, REQ-platform-config-038, REQ-presentation-027, REQ-signin-001, REQ-signin-003, REQ-signin-004, REQ-signin-020, REQ-signin-021, REQ-signin-027, REQ-signup-018, REQ-tenancy-009, REQ-tenancy-022, REQ-tenancy-023, REQ-tenancy-035, REQ-tenancy-036
