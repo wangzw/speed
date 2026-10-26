@@ -443,7 +443,7 @@ flowchart TD
 | 审查装配的两条控制路由（短信审核判定、通知派发）是测试控制 | 已实现 | `starters/demo/server/review_sms_control.go` `reviewSMSControlModule`；`starters/demo/server/review_notification.go` `wireReviewControl` |
 | 只在 `review` 标签下编译的用例在提交门禁里被执行 | 已实现 | `./Makefile` `test-review`；`tools/check_test_tiers.py` |
 | 通知面的宿主侧授权 | 已实现 | `starters/demo/server/notification.go` `notificationModule`、`notificationRoutes`；纳入见 `starters/demo/server/main.go` `baselineServe` |
-| `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`、`seedSchema`、`seedDatabase`、`seedTenant`、`seedMembers`、`seedAdministration`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
+| `seed` 命令 | 已实现 | `starters/demo/server/seed.go` `seedModule`（`Init` 建立 system 租户）、`seedSchema`、`seedDatabase`、`seedTenant`、`seedMembers`、`seedAdministration`、`seedAdminMembership`、`seedBinding`、`seedSettings`；命令见 `starters/demo/server/main.go` `addStack` |
 | `gen` 命令 | 已实现 | `starters/demo/server/main.go` `genModule`、`genDocument`、`featureVocabulary` |
 | 已提交的 `contracts/api.json` 与本二进制合并文档的一致性测试 | 已实现 | `starters/demo/server/demo_test.go` `TestCommittedMergedDocument` |
 | 已提交的 `contracts/features.json` 的新鲜度测试 | 已实现 | `starters/demo/server/feature_test.go` `TestCommittedFeatureVocabulary` |

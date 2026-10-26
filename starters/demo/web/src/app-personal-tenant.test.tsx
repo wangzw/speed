@@ -1,14 +1,14 @@
 /**
- * The personal-tenant trigger in the tenant frame.
+ * The personal-tenant backfill in the tenant frame.
  *
- * The server decides the answer; the host's job is to ask only when every
- * eligibility fact the server checks holds -- authenticated, not impersonating,
- * the workspace.personal feature in force, a settled roster read that left no
- * current tenant -- and to render what each answer means: the personal tenant
- * as the current one, the admission refusal for the 409 already-member, and a
- * retryable failure for everything else. The generated ensure operation runs
- * through the api-sdk runtime seam, so each case binds a scripted request
- * function and observes the calls it makes.
+ * The server decides the answer; the host's job is to ask only when the
+ * caller's own personal tenant is missing from a settled membership list --
+ * authenticated, not impersonating, the workspace.personal feature in force,
+ * the list settled -- and to render what each answer means: the personal tenant
+ * as the current one when none is settled, and a retryable failure for every
+ * failure. The generated ensure operation runs through the api-sdk runtime
+ * seam, so each case binds a scripted request function and observes the calls
+ * it makes.
  */
 
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
