@@ -341,7 +341,7 @@
 
 - **验收**：成功发送一封邮件后出现一条成功日志，含耗时与回执标识；令一次短信发送失败，出现一条失败日志，含结果归类。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-notifications-047
 

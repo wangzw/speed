@@ -71,4 +71,4 @@ flowchart TD
 
 ## 端到端测试
 
-`未实现`
+`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`

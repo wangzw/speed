@@ -121,7 +121,7 @@
 
 - **验收**：提交一条满足载体能力的模板后，列表出现该模板且启用标记为真；列表不出现该模板或启用标记为假即不通过。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-platform-config-034
 
@@ -129,7 +129,7 @@
 
 - **验收**：在逐模板审核的载体上登记一条模板后，它每个语言的审核状态都是待审；在不逐模板审核的载体上登记同一条模板后，它每个语言的审核状态都是无需审核。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-platform-config-035
 
@@ -153,7 +153,7 @@
 
 - **验收**：停用一条已通过审核的模板后其启用标记为假且审核状态仍为已通过；启用一条仍在待审的模板后其启用标记为真且审核状态仍为待审。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-platform-config-013
 
@@ -161,7 +161,7 @@
 
 - **验收**：一条模板的一个语言显示已通过、另一个语言显示待审时，两者同时可见；厂商把待审语言改为已通过或已驳回后，列表在该语言上显示新状态，另一语言不变。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-platform-config-014
 
@@ -169,7 +169,7 @@
 
 - **验收**：分别关闭发送总开关、停用模板、使用一个审核未通过的语言发起发送，都被拒绝；发送总开关开启、模板启用且所用语言审核通过时发送被受理。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-platform-config-015
 
@@ -177,7 +177,7 @@
 
 - **验收**：对配置来源的模板执行修改、删除、停用或以同名登记，都被拒绝并给出只读说明；任一操作被接受或改变了该模板即不通过。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-platform-config-036
 
@@ -185,7 +185,7 @@
 
 - **验收**：配置来源的模板在列表中不显示审核状态；它显示了任一语言的审核状态即不通过。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-sms-template-rollout.spec.ts` `sms-template-rollout: an operator settles one language and a disabled template is refused locally`
 
 ### REQ-platform-config-016
 
