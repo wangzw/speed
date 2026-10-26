@@ -115,10 +115,25 @@ The API is the package's godoc and `pkg/authz`'s. Read the `Manager` and
   role that no longer exists. Another tenant's same-named role, and its rows,
   are untouched.
 - **The platform-domain check runs only in an assembly that has a roster.**
-  `Start` reads the roster for a tenant whose identifier is the reserved
-  `PlatformDomain` and fails the startup with `authz.ErrPlatformDomainTaken` if
-  one exists; a policy module with no tenant module has no roster and runs no
-  such check, and that absence is legal.
+  `Start` reads the roster for a tenant whose identifier is `PlatformDomain` and
+  fails the startup with `authz.ErrPlatformDomainMissing` when none exists: the
+  platform domain's policy rows are that tenant's, so an assembly with a roster
+  and no such tenant has nowhere for a platform decision to land. A policy
+  module with no tenant module has no roster and runs no such check, and that
+  absence is legal.
+- **The administration roles are bounded by domain, and a domain keeps an
+  administrator.** `PutRole` and `PutBinding` refuse `PlatformAdminRole` in any
+  domain but the platform domain with `authz.ErrReservedRole`;
+  `TenantAdminRole` belongs to every domain. A platform administrator binding
+  asks the optional `authz.MembershipChecker` about the account in the platform
+  tenant and refuses with `authz.ErrMissingMembershipChecker` when the assembly
+  supplied none, so the check fails closed. `DeleteBinding` refuses removing the
+  last `TenantAdminRole` binding of a domain with `authz.ErrLastTenantAdmin`,
+  and the check and the delete share one transaction with the binding rows
+  locked, so two concurrent removals cannot both pass the check.
+  `TestPutRoleRefusesThePlatformAdministratorRoleOutsideThePlatformDomain`,
+  `TestPutBindingOfThePlatformAdministratorNeedsAMembershipChecker`,
+  `TestDeletingTheLastTenantAdministratorBindingIsRefused`.
 - **The account lifecycle cleanup is idempotent and crosses tenants.** A
   deleted account's binding rows are removed across every tenant; running the
   cleanup again is no work and no error. A binding row that outlives the

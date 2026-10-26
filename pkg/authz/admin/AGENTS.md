@@ -105,6 +105,10 @@ write that lands answers 204 and no body.
   a grant in the platform domain is refused whatever tenant the path names.
   `TestTheDecisionIsAskedInThePlatformDomain`,
   `TestTheManagementDecisionIsMadeInThePlatformDomainNotTheResolvedTenant`.
+- **A caller may not remove its own tenant-admin binding.** The binding delete
+  route refuses it with a 403 before the mandatory audit and before the
+  `Manager`, which cannot enforce the rule because it reads no actor. Another
+  administrator removes the binding. `TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused`.
 - **The mandatory audit of a write lands before the action, outside any
   transaction.** A write's audit row is written before the `Manager` is called; a
   row that does not land is answered 503 and the action is not carried out, so a
