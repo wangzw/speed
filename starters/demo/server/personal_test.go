@@ -258,6 +258,7 @@ func (m *fakeMemberships) Put(_ context.Context, membership authn.Membership) er
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.puts++
+	m.steps.add("put:" + membership.Account.String())
 	held := m.rows[membership.Account]
 	for i := range held {
 		if held[i].Tenant == membership.Tenant {
@@ -338,6 +339,10 @@ type fakeManager struct {
 	deletedBindings   int
 	deleteRoleErr     error
 	deletedRoles      int
+
+	markBuiltinErr     error
+	markBuiltinFailure int
+	markBuiltinCalls   int
 }
 
 func newFakeManager(grants *fakeGrants) *fakeManager {
@@ -379,6 +384,7 @@ func (m *fakeManager) DeleteGrant(_ context.Context, grant authz.GrantRecord) er
 func (m *fakeManager) PutRole(_ context.Context, record authz.RoleRecord) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.steps.add("role:" + string(record.Role))
 	if m.putRoleErr != nil {
 		return m.putRoleErr
 	}
@@ -404,7 +410,15 @@ func (m *fakeManager) PutRole(_ context.Context, record authz.RoleRecord) error 
 func (m *fakeManager) MarkRoleBuiltin(_ context.Context, tenantID string, role authz.Role) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.markBuiltinCalls++
 	m.steps.add("mark:" + string(role))
+	if m.markBuiltinFailure > 0 {
+		m.markBuiltinFailure--
+		if m.markBuiltinErr != nil {
+			return m.markBuiltinErr
+		}
+		return fmt.Errorf("the builtin mark is unavailable")
+	}
 	held := m.roles[tenantID]
 	for i := range held {
 		if held[i].Role == role {
@@ -432,6 +446,7 @@ func (m *fakeManager) PutBinding(_ context.Context, binding authz.Binding) error
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.putBinding++
+	m.steps.add("bind:" + binding.Account + ":" + string(binding.Role))
 	held := m.bindings[binding.Tenant]
 	for i := range held {
 		if held[i].Account == binding.Account && held[i].Role == binding.Role {
@@ -558,6 +573,7 @@ type fakeSeeder struct {
 	authz.Seeder
 
 	grants *fakeGrants
+	steps  *stepLog
 
 	mu   sync.Mutex
 	seed int
@@ -571,6 +587,7 @@ func (s *fakeSeeder) SeedGrants(_ context.Context, tenantID string, role authz.R
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seed++
+	s.steps.add("seed:" + string(role))
 	s.grants.mu.Lock()
 	defer s.grants.mu.Unlock()
 	if s.grants.sets[tenantID] == nil {
@@ -692,6 +709,7 @@ func unitProductWith(cfg personalConfig) (*personalProduct, *fakeRoster, *fakeMe
 	manager := newFakeManager(grants)
 	manager.steps = steps
 	seeder := newFakeSeeder(grants)
+	seeder.steps = steps
 	auditor := newRecordedAudit()
 	auditor.steps = steps
 	return &personalProduct{
@@ -700,11 +718,11 @@ func unitProductWith(cfg personalConfig) (*personalProduct, *fakeRoster, *fakeMe
 		memberships:       memberships,
 		membershipCleanup: memberships,
 		manager:           manager,
-		seeder:      seeder,
-		catalog:     fakeCatalog{},
-		audit:       auditor,
-		logger:      log.Default(),
-		seen:        newPersonalSeenEvents(personalSeenEventsCapacity),
+		seeder:            seeder,
+		catalog:           fakeCatalog{},
+		audit:             auditor,
+		logger:            log.Default(),
+		seen:              newPersonalSeenEvents(personalSeenEventsCapacity),
 	}, roster, memberships, manager, seeder
 }
 

@@ -961,6 +961,11 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 // carries the mark, so a re-run over a builtin role adds what the process
 // declares since the last one.
 //
+// A personal-prefixed domain is the host's personal space, and its tenant-admin
+// is not builtin: the host revokes grants outside the allowlist through the
+// manager, and the mark refuses that write. That role is left unfrozen, as
+// tenant.Provisioner leaves it.
+//
 // It names no account, because neither does: the role and its grants belong to
 // the domain, so one write serves every administrator the configuration names.
 func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz.Seeder,
@@ -972,6 +977,10 @@ func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz
 	}
 	if err := seedGrants(ctx, seeder, catalog, domain, role); err != nil {
 		return err
+	}
+	if strings.HasPrefix(domain, personalIDPrefix) {
+		fmt.Printf("skipped: builtin mark on %s/%s (personal domain)\n", domain, role)
+		return nil
 	}
 	return markRoleBuiltin(ctx, manager, domain, role)
 }

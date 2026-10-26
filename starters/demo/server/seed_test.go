@@ -888,6 +888,72 @@ func TestSeedBindsTheTenantAdministratorsInTheDeclaredOrder(t *testing.T) {
 	}
 }
 
+// TestSeedMarksADeclaredTenantsExistingRoleBuiltin holds the repair of a
+// declared tenant: an existing non-builtin role keeps its row, receives the
+// declared grants it lacks, and is marked builtin on the run.
+func TestSeedMarksADeclaredTenantsExistingRoleBuiltin(t *testing.T) {
+	t.Parallel()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.roles["acme"] = []authz.RoleRecord{{Tenant: "acme", Role: tenantAdminRole}}
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read":  {"deal", "read"},
+		"crm.deal.write": {"deal", "write"},
+	}}
+	seeder := newFakeSeeder(grants)
+
+	if err := seedAdministration(t.Context(), manager, seeder, catalog,
+		"acme", tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+		t.Fatalf("seedAdministration: %v", err)
+	}
+	if manager.markBuiltinCalls != 1 {
+		t.Errorf("the declared tenant's role was marked %d time(s), want one", manager.markBuiltinCalls)
+	}
+	roles, err := manager.Roles(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("reading the tenant's roles: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Role != tenantAdminRole || !roles[0].Builtin {
+		t.Errorf("the tenant's roles = %+v, want one builtin tenant-admin after repair", roles)
+	}
+	if held := grants.held("acme", tenantAdminRole); len(held) != 2 {
+		t.Errorf("the repaired role holds %d grant(s), want the two declared pairs", len(held))
+	}
+}
+
+// TestSeedLeavesAPersonalDomainsRoleUnfrozen holds the host's personal-domain
+// exception on the seed's path: a declared personal-prefixed tenant receives
+// its role and grants, and the role is not marked builtin, because the host
+// revokes grants outside the allowlist through the manager.
+func TestSeedLeavesAPersonalDomainsRoleUnfrozen(t *testing.T) {
+	t.Parallel()
+	domain := personalIDPrefix + "acct-1"
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	seeder := newFakeSeeder(grants)
+
+	if err := seedAdministration(t.Context(), manager, seeder, catalog,
+		domain, tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+		t.Fatalf("seedAdministration: %v", err)
+	}
+	if manager.markBuiltinCalls != 0 {
+		t.Errorf("the personal domain's role was marked builtin %d time(s), want none", manager.markBuiltinCalls)
+	}
+	roles, err := manager.Roles(t.Context(), domain)
+	if err != nil {
+		t.Fatalf("reading the personal domain's roles: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Role != tenantAdminRole || roles[0].Builtin {
+		t.Errorf("the personal domain's roles = %+v, want one non-builtin tenant-admin", roles)
+	}
+	if held := grants.held(domain, tenantAdminRole); len(held) != 1 {
+		t.Errorf("the personal domain's role holds %d grant(s), want the declared one", len(held))
+	}
+}
+
 // orderManager records the administration writes in order.
 type orderManager struct {
 	authz.Manager

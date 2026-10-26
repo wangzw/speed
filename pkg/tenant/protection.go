@@ -42,13 +42,20 @@ const (
 // surface's registration route calls this seam instead of Catalog.Create.
 //
 // An implementation writes the tenant domain's tenant-admin role, its grants,
-// the creator's membership and the creator's binding first, and the roster row
-// last through Catalog.Create. A failure before the row is written removes what
-// it wrote, so no tenant is left half-built; a refusal of Catalog.Create itself
-// leaves the roster unchanged and is reported as Create reports it. The one
-// exception is ErrTenantExists: that identifier was registered by another
-// replica between the check and the write, so the domain is the winner's and the
-// losing call leaves its policy untouched.
+// the roster row through Catalog.Create, the role's builtin mark, and then the
+// creator's membership and the creator's binding. The roster row precedes the
+// administrator rows so a failure after it leaves a tenant the host's repair
+// path can reconcile, and the builtin mark precedes them so a failure at the
+// mark leaves a tenant with a non-builtin role rather than a half-written
+// administration. A failure before the row removes what the call wrote; a
+// failure after it leaves the row in place and returns the error, so the caller
+// answers 503 and the call never reports success. Repair after such a failure is
+// the host's decision, not this seam's.
+//
+// ErrTenantExists is the exception: that identifier was registered by another
+// replica between the check and the write, so the domain is the winner's. The
+// losing call removes only the rows it added, leaves the winner's policy
+// untouched, and does not mark the role builtin.
 type Provisioner interface {
 	// Provision creates t and binds creator as its first tenant-admin. Roster
 	// refusals stay readable through errors.Is: ErrTenantExists when the

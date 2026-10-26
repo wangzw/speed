@@ -348,7 +348,7 @@ func TestTheAccountLifecycleDeletionIsNotBlockedByThePersonalGuard(t *testing.T)
 	}
 }
 
-
+// TestTheAccountLifecycleDeletionToleratesABuiltinTenantAdminRole holds the tolerance the design
 // names: a role an operator marked builtin cannot be deleted, and the deletion
 // carries on — the bindings are cleared and the tombstone lands.
 func TestTheAccountLifecycleDeletionToleratesABuiltinTenantAdminRole(t *testing.T) {

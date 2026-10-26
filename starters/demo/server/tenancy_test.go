@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -166,6 +167,121 @@ func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
 	}
 }
 
+// TestTheProvisionerWritesTheRosterRowBeforeTheCreatorRows holds the ruled
+// order: the role, its grants, the roster row, the builtin mark, and only then
+// the creator's membership and binding. A failure after the row leaves a tenant
+// the seed can repair, and the mark precedes the administrator rows so a failed
+// mark leaves no half-written administration.
+func TestTheProvisionerWritesTheRosterRowBeforeTheCreatorRows(t *testing.T) {
+	steps := &stepLog{}
+	roster := newFakeRoster()
+	roster.steps = steps
+	memberships := newFakeMemberships()
+	memberships.steps = steps
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.steps = steps
+	seeder := newFakeSeeder(grants)
+	seeder.steps = steps
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
+
+	if err := product.Provision(context.Background(),
+		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	want := []string{
+		"role:tenant-admin",
+		"seed:tenant-admin",
+		"create",
+		"mark:tenant-admin",
+		"put:acct-1",
+		"bind:acct-1:tenant-admin",
+	}
+	if got := steps.snapshot(); !slices.Equal(got, want) {
+		t.Errorf("the provision wrote\n%v\nwant\n%v", got, want)
+	}
+}
+
+// TestTheProvisionerRetriesTheBuiltinMarkOnce holds the retry: a first marking
+// failure is retried, and a successful retry completes the tenant.
+func TestTheProvisionerRetriesTheBuiltinMarkOnce(t *testing.T) {
+	roster := newFakeRoster()
+	memberships := newFakeMemberships()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.markBuiltinFailure = 1
+	manager.markBuiltinErr = errors.New("the policy store is unavailable")
+	seeder := newFakeSeeder(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
+
+	if err := product.Provision(context.Background(),
+		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1"); err != nil {
+		t.Fatalf("Provision: %v", err)
+	}
+	if manager.markBuiltinCalls != 2 {
+		t.Errorf("the role was marked %d time(s), want the first attempt and one retry", manager.markBuiltinCalls)
+	}
+	roles, _ := manager.Roles(context.Background(), "acme")
+	if len(roles) != 1 || !roles[0].Builtin {
+		t.Errorf("the tenant's roles = %+v, want one builtin tenant-admin after the retry", roles)
+	}
+	member, _ := memberships.IsMember(context.Background(), authn.AccountID("acct-1"), "acme")
+	if !member {
+		t.Error("the successful retry did not finish the creator's membership")
+	}
+	bindings, _ := manager.BindingsOf(context.Background(), "acme", "acct-1")
+	if len(bindings) != 1 {
+		t.Errorf("the creator's bindings = %+v, want one", bindings)
+	}
+}
+
+// TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows holds the second
+// failure: after one retry the error is returned, the tenant exists with a
+// non-builtin role, and no membership or binding was written. The caller answers
+// 503 rather than reporting a tenant it did not finish; the seed repairs a
+// declared tenant on its next run.
+func TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows(t *testing.T) {
+	roster := newFakeRoster()
+	memberships := newFakeMemberships()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.markBuiltinFailure = 2
+	manager.markBuiltinErr = errors.New("the policy store is unavailable")
+	seeder := newFakeSeeder(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
+
+	err := product.Provision(context.Background(),
+		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-1")
+	if err == nil {
+		t.Fatal("Provision reported success after the builtin mark failed twice")
+	}
+	if manager.markBuiltinCalls != 2 {
+		t.Errorf("the role was marked %d time(s), want the first attempt and one retry", manager.markBuiltinCalls)
+	}
+	if _, found, _ := roster.Get(context.Background(), "acme"); !found {
+		t.Error("the tenant was not left registered after the builtin mark failed")
+	}
+	roles, _ := manager.Roles(context.Background(), "acme")
+	if len(roles) != 1 || roles[0].Role != authz.TenantAdminRole || roles[0].Builtin {
+		t.Errorf("the tenant's roles = %+v, want one non-builtin tenant-admin left for repair", roles)
+	}
+	if member, _ := memberships.IsMember(context.Background(), authn.AccountID("acct-1"), "acme"); member {
+		t.Error("the failed provision wrote the creator's membership")
+	}
+	if bindings, _ := manager.Bindings(context.Background(), "acme"); len(bindings) != 0 {
+		t.Errorf("the failed provision wrote bindings: %+v", bindings)
+	}
+}
+
 // TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace holds the race
 // between two creations of one identifier: this replica's snapshot predates the
 // row another replica wrote, so the pre-check misses it and Create is the write
@@ -192,6 +308,10 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-loser")
 	if !errors.Is(err, tenant.ErrTenantExists) {
 		t.Fatalf("Provision that lost the race = %v, want ErrTenantExists", err)
+	}
+	if manager.markBuiltinCalls != 0 {
+		t.Errorf("the losing provision marked the role builtin %d time(s), want none: the role belongs to the winner",
+			manager.markBuiltinCalls)
 	}
 	roles, _ := manager.Roles(context.Background(), "acme")
 	if len(roles) != 1 || roles[0].Role != authz.TenantAdminRole {

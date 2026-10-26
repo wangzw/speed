@@ -255,18 +255,23 @@ func (policyWriteGuard) Denied(_ context.Context, tenantID string, _ authz.Write
 }
 
 // Provision implements tenant.Provisioner: it writes the tenant domain's
-// tenant-admin role, every declared permission on it, the creator's membership
-// and the creator's binding, registers the roster row, and marks the role
-// builtin once the row is written so the management surface cannot rewrite or
-// delete it. The membership is written with the binding because the creator is
-// the tenant's first administrator: a binding without it names an administrator
-// who cannot enter the tenant. A refusal of the roster row removes what this
-// call wrote, so no tenant is left half-built — except ErrTenantExists, which is
-// another replica registering the identifier first: the loser removes only the
-// rows it added and leaves the winning tenant's policy in place. A builtin
-// tenant-admin role found before the roster row is the same race seen one step
-// earlier: when the table carries the identifier, the call answers
-// ErrTenantExists rather than a builtin-role failure.
+// tenant-admin role, every declared permission on it, the roster row, marks the
+// role builtin, and then writes the creator's membership and the creator's
+// binding. The roster row precedes the administrator rows so a failure after it
+// leaves a tenant the seed can repair, and the builtin mark precedes them so a
+// failure at the mark leaves a tenant whose role is not yet frozen rather than a
+// half-written administration.
+//
+// A failure before the roster row removes what this call wrote. A failure after
+// it leaves the tenant in place and returns the error: the caller answers 503,
+// never success. The seed reconciles a declared tenant's role, grants, builtin
+// mark and each administrator's membership and binding on every run; a
+// runtime-created tenant that is not declared has no automatic repair.
+//
+// A refusal of the roster row for ErrTenantExists is another replica winning the
+// identifier: the losing call removes only the rows it added and leaves the
+// winner's policy, and it never marks the role builtin, which would freeze a
+// role it did not finish writing.
 //
 // A tenant the roster already holds is refused before any policy write: the
 // identifier's domain belongs to that tenant, and writing this call's role and
@@ -317,26 +322,8 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 	}
 	grants := declaredGrants(p.catalog)
 	if _, err := p.seeder.SeedGrants(ctx, tenantID, role, grants); err != nil {
-		p.removeProvision(ctx, tenantID, creatorID)
+		p.removeProvision(ctx, tenantID)
 		return fmt.Errorf("%s: granting the declared permissions to the tenant-admin role: %w", tenancyModuleName, err)
-	}
-	if err := p.memberships.Put(ctx, authn.Membership{
-		Account: creatorID,
-		Tenant:  tenantID,
-		Active:  true,
-		Source:  authn.ReasonAdmin,
-	}); err != nil {
-		p.removeProvision(ctx, tenantID, creatorID)
-		return fmt.Errorf("%s: writing the creator's membership in the tenant: %w", tenancyModuleName, err)
-	}
-	if err := p.manager.PutBinding(ctx, authz.Binding{
-		Tenant:    tenantID,
-		Account:   creator,
-		Role:      role,
-		GrantedAt: time.Now().UTC(),
-	}); err != nil {
-		p.removeProvision(ctx, tenantID, creatorID)
-		return fmt.Errorf("%s: binding the creator to the tenant-admin role: %w", tenancyModuleName, err)
 	}
 	if err := p.roster.Create(ctx, t); err != nil {
 		// ErrTenantExists means another replica registered the identifier
@@ -346,26 +333,58 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		if errors.Is(err, tenant.ErrTenantExists) {
 			p.undoLostRace(ctx, tenantID, creatorID, creator, membershipHeld, bindingHeld)
 		} else {
-			p.removeProvision(ctx, tenantID, creatorID)
+			p.removeProvision(ctx, tenantID)
 		}
 		return fmt.Errorf("%s: registering the tenant %q: %w", tenancyModuleName, t.ID, err)
 	}
 	// The mark freezes the role against the management surface's rewrite and
 	// delete paths, as the seed freezes the administrator roles. It comes after
-	// the roster row so the role is complete — its grants and the creator's
-	// binding are written — before it is frozen, and so a failure before the row
-	// can still remove it.
+	// the roster row so the tenant is registered before it is frozen, and before
+	// the membership and binding so a failure here leaves a tenant with an
+	// unfrozen role and no administrator rows for the seed to reconcile.
 	//
 	// A personal-prefixed identifier is not a business tenant: the host treats it
 	// as a personal domain in every other seam, and the personal tenant's
 	// tenant-admin is not builtin because the host revokes grants outside the
 	// allowlist through the manager. Leave that role unfrozen for the same reason.
 	if !strings.HasPrefix(tenantID, personalIDPrefix) {
-		if err := p.manager.MarkRoleBuiltin(ctx, tenantID, role); err != nil {
+		if err := p.markTenantAdminBuiltin(ctx, tenantID, role); err != nil {
 			return fmt.Errorf("%s: marking the tenant-admin role builtin: %w", tenancyModuleName, err)
 		}
 	}
+	if err := p.memberships.Put(ctx, authn.Membership{
+		Account: creatorID,
+		Tenant:  tenantID,
+		Active:  true,
+		Source:  authn.ReasonAdmin,
+	}); err != nil {
+		return fmt.Errorf("%s: writing the creator's membership in the tenant: %w", tenancyModuleName, err)
+	}
+	if err := p.manager.PutBinding(ctx, authz.Binding{
+		Tenant:    tenantID,
+		Account:   creator,
+		Role:      role,
+		GrantedAt: time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("%s: binding the creator to the tenant-admin role: %w", tenancyModuleName, err)
+	}
 	return nil
+}
+
+// markTenantAdminBuiltin freezes the tenant-admin role, retrying once. A single
+// failure is often a transient store error; a second failure leaves the tenant
+// with a non-builtin role and returns the error, so the caller answers 503
+// instead of reporting a tenant it did not finish.
+func (p *tenancyProduct) markTenantAdminBuiltin(ctx context.Context, tenantID string, role authz.Role) error {
+	first := p.manager.MarkRoleBuiltin(ctx, tenantID, role)
+	if first == nil {
+		return nil
+	}
+	second := p.manager.MarkRoleBuiltin(ctx, tenantID, role)
+	if second == nil {
+		return nil
+	}
+	return errors.Join(first, second)
 }
 
 // creatorIsMember reports whether the creator already holds a membership in the
@@ -444,14 +463,12 @@ func (p *tenancyProduct) rosterHolds(ctx context.Context, id tenant.ID) (bool, e
 	return true, nil
 }
 
-// removeProvision removes what a failed provision wrote. It is best effort: a
+// removeProvision removes the policy rows a provision wrote before the roster
+// refused it. The membership and binding are written after the roster row, so at
+// this point only the role and its grants are there. It is best effort: a
 // failure is logged, because the write's own failure is the answer the caller
 // receives, and there is no second failure to report beside it.
-func (p *tenancyProduct) removeProvision(ctx context.Context, tenantID string, creator authn.AccountID) {
-	if err := p.memberships.Remove(ctx, creator, tenantID); err != nil {
-		p.logger.Error(tenancyModuleName+": a failed provision left the creator's membership behind",
-			"tenant", tenantID, "cause", err.Error())
-	}
+func (p *tenancyProduct) removeProvision(ctx context.Context, tenantID string) {
 	if err := p.manager.DeleteRole(ctx, tenantID, authz.TenantAdminRole); err != nil &&
 		!errors.Is(err, authz.ErrUnknownRole) {
 		p.logger.Error(tenancyModuleName+": a failed provision left its policy rows behind",

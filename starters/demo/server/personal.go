@@ -390,10 +390,10 @@ type personalProduct struct {
 	// an administrator added.
 	membershipCleanup authn.MembershipCleanup
 	manager           authz.Manager
-	seeder      authz.Seeder
-	catalog     authz.Catalog
-	audit       audit.Audit
-	logger      *slog.Logger
+	seeder            authz.Seeder
+	catalog           authz.Catalog
+	audit             audit.Audit
+	logger            *slog.Logger
 	// accounts is the read the event compensation makes to decide the account's
 	// current state; it is nil in an assembly without the account read surface,
 	// where the event's own target is the best evidence available.
