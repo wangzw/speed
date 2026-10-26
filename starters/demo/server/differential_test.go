@@ -909,13 +909,13 @@ const splitEndpoints = `  endpoints:
       prefixes: ["/"]
 `
 
-// render writes the topology's configuration with the given ports. The merged
-// topology takes the endpoint table from the platform defaults document; the
-// split one overrides the whole table to move the web endpoint onto a listener
-// of its own.
-func (topo topology) render(t *testing.T, ports []int) string {
+// render writes the topology's configuration with the given ports and database
+// locator. The merged topology takes the endpoint table from the platform
+// defaults document; the split one overrides the whole table to move the web
+// endpoint onto a listener of its own.
+func (topo topology) render(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
-	body := differentialConfigBody(t, ports[:listenerCount])
+	body := differentialConfigBody(t, ports[:listenerCount], dsn)
 	// The address shield is left off in this case's configuration. It counts
 	// requests per client address in this process's memory, and the baseline
 	// sends more requests before the matrix than a variant does (the expectation
@@ -947,10 +947,19 @@ func launch(t *testing.T, topo topology, without []string) (*variantProcess, map
 	t.Helper()
 	ports := freePorts(t, topo.ports)
 	dir := t.TempDir()
-	body := topo.render(t, ports)
+	dsn := filepath.Join(dir, "demo.db")
+	body := topo.render(t, ports, dsn)
 	configPath := filepath.Join(dir, "demo.yaml")
 	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
 		t.Fatalf("writing the configuration: %v", err)
+	}
+	// The policy module refuses to start without the system tenant in the
+	// roster, and an in-memory database would lose the seeded row between
+	// processes. The seed runs first over the same file, with the program's own
+	// unmodified module set, so every variant starts from the same roster.
+	seeded := runCommand(t, "file://"+configPath, "sqlite", seedCommand)
+	if seeded.err != nil {
+		t.Fatalf("seeding the variant's database failed: %v\n%s", seeded.err, seeded.combined())
 	}
 	binary, err := filepath.Abs(os.Args[0])
 	if err != nil {
@@ -958,7 +967,7 @@ func launch(t *testing.T, topo topology, without []string) (*variantProcess, map
 	}
 	env := []string{serveWithoutEnv + "=" + strings.Join(without, ",")}
 	child := startChild(t, binary, dir, env,
-		"--config", "file://"+configPath, "sqlite-memory", serveCommand)
+		"--config", "file://"+configPath, "sqlite", serveCommand)
 	byName := map[string]int{"backend": ports[backendListener], "ops": ports[opsListener]}
 	if topo.split {
 		byName["frontend"] = ports[2]
@@ -1046,7 +1055,7 @@ func runDifferential(t *testing.T, topo topology) {
 	if document.status != http.StatusOK {
 		t.Fatalf("the baseline's /openapi.json answered %d: %s", document.status, document.body)
 	}
-	claims := claimsFromConfig(t, "the case's configuration", []byte(topo.render(t, []int{8080, 8083, 8084})))
+	claims := claimsFromConfig(t, "the case's configuration", []byte(topo.render(t, []int{8080, 8083, 8084}, ":memory:")))
 	probes := buildProbes(t, document.body, claims, topo.split)
 	table := parseFrozenTable(baseline.linesCopy())
 	chains := parseChains(baseline.linesCopy())

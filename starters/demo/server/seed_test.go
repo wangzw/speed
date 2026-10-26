@@ -49,7 +49,7 @@ func (m *roleManager) MarkRoleBuiltin(_ context.Context, _ string, role authz.Ro
 // give it meaning exist.
 func TestSeedCreatesTheAdministratorRoleWithoutTheMark(t *testing.T) {
 	manager := &roleManager{}
-	if err := seedRole(t.Context(), manager, "system", time.Now().UTC()); err != nil {
+	if err := seedRole(t.Context(), manager, "system", platformAdminRole, platformAdminDescriptionKey, time.Now().UTC()); err != nil {
 		t.Fatalf("seedRole: %v", err)
 	}
 	if len(manager.writes) != 1 {
@@ -86,7 +86,7 @@ func TestSeedMarksTheAdministratorRoleBuiltin(t *testing.T) {
 			CreatedAt:      created,
 		},
 	}}
-	if err := markRoleBuiltin(t.Context(), manager, "system"); err != nil {
+	if err := markRoleBuiltin(t.Context(), manager, "system", platformAdminRole); err != nil {
 		t.Fatalf("markRoleBuiltin: %v", err)
 	}
 	if len(manager.writes) != 0 {
@@ -103,7 +103,7 @@ func TestSeedLeavesAnExistingBuiltinRoleAlone(t *testing.T) {
 	manager := &roleManager{roles: []authz.RoleRecord{
 		{Tenant: "system", Role: platformAdminRole, Builtin: true, DescriptionKey: "kept"},
 	}}
-	if err := markRoleBuiltin(t.Context(), manager, "system"); err != nil {
+	if err := markRoleBuiltin(t.Context(), manager, "system", platformAdminRole); err != nil {
 		t.Fatalf("markRoleBuiltin: %v", err)
 	}
 	if len(manager.writes) != 0 || len(manager.marks) != 0 {
@@ -177,7 +177,7 @@ func TestSeedGrantsSeedsEveryDeclaredPermission(t *testing.T) {
 		"crm.deal.read":  {"deal", "read"},
 		"crm.deal.write": {"deal", "write"},
 	}}
-	if err := seedGrants(t.Context(), seeder, catalog, "system"); err != nil {
+	if err := seedGrants(t.Context(), seeder, catalog, "system", platformAdminRole); err != nil {
 		t.Fatalf("seedGrants: %v", err)
 	}
 	if seeder.tenant != "system" || seeder.role != platformAdminRole {
@@ -208,7 +208,7 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
 		"crm.deal.read": {"deal", "read"},
 	}}
-	err := seedGrants(t.Context(), seeder, catalog, "system")
+	err := seedGrants(t.Context(), seeder, catalog, "system", platformAdminRole)
 	if !errors.Is(err, refusal) {
 		t.Fatalf("seedGrants error = %v, want it to wrap the seeding failure", err)
 	}
@@ -229,7 +229,7 @@ func TestSeedReportsASeedingFailure(t *testing.T) {
 func memberConfig(t *testing.T, dsn, members string) string {
 	t.Helper()
 	body := configBody(t, freePorts(t, listenerCount), dsn)
-	const needle = "  tenants:\n    - demo\n"
+	const needle = "  tenants:\n    - name: demo\n      admins:\n        - operator\n"
 	replaced := strings.Replace(body, needle, needle+members, 1)
 	if replaced == body {
 		t.Fatalf("the configuration template holds no seed tenants section to extend")
@@ -606,4 +606,99 @@ func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
 	if strings.Contains(res.stdout, "seeded: account operator") {
 		t.Errorf("the account was seeded despite the raised policy:\n%s", res.stdout)
 	}
+}
+
+// A tenant with no administrator would be a tenant nobody can enter: the
+// tenant-admin binding is the only way to hold that role. The command refuses
+// the list before writing anything.
+func TestSeedRefusesATenantWithoutAnAdministrator(t *testing.T) {
+	t.Parallel()
+	in := seedInput{
+		Accounts: []seedAccount{{Identifier: "operator", Password: "operator-dev-secret"}},
+		Tenants:  []seedTenantEntry{{Name: "acme"}},
+	}
+	err := checkTenants(in)
+	if err == nil {
+		t.Fatal("checkTenants accepted a tenant with no administrator")
+	}
+	if !strings.Contains(err.Error(), "names no administrator") {
+		t.Errorf("the refusal = %q, want it to name the missing administrator", err)
+	}
+}
+
+// An administrator has to be one of the declared accounts: the binding would
+// otherwise name an account no seed run can write.
+func TestSeedRefusesAnAdministratorItCannotName(t *testing.T) {
+	t.Parallel()
+	in := seedInput{
+		Accounts: []seedAccount{{Identifier: "operator", Password: "operator-dev-secret"}},
+		Tenants:  []seedTenantEntry{{Name: "acme", Admins: []string{"ghost"}}},
+	}
+	err := checkTenants(in)
+	if err == nil {
+		t.Fatal("checkTenants accepted an administrator the account list does not declare")
+	}
+	if !strings.Contains(err.Error(), "ghost") || !strings.Contains(err.Error(), "seed.accounts") {
+		t.Errorf("the refusal = %q, want it to name the offender and seed.accounts", err)
+	}
+}
+
+// The first administrator is written first, so it is the tenant's first
+// administrator: the binding order is the list's order.
+func TestSeedBindsTheTenantAdministratorsInTheDeclaredOrder(t *testing.T) {
+	t.Parallel()
+	manager := &orderManager{}
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{"crm.deal.read": {"deal", "read"}}}
+	seeder := &orderSeeder{manager: manager}
+	if err := seedAdministration(t.Context(), manager, seeder, catalog,
+		"acme", tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+		t.Fatalf("seedAdministration: %v", err)
+	}
+	for _, id := range []authn.AccountID{"acct-1", "acct-2"} {
+		if err := seedBinding(t.Context(), manager, "acme", tenantAdminRole, id); err != nil {
+			t.Fatalf("seedBinding: %v", err)
+		}
+	}
+	want := []string{"role:tenant-admin", "seed:tenant-admin", "mark:tenant-admin", "bind:acct-1", "bind:acct-2"}
+	if got := manager.order; !slices.Equal(got, want) {
+		t.Errorf("the writes were %v, want %v", got, want)
+	}
+}
+
+// orderManager records the administration writes in order.
+type orderManager struct {
+	authz.Manager
+	order []string
+	roles []authz.RoleRecord
+}
+
+func (m *orderManager) Roles(context.Context, string) ([]authz.RoleRecord, error) {
+	return slices.Clone(m.roles), nil
+}
+func (m *orderManager) PutRole(_ context.Context, r authz.RoleRecord) error {
+	m.order = append(m.order, "role:"+string(r.Role))
+	m.roles = append(m.roles, r)
+	return nil
+}
+func (m *orderManager) MarkRoleBuiltin(_ context.Context, _ string, role authz.Role) error {
+	m.order = append(m.order, "mark:"+string(role))
+	return nil
+}
+func (m *orderManager) BindingsOf(context.Context, string, string) ([]authz.Binding, error) {
+	return nil, nil
+}
+func (m *orderManager) PutBinding(_ context.Context, b authz.Binding) error {
+	m.order = append(m.order, "bind:"+b.Account)
+	return nil
+}
+
+// orderSeeder records a seeding call in the manager's order.
+type orderSeeder struct {
+	authz.Seeder
+	manager *orderManager
+}
+
+func (s *orderSeeder) SeedGrants(context.Context, string, authz.Role, []authz.Grant) (int, error) {
+	s.manager.order = append(s.manager.order, "seed:"+string(authz.TenantAdminRole))
+	return 0, nil
 }

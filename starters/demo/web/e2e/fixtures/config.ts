@@ -508,6 +508,12 @@ export async function writeReviewConfig(
   if (input.seedImpersonation !== true) {
     body = replaceOnce(
       body,
+      '\n        - member\n',
+      '\n        - member\n        - operator@demo.test\n',
+      'review tenant administrator',
+    )
+    body = replaceOnce(
+      body,
       '\n  impersonation: true\n',
       '\n  impersonation: false\n',
       'seed impersonation switch',
@@ -667,7 +673,9 @@ export async function writeDeployConfig(
     // The public domain appears twice: the WebAuthn relying party id and the
     // hostname the human-verification widget must have run on.
     ['__PUBLIC_DOMAIN__', deployValues.publicDomain, 2],
-    ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 1],
+    // The operator's address is both its login name and the administrator the
+    // template names for the seeded tenant.
+    ['__OPERATOR_EMAIL__', deployValues.operatorEmail, 2],
     ['__OPERATOR_PASSWORD__', deployValues.operatorPassword, 1],
     ['__ENCRYPTION_KEY__', deployValues.encryptionKey, 1],
     ['__SMTP_HOST__', deployValues.smtpHost, 1],

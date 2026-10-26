@@ -379,6 +379,14 @@ var (
 		// conditional feature workspace.personal. See personal.go.
 		personalModuleName,
 
+		// The host's tenancy policy seams: the membership check a
+		// platform-administrator binding asks, the write guard protecting system
+		// and personal tenants, and the provisioner that opens a tenant with its
+		// first tenant-admin. The management surface requires the guard and the
+		// provisioner, so a run that names tenant.admin without this module does
+		// not start. See tenancy.go.
+		tenancyModuleName,
+
 		objectstorefs.ModuleName,
 		objectstoremeta.ModuleName,
 		outboxrelay.ModuleName,
@@ -574,7 +582,8 @@ func addStack(root *config.Command, s stack) {
 	// nothing this command runs reaches for one.
 	seed := node.Sub(seedCommand)
 	seed.Include(seedModuleName, authnaccount.ModuleName, authzpolicy.ModuleName,
-		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName)
+		tenantcatalog.ModuleName, settings.ModuleName, outboxrelay.ModuleName, s.event, log.ModuleName,
+		tenancyModuleName)
 	seed.Do(core.StageStart, seedDatabase)
 
 	// gen merges the fragments the modules declare into one document and writes

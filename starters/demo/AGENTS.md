@@ -285,12 +285,12 @@ reads none of it.
   minute to thirty) and seeds the target member of `acme` through
   `seed.members`. The target is the username `member` with no email address, so
   the notification fixture's mailbox counts stay what they assert. The operator
-  is deliberately not a member of `acme`, but it does hold the
-  platform-administrator role's binding in every declared tenant domain,
-  `acme` included, because the seed writes one set of bindings per declared
-  domain. It is therefore not permission-less in `acme`; the impersonation gate
-  does not read the sender's permissions in the target tenant, so the journey
-  is still reachable.
+  is deliberately not a member of `acme` and holds no binding in that domain:
+  `acme`'s tenant list names `member` as its administrator, so the operator has
+  neither a membership nor a tenant-admin binding there. It holds
+  `platform-admin` in the system (platform) domain alone. The impersonation gate
+  does not read the sender's permissions in the target tenant, so the journey is
+  still reachable.
 
 The walkthrough: `seed`, then `serve`, then sign in as `operator@demo.test` with
 `operator-dev-secret` and the current code of the fixture's TOTP seed
@@ -434,20 +434,26 @@ writes a `ready` record on standard output once every module has started and a
 process is up waits for the record and not for a listening socket. Stop a run
 with SIGINT or SIGTERM; it drains in-flight requests first.
 
-`seed` writes the initial operators `seed.accounts` names, the tenants
-`seed.tenants` names, the memberships `seed.members` names, the
-platform-administrator role the ones marked with it hold, and the runtime
-settings `seed.settings` names. A member entry names a tenant under
-`seed.tenants` and an account under `seed.accounts`; it is an active
-membership unless it carries `suspended: true`. A setting is written
+`seed` writes the initial operators `seed.accounts` names, always registers the
+system tenant, registers the business tenants `seed.tenants` names with their
+administrators, writes the memberships `seed.members` names, and writes the
+runtime settings `seed.settings` names. A tenant entry gives `name` and
+`admins`; every named administrator gets a membership and the tenant-admin role
+in that tenant's domain, and the first entry is written first. An account marked
+`platform-admin` becomes a member of the system tenant and holds
+`platform-admin` in the platform domain (the system tenant's domain) plus
+`tenant-admin` in the system domain; a business tenant never holds
+`platform-admin`, which exists only in the platform domain. A member entry names
+a tenant under `seed.tenants` and an account under `seed.accounts`; it is an
+active membership unless it carries `suspended: true`. A setting is written
 into the global layer only while that layer holds no explicit row for its key,
 so a value an operator changed through the settings surface survives a later
 seed run. It carries the migrations with it, so it is the whole of what a fresh
 copy does to a database before serving from it; running it again writes nothing
 and says so. A permission a module declares after an earlier run is added on
-the next run through the host's seeding surface, so the operator keeps
-everything the process declares while the management surface stays unable to
-change the role.
+the next run through the host's seeding surface, so each administration role
+keeps everything the process declares while the management surface stays unable
+to change it.
 
 `seed` writes no second factor in a baseline build, and none in a review build either unless the deployment sets `seed.impersonation`: that switch seeds the impersonation journey's two judged methods on the platform administrator, one aged past `authn.mfa.sensitive-min-age`, and it changes how that administrator signs in afterwards. The public `pkg/authn`
 surface hands a host a registration step it does not let that host read, so a
@@ -834,44 +840,67 @@ names the fixed part of that wiring, and no configuration file repeats it:
   review build is the worked example of both: it declares a type and names the
   caller as the recipient (see "The review build's notification fixture").
 - **The personal tenant** is the host's own policy, not a platform capability
-  (`workspace.personal`, `server/personal.go`, named in `baselineServe`). Its
-  switch is `workspace.personal.enabled`, off in every `testdata/` file and on
-  in the review assembly (`server/review/sqlite.yaml`). With it on, the module
-  mounts `POST /api/v1/workspace/personal` on the `account` endpoint — no tenant
-  resolution — and posts the conditional feature `workspace.personal`; with it
-  off, no route is mounted, the feature is absent from the document, and the
-  claimed `/api/v1/workspace` prefix answers the account endpoint's 404. The route
+  (`workspace.personal`, `server/personal.go` and `server/personal_lifecycle.go`,
+  named in `baselineServe`). Its switch is `workspace.personal.enabled`, off in
+  every `testdata/` file and on in the review assembly
+  (`server/review/sqlite.yaml`). With it on, the module implements
+  `authn.AccountLifecycle.AccountCreated`: the account is committed and then its
+  personal tenant, membership and tenant-admin binding are built, so no account
+  exists without a tenant. With the switch off the hook builds nothing, no route
+  is mounted, the feature is absent from the document, and the claimed
+  `/api/v1/workspace` prefix answers the account endpoint's 404. A service
+  account has no personal tenant, and a deleted account (or an existing tenant
+  tombstone) is no work. The status and deletion hooks stay in force whether or
+  not the route is mounted, because they wind up a tenant an account already
+  has.
+
+  The route `POST /api/v1/workspace/personal` on the `account` endpoint is the
+  backfill: a caller whose own personal tenant is missing from its membership
+  list asks for one. A membership in another tenant is not a refusal — every
+  account owns its personal tenant — so the backfill creates it beside them; an
+  existing personal membership is read back without rewriting it. The route
   requires an authenticated caller, refuses an impersonating one 403 (it is
   registered `Impersonable` so the handler, not the gateway's default 401,
   answers), and refuses a service account or a static-credential principal 403.
   Registration verification is not an eligibility fact: an unverified account
   gets its personal tenant, and the verification gate limits what it may do
-  inside the workspace. The route reads back the
-  caller's own personal tenant when that membership already
-  exists, refuses a caller that belongs to another tenant 409 `already-member`,
-  and otherwise ensures the idempotent pieces: the tenant row (identifier and
+  inside the workspace. The idempotent pieces are the tenant row (identifier and
   alias both `personal-<account-id>`), the account's membership, a non-builtin
-  `owner` role, that role's grants converged to the allowlist the host declares
-  (an empty list: neither the notification surface nor the object store
-  declares a permission point; never the tenant domain's management actions),
-  and the account's binding. It never overwrites an operator's
-  decision: an existing membership is left alone, and a tenant row whose status
-  is not enabled answers 409 `tenant-unavailable` without writing anything. An
-  alias collision or a derived identifier outside the roster domain answers 409
+  `tenant-admin` role, that role's grants converged to the allowlist the host
+  declares (the host's business-resource set less membership, invitation and
+  identity-provider management — the set is empty here because neither the
+  notification surface nor the object store declares a permission point), and
+  the account's binding. It never overwrites an operator's decision: an existing
+  membership is left alone, and a tenant row whose status is not enabled answers
+  409 `tenant-unavailable` without writing anything. An alias collision or a
+  derived identifier outside the roster domain answers 409
   `identifier-unavailable`. A dependency failure is a 503 with no part of the
-  result. The module's three 409s — `already-member`, `tenant-unavailable`,
-  `identifier-unavailable` — carry `urn:speed:workspace:<code>` types, so a
-  frontend that must render them by code can distinguish them. `personal.go` demonstrates
+  result. The two 409s carry `urn:speed:workspace:<code>` types, so a frontend
+  that must render them by code can distinguish them. `personal.go` demonstrates
   that an application module's refusal a product frontend must render by code
   needs that shape, since `@speed/api-client` degrades every other problem type
-  to `client.http.<status>`. The frontend calls it from the tenant frame when an
-  authenticated, non-impersonating viewer has no current tenant and the feature
-  is served, regardless of the account's verification state; a registration
-  completed through SMS lands on `/` (the tenant home) with a one-time setup
-  notice, and without the feature it lands on `/account/setup`. A password
-  registration lands on `/account?verify=1` in either case, and the
-  verification notice is rendered by the account surface independently of the
-  ensure.
+  to `client.http.<status>`. The frontend calls the backfill from the tenant
+  frame when an authenticated, non-impersonating viewer's own personal tenant is
+  absent from its settled membership list and the feature is served, regardless
+  of the account's verification state or its other memberships. The
+  「完成账户设置」 notice is driven by the account's current profile showing
+  setup incomplete, not by whether the backfill created anything. A registration
+  completed through SMS lands on `/` (the tenant home), and without the feature
+  it lands on `/account/setup`; a password registration lands on
+  `/account?verify=1` in either case, and the verification notice is rendered by
+  the account surface independently of the backfill.
+- **The tenancy policy seams** are the host's answers to what the tenant and
+  authorization capabilities leave open (`server/tenancy.go`, named in
+  `baselineServe` and in the `seed` command). The module provides
+  `authz.MembershipChecker` (whether an account is an active member of a tenant,
+  read from `authn.Memberships`), `tenant.WriteGuard` (the system tenant and
+  every personal tenant reject a disable or a delete), and `tenant.Provisioner`
+  (a tenant opens with its creator as its first tenant-admin: the tenant-admin
+  role, every declared permission and the creator's binding are written before
+  the roster row, and a refused roster row removes them). `tenant.admin`
+  requires the guard and the provisioner, and the policy module consults the
+  checker before binding `platform-admin` in the platform domain, so a serve
+  assembly names this module or does not start.
 - The journal (`audit.journal`) records the requests its `requests` list names
   on the endpoints its `endpoints` list names. The sample files name no request
   route (`requests: []`): the object store's routes are gone, and the writes a
@@ -1025,49 +1054,50 @@ Under every stack:
 - **`migrate`** runs the engine alone and reaches every module's declarations to
   build every table.
 - **`seed`** writes the accounts under `seed.accounts`, each with the credential
-  it is given — a plaintext `password` or a `password-hash` — the tenants under
-  `seed.tenants`, the memberships under `seed.members`, and the
-  platform-administrator role the ones marked with it hold, carrying every
-  permission the process declares. A member names a tenant under `seed.tenants`
-  and an account under `seed.accounts`, and it is active unless it carries
+  it is given — a plaintext `password` or a `password-hash` — always registers
+  the system tenant, registers the business tenants under `seed.tenants` with
+  their administrators, writes the memberships under `seed.members`, and writes
+  the runtime settings under `seed.settings`. Each tenant entry gives `name` and
+  `admins`; every named administrator gets a membership and the tenant-admin role
+  in that tenant's domain, with the first entry written first. An account marked
+  `platform-admin` becomes a member of the system tenant and holds
+  `platform-admin` in the platform domain plus `tenant-admin` in the system
+  domain; a business tenant never receives `platform-admin`, which exists only in
+  the platform domain. A member names a tenant under `seed.tenants` and an
+  account under `seed.accounts`, and it is active unless it carries
   `suspended: true`; a tenant or an account the configuration does not declare,
-  and one pair declared twice, fail the command before it writes anything, with
-  the entry named. The role is created, its
-  grants are written through the seeding surface (`authz.Seeder`), and it is
-  then marked builtin in every domain: the management surface refuses to
-  rewrite it, delete it or change its grants, because deleting it would revoke
-  the operator's every permission with no command to put it back. The seeding
-  surface only adds: a permission a module declares after the mark is added to
-  the role on the next run, and an existing grant is never removed or
-  rewritten. The role and its grants
-  are written into two kinds of domain: the platform domain, which the
-  platform's own management surface reads, and each tenant under `seed.tenants`,
-  so the console's tenant-addressed pages — members, invitations and SSO
-  providers — answer out of the box; a platform-domain binding does not reach a
-  tenant domain. The reserved platform domain (`system`) is not accepted under
-  `seed.tenants`: it names the platform's policy domain and not a tenant, and the
-  policy module refuses to start when the roster holds a tenant carrying it, so
-  the seed refuses the name before writing it rather than seeding a roster the
-  next serve would not start on. The memberships are written through
-  `authn.Memberships.Put`, so an account that is missing or deleted is refused by
-  the seam. A membership is written only while the run is creating its account:
-  an account that already exists keeps whatever memberships the operator gave
-  it, so an addition, a suspension, a resume and a removal all survive every
-  restart and are never written back to the declared state. An existing
-  membership is reported as skipped and its row — its state, its source and its
-  SSO exemption — is left untouched. It is idempotent: an account, a
-  tenant, a membership, a role, a grant or a binding
-  already there is left as it stands and reported as skipped, so a re-run writes
-  nothing — and a re-run after the process gained a permission writes exactly
-  that grant. The one existing role it corrects is the administrator role's
-  `builtin` mark: a role an earlier seed wrote without it is marked once its
-  grants are in place, because that mark is what keeps the role off the
-  console's delete control. Nothing else is touched, and an account, a tenant or
-  a membership the configuration no longer names is neither disabled nor
-  deleted. It drives to `StageStart`, past the migrations, so a database that was
-  never migrated is one it can seed in a single command. A role and a binding come
-  from here because no migration writes one: who a deployment's administrators
-  are is the host's answer, and this command is where this host gives it.
+  a tenant with no administrator, and one pair declared twice fail the command
+  before it writes anything, with the entry named. The system tenant is
+  registered in the module's `Init`, before the policy module's `Start` checks
+  the roster for it; naming `system` under `seed.tenants` is legal and writes its
+  administrators like any other tenant's. The administration roles are created,
+  their grants are written through the seeding surface (`authz.Seeder`), and they
+  are then marked builtin in every domain they exist in: the management surface
+  refuses to rewrite them, delete them or change their grants, because deleting
+  one would revoke every permission it carries with no command to put it back.
+  The seeding surface only adds: a permission a module declares after the mark is
+  added to the role on the next run, and an existing grant is never removed or
+  rewritten. The memberships are written through `authn.Memberships.Put`, so an
+  account that is missing or deleted is refused by the seam. A membership is
+  written only while the run is creating its account, or when it is the
+  membership that carries a declared administrator's binding; an account that
+  already exists keeps whatever memberships the operator gave it, so an
+  addition, a suspension, a resume and a removal all survive every restart and
+  are never written back to the declared state. An existing membership is
+  reported as skipped and its row — its state, its source and its SSO exemption —
+  is left untouched. It is idempotent: an account, a tenant, a membership, a
+  role, a grant or a binding already there is left as it stands and reported as
+  skipped, so a re-run writes nothing — and a re-run after the process gained a
+  permission writes exactly that grant. The one existing role it corrects is the
+  administration roles' `builtin` mark: a role an earlier seed wrote without it
+  is marked once its grants are in place, because that mark is what keeps the
+  role off the console's delete control. Nothing else is touched, and an account,
+  a tenant, an administrator or a membership the configuration no longer names
+  is neither disabled, demoted nor deleted. It drives to `StageStart`, past the
+  migrations, so a database that was never migrated is one it can seed in a
+  single command. A role and a binding come from here because no migration writes
+  one: who a deployment's administrators are is the host's answer, and this
+  command is where this host gives it.
 - **`gen`** merges the OpenAPI fragments the modules declare into one document
   and writes it out, either to the file `-o` names or to standard output; the
   document's title and version come from `--title` and `--version`, defaulting to

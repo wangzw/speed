@@ -1,8 +1,16 @@
 package main
 
-// The personal-tenant host module: the demo host's own policy that an account
-// with no membership of its own gets one personal tenant, so a registration
-// completed through the sign-in surface can use the tenant area at once.
+// The personal-tenant host module: the demo host's own policy that every
+// account owns a personal tenant, so a registration completed through the
+// sign-in surface can use the tenant area at once.
+//
+// The tenant is built by the account lifecycle's creation hook, after the
+// account exists. The route is the backfill: a caller whose own personal tenant
+// is missing from its membership list (an account whose creation hook failed)
+// asks for one, and a caller that already holds it reads it back. The
+// backfill's caller list is the client's own, and it is deliberately not
+// qualified by the account's other memberships: an account in business tenants
+// still owns its personal tenant.
 //
 // The decision is recorded in
 // docs/adr/adr-starters-personal-tenant-2026-10-18.md and in the starter
@@ -77,31 +85,61 @@ const personalEndpoint = "account"
 // carries no personal data.
 const personalIDPrefix = "personal-"
 
-// personalOwnerRole is the non-builtin role the ensure writes in the personal
-// tenant. It is the tenant's owner, holding the allowlist below and nothing
-// else.
-const personalOwnerRole = authz.Role("owner")
+// personalTenantAdminRole is the role the ensure writes in the personal tenant.
+// It is every tenant's own highest role, and the account that owns the personal
+// tenant is its first and only holder.
+const personalTenantAdminRole = authz.TenantAdminRole
 
-// personalOwnerPermissions is the host-declared set of permissions the owner
-// role holds. The set is empty: the notification surface declares no permission
-// point, and the object store no longer declares one — its terminal-user API is
-// gone, and bytes are reached through a minted URL the business backend asks
-// for. The set is written out in code and not derived from the process catalog,
-// so a permission a module declares later does not join the owner role on its
-// own.
-//
-// The authentication module's tenant-level management actions are deliberately
-// absent — membership management, invitations, identity providers,
-// impersonation, client management and non-member admission are decided in the
-// tenant in the path, so granting them here would make every self-registered
-// account an administrator of its tenant, able to add any known account to it
-// and lock that account's own ensure out.
-var personalOwnerPermissions = []authz.Permission{}
+// legacyPersonalOwnerRole is the role the old personal-tenant model wrote. The
+// backfill removes it, with its grants and bindings, once the tenant-admin role
+// and the account's binding are in place.
+const legacyPersonalOwnerRole = authz.Role("owner")
 
-// personalOwnerDescriptionKey is the description key written with the owner
-// role. It travels in the API answer wherever a role is listed; the demo renders
-// no role surface of its own.
-const personalOwnerDescriptionKey = "authz.role.personalOwner"
+// personalBusinessPermissions is the host-declared set of business-resource
+// permissions a personal tenant's tenant-admin may hold. The set is written out
+// in code and not derived from the process catalog, so a permission a module
+// declares later does not join the role on its own. It is empty in this
+// skeleton: the notification surface declares no permission point, and the
+// object store no longer declares one — its terminal-user API is gone, and bytes
+// are reached through a minted URL the business backend asks for. A product that
+// adds a business capability adds its tenant-level permissions here.
+var personalBusinessPermissions = []authz.Permission{}
+
+// personalExcludedPermissions is the part of the business-resource face a
+// personal tenant's tenant-admin must never hold. A personal tenant is a
+// single-person space: membership management and invitations would let its
+// holder add accounts, and identity-provider management would let it manage SSO.
+// Both live in the authentication capability: invitations are decided on
+// authn.membership.manage, and IdP management on authn.idp.manage.
+var personalExcludedPermissions = []authz.Permission{
+	authz.PermissionMembershipManage,
+	authz.PermissionIDPManage,
+}
+
+// personalTenantAdminPermissions is the allowlist the ensure converges the
+// tenant-admin role's grants to: the host-declared business resources less the
+// management actions a personal tenant must not have.
+func personalTenantAdminPermissions() []authz.Permission {
+	return personalAllowlist(personalBusinessPermissions)
+}
+
+// personalAllowlist removes the excluded management permissions from a
+// business-resource set.
+func personalAllowlist(business []authz.Permission) []authz.Permission {
+	out := make([]authz.Permission, 0, len(business))
+	for _, permission := range business {
+		if slices.Contains(personalExcludedPermissions, permission) {
+			continue
+		}
+		out = append(out, permission)
+	}
+	return out
+}
+
+// personalTenantAdminDescriptionKey is the description key written with the
+// tenant-admin role. It travels in the API answer wherever a role is listed; the
+// demo renders no role surface of its own.
+const personalTenantAdminDescriptionKey = tenantAdminDescriptionKey
 
 // personalMemberSource is the membership source the ensure writes. The account
 // module publishes it on the membership event; "personal" names this host's own
@@ -118,7 +156,6 @@ const personalKind = "personal"
 // is this surface's own, so the two surfaces do not share a code.
 const (
 	personalProblemPrefix     = "urn:speed:workspace:"
-	alreadyMemberCode         = "already-member"
 	tenantUnavailableCode     = "tenant-unavailable"
 	identifierUnavailableCode = "identifier-unavailable"
 )
@@ -140,9 +177,6 @@ const (
 // The ensure's own refusals. None is returned by a dependency and so none
 // carries a cause.
 var (
-	// errAlreadyMember refuses an account with no personal tenant of its own
-	// that belongs to another tenant.
-	errAlreadyMember = errors.New("the account already has a membership outside its personal tenant")
 	// errTenantUnavailable refuses an account whose personal tenant row exists
 	// and is not enabled. The ensure then writes nothing, so disabling the
 	// tenant is how an operator withdraws a personal workspace.
@@ -195,11 +229,10 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 	http.MethodPost,
 	personalPathFragment,
 	"Ensure the caller's personal tenant exists and is complete",
-	"Creates the caller's personal tenant on first call and reads it back afterwards, completing its "+
-		"owner role and binding and converging the role's grants to the host's allowlist on every "+
-		"call. A membership row that exists is left as it stands, and a tenant that is not enabled is "+
-		"refused without a write. An account that holds an unproved email address is refused without a "+
-		"write too; the workspace opens once it has been proved. The tenant identifier and "+
+	"Backfills the caller's personal tenant when the account's own membership is missing, and reads it "+
+		"back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and "+
+		"converges the role's grants to the host's allowlist. A membership row that exists is left as it "+
+		"stands, and a tenant that is not enabled is refused without a write. The tenant identifier and "+
 		"alias are derived from the account identifier; the answer names the tenant and whether this "+
 		"call created it.",
 	nil,
@@ -215,12 +248,10 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 			"The caller is impersonating, is a service account, or is a static-table subject that "+
 				"cannot own a tenant"),
 		speedhttp.ProblemResponse(http.StatusConflict,
-			"The caller cannot have a personal tenant: it belongs to another tenant while holding none "+
-				"of its own (already-member), its personal tenant exists and is not enabled "+
+			"The caller cannot have a personal tenant: its personal tenant exists and is not enabled "+
 				"(tenant-unavailable), or the derived identifier or alias is unavailable "+
-				"(identifier-unavailable). The type field names which. already-member changes if the "+
-				"other membership is removed, tenant-unavailable changes if an operator enables the "+
-				"tenant, and identifier-unavailable does not change on retry"),
+				"(identifier-unavailable). The type field names which. tenant-unavailable changes if an "+
+				"operator enables the tenant, and identifier-unavailable does not change on retry"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable,
 			"A dependency could not answer; no part of the result is returned"),
 	},
@@ -523,8 +554,7 @@ type personalResult struct {
 // The caller has to be authenticated; the gateway has usually settled that, and
 // the check here is what answers a run whose account endpoint is unguarded. An
 // impersonating identity is a 403, a service account is a 403, a static-table
-// subject is not an account and is a 403. An account that belongs to another
-// tenant is the 409 already-member. An account whose personal tenant is not enabled is the 409
+// subject is not an account and is a 403. An account whose personal tenant is not enabled is the 409
 // tenant-unavailable, and an identifier or alias the tenant cannot take is the
 // 409 identifier-unavailable. Every dependency failure is a 503 that carries no
 // part of the result.
@@ -559,11 +589,6 @@ func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (Workspa
 			},
 			Created: result.Created,
 		}, nil
-	case errors.Is(err, errAlreadyMember):
-		return WorkspacePersonalReply{}, speedhttp.Fault{
-			Status: http.StatusConflict,
-			Type:   personalProblemPrefix + alreadyMemberCode,
-		}
 	case errors.Is(err, errTenantUnavailable):
 		p.logger.Warn(personalModuleName+": the personal tenant is not enabled",
 			"account", account.String(), "tenant", string(personalTenantID(account)), "cause", err.Error())
@@ -649,9 +674,9 @@ func (p *personalProduct) auditBestEffort(ctx context.Context, e audit.Entry) {
 //
 //  1. the tenant row (created, or read back when it already exists),
 //  2. the account's membership in it,
-//  3. the non-builtin owner role,
-//  4. the owner role's grants, converged to the host's allowlist: the missing
-//     ones added, the ones outside it revoked,
+//  3. the non-builtin tenant-admin role,
+//  4. the tenant-admin role's grants, converged to the host's allowlist: the
+//     missing ones added, the ones outside it revoked,
 //  5. the account's binding to that role.
 //
 // Each step is idempotent, and a failure leaves the earlier steps in place for
@@ -660,12 +685,13 @@ func (p *personalProduct) auditBestEffort(ctx context.Context, e audit.Entry) {
 // its state, and a tenant row that is not enabled is answered with a refusal
 // before anything is written.
 //
-// The eligibility check runs first. An account that already holds a membership
-// in its personal tenant reads that tenant back, whether or not it belongs to
-// other tenants too. An account with no personal membership and a membership
-// elsewhere is refused and no tenant is created. An unproved email address is
-// not an eligibility fact: the workspace exists for the account, and the
-// verification gate limits what the account may do inside it.
+// The eligibility check runs first: an account that already holds a membership
+// in its personal tenant reads that tenant back. A membership elsewhere is not
+// an eligibility fact — every account owns its personal tenant — so the
+// backfill creates one even for an account that belongs to business tenants. An
+// unproved email address is not an eligibility fact either: the workspace exists
+// for the account, and the verification gate limits what the account may do
+// inside it.
 func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (personalResult, error) {
 	personalID := personalTenantID(account)
 	// The roster admits an identifier without blanks or control characters and
@@ -677,20 +703,9 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 			"the roster's domain", errIdentifierUnavailable)
 	}
 
-	memberships, err := p.memberships.Tenants(ctx, account)
+	_, own, err := p.memberships.Membership(ctx, string(personalID), account)
 	if err != nil {
-		return personalResult{}, fmt.Errorf("reading the account's memberships: %w", err)
-	}
-	own, elsewhere := false, false
-	for _, membership := range memberships {
-		if membership.Tenant == string(personalID) {
-			own = true
-		} else {
-			elsewhere = true
-		}
-	}
-	if !own && elsewhere {
-		return personalResult{}, errAlreadyMember
+		return personalResult{}, fmt.Errorf("reading the account's personal membership: %w", err)
 	}
 
 	var record tenant.Tenant
@@ -747,25 +762,25 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 	if err != nil {
 		return fail(fmt.Errorf("reading the personal tenant's roles: %w", err))
 	}
-	ownerPresent := false
+	adminPresent := false
 	for _, role := range roles {
-		if role.Role == personalOwnerRole {
-			ownerPresent = true
+		if role.Role == personalTenantAdminRole {
+			adminPresent = true
 			break
 		}
 	}
-	if !ownerPresent {
+	if !adminPresent {
 		if err = p.manager.PutRole(ctx, authz.RoleRecord{
 			Tenant:         string(personalID),
-			Role:           personalOwnerRole,
-			DescriptionKey: personalOwnerDescriptionKey,
+			Role:           personalTenantAdminRole,
+			DescriptionKey: personalTenantAdminDescriptionKey,
 			CreatedAt:      time.Now().UTC(),
 		}); err != nil {
-			return fail(fmt.Errorf("writing the owner role: %w", err))
+			return fail(fmt.Errorf("writing the tenant-admin role: %w", err))
 		}
 	}
 
-	if err = p.convergeOwnerGrants(ctx, string(personalID)); err != nil {
+	if err = p.convergeTenantAdminGrants(ctx, string(personalID)); err != nil {
 		return fail(err)
 	}
 
@@ -775,7 +790,7 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 	}
 	bound := false
 	for _, binding := range bindings {
-		if binding.Role == personalOwnerRole {
+		if binding.Role == personalTenantAdminRole {
 			bound = true
 			break
 		}
@@ -784,11 +799,21 @@ func (p *personalProduct) ensure(ctx context.Context, account authn.AccountID) (
 		if err := p.manager.PutBinding(ctx, authz.Binding{
 			Tenant:    string(personalID),
 			Account:   account.String(),
-			Role:      personalOwnerRole,
+			Role:      personalTenantAdminRole,
 			GrantedAt: time.Now().UTC(),
 		}); err != nil {
-			return fail(fmt.Errorf("binding the account to the owner role: %w", err))
+			return fail(fmt.Errorf("binding the account to the tenant-admin role: %w", err))
 		}
+	}
+
+	// A tenant built under the old model still carries its owner role. The
+	// tenant-admin role and the account's binding are in place above, so removing
+	// the old role — with its grants and bindings — finishes the migration. An
+	// absent role is no work, and a role an operator marked builtin is tolerated:
+	// it cannot be deleted, and the tenant-admin role is already in place.
+	if err := p.manager.DeleteRole(ctx, string(personalID), legacyPersonalOwnerRole); err != nil &&
+		!errors.Is(err, authz.ErrBuiltinRole) {
+		return fail(fmt.Errorf("removing the personal tenant's legacy owner role: %w", err))
 	}
 
 	if createRefused {
@@ -850,17 +875,17 @@ func (p *personalProduct) createTenant(ctx context.Context, id tenant.ID) (tenan
 	}
 }
 
-// convergeOwnerGrants brings the owner role's grants to the host's allowlist:
-// a grant outside it is revoked, and a missing one is added. The seeding
-// surface only adds, which is why the revocation reads the grants first.
-func (p *personalProduct) convergeOwnerGrants(ctx context.Context, tenantID string) error {
-	held, err := p.manager.Grants(ctx, tenantID, personalOwnerRole)
+// convergeTenantAdminGrants brings the tenant-admin role's grants to the host's
+// allowlist: a grant outside it is revoked, and a missing one is added. The
+// seeding surface only adds, which is why the revocation reads the grants first.
+func (p *personalProduct) convergeTenantAdminGrants(ctx context.Context, tenantID string) error {
+	held, err := p.manager.Grants(ctx, tenantID, personalTenantAdminRole)
 	if err != nil {
-		return fmt.Errorf("reading the owner role's grants: %w", err)
+		return fmt.Errorf("reading the tenant-admin role's grants: %w", err)
 	}
-	allowed := make(map[authz.Grant]struct{}, len(personalOwnerPermissions))
-	grants := make([]authz.Grant, 0, len(personalOwnerPermissions))
-	for _, permission := range personalOwnerPermissions {
+	allowed := make(map[authz.Grant]struct{}, len(personalTenantAdminPermissions()))
+	grants := make([]authz.Grant, 0, len(personalTenantAdminPermissions()))
+	for _, permission := range personalTenantAdminPermissions() {
 		object, action, ok := p.catalog.ObjectAction(permission)
 		if !ok {
 			// The allowlist names a permission the process translation has no
@@ -878,15 +903,15 @@ func (p *personalProduct) convergeOwnerGrants(ctx context.Context, tenantID stri
 		}
 		if err := p.manager.DeleteGrant(ctx, authz.GrantRecord{
 			Tenant:   tenantID,
-			Role:     personalOwnerRole,
+			Role:     personalTenantAdminRole,
 			Resource: grant.Resource,
 			Action:   grant.Action,
 		}); err != nil {
-			return fmt.Errorf("revoking a grant outside the owner role's allowlist: %w", err)
+			return fmt.Errorf("revoking a grant outside the tenant-admin role's allowlist: %w", err)
 		}
 	}
-	if _, err := p.seeder.SeedGrants(ctx, tenantID, personalOwnerRole, grants); err != nil {
-		return fmt.Errorf("seeding the owner role's grants: %w", err)
+	if _, err := p.seeder.SeedGrants(ctx, tenantID, personalTenantAdminRole, grants); err != nil {
+		return fmt.Errorf("seeding the tenant-admin role's grants: %w", err)
 	}
 	return nil
 }

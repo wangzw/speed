@@ -47,10 +47,11 @@ const membersItem = "members"
 const seedMemberSource = authn.ReasonAdmin
 
 // platformAdminRole is the role the seed gives the accounts its configuration
-// marks. It holds every permission the process declares, and it is written into
-// the platform domain and into each tenant the deployment serves. A role is a
-// per-domain row, so the platform domain's copy does not reach a tenant's, and
-// the seed writes one in each domain the administrator acts in.
+// marks. The platform domain is the system tenant's domain, and this role
+// exists there alone: it holds every permission the process declares, and an
+// account may hold it only while it is an active member of that tenant. A
+// binding in the platform domain does not reach a business tenant's domain, so
+// acting inside a business tenant still needs that tenant's tenant-admin.
 //
 // It is builtin: the management surface may neither rewrite it nor delete it,
 // and may not change the grants it holds. Deleting it would revoke the
@@ -67,18 +68,29 @@ const platformAdminRole = authz.Role("platform-admin")
 // renders it, and a product that adds a role surface gives it a translation.
 const platformAdminDescriptionKey = "authz.role.platformAdmin"
 
+// tenantAdminRole is every tenant's own highest role. Each tenant domain has
+// one, the platform domain included: the system tenant's copy is its own tenant
+// administration beside the platform administrator role. The seed writes it
+// with every declared permission and marks it builtin, because it is the role
+// the creator of a tenant holds and a tenant without it has no administrator.
+const tenantAdminRole = authz.TenantAdminRole
+
+// tenantAdminDescriptionKey is the description key written with every tenant's
+// tenant-admin role. It travels in the API answer wherever a role is listed.
+const tenantAdminDescriptionKey = "authz.role.tenantAdmin"
+
 // seedInput carries the seed command's inputs.
 type seedInput struct {
 	// Accounts are the accounts a copy starts with.
 	Accounts []seedAccount `config:"accounts"`
-	// Tenants are the tenants this deployment serves. Each is registered in the
-	// roster, and the accounts marked as platform administrators hold the
-	// platform-administrator role within each one, so the console's
-	// tenant-addressed administration pages answer for a tenant the seed wrote.
-	// The reserved platform domain is not among them: it names the platform
-	// operations' policy domain, not a tenant, and a name equal to it is refused
-	// rather than written.
-	Tenants []string `config:"tenants"`
+	// Tenants are the business tenants this deployment serves. Each is
+	// registered in the roster, and each names the accounts that administer it:
+	// the first is the tenant's first tenant-admin, and every one of them holds
+	// that role in the tenant's domain. The system tenant is not named here — the
+	// seed always registers it, and a platform-administrator account administers
+	// it — but naming it is legal and writes administrators for it like any other
+	// tenant.
+	Tenants []seedTenantEntry `config:"tenants"`
 	// Settings are the runtime settings a deployment starts with, each
 	// written into the global layer while that layer holds no explicit row
 	// for its key. A key already written — by an earlier seed run or by the
@@ -116,6 +128,26 @@ type seedMember struct {
 	// negative on purpose: the zero value is an active member, so an entry
 	// that leaves it out does not silently seed a suspended one.
 	Suspended bool `config:"suspended"`
+}
+
+// seedTenantEntry is one business tenant the seed writes: its name and the
+// accounts that administer it.
+type seedTenantEntry struct {
+	// Name is the tenant's identifier, which is also its alias: a request
+	// carrying the tenant's name on its surface resolves to it.
+	Name string `config:"name"`
+	// Admins are the accounts that administer the tenant, each named by a login
+	// name under Accounts. Every one gets a membership and a tenant-admin binding
+	// in the tenant's domain. The first entry is written first, so it is the
+	// tenant's first administrator.
+	Admins []string `config:"admins"`
+}
+
+// seedAdministrator is one configured platform administrator: the account's
+// identifier and its login name, which the membership check keys on.
+type seedAdministrator struct {
+	id   authn.AccountID
+	name string
 }
 
 // seedSetting is one runtime setting the seed writes.
@@ -178,6 +210,79 @@ func (a seedAccount) check() error {
 	return nil
 }
 
+// validateSeedInput runs every check on the configuration, in the order the
+// command has to know them: an account, then a tenant list, then a member list.
+// Both the module's Init callback and the seed action call it, so a run that
+// refuses the configuration has written nothing in either place.
+func validateSeedInput(in seedInput) error {
+	for _, a := range in.Accounts {
+		if err := a.check(); err != nil {
+			return err
+		}
+	}
+	if err := checkTenants(in); err != nil {
+		return err
+	}
+	return checkMembers(in)
+}
+
+// checkTenants refuses a tenant list the seed cannot write, before anything is
+// written.
+//
+// A tenant without an administrator would be a tenant nobody can enter, because
+// its tenant-admin binding is the only way to hold that role; the model has no
+// such state, so the list must name at least one. Every administrator must be
+// one of the declared accounts, and one tenant cannot name the same account
+// twice.
+func checkTenants(in seedInput) error {
+	accounts := make(map[string]bool, len(in.Accounts))
+	for _, a := range in.Accounts {
+		_, name, err := seedLoginName(a.Identifier)
+		if err != nil {
+			return err
+		}
+		accounts[name] = true
+	}
+	seenTenants := make(map[string]bool, len(in.Tenants))
+	for _, t := range in.Tenants {
+		name := strings.TrimSpace(t.Name)
+		if name == "" {
+			return fmt.Errorf("seed: a tenant under seed.%s names no name, and a tenant is "+
+				"registered by its name", tenantsItem)
+		}
+		if !tenant.IsIdentifier(name) {
+			return fmt.Errorf("seed: the tenant %q is outside the roster's identifier domain", name)
+		}
+		if seenTenants[name] {
+			return fmt.Errorf("seed: the tenant %q is declared twice under seed.%s", name, tenantsItem)
+		}
+		seenTenants[name] = true
+		if len(t.Admins) == 0 {
+			return fmt.Errorf("seed: the tenant %q names no administrator, and a tenant always has "+
+				"a tenant-admin", name)
+		}
+		seenAdmins := make(map[string]bool, len(t.Admins))
+		for _, admin := range t.Admins {
+			if strings.TrimSpace(admin) == "" {
+				return fmt.Errorf("seed: the tenant %q names an administrator with no account", name)
+			}
+			_, normalized, err := seedLoginName(admin)
+			if err != nil {
+				return fmt.Errorf("seed: the administrator %q of the tenant %q: %w", admin, name, err)
+			}
+			if !accounts[normalized] {
+				return fmt.Errorf("seed: the administrator %q of the tenant %q is not under seed.%s; "+
+					"add it there or correct the name", admin, name, accountsItem)
+			}
+			if seenAdmins[normalized] {
+				return fmt.Errorf("seed: the account %q administers the tenant %q twice", admin, name)
+			}
+			seenAdmins[normalized] = true
+		}
+	}
+	return nil
+}
+
 // checkMembers refuses a member list the seed cannot write, before anything is
 // written.
 //
@@ -192,7 +297,7 @@ func (a seedAccount) check() error {
 func checkMembers(in seedInput) error {
 	tenants := make(map[string]bool, len(in.Tenants))
 	for _, t := range in.Tenants {
-		tenants[t] = true
+		tenants[t.Name] = true
 	}
 	accounts := make(map[string]bool, len(in.Accounts))
 	for _, a := range in.Accounts {
@@ -254,9 +359,9 @@ func seedSchema() config.Schema {
 			},
 			tenantsItem: {
 				Origins: config.OriginPrimary,
-				Description: "the tenants this deployment serves, each registered in the roster " +
-					"and each holding the platform-administrator role for the accounts marked " +
-					"with it; the reserved platform domain is refused",
+				Description: "the business tenants this deployment serves, each with its name and " +
+					"the accounts that administer it; each is registered in the roster and each " +
+					"named administrator gets a membership and a tenant-admin binding",
 			},
 			settingsItem: {
 				Origins: config.OriginPrimary,
@@ -281,49 +386,80 @@ func init() { core.ProcessRegistry.Register(seedModule()) }
 
 func seedModule() core.Module {
 	return core.Module{
-		Name:      seedModuleName,
+		Name: seedModuleName,
+		// The system tenant is registered in Init, not in the seed action the
+		// command runs once every module has started: the policy module's Start
+		// requires the roster to carry the platform domain, and a fresh database
+		// has no row until this command writes one. Init runs after every module
+		// is constructed and before any Start, so the row is there when the policy
+		// module checks for it. Requiring the roster orders this callback after the
+		// roster's own Init, which is where the snapshot is read.
+		Requires:  []core.Requirement{{Token: (*tenant.Catalog)(nil)}},
 		Resources: []any{seedSchema()},
+		Init: func(ctx context.Context, reg *core.Registry, _ any) error {
+			// The configuration is judged before the row is written: a run that
+			// would refuse an account, a tenant or a member list must have written
+			// nothing at all, and the system tenant is the first write this command
+			// makes.
+			reader, err := core.Resolve[config.Reader](reg)
+			if err != nil {
+				return err
+			}
+			var in seedInput
+			if err := reader.Decode(seedNamespace, &in); err != nil {
+				return err
+			}
+			if err := validateSeedInput(in); err != nil {
+				return err
+			}
+			roster, err := core.Resolve[tenant.Catalog](reg)
+			if err != nil {
+				return err
+			}
+			return seedTenant(ctx, roster, string(authz.PlatformDomain))
+		},
 	}
 }
 
-// seedDatabase writes the accounts the configuration names, the tenants this
-// deployment serves, the memberships the configuration declares, the
-// platform-administrator role the accounts marked with it hold, and the
-// runtime settings the configuration starts the deployment with.
+// seedDatabase writes the runtime settings the configuration names, the system
+// tenant, the accounts, the business tenants with their administrators, the
+// memberships the configuration declares, and the two administration roles with
+// their grants and bindings.
 //
 // It is idempotent: an account, a tenant, a membership, a role, a grant or a
 // binding already there is left as it stands and reported as skipped, so the
 // command is safe to run at every deployment. On an existing database it
-// corrects two things: it marks the administrator role builtin when an earlier
-// seed wrote the row without the mark, and it adds the declared grants the role
-// does not hold. A membership is written only while the run is creating its
-// account. An account that already exists keeps the memberships the operator
-// gave it through the membership management surface — an addition, a suspension,
-// a resume or a removal all survive a later run — because after the account
-// exists its memberships are runtime state and not a gap for the seed to fill.
-// Nothing else is touched — an account, a tenant or a membership the
-// configuration no longer names is not disabled or deleted.
+// corrects two things per administration role: it marks the role builtin when an
+// earlier seed wrote the row without the mark, and it adds the declared grants
+// the role does not hold. A membership is written only while the run is creating
+// its account. An administrator's membership follows the same rule: an account
+// that already exists keeps whatever membership the operator gave it, and a
+// missing row is the operator's removal rather than a gap for the seed to fill,
+// so that administrator gets no binding either. Nothing else is touched — an
+// account, a tenant, an administrator or a membership the configuration no
+// longer names is not disabled, deleted or demoted.
 //
-// The role is written into two kinds of domain. The platform domain carries it
-// so the platform's own management surface answers; each tenant the
-// configuration names carries it too, so the console's tenant-addressed pages —
-// members, invitations and SSO providers — are complete out of the box. A
-// platform-domain binding does not reach a tenant domain, so a deployment whose
-// administrator held the role in the platform domain alone would be refused
-// those pages. The role is a per-domain row: writing the binding in a tenant
-// takes the role and its grants in that tenant, not only the binding.
+// The system tenant is always registered: the platform policy domain is that
+// tenant's domain, and the policy module refuses to start without it. Its
+// tenant-admin role is the system tenant's own administration; the
+// platform-administrator role exists only in that domain and is bound only to
+// accounts that are active members of it.
 //
-// This command is where the role, its grants and its bindings come from: no
-// migration seeds a role or a binding, because who a deployment's
-// administrators are is the host's answer and not the library's. The
-// permissions the role holds are the ones the process declares, read from the
-// catalog, so a first run covers every permission the process declares without
-// an edit here. The role is then marked builtin, which keeps the management
-// surface from rewriting it, deleting it or changing its grants. The grants are
-// written through the seeding surface, which adds the ones the role lacks and
-// never removes one: a permission a module declares later is added on the next
-// run, so the operator is never short of it and the command never fails over
-// the mark.
+// A business tenant gets its tenant-admin role and grants in its own domain, and
+// each account its configuration names under admins gets a membership and a
+// tenant-admin binding there. A business tenant never gets the
+// platform-administrator role: that role's domain is the platform domain alone.
+//
+// This command is where the roles, their grants and their bindings come from: no
+// migration seeds a role or a binding, because who a deployment's administrators
+// are is the host's answer and not the library's. The permissions each role
+// holds are the ones the process declares, read from the catalog, so a first run
+// covers every permission the process declares without an edit here. Each role is
+// then marked builtin, which keeps the management surface from rewriting it,
+// deleting it or changing its grants. The grants are written through the seeding
+// surface, which adds the ones the role lacks and never removes one: a permission
+// a module declares later is added on the next run, so the operator is never
+// short of it and the command never fails over the mark.
 func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
@@ -365,18 +501,12 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	if err != nil {
 		return err
 	}
-	// The account and member lists are judged before anything is written: a
-	// list entry is a value the manifest cannot hold to, so a credential key
-	// spelled wrong, or a member naming a tenant or an account the
-	// configuration does not carry, is caught here rather than by the store,
-	// and a run that would refuse one must not have written the settings below
-	// first.
-	for _, a := range in.Accounts {
-		if err := a.check(); err != nil {
-			return err
-		}
-	}
-	if err := checkMembers(in); err != nil {
+	// Every list is judged before anything is written: a list entry is a value
+	// the manifest cannot hold to, so a credential key spelled wrong, a tenant
+	// with no administrator, or a member naming a tenant or an account the
+	// configuration does not carry is caught here rather than by a store, and a
+	// run that would refuse one must not have written the settings below first.
+	if err := validateSeedInput(in); err != nil {
 		return err
 	}
 
@@ -390,11 +520,18 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		return err
 	}
 
+	// The system tenant first, always: the platform policy domain is that
+	// tenant's domain, and the policy module refuses to start without it.
+	if err := seedTenant(ctx, roster, string(authz.PlatformDomain)); err != nil {
+		return err
+	}
+
 	// Then the accounts, the identifiers of the ones the configuration marks as
-	// administrators, and the identifier of every account a member entry can
-	// name. created records the ones this run wrote, because a membership is
-	// provisioned with its account and never for one that was already there.
-	var administrators []authn.AccountID
+	// administrators, and the identifier of every account a member or admin entry
+	// can name. created records the ones this run wrote, because a membership
+	// under seed.members is provisioned with its account and never for one that
+	// was already there.
+	var administrators []seedAdministrator
 	accountIDs := make(map[string]authn.AccountID, len(in.Accounts))
 	created := make(map[string]bool, len(in.Accounts))
 	for _, a := range in.Accounts {
@@ -409,21 +546,21 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		accountIDs[name] = id
 		created[name] = fresh
 		if a.PlatformAdmin {
-			administrators = append(administrators, id)
+			administrators = append(administrators, seedAdministrator{id: id, name: name})
 		}
 	}
 
-	// Then the tenants, which the console's tenant-addressed pages read from the
-	// roster: a page selects a tenant from it, and a tenant that is not there is
-	// one no page can name.
+	// Then the business tenants, which the console's tenant-addressed pages read
+	// from the roster: a page selects a tenant from it, and a tenant that is not
+	// there is one no page can name.
 	for _, t := range in.Tenants {
-		if err := seedTenant(ctx, roster, t); err != nil {
+		if err := seedTenant(ctx, roster, t.Name); err != nil {
 			return err
 		}
 	}
 
-	// Then the memberships, which name both an account above and a tenant
-	// above, so both are written.
+	// Then the memberships under seed.members, which name both an account above
+	// and a tenant above, so both are written.
 	if err := seedMembers(ctx, memberships, in.Members, accountIDs, created); err != nil {
 		return err
 	}
@@ -436,27 +573,80 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 		return err
 	}
 
-	if len(administrators) == 0 {
-		return nil
+	// Then the roles and their grants, one role row per domain it exists in. The
+	// platform domain carries the platform-administrator role and the system
+	// tenant's own tenant-admin role; each business tenant carries its
+	// tenant-admin role. They are written before the bindings, which name a role
+	// that has to exist in that domain.
+	if err := seedAdministration(ctx, manager, seeder, catalog,
+		string(authz.PlatformDomain), platformAdminRole, platformAdminDescriptionKey); err != nil {
+		return err
 	}
-
-	// Then the role and its grants, one set per domain the administrator's role
-	// is held in: the platform domain, and each tenant the configuration names.
-	// They are written before the bindings, which name a role that has to exist
-	// in that domain.
-	domains := append([]string{string(authz.PlatformDomain)}, in.Tenants...)
-	for _, domain := range domains {
-		if err := seedAdministration(ctx, manager, seeder, catalog, domain); err != nil {
+	if err := seedAdministration(ctx, manager, seeder, catalog,
+		string(authz.PlatformDomain), tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+		return err
+	}
+	for _, t := range in.Tenants {
+		if err := seedAdministration(ctx, manager, seeder, catalog,
+			t.Name, tenantAdminRole, tenantAdminDescriptionKey); err != nil {
 			return err
 		}
 	}
-	for _, id := range administrators {
-		for _, domain := range domains {
-			if err := seedBinding(ctx, manager, domain, id); err != nil {
+
+	// The platform administrators are members of the system tenant and hold both
+	// administration roles there: platform-admin is what reaches the platform
+	// management surface, and tenant-admin is the system tenant's own
+	// administration. The platform-administrator binding is refused by the policy
+	// module for an account that is not an active member, so the membership is
+	// written first.
+	for _, admin := range administrators {
+		member, err := seedAdminMembership(ctx, memberships, string(authz.PlatformDomain),
+			admin.id, created[admin.name])
+		if err != nil {
+			return err
+		}
+		if !member {
+			fmt.Printf("skipped: platform administrator %s (not an active member of system)\n", admin.name)
+			continue
+		}
+		if err := seedBinding(ctx, manager, string(authz.PlatformDomain), platformAdminRole, admin.id); err != nil {
+			return err
+		}
+		if err := seedBinding(ctx, manager, string(authz.PlatformDomain), tenantAdminRole, admin.id); err != nil {
+			return err
+		}
+	}
+
+	// Then each business tenant's administrators, in the order the configuration
+	// names them: the first entry is written first, so it is the tenant's first
+	// administrator.
+	for _, t := range in.Tenants {
+		for _, adminName := range t.Admins {
+			_, name, err := seedLoginName(adminName)
+			if err != nil {
+				return fmt.Errorf("seed: the administrator %q of the tenant %q: %w", adminName, t.Name, err)
+			}
+			id, ok := accountIDs[name]
+			if !ok {
+				// checkTenants refused this before anything was written; the map
+				// only lacks the entry if the two disagree.
+				return fmt.Errorf("seed: the administrator %q of the tenant %q is not under seed.%s",
+					adminName, t.Name, accountsItem)
+			}
+			member, err := seedAdminMembership(ctx, memberships, t.Name, id, created[name])
+			if err != nil {
+				return err
+			}
+			if !member {
+				fmt.Printf("skipped: administrator %s of %s (not an active member)\n", name, t.Name)
+				continue
+			}
+			if err := seedBinding(ctx, manager, t.Name, tenantAdminRole, id); err != nil {
 				return err
 			}
 		}
 	}
+
 	// No second factor is seeded in a default build. The public authn surface
 	// hands back a registration step it does not let a host read, so a seed
 	// cannot finish an enrollment; write-path testing needs a factor added in
@@ -467,6 +657,42 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 			"before testing a write path (see AGENTS.md, \"Exercising a write path\")\n")
 	}
 	return nil
+}
+
+// seedAdminMembership ensures an administrator is an active member of the
+// tenant they administer, unless the row is already there. An existing row is
+// left as it stands: a suspension or a source the operator set is runtime state,
+// not a gap for the seed to fill. A missing row is written only while the run is
+// creating its account; for an account that already existed, a missing row is
+// the operator's removal and is not put back.
+//
+// It answers whether the account is an active member, because the binding that
+// follows has no effect without one.
+func seedAdminMembership(ctx context.Context, memberships authn.Memberships,
+	tenantName string, id authn.AccountID, created bool,
+) (bool, error) {
+	held, found, err := memberships.Membership(ctx, tenantName, id)
+	if err != nil {
+		return false, fmt.Errorf("seed: reading the membership of %s in %s: %w", id, tenantName, err)
+	}
+	if found {
+		fmt.Printf("skipped: member %s in %s (exists)\n", id, tenantName)
+		return held.Active, nil
+	}
+	if !created {
+		fmt.Printf("skipped: member %s in %s (account already present)\n", id, tenantName)
+		return false, nil
+	}
+	if err := memberships.Put(ctx, authn.Membership{
+		Account: id,
+		Tenant:  tenantName,
+		Active:  true,
+		Source:  seedMemberSource,
+	}); err != nil {
+		return false, fmt.Errorf("seed: writing the administrator %s into %s: %w", id, tenantName, err)
+	}
+	fmt.Printf("seeded: member %s in %s (administrator)\n", id, tenantName)
+	return true, nil
 }
 
 // seedTenant registers one tenant the configuration names unless the roster
@@ -683,12 +909,13 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 	return kind, normalized, nil
 }
 
-// seedAdministration writes what platform administration is made of in one
-// domain: the role, every declared permission on it, and the builtin mark that
+// seedAdministration writes what administration is made of in one domain for
+// one role: the role, every declared permission on it, and the builtin mark that
 // keeps the management surface off both. Each is written only when it is not
-// already there. The caller runs it once per domain the role is held in — the
-// platform domain, and each tenant the deployment serves — because a role and
-// its grants are per-domain rows and one domain's do not answer for another's.
+// already there. The caller runs it once per (domain, role) pair — the platform
+// domain carries both administration roles, and each business tenant carries its
+// tenant-admin role — because a role and its grants are per-domain rows and one
+// domain's do not answer for another's.
 //
 // The order is load-bearing: the role is created not builtin, the grants are
 // written, and only then is the mark set. A role created with the mark would be
@@ -700,44 +927,46 @@ func seedLoginName(identifier string) (authn.IdentifierKind, string, error) {
 // It names no account, because neither does: the role and its grants belong to
 // the domain, so one write serves every administrator the configuration names.
 func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz.Seeder,
-	catalog authz.Catalog, domain string,
+	catalog authz.Catalog, domain string, role authz.Role, descriptionKey string,
 ) error {
 	now := time.Now().UTC()
-	if err := seedRole(ctx, manager, domain, now); err != nil {
+	if err := seedRole(ctx, manager, domain, role, descriptionKey, now); err != nil {
 		return err
 	}
-	if err := seedGrants(ctx, seeder, catalog, domain); err != nil {
+	if err := seedGrants(ctx, seeder, catalog, domain, role); err != nil {
 		return err
 	}
-	return markRoleBuiltin(ctx, manager, domain)
+	return markRoleBuiltin(ctx, manager, domain, role)
 }
 
-// seedRole writes the administrator role into one domain unless it is already
+// seedRole writes one administration role into one domain unless it is already
 // there. The row is created without the builtin mark: the grants are written
 // next, and markRoleBuiltin sets the mark once they are in place.
-func seedRole(ctx context.Context, manager authz.Manager, domain string, now time.Time) error {
+func seedRole(ctx context.Context, manager authz.Manager, domain string,
+	role authz.Role, descriptionKey string, now time.Time,
+) error {
 	roles, err := manager.Roles(ctx, domain)
 	if err != nil {
 		return fmt.Errorf("seed: reading the roles of %s: %w", domain, err)
 	}
-	if slices.ContainsFunc(roles, func(r authz.RoleRecord) bool { return r.Role == platformAdminRole }) {
-		fmt.Printf("skipped: role %s/%s (exists)\n", domain, platformAdminRole)
+	if slices.ContainsFunc(roles, func(r authz.RoleRecord) bool { return r.Role == role }) {
+		fmt.Printf("skipped: role %s/%s (exists)\n", domain, role)
 		return nil
 	}
 	record := authz.RoleRecord{
 		Tenant:         domain,
-		Role:           platformAdminRole,
-		DescriptionKey: platformAdminDescriptionKey,
+		Role:           role,
+		DescriptionKey: descriptionKey,
 		CreatedAt:      now,
 	}
 	if err := manager.PutRole(ctx, record); err != nil {
-		return fmt.Errorf("seed: writing the role %s/%s: %w", domain, platformAdminRole, err)
+		return fmt.Errorf("seed: writing the role %s/%s: %w", domain, role, err)
 	}
-	fmt.Printf("seeded: role %s/%s\n", domain, platformAdminRole)
+	fmt.Printf("seeded: role %s/%s\n", domain, role)
 	return nil
 }
 
-// markRoleBuiltin freezes the administrator role once its grants are written.
+// markRoleBuiltin freezes an administration role once its grants are written.
 // The management surface may then neither rewrite it nor delete it, and the
 // manager refuses both here as well; it also refuses to change the role's
 // grants, which leaves the seeding surface the one path that adds one. Deleting
@@ -756,27 +985,27 @@ func seedRole(ctx context.Context, manager authz.Manager, domain string, now tim
 // The mark does not freeze the grant set against the seed: a permission a
 // module declares after this run is added to the role by the seeding surface on
 // the next run, and the management surface still cannot touch it.
-func markRoleBuiltin(ctx context.Context, manager authz.Manager, domain string) error {
+func markRoleBuiltin(ctx context.Context, manager authz.Manager, domain string, role authz.Role) error {
 	roles, err := manager.Roles(ctx, domain)
 	if err != nil {
 		return fmt.Errorf("seed: reading the roles of %s: %w", domain, err)
 	}
-	i := slices.IndexFunc(roles, func(r authz.RoleRecord) bool { return r.Role == platformAdminRole })
+	i := slices.IndexFunc(roles, func(r authz.RoleRecord) bool { return r.Role == role })
 	if i < 0 {
-		return fmt.Errorf("seed: the role %s/%s is not there to mark builtin", domain, platformAdminRole)
+		return fmt.Errorf("seed: the role %s/%s is not there to mark builtin", domain, role)
 	}
 	if roles[i].Builtin {
-		fmt.Printf("skipped: role %s/%s (builtin)\n", domain, platformAdminRole)
+		fmt.Printf("skipped: role %s/%s (builtin)\n", domain, role)
 		return nil
 	}
-	if err := manager.MarkRoleBuiltin(ctx, domain, platformAdminRole); err != nil {
-		return fmt.Errorf("seed: marking the role %s/%s builtin: %w", domain, platformAdminRole, err)
+	if err := manager.MarkRoleBuiltin(ctx, domain, role); err != nil {
+		return fmt.Errorf("seed: marking the role %s/%s builtin: %w", domain, role, err)
 	}
-	fmt.Printf("seeded: role %s/%s (builtin mark)\n", domain, platformAdminRole)
+	fmt.Printf("seeded: role %s/%s (builtin mark)\n", domain, role)
 	return nil
 }
 
-// seedGrants gives the administrator role every permission the process declares
+// seedGrants gives one administration role every permission the process declares
 // and the translation has a row for, adding the ones the role does not already
 // hold.
 //
@@ -792,63 +1021,53 @@ func markRoleBuiltin(ctx context.Context, manager authz.Manager, domain string) 
 // The seeding write adds only and never removes, and reports how many it added,
 // which is what makes a second run write nothing.
 func seedGrants(ctx context.Context, seeder authz.Seeder, catalog authz.Catalog,
-	domain string,
+	domain string, role authz.Role,
 ) error {
-	grants := make([]authz.Grant, 0, len(catalog.Declared()))
-	untranslatable := 0
-	for _, permission := range catalog.Declared() {
-		object, action, ok := catalog.ObjectAction(permission)
-		if !ok {
-			// A declared permission no translation row covers: no route may name
-			// it, so there is nothing to grant for it and nothing to report.
-			untranslatable++
-			continue
-		}
-		grants = append(grants, authz.Grant{Resource: object, Action: action})
-	}
-	added, err := seeder.SeedGrants(ctx, domain, platformAdminRole, grants)
+	grants := declaredGrants(catalog)
+	untranslatable := len(catalog.Declared()) - len(grants)
+	added, err := seeder.SeedGrants(ctx, domain, role, grants)
 	if err != nil {
 		return fmt.Errorf("seed: granting the declared permissions to %s/%s: %w",
-			domain, platformAdminRole, err)
+			domain, role, err)
 	}
 	switch {
 	case added > 0:
-		fmt.Printf("seeded: %d grant(s) on %s/%s\n", added, domain, platformAdminRole)
+		fmt.Printf("seeded: %d grant(s) on %s/%s\n", added, domain, role)
 	case len(grants) == 0:
 		// Nothing was grantable at all, which is the state of a role holding
 		// nothing: saying "all present" here would report the opposite of what
 		// the operator is about to get.
 		fmt.Printf("seeded: no grant on %s/%s: all %d declared permission(s) translate to no pair\n",
-			domain, platformAdminRole, untranslatable)
+			domain, role, untranslatable)
 	default:
-		fmt.Printf("skipped: grants on %s/%s (all present)\n", domain, platformAdminRole)
+		fmt.Printf("skipped: grants on %s/%s (all present)\n", domain, role)
 	}
 	return nil
 }
 
-// seedBinding binds the account to the administrator role in one domain unless
-// it already holds it there. The role has to be there already: a binding names
-// a role that exists in its domain, and one that names nothing is refused.
+// seedBinding binds the account to one administration role in one domain unless
+// it already holds it there. The role has to be there already: a binding names a
+// role that exists in its domain, and one that names nothing is refused.
 func seedBinding(ctx context.Context, manager authz.Manager, domain string,
-	id authn.AccountID,
+	role authz.Role, id authn.AccountID,
 ) error {
 	bindings, err := manager.BindingsOf(ctx, domain, id.String())
 	if err != nil {
 		return fmt.Errorf("seed: reading the bindings of %s in %s: %w", id, domain, err)
 	}
-	if slices.ContainsFunc(bindings, func(b authz.Binding) bool { return b.Role == platformAdminRole }) {
-		fmt.Printf("skipped: binding %s -> %s in %s (exists)\n", id, platformAdminRole, domain)
+	if slices.ContainsFunc(bindings, func(b authz.Binding) bool { return b.Role == role }) {
+		fmt.Printf("skipped: binding %s -> %s in %s (exists)\n", id, role, domain)
 		return nil
 	}
 	record := authz.Binding{
 		Tenant:    domain,
 		Account:   id.String(),
-		Role:      platformAdminRole,
+		Role:      role,
 		GrantedAt: time.Now().UTC(),
 	}
 	if err := manager.PutBinding(ctx, record); err != nil {
-		return fmt.Errorf("seed: binding %s to %s in %s: %w", id, platformAdminRole, domain, err)
+		return fmt.Errorf("seed: binding %s to %s in %s: %w", id, role, domain, err)
 	}
-	fmt.Printf("seeded: binding %s -> %s in %s\n", id, platformAdminRole, domain)
+	fmt.Printf("seeded: binding %s -> %s in %s\n", id, role, domain)
 	return nil
 }

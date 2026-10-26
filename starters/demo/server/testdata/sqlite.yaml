@@ -117,12 +117,16 @@ seed:
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
-  # The tenants the deployment serves. Each is registered in the roster, and
-  # the operator above holds the platform-administrator role within each, so
-  # the console's tenant-addressed pages answer for them out of the box.
-  # DEV: replace with the tenants this deployment actually serves.
+  # The business tenants the deployment serves. Each is registered in the
+  # roster, and each administrator named under it gets a membership and the
+  # tenant-admin role in that tenant's domain, so the console's tenant-addressed
+  # pages answer for them out of the box.
+  # DEV: replace with the tenants this deployment actually serves and the
+  # accounts that administer each.
   tenants:
-    - acme
+    - name: acme
+      admins:
+        - operator
   # Lowered to the domain minimum for local demonstration: impersonation
   # requires a non-SMS factor that has been active for at least
   # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a

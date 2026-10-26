@@ -136,7 +136,9 @@ seed:
       display-name: Demo Operator
       platform-admin: true
   tenants:
-    - acme
+    - name: acme
+      admins:
+        - "__OPERATOR_EMAIL__"
   settings:
     # The anonymous username-and-password registration is open; the account
     # is usable immediately and proves its email address afterwards.

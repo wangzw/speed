@@ -7,7 +7,7 @@ package main
 // The two status hooks move the tenant through the roster's account-driven
 // transition, which writes the disable source as the account's; an operator's
 // disable is therefore never lifted by an account's recovery. The deletion
-// removes the tenant's memberships, bindings and owner role, records the
+// removes the tenant's memberships, bindings and tenant-admin role, records the
 // deletion, and then writes the tombstone, in that order. Every hook is
 // idempotent, and the tombstone is the completion marker: a repeated call finds
 // the row already deleted and writes nothing.
@@ -35,6 +35,48 @@ var _ authn.AccountLifecycle = (*personalProduct)(nil)
 // in. The explicit value keeps the loop's termination independent of whatever
 // page size the account module defaults to.
 const personalMemberPage = 100
+
+// AccountCreated implements authn.AccountLifecycle: the account gets its
+// personal tenant, its membership and its tenant-admin binding as soon as the
+// account exists, so no account is ever without a tenant. The route beside this
+// module is the backfill for the cases this call fails or is missed; both run
+// the same idempotent ensure.
+//
+// A service account has no personal tenant, and an account already deleted is
+// no work: both answer nil. A retry that arrives after the tenant was deleted
+// finds the tombstone and is a no-op. The route switch does not apply here in
+// the sense of the status hooks: this hook is what opens the space, so a
+// process with the policy off builds no personal tenant at all.
+func (p *personalProduct) AccountCreated(ctx context.Context, id authn.AccountID) error {
+	if !p.config.Enabled {
+		return nil
+	}
+	if p.accounts != nil {
+		account, err := p.accounts.Get(ctx, id)
+		switch {
+		case errors.Is(err, authn.ErrAccountNotFound):
+			// The account was deleted before this retry arrived.
+			return nil
+		case err != nil:
+			return fmt.Errorf("reading the account %s at creation: %w", id, err)
+		}
+		if account.Kind != authn.KindUser || account.Status == authn.StatusDeleted {
+			return nil
+		}
+	}
+	personalID := personalTenantID(id)
+	held, found, err := p.lifecycleTenant(ctx, personalID)
+	if err != nil {
+		return err
+	}
+	if found && held.Status == tenant.StatusDeleted {
+		return nil
+	}
+	if _, err := p.ensure(ctx, id); err != nil {
+		return err
+	}
+	return nil
+}
 
 // AccountDisabled implements authn.AccountLifecycle: the tenant the account owns
 // is disabled through the roster's account path, so the disable source says
@@ -77,7 +119,7 @@ func (p *personalProduct) setAccountStatus(ctx context.Context, id authn.Account
 // order:
 //
 //  1. every membership of the tenant is removed,
-//  2. every binding is removed and then the owner role,
+//  2. every binding is removed and then the tenant-admin role,
 //  3. the deletion's audit row is written,
 //  4. the tenant's tombstone is written.
 //
@@ -161,11 +203,11 @@ func (p *personalProduct) clearMemberships(ctx context.Context, tenantID string)
 	}
 }
 
-// clearPolicy deletes every binding of the tenant and then its owner role. The
-// bindings go first so the deletion does not depend on the role's own cascade; a
-// role that is already gone is no work. A role an operator marked builtin cannot
-// be deleted, and that refusal is tolerated: the tenant is a tombstone, so no
-// request resolves to the role again.
+// clearPolicy deletes every binding of the tenant and then its tenant-admin
+// role. The bindings go first so the deletion does not depend on the role's own
+// cascade; a role that is already gone is no work. A role an operator marked
+// builtin cannot be deleted, and that refusal is tolerated: the tenant is a
+// tombstone, so no request resolves to the role again.
 func (p *personalProduct) clearPolicy(ctx context.Context, tenantID string) error {
 	bindings, err := p.manager.Bindings(ctx, tenantID)
 	if err != nil {
@@ -176,8 +218,8 @@ func (p *personalProduct) clearPolicy(ctx context.Context, tenantID string) erro
 			return fmt.Errorf("deleting a binding in the personal tenant: %w", err)
 		}
 	}
-	if err := p.manager.DeleteRole(ctx, tenantID, personalOwnerRole); err != nil && !errors.Is(err, authz.ErrBuiltinRole) {
-		return fmt.Errorf("deleting the personal tenant's owner role: %w", err)
+	if err := p.manager.DeleteRole(ctx, tenantID, personalTenantAdminRole); err != nil && !errors.Is(err, authz.ErrBuiltinRole) {
+		return fmt.Errorf("deleting the personal tenant's tenant-admin role: %w", err)
 	}
 	return nil
 }

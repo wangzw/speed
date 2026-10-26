@@ -260,6 +260,31 @@ func (m *fakeMemberships) Put(_ context.Context, membership authn.Membership) er
 	return nil
 }
 
+// IsMember reads one membership's active state, the way the account module
+// does: an absent row and a suspended one both answer false.
+func (m *fakeMemberships) IsMember(_ context.Context, id authn.AccountID, tenantID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, held := range m.rows[id] {
+		if held.Tenant == tenantID {
+			return held.Active, nil
+		}
+	}
+	return false, nil
+}
+
+// Membership reads one membership row.
+func (m *fakeMemberships) Membership(_ context.Context, tenantID string, id authn.AccountID) (authn.Membership, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, held := range m.rows[id] {
+		if held.Tenant == tenantID {
+			return held, true, nil
+		}
+	}
+	return authn.Membership{}, false, nil
+}
+
 // fakeGrants is the grant table the manager and the seeding surface share, as
 // the two share one in the process: the ensure reads what it seeded.
 type fakeGrants struct {
@@ -436,6 +461,17 @@ func (m *fakeManager) DeleteRole(_ context.Context, tenantID string, role authz.
 		}
 	}
 	m.roles[tenantID] = kept
+	m.grants.mu.Lock()
+	delete(m.grants.sets[tenantID], role)
+	m.grants.mu.Unlock()
+	bindings := m.bindings[tenantID]
+	keptBindings := bindings[:0]
+	for _, binding := range bindings {
+		if binding.Role != role {
+			keptBindings = append(keptBindings, binding)
+		}
+	}
+	m.bindings[tenantID] = keptBindings
 	return nil
 }
 
@@ -477,7 +513,7 @@ func (s *fakeSeeder) SeedGrants(_ context.Context, tenantID string, role authz.R
 	return added, nil
 }
 
-// fakeCatalog is the authz.Catalog the unit cases use. The owner allowlist is
+// fakeCatalog is the authz.Catalog the unit cases use. The tenant-admin allowlist is
 // empty, so no permission is ever translated into a grant; the two methods
 // exist because the seam requires them, and they answer that nothing is
 // declared and nothing maps.
@@ -640,7 +676,7 @@ func TestEnsureIsIdempotent(t *testing.T) {
 			len(roster.rows), roster.creates)
 	}
 	if manager.putRole != 1 {
-		t.Errorf("the owner role was written %d time(s), want once", manager.putRole)
+		t.Errorf("the tenant-admin role was written %d time(s), want once", manager.putRole)
 	}
 	if manager.putBinding != 1 {
 		t.Errorf("the binding was written %d time(s), want once", manager.putBinding)
@@ -648,8 +684,8 @@ func TestEnsureIsIdempotent(t *testing.T) {
 	if seeder.seed != 2 {
 		t.Errorf("the grants were seeded %d time(s), want once per ensure", seeder.seed)
 	}
-	if grants := seeder.grants.held(string(wantID), personalOwnerRole); len(grants) != 0 {
-		t.Errorf("the owner role holds %v, want the empty allowlist", grants)
+	if grants := seeder.grants.held(string(wantID), personalTenantAdminRole); len(grants) != 0 {
+		t.Errorf("the tenant-admin role holds %v, want the empty allowlist", grants)
 	}
 }
 
@@ -670,7 +706,7 @@ func TestEnsureCompletesAMidwayFailureOnTheNextCall(t *testing.T) {
 	if len(memberships.rows[unitAccount]) != 1 {
 		t.Errorf("the membership did not survive the failure")
 	}
-	if held := seeder.grants.held(wantID, personalOwnerRole); len(held) != 0 {
+	if held := seeder.grants.held(wantID, personalTenantAdminRole); len(held) != 0 {
 		t.Errorf("the grants were seeded after the role write failed: %v", held)
 	}
 
@@ -686,29 +722,37 @@ func TestEnsureCompletesAMidwayFailureOnTheNextCall(t *testing.T) {
 		t.Errorf("the completing ensure lost the tenant row")
 	}
 	if len(manager.roles[wantID]) != 1 {
-		t.Errorf("the owner role is not there after the completing call")
+		t.Errorf("the tenant-admin role is not there after the completing call")
 	}
-	if held := seeder.grants.held(wantID, personalOwnerRole); len(held) != 0 {
-		t.Errorf("the owner role holds %d grant(s), want the empty allowlist: %v", len(held), held)
+	if held := seeder.grants.held(wantID, personalTenantAdminRole); len(held) != 0 {
+		t.Errorf("the tenant-admin role holds %d grant(s), want the empty allowlist: %v", len(held), held)
 	}
 	if len(manager.bindings[wantID]) != 1 {
 		t.Errorf("the account is not bound after the completing call")
 	}
 }
 
-// TestEnsureRefusesAnAccountInAnotherTenant holds the eligibility rule: an
-// account with a membership outside its personal tenant gets no tenant.
-func TestEnsureRefusesAnAccountInAnotherTenant(t *testing.T) {
+// TestEnsureCreatesAPersonalTenantBesideABusinessMembership holds the backfill
+// rule: an account that belongs to a business tenant still owns its personal
+// tenant, and the membership it already holds is left as it stands.
+func TestEnsureCreatesAPersonalTenantBesideABusinessMembership(t *testing.T) {
 	product, roster, memberships, _, _ := unitProduct()
 	memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: "acme", Active: true, Source: "invite"},
 	}
-	_, err := product.ensure(context.Background(), unitAccount)
-	if !errors.Is(err, errAlreadyMember) {
-		t.Fatalf("the ensure on an account of another tenant gave %v, want errAlreadyMember", err)
+	result, err := product.ensure(context.Background(), unitAccount)
+	if err != nil {
+		t.Fatalf("the ensure on an account of a business tenant: %v", err)
 	}
-	if len(roster.rows) != 0 {
-		t.Errorf("a tenant was created for an account that already belongs to another: %v", roster.rows)
+	if !result.Created {
+		t.Error("the ensure did not create the personal tenant beside the business membership")
+	}
+	if len(roster.rows) != 1 {
+		t.Errorf("the roster holds %d row(s), want the personal tenant only: %v", len(roster.rows), roster.rows)
+	}
+	if held := memberships.rows[unitAccount]; len(held) != 2 {
+		t.Errorf("the account holds %d membership(s), want the business one and the personal one: %+v",
+			len(held), held)
 	}
 }
 
@@ -901,9 +945,8 @@ func TestEnsureWritesNothingForADisabledTenantWithAMembership(t *testing.T) {
 }
 
 // TestEnsureReadsBackThePersonalTenantBesideAnotherMembership holds the
-// eligibility rule for an account that already has its personal tenant and
-// later joined another one: the personal tenant is read back, and the call does
-// not answer already-member.
+// backfill rule for an account that already has its personal tenant and later
+// joined another one: the personal tenant is read back and nothing is written.
 func TestEnsureReadsBackThePersonalTenantBesideAnotherMembership(t *testing.T) {
 	product, _, memberships, _, _ := unitProduct()
 	ctx := context.Background()
@@ -924,10 +967,10 @@ func TestEnsureReadsBackThePersonalTenantBesideAnotherMembership(t *testing.T) {
 	}
 }
 
-// TestEnsureConvergesTheOwnersGrantsToTheAllowlist holds the reconciliation an
+// TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist holds the reconciliation an
 // older tenant gets: every grant the role holds is outside the host's allowlist,
 // which is empty, so the next ensure revokes all of them.
-func TestEnsureConvergesTheOwnersGrantsToTheAllowlist(t *testing.T) {
+func TestEnsureConvergesTheTenantAdminsGrantsToTheAllowlist(t *testing.T) {
 	product, _, _, manager, seeder := unitProduct()
 	ctx := context.Background()
 	if _, err := product.ensure(ctx, unitAccount); err != nil {
@@ -940,7 +983,7 @@ func TestEnsureConvergesTheOwnersGrantsToTheAllowlist(t *testing.T) {
 	}
 	seeder.grants.mu.Lock()
 	for _, extra := range outer {
-		seeder.grants.sets[id][personalOwnerRole][extra] = struct{}{}
+		seeder.grants.sets[id][personalTenantAdminRole][extra] = struct{}{}
 	}
 	seeder.grants.mu.Unlock()
 
@@ -951,8 +994,8 @@ func TestEnsureConvergesTheOwnersGrantsToTheAllowlist(t *testing.T) {
 		t.Errorf("the ensure revoked %d grant(s), want the %d outside the allowlist",
 			manager.deleted, len(outer))
 	}
-	if held := seeder.grants.held(id, personalOwnerRole); len(held) != 0 {
-		t.Errorf("the owner role holds %v, want the empty allowlist", held)
+	if held := seeder.grants.held(id, personalTenantAdminRole); len(held) != 0 {
+		t.Errorf("the tenant-admin role holds %v, want the empty allowlist", held)
 	}
 }
 
@@ -1224,32 +1267,8 @@ func TestTheEnsureAnswersAnImpersonatingCaller403(t *testing.T) {
 	}
 }
 
-// TestTheEnsureAnswersAnotherMembership409 holds the handler's mapping of the
-// eligibility refusal.
-func TestTheEnsureAnswersAnotherMembership409(t *testing.T) {
-	product, _, memberships, _, _ := unitProduct()
-	memberships.rows[unitAccount] = []authn.Membership{
-		{Account: unitAccount, Tenant: "acme", Active: true, Source: "invite"},
-	}
-	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
-	c, recorder := ginContext(ctx)
-	serveEnsure(product, c)
-	if recorder.Code != http.StatusConflict {
-		t.Fatalf("an account of another tenant answered %d, want 409:\n%s", recorder.Code, recorder.Body.String())
-	}
-	var problem struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
-		t.Fatalf("the 409 body is not JSON: %v\n%s", err, recorder.Body.String())
-	}
-	if problem.Type != personalProblemPrefix+alreadyMemberCode {
-		t.Errorf("the 409 carries type %q, want %q", problem.Type, personalProblemPrefix+alreadyMemberCode)
-	}
-}
-
 // TestTheEnsureAnswersADisabledTenant409 holds the handler's mapping of the
-// withdrawal refusal. The frontend tells the three 409s apart by the type
+// withdrawal refusal. The frontend tells the two 409s apart by the type
 // field, so the code it keys on is written out here rather than taken from the
 // constant the handler also uses: a changed constant is a changed contract.
 func TestTheEnsureAnswersADisabledTenant409(t *testing.T) {
@@ -1421,16 +1440,16 @@ func TestThePersonalTenantUnblocksTheTenantScopedRoutes(t *testing.T) {
 	}
 }
 
-// TestTheEnsureRefusesAnAccountOfAnotherTenant runs the eligibility rule through
+// TestTheEnsureCreatesForAnAccountOfAnotherTenant runs the backfill rule through
 // the program: the configuration's second account is given a membership in the
-// deployment's tenant, and the ensure then refuses it rather than adding a
-// second tenant.
+// deployment's tenant, and the ensure still creates its personal tenant rather
+// than refusing it.
 //
 // The seed wires the administrator's authorization bindings but no authn
 // membership for either account, so the membership is written through the
 // account administration route -- the same path an operator uses -- with the
 // administrator's token.
-func TestTheEnsureRefusesAnAccountOfAnotherTenant(t *testing.T) {
+func TestTheEnsureCreatesForAnAccountOfAnotherTenant(t *testing.T) {
 	base, memberToken := personalServe(t, true)
 	client := &http.Client{Timeout: 10 * time.Second}
 	operatorToken := signIn(t, base, seedIdentifier, seedPassword)
@@ -1457,20 +1476,24 @@ func TestTheEnsureRefusesAnAccountOfAnotherTenant(t *testing.T) {
 
 	res := send(t, client, http.MethodPost,
 		base+personalRoutePath, nil, map[string]string{"Authorization": "Bearer " + memberToken})
-	if res.status != http.StatusConflict {
-		t.Fatalf("the member's ensure answered %d, want 409:\n%s", res.status, res.body)
+	if res.status != http.StatusOK {
+		t.Fatalf("the member's backfill answered %d, want 200:\n%s", res.status, res.body)
 	}
-	if !strings.Contains(string(res.body), "already-member") {
-		t.Errorf("the 409 body does not name already-member:\n%s", res.body)
+	var reply personalCallReply
+	if err := json.Unmarshal(res.body, &reply); err != nil {
+		t.Fatalf("the backfill's answer is not JSON: %v\n%s", err, res.body)
+	}
+	if !reply.Created {
+		t.Error("the backfill beside a business membership answered created=false, want true")
 	}
 }
 
-// TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant runs the authorization
-// consequence of the personal tenant through the program: the owner role holds
+// TestTheTenantAdminHoldsTheAllowlistAndCannotManageTheTenant runs the authorization
+// consequence of the personal tenant through the program: the tenant-admin role holds
 // exactly the host's allowlist, and the account holding it is refused the
 // tenant's membership and invitation management, which every self-registered
 // account would otherwise wield in its own tenant.
-func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
+func TestTheTenantAdminHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	base, memberToken := personalServe(t, true)
 	client := &http.Client{Timeout: 10 * time.Second}
 	memberAuth := map[string]string{"Authorization": "Bearer " + memberToken}
@@ -1490,12 +1513,12 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 
 	// The role's grants, read by the administrator through the policy surface,
 	// are the host's allowlist and nothing else — and the allowlist is empty, so
-	// the owner holds no permission at all.
+	// the tenant-admin holds no permission at all.
 	grants := send(t, client, http.MethodGet,
-		base+"/api/v1/system/tenants/"+personalID+"/roles/"+string(personalOwnerRole)+"/grants",
+		base+"/api/v1/system/tenants/"+personalID+"/roles/"+string(personalTenantAdminRole)+"/grants",
 		nil, operatorAuth)
 	if grants.status != http.StatusOK {
-		t.Fatalf("reading the owner role's grants answered %d:\n%s", grants.status, grants.body)
+		t.Fatalf("reading the tenant-admin role's grants answered %d:\n%s", grants.status, grants.body)
 	}
 	var listed struct {
 		Grants []struct {
@@ -1507,7 +1530,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 		t.Fatalf("the grant list is not JSON: %v\n%s", err, grants.body)
 	}
 	if len(listed.Grants) != 0 {
-		t.Errorf("the owner role holds %+v, want the empty allowlist", listed.Grants)
+		t.Errorf("the tenant-admin role holds %+v, want the empty allowlist", listed.Grants)
 	}
 
 	// The administrator's account identifier, to attempt a membership write
@@ -1527,7 +1550,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 		base+"/api/v1/tenants/"+personalID+"/members/"+who.AccountID,
 		map[string]any{"active": true}, memberAuth)
 	if added.status != http.StatusForbidden {
-		t.Errorf("the personal tenant's owner wrote a membership and answered %d, want 403:\n%s",
+		t.Errorf("the personal tenant's tenant-admin wrote a membership and answered %d, want 403:\n%s",
 			added.status, added.body)
 	}
 
@@ -1535,7 +1558,7 @@ func TestTheOwnerHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 		base+"/api/v1/tenants/"+personalID+"/invitations",
 		map[string]any{"email": "someone@example.test"}, memberAuth)
 	if invited.status != http.StatusForbidden {
-		t.Errorf("the personal tenant's owner issued an invitation and answered %d, want 403:\n%s",
+		t.Errorf("the personal tenant's tenant-admin issued an invitation and answered %d, want 403:\n%s",
 			invited.status, invited.body)
 	}
 }
@@ -1589,10 +1612,10 @@ func TestTheEnsureCreatesForAnUnprovedRegistration(t *testing.T) {
 	}
 }
 
-// TestAnAccountThatBelongsToAnotherTenantIsAlreadyMember holds the remaining
-// refusal: membership elsewhere, not verification, is what keeps an account out
-// of a personal tenant.
-func TestAnAccountThatBelongsToAnotherTenantIsAlreadyMember(t *testing.T) {
+// TestTheBackfillCreatesBesideAnotherMembership holds the rule through the
+// handler: a membership elsewhere is not a refusal, and the account gets its
+// personal tenant.
+func TestTheBackfillCreatesBesideAnotherMembership(t *testing.T) {
 	product, roster, memberships, _, _ := unitProduct()
 	memberships.rows[unitAccount] = []authn.Membership{
 		{Account: unitAccount, Tenant: "acme", Active: true, Source: "invite"},
@@ -1600,9 +1623,11 @@ func TestAnAccountThatBelongsToAnotherTenantIsAlreadyMember(t *testing.T) {
 	ctx := authntest.Context(t, context.Background(), authntest.WithAccount(unitAccount))
 	c, recorder := ginContext(ctx)
 	serveEnsure(product, c)
-	assertProblemType(t, recorder, http.StatusConflict, personalProblemPrefix+alreadyMemberCode)
-	if roster.creates != 0 || memberships.puts != 0 {
-		t.Errorf("the refused ensure wrote %d tenant(s), %d membership(s), want none",
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("the backfill answered %d, want 200:\n%s", recorder.Code, recorder.Body.String())
+	}
+	if roster.creates != 1 || memberships.puts != 1 {
+		t.Errorf("the backfill wrote %d tenant(s), %d membership(s), want one of each",
 			roster.creates, memberships.puts)
 	}
 }
@@ -1632,4 +1657,75 @@ func TestTheEnsureReadsBackAnExistingPersonalTenant(t *testing.T) {
 			roster.creates, memberships.puts)
 	}
 	_, _, _ = manager, seeder, id
+}
+
+// TestThePersonalTenantAdminAllowlistExcludesManagement holds the one
+// tenant-kind difference the host declares: a personal tenant's tenant-admin
+// keeps the business-resource face and loses membership and identity-provider
+// management, which would let a single-person space add accounts or manage SSO.
+func TestThePersonalTenantAdminAllowlistExcludesManagement(t *testing.T) {
+	business := []authz.Permission{
+		"crm.deal.read",
+		authz.PermissionMembershipManage,
+		authz.PermissionIDPManage,
+	}
+	got := personalAllowlist(business)
+	want := []authz.Permission{"crm.deal.read"}
+	if !slices.Equal(got, want) {
+		t.Errorf("the allowlist = %v, want %v", got, want)
+	}
+	for _, excluded := range []authz.Permission{authz.PermissionMembershipManage, authz.PermissionIDPManage} {
+		if !slices.Contains(personalExcludedPermissions, excluded) {
+			t.Errorf("the exclusion set does not hold %q", excluded)
+		}
+		if slices.Contains(personalTenantAdminPermissions(), excluded) {
+			t.Errorf("the host allowlist holds the excluded permission %q", excluded)
+		}
+	}
+}
+
+// TestEnsureMigratesTheLegacyOwnerRole holds the upgrade path: a personal
+// tenant built under the old model has an `owner` role and its binding; the next
+// backfill converges it to the tenant-admin role and removes the owner role with
+// its grants and bindings.
+func TestEnsureMigratesTheLegacyOwnerRole(t *testing.T) {
+	product, roster, memberships, manager, seeder := unitProduct()
+	ctx := context.Background()
+	id := personalTenantID(unitAccount)
+	roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusActive}
+	memberships.rows[unitAccount] = []authn.Membership{
+		{Account: unitAccount, Tenant: string(id), Active: true, Source: "personal"},
+	}
+	legacy := authz.Role("owner")
+	if err := manager.PutRole(ctx, authz.RoleRecord{Tenant: string(id), Role: legacy}); err != nil {
+		t.Fatalf("writing the legacy role: %v", err)
+	}
+	if err := manager.PutBinding(ctx, authz.Binding{Tenant: string(id), Account: unitAccount.String(), Role: legacy}); err != nil {
+		t.Fatalf("writing the legacy binding: %v", err)
+	}
+	if _, err := seeder.SeedGrants(ctx, string(id), legacy, []authz.Grant{{Resource: "legacy", Action: "read"}}); err != nil {
+		t.Fatalf("writing the legacy grant: %v", err)
+	}
+
+	if _, err := product.ensure(ctx, unitAccount); err != nil {
+		t.Fatalf("the ensure over the legacy tenant: %v", err)
+	}
+	roles, _ := manager.Roles(ctx, string(id))
+	for _, role := range roles {
+		if role.Role == legacy {
+			t.Errorf("the legacy owner role survived the backfill: %+v", roles)
+		}
+	}
+	foundAdmin := false
+	for _, role := range roles {
+		if role.Role == personalTenantAdminRole {
+			foundAdmin = true
+		}
+	}
+	if !foundAdmin {
+		t.Errorf("the backfill did not write the tenant-admin role: %+v", roles)
+	}
+	if held := seeder.grants.held(string(id), legacy); len(held) != 0 {
+		t.Errorf("the legacy role's grants survived: %v", held)
+	}
 }

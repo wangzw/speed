@@ -122,7 +122,9 @@ const demoSeedSection = `seed:
       password-hash: "$argon2id$v=19$m=19456,t=2,p=1$xeAjr/xEt4mML0QaEhw8pw$Khjd7856RU6MatFxmOtE0YFZJLsC05yxX5HwJhpBXno"
       display-name: "Demo Ops"
   tenants:
-    - demo
+    - name: demo
+      admins:
+        - operator
   # Lowered to the domain minimum for local demonstration: impersonation
   # requires a non-SMS factor that has been active for at least
   # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a
@@ -573,19 +575,21 @@ func signIn(t *testing.T, accountBase, identifier, password string) string {
 	return token.AccessToken
 }
 
-// TestServeAnswersTheProbes runs migrate and then serve on the sqlite-memory
-// stack, which needs nothing installed, and reads the operations surface: the
-// liveness and readiness probes answer 200 and the merged document holds the
-// operations the modules declared.
+// TestServeAnswersTheProbes seeds and then serves on a file-backed sqlite
+// database, and reads the operations surface: the liveness and readiness probes
+// answer 200 and the merged document holds the operations the modules declared.
+// The database is a file because the platform policy module refuses to start
+// without the system tenant in the roster, and the seed and the serve are two
+// processes: an in-memory database would lose the row between them.
 func TestServeAnswersTheProbes(t *testing.T) {
 	ports := freePorts(t, listenerCount)
-	config := writeConfig(t, ports)
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "probes.db"))
 
-	if res := runCommand(t, config, "sqlite-memory", migrateCommand); res.err != nil {
-		t.Fatalf("migrate failed: %v\n%s", res.err, res.combined())
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
 
-	serve := start(t, config, "sqlite-memory", serveCommand)
+	serve := start(t, config, "sqlite", serveCommand)
 	serve.waitReady(t)
 
 	// The address shield is assembled on the account endpoint. The startup
@@ -758,12 +762,12 @@ func TestServeAnswersTheProbes(t *testing.T) {
 // so the challenge names Bearer alone and a browser has nothing to prompt from.
 func TestTheGuardsOfferNoBasicChallenge(t *testing.T) {
 	ports := freePorts(t, listenerCount)
-	config := writeConfig(t, ports)
+	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "challenge.db"))
 
-	if res := runCommand(t, config, "sqlite-memory", migrateCommand); res.err != nil {
-		t.Fatalf("migrate failed: %v\n%s", res.err, res.combined())
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite-memory", serveCommand)
+	serve := start(t, config, "sqlite", serveCommand)
 	serve.waitReady(t)
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
@@ -1112,15 +1116,20 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	for _, want := range []string{
 		"seeded: account " + seedIdentifier,
 		"seeded: account " + hashIdentifier,
+		"seeded: tenant system",
 		"seeded: tenant " + demoTenant,
 		"seeded: setting authn.mfa.sensitive-min-age=1h",
 		"seeded: role system/" + string(platformAdminRole),
-		"seeded: role " + demoTenant + "/" + string(platformAdminRole),
+		"seeded: role system/" + string(tenantAdminRole),
+		"seeded: role " + demoTenant + "/" + string(tenantAdminRole),
 		"seeded: binding ",
 	} {
 		if !strings.Contains(first.stdout, want) {
 			t.Errorf("the seed wrote nothing holding %q:\n%s", want, first.combined())
 		}
+	}
+	if strings.Contains(first.stdout, "seeded: role "+demoTenant+"/"+string(platformAdminRole)) {
+		t.Errorf("the seed wrote a platform-admin role outside the platform domain:\n%s", first.combined())
 	}
 
 	second := runCommand(t, config, "sqlite", seedCommand)
@@ -1132,12 +1141,15 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	}
 	for _, want := range []string{
 		"skipped: account " + seedIdentifier,
+		"skipped: tenant system",
 		"skipped: tenant " + demoTenant,
 		"skipped: setting authn.mfa.sensitive-min-age (exists)",
 		"skipped: role system/" + string(platformAdminRole),
-		"skipped: role " + demoTenant + "/" + string(platformAdminRole),
+		"skipped: role system/" + string(tenantAdminRole),
+		"skipped: role " + demoTenant + "/" + string(tenantAdminRole),
 		"skipped: grants on system/" + string(platformAdminRole),
-		"skipped: grants on " + demoTenant + "/" + string(platformAdminRole),
+		"skipped: grants on system/" + string(tenantAdminRole),
+		"skipped: grants on " + demoTenant + "/" + string(tenantAdminRole),
 		"skipped: binding ",
 	} {
 		if !strings.Contains(second.stdout, want) {
@@ -1173,17 +1185,19 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	if err := json.Unmarshal(allowed.body, &listed); err != nil {
 		t.Fatalf("reading the roster: %v\n%s", err, allowed.body)
 	}
-	if len(listed.Tenants) != 1 {
-		t.Errorf("the roster holds %d tenant(s), want the one the seed registered", len(listed.Tenants))
+	if len(listed.Tenants) != 2 {
+		t.Errorf("the roster holds %d tenant(s), want the system tenant and the one the seed registered",
+			len(listed.Tenants))
 	}
 
-	// The administrator role is builtin in every domain the seed wrote it —
-	// the platform domain and the tenant. The console reads the flag and
-	// withholds the role's write controls; the server refuses those writes
-	// whether or not a client does. A role without the flag is one the console
-	// offers to delete, and deleting the role that holds every declared
-	// permission locks the operator out of the console.
-	for _, domain := range []string{string(authz.PlatformDomain), demoTenant} {
+	// Both administration roles are builtin in the domains the seed wrote them:
+	// platform-admin only in the system domain, tenant-admin in the system and
+	// business tenant domains. The console reads the flag and withholds the
+	// role's write controls; the server refuses those writes whether or not a
+	// client does. A role without the flag is one the console offers to delete,
+	// and deleting the role that holds every declared permission locks the
+	// operator out of the console.
+	rolesIn := func(domain string) map[string]bool {
 		got := adminGet(t, seedIdentifier, "/api/v1/system/tenants/"+domain+"/roles")
 		if got.status != http.StatusOK {
 			t.Fatalf("reading the roles of %s answered %d: %s", domain, got.status, got.body)
@@ -1197,18 +1211,35 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 		if err := json.Unmarshal(got.body, &roles); err != nil {
 			t.Fatalf("reading the roles of %s: %v\n%s", domain, err, got.body)
 		}
-		found := false
+		out := make(map[string]bool, len(roles.Roles))
 		for _, r := range roles.Roles {
-			if r.Role == string(platformAdminRole) {
-				found = true
-				if !r.Builtin {
-					t.Errorf("the administrator role in %s is not builtin: %s", domain, got.body)
-				}
-			}
+			out[r.Role] = r.Builtin
 		}
+		return out
+	}
+	systemRoles := rolesIn(string(authz.PlatformDomain))
+	for _, role := range []authz.Role{platformAdminRole, tenantAdminRole} {
+		builtin, found := systemRoles[string(role)]
 		if !found {
-			t.Errorf("the roles of %s do not hold the administrator role: %s", domain, got.body)
+			t.Errorf("the system domain does not hold the %s role", role)
+			continue
 		}
+		if !builtin {
+			t.Errorf("the %s role in the system domain is not builtin", role)
+		}
+	}
+	if _, found := systemRoles[string(tenantAdminRole)]; !found {
+		t.Errorf("the system tenant has no tenant-admin role: %v", systemRoles)
+	}
+	tenantRoles := rolesIn(demoTenant)
+	if builtin, found := tenantRoles[string(tenantAdminRole)]; !found {
+		t.Errorf("the business tenant does not hold the tenant-admin role: %v", tenantRoles)
+	} else if !builtin {
+		t.Errorf("the tenant-admin role in %s is not builtin", demoTenant)
+	}
+	if _, found := tenantRoles[string(platformAdminRole)]; found {
+		t.Errorf("the business tenant holds the platform-admin role, which exists only in the platform domain: %v",
+			tenantRoles)
 	}
 
 	// The administrator reaches the console's tenant-addressed pages for the
@@ -1297,8 +1328,8 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 	// distinguishable from one that binds them all.
 	secondTenant := "acme"
 	config := writeConfigReplacing(t, ports, filepath.Join(t.TempDir(), "demo.db"),
-		"  tenants:\n    - "+demoTenant+"\n",
-		"  tenants:\n    - "+demoTenant+"\n    - "+secondTenant+"\n")
+		"  tenants:\n    - name: "+demoTenant+"\n      admins:\n        - "+seedIdentifier+"\n",
+		"  tenants:\n    - name: "+demoTenant+"\n      admins:\n        - "+seedIdentifier+"\n    - name: "+secondTenant+"\n      admins:\n        - "+seedIdentifier+"\n")
 
 	seeded := runCommand(t, config, "sqlite", seedCommand)
 	if seeded.err != nil {

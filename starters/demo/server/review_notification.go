@@ -422,6 +422,12 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 	if !ok {
 		return jobs.Result{}, fmt.Errorf("%s: %w", reviewNotificationModuleName, tenant.ErrNoTenantInContext)
 	}
+	// The system tenant is the platform's policy domain, not a workspace: the
+	// notice this fixture dispatches is not addressed to its administrators.
+	// Personal tenants are real workspaces and do receive it.
+	if string(id) == string(authz.PlatformDomain) {
+		return jobs.Result{}, nil
+	}
 	members, err := n.membersOf(ctx, string(id))
 	if err != nil {
 		return jobs.Result{}, fmt.Errorf("%s: listing the members of tenant %q: %w",

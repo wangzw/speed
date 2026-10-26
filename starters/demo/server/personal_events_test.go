@@ -60,6 +60,7 @@ func (b *recordingBus) subscribed(eventType string) bool {
 // stubAccountReader answers the account's current state, and counts the reads so
 // a case can tell a second delivery of one event from a second event.
 type stubAccountReader struct {
+	kind   authn.AccountKind
 	status authn.AccountStatus
 	err    error
 	reads  atomic.Int64
@@ -70,7 +71,7 @@ func (s *stubAccountReader) Get(_ context.Context, id authn.AccountID) (authn.Ac
 	if s.err != nil {
 		return authn.Account{}, s.err
 	}
-	return authn.Account{ID: id, Status: s.status}, nil
+	return authn.Account{ID: id, Kind: s.kind, Status: s.status}, nil
 }
 
 // TestTheModuleSubscribesTheAccountEvents holds the two subscriptions the

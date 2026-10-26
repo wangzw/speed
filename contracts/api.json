@@ -7786,7 +7786,7 @@
         "x-endpoint": "admin"
       },
       "post": {
-        "description": "Registers a tenant the roster does not hold yet. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the roster is called; if it cannot, the registration does not run and the request is answered 503.",
+        "description": "Registers a tenant the roster does not hold yet, together with its first tenant-admin, which is the acting account. The body gives the identifier and the alias; the new tenant starts active. Registration never overwrites: an identifier or an alias already taken is answered 409 and nothing is written. A mandatory audit row must land before the provisioner is called; if it cannot, the registration does not run and the request is answered 503.",
         "operationId": "tenant.admin.tenants.create",
         "requestBody": {
           "content": {
@@ -8299,7 +8299,7 @@
     },
     "/api/v1/system/tenants/{tenant}/bindings/{account}/{role}": {
       "delete": {
-        "description": "Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
+        "description": "Removes the account's binding to the role within the tenant. An empty account is refused with a 400 before anything is written. A caller may not remove its own tenant-admin binding: that is refused with a 403 before anything is written, and another tenant administrator removes it. Removing a binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is written before the action; if it cannot be written the action is not carried out and the answer is 503.",
         "operationId": "authz.admin.bindings.delete",
         "parameters": [
           {
@@ -8362,7 +8362,7 @@
                 }
               }
             },
-            "description": "The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"
+            "description": "The caller holds no role.manage in the platform domain, has not proved an email address (contact-required), or is removing its own tenant-admin binding"
           },
           "503": {
             "content": {
@@ -9093,7 +9093,7 @@
     },
     "/api/v1/system/tenants/{tenant}/status": {
       "post": {
-        "description": "Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
+        "description": "Changes one tenant's state, which is one of the closed set active and disabled. This surface does not write the deleted state: deletion is the roster's terminal marker, written by the host that winds an account up, and the deleted tenant is rendered read-only here. When the write disables the tenant, before the audit the route asks the host's write guard whether the tenant refuses the write: a protected tenant answers 403 with the type urn:speed:tenant:protected and nothing is written. An identifier the roster does not hold is a 404; a tenant the roster holds as a tombstone is a 409, because deletion is terminal and no status change revives it. A mandatory audit row lands before the write; if it cannot, the state is unchanged and the request is answered 503.",
         "operationId": "tenant.admin.tenants.setStatus",
         "parameters": [
           {
@@ -9163,7 +9163,7 @@
                 }
               }
             },
-            "description": "The caller holds no tenant.manage in the platform domain, or the caller has not proved an email address (contact-required)"
+            "description": "The caller holds no tenant.manage in the platform domain, the caller has not proved an email address (contact-required), or the tenant is protected against disabling (urn:speed:tenant:protected)"
           },
           "404": {
             "description": "No tenant carries the identifier"
@@ -11247,7 +11247,7 @@
     },
     "/api/v1/workspace/personal": {
       "post": {
-        "description": "Creates the caller's personal tenant on first call and reads it back afterwards, completing its owner role and binding and converging the role's grants to the host's allowlist on every call. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. An account that holds an unproved email address is refused without a write too; the workspace opens once it has been proved. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
+        "description": "Backfills the caller's personal tenant when the account's own membership is missing, and reads it back otherwise. Every call completes the tenant's tenant-admin role and the caller's binding and converges the role's grants to the host's allowlist. A membership row that exists is left as it stands, and a tenant that is not enabled is refused without a write. The tenant identifier and alias are derived from the account identifier; the answer names the tenant and whether this call created it.",
         "operationId": "workspace.personal.ensure",
         "responses": {
           "200": {
@@ -11288,7 +11288,7 @@
                 }
               }
             },
-            "description": "The caller cannot have a personal tenant: it belongs to another tenant while holding none of its own (already-member), its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. already-member changes if the other membership is removed, tenant-unavailable changes if an operator enables the tenant, and identifier-unavailable does not change on retry"
+            "description": "The caller cannot have a personal tenant: its personal tenant exists and is not enabled (tenant-unavailable), or the derived identifier or alias is unavailable (identifier-unavailable). The type field names which. tenant-unavailable changes if an operator enables the tenant, and identifier-unavailable does not change on retry"
           },
           "503": {
             "content": {

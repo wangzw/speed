@@ -43,7 +43,7 @@ func auditorOf(t *testing.T, product *personalProduct) *recordedAudit {
 
 // seededPersonal assembles a product and gives the account its personal tenant,
 // so a lifecycle case starts from the state the ensure leaves: one active
-// tenant, one membership, one owner role and one binding.
+// tenant, one membership, one tenant-admin role and one binding.
 func seededPersonal(t *testing.T) (*personalProduct, *fakeRoster, *fakeMemberships, *fakeManager, *recordedAudit) {
 	t.Helper()
 	return seededPersonalWith(t, personalConfig{Enabled: true})
@@ -206,7 +206,7 @@ func TestTheLifecycleStatusHooksReadTheTableBeforeTheSnapshot(t *testing.T) {
 }
 
 // TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder holds the deletion's fixed
-// sequence and its result: memberships, then bindings and the owner role, then
+// sequence and its result: memberships, then bindings and the tenant-admin role, then
 // the audit row, then the tombstone.
 func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 	product, roster, memberships, manager, auditor := seededPersonal(t)
@@ -217,7 +217,7 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 		{Account: other, Tenant: tenantID, Active: true, Source: "invite"},
 	}
 	manager.bindings[tenantID] = append(manager.bindings[tenantID],
-		authz.Binding{Tenant: tenantID, Account: other.String(), Role: personalOwnerRole})
+		authz.Binding{Tenant: tenantID, Account: other.String(), Role: personalTenantAdminRole})
 	roster.steps.reset()
 
 	if err := product.AccountDeleted(context.Background(), unitAccount); err != nil {
@@ -229,9 +229,9 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 		"remove:" + unitAccount.String(),
 		"remove:" + other.String(),
 		"bindings",
-		"unbind:" + unitAccount.String() + ":owner",
-		"unbind:" + other.String() + ":owner",
-		"role:owner",
+		"unbind:" + unitAccount.String() + ":tenant-admin",
+		"unbind:" + other.String() + ":tenant-admin",
+		"role:tenant-admin",
 		"audit:" + deleteAuditAction + ":success",
 		"delete",
 	}
@@ -246,7 +246,7 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 		t.Errorf("the tenant's bindings survived: %v", held)
 	}
 	if held := manager.roles[tenantID]; len(held) != 0 {
-		t.Errorf("the owner role survived: %v", held)
+		t.Errorf("the tenant-admin role survived: %v", held)
 	}
 	row := roster.rows[id]
 	if row.Status != tenant.StatusDeleted {
@@ -273,16 +273,16 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 	}
 }
 
-// TestTheAccountLifecycleDeletionToleratesABuiltinOwnerRole holds the tolerance the design
+// TestTheAccountLifecycleDeletionToleratesABuiltinTenantAdminRole holds the tolerance the design
 // names: a role an operator marked builtin cannot be deleted, and the deletion
 // carries on — the bindings are cleared and the tombstone lands.
-func TestTheAccountLifecycleDeletionToleratesABuiltinOwnerRole(t *testing.T) {
+func TestTheAccountLifecycleDeletionToleratesABuiltinTenantAdminRole(t *testing.T) {
 	product, roster, _, manager, auditor := seededPersonal(t)
 	id := personalTenantID(unitAccount)
-	manager.deleteRoleErr = fmt.Errorf("%w: an operator marked the owner role builtin", authz.ErrBuiltinRole)
+	manager.deleteRoleErr = fmt.Errorf("%w: an operator marked the tenant-admin role builtin", authz.ErrBuiltinRole)
 
 	if err := product.AccountDeleted(context.Background(), unitAccount); err != nil {
-		t.Fatalf("the delete hook over a builtin owner role: %v", err)
+		t.Fatalf("the delete hook over a builtin tenant-admin role: %v", err)
 	}
 	if held := manager.bindings[string(id)]; len(held) != 0 {
 		t.Errorf("the tenant's bindings survived: %v", held)
@@ -610,7 +610,7 @@ func TestTheLifecycleHooksDoNotFollowTheRouteSwitch(t *testing.T) {
 			t.Errorf("the tenant's bindings survived the switch-off deletion: %v", held)
 		}
 		if held := manager.roles[string(id)]; len(held) != 0 {
-			t.Errorf("the owner role survived the switch-off deletion: %v", held)
+			t.Errorf("the tenant-admin role survived the switch-off deletion: %v", held)
 		}
 		if rows := entriesOfAction(auditor.rows(), deleteAuditAction); len(rows) != 1 {
 			t.Errorf("the switch-off deletion wrote %d audit row(s), want one", len(rows))
@@ -634,6 +634,88 @@ func TestTheLifecycleHooksDoNotFollowTheRouteSwitch(t *testing.T) {
 		}
 		if got := roster.rows[id].Status; got != tenant.StatusActive {
 			t.Errorf("the tenant's status is %v after the switch-off enable, want active", got)
+		}
+	})
+}
+
+// TestAccountCreatedBuildsThePersonalTenant holds the creation invariant: the
+// account exists and its personal tenant, membership, tenant-admin role and
+// binding exist with it.
+func TestAccountCreatedBuildsThePersonalTenant(t *testing.T) {
+	product, roster, memberships, manager, _ := unitProductWith(personalConfig{Enabled: true})
+	ctx := context.Background()
+	if err := product.AccountCreated(ctx, unitAccount); err != nil {
+		t.Fatalf("AccountCreated: %v", err)
+	}
+	id := personalTenantID(unitAccount)
+	if _, found := roster.rows[id]; !found {
+		t.Fatalf("the creation hook registered no personal tenant: %v", roster.rows)
+	}
+	held, found, err := memberships.Membership(ctx, string(id), unitAccount)
+	if err != nil {
+		t.Fatalf("reading the membership: %v", err)
+	}
+	if !found || !held.Active {
+		t.Errorf("the account's membership = %+v found %t, want an active one", held, found)
+	}
+	roles, _ := manager.Roles(ctx, string(id))
+	if len(roles) != 1 || roles[0].Role != personalTenantAdminRole {
+		t.Errorf("the tenant's roles = %+v, want one tenant-admin", roles)
+	}
+	bindings, _ := manager.BindingsOf(ctx, string(id), unitAccount.String())
+	if len(bindings) != 1 || bindings[0].Role != personalTenantAdminRole {
+		t.Errorf("the account's bindings = %+v, want one tenant-admin", bindings)
+	}
+}
+
+// TestAccountCreatedBuildsNothingWithThePolicyOff holds the switch: a process
+// that does not serve personal tenants builds none for the accounts it creates.
+func TestAccountCreatedBuildsNothingWithThePolicyOff(t *testing.T) {
+	product, roster, _, _, _ := unitProductWith(personalConfig{Enabled: false})
+	if err := product.AccountCreated(context.Background(), unitAccount); err != nil {
+		t.Fatalf("AccountCreated with the policy off: %v", err)
+	}
+	if len(roster.rows) != 0 || roster.creates != 0 {
+		t.Errorf("the policy-off hook wrote a tenant: %v", roster.rows)
+	}
+}
+
+// TestAccountCreatedSkipsAServiceAccount holds the one account kind without a
+// personal tenant.
+func TestAccountCreatedSkipsAServiceAccount(t *testing.T) {
+	product, roster, _, _, _ := unitProductWith(personalConfig{Enabled: true})
+	product.accounts = &stubAccountReader{kind: authn.KindService, status: authn.StatusActive}
+	if err := product.AccountCreated(context.Background(), unitAccount); err != nil {
+		t.Fatalf("AccountCreated for a service account: %v", err)
+	}
+	if len(roster.rows) != 0 {
+		t.Errorf("a service account got a personal tenant: %v", roster.rows)
+	}
+}
+
+// TestAccountCreatedTreatsADeletedOrTombstonedAccountAsNoWork holds the retry
+// rule: a hook that arrives after the account was deleted writes nothing and is
+// not an error.
+func TestAccountCreatedTreatsADeletedOrTombstonedAccountAsNoWork(t *testing.T) {
+	t.Run("the account is already gone", func(t *testing.T) {
+		product, roster, _, _, _ := unitProductWith(personalConfig{Enabled: true})
+		product.accounts = &stubAccountReader{kind: authn.KindUser, err: authn.ErrAccountNotFound}
+		if err := product.AccountCreated(context.Background(), unitAccount); err != nil {
+			t.Fatalf("AccountCreated for a deleted account: %v", err)
+		}
+		if len(roster.rows) != 0 {
+			t.Errorf("a deleted account got a personal tenant: %v", roster.rows)
+		}
+	})
+	t.Run("the tenant is a tombstone", func(t *testing.T) {
+		product, roster, _, _, _ := unitProductWith(personalConfig{Enabled: true})
+		id := personalTenantID(unitAccount)
+		roster.rows[id] = tenant.Tenant{ID: id, Alias: string(id), Status: tenant.StatusDeleted}
+		if err := product.AccountCreated(context.Background(), unitAccount); err != nil {
+			t.Fatalf("AccountCreated over a tombstone: %v", err)
+		}
+		if roster.creates != 0 {
+			t.Errorf("the hook created a tenant over a tombstone")
 		}
 	})
 }

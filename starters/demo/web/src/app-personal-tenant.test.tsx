@@ -303,7 +303,7 @@ describe('the tenant frame and the personal tenant', () => {
     expect(getCurrentTenantId()).toBeNull()
   })
 
-  it('never ensures when the self list already has memberships', async () => {
+  it('backfills beside other memberships and leaves the current tenant', async () => {
     const ensureCalls: string[] = []
     script({
       roster: 'refused',
@@ -316,10 +316,10 @@ describe('the tenant frame and the personal tenant', () => {
       ),
     })
 
-    // A non-empty list means the account already has an entry; the current
-    // tenant settles from the list and no personal tenant is created.
+    // The list holds another tenant, but not the caller's own personal one, so
+    // the backfill asks for it. The settled current tenant is not replaced.
+    await waitFor(() => expect(ensureCalls).toHaveLength(1))
     await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
-    expect(ensureCalls).toHaveLength(0)
   })
 
   it('settles the account personal row before the first row of the list', async () => {
@@ -406,10 +406,10 @@ describe('the tenant frame and the personal tenant', () => {
     ).toBeInTheDocument()
   })
 
-  it('does not offer the setup notice when the personal tenant already existed', async () => {
-    // The account already held its personal tenant, so the ensure answer is
-    // created: false. The profile is deliberately left incomplete: the
-    // notice's other half is true, which makes created the deciding fact.
+  it('offers the setup notice from an incomplete profile even when the backfill created nothing', async () => {
+    // The account already held its personal tenant, so the backfill answer is
+    // created: false. The profile is deliberately left incomplete: the notice
+    // is driven by setup incomplete alone, so it still appears.
     script({ roster: 'refused', ensureCreated: false })
     const snapshot = authenticatedSnapshot({
       features: readyFeatures(...PERSONAL_FEATURES),
@@ -437,12 +437,14 @@ describe('the tenant frame and the personal tenant', () => {
       }),
     })
 
-    // The ensure settled (the switcher labels the personal tenant), and the
-    // home page shows no notice because this call created nothing.
+    // The backfill settled (the switcher labels the personal tenant), and the
+    // home page offers the setup notice from the profile alone.
     expect(
       await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
     ).toBeInTheDocument()
-    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
+    expect(
+      await screen.findByText(demoEnUS.home.setupNotice.title),
+    ).toBeInTheDocument()
   })
 
   it('renders the personal label in the interface language', async () => {
@@ -493,7 +495,7 @@ describe('the tenant frame and the personal tenant', () => {
     expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
   })
 
-  it('does not call the ensure when a current tenant is settled', async () => {
+  it('backfills even when a current tenant is settled from the roster', async () => {
     const calls: string[] = []
     script({
       roster: {
@@ -507,8 +509,12 @@ describe('the tenant frame and the personal tenant', () => {
       ),
     })
 
-    await waitFor(() => expect(getCurrentTenantId()).toBe('acme'))
-    expect(calls).not.toContain(`POST ${ENSURE_PATH}`)
+    // The caller's own personal tenant is missing from its list, so it asks
+    // for one; the settled current tenant is left in place.
+    await waitFor(() =>
+      expect(calls).toContain(`POST ${ENSURE_PATH}`),
+    )
+    expect(getCurrentTenantId()).toBe('acme')
   })
 
   it('does not call the ensure while impersonating', async () => {
@@ -606,8 +612,8 @@ describe('the tenant frame and the personal tenant', () => {
       ),
     })
 
-    const failure = await screen.findByRole('alert')
-    expect(failure).toHaveTextContent(demoEnUS.workspace.failure.title)
+    const failure = await screen.findByText(demoEnUS.workspace.failure.title)
+    expect(failure).toBeInTheDocument()
     expect(ensureCalls).toHaveLength(1)
     expect(getCurrentTenantId()).toBeNull()
 
@@ -622,19 +628,13 @@ describe('the tenant frame and the personal tenant', () => {
     expect(getCurrentTenantId()).toBe(PERSONAL_ID)
   })
 
-  it('keeps no current tenant on the 409 and settles from a re-read of the list', async () => {
+  it('shows the retryable failure on a 409 from the backfill', async () => {
     const ensureCalls: string[] = []
-    let reads = 0
     script({
       roster: 'refused',
       ensure: 'conflict',
       ensureCalls,
-      // The first read is the pre-ensure snapshot; the re-read reveals the
-      // membership the concurrent grant created.
-      self: () =>
-        reads++ === 0
-          ? { tenants: [] }
-          : { tenants: [{ id: 'globex', alias: 'globex' }] },
+      self: { tenants: [] },
     })
     renderDemoApp({
       session: createTestSession(
@@ -642,15 +642,13 @@ describe('the tenant frame and the personal tenant', () => {
       ),
     })
 
-    // The 409 already-member is a race, not a failure: no personal tenant is
-    // written, the list is re-read, and the membership it now reports becomes
-    // the current tenant.
-    await waitFor(() => expect(getCurrentTenantId()).toBe('globex'))
+    // The two remaining 409s (a disabled personal tenant, an unavailable
+    // identifier) do not change on a retry by the client; the tenant area shows
+    // its retryable failure rather than inventing a second outcome.
+    const failure = await screen.findByText(demoEnUS.workspace.failure.title)
+    expect(failure).toBeInTheDocument()
     expect(ensureCalls).toHaveLength(1)
-    expect(
-      screen.queryByRole('button', { name: demoEnUS.workspace.personal }),
-    ).not.toBeInTheDocument()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(getCurrentTenantId()).toBeNull()
   })
 
   it('does not let a failed roster read stand in for membership: the empty self list still ensures', async () => {
@@ -836,16 +834,12 @@ describe('the tenant frame and the personal tenant', () => {
   })
 
   it('resets the notice when the identity changes', async () => {
-    let ensures = 0
     let identities = 0
     script({
       roster: 'refused',
-      // The first identity's tenant is created; the second identity already
-      // has its own, so it must not inherit the first one's notice.
-      ensureCreated: () => ensures++ === 0,
       // The server derives the identifier per account; the second identity's
-      // own space is therefore a different identifier, and the switcher must
-      // label it as personal (not another account's row).
+      // own space is a different identifier, and the switcher must label it as
+      // personal (not another account's row).
       ensureTenantId: () =>
         identities++ === 0 ? PERSONAL_ID : 'personal-account-2',
       profile: () => INCOMPLETE_PROFILE,
@@ -856,6 +850,13 @@ describe('the tenant frame and the personal tenant', () => {
     expect(
       await screen.findByText(demoEnUS.home.setupNotice.title),
     ).toBeInTheDocument()
+    // Dismiss it for the first identity's session.
+    fireEvent.click(
+      screen.getByRole('button', { name: demoEnUS.home.setupNotice.dismiss }),
+    )
+    await waitFor(() =>
+      expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull(),
+    )
 
     act(() => session.set(ANONYMOUS_SNAPSHOT))
     // The home page is gone with the session; the reset runs while the shell
@@ -873,12 +874,14 @@ describe('the tenant frame and the personal tenant', () => {
         },
       }),
     )
-    // The second identity's ensure answered created: false, and the first
-    // identity's eligibility was cleared when the session turned anonymous.
+    // The second identity's profile is incomplete, so its notice is offered
+    // again: the first identity's dismissal belongs to that identity alone.
     expect(
       await screen.findByRole('button', { name: demoEnUS.workspace.personal }),
     ).toBeInTheDocument()
-    expect(screen.queryByText(demoEnUS.home.setupNotice.title)).toBeNull()
+    expect(
+      await screen.findByText(demoEnUS.home.setupNotice.title),
+    ).toBeInTheDocument()
   })
 
   it('hides the notice once setup is completed on another page', async () => {

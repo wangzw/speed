@@ -66,10 +66,10 @@ type registrationAnswer struct {
 func TestReviewBaselineHasNoRegistrationEntry(t *testing.T) {
 	ports := freePorts(t, listenerCount)
 	config := writeConfigWith(t, ports, filepath.Join(t.TempDir(), "baseline.db"))
-	if res := runCommand(t, config, "sqlite-memory", migrateCommand); res.err != nil {
-		t.Fatalf("migrating the baseline: %v\n%s", res.err, res.combined())
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("seeding the baseline: %v\n%s", res.err, res.combined())
 	}
-	serve := start(t, config, "sqlite-memory", serveCommand)
+	serve := start(t, config, "sqlite", serveCommand)
 	serve.waitReady(t)
 
 	base := fmt.Sprintf("http://127.0.0.1:%d", ports[backendListener])
@@ -91,9 +91,10 @@ func TestReviewBaselineHasNoRegistrationEntry(t *testing.T) {
 
 // TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant is the
 // walkthrough itself: the review build has the register entry, registering sends
-// no mail, the account signs in with the password, adding the address sends one
-// code, the code read from the review mail log verifies the address, the profile
-// turns verified, and the ensure creates the personal tenant.
+// no mail, the account signs in with the password, its creation hook has already
+// built the personal tenant, adding the address sends one code, the code read
+// from the review mail log verifies the address, the profile turns verified,
+// and the backfill reads the same tenant back.
 func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing.T) {
 	binary := reviewBinary(t)
 	ports := freePorts(t, listenerCount)
@@ -143,8 +144,13 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Errorf("the registration reports verification %+v, want pending for %q",
 			created.Verification, reviewSignupEmail)
 	}
-	if strings.Contains(serve.output(), reviewMailLogMarker) {
-		t.Fatalf("registration sent a verification message:\n%s", serve.output())
+	// Registration itself sends no verification code. A notice the review
+	// notification worker dispatched to the account's new personal tenant may
+	// already be in the log, so the assertion is about a code addressed to the
+	// registered address, not about the mail log being empty.
+	if code := reviewMailCodeFor(serve, reviewSignupEmail); code != "" {
+		t.Fatalf("registration sent a verification code %q to %s:\n%s",
+			code, reviewSignupEmail, serve.output())
 	}
 
 	// The account signs in with the password it registered with.
@@ -155,12 +161,12 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q before the address is proved, want pending", state)
 	}
 
-	// The workspace exists before the address is proved: the ensure creates the
-	// personal tenant, and the verification notice is a separate surface. The
-	// ensure after verification below reads the same tenant back.
+	// The workspace exists before the address is proved: the account's creation
+	// hook built the personal tenant, and the verification notice is a separate
+	// surface. The backfill after verification below reads the same tenant back.
 	early := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
 	if early.status != http.StatusOK {
-		t.Fatalf("the ensure before verification answered %d:\n%s", early.status, early.body)
+		t.Fatalf("the backfill before verification answered %d:\n%s", early.status, early.body)
 	}
 	var personal struct {
 		Tenant struct {
@@ -170,10 +176,10 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		Created bool `json:"created"`
 	}
 	if err := json.Unmarshal(early.body, &personal); err != nil {
-		t.Fatalf("the ensure's answer is not JSON: %v\n%s", err, early.body)
+		t.Fatalf("the backfill's answer is not JSON: %v\n%s", err, early.body)
 	}
-	if !personal.Created || personal.Tenant.ID == "" || personal.Tenant.Kind != personalKind {
-		t.Errorf("the ensure answered %+v, want a created personal tenant", personal)
+	if personal.Created || personal.Tenant.ID == "" || personal.Tenant.Kind != personalKind {
+		t.Errorf("the backfill answered %+v, want the tenant the creation hook built", personal)
 	}
 
 	// Adding the address sends the code; the review mail carrier writes it to the
@@ -207,8 +213,8 @@ func TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant(t *testing
 		t.Fatalf("the profile reports %q after the code was accepted, want verified", state)
 	}
 
-	// The proved address lifts the registration limit; the workspace the early
-	// ensure created is read back unchanged.
+	// The proved address lifts the registration limit; the workspace the creation
+	// hook built is read back unchanged.
 	ensured := send(t, client, http.MethodPost, base+personalRoutePath, nil, auth)
 	if ensured.status != http.StatusOK {
 		t.Fatalf("the personal ensure answered %d:\n%s", ensured.status, ensured.body)
@@ -271,6 +277,31 @@ func reviewMailCode(t *testing.T, p *process) string {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// reviewMailCodeFor answers the verification code of a review mail addressed to
+// the given address, or the empty string when no such code is in the log. A
+// notice the review notification fixture dispatched to the same address carries
+// no code and is not mistaken for one.
+func reviewMailCodeFor(p *process, address string) string {
+	const codeField = "verification_code="
+	for _, line := range strings.Split(p.output(), "\n") {
+		if !strings.Contains(line, reviewMailLogMarker) {
+			continue
+		}
+		if !strings.Contains(line, "to="+address) && !strings.Contains(line, `to="`+address+`"`) {
+			continue
+		}
+		at := strings.LastIndex(line, codeField)
+		if at < 0 {
+			continue
+		}
+		value, _, _ := strings.Cut(line[at+len(codeField):], " ")
+		if value = strings.Trim(value, `"`); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // TestReviewSixDigitRunReadsOnlyAnExactRun holds the shape the reviewer's code has:

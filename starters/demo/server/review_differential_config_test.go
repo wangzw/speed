@@ -15,10 +15,10 @@ import (
 // reads the review assembly's own file, server/review/sqlite.yaml, rather than
 // the baseline template that supplies none of them. The database is in-process
 // because serve is the only command the case runs.
-func differentialConfigBody(t *testing.T, ports []int) string {
+func differentialConfigBody(t *testing.T, ports []int, dsn string) string {
 	t.Helper()
 	return reviewConfigBody(t, t.TempDir(),
 		fmt.Sprintf("127.0.0.1:%d", ports[backendListener]),
 		fmt.Sprintf("127.0.0.1:%d", ports[opsListener]),
-		":memory:")
+		dsn)
 }

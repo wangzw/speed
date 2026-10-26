@@ -1,22 +1,20 @@
 /**
  * The one-time "complete account setup" notice, host-held.
  *
- * The signal is the server's personal-tenant ensure answer: when it reports
- * `created: true` the account has just received its personal tenant, and
- * when the same session's GET /api/v1/auth/me shows setup incomplete (no identifier
- * usable as a login name, or no password) the home page offers the way to
- * finish it. The sign-in screen's registration mode is not the trigger -- an
- * account opened implicitly by an ordinary SMS sign-in gets the same notice
- * -- it only decides where a completed registration lands.
+ * The signal is the account's own profile: when GET /api/v1/auth/me shows setup
+ * incomplete (no identifier usable as a login name, or no password) the home
+ * page offers the way to finish it. The sign-in screen's registration mode is
+ * not the trigger -- an account opened implicitly by an ordinary SMS sign-in
+ * gets the same notice -- it only decides where a completed registration lands.
  *
- * The trigger is decided where the ensure answer arrives (TenantFrame,
- * src/app.tsx), and the home page consumes it through this context: both are
- * inside one tenant frame, and the fact must survive a navigation away from
- * the home page and back within the same session. Once the notice has
- * appeared, the home page re-reads the account's current profile and stops
- * offering it as soon as setup is complete -- the trigger is one-time, the
- * wish to finish setup is not. Dismissing it is remembered for the session
- * too; mounting the provider under a new identity resets both.
+ * The fact is decided where the profile is read (TenantFrame, src/app.tsx), and
+ * the home page consumes it through this context: both are inside one tenant
+ * frame, and the fact must survive a navigation away from the home page and
+ * back within the same session. Once the notice has appeared, the home page
+ * re-reads the account's current profile and stops offering it as soon as setup
+ * is complete -- the trigger is one-time, the wish to finish setup is not.
+ * Dismissing it is remembered for the session too; mounting the provider under
+ * a new identity resets both.
  */
 
 import {
@@ -30,7 +28,7 @@ import type { ReactElement, ReactNode } from 'react'
 
 /** What the home page reads: whether to offer the notice and how to close it. */
 export interface PersonalTenantNotice {
-  /** The account just received its personal tenant and setup is incomplete. */
+  /** The account's profile shows setup incomplete. */
   readonly eligible: boolean
   /** Eligible and not dismissed yet. */
   readonly visible: boolean

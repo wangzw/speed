@@ -200,7 +200,13 @@ seed:
       password: member-dev-secret
       display-name: Demo Member
   tenants:
-    - acme
+    # REVIEW: the target is the tenant's administrator as well as its member.
+    # The operator is deliberately absent: the impersonation requirement is a
+    # target inside the tenant and an operator outside it, and naming the
+    # operator here would make it an acme member.
+    - name: acme
+      admins:
+        - member
   members:
     # REVIEW: the target account's membership. The operator is deliberately not
     # among the members: the impersonation requirement is a target inside the

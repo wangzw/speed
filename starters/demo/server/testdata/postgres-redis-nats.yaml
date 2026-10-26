@@ -99,10 +99,13 @@ seed:
       password: operator-dev-secret
       display-name: Demo Operator
       platform-admin: true
-  # The tenants the deployment serves. DEV: replace with the tenants this
-  # deployment actually serves.
+  # The business tenants the deployment serves, each with the accounts that
+  # administer it. DEV: replace with the tenants this deployment actually
+  # serves and their administrators.
   tenants:
-    - acme
+    - name: acme
+      admins:
+        - operator
   # Lowered to the domain minimum for local demonstration: impersonation
   # requires a non-SMS factor that has been active for at least
   # authn.mfa.sensitive-min-age, and the declared default of 24h leaves a
