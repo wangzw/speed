@@ -7,7 +7,46 @@ import (
 	"time"
 
 	"github.com/vislake/speed/pkg/authz"
+	"github.com/vislake/speed/pkg/core"
 )
+
+// The lock the host supplies is the one the binding delete takes: wiring a
+// TenantLock into the assembly replaces the product's in-process default, and
+// holding it blocks the delete.
+func TestTheSuppliedTenantLockIsTheOneTheBindingDeleteTakes(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	mustPutRole(t, ctx, f, "acme", string(authz.TenantAdminRole))
+	mustPutBinding(t, ctx, f, "acme", "acct-1", string(authz.TenantAdminRole))
+	mustPutBinding(t, ctx, f, "acme", "acct-2", string(authz.TenantAdminRole))
+
+	supplied := authz.NewInProcessTenantLock()
+	reg := core.New()
+	reg.Register(core.Module{
+		Name:     "test.tenant-lock",
+		Provides: []core.Provision{{Token: (*authz.TenantLock)(nil)}},
+	})
+	reg.Supply(supplied, "test.tenant-lock")
+	if err := f.wire(reg); err != nil {
+		t.Fatalf("wiring the host-supplied tenant lock: %v", err)
+	}
+
+	release, err := supplied.Lock(ctx, "acme")
+	if err != nil {
+		t.Fatalf("taking the supplied lock: %v", err)
+	}
+	defer release()
+
+	waiting, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	err = f.DeleteBinding(waiting, "acme", "acct-2", authz.TenantAdminRole)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a binding delete under the supplied lock = %v, want it to wait until the context ends", err)
+	}
+	if got := f.bindingsOf(t, "acme", "acct-2"); len(got) != 1 {
+		t.Fatalf("the binding delete ran under the supplied lock: %+v", got)
+	}
+}
 
 // A binding delete is one of the two paths that decide the tenant's
 // tenant-administrator floor, and it must take the same tenant lock an explicit
