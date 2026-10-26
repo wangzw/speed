@@ -404,9 +404,10 @@ var bindingDeleteOperation = speedhttp.NewOperation[bindingInput, struct{}](
 	pathBindingFragment,
 	"Remove an account's binding to a role within a tenant",
 	"Removes the account's binding to the role within the tenant. An empty account is refused with a 400 "+
-		"before anything is written. Removing a binding that does not exist succeeds with 204 and changes "+
-		"nothing. A mandatory audit row is written before the action; if it cannot be written the action "+
-		"is not carried out and the answer is 503.",
+		"before anything is written. A caller may not remove its own tenant-admin binding: that is refused "+
+		"with a 403 before anything is written, and another tenant administrator removes it. Removing a "+
+		"binding that does not exist succeeds with 204 and changes nothing. A mandatory audit row is "+
+		"written before the action; if it cannot be written the action is not carried out and the answer is 503.",
 	nil,
 	[]speedhttp.Response{
 		{
@@ -416,7 +417,8 @@ var bindingDeleteOperation = speedhttp.NewOperation[bindingInput, struct{}](
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The account or the tenant is empty"),
 		speedhttp.ProblemResponse(http.StatusUnauthorized, "The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller holds no role.manage in the platform domain, or the caller has not proved an email address (contact-required)"),
+			"The caller holds no role.manage in the platform domain, has not proved an email address "+
+				"(contact-required), or is removing its own tenant-admin binding"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "A dependency could not answer"),
 	},
 )

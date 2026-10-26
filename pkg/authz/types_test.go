@@ -149,6 +149,11 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			},
 		},
 		{
+			"MembershipChecker",
+			interfaceMethods(t, (*MembershipChecker)(nil)),
+			[]string{"IsMember func(context.Context, string, string) (bool, error)"},
+		},
+		{
 			"Manager",
 			interfaceMethods(t, (*Manager)(nil)),
 			[]string{

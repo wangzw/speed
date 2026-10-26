@@ -218,16 +218,31 @@ func TestTheRegistryWiresPolicyAndGuard(t *testing.T) {
 	}
 }
 
-// A roster holding a tenant named for the platform domain stops the startup.
-func TestTheStartupRefusesThePlatformDomainTaken(t *testing.T) {
-	reg, _, names := assembly(t, rosterStub{ids: map[tenant.ID]bool{tenant.ID(authz.PlatformDomain): true}})
+// A roster with no tenant carrying the platform domain stops the startup.
+func TestTheStartupRefusesARosterWithoutThePlatformDomain(t *testing.T) {
+	reg, _, names := assembly(t, rosterStub{ids: map[tenant.ID]bool{"acme": true}})
 	err := reg.Drive(t.Context(), core.Drive{
 		Depth:        core.StageStart,
 		Participants: names,
 		Action:       func(context.Context, *core.Registry) error { return nil },
 	})
-	if !errors.Is(err, authz.ErrPlatformDomainTaken) {
-		t.Fatalf("the drive ended with %v, want ErrPlatformDomainTaken", err)
+	if !errors.Is(err, authz.ErrPlatformDomainMissing) {
+		t.Fatalf("the drive ended with %v, want ErrPlatformDomainMissing", err)
+	}
+}
+
+// A roster that carries the platform domain passes the startup check.
+func TestTheStartupAcceptsARosterCarryingThePlatformDomain(t *testing.T) {
+	reg, _, names := assembly(t, rosterStub{ids: map[tenant.ID]bool{
+		"acme": true, tenant.ID(authz.PlatformDomain): true,
+	}})
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageStart,
+		Participants: names,
+		Action:       func(context.Context, *core.Registry) error { return nil },
+	})
+	if err != nil {
+		t.Fatalf("the drive ended with %v, want the startup to pass", err)
 	}
 }
 

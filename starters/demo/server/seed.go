@@ -333,24 +333,6 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	if err = reader.Decode(seedNamespace, &in); err != nil {
 		return err
 	}
-	// The reserved platform domain is not a tenant, and the configuration is
-	// checked before anything is written.
-	//
-	// The policy module refuses to start when the roster holds a tenant carrying
-	// that identifier, so a configuration naming it here would seed cleanly and
-	// leave the next serve refused: the failure would surface a run later, in a
-	// different command, with nothing pointing back at the entry that caused it.
-	// The read that writes no row is this command's own, so refusing the name now
-	// is what keeps the mistake caught in the run that reads the configuration.
-	// The value is the same reserved one the startup check tests against, so the
-	// two refusals speak one vocabulary and a fix is the same in both.
-	for _, t := range in.Tenants {
-		if t == string(authz.PlatformDomain) {
-			return fmt.Errorf("%w: seed.%s names the tenant %q. Rename it: the platform "+
-				"domain is a reserved value and its policy rows are the platform operations'",
-				authz.ErrPlatformDomainTaken, tenantsItem, t)
-		}
-	}
 	accounts, err := core.Resolve[authn.Accounts](reg)
 	if err != nil {
 		return err

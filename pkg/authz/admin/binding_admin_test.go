@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/vislake/speed/pkg/authn/authntest"
 	"github.com/vislake/speed/pkg/authz"
 )
 
@@ -259,5 +260,69 @@ func TestTheBindingDecisionIsAskedInThePlatformDomain(t *testing.T) {
 				t.Fatalf("the route decided in %v, want [system]: the platform domain and not the path tenant", got)
 			}
 		})
+	}
+}
+
+// TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused holds the rule
+// the manager cannot enforce because it reads no actor: a caller may not remove
+// its own tenant-admin binding. The refusal is a 403 written before the
+// mandatory audit and before the manager, so nothing is recorded and nothing is
+// deleted.
+func TestRemovingTheCallersOwnTenantAdministratorBindingIsRefused(t *testing.T) {
+	const caller = "test-account"
+	r := newRig(t)
+	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
+		"/api/v1/system/tenants/t1/bindings/"+caller+"/"+string(authz.TenantAdminRole),
+		params("tenant", "t1", "account", caller, "role", string(authz.TenantAdminRole)), nil,
+		authntest.WithAccount(caller))
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("removing the caller's own tenant-admin binding answered %d, want 403", w.Code)
+	}
+	if got := r.manager.recorded(); len(got) != 0 {
+		t.Fatalf("the manager was called %+v for a refused self-removal", got)
+	}
+	if got := r.audit.entries(); len(got) != 0 {
+		t.Fatalf("the audit recorded %+v for a refused self-removal", got)
+	}
+}
+
+// TestRemovingAnotherAccountsTenantAdministratorBindingIsAllowed holds the
+// rule's boundary: the refusal is about the caller's own binding, so another
+// account's tenant-admin binding is removed the ordinary way.
+func TestRemovingAnotherAccountsTenantAdministratorBindingIsAllowed(t *testing.T) {
+	r := newRig(t)
+	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
+		"/api/v1/system/tenants/t1/bindings/acct-2/"+string(authz.TenantAdminRole),
+		params("tenant", "t1", "account", "acct-2", "role", string(authz.TenantAdminRole)), nil,
+		authntest.WithAccount("test-account"))
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("removing another account's tenant-admin binding answered %d, want 204", w.Code)
+	}
+	calls := r.manager.recorded()
+	if len(calls) != 1 || calls[0].op != "DeleteBinding" || calls[0].account != "acct-2" ||
+		calls[0].role != authz.TenantAdminRole {
+		t.Fatalf("the manager calls = %+v, want one DeleteBinding for acct-2", calls)
+	}
+}
+
+// TestRemovingTheCallersOwnOtherBindingIsAllowed holds that the self-removal
+// refusal names the tenant-admin role: a caller removing its own binding to any
+// other role is not refused.
+func TestRemovingTheCallersOwnOtherBindingIsAllowed(t *testing.T) {
+	const caller = "test-account"
+	r := newRig(t)
+	w := r.serve(writeRoute(r.p, bindingDeleteOperation.Handle(r.p.handleBindingDelete)), http.MethodDelete,
+		"/api/v1/system/tenants/t1/bindings/"+caller+"/editor",
+		params("tenant", "t1", "account", caller, "role", "editor"), nil,
+		authntest.WithAccount(caller))
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("removing the caller's own non-administrator binding answered %d, want 204", w.Code)
+	}
+	calls := r.manager.recorded()
+	if len(calls) != 1 || calls[0].op != "DeleteBinding" || calls[0].account != caller {
+		t.Fatalf("the manager calls = %+v, want one DeleteBinding for the caller", calls)
 	}
 }

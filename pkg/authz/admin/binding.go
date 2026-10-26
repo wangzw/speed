@@ -2,8 +2,11 @@ package admin
 
 import (
 	"context"
+	"net/http"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authz"
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // handleBindingList answers GET /api/v1/system/tenants/:tenant/bindings: every
@@ -77,11 +80,19 @@ func (p *product) handleBindingPut(ctx context.Context, in bindingInput) (struct
 // An empty account is refused on shape before the manager is called, the same
 // as the binding write: the route addresses a binding by its account, and an
 // empty account names no row.
+//
+// A caller may not remove its own tenant-admin binding: the manager enforces the
+// domain's last-tenant-administrator floor but reads no actor, so the rule that
+// one administrator cannot take its own permission away is made here, before the
+// mandatory audit and before the manager. Another administrator removes it.
 func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (struct{}, error) {
 	if in.Account == "" {
 		return struct{}{}, badRequest()
 	}
 	role := authz.Role(in.Role)
+	if role == authz.TenantAdminRole && removingOwnBinding(ctx, in.Account) {
+		return struct{}{}, speedhttp.Fault{Status: http.StatusForbidden}
+	}
 	actionID := newActionID()
 	if err := p.auditRequired(ctx, mandatory(actionBindingDelete, in.Account, map[string]string{
 		detailActionID: actionID,
@@ -96,4 +107,16 @@ func (p *product) handleBindingDelete(ctx context.Context, in bindingInput) (str
 		return struct{}{}, p.failureOf("deleting a binding", err)
 	}
 	return struct{}{}, nil
+}
+
+// removingOwnBinding reports whether the account the delete names is the caller
+// the request is taken to be from. The effective account is the subject an
+// authorization decision uses, and it is the one an impersonated request is
+// decided for, so the same account is the one whose own binding is protected.
+func removingOwnBinding(ctx context.Context, account string) bool {
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return false
+	}
+	return string(id.Account()) == account
 }

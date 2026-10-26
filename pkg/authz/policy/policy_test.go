@@ -402,15 +402,19 @@ func (rosterStub) EnterRegistered(context.Context, tenant.ID) (context.Context, 
 	return nil, nil
 }
 
-// A roster holding a tenant named for the platform domain stops the startup;
-// one that does not, starts.
+// A roster with no tenant carrying the platform domain stops the startup; one
+// that carries it passes. The platform domain's policy rows hang on that
+// tenant's identifier, so an assembly with a roster and no such tenant has
+// nowhere for a platform decision to land.
 func TestCheckPlatformDomain(t *testing.T) {
 	ctx := t.Context()
-	if err := checkPlatformDomain(ctx, rosterStub{ids: map[tenant.ID]bool{"acme": true}}); err != nil {
-		t.Errorf("a roster without the platform domain gave %v, want nil", err)
+	err := checkPlatformDomain(ctx, rosterStub{ids: map[tenant.ID]bool{"acme": true}})
+	if !errors.Is(err, authz.ErrPlatformDomainMissing) {
+		t.Errorf("a roster without the platform domain gave %v, want ErrPlatformDomainMissing", err)
 	}
-	err := checkPlatformDomain(ctx, rosterStub{ids: map[tenant.ID]bool{tenant.ID(authz.PlatformDomain): true}})
-	if !errors.Is(err, authz.ErrPlatformDomainTaken) {
-		t.Errorf("a roster naming the platform domain gave %v, want ErrPlatformDomainTaken", err)
+	if err := checkPlatformDomain(ctx, rosterStub{ids: map[tenant.ID]bool{
+		"acme": true, tenant.ID(authz.PlatformDomain): true,
+	}}); err != nil {
+		t.Errorf("a roster carrying the platform domain gave %v, want nil", err)
 	}
 }

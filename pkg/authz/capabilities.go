@@ -139,6 +139,19 @@ type Manager interface {
 	DeleteBinding(ctx context.Context, tenant, account string, role Role) error
 }
 
+// MembershipChecker reports whether an account is an active member of a tenant.
+// The host supplies it; this package does not import the authentication
+// capability.
+//
+// The policy subpackage takes it up optionally. A write binding
+// PlatformAdminRole in the platform domain asks it before writing, and refuses
+// with ErrMissingMembershipChecker when the assembly supplied none: an account
+// no membership check can vouch for must not receive the platform
+// administrator's permissions.
+type MembershipChecker interface {
+	IsMember(ctx context.Context, tenant string, account string) (bool, error)
+}
+
 // Seeder is the host's seeding surface over the policy data: it adds the grants
 // a role is declared to hold, and it is the one write that reaches a builtin
 // role's grant set. The policy subpackage delivers it exclusively, beside

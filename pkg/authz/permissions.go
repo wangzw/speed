@@ -1,10 +1,19 @@
 package authz
 
-// PlatformDomain is the reserved policy domain that carries platform
-// operations: the roles, grants and bindings that apply across tenants. No
-// tenant may carry this identifier, and the policy subpackage checks the roster
-// for a tenant named this at startup.
+// PlatformDomain is the policy domain that carries platform operations: the
+// roles, grants and bindings that apply across tenants. It is also the
+// identifier of a real tenant in the roster — the system tenant — and a binding
+// in this domain is a policy row of that tenant. The policy subpackage refuses
+// to start when the roster holds no tenant carrying this identifier.
 const PlatformDomain Domain = "system"
+
+// The two administration roles. PlatformAdminRole exists only in the platform
+// domain; TenantAdminRole exists once in every tenant domain, the platform
+// domain included, and is that tenant's highest permission.
+const (
+	PlatformAdminRole Role = "platform-admin"
+	TenantAdminRole   Role = "tenant-admin"
+)
 
 // The permissions of the authentication capability: one constant per
 // authn.Action, carrying the same string. This alignment is the contract

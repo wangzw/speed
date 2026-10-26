@@ -1568,36 +1568,6 @@ func TestTheSeedRefusesAConfigurationItCannotWrite(t *testing.T) {
 	}
 }
 
-// TestTheSeedRefusesATenantNamedThePlatformDomain holds that a tenant the
-// configuration names as the reserved platform domain is refused, and refused
-// before anything is written.
-//
-// The platform domain carries the platform operations' policy rows, and the
-// policy module refuses to start when the roster holds a tenant carrying its
-// identifier. A seed that wrote such a tenant would report it seeded and leave
-// the next serve refused — the mistake surfacing a run later, in a different
-// command, with nothing left to point at the configuration that caused it. The
-// seed refuses the name in the run that reads the configuration, so the command
-// that caused the state is the one that reports it.
-func TestTheSeedRefusesATenantNamedThePlatformDomain(t *testing.T) {
-	ports := freePorts(t, listenerCount)
-	config := writeConfigReplacing(t, ports, filepath.Join(t.TempDir(), "demo.db"),
-		"  tenants:\n    - "+demoTenant,
-		"  tenants:\n    - "+string(authz.PlatformDomain))
-
-	res := runCommand(t, config, "sqlite", seedCommand)
-	if res.err == nil {
-		t.Fatalf("the seed accepted a tenant named the reserved platform domain:\n%s", res.combined())
-	}
-	if strings.Contains(res.stdout, "seeded:") {
-		t.Errorf("the seed reported work it did not do:\n%s", res.combined())
-	}
-	if !strings.Contains(res.stderr, authz.ErrPlatformDomainTaken.Error()) {
-		t.Errorf("the seed's failure does not name the reserved platform domain (%q):\n%s",
-			authz.ErrPlatformDomainTaken, res.combined())
-	}
-}
-
 // TestTheConfigTemplateMirrorsTheSampleFile holds the configuration a case runs
 // to the sample file it documents itself as mirroring. The template is a second
 // copy of the platform sections, and a section written into the sample alone —

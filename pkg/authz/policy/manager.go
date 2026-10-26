@@ -171,6 +171,9 @@ func (p *product) PutRole(ctx context.Context, r authz.RoleRecord) error {
 		return fmt.Errorf("%w: the role %q of tenant %q cannot be written with the builtin mark; "+
 			"MarkRoleBuiltin sets it once the grants are in place", authz.ErrBuiltinRole, r.Role, r.Tenant)
 	}
+	if err := refuseReservedRole(r.Tenant, r.Role); err != nil {
+		return err
+	}
 	row := roleRow{
 		Model:          tenancy.Model{TenantID: tenancy.ID(r.Tenant)},
 		Role:           string(r.Role),
@@ -424,6 +427,12 @@ func (p *product) PutBinding(ctx context.Context, b authz.Binding) error {
 		return fmt.Errorf("authz/policy: the binding of tenant %q names no account, and a policy row "+
 			"belongs to one subject", b.Tenant)
 	}
+	if err := refuseReservedRole(b.Tenant, b.Role); err != nil {
+		return err
+	}
+	if err := p.requirePlatformMember(ctx, b); err != nil {
+		return err
+	}
 	rule := []string{b.Account, string(b.Role), b.Tenant}
 	err := p.write(ctx, func(tx *gorm.DB) error {
 		if _, found, err := roleState(ctx, tx, b.Tenant, b.Role); err != nil {
@@ -443,16 +452,113 @@ func (p *product) PutBinding(ctx context.Context, b authz.Binding) error {
 }
 
 // DeleteBinding removes a subject's binding to a role within a tenant.
+//
+// The last tenant administrator of a domain is not removable: the domain would
+// be left with no one who may govern it. The check and the delete are one
+// transaction, and the check locks the domain's tenant-administrator bindings,
+// so two concurrent removals cannot each see enough rows and leave the domain
+// with none. A removal naming no such binding changes nothing and is not
+// refused: it does not take the last one away.
 func (p *product) DeleteBinding(ctx context.Context, tenant, account string, role authz.Role) error {
 	if err := requireTenant(tenant); err != nil {
 		return err
 	}
 	rule := []string{account, string(role), tenant}
-	adapter := persist.New(ctx, p.handle, tenancy.ID(tenant))
-	if err := adapter.RemovePolicy("g", "g", rule); err != nil {
-		return fmt.Errorf("authz/policy: removing the binding of tenant %q: %w", tenant, err)
+	err := p.write(ctx, func(tx *gorm.DB) error {
+		if role == authz.TenantAdminRole {
+			if err := refuseLastTenantAdmin(ctx, tx, tenant, account); err != nil {
+				return err
+			}
+		}
+		if err := persist.New(ctx, tx, tenancy.ID(tenant)).RemovePolicy("g", "g", rule); err != nil {
+			return fmt.Errorf("authz/policy: removing the binding of tenant %q: %w", tenant, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	return p.afterWrite(ctx)
+}
+
+// refuseReservedRole refuses a role reserved to the platform domain in any other
+// domain. PlatformAdminRole is the one such role; TenantAdminRole is every
+// domain's own highest role and is not refused.
+//
+// The check runs before the role is looked up, so the refusal names the reserved
+// role and not an unknown one: the role was never meant to exist in this domain.
+func refuseReservedRole(tenant string, role authz.Role) error {
+	if role != authz.PlatformAdminRole || tenant == string(authz.PlatformDomain) {
+		return nil
+	}
+	return fmt.Errorf("%w: the role %q exists only in the platform domain %q, not in tenant %q",
+		authz.ErrReservedRole, role, authz.PlatformDomain, tenant)
+}
+
+// requirePlatformMember checks that the account a platform administrator binding
+// names is an active member of the platform tenant. It applies to that one
+// binding and leaves every other binding alone.
+//
+// The check fails closed: an assembly with no MembershipChecker refuses the
+// write rather than binding an account nothing can vouch for. A checker that
+// answers "not a member" refuses the write too, and an error carrying out of the
+// checker is the check being unavailable, not a verdict.
+//
+// It runs before the write's transaction. The checker is a host seam that reads
+// the host's own tables, and a call made while this module held a transaction
+// could wait for a connection the pool has already handed to that transaction.
+// The membership it answers is checked a moment before the row is written; a
+// membership revoked in between is the removal path's to revoke, not this
+// write's to prevent.
+func (p *product) requirePlatformMember(ctx context.Context, b authz.Binding) error {
+	if b.Role != authz.PlatformAdminRole || b.Tenant != string(authz.PlatformDomain) {
+		return nil
+	}
+	if p.membership == nil {
+		return fmt.Errorf("%w: the binding of tenant %q names the role %q",
+			authz.ErrMissingMembershipChecker, b.Tenant, b.Role)
+	}
+	member, err := p.membership.IsMember(ctx, b.Tenant, b.Account)
+	if err != nil {
+		return fmt.Errorf("authz/policy: checking whether the account is a member of tenant %q: %w", b.Tenant, err)
+	}
+	if !member {
+		return fmt.Errorf("authz/policy: the account is not an active member of tenant %q, so the role %q "+
+			"cannot be bound there", b.Tenant, b.Role)
+	}
+	return nil
+}
+
+// refuseLastTenantAdmin refuses removing the last tenant administrator binding
+// of a domain.
+//
+// The read takes the domain's tenant-administrator binding rows under an
+// exclusive lock, so the count a removal acts on cannot be read by another
+// removal before this transaction commits. The clause is inert where the dialect
+// has no row locks (SQLite ignores it and its single writer already serialises
+// the writes). A target row that is not there is no removal at all, whatever the
+// count.
+func refuseLastTenantAdmin(ctx context.Context, tx *gorm.DB, tenant, account string) error {
+	var rows []bindingRow
+	err := tx.WithContext(tenancy.CrossTenant(ctx)).
+		Where("tenant_id = ? AND role = ?", tenant, string(authz.TenantAdminRole)).
+		Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Find(&rows).Error
+	if err != nil {
+		return fmt.Errorf("authz/policy: reading the tenant administrators of tenant %q: %w", tenant, err)
+	}
+	target := false
+	for _, row := range rows {
+		if row.AccountID == account {
+			target = true
+			break
+		}
+	}
+	if target && len(rows) == 1 {
+		return fmt.Errorf("%w: account %q is the last %q of tenant %q", authz.ErrLastTenantAdmin,
+			account, authz.TenantAdminRole, tenant)
+	}
+	return nil
 }
 
 // write runs fn inside one transaction on the cross-tenant-marked session.

@@ -77,10 +77,12 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // startup.
 //
 // The database is the one hard dependency: the policy lives in its own tables
-// and there is no engine without it. The roster, the bus and the logger are
-// taken up in Init and each is optional — a policy module with no roster has no
-// platform-domain conflict to check, one with no bus relies on the configured
-// refresh interval, and one with no logger writes through the process default.
+// and there is no engine without it. The roster, the membership checker, the bus
+// and the logger are taken up in Init and each is optional — a policy module
+// with no roster has no platform-domain tenant to check, one with no membership
+// checker refuses a platform administrator binding rather than writing it, one
+// with no bus relies on the configured refresh interval, and one with no logger
+// writes through the process default.
 func Module() core.Module {
 	return core.Module{
 		Name: ModuleName,
@@ -195,8 +197,9 @@ type product struct {
 	logger  *slog.Logger
 
 	// The rest is settled in wire, before any request is served.
-	bus    event.Bus
-	roster tenant.Catalog
+	bus        event.Bus
+	roster     tenant.Catalog
+	membership authz.MembershipChecker
 
 	holder policy.Holder
 	// reloadMu serialises the reload path, a read of the table followed by a
@@ -246,6 +249,11 @@ func (p *product) wire(reg *core.Registry) error {
 		return err
 	} else if found {
 		p.roster = roster
+	}
+	if checker, found, err := optional[authz.MembershipChecker](reg, "the membership checker"); err != nil {
+		return err
+	} else if found {
+		p.membership = checker
 	}
 	if bus, found, err := optional[event.Bus](reg, "the event bus"); err != nil {
 		return err

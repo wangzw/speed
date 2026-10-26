@@ -37,6 +37,10 @@ func grantedPairs(t *testing.T, f *fixture, tenant string, role authz.Role) []au
 // grows the set.
 func TestSeedingGrowsABuiltinRolesGrantsAndTheManagerStaysRefused(t *testing.T) {
 	f := newFixture(t)
+	// Binding the platform administrator role in the platform domain requires a
+	// membership check; this case is about the seeding surface, so the fixture
+	// vouches for the account.
+	f.membership = &membershipStub{member: true}
 	ctx := t.Context()
 	const tenant = "system"
 	role := authz.Role("platform-admin")

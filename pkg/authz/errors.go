@@ -51,10 +51,26 @@ var (
 	// assembled the row.
 	ErrTenantMismatch = errors.New("authz: a policy row's tenant is not the caller's")
 
-	// ErrPlatformDomainTaken reports that the roster holds a tenant whose
-	// identifier is the reserved platform domain. The fix is to rename that
-	// tenant: the platform domain is a reserved value.
-	ErrPlatformDomainTaken = errors.New("authz: a tenant's identifier is the reserved platform domain")
+	// ErrPlatformDomainMissing reports that the roster holds no tenant whose
+	// identifier is the platform domain. The fix is to register that tenant: the
+	// platform domain's policy rows hang on its identifier.
+	ErrPlatformDomainMissing = errors.New("authz: the roster holds no tenant carrying the platform domain")
+
+	// ErrReservedRole reports a role reserved to one domain used in another: the
+	// platform administrator role exists only in the platform domain, so a role
+	// or a binding carrying it elsewhere is refused. Tenant administrators are
+	// TenantAdminRole, which every domain holds.
+	ErrReservedRole = errors.New("authz: a role reserved to the platform domain was used in another domain")
+
+	// ErrLastTenantAdmin reports a delete that would leave a domain with no
+	// tenant administrator. The fix is to bind another account as a tenant
+	// administrator first.
+	ErrLastTenantAdmin = errors.New("authz: the last tenant administrator binding of a domain cannot be removed")
+
+	// ErrMissingMembershipChecker reports a write binding the platform
+	// administrator role while the assembly supplied no MembershipChecker. The
+	// check fails closed: the fix is to supply the checker.
+	ErrMissingMembershipChecker = errors.New("authz: no membership checker is assembled to bind the platform administrator role")
 
 	// ErrPolicyUnavailable reports that the policy snapshot, its store or the
 	// startup self-check is not available. The fix is the dependency: it

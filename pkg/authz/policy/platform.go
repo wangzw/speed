@@ -8,26 +8,26 @@ import (
 	"github.com/vislake/speed/pkg/tenant"
 )
 
-// checkPlatformDomain refuses to start when the roster holds a tenant whose
-// identifier is the reserved platform domain.
+// checkPlatformDomain refuses to start when the roster holds no tenant whose
+// identifier is the platform domain.
 //
 // The platform domain carries the platform operations' roles, grants and
-// bindings, and the identifier carries the same string as a tenant's would, so
-// a real tenant named system would have this module's account-level decisions
-// land on that tenant's policy rows. The direction is the safe one — the rows
-// are still that tenant's — but the semantics are not the ones the design
-// states, so the conflict is refused before the process serves rather than left
-// to be discovered. The check runs only in an assembly that has a roster; a
-// policy module with no tenant module has none to check.
+// bindings, and it is a real roster tenant at the same time: the identifier
+// carries the same string as a tenant's would, so the platform policy rows are
+// that tenant's rows. An assembly with a roster and no such tenant has nowhere
+// for a platform decision to land, and a binding of the platform administrator
+// role would name an account no membership can place there, so the startup is
+// refused before the process serves. The check runs only in an assembly that has
+// a roster; a policy module with no tenant module has none to check.
 func checkPlatformDomain(ctx context.Context, roster tenant.Catalog) error {
 	_, found, err := roster.Get(ctx, tenant.ID(authz.PlatformDomain))
 	if err != nil {
 		return fmt.Errorf("authz/policy: reading the roster for the platform domain: %w", err)
 	}
-	if found {
-		return fmt.Errorf("%w: the roster holds a tenant named %q. Rename that tenant: the "+
-			"platform domain is a reserved value and its policy rows are the platform operations'",
-			authz.ErrPlatformDomainTaken, authz.PlatformDomain)
+	if !found {
+		return fmt.Errorf("%w: the roster holds no tenant named %q. Register it: the platform "+
+			"domain's policy rows are that tenant's, and a platform decision has nowhere to land without it",
+			authz.ErrPlatformDomainMissing, authz.PlatformDomain)
 	}
 	return nil
 }

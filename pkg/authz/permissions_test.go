@@ -57,3 +57,19 @@ func TestPermissionConstantsHoldTheirPublishedValues(t *testing.T) {
 		t.Errorf("PlatformDomain is %q, want %q", PlatformDomain, "system")
 	}
 }
+
+// TestAdministrationRoleNamesHoldTheirPublishedValues pins the two
+// administration roles to the names the design publishes. A binding is written
+// and read by name, and the domain each role may appear in is decided by these
+// values, so a wrong value would place a role in the wrong domain.
+func TestAdministrationRoleNamesHoldTheirPublishedValues(t *testing.T) {
+	if PlatformAdminRole != Role("platform-admin") {
+		t.Errorf("PlatformAdminRole is %q, want %q", PlatformAdminRole, "platform-admin")
+	}
+	if TenantAdminRole != Role("tenant-admin") {
+		t.Errorf("TenantAdminRole is %q, want %q", TenantAdminRole, "tenant-admin")
+	}
+	if PlatformAdminRole == TenantAdminRole {
+		t.Errorf("both administration roles are named %q, so a binding cannot tell them apart", PlatformAdminRole)
+	}
+}
