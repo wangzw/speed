@@ -27,6 +27,7 @@
     "factorTitle": "请选择一种验证方式",
     "enrollTitle": "请选择要登记的方式",
     "unsupportedStep": "此步骤无法在本页完成。",
+    "unsupportedStepAction": "回到第一步",
     "enrollTotpHelp": "将以下设置 URI 扫描或复制到验证器应用。",
     "codeLabel": "验证器验证码",
     "passkeyPrompt": "用你的设备以通行密钥登录。",

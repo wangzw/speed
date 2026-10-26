@@ -322,6 +322,7 @@ export function PasswordRegisterForm({
           step={shownStep}
           busy={driver.busy}
           onAnswer={(input, proof) => void driver.answer(input, proof)}
+          onUnsupported={() => driver.reset()}
         />
         <InlineError code={failure !== null && 'code' in failure ? failure.code : null} />
       </Box>

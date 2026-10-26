@@ -27,6 +27,7 @@
     "factorTitle": "Choose how to verify",
     "enrollTitle": "Choose a factor to register",
     "unsupportedStep": "This step cannot be completed on this page.",
+    "unsupportedStepAction": "Back to the first step",
     "enrollTotpHelp": "Scan or copy this setup URI into your authenticator app.",
     "codeLabel": "Authenticator code",
     "passkeyPrompt": "Use your device to sign in with a passkey.",

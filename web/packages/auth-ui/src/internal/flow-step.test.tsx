@@ -12,6 +12,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import { renderWithProviders } from '../../test-utils/render.js'
@@ -22,9 +23,14 @@ function step(next: AuthnStep): OpenFlowState {
   return { seq: 1, state: 'enroll', next }
 }
 
-function render(next: AuthnStep) {
+function render(next: AuthnStep, onUnsupported: () => void = vi.fn()) {
   return renderWithProviders(
-    <FlowStepFields step={step(next)} busy={false} onAnswer={vi.fn()} />,
+    <FlowStepFields
+      step={step(next)}
+      busy={false}
+      onAnswer={vi.fn()}
+      onUnsupported={onUnsupported}
+    />,
   )
 }
 
@@ -68,5 +74,30 @@ describe('FlowStepFields labels', () => {
       screen.getByRole('button', { name: zhCN.signInFlow.factorKind.webauthn }),
     ).toBeTruthy()
     expect(screen.getByRole('button', { name: 'magic' })).toBeTruthy()
+  })
+})
+
+describe('FlowStepFields unsupported step', () => {
+  it('render the notice with an exit control that reports upward', async () => {
+    const user = userEvent.setup()
+    const onUnsupported = vi.fn()
+    render(
+      {
+        kind: 'redirect',
+        url: 'https://idp.example/authorize',
+        method: 'oidc',
+      },
+      onUnsupported,
+    )
+
+    expect(
+      screen.getByText(zhCN.signInFlow.unsupportedStep),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.signInFlow.unsupportedStepAction,
+      }),
+    )
+    expect(onUnsupported).toHaveBeenCalledTimes(1)
   })
 })

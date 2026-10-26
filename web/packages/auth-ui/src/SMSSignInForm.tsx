@@ -500,6 +500,7 @@ export function SMSSignInForm({
           step={driver.step}
           busy={driver.busy}
           onAnswer={(input) => void answerFurther(input)}
+          onUnsupported={editPhone}
           clientFailure={feedback.localFailure}
           onClientFailure={(key) =>
             key === null ? feedback.clearLocal() : feedback.failLocal(key)

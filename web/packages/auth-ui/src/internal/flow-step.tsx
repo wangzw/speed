@@ -26,7 +26,8 @@
  *  - `complete`   -> nothing: the driver takes a ready step's result.
  *  - `redirect`   -> the host owns navigation; a redirect step that
  *    reaches this renderer (a callback route opened before the provider
- *    answered) renders the unsupported notice.
+ *    answered) renders the unsupported notice with the exit the channel
+ *    supplies, so every rendered step carries at least one control.
  *
  * The factor and enroll checkboxes are the step's own: the challenge a
  * chosen factor opens carries no factor id, so the driver remembers the
@@ -80,6 +81,16 @@ export interface FlowStepFieldsProps {
   /** Report the answered fields upward (the driver sends them). */
   readonly onAnswer: (input: Record<string, string>) => void
   /**
+   * The exit attached to the unsupported-step notice. A channel form
+   * returns to its own first-step fields; the callback route re-reads the
+   * flow. Required because every rendered step carries at least one
+   * control -- an unsupported step has no field of its own to offer.
+   */
+  readonly onUnsupported: () => void
+  /** The exit's label; omitted uses the family's own "back to the first
+   * step" wording (the callback route passes its retry wording). */
+  readonly unsupportedLabel?: string
+  /**
    * The passkey ceremony failure the channel's feedback scope holds, as a
    * bundle key. The ceremony is a client-side source that does not enter
    * the slot (see ./write-feedback); the step reports it upward so the
@@ -105,6 +116,10 @@ export interface HumanGatedFlowStepProps {
     input: Record<string, string>,
     humanProof?: string,
   ) => void
+  /** See FlowStepFieldsProps.onUnsupported. */
+  readonly onUnsupported: () => void
+  /** See FlowStepFieldsProps.unsupportedLabel. */
+  readonly unsupportedLabel?: string
   /** See FlowStepFieldsProps.clientFailure. */
   readonly clientFailure?: string | null
   /** See FlowStepFieldsProps.onClientFailure. */
@@ -128,6 +143,8 @@ export function HumanGatedFlowStep({
   step,
   busy,
   onAnswer,
+  onUnsupported,
+  unsupportedLabel,
   clientFailure,
   onClientFailure,
 }: HumanGatedFlowStepProps) {
@@ -160,6 +177,8 @@ export function HumanGatedFlowStep({
         step={step}
         busy={busy}
         onAnswer={answer}
+        onUnsupported={onUnsupported}
+        unsupportedLabel={unsupportedLabel}
         clientFailure={clientFailure}
         onClientFailure={onClientFailure}
       />
@@ -171,6 +190,8 @@ export function FlowStepFields({
   step,
   busy,
   onAnswer,
+  onUnsupported,
+  unsupportedLabel,
   clientFailure,
   onClientFailure,
 }: FlowStepFieldsProps) {
@@ -245,11 +266,25 @@ export function FlowStepFields({
     default:
       // redirect: the host owns navigation; a redirect step reaching this
       // renderer (a callback route opened before the provider answered)
-      // renders the unsupported notice.
+      // renders the unsupported notice with the exit the channel supplies.
+      // The exit is not disabled by `busy`: every rendered step must offer
+      // a control focus can land on, and this is the only one here.
       return (
-        <Alert severity="info" role="status" sx={{ width: '100%' }}>
-          {t('signInFlow.unsupportedStep')}
-        </Alert>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+            width: '100%',
+          }}
+        >
+          <Alert severity="info" role="status" sx={{ width: '100%' }}>
+            {t('signInFlow.unsupportedStep')}
+          </Alert>
+          <Button type="button" variant="outlined" onClick={onUnsupported}>
+            {unsupportedLabel ?? t('signInFlow.unsupportedStepAction')}
+          </Button>
+        </Box>
       )
   }
 }

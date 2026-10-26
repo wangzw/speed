@@ -175,4 +175,37 @@ describe('step-switch focus in Chromium', () => {
     })
     await waitFor(() => expect(factor).toHaveFocus())
   })
+
+  it('focus the unsupported step’s exit control when it replaces the answered step', async () => {
+    // A step the route cannot render carries a notice and its own exit
+    // control, so the switch still has a first control to take focus.
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => smsCodeChallenge(),
+      [LOGIN_ANSWER]: () =>
+        openFlow({
+          seq: 2,
+          state: 'second',
+          next: {
+            kind: 'redirect',
+            url: 'https://idp.example/authorize',
+            method: 'oidc',
+          },
+        }),
+    })
+    renderWithProviders(<SocialCallbackHandler session={harness.session} />, {
+      language: 'en-US',
+    })
+
+    const code = await screen.findByLabelText(enUS.smsSignIn.codeLabel)
+    const user = userEvent.setup()
+    await user.type(code, '123456')
+    await user.click(
+      screen.getByRole('button', { name: enUS.signInFlow.submit }),
+    )
+
+    const exit = await screen.findByRole('button', {
+      name: enUS.socialCallback.retry,
+    })
+    await waitFor(() => expect(exit).toHaveFocus())
+  })
 })

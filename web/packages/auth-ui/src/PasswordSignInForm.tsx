@@ -184,6 +184,12 @@ export function PasswordSignInForm({
             feedback.reset()
             void driver.answer(input, proof)
           }}
+          onUnsupported={() => {
+            // The channel's first fields are the way out of a step it
+            // cannot render; the abandoned step's failure goes with it.
+            feedback.reset()
+            driver.reset()
+          }}
           clientFailure={feedback.localFailure}
           onClientFailure={(key) =>
             key === null ? feedback.clearLocal() : feedback.failLocal(key)

@@ -222,6 +222,37 @@ describe('SocialCallbackHandler', () => {
     expect(harness.store.get()).toBe('access-1')
   })
 
+  it('render a step this route cannot render with an action that reads the flow again', async () => {
+    // A redirect step belongs to the host's navigation. The callback route
+    // cannot complete it, so the notice carries the same re-read the retry
+    // performs: the handler never goes back to waiting without reading.
+    let reads = 0
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        reads += 1
+        return openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'redirect',
+            url: 'https://idp.example/authorize',
+            method: 'oidc',
+          },
+        })
+      },
+    })
+    renderWithProviders(<SocialCallbackHandler session={harness.session} />)
+
+    expect(
+      await screen.findByText(zhCN.signInFlow.unsupportedStep),
+    ).toBeInTheDocument()
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: zhCN.socialCallback.retry }),
+    )
+
+    await waitFor(() => expect(reads).toBe(2))
+  })
+
   it('not re-read when a remount finds the session already signed in', async () => {
     const harness = makeHarness({
       [LOGIN_CURRENT]: () => completeFlow(1),

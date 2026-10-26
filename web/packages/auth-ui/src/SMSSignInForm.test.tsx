@@ -684,6 +684,47 @@ describe('SMSSignInForm', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('return to the phone step from a step this channel cannot render', async () => {
+    // A redirect step is the host's to navigate, so the SMS form cannot
+    // complete it: the notice carries the exit back to this channel's own
+    // first step -- the phone number.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+      [LOGIN_ANSWER]: () =>
+        openFlow({
+          seq: 2,
+          state: 'second',
+          next: {
+            kind: 'redirect',
+            url: 'https://idp.example/authorize',
+            method: 'oidc',
+          },
+        }),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const user = userEvent.setup()
+    await user.type(
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+
+    expect(
+      await screen.findByText(zhCN.signInFlow.unsupportedStep),
+    ).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('button', {
+        name: zhCN.signInFlow.unsupportedStepAction,
+      }),
+    )
+
+    expect(screen.getByLabelText(zhCN.smsSignIn.phoneLabel)).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText(zhCN.smsSignIn.codeLabel),
+    ).not.toBeInTheDocument()
+  })
+
   it('raise the code-step actions to the 44px floor under a coarse pointer', async () => {
     // Resend and change-phone are compact action buttons; on a
     // finger-driven device each one gates up to the 44x44 floor.

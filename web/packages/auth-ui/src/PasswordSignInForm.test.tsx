@@ -236,6 +236,40 @@ describe('PasswordSignInForm', () => {
     expect(harness.store.get()).toBe('access-1')
   })
 
+  it('return to the credentials fields from a step this channel cannot render', async () => {
+    // A redirect step belongs to the host's navigation, so a channel form
+    // cannot complete it: the notice carries an exit back to this
+    // channel's own first fields instead of leaving the viewer stranded.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'redirect',
+            url: 'https://idp.example/authorize',
+            method: 'oidc',
+          },
+        }),
+    })
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+
+    expect(
+      await screen.findByText(zhCN.signInFlow.unsupportedStep),
+    ).toBeInTheDocument()
+    await userEvent.setup().click(
+      screen.getByRole('button', {
+        name: zhCN.signInFlow.unsupportedStepAction,
+      }),
+    )
+
+    expect(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.signInFlow.unsupportedStep)).toBeNull()
+  })
+
   it('render the en-US bundle on an English-starting instance', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () => completeFlow(1),

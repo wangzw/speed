@@ -22,7 +22,10 @@
  * refusal with no step left to keep -- the flow is gone
  * (`authn.flow_invalid`), or a ready flow's `complete` answer is refused
  * -- renders the banner with the retry that reads the flow back, the same
- * shape as a read that finds nothing.
+ * shape as a read that finds nothing. A step this route cannot render (a
+ * redirect step, whose navigation belongs to the host) renders the
+ * unsupported notice with the same re-read as its exit, so the handler
+ * never returns to the pending state without issuing a read.
  *
  * A mount that finds the session already authenticated is a re-entry to
  * the callback route after a completed login; no second read is started
@@ -271,6 +274,8 @@ export function SocialCallbackHandler({
             setStepFailure(null)
             void driver.answer(input, proof)
           }}
+          onUnsupported={retry}
+          unsupportedLabel={t('socialCallback.retry')}
         />
         {stepFailure === null ? null : (
           <Box sx={{ mt: 1, width: '100%' }}>

@@ -136,6 +136,10 @@ export function DescriptorSignInForm({
             feedback.reset()
             void driver.answer(input, proof)
           }}
+          onUnsupported={() => {
+            feedback.reset()
+            driver.reset()
+          }}
           clientFailure={feedback.localFailure}
           onClientFailure={(key) =>
             key === null ? feedback.clearLocal() : feedback.failLocal(key)
@@ -452,6 +456,10 @@ export function PasskeySignIn({
           onAnswer={(input, proof) => {
             feedback.reset()
             void driver.answer(input, proof)
+          }}
+          onUnsupported={() => {
+            feedback.reset()
+            driver.reset()
           }}
           clientFailure={feedback.localFailure}
           onClientFailure={(key) =>
