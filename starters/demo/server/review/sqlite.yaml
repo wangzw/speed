@@ -201,9 +201,12 @@ seed:
       display-name: Demo Member
   tenants:
     # REVIEW: the target is the tenant's administrator as well as its member.
-    # The operator is deliberately absent: the impersonation requirement is a
-    # target inside the tenant and an operator outside it, and naming the
-    # operator here would make it an acme member.
+    # The end-to-end harness adds the platform operator as a second
+    # administrator on every server it starts: the console's tenant-addressed
+    # administration pages decide in the tenant's own policy domain, and a
+    # platform administrator's role lives in the platform domain, so the
+    # operator needs a grant in acme to address it. A walkthrough that does not
+    # add it keeps the seed as written here.
     - name: acme
       admins:
         - member

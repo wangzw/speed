@@ -262,6 +262,40 @@ function tenantSwitcher(page: Page): Locator {
     .getByRole('button', { name: TENANT, exact: true })
 }
 
+/**
+ * Move the tenant area to the member's organization. The member's account also
+ * owns a personal workspace, and the host settles that row as the current
+ * organization for an ordinary member, so the trigger's current name is not
+ * known up front. The menu's row is disabled when the organization is already
+ * current, which is the only case this helper leaves the menu without a click.
+ */
+async function switchToTenant(page: Page): Promise<void> {
+  const trigger = tenantSwitcher(page).or(
+    page
+      .getByRole('banner')
+      .getByRole('button', {
+        name: copy('demo', 'workspace.personal'),
+        exact: true,
+      }),
+  )
+  await expect(trigger).toBeVisible()
+  await trigger.click()
+  const row = page.getByRole('menuitem', { name: TENANT, exact: true })
+  await expect(row).toBeVisible()
+  if (await row.isEnabled()) {
+    await row.click()
+    await expect(
+      page.getByText(
+        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT }),
+        { exact: true },
+      ),
+    ).toBeVisible()
+  } else {
+    await page.keyboard.press('Escape')
+  }
+  await expect(tenantSwitcher(page)).toBeVisible()
+}
+
 /** The password sign-in surface's fields and submit control. */
 function signInHeading(page: Page): Locator {
   return page.getByRole('heading', {
@@ -697,8 +731,11 @@ test('account-offboarding: an operator disables a member and the member returns 
         }),
       ).toHaveCount(1)
 
-      // The tenant area still names the member's own organization as current,
-      // and its row is the disabled current row of the switcher.
+      // The member's account owns a personal workspace, which the host settles
+      // as the current organization for an ordinary member. Move to the
+      // organization this journey disabled and restored it in through the
+      // switcher, then observe that it is the current, unselectable row.
+      await switchToTenant(memberB)
       await expect(tenantSwitcher(memberB)).toBeVisible({ timeout: 15_000 })
       await tenantSwitcher(memberB).click()
       await expect(

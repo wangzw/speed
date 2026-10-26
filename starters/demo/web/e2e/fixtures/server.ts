@@ -421,7 +421,6 @@ export async function startReviewServer(
     readonly socialIdentityProvider?: boolean
     readonly enterpriseSSO?: boolean
     readonly recentWindow?: string
-    readonly seedSmsRollout?: boolean
     readonly schedulerTick?: string
   } = {},
 ): Promise<ReviewServer> {
@@ -516,7 +515,6 @@ export async function startReviewServer(
       socialProvider,
       ssoProvider,
       recentWindow: options.recentWindow,
-      seedSmsRollout: options.seedSmsRollout,
       schedulerTick: options.schedulerTick,
     })
     await runCommand(
@@ -545,7 +543,6 @@ export async function startReviewServer(
         socialProvider,
         ssoProvider,
         recentWindow: options.recentWindow,
-        seedSmsRollout: options.seedSmsRollout,
         schedulerTick: options.schedulerTick,
       })
       const configLocator = `file:${config.path}`

@@ -51,8 +51,8 @@
  * The email and phone preconditions are produced through the account page, not
  * seeded: the operator's email is proved from a `mail.review` code and its phone
  * from an `sms.review` code, both read through the allowed code reader. The
- * tenant membership is the one seed row this spec's server adds; the binary's
- * own seed command writes it.
+ * operator's membership in the seeded tenant is part of every review server's
+ * seed: the fixture names it acme's second tenant administrator.
  *
  * `@covers` is narrower than the journey document where an assertion cannot fail
  * on the requirement's whole claim:
@@ -85,9 +85,9 @@ import { expect, test } from '../fixtures/demo'
 import { waitForVerificationCode } from '../fixtures/log'
 import { copy } from '../helpers/i18n'
 
-// This journey's actor is the platform operator as a member of the seeded
-// tenant, and its only intended sends are its own control clicks.
-test.use({ seedSmsRollout: true, schedulerTick: '0s' })
+// This journey's actor is the platform operator as an administrator of the
+// seeded tenant, and its only intended sends are its own control clicks.
+test.use({ schedulerTick: '0s' })
 
 /** The seeded tenant the operator joins. */
 const TENANT = smsRolloutOperator.tenant

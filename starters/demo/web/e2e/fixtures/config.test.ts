@@ -50,7 +50,10 @@ describe('the review configuration', () => {
     expect(body).toContain(
       '    allow-private-egress: false\n    dns-resolver: ""\n    oidc-ca-file: ""',
     )
-    expect(body).toContain('  tenants:\n    - acme\n  members:')
+    expect(body).toContain(
+      '    - name: acme\n      admins:\n        - member\n        - operator@demo.test',
+    )
+    expect(body).not.toContain('globex')
   })
 
   it('points the enterprise SSO seams at the local fixtures on request', async () => {
@@ -64,11 +67,25 @@ describe('the review configuration', () => {
     expect(body).not.toContain('    allow-private-egress: false')
   })
 
+  it('keeps the operator an acme administrator while it seeds the impersonation factors', async () => {
+    const body = await rendered({ seedImpersonation: true })
+    // The console's tenant-addressed pages decide in the tenant's own policy
+    // domain, so the operator needs the acme grant even on the impersonation
+    // journey's server. The factors stay on: that switch is the only thing the
+    // impersonation option changes.
+    expect(body).toContain(
+      '    - name: acme\n      admins:\n        - member\n        - operator@demo.test',
+    )
+    expect(body).toContain('\n  impersonation: true\n')
+  })
+
   it("registers the enterprise journey's second organization on request", async () => {
     const body = await rendered({
       ssoProvider: { dnsResolver: '127.0.0.1:5353', rootCAFile: '/tmp/ca.pem' },
     })
-    expect(body).toContain('  tenants:\n    - acme\n    - globex\n  members:')
-    expect(body.match(/^    - globex$/gm)).toHaveLength(1)
+    expect(body).toContain(
+      '    - name: globex\n      admins:\n        - operator@demo.test',
+    )
+    expect(body.match(/^    - name: globex$/gm)).toHaveLength(1)
   })
 })

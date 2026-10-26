@@ -573,14 +573,16 @@ test('deploy-and-operate: a deployment serves, seeds, and refuses an unproved op
       }),
     ).toBeVisible()
 
-    // The overview's roster counts come from the deployment's tenant list: the
-    // seed registered one active tenant and nothing else.
+    // The overview's roster counts come from the deployment's tenant list. The
+    // seed registers the system tenant and the business tenant acme, and the
+    // personal-tenant hook gives the seeded operator its own space, so three
+    // active tenants stand in the roster and nothing is disabled or deleted.
     await expect(
       kpiValue(page, copy('consoleUi', 'dashboard.kpi.tenants')),
-    ).toHaveText('1')
+    ).toHaveText('3')
     await expect(
       kpiValue(page, copy('consoleUi', 'dashboard.kpi.active')),
-    ).toHaveText('1')
+    ).toHaveText('3')
     await expect(
       kpiValue(page, copy('consoleUi', 'dashboard.kpi.disabled')),
     ).toHaveText('0')

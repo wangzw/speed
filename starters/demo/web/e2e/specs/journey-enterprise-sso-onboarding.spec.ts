@@ -217,6 +217,43 @@ function tenantMenuItem(page: Page, alias: string): Locator {
   return page.getByRole('menuitem', { name: alias, exact: true })
 }
 
+/**
+ * Move the tenant area to one organization. The employee's account owns a
+ * personal workspace, and the host settles that row as the current
+ * organization for an ordinary member, so the trigger's current name is not
+ * known up front. The menu's row is disabled when the organization is already
+ * current, which is the only case this helper leaves the menu without a click.
+ */
+async function switchToTenant(page: Page, tenant: string): Promise<void> {
+  const trigger = page
+    .getByRole('banner')
+    .getByRole('button', { name: tenant, exact: true })
+    .or(
+      page
+        .getByRole('banner')
+        .getByRole('button', {
+          name: copy('demo', 'workspace.personal'),
+          exact: true,
+        }),
+    )
+  await expect(trigger).toBeVisible()
+  await trigger.click()
+  const row = tenantMenuItem(page, tenant)
+  await expect(row).toBeVisible()
+  if (await row.isEnabled()) {
+    await row.click()
+    await expect(
+      page.getByText(
+        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant }),
+        { exact: true },
+      ),
+    ).toBeVisible()
+  } else {
+    await page.keyboard.press('Escape')
+  }
+  await expect(tenantSwitcher(page, tenant)).toBeVisible()
+}
+
 /** Select one organization through a tenant-addressed page's selector. */
 async function selectTenant(page: Page, tenant: string): Promise<void> {
   await tenantSelector(page).click()
@@ -800,6 +837,13 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
   })
 
   await test.step('step 7: the employee switches from the current organization into the tenant', async () => {
+    // The journey's start state is the seeded organization the employee
+    // already belongs to. An ordinary member's account also owns a personal
+    // workspace, which the host settles first; move to the seeded organization
+    // through the same control this step drives so the switch below starts
+    // from it.
+    await switchToTenant(page, EXISTING_TENANT)
+
     // REQ-tenancy-022/035: the trigger names the current organization, and the
     // list carries every organization the employee belongs to.
     const switcher = tenantSwitcher(page, EXISTING_TENANT)

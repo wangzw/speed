@@ -2,9 +2,13 @@
  * J13 -- a platform operator impersonates a member for support, works as that
  * member, ends the impersonation and finds the record and the audit trail.
  *
- * The seeded operator is not a member of the target tenant (acme) and holds
- * two two-step methods: an authenticator factor aged past the factor-age
- * requirement, and an SMS factor on a proven phone. The spec signs in with the
+ * The seeded operator administers the target tenant (acme): the console's
+ * tenant-addressed pages decide in that tenant's own policy domain, so a
+ * platform administrator with no grant there could neither read the
+ * impersonation records nor start one. The operator holds two two-step
+ * methods: an authenticator factor aged past the factor-age requirement, and
+ * an SMS factor on a proven phone. The target is an ordinary member of the
+ * tenant, not an administrator. The spec signs in with the
  * password and an authenticator code computed from the review seed's fixed
  * base32 secret (helpers/totp.ts, the same secret a person imports into an
  * authenticator app), enters the console, opens the impersonation page and
@@ -668,9 +672,8 @@ test('impersonation-for-support: the operator acts as a member and the record an
 
     // The inbox is the member's, inside the grant's tenant: it renders its
     // normal empty state. The tenant-unavailable state would be the answer for
-    // an identity without a membership in acme, which is what the operator is
-    // -- so seeing the empty inbox is the rendered proof that the effective
-    // identity is the target member.
+    // an identity that cannot enter acme, so seeing the empty inbox is the
+    // rendered proof that the effective identity is inside the grant's tenant.
     await expect(
       page.getByText(copy('notificationUi', 'inbox.empty.title'), {
         exact: true,

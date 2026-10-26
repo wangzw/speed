@@ -89,6 +89,47 @@ const TYPE_KEY = 'review.notice'
 /** The seeded tenant's name: the alias the switcher renders. */
 const TENANT_NAME = reviewMember.tenant
 
+/** The tenant switcher's trigger, naming the current organization. */
+function tenantSwitcher(page: Page): Locator {
+  return page
+    .getByRole('banner')
+    .getByRole('button', { name: TENANT_NAME, exact: true })
+}
+
+/**
+ * Move the tenant area to the seeded organization. The member's account also
+ * owns a personal workspace, and the host settles that row as the current
+ * organization for an ordinary member, so the trigger's current name is not
+ * known up front. The menu's row is disabled when the organization is already
+ * current, which is the only case this helper leaves the menu without a click.
+ */
+async function switchToTenant(page: Page): Promise<void> {
+  const trigger = tenantSwitcher(page).or(
+    page
+      .getByRole('banner')
+      .getByRole('button', {
+        name: copy('demo', 'workspace.personal'),
+        exact: true,
+      }),
+  )
+  await expect(trigger).toBeVisible()
+  await trigger.click()
+  const row = page.getByRole('menuitem', { name: TENANT_NAME, exact: true })
+  await expect(row).toBeVisible()
+  if (await row.isEnabled()) {
+    await row.click()
+    await expect(
+      page.getByText(
+        copy('tenancyUi', 'tenantSwitcher.switchedTo', { tenant: TENANT_NAME }),
+        { exact: true },
+      ),
+    ).toBeVisible()
+  } else {
+    await page.keyboard.press('Escape')
+  }
+  await expect(tenantSwitcher(page)).toBeVisible()
+}
+
 /**
  * The language the worker renders the notice in. The seeded member stores no
  * language preference, so the dispatch resolves to the platform default.
@@ -220,11 +261,14 @@ test('member-workspace: a member receives, reads and configures notifications', 
       }),
     ).toBeVisible()
 
+    // The member's account owns a personal workspace, which the host settles
+    // as the current organization for an ordinary member. Move to the seeded
+    // organization through the switcher so the journey runs where it says.
+    await switchToTenant(page)
+
     // Step 1: the switcher names the seeded tenant as the current organization,
     // and the row that stands for it is the disabled one once the list opens.
-    const switcher = page
-      .getByRole('banner')
-      .getByRole('button', { name: TENANT_NAME, exact: true })
+    const switcher = tenantSwitcher(page)
     await expect(switcher).toBeVisible()
     await expect(switcher).toBeEnabled()
     await switcher.click()

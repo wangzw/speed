@@ -30,10 +30,12 @@
  * The enterprise journey also switches organizations at its end, which needs a
  * second organization the employee already belongs to. The template seeds one
  * tenant (acme); the same opt-in registers a second one (globex) through the
- * binary's seed command, so the seed writes the platform-administrator role
- * into it like any other tenant and the operator can manage its provider and
- * memberships. The employee's memberships themselves are product writes: the
- * spec adds them through the console's member page, never through this file.
+ * binary's seed command. Every seeded tenant names at least one administrator,
+ * and an administrator is a member of the tenant it administers, so globex
+ * names the platform operator -- the account the seed already carries and the
+ * one that drives the console. The employee's memberships themselves are
+ * product writes: the spec adds them through the console's member page, never
+ * through this file.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -108,14 +110,6 @@ export interface ReviewConfigInput {
    */
   readonly recentWindow?: string
   /**
-   * Seed the SMS-template rollout journey's membership: the template's
-   * platform operator joins the seeded tenant. Off by default, because the
-   * impersonation fixture requires that operator to stay outside the tenant it
-   * acts on. The account itself is the template's own; only the membership row
-   * is added, and the binary's own seed writes it.
-   */
-  readonly seedSmsRollout?: boolean
-  /**
    * Replace the scheduler's tick with this duration. Off by default: the
    * template's two-second tick feeds the member-workspace journey's worker. A
    * journey whose dispatch is a control click and whose only intended sends are
@@ -166,13 +160,11 @@ export const reviewMember = {
 
 /**
  * The platform operator the review template seeds, and the tenant the
- * SMS-template rollout journey makes it a member of.
+ * SMS-template rollout journey drives it in.
  *
- * The template's operator is a platform administrator and deliberately not a
- * member of the seeded tenant, because the impersonation journey targets that
- * tenant from outside. The rollout journey's actor holds both halves, so its
- * server adds this one membership row; the account and its credential are the
- * template's own.
+ * The account and its credential are the template's own. Every server also
+ * names this account acme's second tenant administrator, so the console can
+ * address the tenant; see the seed-tenant section of writeReviewConfig.
  */
 export const smsRolloutOperator = {
   tenant: 'acme',
@@ -238,12 +230,6 @@ function seedSocialAccount(): string {
   return `    - identifier: ${quoted(reviewSocialAccount.identifier)}
       password: ${quoted(reviewSocialAccount.password)}
       display-name: ${quoted(reviewSocialAccount.displayName)}`
-}
-
-/** The rollout operator's `seed.members` entry. */
-function seedSmsRolloutMembership(): string {
-  return `    - tenant: ${quoted(smsRolloutOperator.tenant)}
-      account: ${quoted(smsRolloutOperator.identifier)}`
 }
 
 /** The invitee's `seed.accounts` entry, indented for the list it joins. */
@@ -408,14 +394,15 @@ export async function writeReviewConfig(
     // The journey's last step moves the employee from the organization they
     // already belong to into the tenant the provider was registered in. That
     // second organization is part of the deployment's start state: the seed
-    // registers it and writes the operator's platform-administrator role into
-    // it, exactly as it does for the template's own tenant. The employee's
-    // membership in either organization is written through the console by the
-    // spec, so nothing here manufactures a membership.
+    // registers it with the platform operator as its administrator, exactly as
+    // it does for the template's own tenant. The employee's membership in
+    // either organization is written through the console by the spec, so
+    // nothing here manufactures the employee's membership.
     body = replaceOnce(
       body,
-      '  tenants:\n    - acme',
-      '  tenants:\n    - acme\n    - globex',
+      '    - name: acme\n      admins:\n        - member\n',
+      '    - name: acme\n      admins:\n        - member\n' +
+        '    - name: globex\n      admins:\n        - operator@demo.test\n',
       'seed tenants',
     )
   }
@@ -454,7 +441,6 @@ export async function writeReviewConfig(
   // invitee deliberately gets none: the acceptance is what makes it a member.
   const memberships: string[] = []
   if (input.seedMember === true) memberships.push(seedMemberMembership())
-  if (input.seedSmsRollout === true) memberships.push(seedSmsRolloutMembership())
   if (memberships.length > 0) {
     const entries = memberships.join('\n')
     // The review template may already carry a members list (the impersonation
@@ -501,17 +487,24 @@ export async function writeReviewConfig(
     )
   }
 
+  // The console's tenant-addressed administration pages -- impersonation
+  // records and starts among them -- decide in the tenant's own policy domain.
+  // A platform administrator's role lives in the platform domain and does not
+  // pass such a decision, so the operator is named acme's second administrator
+  // on every server. The template keeps its own single administrator (the
+  // impersonation target); this addition is what lets the console address acme.
+  body = replaceOnce(
+    body,
+    '\n        - member\n',
+    '\n        - member\n        - operator@demo.test\n',
+    'review tenant administrator',
+  )
+
   // The impersonation fixture's second factors change how the seeded operator
   // signs in: every later sign-in must complete one. Only the journey that
   // needs it turns it on; every other server starts from the template's own
   // seed with the factors off.
   if (input.seedImpersonation !== true) {
-    body = replaceOnce(
-      body,
-      '\n        - member\n',
-      '\n        - member\n        - operator@demo.test\n',
-      'review tenant administrator',
-    )
     body = replaceOnce(
       body,
       '\n  impersonation: true\n',

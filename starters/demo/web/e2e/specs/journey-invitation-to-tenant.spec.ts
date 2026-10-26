@@ -321,7 +321,9 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       await page.getByRole('option', { name: TENANT, exact: true }).click()
 
       // The tenant has no invitation yet, and its member list holds the
-      // seeded member with the source the seed wrote.
+      // seeded member and the platform operator, each carrying the source the
+      // seed wrote. The member's own row is what the journey names, so the
+      // source is read inside that row.
       await expect(
         page.getByRole('heading', {
           name: copy('consoleUi', 'invitations.empty.title'),
@@ -329,11 +331,15 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
         }),
       ).toBeVisible()
       const members = memberSection(page).getByRole('table')
+      const existing = members
+        .locator('tbody tr')
+        .filter({ hasText: EXISTING_MEMBER })
+      await expect(existing).toHaveCount(1)
       await expect(
-        members.getByText(EXISTING_MEMBER, { exact: true }),
+        existing.getByText(EXISTING_MEMBER, { exact: true }),
       ).toBeVisible()
       await expect(
-        members.getByText(copy('consoleUi', 'members.source.admin'), {
+        existing.getByText(copy('consoleUi', 'members.source.admin'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -711,10 +717,11 @@ test('invitation-to-tenant: an operator invites an address and the invitee joins
       ).toBeVisible({ timeout: 15_000 })
 
       // The member table gained exactly one row: the invited account, active,
-      // and sourced from the invitation. The tenant's earlier member is still
-      // there, so the table holds two rows.
+      // and sourced from the invitation. The tenant's earlier members -- the
+      // seeded target and the platform operator, who is acme's second
+      // administrator -- are still there, so the table holds three rows.
       const members = memberSection(page).getByRole('table')
-      await expect(members.locator('tbody tr')).toHaveCount(2)
+      await expect(members.locator('tbody tr')).toHaveCount(3)
       const invited = members
         .locator('tbody tr')
         .filter({ hasText: reviewInvitee.displayName })

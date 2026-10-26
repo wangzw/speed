@@ -11,19 +11,14 @@
  * code from the review process log (the one non-UI read this spec makes), and
  * the verify action.
  *
- * A NEW TENANT GETS NO ROLE FOR ITS CREATOR. The seed binds the administrator's
- * platform-admin role in the platform domain and in each tenant it configures
- * (acme), so the seeded tenant's management pages answer for it. A tenant
- * registered through the roster is not one of those: the operator holds no
- * tenant-domain role in it, and the invitation and membership reads and writes
- * -- decided in the tenant's own policy domain -- are refused until it does.
- * The management face of the authorization surface decides in the platform
- * domain, so the operator can use it on a tenant it holds nothing in. Step 6 is
- * therefore a named precondition driven entirely through the console's
- * permissions page: create a role in the new tenant, grant it
- * `authn.membership.manage`, and bind the operator's own account to it. That is
- * a legitimate UI precondition, not a bypass; the invitation page's empty lists
- * in step 5 are the evidence the grant is what makes the page answer.
+ * OPENING A TENANT BINDS ITS CREATOR AS ITS FIRST TENANT-ADMIN. The roster's
+ * registration route provisions the domain's tenant-admin role, its grants and
+ * the creator's membership and binding, so the operator can address the new
+ * tenant's management pages at once and the page's member list holds the
+ * operator from the start. The permissions page is still driven in step 6: it
+ * creates a second role, grants it `authn.membership.manage`, and binds the
+ * operator to it. That exercises the authorization surface without being the
+ * precondition the invitation page needs.
  *
  * The seeded roster already carries acme; the second tenant is registered
  * through the create form. Both collision branches the document names are
@@ -54,14 +49,15 @@
  * REQ-tenancy-017's unrelated-session clause, REQ-tenancy-018 (an address with
  * no account) and REQ-tenancy-019 (an unproved reservation) are alternate
  * branches: the invitee here holds the invited address's own account, so the
- * acceptance binds the membership to that account. REQ-tenancy-023 needs a
- * second tenant on the invitee's account; the seeded invitee holds none, so the
- * switcher is observed with its current row and the switch itself is not
- * driven. REQ-tenancy-005 is claimed narrowly: the roster is read with two
- * tenants and asserted in identifier order, while the empty-roster clause needs
- * a deployment that seeds no tenant. REQ-tenancy-008 is claimed narrowly too:
- * both the empty member list and the one-member list are driven, while paging
- * is not. REQ-tenancy-011's malformed-address refusal and REQ-platform-admin-032's
+ * acceptance binds the membership to that account. REQ-tenancy-023 is not
+ * claimed: the invitee's account owns a personal tenant as well, so the
+ * switcher has a second row available, but this spec only observes the current
+ * row and leaves the switch to the journeys that drive it. REQ-tenancy-005 is
+ * claimed narrowly: the roster is read with the seeded tenants and asserted in
+ * identifier order, while the empty-roster clause needs a deployment that seeds
+ * no tenant. REQ-tenancy-008 is claimed narrowly too: the creator's member list
+ * and the list after the acceptance are driven, while paging is not.
+ * REQ-tenancy-011's malformed-address refusal and REQ-platform-admin-032's
  * blank-expiry default are not driven; the typed expiry is what both the issuer
  * and the invitee read. REQ-platform-admin-006 is claimed narrowly to the
  * grouped navigation this assembly renders: the shell renders a group holding a
@@ -439,10 +435,13 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
 
       // REQ-platform-admin-010: every row carries the identifier, the alias and
-      // the status. REQ-tenancy-005: the seeded roster is read in identifier
-      // order (the new tenant registered in step 3 follows acme).
+      // the status. The roster is every tenant the process serves: the system
+      // tenant, the seeded business tenant acme, and the personal tenant the
+      // account-creation hook gives each of this server's three seeded
+      // accounts. REQ-tenancy-005: the roster is read in identifier order (the
+      // new tenant registered in step 3 follows acme).
       const rows = rosterTable(page).locator('tbody tr')
-      await expect(rows).toHaveCount(1)
+      await expect(rows).toHaveCount(5)
       const seeded = rosterRow(page, SEEDED_TENANT)
       await expect(seeded).toHaveCount(1)
       await expect(rosterIdentifier(seeded, SEEDED_TENANT)).toBeVisible()
@@ -470,6 +469,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       })
       const conflict = copy('consoleUi', 'errors.tenant.conflict')
       const rows = rosterTable(page).locator('tbody tr')
+      // The roster read has settled by this step; its current length is the
+      // baseline both collision branches must leave untouched.
+      const before = await rows.count()
 
       // REQ-tenancy-001's first collision branch: an identifier another tenant
       // holds is refused, and the roster gains no row.
@@ -477,7 +479,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await aliasField.fill('acme-alias-clash')
       await submit.click()
       await expect(page.getByText(conflict, { exact: true })).toBeVisible()
-      await expect(rows).toHaveCount(1)
+      await expect(rows).toHaveCount(before)
 
       // Its second branch: an alias another tenant holds is refused the same
       // way, with a fresh identifier.
@@ -485,7 +487,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await aliasField.fill(SEEDED_TENANT)
       await submit.click()
       await expect(page.getByText(conflict, { exact: true })).toBeVisible()
-      await expect(rows).toHaveCount(1)
+      await expect(rows).toHaveCount(before)
 
       // The successful registration: the row appears, active, with the values
       // typed.
@@ -499,7 +501,7 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
         ),
       ).toBeVisible()
 
-      await expect(rows).toHaveCount(2)
+      await expect(rows).toHaveCount(before + 1)
       const created = rosterRow(page, TENANT_ID)
       await expect(created).toHaveCount(1)
       await expect(rosterIdentifier(created, TENANT_ID)).toBeVisible()
@@ -586,14 +588,12 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible()
     })
 
-    await test.step('precondition: the operator grants the invitation permission in the new tenant through the permissions page', async () => {
-      // The new tenant carries no role for the operator: the seed binds the
-      // platform-admin role only in the platform domain and in the tenants it
-      // configured. The authorization surface is decided in the platform
-      // domain, so it can create the tenant's first role, grant it the
-      // membership-management permission and bind the operator in the tenant's
-      // own domain -- without which the invitation page's tenant reads are
-      // refused.
+    await test.step('the operator manages the new tenant through the permissions page', async () => {
+      // Opening the tenant bound the operator as its first tenant-admin. This
+      // step still drives the authorization surface: it creates a second role
+      // in the tenant, grants it the membership-management permission and
+      // binds the operator to it. The tenant-addressed page decides in the
+      // tenant's own domain, which the created binding exercises.
       await consoleLink(page, copy('consoleUi', 'permissions.title')).click()
       await expect(
         page.getByRole('heading', {
@@ -712,11 +712,17 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(
         page.getByText(boundNotice(), { exact: true }),
       ).toBeVisible()
+      // The tenant already carries the creator's tenant-admin binding, so the
+      // row this write produced is the one naming the role it just granted.
       const bindingsTable = bindings.getByRole('table')
+      const bound = bindingsTable
+        .locator('tbody tr')
+        .filter({ hasText: ROLE })
+      await expect(bound).toHaveCount(1)
       await expect(
-        bindingsTable.getByText(OPERATOR.displayName, { exact: true }),
+        bound.getByText(OPERATOR.displayName, { exact: true }),
       ).toBeVisible()
-      await expect(bindingsTable.getByText(ROLE, { exact: true })).toBeVisible()
+      await expect(bound.getByText(ROLE, { exact: true })).toBeVisible()
     })
 
     await test.step('step 5: the operator opens invitations-and-members and selects the new tenant', async () => {
@@ -742,9 +748,9 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       await expect(invitationSection(page)).toHaveCount(0)
       await expect(memberSection(page)).toHaveCount(0)
 
-      // After choosing it, the new tenant's invitation list and member list are
-      // both empty -- and the empty member list is the evidence the role
-      // binding is a policy grant, not a membership.
+      // After choosing it, the new tenant's invitation list is empty. Its
+      // member list holds the operator: opening a tenant binds its creator as
+      // the first tenant-admin, and a tenant-admin is a member as well.
       await tenantSelector(page).click()
       await page.getByRole('option', { name: TENANT_ALIAS, exact: true }).click()
       await expect(
@@ -754,9 +760,13 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
             exact: true,
           }),
       ).toBeVisible()
+      const members = memberSection(page).getByRole('table')
+      const creator = members
+        .locator('tbody tr')
+        .filter({ hasText: OPERATOR.displayName })
+      await expect(creator).toHaveCount(1)
       await expect(
-        memberSection(page).getByRole('heading', {
-          name: copy('consoleUi', 'members.empty.title'),
+        creator.getByText(copy('consoleUi', 'members.source.admin'), {
           exact: true,
         }),
       ).toBeVisible()
@@ -1066,11 +1076,11 @@ test('operator-onboards-tenant: an operator registers a tenant, invites its firs
       ).toBeVisible({ timeout: 15_000 })
 
       // REQ-tenancy-008: the member list now holds the invited address's
-      // account, sourced from the invitation and active. It held no member
-      // before the acceptance, so its one row is the membership the journey
-      // wrote.
+      // account, sourced from the invitation and active. The operator was
+      // already a member as the tenant's creator and first tenant-admin, so
+      // the acceptance grows the list from one row to two.
       const members = memberSection(page).getByRole('table')
-      await expect(members.locator('tbody tr')).toHaveCount(1)
+      await expect(members.locator('tbody tr')).toHaveCount(2)
       const invited = members
         .locator('tbody tr')
         .filter({ hasText: reviewInvitee.displayName })
