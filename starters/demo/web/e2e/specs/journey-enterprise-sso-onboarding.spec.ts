@@ -10,8 +10,10 @@
  *      and its client secret. The list shows the provider under that tenant, the
  *      write confirms it by name, and the form resets.
  *   3. The operator claims the enterprise email domain. The page hands out a
- *      one-time DNS token with a copy control; the domain is verified after the
- *      token's record is published, and the domain then takes part in discovery.
+ *      one-time DNS token plus the record name and full record value to
+ *      publish, each with a copy control. The claimed domain is listed as
+ *      unverified, turns verified after its record is published, and then
+ *      takes part in discovery.
  *   4. The operator creates the employee's account in the console (display name
  *      plus the work address as its login identifier, asserted by the
  *      administrator) and adds it to the target tenant as a member.
@@ -472,6 +474,14 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
       hasText: copy('consoleUi', 'sso.domains.claimToken'),
     })
     await expect(panel).toBeVisible()
+    for (const detailLabel of [
+      'sso.domains.claimRecordName',
+      'sso.domains.claimRecordValue',
+    ]) {
+      await expect(
+        panel.getByText(copy('consoleUi', detailLabel), { exact: true }),
+      ).toBeVisible()
+    }
     for (const copyLabel of [
       'sso.domains.claimTokenCopy',
       'sso.domains.claimRecordNameCopy',
@@ -509,20 +519,32 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
     // the stub's handle.
     stub.setTXT([publishedValue])
 
-    // The declared domain is listed for the provider; its row carries the
-    // verification action and turns verified in place.
+    // The declared domain is listed for the provider, named in the row and
+    // marked unverified until its record is checked; that row is where the
+    // verification action lives.
     const domainRow = domains
       .getByRole('listitem')
       .filter({ hasText: enterpriseIdentityProviderDomain })
     await expect(domainRow).toHaveCount(1)
-    await domainRow
-      .getByRole('button', {
-        name: copy('consoleUi', 'sso.domains.verifyAria', {
-          domain: enterpriseIdentityProviderDomain,
-        }),
+    await expect(
+      domainRow.getByText(enterpriseIdentityProviderDomain, { exact: true }),
+    ).toBeVisible()
+    await expect(
+      domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
         exact: true,
-      })
-      .click()
+      }),
+    ).toBeVisible()
+    const verifyButton = domainRow.getByRole('button', {
+      name: copy('consoleUi', 'sso.domains.verifyAria', {
+        domain: enterpriseIdentityProviderDomain,
+      }),
+      exact: true,
+    })
+    await expect(verifyButton).toBeVisible()
+    await verifyButton.click()
+
+    // The write names the domain and the row flips in place: verified, no
+    // longer unverified, and its verification action is gone.
     await expect(
       page.getByText(
         copy('consoleUi', 'sso.domains.verified', {
@@ -537,6 +559,12 @@ test('enterprise-sso-onboarding: an operator connects an OIDC provider and an em
         exact: true,
       }),
     ).toBeVisible()
+    await expect(
+      domainRow.getByText(copy('consoleUi', 'sso.domains.state.unverified'), {
+        exact: true,
+      }),
+    ).toHaveCount(0)
+    await expect(verifyButton).toHaveCount(0)
 
     // Closing the one-time panel drops the only copy of the token and the
     // record it handed over.
