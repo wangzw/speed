@@ -204,19 +204,17 @@ func (p *personalProduct) clearMemberships(ctx context.Context, tenantID string)
 }
 
 // clearPolicy deletes every binding of the tenant and then its tenant-admin
-// role. The bindings go first so the deletion does not depend on the role's own
-// cascade; a role that is already gone is no work. A role an operator marked
-// builtin cannot be deleted, and that refusal is tolerated: the tenant is a
-// tombstone, so no request resolves to the role again.
+// role. The bindings go through the domain teardown path, which the
+// last-tenant-administrator rule does not constrain: the account's own binding
+// is often the tenant's only one when the policy module's AccountDeleted has
+// not run first, and the cleanup must not depend on that hook's order. The rule
+// protects a domain still in service; this one is about to become a tombstone.
+// The role follows in its own transaction, and a role marked builtin cannot be
+// deleted; that refusal is tolerated, because no request resolves to the domain
+// again.
 func (p *personalProduct) clearPolicy(ctx context.Context, tenantID string) error {
-	bindings, err := p.manager.Bindings(ctx, tenantID)
-	if err != nil {
-		return fmt.Errorf("listing the personal tenant's bindings: %w", err)
-	}
-	for _, binding := range bindings {
-		if err := p.manager.DeleteBinding(ctx, tenantID, binding.Account, binding.Role); err != nil {
-			return fmt.Errorf("deleting a binding in the personal tenant: %w", err)
-		}
+	if err := p.manager.DeleteBindings(ctx, tenantID); err != nil {
+		return fmt.Errorf("deleting the personal tenant's bindings: %w", err)
 	}
 	if err := p.manager.DeleteRole(ctx, tenantID, personalTenantAdminRole); err != nil && !errors.Is(err, authz.ErrBuiltinRole) {
 		return fmt.Errorf("deleting the personal tenant's tenant-admin role: %w", err)

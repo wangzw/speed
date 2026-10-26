@@ -160,6 +160,7 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 				"Bindings func(context.Context, string) ([]authz.Binding, error)",
 				"BindingsOf func(context.Context, string, string) ([]authz.Binding, error)",
 				"DeleteBinding func(context.Context, string, string, authz.Role) error",
+				"DeleteBindings func(context.Context, string) error",
 				"DeleteGrant func(context.Context, authz.GrantRecord) error",
 				"DeleteRole func(context.Context, string, authz.Role) error",
 				"Grants func(context.Context, string, authz.Role) ([]authz.GrantRecord, error)",

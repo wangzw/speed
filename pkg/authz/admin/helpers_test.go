@@ -144,6 +144,11 @@ func (m *stubManager) DeleteBinding(_ context.Context, tenant, account string, r
 	return m.errNow()
 }
 
+func (m *stubManager) DeleteBindings(_ context.Context, tenant string) error {
+	m.record(managerCall{op: "DeleteBindings", tenant: tenant})
+	return m.errNow()
+}
+
 // stubCatalog is a stand-in authz.Catalog over a fixed set of permissions. It
 // records every Has query, so a case can hold that the grant route checked the
 // catalog before it called the manager.

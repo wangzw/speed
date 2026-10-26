@@ -279,6 +279,11 @@ func (m *managerStub) DeleteBinding(_ context.Context, tenant, account string, r
 	return m.errNow()
 }
 
+func (m *managerStub) DeleteBindings(_ context.Context, tenant string) error {
+	m.note(managerCall{op: "DeleteBindings", tenant: tenant})
+	return m.errNow()
+}
+
 // auditStub keeps the rows it was asked to write and can be told to fail.
 type auditStub struct {
 	mu   sync.Mutex

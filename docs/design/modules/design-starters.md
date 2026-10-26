@@ -326,7 +326,7 @@ flowchart TD
 - **两个状态钩子先读名册，读不到那一行或读到墓碑都返回 nil。** 名册上没有派生出来的标识，说明这个账户没有个人租户——发动这一轮联动的是一次普通的账户状态迁移，钩子没有要做的事；把它当成失败会让每一次这样的迁移都以 `ErrCleanupIncomplete` 结束，管理员得为一个不存在的租户重试。读到墓碑时同样返回 nil：删除是终态，账户的状态迁移不把它带回来，`SetStatusByAccount` 的 `ErrTenantDeleted` 在钩子里按无事可做处置。其余失败原样返回，账户调用以 `ErrCleanupIncomplete` 结束。
 - **账户删除的收尾按固定次序做，每一步幂等，墓碑是完成标记。** `AccountDeleted` 先按派生的标识读名册：没有这一行（这个账户从未有过个人租户）即无事可做；已是已删除即跳过整段收尾，重复的钩子不再写任何东西。其余情形按下列次序做：
   1. 删掉租户内的成员关系：`Memberships.Members` 逐页读，`Remove` 逐条删。账户自己那一行已在账户事务里删除，这一步收掉的是被管理员加进来的其他账户的行。
-  2. 删掉租户内的绑定与租户管理员角色：`Manager.Bindings` 逐条 `DeleteBinding`，`Manager.DeleteRole` 删掉 `tenant-admin` 角色并连带删掉它的授予与绑定。运营者把该角色标成内置角色时 `DeleteRole` 报 `ErrBuiltinRole`，这一步容忍它：内置角色删不掉，租户已是墓碑，没有一条请求解析得到它。
+  2. 删掉租户内的绑定与租户管理员角色：`Manager.DeleteBindings` 一次清空域内全部绑定——它是不受「最后一条租户管理员」规则约束的域级清理路径，删除不因此依赖策略模块的 `AccountDeleted` 钩子先跑——`Manager.DeleteRole` 再删掉 `tenant-admin` 角色并连带删掉它的授予。运营者把该角色标成内置角色时 `DeleteRole` 报 `ErrBuiltinRole`，这一步容忍它：内置角色删不掉，租户已是墓碑，没有一条请求解析得到它。
   3. 写一行删除审计。
   4. `tenant.Catalog.Delete` 把租户写成已删除，标识与别名留在名册里、不再复用（[ADR-tenant-directory-2026-10-24](../../adr/adr-tenant-directory-2026-10-24.md)）。
 

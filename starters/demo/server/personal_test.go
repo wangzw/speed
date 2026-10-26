@@ -324,6 +324,7 @@ type fakeManager struct {
 	steps           *stepLog
 	bindingsErr     error
 	deleteBindErr   error
+	deleteBindingsErr error
 	deletedBindings int
 	deleteRoleErr   error
 	deletedRoles    int
@@ -422,7 +423,8 @@ func (m *fakeManager) Bindings(_ context.Context, tenantID string) ([]authz.Bind
 }
 
 // DeleteBinding removes one binding, and removing one that is not there is no
-// work.
+// work. The last tenant-administrator binding of a domain is refused, as the
+// policy manager refuses it.
 func (m *fakeManager) DeleteBinding(_ context.Context, tenantID, account string, role authz.Role) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -432,6 +434,22 @@ func (m *fakeManager) DeleteBinding(_ context.Context, tenantID, account string,
 		return m.deleteBindErr
 	}
 	held := m.bindings[tenantID]
+	if role == authz.TenantAdminRole {
+		admins, target := 0, false
+		for _, binding := range held {
+			if binding.Role != authz.TenantAdminRole {
+				continue
+			}
+			admins++
+			if binding.Account == account {
+				target = true
+			}
+		}
+		if target && admins == 1 {
+			return fmt.Errorf("%w: account %q is the last %q of tenant %q",
+				authz.ErrLastTenantAdmin, account, authz.TenantAdminRole, tenantID)
+		}
+	}
 	kept := held[:0]
 	for _, binding := range held {
 		if binding.Account == account && binding.Role == role {
@@ -440,6 +458,20 @@ func (m *fakeManager) DeleteBinding(_ context.Context, tenantID, account string,
 		kept = append(kept, binding)
 	}
 	m.bindings[tenantID] = kept
+	return nil
+}
+
+// DeleteBindings removes every binding of a tenant, the domain teardown path
+// that the last-tenant-administrator rule does not constrain.
+func (m *fakeManager) DeleteBindings(_ context.Context, tenantID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.steps.add("unbind-all")
+	if m.deleteBindingsErr != nil {
+		return m.deleteBindingsErr
+	}
+	m.deletedBindings += len(m.bindings[tenantID])
+	delete(m.bindings, tenantID)
 	return nil
 }
 

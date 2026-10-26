@@ -481,6 +481,36 @@ func (p *product) DeleteBinding(ctx context.Context, tenant, account string, rol
 	return p.afterWrite(ctx)
 }
 
+// DeleteBindings removes every binding of a tenant in one statement. It is the
+// host's domain-teardown path, called while a tenant is being deleted, so the
+// last-tenant-administrator rule that DeleteBinding enforces does not apply:
+// the rule keeps a domain in service governable, and a domain being torn down
+// has no request that resolves to it. The roles and grants stay; the caller
+// removes them with DeleteRole.
+//
+// The delete is one transaction and idempotent: a tenant with no bindings
+// writes nothing and publishes nothing.
+func (p *product) DeleteBindings(ctx context.Context, tenant string) error {
+	if err := requireTenant(tenant); err != nil {
+		return err
+	}
+	removed := false
+	err := p.write(ctx, func(tx *gorm.DB) error {
+		result := tx.Where("tenant_id = ?", tenant).Delete(&bindingRow{})
+		if result.Error != nil {
+			return fmt.Errorf("authz/policy: deleting the bindings of tenant %q: %w", tenant, result.Error)
+		}
+		removed = result.RowsAffected > 0
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return nil
+	}
+	return p.afterWrite(ctx)
+}
 // refuseReservedRole refuses a role reserved to the platform domain in any other
 // domain. PlatformAdminRole is the one such role; TenantAdminRole is every
 // domain's own highest role and is not refused.

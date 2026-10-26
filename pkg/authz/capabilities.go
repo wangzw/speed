@@ -137,6 +137,12 @@ type Manager interface {
 	PutBinding(ctx context.Context, b Binding) error
 	// DeleteBinding removes a subject's binding to a role within a tenant.
 	DeleteBinding(ctx context.Context, tenant, account string, role Role) error
+	// DeleteBindings removes every binding of a tenant. It is the host's
+	// domain-teardown path: the tenant is being deleted, so the
+	// last-tenant-administrator rule, which protects a domain still in service,
+	// does not apply. It acts on one tenant alone, leaves the roles and grants
+	// in place, and is idempotent: a tenant with no bindings is no work.
+	DeleteBindings(ctx context.Context, tenant string) error
 }
 
 // MembershipChecker reports whether an account is an active member of a tenant.

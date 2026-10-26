@@ -228,9 +228,7 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 		"members",
 		"remove:" + unitAccount.String(),
 		"remove:" + other.String(),
-		"bindings",
-		"unbind:" + unitAccount.String() + ":tenant-admin",
-		"unbind:" + other.String() + ":tenant-admin",
+		"unbind-all",
 		"role:tenant-admin",
 		"audit:" + deleteAuditAction + ":success",
 		"delete",
@@ -272,6 +270,33 @@ func TestTheAccountLifecycleDeletionRunsTheFourStepsInOrder(t *testing.T) {
 		t.Errorf("the deletion audit row carries no action identifier: %v", entry.Detail)
 	}
 }
+
+// TestTheAccountLifecycleDeletionClearsTheLastBindingWithoutThePolicyHook holds
+// the cleanup against the last-tenant-administrator rule. The account's own
+// binding is the personal tenant's only tenant-admin binding whenever the policy
+// module's AccountDeleted has not run first, and the deletion must still finish:
+// the cleanup reaches the domain teardown path rather than removing the binding
+// through the rule-bound single-binding write.
+func TestTheAccountLifecycleDeletionClearsTheLastBindingWithoutThePolicyHook(t *testing.T) {
+	product, roster, _, manager, _ := seededPersonal(t)
+	id := personalTenantID(unitAccount)
+	bindings := manager.bindings[string(id)]
+	if len(bindings) != 1 || bindings[0].Account != unitAccount.String() ||
+		bindings[0].Role != personalTenantAdminRole {
+		t.Fatalf("the fixture's bindings = %+v, want the account's single tenant-admin binding", bindings)
+	}
+
+	if err := product.AccountDeleted(context.Background(), unitAccount); err != nil {
+		t.Fatalf("the delete hook over the account's only tenant-admin binding: %v", err)
+	}
+	if held := manager.bindings[string(id)]; len(held) != 0 {
+		t.Errorf("the tenant's bindings survived the deletion: %+v", held)
+	}
+	if got := roster.rows[id].Status; got != tenant.StatusDeleted {
+		t.Errorf("the tenant's status is %v, want deleted", got)
+	}
+}
+
 
 // TestTheAccountLifecycleDeletionToleratesABuiltinTenantAdminRole holds the tolerance the design
 // names: a role an operator marked builtin cannot be deleted, and the deletion

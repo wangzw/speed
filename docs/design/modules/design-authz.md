@@ -188,6 +188,7 @@ type Manager interface {
     DeleteGrant(ctx context.Context, g GrantRecord) error
     PutBinding(ctx context.Context, b Binding) error
     DeleteBinding(ctx context.Context, tenant, account string, role Role) error
+    DeleteBindings(ctx context.Context, tenant string) error
 }
 
 // Seeder 是宿主的种入面：它添加角色被声明持有的授权，也是唯一能写
@@ -462,6 +463,7 @@ classDiagram
         +DeleteGrant(ctx, g)
         +PutBinding(ctx, b)
         +DeleteBinding(ctx, tenant, account, role)
+        +DeleteBindings(ctx, tenant)
     }
     class Binding {
         +Tenant string
@@ -711,6 +713,8 @@ CREATE INDEX authz_bindings_by_role ON authz_bindings (tenant_id, role);
 
 **租户管理员至少保留一个。** `Manager.DeleteBinding` 删除 `TenantAdminRole` 的绑定时，若那是该域的最后一条，以 `ErrLastTenantAdmin` 拒绝。`authz.admin` 的绑定删除路由另拒绝调用方删除自己在某域 `TenantAdminRole` 的绑定：一个租户管理员不能取消自己的管理员权限，要离开由另一个管理员移除。
 
+**被删除的域经域级清理路径清空绑定。** `Manager.DeleteBindings` 删掉一个域的全部绑定，不受上一条规则约束：那条规则保护的是仍在服务的域，正在被删除的租户没有请求解析得到它。它与 `DeleteBinding` 并列在 `Manager` 上，因为宿主的删除收尾要一次清空域内绑定，而不是逐条经过规则；角色与授予不在它的范围内，由随后的 `DeleteRole` 处理。
+
 **移除平台域的成员关系撤销该账户在平台域的全部绑定。** 平台管理员的绑定要求成员关系，成员关系被移除之后，残留的绑定会替一个不再属于平台租户的账户继续判定平台权限。本模块订阅 `authn.membership.changed`：事件的租户是平台域且变更值是 `removed` 时，按账户删掉平台域的全部绑定并重载快照。事件的投递至少一次、可能重复，处理器重复执行不删任何行、不报错；暂停不是移除，其他租户域的成员变更不触到平台域；没有事件总线的装配里这条联动不执行（[ADR-tenant-administration-2026-10-26](../../adr/adr-tenant-administration-2026-10-26.md)）。
 
 ```go
@@ -844,7 +848,7 @@ type MembershipChecker interface {
 | 启动期模型自检与夹具 | 已实现 | `pkg/authz/internal/policy/selftest.go` `SelfCheck`（夹具同包） |
 | 权限目录：各已登记模块声明的 `PermissionSpec` 并成一个目录，以及目录对（资源，动作）的翻译与每个权限的说明键 | 已实现 | `pkg/authz/policy/catalog.go` `permissions`、`buildCatalog`、`(*catalog).ObjectAction`、`(*catalog).DescriptionKey`（目录类型未导出，读取面是根包的 `Catalog`） |
 | 主体持有权限的读取：快照的隐式权限经目录反向查找映射为权限名，去重并排序，未翻译的对略去 | 已实现 | `pkg/authz/internal/policy/policy.go` `(*Snapshot).Held`；`pkg/authz/policy/policy.go` `(*product).Held`；`pkg/authz/policy/catalog.go` `(*catalog).indexReverse`、`(*catalog).permissionOf` |
-| `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).DeleteBinding`（接口在 `pkg/authz/capabilities.go`） |
+| `Manager` 的策略读写 | 已实现 | `pkg/authz/policy/manager.go` `(*product).Roles` … `(*product).DeleteBindings`（接口在 `pkg/authz/capabilities.go`） |
 | 种入面 `Seeder`：幂等、只增、可写 builtin 角色的授权集 | 已实现 | `pkg/authz/policy/manager.go` `(*product).SeedGrants`、`grantsHeld`（接口在 `pkg/authz/capabilities.go`） |
 | `AccountLifecycle` 清理（账户删除、停用与启用钩子） | 已实现 | `pkg/authz/policy/lifecycle.go` `AccountDeleted`、`AccountDisabled`、`AccountEnabled`、`ServiceSecretRevoked`；`pkg/authz/policy/manager_test.go` |
 | `authz.policy.changed` 事件发布与订阅、`refresh-interval` 周期重载 | 已实现 | `pkg/authz/policy/policy.go` `wire`（订阅）、`publish`、`reload`、`startRefresh` |

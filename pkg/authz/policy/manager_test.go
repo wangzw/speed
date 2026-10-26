@@ -124,6 +124,31 @@ func TestBindingsOfScopesToOneTenant(t *testing.T) {
 	}
 }
 
+// DeleteBindings is the domain teardown path: it removes the tenant's last
+// tenant-admin binding, which DeleteBinding refuses, and leaves another
+// tenant's bindings alone.
+func TestDeleteBindingsClearsADomainIncludingTheLastTenantAdmin(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	mustPutRole(t, ctx, f, "acme", string(authz.TenantAdminRole))
+	mustPutRole(t, ctx, f, "globex", string(authz.TenantAdminRole))
+	mustPutBinding(t, ctx, f, "acme", "acc1", string(authz.TenantAdminRole))
+	mustPutBinding(t, ctx, f, "globex", "acc1", string(authz.TenantAdminRole))
+
+	if err := f.DeleteBinding(ctx, "acme", "acc1", authz.TenantAdminRole); !errors.Is(err, authz.ErrLastTenantAdmin) {
+		t.Fatalf("DeleteBinding of the last tenant-admin = %v, want ErrLastTenantAdmin", err)
+	}
+	if err := f.DeleteBindings(ctx, "acme"); err != nil {
+		t.Fatalf("DeleteBindings(acme): %v", err)
+	}
+	if bindings, err := f.Bindings(ctx, "acme"); err != nil || len(bindings) != 0 {
+		t.Errorf("Bindings(acme) = %v, %v, want none", bindings, err)
+	}
+	if other, err := f.Bindings(ctx, "globex"); err != nil || len(other) != 1 {
+		t.Errorf("Bindings(globex) = %v, %v, want the other tenant's binding untouched", other, err)
+	}
+}
+
 // Deleting a role revokes it: its grants and bindings go with its row, so the
 // account it was bound to stops being allowed. The engine decides from the
 // grant and binding tables and never reads the role table, so a leftover row
@@ -326,6 +351,7 @@ func TestEveryMethodRefusesAnEmptyTenant(t *testing.T) {
 		}},
 		{"PutBinding", func() error { return f.PutBinding(ctx, authz.Binding{Account: "acc1", Role: "roleA"}) }},
 		{"DeleteBinding", func() error { return f.DeleteBinding(ctx, "", "acc1", "roleA") }},
+		{"DeleteBindings", func() error { return f.DeleteBindings(ctx, "") }},
 	}
 	for _, c := range cases {
 		if err := c.call(); !errors.Is(err, authz.ErrTenantMismatch) {
