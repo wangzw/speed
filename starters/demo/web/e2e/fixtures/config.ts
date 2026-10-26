@@ -61,9 +61,9 @@ export interface ReviewConfigInput {
   readonly seedSocialAccount?: boolean
   /**
    * Point the Google method at a provider other than the one its defaults
-   * name. The end-to-end harness starts a local OpenID Connect provider and
-   * passes its issuer and CA file here. An absent value leaves the template's
-   * defaults, which are the public provider.
+   * name. The end-to-end harness starts a local OpenID Connect provider for a
+   * spec that opts in and passes its issuer and CA file here. An absent value
+   * leaves the template's defaults, which are the public provider.
    */
   readonly socialProvider?: {
     readonly issuer: string
@@ -298,7 +298,7 @@ export async function writeReviewConfig(
   // defaults; the three below are what point the method at the local provider.
   // The loopback switch is the seam's own, and the CA file is the one the
   // provider minted, so the restricted egress client verifies the provider's
-  // certificate against it rather than the system roots. A template that lost
+  // certificate against the system roots plus that file. A template that lost
   // one of the defaults fails here rather than silently keeping the public
   // provider while the journey expects a callback.
   if (input.socialProvider !== undefined) {

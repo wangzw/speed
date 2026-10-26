@@ -719,7 +719,7 @@ Location: <落地页>#authn_error=<码>
 
 出站客户端全经 `internal/egress`：超时、体上限、不跟随重定向、连接时拒绝非公网地址；并以 `oidc.ClientContext` 注入，未注入时库用无超时的默认客户端，所以未经注入的出站调用本身是缺陷。`google`、`github` 与企业 `oidc`、`saml` 的客户端在 `observability.Transport` 之内套 `log.Transport`，每次出站请求成功与失败各写一条记录：方法、主机、不含 query 的路径、对端状态、`outcome` 与耗时，无应答时带底层成因；授权码与令牌都不进记录，请求头与正文同样不记。方法交出的 `Proof.External` 带（提供方，主体）、邮箱与 `EmailVerified`，邮箱只是线索。
 
-`google` 与 `github` 各有一组可选覆盖项把方法指向别的提供方：前者是 `authn.login.google.issuer`，后者是 `authn.login.github.authorize-url`、`token-url` 与 `api-base`；缺省值就是内置的 Google issuer 与 GitHub 端点。两者的受限出站客户端另由 `allow-loopback` 与 `root-ca-file` 成形：缺省为拒回环、用系统根，根证书文件替换系统根并在启动时读取。指向自定义端点即由部署方承担对该端点与其证书的信任；缺省路径上的校验与行为不变（[ADR-authn-social-endpoints-2026-10-26](../../../adr/adr-authn-social-endpoints-2026-10-26.md)）。
+`google` 与 `github` 各有一组可选覆盖项把方法指向别的提供方：前者是 `authn.login.google.issuer`，后者是 `authn.login.github.authorize-url`、`token-url` 与 `api-base`；缺省值就是内置的 Google issuer 与 GitHub 端点。两者的受限出站客户端另由 `allow-loopback` 与 `root-ca-file` 成形：缺省为拒回环、用系统根，根证书文件追加到系统根（不替换）并在启动时读取。指向自定义端点即由部署方承担对该端点与其证书的信任；缺省路径上的校验与行为不变（[ADR-authn-social-endpoints-2026-10-26](../../../adr/adr-authn-social-endpoints-2026-10-26.md)）。
 
 **Google。** 对 issuer `https://accounts.google.com` 用 go-oidc 做发现（`authn.login.google.issuer` 可覆盖，覆盖值须是绝对 https 地址，回环主机的 http issuer 仅在 `allow-loopback` 为真时接受），首次使用时懒发现、缓存，失败不终止启动，期间该方式答 503。`sub` 作主体。配置了 `hosted-domain` 时检查 ID 令牌的 `hd` 声明：限定组织的依据是 `hd`，不是邮箱域名，授权请求里的 `hd` 参数只是界面优化。
 

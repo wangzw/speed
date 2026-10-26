@@ -16,7 +16,7 @@
  *     exchange and userinfo. The product refuses plain http on that client, so
  *     this half is TLS. The certificate chains to a CA written into the run's
  *     temporary directory, and the review configuration names that CA file; the
- *     product verifies the leaf against it instead of the system roots.
+ *     product appends its certificate to the system roots it verifies against.
  *   - The authorization page is served over plain http on a second loopback
  *     port, and the discovery document names it as `authorization_endpoint`.
  *     Only the browser reaches it: the product never fetches the authorization
@@ -291,9 +291,9 @@ export async function startIdentityProvider(
     ].join('\n'),
     { encoding: 'utf8' },
   )
-  // A private CA and a leaf it signs: Go replaces its system roots with the CA
-  // file the configuration names, and the leaf's subject alternative names
-  // cover the loopback host the issuer is written with.
+  // A private CA and a leaf it signs: the configuration names the CA file, whose
+  // certificate Go appends to the system roots, and the leaf's subject
+  // alternative names cover the loopback host the issuer is written with.
   await openssl([
     'req',
     '-x509',

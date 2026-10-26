@@ -54,8 +54,9 @@ type moduleConfig struct {
 	// client. It is a development and local-testing relaxation; production
 	// leaves it off.
 	AllowLoopback bool `config:"allow-loopback"`
-	// RootCAFile is a PEM file whose certificates replace the system roots the
-	// provider's certificate is verified against. Empty uses the system roots.
+	// RootCAFile is a PEM file whose certificates are appended to the system
+	// roots the provider's certificate is verified against, not a replacement
+	// for them. Empty uses the system roots alone.
 	RootCAFile string `config:"root-ca-file"`
 }
 
@@ -203,8 +204,8 @@ func schema() config.Schema {
 					"running on the same machine; production leaves it off",
 			},
 			rootCAFileItem: {
-				Description: "a PEM file whose certificates replace the system roots the provider's certificate is " +
-					"verified against; empty uses the system roots",
+				Description: "a PEM file whose certificates are appended to the system roots the provider's " +
+					"certificate is verified against, not a replacement for them; empty uses the system roots alone",
 			},
 		},
 	}

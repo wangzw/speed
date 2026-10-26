@@ -25,10 +25,11 @@
 //     address the judgement sees is the proxy's and says nothing about the
 //     destination.
 //   - Certificates are verified against the system roots, and verification is
-//     never switched off. [Options].RootCAs replaces the roots for a deployment
-//     whose identity provider uses a private certificate authority, or a test
-//     that serves its own certificate; [RootCAsFromFile] reads a PEM file into
-//     one. It is the only knob on verification.
+//     never switched off. [Options].RootCAs is the pool that replaces the
+//     transport's default for a deployment whose identity provider uses a
+//     private certificate authority, or a test that serves its own certificate;
+//     [RootCAsFromFile] builds one by appending a PEM file's certificates to the
+//     system roots, not by replacing them. It is the only knob on verification.
 //   - The client sets no total timeout. The deadline of each call is the
 //     deadline of its context, so a caller must hand one in: a call whose
 //     context carries none is bounded only by the handshake timeout and by the

@@ -114,8 +114,8 @@ func schema() config.Schema {
 					"running on the same machine; production leaves it off",
 			},
 			rootCAFileItem: {
-				Description: "a PEM file whose certificates replace the system roots the provider's certificate is " +
-					"verified against; empty uses the system roots",
+				Description: "a PEM file whose certificates are appended to the system roots the provider's " +
+					"certificate is verified against, not a replacement for them; empty uses the system roots alone",
 			},
 		},
 	}

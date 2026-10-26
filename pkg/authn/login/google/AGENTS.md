@@ -52,9 +52,9 @@ The API is the package's godoc, and the `LoginMethod`, `Start`, `FlowState`,
   be an absolute https address, except a loopback http issuer, which is accepted
   only with `authn.login.google.allow-loopback`. `allow-loopback` and
   `root-ca-file` shape the restricted client this module builds: off and empty
-  leave loopback refused and the system roots, and a configured root CA file
-  replaces the system roots and must be readable with at least one certificate at
-  startup. A deployment that points the method at its own provider bears the
+  leave loopback refused and the system roots, and a configured root CA file is
+  appended to the system roots rather than replacing them; it must be readable
+  with at least one certificate at startup. A deployment that points the method at its own provider bears the
   trust in that provider and its certificate.
 - **The client carries the trace and logging transports.** `New` wraps the
   restricted client's transport in `observability.Transport` and, inside it,

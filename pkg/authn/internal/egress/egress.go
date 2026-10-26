@@ -43,10 +43,11 @@ type Options struct {
 	// non-public address stays refused.
 	AllowLoopback bool
 
-	// RootCAs replaces the system roots when the peer's certificate chains to a
-	// root the system does not hold: a deployment whose identity provider uses a
-	// private certificate authority, or a test serving its own certificate. Nil
-	// means the system roots. [RootCAsFromFile] reads a PEM file into one.
+	// RootCAs is the pool the peer's certificate is verified against, replacing
+	// the transport's default of the system roots: a deployment whose identity
+	// provider uses a private certificate authority, or a test serving its own
+	// certificate. Nil means the system roots. [RootCAsFromFile] builds one that
+	// appends a PEM file to the system roots rather than replacing them.
 	// Verification itself is never switched off.
 	RootCAs *x509.CertPool
 }
