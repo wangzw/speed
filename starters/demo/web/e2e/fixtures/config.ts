@@ -107,8 +107,8 @@ export interface ReviewConfig {
  * to the configuration the harness writes, so the binary's own `seed` command
  * creates both -- the fixture never writes a row into a running database. The
  * account is seeded by an email address on purpose: the review type's default
- * channels include email, and the worker skips a member with no email
- * identifier.
+ * channels include email and sms, the account holds no phone number, and the
+ * worker skips a member with neither a proved phone nor an email identifier.
  */
 export const reviewMember = {
   tenant: 'acme',

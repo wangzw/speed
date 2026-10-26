@@ -29,7 +29,7 @@ import Box from '@mui/material/Box'
 import CardActionArea from '@mui/material/CardActionArea'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
-import { featurePresence, useFeatureState } from '@speed/auth-core'
+import { featurePresence, useFeature, useFeatureState } from '@speed/auth-core'
 import { useTranslation } from '@speed/i18n'
 import {
   presentDeclarations,
@@ -50,6 +50,7 @@ import {
   NOTIFICATIONS_PATH,
 } from '../paths.js'
 import { useTenantMembershipNotice } from '../tenant-membership-notice.js'
+import { ReviewNoticeControl } from '../review-notice-control.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 
 /**
@@ -120,6 +121,11 @@ export function HomePage(): ReactElement {
   const setupStillIncomplete =
     profile.data === undefined || setupIncomplete(profile.data)
   const showSetupNotice = setupNotice.visible && setupStillIncomplete
+  // The review build's notice control is offered only while the process
+  // declares its review-only feature. A baseline deployment never does, so the
+  // control is absent there; the gate fails closed while the feature document
+  // is unsettled.
+  const reviewNoticeServed = useFeature('review.notification.control')
   return (
     <Box
       component="section"
@@ -190,6 +196,7 @@ export function HomePage(): ReactElement {
           ))}
         </Box>
       </SectionCard>
+      {reviewNoticeServed ? <ReviewNoticeControl /> : null}
     </Box>
   )
 }

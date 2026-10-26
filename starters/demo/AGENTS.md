@@ -150,38 +150,59 @@ through log collection or export.
 #### The review build's notification fixture
 
 `server/review_notification.go`, compiled only under the `review` tag and named
-in `reviewModules`, gives the member-notification journey a running
-counterpart. It adds three things the baseline deliberately lacks.
+in `reviewModules`, gives the member-notification and SMS-template journeys a
+running counterpart. It adds four things the baseline deliberately lacks.
 
 - **A type.** It declares `review.notice` — group `review`, default channels
-  `in_app` and `email`, unsubscribable — with its text in
+  `in_app`, `email` and `sms`, unsubscribable — with its text in
   `server/review_notification_locales/en-US.json` and `zh-CN.json`. The
-  declaration lives in the review-tagged file on purpose:
-  `notification.preferences` and `notification.delivery` collect the type
-  taxonomy with `core.Resources` over the *available* set, not the running set,
-  so a type declared in an untagged file would appear in the baseline's
-  preference matrix and its dispatch validation even though no baseline command
-  runs its module. `server/review_notification_isolation_test.go` holds that
-  boundary in the default build, and the review-tagged case holds the other
-  direction.
+  catalog's `review.notice.sms.template` entry names the runtime SMS template
+  the template-rollout journey registers (`review-notice`), and the type's
+  parameter whitelist admits `to`, which is both the dispatch's destination and
+  the template's only declared parameter. The declaration lives in the
+  review-tagged file on purpose: `notification.preferences` and
+  `notification.delivery` collect the type taxonomy with `core.Resources` over
+  the *available* set, not the running set, so a type declared in an untagged
+  file would appear in the baseline's preference matrix and its dispatch
+  validation even though no baseline command runs its module.
+  `server/review_notification_isolation_test.go` holds that boundary in the
+  default build, and the review-tagged cases hold the other direction.
+
+- **A recipient-aware dispatch.** The fixture resolves each recipient's proved
+  phone and email address. A proved phone is the single destination and the sms
+  channel; with no proved phone the dispatch falls back to the email address and
+  the in-app/email channels. Because the capability carries one destination
+  parameter for every external channel, the fixture prunes the channel the
+  destination cannot address through the preference seam before it submits —
+  monotonically, so a channel the recipient turned off is never re-enabled. An
+  account with neither a proved phone nor an address is skipped rather than
+  failed.
 
 - **A worker-driven dispatch.** The module declares a `jobs.Schedule`, and the
   platform's scheduler enqueues one job per tenant per window. The module's
-  handler turns each job into one dispatch per active member that carries an
-  email identifier: the type's default channels include email, so a member
-  without an address is skipped rather than failed. Each dispatch renders in
-  the recipient's own language — the account's stored `i18n.locale` preference
-  when it has one, and the platform's default locale when it does not — so one
-  window addresses a member who chose Chinese in Chinese and a member with no
-  preference in the default. The dispatch is the real one —
-  `notification.Dispatcher` validates it against the collected taxonomy,
-  the job queue carries it, and the delivery pipeline writes the in-app row and
-  renders the email through `mail.review`. There is no HTTP endpoint for it: a
-  browser drives the journey with clicks alone, and the "another member or the
-  system sends a notice" step is the worker's window. `server/review/sqlite.yaml`
-  lowers `jobs.scheduler.tick` to two seconds, so a tenant created during a
-  walkthrough starts receiving notices promptly; the dispatch window itself is
-  the fixture's own constant.
+  handler turns each job into one dispatch per addressable active member. Each
+  dispatch renders in the recipient's own language — the account's stored
+  `i18n.locale` preference when it has one, and the platform's default locale
+  when it does not — so one window addresses a member who chose Chinese in
+  Chinese and a member with no preference in the default. The dispatch is the
+  real one — `notification.Dispatcher` validates it against the collected
+  taxonomy, the job queue carries it, and the delivery pipeline writes the
+  in-app row and renders the external channel through `mail.review` or the
+  review SMS carrier. `server/review/sqlite.yaml` lowers
+  `jobs.scheduler.tick` to two seconds, so a tenant created during a walkthrough
+  starts receiving notices promptly; the dispatch window itself is the fixture's
+  own constant. The worker's window is the member-notification journey's
+  dispatch, not the SMS-template rollout journey's proof.
+
+- **The review-only tenant control.** The module mounts
+  `POST /api/v1/notifications/review/notice` on the `api` endpoint and declares
+  the static feature `review.notification.control`. A signed-in member of the
+  tenant clicks the tenant home page's control, and the handler dispatches one
+  notice to the caller through the same recipient-aware path. The route and the
+  feature are compiled only under the review tag, so neither exists in a default
+  binary; the home page renders the control only while the feature document
+  carries the name. The control is the SMS-template rollout journey's business
+  action.
 
 - **The preference recipient wiring.** The preference routes read the recipient
   from the request context (`preferences.WithRecipient`); the capability holds

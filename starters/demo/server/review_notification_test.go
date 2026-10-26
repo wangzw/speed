@@ -111,13 +111,17 @@ func TestReviewNotificationTypeReachesBothTaxonomyConsumers(t *testing.T) {
 	if !declared.Unsubscribable {
 		t.Errorf("the type is not unsubscribable, so the journey's preference write would be refused")
 	}
-	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelEmail}; !slices.Equal(declared.DefaultChannels, want) {
+	if want := []notification.Channel{
+		notification.ChannelInApp,
+		notification.ChannelEmail,
+		notification.ChannelSMS,
+	}; !slices.Equal(declared.DefaultChannels, want) {
 		t.Errorf("the type's default channels are %v, want %v", declared.DefaultChannels, want)
 	}
 	if !slices.Contains(declared.RecipientVisibleParams, "to") {
 		t.Errorf("the type's parameter whitelist is %v; it must admit the destination the "+
-			"email channel reads, or every email dispatch is refused as a disallowed parameter",
-			declared.RecipientVisibleParams)
+			"external channels read, or every external dispatch is refused as a disallowed "+
+			"parameter", declared.RecipientVisibleParams)
 	}
 
 	var schedule *jobs.Schedule
@@ -167,6 +171,19 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 		"X-Tenant":      ensureReviewTenant(t, client, base, token),
 	}
 
+	// The review-only tenant control is offered by the feature document: the
+	// module that mounts its route declares the feature statically, so a review
+	// run publishes it and a baseline run, which compiles no such module, does
+	// not.
+	var features struct {
+		Features []string `json:"features"`
+	}
+	readJSON(t, client, base+"/api/v1/features", headers, &features)
+	if !slices.Contains(features.Features, reviewNotificationControlFeature) {
+		t.Errorf("the review feature document omits %q, so the tenant's notice control would "+
+			"never be offered", reviewNotificationControlFeature)
+	}
+
 	// The preferences consumer sees the type with its declared defaults.
 	var types struct {
 		Types []notificationTypeView `json:"types"`
@@ -181,18 +198,8 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	if typeView == nil {
 		t.Fatalf("GET /notifications/types lists no %q:\n%+v", reviewNotificationTypeKey, types)
 	}
-	if want := []string{"in_app", "email"}; !slices.Equal(typeView.DefaultChannels, want) {
+	if want := []string{"in_app", "email", "sms"}; !slices.Equal(typeView.DefaultChannels, want) {
 		t.Errorf("the type's listed default channels are %v, want %v", typeView.DefaultChannels, want)
-	}
-
-	var prefs struct {
-		Preferences []preferenceView `json:"preferences"`
-	}
-	readJSON(t, client, base+"/api/v1/notifications/preferences", headers, &prefs)
-	row := preferenceRow(t, prefs.Preferences)
-	if want := []string{"in_app", "email"}; !slices.Equal(row.Channels, want) || row.Explicit {
-		t.Errorf("the default preference row is %+v, want the default channels %v and explicit false",
-			row, want)
 	}
 
 	// The worker dispatches once per window. Wait for the first message; the
@@ -208,6 +215,21 @@ func TestReviewNotificationJourneyIsReachable(t *testing.T) {
 	}
 	if want := reviewCatalogEntry(t, reviewDefaultLocale, "review.notice.in_app.body"); first.Body != want {
 		t.Errorf("the in-app body is %q, want the catalog's %q", first.Body, want)
+	}
+
+	// This member holds an email address but no phone number, so the fixture
+	// addresses them by email: sms is removed from their effective set and is
+	// not attempted with the address as its destination. The worker writes that
+	// set before it submits the dispatch, so the first message above is the
+	// signal that the write has landed.
+	var prefs struct {
+		Preferences []preferenceView `json:"preferences"`
+	}
+	readJSON(t, client, base+"/api/v1/notifications/preferences", headers, &prefs)
+	row := preferenceRow(t, prefs.Preferences)
+	if want := []string{"in_app", "email"}; !slices.Equal(row.Channels, want) {
+		t.Errorf("the member's effective channels are %+v, want the email fallback %v with sms "+
+			"removed; the recipient has no proved phone number", row, want)
 	}
 
 	// The email channel renders the same message from the catalog. The review

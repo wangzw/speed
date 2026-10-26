@@ -2,5 +2,6 @@
   "review.notice.in_app.title": "工作区新通知",
   "review.notice.in_app.body": "你的工作区有新的活动。",
   "review.notice.email.subject": "工作区新通知",
-  "review.notice.email.body_text": "你的工作区有新的活动。"
+  "review.notice.email.body_text": "你的工作区有新的活动。",
+  "review.notice.sms.template": "review-notice"
 }

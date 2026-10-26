@@ -48,6 +48,13 @@
         "title": "Notifications",
         "description": "Your inbox, and how each kind of notification reaches you."
       }
+    },
+    "reviewNotice": {
+      "title": "Review-only notice control",
+      "description": "This control exists only in the review build. It dispatches one review notice to you through the channels this assembly can reach.",
+      "action": "Send a review notice to me",
+      "sent": "The review notice was dispatched.",
+      "failed": "The review notice could not be dispatched."
     }
   },
   "account": {

@@ -168,9 +168,10 @@ seed:
     # The impersonation journey's target: an enabled, unprotected member of acme
     # that holds no platform-domain permission. It is a member through the
     # members list below and is never the operator's own account. It is seeded as
-    # a username with no email address on purpose: the review notification
-    # fixture dispatches to every member that carries one, and an extra mailbox in
-    # acme would change the mail counts that fixture asserts.
+    # a username with neither a proved phone number nor an email address on
+    # purpose: the review notification fixture addresses every member that has
+    # one, and an extra destination in acme would change the delivery counts that
+    # fixture asserts.
     - identifier: member
       password: member-dev-secret
       display-name: Demo Member

@@ -7,9 +7,9 @@
  * member, the header bell reports it without a page reload, and the
  * notification surface lists it unread. The member marks it read, then marks
  * everything read and sees the count the server reported and a cleared bell.
- * The preference matrix shows the type's declared default channels; turning
- * the email channel off succeeds, the matrix settles on the in-app channel
- * alone, and a later window's notice still reaches the inbox.
+ * The preference matrix shows the channels the member can be addressed on;
+ * turning the email channel off succeeds, the matrix settles on the in-app
+ * channel alone, and a later window's notice still reaches the inbox.
  *
  * Everything is driven through the rendered product with mouse and keyboard:
  * roles and accessible names, visible text, checked and disabled state, focus
@@ -44,8 +44,8 @@
  *
  * REQ-notifications-030 is claimed for the fixed column order this assembly
  * shows, and not for the whole requirement: the review type declares its
- * optional channels in-app then email, which is also the platform's order, so
- * a matrix that followed the host's declaration order would render the same
+ * optional channels in-app, email then sms, which is also the platform's order,
+ * so a matrix that followed the host's declaration order would render the same
  * sequence. The reversed-declaration case is not driven here.
  *
  * REQ-notifications-001 is claimed narrowly: the spec asserts the notice's
@@ -395,9 +395,13 @@ test('member-workspace: a member receives, reads and configures notifications', 
       copy('notificationUi', 'preferences.channel.sms'),
     ])
 
-    // No stored preference yet, so the effective set is the type's defaults.
+    // The seeded member holds an email address and no phone number, so the
+    // fixture addresses them by email and leaves sms out of the effective set:
+    // in-app and email are checked, and the sms cell is not. The matrix renders
+    // the effective set, not whether it came from the type's declaration.
     await expect(channelToggle(page, 'in_app')).toBeChecked()
     await expect(channelToggle(page, 'email')).toBeChecked()
+    await expect(channelToggle(page, 'sms')).not.toBeChecked()
   })
 
   await test.step('turning the email channel off confirms the change and leaves in-app alone', async () => {

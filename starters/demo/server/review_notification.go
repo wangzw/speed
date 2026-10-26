@@ -4,8 +4,9 @@ package main
 
 // This file is the review assembly's notification fixture: one notification
 // type the baseline does not declare, a worker that dispatches it to the
-// members of every tenant, and the preference-recipient wiring the baseline
-// deliberately leaves out.
+// members of every tenant, the preference-recipient wiring the baseline
+// deliberately leaves out, and the review-only tenant control the SMS rollout
+// journey clicks.
 //
 // The type lives here, behind the review tag, for a reason the notification
 // capability makes explicit: notification.preferences and notification.delivery
@@ -16,13 +17,27 @@ package main
 // baseline's preference matrix and its dispatch validation. Behind the build
 // tag it is absent from a default binary entirely.
 //
-// The dispatch mechanism is worker-driven, not an HTTP endpoint a test calls.
-// The module declares a jobs.Schedule, and the platform's scheduler enqueues
-// one dispatch job per tenant per window; the handler registered here turns
-// each job into one notification per active member with an email address. A
-// member who signs in and reaches a tenant therefore receives notices the way a
-// real system action would send them, and the browser only ever clicks and
-// types. Nothing in this file exposes a route of its own.
+// The type's default channels are the in-app inbox, email and sms. The sms
+// channel is what the rollout journey drives: the catalog names the runtime
+// template the journey registers, and the template declares "to" among its
+// parameters because the delivery pipeline uses the dispatch's single
+// destination both as the recipient's address and as a template parameter.
+//
+// A dispatch addresses one recipient on the external channel their account can
+// actually be reached on. A proved phone number is the sms destination; with no
+// proved phone the account falls back to its email address, and sms is removed
+// from that recipient's effective set rather than attempted with the email as
+// its destination. The fixture writes that pruned set through the preference
+// seam because the delivery pipeline reads the effective channels when it
+// consumes the job.
+//
+// The periodic schedule is the member-workspace journey's dispatch: the
+// platform's scheduler enqueues one job per tenant per window and the handler
+// turns each job into one notification per addressable active member. The
+// rollout journey's proof is not that window: it is the review-only control
+// route below, which a tenant member drives from the console by clicking. The
+// route and the feature that offers its control are compiled only under the
+// review build tag, so neither exists in a default binary.
 //
 // The preference routes read the recipient from the request context, under the
 // key preferences.WithRecipient. The notification capability holds no identity,
@@ -38,12 +53,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"github.com/vislake/speed/pkg/authn"
+	"github.com/vislake/speed/pkg/authz"
 	"github.com/vislake/speed/pkg/core"
+	"github.com/vislake/speed/pkg/feature"
 	speedhttp "github.com/vislake/speed/pkg/http"
 	"github.com/vislake/speed/pkg/i18n"
 	"github.com/vislake/speed/pkg/jobs"
@@ -56,12 +75,106 @@ import (
 // The names this fixture owns. The module name is what reviewModules names in
 // the serve roster; the job type is what the schedule enqueues and the handler
 // registers; the type key is the vocabulary both taxonomy consumers collect.
+// The SMS template name is the catalog entry's value: the rollout journey
+// registers a runtime template under exactly this name, with "to" as its
+// declared parameter (the dispatch carries no other). The control feature is
+// the review-only gate the tenant control reads; it exists only while this
+// module is in force, and this module is compiled only under the review build
+// tag.
 const (
-	reviewNotificationModuleName = "review.notification"
-	reviewNotificationJobType    = "review.notification.dispatch"
-	reviewNotificationTypeKey    = "review.notice"
-	reviewNotificationGroup      = "review"
+	reviewNotificationModuleName     = "review.notification"
+	reviewNotificationJobType        = "review.notification.dispatch"
+	reviewNotificationTypeKey        = "review.notice"
+	reviewNotificationGroup          = "review"
+	reviewNotificationSMSTemplate    = "review-notice"
+	reviewNotificationControlFeature = "review.notification.control"
 )
+
+// reviewNotificationControlPath is the review-only control's route on the api
+// endpoint. The tenant control posts to it to dispatch one notice for the
+// calling member; no other assembly mounts anything under it, because the
+// module that mounts it is compiled only under the review build tag.
+const reviewNotificationControlPath = "/api/v1/notifications/review/notice"
+
+// reviewNoticePlan is how one recipient is addressed by one dispatch: the
+// single external destination the dispatch carries and the channels the
+// recipient can receive on. The capability carries one destination parameter
+// for every external channel, so a recipient is addressed on at most one of
+// them per dispatch.
+type reviewNoticePlan struct {
+	// To is the destination the dispatch carries under "to". For sms it is the
+	// recipient's proved phone number and for email the address the account
+	// holds.
+	To string
+	// Channels is the subset of the type's channels the recipient can be
+	// reached on: in_app always, plus the one external channel To addresses.
+	Channels []notification.Channel
+}
+
+// planReviewNotice resolves one account's identifiers into a delivery plan.
+//
+// A proved phone number is the sms destination: the journey's recipient has
+// verified their number, and an unproved one is not a destination the product
+// would send a notice to. With no proved phone the account falls back to its
+// email address, which keeps the in-app and email channels reachable. An
+// account holding neither is not addressable and is skipped rather than failed.
+func planReviewNotice(identifiers []authn.Identifier) (reviewNoticePlan, bool) {
+	var phone, email string
+	for _, identifier := range identifiers {
+		if identifier.Value == "" {
+			continue
+		}
+		switch identifier.Kind {
+		case authn.IdentifierPhone:
+			if phone == "" && (authn.Verification{Via: identifier.VerifiedVia}).Proves() {
+				phone = identifier.Value
+			}
+		case authn.IdentifierEmail:
+			if email == "" {
+				email = identifier.Value
+			}
+		}
+	}
+	switch {
+	case phone != "":
+		return reviewNoticePlan{
+			To:       phone,
+			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
+		}, true
+	case email != "":
+		return reviewNoticePlan{
+			To:       email,
+			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		}, true
+	default:
+		return reviewNoticePlan{}, false
+	}
+}
+
+// pruneReviewChannels removes the channels a plan cannot address from the
+// recipient's effective set. It is deliberately monotonic: it only drops a
+// channel, never adds one back, so a channel the recipient turned off stays off
+// across every dispatch window.
+//
+// The write it feeds is needed because the delivery pipeline reads the
+// recipient's effective channels from the preference seam when it consumes the
+// job. A plan that addresses sms carries a phone number as the single
+// destination, so leaving email in the set would send the email to a phone
+// number; a plan that falls back to email must drop sms, or the sms channel
+// would be attempted with the email address as its destination.
+func pruneReviewChannels(effective []notification.Channel, plan reviewNoticePlan) []notification.Channel {
+	addressable := make(map[notification.Channel]struct{}, len(plan.Channels))
+	for _, channel := range plan.Channels {
+		addressable[channel] = struct{}{}
+	}
+	out := make([]notification.Channel, 0, len(effective))
+	for _, channel := range effective {
+		if _, ok := addressable[channel]; ok {
+			out = append(out, channel)
+		}
+	}
+	return out
+}
 
 // reviewNotificationEndpoint is the endpoint carrying the notification surface.
 // The name is the platform defaults document's; the preference routes mount
@@ -92,14 +205,21 @@ var reviewNotificationCatalog = i18n.Catalog{
 
 // reviewNotificationType is the type a business module would declare for a
 // system notice a recipient may turn off. Its default channels are the in-app
-// inbox and email, it is unsubscribable — the journey's preference write turns
-// its email channel off — and the only parameter it exposes is the email
-// destination the delivery pipeline needs for that channel, which is the
-// recipient's own address.
+// inbox, email and sms: the rollout journey needs sms among them, while the
+// member-workspace journey reaches the other two. It is unsubscribable — the
+// journey's preference write turns a channel off — and the only parameter it
+// exposes is the destination the delivery pipeline reads, which is the
+// recipient's own phone number or address. The catalog names the sms template
+// the journey registers; the template declares "to" as its only parameter
+// because the destination is also a template parameter.
 var reviewNotificationType = notification.TypeSpec{
-	Key:                    reviewNotificationTypeKey,
-	Group:                  reviewNotificationGroup,
-	DefaultChannels:        []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+	Key:   reviewNotificationTypeKey,
+	Group: reviewNotificationGroup,
+	DefaultChannels: []notification.Channel{
+		notification.ChannelInApp,
+		notification.ChannelEmail,
+		notification.ChannelSMS,
+	},
 	Unsubscribable:         true,
 	RecipientVisibleParams: []string{"to"},
 }
@@ -122,17 +242,23 @@ var _ jobs.Handler = (*reviewNotifier)(nil)
 
 // reviewNotificationModule is the fixture's descriptor.
 //
-// The dispatcher, the account store, the membership store, the locale resolver
-// and the handler registration face are required: without them the fixture has
-// nowhere to submit a dispatch, no member to address, no language to render it
-// in and no place to register its job. The logger is optional, as it is for
-// every module, and the host's default logger carries the fixture's diagnostics
-// when none is delivered.
+// The dispatcher, the account store, the membership store, the preference
+// matrix, the locale resolver and the handler registration face are required:
+// without them the fixture has nowhere to submit a dispatch, no member to
+// address, no recipient-aware channel set to write, no language to render it in
+// and no place to register its job. The logger is optional, as it is for every
+// module, and the host's default logger carries the fixture's diagnostics when
+// none is delivered.
+//
+// The control feature is a static declaration: it is present exactly while this
+// module is in force, which is only in a review run, because the module itself
+// is compiled only under the review build tag.
 func reviewNotificationModule() core.Module {
 	return core.Module{
 		Name: reviewNotificationModuleName,
 		Requires: []core.Requirement{
 			{Token: (*notification.Dispatcher)(nil)},
+			{Token: (*notification.Preferences)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.Memberships)(nil)},
 			{Token: (*i18n.Resolver)(nil)},
@@ -143,6 +269,7 @@ func reviewNotificationModule() core.Module {
 			reviewNotificationType,
 			reviewNotificationCatalog,
 			reviewNotificationSchedule,
+			feature.Spec{Name: reviewNotificationControlFeature},
 		},
 		New: func(_ context.Context, reg *core.Registry) (any, error) {
 			return newReviewNotifier(reg)
@@ -161,7 +288,10 @@ func reviewNotificationModule() core.Module {
 				return fmt.Errorf("%s: registering the dispatch handler: %w",
 					reviewNotificationModuleName, err)
 			}
-			return wireReviewRecipient(reg)
+			if err := wireReviewRecipient(reg); err != nil {
+				return err
+			}
+			return wireReviewControl(reg, notifier)
 		},
 	}
 }
@@ -170,6 +300,7 @@ func reviewNotificationModule() core.Module {
 // logger its skipped members are reported on.
 type reviewNotifier struct {
 	dispatcher notification.Dispatcher
+	prefs      notification.Preferences
 	accounts   authn.Accounts
 	members    authn.Memberships
 	resolver   i18n.Resolver
@@ -188,6 +319,11 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 		return nil, fmt.Errorf("%s: taking up the account store: %w",
 			reviewNotificationModuleName, err)
 	}
+	prefs, err := core.Resolve[notification.Preferences](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the preference matrix: %w",
+			reviewNotificationModuleName, err)
+	}
 	members, err := core.Resolve[authn.Memberships](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the membership store: %w",
@@ -204,6 +340,7 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 	}
 	return &reviewNotifier{
 		dispatcher: dispatcher,
+		prefs:      prefs,
 		accounts:   accounts,
 		members:    members,
 		resolver:   resolver,
@@ -223,13 +360,14 @@ func (*reviewNotifier) Type() string { return reviewNotificationJobType }
 // resolver reads the preference off the account, so two members of one tenant
 // receive the same notice in the languages each of them chose.
 //
-// A member this fixture cannot address — one with no email identifier — is
-// skipped with a log line rather than failed: the type's default channels
-// include email, and the delivery pipeline answers a missing destination as a
-// failed channel, which would retry the whole job for one unaddressable member.
-// A dispatch that fails is joined into the returned error, so the job retries;
-// the per-recipient dedupe key of the dispatch makes the members already
-// submitted converge on one delivery job, and a retry writes no second message.
+// A member this fixture cannot address — one with no proved phone and no email
+// address — is skipped with a log line rather than failed: the type's default
+// channels include email and sms, and the delivery pipeline answers a missing
+// destination as a failed channel, which would retry the whole job for one
+// unaddressable member. A dispatch that fails is joined into the returned
+// error, so the job retries; the per-recipient dedupe key of the dispatch makes
+// the members already submitted converge on one delivery job, and a retry
+// writes no second message.
 func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.ProgressFn) (jobs.Result, error) {
 	id, ok := tenant.FromContext(ctx)
 	if !ok {
@@ -245,34 +383,66 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 		if !member.Active {
 			continue
 		}
-		to, ok, err := n.emailOf(ctx, member.Account)
+		plan, ok, err := n.notify(ctx, member.Account, string(job.ID))
 		if err != nil {
-			failures = append(failures, err)
+			failures = append(failures, fmt.Errorf("dispatching to %q: %w", member.Account, err))
 			continue
 		}
 		if !ok {
-			n.logger.Info(reviewNotificationModuleName+": a member has no email identifier, so the notice is skipped",
+			n.logger.Info(reviewNotificationModuleName+": a member has no proved phone and no email address, "+
+				"so the notice is skipped",
 				"tenant", string(id), "account", string(member.Account))
 			continue
 		}
-		_, err = n.dispatcher.Dispatch(ctx, notification.Dispatch{
-			TypeKey: reviewNotificationTypeKey,
-			Recipient: notification.Recipient{
-				Class:  notification.RecipientUser,
-				UserID: string(member.Account),
-			},
-			Locale:       string(n.resolver.LocaleFor(ctx, string(member.Account))),
-			Params:       map[string]any{"to": to},
-			OccurrenceID: string(job.ID),
-		})
-		if err != nil {
-			failures = append(failures, fmt.Errorf("dispatching to %q: %w", member.Account, err))
-		}
+		n.logger.Debug(reviewNotificationModuleName+": a notice was dispatched",
+			"tenant", string(id), "account", string(member.Account), "channels", plan.Channels)
 	}
 	if len(failures) > 0 {
 		return jobs.Result{}, fmt.Errorf("%s: %w", reviewNotificationModuleName, errors.Join(failures...))
 	}
 	return jobs.Result{}, nil
+}
+
+// notify addresses one recipient on the channels their account can be reached
+// on and submits one dispatch. It resolves the account's identifiers into a
+// plan, writes the recipient-aware channel set through the preference seam so
+// the delivery pipeline reads the same set when it consumes the job, and
+// submits the dispatch under occurrenceID.
+//
+// The second result is false when the account has neither a proved phone nor an
+// email address; the caller reports that as a skip, not a failure.
+func (n *reviewNotifier) notify(ctx context.Context, id authn.AccountID, occurrenceID string) (reviewNoticePlan, bool, error) {
+	identifiers, err := n.accounts.Identifiers(ctx, id)
+	if err != nil {
+		return reviewNoticePlan{}, false, fmt.Errorf("listing the identifiers of %q: %w", id, err)
+	}
+	plan, ok := planReviewNotice(identifiers)
+	if !ok {
+		return reviewNoticePlan{}, false, nil
+	}
+	effective, err := n.prefs.Effective(ctx, string(id), reviewNotificationTypeKey)
+	if err != nil {
+		return reviewNoticePlan{}, true, fmt.Errorf("reading the effective channels of %q: %w", id, err)
+	}
+	if wanted := pruneReviewChannels(effective, plan); len(wanted) != len(effective) {
+		if _, setErr := n.prefs.Set(ctx, string(id), reviewNotificationTypeKey, wanted); setErr != nil {
+			return reviewNoticePlan{}, true, fmt.Errorf("writing the addressable channels of %q: %w", id, setErr)
+		}
+	}
+	_, err = n.dispatcher.Dispatch(ctx, notification.Dispatch{
+		TypeKey: reviewNotificationTypeKey,
+		Recipient: notification.Recipient{
+			Class:  notification.RecipientUser,
+			UserID: string(id),
+		},
+		Locale:       string(n.resolver.LocaleFor(ctx, string(id))),
+		Params:       map[string]any{"to": plan.To},
+		OccurrenceID: occurrenceID,
+	})
+	if err != nil {
+		return reviewNoticePlan{}, true, fmt.Errorf("dispatching the notice of %q: %w", id, err)
+	}
+	return plan, true, nil
 }
 
 // membersOf lists every membership of a tenant, following the paging cursor the
@@ -292,21 +462,6 @@ func (n *reviewNotifier) membersOf(ctx context.Context, tenantID string) ([]auth
 		}
 		after = string(page[len(page)-1].Account)
 	}
-}
-
-// emailOf answers the email address an account is found by, and whether it has
-// one. The first email identifier is used; an account may carry at most one.
-func (n *reviewNotifier) emailOf(ctx context.Context, id authn.AccountID) (string, bool, error) {
-	identifiers, err := n.accounts.Identifiers(ctx, id)
-	if err != nil {
-		return "", false, fmt.Errorf("listing the identifiers of %q: %w", id, err)
-	}
-	for _, identifier := range identifiers {
-		if identifier.Kind == authn.IdentifierEmail && identifier.Value != "" {
-			return identifier.Value, true, nil
-		}
-	}
-	return "", false, nil
 }
 
 // wireReviewRecipient adds the layer that names the preference routes'
@@ -349,4 +504,90 @@ func reviewRecipientHandler(c *gin.Context) {
 			preferences.WithRecipient(c.Request.Context(), string(id.Account())))
 	}
 	c.Next()
+}
+
+// wireReviewControl mounts the review-only control route and opens it on the
+// authorization guard's declaration surface.
+//
+// The route is a review-assembly artefact and nothing more: the module that
+// mounts it is compiled only under the review build tag, so a baseline binary
+// carries neither the route nor this function. It is registered open because
+// the tenant control is an ordinary member's action, not a permission; the
+// handler answers for the signed-in caller. Both surfaces are optional in the
+// same way wireReviewRecipient's are: a run without the HTTP entry point has no
+// route to mount, and one without the guard has no declaration table to write.
+func wireReviewControl(reg *core.Registry, notifier *reviewNotifier) error {
+	router, err := core.Resolve[speedhttp.Router](reg)
+	if errors.Is(err, core.ErrMissingProvider) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("%s: taking up the HTTP entry point for the control: %w",
+			reviewNotificationModuleName, err)
+	}
+	endpoint, err := router.Endpoint(reviewNotificationEndpoint)
+	if err != nil {
+		return fmt.Errorf("%s: looking up the %q endpoint for the control: %w",
+			reviewNotificationModuleName, reviewNotificationEndpoint, err)
+	}
+	gate, err := core.Resolve[authz.Gate](reg)
+	switch {
+	case err == nil:
+		gate.Open(http.MethodPost, reviewNotificationControlPath)
+	case !errors.Is(err, core.ErrMissingProvider):
+		return fmt.Errorf("%s: taking up the route-declaration surface: %w",
+			reviewNotificationModuleName, err)
+	}
+	endpoint.Route(http.MethodPost, reviewNotificationControlPath, notifier.handleControl)
+	return nil
+}
+
+// handleControl answers the tenant control: one signed-in member asks the
+// review assembly to dispatch one notice to themselves.
+//
+// The caller is the recipient, so the target is their own account and their own
+// identifiers; the tenant comes from the request context the resolution layer
+// set. Membership is checked here rather than assumed: the route is open on the
+// permission guard, so nothing else would stop an account that does not belong
+// to the tenant from asking for a tenant-scoped dispatch. The response is 204:
+// the dispatch is enqueued, and the delivery is the pipeline's to settle.
+func (n *reviewNotifier) handleControl(c *gin.Context) {
+	ctx := c.Request.Context()
+	identity, ok := authn.FromContext(ctx)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "the review notice control requires a signed-in account"})
+		return
+	}
+	tenantID, ok := tenant.FromContext(ctx)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the review notice control requires a tenant"})
+		return
+	}
+	member, err := n.members.IsMember(ctx, identity.Account(), string(tenantID))
+	if err != nil {
+		n.logger.Error(reviewNotificationModuleName+": the control could not read the membership",
+			"tenant", string(tenantID), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "the membership could not be read"})
+		return
+	}
+	if !member {
+		c.JSON(http.StatusForbidden, gin.H{"error": "the review notice control is for the tenant's members"})
+		return
+	}
+	plan, ok, err := n.notify(ctx, identity.Account(), uuid.NewString())
+	if err != nil {
+		n.logger.Error(reviewNotificationModuleName+": the control could not dispatch the notice",
+			"tenant", string(tenantID), "account", string(identity.Account()), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "the review notice could not be dispatched"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"error": "the account has neither a proved phone number nor an email address to dispatch to",
+		})
+		return
+	}
+	n.logger.Info(reviewNotificationModuleName+": the review notice control dispatched a notice",
+		"tenant", string(tenantID), "account", string(identity.Account()), "channels", plan.Channels)
+	c.Status(http.StatusNoContent)
 }
