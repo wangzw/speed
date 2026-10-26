@@ -18,15 +18,22 @@ import { afterEach, beforeEach } from 'vitest'
 configure({ asyncUtilTimeout: 5_000 })
 
 beforeEach(() => {
-  // Pin the document's text to a metric-stable family. The browser tier's
+  // Pin the document's text to metric-stable families. The browser tier's
   // geometry assertions compare rendered widths; macOS resolves Arial
   // directly and the CI image installs fonts-liberation, whose Liberation
   // Sans is metric-compatible with Arial (and is what fontconfig aliases
   // Arial to). Without the pin, a platform's default sans-serif would move
   // the measurements between machines (see the browser-tier ADR's font
-  // consequence). The inline style outranks the theme's body rule; the
-  // cases render in en-US so no CJK fallback enters the measurement.
-  document.body.style.fontFamily = 'Arial, "Liberation Sans", sans-serif'
+  // consequence). The inline style outranks the theme's body rule.
+  //
+  // The header matrix renders in en-US and zh-CN, so the stack names the
+  // CJK families too. A Chinese glyph is full-width whichever of them
+  // resolves, so a zh-CN run measures a count of em boxes rather than a
+  // platform default's proportional metrics -- the same width on macOS
+  // (PingFang SC) and on the CI image, where Playwright's system
+  // dependencies provide the CJK font.
+  document.body.style.fontFamily =
+    'Arial, "Liberation Sans", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Zen Hei", sans-serif'
 })
 
 afterEach(() => {
