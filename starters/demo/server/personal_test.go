@@ -321,13 +321,13 @@ type fakeManager struct {
 	putBinding int
 	deleted    int
 
-	steps           *stepLog
-	bindingsErr     error
-	deleteBindErr   error
+	steps             *stepLog
+	bindingsErr       error
+	deleteBindErr     error
 	deleteBindingsErr error
-	deletedBindings int
-	deleteRoleErr   error
-	deletedRoles    int
+	deletedBindings   int
+	deleteRoleErr     error
+	deletedRoles      int
 }
 
 func newFakeManager(grants *fakeGrants) *fakeManager {

@@ -511,6 +511,7 @@ func (p *product) DeleteBindings(ctx context.Context, tenant string) error {
 	}
 	return p.afterWrite(ctx)
 }
+
 // refuseReservedRole refuses a role reserved to the platform domain in any other
 // domain. PlatformAdminRole is the one such role; TenantAdminRole is every
 // domain's own highest role and is not refused.
