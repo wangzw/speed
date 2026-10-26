@@ -810,6 +810,40 @@ function NavList({
 }
 
 /**
+ * The topbar layout's user-menu end of the header. Below md it is the
+ * header's second band, whatever the slot renders: a full-width basis
+ * takes it off the first band instead of letting a narrow user menu cram
+ * itself beside the actions and squeeze the brand to nothing. At md and up
+ * it stays the far end of the single row. A slot that resolves to nothing
+ * renders nothing -- neither the box nor a second flex line.
+ */
+function TopbarUserMenuSlot({
+  slot,
+  state,
+  stacked,
+}: {
+  readonly slot: AppShellNavSlot | undefined
+  readonly state: AppShellNavSlotState
+  readonly stacked: boolean
+}): ReactElement | null {
+  const content = renderNavSlot(slot, state)
+  if (!hasSlotContent(content)) {
+    return null
+  }
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        ...(stacked ? { flexBasis: '100%' } : {}),
+      }}
+    >
+      {content}
+    </Box>
+  )
+}
+
+/**
  * The responsive app-chrome shell: fixed header, responsive nav drawer,
  * `main` content region. See the module doc comment for the full
  * contract.
@@ -1074,7 +1108,10 @@ export function AppShell({
       aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
       aria-expanded={mobileOpen}
       onClick={() => setMobileOpen(!mobileOpen)}
-      sx={{ marginRight: 2 }}
+      // One spacing step, not two: at the narrowest supported viewports the
+      // toggle, the brand and the header actions share one band, and the
+      // extra step is what pushes the actions off it.
+      sx={{ marginRight: 1 }}
     >
       {mobileOpen ? <CloseIcon /> : <MenuIcon />}
     </IconButton>
@@ -1293,7 +1330,19 @@ export function AppShell({
               elevation={0}
               sx={{ color: 'text.primary' }}
             >
-              <Toolbar sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+              {/* Below md the header is arranged in at most two bands:
+                  the drawer trigger, the brand and the header actions on
+                  the first, the user menu on the second. The tighter
+                  gutter is what leaves the brand enough width to stay on
+                  the first band beside the actions at 375px; at md and up
+                  the toolbar keeps its theme gutter. */}
+              <Toolbar
+                sx={{
+                  flexWrap: 'wrap',
+                  rowGap: 1,
+                  ...(isDesktop ? {} : { px: 1 }),
+                }}
+              >
                 {mobileNavToggle}
                 {isDesktop && collapseToggleEnabled && (
                   <IconButton
@@ -1313,7 +1362,16 @@ export function AppShell({
                 )}
                 <Box
                   sx={{
-                    flexGrow: 1,
+                    // The brand is the one item that concedes width below
+                    // md: a zero flex basis keeps it out of the line
+                    // breaking, so it never pushes the header actions onto
+                    // a band of their own, and the remaining space is its
+                    // share (the host's own noWrap label ellipsizes inside
+                    // it rather than spilling over the controls). At md and
+                    // up it grows exactly as before.
+                    ...(isDesktop
+                      ? { flexGrow: 1 }
+                      : { flex: '1 1 0', overflow: 'hidden' }),
                     display: 'flex',
                     alignItems: 'center',
                     minWidth: 0,
@@ -1327,14 +1385,28 @@ export function AppShell({
                       display: 'flex',
                       alignItems: 'center',
                       flexWrap: 'wrap',
-                      gap: 1,
-                      marginRight: userMenu !== undefined ? 2 : 0,
+                      // Below md the actions share the first band with the
+                      // brand and the toggle, so their own spacing steps
+                      // shrink: half a step between controls and a half
+                      // step before the user menu. At md and up the bar has
+                      // the width for the full steps.
+                      gap: isDesktop ? 1 : 0.5,
+                      marginRight:
+                        userMenu !== undefined
+                          ? isDesktop
+                            ? 2
+                            : 0.5
+                          : 0,
                     }}
                   >
                     {renderNavSlot(headerActions, temporarySlotState)}
                   </Box>
                 )}
-                {renderNavSlot(userMenu, temporarySlotState)}
+                <TopbarUserMenuSlot
+                  slot={userMenu}
+                  state={temporarySlotState}
+                  stacked={!isDesktop}
+                />
               </Toolbar>
             </AppBar>
           )}

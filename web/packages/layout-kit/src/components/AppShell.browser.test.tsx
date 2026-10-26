@@ -20,6 +20,9 @@ import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import { page, userEvent } from 'vitest/browser'
+import Button from '@mui/material/Button'
+import IconButton from '@mui/material/IconButton'
+import Typography from '@mui/material/Typography'
 import { drawerClasses } from '@mui/material/Drawer'
 import { toolbarClasses } from '@mui/material/Toolbar'
 import { SidePanel } from '@speed/ui-kit'
@@ -745,6 +748,146 @@ describe('AppShell sidebar layout in Chromium', () => {
     expect(panelRect.right).toBeCloseTo(window.innerWidth, 0)
     expect(panelRect.height).toBeCloseTo(VIEWPORT_HEIGHT, 0)
   })
+})
+
+/**
+ * The narrow header: the brand and the six controls the tenant-facing
+ * chrome puts in the app bar (notification bell, language switch, colour
+ * mode, console entry, tenant switcher, account avatar), at their real
+ * sizes. The labels are host content -- data in this fixture, not copy
+ * AppShell renders -- so they stand in for the demo's own translated
+ * strings, as the surrounding host-content fixtures do.
+ */
+const NARROW_HEADER_LABELS = {
+  brand: 'Speed demo',
+  notifications: 'Notifications',
+  language: 'Change language',
+  colourMode: 'Switch to dark theme',
+  console: 'Console',
+  tenant: 'Acme Corporation',
+  account: 'Ada Lovelace',
+} as const
+
+/** One narrow-header control in its icon form: the glyph is decorative,
+ * and the accessible name is what the shell has to keep reachable. */
+function GlyphButton({
+  label,
+  glyph,
+}: {
+  readonly label: string
+  readonly glyph: string
+}): ReactElement {
+  return (
+    <IconButton color="inherit" aria-label={label}>
+      <span aria-hidden="true">{glyph}</span>
+    </IconButton>
+  )
+}
+
+/** The app bar the tenant-facing shell fills: brand plus the six controls. */
+function narrowHeaderShell(): ReactElement {
+  return (
+    <AppShell
+      navItems={NAV_ITEMS}
+      header={
+        <Typography
+          data-testid="header-brand"
+          noWrap
+          variant="h6"
+          component="div"
+          sx={{ color: 'inherit', fontWeight: 600 }}
+        >
+          {NARROW_HEADER_LABELS.brand}
+        </Typography>
+      }
+      headerActions={
+        <>
+          <GlyphButton label={NARROW_HEADER_LABELS.notifications} glyph="N" />
+          <GlyphButton label={NARROW_HEADER_LABELS.language} glyph="L" />
+          <GlyphButton label={NARROW_HEADER_LABELS.colourMode} glyph="C" />
+          <Button color="inherit" href="/console">
+            {NARROW_HEADER_LABELS.console}
+          </Button>
+        </>
+      }
+      userMenu={
+        <>
+          <Button color="inherit" variant="outlined">
+            {NARROW_HEADER_LABELS.tenant}
+          </Button>
+          <GlyphButton label={NARROW_HEADER_LABELS.account} glyph="A" />
+        </>
+      }
+    >
+      <div style={{ height: 240 }}>content</div>
+    </AppShell>
+  )
+}
+
+/** The tolerance a pair of controls on one band may differ by. The
+ * Toolbar centers its items, so every control on a row shares a vertical
+ * center exactly; members of another row are a whole row height away. The
+ * tolerance only absorbs subpixel rounding. */
+const ROW_CENTER_TOLERANCE_PX = 4
+
+/**
+ * The number of vertical bands the header's content occupies: the brand
+ * and every control, clustered by their vertical center. The brand is
+ * counted because a brand alone on a band is still a band the header
+ * takes, which is exactly the arrangement this invariant rules out.
+ */
+function headerBands(): number {
+  const header = screen.getByRole('banner')
+  const toolbar = header.querySelector<HTMLElement>(`.${toolbarClasses.root}`)
+  if (toolbar === null) {
+    throw new Error('AppShell: the banner holds no Toolbar')
+  }
+  const centers = [
+    ...toolbar.querySelectorAll<HTMLElement>(
+      'button, a, [data-testid="header-brand"]',
+    ),
+  ]
+    .map((element) => element.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 && rect.height > 0)
+    .map((rect) => rect.top + rect.height / 2)
+    .sort((left, right) => left - right)
+
+  let bands = 0
+  let bandCenter = Number.NEGATIVE_INFINITY
+  for (const center of centers) {
+    if (center - bandCenter > ROW_CENTER_TOLERANCE_PX) {
+      bands += 1
+      bandCenter = center
+    }
+  }
+  return bands
+}
+
+describe('AppShell narrow header rows in Chromium', () => {
+  for (const width of [375, 430] as const) {
+    it(`keeps the tenant header within two rows at ${width}px with every control reachable`, async () => {
+      await page.viewport(width, VIEWPORT_HEIGHT)
+      renderShell(narrowHeaderShell())
+
+      expect(headerBands(), `bands at ${width}`).toBeLessThanOrEqual(2)
+
+      // Every control stays in the accessibility tree with its name: the
+      // role queries skip hidden elements, so a control that was folded
+      // away, aria-hidden or made untabbable would fail here.
+      for (const name of [
+        NARROW_HEADER_LABELS.notifications,
+        NARROW_HEADER_LABELS.language,
+        NARROW_HEADER_LABELS.colourMode,
+        NARROW_HEADER_LABELS.tenant,
+        NARROW_HEADER_LABELS.account,
+      ]) {
+        expect(screen.getByRole('button', { name })).toBeInTheDocument()
+      }
+      expect(
+        screen.getByRole('link', { name: NARROW_HEADER_LABELS.console }),
+      ).toBeInTheDocument()
+    })
+  }
 })
 
 describe('AppShell focus order in Chromium', () => {  it('makes the skip link the first Tab stop and focuses main when activated', async () => {
