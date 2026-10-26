@@ -154,6 +154,11 @@ func TestTheCapabilityInterfacesHoldTheirMethodSets(t *testing.T) {
 			[]string{"IsMember func(context.Context, string, string) (bool, error)"},
 		},
 		{
+			"WriteGuard",
+			interfaceMethods(t, (*WriteGuard)(nil)),
+			[]string{"Denied func(context.Context, string, authz.WriteOp) (bool, error)"},
+		},
+		{
 			"Manager",
 			interfaceMethods(t, (*Manager)(nil)),
 			[]string{
