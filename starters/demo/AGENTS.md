@@ -519,9 +519,12 @@ age rather than the session's assurance that is refused.
 
 Seeding is a step of its own rather than something `serve` does on its way up,
 because a deployment nobody may administer until somebody says so is the posture
-this skeleton ships. On `sqlite-memory` the step achieves nothing — that stack's
-database is gone with the process that opened it, and seed and serve are two
-processes — which is why the stack to sign in on is `sqlite`.
+this skeleton ships. `serve` requires the system tenant the seed registers, so
+the seed must run first on every stack. On `sqlite-memory` the step reaches a
+later serve only if both commands point at the same database file: that stack's
+`:memory:` locator belongs to the process that opens it, and seed and serve are
+two processes. The suite therefore gives the stack a file locator; the stack to
+sign in on is `sqlite`.
 
 `version` answers with the program's version and assembles nothing:
 
@@ -922,7 +925,12 @@ names the fixed part of that wiring, and no configuration file repeats it:
   consults the checker before binding `platform-admin` in the platform domain,
   so a serve assembly names this module or does not start. The membership guard
   stands beside the policy module's own: the account module asks every guard and
-  any refusal refuses the removal.
+  any refusal refuses the removal. Account deletion does not go through that
+  call, so it consults neither guard and can leave an ordinary tenant with no
+  tenant-admin binding until a new one is written. The personal domain is
+  recognised by the identifier prefix the host derives (`personal-`), and that
+  prefix is this host's policy: the platform passes plain tenant identifiers and
+  defines no tenant kind.
 - **The policy write guard** (`authz.WriteGuard`) refuses every role, grant and
   binding write in a domain whose identifier starts with `personal-`. It is a
   module of its own (`host.tenancy.policy-write`, named in `baselineServe`)
@@ -1098,8 +1106,9 @@ Under every stack:
   a tenant with no administrator, and one pair declared twice fail the command
   before it writes anything, with the entry named. The system tenant is
   registered in the module's `Init`, before the policy module's `Start` checks
-  the roster for it; naming `system` under `seed.tenants` is legal and writes its
-  administrators like any other tenant's. The administration roles are created,
+  the roster for it; it must not be listed under `seed.tenants`, because the
+  command writes that row itself and an entry naming it would claim an
+  administrator for a row the command already owns. The administration roles are created,
   their grants are written through the seeding surface (`authz.Seeder`), and they
   are then marked builtin in every domain they exist in: the management surface
   refuses to rewrite them, delete them or change their grants, because deleting
@@ -1208,8 +1217,9 @@ resolves `pkg` from its released version, so its `go.mod` and `go.sum` have to
 carry every dependency the imports reach.
 
 The tests build the program once and run it as a real child process: they run
-`migrate` and `serve` on the `sqlite-memory` stack, read the probes and the
-merged document, and read two of the identity system's own routes to hold that
-the baseline is assembled and not only the infrastructure it began with. The
-`sqlite-memory` stack needs nothing installed; the other four need the backends
-`compose.yaml` brings up and are not exercised by the suite.
+`seed` and then `serve` on the `sqlite-memory` stack, with a file locator so the
+two processes share one database, read the probes and the merged document, and
+read two of the identity system's own routes to hold that the baseline is
+assembled and not only the infrastructure it began with. The `sqlite-memory`
+stack needs nothing installed; the other four need the backends `compose.yaml`
+brings up and are not exercised by the suite.
