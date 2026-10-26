@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, it } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { page } from 'vitest/browser'
 import { PermissionsPage } from './PermissionsPage.js'
 import { renderWithProviders } from '../test-utils/render.js'
@@ -18,6 +19,7 @@ import type {
   ConsolePermission,
   ConsoleRole,
 } from './operations.js'
+import enUS from './locales/en-US.json' with { type: 'json' }
 
 const FLOOR_WIDTHS = [600, 900, 1200] as const
 
@@ -87,4 +89,79 @@ describe('PermissionsPage horizontal overflow in Chromium', () => {
       await expectNoHorizontalOverflow()
     })
   }
+})
+
+/**
+ * A role name and a permission code are identifiers with no length bound in
+ * the console's contract: a tenant names its own roles, and the catalog
+ * spells each permission as `namespace.resource.action`. At the sm floor
+ * the roles table shows its identity, the actions, and nothing else, so an
+ * unbounded identifier is what would push the row actions off the table
+ * before the scroll fallback appears.
+ */
+const LONG_ROLE = 'tenant-operations-reviewer-with-a-long-unbroken-name-0001'
+const LONG_DESCRIPTION_KEY =
+  'role.a-long-description-key-that-does-not-fit-in-the-column'
+const LONG_RESOURCE = 'a-very-long-resource-name-that-keeps-going'
+const LONG_ACTION = 'an-equally-long-action-name'
+const LONG_PERMISSION = `${LONG_RESOURCE}.${LONG_ACTION}`
+
+const LONG_ROLES: readonly ConsoleRole[] = [
+  {
+    tenant: 'acme',
+    role: LONG_ROLE,
+    builtin: false,
+    description_key: LONG_DESCRIPTION_KEY,
+    created_at: '2026-10-15T12:00:00Z',
+  },
+]
+
+const LONG_PERMISSIONS: readonly ConsolePermission[] = [
+  { permission: LONG_PERMISSION, description: '' },
+]
+
+const LONG_GRANTS: readonly ConsoleGrant[] = [
+  {
+    tenant: 'acme',
+    role: LONG_ROLE,
+    resource: LONG_RESOURCE,
+    action: LONG_ACTION,
+    created_at: '2026-10-15T12:00:00Z',
+  },
+]
+
+describe('PermissionsPage unbounded identifiers in Chromium', () => {
+  it('keeps every table inside each tier floor for a long role and permission', async () => {
+    await page.viewport(1200, 900)
+    seedTenant('acme')
+
+    const operations = createConsoleOperations(
+      makeConsoleBackend({
+        listTenants: () => Promise.resolve(TENANTS),
+        listPermissions: () => Promise.resolve(LONG_PERMISSIONS),
+        listRoles: () => Promise.resolve(LONG_ROLES),
+        listGrants: () => Promise.resolve(LONG_GRANTS),
+        listBindings: () => Promise.resolve([]),
+      }),
+    )
+    renderWithProviders(<PermissionsPage />, { operations, language: 'en-US' })
+
+    await screen.findByText(LONG_ROLE)
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', {
+        name: enUS.permissions.roles.manageGrantsAria.replace(
+          '{{role}}',
+          LONG_ROLE,
+        ),
+      }),
+    )
+    // The code appears in the catalog and in the selected role's grant
+    // row; both tables must be settled before the widths are measured.
+    await screen.findAllByText(LONG_PERMISSION)
+
+    // The helper pins each table's own containment box to the sm, md and
+    // lg floors and requires the columns visible in that tier to fit.
+    await expectNoHorizontalOverflow()
+  })
 })

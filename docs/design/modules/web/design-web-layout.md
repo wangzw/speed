@@ -210,7 +210,7 @@ graph TD
 | 详情页骨架（主栏与侧栏） | 已实现 | `web/packages/console-ui/src/internal/layout.tsx` `DetailLayout`；`web/packages/console-ui/src/TenantDetailPage.tsx` `TenantDetailPage` |
 | 设置页骨架（二级导航与表） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 仪表盘骨架 | 已实现 | `web/packages/console-ui/src/DashboardPage.tsx` `DashboardPage` |
-| 数据表各断点档的可见列宽度之和不超过该档下限 | 未实现 | — |
+| 数据表各断点档的可见列宽度之和不超过该档下限 | 已实现 | `web/packages/console-ui/test-utils/browser-overflow.ts` `TIER_FLOORS`、`expectNoHorizontalOverflow`（把每张表的容器钉到各档下限，断言该档可见列不溢出）；`web/packages/ui-kit/src/components/DataTable.tsx` `PRIMARY_COLUMN_MAX_WIDTH`、`LONG_TEXT_COLUMN_MAX_WIDTH`、`primaryColumnMaxWidthSx`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`（角色名与权限码取主辨识上限，角色说明取长文本上限，目录的权限码上限只约束标识行） |
 | 数据表的列优先级降级 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnVisibilitySx` |
 | 数据表超宽的容器内滚动兜底 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTable` |
 | 侧边面板的层级与视口宽度档 | 已实现 | `web/packages/ui-kit/src/components/SidePanel.tsx` `SidePanel` |

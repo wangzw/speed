@@ -82,6 +82,7 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
+  primaryColumnMaxWidthSx,
   useWriteFeedback,
   visuallyHiddenSx,
 } from '@speed/ui-kit'
@@ -132,10 +133,24 @@ const TENANT_HINT_ID = 'permissions-tenant-hint'
  * table share. The description arrives already rendered in the request's
  * language and is shown as received; an empty one leaves the code alone.
  */
-function PermissionLabel({ entry }: { readonly entry: ConsolePermission }) {
+function PermissionLabel({
+  entry,
+  capIdentity = false,
+}: {
+  readonly entry: ConsolePermission
+  readonly capIdentity?: boolean
+}) {
   return (
     <Box>
-      <Typography variant="body2" noWrap>
+      <Typography
+        variant="body2"
+        noWrap
+        // A table cell caps its identity line alone when prose stacks
+        // beneath it (the description below), so the cap never squeezes
+        // the wrapped description. The grant picker's menu is not a table
+        // cell and keeps the code's full width.
+        sx={capIdentity ? primaryColumnMaxWidthSx : undefined}
+      >
         {entry.permission}
       </Typography>
       {entry.description !== '' && (
@@ -606,6 +621,13 @@ export function PermissionsPage({
       header: t('permissions.roles.column.role'),
       cellWrap: 'nowrap',
       cellFullValue: (role) => role.role,
+      // The role name is the table's primary identity and has no length
+      // bound in the console's contract (a tenant names its own roles).
+      // The shared whole-cell cap -- which counts the copy control --
+      // keeps the row actions on screen at the sm floor, where this
+      // column and the actions are all the roles table shows; the complete
+      // name stays on the cell title and copy control.
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (role) => <Typography variant="body2">{role.role}</Typography>,
     },
     {
@@ -623,6 +645,11 @@ export function PermissionsPage({
       cellWrap: 'nowrap',
       cellFullValue: (role) =>
         role.description_key === '' ? undefined : role.description_key,
+      // A long-text column beside the identity: the flat cap bounds the
+      // rendered description (or the raw message key) at every tier, so
+      // the `lg` tier's total stays within its floor. The complete value
+      // stays on the cell title and copy control.
+      contentMaxWidth: LONG_TEXT_COLUMN_MAX_WIDTH,
       // The key names an entry in the host's own bundle, so only the host
       // can render it; without a resolver the raw key stands rather than an
       // empty cell.
@@ -744,6 +771,12 @@ export function PermissionsPage({
       header: t('permissions.grants.column.permission'),
       cellWrap: 'nowrap',
       cellFullValue: grantLabel,
+      // The permission code is this table's primary identity. The shared
+      // whole-cell cap keeps it and the revoke control inside the `sm`
+      // floor, where the grant table shows only this column and the
+      // actions; the complete code stays on the cell title and copy
+      // control.
+      contentMaxWidth: PRIMARY_COLUMN_MAX_WIDTH,
       cell: (grant) => grantLabel(grant),
     },
   ]
@@ -804,9 +837,12 @@ export function PermissionsPage({
       header: t('permissions.catalog.column.permission'),
       // The code is the column's unbroken primary text; the description
       // beneath it wraps, so the cell's nowrap policy stops at the code.
+      // The column declares no whole-cell cap -- that would squeeze the
+      // wrapped description -- so the identity line alone carries the
+      // shared primary cap (see PermissionLabel).
       cellWrap: 'nowrap',
       cellFullValue: (entry) => entry.permission,
-      cell: (entry) => <PermissionLabel entry={entry} />,
+      cell: (entry) => <PermissionLabel entry={entry} capIdentity />,
     },
   ]
 
