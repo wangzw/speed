@@ -1102,22 +1102,6 @@ func assertPersonalType(t *testing.T, recorder *httptest.ResponseRecorder, statu
 
 // assertProblemType holds one answer's status and its problem type, the type
 // given whole rather than under this surface's workspace prefix.
-func assertProblemType(t *testing.T, recorder *httptest.ResponseRecorder, status int, want string) {
-	t.Helper()
-	if recorder.Code != status {
-		t.Fatalf("the ensure answered %d, want %d:\n%s", recorder.Code, status, recorder.Body.String())
-	}
-	var problem struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
-		t.Fatalf("the answer is not JSON: %v\n%s", err, recorder.Body.String())
-	}
-	if problem.Type != want {
-		t.Errorf("the answer carries type %q, want %q", problem.Type, want)
-	}
-}
-
 // The stand-ins the wiring case hands the product. The registry resolves an
 // optional capability by what a module provides, so each one is a module of its
 // own supplying its instance.

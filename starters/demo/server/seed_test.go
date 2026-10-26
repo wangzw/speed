@@ -675,18 +675,22 @@ type orderManager struct {
 func (m *orderManager) Roles(context.Context, string) ([]authz.RoleRecord, error) {
 	return slices.Clone(m.roles), nil
 }
+
 func (m *orderManager) PutRole(_ context.Context, r authz.RoleRecord) error {
 	m.order = append(m.order, "role:"+string(r.Role))
 	m.roles = append(m.roles, r)
 	return nil
 }
+
 func (m *orderManager) MarkRoleBuiltin(_ context.Context, _ string, role authz.Role) error {
 	m.order = append(m.order, "mark:"+string(role))
 	return nil
 }
+
 func (m *orderManager) BindingsOf(context.Context, string, string) ([]authz.Binding, error) {
 	return nil, nil
 }
+
 func (m *orderManager) PutBinding(_ context.Context, b authz.Binding) error {
 	m.order = append(m.order, "bind:"+b.Account)
 	return nil

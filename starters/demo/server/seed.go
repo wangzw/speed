@@ -406,10 +406,10 @@ func seedModule() core.Module {
 				return err
 			}
 			var in seedInput
-			if err := reader.Decode(seedNamespace, &in); err != nil {
+			if err = reader.Decode(seedNamespace, &in); err != nil {
 				return err
 			}
-			if err := validateSeedInput(in); err != nil {
+			if err = validateSeedInput(in); err != nil {
 				return err
 			}
 			roster, err := core.Resolve[tenant.Catalog](reg)
