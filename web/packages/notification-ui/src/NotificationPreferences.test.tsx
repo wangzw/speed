@@ -275,6 +275,54 @@ describe('NotificationPreferences', () => {
     expect(channelCheckbox('billing.invoice.due', 'email')).toBeEnabled()
   })
 
+  it('ignores a toggle on another row while a write is in flight', async () => {
+    const gate = deferredResponse()
+    const types: TypeRow[] = [
+      { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
+      { key: 'billing.invoice.due', unsubscribable: true, channels: ['in_app'] },
+    ]
+    const base = preferencesResponder(types)
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'PUT' && call.path.includes('demo.thing.happened')) {
+        return gate.promise.then(() => base(call))
+      }
+      return base(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(
+      withPresence(['email'], <NotificationPreferences />),
+    )
+    await screen.findByText('billing.invoice.due')
+
+    await userEvent.click(channelCheckbox('demo.thing.happened', 'email'))
+    await waitFor(() =>
+      expect(channelCheckbox('demo.thing.happened', 'email')).toBeDisabled(),
+    )
+
+    // The untouched row is not merely painted as disabled: operating it
+    // while the first write is in flight starts no second write, so the
+    // first attempt's result is the only one the scope can report.
+    await userEvent.click(channelCheckbox('billing.invoice.due', 'email'))
+    expect(
+      rig.calls.some(
+        (call) =>
+          call.method === 'PUT' &&
+          call.path ===
+            '/api/v1/notifications/preferences/billing.invoice.due/email',
+      ),
+    ).toBe(false)
+    expect(channelCheckbox('billing.invoice.due', 'email')).not.toBeChecked()
+
+    gate.resolve(jsonResponse(200, {}))
+    await waitFor(() =>
+      expect(channelCheckbox('demo.thing.happened', 'email')).toBeEnabled(),
+    )
+    // The blocked click left nothing behind: the second row still shows the
+    // server's answer and the scope ran exactly one attempt.
+    expect(channelCheckbox('billing.invoice.due', 'email')).not.toBeChecked()
+    expect(rig.calls.filter((call) => call.method === 'PUT')).toHaveLength(1)
+  })
+
   it('offers the in-app column alone when no presence provider is mounted', async () => {
     mount([
       { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
