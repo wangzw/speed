@@ -24,8 +24,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { writeReviewConfig, type ReviewConfig } from './config'
+import { startDNSStub, type DNSStub } from './dns-stub'
 import {
+  enterpriseIdentityProviderRecordName,
+  startEnterpriseIdentityProvider,
   startIdentityProvider,
+  type EnterpriseIdentityProvider,
   type IdentityProvider,
 } from './identity-provider'
 import {
@@ -291,6 +295,27 @@ async function startSocialIdentityProvider(
   throw lastError
 }
 
+/**
+ * Start the enterprise journey's local identity provider with the same fresh
+ * pair retry the social provider uses: a process can take one of the two ports
+ * between the provider's probe and its bind, and a retry re-allocates the
+ * listeners while the certificate files are overwritten in place.
+ */
+async function startEnterpriseProvider(
+  dir: string,
+): Promise<EnterpriseIdentityProvider> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= MAX_BIND_ATTEMPTS; attempt += 1) {
+    try {
+      return await startEnterpriseIdentityProvider({ dir })
+    } catch (error) {
+      lastError = error
+      if (!looksLikePortTaken(error)) throw error
+    }
+  }
+  throw lastError
+}
+
 /** A started server. */
 export interface ReviewServer {
   /** The review binary that was built. */
@@ -309,6 +334,19 @@ export interface ReviewServer {
    * this server's spec opted into it; undefined otherwise.
    */
   readonly identityProvider?: IdentityProvider
+  /**
+   * The enterprise journey's local OpenID Connect provider, when this server's
+   * spec opted into it; undefined otherwise. Its fixed user's address is on the
+   * test domain the DNS stub answers for.
+   */
+  readonly enterpriseIdentityProvider?: EnterpriseIdentityProvider
+  /**
+   * The DNS stub that answers TXT queries for the one record name on the
+   * enterprise journey's test domain, when this server's spec opted into it;
+   * undefined otherwise. A spec publishes the record the product renders
+   * through `setTXT`, the way an operator publishes it at the domain's DNS.
+   */
+  readonly dnsStub?: DNSStub
   /** Everything the child wrote to standard output, line by line. */
   readonly log: ProcessLog
   /** Everything the child wrote to standard error, joined. */
@@ -363,6 +401,16 @@ export interface ReviewServer {
  * environment the social methods run against, not a request the fixture answers
  * on the product's behalf. Every other spec runs without it and keeps the
  * template's public provider defaults.
+ *
+ * The enterprise journey opts in separately, with `enterpriseSSO`. Only then
+ * does the fixture start the enterprise provider — the same OIDC machinery with
+ * its own issuer, certificate material and one fixed user whose address is on
+ * the test domain — and the UDP DNS stub beside it. The configuration the
+ * binary reads names the stub as `authn.sso.dns-resolver`, the provider's CA as
+ * `authn.sso.oidc-ca-file` and turns the loopback relaxation on; the stub
+ * answers TXT queries for the one record name and NXDOMAINs everything else.
+ * The social option is untouched by this one: a spec may turn on either, both,
+ * or neither.
  */
 export async function startReviewServer(
   options: {
@@ -371,6 +419,7 @@ export async function startReviewServer(
     readonly seedInvitee?: boolean
     readonly seedSocialAccount?: boolean
     readonly socialIdentityProvider?: boolean
+    readonly enterpriseSSO?: boolean
     readonly recentWindow?: string
     readonly seedSmsRollout?: boolean
     readonly schedulerTick?: string
@@ -381,6 +430,8 @@ export async function startReviewServer(
   const dir = await mkdtemp(join(tmpdir(), 'speed-e2e-server-'))
   let child: ChildProcess | undefined
   let identityProvider: IdentityProvider | undefined
+  let enterpriseProvider: EnterpriseIdentityProvider | undefined
+  let dnsStub: DNSStub | undefined
   const log = new ProcessLog()
   const stderrLines: string[] = []
   let stopped = false
@@ -430,6 +481,24 @@ export async function startReviewServer(
             issuer: identityProvider.issuer,
             rootCAFile: identityProvider.rootCAPath,
           }
+    // The enterprise journey's fixtures are the environment its own seams
+    // need: the provider answers on loopback, and the DNS stub is the one name
+    // server a domain-ownership proof can reach. They start before the seed for
+    // the same reason as the social provider: a configured CA file that cannot
+    // be read stops the start, so the order is load-bearing.
+    if (options.enterpriseSSO === true) {
+      enterpriseProvider = await startEnterpriseProvider(dir)
+      dnsStub = await startDNSStub({
+        recordName: enterpriseIdentityProviderRecordName,
+      })
+    }
+    const ssoProvider =
+      enterpriseProvider === undefined || dnsStub === undefined
+        ? undefined
+        : {
+            dnsResolver: dnsStub.address,
+            rootCAFile: enterpriseProvider.rootCAPath,
+          }
     // Seed with a provisional pair: the seed command does not listen, and the
     // serve attempt below writes its own configuration with the final ports.
     const [seedBackend, seedOps] = await freePorts(2)
@@ -445,6 +514,7 @@ export async function startReviewServer(
       seedInvitee: options.seedInvitee,
       seedSocialAccount: options.seedSocialAccount,
       socialProvider,
+      ssoProvider,
       recentWindow: options.recentWindow,
       seedSmsRollout: options.seedSmsRollout,
       schedulerTick: options.schedulerTick,
@@ -561,6 +631,8 @@ export async function startReviewServer(
       }
       await terminate()
       await identityProvider?.stop()
+      await enterpriseProvider?.stop()
+      await dnsStub?.stop()
       if (options.keep !== true) {
         await rm(dir, { recursive: true, force: true })
       }
@@ -575,6 +647,8 @@ export async function startReviewServer(
       opsPort: reviewConfig.opsPort,
       config: reviewConfig,
       identityProvider,
+      enterpriseIdentityProvider: enterpriseProvider,
+      dnsStub,
       log,
       get stderr(): string {
         return stderrLines.join('\n')
@@ -600,6 +674,8 @@ export async function startReviewServer(
     process.removeListener('exit', reapOnExit)
     await terminate()
     await identityProvider?.stop()
+    await enterpriseProvider?.stop()
+    await dnsStub?.stop()
     await rm(dir, { recursive: true, force: true })
     throw error
   }

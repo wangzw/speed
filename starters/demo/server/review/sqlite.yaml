@@ -90,6 +90,19 @@ authn:
     wechat-web:
       app-id: "review-wechat-web-app"
       app-secret: "review-wechat-web-secret"
+  # REVIEW: the enterprise SSO capability's outbound seams. The review build
+  # assembles authn.sso.oidc, and a spec that drives the enterprise journey
+  # points these three items at the local fixtures the end-to-end harness
+  # starts: dns-resolver at the UDP stub that answers the test domain's TXT
+  # name, oidc-ca-file at the CA that signed the local provider's certificate,
+  # and allow-private-egress on because that provider answers on loopback.
+  # They are the deployment defaults here: the relaxation off and both seams
+  # empty. A deployment keeps them that way — the TXT lookup takes the system
+  # resolver and the enterprise OIDC egress trusts the system roots alone.
+  sso:
+    allow-private-egress: false
+    dns-resolver: ""
+    oidc-ca-file: ""
   token:
     signing-key-file: var/token-signing-key.pem
   mfa:

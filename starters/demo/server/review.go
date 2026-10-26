@@ -17,12 +17,13 @@ package main
 // external account or a service outside the deployment stack (see main.go). A
 // review of the login surface needs the other kinds on screen, so this build
 // adds them with values that start and a sender that reaches no network. None
-// of it is part of the baseline: the four social methods, the SMS family with
-// its template management page and the SMS second factor are imported here and
-// nowhere else, the review modules are a second roster the serve command names
-// beside the baseline, and a default build compiles neither. The configuration
-// the run reads is a copy outside testdata, too — server/review/sqlite.yaml — so
-// the six baselines under testdata stay exactly as they are.
+// of it is part of the baseline: the four social methods, the enterprise OIDC
+// login method, the SMS family with its template management page and the SMS
+// second factor are imported here and nowhere else, and the review modules are
+// a second roster the serve command names beside the baseline. A default build
+// compiles none of it. The configuration the run reads is a copy outside
+// testdata, too — server/review/sqlite.yaml — so the six baselines under
+// testdata stay exactly as they are.
 //
 // The sender is a carrier module built through the same sms.NewModule a real
 // carrier uses: it delivers the Sender and Provider seams exclusively, so the
@@ -72,6 +73,7 @@ import (
 	wechatweb "github.com/vislake/speed/pkg/authn/login/wechatweb"
 	mfasmssms "github.com/vislake/speed/pkg/authn/mfa/sms"
 	authnsms "github.com/vislake/speed/pkg/authn/sms"
+	ssooidc "github.com/vislake/speed/pkg/authn/sso/oidc"
 	smsadmin "github.com/vislake/speed/pkg/sms/admin"
 	smsregistry "github.com/vislake/speed/pkg/sms/registry"
 )
@@ -115,6 +117,13 @@ var reviewModules = []string{
 	githublogin.ModuleName,
 	wechatmp.ModuleName,
 	wechatweb.ModuleName,
+	// The enterprise OIDC login method: an enterprise provider's
+	// authorization-code flow as a first factor, beside the social methods. The
+	// providers are data in the baseline's authn.sso register, and the
+	// authn.sso items review/sqlite.yaml carries point this method's egress at
+	// the local fixtures. The baseline leaves the method out because a
+	// deployment that has an enterprise identity provider adds it.
+	ssooidc.ModuleName,
 	authnsms.ModuleName,
 	smsregistry.ModuleName,
 	smslogin.ModuleName,

@@ -93,6 +93,20 @@ remembering to run it.
   every journey. A spec never answers the provider's requests; it reads the
   page and clicks. The provider's own page copy is the fixture's constant, not
   a product locale string.
+- **The enterprise journey backs its own fixtures**
+  (`fixtures/identity-provider.ts`, `fixtures/dns-stub.ts`). A spec that drives
+  that journey opts its server in with `test.use({ enterpriseSSO: true })`;
+  only then does the server fixture start the enterprise provider and the UDP
+  DNS stub. The review configuration's `authn.sso` block is pointed at them:
+  `dns-resolver` at the stub's loopback address, `oidc-ca-file` at the CA the
+  provider minted, and `allow-private-egress` on so the restricted egress
+  client can reach the provider on loopback. The stub answers TXT queries for
+  the one record name on the test domain and NXDOMAINs every other name, type
+  and class; nothing is forwarded. A spec publishes the record the product
+  renders through the stub's `setTXT`, which is the operator's own act at the
+  domain's DNS. Every other spec keeps the block's empty defaults — the system
+  resolver and the system roots — which is what a deployment keeps. This opt-in
+  is separate from `socialIdentityProvider`.
 
 ## The sanctioned non-UI reads
 

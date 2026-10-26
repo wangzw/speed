@@ -17,6 +17,15 @@
  * and the Google block gains the issuer, the loopback switch and the CA file
  * that point the method at it. Without that input the template's public
  * defaults stand. The credentials in the template reach no provider either way.
+ *
+ * The enterprise SSO seams work the same way. The template leaves the loopback
+ * relaxation off and both outbound seams empty -- the deployment defaults: the
+ * system resolver and the system roots. When the server fixture starts the
+ * enterprise journey's local fixtures it passes `ssoProvider`, and this file
+ * points all three at them: the DNS stub's resolver address, the CA file the
+ * enterprise provider minted, and the loopback switch the restricted egress
+ * client needs to reach that provider. Without that input the template stands,
+ * and a deployment keeps it as it is.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -67,6 +76,19 @@ export interface ReviewConfigInput {
    */
   readonly socialProvider?: {
     readonly issuer: string
+    readonly rootCAFile: string
+  }
+  /**
+   * Point the enterprise SSO seams at the local fixtures. The end-to-end
+   * harness starts a second OpenID Connect provider and a UDP DNS stub for a
+   * spec that opts in, and passes the stub's resolver address and the CA file
+   * the provider minted here. An absent value leaves the template's empty
+   * values and the relaxation off, which is the deployment default: the TXT
+   * lookup takes the system resolver and the enterprise OIDC egress trusts the
+   * system roots alone.
+   */
+  readonly ssoProvider?: {
+    readonly dnsResolver: string
     readonly rootCAFile: string
   }
   /**
@@ -352,6 +374,28 @@ export async function writeReviewConfig(
       allow-loopback: true
       root-ca-file: ${quoted(input.socialProvider.rootCAFile)}`,
       'google provider defaults',
+    )
+  }
+  // The enterprise journey's fixtures are a separate opt-in with their own
+  // seams. The template states the deployment defaults -- the loopback
+  // relaxation off and both seams empty -- and the three below replace the
+  // block whole when the server fixture starts the local provider and the DNS
+  // stub: the stub's resolver address answers the test domain's TXT name, the
+  // CA file signed the provider's certificate, and the restricted egress
+  // client needs the relaxation to reach the provider on loopback. A template
+  // that lost the block fails here rather than silently leaving the system
+  // resolver and roots in place while the journey expects the fixtures.
+  if (input.ssoProvider !== undefined) {
+    const ssoDefaults = `    allow-private-egress: false
+    dns-resolver: ""
+    oidc-ca-file: ""`
+    body = replaceOnce(
+      body,
+      ssoDefaults,
+      `    allow-private-egress: true
+    dns-resolver: ${quoted(input.ssoProvider.dnsResolver)}
+    oidc-ca-file: ${quoted(input.ssoProvider.rootCAFile)}`,
+      'enterprise SSO seams',
     )
   }
   // The WebAuthn relying party is the browser's host. The review template

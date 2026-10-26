@@ -87,6 +87,14 @@ export const test = base.extend<{
    */
   socialIdentityProvider: boolean
   /**
+   * Start the enterprise journey's fixtures: a second OpenID Connect provider
+   * and the UDP DNS stub that answers the test domain's TXT record. A spec that
+   * drives the enterprise journey sets `test.use({ enterpriseSSO: true })`;
+   * every other spec's server keeps both `authn.sso` seams empty, which is the
+   * deployment default. This is separate from `socialIdentityProvider`.
+   */
+  enterpriseSSO: boolean
+  /**
    * Lower the account self-service freshness window for this spec's server.
    * A journey that observes the window passing sets it to the setting's
    * domain floor; every other spec keeps the template's declared window.
@@ -110,6 +118,7 @@ export const test = base.extend<{
   seedInvitee: [false, { option: true }],
   seedSocialAccount: [false, { option: true }],
   socialIdentityProvider: [false, { option: true }],
+  enterpriseSSO: [false, { option: true }],
   recentWindow: [undefined, { option: true }],
   seedSmsRollout: [false, { option: true }],
   schedulerTick: [undefined, { option: true }],
@@ -120,6 +129,7 @@ export const test = base.extend<{
       seedInvitee,
       seedSocialAccount,
       socialIdentityProvider,
+      enterpriseSSO,
       recentWindow,
       seedSmsRollout,
       schedulerTick,
@@ -133,6 +143,7 @@ export const test = base.extend<{
       seedInvitee,
       seedSocialAccount,
       socialIdentityProvider,
+      enterpriseSSO,
       recentWindow,
       seedSmsRollout,
       schedulerTick,

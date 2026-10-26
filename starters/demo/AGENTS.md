@@ -109,11 +109,11 @@ declarations of a module reached this way are collected by the stack node's
 
 `go build -tags review` compiles a second assembly beside the baseline one.
 `server/review.go` adds the login methods that need a provider or a carrier —
-the four social methods, the SMS family with the `sms.review` log carrier and
-the `sms.admin` template page, name-and-password registration with
-`authn.emailcode` over the `mail.review` log carrier, and the SMS second factor
-(`authn.mfa.sms`) — through `reviewModules`, which `serve` includes after
-`baselineServe`.
+the four social methods, the enterprise OIDC method (`authn.sso.oidc`), the SMS
+family with the `sms.review` log carrier and the `sms.admin` template page,
+name-and-password registration with `authn.emailcode` over the `mail.review` log
+carrier, and the SMS second factor (`authn.mfa.sms`) — through `reviewModules`,
+which `serve` includes after `baselineServe`.
 `server/review_off.go` compiles in a default build and names nothing, so a
 baseline binary carries none of those modules' code paths.
 
@@ -134,6 +134,16 @@ person can walk the flow, points the database, key and object root under
 on the next list read. Baseline `serve` names none of these modules and leaves
 registration closed, so the baseline login page advertises no registration
 entry.
+
+The same file carries the `authn.sso` block the enterprise OIDC method reads.
+It states the deployment defaults — `allow-private-egress: false` and both
+outbound seams empty — so the TXT lookup of a domain-ownership proof takes the
+system resolver and the method's egress trusts the system roots. A review that
+drives the enterprise journey points the three at local fixtures the end-to-end
+harness starts: the resolver address of a UDP stub that answers the test
+domain's TXT name, the CA file that signed the local provider's certificate, and
+the loopback relaxation its egress client needs. Those are fixtures, not
+deployment values; a deployment leaves the block as it stands.
 
 `server/review_sms_control.go` is the review-only control over the review
 carrier's per-template review. It mounts
