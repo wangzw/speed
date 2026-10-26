@@ -194,6 +194,28 @@ func TestTheDevelopmentSwitchDoesNotOpenAnythingButLoopback(t *testing.T) {
 	}
 }
 
+// TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint holds the
+// boundary of the loopback switch: it opens loopback addresses and nothing
+// else. With the switch on, a plain http endpoint at a non-loopback address is
+// still refused, and refused before a connection is attempted, because the
+// switch moves the address judgement alone and the transport admits https only.
+// Both social methods build their client through the same constructor with the
+// same option, so this case covers the switch's effect for each of them.
+func TestTheDevelopmentSwitchDoesNotAdmitAPlainHTTPNonLoopbackEndpoint(t *testing.T) {
+	var j judged
+	client := build(Options{AllowLoopback: true}, hooks{control: j.hook})
+
+	for _, url := range []string{"http://10.1.2.3/", "http://198.51.100.7/login"} {
+		_, err := get(client, url)
+		if !errors.Is(err, ErrSchemeNotHTTPS) {
+			t.Errorf("%s: err = %v, want ErrSchemeNotHTTPS", url, err)
+		}
+	}
+	if got := j.seen(); len(got) != 0 {
+		t.Errorf("connection attempts %v, want none: the switch reached past the scheme", got)
+	}
+}
+
 func TestACertificateTheRootsDoNotTrustIsRefused(t *testing.T) {
 	var hits counter
 	srv, _ := tlsServer(t, hits.handler(ok))
