@@ -74,6 +74,10 @@ OIDC 的 issuer 仍必须是具体的 https issuer；TXT 记录的名字、内�
 - `authn.sso.dns-resolver` **只作用于 SSO 域名验证的那一次 TXT 查询**，不是进程的全局解析器；邮件、社交、遥测等其余出站解析仍取系统解析器。
 - `authn.sso.oidc-ca-file` 的证书**追加**在系统根证书之上，不替换系统根；文件未列出的 CA 仍不被信任，系统根里的 CA 也不会因此失效。
 
+### 与社交登录的出站信任并列
+
+社交登录有一套同形的部署级输入：`authn.login.google.*` 与 `authn.login.github.*` 下的 `allow-loopback` 与 `root-ca-file`（[ADR-authn-social-endpoints-2026-10-26](adr-authn-social-endpoints-2026-10-26.md)）。两者的规则相同：根证书文件追加到系统根，回环只由该方法的显式开关打开，证书校验从不关闭。社交方式的键只作用于 Google 与 GitHub 的出站，不作用于本记录的 TXT 查询与企业 OIDC 出站；本记录的两个键也不作用于社交方式。
+
 ## 后果
 
 - 两项都不配置的部署，行为与现在完全相同：系统解析器与系统根证书。
