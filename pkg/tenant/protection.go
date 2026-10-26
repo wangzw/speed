@@ -45,7 +45,10 @@ const (
 // the creator's membership and the creator's binding first, and the roster row
 // last through Catalog.Create. A failure before the row is written removes what
 // it wrote, so no tenant is left half-built; a refusal of Catalog.Create itself
-// leaves the roster unchanged and is reported as Create reports it.
+// leaves the roster unchanged and is reported as Create reports it. The one
+// exception is ErrTenantExists: that identifier was registered by another
+// replica between the check and the write, so the domain is the winner's and the
+// losing call leaves its policy untouched.
 type Provisioner interface {
 	// Provision creates t and binds creator as its first tenant-admin. Roster
 	// refusals stay readable through errors.Is: ErrTenantExists when the

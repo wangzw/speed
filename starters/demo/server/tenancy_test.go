@@ -163,6 +163,48 @@ func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
 	}
 }
 
+// TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace holds the race
+// between two creations of one identifier: this replica's snapshot predates the
+// row another replica wrote, so the pre-check misses it and Create is the write
+// that refuses. The losing call must leave the winner's role and binding in
+// place rather than tear the domain down.
+func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
+	roster := newFakeRoster()
+	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
+	roster.lagging["acme"] = true
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	manager.roles["acme"] = []authz.RoleRecord{{Tenant: "acme", Role: authz.TenantAdminRole}}
+	manager.bindings["acme"] = []authz.Binding{
+		{Tenant: "acme", Account: "winner", Role: authz.TenantAdminRole},
+	}
+	seeder := newFakeSeeder(grants)
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
+
+	err := product.Provision(context.Background(),
+		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-loser")
+	if !errors.Is(err, tenant.ErrTenantExists) {
+		t.Fatalf("Provision that lost the race = %v, want ErrTenantExists", err)
+	}
+	roles, _ := manager.Roles(context.Background(), "acme")
+	if len(roles) != 1 || roles[0].Role != authz.TenantAdminRole {
+		t.Errorf("the winner's role = %+v, want the tenant-admin role left in place", roles)
+	}
+	bindings, _ := manager.Bindings(context.Background(), "acme")
+	found := false
+	for _, binding := range bindings {
+		if binding.Account == "winner" && binding.Role == authz.TenantAdminRole {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the winner's binding was torn down: %+v", bindings)
+	}
+}
+
 // TestTheProvisionerCleansItsPolicyWhenTheRosterRefuses holds the failure
 // path: a roster that refuses the row leaves no role, grant, binding or
 // membership behind.

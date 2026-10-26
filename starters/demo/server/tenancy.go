@@ -162,7 +162,9 @@ func protectedTenant(id tenant.ID) bool {
 // is written with the binding because the creator is the tenant's first
 // administrator: a binding without it names an administrator who cannot enter
 // the tenant. A refusal of the roster row removes what this call wrote, so no
-// tenant is left half-built.
+// tenant is left half-built — except ErrTenantExists, which is another replica
+// registering the identifier first: that domain is the winner's, and the losing
+// call leaves it untouched.
 //
 // A tenant the roster already holds is refused before any policy write: the
 // identifier's domain belongs to that tenant, and writing this call's role and
@@ -211,7 +213,14 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 		return fmt.Errorf("%s: binding the creator to the tenant-admin role: %w", tenancyModuleName, err)
 	}
 	if err := p.roster.Create(ctx, t); err != nil {
-		p.removeProvision(ctx, tenantID, creatorID)
+		// ErrTenantExists means another replica registered the identifier
+		// between this call's read and its write. The domain belongs to the
+		// tenant that call opened; removing the rows this call wrote would
+		// tear down the winner's role and bindings, so the loser leaves the
+		// domain as it stands.
+		if !errors.Is(err, tenant.ErrTenantExists) {
+			p.removeProvision(ctx, tenantID, creatorID)
+		}
 		return fmt.Errorf("%s: registering the tenant %q: %w", tenancyModuleName, t.ID, err)
 	}
 	return nil
