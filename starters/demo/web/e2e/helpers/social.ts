@@ -14,6 +14,8 @@ import { expect } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import {
+  enterpriseIdentityProviderCopy,
+  enterpriseIdentityProviderUser,
   identityProviderCopy,
   identityProviderUser,
 } from '../fixtures/identity-provider'
@@ -39,6 +41,38 @@ export async function approveSocialSignIn(page: Page): Promise<void> {
   await page
     .getByRole('button', {
       name: identityProviderCopy.approve,
+      exact: true,
+    })
+    .click()
+}
+
+/**
+ * The enterprise participant's step at their provider's authorization page.
+ *
+ * An enterprise sign-in reaches the same kind of provider page as a social
+ * one, started from the enterprise fixtures instead. The page belongs to the
+ * provider, so its copy is the fixture's constant; the participant reads whose
+ * account it names and approves it.
+ */
+export async function approveEnterpriseSignIn(page: Page): Promise<void> {
+  await expect(
+    page.getByRole('heading', {
+      level: 1,
+      name: enterpriseIdentityProviderCopy.heading,
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    page.getByText(
+      enterpriseIdentityProviderCopy.accountSentence(
+        enterpriseIdentityProviderUser.email,
+      ),
+      { exact: true },
+    ),
+  ).toBeVisible()
+  await page
+    .getByRole('button', {
+      name: enterpriseIdentityProviderCopy.approve,
       exact: true,
     })
     .click()

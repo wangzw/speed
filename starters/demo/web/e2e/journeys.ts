@@ -129,9 +129,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-enterprise-sso-onboarding.md',
-    status: 'unreachable',
-    reason:
-      'The harness cannot provide a real identity provider: the review assembly configures no enterprise OIDC or SAML login, and the journey also needs a published DNS TXT record, neither of which the browser tier can stand up.',
+    status: 'covered',
     covers: [
       'REQ-platform-admin-013',
       'REQ-platform-config-017',

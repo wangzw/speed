@@ -543,6 +543,7 @@ export async function startReviewServer(
         seedInvitee: options.seedInvitee,
         seedSocialAccount: options.seedSocialAccount,
         socialProvider,
+        ssoProvider,
         recentWindow: options.recentWindow,
         seedSmsRollout: options.seedSmsRollout,
         schedulerTick: options.schedulerTick,
