@@ -106,9 +106,9 @@ func TestTheWriteGuardProtectsTheSystemTenantAndPersonalTenants(t *testing.T) {
 	}
 }
 
-// TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding holds the order
-// the seam promises: the role, its declared grants and the creator's binding
-// exist before the roster row, and the row is the last write.
+// TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding holds that
+// Provision leaves the domain with its tenant-admin role, the declared grants,
+// the roster row and the creator's membership and binding.
 func TestTheProvisionerWritesTheTenantAdminAndTheCreatorBinding(t *testing.T) {
 	roster := newFakeRoster()
 	grants := newFakeGrants()
@@ -246,8 +246,8 @@ func TestTheProvisionerRetriesTheBuiltinMarkOnce(t *testing.T) {
 // TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows holds the second
 // failure: after one retry the error is returned, the tenant exists with a
 // non-builtin role, and no membership or binding was written. The caller answers
-// 503 rather than reporting a tenant it did not finish; the seed repairs a
-// declared tenant on its next run.
+// 503 rather than reporting a tenant it did not finish; the seed repairs every
+// non-personal tenant's role on its next run.
 func TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows(t *testing.T) {
 	roster := newFakeRoster()
 	memberships := newFakeMemberships()
@@ -287,8 +287,9 @@ func TestTheProvisionerReportsTheBuiltinFailureWithoutCreatorRows(t *testing.T) 
 // TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace holds the race
 // between two creations of one identifier: this replica's snapshot predates the
 // row another replica wrote, so the pre-check misses it and Create is the write
-// that refuses. The losing call must leave the winner's role and binding in
-// place rather than tear the domain down, and remove the rows it added itself.
+// that refuses. The losing call has written no creator membership or binding —
+// both follow the roster row — so it leaves the winner's role, grants and
+// administration in place rather than tearing the domain down.
 func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	roster := newFakeRoster()
 	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
@@ -329,81 +330,6 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	}
 	if member {
 		t.Error("the losing provision left the creator's membership behind")
-	}
-}
-
-// TestTheProvisionerKeepsTheSharedMembershipWhenTheSameCreatorLosesTheRace
-// holds the same-creator interleaving: both replicas name one creator, so the
-// winner's membership and binding are the rows the losing call would remove.
-// The binding is the domain's only tenant-administrator binding, so removing it
-// is refused; the membership must stay, because the winner's administrator is
-// still there. Removing the membership first would leave that binding naming an
-// account that is no longer a member.
-func TestTheProvisionerKeepsTheSharedMembershipWhenTheSameCreatorLosesTheRace(t *testing.T) {
-	roster := newFakeRoster()
-	memberships := newFakeMemberships()
-	grants := newFakeGrants()
-	manager := newFakeManager(grants)
-	product := tenancyProductOf(roster, memberships, manager, newFakeSeeder(grants), nil)
-	ctx := context.Background()
-
-	if err := memberships.Put(ctx, authn.Membership{
-		Account: "acct-1", Tenant: "acme", Active: true, Source: "admin",
-	}); err != nil {
-		t.Fatalf("writing the shared membership: %v", err)
-	}
-	if err := manager.PutBinding(ctx, authz.Binding{
-		Tenant: "acme", Account: "acct-1", Role: authz.TenantAdminRole,
-	}); err != nil {
-		t.Fatalf("writing the shared binding: %v", err)
-	}
-
-	// The losing call read both before the winner wrote them.
-	product.undoLostRace(ctx, "acme", authn.AccountID("acct-1"), "acct-1", false, false)
-
-	member, err := memberships.IsMember(ctx, authn.AccountID("acct-1"), "acme")
-	if err != nil {
-		t.Fatalf("reading the shared membership: %v", err)
-	}
-	if !member {
-		t.Error("the lost race removed the membership the winner shares")
-	}
-	bindings, err := manager.Bindings(ctx, "acme")
-	if err != nil {
-		t.Fatalf("reading the domain's bindings: %v", err)
-	}
-	if len(bindings) != 1 || bindings[0].Account != "acct-1" || bindings[0].Role != authz.TenantAdminRole {
-		t.Errorf("the domain's bindings = %+v, want the shared tenant-admin binding left in place", bindings)
-	}
-}
-
-// TestTheProvisionerKeepsAMembershipWhoseBindingHasNotLanded holds the window
-// the provisioning order opens: the winner writes its membership before its
-// binding, so a losing call can find the shared membership without a binding to
-// delete. With no binding to remove there is nothing this call added, and the
-// membership stays.
-func TestTheProvisionerKeepsAMembershipWhoseBindingHasNotLanded(t *testing.T) {
-	roster := newFakeRoster()
-	memberships := newFakeMemberships()
-	grants := newFakeGrants()
-	manager := newFakeManager(grants)
-	product := tenancyProductOf(roster, memberships, manager, newFakeSeeder(grants), nil)
-	ctx := context.Background()
-
-	if err := memberships.Put(ctx, authn.Membership{
-		Account: "acct-1", Tenant: "acme", Active: true, Source: "admin",
-	}); err != nil {
-		t.Fatalf("writing the shared membership: %v", err)
-	}
-
-	product.undoLostRace(ctx, "acme", authn.AccountID("acct-1"), "acct-1", false, false)
-
-	member, err := memberships.IsMember(ctx, authn.AccountID("acct-1"), "acme")
-	if err != nil {
-		t.Fatalf("reading the shared membership: %v", err)
-	}
-	if !member {
-		t.Error("the lost race removed a membership whose binding had not landed")
 	}
 }
 

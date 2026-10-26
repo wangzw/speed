@@ -151,6 +151,21 @@ func (r *fakeRoster) Create(_ context.Context, t tenant.Tenant) error {
 	return nil
 }
 
+// List returns the rows the roster holds, ordered by identifier, as the real
+// catalog does.
+func (r *fakeRoster) List(_ context.Context) ([]tenant.Tenant, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]tenant.Tenant, 0, len(r.rows))
+	for _, row := range r.rows {
+		out = append(out, row)
+	}
+	slices.SortFunc(out, func(a, b tenant.Tenant) int {
+		return strings.Compare(string(a.ID), string(b.ID))
+	})
+	return out, nil
+}
+
 func (r *fakeRoster) EnterRegistered(ctx context.Context, id tenant.ID) (context.Context, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

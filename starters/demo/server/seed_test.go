@@ -18,6 +18,7 @@ import (
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db/sqlite"
 	"github.com/vislake/speed/pkg/tenant"
+	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
 // roleManager answers the manager calls the seed's role steps make. The
@@ -271,6 +272,36 @@ func withMemberships(t *testing.T, dsn string,
 	})
 	if err != nil {
 		t.Fatalf("reading the seeded database: %v", err)
+	}
+}
+
+// createTenantInRoster registers a tenant in the database a seed run wrote,
+// through the real roster module, standing for a tenant another replica opened.
+// It runs while the assembly is up, as withMemberships does.
+func createTenantInRoster(t *testing.T, dsn, id string) {
+	t.Helper()
+	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"tenant":{"catalog":{}}}`, dsn)
+	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), tenantcatalog.Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(sqlite.Module())
+	reg.Register(tenantcatalog.Module())
+	reg.Supply(reader, config.ModuleName)
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{sqlite.ModuleName, tenantcatalog.ModuleName},
+		Action: func(ctx context.Context, reg *core.Registry) error {
+			roster, err := core.Resolve[tenant.Catalog](reg)
+			if err != nil {
+				return err
+			}
+			return roster.Create(ctx, tenant.Tenant{
+				ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive,
+			})
+		},
+	})
+	if err != nil {
+		t.Fatalf("registering the tenant %q in the roster: %v", id, err)
 	}
 }
 
@@ -942,6 +973,95 @@ func TestSeedMarksADeclaredTenantsExistingRoleBuiltin(t *testing.T) {
 	}
 	if held := grants.held("acme", tenantAdminRole); len(held) != 2 {
 		t.Errorf("the repaired role holds %d grant(s), want the two declared pairs", len(held))
+	}
+}
+
+// TestSeedRepairsAnUndeclaredTenantsAdministration holds the roster-wide
+// repair: a tenant the configuration does not list — one another replica
+// opened, or one an earlier deployment left with an unfrozen role — gets its
+// tenant-admin role, its grants and the builtin mark on the next seed run.
+// Membership and bindings stay limited to the administrators seed.tenants
+// declares, because the configuration names no administrator for a tenant it
+// does not list.
+func TestSeedRepairsAnUndeclaredTenantsAdministration(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "roster-repair.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
+
+	if res := runCommand(t, config, "sqlite", seedCommand); res.err != nil {
+		t.Fatalf("the first seed run failed: %v\n%s", res.err, res.combined())
+	}
+	createTenantInRoster(t, dsn, "rogue")
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err != nil {
+		t.Fatalf("the second seed run failed: %v\n%s", res.err, res.combined())
+	}
+	for _, want := range []string{
+		"seeded: role rogue/" + string(tenantAdminRole),
+		"seeded: role rogue/" + string(tenantAdminRole) + " (builtin mark)",
+		"grant(s) on rogue/" + string(tenantAdminRole),
+	} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("the second run does not report %q:\n%s", want, res.stdout)
+		}
+	}
+	for _, line := range strings.Split(res.stdout, "\n") {
+		if strings.Contains(line, "member") && strings.Contains(line, "rogue") {
+			t.Errorf("the seed wrote an administrator row for a tenant the configuration does not declare: %s", line)
+		}
+	}
+}
+
+// TestSeedRepairsEveryNonPersonalTenantInTheRoster holds the scope of the
+// roster-wide repair: every non-personal tenant gets its role, grants and
+// builtin mark, whether or not the configuration lists it, while a personal
+// domain is left entirely to the host.
+func TestSeedRepairsEveryNonPersonalTenantInTheRoster(t *testing.T) {
+	t.Parallel()
+	personal := personalIDPrefix + "acct-1"
+	domains := []string{"acme", string(authz.PlatformDomain), personal}
+	roster := newFakeRoster()
+	grants := newFakeGrants()
+	manager := newFakeManager(grants)
+	for _, id := range domains {
+		roster.rows[tenant.ID(id)] = tenant.Tenant{
+			ID: tenant.ID(id), Alias: id, Status: tenant.StatusActive,
+		}
+		manager.roles[id] = []authz.RoleRecord{{Tenant: id, Role: tenantAdminRole}}
+	}
+	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
+		"crm.deal.read": {"deal", "read"},
+	}}
+	seeder := newFakeSeeder(grants)
+
+	if err := seedRosterAdministration(t.Context(), roster, manager, seeder, catalog); err != nil {
+		t.Fatalf("seedRosterAdministration: %v", err)
+	}
+	for _, id := range domains[:2] {
+		roles, err := manager.Roles(t.Context(), id)
+		if err != nil {
+			t.Fatalf("reading the roles of %q: %v", id, err)
+		}
+		if len(roles) != 1 || roles[0].Role != tenantAdminRole || !roles[0].Builtin {
+			t.Errorf("the roles of %q = %+v, want one builtin tenant-admin", id, roles)
+		}
+		if held := grants.held(id, tenantAdminRole); len(held) != 1 {
+			t.Errorf("%q holds %d grant(s), want the declared one", id, len(held))
+		}
+	}
+	roles, err := manager.Roles(t.Context(), personal)
+	if err != nil {
+		t.Fatalf("reading the roles of the personal domain: %v", err)
+	}
+	if len(roles) != 1 || roles[0].Builtin {
+		t.Errorf("the personal domain's roles = %+v, want one left unfrozen", roles)
+	}
+	if held := grants.held(personal, tenantAdminRole); len(held) != 0 {
+		t.Errorf("the personal domain holds %d seeded grant(s), want none", len(held))
+	}
+	if manager.markBuiltinCalls != 2 {
+		t.Errorf("the seed marked %d role(s) builtin, want the two non-personal domains", manager.markBuiltinCalls)
 	}
 }
 

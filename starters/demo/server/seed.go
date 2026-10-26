@@ -479,10 +479,14 @@ func seedModule() core.Module {
 // platform-administrator role exists only in that domain and is bound only to
 // accounts that are active members of it.
 //
-// A business tenant gets its tenant-admin role and grants in its own domain, and
-// each account its configuration names under admins gets a membership and a
-// tenant-admin binding there. A business tenant never gets the
-// platform-administrator role: that role's domain is the platform domain alone.
+// A business tenant gets its tenant-admin role, the declared grants and the
+// builtin mark in its own domain — every non-personal tenant the roster holds,
+// not only the ones the configuration lists, so a tenant another replica opened
+// or an earlier deployment left unfrozen is repaired on this run. A personal-
+// prefixed domain is the host's own and is left alone. Each account the
+// configuration names under admins gets a membership and a tenant-admin binding
+// there. A business tenant never gets the platform-administrator role: that
+// role's domain is the platform domain alone.
 //
 // This command is where the roles, their grants and their bindings come from: no
 // migration seeds a role or a binding, because who a deployment's administrators
@@ -608,23 +612,19 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 	}
 
 	// Then the roles and their grants, one role row per domain it exists in. The
-	// platform domain carries the platform-administrator role and the system
-	// tenant's own tenant-admin role; each business tenant carries its
-	// tenant-admin role. They are written before the bindings, which name a role
-	// that has to exist in that domain.
+	// platform domain carries the platform-administrator role, and the
+	// tenant-admin role of every non-personal tenant in the roster follows — not
+	// only the ones this configuration lists, so a tenant another replica opened
+	// or an earlier deployment left with an unfrozen role is repaired on this run.
+	// Membership and bindings are reconciled later, only for the administrators
+	// seed.tenants declares. The roles are written before the bindings, which name
+	// a role that has to exist in that domain.
 	if err := seedAdministration(ctx, manager, seeder, catalog,
 		string(authz.PlatformDomain), platformAdminRole, platformAdminDescriptionKey); err != nil {
 		return err
 	}
-	if err := seedAdministration(ctx, manager, seeder, catalog,
-		string(authz.PlatformDomain), tenantAdminRole, tenantAdminDescriptionKey); err != nil {
+	if err := seedRosterAdministration(ctx, roster, manager, seeder, catalog); err != nil {
 		return err
-	}
-	for _, t := range in.Tenants {
-		if err := seedAdministration(ctx, manager, seeder, catalog,
-			t.Name, tenantAdminRole, tenantAdminDescriptionKey); err != nil {
-			return err
-		}
 	}
 
 	// The platform administrators are members of the system tenant and hold both
@@ -988,6 +988,42 @@ func seedAdministration(ctx context.Context, manager authz.Manager, seeder authz
 		return nil
 	}
 	return markRoleBuiltin(ctx, manager, domain, role)
+}
+
+// seedRosterAdministration writes the tenant-admin role, every declared
+// permission on it, and the builtin mark for every non-personal tenant the
+// roster holds. It reads the roster rather than the configuration because the
+// seed repairs a tenant it did not register: one another replica opened between
+// runs, or one an earlier deployment left with a role neither granted nor
+// frozen. A tenant dropped from seed.tenants stays registered, so its
+// administration is still repaired.
+//
+// A personal-prefixed domain is the host's personal space and is skipped
+// entirely: its tenant-admin holds the host's allowlist rather than every
+// declared permission, and the builtin mark would refuse the host's own grant
+// revocation. The role and grants are per domain, so this names no account;
+// membership and bindings stay limited to the administrators seed.tenants
+// declares, because the configuration says nothing about who administers a
+// tenant it does not list.
+func seedRosterAdministration(ctx context.Context, roster tenant.Catalog, manager authz.Manager,
+	seeder authz.Seeder, catalog authz.Catalog,
+) error {
+	tenants, err := roster.List(ctx)
+	if err != nil {
+		return fmt.Errorf("seed: listing the roster's tenants: %w", err)
+	}
+	for _, t := range tenants {
+		id := string(t.ID)
+		if strings.HasPrefix(id, personalIDPrefix) {
+			fmt.Printf("skipped: builtin mark on %s/%s (personal domain)\n", id, tenantAdminRole)
+			continue
+		}
+		if err := seedAdministration(ctx, manager, seeder, catalog, id, tenantAdminRole,
+			tenantAdminDescriptionKey); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // seedRole writes one administration role into one domain unless it is already

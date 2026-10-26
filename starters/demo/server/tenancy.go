@@ -272,14 +272,14 @@ func (policyWriteGuard) Denied(_ context.Context, tenantID string, _ authz.Write
 //
 // A failure before the roster row removes what this call wrote. A failure after
 // it leaves the tenant in place and returns the error: the caller answers 503,
-// never success. The seed reconciles a declared tenant's role, grants, builtin
-// mark and each administrator's membership and binding on every run; a
-// runtime-created tenant that is not declared has no automatic repair.
+// never success. The seed reconciles every non-personal tenant in the roster —
+// its tenant-admin role, grants and builtin mark — on every run, and reconciles
+// each administrator's membership and binding for the tenants it declares.
 //
 // A refusal of the roster row for ErrTenantExists is another replica winning the
-// identifier: the losing call removes only the rows it added and leaves the
-// winner's policy, and it never marks the role builtin, which would freeze a
-// role it did not finish writing.
+// identifier. The creator's membership and binding follow the roster row, so the
+// losing call has written neither; it leaves the winner's role, grants and
+// administrator rows in place and answers the already-exists refusal.
 //
 // A tenant the roster already holds is refused before any policy write: the
 // identifier's domain belongs to that tenant, and writing this call's role and
@@ -296,17 +296,6 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 	}
 	tenantID := string(t.ID)
 	role := authz.Role(authz.TenantAdminRole)
-	// Record what is already there before writing it: a lost race removes only
-	// the rows this call added, and a membership or binding the winning replica
-	// wrote belongs to it.
-	membershipHeld, err := p.creatorIsMember(ctx, tenantID, creatorID)
-	if err != nil {
-		return err
-	}
-	bindingHeld, err := p.creatorIsBound(ctx, tenantID, creator)
-	if err != nil {
-		return err
-	}
 	if err := p.manager.PutRole(ctx, authz.RoleRecord{
 		Tenant:         tenantID,
 		Role:           role,
@@ -336,11 +325,10 @@ func (p *tenancyProduct) Provision(ctx context.Context, t tenant.Tenant, creator
 	if err := p.roster.Create(ctx, t); err != nil {
 		// ErrTenantExists means another replica registered the identifier
 		// between this call's read and its write. The domain belongs to the
-		// tenant that call opened; this call removes only what it added and
-		// leaves the winner's role, grants, membership and binding in place.
-		if errors.Is(err, tenant.ErrTenantExists) {
-			p.undoLostRace(ctx, tenantID, creatorID, creator, membershipHeld, bindingHeld)
-		} else {
+		// tenant that call opened; the creator's membership and binding follow
+		// the roster row, so this call has written neither and leaves the
+		// winner's role, grants and administrator rows in place.
+		if !errors.Is(err, tenant.ErrTenantExists) {
 			p.removeProvision(ctx, tenantID)
 		}
 		return fmt.Errorf("%s: registering the tenant %q: %w", tenancyModuleName, t.ID, err)
@@ -393,83 +381,6 @@ func (p *tenancyProduct) markTenantAdminBuiltin(ctx context.Context, tenantID st
 		return nil
 	}
 	return errors.Join(first, second)
-}
-
-// creatorIsMember reports whether the creator already holds a membership in the
-// tenant before this call writes one.
-func (p *tenancyProduct) creatorIsMember(ctx context.Context, tenantID string, account authn.AccountID) (bool, error) {
-	_, held, err := p.memberships.Membership(ctx, tenantID, account)
-	if err != nil {
-		return false, fmt.Errorf("%s: reading whether the creator is already a member of %q: %w",
-			tenancyModuleName, tenantID, err)
-	}
-	return held, nil
-}
-
-// creatorIsBound reports whether the creator already holds the tenant-admin
-// binding before this call writes one.
-func (p *tenancyProduct) creatorIsBound(ctx context.Context, tenantID, account string) (bool, error) {
-	bindings, err := p.manager.BindingsOf(ctx, tenantID, account)
-	if err != nil {
-		return false, fmt.Errorf("%s: reading the creator's bindings in %q: %w",
-			tenancyModuleName, tenantID, err)
-	}
-	for _, binding := range bindings {
-		if binding.Role == authz.TenantAdminRole {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// undoLostRace removes what this call added before it lost the roster row to
-// another replica. The binding goes first, and the membership is removed only
-// when that delete succeeded: two replicas naming one creator write one
-// membership row and one binding, and deleting the binding is refused as the
-// domain's last tenant-admin binding, so the shared membership stays with it. A
-// binding that is not there is no delete at all, and the membership belongs to
-// the winner: the provisioning order writes the winner's membership before its
-// binding, so the losing call can find that membership while the binding has not
-// landed yet. A membership or binding that was already there belongs to the
-// winning tenant and is left as it stands; the role and its grants stay for the
-// same reason.
-func (p *tenancyProduct) undoLostRace(ctx context.Context, tenantID string, creatorID authn.AccountID,
-	creator string, membershipHeld, bindingHeld bool,
-) {
-	if bindingHeld {
-		// The binding predates this call, so this call added no membership that
-		// the losing cleanup could remove without touching the winner's rows.
-		return
-	}
-	held, err := p.creatorIsBound(ctx, tenantID, creator)
-	if err != nil {
-		p.logger.Error(tenancyModuleName+": a lost tenant-creation race could not read the creator's binding",
-			"tenant", tenantID, "cause", err.Error())
-		return
-	}
-	if !held {
-		// There is no binding of this creator to remove, so there is nothing this
-		// call added; the membership belongs to the winner.
-		return
-	}
-	err = p.manager.DeleteBinding(ctx, tenantID, creator, authz.TenantAdminRole)
-	switch {
-	case err == nil:
-	case errors.Is(err, authz.ErrLastTenantAdmin):
-		p.logger.Warn(tenancyModuleName+": a lost tenant-creation race left the creator's binding and membership as the domain's only administration",
-			"tenant", tenantID)
-		return
-	default:
-		p.logger.Error(tenancyModuleName+": a lost tenant-creation race left the creator's binding and membership behind",
-			"tenant", tenantID, "cause", err.Error())
-		return
-	}
-	if !membershipHeld {
-		if err := p.memberships.Remove(ctx, creatorID, tenantID); err != nil {
-			p.logger.Error(tenancyModuleName+": a lost tenant-creation race left the creator's membership behind",
-				"tenant", tenantID, "cause", err.Error())
-		}
-	}
 }
 
 // rosterHolds reports whether the roster's table carries the identifier. It
