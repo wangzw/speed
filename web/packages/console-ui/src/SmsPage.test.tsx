@@ -2,11 +2,11 @@
  * SmsPage: the SMS-template administration page.
  *
  * Its read lists the runtime templates (with their approval states), the
- * register and offer forms drive the bundle, the row's enable/disable
- * toggle and remove drive it too, and a failed read settles into the
- * retryable error placeholder. A 404 (the surface is not mounted) also
- * collapses both write forms, and so does the entry document a shared
- * endpoint answers an unclaimed path with; any other failure keeps them.
+ * register and offer forms drive the bundle, and the row's enable/disable
+ * toggle and remove drive it too. Every read failure settles into the
+ * page's generic failure surface -- the retryable placeholder, or the
+ * permission placeholder for a 403 -- and the write forms stay in place,
+ * because a write may still land once the read recovers.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -433,7 +433,7 @@ describe('SmsPage', () => {
     })
   })
 
-  it('collapses both write forms when the administration surface is not mounted', async () => {
+  it('renders the generic failure placeholder and keeps both write forms when the read answers 404', async () => {
     const operations = createConsoleOperations(
       makeConsoleBackend({
         listSmsTemplates: () =>
@@ -442,18 +442,19 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
 
-    // The surface has no route on this process: the page says so and keeps
-    // the retry, and neither form is in the document -- every submission
-    // would reach the same missing route.
-    expect(await screen.findByText(zhCN.sms.unmounted.title)).toBeInTheDocument()
+    // A 404 is one more failed read: the page falls back to its generic
+    // retryable placeholder, and both forms stay in place because a write
+    // may still land once the read recovers.
+    expect(await screen.findByText(zhCN.sms.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.sms.retry })).toBeInTheDocument()
-    expect(screen.queryByText(zhCN.sms.register.title)).toBeNull()
-    expect(screen.queryByText(zhCN.sms.offer.title)).toBeNull()
-    expect(screen.queryByRole('button', { name: zhCN.sms.register.submit })).toBeNull()
-    expect(screen.queryByRole('button', { name: zhCN.sms.offer.submit })).toBeNull()
+    expect(screen.getByText(zhCN.sms.register.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.offer.title)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: zhCN.sms.register.submit })).toBeDisabled()
+    expect(screen.getByRole('button', { name: zhCN.sms.offer.submit })).toBeDisabled()
   })
 
-  it('collapses both write forms when the entry document answers the read', async () => {
+  it('renders the generic failure placeholder and keeps both write forms when the entry document answers the read', async () => {
     // A deployment that serves this console from the API's own endpoint
     // answers a path no API route claims with the front-end entry document:
     // HTTP 200 and text/html, not the 404 an API-only deployment gives.
@@ -475,12 +476,13 @@ describe('SmsPage', () => {
     )
     renderWithProviders(<SmsPage />, { operations })
 
-    // The surface is absent here too: the page says so and keeps the retry,
-    // and neither form is rendered.
-    expect(await screen.findByText(zhCN.sms.unmounted.title)).toBeInTheDocument()
+    // The entry document is one more failed read: the same generic
+    // retryable placeholder, and both forms stay in place.
+    expect(await screen.findByText(zhCN.sms.error.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.error.description)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: zhCN.sms.retry })).toBeInTheDocument()
-    expect(screen.queryByText(zhCN.sms.register.title)).toBeNull()
-    expect(screen.queryByText(zhCN.sms.offer.title)).toBeNull()
+    expect(screen.getByText(zhCN.sms.register.title)).toBeInTheDocument()
+    expect(screen.getByText(zhCN.sms.offer.title)).toBeInTheDocument()
   })
 
   it('keeps both write forms when a mounted surface fails temporarily', async () => {

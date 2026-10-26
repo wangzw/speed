@@ -550,7 +550,7 @@ graph TD
 | SSO 页（创建、改动、列出、删除、元数据、域名认领与操作） | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/console-ui/src/routes.tsx` `ssoAdminRoutes` |
 | 设置读写页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/routes.tsx` `settingsAdminRoutes` |
 | 短信模板页（列出、登记、提交、开关、移除） | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/routes.tsx` `smsAdminRoutes` |
-| 短信模板页的读取失败一律落到通用失败面，写入表单不收起 | 未实现 | — |
+| 短信模板页的读取失败一律落到通用失败面，写入表单不收起 | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection` |
 | 审计查询页（筛选、游标分页、操作者可读身份） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`；`web/packages/console-ui/src/routes.tsx` `auditAdminRoutes` |
 | 审计查询页的导出控件（按已应用的筛选下载 NDJSON 文件） | 已实现 | `web/packages/console-ui/src/AuditPage.tsx` `AuditPage`、`startExport`；`web/packages/console-ui/src/operations.tsx` `exportAuditRecords`；`web/packages/console-ui/src/internal/export-file.ts` `exportFileName`、`saveBlob`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 按租户寻址页面的租户选择器 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |

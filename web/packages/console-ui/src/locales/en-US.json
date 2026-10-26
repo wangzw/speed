@@ -1053,10 +1053,6 @@
       "title": "SMS templates could not be loaded",
       "description": "The SMS surface could not complete this request."
     },
-    "unmounted": {
-      "title": "SMS administration is not mounted",
-      "description": "This deployment configures no SMS carrier, so the administration surface is not mounted; registering templates and offering them for review are unavailable."
-    },
     "retry": "Retry",
     "column": {
       "name": "Name",

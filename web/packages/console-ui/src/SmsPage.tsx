@@ -12,16 +12,11 @@
  * process without it has no route to answer at all, so the read is
  * answered 404 -- or, on a deployment that serves this console from the
  * same endpoint as the API, with the front-end entry document, which the
- * transport refuses as `client.html`. Either answer says the surface is
- * absent, and it settles into the retryable error placeholder; a mounted
- * surface whose dependency fails answers 503 instead. The page keeps that
- * distinction: an absent surface collapses both write forms, since every
- * submission would be answered by the same missing route, leaving only
- * the explanation and the retry; any other read failure (a mounted
- * surface that could not complete this request) leaves the forms in
- * place, because a write may still land there. The page says so in its
- * own words, so an operator who reaches it on a carrier-less process
- * knows why it is empty.
+ * transport refuses as `client.html`. Both are one more failed read: the
+ * page renders its generic failure surface, the retryable placeholder that
+ * keeps the retry, and keeps both write forms in place, because a write may
+ * still land there. The page says so in its own words, so an operator who
+ * reaches it on a carrier-less process knows why it is empty.
  *
  * Every read and write is an operation on the console operations bundle,
  * so the page builds no client and writes no query key.
@@ -46,8 +41,6 @@ import {
   PageHeader,
   PRIMARY_COLUMN_MAX_WIDTH,
   SectionCard,
-  errorCodeOf,
-  httpStatusOf,
   useWriteFeedback,
 } from '@speed/ui-kit'
 import { ConsoleAsyncSection } from './internal/async-section.js'
@@ -64,27 +57,6 @@ import {
 } from './internal/write-feedback.js'
 import { useConsoleOperations } from './operations.js'
 import type { ConsoleSmsTemplate } from './operations.js'
-
-/** The bare-HTTP status a missing route answers with, and the code the
- * transport synthesizes when a 2xx carries the front-end entry document:
- * on a deployment that serves this console from the API's endpoint, that is
- * the entry document answering a path no API route claims. */
-const ENTRY_DOCUMENT_CODE = 'client.html'
-
-/**
- * Whether a read's failure says the administration surface is absent: no
- * route claims the path. An API-only deployment answers HTTP 404 with no
- * readable envelope; a deployment that serves this console from the same
- * endpoint answers its front-end entry document with HTTP 200 and an HTML
- * content type, which the transport refuses as an HTML document. A mounted
- * surface whose registry or dependency fails answers 503 (or fails at the
- * transport), which is a failure of the surface rather than its absence.
- */
-function isSurfaceAbsent(error: unknown): boolean {
-  return (
-    httpStatusOf(error) === 404 || errorCodeOf(error) === ENTRY_DOCUMENT_CODE
-  )
-}
 
 /** The template sources the registry names. */
 const SMS_SOURCES = new Set<string>(['config', 'runtime'])
@@ -366,12 +338,6 @@ export function SmsPage() {
 
   const rows = templates.data?.templates
   const pending = templates.isPending && rows === undefined
-  // A 404 says no route is mounted for the surface; every write below would
-  // reach the same missing route, so both forms collapse to the one
-  // explanation the error placeholder carries. It counts only while no rows
-  // have settled: a stale page from an earlier read keeps rendering (and
-  // keeps its forms) because the error branch is not shown then either.
-  const surfaceAbsent = rows === undefined && isSurfaceAbsent(templates.error)
 
   return (
     <Box>
@@ -400,115 +366,111 @@ export function SmsPage() {
         {t('sms.carrierNote')}
       </Typography>
 
-      {!surfaceAbsent && (
-        <SectionCard title={t('sms.register.title')} sx={{ mb: 3 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-end',
-              columnGap: 2,
-              rowGap: 1,
-            }}
+      <SectionCard title={t('sms.register.title')} sx={{ mb: 3 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            columnGap: 2,
+            rowGap: 1,
+          }}
+        >
+          <TextField
+            size="small"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            label={t('sms.register.nameLabel')}
+          />
+          <TextField
+            size="small"
+            value={params}
+            onChange={(event) => setParams(event.target.value)}
+            label={t('sms.register.paramsLabel')}
+          />
+          <TextField
+            size="small"
+            value={codes}
+            onChange={(event) => setCodes(event.target.value)}
+            label={t('sms.register.codesLabel')}
+            placeholder={t('sms.register.codesPlaceholder')}
+          />
+          <Button
+            type="button"
+            variant="contained"
+            disabled={registerFeedback.pending || !registerReady}
+            loading={registerFeedback.pending}
+            onClick={register}
           >
-            <TextField
-              size="small"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              label={t('sms.register.nameLabel')}
-            />
-            <TextField
-              size="small"
-              value={params}
-              onChange={(event) => setParams(event.target.value)}
-              label={t('sms.register.paramsLabel')}
-            />
-            <TextField
-              size="small"
-              value={codes}
-              onChange={(event) => setCodes(event.target.value)}
-              label={t('sms.register.codesLabel')}
-              placeholder={t('sms.register.codesPlaceholder')}
-            />
-            <Button
-              type="button"
-              variant="contained"
-              disabled={registerFeedback.pending || !registerReady}
-              loading={registerFeedback.pending}
-              onClick={register}
-            >
-              {t('sms.register.submit')}
-            </Button>
-          </Box>
-          <Box ref={registerRegionRef}>
-            <WriteFeedbackRegion outcome={registerFeedback.outcome} />
-          </Box>
-        </SectionCard>
-      )}
+            {t('sms.register.submit')}
+          </Button>
+        </Box>
+        <Box ref={registerRegionRef}>
+          <WriteFeedbackRegion outcome={registerFeedback.outcome} />
+        </Box>
+      </SectionCard>
 
-      {!surfaceAbsent && (
-        <SectionCard title={t('sms.offer.title')} sx={{ mb: 3 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'flex-end',
-              columnGap: 2,
-              rowGap: 1,
-            }}
+      <SectionCard title={t('sms.offer.title')} sx={{ mb: 3 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-end',
+            columnGap: 2,
+            rowGap: 1,
+          }}
+        >
+          <TextField
+            size="small"
+            value={offerName}
+            onChange={(event) => setOfferName(event.target.value)}
+            label={t('sms.offer.nameLabel')}
+          />
+          <TextField
+            size="small"
+            value={offerKind}
+            onChange={(event) => setOfferKind(event.target.value)}
+            label={t('sms.offer.kindLabel')}
+          />
+          <TextField
+            size="small"
+            value={offerLocale}
+            onChange={(event) => setOfferLocale(event.target.value)}
+            label={t('sms.offer.localeLabel')}
+          />
+          <TextField
+            size="small"
+            value={offerParams}
+            onChange={(event) => setOfferParams(event.target.value)}
+            label={t('sms.offer.paramsLabel')}
+          />
+          <TextField
+            size="small"
+            value={offerRemark}
+            onChange={(event) => setOfferRemark(event.target.value)}
+            label={t('sms.offer.remarkLabel')}
+          />
+          <TextField
+            size="small"
+            value={offerContent}
+            onChange={(event) => setOfferContent(event.target.value)}
+            label={t('sms.offer.contentLabel')}
+            sx={{ minWidth: 220 }}
+          />
+          <Button
+            type="button"
+            variant="contained"
+            disabled={offerFeedback.pending || !offerReady}
+            loading={offerFeedback.pending}
+            onClick={offer}
           >
-            <TextField
-              size="small"
-              value={offerName}
-              onChange={(event) => setOfferName(event.target.value)}
-              label={t('sms.offer.nameLabel')}
-            />
-            <TextField
-              size="small"
-              value={offerKind}
-              onChange={(event) => setOfferKind(event.target.value)}
-              label={t('sms.offer.kindLabel')}
-            />
-            <TextField
-              size="small"
-              value={offerLocale}
-              onChange={(event) => setOfferLocale(event.target.value)}
-              label={t('sms.offer.localeLabel')}
-            />
-            <TextField
-              size="small"
-              value={offerParams}
-              onChange={(event) => setOfferParams(event.target.value)}
-              label={t('sms.offer.paramsLabel')}
-            />
-            <TextField
-              size="small"
-              value={offerRemark}
-              onChange={(event) => setOfferRemark(event.target.value)}
-              label={t('sms.offer.remarkLabel')}
-            />
-            <TextField
-              size="small"
-              value={offerContent}
-              onChange={(event) => setOfferContent(event.target.value)}
-              label={t('sms.offer.contentLabel')}
-              sx={{ minWidth: 220 }}
-            />
-            <Button
-              type="button"
-              variant="contained"
-              disabled={offerFeedback.pending || !offerReady}
-              loading={offerFeedback.pending}
-              onClick={offer}
-            >
-              {t('sms.offer.submit')}
-            </Button>
-          </Box>
-          <Box ref={offerRegionRef}>
-            <WriteFeedbackRegion outcome={offerFeedback.outcome} />
-          </Box>
-        </SectionCard>
-      )}
+            {t('sms.offer.submit')}
+          </Button>
+        </Box>
+        <Box ref={offerRegionRef}>
+          <WriteFeedbackRegion outcome={offerFeedback.outcome} />
+        </Box>
+      </SectionCard>
 
       <SectionCard flushContent>
         <ConsoleAsyncSection
@@ -528,12 +490,8 @@ export function SmsPage() {
             />
           }
           errorState={{
-            title: surfaceAbsent
-              ? t('sms.unmounted.title')
-              : t('sms.error.title'),
-            description: surfaceAbsent
-              ? t('sms.unmounted.description')
-              : t('sms.error.description'),
+            title: t('sms.error.title'),
+            description: t('sms.error.description'),
             retryLabel: t('sms.retry'),
             onRetry: () => void templates.refetch(),
           }}
