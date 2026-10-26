@@ -67,12 +67,20 @@ authn:
     mount:
       public-url: "http://localhost:8080"
   # REVIEW: the four social methods. The identifiers and secrets are fake and
-  # exist so the methods start and build an authorization URL; no callback is
-  # ever expected from these providers.
+  # exist so the methods start and build an authorization URL. Against the
+  # Google block's public defaults below no callback is expected; the
+  # end-to-end harness replaces those three endpoint items with the local
+  # identity provider it starts, which completes a real round trip.
   login:
     google:
       client-id: "review-google-client"
       client-secret: "review-google-secret"
+      # REVIEW: the method's own defaults, written out so the end-to-end
+      # harness can replace them with the provider it starts. A person running
+      # this file by hand keeps the public provider and the system roots.
+      issuer: "https://accounts.google.com"
+      allow-loopback: false
+      root-ca-file: ""
     github:
       client-id: "review-github-client"
       client-secret: "review-github-secret"

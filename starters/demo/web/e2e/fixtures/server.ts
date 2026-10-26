@@ -24,6 +24,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { writeReviewConfig, type ReviewConfig } from './config'
+import {
+  startIdentityProvider,
+  type IdentityProvider,
+} from './identity-provider'
 import { ProcessLog, waitForReady } from './log'
 import { MANIFEST_PATH } from './paths'
 
@@ -264,6 +268,8 @@ export interface ReviewServer {
   readonly backendPort: number
   readonly opsPort: number
   readonly config: ReviewConfig
+  /** The local OpenID Connect provider the social methods are pointed at. */
+  readonly identityProvider: IdentityProvider
   /** Everything the child wrote to standard output, line by line. */
   readonly log: ProcessLog
   /** Everything the child wrote to standard error, joined. */
@@ -285,15 +291,23 @@ export interface ReviewServer {
  * the port in that window -- so it is retried with a fresh pair, bounded by
  * MAX_BIND_ATTEMPTS.
  *
- * `seedMember`, `seedImpersonation`, `seedInvitee` and `recentWindow` are passed
- * through to the configuration the binary seeds; a spec that needs none leaves
- * them off, so the template's own seed stays the baseline.
+ * `seedMember`, `seedImpersonation`, `seedInvitee`, `seedSocialAccount` and
+ * `recentWindow` are passed through to the configuration the binary seeds; a
+ * spec that needs none leaves them off, so the template's own seed stays the
+ * baseline.
+ *
+ * The local OpenID Connect provider starts before the seed and lives as long as
+ * this server: the configuration the binary reads names the provider's issuer
+ * and the CA file it minted, and a configured CA file that cannot be read stops
+ * the start. The provider is part of the environment the social methods run
+ * against, not a request the fixture answers on the product's behalf.
  */
 export async function startReviewServer(
   options: {
     readonly seedMember?: boolean
     readonly seedImpersonation?: boolean
     readonly seedInvitee?: boolean
+    readonly seedSocialAccount?: boolean
     readonly recentWindow?: string
   } = {},
 ): Promise<ReviewServer> {
@@ -301,6 +315,7 @@ export async function startReviewServer(
   await ensureBinary(manifest.binary)
   const dir = await mkdtemp(join(tmpdir(), 'speed-e2e-server-'))
   let child: ChildProcess | undefined
+  let identityProvider: IdentityProvider | undefined
   const log = new ProcessLog()
   const stderrLines: string[] = []
   let stopped = false
@@ -333,6 +348,16 @@ export async function startReviewServer(
   }
 
   try {
+    // The provider is the environment the social methods run against. It is
+    // started before the seed so the configuration the binary reads already
+    // names a reachable issuer and an existing CA file: a configured root CA
+    // that cannot be read stops the start, so the order is load-bearing.
+    identityProvider = await startIdentityProvider({ dir })
+    const provider = identityProvider
+    const socialProvider = {
+      issuer: provider.issuer,
+      rootCAFile: provider.rootCAPath,
+    }
     // Seed with a provisional pair: the seed command does not listen, and the
     // serve attempt below writes its own configuration with the final ports.
     const [seedBackend, seedOps] = await freePorts(2)
@@ -346,6 +371,8 @@ export async function startReviewServer(
       seedMember: options.seedMember,
       seedImpersonation: options.seedImpersonation,
       seedInvitee: options.seedInvitee,
+      seedSocialAccount: options.seedSocialAccount,
+      socialProvider,
       recentWindow: options.recentWindow,
     })
     await runCommand(
@@ -370,6 +397,8 @@ export async function startReviewServer(
         seedMember: options.seedMember,
         seedImpersonation: options.seedImpersonation,
         seedInvitee: options.seedInvitee,
+        seedSocialAccount: options.seedSocialAccount,
+        socialProvider,
         recentWindow: options.recentWindow,
       })
       const configLocator = `file:${config.path}`
@@ -455,6 +484,7 @@ export async function startReviewServer(
         }
       }
       await terminate()
+      await provider.stop()
       if (options.keep !== true) {
         await rm(dir, { recursive: true, force: true })
       }
@@ -468,6 +498,7 @@ export async function startReviewServer(
       backendPort: reviewConfig.backendPort,
       opsPort: reviewConfig.opsPort,
       config: reviewConfig,
+      identityProvider: provider,
       log,
       get stderr(): string {
         return stderrLines.join('\n')
@@ -480,6 +511,7 @@ export async function startReviewServer(
   } catch (error) {
     process.removeListener('exit', reapOnExit)
     await terminate()
+    await identityProvider?.stop()
     await rm(dir, { recursive: true, force: true })
     throw error
   }

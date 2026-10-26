@@ -73,6 +73,13 @@ export const test = base.extend<{
    */
   seedInvitee: boolean
   /**
+   * Seed the social journey's account that already holds the identity
+   * provider's address. A spec sets `test.use({ seedSocialAccount: true })` for
+   * the branch where the provider's verified address belongs to an account;
+   * every other spec starts from the template's own seed.
+   */
+  seedSocialAccount: boolean
+  /**
    * Lower the account self-service freshness window for this spec's server.
    * A journey that observes the window passing sets it to the setting's
    * domain floor; every other spec keeps the template's declared window.
@@ -82,9 +89,10 @@ export const test = base.extend<{
   seedMember: [false, { option: true }],
   seedImpersonation: [false, { option: true }],
   seedInvitee: [false, { option: true }],
+  seedSocialAccount: [false, { option: true }],
   recentWindow: [undefined, { option: true }],
   server: async (
-    { seedMember, seedImpersonation, seedInvitee, recentWindow },
+    { seedMember, seedImpersonation, seedInvitee, seedSocialAccount, recentWindow },
     use,
     testInfo,
   ) => {
@@ -92,6 +100,7 @@ export const test = base.extend<{
       seedMember,
       seedImpersonation,
       seedInvitee,
+      seedSocialAccount,
       recentWindow,
     })
     try {

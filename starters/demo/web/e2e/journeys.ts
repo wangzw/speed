@@ -405,9 +405,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-social-account-linking.md',
-    status: 'unreachable',
+    status: 'pending',
     reason:
-      'The harness cannot provide a real Google authorization round trip: the review assembly configures fake provider credentials, so the method builds an authorization URL and no callback is ever expected.',
+      'The local identity provider now completes a real Google round trip, so the browser tier can drive this journey; its spec is scheduled and not written yet.',
     covers: [
       'REQ-account-027',
       'REQ-account-028',
@@ -422,9 +422,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-social-sign-in-and-linking.md',
-    status: 'unreachable',
-    reason:
-      'The harness cannot provide a real Google authorization round trip: the review assembly configures fake provider credentials, so the method builds an authorization URL and no callback is ever expected.',
+    status: 'covered',
     covers: [
       'REQ-account-015',
       'REQ-account-016',

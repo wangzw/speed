@@ -12,12 +12,16 @@
  *
  * The remaining values are deliberately kept: the seeded operator, the open
  * signup settings, the SMS prefixes and the review carriers are what make the
- * journeys possible. The credentials in the template are fake and reach no
- * provider.
+ * journeys possible. The template's social credentials are fake; when the
+ * server fixture starts the local identity provider it passes `socialProvider`
+ * and the Google block gains the issuer, the loopback switch and the CA file
+ * that point the method at it. Without that input the template's public
+ * defaults stand. The credentials in the template reach no provider either way.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { identityProviderUser } from './identity-provider'
 import { DEPLOY_CONFIG_TEMPLATE, REVIEW_CONFIG_TEMPLATE } from './paths'
 
 export interface ReviewConfigInput {
@@ -48,6 +52,23 @@ export interface ReviewConfigInput {
    * template's own seed.
    */
   readonly seedInvitee?: boolean
+  /**
+   * Seed an enabled account whose email login name is the fixed identity
+   * provider user's address. Off by default: only the social journey's branch
+   * where the provider-verified address already belongs to an account turns it
+   * on, so every other server starts from the template's own seed.
+   */
+  readonly seedSocialAccount?: boolean
+  /**
+   * Point the Google method at a provider other than the one its defaults
+   * name. The end-to-end harness starts a local OpenID Connect provider and
+   * passes its issuer and CA file here. An absent value leaves the template's
+   * defaults, which are the public provider.
+   */
+  readonly socialProvider?: {
+    readonly issuer: string
+    readonly rootCAFile: string
+  }
   /**
    * Lower `authn.mfa.recent-window` to this duration in the seed settings.
    * Off by default: the template keeps the declared window, and only a
@@ -112,6 +133,23 @@ export const reviewInvitee = {
   displayName: 'Invitation Invitee',
 } as const
 
+/**
+ * The account the social journey's alternative branch finds holding the
+ * provider's address.
+ *
+ * It is seeded through the binary's own seed command, as an email login name
+ * the seed writes with an administrator's assertion (not a provider's proof).
+ * That is exactly the precondition the branch needs: the address exists on an
+ * account, automatic linking is off, so a social login with the same verified
+ * address is refused with the link-required refusal rather than taking the
+ * account over. Its password is a review value, not a credential.
+ */
+export const reviewSocialAccount = {
+  identifier: identityProviderUser.email,
+  password: 'social-review-secret',
+  displayName: identityProviderUser.name,
+} as const
+
 /** The template's seeded operator entry; the member entry is appended to it. */
 const seedOperatorAccount = `    - identifier: operator@demo.test
       password: operator-dev-secret
@@ -129,6 +167,13 @@ function seedMemberAccount(): string {
 function seedMemberMembership(): string {
   return `    - tenant: ${quoted(reviewMember.tenant)}
       account: ${quoted(reviewMember.identifier)}`
+}
+
+/** The social account's `seed.accounts` entry, indented for the list it joins. */
+function seedSocialAccount(): string {
+  return `    - identifier: ${quoted(reviewSocialAccount.identifier)}
+      password: ${quoted(reviewSocialAccount.password)}
+      display-name: ${quoted(reviewSocialAccount.displayName)}`
 }
 
 /** The invitee's `seed.accounts` entry, indented for the list it joins. */
@@ -247,6 +292,28 @@ export async function writeReviewConfig(
     3,
     'public origin',
   )
+  // The social journey drives a real round trip through a provider the harness
+  // starts on loopback. The Google block's client items are the template's
+  // fake review credentials, and its endpoint items are the method's public
+  // defaults; the three below are what point the method at the local provider.
+  // The loopback switch is the seam's own, and the CA file is the one the
+  // provider minted, so the restricted egress client verifies the provider's
+  // certificate against it rather than the system roots. A template that lost
+  // one of the defaults fails here rather than silently keeping the public
+  // provider while the journey expects a callback.
+  if (input.socialProvider !== undefined) {
+    const googleDefaults = `      issuer: "https://accounts.google.com"
+      allow-loopback: false
+      root-ca-file: ""`
+    body = replaceOnce(
+      body,
+      googleDefaults,
+      `      issuer: ${quoted(input.socialProvider.issuer)}
+      allow-loopback: true
+      root-ca-file: ${quoted(input.socialProvider.rootCAFile)}`,
+      'google provider defaults',
+    )
+  }
   // The WebAuthn relying party is the browser's host. The review template
   // pins it to localhost; a run that changed it would fail every ceremony with
   // an origin mismatch, so its absence is a template drift.
@@ -265,6 +332,9 @@ export async function writeReviewConfig(
   const extraAccounts: string[] = []
   if (input.seedMember === true) extraAccounts.push(seedMemberAccount())
   if (input.seedInvitee === true) extraAccounts.push(seedInviteeAccount())
+  if (input.seedSocialAccount === true) {
+    extraAccounts.push(seedSocialAccount())
+  }
   if (extraAccounts.length > 0) {
     body = replaceOnce(
       body,
