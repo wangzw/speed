@@ -46,11 +46,11 @@ func driveModule(t *testing.T, body string, action func(context.Context, *core.R
 	}
 }
 
-// The seven capabilities the descriptor declares are each delivered, and each
+// The eight capabilities the descriptor declares are each delivered, and each
 // resolves to one and the same instance: construction asserts the instance
 // against every capability, so a product missing one fails the drive with
 // core.ErrUndeliveredCapability before the action runs.
-func TestTheSevenCapabilitiesAreDeliveredByOneInstance(t *testing.T) {
+func TestTheEightCapabilitiesAreDeliveredByOneInstance(t *testing.T) {
 	driveModule(t, `{}`, func(_ context.Context, reg *core.Registry) error {
 		accounts, err := core.Resolve[authn.Accounts](reg)
 		if err != nil {
@@ -76,6 +76,10 @@ func TestTheSevenCapabilitiesAreDeliveredByOneInstance(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		cleanup, err := core.Resolve[authn.MembershipCleanup](reg)
+		if err != nil {
+			return err
+		}
 		throttle, err := core.Resolve[authn.Throttle](reg)
 		if err != nil {
 			return err
@@ -84,7 +88,7 @@ func TestTheSevenCapabilitiesAreDeliveredByOneInstance(t *testing.T) {
 		if !ok {
 			t.Fatalf("the delivered Accounts is a %T, not the module's product", accounts)
 		}
-		for _, got := range []any{admin, signups, verification, passwords, memberships, throttle} {
+		for _, got := range []any{admin, signups, verification, passwords, memberships, cleanup, throttle} {
 			if got != p {
 				t.Errorf("a capability resolved to %T, not the one product the descriptor built", got)
 			}

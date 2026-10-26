@@ -14,7 +14,7 @@ removal asks every optional `MembershipGuard` first and calls every
 cleanup removes through `MembershipCleanup`, which asks neither.
 
 No other module reads these tables. Every module that needs an account, a
-credential, a membership or a back-off takes one of the seven interfaces from the
+credential, a membership or a back-off takes one of the eight interfaces from the
 registry; the `*gorm.DB` stays inside this package, and so do the migrations.
 
 The API is the package's godoc and the interface comments in `pkg/authn`.

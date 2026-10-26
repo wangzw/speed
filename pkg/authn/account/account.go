@@ -3,15 +3,17 @@
 // their tenant memberships, the password credentials and the secrets of service
 // accounts, and the back-off that keeps guessing in check.
 //
-// One module, authn.account, owns the tables and delivers seven capabilities
+// One module, authn.account, owns the tables and delivers eight capabilities
 // exclusively: Accounts and AccountAdmin, which read and write the store;
 // Signups, which opens an account for anonymous self-registration, and
 // SignupVerification, which reads how far that registration has got;
 // Passwords, which checks and writes every credential of the password class;
-// Memberships, which says which tenants an account belongs to; and Throttle, the
-// database form of the failure back-off. The root package declares the
-// interfaces, and every other module of this capability directory that needs an
-// account takes them from the registry and never reads a table.
+// Memberships, which says which tenants an account belongs to;
+// MembershipCleanup, which removes a membership on the account-deletion path
+// without asking the guards; and Throttle, the database form of the failure
+// back-off. The root package declares the interfaces, and every other module of
+// this capability directory that needs an account takes them from the registry
+// and never reads a table.
 //
 // An account is global and never reused. Ending one leaves a tombstone, so every
 // reference to it from a session, an audit row or a role binding stays pointing

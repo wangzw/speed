@@ -13,7 +13,7 @@ import (
 )
 
 // The descriptor states what the design states: the database is required and is
-// the one thing the module stands on, the seven capabilities are each delivered
+// the one thing the module stands on, the eight capabilities are each delivered
 // exclusively and by nothing else, and the module declares its own section, its
 // settings and its migrations as resources.
 func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
@@ -34,17 +34,18 @@ func TestTheDescriptorStatesWhatTheDesignStates(t *testing.T) {
 		core.Token((*authn.SignupVerification)(nil)),
 		core.Token((*authn.Passwords)(nil)),
 		core.Token((*authn.Memberships)(nil)),
+		core.Token((*authn.MembershipCleanup)(nil)),
 		core.Token((*authn.Throttle)(nil)),
 	}
 	if len(m.Provides) != len(want) {
-		t.Fatalf("Provides has %d entries, want the seven capabilities", len(m.Provides))
+		t.Fatalf("Provides has %d entries, want the eight capabilities", len(m.Provides))
 	}
 	for _, provision := range m.Provides {
 		if !provision.Exclusive {
 			t.Errorf("the capability %v is not delivered exclusively", provision.Token)
 		}
 		if !containsToken(want, provision.Token) {
-			t.Errorf("the capability %v is not one of the seven", provision.Token)
+			t.Errorf("the capability %v is not one of the eight", provision.Token)
 		}
 	}
 	if len(m.Resources) != 3 {
@@ -61,7 +62,7 @@ func containsToken(tokens []core.Token, want core.Token) bool {
 	return false
 }
 
-// Every product satisfies all seven capabilities, which the package asserts at
+// Every product satisfies all eight capabilities, which the package asserts at
 // compile time; a case holds that the instance the descriptor builds is the one
 // product they are asserted for.
 func TestTheProductSatisfiesEachCapability(t *testing.T) {
@@ -83,6 +84,9 @@ func TestTheProductSatisfiesEachCapability(t *testing.T) {
 	}
 	if _, ok := p.(authn.Memberships); !ok {
 		t.Error("the product is not a Memberships")
+	}
+	if _, ok := p.(authn.MembershipCleanup); !ok {
+		t.Error("the product is not a MembershipCleanup")
 	}
 	if _, ok := p.(authn.Throttle); !ok {
 		t.Error("the product is not a Throttle")
