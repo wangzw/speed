@@ -39,9 +39,10 @@ import (
 // under test.
 //
 // A variant process is this test binary re-executed with DEMO_SERVE_WITHOUT
-// naming modules to drop from baselineServe. TestMain sees the variable, skips
-// the build and the test run, prints the final inclusion list to standard
-// error, and runs the program. Product code carries no switch.
+// naming modules to drop from the serve roster — baselineServe and, under the
+// review tag, reviewModules. TestMain sees the variable, skips the build and
+// the test run, prints the final inclusion list to standard error, and runs the
+// program. Product code carries no switch.
 
 const serveWithoutEnv = "DEMO_SERVE_WITHOUT"
 
@@ -404,22 +405,22 @@ const (
 	classInfra                      // not removed: no routes on a guarded endpoint
 )
 
-// baselineModule is the descriptor facts the classification needs.
-type baselineModule struct {
+// assembledModule is the descriptor facts the classification needs.
+type assembledModule struct {
 	name          string
 	requires      []core.Requirement
 	provides      []core.Token
 	specEndpoints []string
 }
 
-// baselineDescriptors reads the modules the reference run assembles — the
+// assembledDescriptors reads the modules the reference run assembles — the
 // baseline list and, under the review tag, the review build's additions — with
-// their dependency declarations and the endpoints their fragments describe. The
-// review additions are in the graph so that a variant dropping the baseline
-// module a review module requires leaves that module out too; the reference run
-// is the whole roster. A listed name that no module registers is a failure: the
-// lists and the registry would otherwise drift apart silently.
-func baselineDescriptors(t *testing.T) map[string]*baselineModule {
+// their dependency declarations and the endpoints their fragments describe. Both
+// lists are seeds of the variants, and both are in the dependency graph so that
+// a variant dropping a module also leaves out every module that requires it. A
+// listed name that no module registers is a failure: the lists and the registry
+// would otherwise drift apart silently.
+func assembledDescriptors(t *testing.T) map[string]*assembledModule {
 	t.Helper()
 	named := map[string]bool{}
 	for _, name := range baselineServe {
@@ -428,12 +429,12 @@ func baselineDescriptors(t *testing.T) map[string]*baselineModule {
 	for _, name := range reviewModules {
 		named[name] = true
 	}
-	modules := map[string]*baselineModule{}
+	modules := map[string]*assembledModule{}
 	for _, module := range core.ProcessRegistry.Modules() {
 		if !named[module.Name] {
 			continue
 		}
-		described := &baselineModule{name: module.Name, requires: module.Requires}
+		described := &assembledModule{name: module.Name, requires: module.Requires}
 		for _, provision := range module.Provides {
 			described.provides = append(described.provides, provision.Token)
 		}
@@ -470,11 +471,11 @@ func baselineDescriptors(t *testing.T) map[string]*baselineModule {
 	return modules
 }
 
-// classifyBaseline gives every baseline module its class. A module is shaping
+// classifyModules gives every assembled module its class. A module is shaping
 // when it provides a capability every answer depends on, or when it is one of
 // the layers before the gateway; routing when it declares a fragment on a
 // guarded endpoint; and infrastructure otherwise.
-func classifyBaseline(t *testing.T, modules map[string]*baselineModule, guarded map[string]bool) map[string]moduleClass {
+func classifyModules(t *testing.T, modules map[string]*assembledModule, guarded map[string]bool) map[string]moduleClass {
 	t.Helper()
 	mapped := map[string]bool{}
 	for _, module := range preGateLayers {
@@ -496,7 +497,7 @@ func classifyBaseline(t *testing.T, modules map[string]*baselineModule, guarded 
 
 // guardedEndpointOf reports whether the module declares a fragment on a guarded
 // endpoint.
-func guardedEndpointOf(module *baselineModule, guarded map[string]bool) bool {
+func guardedEndpointOf(module *assembledModule, guarded map[string]bool) bool {
 	for _, endpoint := range module.specEndpoints {
 		if guarded[endpoint] {
 			return true
@@ -522,7 +523,7 @@ func providesShapingToken(provides []core.Token) bool {
 // the set provides, transitively. Removing a module without its dependents
 // would leave a run that cannot start for a reason unrelated to the claim, so
 // the variant takes them together.
-func withDependents(seed map[string]bool, modules map[string]*baselineModule) map[string]bool {
+func withDependents(seed map[string]bool, modules map[string]*assembledModule) map[string]bool {
 	out := map[string]bool{}
 	for name := range seed {
 		out[name] = true
@@ -573,20 +574,6 @@ type variantGroup struct {
 // reason, may be left out of the guarantee.
 var mayNotStartGroups = map[string]string{}
 
-// mayLeaveRouteCountUnchanged names the routing modules whose removal cannot
-// lower an endpoint's route count in this case's configuration, each with the
-// reason. A module that mounts its routes only when a switch is on mounts none
-// here, so dropping it changes nothing and the removal check cannot tell a
-// real module from a name that registered nothing. The check stays
-// fail-closed otherwise: every other vacuous removal fails.
-var mayLeaveRouteCountUnchanged = map[string]string{
-	"workspace.personal": "its route is mounted only when workspace.personal.enabled is on; " +
-		"the baseline template leaves the host switch off (the baseline default), which is the " +
-		"only configuration where this removal is vacuous",
-	"authn.humanverify": "its challenge route is mounted only when authn.humanverify.mode is pow, " +
-		"and the case's configuration leaves the gate off (the baseline default)",
-}
-
 // variantStartOutcome decides what a variant's readiness result means. A run
 // that became ready passes. One that did not fails unless mayNotStartGroups
 // exempts the group, in which case the exemption's reason is returned for the
@@ -602,18 +589,35 @@ func variantStartOutcome(group variantGroup, err error, output string) (exemptio
 	return "", fmt.Errorf("dropping %v left a run that does not start: %w\n%s", group.modules, err, output)
 }
 
+// routeCountOutcome decides what a variant's route count means for a removed
+// module: a lower count passes, and an unchanged or higher count passes only
+// when this build's exemption table names the module, whose reason is returned
+// for the log. The decision is a function so a case can hold an exemption to
+// the configuration it was written for without launching a run.
+func routeCountOutcome(removed, endpoint string, before, after int) (exemption string, failure error) {
+	if after < before {
+		return "", nil
+	}
+	if reason, exempt := mayLeaveRouteCountUnchanged[removed]; exempt {
+		return reason, nil
+	}
+	return "", fmt.Errorf("dropping %q left endpoint %q with %d route(s), not fewer than the baseline's %d: "+
+		"the removal is vacuous", removed, endpoint, after, before)
+}
+
 // TestEveryRoutingVariantMustStart holds the start guarantee to the variants
 // the case builds: an exemption has to be written down with its reason, and
 // every other variant fails when it does not start rather than leaving the
-// matrix silently. baselineDescriptors and classifyBaseline are the functions
+// matrix silently. assembledDescriptors and classifyModules are the functions
 // the differential case itself uses, so the groups held here are the ones it
-// runs.
+// runs. Every module a build assembles is a seed of its own, so the start
+// property is held for the review build's additions as well.
 func TestEveryRoutingVariantMustStart(t *testing.T) {
-	modules := baselineDescriptors(t)
-	classes := classifyBaseline(t, modules, guardedEndpointSet(t))
+	modules := assembledDescriptors(t)
+	classes := classifyModules(t, modules, guardedEndpointSet(t))
 	groups := buildGroups(modules, classes)
 	if len(groups) == 0 {
-		t.Fatalf("baselineServe holds no routing module, so there is nothing to remove")
+		t.Fatalf("the assembled serve roster holds no variant seed, so there is nothing to remove")
 	}
 	built := map[string]bool{}
 	for _, group := range groups {
@@ -642,22 +646,36 @@ func TestEveryRoutingVariantMustStart(t *testing.T) {
 			t.Errorf("mayLeaveRouteCountUnchanged exempts %q without a reason", name)
 		}
 		if _, known := modules[name]; !known {
-			t.Errorf("mayLeaveRouteCountUnchanged names %q, which baselineServe does not include", name)
+			t.Errorf("mayLeaveRouteCountUnchanged names %q, which the assembled roster does not include", name)
 			continue
 		}
 		if classes[name] != classRouting {
 			t.Errorf("mayLeaveRouteCountUnchanged names %q, which this case does not classify as routing", name)
 		}
 	}
+	// Every module a build assembles is a seed of a variant of its own, so the
+	// start property is held for the review build's additions too. The default
+	// build names no review module, so this loop checks nothing there.
+	for _, name := range reviewModules {
+		if classes[name] == classShaping {
+			continue
+		}
+		if !built[name] {
+			t.Errorf("the review module %q is assembled but is not a variant seed: "+
+				"the start property is not held for it", name)
+		}
+	}
 }
 
-// buildGroups writes the variants: one per baseline routing module with its
-// dependents, plus the group that leaves one endpoint with no routes at all.
-// The seeds are the baseline list's modules only; the review build's additions
-// join a variant as dependents of the module they hang from, never as a group
-// of their own. They are constant across the reference run and the variants, so
-// leaving them in changes neither side of the comparison.
-func buildGroups(modules map[string]*baselineModule, classes map[string]moduleClass) []variantGroup {
+// buildGroups writes the variants: one seed per baseline routing module, one
+// per module the review build adds, and the groups that leave one endpoint with
+// no routes at all. Each variant is seeded by exactly one module; the modules
+// that non-optionally require what it provides go with it, and nothing else
+// does. The review modules are seeds of their own so the start property is held
+// for every module the build assembles, not only for the baseline's routing
+// ones. reviewModules is empty in a default build, so the default build's
+// variants are unchanged.
+func buildGroups(modules map[string]*assembledModule, classes map[string]moduleClass) []variantGroup {
 	names := make([]string, 0, len(baselineServe))
 	for _, name := range baselineServe {
 		if modules[name] != nil {
@@ -687,9 +705,29 @@ func buildGroups(modules map[string]*baselineModule, classes map[string]moduleCl
 			group(name, map[string]bool{name: true})
 		}
 	}
+
+	// The review build's additions are seeds of their own. A shaping module is
+	// left in place for the same reason the baseline's shaping modules are: its
+	// absence changes every answer for a reason unrelated to the assembly.
+	var review []string
+	for _, name := range reviewModules {
+		if modules[name] != nil && !slices.Contains(names, name) && classes[name] != classShaping {
+			review = append(review, name)
+		}
+	}
+	sort.Strings(review)
+	for _, name := range review {
+		group(name, map[string]bool{name: true})
+	}
+
+	// The endpoint-wide variants name every routing module assembled for that
+	// endpoint, the review build's additions included, so the group still
+	// removes the endpoint's whole routing surface.
+	endpointSeeds := slices.Clone(names)
+	endpointSeeds = append(endpointSeeds, review...)
 	for _, endpoint := range []string{"admin", "api"} {
 		seed := map[string]bool{}
-		for _, name := range names {
+		for _, name := range endpointSeeds {
 			if classes[name] == classRouting && slices.Contains(modules[name].specEndpoints, endpoint) {
 				seed[name] = true
 			}
@@ -988,12 +1026,12 @@ func firstDifference(want, got rawResponse) string {
 // byte apart from Date.
 func runDifferential(t *testing.T, topo topology) {
 	t.Helper()
-	modules := baselineDescriptors(t)
+	modules := assembledDescriptors(t)
 	guarded := guardedEndpointSet(t)
-	classes := classifyBaseline(t, modules, guarded)
+	classes := classifyModules(t, modules, guarded)
 
-	// Completeness: every module the baseline names has a class.
-	for _, name := range baselineServe {
+	// Completeness: every module the build assembles has a class.
+	for _, name := range slices.Concat(baselineServe, reviewModules) {
 		if _, classified := classes[name]; !classified {
 			t.Errorf("the module %q was not classified", name)
 		}
@@ -1190,21 +1228,19 @@ func checkVariantRemoval(t *testing.T, baseline, variant *variantProcess, group 
 				t.Errorf("the variant wrote no chain for endpoint %q", endpoint)
 				continue
 			}
-			if after.routes >= before.routes {
-				if reason, exempt := mayLeaveRouteCountUnchanged[removed]; exempt {
-					t.Logf("dropping %q leaves endpoint %q at %d route(s); exempt: %s",
-						removed, endpoint, after.routes, reason)
-					continue
-				}
-				t.Errorf("dropping %q left endpoint %q with %d route(s), not fewer than the baseline's %d: "+
-					"the removal is vacuous", removed, endpoint, after.routes, before.routes)
+			reason, failure := routeCountOutcome(removed, endpoint, before.routes, after.routes)
+			if failure != nil {
+				t.Error(failure)
+			} else if reason != "" {
+				t.Logf("dropping %q leaves endpoint %q at %d route(s); exempt: %s",
+					removed, endpoint, after.routes, reason)
 			}
 		}
 	}
 }
 
-// endpointOfModule answers the guarded endpoints a baseline module's fragments
-// describe; it is the endpoints whose route count a removal has to lower.
+// endpointOfModule answers the guarded endpoints a module's fragments describe;
+// it is the endpoints whose route count a removal has to lower.
 func endpointOfModule(t *testing.T, name string) []string {
 	t.Helper()
 	var endpoints []string
@@ -1214,6 +1250,107 @@ func endpointOfModule(t *testing.T, name string) []string {
 		}
 	}
 	return endpoints
+}
+
+// variantGroupNamed answers the case's own variant for a module, so a case that
+// pins an exemption launches exactly the removal the differential matrix does.
+func variantGroupNamed(t *testing.T, name string) variantGroup {
+	t.Helper()
+	modules := assembledDescriptors(t)
+	classes := classifyModules(t, modules, guardedEndpointSet(t))
+	for _, group := range buildGroups(modules, classes) {
+		if group.id == name {
+			return group
+		}
+	}
+	t.Fatalf("the case builds no variant for %q", name)
+	return variantGroup{}
+}
+
+// removalRouteCounts launches this build's baseline over the topology and one
+// variant per group, and answers each run's endpoint chains. The baseline's
+// chains are the counts a removal has to lower; each variant's are what it left.
+func removalRouteCounts(t *testing.T, topo topology, groups []variantGroup) (map[string]chainLine, map[string]map[string]chainLine) {
+	t.Helper()
+	baseline, _ := launch(t, topo, nil)
+	if err := baseline.waitReady(startLimit); err != nil {
+		t.Fatalf("the baseline %s run did not become ready: %v", topo.name, err)
+	}
+	before := parseChains(baseline.linesCopy())
+	if len(before) == 0 {
+		t.Fatalf("the baseline wrote no assembly diagnostics:\n%s", baseline.output())
+	}
+	after := map[string]map[string]chainLine{}
+	for _, group := range groups {
+		variant, _ := launch(t, topo, group.modules)
+		if err := variant.waitReady(startLimit); err != nil {
+			t.Fatalf("the variant %q did not become ready: %v", group.id, err)
+		}
+		chains := parseChains(variant.linesCopy())
+		if len(chains) == 0 {
+			t.Fatalf("the variant %q wrote no assembly diagnostics:\n%s", group.id, variant.output())
+		}
+		after[group.id] = chains
+	}
+	return before, after
+}
+
+// assertRouteCountsUnchanged holds an exemption's stated reason to the run:
+// every endpoint the removed modules describe keeps its route count, so the
+// removal is vacuous and only the build's exemption lets it pass. A
+// configuration that mounts the route reddens this assertion, which is what
+// retires the exemption.
+func assertRouteCountsUnchanged(t *testing.T, group variantGroup, before, after map[string]chainLine) {
+	t.Helper()
+	measured := false
+	for _, removed := range group.modules {
+		for _, endpoint := range endpointOfModule(t, removed) {
+			measured = true
+			was, known := before[endpoint]
+			now, seen := after[endpoint]
+			if !known || !seen {
+				t.Errorf("the run wrote no chain for endpoint %q, so the removal of %q cannot be measured",
+					endpoint, removed)
+				continue
+			}
+			if now.routes != was.routes {
+				t.Errorf("dropping %v left endpoint %q with %d route(s), want the baseline's unchanged %d: "+
+					"the exemption's stated reason does not hold for this configuration",
+					group.modules, endpoint, now.routes, was.routes)
+			}
+		}
+	}
+	if !measured {
+		t.Errorf("the variant %q describes no endpoint, so its removal cannot be measured", group.id)
+	}
+}
+
+// assertRouteCountsLowered holds a removal that no exemption may excuse: every
+// endpoint the removed modules describe loses routes. It is the review build's
+// proof that the baseline template's exemption would be false there.
+func assertRouteCountsLowered(t *testing.T, group variantGroup, before, after map[string]chainLine) {
+	t.Helper()
+	measured := false
+	for _, removed := range group.modules {
+		for _, endpoint := range endpointOfModule(t, removed) {
+			measured = true
+			was, known := before[endpoint]
+			now, seen := after[endpoint]
+			if !known || !seen {
+				t.Errorf("the run wrote no chain for endpoint %q, so the removal of %q cannot be measured",
+					endpoint, removed)
+				continue
+			}
+			if now.routes >= was.routes {
+				t.Errorf("dropping %v left endpoint %q with %d route(s), not fewer than the baseline's %d: "+
+					"the removal is not vacuous, so an exemption here would be false",
+					group.modules, endpoint, now.routes, was.routes)
+			}
+		}
+	}
+	if !measured {
+		t.Errorf("the variant %q describes no endpoint, so its removal cannot be measured", group.id)
+	}
 }
 
 // opsSurface answers the routes the operations fragment declares, as patterns.
