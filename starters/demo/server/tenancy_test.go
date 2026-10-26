@@ -167,11 +167,12 @@ func TestTheProvisionerWritesTheCreatorMembership(t *testing.T) {
 // between two creations of one identifier: this replica's snapshot predates the
 // row another replica wrote, so the pre-check misses it and Create is the write
 // that refuses. The losing call must leave the winner's role and binding in
-// place rather than tear the domain down.
+// place rather than tear the domain down, and remove the rows it added itself.
 func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	roster := newFakeRoster()
 	roster.rows["acme"] = tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}
 	roster.lagging["acme"] = true
+	memberships := newFakeMemberships()
 	grants := newFakeGrants()
 	manager := newFakeManager(grants)
 	manager.roles["acme"] = []authz.RoleRecord{{Tenant: "acme", Role: authz.TenantAdminRole}}
@@ -182,7 +183,7 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 	catalog := fixedCatalog{pairs: map[authz.Permission][2]string{
 		"crm.deal.read": {"deal", "read"},
 	}}
-	product := tenancyProductOf(roster, newFakeMemberships(), manager, seeder, catalog)
+	product := tenancyProductOf(roster, memberships, manager, seeder, catalog)
 
 	err := product.Provision(context.Background(),
 		tenant.Tenant{ID: "acme", Alias: "acme", Status: tenant.StatusActive}, "acct-loser")
@@ -194,14 +195,15 @@ func TestTheProvisionerLeavesTheWinnersPolicyWhenItLosesTheRace(t *testing.T) {
 		t.Errorf("the winner's role = %+v, want the tenant-admin role left in place", roles)
 	}
 	bindings, _ := manager.Bindings(context.Background(), "acme")
-	found := false
-	for _, binding := range bindings {
-		if binding.Account == "winner" && binding.Role == authz.TenantAdminRole {
-			found = true
-		}
+	if len(bindings) != 1 || bindings[0].Account != "winner" || bindings[0].Role != authz.TenantAdminRole {
+		t.Errorf("the tenant's bindings = %+v, want only the winner's", bindings)
 	}
-	if !found {
-		t.Errorf("the winner's binding was torn down: %+v", bindings)
+	member, err := memberships.IsMember(context.Background(), authn.AccountID("acct-loser"), "acme")
+	if err != nil {
+		t.Fatalf("reading the losing creator's membership: %v", err)
+	}
+	if member {
+		t.Error("the losing provision left the creator's membership behind")
 	}
 }
 
