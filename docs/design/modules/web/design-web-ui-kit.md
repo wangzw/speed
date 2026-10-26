@@ -99,7 +99,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `HumanVerification` | `gate`（`{required, provider, site_key?}`，缺省、不需证明或 `off` 时不渲染）、`proof`、`status`（`idle`／`working`／`ready`／`failed`）、`onToken`、`onRetry`、`disabled` | `onToken`（Turnstile token 或 null）、`onRetry`（PoW 失败后重试） |
 | `RefreshButton` | `busy`、`disabled`、`writePending`、`describedBy`、`disabledReason`、`ariaLabel`、`label`（可见文字，缺省取命名空间键） | `onClick` |
 | `CopyButton` | `value`、`label`（可及名）、`copiedLabel`（播报文本）、`visibleLabel`（给出即渲染文字按钮）、`pinned` | 写入本机剪贴板并播报（不经网络） |
-| `OneTimeValuePanel` | `message`、`value`、`copyLabel`、`closeLabel`、`closeAriaLabel` | `onClose`（状态归调用方） |
+| `OneTimeValuePanel` | `message`、`value`、`copyLabel`、`details`（在主值旁附带的带标签详情，每条各有自己的值、复制控件与文案）、`closeLabel`、`closeAriaLabel` | `onClose`（状态归调用方） |
 | `DisplayTimeZoneProvider`／`PhoneCountryDefaultProvider` | 时区名或 `undefined`／国家码或 `undefined` | —（经 `useDisplayTimeZone`／`usePhoneCountryDefault` 读取） |
 
 ### 人机验证块
@@ -159,7 +159,7 @@ export const uiKitResources: Readonly<Record<string, ResourceBundle>>
 
 `parseEmailAddress` 把 authn 账户模块的邮箱规范化规则（`NormalizeIdentifier` 的 email 分支）表述在客户端：去空白、可打印 ASCII（0x21 到 0x7e）、恰好一个 `@` 且两侧非空、不超过 254 字节；返回去空白后的地址，不合格返回 `null`。它不改大小写——服务端折叠大小写，而折叠用户正在编辑的值会改掉他们的输入。
 
-`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
+`createAppTheme`、`AppThemeProvider`、`useAppThemePreset` 与 `AppThemePresetControl`、全部组件与类型、`UI_KIT_NAMESPACE` 与 `uiKitResources` 的导出签名是宿主据以编写的接口面。基线导出之外的接缝：`httpStatusOf`（与 `errorCodeOf` 并列的结构判定）、`AsyncSection.refusedState`、`RefreshButton`／`usePageRefresh`／`pageRefreshRead` 及其类型、`CopyButton`、`OneTimeValuePanel`、`OneTimeValuePanelDetail`（`details` 的元素：标签、值与其复制控件的文案）、`DisplayTimeZoneProvider`／`useDisplayTimeZone`、`PhoneCountryDefaultProvider`／`usePhoneCountryDefault`、`parseEmailAddress`／`EMAIL_ADDRESS_MAX_BYTES`、`DataTable.ariaLabel`／`ariaLabelledBy` 与 `DataTableFilter.label`／`placeholder`、`ConfirmDialog.children`／`confirmDisabled`、`PhoneNumberField.preferredCountries`，以及主题上的 `typography.fontFamilyMono`。变更按 TypeScript 的源码语义分类：新增导出、新增可选字段是源码兼容的；删除导出或字段、改既有导出或字段的含义或名、改签名（参数或返回类型），是不兼容变更。把必选与可选互转按位置判：输入位（宿主提供的 prop 或参数）放宽兼容、收紧不兼容；输出位（宿主读取的返回类型或结果字段）相反——放宽为可选使读出的值成为 `T | undefined`，strictNullChecks 下只有在要求 `T` 处使用它的消费者无法编译（对可能为 undefined 的值做成员访问报 TS18048，赋给 `T` 或传入要求 `T` 的形参报 TS2322/TS2345），仅转发或在宽松处使用（模板串、比较、`??`、可选链）的消费者仍编译，故可能破坏消费者、是不兼容变更。公开面的一次改动要与代码、测试、README 与 AGENTS 在同一提交内落地。可加性是模板：`FormLayout` 的 `columns` 与 `DataTableColumn` 的 `priority` 都以 `undefined` 缺省等于原行为，使现有消费方逐字节不受影响。
 
 ## 依赖
 
@@ -355,7 +355,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 
 ### 一次值交接与显示偏好
 
-**`CopyButton` 承载剪贴板动作，`OneTimeValuePanel` 只负责呈现。** `CopyButton` 把 `value` 写入本机剪贴板并在礼貌实时区域里播报；没有 `visibleLabel` 时是 `DataTable` 在 `cellFullValue` 旁渲染的图标控件，给出 `visibleLabel` 时是小的描边文字按钮。`label`／`copiedLabel` 缺省取 `copyButton.*` 文案；`pinned` 供 `contentMaxWidth` 上限内的单元格，控件拒绝收缩。无剪贴板 API（非安全上下文）或被拒绝的写入都保持安静，不让页面失败。`OneTimeValuePanel` 是一次性值（邀请链接、令牌）的展示：调用方持有值与生命周期，组件不持状态，取 `message`、`value`、`copyLabel`、`closeLabel`、`closeAriaLabel` 与 `onClose`；整块是一个 `role="status"` 区域，值用主题的 `fontFamilyMono` 渲染，不可断的值随处断行，复制由内部控件自行播报。
+**`CopyButton` 承载剪贴板动作，`OneTimeValuePanel` 只负责呈现。** `CopyButton` 把 `value` 写入本机剪贴板并在礼貌实时区域里播报；没有 `visibleLabel` 时是 `DataTable` 在 `cellFullValue` 旁渲染的图标控件，给出 `visibleLabel` 时是小的描边文字按钮。`label`／`copiedLabel` 缺省取 `copyButton.*` 文案；`pinned` 供 `contentMaxWidth` 上限内的单元格，控件拒绝收缩。无剪贴板 API（非安全上下文）或被拒绝的写入都保持安静，不让页面失败。`OneTimeValuePanel` 是一次性值（邀请链接、令牌）的展示：调用方持有值与生命周期，组件不持状态，取 `message`、`value`、`copyLabel`、可选 `details`（每条带标签、值与自己复制控件的详情）、`closeLabel`、`closeAriaLabel` 与 `onClose`；整块是一个 `role="status"` 区域，值用主题的 `fontFamilyMono` 渲染，不可断的值随处断行，复制由内部控件自行播报。
 
 **两个显示偏好上下文只转交、不校验。** `DisplayTimeZoneProvider` 携带 IANA 时区名或 `undefined`（纯校验器在 `@speed/i18n`，本包不重复实现），`useDisplayTimeZone` 在缺席时返回 `undefined`，由各渲染面套自己的兜底（设备时区、已存偏好）。`PhoneCountryDefaultProvider` 携带首选 ISO alpha-2 国家码或 `undefined`，`usePhoneCountryDefault` 有值时返回它、否则回落到既有的 `defaultPhoneCountry()`。两者的缺省都是 `undefined`，未挂 provider 的树逐字节不变。
 
