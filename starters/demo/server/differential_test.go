@@ -957,7 +957,7 @@ func launch(t *testing.T, topo topology, without []string) (*variantProcess, map
 	// roster, and an in-memory database would lose the seeded row between
 	// processes. The seed runs first over the same file, with the program's own
 	// unmodified module set, so every variant starts from the same roster.
-	seeded := runCommand(t, "file://"+configPath, "sqlite", seedCommand)
+	seeded := runCommandOn(t, seedHostBinary(), "file://"+configPath, "sqlite", seedCommand)
 	if seeded.err != nil {
 		t.Fatalf("seeding the variant's database failed: %v\n%s", seeded.err, seeded.combined())
 	}

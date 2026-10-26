@@ -38,6 +38,12 @@ import (
 // hostBinary is the compiled program every case runs.
 var hostBinary string
 
+// reviewHostBinary is the review-tagged build, compiled only when this test
+// binary carries the review tag. The differential case seeds a review
+// assembly's database through it: that configuration names the review
+// modules' items, and only a binary carrying those modules accepts it.
+var reviewHostBinary string
+
 // The bounds a case waits within. Exceeding one means the program hung, and the
 // case says so with the output attached rather than with a timeout of the test
 // binary.
@@ -87,6 +93,25 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "building the program failed: %v\n%s", buildErr, out)
 		_ = os.RemoveAll(dir)
 		os.Exit(1)
+	}
+	// A review-tagged case drives a review assembly whose configuration names
+	// the review modules' items, and the seed command has to accept the
+	// configuration it is handed. The plain binary above carries the baseline
+	// modules only, so the review build compiles a second one with the tag and
+	// the differential case seeds through it. The default build compiles one
+	// binary and never looks at this path.
+	if reviewEnabled {
+		reviewHostBinary = filepath.Join(dir, "demo-review")
+		reviewArgs := []string{"build"}
+		if raceEnabled {
+			reviewArgs = append(reviewArgs, "-race")
+		}
+		reviewArgs = append(reviewArgs, "-tags", "review", "-o", reviewHostBinary, ".")
+		if out, buildErr := exec.Command("go", reviewArgs...).CombinedOutput(); buildErr != nil {
+			fmt.Fprintf(os.Stderr, "building the review program failed: %v\n%s", buildErr, out)
+			_ = os.RemoveAll(dir)
+			os.Exit(1)
+		}
 	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
@@ -309,10 +334,25 @@ func (r commandResult) combined() string {
 // runCommand runs one command of the binary to completion under a time bound.
 func runCommand(t *testing.T, config string, args ...string) commandResult {
 	t.Helper()
+	return runCommandOn(t, hostBinary, config, args...)
+}
+
+// seedHostBinary is the program the seed command runs as: the review-tagged
+// build when this test binary is review-tagged, the ordinary build otherwise.
+func seedHostBinary() string {
+	if reviewHostBinary != "" {
+		return reviewHostBinary
+	}
+	return hostBinary
+}
+
+// runCommandOn is runCommand over a named program.
+func runCommandOn(t *testing.T, binary, config string, args ...string) commandResult {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), commandLimit)
 	defer cancel()
 	full := append([]string{"--config", config}, args...)
-	cmd := exec.CommandContext(ctx, hostBinary, full...)
+	cmd := exec.CommandContext(ctx, binary, full...)
 	cmd.Env = childEnv()
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
