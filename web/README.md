@@ -179,15 +179,20 @@ itself, a table container does not overflow its own width), focus order
 the shell's offset and spacer across three viewport classes and three
 banner heights, the skip link, the impersonation banner's live region,
 the data table's per-column content cap, and every console list page's
-horizontal containment at the sm/md/lg floor widths with fixed data.
+horizontal containment at the sm/md/lg floor widths with fixed data. The
+two shells' header band invariant runs as the full matrix: ProductShell and
+ConsoleShell, each at 375px and 430px in en-US and zh-CN, plus the md
+single row, with every rendered header control asserted reachable and
+clickable.
 
 It does not cover color contrast, screenshot or pixel regression, or
 anything a jsdom unit test can already assert. Geometry assertions keep a
-one-pixel tolerance for subpixel rounding. The cases render in en-US and
-the setup pins the document's family to Arial / Liberation Sans, so the
-measured text uses metric-compatible fonts on macOS and on the CI image;
-measurements still belong to the machine's layout engine, which is one
-reason the tier runs on a schedule rather than in the commit gate.
+one-pixel tolerance for subpixel rounding. The setup pins the document's
+family to Arial / Liberation Sans for Latin text and to full-width CJK
+families for Chinese text, so the measured text uses metric-compatible
+fonts on macOS and on the CI image; measurements still belong to the
+machine's layout engine, which is one reason the tier runs on a schedule
+rather than in the commit gate.
 
 ## Package shape (all packages follow it)
 
