@@ -103,7 +103,7 @@ type SSOProviders interface {
 
 **断言重放行的写面。** 断言标识的去重表 `authn_saml_assertions` 归本模块，写这一行是登记方的活，所以协议方法不直接持有 `db.Database`。`authn.sso` 除 `SSOProviders` 外另行交付 `RememberAssertion(ctx, idpID, assertionID, notOnOrAfter)`：插入断言标识，撞唯一约束即 `ErrAssertionReplay`。`authn.sso.saml` 在构造期把它取到的 `SSOProviders` 值断言到这个扩展形状上，断不上即构造失败——没有它一条断言可在有效期内被重放，所以这是构造期要求而非可选。`SSOProviders` 的公开方法集不变：这个扩展是登记方必须额外满足的形状，宿主换用自写实现时同样要交付它。
 
-**域声明的读面。** 提供方视图要列出该提供方声明过的邮箱域及其验证状态，而 `SSOProviders` 的公开方法集不含域读，所以 `authn.sso` 除 `SSOProviders` 外另行交付两个读：`Domains(ctx, idpID)` 读一个提供方的全部声明，`DomainsMany(ctx, ids)` 一次读多个提供方的声明，供列表一次取回整页。两者都返回 `authn.SSOProviderDomain`（`domain` 是规范化后的域，`verified` 是该域是否已验证），按域升序；`Domains` 对不存在的提供方返回 `ErrProviderNotFound`，`DomainsMany` 为每个点名的提供方都给一个条目，没有声明时为空切片。`authn.admin` 在 `Init` 接线时把交付的 `SSOProviders` 值断言到这个扩展形状上，断不上即不挂 SSO 提供方组——管理面的提供方读必须带域，缺了它的登记方不能提供这一组。`SSOProviders` 的公开方法集不变，宿主换用自写实现时同样要交付这个扩展。
+**域声明的读面。** 管理面的提供方视图要列出该提供方声明过的邮箱域及其验证状态：运营者必须看清哪些域还在等 DNS 记录、哪些已经验证，而只有已验证的域参与按邮箱域的登录发现，未验证的声明若不出现在读里就无从看到。`SSOProviders` 的公开方法集不含域读，所以 `authn.sso` 除 `SSOProviders` 外另行交付两个读：`Domains(ctx, idpID)` 读一个提供方的全部声明，`DomainsMany(ctx, ids)` 一次读多个提供方的声明，供列表一次取回整页。两者都返回 `authn.SSOProviderDomain`（`domain` 是规范化后的域，`verified` 是该域是否已验证），按域升序；`Domains` 对不存在的提供方返回 `ErrProviderNotFound`，`DomainsMany` 为每个点名的提供方都给一个条目，没有声明时为空切片。`authn.admin` 在 `Init` 接线时把交付的 `SSOProviders` 值断言到这个扩展形状上，断不上即不挂 SSO 提供方组——管理面的提供方读必须带域，缺了它的登记方不能提供这一组。`SSOProviders` 的公开方法集不变，宿主换用自写实现时同样要交付这个扩展。
 
 ### SSOMetadataRefresher
 
@@ -598,6 +598,7 @@ SSO 不做单点登出：IdP 一侧的登出与停用都不终止 speed 的会�
 | `authn.sso` 提供方登记：`Put`、`Get`、`List`、`Secret`、`Tenant`、`Delete`、`config` 校验、`version` | 已实现 | `pkg/authn/sso/providers.go` `Get`、`Secret`、`List`、`Tenant`、`Put`、`Delete`、`checkPutShape`；`pkg/authn/sso/register.go` `readIDP`、`readSecret`、`insertIDP`、`saveIDP`；`pkg/authn/sso/config_validate.go` `validateConfig` |
 | `authn_idps`、`authn_idp_domains`、`authn_saml_assertions` 迁移集 | 已实现 | `pkg/authn/sso/migrations/{postgres,sqlite}/0001_authn_idps.sql` |
 | 域所有权：`ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains` | 已实现 | `pkg/authn/sso/providers.go` `ClaimDomain`、`VerifyDomain`、`RemoveDomain`、`ReverifyDomains`、`normalizeDomain`、`txtName` |
+| 域声明的读面：`Domains`、`DomainsMany` 与 `SSOProviderDomain` | 已实现 | `pkg/authn/ids.go` `SSOProviderDomain`；`pkg/authn/sso/providers.go` `Domains`、`DomainsMany`；`pkg/authn/admin/sso.go` `domainClaims`、`providerViewOf` |
 | 域所有权证明的解析器来源：`authn.sso.dns-resolver` | 已实现 | `pkg/authn/sso/config.go` `moduleConfig`、`validateResolverAddress`；`pkg/authn/sso/module.go` `resolverLookup`、`lookupTXT` |
 | 企业 OIDC 出站客户端的额外信任根：`authn.sso.oidc-ca-file` | 已实现 | `pkg/authn/sso/oidc/config.go` `trustRoots`；`pkg/authn/sso/oidc/oidc.go` `newProduct` |
 | 发现：`Discover` 与 `POST B/sso/discover` | 已实现 | `pkg/authn/sso/providers.go` `Discover`；`pkg/authn/sso/routes.go` `handleDiscover`、`mountRoutes` |

@@ -299,6 +299,12 @@ graph TD
 
 展示值旁是 [ui-kit](design-web-ui-kit.md) 的复制控件（`CopyButton`）：它把完整的展示值——构造器在场的绝对链接，构造器缺席的裸令牌——写入剪贴板，故交出去的是完整值而不是被折行折断的可视片段；复制成功后控件旁的状态区播报「已复制」，两秒后清空。运行环境不提供 Clipboard API 时点击不写入、不播报，页面不为此失败。
 
+### SSO 页的提供方域名与认领令牌
+
+**提供方读携带已声明的邮箱域。** 租户的提供方读（`GET /api/v1/tenants/{tenant}/sso/providers`，单条读与创建、更新、元数据刷新应答同形）为每个提供方带出 `domains`：该提供方声明过的每一个邮箱域及其 `verified` 状态。页面因此把域名列在提供方之下，不让操作者凭记忆键入：域名节先选一个提供方，随后逐行列出它的声明——域名取等宽字体，状态在旁标为「已验证」或「未验证」，未验证的行带「验证」控件，每一行带「移除」控件。列表之上说明列出的是已声明的域及其验证状态，且只有已验证的域参与按邮箱域的登录发现。运营者必须看清哪些已声明的域还在等 DNS 记录、哪些已经验证：只有已验证的域参与发现，未验证的声明若不出现在读与列表里，运营者就无从知道还差哪一步。认领、验证与移除各自重读提供方列表，行因此出现、转为已验证或消失。
+
+**认领令牌与它要发布的记录一并交出。** 认领成功时页面给出一枚一次性的验证令牌，以及要发布的 DNS 记录名 `_speed-authn.<域>` 与完整记录值 `speed-authn=<令牌>`。令牌、记录名与记录值经 [ui-kit](design-web-ui-kit.md) 的 `OneTimeValuePanel` 呈现：令牌是面板的主值，记录名与记录值是带标签的明细，各带自己的复制控件，操作者仅凭面板就能发布 TXT 记录。面板的关闭控件可及名点名租户、提供方与域；它由页面自持，不属于任何反馈作用域的槽，故 `reset`、后续失败或上下文变化都不清掉它，保留到操作者显式关闭。
+
 ### 按租户寻址的请求
 
 按租户寻址的读以租户选择器的取值为查询键的一段，故切租户即换键、旧租户的数据自行失效。取值为空时该读声明为禁用（不发出请求）；页面渲染一段说明，提示先选择租户。读被禁用的作用域里，页的刷新动作同样禁用，条件与理由见「页的刷新动作」。
@@ -321,7 +327,7 @@ graph TD
 
 **权限页刷新后所选角色已不存在时清空选择并提示。** 刷新动作重读的角色列表成功落定、且读回的列表不再含所选角色时，选择被清空，授权面回到未选角色的状态（授权作用域随所选角色，按「上下文变化时作用域 `reset`」处理），并在页内一个随页面挂载的视觉隐藏 `role="status"` 区域里播报一条说明：所选角色已不存在、选择已清除。角色列表读失败时保持选择，由陈旧提示承担。这条提示在操作者下一次选择角色、切换租户或下一次刷新时清除。本页自己移除所选角色时，写入自身清空选择并落成功确认，不触发这条提示。文案在 zh-CN 与 en-US 语言包里各一键。
 
-**SSO 页的刷新动作与行内元数据刷新有可区分的文字。** SSO 页的刷新动作在租户选择器行内，重读提供方列表，可见文字是「刷新」，可及名点名对象「刷新提供方列表」。行内元数据刷新是对 IdP 的一次写入，可见文字是「刷新元数据」，可及名是「刷新元数据（{{name}}）」。两种语言下两处的可见文字都不相同，可及名都以可见文字起头。
+**SSO 页的刷新动作与行内元数据刷新有可区分的文字。** SSO 页的刷新动作在租户选择器行内，重读提供方列表及其携带的域名与验证状态，可见文字是「刷新」，可及名点名对象「刷新提供方列表」。行内元数据刷新是对 IdP 的一次写入，可见文字是「刷新元数据」，可及名是「刷新元数据（{{name}}）」。两种语言下两处的可见文字都不相同，可及名都以可见文字起头。
 
 **更新时间与完成播报只设在审计查询页与仪表盘。** 刷新动作所在的动作组里，刷新动作之前显示静态文字「更新于 {{time}}」：取页面渲染着、且落定过数据的各个读最近一次成功的落定时刻，有多个读时取其中最旧的一个；换键后以旧数值留在屏上的读沿用换键前最后一次落定的时刻，直到新值落定；特性缺席而未发出的读、从未落定过的读（含始终被权限拒绝的读）不计；没有任何读落定过时不渲染。`time` 带日期、时分秒与 UTC 标注，经 [i18n](design-web-i18n.md) 的 `formatInstant` 按活动语言以 `dateStyle: 'medium'`、`timeStyle: 'long'`、`timeZone: 'UTC'` 格式化；本包其余时间同样经 `formatInstant` 固定 UTC 渲染，不由本包自带格式化器。带秒使连续两次刷新可分辨，带日期使前台静止过夜的页面仍能看出数据是哪一天的；不做相对时间，不逐秒变化。刷新失败时落定时刻不变，所示仍是最近一次成功的时间。用户点击刷新动作时，页面记下点击时刻并清空页内一个随页面挂载的视觉隐藏 `role="status"` 区域，该区域先空后填，与「更新于」是否渲染无关；被刷新重读的每一个读都成功落定、且落定时刻不早于点击时刻之后，向该区域写入一次「数据已刷新」，连续两次点击得到相同文本时先清空再填入，使第二次同样播报；任一读失败时不播报，失败由陈旧提示承担。判定取各读的落定时刻，不取重读调用的返回值：换键发出的读没有可等待的重读结果。自动重读不播报。「更新于 {{time}}」与「数据已刷新」在 zh-CN 与 en-US 语言包里各一键。
 
@@ -424,13 +430,13 @@ graph TD
 
 **作用域按控件组划分，页面不聚合。** 控件组的判据见 ui-kit。权限页的角色、授权、绑定、账户绑定查询各是一组，账户绑定查询表的解绑动作用它自己的作用域，区域在查询表之下，不用绑定组的作用域；其余页面同样按带标题的节划分。页面不聚合多个 mutation 的错误，也不各持错误选取函数。表格行内的动作按行是否带自己的草稿输入区分：单击型的行动作（撤销、移除）共用该表的作用域，区域在表之下，成功文案点名被操作的行；带各自草稿输入的行（租户名册的重命名与启停）每行一个作用域，区域在该行内。写入自身的效果会卸载它所在节的控件时（冒充的发起使发起表单卸载），区域放在写入之后仍存活的最近祖先里：冒充的发起与结束的区域在「当前冒充」状态节内，不在发起表单内。面板打开期间的落点见「账户页的详情与创建面板」。
 
-**上下文变化时作用域 `reset`，写入在途时改变上下文的控件禁用。** 一个作用域在它的写入所带的某个请求实参改变时 `reset`。租户是按租户寻址的页面上每次写入的实参，租户改变时该页全部作用域 `reset`，租户选择器在该页任一作用域 `pending` 时禁用。其余选择器按各自牵动的作用域：SSO 页的创建与编辑表单随编辑目标所选的提供方，域名认领、验证与移除随域名栏所选的提供方，它们互不牵动；权限页的授权作用域随所选角色，绑定作用域随绑定账户，账户绑定查询的作用域随查询账户（应用另一个账户即 `reset`）；设置页的命名空间选择牵动设置表的作用域。这些选择器在它们牵动的作用域 `pending` 时禁用。页的刷新动作同样是上下文变化，见「页的刷新动作」。
+**上下文变化时作用域 `reset`，写入在途时改变上下文的控件禁用。** 一个作用域在它的写入所带的某个请求实参改变时 `reset`。租户是按租户寻址的页面上每次写入的实参，租户改变时该页全部作用域 `reset`，租户选择器在该页任一作用域 `pending` 时禁用。其余选择器按各自牵动的作用域：SSO 页的创建与编辑表单随编辑目标所选的提供方，域名节的认领、验证与移除随域名节所选的提供方，它们互不牵动；权限页的授权作用域随所选角色，绑定作用域随绑定账户，账户绑定查询的作用域随查询账户（应用另一个账户即 `reset`）；设置页的命名空间选择牵动设置表的作用域。这些选择器在它们牵动的作用域 `pending` 时禁用。页的刷新动作同样是上下文变化，见「页的刷新动作」。
 
 **成功确认覆盖本包每个由操作者发起、落定且无一失败的动作**，包括只带表单清空或列表重读这类隐含变化的动作，例如账户创建与服务密钥创建、冒充的发起、结束与终止、邀请的撤销、成员的移除与写入、SSO 豁免的切换、SSO 提供方与域名的各写入、短信模板的各写入、租户详情的重命名与启停。这个列表是示例；判据是动作整体成功。冒充的发起同样落成功文案；宿主给了 `onImpersonationChange` 时页面随即被带离，持续的提示由租户框架里的冒充横幅承担。
 
 **写入成功后失效它改变的每一个屏上可见的读。** 判据：这次写入成功后，屏上哪个读的结果不再成立，哪个读就失效重读，包括不在发起写入的那一节里的读。示例：移除角色连带撤销它的授权与绑定，故失效角色读、绑定列表读、该角色的授权读，以及该租户下任一账户的绑定查询（移除角色不知道页面正在查哪个账户，故按租户整体失效）；移除账户的登录标识改变按登录标识前缀与类别检索时账户列表的命中集合，且账户行与账户视图本身都携带登录标识，故同时失效账户列表与该账户自身的读（行与详情面板都读它），与添加登录标识对称；停用账户同步清理它的会话（[design-authn-admin](../authn/design-authn-admin.md)），故同时失效该账户的会话读。这个列表是示例；判据是这次写入成功后屏上结果不再成立的读。
 
-**一次性值的展示面板与区域并列，不属于槽。** 邀请的接受链接、SSO 域名认领令牌、新建的服务密钥是只交出一次的值。呈现用 [ui-kit](design-web-ui-kit.md) 的 `OneTimeValuePanel`（带复制控件与显式关闭按钮）；面板的状态由页面组件持有，不在 `useWriteFeedback` 的槽里，也不在随关闭卸载的面板内容里；它渲染在同一控件组之下、区域之侧，是单个 `role="status"` 的 live region，关闭按钮的可及名含所属的对象：邀请含租户与受邀人，SSO 认领令牌含租户、提供方与域名，服务密钥含账户。面板保留到操作者显式关闭或离开页面，不被 `reset`、下一次失败或上下文变化清掉；同一控件组再次发放时新值替换旧值，同一提供方与域名再次认领换发新令牌、旧令牌作废。
+**一次性值的展示面板与区域并列，不属于槽。** 邀请的接受链接、SSO 域名认领令牌、新建的服务密钥是只交出一次的值。呈现用 [ui-kit](design-web-ui-kit.md) 的 `OneTimeValuePanel`（带复制控件与显式关闭按钮；SSO 认领令牌另带记录名与完整记录值，各带自己的复制控件）；面板的状态由页面组件持有，不在 `useWriteFeedback` 的槽里，也不在随关闭卸载的面板内容里；它渲染在同一控件组之下、区域之侧，是单个 `role="status"` 的 live region，关闭按钮的可及名含所属的对象：邀请含租户与受邀人，SSO 认领令牌含租户、提供方与域名，服务密钥含账户。面板保留到操作者显式关闭或离开页面，不被 `reset`、下一次失败或上下文变化清掉；同一控件组再次发放时新值替换旧值，同一提供方与域名再次认领换发新令牌、旧令牌作废。
 
 **批量保存是一次尝试。** 设置页的保存以一次 `run` 结算：逐项以 `mutateAsync` 发出并以 `Promise.allSettled` 等待，保存控件在整批落定之前保持忙态，忙态取自作用域的 `pending`，不取 mutation 观察者的 `isPending`。全部成功才落「设置已保存」；有失败时以提交顺序中第一个失败项的码落失败，失败项的草稿、行标记与待保存计数保留，成功项的草稿清掉，表格翻到第一个失败项所在的页，并把反馈区域滚入视野（用户偏好减少动效时不做平滑滚动）。部分落地的批量只报失败。
 
@@ -520,7 +526,7 @@ graph TD
 | 步进对话框会发送验证码的步骤出示人机验证证明 | 已实现 | `web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge`、`stepMaySend`；`web/packages/auth-core/src/step-up.ts` `useStepUp` |
 | 前往账户设置的入口由宿主经 `accountHref` 给出 | 已实现 | `web/packages/console-ui/src/ConsoleShell.tsx` `ConsoleShellProps.accountHref`；`web/packages/console-ui/src/internal/account-href.tsx` `ConsoleAccountHrefProvider`、`useConsoleAccountHref`；`web/packages/console-ui/src/internal/step-up-challenge.tsx` `StepUpChallenge` |
 | 各页的反馈作用域与成功确认 | 已实现 | `web/packages/console-ui/src/internal/write-feedback.tsx` `WriteFeedbackRegion`、`failureTextOf`、`useFailureScroll`；`web/packages/console-ui/src/AccountsPage.tsx` `AccountsPage`；`web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/TenantRosterPage.tsx` `TenantRosterPage`；`web/packages/console-ui/src/ImpersonationsPage.tsx` `ImpersonationsPage`；`web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm` |
-| 一次性值的展示面板（邀请链接、SSO 令牌、服务密钥） | 已实现 | `web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel`；`web/packages/console-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/console-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
+| 一次性值的展示面板（邀请链接、SSO 认领令牌含记录名与完整记录值、服务密钥） | 已实现 | `web/packages/ui-kit/src/components/OneTimeValuePanel.tsx` `OneTimeValuePanel`、`OneTimeValuePanelDetail`；`web/packages/console-ui/src/AccountsPage.tsx` `OneTimeSecretNotice`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationLinkNotice`；`web/packages/console-ui/src/SsoPage.tsx` `ClaimTokenNotice` |
 | 设置页的批量保存按一次尝试 | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage` |
 | 创建成功后表单复位与必填为空时提交禁用 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreateForm`；`web/packages/console-ui/src/PermissionsPage.tsx` `saveRole`；`web/packages/console-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/console-ui/src/SmsPage.tsx` `register`、`offer`、`registerReady`、`offerReady`；`web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage` |
 | 确认对话框在确认点击时关闭（含权限页的角色删除） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/internal/confirm.tsx` `usePendingConfirm` |
@@ -547,7 +553,7 @@ graph TD
 | 权限目录与授予选择器显示服务端渲染的权限说明 | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`、`PermissionLabel` |
 | 内建角色只读（保留查看授权入口，隐藏授予与撤销控件） | 已实现 | `web/packages/console-ui/src/PermissionsPage.tsx` `PermissionsPage`；`web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json` |
 | 邀请与成员页（邀请读写、成员列出与移除） | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `InvitationsPage`；`web/packages/console-ui/src/routes.tsx` `invitationsAdminRoutes` |
-| SSO 页（创建、改动、列出、删除、元数据、域名认领与操作） | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/console-ui/src/routes.tsx` `ssoAdminRoutes` |
+| SSO 页（创建、改动、列出、删除、元数据、域名列表与认领、验证、移除） | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoPage`、`SsoProviderWriteForm`；`web/packages/console-ui/src/routes.tsx` `ssoAdminRoutes` |
 | 设置读写页（PageHeader 开篇） | 已实现 | `web/packages/console-ui/src/SettingsPage.tsx` `SettingsPage`；`web/packages/console-ui/src/routes.tsx` `settingsAdminRoutes` |
 | 短信模板页（列出、登记、提交、开关、移除） | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/routes.tsx` `smsAdminRoutes` |
 | 短信模板页的读取失败一律落到通用失败面，写入表单不收起 | 已实现 | `web/packages/console-ui/src/SmsPage.tsx` `SmsPage`；`web/packages/console-ui/src/internal/async-section.tsx` `ConsoleAsyncSection` |
@@ -556,7 +562,7 @@ graph TD
 | 按租户寻址页面的租户选择器 | 已实现 | `web/packages/console-ui/src/internal/tenant-scope.tsx` `TenantScope` |
 | 账户选择器（按显示名或登录标识检索，交出账户 id） | 已实现 | `web/packages/console-ui/src/internal/account-selector.tsx` `AccountSelector` |
 | 账户的创建、改动、状态变更、MFA 要求、口令重置、标识新增、服务密钥新建 | 已实现 | `web/packages/console-ui/src/AccountsPage.tsx` `AccountCreateForm`、`AccountDetailWrites`；`web/packages/console-ui/src/operations.tsx` `useCreateAccount`、`usePatchAccount`、`useSetAccountStatus`、`useSetMFARequired`、`useResetPassword`、`useAddIdentifier`、`useCreateSecret` |
-| SSO 提供方的创建与改动、域名认领 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoProviderWriteForm`；`web/packages/console-ui/src/operations.tsx` `useCreateSsoProvider`、`useUpdateSsoProvider`、`useClaimSsoDomain` |
+| SSO 提供方的创建与改动、域名的认领、验证、移除与重新验证 | 已实现 | `web/packages/console-ui/src/SsoPage.tsx` `SsoProviderWriteForm`、`ClaimTokenNotice`；`web/packages/console-ui/src/operations.tsx` `useCreateSsoProvider`、`useUpdateSsoProvider`、`useClaimSsoDomain`、`useVerifySsoDomain`、`useRemoveSsoDomain`、`useReverifySsoDomains` |
 | 成员的写入与 SSO 豁免 | 已实现 | `web/packages/console-ui/src/InvitationsPage.tsx` `MemberWriteForm`；`web/packages/console-ui/src/operations.tsx` `useWriteMember`、`useSetMemberSsoExempt` |
 | 页头、双语资源与错误码白名单 | 已实现 | `web/packages/console-ui/src/locales/zh-CN.json`、`en-US.json`；`web/packages/console-ui/src/internal/error-text.ts` |
 | 页面声明的 `requires`（每条声明非空，元素类型 `FeatureName`） | 已实现 | `web/packages/console-ui/src/routes.tsx` `consoleRoutes`；`web/packages/console-ui/src/route.ts` `ConsoleRoute` |
