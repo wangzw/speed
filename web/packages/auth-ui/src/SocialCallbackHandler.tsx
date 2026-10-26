@@ -15,6 +15,15 @@
  * retry button that reads once more. Nothing here navigates: the callback
  * route is the host's own and the success callback is the host's.
  *
+ * A refused answer keeps its step when the flow stays parked on it: the
+ * failure banner renders beside the still-parked step, its state is
+ * unchanged, and the step's own controls are the retry -- answering again
+ * clears the banner first, because an answer is a new attempt. Only a
+ * refusal with no step left to keep -- the flow is gone
+ * (`authn.flow_invalid`), or a ready flow's `complete` answer is refused
+ * -- renders the banner with the retry that reads the flow back, the same
+ * shape as a read that finds nothing.
+ *
  * A mount that finds the session already authenticated is a re-entry to
  * the callback route after a completed login; no second read is started
  * and the handler fires onSignedIn again so the host bounces the viewer
@@ -83,11 +92,24 @@ export function SocialCallbackHandler({
   const { t } = useAuthUiTranslation()
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
+  // A refusal of a still-parked step's answer: the step stays, and this
+  // code renders beside it. Cleared as the next answer begins.
+  const [stepFailure, setStepFailure] = useState<string | null>(null)
   const [absentShown, setAbsentShown] = useState(false)
   const [attempt, setAttempt] = useState(0)
 
   const driver = useFlowDriver(session, {
     onFailure: (code) => {
+      // A refusal that leaves the flow parked on its step keeps that step:
+      // the banner rides beside it and the step's own controls are the
+      // retry. Only a refusal with no step left to keep -- the flow is
+      // gone (the driver drops it for authn.flow_invalid), or a ready
+      // flow's `complete` answer was refused -- falls back to the banner
+      // with the retry that reads the flow back.
+      if (driverRef.current.currentStep() !== null) {
+        setStepFailure(code)
+        return
+      }
       setErrorCode(code)
       setFailed(true)
     },
@@ -197,6 +219,7 @@ export function SocialCallbackHandler({
   const retry = (): void => {
     setErrorCode(null)
     setFailed(false)
+    setStepFailure(null)
     setAttempt((value) => value + 1)
   }
 
@@ -225,15 +248,27 @@ export function SocialCallbackHandler({
 
   // A step the flow parked when it was read back is rendered and answered
   // in place, with the deployment's proof block above it when the step may
-  // send; only the pending read shows the notice below.
+  // send; only the pending read shows the notice below. A refused answer
+  // that left the flow on this step renders its banner beneath the step,
+  // not in place of it, and answering again clears it first.
   if (driver.step !== null) {
     return (
-      <HumanGatedFlowStep
-        session={session}
-        step={driver.step}
-        busy={driver.busy}
-        onAnswer={(input, proof) => void driver.answer(input, proof)}
-      />
+      <>
+        <HumanGatedFlowStep
+          session={session}
+          step={driver.step}
+          busy={driver.busy}
+          onAnswer={(input, proof) => {
+            setStepFailure(null)
+            void driver.answer(input, proof)
+          }}
+        />
+        {stepFailure === null ? null : (
+          <Box sx={{ mt: 1, width: '100%' }}>
+            <InlineError code={stepFailure} />
+          </Box>
+        )}
+      </>
     )
   }
 

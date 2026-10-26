@@ -446,6 +446,160 @@ describe('SocialCallbackHandler', () => {
     ).toBe(false)
   })
 
+  it('keep the parked step and render a refused answer beside it, retryable in place', async () => {
+    // A parked step's answer refused with any code but authn.flow_invalid
+    // leaves the flow parked on that step: the failure banner renders
+    // beside the step -- whose own controls are the retry -- instead of
+    // replacing it with the flow-read retry that belongs to a lost flow.
+    // Answering again begins a new attempt, clearing the banner first.
+    let answers = 0
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', secret: true }],
+          },
+        }),
+      [LOGIN_ANSWER]: (call) => {
+        const step = (call.options?.body as { step?: string }).step
+        if (step === 'complete') {
+          return authenticatedCompletion()
+        }
+        answers += 1
+        if (answers === 1) {
+          throw apiError(429, 'authn.throttled')
+        }
+        return completeFlow(2)
+      },
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    // The step is still there, with the refusal beside it and no
+    // flow-read retry button.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.throttled,
+    )
+    expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toHaveValue(
+      '123456',
+    )
+    expect(
+      screen.queryByRole('button', { name: zhCN.socialCallback.retry }),
+    ).not.toBeInTheDocument()
+
+    // The step's own controls are the retry: answering again clears the
+    // banner and advances the same flow to completion.
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(harness.store.get()).toBe('access-1')
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
+    ).toHaveLength(1)
+  })
+
+  it('fall back to the re-reading retry when a step answer is refused as flow-invalid', async () => {
+    // authn.flow_invalid means the flow is gone: no step is left to keep,
+    // so the banner renders with the retry that reads the flow back -- the
+    // same shape as a read that finds no flow.
+    let reads = 0
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => {
+        reads += 1
+        return reads === 1
+          ? openFlow({
+              seq: 1,
+              state: 'first',
+              next: {
+                kind: 'challenge',
+                fields: [{ name: 'code', kind: 'code', secret: true }],
+              },
+            })
+          : completeFlow(1)
+      },
+      [LOGIN_ANSWER]: (call) => {
+        const step = (call.options?.body as { step?: string }).step
+        if (step === 'complete') {
+          return authenticatedCompletion()
+        }
+        throw apiError(401, 'authn.flow_invalid')
+      },
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '123456')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+
+    // No step survives the lost flow: the banner carries the retry.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.flow_invalid,
+    )
+    expect(
+      screen.queryByLabelText(zhCN.smsSignIn.codeLabel),
+    ).not.toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.socialCallback.retry }),
+    )
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
+    ).toHaveLength(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(harness.store.get()).toBe('access-1')
+  })
+
+  it('fall back to the re-reading retry when a ready flow complete answer is refused', async () => {
+    // A ready flow is taken with step: complete and never parked; a
+    // refusal of that answer leaves no step to keep, so the banner renders
+    // with the retry that reads the flow back.
+    let answers = 0
+    const harness = makeHarness({
+      [LOGIN_CURRENT]: () => completeFlow(1),
+      [LOGIN_ANSWER]: () => {
+        answers += 1
+        if (answers === 1) {
+          throw apiError(503, 'authn.unavailable')
+        }
+        return authenticatedCompletion()
+      },
+      [PROFILE_GET]: () => principal(),
+    })
+    const onSignedIn = vi.fn()
+    renderWithProviders(
+      <SocialCallbackHandler session={harness.session} onSignedIn={onSignedIn} />,
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.unavailable,
+      ),
+    )
+    await userEvent.setup().click(
+      screen.getByRole('button', { name: zhCN.socialCallback.retry }),
+    )
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
+    expect(
+      harness.calls.filter((call) => call.path === '/api/v1/auth/flows/current'),
+    ).toHaveLength(2)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(harness.store.get()).toBe('access-1')
+  })
+
   it('treat a superseded completion as the lost race it is: no failed state, no onSignedIn', async () => {
     // A sibling login committing through the same session while this
     // read's completion is in flight makes auth-core reject it with
