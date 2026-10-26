@@ -27,9 +27,18 @@ package main
 // actually be reached on. A proved phone number is the sms destination; with no
 // proved phone the account falls back to its email address, and sms is removed
 // from that recipient's effective set rather than attempted with the email as
-// its destination. The fixture writes that pruned set through the preference
-// seam because the delivery pipeline reads the effective channels when it
-// consumes the job.
+// its destination. A proved phone is not enough on its own: the sms channel is
+// chosen only when the SMS template registry holds the type's template for the
+// recipient's language — the template the rollout journey registers. Another
+// review server that never registers it therefore falls back to email (or
+// in-app alone) instead of attempting sms with a template the registry does not
+// hold; the channel choice lives here, not in the type's default set, so the
+// type's sms membership does not leak an attempt into every server. The
+// platform's sending gate stays with the delivery pipeline: a held template that
+// is disabled or still awaiting review is still chosen, so its refusal is
+// recorded rather than hidden. The fixture writes the pruned set through the
+// preference seam because the delivery pipeline reads the effective channels
+// when it consumes the job.
 //
 // The periodic schedule is the member-workspace journey's dispatch: the
 // platform's scheduler enqueues one job per tenant per window and the handler
@@ -69,6 +78,7 @@ import (
 	"github.com/vislake/speed/pkg/log"
 	"github.com/vislake/speed/pkg/notification"
 	"github.com/vislake/speed/pkg/notification/preferences"
+	"github.com/vislake/speed/pkg/sms"
 	"github.com/vislake/speed/pkg/tenant"
 )
 
@@ -111,15 +121,12 @@ type reviewNoticePlan struct {
 	Channels []notification.Channel
 }
 
-// planReviewNotice resolves one account's identifiers into a delivery plan.
-//
-// A proved phone number is the sms destination: the journey's recipient has
-// verified their number, and an unproved one is not a destination the product
-// would send a notice to. With no proved phone the account falls back to its
-// email address, which keeps the in-app and email channels reachable. An
-// account holding neither is not addressable and is skipped rather than failed.
-func planReviewNotice(identifiers []authn.Identifier) (reviewNoticePlan, bool) {
-	var phone, email string
+// reviewNoticeDestinations resolves an account's identifiers into the two
+// destinations a dispatch can address: the proved phone number, which is the
+// sms destination, and the email address, which is the email destination. An
+// unproved phone is not a destination the product would send a notice to, so it
+// is ignored.
+func reviewNoticeDestinations(identifiers []authn.Identifier) (phone, email string) {
 	for _, identifier := range identifiers {
 		if identifier.Value == "" {
 			continue
@@ -135,8 +142,26 @@ func planReviewNotice(identifiers []authn.Identifier) (reviewNoticePlan, bool) {
 			}
 		}
 	}
+	return phone, email
+}
+
+// planReviewNotice resolves one account's identifiers into a delivery plan.
+//
+// A proved phone number is the sms destination when the registry holds the
+// type's template for the recipient's language; otherwise the account falls
+// back to its email address, which keeps the in-app and email channels
+// reachable. The platform's own sending gate — a disabled template, a language
+// still under review, the deployment's sending switch — is not part of this
+// choice: the delivery pipeline refuses such a send, and the fixture must let it
+// be observed rather than quietly choosing another channel. An account holding
+// neither destination is not addressable and is skipped rather than failed. A
+// proved phone with neither a held template nor an email address is still
+// addressable in-app; the dispatch carries the phone as its "to" parameter,
+// which the in-app channel does not read.
+func planReviewNotice(identifiers []authn.Identifier, smsAddressable bool) (reviewNoticePlan, bool) {
+	phone, email := reviewNoticeDestinations(identifiers)
 	switch {
-	case phone != "":
+	case phone != "" && smsAddressable:
 		return reviewNoticePlan{
 			To:       phone,
 			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
@@ -145,6 +170,11 @@ func planReviewNotice(identifiers []authn.Identifier) (reviewNoticePlan, bool) {
 		return reviewNoticePlan{
 			To:       email,
 			Channels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+		}, true
+	case phone != "":
+		return reviewNoticePlan{
+			To:       phone,
+			Channels: []notification.Channel{notification.ChannelInApp},
 		}, true
 	default:
 		return reviewNoticePlan{}, false
@@ -243,12 +273,14 @@ var _ jobs.Handler = (*reviewNotifier)(nil)
 // reviewNotificationModule is the fixture's descriptor.
 //
 // The dispatcher, the account store, the membership store, the preference
-// matrix, the locale resolver and the handler registration face are required:
-// without them the fixture has nowhere to submit a dispatch, no member to
-// address, no recipient-aware channel set to write, no language to render it in
-// and no place to register its job. The logger is optional, as it is for every
-// module, and the host's default logger carries the fixture's diagnostics when
-// none is delivered.
+// matrix, the SMS template registry, the locale resolver and the handler
+// registration face are required: without them the fixture has nowhere to
+// submit a dispatch, no member to address, no recipient-aware channel set to
+// write, no way to tell whether the sms channel can carry the type's template
+// in the recipient's language, no language to render it in and no place to
+// register its job. The logger is optional, as it is for every module, and the
+// host's default logger carries the fixture's diagnostics when none is
+// delivered.
 //
 // The control feature is a static declaration: it is present exactly while this
 // module is in force, which is only in a review run, because the module itself
@@ -261,6 +293,7 @@ func reviewNotificationModule() core.Module {
 			{Token: (*notification.Preferences)(nil)},
 			{Token: (*authn.Accounts)(nil)},
 			{Token: (*authn.Memberships)(nil)},
+			{Token: (*sms.Registry)(nil)},
 			{Token: (*i18n.Resolver)(nil)},
 			{Token: (*jobs.Handlers)(nil)},
 			{Token: (*log.Logger)(nil), Optional: true},
@@ -296,6 +329,15 @@ func reviewNotificationModule() core.Module {
 	}
 }
 
+// reviewSMSTemplates is the part of the SMS template registry this fixture
+// reads before it chooses the sms channel: one resolution, which answers
+// whether the registry holds a template for a language and can carry a message
+// in it. The narrow shape keeps the decision testable without the registry's
+// management surface.
+type reviewSMSTemplates interface {
+	Resolve(sms.Message) (sms.Resolved, error)
+}
+
 // reviewNotifier is the worker's product: the seams one dispatch needs, and the
 // logger its skipped members are reported on.
 type reviewNotifier struct {
@@ -303,6 +345,7 @@ type reviewNotifier struct {
 	prefs      notification.Preferences
 	accounts   authn.Accounts
 	members    authn.Memberships
+	templates  reviewSMSTemplates
 	resolver   i18n.Resolver
 	logger     *slog.Logger
 }
@@ -329,6 +372,11 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 		return nil, fmt.Errorf("%s: taking up the membership store: %w",
 			reviewNotificationModuleName, err)
 	}
+	templates, err := core.Resolve[sms.Registry](reg)
+	if err != nil {
+		return nil, fmt.Errorf("%s: taking up the SMS template registry: %w",
+			reviewNotificationModuleName, err)
+	}
 	resolver, err := core.Resolve[i18n.Resolver](reg)
 	if err != nil {
 		return nil, fmt.Errorf("%s: taking up the locale resolver: %w",
@@ -343,6 +391,7 @@ func newReviewNotifier(reg *core.Registry) (*reviewNotifier, error) {
 		prefs:      prefs,
 		accounts:   accounts,
 		members:    members,
+		templates:  templates,
 		resolver:   resolver,
 		logger:     logger,
 	}, nil
@@ -409,6 +458,15 @@ func (n *reviewNotifier) Handle(ctx context.Context, job *jobs.Job, _ jobs.Progr
 // the delivery pipeline reads the same set when it consumes the job, and
 // submits the dispatch under occurrenceID.
 //
+// The sms channel is offered to the plan only after the SMS template registry
+// reports that it holds the type's template for the recipient's language, so a
+// server that never registered the rollout template skips sms instead of
+// failing the channel locally; the other channels still deliver. A template
+// the platform's sending gate refuses is still chosen, so the pipeline records
+// that refusal instead of the fixture hiding it. The resolution happens before
+// the plan is chosen because the destination the registry checks is the
+// recipient's proved phone, which the plan itself selects.
+//
 // The second result is false when the account has neither a proved phone nor an
 // email address; the caller reports that as a skip, not a failure.
 func (n *reviewNotifier) notify(ctx context.Context, id authn.AccountID, occurrenceID string) (reviewNoticePlan, bool, error) {
@@ -416,7 +474,8 @@ func (n *reviewNotifier) notify(ctx context.Context, id authn.AccountID, occurre
 	if err != nil {
 		return reviewNoticePlan{}, false, fmt.Errorf("listing the identifiers of %q: %w", id, err)
 	}
-	plan, ok := planReviewNotice(identifiers)
+	locale := string(n.resolver.LocaleFor(ctx, string(id)))
+	plan, ok := planReviewNotice(identifiers, n.smsAddressable(locale, identifiers))
 	if !ok {
 		return reviewNoticePlan{}, false, nil
 	}
@@ -435,7 +494,7 @@ func (n *reviewNotifier) notify(ctx context.Context, id authn.AccountID, occurre
 			Class:  notification.RecipientUser,
 			UserID: string(id),
 		},
-		Locale:       string(n.resolver.LocaleFor(ctx, string(id))),
+		Locale:       locale,
 		Params:       map[string]any{"to": plan.To},
 		OccurrenceID: occurrenceID,
 	})
@@ -443,6 +502,36 @@ func (n *reviewNotifier) notify(ctx context.Context, id authn.AccountID, occurre
 		return reviewNoticePlan{}, true, fmt.Errorf("dispatching the notice of %q: %w", id, err)
 	}
 	return plan, true, nil
+}
+
+// smsAddressable reports whether the type's sms template is one the registry
+// holds for the account's proved phone and locale: the template is in force and
+// declares the language, with the destination parameter the dispatch carries.
+//
+// ErrRejected is the one answer that says the registry cannot carry the message
+// at all — no such template, no code or body for the language, a parameter the
+// template does not declare — and it is what keeps the type's sms membership
+// from leaking an attempt into a server that never registered the template.
+// ErrNotSendable is deliberately different: the template is held and the
+// language is declared, but the platform's sending gate refuses it (the
+// template is disabled, the language is still under review, or the deployment's
+// sending switch is off). The delivery pipeline is where that gate belongs, and
+// its refusal is the product behaviour the rollout journey proves; the fixture
+// must not hide it by choosing another channel.
+//
+// An account with no proved phone has no sms destination and answers false.
+func (n *reviewNotifier) smsAddressable(locale string, identifiers []authn.Identifier) bool {
+	phone, _ := reviewNoticeDestinations(identifiers)
+	if phone == "" {
+		return false
+	}
+	_, err := n.templates.Resolve(sms.Message{
+		To:       phone,
+		Template: reviewNotificationSMSTemplate,
+		Params:   map[string]string{"to": phone},
+		Locale:   locale,
+	})
+	return err == nil || errors.Is(err, sms.ErrNotSendable)
 }
 
 // membersOf lists every membership of a tenant, following the paging cursor the

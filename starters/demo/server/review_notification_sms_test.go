@@ -11,12 +11,17 @@ package main
 // email address as its destination.
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/feature"
+	"github.com/vislake/speed/pkg/i18n"
+	"github.com/vislake/speed/pkg/jobs"
 	"github.com/vislake/speed/pkg/notification"
+	"github.com/vislake/speed/pkg/sms"
 )
 
 const (
@@ -91,7 +96,9 @@ func TestReviewNotificationControlFeatureIsDeclared(t *testing.T) {
 }
 
 // TestReviewNoticePlansTheExternalChannelFromTheAccount holds the per-recipient
-// choice: a proved phone is the destination and sms the external channel, and
+// choice: a proved phone whose template the registry holds for the language is
+// the destination and sms the external channel; without a held template the
+// account falls back to its email address, or to in-app alone when it has none;
 // an account with only an email address falls back to email without sms.
 func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	phone := authn.Identifier{
@@ -106,25 +113,44 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	}
 
 	cases := []struct {
-		name         string
-		identifiers  []authn.Identifier
-		wantTo       string
-		wantChannels []notification.Channel
-		wantOK       bool
+		name           string
+		identifiers    []authn.Identifier
+		smsAddressable bool
+		wantTo         string
+		wantChannels   []notification.Channel
+		wantOK         bool
 	}{
 		{
-			name:         "a proved phone addresses sms",
-			identifiers:  []authn.Identifier{email, phone},
-			wantTo:       reviewSMSTestPhone,
-			wantChannels: []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
-			wantOK:       true,
+			name:           "a proved phone with a held template addresses sms",
+			identifiers:    []authn.Identifier{email, phone},
+			smsAddressable: true,
+			wantTo:         reviewSMSTestPhone,
+			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelSMS},
+			wantOK:         true,
 		},
 		{
-			name:         "an account without a phone falls back to email",
-			identifiers:  []authn.Identifier{email},
-			wantTo:       reviewSMSTestEmail,
-			wantChannels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
-			wantOK:       true,
+			name:           "a proved phone without a held template falls back to email",
+			identifiers:    []authn.Identifier{email, phone},
+			smsAddressable: false,
+			wantTo:         reviewSMSTestEmail,
+			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+			wantOK:         true,
+		},
+		{
+			name:           "a proved phone without a held template and no email stays in-app",
+			identifiers:    []authn.Identifier{phone},
+			smsAddressable: false,
+			wantTo:         reviewSMSTestPhone,
+			wantChannels:   []notification.Channel{notification.ChannelInApp},
+			wantOK:         true,
+		},
+		{
+			name:           "an account without a phone falls back to email",
+			identifiers:    []authn.Identifier{email},
+			smsAddressable: true,
+			wantTo:         reviewSMSTestEmail,
+			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+			wantOK:         true,
 		},
 		{
 			name: "an unproved phone is not an sms destination",
@@ -132,9 +158,10 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 				email,
 				{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSelf},
 			},
-			wantTo:       reviewSMSTestEmail,
-			wantChannels: []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
-			wantOK:       true,
+			smsAddressable: false,
+			wantTo:         reviewSMSTestEmail,
+			wantChannels:   []notification.Channel{notification.ChannelInApp, notification.ChannelEmail},
+			wantOK:         true,
 		},
 		{
 			name:        "an account with no address is not addressable",
@@ -144,7 +171,7 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			plan, ok := planReviewNotice(c.identifiers)
+			plan, ok := planReviewNotice(c.identifiers, c.smsAddressable)
 			if ok != c.wantOK {
 				t.Fatalf("planReviewNotice answered ok=%t, want %t", ok, c.wantOK)
 			}
@@ -159,6 +186,223 @@ func TestReviewNoticePlansTheExternalChannelFromTheAccount(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestReviewNoticeSkipsSMSWithoutASendableTemplate drives the decision through
+// notify: a member with a proved phone and an email address whose SMS template
+// the registry cannot resolve is dispatched on in-app and email, and sms is
+// removed from the effective set before the pipeline reads it. The registry is
+// asked first, so a server that never registered the rollout template does not
+// attempt sms at all.
+func TestReviewNoticeSkipsSMSWithoutASendableTemplate(t *testing.T) {
+	templates := &stubReviewSMSTemplates{err: fmt.Errorf("%w: no template", sms.ErrRejected)}
+	prefs := &stubReviewPrefs{
+		effective: []notification.Channel{
+			notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS,
+		},
+	}
+	dispatcher := &stubReviewDispatcher{}
+	notifier := &reviewNotifier{
+		dispatcher: dispatcher,
+		prefs:      prefs,
+		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+			{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
+		}},
+		templates: templates,
+		resolver:  stubReviewResolver{locale: reviewChineseLocale},
+	}
+
+	plan, ok, err := notifier.notify(context.Background(), "acct-1", "occurrence-1")
+	if err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+	if !ok {
+		t.Fatalf("the account is addressable")
+	}
+	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelEmail}; !sameChannels(plan.Channels, want) {
+		t.Errorf("the plan's channels are %v, want %v: a phone with no sendable template must not "+
+			"produce an sms attempt", plan.Channels, want)
+	}
+	if plan.To != reviewSMSTestEmail {
+		t.Errorf("the plan's destination is %q, want the email fallback %q", plan.To, reviewSMSTestEmail)
+	}
+	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelEmail}; !sameChannels(prefs.written, want) {
+		t.Errorf("the effective set written through the preference seam is %v, want %v",
+			prefs.written, want)
+	}
+	if dispatcher.dispatch == nil {
+		t.Fatalf("notify submitted no dispatch")
+	}
+	if got := dispatcher.dispatch.Params["to"]; got != reviewSMSTestEmail {
+		t.Errorf("the dispatch's destination is %v, want the email fallback %q", got, reviewSMSTestEmail)
+	}
+	if templates.message.Template != reviewNotificationSMSTemplate {
+		t.Errorf("the registry was asked for the template %q, want %q",
+			templates.message.Template, reviewNotificationSMSTemplate)
+	}
+	if templates.message.Locale != reviewChineseLocale {
+		t.Errorf("the registry was asked for the locale %q, want the recipient's %q",
+			templates.message.Locale, reviewChineseLocale)
+	}
+	if templates.message.To != reviewSMSTestPhone {
+		t.Errorf("the registry was asked about the destination %q, want the proved phone %q",
+			templates.message.To, reviewSMSTestPhone)
+	}
+}
+
+// TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses holds the other side
+// of the selection rule: a template the registry holds for the language but the
+// platform's sending gate refuses (disabled, awaiting review, or the sending
+// switch off) is still chosen, so the delivery pipeline records the refusal.
+// The fixture must not turn the platform's gate into a silent channel swap.
+func TestReviewNoticeKeepsSMSForATemplateThePlatformRefuses(t *testing.T) {
+	templates := &stubReviewSMSTemplates{
+		err: fmt.Errorf("%w: the template is disabled", sms.ErrNotSendable),
+	}
+	prefs := &stubReviewPrefs{
+		effective: []notification.Channel{
+			notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS,
+		},
+	}
+	dispatcher := &stubReviewDispatcher{}
+	notifier := &reviewNotifier{
+		dispatcher: dispatcher,
+		prefs:      prefs,
+		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+			{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
+		}},
+		templates: templates,
+		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
+	}
+
+	plan, ok, err := notifier.notify(context.Background(), "acct-3", "occurrence-3")
+	if err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+	if !ok {
+		t.Fatalf("the account is addressable")
+	}
+	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelSMS}; !sameChannels(plan.Channels, want) {
+		t.Errorf("the plan's channels are %v, want %v: a held template the platform refuses must "+
+			"still reach the pipeline, whose refusal is recorded", plan.Channels, want)
+	}
+	if plan.To != reviewSMSTestPhone {
+		t.Errorf("the plan's destination is %q, want the proved phone %q", plan.To, reviewSMSTestPhone)
+	}
+	if dispatcher.dispatch == nil {
+		t.Fatalf("notify submitted no dispatch")
+	}
+	if got := dispatcher.dispatch.Params["to"]; got != reviewSMSTestPhone {
+		t.Errorf("the dispatch's destination is %v, want the proved phone %q", got, reviewSMSTestPhone)
+	}
+}
+
+// TestReviewNoticeSendsSMSWithASendableTemplate holds the other direction: when
+// the registry resolves the type's template in the recipient's language, the
+// phones address is the destination and sms stays in the effective set.
+func TestReviewNoticeSendsSMSWithASendableTemplate(t *testing.T) {
+	prefs := &stubReviewPrefs{
+		effective: []notification.Channel{
+			notification.ChannelInApp, notification.ChannelEmail, notification.ChannelSMS,
+		},
+	}
+	dispatcher := &stubReviewDispatcher{}
+	notifier := &reviewNotifier{
+		dispatcher: dispatcher,
+		prefs:      prefs,
+		accounts: stubReviewAccounts{identifiers: []authn.Identifier{
+			{Kind: authn.IdentifierEmail, Value: reviewSMSTestEmail, VerifiedVia: authn.VerifiedViaEmailCode},
+			{Kind: authn.IdentifierPhone, Value: reviewSMSTestPhone, VerifiedVia: authn.VerifiedViaSMSCode},
+		}},
+		templates: &stubReviewSMSTemplates{},
+		resolver:  stubReviewResolver{locale: reviewDefaultLocale},
+	}
+
+	plan, ok, err := notifier.notify(context.Background(), "acct-2", "occurrence-2")
+	if err != nil {
+		t.Fatalf("notify: %v", err)
+	}
+	if !ok {
+		t.Fatalf("the account is addressable")
+	}
+	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelSMS}; !sameChannels(plan.Channels, want) {
+		t.Errorf("the plan's channels are %v, want %v", plan.Channels, want)
+	}
+	if plan.To != reviewSMSTestPhone {
+		t.Errorf("the plan's destination is %q, want the proved phone %q", plan.To, reviewSMSTestPhone)
+	}
+	if want := []notification.Channel{notification.ChannelInApp, notification.ChannelSMS}; !sameChannels(prefs.written, want) {
+		t.Errorf("the effective set written through the preference seam is %v, want %v",
+			prefs.written, want)
+	}
+	if dispatcher.dispatch == nil {
+		t.Fatalf("notify submitted no dispatch")
+	}
+	if got := dispatcher.dispatch.Params["to"]; got != reviewSMSTestPhone {
+		t.Errorf("the dispatch's destination is %v, want the proved phone %q", got, reviewSMSTestPhone)
+	}
+}
+
+// stubReviewSMSTemplates answers Resolve with the error the case set and keeps
+// the message it was asked about. A nil error is a sendable template.
+type stubReviewSMSTemplates struct {
+	err     error
+	message sms.Message
+}
+
+func (s *stubReviewSMSTemplates) Resolve(m sms.Message) (sms.Resolved, error) {
+	s.message = m
+	return sms.Resolved{}, s.err
+}
+
+// stubReviewAccounts answers Identifiers; the embedded interface makes the
+// other reads unreachable without listing them.
+type stubReviewAccounts struct {
+	authn.Accounts
+	identifiers []authn.Identifier
+}
+
+func (s stubReviewAccounts) Identifiers(context.Context, authn.AccountID) ([]authn.Identifier, error) {
+	return s.identifiers, nil
+}
+
+// stubReviewPrefs answers the effective set and records the write.
+type stubReviewPrefs struct {
+	notification.Preferences
+	effective []notification.Channel
+	written   []notification.Channel
+}
+
+func (s *stubReviewPrefs) Effective(context.Context, string, string) ([]notification.Channel, error) {
+	return s.effective, nil
+}
+
+func (s *stubReviewPrefs) Set(_ context.Context, _, _ string, channels []notification.Channel) ([]notification.Channel, error) {
+	s.written = append([]notification.Channel(nil), channels...)
+	return s.written, nil
+}
+
+// stubReviewDispatcher records the submitted dispatch.
+type stubReviewDispatcher struct {
+	notification.Dispatcher
+	dispatch *notification.Dispatch
+}
+
+func (s *stubReviewDispatcher) Dispatch(_ context.Context, d notification.Dispatch) (jobs.JobID, error) {
+	s.dispatch = &d
+	return "job-1", nil
+}
+
+// stubReviewResolver answers the recipient's language.
+type stubReviewResolver struct {
+	i18n.Resolver
+	locale string
+}
+
+func (s stubReviewResolver) LocaleFor(context.Context, string) i18n.Locale {
+	return i18n.Locale(s.locale)
 }
 
 // TestReviewNoticePrunesOnlyUnaddressableChannels holds the write the fixture
