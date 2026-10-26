@@ -11,6 +11,16 @@
  * answer by invalidating the acting tenant's reads (see internal/queries),
  * so the list and the header bell's unread count move together.
  *
+ * Both actions report through one write-feedback scope: the header action
+ * and every row action share one result slot under the list, so a success
+ * and a failure never stand together and the attempt that settles last is
+ * the one shown. While one attempt is in flight every write control in the
+ * scope -- the header action, every row action and the pager -- disables
+ * and reads as busy, so attempts never overlap. Marking one message read
+ * confirms with that message's title, not only by flipping the row; marking
+ * all confirms the answer's count. A page, group or page-size change is a
+ * new context and clears the slot.
+ *
  * A host may narrow and shape the surface through optional props: a group
  * filter and a page size (with previous/next paging driven by the
  * response's total), a per-row detail renderer, and an `onOpen` action
@@ -42,19 +52,19 @@ import Skeleton from '@mui/material/Skeleton'
 import Typography from '@mui/material/Typography'
 import type { NotificationMessage } from '@speed/api-sdk'
 import {
-  InlineSuccess,
   ListSkeleton,
   PageHeader,
   SectionCard,
-  errorCodeOf,
+  WriteFeedbackRegion,
   useDisplayTimeZone,
+  useWriteFeedback,
 } from '@speed/ui-kit'
 import type {
   EmptyStateHeadingLevel,
   SectionCardHeadingLevel,
 } from '@speed/ui-kit'
 import { formatDateTime } from './internal/datetime.js'
-import { InlineError } from './internal/inline-error.js'
+import { useNotificationUiErrorText } from './internal/error-text.js'
 import { TenantAsyncSection } from './internal/tenant-section.js'
 import {
   type NotificationInbox as NotificationInboxPage,
@@ -141,22 +151,22 @@ export function NotificationInbox({
   // read through, even though unread messages remain on other pages (or
   // under the current group).
   const unreadTotal = useNotificationUnreadCount().data
-  // The last mark-all-read answer, tied to the list context it landed in;
-  // a fresh attempt or a context change clears it so a stale count never
-  // lingers.
-  const [markedAll, setMarkedAll] = useState<{
-    readonly context: string
-    readonly count: number
-  } | null>(null)
-  const markedAllCount =
-    markedAll !== null && markedAll.context === listContext
-      ? markedAll.count
-      : null
+  // The inbox is one feedback scope: the header action and every row's
+  // action write into the same slot, so only one result stands at a time
+  // and the attempt that settles last is the one shown.
+  const feedback = useWriteFeedback()
+  const resolveError = useNotificationUiErrorText()
+  const resetFeedback = feedback.reset
+  // One write in flight interlocks the scope's writes: the header action,
+  // every row's action and the pager disable together, so two attempts
+  // never overlap and one result never describes another attempt's
+  // context. Every write control reads as busy for the same reason.
+  const writePending = feedback.pending
 
   // A new filter or page size is a new list: drop the previous list's
-  // standing confirmation and its last write result. The context change
-  // is detected through a ref because the mutation results are rebuilt on
-  // every render; the effect must act on the context change alone.
+  // standing result, which would otherwise describe another context. The
+  // context change is detected through a ref so the effect acts on the
+  // change alone.
   const previousContext = useRef(listContext)
   useEffect(() => {
     if (previousContext.current === listContext) {
@@ -164,34 +174,29 @@ export function NotificationInbox({
     }
     previousContext.current = listContext
     setPages({ context: listContext, index: 0 })
-    setMarkedAll(null)
-    markRead.reset()
-    markAllRead.reset()
-  }, [listContext, markRead, markAllRead])
+    resetFeedback()
+  }, [listContext, resetFeedback])
 
   const page = messages.data
   const list = page?.messages ?? []
   const total = page?.total ?? 0
   const pending = messages.isPending && page === undefined
 
-  const writeError = markRead.isError
-    ? errorCodeOf(markRead.error)
-    : markAllRead.isError
-      ? errorCodeOf(markAllRead.error)
-      : null
-  // One write in flight interlocks the scope's writes: the header action
-  // and every row's action disable together, so two attempts never
-  // overlap and one result never describes another attempt's context.
-  const writePending = markRead.isPending || markAllRead.isPending
-
   const runMarkAll = (): void => {
-    setMarkedAll(null)
-    markAllRead.mutate(undefined, {
-      onSuccess: (result) =>
-        setMarkedAll({
-          context: listContext,
-          count: result?.read_count ?? 0,
-        }),
+    void feedback.run(async () => {
+      const result = await markAllRead.mutateAsync()
+      return t('inbox.markAllReadDone', { n: result?.read_count ?? 0 })
+    })
+  }
+
+  // Marking one message read confirms the message it changed; `after` runs
+  // only once the write has landed, which is how opening a linked message
+  // never navigates on a read that did not reach the server.
+  const markOneRead = (message: NotificationMessage, after?: () => void): void => {
+    void feedback.run(async () => {
+      await markRead.mutateAsync({ messageId: message.id })
+      after?.()
+      return t('inbox.markReadDone', { title: message.title })
     })
   }
 
@@ -199,9 +204,7 @@ export function NotificationInbox({
   // longer describes what is on screen, so the feedback scope resets with
   // the move.
   const goToPage = (next: number): void => {
-    setMarkedAll(null)
-    markRead.reset()
-    markAllRead.reset()
+    resetFeedback()
     setPages({ context: listContext, index: next })
   }
 
@@ -213,10 +216,7 @@ export function NotificationInbox({
       onOpen(message)
       return
     }
-    markRead.mutate(
-      { messageId: message.id },
-      { onSuccess: () => onOpen(message) },
-    )
+    markOneRead(message, () => onOpen(message))
   }
 
   const markAllAction = (
@@ -225,11 +225,10 @@ export function NotificationInbox({
       variant="outlined"
       size="small"
       disabled={writePending || (unreadTotal ?? 0) === 0}
+      loading={writePending}
       onClick={runMarkAll}
     >
-      {markAllRead.isPending
-        ? t('inbox.markAllReadPending')
-        : t('inbox.markAllRead')}
+      {t('inbox.markAllRead')}
     </Button>
   )
 
@@ -239,23 +238,6 @@ export function NotificationInbox({
 
   const surfaceContent = (
     <>
-      {/* The read-all confirmation: one standing role="status" region
-          (ui-kit's InlineSuccess), mounted for the whole settled phase and
-          silent until a write lands -- a region born together with its text
-          is unreliable for a screen reader, so the region is there first and
-          the count fills it. */}
-      <Box sx={{ mb: 2 }}>
-        <InlineSuccess
-          message={
-            markedAllCount === null
-              ? null
-              : t('inbox.markAllReadDone', { n: markedAllCount })
-          }
-        />
-      </Box>
-
-      <InlineError code={writeError} />
-
       {/* The empty placeholder stands under the surface's own heading,
           which already names the space: a second heading here ("No
           notifications") would re-enter the outline as a redundant chapter,
@@ -299,7 +281,7 @@ export function NotificationInbox({
                 locale={i18n.language}
                 timeZone={timeZone}
                 markReadDisabled={writePending}
-                onMarkRead={() => markRead.mutate({ messageId: message.id })}
+                onMarkRead={() => markOneRead(message)}
                 onOpen={
                   onOpen === undefined || message.link === ''
                     ? undefined
@@ -334,6 +316,10 @@ export function NotificationInbox({
           </Button>
         </Box>
       )}
+
+      {/* The scope's one result sits under the controls that write into it:
+          the header action and the row actions share this slot. */}
+      <WriteFeedbackRegion outcome={feedback.outcome} resolve={resolveError} />
     </>
   )
 
@@ -395,6 +381,7 @@ function NotificationRow({
             type="button"
             size="small"
             disabled={markReadDisabled}
+            loading={markReadDisabled}
             aria-label={t('inbox.markReadAria', { title: message.title })}
             onClick={onMarkRead}
           >

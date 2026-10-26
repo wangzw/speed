@@ -15,9 +15,10 @@
  *
  * Every write goes through one `useWriteFeedback` scope whose region
  * renders under the table: a success confirms the type, channel and new
- * state, and a failure resolves in that same region. The toggling row's
- * controls are disabled while its write is in flight; the other rows stay
- * usable, and there is no optimistic update.
+ * state, and a failure resolves in that same region. The whole matrix is
+ * disabled while a write is in flight, so no second toggle can overlap the
+ * first and replace its result; there is no optimistic update, so a failed
+ * cell shows the server's answer again.
  *
  * A type the taxonomy marks not unsubscribable (from
  * GET /notifications/types) renders its whole row disabled with a note:
@@ -40,7 +41,7 @@
  * with a retry.
  */
 
-import { Fragment, useState } from 'react'
+import { Fragment } from 'react'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
 import Skeleton from '@mui/material/Skeleton'
@@ -131,21 +132,6 @@ export function NotificationPreferences({
   const setPreference = useSetNotificationPreference()
   const feedback = useWriteFeedback()
   const resolveError = useNotificationUiErrorText()
-  const [inFlightTypes, setInFlightTypes] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  )
-
-  const setTypeInFlight = (typeKey: string, inFlight: boolean): void => {
-    setInFlightTypes((current) => {
-      const next = new Set(current)
-      if (inFlight) {
-        next.add(typeKey)
-      } else {
-        next.delete(typeKey)
-      }
-      return next
-    })
-  }
 
   const rows = preferences.data ?? []
   const pending = preferences.isPending && preferences.data === undefined
@@ -167,26 +153,21 @@ export function NotificationPreferences({
     enabled: boolean,
   ): void => {
     const typeKey = preference.type_key
-    setTypeInFlight(typeKey, true)
     void feedback.run(async () => {
-      try {
-        await setPreference.mutateAsync({
-          typeKey,
-          channel,
-          data: { enabled },
-        })
-        return t('preferences.saved', {
-          type: label,
-          channel: t(`preferences.channel.${channel}`),
-          state: t(
-            enabled
-              ? 'preferences.state.enabled'
-              : 'preferences.state.disabled',
-          ),
-        })
-      } finally {
-        setTypeInFlight(typeKey, false)
-      }
+      await setPreference.mutateAsync({
+        typeKey,
+        channel,
+        data: { enabled },
+      })
+      return t('preferences.saved', {
+        type: label,
+        channel: t(`preferences.channel.${channel}`),
+        state: t(
+          enabled
+            ? 'preferences.state.enabled'
+            : 'preferences.state.disabled',
+        ),
+      })
     })
   }
 
@@ -210,7 +191,7 @@ export function NotificationPreferences({
           <TableCell key={channel} align="center">
             <Checkbox
               checked={hasChannel(preference, channel)}
-              disabled={locked || inFlightTypes.has(preference.type_key)}
+              disabled={locked || feedback.pending}
               onChange={(event) =>
                 toggle(preference, label, channel, event.target.checked)
               }

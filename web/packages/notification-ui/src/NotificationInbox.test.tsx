@@ -1,11 +1,13 @@
 /**
  * NotificationInbox behaviour over the generated inbox operations: the
  * caller's messages render (title, body, unread chip), an unread row's
- * "mark as read" POSTs that message's read route and the list re-reads
- * with it marked, the header action POSTs read-all and reports the
- * answer's count, a message carrying a link activates the host's
- * `onOpen` after marking it read, a page size pages through the
- * response's total, the embedded variant renders its own heading, a
+ * "mark as read" POSTs that message's read route, confirms the message it
+ * changed and the list re-reads with it marked, the header action POSTs
+ * read-all and reports the answer's count, both actions share one feedback
+ * slot and interlock while one is in flight, a message carrying a link
+ * activates the host's `onOpen` after marking it read, a page size pages
+ * through the response's total, the embedded variant renders its own
+ * heading, a
  * per-row detail renderer appends content, an empty answer renders the
  * empty placeholder, a failed read renders the retryable error
  * placeholder, and the whole surface passes axe.
@@ -14,7 +16,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import type { ReactElement } from 'react'
-import { act, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { formatInstant } from '@speed/i18n'
 import { DisplayTimeZoneProvider } from '@speed/ui-kit'
@@ -105,6 +107,18 @@ function mount(rows: Row[], ui: ReactElement = <NotificationInbox />) {
   return { rig, ...renderWithProviders(ui) }
 }
 
+/** A response the test settles by hand, so a write can be held in flight. */
+function deferredResponse(): {
+  readonly promise: Promise<Response>
+  readonly resolve: (response: Response) => void
+} {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 /** A host that changes the list context the inbox renders with: both a
  * group filter and a page size change are new lists. */
 function ContextHarness({ pageSize }: { readonly pageSize: number }) {
@@ -175,6 +189,98 @@ describe('NotificationInbox', () => {
     expect(
       rig.calls.some((call) => call.path === READ_ALL_PATH && call.method === 'POST'),
     ).toBe(true)
+  })
+
+  it('confirms marking one message read with its title', async () => {
+    mount([
+      { id: 'm1', title: 'Build finished', body: '', read: false },
+    ])
+    await screen.findByText('Build finished')
+    // The scope's success region stands in the tree empty before the write,
+    // so the confirmation lands as a change a screen reader announces.
+    const notice = screen.getByRole('status')
+    expect(notice).toHaveTextContent('')
+
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
+      }),
+    )
+    // The single-message write confirms too, naming the message it marked;
+    // the flipped row state alone is not the acknowledgement.
+    await waitFor(() => expect(notice).toHaveTextContent('Build finished'))
+  })
+
+  it('keeps one write result: a landed action replaces a standing failure', async () => {
+    const rows: Row[] = [
+      { id: 'm1', title: 'Build finished', body: '', read: false },
+    ]
+    const responder = inboxResponder(rows)
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.method === 'POST' && call.path === `${MESSAGES_PATH}/m1/read`) {
+        return jsonResponse(500, { code: 'notification.bad_request' })
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    await screen.findByText('Build finished')
+
+    // The row write fails: its code stands in the scope's region.
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
+      }),
+    )
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+    // The header write then lands. One scope holds one result, so the
+    // success replaces the failure rather than standing beside it.
+    await userEvent.click(
+      screen.getByRole('button', { name: zhCN.inbox.markAllRead }),
+    )
+    expect(
+      await screen.findByText(
+        zhCN.inbox.markAllReadDone.replace('{{n}}', '1'),
+      ),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('disables and marks every scope control busy while one attempt is in flight', async () => {
+    const gate = deferredResponse()
+    const responder = inboxResponder([
+      { id: 'm1', title: 'Build finished', body: '', read: false },
+    ])
+    const rig = makeRealClientRigWithoutSession((call) => {
+      if (call.path === READ_ALL_PATH && call.method === 'POST') {
+        return gate.promise.then(() => responder(call))
+      }
+      return responder(call)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(<NotificationInbox />)
+    await screen.findByText('Build finished')
+
+    const markAll = screen.getByRole('button', { name: zhCN.inbox.markAllRead })
+    const rowAction = screen.getByRole('button', {
+      name: zhCN.inbox.markReadAria.replace('{{title}}', 'Build finished'),
+    })
+    await userEvent.click(markAll)
+
+    // The header action and every row action share the scope's in-flight
+    // state: both disable and both read as busy, so attempts never overlap.
+    await waitFor(() => expect(markAll).toBeDisabled())
+    expect(rowAction).toBeDisabled()
+    expect(within(markAll).getByRole('progressbar')).toBeInTheDocument()
+    expect(within(rowAction).getByRole('progressbar')).toBeInTheDocument()
+
+    gate.resolve(jsonResponse(200, { read_count: 1 }))
+    expect(
+      await screen.findByText(
+        zhCN.inbox.markAllReadDone.replace('{{n}}', '1'),
+      ),
+    ).toBeInTheDocument()
   })
 
   it('marks a linked message read before handing it to onOpen', async () => {

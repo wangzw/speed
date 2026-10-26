@@ -9,8 +9,8 @@
  * the note; the type label and grouped rendering follow the optional
  * props; an empty taxonomy renders the empty placeholder; a landed write
  * confirms the type, channel and new state under the table while a failure
- * resolves in that same region; only the toggling row locks while its
- * write is in flight; and the surface passes axe.
+ * resolves in that same region; the whole matrix locks while a write is in
+ * flight; and the surface passes axe.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -241,7 +241,7 @@ describe('NotificationPreferences', () => {
     ).toBeInTheDocument()
   })
 
-  it('locks only the toggling row while its write is in flight', async () => {
+  it('locks the whole matrix while a write is in flight', async () => {
     const gate = deferredResponse()
     const types: TypeRow[] = [
       { key: 'demo.thing.happened', unsubscribable: true, channels: ['in_app'] },
@@ -264,14 +264,15 @@ describe('NotificationPreferences', () => {
     await waitFor(() =>
       expect(channelCheckbox('demo.thing.happened', 'email')).toBeDisabled(),
     )
-    // The untouched row stays usable: the lock belongs to the write's own
-    // row, not to the whole matrix.
-    expect(channelCheckbox('billing.invoice.due', 'email')).toBeEnabled()
+    // The lock belongs to the scope, not to the toggling row: the whole
+    // matrix disables so no second attempt can overlap the first.
+    expect(channelCheckbox('billing.invoice.due', 'email')).toBeDisabled()
 
     gate.resolve(jsonResponse(200, {}))
     await waitFor(() =>
       expect(channelCheckbox('demo.thing.happened', 'email')).toBeEnabled(),
     )
+    expect(channelCheckbox('billing.invoice.due', 'email')).toBeEnabled()
   })
 
   it('offers the in-app column alone when no presence provider is mounted', async () => {
