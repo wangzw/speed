@@ -89,7 +89,7 @@ export function AppThemeProvider(props: AppThemeProviderProps): JSX.Element
 | `FormField` | `name`、`control`、`rules`、`defaultValue`、`required`、`render` | 经 `render` 暴露的绑定字段状态 |
 | `FormLayout` | `form`、子节点、`onSubmit`、动作行、间距、宽度、`columns` | `onSubmit`（经 RHF 校验后） |
 | `PhoneNumberField` | `country`、`nationalNumber`、国家/电话两个标签、帮助文本、`disabled`、`showValidationError`、自动填充标记、`preferredCountries`（置顶列出的国家码，按给定次序；缺省即原次序） | `onCountryChange`、`onNationalNumberChange` |
-| `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`（可选 `label`／`placeholder`）、选择、分页、空态文案、`rowVerticalAlign`（整行纵向对齐，缺省 MUI 的居中）、`ariaLabel`／`ariaLabelledBy`（替换命名空间默认的可及名） | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
+| `DataTable` | `rows`、`columns`、`rowKey`、`loading`、`sort`、`filter`（可选 `label`／`placeholder`）、选择、分页、空态文案、`rowVerticalAlign`（整行纵向对齐，缺省 MUI 的居中）、`pinLastColumn`（可选：钉住最后一列，仅在表格实际溢出容器时生效）、`ariaLabel`／`ariaLabelledBy`（替换命名空间默认的可及名） | `onSortChange`、`filter.onValueChange`、`onSelectionChange`、分页回调 |
 | `FileUploader` | `rows`、选取/取消/重试/移除回调、`multiple`、`accept`、`allowDrop`、`disabled`、标签 | `onSelectFiles`、`onCancel`、`onRetry`、`onRemove` |
 | `InlineError` | `code`、`resolve` | — |
 | `InlineSuccess` | `message`（`null` 时静默，仍挂载一个裁剪的 `role="status"` 区域；`severity` 恒为 success） | — |
@@ -451,6 +451,7 @@ console-ui 已改用本包的 `RefreshButton` 与 `usePageRefresh`，不再保�
 | 数据表的完整值访问器 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTableColumn` 的 `cellFullValue` |
 | 数据表的整行纵向对齐 `rowVerticalAlign`（顶对齐时复制控件贴住内容顶部） | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` 的 `DataTableProps.rowVerticalAlign` |
 | 数据表按列的折行策略 | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `columnCellWrapSx` |
+| 数据表的行操作列钉住 `pinLastColumn` | 已实现 | `web/packages/ui-kit/src/components/DataTable.tsx` `DataTableProps.pinLastColumn`、`pinnedColumnSx` |
 | 文件上传队列 | 已实现 | `web/packages/ui-kit/src/components/FileUploader.tsx` `FileUploader`、`FileUploaderRow` |
 | 跨表面状态原语 | 已实现 | `web/packages/ui-kit/src/components/InlineError.tsx` `InlineError`、`errorCodeOf`；`web/packages/ui-kit/src/components/InlineSuccess.tsx` `InlineSuccess`；`web/packages/ui-kit/src/components/ListSkeleton.tsx` `ListSkeleton`；`web/packages/ui-kit/src/components/AsyncSection.tsx` `AsyncSection`；`web/packages/ui-kit/src/visually-hidden.ts` `visuallyHiddenSx`；`web/packages/ui-kit/src/touch-target.ts` `touchTargetSx` |
 | 人机验证块 | 已实现 | `web/packages/ui-kit/src/components/HumanVerification.tsx` `HumanVerification`、`HumanVerificationGate`、`HumanVerificationStatus` |
