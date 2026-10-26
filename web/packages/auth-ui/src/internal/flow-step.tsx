@@ -79,6 +79,15 @@ export interface FlowStepFieldsProps {
   readonly busy: boolean
   /** Report the answered fields upward (the driver sends them). */
   readonly onAnswer: (input: Record<string, string>) => void
+  /**
+   * The passkey ceremony failure the channel's feedback scope holds, as a
+   * bundle key. The ceremony is a client-side source that does not enter
+   * the slot (see ./write-feedback); the step reports it upward so the
+   * channel can keep it mutually exclusive with the slot's failure.
+   */
+  readonly clientFailure?: string | null
+  /** Report a ceremony failure upward, or `null` when a retry begins. */
+  readonly onClientFailure?: (key: string | null) => void
 }
 
 export interface HumanGatedFlowStepProps {
@@ -96,6 +105,10 @@ export interface HumanGatedFlowStepProps {
     input: Record<string, string>,
     humanProof?: string,
   ) => void
+  /** See FlowStepFieldsProps.clientFailure. */
+  readonly clientFailure?: string | null
+  /** See FlowStepFieldsProps.onClientFailure. */
+  readonly onClientFailure?: (key: string | null) => void
 }
 
 /**
@@ -115,6 +128,8 @@ export function HumanGatedFlowStep({
   step,
   busy,
   onAnswer,
+  clientFailure,
+  onClientFailure,
 }: HumanGatedFlowStepProps) {
   const human = useHumanVerification(
     session,
@@ -141,7 +156,13 @@ export function HumanGatedFlowStep({
           disabled={busy}
         />
       ) : null}
-      <FlowStepFields step={step} busy={busy} onAnswer={answer} />
+      <FlowStepFields
+        step={step}
+        busy={busy}
+        onAnswer={answer}
+        clientFailure={clientFailure}
+        onClientFailure={onClientFailure}
+      />
     </>
   )
 }
@@ -150,6 +171,8 @@ export function FlowStepFields({
   step,
   busy,
   onAnswer,
+  clientFailure,
+  onClientFailure,
 }: FlowStepFieldsProps) {
   const { t } = useAuthUiTranslation()
   const labelId = useId()
@@ -212,6 +235,8 @@ export function FlowStepFields({
           busy={busy}
           submit={t('signInFlow.submit')}
           onAnswer={onAnswer}
+          clientFailure={clientFailure ?? null}
+          onClientFailure={onClientFailure}
         />
       )
     case 'complete':
@@ -300,23 +325,35 @@ function TotpFields({
  * and the browser is asked to give it up, so a ceremony that settles after
  * the surface is gone answers nothing and completes nothing.
  * A browser without WebAuthn, a cancelled or dismissed ceremony and a
- * failed ceremony each render their own message, and the retry action runs
- * the ceremony again against the same step. The prompt names the ceremony
- * the step asks for: a login assertion or a passkey to register. */
+ * failed ceremony each report their own bundle key to the channel's
+ * feedback scope, which renders it as the step's failure banner; the retry
+ * action runs the ceremony again against the same step and clears it. The
+ * scope keeps this client-side message mutually exclusive with the
+ * channel's server failure banner (see ./write-feedback). The prompt names
+ * the ceremony the step asks for: a login assertion or a passkey to
+ * register. */
 function PasskeyFields({
   options,
   busy,
   submit,
   onAnswer,
+  clientFailure,
+  onClientFailure,
 }: {
   readonly options: unknown
   readonly busy: boolean
   readonly submit: string
   readonly onAnswer: (input: Record<string, string>) => void
+  /** The ceremony failure the channel's feedback scope holds. */
+  readonly clientFailure: string | null
+  /** Report a ceremony failure to the scope, or `null` as a retry begins. */
+  readonly onClientFailure?: (key: string | null) => void
 }) {
   const { t } = useAuthUiTranslation()
   const [working, setWorking] = useState(false)
-  const [errorKey, setErrorKey] = useState<string | null>(null)
+  // The scope owns the failure: it renders the banner and keeps it mutually
+  // exclusive with the channel's server failure. This step only reports it.
+  const errorKey = clientFailure
   // The waiting notice's text, one commit behind the waiting phase (see
   // the effect below): the region must mount empty.
   const [waitingCommitted, setWaitingCommitted] = useState(false)
@@ -366,7 +403,7 @@ function PasskeyFields({
     const controller = new AbortController()
     pendingRef.current = { attempt, controller }
     setWorking(true)
-    setErrorKey(null)
+    onClientFailure?.(null)
     try {
       const credential = await runWebauthn(options, controller.signal)
       if (pendingRef.current?.attempt === attempt) {
@@ -374,7 +411,7 @@ function PasskeyFields({
       }
     } catch (failure) {
       if (pendingRef.current?.attempt === attempt) {
-        setErrorKey(webauthnErrorKey(failure))
+        onClientFailure?.(webauthnErrorKey(failure))
       }
     } finally {
       if (pendingRef.current?.attempt === attempt) {
@@ -392,7 +429,7 @@ function PasskeyFields({
     // its eventual settlement are both ignored: its attempt no longer
     // matches pendingRef.
     setWorking(false)
-    setErrorKey('signInFlow.passkeyCancelled')
+    onClientFailure?.('signInFlow.passkeyCancelled')
   }
 
   return (
@@ -402,11 +439,6 @@ function PasskeyFields({
           ? t('signInFlow.passkeyRegisterPrompt')
           : t('signInFlow.passkeyPrompt')}
       </Typography>
-      {errorKey !== null && (
-        <Alert severity="error" role="alert">
-          {t(errorKey)}
-        </Alert>
-      )}
       {working ? (
         <>
           <Box

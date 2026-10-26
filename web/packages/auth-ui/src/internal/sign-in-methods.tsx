@@ -41,7 +41,10 @@ import type {
 import { FormField, FormLayout, errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './translation.js'
 import { fieldLabel, methodLabel } from './labels.js'
-import { InlineError } from './inline-error.js'
+import {
+  ChannelFeedbackRegion,
+  useChannelFeedback,
+} from './write-feedback.js'
 import { HumanGatedFlowStep } from './flow-step.js'
 import { useFlowDriver } from './use-flow-driver.js'
 import { isOpenFlow } from './flow.js'
@@ -90,11 +93,11 @@ export function DescriptorSignInForm({
     defaults[field.name] = ''
   }
   const form = useForm<Record<string, string>>({ defaultValues: defaults })
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  const feedback = useChannelFeedback()
 
   const driver = useFlowDriver(session, {
     beforeStart,
-    onFailure: setErrorCode,
+    onFailure: (code) => feedback.fail(code),
     onSettled: () => {
       try {
         onSignedIn?.()
@@ -106,7 +109,7 @@ export function DescriptorSignInForm({
   })
 
   const onSubmit: SubmitHandler<Record<string, string>> = async (values) => {
-    setErrorCode(null)
+    feedback.reset()
     await driver.start({
       method,
       binding: 'cookie',
@@ -122,9 +125,16 @@ export function DescriptorSignInForm({
           humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input, proof) => void driver.answer(input, proof)}
+          onAnswer={(input, proof) => {
+            feedback.reset()
+            void driver.answer(input, proof)
+          }}
+          clientFailure={feedback.localFailure}
+          onClientFailure={(key) =>
+            key === null ? feedback.clearLocal() : feedback.failLocal(key)
+          }
         />
-        <InlineError code={errorCode} />
+        <ChannelFeedbackRegion feedback={feedback} />
       </>
     )
   }
@@ -166,7 +176,7 @@ export function DescriptorSignInForm({
           )}
         />
       ))}
-      <InlineError code={errorCode} />
+      <ChannelFeedbackRegion feedback={feedback} />
     </FormLayout>
   )
 }
@@ -202,15 +212,17 @@ export function EnterpriseSignIn({
     null,
   )
   const [busy, setBusy] = useState(false)
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  // The enterprise entry's own feedback scope: a discovery or start failure
+  // renders in its region and a new attempt clears the previous one.
+  const feedback = useChannelFeedback()
 
   const discover: SubmitHandler<{ email: string }> = async ({ email }) => {
-    setErrorCode(null)
+    feedback.reset()
     setBusy(true)
     try {
       setProviders(await session.discoverSso(email))
     } catch (error) {
-      setErrorCode(errorCodeOf(error))
+      feedback.fail(errorCodeOf(error))
     } finally {
       setBusy(false)
     }
@@ -227,7 +239,7 @@ export function EnterpriseSignIn({
       setBusy(false)
       return
     }
-    setErrorCode(null)
+    feedback.reset()
     let authorizeUrl: string | null = null
     let failure: string | null = null
     try {
@@ -249,7 +261,7 @@ export function EnterpriseSignIn({
       setBusy(false)
     }
     if (failure !== null) {
-      setErrorCode(failure)
+      feedback.fail(failure)
       return
     }
     if (authorizeUrl !== null) {
@@ -263,7 +275,7 @@ export function EnterpriseSignIn({
   }
 
   const editEmail = (): void => {
-    setErrorCode(null)
+    feedback.reset()
     setProviders(null)
   }
 
@@ -293,7 +305,7 @@ export function EnterpriseSignIn({
             />
           )}
         />
-        <InlineError code={errorCode} />
+        <ChannelFeedbackRegion feedback={feedback} />
       </FormLayout>
     )
   }
@@ -330,7 +342,7 @@ export function EnterpriseSignIn({
       <Button variant="text" onClick={editEmail}>
         {t('enterprise.editEmail')}
       </Button>
-      <InlineError code={errorCode} />
+      <ChannelFeedbackRegion feedback={feedback} />
     </Box>
   )
 }
@@ -367,11 +379,11 @@ export function PasskeySignIn({
 }: PasskeySignInProps) {
   const { t } = useAuthUiTranslation()
   const headingVariant = useGroupHeadingVariant()
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  const feedback = useChannelFeedback()
 
   const driver = useFlowDriver(session, {
     beforeStart,
-    onFailure: setErrorCode,
+    onFailure: (code) => feedback.fail(code),
     onSettled: () => {
       try {
         onSignedIn?.()
@@ -382,7 +394,7 @@ export function PasskeySignIn({
   })
 
   const begin = async (): Promise<void> => {
-    setErrorCode(null)
+    feedback.reset()
     await driver.start({
       method: method.name,
       binding: 'cookie',
@@ -409,10 +421,17 @@ export function PasskeySignIn({
           humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input, proof) => void driver.answer(input, proof)}
+          onAnswer={(input, proof) => {
+            feedback.reset()
+            void driver.answer(input, proof)
+          }}
+          clientFailure={feedback.localFailure}
+          onClientFailure={(key) =>
+            key === null ? feedback.clearLocal() : feedback.failLocal(key)
+          }
         />
       )}
-      <InlineError code={errorCode} />
+      <ChannelFeedbackRegion feedback={feedback} />
     </Box>
   )
 }

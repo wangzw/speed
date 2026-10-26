@@ -20,7 +20,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@speed/api-client'
-import { SMSSignInForm } from './SMSSignInForm.js'
+import { SMSSignInForm, SMS_NOTICE_ID } from './SMSSignInForm.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { hasCoarsePointerTouchTarget } from '@speed/test-utils/emitted-css'
 import {
@@ -143,9 +143,9 @@ describe('SMSSignInForm', () => {
       binding: 'cookie',
       input: { phone: CN_E164 },
     })
-    expect(
-      screen.getByRole('status'),
-    ).toHaveTextContent(zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164))
+    expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(
+      zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164),
+    )
   })
 
   it('name no token delivery on the code request -- the session delivery is auth-core’s', async () => {
@@ -310,7 +310,7 @@ describe('SMSSignInForm', () => {
     // viewer who submitted from the button hears it.
     await waitFor(() => expect(phone).toHaveFocus())
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(message),
+      expect(document.getElementById(SMS_NOTICE_ID)).toHaveTextContent(message),
     )
     expect(sends(harness)).toHaveLength(0)
   })
@@ -329,7 +329,7 @@ describe('SMSSignInForm', () => {
     const phone = screen.getByLabelText(zhCN.smsSignIn.phoneLabel)
     await user.type(phone, '138000')
     const submit = screen.getByRole('button', { name: zhCN.smsSignIn.sendCode })
-    const region = screen.getByRole('status')
+    const region = document.getElementById(SMS_NOTICE_ID)!
     const mutations: MutationRecord[] = []
     const observer = new MutationObserver((records) => {
       mutations.push(...records)
@@ -933,6 +933,59 @@ describe('SMSSignInForm', () => {
       | { readonly human_proof?: string }
       | undefined
     expect(body?.human_proof).toMatch(/^[A-Za-z0-9_-]+\.\d+$/)
+  })
+
+  it('clear the failure banner when a step after the code is answered again', async () => {
+    // Each answer is a new attempt, including a parked second factor: the
+    // previous refusal's banner goes when the next answer begins.
+    let answers = 0
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+      [LOGIN_ANSWER]: (call) => {
+        const step = (call.options?.body as { step?: string }).step
+        if (step === 'answer') {
+          return openFlow({
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'code', required: true }],
+            },
+          })
+        }
+        answers += 1
+        if (answers === 1) {
+          throw apiError(401, 'authn.login_failed')
+        }
+        return openFlow({
+          seq: 4,
+          state: 'second',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        })
+      },
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const user = userEvent.setup()
+    await user.type(
+      await screen.findByLabelText(zhCN.smsSignIn.codeLabel),
+      '123456',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.smsSignIn.submit }))
+    const second = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(second, '000000')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.login_failed,
+      ),
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument()
   })
 
   it('carry the proof on an answer that may send (an SMS second factor)', async () => {

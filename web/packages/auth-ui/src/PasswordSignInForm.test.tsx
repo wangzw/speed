@@ -450,6 +450,51 @@ describe('PasswordSignInForm', () => {
     }
   })
 
+  it('clear the failure banner when a parked step is answered again', async () => {
+    // Answering a step is a new attempt: the previous refusal's banner must
+    // not stay beside the step the next answer parks.
+    let answers = 0
+    const challenge = openFlow({
+      seq: 1,
+      state: 'second',
+      next: {
+        kind: 'challenge',
+        fields: [{ name: 'code', kind: 'code', required: true }],
+      },
+    })
+    const harness = makeHarness({
+      [LOGIN_START]: () => challenge,
+      [LOGIN_ANSWER]: () => {
+        answers += 1
+        if (answers === 1) {
+          throw apiError(401, 'authn.login_failed')
+        }
+        return openFlow({
+          seq: 3,
+          state: 'second',
+          next: {
+            kind: 'challenge',
+            fields: [{ name: 'code', kind: 'code', required: true }],
+          },
+        })
+      },
+    })
+    renderWithProviders(<PasswordSignInForm session={harness.session} />)
+    await fillAndSubmit('alice@example.com', 's3cret-pass', ZH_LABELS)
+    const user = userEvent.setup()
+    const code = await screen.findByLabelText(zhCN.smsSignIn.codeLabel)
+    await user.type(code, '000000')
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.login_failed,
+      ),
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect(screen.getByLabelText(zhCN.smsSignIn.codeLabel)).toBeInTheDocument()
+  })
+
   it('render the TOTP setup URI in the theme’s mono stack', async () => {
     // The enrollment step's otpauth_uri is rendered as a code block; the
     // font family is the theme's mono entry, not a hardcoded literal.

@@ -139,8 +139,7 @@ describe('session journeys over the composed sign-in family', () => {
     await user.type(screen.getByLabelText(PHONE_LABEL_ZH), PHONE)
     await user.click(screen.getByRole('button', { name: SEND_CODE_ZH }))
     // The sent notice announces the receiving number.
-    const sent = await screen.findByRole('status')
-    expect(sent).toHaveTextContent(SENT_NOTICE_ZH)
+    expect(await screen.findByText(SENT_NOTICE_ZH)).toBeInTheDocument()
     // Starting the flow is not a session: the gate still shows the
     // sign-in surface for the code step.
     expect(rig.store.get()).toBeNull()

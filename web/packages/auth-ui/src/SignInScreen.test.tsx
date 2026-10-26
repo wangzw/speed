@@ -714,15 +714,25 @@ describe('SignInScreen', () => {
             .getByRole('button', { name: zhCN.signInFlow.submit })
             .click()
         })
-        // The region is born empty: a live region announces only content
-        // changes that follow its own insertion, and the text fills the
-        // existing region a commit later.
-        expect(screen.getByRole('status').textContent).toBe('')
+        // The waiting region is born empty: a live region announces only
+        // content changes that follow its own insertion, and the text fills
+        // the existing region a commit later. (The channel's feedback scope
+        // adds its own silent success region, hence the collection.)
+        expect(
+          screen
+            .getAllByRole('status')
+            .every((region) => region.textContent === ''),
+        ).toBe(true)
       })
       await waitFor(() =>
-        expect(screen.getByRole('status')).toHaveTextContent(
-          zhCN.signInFlow.passkeyWaiting,
-        ),
+        expect(
+          screen
+            .getAllByRole('status')
+            .some(
+              (region) =>
+                region.textContent === zhCN.signInFlow.passkeyWaiting,
+            ),
+        ).toBe(true),
       )
       // The Continue button that had focus unmounted with the phase; the
       // control the waiting state offers has it now.
@@ -1637,6 +1647,130 @@ describe('SignInScreen', () => {
       ).toBe(true),
     )
     expect(beforeStart).toHaveBeenCalledTimes(1)
+  })
+
+  it('keep the ceremony failure and the server failure banner mutually exclusive', async () => {
+    // One channel component renders at most one whole-attempt failure: the
+    // passkey ceremony's client-side message and the flow's server refusal
+    // share the channel's feedback scope, so either one clears the other.
+    const harness = makeHarness({
+      [LOGIN_START]: () =>
+        openFlow({
+          seq: 1,
+          state: 'first',
+          next: { kind: 'webauthn', options: { challenge: 'abc', rpId: 'x' } },
+        }),
+      [LOGIN_ANSWER]: () => {
+        throw apiError(401, 'authn.login_failed')
+      },
+    })
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(assertionCredential())
+      .mockRejectedValueOnce(
+        new DOMException('no authenticator', 'NotAllowedError'),
+      )
+      .mockResolvedValueOnce(assertionCredential())
+    const restore = stubCredentials({ get, create: vi.fn() })
+    try {
+      renderWithProviders(
+        <SignInScreen
+          session={harness.session}
+          discovery={PASSKEY_ONLY}
+          onSignedIn={vi.fn()}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      // The ceremony returns a credential and the server refuses the answer:
+      // the channel's failure banner renders.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.login_failed,
+      )
+      // The next ceremony fails on the client: the server banner gives way,
+      // so the scope shows exactly one failure.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      )
+      const ceremony = await screen.findByRole('alert')
+      expect(ceremony).toHaveTextContent(zhCN.signInFlow.passkeyCancelled)
+      expect(ceremony).not.toHaveTextContent(zhCN.errors.authn.login_failed)
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+      // A retry whose answer the server refuses clears the ceremony message
+      // the other way round: the server banner takes the scope alone.
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyRetry }),
+      )
+      const server = await screen.findByRole('alert')
+      expect(server).toHaveTextContent(zhCN.errors.authn.login_failed)
+      expect(server).not.toHaveTextContent(zhCN.signInFlow.passkeyCancelled)
+      expect(screen.getAllByRole('alert')).toHaveLength(1)
+    } finally {
+      restore()
+    }
+  })
+
+  it('keep each channel’s failure banner in its own feedback scope', async () => {
+    // Two channels render at once: a failure in one leaves the other's
+    // banner alone, and leaving a channel clears only that channel's own.
+    const harness = makeHarness({
+      [LOGIN_START]: (call) => {
+        const method = (call.options?.body as { method?: string }).method
+        if (method === 'password') {
+          throw apiError(503, 'authn.unavailable')
+        }
+        if (method === 'google') {
+          throw apiError(400, 'authn.method_disabled')
+        }
+        return completeFlow(1)
+      },
+    })
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([
+          { name: 'password', kind: 'form' },
+          { name: 'sms', kind: 'form' },
+          { name: 'google', kind: 'redirect', label: 'Google' },
+        ])}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.identifierLabel),
+      MAIL,
+    )
+    await user.type(
+      screen.getByLabelText(zhCN.passwordSignIn.passwordLabel),
+      PASS,
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.submit }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        zhCN.errors.authn.unavailable,
+      ),
+    )
+    await user.click(screen.getByRole('button', { name: 'Google' }))
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2))
+    expect(
+      screen.getByText(zhCN.errors.authn.unavailable),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.errors.authn.method_disabled),
+    ).toBeInTheDocument()
+    // Leaving the password channel takes its banner with it, and only its.
+    await user.click(screen.getByRole('tab', { name: zhCN.smsSignIn.title }))
+    expect(
+      screen.queryByText(zhCN.errors.authn.unavailable),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(zhCN.errors.authn.method_disabled),
+    ).toBeInTheDocument()
   })
 
   it('refuse a social start at the gate', async () => {

@@ -17,8 +17,9 @@
  * own button disables and the others stay live, each flight tracked per
  * provider: an earlier attempt's return can never re-enable a later
  * provider's button mid-flight. A failed answer (an unknown or disabled
- * method, an account-unavailable refusal) renders through the one
- * InlineError banner -- but the banner belongs to the newest attempt only:
+ * method, an account-unavailable refusal) renders through the block's one
+ * feedback region (see internal/write-feedback) -- but the banner belongs
+ * to the newest attempt only:
  * attempts are numbered at start, a failure writes its code only when it
  * is still the newest attempt, and each new attempt clears the banner, so
  * an earlier attempt's failure can never paint over a newer attempt's
@@ -52,7 +53,10 @@ import type { AuthSession } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { methodLabel } from './internal/labels.js'
 import { errorCodeOf } from '@speed/ui-kit'
-import { InlineError } from './internal/inline-error.js'
+import {
+  ChannelFeedbackRegion,
+  useChannelFeedback,
+} from './internal/write-feedback.js'
 import { isOpenFlow } from './internal/flow.js'
 import { useGroupHeadingVariant } from './internal/group-heading.js'
 import { allowedToStart } from './internal/start-gate.js'
@@ -126,7 +130,10 @@ export function SocialSignInSection({
   const [busyProviders, setBusyProviders] = useState<
     ReadonlySet<SocialProvider>
   >(new Set())
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  // The social block's own feedback scope. Every provider button is one
+  // control group: a failure renders in the one region below them and a new
+  // attempt clears the previous one.
+  const feedback = useChannelFeedback()
   // Attempt numbering: the failure banner belongs to the newest attempt
   // (see authorize below), so attemptsRef is the counter that decides.
   const attemptsRef = useRef(0)
@@ -151,7 +158,7 @@ export function SocialSignInSection({
     const attempt = ++attemptsRef.current
     // The newest attempt owns the banner: a new attempt clears any
     // failure an older attempt left behind.
-    setErrorCode(null)
+    feedback.reset()
     let authorizeUrl: string | null = null
     let failure: string | null = null
     try {
@@ -184,7 +191,7 @@ export function SocialSignInSection({
     // not paint over the newer attempt's outcome.
     if (failure !== null) {
       if (attempt === attemptsRef.current) {
-        setErrorCode(failure)
+        feedback.fail(failure)
       }
       return
     }
@@ -222,7 +229,7 @@ export function SocialSignInSection({
           </Button>
         )
       })}
-      <InlineError code={errorCode} />
+      <ChannelFeedbackRegion feedback={feedback} />
     </Box>
   )
 }

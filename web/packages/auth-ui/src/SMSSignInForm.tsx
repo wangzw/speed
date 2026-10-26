@@ -97,7 +97,10 @@ import { humanGateNeedsProof, useHumanVerification } from '@speed/auth-core'
 import type { OpenFlowState } from './internal/flow.js'
 import { answerSends } from './internal/flow.js'
 import { useAuthUiTranslation } from './internal/translation.js'
-import { InlineError } from './internal/inline-error.js'
+import {
+  ChannelFeedbackRegion,
+  useChannelFeedback,
+} from './internal/write-feedback.js'
 import { FlowStepFields } from './internal/flow-step.js'
 import { retryWaitMs } from './internal/retry-wait.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
@@ -129,6 +132,12 @@ interface SmsFields {
 
 /** The resend note's id, referenced by the resend control while it counts down. */
 const RESEND_NOTE_ID = 'sms-sign-in-resend-note'
+
+/** The form's one live status region (sent notice and phone refusal). */
+export const SMS_NOTICE_ID = 'sms-sign-in-notice'
+
+/** The server's collapsed credential refusal (see the file header). */
+const LOGIN_FAILED = 'authn.login_failed'
 
 /** The SMS method's first code prompt: state `first` with a challenge. */
 function isCodePrompt(step: OpenFlowState): boolean {
@@ -181,16 +190,18 @@ export function SMSSignInForm({
   // under the number, filled after the refused submit has rendered it.
   const [phoneNotice, setPhoneNotice] = useState('')
   const [sentTo, setSentTo] = useState<string | null>(null)
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  // The channel's feedback scope: failure codes settle its slot, while the
+  // SMS step's own two notices (this step's code refusal and the used-code
+  // notice) are bundle copy rather than codes. The local notice shares the
+  // scope's one failure position, so the slot and it never stand together.
+  const feedback = useChannelFeedback()
+  const [localNotice, setLocalNotice] = useState<
+    'refused' | 'used' | null
+  >(null)
   // The instant the resend control becomes usable again, and the ticking
   // clock its note reads.
   const [resendUntil, setResendUntil] = useState(0)
   const [now, setNow] = useState(() => Date.now())
-  // The used-code notice: the current code session's last answer lost a
-  // concurrent sign-in race after its code verified server-side -- the
-  // code is SPENT (see the file header) -- or re-submitted the very code
-  // one did. Renders in the code step, never while an error is showing.
-  const [codeUsed, setCodeUsed] = useState(false)
   // The exact code a superseded answer proved spent, kept until the next
   // code request ISSUES a fresh code (a request the server refuses issues
   // none, and this memory survives it -- the old code is no less spent),
@@ -202,6 +213,15 @@ export function SMSSignInForm({
   // The number the current code session was sent to, so resend repeats
   // against it rather than trusting a re-typed field.
   const sentToRef = useRef<string>('')
+  // Whether the answer in flight is the code step's own: only that answer
+  // renders the step's specific refusal instead of the generic slot text.
+  const answeringCodeRef = useRef(false)
+
+  /** A new attempt clears every failure source of the scope. */
+  function resetScope(): void {
+    setLocalNotice(null)
+    feedback.reset()
+  }
 
   /** Hold the resend control for the interval the server asked for: a
    * positive `resend_after` from the challenge, or a 429's `Retry-After`. */
@@ -213,7 +233,16 @@ export function SMSSignInForm({
   const driver = useFlowDriver(session, {
     beforeStart,
     onFailure: (code, error) => {
-      setErrorCode(code)
+      if (code === LOGIN_FAILED && answeringCodeRef.current) {
+        // The code step's own refusal: this surface's copy names no
+        // password it has no field for. It shares the scope's one failure
+        // position with the slot (see the state above).
+        setLocalNotice('refused')
+        feedback.reset()
+      } else {
+        setLocalNotice(null)
+        feedback.fail(code)
+      }
       const wait = retryWaitMs(error)
       if (wait !== undefined) {
         holdResend(wait)
@@ -226,7 +255,8 @@ export function SMSSignInForm({
       }
       form.resetField('code', { defaultValue: '' })
       setSpentCode(code)
-      setCodeUsed(true)
+      setLocalNotice('used')
+      feedback.reset()
     },
     onSettled: () => {
       try {
@@ -292,13 +322,13 @@ export function SMSSignInForm({
     if (proofBlocked) {
       return
     }
-    setErrorCode(null)
+    resetScope()
+    answeringCodeRef.current = false
     // A request does not yet open a new code session: whether one opens is
     // the server's answer -- the used-code notice clears for the attempt,
     // but the spent-code memory is released only once a fresh code was
     // actually issued (the send succeeded), because a refused request
     // leaves the previous code spent.
-    setCodeUsed(false)
     sentToRef.current = phone
     // The proof is single-use: the send spends it, so the control obtains
     // a fresh one for the next send whatever this answer is.
@@ -357,17 +387,17 @@ export function SMSSignInForm({
       await requestCode(phone)
       return
     }
-    setErrorCode(null)
-    setCodeUsed(false)
+    resetScope()
     if (values.code !== '' && values.code === spentCode) {
       // The very code a superseded answer proved spent is being submitted
       // again: answer with the used-code notice and clear it -- never a
       // doomed round-trip into the server's collapsed invalid-code answer.
       form.resetField('code', { defaultValue: '' })
-      setCodeUsed(true)
+      setLocalNotice('used')
       return
     }
     lastCodeRef.current = values.code
+    answeringCodeRef.current = true
     // The code answer verifies rather than sends, so the proof rides along
     // only for a step that may ask for a phone next; the server ignores it
     // otherwise, and the proof stays unspent.
@@ -386,6 +416,10 @@ export function SMSSignInForm({
     const current = driver.step
     const presented = needsProof ? human.proof : null
     const sends = current !== null && answerSends(current, input)
+    // A further step's answer is a new attempt too: the previous refusal's
+    // banner goes before the reply lands.
+    resetScope()
+    answeringCodeRef.current = false
     await driver.answer(input, presented ?? undefined)
     if (sends && presented !== null) {
       human.consume()
@@ -393,11 +427,10 @@ export function SMSSignInForm({
   }
 
   const editPhone = (): void => {
-    setErrorCode(null)
+    resetScope()
     // Leaving the code step clears its attempt state: the code-entry
     // surface unmounts with it, and re-entering requires a code request
     // the server accepts.
-    setCodeUsed(false)
     setSpentCode(null)
     sentToRef.current = ''
     driver.reset()
@@ -431,8 +464,12 @@ export function SMSSignInForm({
           step={driver.step}
           busy={driver.busy}
           onAnswer={(input) => void answerFurther(input)}
+          clientFailure={feedback.localFailure}
+          onClientFailure={(key) =>
+            key === null ? feedback.clearLocal() : feedback.failLocal(key)
+          }
         />
-        <InlineError code={errorCode} />
+        <ChannelFeedbackRegion feedback={feedback} />
       </>
     )
   }
@@ -471,6 +508,7 @@ export function SMSSignInForm({
           while nothing is announced -- and each accepted notice fills
           the text into a region the screen reader already knows. */}
       <Alert
+        id={SMS_NOTICE_ID}
         severity="info"
         role="status"
         sx={onCodeStep ? { width: '100%' } : visuallyHiddenSx}
@@ -545,22 +583,21 @@ export function SMSSignInForm({
           {humanBlock}
         </>
       )}
-      {codeUsed ? (
-        <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+      <ChannelFeedbackRegion feedback={feedback} />
+      {localNotice === 'used' ? (
+        <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
           {t('smsSignIn.codeUsed')}
         </Alert>
-      ) : errorCode === 'authn.login_failed' && onCodeStep ? (
+      ) : localNotice === 'refused' ? (
         // The code step's own refusal: the server collapses a wrong,
         // expired, spent or exhausted code into this one answer, so the
         // text says what this step can promise -- try it again or ask
         // for a new code -- and never names a password this surface has
         // no field for.
-        <Alert severity="error" role="alert" sx={{ width: '100%' }}>
+        <Alert severity="error" role="alert" sx={{ width: '100%', mt: 1 }}>
           {t('smsSignIn.loginFailed')}
         </Alert>
-      ) : (
-        <InlineError code={errorCode} />
-      )}
+      ) : null}
     </FormLayout>
   )
 }

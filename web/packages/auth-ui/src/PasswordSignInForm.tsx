@@ -8,9 +8,9 @@
  * `password`), rendered through ui-kit's FormLayout and FormField
  * skeleton. The skeleton owns the <form>, the validation-error rendering
  * and the actions row; this component owns the submission, the busy state
- * (RHF's isSubmitting while the request is in flight) and the
- * whole-attempt failure banner (one InlineError per failed submit, code
- * resolved to current-language text).
+ * (RHF's isSubmitting while the request is in flight) and the channel's
+ * feedback scope (see internal/write-feedback): one whole-attempt failure
+ * banner at a time, cleared as the next answer begins.
  *
  * A password step that does not complete immediately -- a forced password
  * change (the method answers `challenge` with a `new_password` field), a
@@ -41,7 +41,7 @@
  * reader. Every other code renders through the whole-attempt banner.
  */
 
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import { useForm } from 'react-hook-form'
@@ -49,7 +49,10 @@ import type { SubmitHandler } from 'react-hook-form'
 import { FormField, FormLayout } from '@speed/ui-kit'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
-import { InlineError } from './internal/inline-error.js'
+import {
+  ChannelFeedbackRegion,
+  useChannelFeedback,
+} from './internal/write-feedback.js'
 import { HumanGatedFlowStep } from './internal/flow-step.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
@@ -98,7 +101,9 @@ export function PasswordSignInForm({
   const form = useForm<PasswordFields>({
     defaultValues: { identifier: defaultUsername ?? '', password: '' },
   })
-  const [errorCode, setErrorCode] = useState<string | null>(null)
+  // The channel's own feedback scope: one failure banner at a time, cleared
+  // when a new answer begins.
+  const feedback = useChannelFeedback()
   // Whether this form's own fields are the mounted surface: a refusal of a
   // later step (a second factor) has no password field to attach to and
   // renders through the banner instead.
@@ -121,10 +126,10 @@ export function PasswordSignInForm({
           message: t('passwordSignIn.loginFailed'),
         })
         passwordInput.current?.focus()
-        setErrorCode(null)
+        feedback.reset()
         return
       }
-      setErrorCode(code)
+      feedback.fail(code)
     },
     onSettled: () => {
       try {
@@ -143,7 +148,7 @@ export function PasswordSignInForm({
     identifier,
     password,
   }) => {
-    setErrorCode(null)
+    feedback.reset()
     form.clearErrors('password')
     await driver.start({
       method: 'password',
@@ -164,9 +169,18 @@ export function PasswordSignInForm({
           humanGate={humanGate}
           step={driver.step}
           busy={driver.busy}
-          onAnswer={(input, proof) => void driver.answer(input, proof)}
+          onAnswer={(input, proof) => {
+            // Answering a step is a new attempt: the previous failure must
+            // not stand beside the step this answer parks.
+            feedback.reset()
+            void driver.answer(input, proof)
+          }}
+          clientFailure={feedback.localFailure}
+          onClientFailure={(key) =>
+            key === null ? feedback.clearLocal() : feedback.failLocal(key)
+          }
         />
-        <InlineError code={errorCode} />
+        <ChannelFeedbackRegion feedback={feedback} />
       </>
     )
   }
@@ -215,7 +229,7 @@ export function PasswordSignInForm({
           />
         )}
       />
-      <InlineError code={errorCode} />
+      <ChannelFeedbackRegion feedback={feedback} />
     </FormLayout>
   )
 }
