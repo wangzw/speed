@@ -608,9 +608,8 @@ func (suppliedAudit) Record(context.Context, audit.Entry) error { return nil }
 // supply any value that delivers the audit capability. A callback that took its
 // instance for the journal would panic on it, or fail the startup for it. The
 // contrast is the module's own product, which the same callbacks act on in the
-// same registry: Init fails for it, because the configuration names an endpoint
-// and the registry has no entry point to serve it, and Start and Stop switch what
-// it accepts.
+// same registry: Init wires it — skipping the request-level layer because the
+// registry has no entry point — and Start and Stop switch what it accepts.
 func TestTheCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 	ctx := context.Background()
 	module := Module()
@@ -631,9 +630,9 @@ func TestTheCallbacksLeaveASuppliedInstanceAlone(t *testing.T) {
 	}
 
 	own := newJournal(settings{endpoints: []string{"public"}}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := module.Init(ctx, reg, own); err == nil {
-		t.Error("Init on the module's own product gave no error in a registry with no entry point, " +
-			"so the calls above show nothing about what Init does to an instance")
+	if err := module.Init(ctx, reg, own); err != nil {
+		t.Errorf("Init on the module's own product in a registry with no entry point gave %v, "+
+			"want the request-level layer skipped", err)
 	}
 	if err := module.Start(ctx, reg, own); err != nil || !own.accepting.Load() {
 		t.Errorf("Start on the module's own product gave %v with accepting %v, want it accepting",
@@ -658,16 +657,13 @@ func TestWireFailsWhenEventsAreNamedAndNoBusIsInTheRun(t *testing.T) {
 	}
 }
 
-// Naming an endpoint without an entry point in the run fails the startup too,
-// rather than leaving the layer off the endpoint in silence.
-func TestWireFailsWhenEndpointsAreNamedAndNoRouterIsInTheRun(t *testing.T) {
+// Naming an endpoint without an entry point in the run wires cleanly: the run
+// serves no request, so there is nowhere to put the request-level layer and no
+// defect to report. The statement and record capture stay in force.
+func TestWireSkipsRequestCaptureWhenEndpointsAreNamedAndNoRouterIsInTheRun(t *testing.T) {
 	j := newTestJournal(open(t), settings{endpoints: []string{"public"}})
-	err := j.wire(context.Background(), core.New())
-	if err == nil {
-		t.Fatal("wiring accepted an endpoint named with no entry point in the run")
-	}
-	if !strings.Contains(err.Error(), endpointsItem) {
-		t.Errorf("the failure does not name the %s input item: %v", endpointsItem, err)
+	if err := j.wire(context.Background(), core.New()); err != nil {
+		t.Fatalf("wiring an endpoint with no entry point in the run: %v", err)
 	}
 }
 

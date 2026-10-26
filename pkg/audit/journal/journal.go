@@ -17,6 +17,7 @@ package journal
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -219,24 +220,26 @@ func newJournal(set settings, handle *gorm.DB, logger *slog.Logger) *journal {
 // every named event type.
 //
 // Both capabilities are taken up rather than declared, which is what makes them
-// optional in practice: a host that names an endpoint but never brings an entry
-// point fails here, and the failure names the input item that asked for it. A
-// host that names nothing gets neither path and a journal that still captures
-// statements.
+// optional in practice. The endpoint list arrives from the compiled-in document
+// rather than from the command, so a run with no entry point — seed, a one-shot
+// migration — is naming endpoints it has nothing to attach them to: that run
+// serves no request, so it skips the request-level layer and keeps the statement
+// and record capture. A configured endpoint name that the entry point does not
+// declare is still a startup failure, because there the run does serve.
 func (j *journal) wire(_ context.Context, reg *core.Registry) error {
 	if len(j.settings.endpoints) > 0 {
 		router, err := core.Resolve[speedhttp.Router](reg)
-		if err != nil {
+		switch {
+		case errors.Is(err, core.ErrMissingProvider):
+			j.logger.Info(diagnosticPrefix+ModuleName+": the run has no HTTP entry point, so no request-level layer is registered",
+				"endpoints", j.settings.endpoints)
+		case err != nil:
 			return fmt.Errorf("%s%s: the %s input item names endpoints, but %w",
 				diagnosticPrefix, ModuleName, endpointsItem, err)
-		}
-		for _, name := range unique(j.settings.endpoints) {
-			endpoint, err := router.Endpoint(name)
-			if err != nil {
-				return fmt.Errorf("%s%s: %s lists the endpoint %q: %w",
-					diagnosticPrefix, ModuleName, endpointsItem, name, err)
+		default:
+			if err := j.registerRequestCapture(router); err != nil {
+				return err
 			}
-			endpoint.Use(j.middlewareFor(name))
 		}
 	}
 
@@ -253,6 +256,20 @@ func (j *journal) wire(_ context.Context, reg *core.Registry) error {
 		"endpoints", j.settings.endpoints,
 		"requests", len(j.settings.requests),
 		"events", len(j.settings.events))
+	return nil
+}
+
+// registerRequestCapture puts the middleware on the endpoints the configuration
+// names. A name the entry point does not declare is a startup failure.
+func (j *journal) registerRequestCapture(router speedhttp.Router) error {
+	for _, name := range unique(j.settings.endpoints) {
+		endpoint, err := router.Endpoint(name)
+		if err != nil {
+			return fmt.Errorf("%s%s: %s lists the endpoint %q: %w",
+				diagnosticPrefix, ModuleName, endpointsItem, name, err)
+		}
+		endpoint.Use(j.middlewareFor(name))
+	}
 	return nil
 }
 
