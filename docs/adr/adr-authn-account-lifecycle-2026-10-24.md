@@ -26,7 +26,7 @@
 
 个人租户的 ensure 读到停用的租户时，按账户状态决定是否重新启用。
 
-**否决**：钩子实现不得读账户行（墓碑之外的内容已抹除）；ensure 对停用的租户按设计不写任何东西，运营者的停用正是靠这条不被推翻（REQ-tenancy-030）；要让 ensure 判断来源，它得先拿到账户状态，而租户模块不认识账户，方向会反过来。
+**否决**：删除之后的收尾钩子不得读账户行（墓碑之外的内容已抹除）；ensure 对停用的租户按设计不写任何东西，运营者的停用正是靠这条不被推翻（REQ-tenancy-030）；要让 ensure 判断来源，它得先拿到账户状态，而租户模块不认识账户，方向会反过来。
 
 ### 账户模块为恢复新增一个公开方法
 
@@ -42,7 +42,7 @@
 
 ## 决策
 
-采纳：`AccountLifecycle` 新增 `AccountEnabled(ctx context.Context, id AccountID) error`，契约与其余方法相同——提交之后调用、幂等、不得读账户行、失败让调用返回 `ErrCleanupIncomplete`。
+采纳：`AccountLifecycle` 新增 `AccountEnabled(ctx context.Context, id AccountID) error`，契约与其余方法相同——提交之后调用、幂等、失败让调用返回 `ErrCleanupIncomplete`。不得读账户行这一条只约束删除之后的收尾钩子，即 `AccountDisabled`、`AccountEnabled` 与 `AccountDeleted`；`AccountCreated` 在账户创建提交之后调用，读得到账户行，不受这条约束（[ADR-tenant-administration-2026-10-26](adr-tenant-administration-2026-10-26.md)）。
 
 **`SetStatus` 按目标状态调用对应的钩子，不论那一行是否真的改了。** 转停用调 `AccountDisabled`，转启用调 `AccountEnabled`；账户已经是目标状态时同样调用一次。失败之后重复同一次调用补齐清理，停用与启用因而都成立。
 
