@@ -51,6 +51,7 @@ import { errorCodeOf } from '@speed/ui-kit'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { HumanGatedFlowStep } from './internal/flow-step.js'
+import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 
 export interface SocialCallbackHandlerProps {
@@ -223,6 +224,14 @@ export function SocialCallbackHandler({
     setAttempt((value) => value + 1)
   }
 
+  // A step the route parks after readFlow is its first appearance -- the
+  // viewer was not working in a control it replaced -- so it moves no
+  // focus. A later step, parked by answering the one before it, took the
+  // answered step's place and does.
+  const surfaceRef = useStepFocus(stepKey(driver.step), {
+    focusFirstStep: false,
+  })
+
   if (absentShown && absent !== undefined) {
     return <>{absent}</>
   }
@@ -253,7 +262,7 @@ export function SocialCallbackHandler({
   // not in place of it, and answering again clears it first.
   if (driver.step !== null) {
     return (
-      <>
+      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
         <HumanGatedFlowStep
           session={session}
           step={driver.step}
@@ -268,7 +277,7 @@ export function SocialCallbackHandler({
             <InlineError code={stepFailure} />
           </Box>
         )}
-      </>
+      </Box>
     )
   }
 

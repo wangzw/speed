@@ -46,6 +46,7 @@ import {
   useChannelFeedback,
 } from './write-feedback.js'
 import { HumanGatedFlowStep } from './flow-step.js'
+import { stepKey, useStepFocus } from './step-focus.js'
 import { useFlowDriver } from './use-flow-driver.js'
 import { isOpenFlow } from './flow.js'
 import { useGroupHeadingVariant } from './group-heading.js'
@@ -117,9 +118,15 @@ export function DescriptorSignInForm({
     })
   }
 
+  // The descriptor's own fields and a parked step are two surfaces of
+  // this channel; a switch moves focus to the new one's first control.
+  const surfaceRef = useStepFocus(
+    driver.step === null ? 'descriptor-fields' : stepKey(driver.step),
+  )
+
   if (driver.step !== null) {
     return (
-      <>
+      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
         <HumanGatedFlowStep
           session={session}
           humanGate={humanGate}
@@ -135,12 +142,13 @@ export function DescriptorSignInForm({
           }
         />
         <ChannelFeedbackRegion feedback={feedback} />
-      </>
+      </Box>
     )
   }
 
   return (
     <FormLayout
+      ref={surfaceRef}
       form={form}
       onSubmit={onSubmit}
       actions={
@@ -401,8 +409,17 @@ export function PasskeySignIn({
     })
   }
 
+  // The passkey button and the ceremony step it opens are two surfaces;
+  // a switch between them moves focus to the new one's first control.
+  const surfaceRef = useStepFocus(
+    driver.step === null ? 'passkey-entry' : stepKey(driver.step),
+  )
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}>
+    <Box
+      ref={surfaceRef}
+      sx={{ display: 'flex', flexDirection: 'column', gap: 1, width: '100%' }}
+    >
       <Divider textAlign="center" sx={{ color: 'text.secondary' }}>
         {t(headingVariant === 'plain' ? 'passkey.titleFirst' : 'passkey.title')}
       </Divider>

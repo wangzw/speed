@@ -42,6 +42,7 @@
  */
 
 import { useRef } from 'react'
+import Box from '@mui/material/Box'
 import TextField from '@mui/material/TextField'
 import Button from '@mui/material/Button'
 import { useForm } from 'react-hook-form'
@@ -54,6 +55,7 @@ import {
   useChannelFeedback,
 } from './internal/write-feedback.js'
 import { HumanGatedFlowStep } from './internal/flow-step.js'
+import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
 
@@ -144,6 +146,13 @@ export function PasswordSignInForm({
 
   credentialsMounted.current = driver.step === null
 
+  // The credentials form and the parked step are two surfaces of this
+  // channel; a switch between them moves focus to the new one's first
+  // control, while the form's first render moves nothing.
+  const surfaceRef = useStepFocus(
+    driver.step === null ? 'password-credentials' : stepKey(driver.step),
+  )
+
   const onSubmit: SubmitHandler<PasswordFields> = async ({
     identifier,
     password,
@@ -163,7 +172,7 @@ export function PasswordSignInForm({
   // carries the deployment's proof block above it and presents the proof.
   if (driver.step !== null) {
     return (
-      <>
+      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
         <HumanGatedFlowStep
           session={session}
           humanGate={humanGate}
@@ -181,12 +190,13 @@ export function PasswordSignInForm({
           }
         />
         <ChannelFeedbackRegion feedback={feedback} />
-      </>
+      </Box>
     )
   }
 
   return (
     <FormLayout
+      ref={surfaceRef}
       form={form}
       onSubmit={onSubmit}
       actions={

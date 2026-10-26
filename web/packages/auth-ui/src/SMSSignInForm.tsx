@@ -8,7 +8,10 @@
  * (`session.answerFlow`). The `challenge` step the server answers with is
  * what tells the form a code was issued; the sent notice announces the
  * receiving number, resend begins the flow again against the same number,
- * and changing the phone returns to the first step. A resend is held for
+ * and changing the phone returns to the first step. The notice is written
+ * into a region that mounted empty, and an identical resend clears it
+ * before writing the same sentence again, so a successful repeat is
+ * announced rather than read as an unchanged string. A resend is held for
  * the interval the server states -- the `resend_after` a challenge carried,
  * or the `Retry-After` of a 429 -- and the control states how many seconds
  * remain; the countdown timer stops at its own expiry. A fresh code starts
@@ -103,6 +106,7 @@ import {
 } from './internal/write-feedback.js'
 import { FlowStepFields } from './internal/flow-step.js'
 import { retryWaitMs } from './internal/retry-wait.js'
+import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
 
@@ -189,7 +193,13 @@ export function SMSSignInForm({
   // The phone step's announcement: the exact message the control renders
   // under the number, filled after the refused submit has rendered it.
   const [phoneNotice, setPhoneNotice] = useState('')
-  const [sentTo, setSentTo] = useState<string | null>(null)
+  // The sent notice the status region carries. It is written a commit
+  // after an accepted send (so the region is never born with its text)
+  // and cleared before an identical resend writes the same sentence again:
+  // a live region announces a change, not a value rewritten, so a
+  // repeated sentence must pass through empty to be spoken.
+  const [sentNotice, setSentNotice] = useState('')
+  const [sentSeq, setSentSeq] = useState(0)
   // The channel's feedback scope: failure codes settle its slot, while the
   // SMS step's own two notices (this step's code refusal and the used-code
   // notice) are bundle copy rather than codes. The local notice shares the
@@ -293,6 +303,17 @@ export function SMSSignInForm({
     setPhoneNotice(message)
   }, [phoneAttempt])
 
+  // Fill the sent notice one commit after the send was accepted. A first
+  // send and a resend take the same path, so the region always changes --
+  // an identical resend included, because the accepted send cleared it in
+  // the commit that bumped `sentSeq`.
+  useEffect(() => {
+    if (sentSeq === 0) {
+      return
+    }
+    setSentNotice(t('smsSignIn.sentNotice', { phone: sentToRef.current }))
+  }, [sentSeq, t])
+
   // Tick the countdown only while one is running, and stop the timer at its
   // own expiry rather than leaving it ticking for the rest of the mount.
   useEffect(() => {
@@ -350,7 +371,11 @@ export function SMSSignInForm({
     // against the one it replaces is stale too.
     setSpentCode(null)
     form.resetField('code', { defaultValue: '' })
-    setSentTo(phone)
+    // Empty the region before the notice is written again: when a resend
+    // produces the same sentence, passing through empty is what makes the
+    // successful repeat audible.
+    setSentNotice('')
+    setSentSeq((value) => value + 1)
     // The reply's challenge may state how long to wait before another code
     // may be requested. It is read from the driver's parked step, because
     // this handler's state copy predates the reply's render.
@@ -439,6 +464,17 @@ export function SMSSignInForm({
   const onCodeStep =
     driver.step !== null && isCodePrompt(driver.step)
 
+  // The surface this form renders now: the phone step and the code step
+  // are its own, anything else is a parked step. A switch to another
+  // surface moves focus to its first control; the form's first render
+  // moves nothing.
+  const surfaceKey = onCodeStep
+    ? 'sms-code'
+    : driver.step === null
+      ? 'sms-phone'
+      : stepKey(driver.step)
+  const surfaceRef = useStepFocus(surfaceKey)
+
   // The deployment's human-verification block, above whichever send
   // control the current step shows. It renders nothing when no proof is
   // required.
@@ -458,7 +494,7 @@ export function SMSSignInForm({
   // surface: it renders in place of the SMS form.
   if (driver.step !== null && !onCodeStep) {
     return (
-      <>
+      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
         {humanBlock}
         <FlowStepFields
           step={driver.step}
@@ -470,12 +506,13 @@ export function SMSSignInForm({
           }
         />
         <ChannelFeedbackRegion feedback={feedback} />
-      </>
+      </Box>
     )
   }
 
   return (
     <FormLayout
+      ref={surfaceRef}
       form={form}
       onSubmit={onSubmit}
       actions={
@@ -514,7 +551,7 @@ export function SMSSignInForm({
         sx={onCodeStep ? { width: '100%' } : visuallyHiddenSx}
       >
         {onCodeStep
-          ? t('smsSignIn.sentNotice', { phone: sentTo ?? '' })
+          ? sentNotice
           : phoneNotice}
       </Alert>
       {onCodeStep ? (

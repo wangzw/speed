@@ -360,6 +360,45 @@ describe('SMSSignInForm', () => {
     }
   })
 
+  it('re-announce the sent notice when a resend of the same number succeeds', async () => {
+    // A live region announces a text change, not a value written again. A
+    // resend produces the same sentence as the first send, so the region
+    // must pass through empty between the two announcements for a screen
+    // reader to speak the successful resend, not only a refused one.
+    const harness = makeHarness({
+      [LOGIN_START]: () => codeChallenge(),
+    })
+    renderWithProviders(<SMSSignInForm session={harness.session} />)
+    await sendCode()
+    const sent = zhCN.smsSignIn.sentNotice.replace('{{phone}}', CN_E164)
+    const region = document.getElementById(SMS_NOTICE_ID)!
+    await waitFor(() => expect(region).toHaveTextContent(sent))
+
+    const mutations: MutationRecord[] = []
+    const observer = new MutationObserver((records) => {
+      mutations.push(...records)
+    })
+    observer.observe(region, {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    })
+    try {
+      const user = userEvent.setup()
+      await user.click(
+        screen.getByRole('button', { name: zhCN.smsSignIn.resendCode }),
+      )
+      await waitFor(() => expect(sends(harness)).toHaveLength(2))
+      // The same sentence is on screen again, and the region reached it
+      // through an empty frame: a removal and a new insertion (or two text
+      // rewrites), never one unchanged value.
+      await waitFor(() => expect(region).toHaveTextContent(sent))
+      expect(mutations.length).toBeGreaterThanOrEqual(2)
+    } finally {
+      observer.disconnect()
+    }
+  })
+
   it('return to the phone step when the flow is gone (flow-invalid)', async () => {
     // A step answered after the flow expired, was consumed, or was bound
     // to another browser answers flow-invalid: the flow cannot continue,

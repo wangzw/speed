@@ -52,6 +52,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -68,6 +69,7 @@ import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
 import { useAuthUiTranslation } from './internal/translation.js'
 import { InlineError } from './internal/inline-error.js'
 import { HumanGatedFlowStep } from './internal/flow-step.js'
+import { stepKey, useStepFocus } from './internal/step-focus.js'
 import { useFlowDriver } from './internal/use-flow-driver.js'
 import { allowedToStart } from './internal/start-gate.js'
 import type { SignInBeforeStart } from './internal/start-gate.js'
@@ -298,22 +300,31 @@ export function PasswordRegisterForm({
   const signedIn = status === 'signedIn'
   const busy = form.formState.isSubmitting || driver.busy
 
+  // The registration fields and a parked step of the auto-login are two
+  // surfaces of this channel; a switch between them moves focus to the
+  // new one's first control (the signed-in notice is no step).
+  const shownStep =
+    driver.step !== null && !autoSignInFailed && !signedIn ? driver.step : null
+  const surfaceRef = useStepFocus(
+    shownStep !== null ? stepKey(shownStep) : signedIn ? null : 'register-fields',
+  )
+
   // A parked step after the password (a forced password change, a second
   // factor) replaces this form's fields: only one surface renders at a
   // time. A second factor that sends a code carries the deployment's proof
   // block above it and presents the proof.
-  if (driver.step !== null && !autoSignInFailed && !signedIn) {
+  if (shownStep !== null) {
     return (
-      <>
+      <Box ref={surfaceRef} sx={{ display: 'contents' }}>
         <HumanGatedFlowStep
           session={session}
           humanGate={humanGate}
-          step={driver.step}
+          step={shownStep}
           busy={driver.busy}
           onAnswer={(input, proof) => void driver.answer(input, proof)}
         />
         <InlineError code={failure !== null && 'code' in failure ? failure.code : null} />
-      </>
+      </Box>
     )
   }
 
@@ -405,6 +416,7 @@ export function PasswordRegisterForm({
 
   return (
     <FormLayout
+      ref={surfaceRef}
       form={form}
       onSubmit={onSubmit}
       actions={
