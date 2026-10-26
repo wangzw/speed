@@ -173,11 +173,13 @@ describe('DataTable', () => {
     expect(container).toHaveStyle({ overflowX: 'auto' })
   })
 
-  it('pins the last column only when the host opts in', () => {
-    // The pin is a per-table opt-in, never the default: an unopted table
-    // keeps its last column in normal flow, while the opted one makes
-    // both the header cell and the body cells stick to the scroll
-    // container's right edge (the browser tier proves the movement).
+  it('pins the last column only when the host opts in and the table overflows', () => {
+    // The pin is a per-table opt-in, never the default, and it is measured
+    // rather than assumed: an opted-in table that fits its container keeps
+    // its last column in normal flow, while one whose content is wider
+    // makes both the header cell and the body cells stick to the scroll
+    // container's right edge (the browser tier proves the movement and the
+    // measurement against real layout).
     const withActions: readonly DataTableColumn<Member>[] = [
       ...BASE_COLUMNS,
       { id: 'actions', header: 'Actions', cell: () => 'open' },
@@ -190,17 +192,41 @@ describe('DataTable', () => {
     })
     off.unmount()
 
-    const on = renderTable({ columns: withActions, pinLastColumn: true })
-    const headers = on.container.querySelectorAll('thead th')
-    expect(headers[headers.length - 1]).toHaveStyle({
+    // jsdom lays nothing out, so an unmocked container reports equal
+    // scroll and client widths: the fitting case.
+    const fitting = renderTable({ columns: withActions, pinLastColumn: true })
+    const fittingHeaders = fitting.container.querySelectorAll('thead th')
+    expect(fittingHeaders[fittingHeaders.length - 1]).not.toHaveStyle({
       position: 'sticky',
-      right: '0px',
     })
-    const bodyCells = on.container.querySelectorAll('tbody tr:first-child td')
-    expect(bodyCells[bodyCells.length - 1]).toHaveStyle({
-      position: 'sticky',
-      right: '0px',
-    })
+    fitting.unmount()
+
+    // Simulate the one measurement the pin reads: the table is wider than
+    // its scroll container.
+    const scrollWidth = vi
+      .spyOn(Element.prototype, 'scrollWidth', 'get')
+      .mockReturnValue(600)
+    const clientWidth = vi
+      .spyOn(Element.prototype, 'clientWidth', 'get')
+      .mockReturnValue(300)
+    try {
+      const on = renderTable({ columns: withActions, pinLastColumn: true })
+      const headers = on.container.querySelectorAll('thead th')
+      expect(headers[headers.length - 1]).toHaveStyle({
+        position: 'sticky',
+        right: '0px',
+      })
+      const bodyCells = on.container.querySelectorAll(
+        'tbody tr:first-child td',
+      )
+      expect(bodyCells[bodyCells.length - 1]).toHaveStyle({
+        position: 'sticky',
+        right: '0px',
+      })
+    } finally {
+      scrollWidth.mockRestore()
+      clientWidth.mockRestore()
+    }
   })
 
   it('applies column alignment and width to cells', () => {

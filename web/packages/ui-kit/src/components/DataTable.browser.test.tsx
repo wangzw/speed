@@ -146,6 +146,17 @@ describe('DataTable content caps in Chromium', () => {
 /** One pixel of tolerance for subpixel layout rounding. */
 const PIN_TOLERANCE = 0.5
 
+/**
+ * The alpha channel of a computed CSS colour. A hex or rgb() form is
+ * opaque; rgba() carries its own alpha as the fourth component.
+ */
+function alphaOf(color: string): number {
+  const rgba = /^rgba?\(([^)]+)\)$/.exec(color)
+  if (rgba === null) return 1
+  const parts = rgba[1].split(',').map((part) => Number.parseFloat(part))
+  return parts[3] ?? 1
+}
+
 describe('DataTable row-actions pinning in Chromium', () => {
   interface PinRow {
     readonly name: string
@@ -236,5 +247,198 @@ describe('DataTable row-actions pinning in Chromium', () => {
     const after = manage.getBoundingClientRect()
     expect(after.left).toBeGreaterThanOrEqual(box.left - PIN_TOLERANCE)
     expect(after.right).toBeLessThanOrEqual(box.right + PIN_TOLERANCE)
+  })
+
+  it('keeps the pinned band opaque when the surface fill is translucent', async () => {
+    await page.viewport(1280, 900)
+    renderWithProviders(
+      <div style={{ width: 280 }}>
+        <DataTable
+          rows={[PIN_ROW]}
+          columns={PIN_COLUMNS}
+          rowKey={(row) => row.email}
+          pinLastColumn
+        />
+      </div>,
+      {
+        language: 'en-US',
+        // The glass preset's container alpha, projected onto the default
+        // tokens: the surface fill no longer guarantees opaqueness, so the
+        // pinned cell must supply an opaque base underneath it.
+        projectTokens: { surface: { container: { opacity: 0.4 } } },
+      },
+    )
+
+    const manage = await screen.findByRole('button', { name: 'Manage' })
+    await waitFor(() => {
+      expect(manage.getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+    await document.fonts.ready
+
+    const container = manage.closest<HTMLElement>(
+      `.${tableContainerClasses.root}`,
+    )
+    expect(container).not.toBeNull()
+    // The pin is real only while the table overflows its container.
+    expect(container?.scrollWidth).toBeGreaterThan(container?.clientWidth ?? 0)
+
+    const headers = Array.from(container?.querySelectorAll('thead th') ?? [])
+    const bodyCells = Array.from(
+      container?.querySelectorAll('tbody tr:first-child td') ?? [],
+    )
+    const pinnedHeader = headers[headers.length - 1] as HTMLElement
+    const pinnedBody = bodyCells[bodyCells.length - 1] as HTMLElement
+
+    await waitFor(() => {
+      expect(getComputedStyle(pinnedHeader).position).toBe('sticky')
+      expect(getComputedStyle(pinnedBody).position).toBe('sticky')
+    })
+
+    for (const cell of [pinnedHeader, pinnedBody]) {
+      const computed = getComputedStyle(cell)
+      // The base layer is opaque, so the main columns cannot show through.
+      expect(alphaOf(computed.backgroundColor)).toBe(1)
+      // ... while the translucent surface fill stays the visible layer, so
+      // the pinned band still reads as part of the table.
+      expect(computed.backgroundImage).toContain('0.4')
+    }
+  })
+
+  it('leaves the last cells untouched when the table fits its container', async () => {
+    await page.viewport(1280, 900)
+
+    const FITS_ROW: PinRow = { name: 'Ada', email: 'ada@example.com' }
+    const FITS_COLUMNS: readonly DataTableColumn<PinRow>[] = [
+      { id: 'name', header: 'Name', cellWrap: 'nowrap', cell: (row) => row.name },
+      {
+        id: 'actions',
+        header: 'Actions',
+        cellWrap: 'nowrap',
+        cell: () => <button type="button">Manage</button>,
+      },
+    ]
+
+    renderWithProviders(
+      <div style={{ width: 900 }}>
+        <DataTable
+          rows={[FITS_ROW]}
+          columns={FITS_COLUMNS}
+          rowKey={(row) => row.email}
+          pinLastColumn
+        />
+      </div>,
+      { language: 'en-US' },
+    )
+
+    const manage = await screen.findByRole('button', { name: 'Manage' })
+    await waitFor(() => {
+      expect(manage.getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+    await document.fonts.ready
+
+    const container = manage.closest<HTMLElement>(
+      `.${tableContainerClasses.root}`,
+    )
+    expect(container).not.toBeNull()
+    // The premise of this case: the table genuinely fits its container.
+    await waitFor(() => {
+      expect(container?.scrollWidth ?? 0).toBeLessThanOrEqual(
+        container?.clientWidth ?? 0,
+      )
+    })
+
+    const headers = Array.from(container?.querySelectorAll('thead th') ?? [])
+    const bodyCells = Array.from(
+      container?.querySelectorAll('tbody tr:first-child td') ?? [],
+    )
+    const firstHeader = headers[0] as HTMLElement
+    const lastHeader = headers[headers.length - 1] as HTMLElement
+    const firstBody = bodyCells[0] as HTMLElement
+    const lastBody = bodyCells[bodyCells.length - 1] as HTMLElement
+
+    // A fitting table is unaffected: the last cells sit in normal flow and
+    // read exactly like their row siblings, with no start-edge divider.
+    expect(getComputedStyle(lastHeader).position).toBe('static')
+    expect(getComputedStyle(lastBody).position).toBe('static')
+    expect(getComputedStyle(lastHeader).backgroundColor).toBe(
+      getComputedStyle(firstHeader).backgroundColor,
+    )
+    expect(getComputedStyle(lastBody).backgroundColor).toBe(
+      getComputedStyle(firstBody).backgroundColor,
+    )
+    expect(getComputedStyle(lastHeader).boxShadow).toBe('none')
+    expect(getComputedStyle(lastBody).boxShadow).toBe('none')
+  })
+
+  it('carries the row hover highlight into the pinned cell', async () => {
+    await page.viewport(1280, 900)
+
+    // A short first column stays clear of the pinned band, so the pointer
+    // can rest on the row without the pinned controls intercepting it.
+    const HOVER_ROW: PinRow = { name: 'Ada', email: LONG_ID }
+    const HOVER_COLUMNS: readonly DataTableColumn<PinRow>[] = [
+      { id: 'name', header: 'Name', cellWrap: 'nowrap', cell: (row) => row.name },
+      { id: 'email', header: 'Email', cellWrap: 'nowrap', cell: (row) => row.email },
+      {
+        id: 'actions',
+        header: 'Actions',
+        cellWrap: 'nowrap',
+        cell: () => <button type="button">Manage</button>,
+      },
+    ]
+
+    renderWithProviders(
+      <div style={{ width: 280 }}>
+        <DataTable
+          rows={[HOVER_ROW]}
+          columns={HOVER_COLUMNS}
+          rowKey={(row) => row.email}
+          pinLastColumn
+        />
+      </div>,
+      { language: 'en-US' },
+    )
+
+    const manage = await screen.findByRole('button', { name: 'Manage' })
+    await waitFor(() => {
+      expect(manage.getBoundingClientRect().width).toBeGreaterThan(0)
+    })
+    await document.fonts.ready
+
+    const container = manage.closest<HTMLElement>(
+      `.${tableContainerClasses.root}`,
+    )
+    expect(container).not.toBeNull()
+    expect(container?.scrollWidth).toBeGreaterThan(container?.clientWidth ?? 0)
+
+    const row = manage.closest('tr')
+    expect(row).not.toBeNull()
+    const cells = Array.from(row?.querySelectorAll('td') ?? [])
+    const pinned = cells[cells.length - 1] as HTMLElement
+    expect(getComputedStyle(pinned).position).toBe('sticky')
+
+    // This tier runs a hovering, fine pointer, which is what turns the row
+    // highlight on in the first place.
+    expect(
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches,
+    ).toBe(true)
+
+    const restingImage = getComputedStyle(pinned).backgroundImage
+    await page.getByText('Ada').hover()
+    await waitFor(() => {
+      expect(getComputedStyle(row as HTMLElement).backgroundColor).not.toBe(
+        'rgba(0, 0, 0, 0)',
+      )
+    })
+
+    const hovered = getComputedStyle(pinned)
+    // The same layer the row's own highlight paints is present in the
+    // pinned cell, so the highlight no longer stops at the pinned edge.
+    expect(hovered.backgroundImage).not.toBe(restingImage)
+    expect(hovered.backgroundImage).toContain(
+      getComputedStyle(row as HTMLElement).backgroundColor,
+    )
+    // ... and the opaque base survives underneath the extra layer.
+    expect(alphaOf(hovered.backgroundColor)).toBe(1)
   })
 })

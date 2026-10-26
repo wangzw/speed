@@ -67,14 +67,22 @@
  * scroll happens: the table's last column -- the position a host gives
  * its row-actions column, so its controls stay reachable as the main
  * columns pass under them -- is declared `position: sticky` with a right
- * offset of zero on its header and body cells. Both get the surface
- * background, so the columns scrolling beneath stay hidden behind it,
- * and a hairline separator on the pinned cell's start edge marks the
- * boundary; the cells remain ordinary table cells, so no overlay or
- * second layout layer is introduced. The pin only does anything when the
- * table is actually wider than its container (otherwise the column sits
- * where it already was), and it defaults to off: a host that does not
- * pass it renders byte-for-byte the table it rendered before.
+ * offset of zero on its header and body cells. The cells remain ordinary
+ * table cells, so no overlay or second layout layer is introduced. The
+ * pin is measured, not assumed: a ResizeObserver watching the container
+ * and the table decides whether the table actually overflows, and only
+ * then are the sticky declarations, the opaque band and its start-edge
+ * separator emitted -- a table that fits renders exactly as it does
+ * without the switch, its last header cell included. The band is opaque
+ * even when the theme's container surface is not: the surface fill is not
+ * guaranteed opaque (a preset may declare an opacity), so the cell
+ * composites it over the opaque paper colour, which is the layer that
+ * hides the columns scrolling beneath; a hairline separator on the start
+ * edge marks the boundary. On a fine pointer the row's hover layer is
+ * carried into the pinned body cell on top of that same composite, so the
+ * highlight does not stop at the band's edge. It defaults to off: a host
+ * that does not pass it renders byte-for-byte the table it rendered
+ * before.
  *
  * That fallback only exists when a cell refuses to squeeze: under normal
  * text flow a value breaks mid-token and shrinks the table back to its
@@ -184,7 +192,7 @@
  * (resource table in the README) and follows the active language.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
 import Checkbox from '@mui/material/Checkbox'
@@ -518,33 +526,56 @@ function columnCellWrapSx(
 /**
  * Renders the opt-in pinning of the table's last column into a cell's sx
  * value (see the header note). The pinned cell sticks to the scroll
- * container's right edge; its background takes the theme's container
- * surface -- the single surface the table is designed to sit on, so the
- * pinned band reads as part of the table rather than as a second
- * surface -- and must be opaque, or the columns scrolling beneath it
- * would show through. The inset shadow draws the separator on its start
- * edge without depending on collapsed table borders. The header cell
- * takes a higher stacking order than body cells so the pinned band keeps
- * one surface. Returns undefined for an unpinned column, making the
- * spread a no-op -- the exact prior sx.
+ * container's right edge and stays opaque so the columns scrolling
+ * beneath it never show through: the container surface fill is the layer
+ * the reader sees, but it is not guaranteed opaque (a preset may declare
+ * an opacity), so an opaque paper base sits underneath it and the two
+ * are composited into one background. On a fine pointer the row's hover
+ * layer rides on top of that same composite, so the row highlight does
+ * not stop at the pinned band's edge. The inset shadow draws the
+ * separator on its start edge without depending on collapsed table
+ * borders. The header cell takes a higher stacking order than body cells
+ * so the pinned band keeps one surface, and carries no hover layer (the
+ * header row does not hover). Returns undefined for an unpinned column,
+ * making the spread a no-op -- the exact prior sx.
  */
 function pinnedColumnSx(
   pinned: boolean,
   header: boolean,
-): {
-  position: 'sticky'
-  right: number
-  zIndex: number
-  backgroundColor: (theme: Theme) => string
-  boxShadow: (theme: Theme) => string
-} | undefined {
+): SxProps<Theme> | undefined {
   if (!pinned) return undefined
+  // The visible fill, repeated as a gradient layer so it can composite
+  // over the opaque base and, on hover, under the row highlight.
+  const surfaceLayer = (theme: Theme): string => {
+    const fill = theme.surface.container.fill
+    return `linear-gradient(${fill}, ${fill})`
+  }
   return {
     position: 'sticky',
     right: 0,
     zIndex: header ? 3 : 1,
-    backgroundColor: (theme) => theme.surface.container.fill,
+    // The opaque base guarantees the band hides what scrolls under it;
+    // the surface fill above it keeps the band reading as part of the
+    // table. Setting only the fill would be translucent whenever a preset
+    // declares an opacity.
+    backgroundColor: (theme) => theme.palette.background.paper,
+    backgroundImage: surfaceLayer,
     boxShadow: (theme) => `inset 1px 0 0 ${theme.palette.divider}`,
+    ...(header
+      ? {}
+      : {
+          [POINTER_FINE_HOVER_QUERY]: {
+            // The same hover layer the row paints, carried into the pinned
+            // cell: the row's own highlight sits behind this cell's opaque
+            // base, which is why the cell must repeat it.
+            'tr:hover &': {
+              backgroundImage: (theme) => {
+                const hover = theme.palette.action.hover
+                return `linear-gradient(${hover}, ${hover}), ${surfaceLayer(theme)}`
+              },
+            },
+          },
+        }),
   }
 }
 
@@ -596,6 +627,37 @@ export function DataTable<T>({
     setStatusRegionCommitted(emptyPhase)
   }, [emptyPhase])
 
+  // The pin is an enhancement over the scroll fallback, so it may only
+  // appear while the table actually overflows its container: a table that
+  // fits must render exactly as it would without the switch. The
+  // measurement watches both boxes -- the container (host width changes)
+  // and the table (content width changes: fonts, columns, nowrap values,
+  // rows) -- because neither element's own box reports the other moving.
+  // jsdom has no layout and no ResizeObserver, so the unit tier proves the
+  // declarations and the browser tier proves the measurement.
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [containerOverflows, setContainerOverflows] = useState(false)
+  useEffect(() => {
+    if (!pinLastColumn) {
+      setContainerOverflows(false)
+      return
+    }
+    const container = containerRef.current
+    if (container === null) return
+    const measure = (): void => {
+      setContainerOverflows(container.scrollWidth > container.clientWidth)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(container)
+    const table = container.querySelector('table')
+    if (table !== null) {
+      observer.observe(table)
+    }
+    return () => observer.disconnect()
+  }, [pinLastColumn])
+
   const selectable = onSelectionChange !== undefined
   const sortingEnabled = onSortChange !== undefined && sort !== undefined
   const selected = new Set<string | number>(selectedRowKeys ?? [])
@@ -612,11 +674,11 @@ export function DataTable<T>({
 
   // The pin applies to the last declared column only -- the host's
   // row-actions column by the placement convention -- and only when the
-  // host opted in.
+  // host opted in and the table actually overflows the container.
   const lastColumnId =
     columns.length === 0 ? undefined : columns[columns.length - 1]?.id
   const isPinnedColumn = (column: DataTableColumn<T>): boolean =>
-    pinLastColumn && column.id === lastColumnId
+    pinLastColumn && containerOverflows && column.id === lastColumnId
 
   const toggleAll = () => {
     if (!selectable) return
@@ -703,7 +765,7 @@ export function DataTable<T>({
           />
         </Box>
       )}
-      <TableContainer>
+      <TableContainer ref={containerRef}>
         <Table
           aria-label={
             ariaLabelledBy === undefined
