@@ -22,8 +22,11 @@
  * raw key and a missing translation never leaks another language's text
  * or an English fallback.
  *
- * The whitelist composes the shared client-transport family (the codes
- * exported by @speed/i18n) with this surface's own authn codes; the key
+ * The whitelist composes the shared session-lifecycle and client-transport
+ * families (both exported by @speed/i18n) with this surface's own authn
+ * codes; a session that dies mid-flight surfaces through the refresh leg
+ * as one of the session-lifecycle codes, so each of them carries its own
+ * text here rather than collapsing onto 'errors.unknown'. The key
  * construction and the unknown fallback are the shared resolver's (see
  * @speed/i18n's error-text module).
  *
@@ -35,13 +38,18 @@
  * suite pins to its source, importing the auth-ui bundles as test data,
  * so the copies cannot drift. The account-only codes
  * (insufficient_user_authentication, impersonation_restricted, forbidden,
- * login_identifier_required, unsupported_media_type) carry
- * account-authored texts: the sign-in surface does not render them, so
- * there is no sign-in wording to copy.
+ * login_identifier_required, unsupported_media_type) and the shared
+ * session-lifecycle family carry account-authored texts: the sign-in
+ * surface does not render them, so there is no sign-in wording to copy.
+ * The lifecycle leaves state the outcome (the session has ended) without
+ * naming which of the merged causes -- expiry, revocation, reuse -- the
+ * server answered with, since the account page has no different remedy to
+ * offer and the code must not assert a cause the surface cannot observe.
  */
 
 import {
   CLIENT_TRANSPORT_ERROR_CODES,
+  SESSION_LIFECYCLE_ERROR_CODES,
   createErrorTextResolver,
 } from '@speed/i18n'
 import { useAccountUiTranslation } from './translation.js'
@@ -79,7 +87,10 @@ export const ERROR_TEXT_CODES = [
   'authn.throttled',
   'authn.unavailable',
   'authn.human_verification_required',
-  // Transport-level failures of the api-client contract (see @speed/i18n).
+  // The shared signed-in-surface families: a session that dies mid-flight
+  // and the transport-level failures of the api-client contract (see
+  // @speed/i18n's error-text module).
+  ...SESSION_LIFECYCLE_ERROR_CODES,
   ...CLIENT_TRANSPORT_ERROR_CODES,
 ] as const
 

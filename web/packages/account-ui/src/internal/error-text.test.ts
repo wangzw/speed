@@ -34,7 +34,11 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { createI18n, registerNamespace } from '@speed/i18n'
+import {
+  SESSION_LIFECYCLE_ERROR_CODES,
+  createI18n,
+  registerNamespace,
+} from '@speed/i18n'
 import { ACCOUNT_UI_NAMESPACE, accountUiResources } from '../resources.js'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
 import enUS from '../locales/en-US.json' with { type: 'json' }
@@ -135,6 +139,35 @@ describe('error-text whitelist', () => {
       expect(en, code).not.toBe(enUS.errors.unknown)
       expect(en, code).not.toBe(`errors.${code}`)
       expect(en, code).toBe(bundleText(enUS, code))
+    }
+  })
+
+  it('compose the shared session-lifecycle family and resolve each code to its own text', async () => {
+    // A session that dies mid-flight answers through the refresh leg with
+    // one of these codes; the account surface must render its own sentence
+    // for each, never the unknown fallback. The family is composed from
+    // @speed/i18n rather than re-listed, so this pin also keeps the set
+    // from being trimmed.
+    const whitelist = ERROR_TEXT_CODES as readonly string[]
+    for (const code of SESSION_LIFECYCLE_ERROR_CODES) {
+      expect(whitelist, `${code} must be whitelisted`).toContain(code)
+    }
+
+    const i18n = newInstance()
+    for (const code of SESSION_LIFECYCLE_ERROR_CODES) {
+      const zh = i18n.t(`errors.${code}`, { ns: ACCOUNT_UI_NAMESPACE })
+      expect(zh, code).not.toBe(zhCN.errors.unknown)
+      expect(zh, code).not.toBe(`errors.${code}`)
+      expect(zh, code).toBe(bundleText(zhCN, code))
+      expect(zh, code).not.toBe('')
+    }
+    await i18n.changeLanguage('en-US')
+    for (const code of SESSION_LIFECYCLE_ERROR_CODES) {
+      const en = i18n.t(`errors.${code}`, { ns: ACCOUNT_UI_NAMESPACE })
+      expect(en, code).not.toBe(enUS.errors.unknown)
+      expect(en, code).not.toBe(`errors.${code}`)
+      expect(en, code).toBe(bundleText(enUS, code))
+      expect(en, code).not.toBe('')
     }
   })
 
