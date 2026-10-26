@@ -683,6 +683,31 @@ describe('AppShell sidebar layout in Chromium', () => {
     await expectNoAxeViolations()
   })
 
+  it('keeps the sidebar minimal top bar on the theme gutter below md', async () => {
+    // The two-band header fix tightens the topbar shape's own spacing. The
+    // sidebar shape's minimal bar (the drawer trigger and the brand only)
+    // has no width pressure, so it keeps the theme's two-step gutter: the
+    // space after the trigger is a full spacing step, not the topbar's half.
+    await page.viewport(400, VIEWPORT_HEIGHT)
+    renderShell(
+      <AppShell
+        shellLayout="sidebar"
+        navItems={NAV_ITEMS}
+        {...SIDEBAR_CHROME}
+      >
+        <h1>Main content</h1>
+      </AppShell>,
+    )
+
+    const toggleRect = screen
+      .getByRole('button', { name: OPEN_NAV })
+      .getBoundingClientRect()
+    const brandRect = screen.getByText('Speed Admin').getBoundingClientRect()
+    // theme.spacing(2) with the default 8px base, allowing for subpixel
+    // rounding.
+    expect(Math.abs(brandRect.left - toggleRect.right - 16)).toBeLessThanOrEqual(1)
+  })
+
   it('anchors the fixed head, the drawer paper and a side panel under backdrop-filtered surfaces', async () => {
     // The glass preset expresses its translucency through
     // `surface.*.backdropFilter`; a backdrop filter makes its element a

@@ -1108,10 +1108,12 @@ export function AppShell({
       aria-label={mobileOpen ? t('appShell.closeNav') : t('appShell.openNav')}
       aria-expanded={mobileOpen}
       onClick={() => setMobileOpen(!mobileOpen)}
-      // One spacing step, not two: at the narrowest supported viewports the
-      // toggle, the brand and the header actions share one band, and the
-      // extra step is what pushes the actions off it.
-      sx={{ marginRight: 1 }}
+      // In the topbar layout one spacing step, not two: at the narrowest
+      // supported viewports the toggle, the brand and the header actions
+      // share one band, and the extra step is what pushes the actions off
+      // it. The sidebar layout's minimal top bar holds only the toggle and
+      // the brand, so it keeps the theme's two-step gutter.
+      sx={{ marginRight: sidebarLayout ? 2 : 1 }}
     >
       {mobileOpen ? <CloseIcon /> : <MenuIcon />}
     </IconButton>
