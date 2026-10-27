@@ -101,8 +101,10 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // is delivered exclusively by another module, so a command that names this one
 // fails before anything is built unless it names them too. The settings store is
 // required as optional only so that it is initialised first and its snapshot is
-// loaded when Init reads a setting, and the human-verification seam is optional
-// so that an assembly without one sends without asking for a proof.
+// loaded when Init reads a setting, the human-verification seam is optional
+// so that an assembly without one sends without asking for a proof, and the
+// impersonation capability is optional so that an assembly without one refuses
+// the completion of a flow an impersonating identity started.
 //
 // The stance is StateEnabled and never StateAuto: the module is taken in at run
 // level, so it has no way to stand itself down.
@@ -185,18 +187,19 @@ type product struct {
 	mfa          authn.MFA
 
 	// Optional capabilities, taken up by Init and read-only afterwards.
-	tokens      authn.Tokens
-	smsCodes    authn.SMSCodes
-	emailSender authn.EmailCodeSender
-	sso         authn.SSOProviders
-	provisioner authn.Provisioner
-	human       authn.HumanVerifier
-	store       settings.Store
-	audit       audit.Audit
-	bus         event.Bus
-	meters      meters
-	logger      *slog.Logger
-	settings    *reader
+	tokens        authn.Tokens
+	impersonation authn.Impersonation
+	smsCodes      authn.SMSCodes
+	emailSender   authn.EmailCodeSender
+	sso           authn.SSOProviders
+	provisioner   authn.Provisioner
+	human         authn.HumanVerifier
+	store         settings.Store
+	audit         audit.Audit
+	bus           event.Bus
+	meters        meters
+	logger        *slog.Logger
+	settings      *reader
 
 	// Assembled by Init.
 	resolver    *resolve.Resolver
@@ -259,6 +262,9 @@ func (p *product) wire(reg *core.Registry) error {
 	}
 	var err error
 	if p.tokens, err = optional[authn.Tokens](reg, "the token capability"); err != nil {
+		return err
+	}
+	if p.impersonation, err = optional[authn.Impersonation](reg, "the impersonation capability"); err != nil {
 		return err
 	}
 	if p.smsCodes, err = optional[authn.SMSCodes](reg, "the SMS code capability"); err != nil {

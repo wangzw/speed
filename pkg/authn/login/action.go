@@ -42,13 +42,15 @@ func (r *routes) complete(c *call, token string, rec record, raw []byte) {
 }
 
 // review re-checks, for a link, a step-up or an enrollment, that the session the
-// flow was started on is still valid and still the flow's own, and that a link
-// or an enrollment still meets the freshness the account's factors call for. It
-// answers the request and returns false when it does not. A flow an impersonating
-// identity started is reviewed against the effective account: the session must
-// still belong to the operator and name the same record, so an ended
-// impersonation, or a different one on the same session, does not carry the flow
-// onto the account it was started for.
+// flow was started on is still valid and still the flow's own, that an
+// impersonating flow's record still holds, and that a link or an enrollment
+// still meets the freshness the account's factors call for. It answers the
+// request and returns false when it does not. A flow an impersonating identity
+// started is reviewed against the effective account: the session must still
+// belong to the operator and name the same record, and that record must still be
+// active for the flow's account, so neither an ended impersonation, nor another
+// one on the same session, nor a record that lapsed in the background carries
+// the flow onto the account it was started for.
 func (r *routes) review(c *call, rec record) bool {
 	status, err := r.sessions.StatusFresh(c.ctx, authn.SessionID(rec.Session))
 	if err != nil {
@@ -61,6 +63,9 @@ func (r *routes) review(c *call, rec record) bool {
 	}
 	if !status.Active || !flowOwnsSession(rec, status) {
 		c.unauthorized(mount.CodeFlowInvalid)
+		return false
+	}
+	if rec.Impersonation != "" && !r.recordHolds(c, rec) {
 		return false
 	}
 	if rec.Purpose == authn.PurposeLink || rec.Purpose == authn.PurposeEnroll {
@@ -81,6 +86,30 @@ func flowOwnsSession(rec record, st authn.SessionStatus) bool {
 		return st.Account == authn.AccountID(rec.Actor) && st.ImpersonationID == rec.Impersonation
 	}
 	return st.Account == authn.AccountID(rec.Account) && st.ImpersonationID == ""
+}
+
+// recordHolds reports whether the impersonation record the flow was started
+// under is still active and still binds the flow's actor and account. The marker
+// on a session row is left in place by a record that lapses without End -- by
+// expiry, a disabled initiator or target, or a removed membership -- so the
+// marker alone does not prove the window is still open. An assembly with no
+// impersonation capability cannot confirm the record and refuses, the direction
+// the session and token verifiers take.
+func (r *routes) recordHolds(c *call, rec record) bool {
+	if r.impersonation == nil {
+		c.unauthorized(mount.CodeFlowInvalid)
+		return false
+	}
+	grant, active, err := r.impersonation.Active(c.ctx, rec.Impersonation)
+	if err != nil {
+		r.fail(c, err)
+		return false
+	}
+	if !active || grant.Actor != authn.AccountID(rec.Actor) || grant.Target != authn.AccountID(rec.Account) {
+		c.unauthorized(mount.CodeFlowInvalid)
+		return false
+	}
+	return true
 }
 
 // requirementFor is the freshness a link or an enrollment asks for, as the flow

@@ -318,6 +318,7 @@ type Proof struct {
 | `Memberships` | 是 | 企业 SSO 首登开户与并入判定所需的成员关系读写 |
 | `Throttle` | 是 | 失败退避的存取面 |
 | `Sessions` | 是 | `Create`、`Current`、`Revoke`、`StatusFresh`、`Elevate`、`RevokeAccount`、`Rotate`、`SetCookie`：`session` 与 `token` 交付都先建会话；请求带着可解析的旧会话 cookie 时撤销旧会话；`link`、`step-up`、`enroll` 的完成复核 |
+| `Impersonation` | 可选 | `Active`：完成复核确认冒充流程开始时绑定的那条记录仍然有效，并取它绑定的生效账户；缺席时冒充流程的完成一律 401 `flow-invalid` |
 | `MFA` | 是 | 第二因素与登记的编排、保障等级的合成 |
 | 全部 `LoginMethod` | 经 `ResolveAll` | 缺席合法，但没有任何方法即启动期 `ErrNoLoginMethod` |
 | `Tokens` | 可选 | `Issue` 与 `NewRefresh`；缺席时 `delivery=token` 不启用，启动诊断写一行 |
@@ -565,7 +566,7 @@ cookie 的属性是 `Secure; HttpOnly; Path=/`、无 `Domain`、**`SameSite=None
 
 **冒充期间的因素核验对象是发起者。** 流程记录的 `account` 仍是生效账户，也就是被冒充账户，登记因素、关联外部身份这些终态动作落在它上面。要求本身按生效账户取定：它名下有启用因素时要求新鲜的本地多因素，没有时要求新鲜的第一因素。满足这个要求的那几步——`step-up`，以及 `enroll` 与 `link` 的起始证明——核验的是发起者名下的因素与发起者会话的方式集，因为能被证明的只有动手的人；被冒充账户名下的因素决定要求的高低，不参与证明。
 
-**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、生效账户与记录的 `account` 一致，任一项不过为 401 `flow-invalid`；`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`；该要求取流程开始时账户有无有效因素取定的那一份（记录的 `require_multi`），使登记在其最后一步刚置启用的因素不抬高它自己完成所按的门槛（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
+**完成时的复核**由 `complete` 在终态动作之前做，`link`、`step-up`、`enroll` 共用：`StatusFresh(记录的 session)` 有效、生效账户与记录的 `account` 一致，任一项不过为 401 `flow-invalid`。冒充期间生效账户由流程开始时绑定的记录给出：复核要求 `Impersonation.Active(记录)` 为真、冒充记录的 `Actor` 与 `Target` 分别等于流程记录的 `actor` 与 `account`，会话属于发起者并仍带同一记录标识，任一项不过同为 401 `flow-invalid`；`Impersonation` 能力缺席时无法确认记录，冒充流程的完成按同一条拒绝。`link` 与 `enroll` 另按上表的起始要求再核对一次，不满足为 401 `insufficient_user_authentication`；该要求取流程开始时账户有无有效因素取定的那一份（记录的 `require_multi`），使登记在其最后一步刚置启用的因素不抬高它自己完成所按的门槛（[ADR-authn-login-flow](../../../adr/adr-authn-login-flow.md)）。
 
 ### 答复与迁移
 

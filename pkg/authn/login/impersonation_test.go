@@ -1,6 +1,7 @@
 package login
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -15,6 +16,13 @@ import (
 func (r *rig) impersonatedAuthenticated(actor, target authn.AccountID, session authn.SessionID) {
 	r.t.Helper()
 	now := time.Now()
+	r.accounts.byID[actor] = authn.Account{ID: actor, Kind: authn.KindUser, Status: authn.StatusActive}
+	r.accounts.byID[target] = authn.Account{ID: target, Kind: authn.KindUser, Status: authn.StatusActive}
+	r.imp.grant = authn.ImpersonationGrant{
+		ID: "grant-1", Actor: actor, Target: target, Tenant: "tenant-a",
+		StartedAt: now, EndsAt: now.Add(30 * time.Minute),
+	}
+	r.imp.member[target] = true
 	r.m.As(
 		authntest.WithAccount(target),
 		authntest.WithActor(actor),
@@ -141,6 +149,118 @@ func TestAnImpersonatedEnrollmentActsOnTheEffectiveAccount(t *testing.T) {
 	if r.sessions.revokedAccount != "acct-target" || r.sessions.except != "sid-op" {
 		t.Errorf("the completion revoked %q except %q, want the effective account's sessions except the operator's",
 			r.sessions.revokedAccount, r.sessions.except)
+	}
+}
+
+// TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses holds the
+// completion review against the record itself. A record that lapses without End
+// leaves its marker on the session row, so every cause that ends a record in
+// the background must still stop an enrollment begun during the impersonation
+// from landing its terminal action on the target. An explicit End clears the
+// marker, and the review refuses it on that ground.
+func TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses(t *testing.T) {
+	cases := []struct {
+		name   string
+		lapsed func(*rig)
+	}{
+		{"expired", func(r *rig) {
+			r.imp.now = func() time.Time { return time.Now().Add(31 * time.Minute) }
+		}},
+		{"the initiator was disabled", func(r *rig) {
+			r.accounts.byID["acct-admin"] = authn.Account{ID: "acct-admin", Kind: authn.KindUser, Status: authn.StatusDisabled}
+		}},
+		{"the target was disabled", func(r *rig) {
+			r.accounts.byID["acct-target"] = authn.Account{ID: "acct-target", Kind: authn.KindUser, Status: authn.StatusDisabled}
+		}},
+		{"the membership was removed", func(r *rig) {
+			delete(r.imp.member, "acct-target")
+		}},
+		{"explicitly ended, the marker is cleared", func(r *rig) {
+			r.sessions.status.ImpersonationID = ""
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t, &fakeMethod{name: "password"})
+			r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
+
+			start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+				`{"purpose":"enroll","input":{"kind":"totp"}}`)
+			if start.Code != http.StatusOK {
+				t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+			}
+			cookie := flowCookie(t, start)
+			seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+			c.lapsed(r)
+			done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+				`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+			if done.Code != http.StatusUnauthorized {
+				t.Fatalf("the completion after the record lapsed answered %d: %s, want 401 flow-invalid",
+					done.Code, done.Body.String())
+			}
+			if got := decode(t, done.Body.String())["type"]; got != "urn:speed:authn:flow-invalid" {
+				t.Errorf("the completion answered type %v, want urn:speed:authn:flow-invalid", got)
+			}
+			if r.sessions.revokedAll != 0 {
+				t.Error("a completion under a lapsed record revoked the target's sessions")
+			}
+		})
+	}
+}
+
+// TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability holds the
+// absent-dependency direction: an assembly with no impersonation capability
+// cannot confirm the record, so the completion of an impersonating flow is
+// refused rather than carried through on the session's marker alone.
+func TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability(t *testing.T) {
+	r := newRig(t, &fakeMethod{name: "password"})
+	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+	r.p.impersonation = nil
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusUnauthorized {
+		t.Fatalf("the completion with no impersonation capability answered %d: %s, want 401 flow-invalid",
+			done.Code, done.Body.String())
+	}
+	if r.sessions.revokedAll != 0 {
+		t.Error("a completion with no impersonation capability revoked the target's sessions")
+	}
+}
+
+// TestAnImpersonatedFlowIsRefusedWhenTheRecordCannotBeRead holds the failure
+// direction: a record store that cannot answer is a 503, and the completion's
+// terminal action does not run.
+func TestAnImpersonatedFlowIsRefusedWhenTheRecordCannotBeRead(t *testing.T) {
+	r := newRig(t, &fakeMethod{name: "password"})
+	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+	r.imp.err = errors.New("login test: the record store is down")
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusServiceUnavailable {
+		t.Fatalf("the completion with an unreadable record answered %d: %s, want 503",
+			done.Code, done.Body.String())
+	}
+	if r.sessions.revokedAll != 0 {
+		t.Error("a completion with an unreadable record revoked the target's sessions")
 	}
 }
 

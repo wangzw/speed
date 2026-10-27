@@ -317,6 +317,40 @@ func (a *fakeAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, valu
 	return "", authn.ErrAccountNotFound
 }
 
+// fakeImpersonation answers for one record and judges it by the state a case
+// scripts: the record's own end, whether its initiator and target are enabled,
+// and whether the target is a member. Those are the four causes the real module
+// lapses a record for without End, kept here so a completion case can reach
+// each without the real module's stores.
+type fakeImpersonation struct {
+	authn.Impersonation
+	now      func() time.Time
+	accounts *fakeAccounts
+	member   map[authn.AccountID]bool
+	grant    authn.ImpersonationGrant
+	err      error
+	calls    int
+}
+
+func (f *fakeImpersonation) Active(_ context.Context, id string) (authn.ImpersonationGrant, bool, error) {
+	f.calls++
+	if f.err != nil {
+		return authn.ImpersonationGrant{}, false, f.err
+	}
+	if id != f.grant.ID {
+		return authn.ImpersonationGrant{}, false, nil
+	}
+	switch {
+	case !f.now().Before(f.grant.EndsAt):
+	case f.accounts.byID[f.grant.Actor].Status != authn.StatusActive:
+	case f.accounts.byID[f.grant.Target].Status != authn.StatusActive:
+	case !f.member[f.grant.Target]:
+	default:
+		return f.grant, true, nil
+	}
+	return f.grant, false, nil
+}
+
 // fakeSessions records the sessions made, reports the status a case configures
 // for the completion review, and records the elevation.
 type fakeSessions struct {
@@ -467,6 +501,7 @@ type rig struct {
 	mfa          *fakeMFA
 	sessions     *fakeSessions
 	accounts     *fakeAccounts
+	imp          *fakeImpersonation
 	admin        *fakeAdmin
 	signups      *fakeSignups
 	verification *fakeVerification
@@ -506,6 +541,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		lookup: map[string]authn.AccountID{},
 	}
 	sessions := &fakeSessions{}
+	imp := &fakeImpersonation{now: time.Now, accounts: accounts, member: map[authn.AccountID]bool{}}
 	admin := &fakeAdmin{}
 	signups := &fakeSignups{}
 	verification := &fakeVerification{}
@@ -522,6 +558,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		memberships:    stubMemberships{},
 		throttle:       stubThrottle{},
 		sessions:       sessions,
+		impersonation:  imp,
 		mfa:            mfa,
 		methods:        map[string]authn.LoginMethod{},
 		settings:       newReader(nil, slog.New(slog.NewTextHandler(ioDiscard{}, nil))),
@@ -547,6 +584,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		mfa:          mfa,
 		sessions:     sessions,
 		accounts:     accounts,
+		imp:          imp,
 		admin:        admin,
 		signups:      signups,
 		verification: verification,
