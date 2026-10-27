@@ -35,7 +35,7 @@
  * helpers/i18n.ts.
  */
 // @journey journey-last-login-way.md
-// @covers REQ-security-040, REQ-security-013, REQ-security-017
+// @covers REQ-security-040, REQ-security-013
 import type { Locator, Page } from '@playwright/test'
 
 import { expect, test } from '../fixtures/demo'
