@@ -294,7 +294,7 @@
         "summary": "The caller's own profile"
       },
       "patch": {
-        "description": "Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity is refused 403 without the body being read, and a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.",
+        "description": "Writes the caller's own display name, its whole attribute set, and the language and time zone named inside that set; every body field is optional and a field left out is left as it is. The display name is written before the attribute set, and the two writes are not one atomic change: when the second fails, the first is already in force and the answer is that failure's. An impersonating identity writes the impersonated account's profile like any other caller; a caller with no login session, or one that does not meet the freshness the account's own factors call for, is refused 401 before anything is written.",
         "operationId": "authn.profile.patch",
         "requestBody": {
           "content": {
@@ -368,16 +368,6 @@
                 }
               }
             }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The identity is impersonating, which the route refuses"
           },
           "413": {
             "content": {

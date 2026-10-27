@@ -503,16 +503,17 @@ var startAuthenticatedOperation = speedhttp.NewReplyOperation[startAuthenticated
 	pathFlowsAuth,
 	"Start a flow on the identity already signed in",
 	"Starts a `link`, `step-up` or `enroll` flow on the identity the gateway authenticated and advances it to "+
-		"its first step. The flow is bound to that account and session, and an impersonating identity is refused "+
-		"with 403 impersonation-restricted. A link and an enrollment require the fresh authentication the "+
-		"account's factors call for — a fresh local multi-factor when the account holds an active factor, a "+
-		"fresh first factor otherwise — and answer 401 insufficient_user_authentication with `WWW-Authenticate` "+
-		"when it does not hold. A step-up whose account holds at least one factor usable for this session starts "+
-		"at the second factor and answers the offered factors without calling the method; an account that holds "+
-		"factors but none usable for this session — because each was activated at or after the session "+
-		"authenticated — is refused with 401 insufficient_user_authentication, and an account with no factor "+
-		"starts at the first factor with the method named in the body. The delivery mode is not read from the "+
-		"body: it follows the kind of the request's session.",
+		"its first step. The flow is bound to the effective account and the caller's session: an impersonating "+
+		"identity starts it for the impersonated account and proves its own factors. A link and an enrollment "+
+		"require the fresh authentication the effective account's factors call for — a fresh local multi-factor "+
+		"when the account holds an active factor, a fresh first factor otherwise — and answer 401 "+
+		"insufficient_user_authentication with `WWW-Authenticate` when it does not hold. A step-up whose account "+
+		"holds at least one factor usable for this session starts at the second factor and answers the offered "+
+		"factors without calling the method; an account that holds factors but none usable for this session — "+
+		"because each was activated at or after the session authenticated — is refused with 401 "+
+		"insufficient_user_authentication, and an account with no factor starts at the first factor with the "+
+		"method named in the body. The delivery mode is not read from the body: it follows the kind of the "+
+		"request's session.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The request to start a link, step-up or enrollment flow: the purpose, the method and fields where the purpose takes them, how the flow token is carried, and the return target. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
