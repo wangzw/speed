@@ -292,6 +292,12 @@ func TestRequirePassesTheAccountReadFailureOn(t *testing.T) {
 		if _, _, err := r.p.Require(context.Background(), "", "", byPassword); !errors.Is(err, authn.ErrInvalidAccountID) {
 			t.Errorf("no account: Require gave %v, want ErrInvalidAccountID", err)
 		}
+		if _, _, err := r.p.Require(context.Background(), "", "with-factor", byPassword); !errors.Is(err, authn.ErrInvalidAccountID) {
+			t.Errorf("no proof account: Require gave %v, want ErrInvalidAccountID", err)
+		}
+		if _, _, err := r.p.Require(context.Background(), "with-factor", "", byPassword); !errors.Is(err, authn.ErrInvalidAccountID) {
+			t.Errorf("no requirement account: Require gave %v, want ErrInvalidAccountID", err)
+		}
 	})
 }
 
