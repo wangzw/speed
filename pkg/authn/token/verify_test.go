@@ -561,6 +561,9 @@ func (v *vfy) impersonationToken() string {
 
 func TestAnImpersonationTokenAuthenticatesAsTheTarget(t *testing.T) {
 	v := newVfy(t)
+	v.sess.status.Assurance = authn.AssuranceMulti
+	v.sess.status.IDPAssured = true
+	v.sess.status.Provider = "oidc:corp"
 	got := principalOf(v.verify(v.impersonationToken()))
 	if got.Account != vfyBob || got.Actor != vfyAdmin {
 		t.Errorf("the principal is account %s actor %s, want %s acting as %s", got.Account, got.Actor, vfyAdmin, vfyBob)
@@ -568,11 +571,8 @@ func TestAnImpersonationTokenAuthenticatesAsTheTarget(t *testing.T) {
 	if got.Scope != "acme" {
 		t.Errorf("the scope is %q, want the record's tenant acme", got.Scope)
 	}
-	if got.Assurance > authn.AssuranceSingle {
-		t.Errorf("an impersonation's assurance is %v, want at most single", got.Assurance)
-	}
-	if got.IDPAssured {
-		t.Error("an impersonation asserts an IdP level")
+	if got.Assurance != authn.AssuranceMulti || !got.IDPAssured || got.Provider != "oidc:corp" {
+		t.Errorf("assurance %v, IDPAssured %v and provider %q, want the operator session's own facts", got.Assurance, got.IDPAssured, got.Provider)
 	}
 }
 
@@ -877,16 +877,43 @@ func TestATokenIssuedAtTheValidAfterInstantIsAccepted(t *testing.T) {
 	}
 }
 
-// TestAnImpersonationTokenIsCappedAtASingleFactor holds the cap that suppresses
-// the target's privilege signal: an impersonation over a multi-factor session
-// still reads as a single factor, not multi.
-func TestAnImpersonationTokenIsCappedAtASingleFactor(t *testing.T) {
+// TestAnImpersonationTokenTakesTheOperatorsLevel holds that the impersonation
+// does not cap the authentication facts: the level, the IdP declaration and the
+// provider are the operator session's own.
+func TestAnImpersonationTokenTakesTheOperatorsLevel(t *testing.T) {
 	v := newVfy(t)
 	tok := v.impersonationToken()
 	v.sess.status.Assurance = authn.AssuranceMulti
+	v.sess.status.IDPAssured = true
+	v.sess.status.Provider = "oidc:corp"
 	got := principalOf(v.verify(tok))
-	if got.Assurance != authn.AssuranceSingle {
-		t.Errorf("an impersonation over a multi-factor session is %v, want single", got.Assurance)
+	if got.Assurance != authn.AssuranceMulti || !got.IDPAssured || got.Provider != "oidc:corp" {
+		t.Errorf("the impersonation is %v, IDPAssured %v, provider %q, want the operator session's own",
+			got.Assurance, got.IDPAssured, got.Provider)
+	}
+}
+
+// TestAStatelessImpersonationTokenReadsItsLevelFromTheToken holds the
+// check-session-off branch: the level comes from the token's acr, and the facts
+// the token does not carry are false and empty.
+func TestAStatelessImpersonationTokenReadsItsLevelFromTheToken(t *testing.T) {
+	v := newVfy(t)
+	v.st.setBool(checkSessionPath, false)
+	c := vfyClaims()
+	c["sub"] = string(vfyBob)
+	c["act"] = map[string]any{"sub": string(vfyAdmin)}
+	c["imp"] = "imp-1"
+	c["acr"] = "2"
+	v.imp.grant = authn.ImpersonationGrant{
+		ID: "imp-1", Actor: vfyAdmin, Target: vfyBob, Tenant: "acme", SessionID: vfySession,
+	}
+	v.imp.active = true
+	got := principalOf(v.verify(v.sign(c, v.header())))
+	if got.Assurance != authn.AssuranceMulti {
+		t.Errorf("a stateless impersonation whose acr is 2 is %v, want multi", got.Assurance)
+	}
+	if got.IDPAssured || got.Provider != "" {
+		t.Errorf("IDPAssured %v and provider %q, want false and empty: the token carries neither", got.IDPAssured, got.Provider)
 	}
 }
 

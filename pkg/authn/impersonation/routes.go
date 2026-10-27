@@ -209,9 +209,10 @@ func (m *product) handleEnd(ctx context.Context, _ struct{}, _ *speedhttp.Meta) 
 }
 
 // issueImpersonation signs the impersonation access token: the target's subject,
-// the administrator's actor claim, the record, its tenant and session, the level
-// capped at a single factor and a lifetime of the shorter of the access-token
-// setting and the record's remaining lifetime. No refresh token is issued.
+// the administrator's actor claim, the record, its tenant and session, the
+// administrator's own authentication facts and a lifetime of the shorter of the
+// access-token setting and the record's remaining lifetime. No refresh token is
+// issued.
 func (m *product) issueImpersonation(ctx context.Context, actor authn.Identity, g authn.ImpersonationGrant) (authn.AccessToken, error) {
 	ttl := m.settings.tokenAccessTTL()
 	if remaining := g.EndsAt.Sub(m.clock.Now()); remaining < ttl {

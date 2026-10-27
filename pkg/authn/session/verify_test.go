@@ -216,8 +216,8 @@ func TestAnImpersonationIsTheTargetActedForByTheActor(t *testing.T) {
 		if p.Account != bob || p.Actor != admin || p.Scope != "tenant-1" || p.Session != sid {
 			t.Errorf("the principal is %+v, want bob acted for by the administrator in tenant-1 on the administrator's session", p)
 		}
-		if p.Assurance != authn.AssuranceSingle || p.IDPAssured {
-			t.Errorf("assurance %v and IDPAssured %v, want a single factor and no IdP declaration: the target did not authenticate", p.Assurance, p.IDPAssured)
+		if p.Assurance != authn.AssuranceMulti || !p.IDPAssured {
+			t.Errorf("assurance %v and IDPAssured %v, want the operator's own facts: an impersonation does not cap them", p.Assurance, p.IDPAssured)
 		}
 		if p.Provider != provider {
 			t.Errorf("the provider is %q", p.Provider)

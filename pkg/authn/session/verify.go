@@ -160,16 +160,14 @@ func (p *product) impersonate(ctx context.Context, cs *cacheSet, st authn.Sessio
 
 	// The identity is the target's: its account and its attributes. What the
 	// administrator's own login carried, the SSO attributes among it, is not
-	// the target's and does not go with it. The level is capped at a single factor
-	// and no IdP's declaration is carried: the target did not authenticate.
+	// the target's and does not go with it. The authentication facts — the level,
+	// the IdP declaration and the provider — are the operator's own, uncapped:
+	// the operator is the one who authenticated, and a sensitive action's
+	// strength is answered by the operator's proof.
 	imp := own
 	imp.Account = g.grant.Target
 	imp.Actor = st.Account
 	imp.Scope = g.grant.Tenant
-	if imp.Assurance > authn.AssuranceSingle {
-		imp.Assurance = authn.AssuranceSingle
-	}
-	imp.IDPAssured = false
 	imp.Attributes = mergeAttributes(target.Attributes, nil)
 	return imp, nil
 }

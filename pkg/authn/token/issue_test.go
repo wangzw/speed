@@ -104,7 +104,7 @@ func TestTheIssuedClaimSetIsTheDesignsTable(t *testing.T) {
 	}
 }
 
-func TestAnImpersonationTokenCapsTheLevelAndCarriesTheActor(t *testing.T) {
+func TestAnImpersonationTokenCarriesTheOperatorsLevelAndTheActor(t *testing.T) {
 	r := newRig(t)
 	in := normalIssue(authn.SessionID("sess-1"))
 	in.Actor = "acct-admin"
@@ -118,8 +118,8 @@ func TestAnImpersonationTokenCapsTheLevelAndCarriesTheActor(t *testing.T) {
 		t.Fatalf("Issue: %v", err)
 	}
 	claims := r.issuedClaims(access.Value)
-	if claims["acr"] != "1" {
-		t.Errorf("an impersonation token's acr is %v, want 1 however strong the admin session", claims["acr"])
+	if claims["acr"] != "2" {
+		t.Errorf("an impersonation token's acr is %v, want the operator session's 2", claims["acr"])
 	}
 	if claims["sub"] != string(account) {
 		t.Errorf("sub is %v, want the impersonated account", claims["sub"])

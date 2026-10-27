@@ -295,18 +295,21 @@ func (p *product) authenticate(ctx context.Context, vc verifyClaims, sub authn.A
 	switch {
 	case impersonation:
 		// The identity is the target's; the actor and the tenant come from the
-		// record, never from the imp_tenant claim. The level is capped at a
-		// single factor, because the target did not authenticate.
+		// record, never from the imp_tenant claim. The authentication facts are the
+		// operator session's own, uncapped, because the operator is the one who
+		// authenticated; check-session off takes what the token itself carries.
 		principal.Actor = actor
 		principal.Scope = grant.Tenant
 		if haveSession {
 			principal.Methods = slices.Clone(status.Methods)
 			principal.AuthTime = status.AuthTime
-			principal.Assurance = min(status.Assurance, authn.AssuranceSingle)
+			principal.Assurance = status.Assurance
+			principal.IDPAssured = status.IDPAssured
+			principal.Provider = status.Provider
 		} else {
 			principal.Methods = methodsOf(vc.Methods)
 			principal.AuthTime = authTimeOf(vc)
-			principal.Assurance = authn.AssuranceSingle
+			principal.Assurance = assuranceOf(vc.Assurance)
 		}
 		principal.Attributes = principalAttributes(acct.Attributes, nil)
 	case service:

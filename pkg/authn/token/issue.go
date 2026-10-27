@@ -89,7 +89,7 @@ func (p *product) signAccess(ctx context.Context, in authn.IssueToken) (authn.Ac
 		ID:        jti.String(),
 		Session:   string(in.Session),
 		Methods:   methodNames(in.Methods),
-		Assurance: assuranceText(in.Assurance, in.Actor != ""),
+		Assurance: assuranceText(in.Assurance),
 		AuthTime:  in.AuthTime.Unix(),
 		ClientID:  p.clientIDFor(in),
 		Extra:     extra,
@@ -184,12 +184,13 @@ func methodNames(methods []authn.Method) []string {
 }
 
 // assuranceText is the acr claim: the level's decimal text. It is one of the
-// closed set "1" or "2". An impersonation token is capped at a single factor, so
-// its acr is always "1" however strong the administrator's session is; a zero
-// level, which is what a caller that did not state one hands over, is written as
-// a single factor too, so the acr never falls outside the set.
-func assuranceText(level authn.Assurance, impersonating bool) string {
-	if impersonating || level == authn.AssuranceNone {
+// closed set "1" or "2". An impersonation token carries the operator session's
+// level, as a token of the operator's own would: the operator is the one who
+// authenticated. A zero level, which is what a caller that did not state one
+// hands over, is written as a single factor too, so the acr never falls outside
+// the set.
+func assuranceText(level authn.Assurance) string {
+	if level == authn.AssuranceNone {
 		return "1"
 	}
 	return strconv.Itoa(int(level))
