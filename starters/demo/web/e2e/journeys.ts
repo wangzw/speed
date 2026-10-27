@@ -428,4 +428,35 @@ export const journeys: readonly JourneyEntry[] = [
       'REQ-signup-019',
     ],
   },
+  {
+    journey: 'journey-password-reset-email.md',
+    status: 'pending',
+    reason:
+      'The path is designed and its specification is due with the anonymous password reset implementation: the sign-in surface will offer the forgot-password entry, and the spec drives the email code round trip, the new password and the invalidation of the other browser context.',
+    covers: [
+      'REQ-security-020',
+      'REQ-security-034',
+      'REQ-security-035',
+      'REQ-security-036',
+      'REQ-security-037',
+      'REQ-signin-036',
+      'REQ-abuse-011',
+    ],
+  },
+  {
+    journey: 'journey-password-reset-sms.md',
+    status: 'pending',
+    reason:
+      'The path is designed and its specification is due with the anonymous password reset implementation: the review assembly publishes the SMS carrier for the reset purpose, and the spec drives the SMS code round trip, the new password and the invalidation of the other browser context.',
+    covers: [
+      'REQ-security-020',
+      'REQ-security-034',
+      'REQ-security-035',
+      'REQ-security-036',
+      'REQ-security-037',
+      'REQ-signin-036',
+      'REQ-abuse-011',
+      'REQ-deployment-039',
+    ],
+  },
 ]
