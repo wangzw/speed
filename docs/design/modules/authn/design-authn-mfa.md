@@ -92,7 +92,7 @@ type MFAResult struct {
 // MFA 由 authn.mfa 排他交付。
 type MFA interface {
 	Factors(ctx context.Context, id AccountID) ([]FactorRecord, error)
-	Require(ctx context.Context, id AccountID, first Proof) (MFAOutcome, []FactorRecord, error)
+	Require(ctx context.Context, proof, requirement AccountID, first Proof) (MFAOutcome, []FactorRecord, error)
 	Challenge(ctx context.Context, f FlowState, factorID string) (Step, error)
 	Verify(ctx context.Context, f FlowState, factorID string, in StepInput) (Step, error)
 	Enroll(ctx context.Context, f FlowState, kind FactorKind, in StepInput) (Step, error)
@@ -111,7 +111,7 @@ type MFA interface {
 | 方法 | 承诺 |
 |---|---|
 | `Factors` | 返回账户名下的因素行，含状态；不含任何种子、公钥或其他种类专属数据。 |
-| `Require` | 按「策略判定」一节的顺序回答结局；结局为 `MFAFactor` 时同时返回可用清单：状态为启用、且认证方式与 `first.Methods` 不相交的因素。清单可以为空，空清单即该次登录无法完成。 |
+| `Require` | 按「策略判定」一节的顺序回答结局；结局为 `MFAFactor` 时同时返回可用清单：状态为启用、且认证方式与 `first.Methods` 不相交的因素。清单可以为空，空清单即该次登录无法完成。结局按 `requirement` 账户的因素与策略取定，清单取 `proof` 账户的因素：两者在普通登录里是同一账户，冒充期间分别是生效账户与发起者自己的账户。 |
 | `Challenge` | 对选定的因素发码或生成断言选项；先 `Throttle.Check`，退避中不发。TOTP 无事可做。 |
 | `Verify` | 先 `Throttle.Check`（`ScopeFactor`，键为因素标识），退避中不校验；再转调 `Factor.Verify`；失败 `Throttle.Fail`，成功 `Throttle.Succeed`；审计与事件在此统一。 |
 | `Enroll` | 登记的唯一入口：核对每种至多 `max-per-kind` 个、写待确认行、转调 `Factor.Enroll`、最后一步置启用。 |
