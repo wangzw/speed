@@ -685,7 +685,7 @@ Location: <落地页>#authn_error=<码>[&authn_email=<掩码地址>]
 - **地址（仅 `link-required`）。** `link-required` 的落地在片段里多带 `authn_email`，值是冲突地址的掩码：本地部分的首个字符、`***`，再按原样接 `@` 与域名（`ann@home.org` 落成 `a***@home.org`）。只有这一种拒绝带它；其他码的落地不带这个键，`link-required` 没有可命名的地址时也不带。地址在服务端掩码，片段会写进浏览器历史并显示在页面上，只保留足以让调用方认出自己哪个地址冲突的位数。错误文本不带地址，因为错误会进日志。
 - **片段而非查询串。** 片段不随请求发往服务器，码与掩码地址都不进访问日志，也不进页面能发出的 `Referer`。
 - **不改变 API 客户端的形状。** 没有 `Sec-Fetch-Mode: navigate` 的请求照旧得到 `application/problem+json`。落地页读不出、或落地页不合规时同样退回问题文档，不把用户代理送到一个未经校验的地址。
-- **客户端呈现。** 登录面把片段里的码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给已有的内联错误渲染；白名单之外的码落通用文案。`link-required` 携带的 `authn_email` 另在内联错误下方渲染为一行地址（[web-auth-ui](../web/design-web-auth-ui.md)）。
+- **客户端呈现。** 登录面把片段里的码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给已有的内联错误渲染；白名单之外的码落通用文案。`link-required` 携带的 `authn_email` 另在拒绝句下方、同一条内联错误横幅内渲染为一行地址（[web-auth-ui](../web/design-web-auth-ui.md)）。
 
 取舍见 [ADR-authn-callback-failure-landing](../../../adr/adr-authn-callback-failure-landing.md)。
 

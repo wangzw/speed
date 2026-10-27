@@ -56,7 +56,7 @@ interface SignInScreenProps {
   readonly channels?: readonly SignInChannel[] // 已弃用：仍窄化 form 标签页条，一个 major 内生效
   readonly defaultChannel?: SignInChannel      // 已弃用
   readonly initialError?: string            // 宿主从外部带回的错误码，渲染在渠道之上
-  readonly initialErrorEmail?: string       // link-required 拒绝的掩码地址，渲染在该内联错误下方
+  readonly initialErrorEmail?: string       // link-required 拒绝的掩码地址，渲染进该内联错误横幅
   readonly onForgotPassword?: () => void    // 发现面提供匿名口令重置时在口令渠道下渲染入口；宿主导航
 }
 
