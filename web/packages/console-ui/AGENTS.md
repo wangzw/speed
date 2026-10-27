@@ -276,8 +276,11 @@ request body.
   lockstep by hand: a change to how a step renders lands in all three in
   the same change. No compiler check or test compares the copies. All
   three start an assertion passkey ceremony on the step's arrival -- the
-  entry was the click -- and a registration ceremony on a click, because
-  a creation ceremony needs the user activation some browsers require.
+  entry was the click -- keying the arrival on the step number and the
+  challenge so a re-sent challenge starts a fresh ceremony while an
+  ordinary re-render does not, and start a registration ceremony on a
+  click, because a creation ceremony needs the user activation some
+  browsers require.
 - **No routing in package code.** No path matching, no `react-router`. The
   shell links each labelled entry to its declaration's path; a page builds
   a row's detail link from its own matched path plus a row id, and a

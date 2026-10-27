@@ -610,8 +610,10 @@ is `test-utils/real-client.ts`, the render harness
   `@speed/auth-core/webauthn`), so it needs a secure context with an
   authenticator; where the browser offers none, the step renders its own
   message and the flow cannot proceed. An assertion step starts the
-  ceremony as it arrives -- the passkey entry was the click -- while a
-  registration step waits for a click. The step waits visibly, can be
+  ceremony as it arrives -- the passkey entry was the click -- and starts
+  it again when the flow re-sends the same challenge in its next step,
+  while a registration step waits for a click. The step waits visibly,
+  can be
   cancelled (best effort, by aborting the ceremony) and retried, and
   abandons a pending ceremony on unmount.
 - The step-up dialog covers the factor and challenge steps; a flow that

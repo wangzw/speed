@@ -408,6 +408,7 @@ export function MfaSection({ session }: MfaSectionProps) {
               <FlowStep
                 key={`${wizard.seq}-${wizard.step.kind}`}
                 step={wizard.step}
+                sequence={wizard.seq}
                 busy={enrolling}
                 answerStep="enroll"
                 submitLabel={t('mfa.enroll.confirmLabel')}

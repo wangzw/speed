@@ -65,6 +65,11 @@ function factorKindLabel(kind: string, t: (key: string) => string): string {
 export interface FlowStepProps {
   /** The step to render. */
   readonly step: AuthnStep
+  /** The flow's step number (`seq`) the step arrived with. It advances with
+   * every reply the flow parks; the assertion ceremony's arrival effect keys
+   * on it together with the challenge, so a re-sent challenge starts a fresh
+   * ceremony while an ordinary re-render does not. */
+  readonly sequence: number
   /**
    * The answer step a step travels under: `answer` in the flow's first
    * factor, `factor` in its second, `enroll` in its registration. A
@@ -87,6 +92,7 @@ export interface FlowStepProps {
 
 export function FlowStep({
   step,
+  sequence,
   answerStep,
   submitLabel,
   onSubmit,
@@ -198,6 +204,7 @@ export function FlowStep({
     return (
       <PasskeyPrompt
         options={options}
+        sequence={sequence}
         answerStep={answerStep}
         submitLabel={submitLabel}
         onSubmit={onSubmit}
@@ -240,6 +247,10 @@ export function FlowStep({
 
 interface PasskeyPromptProps {
   readonly options: unknown
+  /** The flow's step number (`seq`), which advances with every reply. The
+   * arrival effect keys on it together with the challenge, so a re-sent
+   * challenge is a new ceremony while an ordinary re-render is not. */
+  readonly sequence: number
   readonly answerStep: string
   readonly submitLabel: string
   readonly onSubmit: (answer: AuthnFlowAnswer) => void
@@ -273,6 +284,7 @@ interface PasskeyPromptProps {
  * server-side banner mutually exclusive. */
 function PasskeyPrompt({
   options,
+  sequence,
   answerStep,
   submitLabel,
   onSubmit,
@@ -282,7 +294,7 @@ function PasskeyPrompt({
   const { t } = useConsoleUiTranslation()
   // An assertion step starts on arrival, so its first render is already the
   // waiting state and the start control never flashes.
-  const arrivalKey = assertionKey(options)
+  const arrivalKey = assertionKey(options, sequence)
   const [working, setWorking] = useState(arrivalKey !== null)
   const [localError, setLocalError] = useState<string | null>(null)
   const controlled = onCeremonyError !== undefined
@@ -307,8 +319,8 @@ function PasskeyPrompt({
   } | null>(null)
   const attemptRef = useRef(0)
   // The latest `run`, read by the arrival effect. The effect keys on the
-  // step's challenge rather than on this function or the options object, so
-  // a re-render leaves a running ceremony alone.
+  // step's challenge and sequence number rather than on this function or the
+  // options object, so a re-render leaves a running ceremony alone.
   const runRef = useRef<() => Promise<void>>(async () => {})
 
   // Abandon the ceremony with the surface: an unmounted step has no flow to
@@ -367,10 +379,12 @@ function PasskeyPrompt({
   // An assertion step is the step-up: its arrival starts the ceremony, so
   // choosing the passkey factor is the whole interaction. A registration
   // step stays parked until the viewer clicks. The effect keys on the
-  // challenge rather than the options object, so an ordinary re-render does
-  // not restart the ceremony, while a new challenge rebinds it. Under
-  // StrictMode's double mount the first ceremony is abandoned by this
-  // cleanup and the second starts cleanly; only the live attempt answers.
+  // challenge and the step's sequence number rather than the options object,
+  // so an ordinary re-render does not restart the ceremony, while a new
+  // challenge -- or the same one re-sent in the flow's next step -- rebinds
+  // it. Under StrictMode's double mount the first ceremony is abandoned by
+  // this cleanup and the second starts cleanly; only the live attempt
+  // answers.
   useEffect(() => {
     if (arrivalKey === null) {
       return
@@ -445,22 +459,26 @@ function PasskeyPrompt({
   )
 }
 
-/** The identity of an assertion step's ceremony: its kind plus the server's
- * challenge. A registration step returns `null` -- it starts on a click --
- * and the arrival effect watches this value, so a re-render does not
- * restart the ceremony while a new challenge rebinds it. Options without a
- * challenge still key on the kind, so a mounted step runs once. */
-function assertionKey(options: unknown): string | null {
+/** The identity of an assertion step's ceremony: the flow's step number plus
+ * the server's challenge. A registration step returns `null` -- it starts on
+ * a click -- and the arrival effect watches this value, so a re-render does
+ * not restart the ceremony while a new challenge, or the same challenge in a
+ * re-sent step, rebinds it. The sequence alone would also distinguish a
+ * re-sent step, but the challenge keeps a reply that reuses a number
+ * distinguishable. Options without a challenge still key on the step number,
+ * so a mounted step runs once and a re-sent one runs again. */
+function assertionKey(options: unknown, sequence: number): string | null {
   if (webauthnStepOf(options) !== 'assert') {
     return null
   }
+  let challenge = ''
   if (typeof options === 'object' && options !== null) {
-    const challenge = (options as Record<string, unknown>).challenge
-    if (typeof challenge === 'string' && challenge !== '') {
-      return `assert:${challenge}`
+    const value = (options as Record<string, unknown>).challenge
+    if (typeof value === 'string') {
+      challenge = value
     }
   }
-  return 'assert:'
+  return `assert:${sequence}:${challenge}`
 }
 
 /** The bundle key of the message a failed ceremony renders. */

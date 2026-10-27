@@ -428,7 +428,7 @@ graph TD
 
 **步进对话框的失败面。** 回答的错误码按本包白名单解析，白名单含步进回答路径会收到的认证码（`authn.login_failed`、`authn.flow_invalid`、`authn.throttled`、`authn.unavailable`、`authn.human_verification_required`），验证码输错渲染该码的文本而不是通用兜底。起手失败（既不是 401 步进不足，也不是会话仍成立时的 400）与回答被 `authn.flow_invalid` 拒绝（流程已过期、已被消费、已无可答复）同样处理：对话框不渲染描述正文（`stepUp.description`）与步骤表单，渲染该码的失败横幅、重新起手的动作与取消；重新起手是对话框本地的，由它重新驱动 `useStepUp`，不改 auth-core。通行密钥仪式的失败与服务端的失败横幅互斥，同一时刻只渲染一条（[ui-kit](design-web-ui-kit.md) 的「写入的反馈」）。步进对话框自带区域，失败横幅在模态之内。
 
-**通行密钥仪式步的等待、取消与重试。** 断言仪式步到达即进入等待态，没有第二次点击：选择通行密钥因素的那次点击就是全部交互，界面直接显示等待文案与一个取消控件。登记仪式步（选项带 `user`）仍需一次点击开始，因为创建仪式在部分浏览器要求用户激活。仪式可能在浏览器上停留很久（没有可用认证器时一直等到用户放弃），等待通知因此挂成空的 `role="status"` 区域（`stepUp.passkeyWaiting`）、下一提交再填文本，焦点移到取消控件（`stepUp.passkeyCancel`，等待态取代了继续/入口控件）。取消不等仪式落定，立即渲染取消文案（`stepUp.passkeyCancelled`）并给出重试（`stepUp.passkeyRetry`），只尽力经 `AbortController` 让浏览器放弃仪式（凭据 API 不保证响应中止）；被放弃仪式的迟到应答按尝试序号丢弃，步在仪式途中卸载时同样放弃仪式。浏览器不支持 WebAuthn、用户放弃提示与仪式失败各渲染自己的文案（`stepUp.passkeyUnsupported`、`stepUp.passkeyCancelled`、`stepUp.passkeyFailed`）。这一步与 auth-ui、account-ui 的两个副本保持同步：三处行为一致，改动同批落到三处。
+**通行密钥仪式步的等待、取消与重试。** 断言仪式步到达即进入等待态，没有第二次点击：选择通行密钥因素的那次点击就是全部交互，界面直接显示等待文案与一个取消控件。登记仪式步（选项带 `user`）仍需一次点击开始，因为创建仪式在部分浏览器要求用户激活。到达按步号与挑战共同辨认：服务端在下一步重发同一挑战时仪式重新开始，普通重渲染不重开。仪式可能在浏览器上停留很久（没有可用认证器时一直等到用户放弃），等待通知因此挂成空的 `role="status"` 区域（`stepUp.passkeyWaiting`）、下一提交再填文本，焦点移到取消控件（`stepUp.passkeyCancel`，等待态取代了继续/入口控件）。取消不等仪式落定，立即渲染取消文案（`stepUp.passkeyCancelled`）并给出重试（`stepUp.passkeyRetry`），只尽力经 `AbortController` 让浏览器放弃仪式（凭据 API 不保证响应中止）；被放弃仪式的迟到应答按尝试序号丢弃，步在仪式途中卸载时同样放弃仪式。浏览器不支持 WebAuthn、用户放弃提示与仪式失败各渲染自己的文案（`stepUp.passkeyUnsupported`、`stepUp.passkeyCancelled`、`stepUp.passkeyFailed`）。这一步与 auth-ui、account-ui 的两个副本保持同步：三处行为一致，改动同批落到三处。
 
 ### 写入的反馈与读的刷新
 

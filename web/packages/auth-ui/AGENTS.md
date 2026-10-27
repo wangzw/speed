@@ -84,8 +84,12 @@ account-resolution outcome where the deployment enables that.
   assertion passkey step starts its ceremony on arrival -- the passkey
   entry was the click -- and a registration step waits for a click,
   because a creation ceremony needs the user activation some browsers
-  require. A step the server answers `authn.flow_invalid` returns the form
-  to its channel's first step.
+  require. An assertion step re-sent in the flow's next step starts its
+  ceremony again even when the server repeats the challenge: the arrival
+  effect keys on the step number and the challenge, not the challenge
+  alone, so an ordinary re-render leaves a running ceremony alone. A step
+  the server answers `authn.flow_invalid` returns the form to its
+  channel's first step.
 - **A parked step that may send carries the proof block.**
   `HumanGatedFlowStep` (in `src/internal/flow-step.tsx`) wraps the shared
   step renderer: when the deployment's gate requires a proof and the step

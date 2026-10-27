@@ -253,6 +253,7 @@ export function FlowStepFields({
       ) : (
         <PasskeyFields
           options={step.next.options}
+          sequence={step.seq}
           busy={busy}
           submit={t('signInFlow.submit')}
           onAnswer={onAnswer}
@@ -375,6 +376,7 @@ function TotpFields({
  * register. */
 function PasskeyFields({
   options,
+  sequence,
   busy,
   submit,
   onAnswer,
@@ -382,6 +384,10 @@ function PasskeyFields({
   onClientFailure,
 }: {
   readonly options: unknown
+  /** The flow's step number (`seq`), which advances with every reply. The
+   * arrival effect keys on it together with the challenge, so a re-sent
+   * challenge is a new ceremony while an ordinary re-render is not. */
+  readonly sequence: number
   readonly busy: boolean
   readonly submit: string
   readonly onAnswer: (input: Record<string, string>) => void
@@ -394,7 +400,7 @@ function PasskeyFields({
   // Assertion steps start on arrival, so the first render is already the
   // waiting state: the start control never flashes before the effect below
   // begins the ceremony.
-  const arrivalKey = assertionKey(options)
+  const arrivalKey = assertionKey(options, sequence)
   const [working, setWorking] = useState(arrivalKey !== null)
   // The scope owns the failure: it renders the banner and keeps it mutually
   // exclusive with the channel's server failure. This step only reports it.
@@ -412,8 +418,8 @@ function PasskeyFields({
   } | null>(null)
   const attemptRef = useRef(0)
   // The latest `run`, read by the arrival effect. The effect keys on the
-  // step's challenge rather than on this function or the options object, so
-  // a re-render leaves a running ceremony alone.
+  // step's challenge and sequence number rather than on this function or the
+  // options object, so a re-render leaves a running ceremony alone.
   const runRef = useRef<() => Promise<void>>(async () => {})
 
   // Abandon the ceremony with the surface. An unmounted step has no flow to
@@ -481,8 +487,9 @@ function PasskeyFields({
   // An assertion step is the login: its arrival starts the ceremony, so the
   // click that chose the passkey entry is the whole interaction. A
   // registration step stays parked until the viewer clicks. The effect keys
-  // on the challenge rather than the options object, so an ordinary
-  // re-render does not restart the ceremony, while a new challenge rebinds
+  // on the challenge and the step's sequence number rather than the options
+  // object, so an ordinary re-render does not restart the ceremony, while a
+  // new challenge -- or the same one re-sent in the flow's next step -- rebinds
   // it. Under StrictMode's double mount the first ceremony is abandoned by
   // this cleanup and the second starts cleanly; only the live attempt
   // answers (see `run`).
@@ -551,22 +558,26 @@ function PasskeyFields({
   )
 }
 
-/** The identity of an assertion step's ceremony: its kind plus the server's
- * challenge. A registration step returns `null` -- it starts on a click --
- * and the arrival effect watches this value, so a re-render does not
- * restart the ceremony while a new challenge rebinds it. Options without a
- * challenge still key on the kind, so a mounted step runs once. */
-function assertionKey(options: unknown): string | null {
+/** The identity of an assertion step's ceremony: the flow's step number plus
+ * the server's challenge. A registration step returns `null` -- it starts on
+ * a click -- and the arrival effect watches this value, so a re-render does
+ * not restart the ceremony while a new challenge, or the same challenge in a
+ * re-sent step, rebinds it. The sequence alone would also distinguish a
+ * re-sent step, but the challenge keeps a reply that reuses a number
+ * distinguishable. Options without a challenge still key on the step number,
+ * so a mounted step runs once and a re-sent one runs again. */
+function assertionKey(options: unknown, sequence: number): string | null {
   if (webauthnStepOf(options) !== 'assert') {
     return null
   }
+  let challenge = ''
   if (typeof options === 'object' && options !== null) {
-    const challenge = (options as Record<string, unknown>).challenge
-    if (typeof challenge === 'string' && challenge !== '') {
-      return `assert:${challenge}`
+    const value = (options as Record<string, unknown>).challenge
+    if (typeof value === 'string') {
+      challenge = value
     }
   }
-  return 'assert:'
+  return `assert:${sequence}:${challenge}`
 }
 
 /** The bundle key of the message a failed ceremony renders. */

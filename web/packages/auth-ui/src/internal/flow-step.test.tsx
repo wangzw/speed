@@ -146,6 +146,105 @@ describe('FlowStepFields passkey arrival', () => {
     }
   })
 
+  it('restarts the arrival ceremony when the server re-sends the same challenge', async () => {
+    // The challenge string alone does not identify a ceremony: the server can
+    // send the same challenge again in the next step. The sequence number
+    // advances with every reply the flow parks, so a re-sent challenge starts
+    // the ceremony again while an ordinary re-render leaves it alone.
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      function Harness() {
+        const [seq, setSeq] = useState(1)
+        return (
+          <>
+            <button type="button" onClick={() => setSeq((value) => value + 1)}>
+              resend
+            </button>
+            <FlowStepFields
+              step={{
+                seq,
+                state: 'second',
+                next: {
+                  kind: 'webauthn',
+                  options: { challenge: 'Y2hhbGxlbmdl' },
+                },
+              }}
+              busy={false}
+              onAnswer={vi.fn()}
+              onUnsupported={vi.fn()}
+            />
+          </>
+        )
+      }
+      renderWithProviders(<Harness />)
+
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyWaiting),
+      ).toBeInTheDocument()
+      expect(get).toHaveBeenCalledTimes(1)
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'resend' }))
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+    } finally {
+      restore()
+    }
+  })
+
+  it('starts no assertion ceremony when a genuinely different step arrives', async () => {
+    // Only an assertion step starts on arrival. A different step the flow
+    // parks is not an assertion ceremony, whatever sequence it carries.
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      function Harness() {
+        const [step, setStep] = useState<AuthnStep>({
+          kind: 'webauthn',
+          options: { challenge: 'Y2hhbGxlbmdl' },
+        })
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                setStep({
+                  kind: 'challenge',
+                  fields: [{ name: 'code', kind: 'code' }],
+                })
+              }
+            >
+              different
+            </button>
+            <FlowStepFields
+              step={{ seq: 2, state: 'second', next: step }}
+              busy={false}
+              onAnswer={vi.fn()}
+              onUnsupported={vi.fn()}
+            />
+          </>
+        )
+      }
+      renderWithProviders(<Harness />)
+
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyWaiting),
+      ).toBeInTheDocument()
+      expect(get).toHaveBeenCalledTimes(1)
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'different' }))
+      expect(get).toHaveBeenCalledTimes(1)
+      expect(
+        screen.getByLabelText(zhCN.smsSignIn.codeLabel),
+      ).toBeInTheDocument()
+    } finally {
+      restore()
+    }
+  })
+
   it('waits for a click before a registration ceremony starts', async () => {
     // A creation ceremony needs the user activation some browsers require,
     // so a registration step stays parked until the viewer clicks.

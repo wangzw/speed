@@ -206,8 +206,9 @@ step one button per registerable kind, a `webauthn` step drives the
 browser's WebAuthn ceremony (`@speed/auth-core/webauthn`) from its
 public-key options and reports the credential it returns (an assertion
 step starts its ceremony as it arrives -- the passkey entry was the
-click -- while a registration step waits for a click), and a `ready` step (whose
-`next.kind` is `complete`) is
+click -- and starts it again when the flow re-sends the same challenge
+in its next step, while a registration step waits for a click), and a
+`ready` step (whose `next.kind` is `complete`) is
 taken automatically with `step: 'complete'`. A `redirect` step reaching the
 renderer (a callback route opened before the provider answered) renders an
 unavailable notice; the host owns navigation. The answer

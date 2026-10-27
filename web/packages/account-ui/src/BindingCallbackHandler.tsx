@@ -334,6 +334,7 @@ export function BindingCallbackHandler({
           <FlowStep
             key={`${seq ?? 0}-${step.kind}`}
             step={step}
+            sequence={seq ?? 0}
             busy={answering}
             answerStep={challengeStep}
             submitLabel={t('bindingCallback.continueLabel')}

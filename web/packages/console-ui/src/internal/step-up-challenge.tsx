@@ -329,6 +329,7 @@ function StepUpFlow({
                       // the step identity clears its per-answer state.
                       key={`${seq ?? 0}-${step.kind}`}
                       step={step}
+                      sequence={seq ?? 0}
                       answerStep="factor"
                       submitLabel={t('stepUp.submit')}
                       onSubmit={handleAnswer}

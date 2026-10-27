@@ -9,6 +9,7 @@
  * suite is the console-ui side of the registered sync obligation.
  */
 
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -21,6 +22,7 @@ function render(step: AuthnStep, onSubmit = vi.fn()) {
   const rendered = renderWithProviders(
     <FlowStep
       step={step}
+      sequence={1}
       answerStep="answer"
       submitLabel="Continue"
       onSubmit={onSubmit}
@@ -104,6 +106,94 @@ describe('FlowStep passkey ceremony', () => {
       expect(await screen.findByText(zhCN.stepUp.passkeyWaiting)).toBeTruthy()
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
       expect(get).toHaveBeenCalledTimes(1)
+    } finally {
+      restore()
+    }
+  })
+
+  it('restarts the arrival ceremony when the server re-sends the same challenge', async () => {
+    // The challenge string alone does not identify a ceremony: the server can
+    // send the same challenge again in the next step. The sequence number
+    // advances with every reply the flow parks, so a re-sent challenge starts
+    // the ceremony again while an ordinary re-render leaves it alone.
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      function Harness() {
+        const [sequence, setSequence] = useState(1)
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => setSequence((value) => value + 1)}
+            >
+              resend
+            </button>
+            <FlowStep
+              step={ASSERT_STEP}
+              sequence={sequence}
+              answerStep="answer"
+              submitLabel="Continue"
+              onSubmit={vi.fn()}
+            />
+          </>
+        )
+      }
+      renderWithProviders(<Harness />)
+
+      expect(await screen.findByText(zhCN.stepUp.passkeyWaiting)).toBeTruthy()
+      expect(get).toHaveBeenCalledTimes(1)
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'resend' }))
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+    } finally {
+      restore()
+    }
+  })
+
+  it('starts no assertion ceremony when a genuinely different step arrives', async () => {
+    // Only an assertion step starts on arrival. A different step the flow
+    // parks is not an assertion ceremony, whatever sequence it carries.
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      function Harness() {
+        const [step, setStep] = useState<AuthnStep>(ASSERT_STEP)
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                setStep({
+                  kind: 'challenge',
+                  fields: [{ name: 'code', kind: 'code' }],
+                })
+              }
+            >
+              different
+            </button>
+            <FlowStep
+              step={step}
+              sequence={2}
+              answerStep="answer"
+              submitLabel="Continue"
+              onSubmit={vi.fn()}
+            />
+          </>
+        )
+      }
+      renderWithProviders(<Harness />)
+
+      expect(await screen.findByText(zhCN.stepUp.passkeyWaiting)).toBeTruthy()
+      expect(get).toHaveBeenCalledTimes(1)
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'different' }))
+      expect(get).toHaveBeenCalledTimes(1)
+      expect(screen.getByLabelText('code')).toBeTruthy()
     } finally {
       restore()
     }

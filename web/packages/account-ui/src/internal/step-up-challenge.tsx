@@ -421,6 +421,7 @@ function StepUpFlow({
                       // the step identity clears its per-answer state.
                       key={`${seq ?? 0}-${step.kind}`}
                       step={step}
+                      sequence={seq ?? 0}
                       busy={false}
                       answerStep={answerStep}
                       submitLabel={t('mfa.stepUp.confirmLabel')}

@@ -198,8 +198,11 @@ session as a required prop; `PreferencesSection` takes it optionally
    renders the server's own kind value (the deployment's vocabulary, never
    a generic "other" label), and a factor option's server-supplied label
    wins over both. All three start an assertion passkey ceremony on the
-   step's arrival and a registration ceremony on a click, because a
-   creation ceremony needs the user activation some browsers require.
+   step's arrival, keying the arrival on the step number and the challenge
+   so a re-sent challenge starts a fresh ceremony while an ordinary
+   re-render does not, and start a registration ceremony on a click,
+   because a creation ceremony needs the user activation some browsers
+   require.
 2. **State is discovered through the spec's own answers; the package
    renders exactly the operations that exist.** Registration is not a
    factor route — it is the login engine's enroll purpose — so
