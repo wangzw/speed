@@ -451,6 +451,9 @@ func TestSetAttributesTheChangeAndRefusesAnUnknownAttribution(t *testing.T) {
 		}{
 			{"an attribution outside Set's set", authn.SetPasswordOptions{By: "import"}},
 			{"an unknown channel", authn.SetPasswordOptions{By: "reset", Channel: "carrier-pigeon"}},
+			{"a reset with no channel", authn.SetPasswordOptions{By: "reset"}},
+			{"a channel outside the reset path", authn.SetPasswordOptions{By: "admin", Channel: "email"}},
+			{"a self change carrying a channel", authn.SetPasswordOptions{By: "self", Channel: "sms"}},
 		} {
 			if err := h.p.Set(ctx, id, "a fourth good phrase", c.opt); !errors.Is(err, authn.ErrInvalidArgument) {
 				t.Errorf("%s gave %v, want ErrInvalidArgument", c.name, err)

@@ -176,7 +176,7 @@ type SetPasswordOptions struct {
 }
 ```
 
-`By` 的取值是封闭集 `self`、`admin`、`reset`；空表示按 `Current` 有无推断——非空记 `self`，空记 `admin`。`import` 不在 `Set` 的取值内，由 `ImportHash` 发出。`Channel` 只取 `email` 或 `sms`，非重置路径留空，作为 `authn.password.changed` 载荷的 `channel`。`RequireActive`、`RequireExisting` 与 `RequireIdentifier` 在写事务内复核账户状态、凭据行与标识行，任一不满足返回 `ErrAccountUnavailable`；`AdvanceValidAfter` 用 `laterOf(valid_after, ceilSecond(now))` 推进账户的 `valid_after`，使既有会话在会话状态缓存过期后失效。重置后的新登录落在同一秒内时，会话时间戳可能早于 `valid_after` 而被判无效，最长约一秒；客户端重试即可，这一秒窗口是 `ceilSecond` 的代价。
+`By` 的取值是封闭集 `self`、`admin`、`reset`；空表示按 `Current` 有无推断——非空记 `self`，空记 `admin`。`import` 不在 `Set` 的取值内，由 `ImportHash` 发出。`Channel` 只取 `email` 或 `sms`，作为 `authn.password.changed` 载荷的 `channel`；它与 `By=reset` 互为充要——重置必须点名渠道，非重置路径不得携带渠道，两条都不满足时返回 `ErrInvalidArgument`。`RequireActive`、`RequireExisting` 与 `RequireIdentifier` 在写事务内复核账户状态、凭据行与标识行，任一不满足返回 `ErrAccountUnavailable`；`AdvanceValidAfter` 用 `laterOf(valid_after, ceilSecond(now))` 推进账户的 `valid_after`，使既有会话在会话状态缓存过期后失效。重置后的新登录落在同一秒内时，会话时间戳可能早于 `valid_after` 而被判无效，最长约一秒；客户端重试即可，这一秒窗口是 `ceilSecond` 的代价。
 
 | 方法 | 承诺 |
 |---|---|

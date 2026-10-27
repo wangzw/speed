@@ -71,10 +71,15 @@ func attribution(opt authn.SetPasswordOptions) (by, channel string, err error) {
 	}
 	switch opt.Channel {
 	case "", channelEmail, channelSMS:
-		return by, opt.Channel, nil
 	default:
 		return "", "", fmt.Errorf("%w: the channel of a password change is email or sms", authn.ErrInvalidArgument)
 	}
+	// A channel is the reset path's own field: the payload carries it only when
+	// the write came from a reset, and a reset always names the channel it used.
+	if (by == byReset) != (opt.Channel != "") {
+		return "", "", fmt.Errorf("%w: a reset names its channel and only a reset carries one", authn.ErrInvalidArgument)
+	}
+	return by, opt.Channel, nil
 }
 
 // requireInTx holds a password write to the state its caller requires, inside the
