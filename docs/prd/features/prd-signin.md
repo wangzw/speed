@@ -291,3 +291,11 @@
 - **验收**：不带凭据访问受保护端点得到未认证应答并带认证挑战头；装配不含口令表时挑战头不含 `Basic`。
 - **状态**：已实现
 - **端到端测试**：未实现
+
+### REQ-signin-035
+
+「需先绑定」的拒绝必须点名与自己冲突的那个邮箱地址，且显示的位数只够调用方认出该地址。
+
+- **验收**：提供方已证明的邮箱命中现有账户且登录被拒时，拒绝所在页面显示该地址，形式为本地部分的首个字符、`***`，再按原样接 `@` 与域名；地址按收到的原样显示，不再处理；其他拒绝不显示地址；地址与拒绝文案处于同一个读屏播报区域。
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-social-sign-in-and-linking.spec.ts` `social-sign-in: a Google email already on an account is refused with link-required`
