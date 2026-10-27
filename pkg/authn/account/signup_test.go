@@ -746,8 +746,8 @@ func TestProvingTheAccountsOwnEmailIsIdempotent(t *testing.T) {
 		}
 
 		if err = h.p.AddIdentifier(ctx, account.ID, authn.IdentifierEmail, "bob@example.com",
-			authn.Verification{Via: authn.VerifiedViaAdmin}); !errors.Is(err, authn.ErrAccountExists) {
-			t.Errorf("an unproved way for a proved address gave %v, want ErrAccountExists", err)
+			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
+			t.Errorf("an unproved way for a proved address gave %v, want the proof kept", err)
 		}
 		for _, row := range h.identifierRows(account.ID) {
 			if row.Kind == string(authn.IdentifierEmail) && row.VerifiedVia != authn.VerifiedViaEmailCode {

@@ -387,15 +387,14 @@ func (p *product) updateAccount(ctx context.Context, id authn.AccountID, columns
 
 // AddIdentifier binds an identifier to an account, normalized first. A phone
 // number replaces the one the account has, since an account has one; the same
-// number again changes nothing but the proof it was written with.
+// number again rewrites its way only when that does not take a proof away.
 //
-// An email address the account already holds as an identifier is brought up to
-// proved by a proving way instead of being added again: the row's instant and
-// way are rewritten, no identifier-changed event is published, and the call is
-// nil. A way that does not prove ownership never takes a proof away from an
-// existing row, and is authn.ErrAccountExists. An address another account holds
-// is authn.ErrContactTaken, which the contact reservation's unique index
-// arbitrates.
+// An email address the account already holds as an identifier is rewritten in
+// place instead of being added again: no identifier-changed event is published
+// and the call is nil. A way that does not prove ownership applies only to a row
+// that is new or not yet proved, so an already-proved row keeps its proof. An
+// address another account holds is authn.ErrContactTaken, which the contact
+// reservation's unique index arbitrates.
 func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind authn.IdentifierKind, value string,
 	via authn.Verification,
 ) error {
@@ -431,21 +430,24 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 			// The address may already be an identifier of this account, written
 			// by an administrator, an import or the account itself. A proof
 			// brings that row up to proved and keeps it single; an unproved way
-			// never takes a proof away.
+			// never takes a proof away, and only rewrites a row without one.
 			var held []identifierRow
 			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(), string(kind), normalized).
 				Find(&held).Error; err != nil {
 				return err
 			}
 			if len(held) > 0 {
-				if !via.Proves() {
-					return fmt.Errorf("%w", authn.ErrAccountExists)
+				if (authn.Verification{Via: held[0].VerifiedVia}).Proves() && !via.Proves() {
+					return nil
 				}
 				if err = tx.Model(&identifierRow{}).Where("id = ?", held[0].ID).
 					Updates(map[string]any{"verified_at": now, "verified_via": verified}).Error; err != nil {
 					return err
 				}
-				return noteEmailProved(tx, account, now)
+				if via.Proves() {
+					return noteEmailProved(tx, account, now)
+				}
+				return nil
 			}
 		} else if kind == authn.IdentifierPhone && via.Proves() {
 			if err = tx.Where("account_id = ? AND kind = ? AND value = ?", id.String(), string(kind), normalized).
@@ -460,6 +462,11 @@ func (p *product) AddIdentifier(ctx context.Context, id authn.AccountID, kind au
 			}
 			for _, old := range held {
 				if old.Value == normalized {
+					// A rewrite keeps a proof the row already has: an unproved way
+					// applies only to a row without one.
+					if (authn.Verification{Via: old.VerifiedVia}).Proves() && !via.Proves() {
+						return nil
+					}
 					return tx.Model(&identifierRow{}).Where("id = ?", old.ID).
 						Updates(map[string]any{"verified_at": now, "verified_via": verified}).Error
 				}

@@ -448,7 +448,7 @@ var identifierAddOperation = speedhttp.NewReplyOperation[identifierAddInput](
 	http.MethodPost,
 	pathIdentities,
 	"Add an identifier to an account",
-	"Adds a login name (username) or an email address to the account. The identifier is recorded as administrator-asserted (verified_via admin) and is not evidence of ownership, so it does not by itself justify automatic linking or merging. A phone number is refused here: it is added or changed only through an SMS code. Requires account.update.",
+	"Adds a login name (username) or an email address to the account. The identifier is recorded as administrator-asserted (verified_via admin), which is not evidence of ownership, so it does not by itself justify automatic linking or merging. An identifier the account already holds keeps a proof it already has, so a proved address is not lowered to an assertion. A phone number is refused here: it is added or changed only through an SMS code. Requires account.update.",
 	&speedhttp.RequestBody{
 		MediaType:   "application/json",
 		Description: "The identifier to add. kind is username or email and value is its text; the value is normalized before it is stored, so a username is lower-cased and an email address is trimmed and lower-cased.",

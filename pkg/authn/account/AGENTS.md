@@ -117,11 +117,12 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   a reservation another account holds answers `authn.ErrContactTaken`. A proving
   phone deletes the same-value pending target and changes no state; `admin`,
   `import-unverified` and `self` no longer leave an email reservation unproved.
-  An email address the account already holds as an identifier is brought up to
-  proved by a proving way in place: the row's `verified_at` and `verified_via`
-  are rewritten, no second row is inserted and no identifier-changed event is
-  published. A way that does not prove ownership never downgrades or replaces
-  that row and answers `authn.ErrAccountExists`.
+  An email address the account already holds as an identifier is rewritten in
+  place: a proving way brings it up to proved with the row's `verified_at` and
+  `verified_via` rewritten, while a way that does not prove ownership applies
+  only to a row without a proof, so an already-proved row keeps its way and
+  instant. No second row is inserted and no identifier-changed event is
+  published. A same-value phone number's write follows the same rule.
   `RemoveIdentifier` of an email deletes this account's reservation, releasing the
   address; removing the last proved email of a self-registration moves
   `signup_state` back to 1, keeps the instant and rebuilds no reservation. The

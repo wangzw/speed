@@ -830,24 +830,21 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 			t.Errorf("the phone events are %v, want added, then the replacement as removed and added", seen)
 		}
 
+		// The administrator's restatement of the number is not proof of it, and it
+		// may not take the sms-code proof away: the row keeps both its way and its
+		// instant.
+		h.clock.advance(time.Hour)
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierPhone, "+8613800000002", admin); err != nil {
 			t.Errorf("the same number again gave %v, want no change", err)
 		}
 		held, _ := h.p.Identifiers(ctx, id)
 		for _, i := range held {
-			if i.Kind == authn.IdentifierPhone && i.VerifiedVia != authn.VerifiedViaAdmin {
-				t.Errorf("the same number again left its proof %q", i.VerifiedVia)
+			if i.Kind == authn.IdentifierPhone && i.VerifiedVia != authn.VerifiedViaSMSCode {
+				t.Errorf("the same number again left its proof %q, want sms-code kept", i.VerifiedVia)
 			}
 		}
 		if got := len(h.bus.of(authn.EventIdentifierChanged)); got != len(changes) {
 			t.Errorf("the same number again published %d more event(s)", got-len(changes))
-		}
-
-		// The administrator's restatement of the number is not proof of it, so
-		// prove the number again before the account is asked to give up an
-		// address.
-		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierPhone, "+8613800000002", smsCode); err != nil {
-			t.Fatalf("proving the number again: %v", err)
 		}
 
 		if err := h.p.AddIdentifier(ctx, other, authn.IdentifierPhone, "+8613800000002", smsCode); !errors.Is(err, authn.ErrAccountExists) {
@@ -900,6 +897,99 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 			t.Errorf("removing from nobody gave %v, want ErrAccountNotFound", err)
 		}
 	})
+}
+
+// A rewrite of an already-proved identifier never lowers its proof: an
+// administrator's assertion applies only to a new identifier or one that is not
+// yet proved. A proved row keeps both its way and its instant.
+func TestAnAdminRewriteKeepsAProvedIdentifier(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		for _, c := range []struct {
+			name  string
+			kind  authn.IdentifierKind
+			value string
+			proof authn.Verification
+		}{
+			{"phone", authn.IdentifierPhone, "+8613800000021", authn.Verification{Via: authn.VerifiedViaSMSCode}},
+			{"email", authn.IdentifierEmail, "kept@example.com", authn.Verification{Via: authn.VerifiedViaEmailCode}},
+		} {
+			id := h.user("keeper-"+c.name, "")
+			if err := h.p.AddIdentifier(ctx, id, c.kind, c.value, c.proof); err != nil {
+				t.Fatalf("%s: proving the identifier: %v", c.name, err)
+			}
+			provedAt := h.clock.read()
+			before := len(h.bus.of(authn.EventIdentifierChanged))
+			h.clock.advance(time.Hour)
+			if err := h.p.AddIdentifier(ctx, id, c.kind, c.value, admin); err != nil {
+				t.Fatalf("%s: an administrator restating a proved identifier: %v", c.name, err)
+			}
+			rows := h.rowsOf(id, c.kind, c.value)
+			if len(rows) != 1 {
+				t.Fatalf("%s: the restated identifier has %d row(s), want one", c.name, len(rows))
+			}
+			if rows[0].VerifiedVia != c.proof.Via {
+				t.Errorf("%s: the restated identifier reads via %q, want %q kept", c.name, rows[0].VerifiedVia, c.proof.Via)
+			}
+			if !rows[0].VerifiedAt.Equal(provedAt) {
+				t.Errorf("%s: the restated identifier's proved instant is %v, want %v kept", c.name, rows[0].VerifiedAt, provedAt)
+			}
+			if after := len(h.bus.of(authn.EventIdentifierChanged)); after != before {
+				t.Errorf("%s: restating the identifier published %d identifier event(s), want none", c.name, after-before)
+			}
+		}
+	})
+}
+
+// The administrator's assertion is what a new identifier records, and what an
+// identifier without a proof takes when it is rewritten: only a proof outranks
+// it.
+func TestAnAdminAssertionAppliesToANewOrUnprovedIdentifier(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("asserter", "")
+		imported := authn.Verification{Via: authn.VerifiedViaImportUnverified}
+		for _, c := range []struct {
+			name  string
+			kind  authn.IdentifierKind
+			value string
+		}{
+			{"phone", authn.IdentifierPhone, "+8613800000022"},
+			{"email", authn.IdentifierEmail, "asserted@example.com"},
+		} {
+			if err := h.p.AddIdentifier(ctx, id, c.kind, c.value, admin); err != nil {
+				t.Fatalf("%s: adding a new identifier: %v", c.name, err)
+			}
+			if got := h.rowsOf(id, c.kind, c.value); len(got) != 1 || got[0].VerifiedVia != authn.VerifiedViaAdmin {
+				t.Fatalf("%s: the new identifier reads %+v, want one admin row", c.name, got)
+			}
+			if err := h.p.AddIdentifier(ctx, id, c.kind, c.value, imported); err != nil {
+				t.Fatalf("%s: rewriting an unproved identifier: %v", c.name, err)
+			}
+			if got := h.rowsOf(id, c.kind, c.value); len(got) != 1 || got[0].VerifiedVia != imported.Via {
+				t.Fatalf("%s: the unproved rewrite reads %+v, want one import-unverified row", c.name, got)
+			}
+			if err := h.p.AddIdentifier(ctx, id, c.kind, c.value, admin); err != nil {
+				t.Fatalf("%s: asserting an unproved identifier: %v", c.name, err)
+			}
+			if got := h.rowsOf(id, c.kind, c.value); len(got) != 1 || got[0].VerifiedVia != authn.VerifiedViaAdmin {
+				t.Errorf("%s: the asserted rewrite reads %+v, want one admin row", c.name, got)
+			}
+		}
+	})
+}
+
+// rowsOf returns the identifier rows of one kind and value, whatever their
+// number, so a case can assert both the count and the proof kept.
+func (h *harness) rowsOf(id authn.AccountID, kind authn.IdentifierKind, value string) []identifierRow {
+	h.t.Helper()
+	var rows []identifierRow
+	for _, row := range h.identifierRows(id) {
+		if row.Kind == string(kind) && row.Value == value {
+			rows = append(rows, row)
+		}
+	}
+	return rows
 }
 
 func TestExternalIdentitiesAreBoundByProviderAndSubjectAndConflictAcrossAccounts(t *testing.T) {
