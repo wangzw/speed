@@ -98,21 +98,115 @@ func TestRemovingALoginNameIsAllowedWhileAnotherRemains(t *testing.T) {
 	})
 }
 
-// TestAnAccountWithoutAPasswordMayLoseItsLastLoginName holds that the rule binds
-// only accounts holding a password credential: one that signs in another way
-// gives up its last username freely.
-func TestAnAccountWithoutAPasswordMayLoseItsLastLoginName(t *testing.T) {
+// TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn holds rule 2C: a
+// passwordless account with no phone number and no external identity cannot
+// lose its last identifier, because nothing would be left to log in with. The
+// refusal is ErrLastLoginMethod, the transaction rolls back and no removal event
+// is published.
+func TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
 		id, err := h.p.Create(ctx, authn.CreateAccount{Username: "nopass", Via: "admin"})
 		if err != nil {
 			t.Fatalf("creating an account without a password: %v", err)
 		}
-		if err = h.p.RemoveIdentifier(ctx, id.ID, identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); err != nil {
-			t.Fatalf("removing the last login name of an account without a password gave %v, want nil", err)
+		usernameID := identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID
+		before := len(h.bus.of(authn.EventIdentifierChanged))
+		if err = h.p.RemoveIdentifier(ctx, id.ID, usernameID); !errors.Is(err, authn.ErrLastLoginMethod) {
+			t.Fatalf("removing the last way in of an account without a password gave %v, want ErrLastLoginMethod", err)
 		}
-		if held, err := h.p.Identifiers(ctx, id.ID); err != nil || len(held) != 0 {
-			t.Errorf("after the removal the account holds %v, %v, want no identifier", held, err)
+		if held, listErr := h.p.Identifiers(ctx, id.ID); listErr != nil || len(held) != 1 {
+			t.Errorf("the refused removal left %v, %v, want the identifier kept", held, listErr)
+		}
+		if got := len(h.bus.of(authn.EventIdentifierChanged)); got != before {
+			t.Errorf("the refused removal published %d event(s)", got-before)
+		}
+	})
+}
+
+// TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains holds rule 2C
+// from the allowed side: a phone number, verified or not, and an external
+// identity each keep the account reachable, so the last login name may go. Once
+// the phone number is the last way in, removing it is refused.
+func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+
+		withPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "phoneway", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without a password: %v", err)
+		}
+		if err = h.p.AddIdentifier(ctx, withPhone.ID, authn.IdentifierPhone, "+8613800000011",
+			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
+			t.Fatalf("adding a phone number: %v", err)
+		}
+		if err = h.p.RemoveIdentifier(ctx, withPhone.ID,
+			identifierOfKind(t, h, withPhone.ID, authn.IdentifierUsername).ID); err != nil {
+			t.Fatalf("removing the login name while a phone number remains gave %v, want nil", err)
+		}
+		if err = h.p.RemoveIdentifier(ctx, withPhone.ID,
+			identifierOfKind(t, h, withPhone.ID, authn.IdentifierPhone).ID); !errors.Is(err, authn.ErrLastLoginMethod) {
+			t.Fatalf("removing the last phone number gave %v, want ErrLastLoginMethod", err)
+		}
+
+		withExternal, err := h.p.Create(ctx, authn.CreateAccount{Username: "externalway", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without a password: %v", err)
+		}
+		if err = h.p.LinkExternal(ctx, withExternal.ID,
+			authn.ExternalLink{Provider: "google", Subject: "subject-" + withExternal.ID.String()}); err != nil {
+			t.Fatalf("linking an external identity: %v", err)
+		}
+		if err = h.p.RemoveIdentifier(ctx, withExternal.ID,
+			identifierOfKind(t, h, withExternal.ID, authn.IdentifierUsername).ID); err != nil {
+			t.Fatalf("removing the login name while an external identity remains gave %v, want nil", err)
+		}
+	})
+}
+
+// TestHasLoginWayOtherThanPasskeyCountsTheThreeWays holds the account module's
+// answer the administrator's reset guard reads: a password credential, a phone
+// number and an external identity each count, while none of them does not. A
+// login name without a password is not a way in.
+func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+
+		none, err := h.p.Create(ctx, authn.CreateAccount{Username: "noway", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without a password: %v", err)
+		}
+		if way, err := h.p.HasLoginWayOtherThanPasskey(ctx, none.ID); err != nil || way {
+			t.Errorf("an account with only a login name reports %v, %v, want false, nil", way, err)
+		}
+
+		withPassword := h.user("has-a-password", "correct horse battery")
+		if way, err := h.p.HasLoginWayOtherThanPasskey(ctx, withPassword); err != nil || !way {
+			t.Errorf("an account with a password reports %v, %v, want true, nil", way, err)
+		}
+
+		withPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-a-phone", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without a password: %v", err)
+		}
+		if err = h.p.AddIdentifier(ctx, withPhone.ID, authn.IdentifierPhone, "+8613800000012",
+			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
+			t.Fatalf("adding a phone number: %v", err)
+		}
+		if way, err := h.p.HasLoginWayOtherThanPasskey(ctx, withPhone.ID); err != nil || !way {
+			t.Errorf("an account with a phone number reports %v, %v, want true, nil", way, err)
+		}
+
+		withExternal, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-an-external", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without a password: %v", err)
+		}
+		if err = h.p.LinkExternal(ctx, withExternal.ID,
+			authn.ExternalLink{Provider: "github", Subject: "subject-" + withExternal.ID.String()}); err != nil {
+			t.Fatalf("linking an external identity: %v", err)
+		}
+		if way, err := h.p.HasLoginWayOtherThanPasskey(ctx, withExternal.ID); err != nil || !way {
+			t.Errorf("an account with an external identity reports %v, %v, want true, nil", way, err)
 		}
 	})
 }

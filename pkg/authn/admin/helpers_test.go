@@ -297,6 +297,10 @@ type fakeAccountAdmin struct {
 	addedKind  authn.IdentifierKind
 	addedValue string
 	addedVia   authn.Verification
+	// loginWay is what HasLoginWayOtherThanPasskey answers. It defaults to true,
+	// the ordinary account, so only the cases about the lock-out guard set it
+	// false.
+	loginWay bool
 	// createNeedsLoginName makes Create apply the account module's rule that a
 	// password credential needs a username or email address to authenticate
 	// anything. It is off by default, because most cases drive the route's own
@@ -304,7 +308,9 @@ type fakeAccountAdmin struct {
 	createNeedsLoginName bool
 }
 
-func newAccountAdmin() *fakeAccountAdmin { return &fakeAccountAdmin{calls: map[string]int{}} }
+func newAccountAdmin() *fakeAccountAdmin {
+	return &fakeAccountAdmin{calls: map[string]int{}, loginWay: true}
+}
 
 func (a *fakeAccountAdmin) note(op string) error {
 	a.mu.Lock()
@@ -370,6 +376,13 @@ func (a *fakeAccountAdmin) AddIdentifier(_ context.Context, _ authn.AccountID, k
 
 func (a *fakeAccountAdmin) RemoveIdentifier(_ context.Context, _ authn.AccountID, _ string) error {
 	return a.note("remove-identifier")
+}
+
+func (a *fakeAccountAdmin) HasLoginWayOtherThanPasskey(_ context.Context, _ authn.AccountID) (bool, error) {
+	a.mu.Lock()
+	way := a.loginWay
+	a.mu.Unlock()
+	return way, a.note("has-login-way")
 }
 
 func (a *fakeAccountAdmin) CreateServiceSecret(_ context.Context, _ authn.AccountID, _ string, _ *time.Time) (string, string, error) {

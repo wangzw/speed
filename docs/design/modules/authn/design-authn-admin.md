@@ -172,10 +172,10 @@ type ScopeGuard interface {
 | 账户 | `GET\|POST B/accounts` | `account.read`、`account.create` | 列表键集分页（`Accounts.List`），可按状态、种类、标识前缀、显示名前缀过滤，标识前缀精确到一种标识类型；列表的查询参数是封闭集，出现集合外的参数即 400，已接受的过滤给空值即不过滤（显示名前缀按字节前缀、大小写敏感，不是合法 UTF-8 即 400）；创建的**用户**账户至少要有一个登录标识（用户名、邮箱或手机号），一个都没有的请求在写入之前 400，不留下无法登录的账户；带口令而只有手机号的用户账户没有可作登录名的标识，答 409 `login-identifier-required`；邮箱已被别的账户预留或持有答 409 `email-taken`；服务账户以服务密钥登录，不受这条要求；创建服务账户另要 `client.manage`；强制审计 |
 | 账户 | `GET\|PATCH\|DELETE B/accounts/:id` | `account.read`、`account.update`、`account.delete` | `PATCH` 改显示名、属性与 `protected`（`SetDisplayName`、`SetAttributes`、`SetProtected`）；删除要新鲜的本地多因素；强制审计 |
 | 因素与口令 | `POST B/accounts/:id/password` | `account.update` | 管理员提交临时口令，是请求体，从不回显、不进日志与审计，缺省置 `must_change`；发起者新鲜的本地多因素且 `MFA.Seasoned`；强制审计；成功后撤销该账户的全部会话 |
-| 账户 | `POST B/accounts/:id/identifiers`、`DELETE B/accounts/:id/identifiers/:identifier` | `account.update` | 添加用户名（登录名）与管理员断言的邮箱，邮箱的 `verified_via` 为 `admin`，不作自动关联与并入的依据；邮箱已被别的账户预留或持有答 409 `email-taken`；删除带口令凭据账户的最后一个登录名答 409 `login-identifier-required`；强制审计 |
+| 账户 | `POST B/accounts/:id/identifiers`、`DELETE B/accounts/:id/identifiers/:identifier` | `account.update` | 添加用户名（登录名）与管理员断言的邮箱，邮箱的 `verified_via` 为 `admin`，不作自动关联与并入的依据；邮箱已被别的账户预留或持有答 409 `email-taken`；删除带口令凭据账户的最后一个登录名答 409 `login-identifier-required`，这条规则先于下一条；删除任何标识后账户若不再持有口令凭据、手机号与外部身份中的任何一种，答 409 `conflict`（`ErrLastLoginMethod`），通行密钥不算；强制审计 |
 | 账户 | `POST B/accounts/:id/status` | `account.disable` | 新鲜的本地多因素；强制审计；停用后同步清理会话（`AccountLifecycle`），清理失败 503，重试幂等 |
 | 会话 | `GET B/accounts/:id/sessions`、`POST B/accounts/:id/revoke-sessions`、`DELETE B/sessions/:id` | `session.read`、`session.revoke` | `GET B/accounts/:id/sessions` 的每一行带 `current` 标记：该行是调用方自己的会话时为真，取自调用方身份的会话标识，其余为假，与自助路由 `GET B/sessions` 的同名标记同义；`DELETE B/sessions/:id` 先 `Sessions.Get` 解析会话所属账户，`Decision.Target` 填会话标识、`TargetAccount` 填账户；强制审计 |
-| 因素与口令 | `GET B/accounts/:id/factors`、`POST B/accounts/:id/mfa-required`、`POST B/accounts/:id/mfa-reset` | `account.read`、`account.update`、`mfa.reset` | 清单只交回种类、标签、状态；重置要新鲜的本地非短信多因素与 `MFA.Seasoned`；强制审计 |
+| 因素与口令 | `GET B/accounts/:id/factors`、`POST B/accounts/:id/mfa-required`、`POST B/accounts/:id/mfa-reset` | `account.read`、`account.update`、`mfa.reset` | 清单只交回种类、标签、状态；重置要新鲜的本地非短信多因素与 `MFA.Seasoned`；重置前核对目标账户持有口令凭据、手机号与外部身份中的至少一种（`AccountAdmin.HasLoginWayOtherThanPasskey`），一种都没有（只剩因素，例如只有通行密钥）答 409 `conflict`（`ErrLastLoginMethod`），不调 `MFA.Reset`，补一条 `failed` 审计行；强制审计 |
 | 服务密钥 | `GET\|POST B/accounts/:id/secrets`、`DELETE B/accounts/:id/secrets/:secret` | `client.manage`（`GET` 为 `account.read`） | `GET` 经 `ListServiceSecrets`，只交标识、标签、期限与撤销状态；创建与撤销要新鲜的本地多因素；密钥只在创建应答里出现一次；撤销后同步撤销该密钥的 service 会话；强制审计 |
 | 成员关系 | `GET Bt/:tenant/members`、`PUT\|DELETE Bt/:tenant/members/:account`、`PUT Bt/:tenant/members/:account/sso-exempt` | `membership.manage` | `Decision.Tenant` 取路径里的租户标识，不是别名，所以 `authn.admin` 不依赖租户名册；强制审计。`DELETE` 先取该租户的成员删除锁，再问每个 `MembershipGuard`，把检查与删除的提交一起持在锁里：若会让该租户不再有任何租户管理员绑定，答 409 `conflict`（`ErrLastTenantAdmin`），成员关系不删；锁取不到答 503，删除不执行 |
 | SSO 提供方 | `GET\|POST Bt/:tenant/sso/providers`、`GET\|PUT\|DELETE Bt/:tenant/sso/providers/:id`、`POST\|DELETE Bt/:tenant/sso/providers/:id/domains[/:domain]`、`POST Bt/:tenant/sso/providers/:id/domains/:domain/verify`、`POST Bt/:tenant/sso/providers/:id/reverify-domains` | `idp.manage` | `Decision.Tenant` 取 `SSOProviders.Tenant(id)`；路径带租户的路由核对路径、请求体与已存记录的租户一致，不一致 400，`PUT` 时租户不可变；加密列从不回显；IdP 发起登录开启与 `merge_existing` 开启时应答带警告；强制审计 |
@@ -404,6 +404,7 @@ flowchart TD
 | 读取发起者的注册验证状态失败 | 503 `urn:speed:authn:unavailable`（`ErrUnavailable`），动作不执行 | 拒 |
 | 发起者的强度不足 | 401 `insufficient_user_authentication`（`ErrStepUpRequired`） | 拒 |
 | 管理员重置因素与重置口令时，发起者名下没有启用已满 `sensitive-min-age` 的非短信因素（`Seasoned` 为假），在强度判定通过之后判定 | 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 拒 |
+| 管理员重置因素时，目标账户没有口令凭据、手机号与外部身份中的任何一种（通行密钥不算） | 409 `conflict`（`ErrLastLoginMethod`），不调 `MFA.Reset`，补一条 `failed` 审计行 | 拒 |
 | 强制档审计写失败（含 `ErrNotAccepting`、`ErrWriteFailed`） | 503（`ErrAuditRequired`），动作不执行 | 拒 |
 | 写失败 | 为每个对象补一条 `failed` 审计行，按能力接口的哨兵映射应答 | 拒 |
 | 写已生效而清理失败（`ErrCleanupIncomplete`） | 503，重试同一请求幂等地补完 | 拒（状态已生效，清理待补） |
@@ -460,6 +461,7 @@ flowchart TD
 |---|---|---|
 | 管理面会话列表的 `current` 标记 | 已实现 | `pkg/authn/admin/session.go` `sessionView`、`sessionViewOf`、`handleAccountSessions` |
 | 重置因素与重置口令在 `Seasoned` 不满足时答 403 `factor-not-seasoned` | 已实现 | `pkg/authn/admin/factor.go` `requireAdministrator` |
+| 重置因素在目标账户只剩因素一种登录方式时答 409 `conflict` | 已实现 | `pkg/authn/admin/factor.go` `handleMFAReset`；`pkg/authn/account/admin.go` `HasLoginWayOtherThanPasskey`、`loginWayHeld` |
 | 根包的 `Decider`、`Decision`、`Action` 常量 | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |
 | 根包的 `ScopeGuard` | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/gate.go` `wire`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
 | `authn.admin` 模块：注册、必需与可选依赖、缺审计的启动失败、路由组的挂出与启动诊断 | 已实现 | `pkg/authn/admin/admin.go` `Module`、`newProduct`、`product.wire`、`diagnose`；`pkg/authn/admin/routes.go` `mountRoutes` |

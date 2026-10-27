@@ -65,6 +65,41 @@ func codeOf(problemType string) string {
 	return problemType
 }
 
+// TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused holds the
+// lock-out guard: when the account module reports that a factor is the only way
+// into the account, mfa-reset answers 409 conflict, leaves MFA.Reset uncalled
+// and records the failed attempt beside the permitted row.
+func TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused(t *testing.T) {
+	r := newRig(t)
+	r.accountAdm.loginWay = false
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("mfa-reset: status = %d, want 409; body %s", rec.Code, rec.Body.String())
+	}
+	if code := problemCode(t, rec.Body.String()); code != "conflict" {
+		t.Errorf("mfa-reset: problem code %q, want conflict", code)
+	}
+	if r.mfa.resets != 0 {
+		t.Errorf("Reset ran %d times, want none", r.mfa.resets)
+	}
+	if !auditHas(t, r, actionMFAReset, outcomeFailed) {
+		t.Error("the refused reset left no failed audit row")
+	}
+}
+
+// TestResettingTheFactorsOfAnAccountWithAnotherWayInIsAllowed is the other side
+// of the guard: an account with a non-factor way to log in is reset as before.
+func TestResettingTheFactorsOfAnAccountWithAnotherWayInIsAllowed(t *testing.T) {
+	r := newRig(t)
+	rec := r.do(http.MethodPost, "/api/v1/system/auth/accounts/"+string(userID)+"/mfa-reset", nil, fresh()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mfa-reset: status = %d, want 200; body %s", rec.Code, rec.Body.String())
+	}
+	if r.mfa.resets != 1 {
+		t.Errorf("Reset ran %d times, want once", r.mfa.resets)
+	}
+}
+
 // TestTheStrongRoutesNeedASeasonedAdministratorWithANonSMSSecond holds the two
 // higher gates of the strong routes: a fresh, local, multi-factor
 // authentication with a non-SMS second method and a seasoned factor of the

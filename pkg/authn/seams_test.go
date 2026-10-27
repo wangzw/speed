@@ -51,6 +51,7 @@ var seamSignatures = map[string][]string{
 		"RemoveIdentifier(ctx context.Context, id AccountID, identifierID string) error",
 		"LinkExternal(ctx context.Context, id AccountID, l ExternalLink) error",
 		"UnlinkExternal(ctx context.Context, id AccountID, externalID string) error",
+		"HasLoginWayOtherThanPasskey(ctx context.Context, id AccountID) (bool, error)",
 		"CreateServiceSecret(ctx context.Context, id AccountID, label string, expires *time.Time) (secretID, secret string, err error)",
 		"RevokeServiceSecret(ctx context.Context, id AccountID, secretID string) error",
 		"Touch(ctx context.Context, id AccountID, at time.Time) error",

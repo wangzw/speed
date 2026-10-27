@@ -6457,7 +6457,7 @@ export const useAuthnAdminAccountsSetMFARequired = <TError = Problem | void,
     }
 
 /**
- * Disables every factor registered on the account, sets the account's mfa_required flag so it must register a factor again, revokes every session of the account, and answers how many factors were removed. Requires mfa.reset, a fresh local non-SMS multi-factor authentication and a seasoned non-SMS factor of the caller's own; a caller without one gets 403 factor-not-seasoned.
+ * Disables every factor registered on the account, sets the account's mfa_required flag so it must register a factor again, revokes every session of the account, and answers how many factors were removed. Requires mfa.reset, a fresh local non-SMS multi-factor authentication and a seasoned non-SMS factor of the caller's own; a caller without one gets 403 factor-not-seasoned. An account whose only way to log in is a factor is refused 409 conflict, because resetting it would leave the account with no way in; it must first be given a password, a phone number or an external identity.
  * @summary Remove an account's registered factors
  */
 export const authnAdminAccountsResetMFA = (

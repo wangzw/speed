@@ -97,6 +97,10 @@ type AccountAdmin interface {
 	// UnlinkExternal removes a binding. When no other way to log in would remain
 	// the call is refused with ErrLastLoginMethod.
 	UnlinkExternal(ctx context.Context, id AccountID, externalID string) error
+	// HasLoginWayOtherThanPasskey reports whether the account can log in by a
+	// way that is not a factor: a password credential, a phone number or an
+	// external identity. A passkey does not count.
+	HasLoginWayOtherThanPasskey(ctx context.Context, id AccountID) (bool, error)
 	// CreateServiceSecret makes a secret for a service account: 256 random bits
 	// under the prefix spd_cs_, of which the store keeps only a SHA-256. The
 	// secret is in the return value once and never again.

@@ -502,6 +502,7 @@ var exportedSurface = []string{
 	"method AccountAdmin.Create",
 	"method AccountAdmin.CreateServiceSecret",
 	"method AccountAdmin.Delete",
+	"method AccountAdmin.HasLoginWayOtherThanPasskey",
 	"method AccountAdmin.LinkExternal",
 	"method AccountAdmin.RemoveIdentifier",
 	"method AccountAdmin.RevokeServiceSecret",

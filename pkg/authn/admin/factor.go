@@ -97,6 +97,8 @@ func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *spe
 // handleMFAReset answers POST /admin/accounts/:id/mfa-reset: it disables the
 // account's factors. The action is mfa.reset; the actor needs a fresh, local,
 // non-SMS multi-factor authentication and a seasoned factor of their own.
+// An account whose only way to log in is a factor is refused 409: resetting the
+// factors would leave it with no way in at all.
 func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, err := m.caller(ctx)
 	if err != nil {
@@ -125,6 +127,15 @@ func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *spee
 	if err = m.auditRequired(ctx, mandatory(actionMFAReset, string(accountID),
 		map[string]string{detailActionID: actionID})); err != nil {
 		return nil, err
+	}
+	hasWay, err := m.accountAdm.HasLoginWayOtherThanPasskey(ctx, accountID)
+	if err != nil {
+		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
+		return m.replyFailure("reading the account's ways to log in", err)
+	}
+	if !hasWay {
+		m.auditBestEffort(ctx, failedAudit(actionMFAReset, string(accountID), actionID))
+		return m.replyFailure("resetting factors", authn.ErrLastLoginMethod)
 	}
 	removed, err := m.mfa.Reset(ctx, accountID, authn.ReasonAdmin)
 	if err != nil {

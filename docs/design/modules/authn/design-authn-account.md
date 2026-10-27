@@ -100,6 +100,7 @@ type AccountAdmin interface {
 	RemoveIdentifier(ctx context.Context, id AccountID, identifierID string) error
 	LinkExternal(ctx context.Context, id AccountID, l ExternalLink) error
 	UnlinkExternal(ctx context.Context, id AccountID, externalID string) error
+	HasLoginWayOtherThanPasskey(ctx context.Context, id AccountID) (bool, error)
 	CreateServiceSecret(ctx context.Context, id AccountID, label string, expires *time.Time) (secretID, secret string, err error)
 	RevokeServiceSecret(ctx context.Context, id AccountID, secretID string) error
 	Touch(ctx context.Context, id AccountID, at time.Time) error
@@ -115,9 +116,9 @@ type AccountAdmin interface {
 | `SetDisplayName` | 至多 100 个字符。 |
 | `SetAttributes` | 受[属性集的限制](#扩展点)约束；经 `Identity.Attribute` 只读到达所有层。 |
 | `SetProtected` | 为真的账户不得被冒充，不依赖 `Decider`（[design-authn-impersonation](design-authn-impersonation.md)）。 |
-| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合的形态，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下（[design-authn-login](design-authn-login.md)），`invite` 由邀请接受的兑现写下（[design-authn-invite](design-authn-invite.md)）。`AddIdentifier` 写入邮箱标识时——无论 `via` 是哪一个——都在同一事务里写入或提升该地址的联系方式预留：本账户已有的同值预留置为已持有，没有则插入一条已持有的预留；预留属于别的账户返回 `ErrContactTaken` 并回滚。账户已经持有同值邮箱标识时，以 `Proves` 为真的渠道写入是**幂等证明**：就地重写该行的 `verified_at` 与 `verified_via`，不插入第二行、不发布标识变更事件、返回 nil；以 `admin`、`import-unverified` 或 `self` 重复写入同一行返回 `ErrAccountExists`，已有的证明不被降级或替换。其中 `Proves` 为真的邮箱标识——`email-code`、`idp:<提供方标识>`，或命中同一未证明预留的 `invite`——在首次证明该行时写 `signup_verified_at`（任何账户都写，`0` 与 `2` 一视同仁），`signup_state` 为 `1` 时同时置 `2`；`admin`、`import-unverified` 与 `self` 不改变 `signup_state`，也不写 `signup_verified_at`。写入手机标识（`sms-code`）时删除同值的待验证目标，但不改变 `signup_state`，也不写预留。`RemoveIdentifier` 删除邮箱标识时在同一事务里删除该地址的预留，地址随即释放；删除最后一个 `Proves` 为真的邮箱时，若 `signup_state` 为 2 则回到 1，但保留 `signup_verified_at`，也不重建预留；写入手机从不把它拉回 2。带口令凭据的账户删除最后一个 username 或 email 标识时，`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired` 并回滚；没有口令凭据的账户不受此限，删除手机永不触发该规则。 |
+| `AddIdentifier`、`RemoveIdentifier` | 标识先规范化；`via` 取值是 `sms-code`、`email-code`、`invite`、`idp:<提供方标识>`、`admin`、`import-unverified`、`self` 这一封闭集合的形态，其余拒绝。`idp:` 后的提供方标识是 1 到 64 字节、字符集 `[A-Za-z0-9._-]`（与 `AccountID` 同一字符集），越出即 `ErrInvalidArgument`。`email-code` 与 `self` 由自助添加标识的路由写下（[design-authn-login](design-authn-login.md)），`invite` 由邀请接受的兑现写下（[design-authn-invite](design-authn-invite.md)）。`AddIdentifier` 写入邮箱标识时——无论 `via` 是哪一个——都在同一事务里写入或提升该地址的联系方式预留：本账户已有的同值预留置为已持有，没有则插入一条已持有的预留；预留属于别的账户返回 `ErrContactTaken` 并回滚。账户已经持有同值邮箱标识时，以 `Proves` 为真的渠道写入是**幂等证明**：就地重写该行的 `verified_at` 与 `verified_via`，不插入第二行、不发布标识变更事件、返回 nil；以 `admin`、`import-unverified` 或 `self` 重复写入同一行返回 `ErrAccountExists`，已有的证明不被降级或替换。其中 `Proves` 为真的邮箱标识——`email-code`、`idp:<提供方标识>`，或命中同一未证明预留的 `invite`——在首次证明该行时写 `signup_verified_at`（任何账户都写，`0` 与 `2` 一视同仁），`signup_state` 为 `1` 时同时置 `2`；`admin`、`import-unverified` 与 `self` 不改变 `signup_state`，也不写 `signup_verified_at`。写入手机标识（`sms-code`）时删除同值的待验证目标，但不改变 `signup_state`，也不写预留。`RemoveIdentifier` 删除邮箱标识时在同一事务里删除该地址的预留，地址随即释放；删除最后一个 `Proves` 为真的邮箱时，若 `signup_state` 为 2 则回到 1，但保留 `signup_verified_at`，也不重建预留；写入手机从不把它拉回 2。带口令凭据的账户删除最后一个 username 或 email 标识时，`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired` 并回滚，这条规则先于下一条；删除任何标识后，账户若不再持有口令凭据、手机号与外部身份中的任何一种，返回 `ErrLastLoginMethod` 并回滚，通行密钥不算，手机号即使未验证也计入。 |
 | `LinkExternal` | 该（提供方，主体）已被别的账户占用返回 `ErrBindingConflict`。 |
-| `UnlinkExternal` | 解绑之后账户至少还剩一种可用登录方式，否则返回 `ErrLastLoginMethod`。 |
+| `UnlinkExternal` | 解绑之后账户至少还剩一种非因素的登录方式（口令、手机、另一条绑定），否则返回 `ErrLastLoginMethod`。 |
 | `CreateServiceSecret` | 密钥是 256 位随机数，前缀 `spd_cs_`，库里只存 SHA-256；明文只在返回值里出现一次。 |
 | `RevokeServiceSecret` | 写 `revoked_at`；提交之后调 `AccountLifecycle.ServiceSecretRevoked`，失败同样返回 `ErrCleanupIncomplete`。 |
 | `Touch` | 写 `last_login_at`，走原生 SQL，不产生审计行。 |
@@ -753,7 +754,7 @@ flowchart TD
 | A3 | 无绑定、来源是社交、`authn.account.auto-link` 未开启自动关联：不关联。仅当 `External.EmailVerified` 为真且该邮箱命中现有账户的邮箱标识时应答 `link-required`（请先用原有方式登录，再在账户设置里关联）；提供方自称未验证的邮箱（Google 在某些账号上给 `email_verified=false`）不触发它，按「无邮箱线索」处理，走首登开户或统一的 `login-failed`。所以 `link-required` 只在调用者已被提供方证明拥有该邮箱时才给，不构成对陌生人的枚举预言机。 |
 | A4 | `authn.account.auto-link` 取 `verified-email`（设置项，缺省 `never`，只有全局一档；改到 `verified-email` 是放宽方向，运行期写一行 `Warn` 与 `authn.settings.relaxed`）时，仅在下列各条同时满足才自动关联：提供方声明邮箱已验证（Google 的 `email_verified` 为真；GitHub 取 `/user/emails` 里 `primary` 且 `verified` 的一条，不用 `/user` 返回的邮箱）；现有账户持有该邮箱的标识，且标识的 `verified_via` 是真实证明（`idp:*`；`admin` 与 `import-unverified` 不算）；现有账户状态为启用；该邮箱域不属于任何已启用提供方、由租户验证过的 SSO 域，否则社交登录会绕开租户的强制 SSO。域的判定经 `SSOProviders.Discover`，它只返回已验证且提供方已启用的域；某租户为已停用提供方验证过的域无从经该接口枚举，因此不拦住自动关联，这是该接口契约的直接结果。微信无邮箱，永不适用。关联只改变第一因素，账户已登记的因素照常要求，不因关联降低任何要求。不满足任一条时按 A3 处理。成功并入的副作用见 A10。 |
 | A5 | 企业 SSO（提供方属租户 T）无绑定时：提供方声明的邮箱，其域必须属于 T 已验证的域，否则 `ErrDomainMismatch`，防止恶意租户管理员用自己配置的 IdP 声明别家用户的邮箱。`provisioning` 为 `preprovisioned` 的提供方只匹配管理员预先建好、且带该邮箱标识的账户（标识的验证渠道合法且不是 `import-unverified`，即 `admin`、`invite` 或 `idp:*`；`admin` 的断言在这里算数，预置账户就是管理员为这个人建的；`invite` 同样算数，它是管理员对某个具体地址发起的邀请，且接受方以持有该地址的令牌接受了它，比管理员手写的地址更强），匹配不上即 `ErrNotProvisioned`；`jit` 才可新建账户并建 T 的成员关系（`source = jit:<提供方标识>`），缺省只新建、不并入：邮箱已被现有账户占用时应答 `link-required`，域匹配已由 IdP 的域证明替代 A3 的 `EmailVerified` 前提，用户先用原方式登录再在设置里关联。提供方行的 `merge_existing`（缺省假，创建提供方时显式选）为真时才可并入，且只并入「邮箱标识是真实证明、全部成员关系 ⊆ {T}、没有口令、手机、其他绑定与因素」的账户；账户可属多个租户或有别的登录方式时一律不并入，因为账户是全局的，并入会让 T 的 IdP 管理员（或前雇主）永久登录这个人在别的租户里的账户。成员关系只在建绑定的开户这一次里新建：已有绑定的后续登录不读不写成员关系（A2），所以管理员暂停或移除的成员不会被 JIT 复活或重建；下线人员要么暂停成员关系，要么在 IdP 侧停用。 |
-| A6 | 解绑与关联要新鲜的本地多因素认证（账户有因素时，`Requirement.Local`，IdP 声明的多因素不算）；解绑后账户至少还剩一种可用登录方式（口令、手机、另一条绑定、任一因素），否则 `ErrLastLoginMethod`；解绑与关联成功后处理器调 `Sessions.RevokeAccount(except = 当前会话)` 撤销其余登录会话，并发 `authn.binding.changed`。 |
+| A6 | 解绑与关联要新鲜的本地多因素认证（账户有因素时，`Requirement.Local`，IdP 声明的多因素不算）；解绑后账户至少还剩一种非因素的登录方式（口令、手机、另一条绑定），否则 `ErrLastLoginMethod`；因素不算登录方式，只有因素可退的账户同样被拒；解绑与关联成功后处理器调 `Sessions.RevokeAccount(except = 当前会话)` 撤销其余登录会话，并发 `authn.binding.changed`。 |
 | A7 | 手机的变更与添加经短信验证（新号码的验证码，`verified_via = sms-code`）；邮箱除经 IdP 声明（首登开户时写入）或管理员登记成为标识外，还可由本人自助添加：发码到地址、兑现码后写标识（`verified_via = email-code`）；用户名除管理员添加外还可由本人自助写入，是一条未证明的登录名（`verified_via = self`）。自助添加的路由、验证回路与 `verified_via` 归属见 [design-authn-login](design-authn-login.md)。变更要求新鲜的本地多因素；成功后处理器调 `Sessions.RevokeAccount(except = 当前会话)`。 |
 | A8 | 微信后来收到 `unionid` 时，若没有账户占用该 `unionid`，给同一账户补一条以 `unionid` 为键的绑定；若已被别的账户占用，报 `ErrBindingConflict`，不自动合并。 |
 | A9 | 同一个（提供方，主体）并发首登：唯一约束让败者回读绑定后继续，幂等。 |
@@ -770,7 +771,7 @@ flowchart TD
 - 企业 SSO 按提供方的 `provisioning` 开户（A5）。
 - `Provisioner` 在场则先调用，宿主可改写拟创建的账户或拒绝开户（[扩展点](#扩展点)）。
 - 没有可作登录名的标识的账户（没有用户名、也没有邮箱标识，典型是只绑了微信或手机的账户）设口令得到 409 `login-identifier-required`：口令登录要有登录名，登录名是用户名或邮箱标识（REQ-account-012、REQ-signin-006），邮箱标识的证明渠道只决定它是否 `proven`；用户名由管理员经管理面添加，或由本人经自助路由添加。
-- 带口令凭据的账户不能删除最后一个可作登录名的标识：`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired`，删除不生效；无口令凭据的账户（短信或通行密钥账户）不受此限，删除手机从不触发该规则。换用户名要先有另一个登录名，通常先验证邮箱（[ADR-authn-login-identifier](../../../adr/adr-authn-login-identifier.md)）。
+- 带口令凭据的账户不能删除最后一个可作登录名的标识：`RemoveIdentifier` 在事务内返回 `ErrIdentifierRequired`，删除不生效；任何账户删除标识后若不再持有口令凭据、手机号与外部身份中的任何一种（通行密钥不算），返回 `ErrLastLoginMethod`，删除不生效。换用户名要先有另一个登录名，通常先验证邮箱（[ADR-authn-login-identifier](../../../adr/adr-authn-login-identifier.md)）。
 
 自助注册不经过首登开户：它由 `Signups.Register` 一次建号，见下一节。首登开户的 `closed` 取值不影响 `authn.account.password-signup`，反之亦然。
 
@@ -934,7 +935,7 @@ flowchart TD
 | `ErrLastTenantAdmin` | 显式删除成员关系会让租户不再有任何 `tenant-admin` 绑定（由 `MembershipGuard` 判出） | 409 `conflict` |
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 标识级退避中；注册的 `signup-username` 退避中 | 429 `throttled`，带 `Retry-After` |
 | `ErrBindingConflict` | 外部身份已被别的账户占用 | 409 |
-| `ErrLastLoginMethod` | 解绑最后一种登录方式 | 409 |
+| `ErrLastLoginMethod` | 删除标识或解绑会留下没有任何非因素登录方式的账户 | 409 |
 | `ErrAccountUnavailable` | 外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足 | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable` |
 | `ErrLinkRequired` | 社交登录无绑定而邮箱命中现有账户；或 JIT 开户遇到已被占用的邮箱 | 401 `link-required` |
 | `ErrNotProvisioned`、`ErrDomainMismatch`、`ErrProvisionRefused` | 企业 SSO 未预开户；企业 SSO 邮箱的域不属于该租户已验证的域；宿主拒绝开户 | 一律 401 `login-failed`，成因进日志 |
@@ -1063,6 +1064,7 @@ type Provisioner interface {
 | `AccountEnabled` 钩子与启用之后的恢复调用 | 已实现 | `pkg/authn/lifecycle.go` `AccountLifecycle.AccountEnabled`；`pkg/authn/account/lifecycle.go` `SetStatus`；`pkg/authn/session/lifecycle.go`、`pkg/authn/mfa/manage.go`、`pkg/authn/sms/lifecycle.go`、`pkg/authz/policy/lifecycle.go` 的 `AccountEnabled`；`pkg/authn/account/lifecycle_test.go` `TestEnablingCallsTheEnabledHook`、`TestSetStatusToActiveOnAnActiveAccountRunsTheEnabledHook` |
 | 显式成员关系删除的守卫与生命周期钩子 | 已实现 | `pkg/authn/membership.go` `MembershipLifecycle`、`MembershipGuard`、`SharedMembershipLock`；`pkg/authn/account/account.go` `(*product).membershipGuards`、`wire`；`pkg/authn/account/memberships.go` `(*product).Remove`、`lockMembershipRemoval`、`membershipExists`、`checkMembershipRemoval`；`pkg/authn/account/lifecycle.go` `callMembershipHooks`；`pkg/authz/policy/lifecycle.go` `MembershipRemoved`、`CheckMembershipRemoval`；`starters/demo/server/tenancy.go` `(*tenancyProduct).CheckMembershipRemoval`、`(*tenancyProduct).MembershipLock`；`pkg/authn/account/membership_lifecycle_test.go` `TestEveryMembershipGuardIsAsked`、`TestTwoGuardsSharingOneLockTakeItOnce` |
 | 外部身份绑定与自动关联的规则、首登开户（执行在 `authn.login` 的账户解析步） | 已实现 | `pkg/authn/account/admin.go` `LinkExternal`、`UnlinkExternal`、`AddIdentifier`、`RemoveIdentifier`；`pkg/authn/account/accounts.go` `ByExternal`；`pkg/authn/account/admin.go` `Create`；`pkg/authn/login/internal/resolve` |
+| 非因素登录方式的计数与查询（口令凭据、手机号、外部身份任一即真，通行密钥不算） | 已实现 | `pkg/authn/account/admin.go` `loginWayHeld`、`HasLoginWayOtherThanPasskey` |
 | 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 已实现 | `pkg/authn/account/password.go` `Verify`；`pkg/authn/account/credentials.go` `Set`、`Clear`、`ImportHash`；`pkg/authn/internal/password` `Parse`、`Params`、`Governor`、`Decoy` |
 | 口令凭据的删除（规则 A10） | 已实现 | `pkg/authn/account/credentials.go` `Clear`；`pkg/authn/account.go` `Passwords.Clear` |
 | `SetPasswordOptions` 的 `By`、`Channel`、`RequireActive`、`RequireExisting`、`RequireIdentifier` 与 `AdvanceValidAfter` | 未实现 | — |

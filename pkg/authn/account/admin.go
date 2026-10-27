@@ -558,9 +558,14 @@ func writeEmailClaim(tx *gorm.DB, account, value string, now time.Time) error {
 //
 // An account that holds a password credential keeps at least one login name:
 // removing its last username or email address is authn.ErrIdentifierRequired,
-// since the password would then authenticate nothing. An account with no
-// password credential loses its last login name freely, and removing a phone
-// number never reaches this rule.
+// since the password would then authenticate nothing. That rule is about login
+// names and is checked first, before the rule below, so it is unchanged.
+//
+// Removing any identifier that would leave the account with no way to log in
+// that is not a factor is authn.ErrLastLoginMethod, and the transaction rolls
+// back. The ways counted are a password credential, a phone number and an
+// external identity (see loginWayHeld); a username or an email address without a
+// password authenticates nothing and does not count on its own.
 func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, identifierID string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -605,6 +610,17 @@ func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, iden
 						"email address to log in with", authn.ErrIdentifierRequired)
 				}
 			}
+		}
+		// The login-name rule above is checked first and keeps its answer. This
+		// one covers every identifier: the account must keep a way to log in
+		// that is not a factor.
+		var hasWay bool
+		if hasWay, err = loginWayHeld(tx, id.String()); err != nil {
+			return err
+		}
+		if !hasWay {
+			return fmt.Errorf("%w: removing the identifier would leave the account with no way to log in "+
+				"that is not a factor", authn.ErrLastLoginMethod)
 		}
 		if kind == authn.IdentifierEmail &&
 			(authn.Verification{Via: row.VerifiedVia}).Proves() &&
@@ -701,25 +717,58 @@ func (p *product) UnlinkExternal(ctx context.Context, id authn.AccountID, extern
 		if !slices.ContainsFunc(bound, func(r externalRow) bool { return r.ID == externalID }) {
 			return nil
 		}
-		left := len(bound) - 1
-		if left == 0 {
-			hasPassword, err := passwordSet(tx, id.String())
-			if err != nil {
-				return err
-			}
-			var phones int64
-			err = tx.Model(&identifierRow{}).Where("account_id = ? AND kind = ?", id.String(), string(authn.IdentifierPhone)).
-				Count(&phones).Error
-			if err != nil {
-				return err
-			}
-			if !hasPassword && phones == 0 {
-				return fmt.Errorf("%w", authn.ErrLastLoginMethod)
-			}
+		if err := tx.Where("id = ? AND account_id = ?", externalID, id.String()).Delete(&externalRow{}).Error; err != nil {
+			return err
 		}
-		return tx.Where("id = ? AND account_id = ?", externalID, id.String()).Delete(&externalRow{}).Error
+		hasWay, err := loginWayHeld(tx, id.String())
+		if err != nil {
+			return err
+		}
+		if !hasWay {
+			return fmt.Errorf("%w", authn.ErrLastLoginMethod)
+		}
+		return nil
 	})
 	return failed("unbinding an external identity", err)
+}
+
+// HasLoginWayOtherThanPasskey reports whether the account can log in by a way
+// other than a factor: a password credential, a phone number or an external
+// identity. A passkey does not count, and neither does a username or an email
+// address on its own, since without a password it authenticates nothing. The
+// factor modules hold what this module cannot read, so the answer is exactly
+// the three ways loginWayHeld counts.
+func (p *product) HasLoginWayOtherThanPasskey(ctx context.Context, id authn.AccountID) (bool, error) {
+	hasWay, err := loginWayHeld(p.conn(ctx), id.String())
+	if err != nil {
+		return false, failed("reading the account's ways to log in", err)
+	}
+	return hasWay, nil
+}
+
+// loginWayHeld reports whether the account holds a way to log in that is not a
+// factor: a password credential, a phone-number identifier (verified or not,
+// which is the count UnlinkExternal has always used), or an external identity.
+// A passkey or another factor lives in another module's tables and does not
+// count here.
+func loginWayHeld(tx *gorm.DB, accountID string) (bool, error) {
+	hasPassword, err := hasCredential(tx, accountID)
+	if err != nil || hasPassword {
+		return hasPassword, err
+	}
+	var phones int64
+	if err = tx.Model(&identifierRow{}).Where("account_id = ? AND kind = ?", accountID,
+		string(authn.IdentifierPhone)).Count(&phones).Error; err != nil {
+		return false, err
+	}
+	if phones > 0 {
+		return true, nil
+	}
+	var externals int64
+	if err = tx.Model(&externalRow{}).Where("account_id = ?", accountID).Count(&externals).Error; err != nil {
+		return false, err
+	}
+	return externals > 0, nil
 }
 
 // CreateServiceSecret makes a secret for a service account: 256 random bits

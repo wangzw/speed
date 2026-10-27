@@ -27,7 +27,9 @@ func bindingEvent[T any](t *testing.T, h *harness, eventType string) T {
 func TestIdentifierChangesArePublished(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
-		id := h.user("binder", "")
+		// The account keeps its password, so removing the phone number leaves it a
+		// way to log in and the removal is the event under test.
+		id := h.user("binder", "correct horse battery")
 		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierPhone, "+8613812345678", admin); err != nil {
 			t.Fatalf("adding: %v", err)
 		}
