@@ -189,7 +189,8 @@ type chain struct {
 	// noAudit and noLimiter leave out the layers that stand for those
 	// capabilities.
 	noAudit, noLimiter bool
-	// mountEndpoint is written to the gateway's mount.endpoint when set.
+	// mountEndpoint is written to the gateway's ordinary mount endpoint when
+	// set.
 	mountEndpoint string
 	// admissionEndpoints is the admission layer's list; the default guards
 	// "public" alone.
@@ -216,7 +217,7 @@ func (c chain) body() string {
 	}
 	mount := ""
 	if c.mountEndpoint != "" {
-		mount = fmt.Sprintf(`,"mount":{"endpoint":%q}`, c.mountEndpoint)
+		mount = fmt.Sprintf(`,"mount":{"endpoints":{"default":%q}}`, c.mountEndpoint)
 	}
 	return fmt.Sprintf(`{
 		"http": {"listeners": {"public": {"address": "127.0.0.1:0"}, "admin": {"address": "127.0.0.1:0"}}, "endpoints": {"public": {"listener": "public"}, "admin": {"listener": "admin"}}},

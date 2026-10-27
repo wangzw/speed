@@ -166,7 +166,67 @@ func readConfig(reader config.Reader) (resolved, error) {
 	if err := reader.Decode(ConfigNamespace, &cfg); err != nil {
 		return resolved{}, err
 	}
-	return cfg.resolve()
+	set, err := cfg.resolve()
+	if err != nil {
+		return resolved{}, err
+	}
+	if err := checkResolutionCoverage(reader, set.endpoints); err != nil {
+		return resolved{}, err
+	}
+	return set, nil
+}
+
+// resolutionNamespace and resolutionEndpointsItem are where the tenant
+// resolution layer keeps the endpoints it resolves a tenant on. They are read,
+// not owned: the list is that module's, and this module reads it once, when it
+// decodes its own section.
+const (
+	resolutionNamespace     = "tenant.resolve"
+	resolutionEndpointsItem = "endpoints"
+)
+
+// checkResolutionCoverage refuses an endpoint this layer guards that the tenant
+// resolution layer does not resolve a tenant on.
+//
+// The judgement runs on an endpoint's tenant context, and this layer admits a
+// non-impersonating request that carries none: without the resolution layer the
+// endpoint would serve every caller, member or not, and nothing would say so.
+// The two lists are separate configuration items that a host can write
+// independently, so the pairing is checked where both are in hand.
+//
+// The list is another module's and is read when it is declared. A command whose
+// resolution capability is supplied by the host, or whose layer wrote no list,
+// has nothing here to compare against: the layer's own configuration is where an
+// invalid or empty list is refused.
+func checkResolutionCoverage(reader config.Reader, endpoints []string) error {
+	var shape struct {
+		Endpoints []string `config:"endpoints"`
+	}
+	if err := reader.Decode(resolutionNamespace, &shape); err != nil {
+		// The shape is the resolution layer's to explain; its own startup
+		// reports it with the key it owns.
+		return nil
+	}
+	if len(shape.Endpoints) == 0 {
+		return nil
+	}
+	resolved := make(map[string]struct{}, len(shape.Endpoints))
+	for _, name := range shape.Endpoints {
+		resolved[name] = struct{}{}
+	}
+	for _, name := range endpoints {
+		if _, covered := resolved[name]; covered {
+			continue
+		}
+		return fmt.Errorf("%w: %s.%s lists the endpoint %q, which %s.%s does not resolve a tenant "+
+			"on. A request on that endpoint carries no tenant context, and this layer admits a "+
+			"non-impersonating request without one, so the membership check would never run there. "+
+			"Add the endpoint to %s.%s, or remove it from %s.%s",
+			authn.ErrInvalidConfig, ConfigNamespace, endpointsItem, name,
+			resolutionNamespace, resolutionEndpointsItem,
+			resolutionNamespace, resolutionEndpointsItem, ConfigNamespace, endpointsItem)
+	}
+	return nil
 }
 
 // prepare states this module's stance, or reports what it cannot start without.

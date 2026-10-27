@@ -184,3 +184,83 @@ func TestNoDefaultForTheEndpointList(t *testing.T) {
 		t.Fatalf("the declared default list is %v, want none", configDefaults.Endpoints)
 	}
 }
+
+// readWithResolution loads a document with this module's section and the tenant
+// resolution layer's section both declared, the way a run that takes both
+// modules in declares them.
+func readWithResolution(t *testing.T, document string) config.Reader {
+	t.Helper()
+	type resolution struct {
+		Endpoints []string `config:"endpoints"`
+	}
+	resolutionSchema := config.Schema{
+		Namespace: "tenant.resolve",
+		Mounts:    []config.Mount{{Value: &resolution{}}},
+		Items: map[string]config.Item{
+			"endpoints": {Origins: config.OriginPrimary, Required: true},
+		},
+	}
+	return authntest.ConfigReaderAll(t, document,
+		core.Module{Name: ModuleName, Resources: Module().Resources},
+		core.Module{Name: "tenant.resolve.stand-in", Resources: []any{resolutionSchema}},
+	)
+}
+
+// TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover holds the subset
+// rule between the two tenant layers: an endpoint this layer guards but the
+// resolution layer does not is one where a request has no tenant context, and
+// the layer admits a non-impersonating request without one. The startup failure
+// is the only place that misconfiguration is visible, and it names both keys so
+// a host knows which list to change.
+func TestPrepareRefusesAnEndpointTheResolutionLayerDoesNotCover(t *testing.T) {
+	body := `{"tenant":{
+		"resolve":{"endpoints":["api"]},
+		"admission":{"endpoints":["account","api"]}
+	}}`
+	got, err := prepare(readWithResolution(t, body))
+	if err == nil {
+		t.Fatalf("prepare over an admission endpoint the resolution layer does not cover = %+v, want a startup failure", got)
+	}
+	if got != (core.Enablement{}) {
+		t.Fatalf("a failed prepare carried the stance %+v, want none", got)
+	}
+	if !errors.Is(err, authn.ErrInvalidConfig) {
+		t.Fatalf("the failure is not authn.ErrInvalidConfig: %v", err)
+	}
+	for _, want := range []string{ConfigNamespace + "." + endpointsItem, "tenant.resolve.endpoints", `"account"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure reads %q and does not name %q", err, want)
+		}
+	}
+}
+
+// TestPrepareAcceptsAnAdmissionListInsideTheResolutionList is the control: the
+// same lists with the extra endpoint removed start, so the refusal above is the
+// subset and not the surrounding configuration.
+func TestPrepareAcceptsAnAdmissionListInsideTheResolutionList(t *testing.T) {
+	body := `{"tenant":{
+		"resolve":{"endpoints":["api","admin"]},
+		"admission":{"endpoints":["api"]}
+	}}`
+	got, err := prepare(readWithResolution(t, body))
+	if err != nil {
+		t.Fatalf("prepare over an admission list inside the resolution list: %v", err)
+	}
+	if got.State != core.StateEnabled {
+		t.Fatalf("the stance is %v, want StateEnabled", got.State)
+	}
+}
+
+// TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration holds the limit of the
+// check: a host may supply the resolution capability itself, and a command with
+// no resolution declaration has no list to compare against. The layer then
+// starts and the host owns the pairing, as it owns every supplied instance.
+func TestTheSubsetRuleWaitsForTheResolutionLayersDeclaration(t *testing.T) {
+	got, err := prepare(readThrough(t, endpointsConfig(`["public"]`)))
+	if err != nil {
+		t.Fatalf("prepare over a supplied resolution with no declared list: %v", err)
+	}
+	if got.State != core.StateEnabled {
+		t.Fatalf("the stance is %v, want StateEnabled", got.State)
+	}
+}
