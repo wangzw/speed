@@ -394,3 +394,54 @@ func TestAManagementHandlerAnswersItsOwn401WithTheChallenge(t *testing.T) {
 		t.Errorf("headers = %+v, want WWW-Authenticate: %q", fault.Headers, want)
 	}
 }
+
+// TestManagementRoutesAdmitAnImpersonatingIdentity holds that the management
+// face is a tenant-domain capability: an impersonating identity reaches the
+// handler, which does not answer impersonation-restricted, and the same
+// membership.manage decision is asked in the path's tenant through the effective
+// account.
+func TestManagementRoutesAdmitAnImpersonatingIdentity(t *testing.T) {
+	h := newHarness(t)
+	h.mounter.As(
+		authntest.WithAccount("acct-target"),
+		authntest.WithActor(adminID),
+		authntest.WithSession("session-1"),
+		authntest.WithScope("tenant-a"),
+	)
+	w := h.request(http.MethodGet, pathAdmin, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("an impersonating list answered %d, want 200: %s", w.Code, w.Body.String())
+	}
+	dec, ok := h.decider.last()
+	if !ok {
+		t.Fatal("the Decider was not asked")
+	}
+	if dec.Action != authn.ActionMembershipManage || dec.Tenant != "tenant-a" {
+		t.Errorf("decision = %+v, want membership.manage in tenant-a", dec)
+	}
+	if !dec.Actor.Impersonating() || dec.Actor.Account() != "acct-target" || dec.Actor.Actor() != adminID {
+		t.Errorf("Decision.Actor = account %q actor %q impersonating %t; want the impersonated target decided through the operator",
+			dec.Actor.Account(), dec.Actor.Actor(), dec.Actor.Impersonating())
+	}
+}
+
+// TestManagementRoutesAreImpersonable holds the registration split: the
+// management routes (tenant-scoped) are registered Impersonable, and the public
+// acceptance routes are not. Acceptance is reached by the token alone, so it has
+// no identity to impersonate.
+func TestManagementRoutesAreImpersonable(t *testing.T) {
+	h := newHarness(t)
+	seen := 0
+	for _, reg := range h.mounter.Registrations() {
+		management := strings.Contains(reg.Path, "/tenants/")
+		if management {
+			seen++
+		}
+		if reg.Impersonable != management {
+			t.Errorf("%s (%s): Impersonable = %t, want %t", reg.Path, reg.Kind, reg.Impersonable, management)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no tenant-scoped management route was mounted")
+	}
+}

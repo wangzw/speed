@@ -48,12 +48,13 @@ func (p *product) caller(ctx context.Context) (authn.Identity, error) {
 	return id, nil
 }
 
-// admit applies the two checks every management route makes before it reads
-// anything: the actor is not impersonating, and a Decider is there.
-func (p *product) admit(id authn.Identity) error {
-	if id.Impersonating() {
-		return inviteFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
-	}
+// admit applies the check every management route makes before it reads
+// anything: a Decider is there. The management face is decided in the path's
+// tenant, so an impersonating identity is admitted and decided by the effective
+// account's permissions there; the invitation routes are not a platform-domain
+// surface. It answers a refusal as an error, so that a deployment with no
+// Decider tells a caller nothing about which invitations exist.
+func (p *product) admit() error {
 	if p.decider == nil {
 		return inviteFailure(http.StatusForbidden, mount.CodeForbidden)
 	}

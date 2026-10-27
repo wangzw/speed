@@ -14,13 +14,14 @@ import (
 // source. The mounter puts every response under Cache-Control: no-store and
 // every unsafe method behind the cross-origin check.
 //
-// The management routes are registered guarded and never impersonable: the
-// gateway answers an impersonating identity with a 401, and the handler checks
-// the same condition again. The acceptance routes are registered public: the
-// token is the whole credential and there is no identity to read.
+// The management routes are registered guarded and Impersonable: their action is
+// decided in the path's tenant, so an impersonating identity is admitted and
+// decided by the effective account's permissions there. The acceptance routes
+// are registered public: the token is the whole credential and there is no
+// identity to read.
 func (p *product) mountRoutes() {
 	g := func(operation speedhttp.Declared, rel string, h gin.HandlerFunc, opts ...mount.Option) {
-		mount.Declared(p.mounter, operation, rel, h, append(opts, mount.InScope(speedhttp.ScopeTenants))...)
+		mount.Declared(p.mounter, operation, rel, h, append(opts, mount.InScope(speedhttp.ScopeTenants), mount.Impersonable())...)
 	}
 	g(issueOperation, p.route(issueOperation.Path), issueOperation.Handle(p.handleIssue))
 	g(listOperation, p.route(listOperation.Path), listOperation.Handle(p.handleList))
