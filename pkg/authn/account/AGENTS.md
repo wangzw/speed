@@ -130,8 +130,9 @@ The API is the package's godoc and the interface comments in `pkg/authn`.
   password credential cannot lose its last username or email address: that
   removal answers `authn.ErrIdentifierRequired` and the transaction rolls back,
   since the password would then authenticate nothing. An account with no password
-  credential may lose its last login name, and removing a phone number never
-  triggers the rule.
+  credential may lose its last login name only while another way to log in
+  remains; a phone number counts only when its ownership was proved. Removing a
+  phone number never triggers the login-name rule.
   `Create` always writes `signup_state` 0 and writes only identifiers; an email
   address also writes a proved reservation, and a reservation another account
   holds answers `authn.ErrContactTaken`. The way a username came about is

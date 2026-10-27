@@ -531,7 +531,7 @@ CREATE TABLE authn_webauthn_credentials (
 
 重置不绕过第一因素：重置后的下一次登录仍要先过第一因素，然后只能登记新因素；不提供「重置后直接登录」。重置也不借道冒充接缝。
 
-**重置的授权与强认证核验在管理面处理器。** 处理器先经 `Decider`（动作 `authn.mfa.reset`，`Decider` 缺席即全拒），再核验发起者的要求（见「账户安全类动作与 `Requirement.Local`、`Seasoned`」），然后写强制审计，审计写成功之后、调用 `MFA.Reset` 之前，经 `AccountAdmin.HasLoginWayOtherThanPasskey` 核对目标账户是否持有口令凭据、手机号与外部身份中的至少一种；一种都没有（只剩因素，例如只有通行密钥）时答 409 `conflict`（`ErrLastLoginMethod`），不调 `Reset`，补一条 `failed` 审计行。重置失败时同样补 `failed` 行（[authn-admin](design-authn-admin.md)）。`Reset` 的 `reason` 形参由处理器填入，本模块不使用它记录或发事件：`authn.factor.changed`（`reset`）不带原因，会话撤销固定用 `authn.ReasonFactorReset`，重置的来由落在处理器写的强制档审计里。签名保留该形参，供宿主与处理器表达重置的来由。
+**重置的授权与强认证核验在管理面处理器。** 处理器先经 `Decider`（动作 `authn.mfa.reset`，`Decider` 缺席即全拒），再核验发起者的要求（见「账户安全类动作与 `Requirement.Local`、`Seasoned`」），然后写强制审计，审计写成功之后、调用 `MFA.Reset` 之前，经 `AccountAdmin.HasLoginWayOtherThanPasskey` 核对目标账户是否持有口令凭据、`Proves` 为真的手机号与外部身份中的至少一种；一种都没有（只剩因素，例如只有通行密钥，或只剩未证明的手机号）时答 409 `conflict`（`ErrLastLoginMethod`），不调 `Reset`，补一条 `failed` 审计行。重置失败时同样补 `failed` 行（[authn-admin](design-authn-admin.md)）。`Reset` 的 `reason` 形参由处理器填入，本模块不使用它记录或发事件：`authn.factor.changed`（`reset`）不带原因，会话撤销固定用 `authn.ReasonFactorReset`，重置的来由落在处理器写的强制档审计里。签名保留该形参，供宿主与处理器表达重置的来由。
 
 **`MFA.Seasoned`。** 读账户的因素行：存在 `kind` 不是 `sms`、`status` 为启用、`activated_at` 与当前时刻之差不小于 `sensitive-min-age` 的行即为真。该判定不看会话，只看登记簿。
 
@@ -577,7 +577,7 @@ CREATE TABLE authn_webauthn_credentials (
 | `ErrFactorNotSeasoned` | `Seasoned` 为假：冒充发起、管理员重置因素与重置口令的发起者名下没有启用已满 `sensitive-min-age` 的非短信因素 | 403 `factor-not-seasoned` | 拒 |
 | `ErrNoFactor` | 纳入 `authn.mfa` 而没有任何 `Factor`，且设了 `global-required`，或库里已有账户登记了某个种类而该种类没有实现 | 启动失败，点名缺的模块 | 拒 |
 | `ErrFactorConflict` | 两个 `Factor` 同种 | 启动失败，点名双方 | 拒 |
-| `ErrLastLoginMethod` | 重置因素时目标账户没有口令凭据、手机号与外部身份中的任何一种，只剩因素一种登录方式 | 409 `conflict` | 拒 |
+| `ErrLastLoginMethod` | 重置因素时目标账户没有口令凭据、`Proves` 为真的手机号与外部身份中的任何一种（未证明的手机号不算），只剩因素一种登录方式 | 409 `conflict` | 拒 |
 | `ErrForbidden`、`ErrAuditRequired` | 重置因素时 `Decider` 判否；强制审计写失败 | 403；503 | 拒 |
 
 ### 失败方向

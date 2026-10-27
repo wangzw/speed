@@ -125,9 +125,9 @@ func TestAnAccountWithoutAPasswordMayNotLoseItsLastWayIn(t *testing.T) {
 }
 
 // TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains holds rule 2C
-// from the allowed side: a phone number, verified or not, and an external
-// identity each keep the account reachable, so the last login name may go. Once
-// the phone number is the last way in, removing it is refused.
+// from the allowed side: a proved phone number and an external identity each
+// keep the account reachable, so the last login name may go. Once the phone
+// number is the last way in, removing it is refused.
 func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -164,10 +164,42 @@ func TestAPasswordlessAccountLosesALoginNameWhileAnotherWayInRemains(t *testing.
 	})
 }
 
+// TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable holds that a phone number
+// counts as a way in only once its ownership was proved: a number written with
+// an unproved way leaves a passwordless account with no way to log in, and
+// proving the same number in place turns the removal from a refusal into a
+// success.
+func TestAnUnverifiedPhoneDoesNotKeepTheAccountReachable(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id, err := h.p.Create(ctx, authn.CreateAccount{Username: "unproven-phone", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without a password: %v", err)
+		}
+		if err = h.p.AddIdentifier(ctx, id.ID, authn.IdentifierPhone, "+8613800000021",
+			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
+			t.Fatalf("adding an unverified phone number: %v", err)
+		}
+		if err = h.p.RemoveIdentifier(ctx, id.ID,
+			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); !errors.Is(err, authn.ErrLastLoginMethod) {
+			t.Fatalf("removing the login name beside an unverified phone gave %v, want ErrLastLoginMethod", err)
+		}
+		if err = h.p.AddIdentifier(ctx, id.ID, authn.IdentifierPhone, "+8613800000021",
+			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
+			t.Fatalf("proving the phone number: %v", err)
+		}
+		if err = h.p.RemoveIdentifier(ctx, id.ID,
+			identifierOfKind(t, h, id.ID, authn.IdentifierUsername).ID); err != nil {
+			t.Fatalf("removing the login name beside a proved phone gave %v, want nil", err)
+		}
+	})
+}
+
 // TestHasLoginWayOtherThanPasskeyCountsTheThreeWays holds the account module's
-// answer the administrator's reset guard reads: a password credential, a phone
-// number and an external identity each count, while none of them does not. A
-// login name without a password is not a way in.
+// answer the administrator's reset guard reads: a password credential, a proved
+// phone number and an external identity each count, while none of them does
+// not. A login name without a password is not a way in, and neither is a phone
+// number whose ownership was not proved.
 func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *harness) {
 		ctx := context.Background()
@@ -195,6 +227,25 @@ func TestHasLoginWayOtherThanPasskeyCountsTheThreeWays(t *testing.T) {
 		}
 		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, withPhone.ID); wayErr != nil || !way {
 			t.Errorf("an account with a phone number reports %v, %v, want true, nil", way, wayErr)
+		}
+
+		unproven, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-an-unproven-phone", Via: "admin"})
+		if err != nil {
+			t.Fatalf("creating an account without a password: %v", err)
+		}
+		if err = h.p.AddIdentifier(ctx, unproven.ID, authn.IdentifierPhone, "+8613800000013",
+			authn.Verification{Via: authn.VerifiedViaAdmin}); err != nil {
+			t.Fatalf("adding an unverified phone number: %v", err)
+		}
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, unproven.ID); wayErr != nil || way {
+			t.Errorf("an account with only an unverified phone number reports %v, %v, want false, nil", way, wayErr)
+		}
+		if err = h.p.AddIdentifier(ctx, unproven.ID, authn.IdentifierPhone, "+8613800000013",
+			authn.Verification{Via: authn.VerifiedViaSMSCode}); err != nil {
+			t.Fatalf("proving the phone number: %v", err)
+		}
+		if way, wayErr := h.p.HasLoginWayOtherThanPasskey(ctx, unproven.ID); wayErr != nil || !way {
+			t.Errorf("an account with a proved phone number reports %v, %v, want true, nil", way, wayErr)
 		}
 
 		withExternal, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-an-external", Via: "admin"})

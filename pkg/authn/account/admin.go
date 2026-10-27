@@ -563,9 +563,10 @@ func writeEmailClaim(tx *gorm.DB, account, value string, now time.Time) error {
 //
 // Removing any identifier that would leave the account with no way to log in
 // that is not a factor is authn.ErrLastLoginMethod, and the transaction rolls
-// back. The ways counted are a password credential, a phone number and an
-// external identity (see loginWayHeld); a username or an email address without a
-// password authenticates nothing and does not count on its own.
+// back. The ways counted are a password credential, a phone number whose
+// ownership was proved and an external identity (see loginWayHeld); a username
+// or an email address without a password authenticates nothing and does not
+// count on its own, and neither does an unproved phone number.
 func (p *product) RemoveIdentifier(ctx context.Context, id authn.AccountID, identifierID string) error {
 	b := &batch{}
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
@@ -702,9 +703,9 @@ func (p *product) LinkExternal(ctx context.Context, id authn.AccountID, l authn.
 
 // UnlinkExternal removes a binding. When it is the last way the account has to log
 // in, the call is authn.ErrLastLoginMethod and nothing changes. The ways counted
-// are a password, a phone number and another binding: what the factor modules
-// hold is not this module's to read, so an account whose only other way is a
-// factor is refused too.
+// are a password, a phone number whose ownership was proved and another
+// binding: what the factor modules hold is not this module's to read, so an
+// account whose only other way is a factor is refused too.
 func (p *product) UnlinkExternal(ctx context.Context, id authn.AccountID, externalID string) error {
 	err := p.conn(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := p.lock(tx, id); err != nil {
@@ -733,9 +734,10 @@ func (p *product) UnlinkExternal(ctx context.Context, id authn.AccountID, extern
 }
 
 // HasLoginWayOtherThanPasskey reports whether the account can log in by a way
-// other than a factor: a password credential, a phone number or an external
-// identity. A passkey does not count, and neither does a username or an email
-// address on its own, since without a password it authenticates nothing. The
+// other than a factor: a password credential, a phone number whose ownership was
+// proved or an external identity. A passkey does not count, and neither does a
+// username or an email address on its own, since without a password it
+// authenticates nothing; an unproved phone number does not count either. The
 // factor modules hold what this module cannot read, so the answer is exactly
 // the three ways loginWayHeld counts.
 func (p *product) HasLoginWayOtherThanPasskey(ctx context.Context, id authn.AccountID) (bool, error) {
@@ -747,21 +749,23 @@ func (p *product) HasLoginWayOtherThanPasskey(ctx context.Context, id authn.Acco
 }
 
 // loginWayHeld reports whether the account holds a way to log in that is not a
-// factor: a password credential, a phone-number identifier (verified or not,
-// which is the count UnlinkExternal has always used), or an external identity.
-// A passkey or another factor lives in another module's tables and does not
-// count here.
+// factor: a password credential, a phone number whose ownership was proved, or
+// an external identity. An unproved phone number (admin, import-unverified or
+// self) does not count; only a verification that Proves does. A passkey or
+// another factor lives in another module's tables and does not count here.
 func loginWayHeld(tx *gorm.DB, accountID string) (bool, error) {
 	hasPassword, err := hasCredential(tx, accountID)
 	if err != nil || hasPassword {
 		return hasPassword, err
 	}
-	var phones int64
-	if err = tx.Model(&identifierRow{}).Where("account_id = ? AND kind = ?", accountID,
-		string(authn.IdentifierPhone)).Count(&phones).Error; err != nil {
+	var phones []identifierRow
+	if err = tx.Where("account_id = ? AND kind = ?", accountID,
+		string(authn.IdentifierPhone)).Find(&phones).Error; err != nil {
 		return false, err
 	}
-	if phones > 0 {
+	if slices.ContainsFunc(phones, func(r identifierRow) bool {
+		return authn.Verification{Via: r.VerifiedVia}.Proves()
+	}) {
 		return true, nil
 	}
 	var externals int64

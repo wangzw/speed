@@ -843,6 +843,13 @@ func TestIdentifiersAreAddedAndRemovedAndAPhoneIsReplaced(t *testing.T) {
 			t.Errorf("the same number again published %d more event(s)", got-len(changes))
 		}
 
+		// The administrator's restatement of the number is not proof of it, so
+		// prove the number again before the account is asked to give up an
+		// address.
+		if err := h.p.AddIdentifier(ctx, id, authn.IdentifierPhone, "+8613800000002", smsCode); err != nil {
+			t.Fatalf("proving the number again: %v", err)
+		}
+
 		if err := h.p.AddIdentifier(ctx, other, authn.IdentifierPhone, "+8613800000002", smsCode); !errors.Is(err, authn.ErrAccountExists) {
 			t.Errorf("another account's number gave %v, want ErrAccountExists", err)
 		}
@@ -1018,12 +1025,21 @@ func TestAnExternalIdentityIsUnlinkedUnlessItIsTheLastWayIn(t *testing.T) {
 		if err = h.p.UnlinkExternal(ctx, withPassword, bind(withPassword, "google")); err != nil {
 			t.Errorf("unlinking with a password to fall back on gave %v", err)
 		}
-		withPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-phone", Phone: "+8613800000009", PhoneVerifiedVia: admin})
+		withPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-phone", Phone: "+8613800000009",
+			PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode}})
 		if err != nil {
 			t.Fatalf("creating: %v", err)
 		}
 		if err = h.p.UnlinkExternal(ctx, withPhone.ID, bind(withPhone.ID, "github")); err != nil {
-			t.Errorf("unlinking with a phone number to fall back on gave %v", err)
+			t.Errorf("unlinking with a proved phone number to fall back on gave %v", err)
+		}
+		withUnprovenPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-unproven-phone",
+			Phone: "+8613800000010", PhoneVerifiedVia: admin})
+		if err != nil {
+			t.Fatalf("creating: %v", err)
+		}
+		if err = h.p.UnlinkExternal(ctx, withUnprovenPhone.ID, bind(withUnprovenPhone.ID, "github")); !errors.Is(err, authn.ErrLastLoginMethod) {
+			t.Errorf("unlinking with only an unverified phone number to fall back on gave %v, want ErrLastLoginMethod", err)
 		}
 		two, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-two"})
 		if err != nil {
