@@ -12,7 +12,7 @@
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@speed/api-client'
-import { useStepUpGate } from './step-up-gate.js'
+import { useStepUpGate, stepUpReasonOf } from './step-up-gate.js'
 
 afterEach(cleanup)
 
@@ -24,6 +24,24 @@ function stepUpRefusal(): ApiError {
     attempts: 1,
   })
 }
+
+/** The tenant admission layer's SSO step-up refusal. */
+function ssoRefusal(): ApiError {
+  return new ApiError({
+    status: 401,
+    code: 'authn.sso_required',
+    attempts: 1,
+  })
+}
+
+describe('stepUpReasonOf', () => {
+  it('maps the two refusal codes and nothing else', () => {
+    expect(stepUpReasonOf('authn.insufficient_user_authentication')).toBe('mfa')
+    expect(stepUpReasonOf('authn.sso_required')).toBe('sso')
+    expect(stepUpReasonOf('client.http.401')).toBeNull()
+    expect(stepUpReasonOf(undefined)).toBeNull()
+  })
+})
 
 describe('useStepUpGate', () => {
   it('starts closed, arms an action, and replays it exactly once', () => {
@@ -86,6 +104,35 @@ describe('useStepUpGate', () => {
 
     act(() => result.current.succeed())
     expect(onRetry).toHaveBeenCalledWith('row-1')
+  })
+
+  it('arms on the SSO step-up refusal and remembers its reason', () => {
+    const onRetry = vi.fn()
+    const { result } = renderHook(() => useStepUpGate<string>(onRetry))
+
+    let intercepted = false
+    act(() => {
+      intercepted = result.current.intercept(ssoRefusal(), 'row-1')
+    })
+
+    expect(intercepted).toBe(true)
+    expect(result.current.open).toBe(true)
+    expect(result.current.reason).toBe('sso')
+
+    act(() => result.current.succeed())
+    expect(result.current.reason).toBeNull()
+    expect(onRetry).toHaveBeenCalledWith('row-1')
+  })
+
+  it('remembers the reason a caller armed explicitly', () => {
+    const onRetry = vi.fn()
+    const { result } = renderHook(() => useStepUpGate<string>(onRetry))
+
+    act(() => result.current.arm('row-1'))
+    expect(result.current.reason).toBe('mfa')
+
+    act(() => result.current.arm('row-2', 'sso'))
+    expect(result.current.reason).toBe('sso')
   })
 
   it('leaves the gate untouched for any other failure', () => {

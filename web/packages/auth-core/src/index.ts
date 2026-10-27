@@ -104,8 +104,8 @@ export type {
   StepUpPhase,
   StepUpState,
 } from './step-up.js'
-export { useStepUpGate } from './step-up-gate.js'
-export type { StepUpGate } from './step-up-gate.js'
+export { useStepUpGate, stepUpReasonOf } from './step-up-gate.js'
+export type { StepUpGate, StepUpReason } from './step-up-gate.js'
 export {
   humanGateNeedsProof,
   powProofFromChallenge,
