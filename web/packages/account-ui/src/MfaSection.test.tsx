@@ -147,6 +147,93 @@ describe('MfaSection', () => {
     ).toBeNull()
   })
 
+  it('says so in place when exactly one factor is enabled', async () => {
+    // One enabled row, one pending: the pending row does not count as a
+    // usable second method, so the section says the account has only one and
+    // points at the enrollment entries below it.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({ id: 'factor-1', kind: 'totp', status: 'active' }),
+            factor({ id: 'factor-2', kind: 'webauthn', status: 'pending' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText(zhCN.mfa.singleFactor)).toBeTruthy()
+    // The note points at entries that are actually on the page.
+    expect(
+      screen.getByRole('button', { name: zhCN.mfa.enroll.totp }),
+    ).toBeTruthy()
+  })
+
+  it('hides the single-factor note when two factors are enabled', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp', 'webauthn']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [
+            factor({ id: 'factor-1', kind: 'totp', label: 'Phone app' }),
+            factor({ id: 'factor-2', kind: 'webauthn', label: 'Laptop key' }),
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    // The list has settled before the note's absence is asserted.
+    expect(await screen.findByText('Phone app')).toBeTruthy()
+    expect(screen.getByText('Laptop key')).toBeTruthy()
+    expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
+  })
+
+  it('hides the single-factor note when no factor is enabled', async () => {
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc(['totp']))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, {
+          factors: [factor({ status: 'pending' })],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('My authenticator')).toBeTruthy()
+    expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
+  })
+
+  it('withholds the single-factor note when the deployment offers no enrollment entry', async () => {
+    // The note points at registering another method. A deployment that
+    // reports no enrollable kind offers nothing to point at, so the note is
+    // withheld rather than naming a control that is not there.
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [factor({ status: 'active' })] })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+
+    expect(await screen.findByText('My authenticator')).toBeTruthy()
+    expect(screen.queryByText(zhCN.mfa.singleFactor)).toBeNull()
+  })
+
   it('renders the empty state without a list container when no factor is set up', async () => {
     // A role="list" with no listitem child is an ARIA required-children
     // violation (axe rates it critical): the empty state is plain text and

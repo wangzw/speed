@@ -114,6 +114,7 @@
     "title": "两步验证",
     "loading": "正在加载两步验证",
     "empty": "尚未设置任何两步验证方式。",
+    "singleFactor": "当前只启用了一种两步验证方式。请在下方再添加一种，以便丢失这一种后仍能登录。",
     "remove": "移除",
     "removeAria": "移除此两步验证方式：{{factor}}",
     "removed": "{{factor}} 已移除。",

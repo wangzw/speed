@@ -210,6 +210,8 @@ sequenceDiagram
 
 一次门控动作在被拒时打开加强认证流程，记住被门控的动作；一次成功的流程落定提权，成功路径重试那次被门控的操作恰好一次，取消则不重试。提权只活在那次会话的存续期内，对话框从不承诺不再询问。
 
+**只有一个启用因素时就地说明。** 因素读回的行里恰好一行处于启用状态（`status` 为 `active`；待确认与已停用的行不计）时，`MfaSection` 在登记入口上方就地说明本账户只启用了一种两步验证方式，并指向下方的入口再登记一种。计数取自同一份因素读（`GET /api/v1/auth/factors`），不另发请求；登录与登记的应答不带 `warnings`，这条补救提示由本节承担。零个或两个以上启用因素时不渲染该说明；部署没有可登记入口（`mfa.factors` 为空或读失败）时同样不渲染，因为说明要指向的入口不存在。
+
 ### 绑定添加区的渠道与回跳
 
 添加区的渠道取自 `session.listMethods()` 读回的发现文档：其中 `kind=redirect` 的每个方法、且账户尚未绑定的，渲染一个按钮，名称取描述符的 `label`，缺省用方法名。被部署关闭的方法不在发现文档里，因而不出现在添加区。点击起一条 `purpose: 'link'` 的流程，请求以顶层 `return_to` 携带 `returnTo`：起流程只读顶层 `return_to`，回跳只用流程记录里的值（[authn 登录](../authn/design-authn-login.md)），提供方的往返因而落回宿主的绑定回调路由，由 `BindingCallbackHandler` 续接。`returnTo` 是宿主的回调路由：同源部署给路径即可，分离源部署给受信源下的绝对 URL（`return_to` 的取值规则见 [authn 登录](../authn/design-authn-login.md)）；服务端接受路径或该 URL。
@@ -318,6 +320,7 @@ sequenceDiagram
 | 绑定添加区的渠道取自发现文档，`SocialBindingsSectionProps` 不含 `providers` | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
 | 已绑定行按描述符的 `binding_providers` 归到方法 | 已实现 | `web/packages/account-ui/src/SocialBindingsSection.tsx` `SocialBindingsSection` |
 | 两步验证登记入口按 `mfa.factors` 逐个生成（含 `sms` 与未知种类的通用入口） | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection` |
+| 只有一个启用因素时在登记入口上方就地说明并指向再登记 | 已实现 | `web/packages/account-ui/src/MfaSection.tsx` `MfaSection`；`web/packages/account-ui/src/locales/en-US.json`、`zh-CN.json` `mfa.singleFactor` |
 | 口令节的可选 `withoutLoginName`（`'form'` 缺省、`'explain'` 先说明） | 已实现 | `web/packages/account-ui/src/PasswordSection.tsx` `PasswordSection`、`PasswordSectionProps` |
 | 标识节的可选 `offerUsername` | 已实现 | `web/packages/account-ui/src/IdentifiersSection.tsx` `IdentifiersSection`、`IdentifiersSectionProps` |
 | `ContactVerificationSection`（未证明预留、发送与重发、验证码、更换邮箱、完成态） | 已实现 | `web/packages/account-ui/src/ContactVerificationSection.tsx` `ContactVerificationSection`、`ContactVerificationSectionProps` |

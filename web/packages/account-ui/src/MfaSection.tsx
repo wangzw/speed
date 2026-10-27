@@ -55,9 +55,16 @@
  * calls. State is discovered by reading the factor list, never declared;
  * the section never claims a factor is enabled beyond what the server
  * answered.
+ *
+ * An account left with exactly one enabled factor is told so above the
+ * enrollment entries, which are where another one is registered. The
+ * count comes from the same factors read; pending and disabled rows do not
+ * count. The note is withheld when the deployment reports no enrollable
+ * kind, because then there is no entry to point at.
  */
 
 import { useEffect, useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -386,8 +393,14 @@ export function MfaSection({ session }: MfaSectionProps) {
           onRetry: () => void refetch(),
         }}
       >
-        {(settledFactors) =>
-          wizard !== null ? (
+        {(settledFactors) => {
+          // The note above the enrollment entries speaks for the enabled rows
+          // alone: a pending or disabled factor is not a fallback the account
+          // can use to sign in.
+          const enabledFactorCount = settledFactors.filter(
+            (factor) => factor.status === 'active',
+          ).length
+          return wizard !== null ? (
             <Box sx={{ py: 1.5 }}>
               <Typography variant="h6" component="h3">
                 {t('mfa.enroll.title')}
@@ -525,6 +538,15 @@ export function MfaSection({ session }: MfaSectionProps) {
                     pt: 2,
                   }}
                 >
+                  {enabledFactorCount === 1 && (
+                    <Alert
+                      severity="info"
+                      role="note"
+                      sx={{ width: '100%', mb: 1.5 }}
+                    >
+                      {t('mfa.singleFactor')}
+                    </Alert>
+                  )}
                   <Typography
                     variant="body2"
                     color="text.secondary"
@@ -558,7 +580,7 @@ export function MfaSection({ session }: MfaSectionProps) {
               )}
             </Box>
           )
-        }
+        }}
       </AccountAsyncSection>
       </SectionCard>
 

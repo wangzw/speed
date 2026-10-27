@@ -114,6 +114,7 @@
     "title": "Two-step verification",
     "loading": "Loading two-step verification",
     "empty": "No two-step verification method is set up yet.",
+    "singleFactor": "Only one two-step verification method is enabled. Add another one below so you can still sign in if you lose this one.",
     "remove": "Remove",
     "removeAria": "Remove this two-step verification method: {{factor}}",
     "removed": "{{factor}} removed.",
