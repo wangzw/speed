@@ -137,7 +137,7 @@ type ScopeGuard interface {
 
 ### 管理面模块 `authn.admin`
 
-`authn.admin` 是 `pkg/authn/admin` 里注册的独立模块，不交付任何功能接口，只经 `mount.Mounter` 挂 `B/*` 与 `Bt/:tenant/*`；`B` 是 `system` 作用域的基路径，`Bt` 是 `tenants` 作用域的基路径，二者都由 [authn-gate](design-authn-gate.md) 声明。冒充记录的路由也在 `B` 下，路径是 `B/tenants/:tenant/impersonations`：路径带租户，但判定在平台域，租户是被记录限定的数据，不是请求的域。路由的访问级别全部是 `Required`。判定域为该租户的管理路由登记为可冒充，判定域为平台域的不登记：冒充身份的能力取自被冒充账户，而它从不持有平台域权限（[design-authn-impersonation](design-authn-impersonation.md)）。这些路由的判定在 handler 内经 `Decider` 做出；宿主把它们挂在受授权守卫的端上时（租户管理作用域在示范里挂在 `api`），守卫的缺省关闭会先拒，宿主须在守卫的声明面上把这组路由登记为开放。平台管理作用域在示范里挂在 `admin` 端，该端不在授权守卫之列，冒充记录的路由因此无须登记为开放。
+`authn.admin` 是 `pkg/authn/admin` 里注册的独立模块，不交付任何功能接口，只经 `mount.Mounter` 挂 `B/*` 与 `Bt/:tenant/*`；`B` 是 `system` 作用域的基路径，`Bt` 是 `tenants` 作用域的基路径，二者都由 [authn-gate](design-authn-gate.md) 声明。冒充记录的路由也在 `B` 下，路径是 `B/tenants/:tenant/impersonations`：路径带租户，但判定在平台域，租户是被记录限定的数据，不是请求的域。路由的访问级别全部是 `Required`。判定域为该租户的管理路由登记为可冒充，判定域为平台域的不登记：冒充身份的能力取自被冒充账户，而它从不持有平台域权限（[design-authn-impersonation](design-authn-impersonation.md)）。这些路由的判定在 handler 内经 `Decider` 做出；宿主把它们挂在受授权守卫的端上时（租户管理作用域在示范里挂在 `api`），守卫的缺省关闭会先拒，宿主须在守卫的声明面上把这组路由登记为开放。平台管理作用域在示范里挂在 `admin` 端，该端不在授权守卫之列，冒充记录的路由因此无须登记为开放。路由的作用域按判定域划分，不由路径里有没有租户决定：`B` 下的账户、服务密钥与冒充记录在平台域判定，`Bt/:tenant/*` 下的成员、邀请与 SSO 提供方在该租户的策略域判定（[ADR-http-api-path-scopes](../../../adr/adr-http-api-path-scopes.md)）。
 
 - **不纳入就没有管理路由。** 宿主不点名 `authn.admin` 时没有 `B/*` 或 `Bt/:tenant/*` 下的任何路由；`AccountAdmin`、`Memberships`、`Sessions`、`SSOProviders` 的 Go 接口照常可用。
 - **缺审计则启动失败。** `audit.Audit` 是必需依赖，漏纳入在任何实例构造之前以 `core.ErrMissingProvider` 失败，不留到第一次写操作才发现。

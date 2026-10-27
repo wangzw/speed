@@ -446,9 +446,9 @@ WHERE id = ? AND ended_at IS NULL
 | 操作 | 路由 | 判据 |
 |---|---|---|
 | 再次开始冒充 | `POST B/impersonation` | 冒充是平台能力，不属于任何目标账户。 |
-| 平台域管理面，含服务密钥与冒充记录面 | 判定域为平台域的管理路由，`B/*` 与 `Bt/:tenant/*` 中的那些 | 不属于目标账户的能力：目标不持平台域权限（REQ-platform-admin-108）。处理器另以 `Impersonating()` 自检，作为授权层之外的兜底。 |
+| 平台域管理面，含服务密钥与冒充记录面 | 判定域为平台域的管理路由，即 `B/*` 下的那些 | 不属于目标账户的能力：目标不持平台域权限（REQ-platform-admin-108）。处理器另以 `Impersonating()` 自检，作为授权层之外的兜底。 |
 
-**冒充期间允许的 authn 路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`、`PATCH B/me`、`PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id`、`POST B/flows/authenticated`（用途 `enroll`、`step-up` 与关联外部身份）、`GET B/factors`、`DELETE B/factors/:id`、`GET B/sessions`、`DELETE B/sessions`、`DELETE B/sessions/:id`，以及判定域为该租户的管理路由（[design-authn-admin](design-authn-admin.md)、[design-authz](../design-authz.md)）：目标是租户管理员时，它在该租户的管理权限按同一判据生效。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；其余路由由各自的模块经 `mount.Impersonable()` 登记，访问级别以各自的路由表为准。
+**冒充期间允许的 authn 路由**（封闭集合，登记为 `Impersonable`）：`DELETE B/impersonation`、`GET B/impersonation`、`POST B/logout`、`GET B/session`、`GET B/me`、`PATCH B/me`、`PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id`、`POST B/flows/authenticated`（用途 `enroll`、`step-up` 与关联外部身份）、`GET B/factors`、`DELETE B/factors/:id`、`GET B/sessions`、`DELETE B/sessions`、`DELETE B/sessions/:id`，以及判定域为该租户的管理路由（`Bt/:tenant/*` 下的成员、邀请与 SSO 提供方面；[design-authn-admin](design-authn-admin.md)、[design-authz](../design-authz.md)）：目标是租户管理员时，它在该租户的管理权限按同一判据生效。`DELETE B/impersonation` 与 `GET B/impersonation` 由本模块登记；其余路由由各自的模块经 `mount.Impersonable()` 登记，访问级别以各自的路由表为准。
 
 - `POST B/logout` 登出的是发起者自己的会话，冒充随之结束：会话撤销使绑定的会话失效，`Active` 为假。
 - `GET B/sessions` 与 `DELETE B/sessions`、`DELETE B/sessions/:id` 读写的都是被冒充账户的会话，不含发起者自己的会话；`DELETE B/sessions` 的「除当前会话外」因此不排除发起者那一条，它在被冒充账户的会话集合之外。

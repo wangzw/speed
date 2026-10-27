@@ -144,9 +144,9 @@ starters/demo/
 
 `ops` 独占 `ops` 监听，省略 `prefixes`，即认领 `/`。
 
-每个模块的 API 路由都以 `/api/v1/<作用域>/<能力>` 为根（租户级是 `/api/v1/tenants/<租户>/…`）；ops 探针留在 `ops` 监听的根上（[ADR-http-api-prefix](../../adr/adr-http-api-prefix.md)）。
+每条 API 路由以 `/api/v1` 为根：普通面直接在 `/api/v1/<能力>` 下，平台管理面在 `/api/v1/system/<能力>` 下，租户管理面在 `/api/v1/tenants/<租户>/<能力>` 下（[ADR-http-api-prefix](../../adr/adr-http-api-prefix.md)、[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）；ops 探针留在 `ops` 监听的根上。
 
-认证一族的作用域挂载端同样由平台默认文档写出：普通面挂在 `account`，平台管理作用域挂在 `admin`（它认领 `/api/v1/system/auth` 与 `/api/v1/system/tenants`，冒充记录的路由落在这一段之下），租户管理作用域挂在 `api`（`authn.gate.mount.endpoints`）。租户管理路由在该租户的策略域判定，落在 `api` 上才与 `tenant.resolve`、`tenant.admission` 所守的端一致；`/api/v1/tenants` 由 `api` 的 `/api` 认领覆盖，不再是 `account` 的一条认领。平台管理作用域的路由在平台域判定，落在 `admin` 上，该端不在租户两层之内。租户管理路由的判定在 handler 内经 `authn.Decider` 做出，`api` 端的授权守卫不为其再判一次；宿主因此在 `management.access` 模块里把这组路由登记为开放，列表与提交的契约双向核对。冒充记录的路由在 `admin` 端，该端不在授权守卫之列，无须这份声明。
+认证一族的作用域挂载端同样由平台默认文档写出：普通面挂在 `account`，平台管理作用域挂在 `admin`（它认领 `/api/v1/system/auth` 与 `/api/v1/system/tenants`，冒充记录的路由落在这一段之下），租户管理作用域挂在 `api`（`authn.gate.mount.endpoints`）。租户管理路由在该租户的策略域判定，落在 `api` 上才与 `tenant.resolve`、`tenant.admission` 所守的端一致；`/api/v1/tenants` 由 `api` 的 `/api` 认领覆盖，不再是 `account` 的一条认领。平台管理作用域的路由在平台域判定，落在 `admin` 上，该端不在租户两层之内。租户管理路由的判定在 handler 内经 `authn.Decider` 做出，`api` 端的授权守卫不为其再判一次；宿主因此在 `management.access` 模块里把这组路由登记为开放，列表与提交的契约双向核对。冒充记录的路由在 `admin` 端，该端不在授权守卫之列，无须这份声明。留在 `admin` 端的租户相关面按判定域划分：名册的单行路由、授权与冒充记录按租户寻址而判定在平台域，租户是数据；名册的集合路由不按租户寻址；审计在整张表上读，设置的租户层由查询串点名——都不落在 `api` 的租户两层里（[ADR-http-api-path-scopes](../../adr/adr-http-api-path-scopes.md)）。
 
 - **认领是产品固定的命名空间表，去掉一项能力不删它的认领。** 撤出运行集也好，删掉 import 也好，那项能力的命名空间都留在认领里：示范的二进制 import 了 `sms.admin` 而基线不运行它，`admin` 仍认领 `/api/v1/system/sms`；从示范拷出、删掉 `tenant.admin` import 的产品，仍认领 `/api/v1/system/tenants`。认领表覆盖可用集里每个 operation 的命名空间，以及平台前端包会寻址的命名空间。
 - **前端页面路径不落在 `/` 以外的任何认领之下。** 落在这类认领之下的页面路径，整页导航得到那个端的应答，拿不到入口文档。

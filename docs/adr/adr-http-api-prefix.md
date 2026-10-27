@@ -24,18 +24,18 @@
 
 ### 全部收进 `/api/v1`
 
-每项能力的路由改为 `/api/v1/<能力>/...`。业务端点认领 `/api`，账户端与管理端点在同一监听上按 `/api/v1/<能力>` 认领各自的子树，最长的认领胜出。
+每项能力的路由改为 `/api/v1/...`。业务端点认领 `/api`，账户端与管理端点在同一监听上按各自的命名空间认领子树，最长的认领胜出。
 
 **采纳**，见「决策」。
 
 ## 决策
 
-采纳：**模块挂载的每条 HTTP API 路径以 `/api/v1/<能力>` 为根。** ops 探针（`/health`、`/ready` 与 `/openapi.json`）留在 `ops` 监听的根上：它们是进程探针与 API 文档读取，不是对资源的操作。
+采纳：**模块挂载的每条 HTTP API 路径以 `/api/v1` 为根。** 普通面直接在 `/api/v1/<能力>` 下；管理面另带作用域段，平台管理是 `/api/v1/system/<能力>`，租户管理是 `/api/v1/tenants/{tenant}/<能力>`（[ADR-http-api-path-scopes](adr-http-api-path-scopes.md)）。ops 探针（`/health`、`/ready` 与 `/openapi.json`）留在 `ops` 监听的根上：它们是进程探针与 API 文档读取，不是对资源的操作。
 
 ## 后果
 
 - 生成的契约、各模块的内嵌 OpenAPI 片段、宿主的端点认领表与前端开发代理清单都按同一套根路径书写。
-- 认证挂载基路径的缺省值改为 `/api/v1/auth`；显式配置了 `authn.gate.mount.base-path` 的宿主保留自己的取值。
+- 认证的普通面挂载基路径缺省值改为 `/api/v1/auth`；显式配置了 `authn.gate.mount.bases.default` 的宿主保留自己的取值。认证的管理面路由按作用域挂在各自的基路径下（`authn.gate.mount.bases.system` 与 `.tenants`），缺省分别为 `/api/v1/system` 与 `/api/v1/tenants`。
 - 前端页面路径不受影响：页面表全部落在 `web` 端点的 `/` 兜底认领之下，与 `/api` 命名空间不相交。
 
 **付出的代价：**

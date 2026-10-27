@@ -117,7 +117,7 @@ func (s InvitationStatus) Valid() bool { return s <= InvitationRevoked }
 
 ### 路由
 
-本模块经 `mount.Mounter` 挂管理面与 account 面的路由。管理面路由登记为 `Guarded`，并登记为 `Impersonable`：它们按路径里的租户域判定，目标是该租户管理员时，冒充身份持有它在该租户的管理权限，邀请面照常可用（[design-authn-impersonation](design-authn-impersonation.md)）。接受面路由登记为 `Public`，无身份。
+本模块经 `mount.Mounter` 挂管理面与 account 面的路由。管理面路由登记为 `Guarded`，并登记为 `Impersonable`：它们按路径里的租户域判定，目标是该租户管理员时，冒充身份持有它在该租户的管理权限，邀请面照常可用（[design-authn-impersonation](design-authn-impersonation.md)）。接受面路由登记为 `Public`，无身份。管理面按租户寻址且在该租户的策略域判定，因此落在 `tenants` 作用域与受租户两层守护的端上；接受面按令牌寻址、没有租户，落在普通面（[ADR-http-api-path-scopes](../../../adr/adr-http-api-path-scopes.md)）。
 
 | 面 | 方法 路径 | 登记 | 授权 |
 |---|---|---|---|
