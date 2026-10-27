@@ -167,8 +167,8 @@ func TestAnImpersonationTokenExpiresNoLaterThanItsRecord(t *testing.T) {
 
 // TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold holds the failure
 // direction of the cap: no remaining time can be read from a record that is not
-// active, and an assembly with no impersonation capability cannot read one at
-// all, so neither issues a token.
+// active, from one whose store cannot answer, or from an assembly with no
+// impersonation capability, so none of them issues a token.
 func TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold(t *testing.T) {
 	in := normalIssue(authn.SessionID("sess-1"))
 	in.Actor = "acct-admin"
@@ -183,6 +183,13 @@ func TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold(t *testing.T) {
 	noCapability.p.impersonation = nil
 	if _, err := noCapability.p.Issue(context.Background(), in); !errors.Is(err, authn.ErrUnavailable) {
 		t.Fatalf("an assembly with no impersonation capability gave %v, want ErrUnavailable", err)
+	}
+
+	unreadable := newRig(t)
+	unreadable.activeRecord("grant-1", epoch.Add(time.Hour))
+	unreadable.imp.activeErr = errors.New("the record store is down")
+	if _, err := unreadable.p.Issue(context.Background(), in); !errors.Is(err, authn.ErrUnavailable) {
+		t.Fatalf("an unreadable record gave %v, want ErrUnavailable", err)
 	}
 }
 

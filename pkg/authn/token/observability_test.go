@@ -286,6 +286,16 @@ func TestTheOperationsCounterRecordsEachRealPath(t *testing.T) {
 				t.Fatal("a two-hour token was issued")
 			}
 		}, pair(operationIssued, outcomeInvalid)},
+		{"issue with an unreadable impersonation record", func(t *testing.T, r *rig) {
+			r.activeRecord("grant-1", epoch.Add(time.Hour))
+			r.imp.activeErr = errors.New("the record store is down")
+			in := normalIssue("sess-1")
+			in.Actor = "acct-admin"
+			in.ImpersonationID = "grant-1"
+			if _, err := r.p.Issue(context.Background(), in); !errors.Is(err, authn.ErrUnavailable) {
+				t.Fatalf("Issue = %v, want ErrUnavailable", err)
+			}
+		}, pair(operationIssued, outcomeUnavailable)},
 		{"refresh of an unknown token", func(t *testing.T, r *rig) {
 			if _, _, err := r.p.Refresh(context.Background(), "spd_rt_"+strings.Repeat("A", 43)); !errors.Is(err, authn.ErrInvalidGrant) {
 				t.Fatalf("Refresh = %v, want ErrInvalidGrant", err)

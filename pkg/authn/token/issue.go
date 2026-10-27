@@ -44,11 +44,13 @@ const (
 // the signing key's kid and typ=at+jwt, and its claim set is the fixed one the
 // design states: the registered claims, the session and authentication facts of
 // the request, and whatever the command's ClaimsContributor implementations add.
-// With no signing key configured it is ErrNoSigningKey.
+// With no signing key configured it is ErrNoSigningKey. The operations counter
+// reports a missing key or an unavailable dependency as unavailable and a
+// request the caller got wrong as invalid.
 func (p *product) Issue(ctx context.Context, in authn.IssueToken) (authn.AccessToken, error) {
 	token, err := p.signAccess(ctx, in)
 	if err != nil {
-		if errors.Is(err, authn.ErrNoSigningKey) {
+		if errors.Is(err, authn.ErrNoSigningKey) || errors.Is(err, authn.ErrUnavailable) {
 			p.recordOperation(ctx, operationIssued, outcomeUnavailable)
 		} else {
 			p.recordOperation(ctx, operationIssued, outcomeInvalid)
