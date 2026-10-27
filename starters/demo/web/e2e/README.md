@@ -283,12 +283,11 @@ Every spec declares, in its header comment:
 relates to it. A journey is `covered` by a spec; `pending` when the browser
 tier can drive it but its spec has not been written yet, with the reason saying
 the path is reachable and the spec is scheduled; or `unreachable` when a
-precondition the tier cannot provide stands in the way (a deployment, a real
-identity or social provider, a vendor behaviour), which the reason names. The
-distinction is load-bearing: calling a reachable journey `unreachable` tells a
-reader the browser cannot get there when it can, and silences the honesty gate
-for that journey. The gate requires a reason on both non-covered states,
-rejects any other status, and prints the covered / pending / unreachable
+precondition the tier cannot provide stands in the way, which the reason names.
+The distinction is load-bearing: calling a reachable journey `unreachable`
+tells a reader the browser cannot get there when it can, and silences the
+honesty gate for that journey. The gate requires a reason on both non-covered
+states, rejects any other status, and prints the covered / pending / unreachable
 counts on every run; a journey that is neither covered nor registered
 non-covered fails `make repo-check`.
 
