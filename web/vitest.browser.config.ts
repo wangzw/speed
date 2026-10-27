@@ -25,6 +25,16 @@ export default defineConfig({
   resolve: {
     alias: speedAliases(),
   },
+  // The tier must not hot-reload. Vite's dev server watches the tree, so a
+  // write anywhere under it while the tier runs -- a parallel session's edit,
+  // or a regeneration of a generated file -- reloads the page under a case
+  // that is mid-assertion. The symptoms are a detached frame or "failed to
+  // fetch dynamically imported module" in whichever file was importing at
+  // that instant, which reads as a flaky case in an unrelated package. A test
+  // server has nothing to serve newer than the tree it started from.
+  server: {
+    watch: null,
+  },
   test: sharedTestOptions({
     // The browser cases of every package, from the root config: one
     // Chromium instance for the whole tier rather than one per package.
