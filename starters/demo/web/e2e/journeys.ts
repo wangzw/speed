@@ -459,4 +459,20 @@ export const journeys: readonly JourneyEntry[] = [
       'REQ-deployment-039',
     ],
   },
+  {
+    journey: 'journey-tenant-sso-required.md',
+    status: 'pending',
+    reason:
+      'The path is designed and its specification is due next in this train: the member triggers a write that needs fresh authentication, sees the refusal that names the enterprise sign-in, re-authenticates through the tenant provider the enterprise SSO fixtures already serve, and retries the write.',
+    covers: [
+      'REQ-security-013',
+      'REQ-security-014',
+      'REQ-security-017',
+      'REQ-security-038',
+      'REQ-signin-020',
+      'REQ-signin-021',
+      'REQ-signin-022',
+      'REQ-signin-023',
+    ],
+  },
 ]
