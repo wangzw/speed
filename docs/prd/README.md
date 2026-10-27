@@ -18,6 +18,7 @@
 | 邀请一位成员进入租户 | [邀请一位成员进入租户](journeys/journey-invitation-to-tenant.md) |
 | 停用账户并让它的会话失效 | [停用账户并让它的会话失效](journeys/journey-account-offboarding.md) |
 | 登记第二因素并执行一次敏感操作 | [登记第二因素并执行一次敏感操作](journeys/journey-account-security-hardening.md) |
+| 用带用户验证的通行密钥登录 | [用带用户验证的通行密钥登录，不再要求第二因素](journeys/journey-passkey-user-verification.md) |
 | 邮箱验证码重置口令 | [邮箱验证码重置口令](journeys/journey-password-reset-email.md) |
 | 短信验证码重置口令 | [短信验证码重置口令](journeys/journey-password-reset-sms.md) |
 | 成员在租户里收发通知 | [成员在租户里收发通知](journeys/journey-member-workspace.md) |

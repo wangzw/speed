@@ -332,7 +332,7 @@
 
 - **验收**：带用户验证的通行密钥断言完成登录时，登录不再要求第二因素，直接进入应用；未带用户验证的通行密钥断言被拒绝，登录不成功。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-passkey-user-verification.spec.ts` `passkey-user-verification: a user-verifying passkey signs in without a second factor`
 
 ### REQ-security-040
 
