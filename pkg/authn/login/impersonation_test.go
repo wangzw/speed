@@ -378,6 +378,71 @@ func requireImpersonationDetail(t *testing.T, detail map[string]string) {
 	}
 }
 
+// TestAnImpersonatedEnrollmentStepCannotEnableAFactorAfterTheRecordLapses holds
+// the enrollment step itself to the impersonation record. The multi-factor
+// module makes the pending row active on the step that completes a
+// registration, which runs before the flow's completion review; a record that
+// lapsed in the background between the start and that step must therefore stop
+// the step from running, or the factor lands on the account the flow was
+// started for after the authority to act there is gone.
+func TestAnImpersonatedEnrollmentStepCannotEnableAFactorAfterTheRecordLapses(t *testing.T) {
+	cases := []struct {
+		name   string
+		lapsed func(*rig)
+	}{
+		{"expired", func(r *rig) {
+			r.imp.now = func() time.Time { return time.Now().Add(31 * time.Minute) }
+		}},
+		{"the initiator was disabled", func(r *rig) {
+			r.accounts.byID["acct-admin"] = authn.Account{ID: "acct-admin", Kind: authn.KindUser, Status: authn.StatusDisabled}
+		}},
+		{"the target was disabled", func(r *rig) {
+			r.accounts.byID["acct-target"] = authn.Account{ID: "acct-target", Kind: authn.KindUser, Status: authn.StatusDisabled}
+		}},
+		{"the membership was removed", func(r *rig) {
+			delete(r.imp.member, "acct-target")
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t, &fakeMethod{name: "password"})
+			r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
+			// The first step asks for the factor's confirmation; the step that
+			// makes the row active is the answer submitted after the record lapses.
+			enabled := false
+			r.mfa.enroll = func(authn.FactorKind, authn.StepInput) authn.Step {
+				if len(r.mfa.enrolls) == 1 {
+					return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
+				}
+				enabled = true
+				return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
+			}
+
+			start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+				`{"purpose":"enroll","input":{"kind":"totp"}}`)
+			if start.Code != http.StatusOK {
+				t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+			}
+			cookie := flowCookie(t, start)
+			seq := int(decode(t, start.Body.String())["seq"].(float64))
+
+			c.lapsed(r)
+			done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+				`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"123456"}}`, "Cookie", cookie)
+			if done.Code != http.StatusUnauthorized {
+				t.Fatalf("the enrolling step after the record lapsed answered %d: %s, want 401 flow-invalid",
+					done.Code, done.Body.String())
+			}
+			if got := decode(t, done.Body.String())["type"]; got != "urn:speed:authn:flow-invalid" {
+				t.Errorf("the enrolling step answered type %v, want urn:speed:authn:flow-invalid", got)
+			}
+			if enabled {
+				t.Error("the enrolling step made the factor active after the record lapsed")
+			}
+		})
+	}
+}
+
 // TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability holds the
 // absent-dependency direction: an assembly with no impersonation capability
 // cannot confirm the record, so the completion of an impersonating flow is

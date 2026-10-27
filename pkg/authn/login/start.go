@@ -334,6 +334,16 @@ func (r *routes) startRequirement(c *call, id authn.Identity, purpose string) (r
 // the factor kind a first step names and is empty on a later one; fields are the
 // request's own input, forwarded to the factor, whose step decides what it needs.
 func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte, kind string, fields map[string]string) {
+	// The multi-factor module makes the pending row active on the step that
+	// completes a registration, and that step runs before the flow's completion
+	// review. An impersonating flow therefore re-checks its record here, at the
+	// entry to the step that can enable the factor: a record that lapsed in the
+	// background -- by expiry, a disabled initiator or target, or a removed
+	// membership -- does not land a factor on the account the flow was started
+	// for.
+	if rec.Impersonation != "" && !r.recordHolds(c, rec) {
+		return
+	}
 	f := r.flowState(rec, token)
 	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: c.clientInfo()}
 	// The registration's terminal audit row is written by the multi-factor
