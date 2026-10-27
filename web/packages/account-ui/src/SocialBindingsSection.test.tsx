@@ -631,7 +631,7 @@ describe('SocialBindingsSection', () => {
         return jsonResponse(200, methodsDoc([]))
       }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
-        return errorResponse(409, 'authn.conflict')
+        return errorResponse(409, 'authn.last_login_method')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -663,7 +663,7 @@ describe('SocialBindingsSection', () => {
     )
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.errors.authn.conflict)
+    expect(alert).toHaveTextContent(zhCN.errors.authn.last_login_method)
     // The refusal leaves the row in place.
     expect(screen.getByText(zhCN.bindings.provider.github)).toBeTruthy()
   })
@@ -951,7 +951,7 @@ describe('SocialBindingsSection', () => {
         call.method === 'DELETE' &&
         call.path === '/api/v1/auth/links/github-1'
       ) {
-        return errorResponse(409, 'authn.conflict')
+        return errorResponse(409, 'authn.last_login_method')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -979,7 +979,7 @@ describe('SocialBindingsSection', () => {
       }),
     )
 
-    await screen.findByText(zhCN.errors.authn.conflict)
+    await screen.findByText(zhCN.errors.authn.last_login_method)
     expect(rig.transitionBegins()).toBe(1)
 
     // A fresh 401 read now settles the true state.

@@ -48,6 +48,11 @@ import enUS from '../locales/en-US.json' with { type: 'json' }
 // crosses no package boundary the rule draws.
 import authUiZhCN from '../../../auth-ui/src/locales/zh-CN.json' with { type: 'json' }
 import authUiEnUS from '../../../auth-ui/src/locales/en-US.json' with { type: 'json' }
+// The platform catalog is the shipped source of the last-login-way sentence.
+// account-ui carries its own bundle, so the copy is pinned here to the source
+// text as test data, the same way the auth-ui copies above are.
+import platformErrorsZhCN from '../../../i18n/src/platform-errors/locales/zh-CN.json' with { type: 'json' }
+import platformErrorsEnUS from '../../../i18n/src/platform-errors/locales/en-US.json' with { type: 'json' }
 import { ERROR_TEXT_CODES } from './error-text.js'
 
 /** A language bundle's errors section, structural so both packages'
@@ -78,6 +83,11 @@ function bundleText(bundle: Bundle, code: string): string {
     bundle.errors as unknown as Record<string, Record<string, string>>
   )[source!]
   return section?.[leaf!] ?? ''
+}
+
+/** The flat, dotted-key catalog value of the platform error bundle. */
+function platformText(bundle: Bundle, code: string): string {
+  return (bundle.errors as unknown as Record<string, string>)[code] ?? ''
 }
 
 function newInstance(): ReturnType<typeof createI18n> {
@@ -169,6 +179,19 @@ describe('error-text whitelist', () => {
       expect(en, code).toBe(bundleText(enUS, code))
       expect(en, code).not.toBe('')
     }
+  })
+
+  it('renders the shipped platform sentence for the last-login-way refusal', () => {
+    // The account page refuses to remove the last way to sign in; the answer
+    // is authn.last_login_method, and its text is the one the platform error
+    // catalog already ships. The copy in this package's bundle must be that
+    // sentence verbatim, in both languages, so the same server answer reads
+    // the same wherever the catalog is rendered.
+    const code = 'authn.last_login_method'
+    expect(bundleText(zhCN, code)).not.toBe('')
+    expect(bundleText(enUS, code)).not.toBe('')
+    expect(bundleText(zhCN, code)).toBe(platformText(platformErrorsZhCN, code))
+    expect(bundleText(enUS, code)).toBe(platformText(platformErrorsEnUS, code))
   })
 
   it('name both a username and an email address in the missing-login-identifier text', () => {

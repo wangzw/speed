@@ -8,7 +8,8 @@
  * the client as `authn.<code>` with the dashes spelled as underscores:
  * bad_request for a malformed write, insufficient_user_authentication
  * for an operation the caller's token does not yet prove, conflict for
- * the last-factor and last-login-method guards, email_taken for an
+ * the last-factor guard, last_login_method for the last-login-way guard,
+ * email_taken for an
  * address another account has reserved or proved, forbidden for a session
  * that is not the caller's, flow_invalid for a flow binding that has
  * gone, link_required and method_disabled for the social channel,
@@ -67,6 +68,7 @@ export const ERROR_TEXT_CODES = [
   // bad_request/insufficient_user_authentication/impersonation_restricted,
   // the factor routes answer
   // bad_request/insufficient_user_authentication/impersonation_restricted/conflict/unavailable,
+  // the identifier and unlink routes answer conflict/last_login_method,
   // and the login-flow routes behind the link, enroll and step-up flows
   // answer the rest.
   'authn.bad_request',
@@ -84,6 +86,7 @@ export const ERROR_TEXT_CODES = [
   'authn.conflict',
   'authn.email_taken',
   'authn.login_identifier_required',
+  'authn.last_login_method',
   'authn.unsupported_media_type',
   'authn.throttled',
   'authn.unavailable',

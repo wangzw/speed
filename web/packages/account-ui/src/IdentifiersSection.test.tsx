@@ -669,7 +669,7 @@ describe('IdentifiersSection', () => {
         )
       }
       if (call.method === 'DELETE' && call.path === '/api/v1/auth/identifiers/id-email') {
-        return errorResponse(409, 'authn.conflict')
+        return errorResponse(409, 'authn.last_login_method')
       }
       throw new Error(`unexpected ${call.method} ${call.path}`)
     }
@@ -689,7 +689,7 @@ describe('IdentifiersSection', () => {
     )
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(zhCN.errors.authn.conflict)
+    expect(alert).toHaveTextContent(zhCN.errors.authn.last_login_method)
   })
 
   it('renders the last-login-name refusal when the guard read a stale profile', async () => {
