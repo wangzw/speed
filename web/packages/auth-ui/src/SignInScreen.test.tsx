@@ -862,6 +862,88 @@ describe('SignInScreen', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('offer the forgot-password entry under the password channel when the deployment resets passwords', async () => {
+    const harness = makeHarness({})
+    const onForgotPassword = vi.fn()
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }], {
+          passwordReset: true,
+          passwordResetMethods: ['email'],
+        })}
+        onForgotPassword={onForgotPassword}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.forgotPassword }),
+    )
+    expect(onForgotPassword).toHaveBeenCalledTimes(1)
+    // The entry only reports to the host: no login flow starts.
+    expect(harness.calls).toHaveLength(0)
+  })
+
+  it('hide the forgot-password entry when the deployment does not offer it', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }])}
+        onForgotPassword={() => undefined}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: zhCN.passwordSignIn.forgotPassword }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('hide the forgot-password entry when the host binds no navigation', () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList([{ name: 'password', kind: 'form' }], {
+          passwordReset: true,
+          passwordResetMethods: ['email'],
+        })}
+      />,
+    )
+    expect(
+      screen.queryByRole('button', { name: zhCN.passwordSignIn.forgotPassword }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('hide the forgot-password entry off the password channel and in register mode', async () => {
+    const harness = makeHarness({})
+    renderWithProviders(
+      <SignInScreen
+        session={harness.session}
+        discovery={methodList(
+          [{ name: 'password', kind: 'form' }, { name: 'sms', kind: 'form', opens_account: true }],
+          { signup: true, passwordReset: true, passwordResetMethods: ['email'] },
+        )}
+        onForgotPassword={() => undefined}
+      />,
+    )
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('tab', { name: zhCN.smsSignIn.title }))
+    expect(
+      screen.queryByRole('button', { name: zhCN.passwordSignIn.forgotPassword }),
+    ).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: zhCN.passwordSignIn.title }))
+    expect(
+      screen.getByRole('button', { name: zhCN.passwordSignIn.forgotPassword }),
+    ).toBeInTheDocument()
+    // The register side opens accounts; it never offers the reset entry.
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mode.registerEntry }),
+    )
+    expect(
+      screen.queryByRole('button', { name: zhCN.passwordSignIn.forgotPassword }),
+    ).not.toBeInTheDocument()
+  })
+
   it('name the register-mode toggle apart from the channel submit', async () => {
     const harness = makeHarness({
       [LOGIN_START]: () =>

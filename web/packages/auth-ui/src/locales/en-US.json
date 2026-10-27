@@ -5,6 +5,7 @@
     "passwordLabel": "Password",
     "newPasswordLabel": "New password",
     "submit": "Sign in",
+    "forgotPassword": "Forgot your password?",
     "loginFailed": "The email or username and password are incorrect."
   },
   "smsSignIn": {

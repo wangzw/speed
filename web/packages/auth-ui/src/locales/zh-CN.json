@@ -5,6 +5,7 @@
     "passwordLabel": "密码",
     "newPasswordLabel": "新密码",
     "submit": "登录",
+    "forgotPassword": "忘记口令？",
     "loginFailed": "邮箱或用户名与密码不正确。"
   },
   "smsSignIn": {
