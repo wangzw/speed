@@ -888,9 +888,11 @@ names the fixed part of that wiring, and no configuration file repeats it:
   list asks for one. A membership in another tenant is not a refusal — every
   account owns its personal tenant — so the backfill creates it beside them; an
   existing personal membership is read back without rewriting it. The route
-  requires an authenticated caller, refuses an impersonating one 403 (it is
-  registered `Impersonable` so the handler, not the gateway's default 401,
-  answers), and refuses a service account or a static-credential principal 403.
+  requires an authenticated caller and settles it for the effective account: it
+  is registered `Impersonable`, so an impersonating identity reaches the handler,
+  which builds or reads back the impersonated account's personal tenant rather
+  than answering the gateway's default 401. It refuses a service account or a
+  static-credential principal 403.
   Registration verification is not an eligibility fact: an unverified account
   gets its personal tenant, and the verification gate limits what it may do
   inside the workspace. The idempotent pieces are the tenant row (identifier and
