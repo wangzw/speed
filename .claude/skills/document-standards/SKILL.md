@@ -85,7 +85,7 @@ Documentation paths and language are declared in `CLAUDE.md` under a fixed headi
 - **A local glossary never redefines, narrows or restates a project term.** Two definitions of one term is a defect regardless of which is right. A term that outgrows its context moves up — it enters the project glossary and leaves the local one; a project term never moves down.
 - An entry carries the term, its definition, and its counterpart in the source language when the document language differs from it.
 - **Once a term is registered, its wording is uniform throughout the scope that registered it** — the whole documentation for a project term, the owning context for a local one. Synonym drift is a defect.
-- **Uniformity binds every document.** An ADR is revised in place like every other document, so a term rename reaches it too; no record keeps a superseded wording.
+- **Uniformity binds every document.** An ADR is revised in place like every other document, so a term rename reaches it too; no record keeps an outdated wording.
 
 **Examples convey intent, not runnability.**
 - Example code **is not required to compile**, to be complete, or to match the code verbatim. Omit imports, error-handling boilerplate and initialization; `...` for elided parts is fine.

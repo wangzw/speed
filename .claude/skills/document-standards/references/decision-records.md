@@ -28,7 +28,7 @@ The failure mode of this document type is inflation: hundreds of records, none o
 - **A replaced decision survives only as an option.** When the current decision displaces an earlier one, the earlier decision appears in *Options Considered* if it was a real alternative, with the reason it was rejected. It is not recorded as "what was decided before" and gets no separate paragraph. If it was not a real alternative, it is dropped.
 - **The reference check is the cost of this freedom.** Other documents cite the record, and code follows it. After revising, confirm that every citation still says something true — that a design document referencing `ADR-<slug>` has not been left asserting the option the record no longer takes.
 
-**This is why the ADR is a supplement to the design.** Both are revised on the same rhythm, in place, from the same authority: the current state of the system. A supersession tree would put the two document types on different rules for no gain, and the ADR's value is its reasoning, which a fresh record does not preserve any better than a rewritten one.
+**This is why the ADR is a supplement to the design.** Both are revised on the same rhythm, in place, from the same authority: the current state of the system. Keeping a chain of successor records would put the two document types on different rules for no gain, and the ADR's value is its reasoning, which a fresh record does not preserve any better than a rewritten one.
 
 ## 3. Layout and Naming
 
