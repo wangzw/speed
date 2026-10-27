@@ -141,7 +141,7 @@ func drive(t *testing.T, run func(m *mounttest.Mounter), omit ...leaveOut) error
 }
 
 // TestARealRegistryMountsTheProfileRoutes holds the descriptor end to end: the
-// module mounts GET /me as impersonable and PATCH /me as not, both guarded.
+// module mounts GET /me and PATCH /me as impersonable, both guarded.
 func TestARealRegistryMountsTheProfileRoutes(t *testing.T) {
 	err := drive(t, func(m *mounttest.Mounter) {
 		get, ok := m.Registered(http.MethodGet, "/api/v1/auth/me")

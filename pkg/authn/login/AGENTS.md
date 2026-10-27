@@ -83,10 +83,16 @@ does.
   as its SHA-256 and compared in constant time; `method_state` is opaque to the
   engine; this implementation writes no identifier value, including
   `identifier_mac`.
-- **The one place an identity is written rather than read is the audit row of a
-  completed login.** The engine derives a context carrying the account the login
-  just proved and hands it to the audit record alone; the derived context reaches
-  no handler and no later step, so it does not flow back into the request chain.
+- **An identity is derived only for the audit rows a flow writes.** The flow's
+  routes are public, so the request carries no identity; the engine derives one
+  from the record for the login's audit row, a completed link's best-effort row,
+  an impersonating enrollment's terminal row, and the row of a registration that
+  opened an account. The derived context is handed to that one record and to no
+  handler and no later step, so it does not flow back into the request chain. An
+  impersonating flow's derived identity is centred on the effective account and
+  carries the operator as its actor and the grant's scope and session, so the
+  journal writes the row's on_behalf_of, impersonation_scope and session from
+  them.
 - **This package imports no first-factor leaf package and no package of the tenant
   tree.** It depends on the root package, its own inner packages and the
   capability interfaces only. A tenant is never read here: the login request

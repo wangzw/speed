@@ -19,13 +19,13 @@
 // writable here. The language and the time zone are named uses of the attribute
 // set, under the keys the i18n package declares; nothing new is stored.
 //
-// GET B/me is the one route an impersonating identity may reach (it is
-// registered impersonable), and it then reads the impersonated account.
-// PATCH B/me is not, and the handler checks the same condition again as the
-// fallback for a registration made wrongly. A write asks for a fresh
-// authentication — a fresh local multi-factor one when the account has an active
-// factor, a fresh first factor otherwise — so that a profile is changed only by
-// the account's holder acting on its own behalf.
+// Both routes are impersonable: an impersonating identity reads and writes the
+// impersonated account's profile exactly as the account's own request does, and
+// the write handler keeps no impersonation refusal of its own. A write asks for
+// a fresh authentication — a fresh local multi-factor one when the account has
+// an active factor, a fresh first factor otherwise — under the requirement the
+// effective account calls for, so that a profile is changed only by a caller
+// that has just proved itself.
 //
 // The module is taken in only by a command that wants this surface. Without it
 // /me is not mounted, and the account is still read and written through its Go

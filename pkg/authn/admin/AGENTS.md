@@ -49,12 +49,16 @@ The API is the package's godoc.
   misspelled filter is reported rather than swallowed by a read that ignores it;
   an accepted filter given empty is no filter. The display-name prefix is a byte
   prefix of the stored name and is case-sensitive.
-- **The tenant of a tenant-level action is resolved here.** The routes whose
-  path carries no tenant (`sso/providers/:id` and its domains and metadata, and
-  `impersonations/:id`) read the object's own tenant before asking the
-  `Decider`, so it never receives a tenant-level action with no tenant. A path,
-  a body and a stored row that disagree on the tenant are a 400 and the
-  `Decider` is never asked. `PUT` may not change a provider's tenant.
+- **The tenant of a tenant-level action is the path's first segment.** Every
+  tenant-level route carries the tenant in its path, `sso/providers/:id` and its
+  domains and metadata and `impersonations/:id` included. The membership and SSO
+  provider routes are decided in that tenant's own policy domain; the
+  impersonation-record routes are the exception, decided in the platform domain,
+  and the path's tenant is the data the records are confined to. A body that
+  names another tenant than the path is a 400. A stored object that belongs to
+  another tenant answers not found, the same answer an absent object gets, so the
+  path cannot be used to probe another tenant's objects. `PUT` may not change a
+  provider's tenant.
 - **The mandatory audit is written outside any transaction and before the
   action.** A write whose row does not land is answered 503 and the capability
   is not called; a write that fails after it gets a `failed` row linked to the

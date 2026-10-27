@@ -37,9 +37,12 @@ const (
 	pathSecrets         = pathAccount + "/secrets"
 	pathSecret          = pathSecrets + "/:secret"
 
-	// Tenant scope: routes decided in the tenant's own policy domain. The
-	// tenant is the first segment, so the level and the tenant it acts on are
-	// both on the request line.
+	// Tenant-prefixed scope: the tenant is the first segment, so the level and
+	// the tenant a route acts on are both on the request line. The membership,
+	// SSO provider and domain routes are decided in that tenant's own policy
+	// domain; the impersonation-record group is the exception, decided in the
+	// platform domain with the path's tenant as the data the records are
+	// confined to.
 	pathMembers         = "/:tenant/members"
 	pathMember          = pathMembers + "/:account"
 	pathMemberExempt    = pathMember + "/sso-exempt"
