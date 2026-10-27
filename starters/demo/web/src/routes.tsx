@@ -43,12 +43,14 @@ import { AcceptInvitationPage } from './pages/accept-invitation-page.js'
 import { AuthCallbackPage } from './pages/auth-callback-page.js'
 import { HomePage } from './pages/home-page.js'
 import { TENANT_HOME_PATH } from './pages/not-found-page.js'
+import { PasswordResetPage } from './pages/password-reset-page.js'
 import {
   ACCOUNT_CALLBACK_PATH,
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
   INVITATION_PREFIX,
+  PASSWORD_RESET_PATH,
 } from './paths.js'
 
 // The path constants live in src/paths.ts, shared with the chrome that
@@ -61,6 +63,7 @@ export {
   AUTH_CALLBACK_PATH,
   CONSOLE_PREFIX,
   NOTIFICATIONS_PATH,
+  PASSWORD_RESET_PATH,
 } from './paths.js'
 // The console area's prefixed declarations and the prefix test live in
 // src/console-routes.ts, shared with the start page (which must not import
@@ -186,12 +189,29 @@ export const invitationRoutes: RouteTable = [
   },
 ] satisfies readonly HostRouteDeclaration[]
 
-/** The product's pages: the business slot, the callback and invitation
- * routes, and the mounted console area (the dashboard at the prefix
- * itself). */
+/**
+ * The anonymous password reset route: the public landing the sign-in
+ * surface's "forgot password" entry points at, `/password-reset`. It is
+ * unlabelled (it adds no navigation entry) and the app renders its page
+ * outside both shells (src/app.tsx), because the viewer arrives without a
+ * session. It is inert until the deployment publishes a reset channel; a
+ * deployment without one still serves the page, whose surface states that no
+ * channel is offered.
+ */
+export const passwordResetRoutes: RouteTable = [
+  {
+    path: PASSWORD_RESET_PATH,
+    view: () => <PasswordResetPage />,
+  },
+] satisfies readonly HostRouteDeclaration[]
+
+/** The product's pages: the business slot, the callback, invitation and
+ * password reset routes, and the mounted console area (the dashboard at the
+ * prefix itself). */
 export const routes: RouteTable = [
   ...businessRoutes,
   ...authCallbackRoutes,
   ...invitationRoutes,
+  ...passwordResetRoutes,
   ...consoleShellRoutes,
 ]

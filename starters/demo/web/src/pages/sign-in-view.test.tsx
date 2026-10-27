@@ -32,7 +32,12 @@ import {
 } from '../test-utils/session-harness.js'
 import demoEnUS from '../locales/en-US.json' with { type: 'json' }
 import { pendingInvitationLanding } from '../invitation-return.js'
-import { ACCOUNT_PATH, ACCOUNT_SETUP_PATH, INVITATION_PREFIX } from '../paths.js'
+import {
+  ACCOUNT_PATH,
+  ACCOUNT_SETUP_PATH,
+  INVITATION_PREFIX,
+  PASSWORD_RESET_PATH,
+} from '../paths.js'
 import { renderDemoApp } from '../test-utils/render.js'
 import { createTestSession } from '../test-utils/session.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
@@ -51,6 +56,7 @@ const METHODS: AuthnMethodList = {
   signup: { enabled: false, password: { enabled: false } },
   mfa: { factors: [] },
   human: { required: false, provider: 'off' },
+  password_reset: { enabled: false, methods: [] },
 }
 
 /** A session whose discovery names a redirect method and whose flow start
@@ -108,6 +114,15 @@ const authLandingEn = authUiResources['en-US'] as unknown as {
   readonly social: { readonly linkRequiredEmail: string }
 }
 
+/** The auth-ui copy the forgot-password entry and the reset surface render. */
+const authResetEn = authUiResources['en-US'] as unknown as {
+  readonly passwordSignIn: { readonly forgotPassword: string }
+  readonly passwordReset: {
+    readonly title: string
+    readonly emailLabel: string
+  }
+}
+
 const REGISTER_PATH = '/api/v1/auth/register'
 const REGISTER = `POST ${REGISTER_PATH}`
 
@@ -141,6 +156,52 @@ describe('the sign-in surface', () => {
     expect(container.textContent).not.toMatch(/seed|AGENTS\.md/)
   })
 
+  it('offers the forgot-password entry where reset is published and opens the reset page', async () => {
+    // The deployment publishes the email reset channel, so the password
+    // channel carries the entry; picking it navigates to the anonymous reset
+    // route, whose surface reads the same document.
+    const session: AuthSession = Object.assign(createTestSession(), {
+      listMethods: (): Promise<AuthnMethodList> =>
+        Promise.resolve({
+          methods: [{ name: 'password', kind: 'form' }],
+          signup: { enabled: false, password: { enabled: false } },
+          mfa: { factors: [] },
+          human: { required: false, provider: 'off' },
+          password_reset: { enabled: true, methods: ['email'] },
+        }),
+    })
+    renderDemoApp({ session })
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: authResetEn.passwordSignIn.forgotPassword,
+      }),
+    )
+
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(PASSWORD_RESET_PATH),
+    )
+    expect(
+      await screen.findByRole('heading', { name: authResetEn.passwordReset.title }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('textbox', {
+        name: authResetEn.passwordReset.emailLabel,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers no forgot-password entry where the deployment publishes none', async () => {
+    renderDemoApp()
+    await screen.findByLabelText(authEn.passwordSignIn.identifierLabel)
+    expect(
+      screen.queryByRole('button', {
+        name: authResetEn.passwordSignIn.forgotPassword,
+      }),
+    ).toBeNull()
+  })
+
   it('follows the register / sign-in switch in the page heading', async () => {
     // A deployment whose password channel opens an account: the screen offers
     // its register entry, and the host page heading has to follow the switch
@@ -152,6 +213,7 @@ describe('the sign-in surface', () => {
           signup: { enabled: true, password: { enabled: false } },
           mfa: { factors: [] },
           human: { required: false, provider: 'off' },
+          password_reset: { enabled: false, methods: [] },
         }),
     })
     renderDemoApp({ session })

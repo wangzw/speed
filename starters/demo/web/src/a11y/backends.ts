@@ -349,6 +349,10 @@ export const EXACT: Readonly<Record<string, RouteAnswer>> = {
     } satisfies AuthnMfaFactorList,
     { factors: [] } satisfies AuthnMfaFactorList,
   ),
+  // The anonymous reset page's resume read. A visitor with no reset cookie is
+  // answered a bare 404 flow-invalid, which the surface reads as "start
+  // fresh"; this is that empty state, not a body.
+  '/api/v1/auth/password-reset/current': answer(NOT_FOUND, NOT_FOUND),
   '/api/v1/notifications/messages': answer(
     { messages: [NOTIFICATION_MESSAGE], total: 1 } satisfies NotificationInboxListMessages200,
     { messages: [], total: 0 } satisfies NotificationInboxListMessages200,

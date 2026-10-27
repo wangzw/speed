@@ -118,6 +118,7 @@ const EXPECTED_ROUTE_PATHS = [
   '/notifications',
   '/sign-in/callback',
   '/invitations/sample',
+  '/password-reset',
   '/console',
   '/console/tenants',
   '/console/tenants/sample',

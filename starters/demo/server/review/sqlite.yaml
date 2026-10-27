@@ -123,9 +123,12 @@ authn:
     mode: off
 
 # The SMS sending family. sms.registry holds the templates the SMS module sends
-# its codes under; the three names and the parameter pair are the contract the
-# module checks at startup. Each carries kind: verification because these
-# messages carry the code a recipient proves — the kind the review carrier reads
+# its codes under; the login, second-factor and enrollment names and the
+# parameter pair are the contract the module checks at startup. The reset
+# template is the optional member: declaring it is what publishes the SMS
+# channel of the anonymous password reset, and without it the review assembly
+# would serve the email channel alone. Each carries kind: verification because
+# these messages carry the code a recipient proves — the kind the review carrier reads
 # when it decides whether a line is a verification code or a notice. The codes
 # are the carrier's identifiers, which for the review sender are labels it
 # writes to the log. Each template declares both interface languages: a flow
@@ -159,6 +162,15 @@ sms:
         codes:
           en-US: "review-enroll"
           zh-CN: "review-enroll-zh"
+      # REVIEW: the anonymous password reset's SMS channel. Optional in the
+      # module's contract; declared here so the review build offers both reset
+      # channels and the SMS journey can read its code from the log.
+      authn.code.reset:
+        kind: verification
+        params: ["code", "ttl_minutes"]
+        codes:
+          en-US: "review-reset"
+          zh-CN: "review-reset-zh"
   # REVIEW: the SMS template page. The baseline imports sms.admin for its OpenAPI
   # fragment and names it on no command, so a normal deployment serves no page;
   # the review build mounts the management routes on the admin endpoint so the
@@ -233,6 +245,13 @@ seed:
     # The registration itself sends no mail; the code goes out when the signed-in
     # account adds its address.
     - key: "authn.account.password-signup"
+      value: "open"
+    # REVIEW: the anonymous password reset is open. The review assembly carries
+    # both channels -- authn.emailcode over mail.review, and authn.sms over
+    # sms.review with the optional authn.code.reset template declared above --
+    # so the sign-in surface offers the forgot-password entry and the reset
+    # page offers the channel choice. The declared default is closed.
+    - key: "authn.login.password-reset"
       value: "open"
     # REVIEW: the email verification code budgets, widened so a walkthrough can
     # ask for several codes without waiting out a window. They stay inside the

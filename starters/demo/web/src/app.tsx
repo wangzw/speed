@@ -128,7 +128,11 @@ import {
   TENANT_HOME_PATH,
 } from './pages/not-found-page.js'
 import { SignInView } from './pages/sign-in-view.js'
-import { ACCOUNT_PATH, isAccountLevelPath } from './paths.js'
+import {
+  ACCOUNT_PATH,
+  isAccountLevelPath,
+  PASSWORD_RESET_PATH,
+} from './paths.js'
 import { DEMO_NAMESPACE } from './resources.js'
 import {
   clearSelfTenants,
@@ -316,6 +320,15 @@ function AppFrame({
         }
       />
     )
+  }
+
+  // The anonymous password reset renders outside both shells: the viewer
+  // arrives without a session, and the surface needs no tenant context. The
+  // declaration carries no feature gate, so RouteView renders it on every
+  // deployment; a deployment that publishes no channel answers with the
+  // surface's own unavailable notice.
+  if (pathname === PASSWORD_RESET_PATH) {
+    return <RouteView />
   }
 
   if (isConsolePath(pathname)) {

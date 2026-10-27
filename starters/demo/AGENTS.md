@@ -128,6 +128,23 @@ the code for the walkthrough with `verification_code`; the value is not logged
 under `code`, because that name is a registered sensitive key of the process and
 the logging layer would mask it.
 
+**The review build runs the anonymous password reset on both channels.** Its
+configuration sets the `authn.login.password-reset` setting to `open`, and
+`sms.registry.templates` declares the optional `authn.code.reset` template
+beside the three required ones — declaring it is what makes the SMS module
+publish the reset purpose and the carrier able to carry it. `authn.emailcode`
+provides `authn.EmailResetCodeSender` from its compiled-in catalog, so the mail
+carrier serves the email channel. The sign-in surface therefore carries the
+forgot-password entry, `/password-reset` is the host's own page over
+`@speed/auth-ui`'s `PasswordResetScreen`, and the reset code arrives through
+`mail.review` or `sms.review` like any other verification code.
+
+The inbox and number resend windows are held by the destination across purposes,
+so a reset sent shortly after the account proved that same address or number is
+suppressed: the surface still shows its sent notice, and its resend control —
+which states the remaining interval — is what releases the message. The two
+journeys read that control rather than sleeping.
+
 `server/review/sqlite.yaml` is the configuration the build reads. It keeps
 `authn.account.signup` and `authn.account.password-signup` open, widens the four
 `authn.login.email-*` budgets and lowers the resend interval to its floor so a
@@ -639,6 +656,14 @@ send sixty verification messages a minute (`authn.login.ip-limit`). The mail
 budgets are the declared defaults too: a walk-through may need to wait out the
 per-address window. A default build has no mail path and leaves registration
 closed, so the baseline testdata and the review build keep their own assemblies.
+
+**The anonymous password reset is open on this deployment too.**
+`seed.settings` sets `authn.login.password-reset` to `open`, and the image's
+`authn.emailcode` provides the reset seam over the same SMTP carrier, so the
+sign-in surface offers the forgot-password entry and `/password-reset` offers
+the email channel. The image assembles no SMS family, so the reset page offers
+email alone; a deployment that adds the SMS modules and declares the optional
+`authn.code.reset` template gets the SMS channel beside it.
 
 **Google and GitHub sign-in are on the same deployment.** Each application's
 identifier and secret come from its own Fly secret; the entrypoint requires all

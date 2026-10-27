@@ -25,9 +25,14 @@ import {
   isConsolePath,
   navIconFor,
   NOTIFICATIONS_PATH,
+  passwordResetRoutes,
   routes,
 } from './routes.js'
-import { ACCOUNT_SETUP_PATH, INVITATION_PREFIX } from './paths.js'
+import {
+  ACCOUNT_SETUP_PATH,
+  INVITATION_PREFIX,
+  PASSWORD_RESET_PATH,
+} from './paths.js'
 
 describe('the route table', () => {
   it('names the business slot, the account page and its setup page and the notification center, all labelled but for the completion points beside the unlabelled callback', () => {
@@ -120,6 +125,17 @@ describe('the route table', () => {
     expect(invitationRoutes[0]?.label).toBeUndefined()
   })
 
+  it('mounts the anonymous reset route at its own path, unlabelled', () => {
+    expect(passwordResetRoutes.map((route) => route.path)).toEqual([
+      PASSWORD_RESET_PATH,
+    ])
+    // Unlabelled, so it adds no navigation entry; the app renders its page
+    // outside both shells (src/app.tsx) because the viewer arrives without a
+    // session.
+    expect(passwordResetRoutes[0]?.label).toBeUndefined()
+    expect(passwordResetRoutes[0]?.requires).toBeUndefined()
+  })
+
   it('gates only on names the platform feature vocabulary declares', () => {
     const known = new Set<string>(FEATURE_NAMES)
     let gated = 0
@@ -141,11 +157,12 @@ describe('the route table', () => {
     ).toContain('notification.inbox')
   })
 
-  it('combines the business slot, the callback and invitation routes and the console pages', () => {
+  it('combines the business slot, the callback, invitation and reset routes and the console pages', () => {
     expect(routes).toHaveLength(
       businessRoutes.length +
         authCallbackRoutes.length +
         invitationRoutes.length +
+        passwordResetRoutes.length +
         consoleShellRoutes.length,
     )
   })

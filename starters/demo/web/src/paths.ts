@@ -25,6 +25,14 @@ export const CONSOLE_PREFIX = '/console'
  * being served the entry document. */
 export const AUTH_CALLBACK_PATH = '/sign-in/callback'
 
+/**
+ * The anonymous password reset page: where the sign-in surface's "forgot
+ * password" entry sends a viewer. It is not a navigation destination (it
+ * renders outside both shells, src/app.tsx) and sits outside every prefix the
+ * backend endpoints claim (backend-prefixes.json), like the callback route.
+ */
+export const PASSWORD_RESET_PATH = '/password-reset'
+
 /** The tenant area's account page: the account-management surfaces. */
 export const ACCOUNT_PATH = '/account'
 

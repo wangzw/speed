@@ -187,6 +187,20 @@ program beside this directory embeds with `go:embed` and serves through
   predicates are `contactVerificationPending` and `setupIncomplete` in
   `src/account-setup.ts`, and a password registration is setup-complete while
   verification is still pending.
+- **The anonymous password reset has its own page and entry.**
+  `/password-reset` (`src/pages/password-reset-page.tsx`) renders
+  auth-ui's `PasswordResetScreen` outside both shells: the viewer arrives
+  without a session, so no tenant context or authenticated frame is
+  involved. The page reads the deployment's channels from the same discovery
+  document the sign-in surface reads (`session.listMethods`, and its
+  `password_reset` member) and binds the screen's operations to the app's
+  generated surface (`src/app-api`); an absent or disabled member renders the
+  screen's unavailable notice. `SignInScreen` carries the forgot-password
+  entry only while that member is enabled, and only the application's own
+  sign-in page binds `onForgotPassword`: the invitation landing and the
+  console gate own their landing and leave the entry out, because navigating
+  away would drop the token or the path the viewer arrived with.
+
 - **A page reload keeps the viewer signed in.** The session is delivered as
   the server's httpOnly cookie (the login flow requests `delivery: 'session'`,
   the client sends it with `credentials: 'same-origin'`), so a reload

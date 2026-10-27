@@ -82,6 +82,7 @@ import {
   ACCOUNT_PATH,
   ACCOUNT_SETUP_PATH,
   AUTH_CALLBACK_PATH,
+  PASSWORD_RESET_PATH,
 } from '../paths.js'
 import { DEMO_NAMESPACE } from '../resources.js'
 import { navigateToAuthorizationUrl } from '../sign-in-navigation.js'
@@ -233,6 +234,13 @@ export function SignInView({
           social={social}
           initialError={initialError}
           initialErrorEmail={initialErrorEmail}
+          // The password channel's "forgot password" entry navigates to the
+          // anonymous reset page. A surface that owns its own landing (an
+          // invitation link, the console gate) leaves it out: navigating away
+          // would drop the token or the path the viewer arrived with.
+          onForgotPassword={
+            keepLanding ? undefined : () => navigate(PASSWORD_RESET_PATH)
+          }
         />
       </Card>
     </Box>

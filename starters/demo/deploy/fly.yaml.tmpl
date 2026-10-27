@@ -150,6 +150,12 @@ seed:
     # the binding could sign in with Google or GitHub.
     - key: "authn.account.signup"
       value: "open"
+    # The anonymous password reset is open, through the email channel this
+    # deployment's mail carrier delivers (authn.emailcode provides the reset
+    # seam beside the verification one). The image assembles no SMS family, so
+    # the reset page offers email alone. The declared default is closed.
+    - key: "authn.login.password-reset"
+      value: "open"
 
 # The engine. The database file is on the volume; the encryption key seals the
 # columns a module encrypts at rest. The key is a secret and must stay the same
