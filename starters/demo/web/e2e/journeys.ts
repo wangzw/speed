@@ -438,9 +438,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-password-reset-email.md',
-    status: 'unimplemented',
-    reason:
-      'The path is neither rendered nor covered yet: the anonymous password reset is designed but not implemented, so the sign-in surface offers no forgot-password entry and the tier cannot drive the journey today. The spec and the covered label arrive with the implementation; until then this entry records the gap rather than a scheduled spec.',
+    status: 'covered',
     covers: [
       'REQ-security-020',
       'REQ-security-034',
@@ -453,9 +451,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-password-reset-sms.md',
-    status: 'unimplemented',
-    reason:
-      'The path is neither rendered nor covered yet: the anonymous password reset is designed but not implemented, so no reset channel is published and the tier cannot drive the journey today. The spec and the covered label arrive with the implementation; until then this entry records the gap rather than a scheduled spec.',
+    status: 'covered',
     covers: [
       'REQ-security-020',
       'REQ-security-034',
