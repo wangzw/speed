@@ -231,8 +231,11 @@ var (
 	ErrLastTenantAdmin = errors.New("authn: the last tenant administrator binding of a tenant cannot be removed")
 
 	// ErrAccountUnavailable reports a disabled account on an external login path,
-	// where the caller has already proved who they are at the provider. Outwardly
-	// it is a 403 account-unavailable.
+	// where the caller has already proved who they are at the provider, or a
+	// password write whose transaction found the account no longer enabled, no
+	// longer holding a credential, or no longer holding the identifier it named.
+	// Outwardly it is a 403 account-unavailable, and on an anonymous password
+	// reset a 403 password-reset-unavailable.
 	ErrAccountUnavailable = errors.New("authn: the account is not available")
 
 	// ErrLinkRequired reports a social login with no binding whose verified email

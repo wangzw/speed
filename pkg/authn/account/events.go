@@ -78,7 +78,11 @@ const (
 	byAdmin  = "admin"
 	bySelf   = "self"
 	byImport = "import"
+	byReset  = "reset"
 	bySignup = "signup"
+
+	channelEmail = "email"
+	channelSMS   = "sms"
 )
 
 func accountCreated(id authn.AccountID, kind authn.AccountKind, via string) event.Event {
@@ -111,8 +115,8 @@ func membershipChanged(id authn.AccountID, tenant, change, source string) event.
 	}}
 }
 
-func passwordChanged(id authn.AccountID, by string) event.Event {
-	return event.Event{Type: authn.EventPasswordChanged, Payload: authn.PasswordChanged{AccountID: id.String(), By: by}}
+func passwordChanged(id authn.AccountID, by, channel string) event.Event {
+	return event.Event{Type: authn.EventPasswordChanged, Payload: authn.PasswordChanged{AccountID: id.String(), By: by, Channel: channel}}
 }
 
 func throttleEngaged(scope authn.ThrottleScope, id authn.AccountID) event.Event {

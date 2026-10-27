@@ -284,6 +284,12 @@ type VerifyResult struct {
 
 // SetPasswordOptions qualifies Passwords.Set.
 type SetPasswordOptions struct {
-	Current    string // the current password, for a change the account makes itself
-	MustChange bool   // sets must_change; an administrator's reset defaults to true
+	Current           string // the current password, for a change the account makes itself
+	MustChange        bool   // sets must_change; an administrator's reset defaults to true
+	By                string // event attribution: self, admin or reset; empty is inferred from Current
+	Channel           string // event channel: email or sms; empty outside a reset
+	RequireActive     bool   // the write transaction requires the account to be enabled
+	RequireExisting   bool   // the write transaction requires a credential row, and creates none
+	RequireIdentifier string // the write transaction requires this identifier row to belong to the account
+	AdvanceValidAfter bool   // the write transaction moves valid_after past the current second
 }

@@ -128,10 +128,14 @@ type Passwords interface {
 	// credential carries must_change.
 	Verify(ctx context.Context, identifier, password string) (AccountID, VerifyResult, error)
 	// Set writes a password after the policy: a violation is ErrPasswordPolicy,
-	// and so is a new password equal to the current one. Set revokes no session:
-	// the handler that changed the password calls Sessions.RevokeAccount once it
-	// succeeded, which is why this interface does not depend on the session
-	// module.
+	// and so is a new password equal to the current one. The options attribute
+	// the change to self, admin or reset and name a channel on a reset; they can
+	// also require, inside the write transaction, an enabled account, an existing
+	// credential and an identifier that still belongs to the account, any of
+	// which unsatisfied is ErrAccountUnavailable, and move valid_after in that
+	// same transaction. Set revokes no session: the handler that changed the
+	// password calls Sessions.RevokeAccount once it succeeded, which is why this
+	// interface does not depend on the session module.
 	Set(ctx context.Context, id AccountID, password string, opt SetPasswordOptions) error
 	// ImportHash writes a PHC or legacy entry as the account's password
 	// credential. A legacy entry is converted without loss, the salt and the key

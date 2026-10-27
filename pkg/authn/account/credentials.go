@@ -53,6 +53,61 @@ func (p *product) writeCredential(tx *gorm.DB, id, phc string, mustChange bool) 
 		" must_change = EXCLUDED.must_change", id, phc, p.at(), mustChange).Error
 }
 
+// attribution resolves the event attribution of a password write and holds it to
+// the closed sets the payload carries. An empty By is inferred from whether the
+// call carries the current password, and an empty Channel is the non-reset case.
+func attribution(opt authn.SetPasswordOptions) (by, channel string, err error) {
+	by = opt.By
+	if by == "" {
+		by = byAdmin
+		if opt.Current != "" {
+			by = bySelf
+		}
+	}
+	switch by {
+	case bySelf, byAdmin, byReset:
+	default:
+		return "", "", fmt.Errorf("%w: the attribution of a password change is self, admin or reset", authn.ErrInvalidArgument)
+	}
+	switch opt.Channel {
+	case "", channelEmail, channelSMS:
+		return by, opt.Channel, nil
+	default:
+		return "", "", fmt.Errorf("%w: the channel of a password change is email or sms", authn.ErrInvalidArgument)
+	}
+}
+
+// requireInTx holds a password write to the state its caller requires, inside the
+// write transaction: the account still enabled, a credential row already there,
+// and an identifier row that still belongs to the account. Any of them
+// unsatisfied is authn.ErrAccountUnavailable. The requirement is read under the
+// account's lock, so a status change or a removal committed before it is seen.
+func (p *product) requireInTx(tx *gorm.DB, row accountRow, opt authn.SetPasswordOptions) error {
+	if opt.RequireActive && statusOf(row.Status) != authn.StatusActive {
+		return fmt.Errorf("%w: the account is not enabled", authn.ErrAccountUnavailable)
+	}
+	if opt.RequireExisting {
+		has, err := hasCredential(tx, row.ID)
+		if err != nil {
+			return err
+		}
+		if !has {
+			return fmt.Errorf("%w: the account has no password credential", authn.ErrAccountUnavailable)
+		}
+	}
+	if opt.RequireIdentifier != "" {
+		var n int64
+		if err := tx.Raw("SELECT COUNT(*) FROM "+tableIdentifiers+" WHERE id = ? AND account_id = ?",
+			opt.RequireIdentifier, row.ID).Scan(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: the identifier does not belong to the account", authn.ErrAccountUnavailable)
+		}
+	}
+	return nil
+}
+
 // Set writes a password.
 //
 // The password is normalized and judged by the policy: no fewer characters than
@@ -65,6 +120,10 @@ func (p *product) writeCredential(tx *gorm.DB, id, phc string, mustChange bool) 
 // does that once the change is made, which is why this module does not depend on
 // the session module.
 func (p *product) Set(ctx context.Context, id authn.AccountID, plaintext string, opt authn.SetPasswordOptions) error {
+	by, channel, err := attribution(opt)
+	if err != nil {
+		return err
+	}
 	conn := p.conn(ctx)
 	row, err := loadAccount(conn, id)
 	if err != nil {
@@ -114,17 +173,26 @@ func (p *product) Set(ctx context.Context, id authn.AccountID, plaintext string,
 	}
 	b := &batch{}
 	err = conn.Transaction(func(tx *gorm.DB) error {
-		if _, err = p.lock(tx, id); err != nil {
-			return err
+		locked, lerr := p.lock(tx, id)
+		if lerr != nil {
+			return lerr
 		}
-		if err = p.writeCredential(tx, row.ID, phc, opt.MustChange); err != nil {
-			return err
+		if lerr = p.requireInTx(tx, locked, opt); lerr != nil {
+			return lerr
 		}
-		by := byAdmin
-		if opt.Current != "" {
-			by = bySelf
+		if lerr = p.writeCredential(tx, locked.ID, phc, opt.MustChange); lerr != nil {
+			return lerr
 		}
-		return p.emit(tx, b, passwordChanged(id, by), false)
+		if opt.AdvanceValidAfter {
+			now := p.at()
+			if lerr = tx.Model(&accountRow{}).Where("id = ?", locked.ID).Updates(map[string]any{
+				"valid_after": laterOf(utc(locked.ValidAfter), ceilSecond(now)),
+				"updated_at":  now,
+			}).Error; lerr != nil {
+				return lerr
+			}
+		}
+		return p.emit(tx, b, passwordChanged(id, by, channel), false)
 	})
 	if err != nil {
 		return failed("writing a password", err)
@@ -203,7 +271,7 @@ func (p *product) ImportHash(ctx context.Context, id authn.AccountID, encoded st
 		if err = p.writeCredential(tx, row.ID, phc, mustChange); err != nil {
 			return err
 		}
-		return p.emit(tx, b, passwordChanged(id, byImport), false)
+		return p.emit(tx, b, passwordChanged(id, byImport, ""), false)
 	})
 	if err != nil {
 		return failed("importing a password entry", err)

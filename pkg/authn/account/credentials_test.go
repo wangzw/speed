@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/internal/password"
@@ -291,6 +292,175 @@ func TestClearRemovesTheCredential(t *testing.T) {
 		}
 		if _, _, err := h.p.Verify(ctx, "cleared", "correct horse battery"); !errors.Is(err, authn.ErrInvalidCredentials) {
 			t.Errorf("verifying a cleared account gave %v, want ErrInvalidCredentials", err)
+		}
+	})
+}
+
+// emailIdentifierID is the identifier ID of an account's email address, which a
+// reset names in SetPasswordOptions.RequireIdentifier.
+func emailIdentifierID(t *testing.T, h *harness, id authn.AccountID) string {
+	t.Helper()
+	identifiers, err := h.p.Identifiers(context.Background(), id)
+	if err != nil {
+		t.Fatalf("listing identifiers: %v", err)
+	}
+	for _, i := range identifiers {
+		if i.Kind == authn.IdentifierEmail {
+			return i.ID
+		}
+	}
+	t.Fatalf("the account %s has no email identifier", id)
+	return ""
+}
+
+// RequireActive re-judges the account inside the write transaction: a disabled
+// account is ErrAccountUnavailable and keeps its password.
+func TestSetRequireActiveRefusesADisabledAccount(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("inactive", "correct horse battery")
+		if err := h.p.SetStatus(ctx, id, authn.StatusDisabled, authn.ReasonAdmin); err != nil {
+			t.Fatalf("disabling: %v", err)
+		}
+		err := h.p.Set(ctx, id, "another good phrase", authn.SetPasswordOptions{RequireActive: true})
+		if !errors.Is(err, authn.ErrAccountUnavailable) {
+			t.Errorf("Set gave %v, want ErrAccountUnavailable", err)
+		}
+		if err = h.p.SetStatus(ctx, id, authn.StatusActive, authn.ReasonAdmin); err != nil {
+			t.Fatalf("enabling: %v", err)
+		}
+		if _, _, verr := h.p.Verify(ctx, "inactive", "correct horse battery"); verr != nil {
+			t.Errorf("the password changed on a refused write: %v", verr)
+		}
+	})
+}
+
+// RequireExisting keeps a reset from setting a first password: an account with no
+// credential is ErrAccountUnavailable and no row is created.
+func TestSetRequireExistingRefusesAnAccountWithoutACredential(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("credentialless", "")
+		err := h.p.Set(ctx, id, "another good phrase", authn.SetPasswordOptions{RequireExisting: true})
+		if !errors.Is(err, authn.ErrAccountUnavailable) {
+			t.Errorf("Set gave %v, want ErrAccountUnavailable", err)
+		}
+		if n := h.count(tableCredentials, "account_id = ?", id.String()); n != 0 {
+			t.Errorf("%d credential row(s) were written, want none", n)
+		}
+		if err = h.p.Set(ctx, id, "another good phrase", authn.SetPasswordOptions{}); err != nil {
+			t.Errorf("Set without the requirement: %v", err)
+		}
+	})
+}
+
+// RequireIdentifier re-reads the identifier inside the write transaction: one
+// that belongs to another account, or to none, is ErrAccountUnavailable, and the
+// account's own is accepted.
+func TestSetRequireIdentifierRefusesAnIdentifierOfAnotherAccount(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		owner := h.user("owner", "correct horse battery")
+		other := h.user("other", "correct horse battery")
+		emailID := emailIdentifierID(t, h, owner)
+		for _, c := range []struct{ name, identifier string }{
+			{"another account's identifier", emailID},
+			{"an identifier that does not exist", "no-such-identifier"},
+		} {
+			err := h.p.Set(ctx, other, "another good phrase", authn.SetPasswordOptions{RequireIdentifier: c.identifier})
+			if !errors.Is(err, authn.ErrAccountUnavailable) {
+				t.Errorf("%s gave %v, want ErrAccountUnavailable", c.name, err)
+			}
+		}
+		if _, _, err := h.p.Verify(ctx, "other", "correct horse battery"); err != nil {
+			t.Errorf("the password changed on a refused write: %v", err)
+		}
+		if err := h.p.Set(ctx, owner, "another good phrase", authn.SetPasswordOptions{RequireIdentifier: emailID}); err != nil {
+			t.Errorf("the account's own identifier gave %v", err)
+		}
+	})
+}
+
+// AdvanceValidAfter moves the instant in the write transaction and leaves the
+// rest of the account alone, and the event names the reset and its channel.
+func TestSetAdvancesValidAfterAndLeavesTheAccountAlone(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("resetter", "correct horse battery")
+		emailID := emailIdentifierID(t, h, id)
+		var before accountRow
+		if err := h.handle.Where("id = ?", id.String()).Take(&before).Error; err != nil {
+			t.Fatalf("reading the account: %v", err)
+		}
+		at := h.clock.read()
+		err := h.p.Set(ctx, id, "another good phrase", authn.SetPasswordOptions{
+			By: "reset", Channel: "email", RequireActive: true, RequireExisting: true,
+			RequireIdentifier: emailID, AdvanceValidAfter: true,
+		})
+		if err != nil {
+			t.Fatalf("the reset write: %v", err)
+		}
+		var after accountRow
+		if err = h.handle.Where("id = ?", id.String()).Take(&after).Error; err != nil {
+			t.Fatalf("reading the account back: %v", err)
+		}
+		want := at.Truncate(time.Second).Add(time.Second)
+		if !utc(after.ValidAfter).Equal(want) {
+			t.Errorf("valid_after is %v, want %v", after.ValidAfter, want)
+		}
+		if after.Status != before.Status || after.SignupState != before.SignupState ||
+			after.MFARequired != before.MFARequired || after.Protected != before.Protected ||
+			after.DisplayName != before.DisplayName || after.Attributes != before.Attributes {
+			t.Errorf("the reset changed the account beyond valid_after: before %+v, after %+v", before, after)
+		}
+		if n := h.count(tableCredentials, "account_id = ?", id.String()); n != 1 {
+			t.Errorf("%d credential row(s), want one", n)
+		}
+		payload := bindingEvent[authn.PasswordChanged](t, h, authn.EventPasswordChanged)
+		if payload.By != "reset" || payload.Channel != "email" {
+			t.Errorf("the event is %+v, want by=reset channel=email", payload)
+		}
+	})
+}
+
+// By is inferred from the current password when it is not given, and a value
+// outside the closed set is refused before anything is written.
+func TestSetAttributesTheChangeAndRefusesAnUnknownAttribution(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *harness) {
+		ctx := context.Background()
+		id := h.user("attributed", "correct horse battery")
+		if err := h.p.Set(ctx, id, "another good phrase", authn.SetPasswordOptions{}); err != nil {
+			t.Fatalf("an administrator's set: %v", err)
+		}
+		payload := bindingEvent[authn.PasswordChanged](t, h, authn.EventPasswordChanged)
+		if payload.By != "admin" || payload.Channel != "" {
+			t.Errorf("the event is %+v, want by=admin and no channel", payload)
+		}
+		h.bus.events = nil
+		if err := h.p.Set(ctx, id, "a third good phrase", authn.SetPasswordOptions{Current: "another good phrase"}); err != nil {
+			t.Fatalf("a self-service set: %v", err)
+		}
+		payload = bindingEvent[authn.PasswordChanged](t, h, authn.EventPasswordChanged)
+		if payload.By != "self" {
+			t.Errorf("the event is %+v, want by=self", payload)
+		}
+		h.bus.events = nil
+		for _, c := range []struct {
+			name string
+			opt  authn.SetPasswordOptions
+		}{
+			{"an attribution outside Set's set", authn.SetPasswordOptions{By: "import"}},
+			{"an unknown channel", authn.SetPasswordOptions{By: "reset", Channel: "carrier-pigeon"}},
+		} {
+			if err := h.p.Set(ctx, id, "a fourth good phrase", c.opt); !errors.Is(err, authn.ErrInvalidArgument) {
+				t.Errorf("%s gave %v, want ErrInvalidArgument", c.name, err)
+			}
+		}
+		if events := h.bus.of(authn.EventPasswordChanged); len(events) != 0 {
+			t.Errorf("%d password-changed events on refused writes, want none", len(events))
+		}
+		if _, _, err := h.p.Verify(ctx, "attributed", "a third good phrase"); err != nil {
+			t.Errorf("the refused writes changed the password: %v", err)
 		}
 	})
 }
