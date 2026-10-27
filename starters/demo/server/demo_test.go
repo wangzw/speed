@@ -723,8 +723,8 @@ func TestServeAnswersTheProbes(t *testing.T) {
 	// The assembly does not show through an anonymous answer on a guarded
 	// endpoint. The two paths below are both under prefixes the admin endpoint
 	// claims, and the two capabilities behind them are assembled differently:
-	// sms.admin is imported for the contract but named by no command, so it
-	// registers no route, while tenant.admin runs. The dispatch selects an
+	// sms.admin is imported for the contract but named by no baseline command,
+	// so it registers no route here, while tenant.admin runs. The dispatch selects an
 	// endpoint by its claims alone, so both requests reach the admin chain and
 	// the gateway refuses each before any route matters — same status, same
 	// headers but Date, same body, and a challenge for the admin realm. Before

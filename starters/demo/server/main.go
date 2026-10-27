@@ -111,15 +111,16 @@ import (
 	tenantself "github.com/vislake/speed/pkg/tenant/self"
 
 	// The platform modules whose HTTP fragments belong to the merged contract
-	// even though no command names them for a run. The credential criterion
-	// keeps sms.admin (an SMS vendor's account) and authn.sso.saml (an
-	// enterprise provider's credentials and metadata) out of the baseline, so
-	// no Include lists them; their fragments still describe the platform's API
-	// surface, and what gen and /openapi.json merge is the fragments of the
-	// modules the binary's imports reach, not the modules a run names. The
-	// import is what puts them in the available set, and no Include runs them.
-	// Naming a module for a run and importing it for its contract are two
-	// different questions; see AGENTS.md.
+	// even though the baseline names neither for a run. The credential
+	// criterion keeps sms.admin (an SMS vendor's account) and authn.sso.saml
+	// (an enterprise provider's credentials and metadata) out of the baseline,
+	// so no baseline Include lists them; their fragments still describe the
+	// platform's API surface, and what gen and /openapi.json merge is the
+	// fragments of the modules the binary's imports reach, not the modules a
+	// run names. The import is what puts them in the available set. No command
+	// runs authn.sso.saml; the review build's serve is the only run that names
+	// sms.admin. Naming a module for a run and importing it for its contract
+	// are two different questions; see AGENTS.md.
 	_ "github.com/vislake/speed/pkg/authn/sso/saml"
 	_ "github.com/vislake/speed/pkg/sms/admin"
 
