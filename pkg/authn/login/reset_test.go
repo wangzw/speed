@@ -664,6 +664,36 @@ func TestResetAuditFailureLeavesThePasswordUnchanged(t *testing.T) {
 	}
 }
 
+// TestResetDeniedWriteAppendsADeniedRow holds the second half of the audit: a
+// password the policy refuses answers 400 and appends a denied row under the
+// attempted row's action id, and the record stays verified so another password
+// may be tried.
+func TestResetDeniedWriteAppendsADeniedRow(t *testing.T) {
+	r := newResetRig(t)
+	r.seedResetAccount("acct-a", authn.IdentifierEmail, "a@example.com", authn.VerifiedViaEmailCode)
+	cookie, code := r.emailStart(t, "a@example.com")
+	if got := r.verify(cookie, code); got.Code != http.StatusOK {
+		t.Fatalf("verify answered %d: %s", got.Code, got.Body.String())
+	}
+	r.passwords.err = fmt.Errorf("%w: too short", authn.ErrPasswordPolicy)
+	got := r.complete(cookie, "short")
+	if got.Code != http.StatusBadRequest || resetProblemCode(t, got) != "bad-request" {
+		t.Fatalf("a policy refusal answered %d %q, want 400 bad-request", got.Code, resetProblemCode(t, got))
+	}
+	rows := r.audit.rows()
+	if len(rows) != 2 || rows[0].Outcome != "attempted" || rows[1].Outcome != "denied" {
+		t.Fatalf("audit rows %+v, want attempted then denied", rows)
+	}
+	if rows[0].Detail["action_id"] == "" || rows[0].Detail["action_id"] != rows[1].Detail["action_id"] {
+		t.Errorf("the attempted and denied rows do not share one action id: %+v", rows)
+	}
+	// The record is back at verified: another password, inside the policy, wins.
+	r.passwords.err = nil
+	if got := r.complete(cookie, "a whole new password"); got.Code != http.StatusNoContent {
+		t.Errorf("the retry answered %d: %s", got.Code, got.Body.String())
+	}
+}
+
 // TestResetBudgetOverrunsAreSuppressedAndSameShape holds the suppression shape:
 // an SMS budget overrun and an email resend-window overrun both answer 202 with
 // the same body as a real send, never a 429.
