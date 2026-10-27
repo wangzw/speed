@@ -89,7 +89,7 @@ type ScopeGuard interface {
 | 401 | 缺身份而路由必需认证；或强度要求未满足 | 强度未满足时带加强认证挑战，见下 |
 | 503 | 成员核对、`Decider` 或 IdP 归属的读取出错 | 不放行，不当作拒绝 |
 
-强度未满足的 401 的 Problem 类型是 `urn:speed:authn:insufficient_user_authentication`，头为 `WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication", acr_values="…"`：`acr_values` 在多因素要求下取 `"2"`，在 SSO 要求下取 `"sso"`。方案名取身份的 `Challenge()`，即网关按凭据载体盖章的那一个。挑战不带 `max_age`：准入层只比对等级与提供方，不含新鲜度要求，没有可填的取值。账户登记了因素与没有登记因素时收到同一个应答，客户端据此走加强认证或登记；准入层不读因素登记簿，登记与加强认证的端点所在的端不受租户解析守卫，客户端总有路可走（[design-authn-mfa](../authn/design-authn-mfa.md)）。
+强度未满足的 401 头为 `WWW-Authenticate: <Identity.Challenge()> error="insufficient_user_authentication", acr_values="…"`：`acr_values` 在多因素要求下取 `"2"`，在 SSO 要求下取 `"sso"`。Problem 类型随要求区分：多因素要求写 `urn:speed:authn:insufficient_user_authentication`，SSO 要求写 `urn:speed:authn:sso_required`，使客户端知道本地因素满足不了后一种要求、只有经本租户的提供方重新登录才行。方案名取身份的 `Challenge()`，即网关按凭据载体盖章的那一个。挑战不带 `max_age`：准入层只比对等级与提供方，不含新鲜度要求，没有可填的取值。账户登记了因素与没有登记因素时收到同一个多因素应答，客户端据此走加强认证或登记；准入层不读因素登记簿，登记与加强认证的端点所在的端不受租户解析守卫，客户端总有路可走（[design-authn-mfa](../authn/design-authn-mfa.md)）。
 
 ### 配置与设置
 
@@ -223,8 +223,8 @@ sequenceDiagram
 | `admitted-by-policy` | 非成员经 `Decider` 的 `authn.tenant.access` 放行 |
 | `not-member` | 非成员且未经放行，404 |
 | `scope-mismatch` | 冒充身份的范围与本租户不符，或冒充身份到了没有租户上下文的路由，404 |
-| `step-up-mfa` | 租户要求多因素而有效保障等级不足，401 |
-| `step-up-sso` | 租户要求 SSO 而身份未经本租户的提供方登录，401 |
+| `step-up-mfa` | 租户要求多因素而有效保障等级不足，401 `insufficient_user_authentication` |
+| `step-up-sso` | 租户要求 SSO 而身份未经本租户的提供方登录，401 `sso_required` |
 | `no-identity` | 无身份而路由必需认证或访问级别未知，401 |
 | `unavailable` | 成员核对、`Decider` 或 IdP 归属读取出错，503 |
 
@@ -243,7 +243,7 @@ sequenceDiagram
 | 成员出错 | `IsMember` 或 `Decide` 返回 error | **503**，不放行 |
 | 豁免 | 身份是冒充身份，或 `Methods` 含 `client-secret`（服务账户） | 跳过多因素强度与 SSO 强度的判定 |
 | 多因素强度 | 设置 `tenant.admission.require-mfa` 为真（租户层）且有效保障等级低于多因素（等级的导出见「有效保障等级」） | **401** `insufficient_user_authentication`，`acr_values="2"` |
-| SSO 强度 | 设置 `tenant.admission.require-sso` 为真（租户层）且 `Identity.Provider()` 为空或对应提供方不属于本租户；成员的 `sso_exempt` 为真时改为只要求多因素 | **401** `insufficient_user_authentication`，`acr_values="sso"`；`sso_exempt` 成员未达多因素时，应答同多因素强度判定 |
+| SSO 强度 | 设置 `tenant.admission.require-sso` 为真（租户层）且 `Identity.Provider()` 为空或对应提供方不属于本租户；成员的 `sso_exempt` 为真时改为只要求多因素 | **401** `sso_required`，`acr_values="sso"`；`sso_exempt` 成员未达多因素时，应答同多因素强度判定 |
 | 通过 | 以上均未命中 | 放行 |
 
 ```mermaid
@@ -269,7 +269,7 @@ flowchart TD
     sk -- 否 --> mfa{"require-mfa 且等级不足?"}
     mfa -- 是 --> r401b["401 acr_values 2"]
     mfa -- 否 --> sso{"require-sso 且未经本租户提供方?"}
-    sso -- 是 --> r401c["401 acr_values sso"]
+    sso -- 是 --> r401c["401 sso_required acr_values sso"]
     sso -- 否 --> pass
 ```
 

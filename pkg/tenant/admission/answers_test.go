@@ -271,10 +271,16 @@ func TestTheStepUpChallengeCarriesTheDocumentedValues(t *testing.T) {
 	if got := mfa.header.Get("WWW-Authenticate"); !strings.Contains(got, `error_description="A stronger or more recent authentication is required"`) {
 		t.Errorf("the challenge is %q, want the documented error_description", got)
 	}
+	if !strings.Contains(mfa.body, `"urn:speed:authn:insufficient_user_authentication"`) {
+		t.Errorf("the multi-factor problem is %q, want the insufficient_user_authentication type", mfa.body)
+	}
 
 	sso := r.serve(r.as(acme, authntest.WithAssurance(authn.AssuranceMulti)))
 	if got := sso.header.Get("WWW-Authenticate"); !strings.HasSuffix(got, `acr_values="sso"`) {
 		t.Errorf("the SSO challenge is %q, want it to end with acr_values=\"sso\"", got)
+	}
+	if !strings.Contains(sso.body, `"urn:speed:authn:sso_required"`) {
+		t.Errorf("the SSO problem is %q, want the sso_required type", sso.body)
 	}
 }
 

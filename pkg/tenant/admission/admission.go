@@ -68,9 +68,15 @@ const (
 // authentication capability's problem types are in this namespace.
 const typePrefix = "urn:speed:authn:"
 
-// insufficientUserAuthentication is the error of a step-up challenge, as RFC 9470
-// names it.
+// insufficientUserAuthentication is the error of a step-up challenge for a
+// stronger local authentication, as RFC 9470 names it.
 const insufficientUserAuthentication = "insufficient_user_authentication"
+
+// ssoRequired is the problem type of a step-up challenge that asks for a fresh
+// sign-in through the tenant's identity provider. A local factor cannot satisfy
+// it, so it is told apart from insufficientUserAuthentication rather than
+// answered with that code.
+const ssoRequired = "sso_required"
 
 // The values acr_values takes in a step-up challenge: the number of the
 // multi-factor level, as the access token's acr writes it, and the word that
@@ -463,11 +469,12 @@ func (l *layer) conclude(c *gin.Context, d decision, realm string) {
 	switch d.outcome {
 	case stepUpMFA, stepUpSSO:
 		acr := acrMultiFactor
+		problem.Type = typePrefix + insufficientUserAuthentication
 		if d.outcome == stepUpSSO {
 			acr = acrSSO
+			problem.Type = typePrefix + ssoRequired
 		}
 		c.Header("WWW-Authenticate", stepUpChallenge(d.challenge, acr))
-		problem.Type = typePrefix + insufficientUserAuthentication
 	case noIdentity:
 		c.Header("WWW-Authenticate", `Bearer realm="`+realm+`", Cookie realm="`+realm+`"`)
 	}

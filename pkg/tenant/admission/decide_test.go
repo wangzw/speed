@@ -35,11 +35,17 @@ func stepUp(t *testing.T, what string, rp reply, acr string) {
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("%s challenged with %q, want it to end with %q", what, got, want)
 	}
+	// The problem type tells the client what the challenge needs: the SSO
+	// challenge is its own code, because a local factor cannot satisfy it.
+	wantType := "urn:speed:authn:insufficient_user_authentication"
+	if acr == "sso" {
+		wantType = "urn:speed:authn:sso_required"
+	}
 	var problem struct {
 		Type string `json:"type"`
 	}
-	if err := json.Unmarshal([]byte(rp.body), &problem); err != nil || problem.Type != "urn:speed:authn:insufficient_user_authentication" {
-		t.Fatalf("%s carries the problem %q (%v), want urn:speed:authn:insufficient_user_authentication", what, rp.body, err)
+	if err := json.Unmarshal([]byte(rp.body), &problem); err != nil || problem.Type != wantType {
+		t.Fatalf("%s carries the problem %q (%v), want %s", what, rp.body, err, wantType)
 	}
 }
 
