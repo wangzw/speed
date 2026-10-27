@@ -59,8 +59,10 @@ acceptance itself refuses it, so no sweeper is needed.
 ## Routes and the decision
 
 Every management route is decided in the handler by the `Decider` seam with the
-action `authn.membership.manage`; the module grants itself no permission, and
-the routes are registered guarded and never impersonable. Before the decision
+action `authn.membership.manage`; the module grants itself no permission. The
+routes are registered guarded and impersonable: the action is decided in the
+path's tenant, so an impersonating identity is decided by the effective
+account's permissions there. Before the decision
 and before the mandatory audit, a management write asks the signup gate: a
 user account whose self-registration is still pending (`signup_state=1`) gets
 `403 contact-required`, asks no `Decider` and writes no row or audit row. The
@@ -70,9 +72,9 @@ token is the whole credential and there is no identity to read.
 
 | Face | Method and path | Registration | Authorization |
 |---|---|---|---|
-| Management | `POST B/admin/tenants/:tenant/invitations` | Guarded | decision + mandatory audit |
-| Management | `GET B/admin/tenants/:tenant/invitations` | Guarded | decision for the read; no audit |
-| Management | `DELETE B/admin/tenants/:tenant/invitations/:id` | Guarded | decision + mandatory audit |
+| Management | `POST B/admin/tenants/:tenant/invitations` | Guarded, Impersonable | decision + mandatory audit |
+| Management | `GET B/admin/tenants/:tenant/invitations` | Guarded, Impersonable | decision for the read; no audit |
+| Management | `DELETE B/admin/tenants/:tenant/invitations/:id` | Guarded, Impersonable | decision + mandatory audit |
 | Acceptance | `GET B/invitations/:token` | Public | the token |
 | Acceptance | `POST B/invitations/:token` | Public | the token |
 
