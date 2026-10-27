@@ -340,4 +340,4 @@
 
 - **验收**：删除最后一个用户名或邮箱、手机号或外部身份，或管理员重置因素，会使账户不再持有口令凭据、已验证手机号与外部身份中的任何一种时，操作被拒绝并说明需要先补一种登录方式；账户仍持有其中任何一种时操作成功。
 - **状态**：已实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-last-login-way.spec.ts` `last-login-way: removing the last way that is not a passkey is refused`
