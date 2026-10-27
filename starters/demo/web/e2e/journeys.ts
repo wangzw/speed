@@ -8,6 +8,12 @@
  * written yet. It is a statement about the schedule, not about the product:
  * the path is reachable through the rendered UI, and the reason says so.
  *
+ * `unimplemented` means the product does not present the path yet: the feature
+ * is designed (or not) and the browser has no rendered entry to drive, so no
+ * spec could pass today. The reason says what is missing. It is a statement
+ * about the product, not about the schedule, and the spec and the `covered`
+ * label arrive with the implementation.
+ *
  * `unreachable` means a precondition the tier cannot provide stands between
  * the journey and any spec: a deployment, a real identity or social provider,
  * or a behaviour only a real vendor exhibits. The reason names the missing
@@ -15,12 +21,14 @@
  * the product is broken, and it is not a place to park a journey whose spec
  * was merely deferred.
  *
- * The distinction matters because the two non-covered states say different
+ * The distinction matters because the three non-covered states say different
  * things. Calling a reachable journey `unreachable` tells a reader the browser
  * cannot get there when it can, and it silences the honesty gate for that
- * journey: the gate accepts either non-covered state, so the label is what
- * keeps the count of deliberately unverified journeys honest. The gate
- * requires a reason on both states and prints the three counts on every run.
+ * journey; calling a designed-but-unbuilt path `pending` claims a spec is all
+ * that stands in the way. The gate accepts any non-covered state, so the label
+ * is what keeps the count of deliberately unverified journeys honest. The gate
+ * requires a reason on all three states and prints the four counts on every
+ * run.
  *
  * `covers` lists the requirement ids the journey document itself lists. A
  * spec's `@covers` is the narrower claim: the ids that spec actually exercises.
@@ -32,7 +40,7 @@
 
 export interface JourneyEntry {
   readonly journey: string
-  readonly status: 'covered' | 'pending' | 'unreachable'
+  readonly status: 'covered' | 'pending' | 'unreachable' | 'unimplemented'
   readonly reason?: string
   readonly covers: readonly string[]
 }
@@ -430,7 +438,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-password-reset-email.md',
-    status: 'pending',
+    status: 'unimplemented',
     reason:
       'The path is neither rendered nor covered yet: the anonymous password reset is designed but not implemented, so the sign-in surface offers no forgot-password entry and the tier cannot drive the journey today. The spec and the covered label arrive with the implementation; until then this entry records the gap rather than a scheduled spec.',
     covers: [
@@ -445,7 +453,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-password-reset-sms.md',
-    status: 'pending',
+    status: 'unimplemented',
     reason:
       'The path is neither rendered nor covered yet: the anonymous password reset is designed but not implemented, so no reset channel is published and the tier cannot drive the journey today. The spec and the covered label arrive with the implementation; until then this entry records the gap rather than a scheduled spec.',
     covers: [
@@ -461,9 +469,9 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-tenant-sso-required.md',
-    status: 'pending',
+    status: 'unimplemented',
     reason:
-      'The path is designed and its specification is due next in this train: the member triggers a write that needs fresh authentication, sees the refusal that names the enterprise sign-in, re-authenticates through the tenant provider the enterprise SSO fixtures already serve, and retries the write.',
+      'The refusal the journey needs does not appear yet: the tenant admission layer covers the api endpoint only, and every self-service write that needs fresh authentication (password, identifiers, factors, sessions) lives on the account endpoint, so a write under require-sso is accepted instead of being refused with the enterprise sign-in exit. The spec arrives with that product change; the enterprise provider fixture is already available.',
     covers: [
       'REQ-security-013',
       'REQ-security-014',

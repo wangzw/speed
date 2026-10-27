@@ -147,7 +147,7 @@ class TestBaseline(GateCase):
         self.assertEqual(
             out,
             "e2e-honesty: 2 journey document(s): "
-            "1 covered, 0 pending, 1 unreachable\n",
+            "1 covered, 0 pending, 1 unreachable, 0 unimplemented\n",
         )
 
 
@@ -158,8 +158,8 @@ class TestCoverage(GateCase):
         self.assertEqual(code, 1)
         self.assertIn("journey-gamma.md", out)
         self.assertIn(
-            "neither covered by a spec nor registered pending or unreachable "
-            "with a reason",
+            "neither covered by a spec nor registered pending, unreachable or "
+            "unimplemented with a reason",
             out,
         )
 
@@ -175,7 +175,7 @@ class TestCoverage(GateCase):
         code, out, err = self.run_gate()
         self.assertEqual(code, 0, f"{out}{err}")
         self.assertIn(
-            "2 journey document(s): 2 covered, 0 pending, 0 unreachable", out
+            "2 journey document(s): 2 covered, 0 pending, 0 unreachable, 0 unimplemented", out
         )
 
     def test_a_reachable_journey_labelled_unreachable_with_no_reason_fails(self) -> None:
@@ -231,8 +231,48 @@ class TestCoverage(GateCase):
         code, out, err = self.run_gate()
         self.assertEqual(code, 0, f"{out}{err}")
         self.assertIn(
-            "2 journey document(s): 1 covered, 1 pending, 0 unreachable", out
+            "2 journey document(s): 1 covered, 1 pending, 0 unreachable, 0 unimplemented", out
         )
+
+    def test_unimplemented_is_an_honest_state_not_a_failure(self) -> None:
+        # A path the product does not present yet is not a spec merely waiting
+        # its turn; the state keeps that gap out of the pending count.
+        self.write(
+            "starters/demo/web/e2e/journeys.ts",
+            registry(
+                """\
+  {
+    journey: 'journey-beta.md',
+    status: 'unimplemented',
+    reason: 'the feature is designed but not built, so no entry is rendered',
+    covers: ['REQ-beta-001'],
+  },"""
+            ),
+        )
+        code, out, err = self.run_gate()
+        self.assertEqual(code, 0, f"{out}{err}")
+        self.assertIn(
+            "2 journey document(s): 1 covered, 0 pending, 0 unreachable, "
+            "1 unimplemented",
+            out,
+        )
+
+    def test_an_unimplemented_journey_needs_a_reason(self) -> None:
+        self.write(
+            "starters/demo/web/e2e/journeys.ts",
+            registry(
+                """\
+  {
+    journey: 'journey-beta.md',
+    status: 'unimplemented',
+    reason: '',
+    covers: ['REQ-beta-001'],
+  },"""
+            ),
+        )
+        code, out, _ = self.run_gate()
+        self.assertEqual(code, 1)
+        self.assertIn("marked unimplemented with no reason", out)
 
     def test_the_summary_reports_the_three_counts(self) -> None:
         self.write(
@@ -259,7 +299,7 @@ class TestCoverage(GateCase):
         code, out, err = self.run_gate()
         self.assertEqual(code, 0, f"{out}{err}")
         self.assertIn(
-            "3 journey document(s): 1 covered, 1 pending, 1 unreachable", out
+            "3 journey document(s): 1 covered, 1 pending, 1 unreachable, 0 unimplemented", out
         )
 
     def test_a_registry_covered_entry_still_needs_a_spec(self) -> None:
@@ -311,7 +351,9 @@ class TestCoverage(GateCase):
         code, out, _ = self.run_gate()
         self.assertEqual(code, 1)
         self.assertIn("unknown status", out)
-        self.assertIn("expected 'covered', 'pending' or 'unreachable'", out)
+        self.assertIn(
+            "expected 'covered', 'pending', 'unreachable' or 'unimplemented'", out
+        )
 
     def test_a_comment_with_braces_in_the_registry_is_not_an_entry(self) -> None:
         # The registry is read, not executed, so a comment is prose. A brace

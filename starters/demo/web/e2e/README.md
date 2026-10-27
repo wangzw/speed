@@ -225,8 +225,9 @@ gates cannot decide for a spec.
   review rule: a fixture that answers a journey's request is a defect.
 - **Never inject data into the database** to manufacture a precondition. A
   journey whose precondition the UI cannot reach is registered `unreachable`;
-  a journey the UI can reach but whose spec is not written is `pending`.
-  Neither state is a licence to bypass the product. The layer split above
+  a journey the UI can reach but whose spec is not written is `pending`; a
+  journey the product does not present yet is `unimplemented`. None of the
+  three is a licence to bypass the product. The layer split above
   keeps a spec and a helper away from a database client. What the fixtures do
   seed goes through the binary's own `seed` command reading a configuration
   the fixture extends: the operator, and, only when a spec opts in, the
@@ -282,14 +283,17 @@ Every spec declares, in its header comment:
 `journeys.ts` is the registry of every journey document and how the tier
 relates to it. A journey is `covered` by a spec; `pending` when the browser
 tier can drive it but its spec has not been written yet, with the reason saying
-the path is reachable and the spec is scheduled; or `unreachable` when a
-precondition the tier cannot provide stands in the way, which the reason names.
+the path is reachable and the spec is scheduled; `unimplemented` when the
+product does not present the path yet, so no spec could pass today, with the
+reason saying what is missing; or `unreachable` when a precondition the tier
+cannot provide stands in the way, which the reason names.
 The distinction is load-bearing: calling a reachable journey `unreachable`
-tells a reader the browser cannot get there when it can, and silences the
-honesty gate for that journey. The gate requires a reason on both non-covered
-states, rejects any other status, and prints the covered / pending / unreachable
-counts on every run; a journey that is neither covered nor registered
-non-covered fails `make repo-check`.
+tells a reader the browser cannot get there when it can, and calling a
+designed-but-unbuilt path `pending` claims only a spec stands in the way; either
+silences the honesty gate for that journey. The gate requires a reason on every
+non-covered state, rejects any other status, and prints the covered / pending /
+unreachable / unimplemented counts on every run; a journey that is neither
+covered nor registered non-covered fails `make repo-check`.
 
 ## Where the artifacts are
 
