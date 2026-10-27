@@ -23,8 +23,10 @@ package main
 // The route is POST /api/v1/workspace/personal on the account endpoint. That endpoint
 // resolves no tenant, so the caller is served before any tenant context exists;
 // the gateway guards the endpoint, and this module registers the route as one an
-// impersonating identity may reach so the handler can answer it 403 itself
-// (the gateway's refusal for an unregistered route is a 401).
+// impersonating identity may reach. The ensure then acts for the effective
+// account, so an impersonating identity builds or reads back the impersonated
+// account's own personal tenant (the gateway's default would refuse the route
+// with a 401).
 //
 // The tenant's identifier and alias are one deterministic string: a fixed
 // prefix plus the account identifier. Nothing personal goes into it -- not the
@@ -245,7 +247,7 @@ var personalEnsureOperation = speedhttp.NewOperation[struct{}, WorkspacePersonal
 		speedhttp.ProblemResponse(http.StatusUnauthorized,
 			"The request carries no identity"),
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The caller is impersonating, is a service account, or is a static-table subject that "+
+			"The caller is a service account, or a static-table subject that "+
 				"cannot own a tenant"),
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The caller cannot have a personal tenant: its personal tenant exists and is not enabled "+
@@ -275,8 +277,7 @@ func init() { core.ProcessRegistry.Register(personalModule()) }
 // without an entry point the routes are not mounted, without a board the
 // conditional feature is simply absent from the document, and without the
 // gateway's registration surface the route is guarded by the gateway's default
-// and an impersonating caller is answered by the gateway instead of the handler.
-//
+// and an impersonating caller is answered by the gateway instead of the handler.//
 // The module provides the account lifecycle hook: the personal tenant follows
 // the account that owns it, and the account module calls the hooks after its own
 // transaction commits. Where the assembly also carries an event bus, the module
@@ -502,9 +503,11 @@ func (p *personalProduct) wire(reg *core.Registry) error {
 	}
 	endpoint.Route(personalEnsureOperation.Method, personalRoutePath,
 		personalEnsureOperation.Handle(p.handleEnsure))
-	// An impersonating identity is let through the gateway so the handler can
-	// answer it 403. Without the registration surface the gateway's default
-	// refuses the route for an impersonating caller, which is a 401.
+	// The route is registered for an impersonating identity: the ensure acts
+	// for the effective account, so the impersonated account's own personal
+	// tenant is built or read back. Without the registration surface the
+	// gateway's default refuses the route for an impersonating caller, which is
+	// a 401.
 	if gate, found, gateErr := optionalPersonal[authn.Gate](reg, "the authentication gateway"); gateErr != nil {
 		return gateErr
 	} else if found {
@@ -563,19 +566,17 @@ type personalResult struct {
 // handleEnsure serves POST /api/v1/workspace/personal.
 //
 // The caller has to be authenticated; the gateway has usually settled that, and
-// the check here is what answers a run whose account endpoint is unguarded. An
-// impersonating identity is a 403, a service account is a 403, a static-table
-// subject is not an account and is a 403. An account whose personal tenant is not enabled is the 409
-// tenant-unavailable, and an identifier or alias the tenant cannot take is the
-// 409 identifier-unavailable. Every dependency failure is a 503 that carries no
-// part of the result.
+// the check here is what answers a run whose account endpoint is unguarded. The
+// ensure acts for the effective account, so an impersonating identity builds or
+// reads back the impersonated account's personal tenant. A service account is a
+// 403, and a static-table subject is not an account and is a 403. An account
+// whose personal tenant is not enabled is the 409 tenant-unavailable, and an
+// identifier or alias the tenant cannot take is the 409 identifier-unavailable.
+// Every dependency failure is a 503 that carries no part of the result.
 func (p *personalProduct) handleEnsure(ctx context.Context, _ struct{}) (WorkspacePersonalReply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
 		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusUnauthorized}
-	}
-	if id.Impersonating() {
-		return WorkspacePersonalReply{}, speedhttp.Fault{Status: http.StatusForbidden}
 	}
 	if slices.Contains(id.Methods(), authn.MethodClientSecret) {
 		// A service account authenticates only with its client secret, so the

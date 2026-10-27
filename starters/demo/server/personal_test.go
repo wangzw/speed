@@ -1376,11 +1376,13 @@ func ginContext(ctx context.Context) (*gin.Context, *httptest.ResponseRecorder) 
 	return c, recorder
 }
 
-// TestTheEnsureAnswersAnImpersonatingCaller403 holds the handler's own refusal;
-// the gateway lets an impersonating identity through this route so the handler
-// can say 403 rather than the gateway's 401.
-func TestTheEnsureAnswersAnImpersonatingCaller403(t *testing.T) {
-	product, _, _, _, _ := unitProduct()
+// TestTheEnsureActsForTheImpersonatedAccount holds that the backfill route is a
+// tenant-domain capability: an impersonating identity builds or reads back the
+// target's personal tenant, not the operator's. The gateway lets it through
+// because the route is registered Impersonable, and the handler acts on the
+// effective account.
+func TestTheEnsureActsForTheImpersonatedAccount(t *testing.T) {
+	product, roster, memberships, _, _ := unitProduct()
 	ctx := authntest.Context(t, context.Background(),
 		authntest.WithAccount("target-account"),
 		authntest.WithActor("operator-account"),
@@ -1389,8 +1391,19 @@ func TestTheEnsureAnswersAnImpersonatingCaller403(t *testing.T) {
 	)
 	c, recorder := ginContext(ctx)
 	serveEnsure(product, c)
-	if recorder.Code != http.StatusForbidden {
-		t.Errorf("an impersonating ensure answered %d, want 403:\n%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("an impersonating ensure answered %d, want 200:\n%s", recorder.Code, recorder.Body.String())
+	}
+	want := personalTenantID("target-account")
+	if _, found := roster.rows[want]; !found {
+		t.Errorf("the ensure built no personal tenant for the impersonated account %q", want)
+	}
+	if held := memberships.rows["target-account"]; len(held) != 1 || held[0].Tenant != string(want) {
+		t.Errorf("the impersonated account holds %+v, want one membership in %q", held, want)
+	}
+	operatorsOwn := personalTenantID("operator-account")
+	if _, found := roster.rows[operatorsOwn]; found {
+		t.Errorf("the ensure built the operator's personal tenant %q", operatorsOwn)
 	}
 }
 

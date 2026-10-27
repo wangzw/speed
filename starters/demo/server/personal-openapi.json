@@ -115,7 +115,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating, is a service account, or is a static-table subject that cannot own a tenant"
+            "description": "The caller is a service account, or a static-table subject that cannot own a tenant"
           },
           "409": {
             "content": {
