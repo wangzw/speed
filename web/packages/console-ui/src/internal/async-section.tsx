@@ -33,16 +33,27 @@
  * structural -- the answer's HTTP status is 403, or a bare non-2xx with no
  * readable envelope surfaced as the client.http.403 code -- so it reads a
  * plain object and never imports the transport.
+ *
+ * A read on a tenant-addressed surface can also meet the tenant admission
+ * layer's `401 authn.sso_required` refusal, which no retry can clear: the
+ * same request is refused again while the session is a local one. A caller
+ * that offers a sign-in exit passes `ssoRelogin`; the section then names
+ * the refusal through the console's resolver and offers that exit in place
+ * of the retryable placeholder. Every other failure, and a caller that
+ * passes no exit, keeps the branches above.
  */
 
 import type { ReactNode } from 'react'
-import { EmptyState, httpStatusOf } from '@speed/ui-kit'
+import Button from '@mui/material/Button'
+import { stepUpReasonOf } from '@speed/auth-core'
+import { EmptyState, errorCodeOf, httpStatusOf } from '@speed/ui-kit'
 import {
   AsyncSection,
   type AsyncSectionEmptyState,
   type AsyncSectionErrorState,
 } from '@speed/ui-kit'
 import type { EmptyStateHeadingLevel } from '@speed/ui-kit'
+import { useConsoleUiErrorText } from './error-text.js'
 import { useConsoleUiTranslation } from './translation.js'
 
 /**
@@ -121,6 +132,13 @@ export interface ConsoleAsyncSectionProps<Payload> {
   readonly refreshing: boolean
   /** The settled content, built from the narrowed payload. */
   readonly children: (payload: Payload) => ReactNode
+  /**
+   * The re-login exit for the tenant admission layer's SSO refusal. When
+   * the read settles `authn.sso_required`, the section names the refusal
+   * and renders this action instead of the retryable placeholder; every
+   * other failure, and a caller that omits it, keeps the branches above.
+   */
+  readonly ssoRelogin?: () => void
 }
 
 /** The console async section: an AsyncSection whose failure branch splits a 403 out. */
@@ -131,9 +149,11 @@ export function ConsoleAsyncSection<Payload>({
   notFoundStatuses,
   headingLevel = 'h2',
   refreshing,
+  ssoRelogin,
   ...rest
 }: ConsoleAsyncSectionProps<Payload>) {
   const { t } = useConsoleUiTranslation()
+  const resolve = useConsoleUiErrorText()
   // A refusal replaces the content whatever the payload is: the older data
   // no longer means anything, so it is never marked stale and no retry is
   // offered. A first load still pending renders the loading announcement.
@@ -143,6 +163,27 @@ export function ConsoleAsyncSection<Payload>({
         variant="noPermission"
         title={t('forbidden.title')}
         description={t('forbidden.description')}
+        headingLevel={headingLevel}
+      />
+    )
+  }
+  // The tenant admission layer's SSO refusal is answered the same way while
+  // the session stays a local one: no retry can change it. Only a surface
+  // that offers the sign-in exit takes this branch.
+  const failureCode = errorCodeOf(error)
+  if (
+    !rest.pending &&
+    ssoRelogin !== undefined &&
+    stepUpReasonOf(failureCode) === 'sso'
+  ) {
+    return (
+      <EmptyState
+        variant="error"
+        title={errorState.title}
+        description={resolve(failureCode)}
+        action={
+          <Button onClick={ssoRelogin}>{t('stepUp.relogin')}</Button>
+        }
         headingLevel={headingLevel}
       />
     )

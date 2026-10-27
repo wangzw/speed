@@ -24,7 +24,13 @@
  * section (claim, verify, remove) reports under its controls. A refusal
  * marks the affected provider row inline with the same resolved text the
  * region shows and brings that region into view; a success names the
- * provider or provider-and-domain it changed. The tenant seeds every
+ * provider or provider-and-domain it changed. A write the tenant admission
+ * layer refuses because the tenant requires enterprise single sign-on
+ * renders its resolved sentence with a re-login exit under the region: the
+ * exit ends the session so the host's session gate returns to its sign-in
+ * surface, where the operator signs in through the tenant's provider. No
+ * local factor can clear that refusal, so the page opens no step-up dialog
+ * and lists no factor. The tenant seeds every
  * write, so changing it resets all three scopes and disables the tenant
  * selector while any of them is in flight; the provider selectors follow
  * the scope they drive and are disabled only while that one is pending.
@@ -79,6 +85,7 @@ import { useConsoleUiErrorText } from './internal/error-text.js'
 import { useConsoleHasFeature } from './internal/features.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { CONSOLE_UI_NAMESPACE } from './resources.js'
+import { useConsoleSession } from './internal/session.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
@@ -139,6 +146,7 @@ export function SsoPage({
 }: SsoPageProps = {}) {
   const { t } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
+  const session = useConsoleSession()
   const hasFeature = useConsoleHasFeature()
   // A provider's metadata refresh is a separate capability of the SSO
   // surface; without it the row keeps its other actions.
@@ -228,6 +236,14 @@ export function SsoPage({
     setInnerTenant(next)
     onTenantChange?.(next)
   }
+
+  // The tenant admission layer's SSO refusal cannot be cleared by any local
+  // factor: the exit ends the session so the host's session gate returns to
+  // its sign-in surface, where the operator signs in through the tenant's
+  // provider. Without a session there is no exit to offer.
+  const relogin = useCallback(() => {
+    void session?.logout().catch(() => undefined)
+  }, [session])
 
   // The provider form scope follows the provider it edits: another target's
   // result would read as this one's.
@@ -572,7 +588,10 @@ export function SsoPage({
               )}
             </ConsoleAsyncSection>
             <Box ref={listRegionRef}>
-              <WriteFeedbackRegion outcome={listFeedback.outcome} />
+              <WriteFeedbackRegion
+                outcome={listFeedback.outcome}
+                ssoRelogin={session === null ? undefined : relogin}
+              />
             </Box>
           </SectionCard>
 
@@ -600,7 +619,10 @@ export function SsoPage({
               feedback={formFeedback}
             />
             <Box ref={formRegionRef}>
-              <WriteFeedbackRegion outcome={formFeedback.outcome} />
+              <WriteFeedbackRegion
+                outcome={formFeedback.outcome}
+                ssoRelogin={session === null ? undefined : relogin}
+              />
             </Box>
           </SectionCard>
 
@@ -758,7 +780,10 @@ export function SsoPage({
               />
             )}
             <Box ref={domainsRegionRef}>
-              <WriteFeedbackRegion outcome={domainsFeedback.outcome} />
+              <WriteFeedbackRegion
+                outcome={domainsFeedback.outcome}
+                ssoRelogin={session === null ? undefined : relogin}
+              />
             </Box>
           </SectionCard>
         </>

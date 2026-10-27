@@ -30,6 +30,7 @@ import {
   providerFixture,
   type ConsoleBackend,
 } from '../test-utils/operations.js'
+import { createStepUpSession } from '../test-utils/session.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import enUS from './locales/en-US.json' with { type: 'json' }
@@ -864,6 +865,99 @@ describe('SsoPage', () => {
     expect(document.getElementById(describedBy ?? '')).toHaveTextContent(
       zhCN.errors.authn.forbidden,
     )
+  })
+
+  it('offers the enterprise re-login exit for an SSO refusal on a provider-list write', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const logout = vi.spyOn(session, 'logout').mockResolvedValue(undefined)
+    const operations = withProviders({
+      refreshSsoMetadata: () =>
+        Promise.reject({ status: 401, code: 'authn.sso_required' }),
+    })
+    renderWithProviders(<SsoPage />, { operations, session })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.click(
+      screen.getByRole('button', {
+        name: text(zhCN.sso.refreshMetadataAria, { name: 'Acme IdP' }),
+      }),
+    )
+
+    // The tenant admission layer's refusal names the enterprise sign-in and
+    // offers the re-login exit in the list region. No local factor dialog
+    // opens, so the exit is the only banner on the page.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(alert.closest('section')).toContainElement(
+      screen.getByRole('table'),
+    )
+    const relogin = screen.getByRole('button', { name: zhCN.stepUp.relogin })
+    await user.click(relogin)
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers the enterprise re-login exit for an SSO refusal on a provider-form write', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const logout = vi.spyOn(session, 'logout').mockResolvedValue(undefined)
+    const operations = withProviders({
+      createSsoProvider: () =>
+        Promise.reject({ status: 401, code: 'authn.sso_required' }),
+    })
+    renderWithProviders(<SsoPage />, { operations, session })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.protocolLabel), 'oidc')
+    await user.type(screen.getByLabelText(zhCN.sso.provider.nameLabel), 'New IdP')
+    await user.type(
+      screen.getByLabelText(zhCN.sso.provider.provisioningLabel),
+      'manual',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.sso.provider.createSubmit }),
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
+    // The result lands under the write form, not under the provider list or
+    // the domain bar.
+    expect(alert.closest('section')).toContainElement(
+      screen.getByLabelText(zhCN.sso.provider.nameLabel),
+    )
+    const relogin = screen.getByRole('button', { name: zhCN.stepUp.relogin })
+    await user.click(relogin)
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers the enterprise re-login exit for an SSO refusal on a domain write', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const logout = vi.spyOn(session, 'logout').mockResolvedValue(undefined)
+    const operations = withProviders({
+      claimSsoDomain: () =>
+        Promise.reject({ status: 401, code: 'authn.sso_required' }),
+    })
+    renderWithProviders(<SsoPage />, { operations, session })
+    await pickTenant(user)
+    await screen.findByText('Acme IdP')
+    await pickProvider(user)
+    await user.type(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+      'acme.com',
+    )
+    await user.click(screen.getByRole('button', { name: zhCN.sso.domains.claim }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
+    expect(alert.closest('section')).toContainElement(
+      screen.getByRole('textbox', { name: zhCN.sso.domains.domainLabel }),
+    )
+    const relogin = screen.getByRole('button', { name: zhCN.stepUp.relogin })
+    await user.click(relogin)
+    expect(logout).toHaveBeenCalledTimes(1)
   })
 
   it('confirms each provider-list action with the provider it changed', async () => {

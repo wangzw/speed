@@ -1397,6 +1397,35 @@ describe('InvitationsPage', () => {
     ).toBeNull()
   })
 
+  it('offers the enterprise re-login exit for an SSO refusal on the invitation list read', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const logout = vi.spyOn(session, 'logout').mockResolvedValue(undefined)
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.reject({ status: 401, code: 'authn.sso_required' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations, session })
+    await pickTenant(user)
+
+    // A read the tenant admission layer refuses names the enterprise sign-in
+    // and offers the re-login exit, as a refused write does. No retry stands
+    // beside it: the same request would be refused again while the session is
+    // a local one.
+    expect(
+      await screen.findByText(zhCN.errors.authn.sso_required),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.invitations.retry }),
+    ).toBeNull()
+    const relogin = screen.getByRole('button', { name: zhCN.stepUp.relogin })
+
+    // The exit ends the session so the host's session gate returns to the
+    // sign-in surface, where the operator signs in through the provider.
+    await user.click(relogin)
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
   it('shows one banner with the re-login exit for an SSO refusal on a member write', async () => {
     const user = userEvent.setup()
     const session = createStepUpSession()

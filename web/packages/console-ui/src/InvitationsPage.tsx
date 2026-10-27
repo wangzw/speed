@@ -33,13 +33,16 @@
  * region shows and brings the region into view; a success names the
  * invitee or account it changed. The tenant seeds every write, so changing
  * it resets both scopes and disables the selector while either is in
- * flight. A write the tenant admission layer refuses because the tenant
+ * flight. A request the tenant admission layer refuses because the tenant
  * requires enterprise single sign-on renders its resolved sentence with a
- * re-login exit under the region: the exit ends the session so the host's
- * session gate returns to its sign-in surface, where the operator signs in
- * through the tenant's provider. No local factor can clear that refusal,
- * so the page opens no step-up dialog and lists no factor. The page opens
- * with ui-kit's PageHeader.
+ * re-login exit: a refused write shows it under the region, and the
+ * invitation list's failed read shows it in place of the retryable
+ * placeholder (a retry cannot clear the refusal while the session is a
+ * local one). The exit ends the session so the host's session gate returns
+ * to its sign-in surface, where the operator signs in through the tenant's
+ * provider. No local factor can clear that refusal, so the page opens no
+ * step-up dialog and lists no factor. The page opens with ui-kit's
+ * PageHeader.
  *
  * The tenant scope is optionally controlled: `tenant` locks the page to the
  * given value and hides the selector, `defaultTenant` seeds the page's own
@@ -685,6 +688,7 @@ export function InvitationsPage({
                 title: t('invitations.empty.title'),
                 description: t('invitations.empty.description'),
               }}
+              ssoRelogin={session === null ? undefined : relogin}
             >
               {(settled) => (
                 <DataTable
