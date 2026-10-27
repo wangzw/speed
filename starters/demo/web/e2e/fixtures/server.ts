@@ -402,10 +402,12 @@ export interface ReviewServer {
  * on the product's behalf. Every other spec runs without it and keeps the
  * template's public provider defaults.
  *
- * The enterprise journey opts in separately, with `enterpriseSSO`. Only then
- * does the fixture start the enterprise provider — the same OIDC machinery with
- * its own issuer, certificate material and one fixed user whose address is on
- * the test domain — and the UDP DNS stub beside it. The configuration the
+ * The enterprise journey opts in separately, with `enterpriseSSO`; the
+ * tenant-SSO journey uses the same fixtures through `tenantSSO`, which also
+ * seeds its tenant administrator and that tenant's own SSO requirement. Only
+ * then does the fixture start the enterprise provider — the same OIDC machinery
+ * with its own issuer, certificate material and one fixed user whose address is
+ * on the test domain — and the UDP DNS stub beside it. The configuration the
  * binary reads names the stub as `authn.sso.dns-resolver`, the provider's CA as
  * `authn.sso.oidc-ca-file` and turns the loopback relaxation on; the stub
  * answers TXT queries for the one record name and NXDOMAINs everything else.
@@ -420,6 +422,7 @@ export async function startReviewServer(
     readonly seedSocialAccount?: boolean
     readonly socialIdentityProvider?: boolean
     readonly enterpriseSSO?: boolean
+    readonly tenantSSO?: boolean
     readonly recentWindow?: string
     readonly schedulerTick?: string
   } = {},
@@ -485,7 +488,10 @@ export async function startReviewServer(
     // server a domain-ownership proof can reach. They start before the seed for
     // the same reason as the social provider: a configured CA file that cannot
     // be read stops the start, so the order is load-bearing.
-    if (options.enterpriseSSO === true) {
+    if (
+      options.enterpriseSSO === true ||
+      options.tenantSSO === true
+    ) {
       enterpriseProvider = await startEnterpriseProvider(dir)
       dnsStub = await startDNSStub({
         recordName: enterpriseIdentityProviderRecordName,
@@ -512,6 +518,7 @@ export async function startReviewServer(
       seedImpersonation: options.seedImpersonation,
       seedInvitee: options.seedInvitee,
       seedSocialAccount: options.seedSocialAccount,
+      tenantSSO: options.tenantSSO,
       socialProvider,
       ssoProvider,
       recentWindow: options.recentWindow,
@@ -540,6 +547,7 @@ export async function startReviewServer(
         seedImpersonation: options.seedImpersonation,
         seedInvitee: options.seedInvitee,
         seedSocialAccount: options.seedSocialAccount,
+        tenantSSO: options.tenantSSO,
         socialProvider,
         ssoProvider,
         recentWindow: options.recentWindow,

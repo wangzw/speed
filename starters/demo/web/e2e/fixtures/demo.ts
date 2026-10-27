@@ -95,6 +95,14 @@ export const test = base.extend<{
    */
   enterpriseSSO: boolean
   /**
+   * Start the enterprise fixtures and seed the tenant-SSO journey's state: the
+   * enterprise user as the target tenant's administrator and that tenant's own
+   * `tenant.admission.require-sso` switched on. A spec that drives the tenant
+   * SSO re-authentication sets `test.use({ tenantSSO: true })`; every other
+   * spec starts from the template's own seed and without the requirement.
+   */
+  tenantSSO: boolean
+  /**
    * Lower the account self-service freshness window for this spec's server.
    * A journey that observes the window passing sets it to the setting's
    * domain floor; every other spec keeps the template's declared window.
@@ -113,6 +121,7 @@ export const test = base.extend<{
   seedSocialAccount: [false, { option: true }],
   socialIdentityProvider: [false, { option: true }],
   enterpriseSSO: [false, { option: true }],
+  tenantSSO: [false, { option: true }],
   recentWindow: [undefined, { option: true }],
   schedulerTick: [undefined, { option: true }],
   server: async (
@@ -123,6 +132,7 @@ export const test = base.extend<{
       seedSocialAccount,
       socialIdentityProvider,
       enterpriseSSO,
+      tenantSSO,
       recentWindow,
       schedulerTick,
     },
@@ -136,6 +146,7 @@ export const test = base.extend<{
       seedSocialAccount,
       socialIdentityProvider,
       enterpriseSSO,
+      tenantSSO,
       recentWindow,
       schedulerTick,
     })

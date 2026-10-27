@@ -40,7 +40,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { identityProviderUser } from './identity-provider'
+import {
+  enterpriseIdentityProviderUser,
+  identityProviderUser,
+} from './identity-provider'
 import { DEPLOY_CONFIG_TEMPLATE, REVIEW_CONFIG_TEMPLATE } from './paths'
 
 export interface ReviewConfigInput {
@@ -118,6 +121,17 @@ export interface ReviewConfigInput {
    * dispatch polls independently.
    */
   readonly schedulerTick?: string
+  /**
+   * Seed the tenant-SSO journey's state through the binary's own `seed` command:
+   * the enterprise fixture's fixed user as the target tenant's administrator,
+   * and `tenant.admission.require-sso` on in that tenant's layer. Off by
+   * default: the requirement changes what every write the tenant's members make
+   * is judged by, so only the journey that observes it turns it on. The
+   * provider and the DNS stub the journey needs come from `ssoProvider`; this
+   * input contributes the account, the administrator binding and the tenant
+   * setting, never a database row written around the product.
+   */
+  readonly tenantSSO?: boolean
 }
 
 export interface ReviewConfig {
@@ -209,6 +223,32 @@ export const reviewSocialAccount = {
   displayName: identityProviderUser.name,
 } as const
 
+/**
+ * The tenant that requires enterprise SSO in the tenant-SSO journey. It is the
+ * second tenant the enterprise fixture's opt-in registers, and the journey's
+ * administrator belongs to it.
+ */
+export const tenantSSOTenant = 'globex'
+
+/**
+ * The tenant administrator the tenant-SSO journey signs in as.
+ *
+ * The address is the enterprise fixture's fixed user's, so the provider's
+ * pre-provisioned match lands on this account; the password gives the journey
+ * the local-first-factor session it starts from. The display name deliberately
+ * differs from the provider's `name` claim, so an account opened from the
+ * provider's claims would show the claim and fail the same-account assertion.
+ * The account is also a platform administrator because this host's console --
+ * where the invitations-and-members page lives -- is platform-staff-only; the
+ * tenant-administrator binding in `tenantSSOTenant` is what the journey's
+ * invitations exercise.
+ */
+export const tenantSSOAdmin = {
+  identifier: enterpriseIdentityProviderUser.email,
+  password: 'tenant-sso-review-secret',
+  displayName: 'Globex Administrator',
+} as const
+
 /** The template's seeded operator entry; the member entry is appended to it. */
 const seedOperatorAccount = `    - identifier: operator@demo.test
       password: operator-dev-secret
@@ -240,6 +280,18 @@ function seedInviteeAccount(): string {
   return `    - identifier: ${quoted(reviewInvitee.identifier)}
       password: ${quoted(reviewInvitee.password)}
       display-name: ${quoted(reviewInvitee.displayName)}`
+}
+
+/**
+ * The tenant-SSO administrator's `seed.accounts` entry. It joins the operator's
+ * list, and it is marked `platform-admin` because the console is platform-staff
+ * only; the tenant-admin binding comes from the tenant entry below.
+ */
+function seedTenantSSOAdminAccount(): string {
+  return `    - identifier: ${quoted(tenantSSOAdmin.identifier)}
+      password: ${quoted(tenantSSOAdmin.password)}
+      display-name: ${quoted(tenantSSOAdmin.displayName)}
+      platform-admin: true`
 }
 
 /** Replace exactly one occurrence of a needle, or fail the fixture. */
@@ -382,6 +434,12 @@ export async function writeReviewConfig(
   // client needs the relaxation to reach the provider on loopback. A template
   // that lost the block fails here rather than silently leaving the system
   // resolver and roots in place while the journey expects the fixtures.
+  if (input.tenantSSO === true && input.ssoProvider === undefined) {
+    throw new Error(
+      'the tenant-SSO seed names an enterprise provider the configuration has ' +
+        'no seams for; the server fixture must pass ssoProvider with tenantSSO',
+    )
+  }
   if (input.ssoProvider !== undefined) {
     const ssoDefaults = `    allow-private-egress: false
     dns-resolver: ""
@@ -394,18 +452,40 @@ export async function writeReviewConfig(
     oidc-ca-file: ${quoted(input.ssoProvider.rootCAFile)}`,
       'enterprise SSO seams',
     )
-    // The journey's last step moves the employee from the organization they
-    // already belong to into the tenant the provider was registered in. That
-    // second organization is part of the deployment's start state: the seed
-    // registers it with the platform operator as its administrator, exactly as
-    // it does for the template's own tenant. The employee's membership in
-    // either organization is written through the console by the spec, so
-    // nothing here manufactures the employee's membership.
+    // The enterprise onboarding journey's last step moves the employee from
+    // the organization they already belong to into the tenant the provider was
+    // registered in. That second organization is part of the deployment's
+    // start state: the seed registers it with the platform operator as its
+    // administrator, exactly as it does for the template's own tenant. The
+    // employee's membership in either organization is written through the
+    // console by the spec, so nothing here manufactures the employee's
+    // membership.
+    //
+    // The tenant-SSO journey's second tenant has a different shape: its
+    // administrators are the platform operator, who reaches the management
+    // surface to register the provider, and the enterprise fixture's own user,
+    // whom the provider's pre-provisioned match lands on, so the session keeps
+    // the same account and administrator binding across the re-login. The
+    // tenant's own settings layer demands SSO. The management routes mount on
+    // the admin endpoint, which tenant admission does not guard, so the
+    // operator's provider setup is not held to the requirement; the
+    // administrator's invitation writes are, because the invitation routes are
+    // tenant-resolved on the API endpoint.
+    const tenants =
+      input.tenantSSO === true
+        ? '    - name: acme\n      admins:\n        - member\n' +
+          '    - name: globex\n      admins:\n' +
+          '        - operator@demo.test\n' +
+          `        - ${quoted(tenantSSOAdmin.identifier)}\n` +
+          '      settings:\n' +
+          '        - key: "tenant.admission.require-sso"\n' +
+          '          value: "true"\n'
+        : '    - name: acme\n      admins:\n        - member\n' +
+          '    - name: globex\n      admins:\n        - operator@demo.test\n'
     body = replaceOnce(
       body,
       '    - name: acme\n      admins:\n        - member\n',
-      '    - name: acme\n      admins:\n        - member\n' +
-        '    - name: globex\n      admins:\n        - operator@demo.test\n',
+      tenants,
       'seed tenants',
     )
   }
@@ -429,6 +509,9 @@ export async function writeReviewConfig(
   if (input.seedInvitee === true) extraAccounts.push(seedInviteeAccount())
   if (input.seedSocialAccount === true) {
     extraAccounts.push(seedSocialAccount())
+  }
+  if (input.tenantSSO === true) {
+    extraAccounts.push(seedTenantSSOAdminAccount())
   }
   if (extraAccounts.length > 0) {
     body = replaceOnce(
