@@ -33,7 +33,13 @@
  * region shows and brings the region into view; a success names the
  * invitee or account it changed. The tenant seeds every write, so changing
  * it resets both scopes and disables the selector while either is in
- * flight. The page opens with ui-kit's PageHeader.
+ * flight. A write the tenant admission layer refuses because the tenant
+ * requires enterprise single sign-on renders its resolved sentence with a
+ * re-login exit under the region: the exit ends the session so the host's
+ * session gate returns to its sign-in surface, where the operator signs in
+ * through the tenant's provider. No local factor can clear that refusal,
+ * so the page opens no step-up dialog and lists no factor. The page opens
+ * with ui-kit's PageHeader.
  *
  * The tenant scope is optionally controlled: `tenant` locks the page to the
  * given value and hides the selector, `defaultTenant` seeds the page's own
@@ -81,6 +87,7 @@ import { useConsoleHasFeature } from './internal/features.js'
 import { useConsoleInvitationLink } from './internal/invitation-link.js'
 import { RefreshButton } from '@speed/ui-kit'
 import { CONSOLE_UI_NAMESPACE } from './resources.js'
+import { useConsoleSession } from './internal/session.js'
 import { TenantScope, tenantFromLocation } from './internal/tenant-scope.js'
 import { useConsoleUiTranslation } from './internal/translation.js'
 import {
@@ -162,6 +169,7 @@ export function InvitationsPage({
 }: InvitationsPageProps = {}) {
   const { t, i18n } = useConsoleUiTranslation()
   const operations = useConsoleOperations()
+  const session = useConsoleSession()
   const invitationLink = useConsoleInvitationLink()
   const hasFeature = useConsoleHasFeature()
   // The member table's exemption column, toggle and the write form's
@@ -229,6 +237,14 @@ export function InvitationsPage({
     setInnerTenant(next)
     onTenantChange?.(next)
   }
+
+  // The tenant admission layer's SSO refusal cannot be cleared by any local
+  // factor: the exit ends the session so the host's session gate returns to
+  // its sign-in surface, where the operator signs in through the tenant's
+  // provider. Without a session there is no exit to offer.
+  const relogin = useCallback(() => {
+    void session?.logout().catch(() => undefined)
+  }, [session])
 
   // The refresh action re-reads both body reads -- the invitation list and
   // the member list -- and resets both scopes and row markers first. The
@@ -679,7 +695,10 @@ export function InvitationsPage({
               )}
             </ConsoleAsyncSection>
             <Box ref={invitationRegionRef}>
-              <WriteFeedbackRegion outcome={invitationFeedback.outcome} />
+              <WriteFeedbackRegion
+                outcome={invitationFeedback.outcome}
+                ssoRelogin={session === null ? undefined : relogin}
+              />
             </Box>
           </SectionCard>
 
@@ -722,7 +741,10 @@ export function InvitationsPage({
               )}
             </ConsoleAsyncSection>
             <Box ref={membersRegionRef}>
-              <WriteFeedbackRegion outcome={membersFeedback.outcome} />
+              <WriteFeedbackRegion
+                outcome={membersFeedback.outcome}
+                ssoRelogin={session === null ? undefined : relogin}
+              />
             </Box>
           </SectionCard>
         </>

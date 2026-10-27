@@ -39,6 +39,7 @@ import {
 } from '../test-utils/operations.js'
 import { ConsoleInvitationLinkProvider } from './internal/invitation-link.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
+import { createStepUpSession } from '../test-utils/session.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
 import { uiKitResources } from '@speed/ui-kit'
 
@@ -1325,6 +1326,100 @@ describe('InvitationsPage', () => {
       within(section(zhCN.members.title)).queryByText(zhCN.errors.authn.conflict),
     ).toBeNull()
     expect(screen.getAllByRole('alert')).toHaveLength(2)
+  })
+
+  it('offers the enterprise re-login exit for an SSO refusal on an invitation write', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const logout = vi.spyOn(session, 'logout').mockResolvedValue(undefined)
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      issueInvitation: () =>
+        Promise.reject({ status: 401, code: 'authn.sso_required' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations, session })
+    await pickTenant(user)
+
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+
+    // The tenant admission layer's refusal names the enterprise sign-in and
+    // offers the re-login exit. No local factor dialog opens, so the exit is
+    // the only banner on the page.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: zhCN.stepUp.submit }),
+    ).toBeNull()
+    const relogin = screen.getByRole('button', { name: zhCN.stepUp.relogin })
+    await expectNoAxeViolations()
+
+    // The exit ends the session so the host's session gate returns to the
+    // sign-in surface, where the operator signs in through the provider.
+    await user.click(relogin)
+    expect(logout).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps a plain invitation refusal's own text and offers no SSO exit", async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const operations = withTenant({
+      listInvitations: () =>
+        Promise.resolve({ invitations: [invitation()], next_cursor: '' }),
+      issueInvitation: () =>
+        Promise.reject({ status: 409, code: 'authn.conflict' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations, session })
+    await pickTenant(user)
+
+    await user.type(
+      screen.getByLabelText(zhCN.invitations.issue.emailLabel),
+      'new@example.com',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.invitations.issue.submit }),
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      zhCN.errors.authn.conflict,
+    )
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(
+      screen.queryByRole('button', { name: zhCN.stepUp.relogin }),
+    ).toBeNull()
+  })
+
+  it('shows one banner with the re-login exit for an SSO refusal on a member write', async () => {
+    const user = userEvent.setup()
+    const session = createStepUpSession()
+    const operations = withTenant({
+      listMembers: () => Promise.resolve([member()]),
+      setMemberSsoExempt: () =>
+        Promise.reject({ status: 401, code: 'authn.sso_required' }),
+    })
+    renderWithProviders(<InvitationsPage />, { operations, session })
+    await pickTenant(user)
+    await screen.findAllByText('Operator')
+
+    await user.click(
+      screen.getByRole('button', { name: zhCN.members.ssoExemptSet }),
+    )
+
+    const memberSection = section(zhCN.members.title)
+    const alert = await within(memberSection).findByRole('alert')
+    expect(alert).toHaveTextContent(zhCN.errors.authn.sso_required)
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(
+      within(memberSection).getByRole('button', { name: zhCN.stepUp.relogin }),
+    ).toBeInTheDocument()
   })
 
   it('marks the refused invitation row inline and brings its region into view', async () => {

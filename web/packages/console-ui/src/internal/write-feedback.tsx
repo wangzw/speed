@@ -16,27 +16,62 @@
  * region render the one message through the one resolver, and a ref that
  * brings a region into view when its scope settles a failure, so a failure
  * reported below a long table is still seen.
+ *
+ * A surface that offers a sign-in exit passes `ssoRelogin`: when the slot
+ * settles the tenant admission layer's `authn.sso_required` refusal, the
+ * region renders the exit under the resolved sentence, and every other
+ * code keeps its existing rendering.
  */
 
 import { useEffect, useRef } from 'react'
 import type { RefObject } from 'react'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import type { SxProps, Theme } from '@mui/material/styles'
+import { stepUpReasonOf } from '@speed/auth-core'
 import { WriteFeedbackRegion as SharedWriteFeedbackRegion } from '@speed/ui-kit'
 import type { WriteOutcome } from '@speed/ui-kit'
 import { useConsoleUiErrorText } from './error-text.js'
+import { useConsoleUiTranslation } from './translation.js'
 
 export interface WriteFeedbackRegionProps {
   /** The scope's slot; `null` renders no visible feedback. */
   readonly outcome: WriteOutcome | null
   /** Styles for the region's root container; spacing adjustments. */
   readonly sx?: SxProps<Theme>
+  /**
+   * The re-login exit for the tenant admission layer's SSO refusal. When
+   * the scope settles the `authn.sso_required` failure, the region renders
+   * this action under the resolved sentence; every other code keeps its
+   * existing rendering. Omit it on a surface with no sign-in exit of its
+   * own.
+   */
+  readonly ssoRelogin?: () => void
 }
 
 /** The console's feedback region: one scope's slot rendered with its resolver. */
-export function WriteFeedbackRegion({ outcome, sx }: WriteFeedbackRegionProps) {
+export function WriteFeedbackRegion({
+  outcome,
+  sx,
+  ssoRelogin,
+}: WriteFeedbackRegionProps) {
   const resolve = useConsoleUiErrorText()
+  const { t } = useConsoleUiTranslation()
+  const ssoRefused =
+    outcome !== null &&
+    outcome.kind === 'failure' &&
+    stepUpReasonOf(outcome.code) === 'sso'
   return (
-    <SharedWriteFeedbackRegion outcome={outcome} resolve={resolve} sx={sx} />
+    <>
+      <SharedWriteFeedbackRegion outcome={outcome} resolve={resolve} sx={sx} />
+      {ssoRefused && ssoRelogin !== undefined && (
+        <Box sx={{ mt: 1 }}>
+          <Button type="button" variant="contained" onClick={ssoRelogin}>
+            {t('stepUp.relogin')}
+          </Button>
+        </Box>
+      )}
+    </>
   )
 }
 
