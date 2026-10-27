@@ -294,6 +294,7 @@ describe('PasswordResetScreen', () => {
       screen.queryByLabelText(zhCN.passwordReset.codeLabel),
     ).not.toBeInTheDocument()
     expect(verifyReset).toHaveBeenCalledTimes(1)
+    await expectNoAxeViolations()
 
     await user.click(
       screen.getByRole('button', { name: zhCN.passwordReset.submit }),
