@@ -84,10 +84,11 @@ type seedInput struct {
 	// Accounts are the accounts a copy starts with.
 	Accounts []seedAccount `config:"accounts"`
 	// Tenants are the business tenants this deployment serves. Each is
-	// registered in the roster, and each names the accounts that administer it:
-	// the first is the tenant's first tenant-admin, and every one of them holds
-	// that role in the tenant's domain. The system tenant must not be named here:
-	// the seed registers it itself, and a list entry naming it is refused. Every
+	// registered in the roster, names the accounts that administer it, and may
+	// list the runtime settings it starts with: the first administrator is the
+	// tenant's first tenant-admin, and every one of them holds that role in the
+	// tenant's domain. The system tenant must not be named here: the seed
+	// registers it itself, and a list entry naming it is refused. Every
 	// administrator's membership and tenant-admin binding are reconciled on every
 	// run — a missing one is written — which is where this differs from
 	// seed.members.
@@ -131,8 +132,8 @@ type seedMember struct {
 	Suspended bool `config:"suspended"`
 }
 
-// seedTenantEntry is one business tenant the seed writes: its name and the
-// accounts that administer it.
+// seedTenantEntry is one business tenant the seed writes: its name, the
+// accounts that administer it, and the settings that tenant starts with.
 type seedTenantEntry struct {
 	// Name is the tenant's identifier, which is also its alias: a request
 	// carrying the tenant's name on its surface resolves to it.
@@ -142,6 +143,12 @@ type seedTenantEntry struct {
 	// in the tenant's domain. The first entry is written first, so it is the
 	// tenant's first administrator.
 	Admins []string `config:"admins"`
+	// Settings are runtime settings written into this tenant's layer, each while
+	// that layer holds no explicit row for its key. They go through the settings
+	// store exactly as the global list does, so a misspelled key and a value
+	// outside its declared domain both fail the command. An entry that names none
+	// writes none, and the global layer is untouched either way.
+	Settings []seedSetting `config:"settings"`
 }
 
 // seedAdministrator is one configured platform administrator: the account's
@@ -389,9 +396,10 @@ func seedSchema() config.Schema {
 			},
 			tenantsItem: {
 				Origins: config.OriginPrimary,
-				Description: "the business tenants this deployment serves, each with its name and " +
-					"the accounts that administer it; the system tenant must not be listed, each " +
-					"is registered in the roster, and each named administrator's membership and " +
+				Description: "the business tenants this deployment serves, each with its name, " +
+					"the accounts that administer it, and optionally the runtime settings written " +
+					"into that tenant's layer; the system tenant must not be listed, each is " +
+					"registered in the roster, and each named administrator's membership and " +
 					"tenant-admin binding are written whenever either is missing",
 			},
 			settingsItem: {
@@ -452,10 +460,10 @@ func seedModule() core.Module {
 	}
 }
 
-// seedDatabase writes the runtime settings the configuration names, the system
-// tenant, the accounts, the business tenants with their administrators, the
-// memberships the configuration declares, and the two administration roles with
-// their grants and bindings.
+// seedDatabase writes the global runtime settings the configuration names, the
+// system tenant, the accounts, the business tenants with their administrators
+// and each tenant's own runtime settings, the memberships the configuration
+// declares, and the two administration roles with their grants and bindings.
 //
 // It is idempotent: an account, a tenant, a membership, a role, a grant or a
 // binding already there is left as it stands and reported as skipped, so the
@@ -590,9 +598,13 @@ func seedDatabase(ctx context.Context, reg *core.Registry) error {
 
 	// Then the business tenants, which the console's tenant-addressed pages read
 	// from the roster: a page selects a tenant from it, and a tenant that is not
-	// there is one no page can name.
+	// there is one no page can name. Each tenant's settings follow its row into
+	// that tenant's layer.
 	for _, t := range in.Tenants {
 		if err := seedTenant(ctx, roster, t.Name); err != nil {
+			return err
+		}
+		if err := seedTenantSettings(ctx, store, t.Name, t.Settings); err != nil {
 			return err
 		}
 	}
@@ -872,6 +884,49 @@ func seedSettings(ctx context.Context, store settings.Store, items []seedSetting
 		}
 		held[item.Key] = true
 		fmt.Printf("seeded: setting %s=%s\n", item.Key, item.Value)
+	}
+	return nil
+}
+
+// seedTenantSettings writes the settings one tenant's configuration names into
+// that tenant's layer, unless the layer already holds an explicit row for the
+// key.
+//
+// It is the global seed's write path with the tenant as the layer: the key is
+// held to its declaration and the value to the declared type and domain by the
+// settings module, so a misspelled key and an out-of-domain value both fail
+// this command with the module's own vocabulary. A key the tenant's layer
+// already holds is skipped, not overwritten, for the reason seedSettings gives:
+// the row may be an operator's runtime change, and a later seed run must leave
+// it as it stands.
+func seedTenantSettings(ctx context.Context, store settings.Store, tenantName string, items []seedSetting) error {
+	if len(items) == 0 {
+		return nil
+	}
+	layer := settings.ForTenant(tenantName)
+	rows, err := store.List(ctx, layer)
+	if err != nil {
+		return fmt.Errorf("seed: listing the settings of tenant %q: %w", tenantName, err)
+	}
+	held := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		held[row.Key] = true
+	}
+	for _, item := range items {
+		if held[item.Key] {
+			fmt.Printf("skipped: setting %s in tenant %s (exists)\n", item.Key, tenantName)
+			continue
+		}
+		if err := store.Set(ctx, settings.Write{
+			Layer: layer,
+			Key:   item.Key,
+			Value: item.Value,
+			Actor: seedCommand,
+		}); err != nil {
+			return fmt.Errorf("seed: writing the setting %s in tenant %q: %w", item.Key, tenantName, err)
+		}
+		held[item.Key] = true
+		fmt.Printf("seeded: setting %s=%s in tenant %s\n", item.Key, item.Value, tenantName)
 	}
 	return nil
 }

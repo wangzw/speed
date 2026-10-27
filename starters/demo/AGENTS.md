@@ -447,8 +447,9 @@ path back. An account marked `platform-admin` becomes a member of the system
 tenant and holds `platform-admin` in the platform domain (the system tenant's
 domain) plus `tenant-admin` in the system domain; a business tenant never holds
 `platform-admin`, which exists only in the platform domain. A tenant entry gives
-`name` and `admins`; every named administrator gets a membership and the
-tenant-admin role in that tenant's domain, and the first entry is written first.
+`name` and `admins`, and may also give `settings`; every named administrator
+gets a membership and the tenant-admin role in that tenant's domain, and the
+first entry is written first.
 The system tenant must not be listed under `seed.tenants`: the command
 registers it itself and refuses an entry naming it. A `personal-` prefixed name
 is refused too: the list names the deployment's business tenants, and personal
@@ -461,9 +462,10 @@ administrator named under a tenant entry (and a platform administrator's system
 membership) is reconciled on every run — a missing membership is written and a
 missing tenant-admin binding is added — because the configuration names that
 account an administrator and the binding has no effect without the membership.
-A setting is written into the global layer only while that layer holds no
-explicit row for its key, so a value an operator changed through the settings
-surface survives a later seed run. It carries the migrations with it, so it is
+A setting under `seed.settings` is written into the global layer, and one under
+a tenant entry into that tenant's layer, only while that layer holds no explicit
+row for its key, so a value an operator changed through the settings surface
+survives a later seed run. It carries the migrations with it, so it is
 the whole of what a fresh copy does to a database before serving from it; a run
 with nothing to reconcile writes nothing and says so. A permission a module declares
 after an earlier run is added on the next run through the host's seeding
@@ -1119,9 +1121,12 @@ Under every stack:
   it is given — a plaintext `password` or a `password-hash` — always registers
   the system tenant, registers the business tenants under `seed.tenants` with
   their administrators, writes the memberships under `seed.members`, and writes
-  the runtime settings under `seed.settings`. Each tenant entry gives `name` and
-  `admins`; every named administrator gets a membership and the tenant-admin role
-  in that tenant's domain, with the first entry written first. An account marked
+  the runtime settings under `seed.settings`. Each tenant entry gives `name`,
+  `admins` and optionally `settings`; every named administrator gets a membership
+  and the tenant-admin role in that tenant's domain, with the first entry written
+  first, and each `settings` pair is written into that tenant's layer through the
+  same store, so its key and value are held to the declaration as the global
+  list's are. An account marked
   `platform-admin` becomes a member of the system tenant and holds
   `platform-admin` in the platform domain plus `tenant-admin` in the system
   domain; a business tenant never receives `platform-admin`, which exists only in

@@ -17,7 +17,10 @@ import (
 	"github.com/vislake/speed/pkg/config"
 	"github.com/vislake/speed/pkg/core"
 	"github.com/vislake/speed/pkg/db/sqlite"
+	eventmemory "github.com/vislake/speed/pkg/event/memory"
+	"github.com/vislake/speed/pkg/settings"
 	"github.com/vislake/speed/pkg/tenant"
+	"github.com/vislake/speed/pkg/tenant/admission"
 	tenantcatalog "github.com/vislake/speed/pkg/tenant/catalog"
 )
 
@@ -656,6 +659,156 @@ func TestSeedAppliesTheSettingsBeforeCreatingAccounts(t *testing.T) {
 	}
 	if strings.Contains(res.stdout, "seeded: account operator") {
 		t.Errorf("the account was seeded despite the raised policy:\n%s", res.stdout)
+	}
+}
+
+// tenantSettingsConfig extends the configuration template's seed section with a
+// settings list under the demo tenant and points the stack at a database in a
+// file, so that what the seed command writes outlives its process and the case
+// can read it back through the settings module.
+func tenantSettingsConfig(t *testing.T, dsn, entry string) string {
+	t.Helper()
+	body := configBody(t, freePorts(t, listenerCount), dsn)
+	const needle = "  tenants:\n    - name: demo\n      admins:\n        - operator\n"
+	replaced := strings.Replace(body, needle, needle+entry, 1)
+	if replaced == body {
+		t.Fatalf("the configuration template holds no seed tenant entry to extend")
+	}
+	return writeConfigFile(t, replaced)
+}
+
+// withSettings opens the database a seed run wrote through the real settings
+// module and the real engine, and runs check while the assembly is up: a read
+// after Drive returns would find the database closed. The tenant admission
+// module is registered for its declaration alone — it takes no part in the
+// drive — so its two per-tenant switches are in the key table and a read
+// resolves them under their declared type, the way a consumer's does.
+func withSettings(t *testing.T, dsn string,
+	check func(context.Context, settings.Store),
+) {
+	t.Helper()
+	body := fmt.Sprintf(`{"db":{"sqlite":{"dsn":%q}},"event":{"memory":{}}}`, dsn)
+	reader := authntest.ConfigReaderAll(t, body, sqlite.Module(), eventmemory.Module(),
+		settings.Module())
+	reg := core.New()
+	reg.Register(config.Module())
+	reg.Register(sqlite.Module())
+	reg.Register(eventmemory.Module())
+	reg.Register(settings.Module())
+	reg.Register(admission.Module())
+	reg.Supply(reader, config.ModuleName)
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth:        core.StageInit,
+		Participants: []string{sqlite.ModuleName, eventmemory.ModuleName, settings.ModuleName},
+		Action: func(ctx context.Context, reg *core.Registry) error {
+			store, err := core.Resolve[settings.Store](reg)
+			if err != nil {
+				return err
+			}
+			check(ctx, store)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("reading the seeded settings: %v", err)
+	}
+}
+
+// A settings list under seed.tenants is written into that tenant's layer, not
+// the global one: the tenant reads the value, a global read keeps the declared
+// default, and the row carries the tenant's own column.
+func TestSeedWritesATenantSettingIntoThatTenantsLayer(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "tenant-setting.db")
+	config := tenantSettingsConfig(t, dsn,
+		"      settings:\n        - key: \"tenant.admission.require-sso\"\n          value: \"true\"\n")
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	if !strings.Contains(res.stdout, "seeded: setting tenant.admission.require-sso=true in tenant demo") {
+		t.Errorf("the seed did not report the tenant setting it wrote:\n%s", res.stdout)
+	}
+	withSettings(t, dsn, func(ctx context.Context, store settings.Store) {
+		got, err := settings.Get[bool](store, settings.ForTenant("demo"), "tenant.admission.require-sso")
+		if err != nil {
+			t.Fatalf("reading the tenant setting: %v", err)
+		}
+		if !got {
+			t.Error("the tenant layer does not hold the seeded switch")
+		}
+		global, err := settings.Get[bool](store, settings.Global(), "tenant.admission.require-sso")
+		if err != nil {
+			t.Fatalf("reading the global layer: %v", err)
+		}
+		if global {
+			t.Error("the tenant setting is visible in the global layer")
+		}
+		rows, err := store.List(ctx, settings.ForTenant("demo"))
+		if err != nil {
+			t.Fatalf("listing the tenant's rows: %v", err)
+		}
+		if len(rows) != 1 || rows[0].Tenant != "demo" ||
+			rows[0].Key != "tenant.admission.require-sso" || rows[0].Value != "true" {
+			t.Errorf("the tenant's rows = %+v, want the one seeded switch under demo", rows)
+		}
+	})
+}
+
+// A tenant entry with no settings list writes nothing into that tenant's layer,
+// and the global layer keeps what the global list put there: the new list is
+// optional and leaves the existing behaviour alone.
+func TestSeedWithoutTenantSettingsWritesNothingToTheTenantLayer(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "no-tenant-settings.db")
+	config := writeConfigWith(t, freePorts(t, listenerCount), dsn)
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err != nil {
+		t.Fatalf("seed failed: %v\n%s", res.err, res.combined())
+	}
+	withSettings(t, dsn, func(ctx context.Context, store settings.Store) {
+		rows, err := store.List(ctx, settings.ForTenant("demo"))
+		if err != nil {
+			t.Fatalf("listing the tenant's rows: %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("a tenant entry with no settings list wrote %+v, want none", rows)
+		}
+		global, err := store.List(ctx, settings.Global())
+		if err != nil {
+			t.Fatalf("listing the global rows: %v", err)
+		}
+		found := false
+		for _, row := range global {
+			if row.Key == "authn.mfa.sensitive-min-age" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("the global settings the configuration names are not there: %+v", global)
+		}
+	})
+}
+
+// A tenant setting key no declaration covers fails the command and names the
+// key, exactly as the global list's unknown key does: the write goes through the
+// settings module rather than the table.
+func TestSeedRefusesATenantSettingKeyTheRegistryDoesNotDeclare(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "bad-tenant-setting.db")
+	config := tenantSettingsConfig(t, dsn,
+		"      settings:\n        - key: \"tenant.admission.no-such-key\"\n          value: \"true\"\n")
+
+	res := runCommand(t, config, "sqlite", seedCommand)
+	if res.err == nil {
+		t.Fatalf("the seed accepted a tenant setting key no declaration covers:\n%s", res.combined())
+	}
+	for _, want := range []string{"tenant.admission.no-such-key", settings.ErrUnknownKey.Error()} {
+		if !strings.Contains(res.combined(), want) {
+			t.Errorf("the refusal does not name %q:\n%s", want, res.combined())
+		}
 	}
 }
 
