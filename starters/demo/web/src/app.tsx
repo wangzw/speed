@@ -1124,23 +1124,39 @@ function ConsoleFeatureGate({
  * away. The roster read settles the same default the tenant frame would.
  *
  * The number is the request surface's only use here: the console renders no
- * tenant and has no switcher. When the roster read is refused or fails during
- * an impersonation -- the gateway answers an impersonated identity there -- the
- * caller tenant list settles the name instead: the server narrows it to the
- * grant, and without it the target's platform set could never be read. A
- * member's refused roster read settles nothing: the caller list names their
- * tenant, but reading the empty platform set from it would turn a full-page
- * console load into a redirect the invitation journey does not document, and a
- * tenant the request surface cannot name keeps the area waiting.
+ * tenant and has no switcher. The roster is part of the assembly only when the
+ * feature document serves tenant.admin. A deployment that does not serve it has
+ * no staff default to read, so the caller tenant list's first row settles the
+ * name -- the only source the request surface can announce -- and the area then
+ * decides by the platform permission set. When the roster is served, a refused
+ * or failed read during an impersonation falls back to the caller tenant list:
+ * the server narrows it to the grant, and without it the target's platform set
+ * could never be read. A member's refused roster read settles nothing: the
+ * caller list names their tenant, but reading the empty platform set from it
+ * would turn a full-page console load into a redirect the invitation journey
+ * does not document, and a tenant the request surface cannot name keeps the area
+ * waiting.
  */
 function useConsoleTenantSettle(
   authenticated: boolean,
   impersonating: boolean,
+  rosterServed: boolean,
 ): void {
   const tenantId = useCurrentTenantId()
   const selfState = useSelfTenantState()
   useEffect(() => {
     if (!authenticated || tenantId !== null) {
+      return undefined
+    }
+    if (!rosterServed) {
+      // No roster is assembled, so no read is spent on it. The caller list's
+      // first row is the name the permission read can carry; until it lands the
+      // tenant stays unknown and the effect runs again.
+      const row = selfState.tenants[0]
+      if (row !== undefined) {
+        setTenantAlias(row.id, row.alias)
+        setCurrentTenantId(row.id)
+      }
       return undefined
     }
     let cancelled = false
@@ -1180,7 +1196,7 @@ function useConsoleTenantSettle(
     return () => {
       cancelled = true
     }
-  }, [authenticated, impersonating, tenantId, selfState])
+  }, [authenticated, impersonating, rosterServed, tenantId, selfState])
 }
 
 /**
@@ -1216,9 +1232,14 @@ function ConsoleAreaGate({
   readonly children: ReactNode
 }): ReactElement | null {
   const snapshot = useAuthState()
+  // Whether the deployment assembles the roster at all. A deployment without
+  // tenant.admin settles the current tenant from the caller list instead; the
+  // area still decides by the platform permission set.
+  const rosterServed = useFeature('tenant.admin')
   useConsoleTenantSettle(
     snapshot.state === 'authenticated',
     snapshot.impersonating,
+    rosterServed,
   )
   // An account whose address is still unproved never settles a tenant: the
   // personal tenant's ensure refuses a pending account and the roster is a

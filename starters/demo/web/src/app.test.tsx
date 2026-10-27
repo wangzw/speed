@@ -49,6 +49,7 @@ import {
   ANONYMOUS_SNAPSHOT,
   authenticatedSnapshot,
   createTestSession,
+  readyFeatures,
 } from './test-utils/session.js'
 import {
   getCurrentTenantId,
@@ -408,6 +409,65 @@ describe('the console area', () => {
     // boundary chose from the roster.
     expect(tenantAtRead).toEqual([TENANT_ID])
     expect(requested).toContain('/api/v1/system/tenants')
+  })
+
+  it('settles the caller list when the deployment serves no roster', async () => {
+    // A deployment without tenant.admin has no roster to name a default
+    // tenant. The console area must still settle the caller's own list, or the
+    // guarded permission read never carries a tenant name and a staff operator
+    // on a console deep link waits forever.
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    window.history.replaceState({}, '', '/console/settings')
+    const requested: string[] = []
+    bindRequestFn(<T,>(path: string): Promise<T> => {
+      requested.push(path)
+      if (path === '/api/v1/auth/me/tenants') {
+        return Promise.resolve({
+          tenants: [{ id: TENANT_ID, alias: TENANT_ID }],
+        } as T)
+      }
+      if (path === '/api/v1/authz/me/permissions') {
+        return Promise.resolve({
+          platform: ['settings.read'],
+          tenant: [],
+        } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    })
+    await loadSelfTenants()
+    const base = createTestSession(
+      authenticatedSnapshot({
+        system: null,
+        features: readyFeatures('settings.admin'),
+      }),
+    )
+    const session: AuthSession = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: { ...current.permissionSets, [domain]: perms },
+        })
+      },
+    }
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    expect(
+      await screen.findByRole('navigation', {
+        name: tConsole('shell.navLabel'),
+      }),
+    ).toBeInTheDocument()
+    // The roster is not part of this assembly, so no read is spent on it.
+    expect(requested).not.toContain('/api/v1/system/tenants')
+
+    clearSelfTenants()
   })
 
   it('turns a member who reaches a console page directly out of the console entirely', async () => {
