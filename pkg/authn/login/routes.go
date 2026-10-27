@@ -211,9 +211,11 @@ func (r *routes) fail(c *call, err error) {
 		}
 		c.unauthorized(mount.CodeLinkRequired)
 	case errors.Is(err, authn.ErrBindingConflict), errors.Is(err, authn.ErrAccountExists),
-		errors.Is(err, authn.ErrLastLoginMethod), errors.Is(err, authn.ErrLastFactor),
+		errors.Is(err, authn.ErrLastFactor),
 		errors.Is(err, authn.ErrFactorLimit):
 		c.fail(mount.CodeConflict)
+	case errors.Is(err, authn.ErrLastLoginMethod):
+		c.fail(mount.CodeLastLoginMethod)
 	case errors.Is(err, authn.ErrIdentifierRequired):
 		c.fail(mount.CodeLoginIdentifierRequired)
 	case errors.Is(err, authn.ErrUnsupportedRegion):

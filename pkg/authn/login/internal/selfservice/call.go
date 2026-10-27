@@ -188,9 +188,11 @@ func (r *routes) fail(c *call, err error) {
 	case errors.Is(err, authn.ErrContactTaken):
 		c.fail(mount.CodeEmailTaken)
 	case errors.Is(err, authn.ErrAccountExists), errors.Is(err, authn.ErrBindingConflict),
-		errors.Is(err, authn.ErrLastLoginMethod), errors.Is(err, authn.ErrLastFactor),
+		errors.Is(err, authn.ErrLastFactor),
 		errors.Is(err, authn.ErrFactorLimit):
 		c.fail(mount.CodeConflict)
+	case errors.Is(err, authn.ErrLastLoginMethod):
+		c.fail(mount.CodeLastLoginMethod)
 	case errors.Is(err, authn.ErrUnsupportedRegion):
 		c.fail(mount.CodeUnsupportedRegion)
 	case errors.Is(err, authn.ErrInvalidCredentials):

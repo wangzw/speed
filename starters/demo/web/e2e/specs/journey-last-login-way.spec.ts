@@ -25,10 +25,10 @@
  * fresh local multi-factor session. The unlink then reaches the account
  * module's last-way rule instead of stopping at the step-up gate.
  *
- * WHAT IS NOT ASSERTED. The shipped refusal sentence is the account surface's
- * generic conflict text; it does not itself say "add another way first", so
- * this spec does not claim the requirement's wording clause. It asserts the
- * rendered refusal and that the binding survives it.
+ * WHAT IS ASSERTED. The refusal is the dedicated last-login-method answer, and
+ * this spec asserts its shipped sentence: it says the account has no other way
+ * to sign in and names setting a password or linking another account as the
+ * remedy. It also asserts that the binding survives the refusal.
  *
  * Expected copy is read from the shipped en-US bundles through
  * helpers/i18n.ts.
@@ -275,13 +275,13 @@ test('last-login-way: removing the last way that is not a passkey is refused', a
         copy('accountUi', 'bindings.confirmLabel'),
       )
 
-      // The account module refuses to remove the last non-passkey way: the
-      // refusal renders in the bindings section's result region, and the row
-      // it would have removed is still listed.
+      // The account module refuses to remove the last non-passkey way with
+      // its dedicated code: the refusal renders in the bindings section's
+      // result region, and the row it would have removed is still listed.
       await expect(
         bindingsSection(page)
           .getByRole('alert')
-          .filter({ hasText: copy('accountUi', 'errors.authn.conflict') }),
+          .filter({ hasText: copy('accountUi', 'errors.authn.last_login_method') }),
       ).toBeVisible({ timeout: 15_000 })
       await expect(googleRow(page)).toBeVisible()
       await expect(

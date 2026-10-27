@@ -291,7 +291,9 @@ var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput]
 		"fresh authentication every change of what proves the account asks for. An account that holds a "+
 		"password credential cannot lose its last username or email address: "+
 		"that removal is a 409 login-identifier-required and changes nothing. An account without a password "+
-		"credential may lose its last login name, and removing a phone number is always allowed. Unlike the "+
+		"credential may lose its last login name, and removing a phone number is always allowed; a removal that "+
+		"would leave the account with no password, no proved phone number and no external identity is a 409 "+
+		"last-login-method and changes nothing. Unlike the "+
 		"routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no "+
 		"event of its own: `authn.identifier.changed` is published by the account module on the removal.",
 	nil,
@@ -300,7 +302,7 @@ var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput]
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The identifier cannot be removed"),
 		unauthorized("No usable credential"),
 		speedhttp.ProblemResponseOf(http.StatusConflict,
-			"The removal would leave a password account with no login name", typePrefix+mount.CodeLoginIdentifierRequired),
+			"The removal would leave a password account with no login name (login-identifier-required), or leave the account with no way to sign in at all (last-login-method)", typePrefix+mount.CodeLoginIdentifierRequired),
 		tooMany(),
 		unavailable("A dependency could not answer"),
 	},
@@ -378,7 +380,7 @@ var unlinkOperation = speedhttp.NewReplyOperation[linkPathInput](
 		"is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call "+
 		"requires the fresh authentication every change of what proves the account asks for — a multi-factor "+
 		"assurance merely declared by an identity provider does not count. The account module refuses to remove "+
-		"the last way to sign in (409 conflict); a way only an "+
+		"the last way to sign in (409 last-login-method); a way only an "+
 		"identity provider declared does not count as a way to sign in, which is why this route asks for local "+
 		"freshness. On success the call publishes `authn.binding.changed` when the provider is in the event "+
 		"payload's closed set, rotates the caller's session token, revokes the account's other sessions, and "+
@@ -388,7 +390,7 @@ var unlinkOperation = speedhttp.NewReplyOperation[linkPathInput](
 		{Status: http.StatusNoContent, Description: "The external identity was unbound"},
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The binding cannot be removed"),
 		unauthorized("No usable credential"),
-		speedhttp.ProblemResponse(http.StatusConflict, "The binding is the account's last way in"),
+		speedhttp.ProblemResponse(http.StatusConflict, "The binding is the account's last way in (last-login-method)"),
 		tooMany(),
 		unavailable("A dependency could not answer"),
 	},

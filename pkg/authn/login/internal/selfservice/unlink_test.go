@@ -47,10 +47,9 @@ func TestAnIdentifierThatIsNotTheCallersIsNotRemoved(t *testing.T) {
 
 // TestRemovingAnIdentifierMapsTheAccountModulesAnswers holds each answer the
 // removal can give. The refusal to leave a password account with no login name
-// is a 409 login-identifier-required. The route declares 409, so a sentinel it
-// does not expect on this path but that maps to the same status, such as the
-// unbinding rule ErrLastLoginMethod, is answered as 409 conflict rather than
-// turned into the defect answer.
+// is a 409 login-identifier-required, and the refusal to leave it with no way
+// to sign in at all is its own 409 last-login-method. A non-last-way conflict
+// keeps the generic conflict code.
 func TestRemovingAnIdentifierMapsTheAccountModulesAnswers(t *testing.T) {
 	for _, c := range []struct {
 		err  error
@@ -58,7 +57,9 @@ func TestRemovingAnIdentifierMapsTheAccountModulesAnswers(t *testing.T) {
 		kind string
 	}{
 		{authn.ErrIdentifierRequired, http.StatusConflict, "login-identifier-required"},
-		{authn.ErrLastLoginMethod, http.StatusConflict, "conflict"},
+		{authn.ErrLastLoginMethod, http.StatusConflict, "last-login-method"},
+		{authn.ErrLastFactor, http.StatusConflict, "conflict"},
+		{authn.ErrBindingConflict, http.StatusConflict, "conflict"},
 		{authn.ErrUnavailable, http.StatusServiceUnavailable, "unavailable"},
 		{errors.New("driver: down"), http.StatusServiceUnavailable, "unavailable"},
 	} {
@@ -120,15 +121,15 @@ func TestUnlinkingRotatesRevokesTheOthersAndPublishes(t *testing.T) {
 }
 
 // TestTheLastWayToLogInIsNotUnlinked holds the refusal of the account module as
-// a 409 conflict, and that a refused unbinding revokes nothing, rotates nothing,
-// publishes nothing and leaves no success row.
+// a 409 last-login-method, and that a refused unbinding revokes nothing,
+// rotates nothing, publishes nothing and leaves no success row.
 func TestTheLastWayToLogInIsNotUnlinked(t *testing.T) {
 	h := newHarness(t)
 	h.richAccount()
 	h.admin.unlinkErr = authn.ErrLastLoginMethod
 	w := h.delete("/links/link-1")
-	if w.Code != http.StatusConflict || problemType(t, w) != "conflict" {
-		t.Fatalf("answer = %d %s, want 409 conflict", w.Code, w.Body)
+	if w.Code != http.StatusConflict || problemType(t, w) != "last-login-method" {
+		t.Fatalf("answer = %d %s, want 409 last-login-method", w.Code, w.Body)
 	}
 	for _, name := range []string{"sessions.Rotate", "sessions.RevokeAccount", "sessions.SetCookie"} {
 		if h.log.count(name) != 0 {

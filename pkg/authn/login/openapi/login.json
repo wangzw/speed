@@ -1720,7 +1720,7 @@
     },
     "/auth/identifiers/{id}": {
       "delete": {
-        "description": "Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.",
+        "description": "Removes one login identifier the caller's account holds. The identifier must be the caller's own: one that does not exist and one that belongs to another account are answered identically as a 400 bad-request, so the route discloses nothing about what another account holds. The call requires the fresh authentication every change of what proves the account asks for. An account that holds a password credential cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. An account without a password credential may lose its last login name, and removing a phone number is always allowed; a removal that would leave the account with no password, no proved phone number and no external identity is a 409 last-login-method and changes nothing. Unlike the routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no event of its own: `authn.identifier.changed` is published by the account module on the removal.",
         "operationId": "authn.login.removeIdentifier",
         "parameters": [
           {
@@ -1773,7 +1773,7 @@
                 }
               }
             },
-            "description": "The removal would leave a password account with no login name"
+            "description": "The removal would leave a password account with no login name (login-identifier-required), or leave the account with no way to sign in at all (last-login-method)"
           },
           "429": {
             "content": {
@@ -1817,7 +1817,7 @@
     },
     "/auth/links/{id}": {
       "delete": {
-        "description": "Unbinds one external identity from the caller's account. The binding must be the caller's own; one that is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call requires the fresh authentication every change of what proves the account asks for — a multi-factor assurance merely declared by an identity provider does not count. The account module refuses to remove the last way to sign in (409 conflict); a way only an identity provider declared does not count as a way to sign in, which is why this route asks for local freshness. On success the call publishes `authn.binding.changed` when the provider is in the event payload's closed set, rotates the caller's session token, revokes the account's other sessions, and answers 204.",
+        "description": "Unbinds one external identity from the caller's account. The binding must be the caller's own; one that is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call requires the fresh authentication every change of what proves the account asks for — a multi-factor assurance merely declared by an identity provider does not count. The account module refuses to remove the last way to sign in (409 last-login-method); a way only an identity provider declared does not count as a way to sign in, which is why this route asks for local freshness. On success the call publishes `authn.binding.changed` when the provider is in the event payload's closed set, rotates the caller's session token, revokes the account's other sessions, and answers 204.",
         "operationId": "authn.login.unlink",
         "parameters": [
           {
@@ -1870,7 +1870,7 @@
                 }
               }
             },
-            "description": "The binding is the account's last way in"
+            "description": "The binding is the account's last way in (last-login-method)"
           },
           "429": {
             "content": {

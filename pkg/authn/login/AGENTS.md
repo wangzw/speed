@@ -177,7 +177,10 @@ does.
   `ErrIdentifierRequired` to 409 `login-identifier-required`: an account holding a
   password credential keeps its last username or email address. An account with no
   password credential may lose its last login name, and removing a phone number is
-  always allowed. The identifier is checked against the caller's own before the
+  always allowed; a removal that would leave it with no password, no proved phone
+  number and no external identity is `ErrLastLoginMethod`, answered 409
+  `last-login-method`. `DELETE /links/:id` answers the same code for the same
+  last-way rule. The identifier is checked against the caller's own before the
   write, and the route revokes no session and publishes no event of its own.
 - **The account module's signup verification read is required beside `Signups`.**
   `authn.SignupVerification` is declared in `Requires` and resolved in `New`, so an

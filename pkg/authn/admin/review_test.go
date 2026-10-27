@@ -67,8 +67,8 @@ func codeOf(problemType string) string {
 
 // TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused holds the
 // lock-out guard: when the account module reports that a factor is the only way
-// into the account, mfa-reset answers 409 conflict, leaves MFA.Reset uncalled
-// and records the failed attempt beside the permitted row.
+// into the account, mfa-reset answers 409 last-login-method, leaves MFA.Reset
+// uncalled and records the failed attempt beside the permitted row.
 func TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused(t *testing.T) {
 	r := newRig(t)
 	r.accountAdm.loginWay = false
@@ -76,8 +76,8 @@ func TestResettingTheFactorsOfAnAccountWithNoOtherWayInIsRefused(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("mfa-reset: status = %d, want 409; body %s", rec.Code, rec.Body.String())
 	}
-	if code := problemCode(t, rec.Body.String()); code != "conflict" {
-		t.Errorf("mfa-reset: problem code %q, want conflict", code)
+	if code := problemCode(t, rec.Body.String()); code != "last-login-method" {
+		t.Errorf("mfa-reset: problem code %q, want last-login-method", code)
 	}
 	if r.mfa.resets != 0 {
 		t.Errorf("Reset ran %d times, want none", r.mfa.resets)
@@ -516,7 +516,7 @@ func TestTheAnswerMapsEverySentinel(t *testing.T) {
 		{"contact taken", authn.ErrContactTaken, http.StatusConflict, mount.CodeEmailTaken},
 		{"binding conflict", authn.ErrBindingConflict, http.StatusConflict, mount.CodeConflict},
 		{"domain claimed", authn.ErrDomainClaimed, http.StatusConflict, mount.CodeConflict},
-		{"last login method", authn.ErrLastLoginMethod, http.StatusConflict, mount.CodeConflict},
+		{"last login method", authn.ErrLastLoginMethod, http.StatusConflict, "last-login-method"},
 		{"factor limit", authn.ErrFactorLimit, http.StatusConflict, mount.CodeConflict},
 		{"last factor", authn.ErrLastFactor, http.StatusConflict, mount.CodeConflict},
 		{"unsupported region", authn.ErrUnsupportedRegion, http.StatusBadRequest, mount.CodeUnsupportedRegion},
