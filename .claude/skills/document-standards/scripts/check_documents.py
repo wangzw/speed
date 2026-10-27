@@ -217,6 +217,8 @@ ADR_STATUS_FIELD_RE = re.compile(
     r"^\s*(?:[-*+]\s+)?\**\s*"
     r"(Status|State|Acceptance|Accepted|Deprecated|状态|接受|验收)"
     r"\**\s*[:：]", re.IGNORECASE)
+ADR_SUPERSEDED_RE = re.compile(
+    r"^\s*(?:[-*+]\s+)?\**\s*(?:Superseded by|已被.{0,40}?取代)", re.IGNORECASE)
 
 
 def forbidden_column(cell: str) -> bool:
@@ -889,6 +891,10 @@ def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[lis
             found.append(Finding(rel, n,
                                  f"status field {field.group(1)!r}; an ADR carries no status, "
                                  f"state or acceptance field"))
+        if ADR_SUPERSEDED_RE.match(raw):
+            found.append(Finding(rel, n,
+                                 "supersession line; a changed decision is revised into its "
+                                 "record, not marked as replaced"))
     for section in sections:
         if section.level != 2:
             continue

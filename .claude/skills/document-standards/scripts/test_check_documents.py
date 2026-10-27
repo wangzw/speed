@@ -492,6 +492,12 @@ class AdrTreeTests(CheckerCase):
                                             "## Context\n\n- **Status**: Accepted\n")},
                         "status field")
 
+    def test_supersession_line_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ADR_RECORD.replace("## Context\n",
+                                            "## Context\n\nSuperseded by ADR-core-rights.\n")},
+                        "supersession line")
+
     def test_single_option(self):
         broken = ADR_RECORD.replace("### A registry in the host\n\nRejected: every host "
                                     "would reimplement it.\n\n", "")
@@ -720,6 +726,12 @@ classDiagram
                          ZH_FILES["docs/design/modules/design-core.md"]
                          .replace("| 注册 | 未实现 | — |", "| 注册 | 基本完成 | — |")},
                         "vague status", base=ZH_FILES)
+
+    def test_chinese_supersession_line_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ZH_FILES["docs/adr/adr-core-scope.md"]
+                         .replace("## 背景\n", "## 背景\n\n已被 ADR-core-rights 取代\n")},
+                        "supersession line", base=ZH_FILES)
 
     def test_chinese_status_section_is_refused(self):
         self.assert_red({"docs/adr/adr-core-scope.md":
