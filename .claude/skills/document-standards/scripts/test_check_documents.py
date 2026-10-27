@@ -477,7 +477,20 @@ class AdrTreeTests(CheckerCase):
         self.assert_red({"docs/adr/adr-core-scope.md":
                          ADR_RECORD.replace("## Context",
                                             "## Status\n\nAccepted\n\n## Context")},
-                        "not part of this document type's fixed section set")
+                        "records a status")
+
+    def test_status_heading_at_level_three_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ADR_RECORD.replace("A host needs one place to register components.",
+                                            "### Status\n\nAccepted\n\n"
+                                            "A host needs one place to register components.")},
+                        "records a status")
+
+    def test_status_field_line_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ADR_RECORD.replace("## Context\n",
+                                            "## Context\n\n- **Status**: Accepted\n")},
+                        "status field")
 
     def test_single_option(self):
         broken = ADR_RECORD.replace("### A registry in the host\n\nRejected: every host "
@@ -485,13 +498,34 @@ class AdrTreeTests(CheckerCase):
         self.assert_red({"docs/adr/adr-core-scope.md": broken},
                         "lists 1 option(s)")
 
-    def test_file_name_with_a_date(self):
+    def test_file_name_with_a_date_suffix(self):
         self.assert_red({"docs/adr/adr-core-scope.md": None,
                          "docs/adr/adr-core-scope-2026-01-02.md": ADR_RECORD,
                          "docs/adr/README.md":
                          ADR_README.replace("adr-core-scope.md",
                                             "adr-core-scope-2026-01-02.md")},
+                        "file name does not match adr-<slug>;")
+
+    def test_file_name_with_a_date_in_the_middle(self):
+        self.assert_red({"docs/adr/adr-core-scope.md": None,
+                         "docs/adr/adr-2026-01-02-core-scope.md": ADR_RECORD,
+                         "docs/adr/README.md":
+                         ADR_README.replace("adr-core-scope.md",
+                                            "adr-2026-01-02-core-scope.md")},
                         "does not match adr-<slug>")
+
+    def test_file_name_with_a_sequence_number(self):
+        self.assert_red({"docs/adr/adr-core-scope.md": None,
+                         "docs/adr/adr-core-scope-2.md": ADR_RECORD,
+                         "docs/adr/README.md":
+                         ADR_README.replace("adr-core-scope.md", "adr-core-scope-2.md")},
+                        "sequence number")
+
+    def test_index_row_uses_the_record_title(self):
+        self.assert_red({"docs/adr/README.md":
+                         ADR_README.replace("[core owns registration]",
+                                            "[a registry lives in core]")},
+                        "does not use the record's own title")
 
     def test_two_records_may_share_a_topic(self):
         second = (ADR_RECORD.replace("# core owns registration", "# core owns nothing")
@@ -691,7 +725,14 @@ classDiagram
         self.assert_red({"docs/adr/adr-core-scope.md":
                          ZH_FILES["docs/adr/adr-core-scope.md"]
                          .replace("## 背景", "## 状态\n\n已接受\n\n## 背景")},
-                        "not part of this document type's fixed section set", base=ZH_FILES)
+                        "records a status", base=ZH_FILES)
+
+    def test_chinese_index_with_a_status_column(self):
+        self.assert_red({"docs/adr/README.md":
+                         ZH_FILES["docs/adr/README.md"]
+                         .replace("| 记录 |\n|---|", "| 记录 | 状态 |\n|---|---|")
+                         .replace("(adr-core-scope.md) |", "(adr-core-scope.md) | 已接受 |")},
+                        "date or status column", base=ZH_FILES)
 
     def test_chinese_index_with_a_date_column(self):
         self.assert_red({"docs/adr/README.md":

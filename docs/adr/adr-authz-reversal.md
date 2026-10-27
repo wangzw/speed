@@ -35,7 +35,7 @@
 采纳：反转旧树「不用 Casbin」的结论。被否的是 Casbin 的默认存储，不是引擎。
 
 - **默认存储被替换，引擎被采纳。** 官方 `casbin_rule` 表与官方 `gorm-adapter` 由自写薄适配器加带真实 `tenant_id` 列的表替代（[ADR-authz-store](adr-authz-store.md)）——租户列这条理由由真实列消掉，官方适配器自持连接与默认 `AutoMigrate` 两条因不使用官方适配器而不适用。引擎本身被采纳（[ADR-authz-engine](adr-authz-engine.md)）。
-- **旧树的结论已被取代，指引只落在点名的旧文档。** 站点 rbac 页在「不用 Casbin」处加一行指向本记录的指引，正文不被改写；旧树源码与其 `AGENTS.md` 保留原文、不加指引。
+- **旧树的结论已被取代，指引只落在点名的旧文档。** 站点 rbac 页在「不用 Casbin」处加一行指向本记录的指引，正文不被改写。
 - **模型文本固定在代码里。** 桥接固定的模型文本属于设计对外接口面（[ADR-authz-engine](adr-authz-engine.md)）：判定语言不开放给宿主改写，宿主写的只是策略数据。
 
 ## 后果

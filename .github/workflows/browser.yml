@@ -2,7 +2,7 @@
 #
 # The cases assert real geometry, focus order and focusability in
 # Chromium -- properties jsdom cannot answer (see
-# docs/adr/adr-web-browser-tier-2026-10-18.md). Chromium is not part of
+# docs/adr/adr-web-browser-tier.md). Chromium is not part of
 # the .mise.toml toolchain, so this job installs it and then calls the
 # repository's own entry point; the command list stays in the Makefile
 # (`make web-browser`), exactly as ci.yml and integration.yml keep

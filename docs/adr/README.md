@@ -4,7 +4,7 @@
 
 记录只陈述当前生效的决策，修订原地进行：决策变了就改写记录本身，不另立新记录，也不保留旧版本。修订不留下痕迹——没有日期、没有变更说明；被替换的旧决策只作为「考虑过的选项」里的一个落选项存在。
 
-引用形式为 `ADR-<主题>`。同一主题可以有多条决策，每条有能区分的名字，并在下表中归到同一个主题之下。
+引用形式为 `ADR-<slug>`，slug 命名决策本身。同一主题可以有多条决策，每条有能区分的 slug，并在下表中归到同一个主题之下。
 
 ## 模块机制
 
@@ -78,7 +78,7 @@
 | [监听按端点在配置里认领的前缀为请求选端，已登记的路由只用于核对归属](adr-http-dispatch.md) |
 | [全部 HTTP API 路径收进 `/api/v1` 命名空间](adr-http-api-prefix.md) |
 | [OpenAPI 片段以相对路径声明，端点前缀与版本段由 Spec 承载](adr-http-spec-path.md) |
-| [OpenAPI 片段由 Go 中的 operation 声明生成](adr-http-openapi-generation.md) |
+| [operation 声明同时生成 OpenAPI 片段并绑定 handler](adr-http-openapi-generation.md) |
 | [错误应答按公共集加覆盖声明，Fault 可返回也可 panic](adr-http-failure-responses.md) |
 | [operation 声明覆盖完整的 HTTP 输入与应答形态](adr-http-request-response-kinds.md) |
 | [管理面路径以作用域段开头，普通面不带段](adr-http-api-path-scopes.md) |
@@ -112,7 +112,7 @@
 | [API origin 在运行期注入，不在构建期烘焙](adr-web-runtime-config.md) |
 | [路由与导航独立成包，壳不做导航](adr-web-route-seam.md) |
 | [租户作用域的 query key 由框架提供工厂与逐出助手](adr-web-tenant-query-key.md) |
-| [现有前端原地复用，旧树改名保留](adr-web-reuse.md) |
+| [现有前端原地复用，旧树不保留](adr-web-reuse.md) |
 | [前端登录渠道的来源是后端发现端点，前端不写死集合](adr-web-auth-channel-discovery.md) |
 | [账户自助写面归前端组件族](adr-web-account-ui-selfservice.md) |
 | [特性态由 auth-core 随会话提交持有，读取失败是独立状态，只有宿主读它](adr-web-feature-state.md) |
@@ -121,7 +121,7 @@
 | [写入的结果由每个反馈作用域的一个槽承载，最后落定的结果为准，成功确认为默认](adr-web-write-feedback.md) |
 | [冒充期间由应用壳在应用栏之下显示可隐藏的横幅、外壳常驻 chrome 区里的身份指示并提供结束入口，身份变更按会话边界处理依赖身份的状态](adr-web-impersonation-shell.md) |
 | [宿主可为平台命名空间补整套语言，注册期全覆盖规则不变](adr-web-host-language-sets.md) |
-| [通行密钥仪式下沉 auth-core，提权对话框由 account-ui 外导给宿主](adr-web-auth-seams.md) |
+| [认证复用接缝的归属](adr-web-auth-seams.md) |
 | [界面表面由语义角色 token、主题映射与 SectionCard 原语共同承担](adr-web-surface-system.md) |
 | [浅色模式的 warning、info 与 success 取 700 调，使 main 同时满足文字与填充两种读法](adr-web-light-contrast.md) |
 | [应用外壳的形态在装配期选定并由一组内置变体表达，不交给宿主自由拼装](adr-web-shell-layout-variant.md) |
@@ -204,7 +204,7 @@
 
 | 记录 |
 |---|
-| [登录会话：db 权威存放，scs 只作令牌与 cookie 的桥，期限按种类定，cookie 仅主机会话期，跨源由网关检查](adr-authn-session.md) |
+| [登录会话：db 权威存放，scs 只作令牌与 cookie 的桥，cookie 缺省仅主机会话期，跨源由网关检查](adr-authn-session.md) |
 | [令牌：JWT 访问令牌与不透明刷新令牌，签名密钥放文件，服务账户走 client_credentials](adr-authn-token.md) |
 | [冒充：有期限的记录、结构性限制、租户范围的联合执行、审计先于动作](adr-authn-impersonation.md) |
 
@@ -219,7 +219,7 @@
 
 | 记录 |
 |---|
-| [租户解析、租户名册与数据隔离同属一个功能目录，设置与权限另立](adr-tenant-scope.md) |
+| [租户解析、租户名册与数据隔离同属一个功能目录，设置与授权另立](adr-tenant-scope.md) |
 | [根包不登记模块，解析与名册各登记一个模块并各自排他交付](adr-tenant-packaging.md) |
 | [租户标识由请求面解析得到，取法由配置选定，不从认证身份派生](adr-tenant-resolution.md) |
 | [租户解析以认证为锚点排在认证之内，未认证的请求不进入解析层](adr-tenant-ordering.md) |
@@ -251,7 +251,7 @@
 | [打包：根包只放接口与常量，策略、强制点、管理面各为一个叶子模块](adr-authz-packaging.md) |
 | [策略常驻进程内不可变快照，事件失效、周期重载兜底](adr-authz-cache.md) |
 | [反转旧树「不用 Casbin」的结论：被否的是默认存储，不是引擎](adr-authz-reversal.md) |
-| [种入面：独立于 Manager 的 Seeder 能力，管理面够不到内置角色的授权](adr-authz-seeding.md) |
+| [种入面：独立于 Manager 的 Seeder 能力](adr-authz-seeding.md) |
 | [主体持有的权限由策略模块读出，并经一条自身路由回答](adr-authz-subject-permissions.md) |
 
 ## 键值
@@ -317,7 +317,7 @@
 |---|
 | [限流交付速率限制，不承载配额](adr-ratelimit-scope.md) |
 | [限流不算架构的安全边界](adr-ratelimit-boundary.md) |
-| [速率限制按主体计数，取不到身份即放行](adr-ratelimit-dimension.md) |
+| [速率限制按责任键计数，取不到身份即放行](adr-ratelimit-dimension.md) |
 | [限流以两个固定窗口加权近似滑动窗口](adr-ratelimit-algorithm.md) |
 | [超限以 429 与 Retry-After 收口](adr-ratelimit-verdict.md) |
 | [计数后端不可达时限流放行](adr-ratelimit-failure.md) |
@@ -340,7 +340,7 @@
 | [刷出落在关闭阶段，以配置的上界为界](adr-observability-shutdown.md) |
 | [采集层的锚点用本模块交付的功能，本层自带记录后重抛](adr-observability-anchor.md) |
 | [存在与覆盖面是装配与配置的结果，不是框架的承诺](adr-observability-coverage.md) |
-| [请求路径的采集以上游 gin 采集库为基座，本模块只补 panic 处理、日志关联与端名](adr-observability-request-layer.md) |
+| [请求路径的采集以上游 gin 采集库为基座，本模块只补日志关联与端名](adr-observability-request-layer.md) |
 
 ## 国际化
 
@@ -392,7 +392,6 @@
 
 | 记录 |
 |---|
-| [示例宿主的 race 腿默认铺在轻量栈矩阵上，CI 保留全量五栈](adr-host-race-tiers.md) |
 | [用顶层 starters/ 提供可运行的示范骨架](adr-starters-skeleton.md) |
 | [每个账户创建即拥有一个人租户，个人租户是单人的受保护租户](adr-starters-personal-tenant.md) |
 

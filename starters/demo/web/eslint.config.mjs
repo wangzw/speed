@@ -19,7 +19,7 @@
  * exempted module is src/runtime-config.ts, whose
  * sole request reads the deployment's static runtime-config.json beside the
  * entry document -- a static asset, not an API call, that the runtime API
- * origin contract requires (docs/adr/adr-web-runtime-config-2026-10-15.md).
+ * origin contract requires (docs/adr/adr-web-runtime-config.md).
  *
  * The end-to-end tier under e2e/** is held to the honesty rules instead: it
  * drives the built product through a real browser, so network calls, route

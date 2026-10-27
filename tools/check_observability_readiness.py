@@ -72,7 +72,7 @@ The four checks, each anchored on a pattern that occurs in the tree:
      that install or read the process-wide provider
      (`otel.SetTracerProvider(`, `otel.GetTracerProvider(`,
      `otel.SetMeterProvider(`, `otel.GetMeterProvider(`, `otel.Handle(`).
-     adr-observability-provider-2026-09-22 records that this module installs
+     adr-observability-provider records that this module installs
      no global provider, so a signal written through the global resolves to
      the upstream no-op and reaches no destination. The check reads non-test
      files, as the others do.

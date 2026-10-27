@@ -65,10 +65,10 @@ WHAT IS CHECKED
   ADR tree (references/decision-records.md):
     * file names match adr-<slug>, with no date and no sequence number
     * the fixed section order, with Invalidation Conditions optional and
-      no Status section
+      no status field or heading
     * Options Considered lists at least two options
-    * README index covers every record exactly once and carries neither
-      a date column nor a status column
+    * README index covers every record exactly once, carries neither a
+      date column nor a status column, and names each record by its title
 
   Requirements tree (references/requirements-documents.md):
     * README.md and overview.md are present; journeys/journey-<slug> and
@@ -210,8 +210,21 @@ REQUIREMENT_STATUS = {
 }
 VAGUE_STATUS = ("mostly complete", "basically working", "almost done",
                 "基本完成", "大部分完成", "基本可用", "大致完成", "基本实现")
-ADR_DATE_SUFFIX_RE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
-ADR_FORBIDDEN_COLUMNS = ("date", "日期", "status", "状态")
+ADR_DATE_TOKEN_RE = re.compile(r"(?:^|-)\d{4}-\d{2}-\d{2}(?:-|$)")
+ADR_STATUS_HEADINGS = ("status", "状态", "state", "acceptance", "接受状态",
+                       "acceptance status")
+ADR_STATUS_FIELD_RE = re.compile(
+    r"^\s*(?:[-*+]\s+)?\**\s*"
+    r"(Status|State|Acceptance|Accepted|Deprecated|状态|接受|验收)"
+    r"\**\s*[:：]", re.IGNORECASE)
+
+
+def forbidden_column(cell: str) -> bool:
+    text = cell.casefold().strip("*` ")
+    for token in ("status", "date", "state", "acceptance", "accepted", "deprecated"):
+        if re.search(rf"\b{token}\b", text):
+            return True
+    return any(token in text for token in ("状态", "日期", "接受", "已接受", "已废弃"))
 
 # Metadata a document never carries (SKILL.md section 2).
 METADATA_HEADINGS = ("change history", "revision history", "changelog", "version history",
@@ -842,7 +855,7 @@ def adr_id(name: str) -> str | None:
     if not stem.startswith("adr-"):
         return None
     slug = stem[len("adr-"):]
-    if ADR_DATE_SUFFIX_RE.search(slug) or not SLUG_RE.match(slug):
+    if ADR_DATE_TOKEN_RE.search(slug) or not SLUG_RE.match(slug):
         return None
     return f"ADR-{slug}"
 
@@ -858,10 +871,24 @@ def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[lis
         found += check_filename_sequence(rel)
         return found, None
 
+    found += check_filename_sequence(rel)
     found += check_heading_language(rel, text, language, ADR_SECTIONS)
     found += check_section_order(rel, text, language, ADR_SECTIONS)
 
     sections = parse_sections(text)
+    for section in sections:
+        if section.level and normalize_heading(section.title) in ADR_STATUS_HEADINGS:
+            found.append(Finding(rel, section.line,
+                                 f"section {section.title!r} records a status; an ADR carries "
+                                 f"no status, state or acceptance field"))
+    for n, raw, in_fence, _ in scan_lines(text):
+        if in_fence or FENCE_RE.match(raw):
+            continue
+        field = ADR_STATUS_FIELD_RE.match(raw)
+        if field:
+            found.append(Finding(rel, n,
+                                 f"status field {field.group(1)!r}; an ADR carries no status, "
+                                 f"state or acceptance field"))
     for section in sections:
         if section.level != 2:
             continue
@@ -883,6 +910,7 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
     if not os.path.isfile(readme):
         found.append(Finding(os.path.relpath(readme, root), 0,
                              "the ADR tree has no README index"))
+    titles: dict[str, str] = {}
     for path in markdown_files(tree):
         rel = os.path.relpath(path, root)
         if os.path.basename(path) == "README.md":
@@ -892,37 +920,54 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
             continue
         text = strip_comments(read(path))
         found += check_common(rel, text, language)
-        found += check_adr_record(path, rel, text, language)[0]
+        record_findings, record_id = check_adr_record(path, rel, text, language)
+        found += record_findings
+        if record_id:
+            for section in parse_sections(text):
+                if section.level == 1:
+                    titles[record_id] = section.title
+                    break
 
     if os.path.isfile(readme):
         rel_readme = os.path.relpath(readme, root)
         found += check_index(readme, rel_readme, tree, root, language, "ADR")
         text = strip_comments(read(readme))
-        topics = [s for s in parse_sections(text) if s.level == 2]
+        sections = parse_sections(text)
+        topics = [s for s in sections if s.level == 2]
         if not topics:
             found.append(Finding(rel_readme, 0,
                                  "the index is not grouped by topic; each topic is an H2"))
-        header: tuple[int, list[str]] | None = None
-        in_body = False
-        for n, raw, in_fence, _ in scan_lines(text):
-            if in_fence or not raw.strip().startswith("|"):
-                header, in_body = None, False
+        first_topic = min((s.line for s in sections if s.level == 2), default=0)
+        lines = scan_lines(text)
+        for i, (n, raw, in_fence, _) in enumerate(lines):
+            if in_fence or n < first_topic or "|" not in raw:
+                continue
+            if TABLE_SEPARATOR_RE.match(raw.strip()):
+                continue
+            following = i + 1
+            while following < len(lines) and not lines[following][1].strip():
+                following += 1
+            if (following >= len(lines) or lines[following][2]
+                    or not TABLE_SEPARATOR_RE.match(lines[following][1].strip())):
                 continue
             cells = [cell.strip() for cell in raw.strip().strip("|").split("|")]
-            if TABLE_SEPARATOR_RE.match(raw.strip()):
-                if header and not in_body and any(
-                        col in cell.casefold().strip("*` ")
-                        for cell in header[1] for col in ADR_FORBIDDEN_COLUMNS):
-                    found.append(Finding(rel_readme, header[0],
-                                         "the index carries a date or status column; an ADR's "
-                                         "identity is its decision, nothing else"))
-                in_body = header is not None
+            if any(forbidden_column(cell) for cell in cells):
+                found.append(Finding(rel_readme, n,
+                                     "the index carries a date or status column; an ADR's "
+                                     "identity is its decision, nothing else"))
+        for n, raw, in_fence, _ in lines:
+            if in_fence or n < first_topic or not raw.strip().startswith("|"):
                 continue
-            if header is None:
-                header = (n, cells)
+            match = re.search(r"\[([^\]]*)\]\((adr-[^)]+\.md)\)", raw)
+            if not match:
                 continue
-            if not in_body:
+            record_id = adr_id(os.path.basename(match.group(2)))
+            if record_id is None or record_id not in titles:
                 continue
+            if normalize_heading(match.group(1)) != normalize_heading(titles[record_id]):
+                found.append(Finding(rel_readme, n,
+                                     f"index row for {record_id} does not use the record's "
+                                     f"own title ({titles[record_id]!r})"))
     return found
 
 

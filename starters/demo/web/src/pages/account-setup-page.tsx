@@ -2,13 +2,13 @@
  * The account setup page: where a registration completed through the
  * sign-in surface finishes.
  *
- * The ruling is that a username-and-password registration is three existing
- * capabilities in a row (ADR-authn-signup): the SMS first login
- * opens the account with a verified phone, POST /api/v1/auth/identifiers adds a
- * username, and PUT /api/v1/auth/password sets a password. This page is the host
- * half of the second and third steps -- account-ui's IdentifiersSection
- * (username only; the email add face lives on the account page) and its
- * PasswordSection under a page header.
+ * The adopted registration path creates the account directly (ADR-authn-signup);
+ * an account that reaches the product without a username or password finishes
+ * setup here: POST /api/v1/auth/identifiers adds a username and
+ * PUT /api/v1/auth/password sets a password. This page is the host half of
+ * those two steps -- account-ui's IdentifiersSection (username only; the email
+ * add face lives on the account page) and its PasswordSection under a page
+ * header.
  *
  * The account's own profile (GET /api/v1/auth/me, the same query the sections read)
  * decides the state. A login name is a username or an email address: the

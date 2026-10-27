@@ -4,8 +4,7 @@ committing.
 
 The index is grouped by TOPIC. A topic can hold several decisions that all
 still apply; each is a separate record and appears as its own row. Grouping is
-what makes the index worth having: a reader sees a topic's decisions together
-and which of them are in force.
+what makes the index worth having: a reader sees a topic's decisions together.
 
 Every record appears exactly once. A record missing from the index is an
 orphan, and an orphan is an error.

@@ -80,7 +80,7 @@ What the project is now committed to.
 
 **Optional.** What would show this decision to have been wrong: the measurement that would contradict it, the scale at which it stops holding, the assumption whose failure undoes it.
 
-Worth writing when the decision rests on an assumption that can actually be checked later. The condition states when the decision stops holding; it does not say what will happen to the record, which is always the same — the record is revised.
+Worth writing when the decision rests on an assumption that can actually be checked later. The condition states when the decision stops holding; what happens to the record is governed by section 2 — rewritten into the decision that replaced it, or removed when nothing replaces it.
 
 ## 5. Division of Labour with the Design Document
 
@@ -96,7 +96,7 @@ A brief introduction, then the index **grouped by topic**, each record listed by
 **Required:**
 - **The index covers every record, each appearing exactly once.** A record absent from the index is an orphan, and an orphan is an error.
 - Grouping by topic is what makes the index worth having: a reader sees a topic's decisions together.
-- **No date column and no status column.** The index names the decision and links it. When the record is revised, the index row stays as it is unless the title changed.
+- **No date column and no status column.** The index names the decision and links it. When the record is revised, the index row stays as it is unless the title or the file name changed.
 
 Template: `templates/adr-readme.md`.
 
