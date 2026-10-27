@@ -102,8 +102,8 @@ func TestGetZeroCreatedAtIsEmpty(t *testing.T) {
 	}
 }
 
-// TestGetIsReachableWhileImpersonating holds the one route an impersonating
-// identity may reach: it reads the impersonated account.
+// TestGetIsReachableWhileImpersonating holds that an impersonating identity
+// reads the impersonated account.
 func TestGetIsReachableWhileImpersonating(t *testing.T) {
 	r := newRig(t)
 	rec := r.do(http.MethodGet, "/api/v1/auth/me", nil, impersonating()...)

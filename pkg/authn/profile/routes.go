@@ -10,14 +10,14 @@ import (
 // the gateway authenticates the endpoint and a request without a credential
 // never reaches a handler.
 //
-// GET /me is the one route an impersonating identity may reach, and PATCH /me is
-// not: the gateway refuses an impersonating identity there, guardPatch refuses it
-// again, and the typed handler refuses it a third time as the fallback for a
-// registration made wrongly.
+// Both routes are registered impersonable: an impersonating identity reads and
+// writes the impersonated account's profile, exactly as the account's own
+// request does. The write handler keeps no impersonation refusal of its own,
+// because the operation is one the effective account may perform.
 func (p *product) mountRoutes() {
 	mount.Declared(p.mounter, getOperation, p.mountRel(getOperation.Path),
 		getOperation.Handle(p.handleGetMe), mount.Impersonable())
-	mount.Declared(p.mounter, patchOperation, p.mountRel(patchOperation.Path), p.patchEntry())
+	mount.Declared(p.mounter, patchOperation, p.mountRel(patchOperation.Path), p.patchEntry(), mount.Impersonable())
 }
 
 // mountRel turns a declared route into the relative path the mounter joins to

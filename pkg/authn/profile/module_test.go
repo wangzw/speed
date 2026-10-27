@@ -161,8 +161,8 @@ func TestARealRegistryMountsTheProfileRoutes(t *testing.T) {
 		if patch.Kind != mounttest.Guarded {
 			t.Errorf("PATCH /api/v1/auth/me kind = %q, want guarded", patch.Kind)
 		}
-		if patch.Impersonable {
-			t.Error("PATCH /api/v1/auth/me is registered impersonable, and a write of the profile is not impersonable")
+		if !patch.Impersonable {
+			t.Error("PATCH /api/v1/auth/me is not registered impersonable")
 		}
 	})
 	if err != nil {

@@ -34,9 +34,8 @@ type patchInput struct {
 // capability's decode rule, then the declared handler that binds the body and
 // answers. The entry point binds the declared input before it calls a handler,
 // so the checks that the order of this route puts in front of the body — the
-// identity, that it is not impersonating, that it has a login session, and the
-// freshness the account's own factors call for — run in front of the bound
-// handler instead.
+// identity, that it has a login session, and the freshness the account's own
+// factors call for — run in front of the bound handler instead.
 func (p *product) patchEntry() gin.HandlerFunc {
 	return p.guardPatch(patchDecoded(patchOperation.Handle(p.handlePatchMe)))
 }
@@ -115,10 +114,6 @@ func (p *product) guardPatch(next gin.HandlerFunc) gin.HandlerFunc {
 			mount.Unauthorized(c, p.mounter.Endpoint(), "")
 			return
 		}
-		if id.Impersonating() {
-			mount.Forbidden(c, mount.CodeImpersonationRestricted)
-			return
-		}
 		if id.Session() == "" {
 			mount.Unauthorized(c, p.mounter.Endpoint(), "")
 			return
@@ -137,18 +132,17 @@ func (p *product) guardPatch(next gin.HandlerFunc) gin.HandlerFunc {
 //
 // The order is fixed: the checks guardPatch makes before the body is read, the
 // body's shape and the two value domains, the account read, the writes, the
-// best-effort audit row, the answer. The identity, impersonation and session
-// conditions are checked again here as the fallback for a registration that did
-// not go through patchEntry. The two writes are not one atomic change: when the
-// display name lands and the attribute set does not, the display name's change is
-// in force and the answer is the failure's.
+// best-effort audit row, the answer. The identity and session conditions are
+// checked again here as the fallback for a registration that did not go through
+// patchEntry. An impersonating identity is not refused: the write is the
+// effective account's own, so it lands on the impersonated account. The two
+// writes are not one atomic change: when the display name lands and the
+// attribute set does not, the display name's change is in force and the answer is
+// the failure's.
 func (p *product) handlePatchMe(ctx context.Context, body patchInput) (AuthnProfilePatch, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok || id.Account() == "" {
 		return AuthnProfilePatch{}, p.unauthorized()
-	}
-	if id.Impersonating() {
-		return AuthnProfilePatch{}, authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
 	}
 	if id.Session() == "" {
 		return AuthnProfilePatch{}, p.unauthorized()

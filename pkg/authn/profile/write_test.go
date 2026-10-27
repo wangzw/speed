@@ -334,16 +334,15 @@ func TestPatchRefusalsCarryTheCapabilityProblemType(t *testing.T) {
 }
 
 // TestPatchRefusesBeforeTheBodyIsRead holds the order the route documents: the
-// identity, the impersonation, the session and the freshness are decided before
-// the body is bound. A body the declaration would refuse is therefore answered
-// with the earlier refusal, not the binding's 400.
+// identity, the session and the freshness are decided before the body is bound.
+// A body the declaration would refuse is therefore answered with the earlier
+// refusal, not the binding's 400.
 func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 	cases := []struct {
 		name string
 		opts []authntest.Option
 		want int
 	}{
-		{"impersonating", impersonating(), http.StatusForbidden},
 		{"no session", noSession(), http.StatusUnauthorized},
 		{"stale", stale(), http.StatusUnauthorized},
 	}
@@ -360,21 +359,29 @@ func TestPatchRefusesBeforeTheBodyIsRead(t *testing.T) {
 	}
 }
 
-// TestPatchIsNotReachableWhileImpersonating holds the refusal at both layers: the
-// gateway answers 401 because the route is not impersonable, and the handler
-// answers 403 as the fallback for a registration made wrongly, without reading a
-// body or calling a write.
-func TestPatchIsNotReachableWhileImpersonating(t *testing.T) {
+// TestPatchIsReachableWhileImpersonating holds that an impersonating identity
+// writes the impersonated account's profile: the route is registered impersonable
+// and the handler no longer refuses the identity, so the write reaches the
+// effective account just as the target's own request would.
+func TestPatchIsReachableWhileImpersonating(t *testing.T) {
 	r := newRig(t)
-	if rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...); rec.Code != http.StatusUnauthorized {
-		t.Errorf("through the gateway: status = %d, want 401", rec.Code)
+	rec := r.do(http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("through the gateway: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
-	rec := r.invoke(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("the handler while impersonating: status = %d, want 403", rec.Code)
+	if got := r.admin.count("set-display-name"); got != 1 {
+		t.Errorf("SetDisplayName calls = %d, want 1", got)
 	}
-	if r.admin.count("set-display-name") != 0 || r.admin.count("set-attributes") != 0 {
-		t.Error("an impersonating write reached a capability")
+
+	// The handler alone, the fallback a registration that reached it without the
+	// gateway relies on, answers the same write rather than refusing the identity.
+	r = newRig(t)
+	rec = r.invoke(r.p.patchEntry(), http.MethodPatch, "/api/v1/auth/me", map[string]any{"display_name": "X"}, impersonating()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the handler while impersonating: status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got := r.admin.count("set-display-name"); got != 1 {
+		t.Errorf("the handler alone: SetDisplayName calls = %d, want 1", got)
 	}
 }
 
