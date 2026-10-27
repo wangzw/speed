@@ -585,7 +585,7 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| `Seasoned` 不满足答 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 已实现 | `pkg/authn/impersonation/start.go` `checkActor`；`pkg/authn/impersonation/routes.go` `answerStart` |
+| `Seasoned` 不满足答 403 `factor-not-seasoned`（`ErrFactorNotSeasoned`） | 已实现 | `pkg/authn/impersonation/start.go` `checkActor`；`pkg/authn/impersonation/routes.go` `startFailure` |
 | 根包的接缝与值类型：`Impersonation`、`ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` | 已实现 | `pkg/authn/impersonation.go` `Impersonation`；`pkg/authn/internal/model/impersonation.go` `ImpersonationRequest`、`ImpersonationGrant`、`GrantQuery` |
 | 冒充的哨兵：`ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` | 已实现 | `pkg/authn/errors.go` `ErrImpersonationRestricted`、`ErrImpersonationActive`、`ErrNotImpersonating`、`ErrImpersonationNeedsSession` |
 | `ScopeGuard` 的根包接口 | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/authn/gate/serve.go` `impersonationAdmitted` |

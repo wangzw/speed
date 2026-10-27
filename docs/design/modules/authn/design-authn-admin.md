@@ -459,7 +459,7 @@ flowchart TD
 
 | 能力 | 状态 | 代码 |
 |---|---|---|
-| 管理面会话列表的 `current` 标记 | 已实现 | `pkg/authn/admin/session.go` `sessionView`、`sessionViewOf`、`handleAccountSessions` |
+| 管理面会话列表的 `current` 标记 | 已实现 | `pkg/authn/admin/session.go` `sessionViewOf`、`handleAccountSessions` |
 | 重置因素与重置口令在 `Seasoned` 不满足时答 403 `factor-not-seasoned` | 已实现 | `pkg/authn/admin/factor.go` `requireAdministrator` |
 | 重置因素在目标账户只剩因素一种登录方式时答 409 `conflict` | 已实现 | `pkg/authn/admin/factor.go` `handleMFAReset`；`pkg/authn/account/admin.go` `HasLoginWayOtherThanPasskey`、`loginWayHeld` |
 | 根包的 `Decider`、`Decision`、`Action` 常量 | 已实现 | `pkg/authn/decide.go` `Decider`、`Decision`、`Action` |

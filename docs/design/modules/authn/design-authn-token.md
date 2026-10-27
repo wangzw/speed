@@ -86,7 +86,7 @@ type Tokens interface {
 
 约束：
 
-- `Issue` 不依赖请求上下文里的身份：签发的全部事实由 `IssueToken` 携带。有效期按[声明集](#声明集)的 `exp` 行取值。
+- `Issue` 不依赖请求上下文里的身份：签发的全部事实由 `IssueToken` 携带；唯一的例外是 `ImpersonationID` 非空——`Issue` 经可选 `Impersonation` 读记录，用它给有效期封顶（见[签发](#签发)）。有效期按[声明集](#声明集)的 `exp` 行取值。
 - 没有配置签名私钥时 `Issue` 返回 `ErrNoSigningKey`，签发路径上的调用方据此答 503。
 - `NewRefresh` 只接受 `token` 种会话；`browser` 与 `service` 种会话返回 `ErrInvalidGrant`。冒充会话与客户端凭据不签发刷新令牌。
 - `RefreshToken.ExpiresAt` 是刷新令牌行的空闲到期时刻，不是会话的绝对期限。
@@ -398,10 +398,11 @@ CREATE INDEX authn_refresh_tokens_expiry  ON authn_refresh_tokens (idle_expires_
 `Tokens.Issue` 按下列次序执行：
 
 1. 没有签名私钥则返回 `ErrNoSigningKey`。
-2. 确定有效期：取值规则见[声明集](#声明集)的 `exp` 行；取值不大于 0 或使 `exp - iat` 超过 1 小时，以 `authn.ErrInvalidArgument` 拒绝——这是调用方传错了 TTL，不是请求的错误。
-3. 调用全部 `ClaimsContributor`，每个交回的映射含保留名即以 `ErrReservedClaim` 拒绝整次签发；交回 error 同样拒绝。
-4. 按[声明集](#声明集)构造声明，冒充令牌另带该表里仅冒充的声明；`acr` 取 `Assurance` 的十进制文本。
-5. 以签名密钥签名，头带 `kid` 与 `typ: at+jwt`。
+2. `ImpersonationID` 非空时读冒充记录：能力缺席返回 `ErrUnavailable`，`Active` 读失败返回 `ErrUnavailable`，记录不生效返回 `ErrNotImpersonating`，都不签发；记录有效时取剩余时限参与下一步。
+3. 确定有效期：取值规则见[声明集](#声明集)的 `exp` 行，冒充令牌取 `min(access-ttl, 记录剩余时限)`；取值不大于 0 或使 `exp - iat` 超过 1 小时，以 `authn.ErrInvalidArgument` 拒绝——这是调用方传错了 TTL，不是请求的错误。
+4. 调用全部 `ClaimsContributor`，每个交回的映射含保留名即以 `ErrReservedClaim` 拒绝整次签发；交回 error 同样拒绝。
+5. 按[声明集](#声明集)构造声明，冒充令牌另带该表里仅冒充的声明；`acr` 取 `Assurance` 的十进制文本。
+6. 以签名密钥签名，头带 `kid` 与 `typ: at+jwt`。
 
 声明集里没有角色、租户、权限与范围，也没有注册验证状态：账户事实新增一项时不自动成为声明，进声明集要有单独的改动。`ErrReservedClaim` 是宿主实现的缺陷，不是请求的问题。
 
@@ -588,12 +589,12 @@ service 种访问令牌的撤销是无操作：该会话行由同一密钥签出
 |---|---|---|
 | 令牌接缝与数据类型：`Tokens`、`IssueToken`、`AccessToken`、`RefreshToken`、`ClaimsContributor` 与令牌类哨兵 | 已实现 | `pkg/authn/token.go` `Tokens`；`pkg/authn/claims.go` `ClaimsContributor`；`pkg/authn/internal/model/token.go` `IssueToken`、`AccessToken`、`RefreshToken`；`pkg/authn/errors.go` `ErrNoSigningKey`、`ErrInvalidGrant`、`ErrRefreshReuse`、`ErrTokenInvalid`、`ErrReservedClaim`、`ErrInvalidKey` |
 | 模块 `authn.token` 的登记与交付 | 已实现 | `pkg/authn/token/module.go`、`pkg/authn/token/product.go`；`Tokens` 与 `Verifier` 均已交付，`Requires`、`Provides`、配置与设置 schema、迁移、JWKS 路由与令牌端点都已交付 |
-| 访问令牌签发与声明集 | 已实现 | `pkg/authn/token/issue.go`（`Issue`、`signAccess`、`contributorClaims`） |
+| 访问令牌签发与声明集 | 已实现 | `pkg/authn/token/issue.go`（`Issue`、`recordTTL`、`signAccess`、`contributorClaims`） |
 | 校验后端与校验次序（含冒充令牌与 `check-session`） | 已实现 | `pkg/authn/token/verify.go`（`Name`、`Accepts`、`Verify`、`checkRequiredClaims`、`authenticate`） |
 | `check-session` 放宽开关与启动诊断 | 已实现 | `pkg/authn/token/settings.go`（`settingsSchema`）、`pkg/authn/token/relax.go`、`pkg/authn/token/product.go`（`diagnose`） |
 | 签名与验证密钥集的装入、启动校验与 `token.GenerateKey` | 已实现 | `pkg/authn/token/keys.go`（`loadKeySet`、`GenerateKey`） |
 | JWKS 发布 | 已实现 | `pkg/authn/token/jwks.go`（`JWKS`、`mountJWKS`） |
-| 令牌端点 `POST B/token` 与 OAuth 错误形状 | 已实现 | `pkg/authn/token/routes.go`（`mountTokenRoutes`、`handleToken`、`oauthError`、`classifyGrantError`） |
+| 令牌端点 `POST B/token` 与 OAuth 错误形状 | 已实现 | `pkg/authn/token/routes.go`（`mountTokenRoutes`、`handleToken`、`classifyGrantError`）；`pkg/authn/token/operations.go` `oauthErrorResponse` |
 | 刷新令牌表、轮换与重用检测 | 已实现 | `pkg/authn/token/refresh.go`（`NewRefresh`、`Refresh`、`rotate`、`revokeFamily`）；`pkg/authn/token/migrations/{postgres,sqlite}/0001_authn_refresh_tokens.sql` 建 `authn_refresh_tokens` |
 | 撤销 `Tokens.Revoke` 与 `POST B/token/revoke` | 已实现 | `pkg/authn/token/revoke.go`（`Revoke`）、`pkg/authn/token/routes.go`（`handleRevoke`） |
 | 服务账户的 `client_credentials` | 已实现 | `pkg/authn/token/client.go`（`clientCredentials`），经 `Passwords.VerifyServiceSecret`、`Sessions.ForCredential`、`Throttle` 的 `ScopeClient` |

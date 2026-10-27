@@ -482,7 +482,7 @@ stateDiagram-v2
 | 账户核对 | 经账户快照缓存（`internal/acctcache`，有效期同 `check-ttl`）核对：账户非启用，或会话的 `CreatedAt` 早于账户的 `valid_after`。这与 `Sessions.Status` 里的同一判据是双重校验：停用账户时的清理钩子漏了，也不放行。 | `Denied` |
 | 冒充 | 会话行的 `ImpersonationID` 非空时，经冒充记录缓存取 `Impersonation.Active(id)` 的结果（键是记录标识，有效期 `check-ttl`，容量与淘汰同会话校验缓存，`Active` 出错不写入），未命中才询问：记录仍有效则按冒充构造 `Principal`（`Account` 为被冒充账户，`Actor` 为会话账户，`Scope` 为记录的租户；保障等级、认证时刻、方式集与 `IDPAssured` 取自会话行，不封顶）；记录已结束或过期则按未冒充处理，管理员回到自己的身份，不是 401。 | 能力缺席而 `ImpersonationID` 非空：`Denied`；`Active` 出错：`Unavailable` |
 | 续期 | 距上次续期已过 `touch-interval` 时，按 S2 条件更新 `last_seen_at` 与 `idle_expires_at`。 | 续期失败被忽略，请求照常通过，只影响空闲续期的精度 |
-| 构造身份 | 方式集、等级、`IDPAssured`、认证时刻、提供方取自会话行，冒充时同样不封顶；属性为账户快照的 `attributes` 并上会话载荷里的 `idp.*`；`Session` 取 `sid`。 | — |
+| 构造身份 | 方式集、等级、`IDPAssured`、认证时刻、提供方取自会话行，冒充时同样不封顶；属性为账户快照的 `attributes` 并上会话载荷里的 `idp.*`，冒充时只取被冒充账户快照的属性、不并入发起者会话的 `idp.*`；`Session` 取 `sid`。 | — |
 
 `Denied` 时网关调用 `ClearCookie` 清除失效的 cookie；`Unavailable` 与超预算由网关收口为 503，不清 cookie。
 
