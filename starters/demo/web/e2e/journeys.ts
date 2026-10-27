@@ -465,9 +465,7 @@ export const journeys: readonly JourneyEntry[] = [
   },
   {
     journey: 'journey-tenant-sso-required.md',
-    status: 'unimplemented',
-    reason:
-      'The refusal the journey needs does not appear yet: the invitation management routes mount on the account endpoint, which the tenant admission layer does not guard, so the write is accepted instead of being refused with the enterprise sign-in exit. The routes have to be tenant-resolved on the api endpoint before a spec can drive the journey; the provider fixture and the tenant-scoped require-sso seed are already available.',
+    status: 'covered',
     covers: [
       'REQ-security-038',
       'REQ-signin-020',

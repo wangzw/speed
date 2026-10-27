@@ -123,13 +123,15 @@ export interface ReviewConfigInput {
   readonly schedulerTick?: string
   /**
    * Seed the tenant-SSO journey's state through the binary's own `seed` command:
-   * the enterprise fixture's fixed user as the target tenant's administrator,
-   * and `tenant.admission.require-sso` on in that tenant's layer. Off by
-   * default: the requirement changes what every write the tenant's members make
-   * is judged by, so only the journey that observes it turns it on. The
-   * provider and the DNS stub the journey needs come from `ssoProvider`; this
-   * input contributes the account, the administrator binding and the tenant
-   * setting, never a database row written around the product.
+   * the enterprise fixture's fixed user as the target tenant's administrator.
+   * Off by default: the account and its administrator binding exist for the
+   * journey alone. The provider and the DNS stub the journey needs come from
+   * `ssoProvider`; this input contributes the account and the administrator
+   * binding, never a database row written around the product. The tenant's SSO
+   * requirement is not seeded: the journey enables it through the console's
+   * settings surface once its administrator's console session is established,
+   * because the console's own permission read is judged by the admission layer
+   * and a requirement already on would keep the page from being opened.
    */
   readonly tenantSSO?: boolean
 }
@@ -466,20 +468,18 @@ export async function writeReviewConfig(
     // surface to register the provider, and the enterprise fixture's own user,
     // whom the provider's pre-provisioned match lands on, so the session keeps
     // the same account and administrator binding across the re-login. The
-    // tenant's own settings layer demands SSO. The management routes mount on
-    // the admin endpoint, which tenant admission does not guard, so the
-    // operator's provider setup is not held to the requirement; the
-    // administrator's invitation writes are, because the invitation routes are
-    // tenant-resolved on the API endpoint.
+    // console's settings surface switches the tenant's SSO requirement on once
+    // the administrator's session is established; the seed writes neither
+    // layer's row. The provider and invitation routes are tenant-resolved on
+    // the API endpoint, and the admission layer judges a request in the
+    // organization the request surface announces, so the spec moves the tenant
+    // area to globex before the writes the requirement holds to.
     const tenants =
       input.tenantSSO === true
         ? '    - name: acme\n      admins:\n        - member\n' +
           '    - name: globex\n      admins:\n' +
           '        - operator@demo.test\n' +
-          `        - ${quoted(tenantSSOAdmin.identifier)}\n` +
-          '      settings:\n' +
-          '        - key: "tenant.admission.require-sso"\n' +
-          '          value: "true"\n'
+          `        - ${quoted(tenantSSOAdmin.identifier)}\n`
         : '    - name: acme\n      admins:\n        - member\n' +
           '    - name: globex\n      admins:\n        - operator@demo.test\n'
     body = replaceOnce(
