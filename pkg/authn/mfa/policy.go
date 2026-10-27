@@ -44,15 +44,20 @@ func disjoint(a, b []authn.Method) bool {
 }
 
 // Require decides, in the order of the policy table, what a login whose first
-// factor is proven has to do next. The first row that holds is the answer:
+// factor is proven has to do next. The requirement account decides the outcome;
+// the proof account is the one whose factors may be offered. They are the same
+// account for an ordinary login and differ when an impersonating identity proves
+// its own factors for the impersonated account: the impersonated account's
+// factors decide how strong the proof must be, and the operator's own are the
+// ones that can be proven. The first row that holds is the answer:
 //
 //  1. A first factor that carried user verification is two factors already, so
 //     nothing more is asked.
 //  2. An account with an active factor has to use one. The list offers the
-//     active factors that have an implementation in this assembly and whose
-//     methods do not intersect the first factor's; it may be empty, and then the
-//     login cannot be completed. An enterprise IdP's declaration does not
-//     override the account's own factor.
+//     proof account's active factors that have an implementation in this
+//     assembly and whose methods do not intersect the first factor's; it may be
+//     empty, and then the login cannot be completed. An enterprise IdP's
+//     declaration does not override the account's own factor.
 //  3. An account that requires a factor, or a deployment that does, and an
 //     account that has none: the login can only register one.
 //  4. An enterprise IdP's declaration of multi-factor, when none of the above
@@ -61,21 +66,28 @@ func disjoint(a, b []authn.Method) bool {
 //  5. Otherwise a single factor completes the login.
 //
 // Policy only ever tightens: no row cancels another.
-func (m *product) Require(ctx context.Context, id authn.AccountID, first authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
-	if id == "" {
+func (m *product) Require(ctx context.Context, proof, requirement authn.AccountID, first authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
+	if proof == "" || requirement == "" {
 		return authn.MFANone, nil, authn.ErrInvalidAccountID
 	}
 	if first.UserVerified {
 		return authn.MFANone, nil, nil
 	}
-	active, err := m.register.list(ctx, id, int(authn.FactorActive))
+	active, err := m.register.list(ctx, requirement, int(authn.FactorActive))
 	if err != nil {
 		return authn.MFANone, nil, m.unavailable(err)
 	}
 	if len(active) > 0 {
-		return authn.MFAFactor, m.usable(active, first), nil
+		offered := active
+		if proof != requirement {
+			offered, err = m.register.list(ctx, proof, int(authn.FactorActive))
+			if err != nil {
+				return authn.MFANone, nil, m.unavailable(err)
+			}
+		}
+		return authn.MFAFactor, m.usable(offered, first), nil
 	}
-	account, err := m.accounts.Get(ctx, id)
+	account, err := m.accounts.Get(ctx, requirement)
 	if err != nil {
 		return authn.MFANone, nil, err
 	}

@@ -141,7 +141,7 @@ var seamSignatures = map[string][]string{
 	},
 	"MFA": {
 		"Factors(ctx context.Context, id AccountID) ([]FactorRecord, error)",
-		"Require(ctx context.Context, id AccountID, first Proof) (MFAOutcome, []FactorRecord, error)",
+		"Require(ctx context.Context, proof, requirement AccountID, first Proof) (MFAOutcome, []FactorRecord, error)",
 		"Challenge(ctx context.Context, f FlowState, factorID string) (Step, error)",
 		"Verify(ctx context.Context, f FlowState, factorID string, in StepInput) (Step, error)",
 		"Enroll(ctx context.Context, f FlowState, kind FactorKind, in StepInput) (Step, error)",

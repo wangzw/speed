@@ -88,12 +88,23 @@ func (r *routes) flowState(rec record, token string) authn.FlowState {
 		Purpose:   rec.Purpose,
 		Step:      rec.MethodStep,
 		Provider:  rec.Provider,
-		Account:   authn.AccountID(rec.Account),
+		Account:   flowAccount(rec),
 		Session:   authn.SessionID(rec.Session),
 		Private:   rec.MethodState,
 		SendsLeft: r.sendsLeft(rec),
 		Locale:    rec.Locale,
 	}
+}
+
+// flowAccount is the account a flow's steps act for. For a link and an
+// enrollment it is the effective account, which is where those terminal actions
+// land. A step-up proves the factors of the account that started it, so when an
+// impersonating identity started the flow its steps act for the operator.
+func flowAccount(rec record) authn.AccountID {
+	if rec.Purpose == authn.PurposeStepUp && rec.Actor != "" {
+		return authn.AccountID(rec.Actor)
+	}
+	return authn.AccountID(rec.Account)
 }
 
 // swap writes the record built from old, refusing the request as an invalid flow
@@ -174,7 +185,7 @@ func (r *routes) applyFirstBegin(c *call, token, echo string, rec record, raw []
 	rec.Provider = flowProvider(rec.Method, fields)
 	s := authn.Start{
 		Purpose:   rec.Purpose,
-		Account:   authn.AccountID(rec.Account),
+		Account:   flowAccount(rec),
 		Fields:    fields,
 		Client:    c.clientInfo(),
 		SendsLeft: r.sendsLeft(rec),
@@ -260,7 +271,7 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 	res, err := r.resolver.Resolve(c.ctx, resolve.Request{
 		Proof:   proof,
 		Purpose: rec.Purpose,
-		Account: authn.AccountID(rec.Account),
+		Account: flowAccount(rec),
 	})
 	if err != nil {
 		rec.State = stateFailed
@@ -271,7 +282,12 @@ func (r *routes) resolveAndDecide(c *call, token, echo string, rec record, raw [
 		r.fail(c, err)
 		return
 	}
-	rec.Account = string(res.Account)
+	// Only a login resolves to the account it lands on. A link, a step-up and an
+	// enrollment are bound to the account the flow was started on, so their record
+	// keeps it even when the proof was the operator's own.
+	if rec.Purpose == authn.PurposeLogin {
+		rec.Account = string(res.Account)
+	}
 	p := proof
 	rec.Proof = &p
 	if res.Outcome == resolve.OutcomeMerged {
@@ -316,7 +332,7 @@ func (r *routes) decidePolicy(ctx context.Context, rec *record, proof authn.Proo
 		rec.State = stateReady
 		return nil
 	}
-	outcome, offered, err := r.mfa.Require(ctx, authn.AccountID(rec.Account), proof)
+	outcome, offered, err := r.mfa.Require(ctx, authn.AccountID(rec.Account), authn.AccountID(rec.Account), proof)
 	if err != nil {
 		return fmt.Errorf("%w: %w", authn.ErrUnavailable, err)
 	}

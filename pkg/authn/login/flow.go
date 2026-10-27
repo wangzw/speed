@@ -90,12 +90,19 @@ type record struct {
 	// an active factor when the flow started: the completion re-checks the
 	// freshness the start fixed, so a registration's own factor -- made active
 	// during its last step -- does not raise the bar its own completion clears.
-	RequireMulti bool      `json:"require_multi,omitempty"`
-	Answers      int       `json:"answers"`
-	Sends        int       `json:"sends"`
-	Locale       string    `json:"locale,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	RequireMulti bool   `json:"require_multi,omitempty"`
+	Answers      int    `json:"answers"`
+	Sends        int    `json:"sends"`
+	Locale       string `json:"locale,omitempty"`
+	// Actor, Impersonation and Scope record how an impersonating identity
+	// started the flow: the operator, the grant the session named and the grant's
+	// tenant. Account stays the effective account. They are empty for a flow the
+	// account's own holder started.
+	Actor         string    `json:"actor,omitempty"`
+	Impersonation string    `json:"impersonation,omitempty"`
+	Scope         string    `json:"scope,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 // mfaState is the second-factor part of a flow. offered is the usable factors

@@ -37,11 +37,15 @@ type MFA interface {
 	// Factors lists the account's factors with their status, and nothing of
 	// theirs that is secret.
 	Factors(ctx context.Context, id AccountID) ([]FactorRecord, error)
-	// Require decides the outcome for a login whose first factor is proven. For
-	// MFAFactor it also returns the usable factors: active ones whose methods do
-	// not intersect first.Methods. The list may be empty, in which case the login
-	// cannot be completed.
-	Require(ctx context.Context, id AccountID, first Proof) (MFAOutcome, []FactorRecord, error)
+	// Require decides the outcome for a login whose first factor is proven. The
+	// requirement account is the one whose factors and policy decide whether a
+	// second factor is needed; the proof account is the one whose factors may be
+	// offered. They are the same account for an ordinary login, and apart when an
+	// impersonating identity proves its own factors for the impersonated account.
+	// For MFAFactor it returns the usable factors of the proof account: active
+	// ones whose methods do not intersect first.Methods. The list may be empty, in
+	// which case the login cannot be completed.
+	Require(ctx context.Context, proof, requirement AccountID, first Proof) (MFAOutcome, []FactorRecord, error)
 	// Challenge starts a verification on the chosen factor, after checking the
 	// factor's throttle: a factor in back-off is sent nothing.
 	Challenge(ctx context.Context, f FlowState, factorID string) (Step, error)

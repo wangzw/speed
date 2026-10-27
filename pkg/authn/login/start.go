@@ -216,6 +216,12 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 		CreatedAt:    now,
 		ExpiresAt:    now.Add(ttl),
 	}
+	if id.Impersonating() {
+		scope, _ := id.Scope()
+		rec.Actor = string(id.Actor())
+		rec.Impersonation = status.ImpersonationID
+		rec.Scope = scope
+	}
 
 	var offered []factorView
 	switch in.Purpose {
@@ -228,7 +234,7 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 	case authn.PurposeEnroll:
 		rec.State = stateEnroll
 	case authn.PurposeStepUp:
-		start, stepUpOffered, insufficient, serr := r.stepUpStart(c.ctx, status, in.Method)
+		start, stepUpOffered, insufficient, serr := r.stepUpStart(c.ctx, status, id.Account(), in.Method)
 		if serr != nil {
 			r.fail(c, serr)
 			return c.result()
@@ -267,14 +273,18 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 	return c.result()
 }
 
-// stepUpStart decides where a step-up flow starts. It asks the policy with a
-// proof made of the session's methods; a usable factor keeps the flow at the
-// second factor, every other outcome starts it at the first factor with the
-// method the request named. insufficient reports that the account has factors
-// but none that may strengthen this session, which is the flow's refusal.
-func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, method string) (start string, offered []factorView, insufficient bool, err error) {
+// stepUpStart decides where a step-up flow starts. It asks the policy with the
+// session's methods as the proof and the effective account as the requirement:
+// the effective account's factors decide whether a second factor is needed,
+// while the factors that may be offered are the ones the session's own account
+// (the operator, under an impersonation) holds. A usable factor keeps the flow
+// at the second factor, every other outcome starts it at the first factor with
+// the method the request named. insufficient reports that the account has
+// factors but none that may strengthen this session, which is the flow's
+// refusal.
+func (r *routes) stepUpStart(ctx context.Context, status authn.SessionStatus, requirement authn.AccountID, method string) (start string, offered []factorView, insufficient bool, err error) {
 	first := authn.Proof{Methods: status.Methods}
-	outcome, factors, err := r.mfa.Require(ctx, status.Account, first)
+	outcome, factors, err := r.mfa.Require(ctx, status.Account, requirement, first)
 	if err != nil {
 		return "", nil, false, err
 	}

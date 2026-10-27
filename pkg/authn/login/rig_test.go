@@ -227,14 +227,24 @@ type fakeMFA struct {
 	factors   []authn.FactorRecord
 	enroll    func(kind authn.FactorKind, in authn.StepInput) authn.Step
 	enrolls   []authn.StepInput
-	kinds     []authn.FactorKind
+	// required records every Require call: the proof account and the account
+	// whose policy was applied.
+	required []requireCall
+	kinds    []authn.FactorKind
 	// challenges counts the times a factor's challenge was started, so a case
 	// can see whether an SMS factor reached its send.
 	challenges int
 }
 
-func (m *fakeMFA) Require(context.Context, authn.AccountID, authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
+func (m *fakeMFA) Require(_ context.Context, proof, requirement authn.AccountID, first authn.Proof) (authn.MFAOutcome, []authn.FactorRecord, error) {
+	m.required = append(m.required, requireCall{proof, requirement})
 	return m.outcome, m.offered, m.reason
+}
+
+// requireCall is one call Require received: which account was proving and which
+// account's policy was applied.
+type requireCall struct {
+	proof, requirement authn.AccountID
 }
 
 func (m *fakeMFA) Factors(context.Context, authn.AccountID) ([]authn.FactorRecord, error) {
@@ -311,15 +321,19 @@ func (a *fakeAccounts) Lookup(_ context.Context, kind authn.IdentifierKind, valu
 // for the completion review, and records the elevation.
 type fakeSessions struct {
 	authn.Sessions
-	created    []authn.NewSession
-	made       []authn.Issued
-	revoked    []authn.SessionID
-	status     authn.SessionStatus
-	statusErr  error
-	elevated   []authn.Elevation
-	revokedAll int
-	except     authn.SessionID
-	rec        *recorder
+	created   []authn.NewSession
+	made      []authn.Issued
+	revoked   []authn.SessionID
+	status    authn.SessionStatus
+	statusErr error
+	elevated  []authn.Elevation
+	// elevatedFor records the session each elevation was written to.
+	elevatedFor []authn.SessionID
+	revokedAll  int
+	except      authn.SessionID
+	// revokedAccount is the account whose other sessions were revoked last.
+	revokedAccount authn.AccountID
+	rec            *recorder
 }
 
 func (s *fakeSessions) Create(_ context.Context, in authn.NewSession) (authn.Issued, error) {
@@ -339,9 +353,10 @@ func (s *fakeSessions) Revoke(_ context.Context, id authn.SessionID, _ string) e
 	return nil
 }
 
-func (s *fakeSessions) RevokeAccount(_ context.Context, _ authn.AccountID, except authn.SessionID, _ string) ([]authn.SessionID, error) {
+func (s *fakeSessions) RevokeAccount(_ context.Context, account authn.AccountID, except authn.SessionID, _ string) ([]authn.SessionID, error) {
 	s.rec.add("revoke:" + string(except))
 	s.revokedAll++
+	s.revokedAccount = account
 	s.except = except
 	return nil, nil
 }
@@ -358,6 +373,7 @@ func (s *fakeSessions) StatusFresh(context.Context, authn.SessionID) (authn.Sess
 
 func (s *fakeSessions) Elevate(_ context.Context, id authn.SessionID, e authn.Elevation) (authn.Issued, error) {
 	s.elevated = append(s.elevated, e)
+	s.elevatedFor = append(s.elevatedFor, id)
 	return authn.Issued{ID: id, Token: "tok-2", ExpiresAt: time.Now().Add(time.Hour)}, nil
 }
 

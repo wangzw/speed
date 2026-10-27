@@ -158,7 +158,7 @@ func TestRequireFollowsThePolicyTable(t *testing.T) {
 				r.accounts.required[account] = c.mfaRequired
 				r.store.set(globalRequiredPath, c.global)
 
-				got, offered, err := r.p.Require(context.Background(), account, c.first)
+				got, offered, err := r.p.Require(context.Background(), account, account, c.first)
 				if err != nil {
 					t.Fatalf("Require: %v", err)
 				}
@@ -202,7 +202,7 @@ func TestAnIDPDeclarationNeedsAllThreeConditionsEachOfWhichIsNecessary(t *testin
 					}
 					r.accounts.required[account] = accountFlag
 					r.store.set(globalRequiredPath, global)
-					got, _, err := r.p.Require(context.Background(), account, byIDP)
+					got, _, err := r.p.Require(context.Background(), account, account, byIDP)
 					if err != nil {
 						t.Fatalf("Require: %v", err)
 					}
@@ -224,7 +224,7 @@ func TestRequireRefusesWhenTheMandatorySwitchCannotBeRead(t *testing.T) {
 		r.store.fail(globalRequiredPath, errors.New("settings: not loaded"))
 
 		for name, first := range map[string]authn.Proof{"a single factor": byPassword, "an IdP's declaration": byIDP} {
-			outcome, _, err := r.p.Require(context.Background(), "no-factors", first)
+			outcome, _, err := r.p.Require(context.Background(), "no-factors", "no-factors", first)
 			if !errors.Is(err, authn.ErrUnavailable) {
 				t.Errorf("%s: Require = %v, %v, want an error that is ErrUnavailable, so that it is answered 503 and the login does not complete", name, outcome, err)
 			}
@@ -236,15 +236,48 @@ func TestRequireRefusesWhenTheMandatorySwitchCannotBeRead(t *testing.T) {
 		// The switch is not consulted when the answer does not depend on it: an
 		// account with a factor has to use it whatever the switch says.
 		r.activeFactor("with-factor", authn.FactorTOTP, time.Hour)
-		outcome, _, err := r.p.Require(context.Background(), "with-factor", byPassword)
+		outcome, _, err := r.p.Require(context.Background(), "with-factor", "with-factor", byPassword)
 		if err != nil || outcome != authn.MFAFactor {
 			t.Errorf("an account with a factor: Require = %v, %v, want MFAFactor and no error", outcome, err)
 		}
 		// An account that requires one is asked to register without the switch too.
 		r.accounts.required["flagged"] = true
-		outcome, _, err = r.p.Require(context.Background(), "flagged", byPassword)
+		outcome, _, err = r.p.Require(context.Background(), "flagged", "flagged", byPassword)
 		if err != nil || outcome != authn.MFAEnroll {
 			t.Errorf("an account that requires a factor: Require = %v, %v, want MFAEnroll and no error", outcome, err)
+		}
+	})
+}
+
+// TestRequireDecidesTheOutcomeFromTheRequirementAccount holds the split an
+// impersonating identity needs: the effective account's factors decide whether a
+// second factor is needed, while the factors that may be offered are the proof
+// account's own, because those are the only ones the operator can prove.
+func TestRequireDecidesTheOutcomeFromTheRequirementAccount(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
+		r := newRig(t, h, newFactor(authn.FactorTOTP), newFactor(authn.FactorSMS))
+		r.activeFactor("target", authn.FactorSMS, time.Hour)
+		r.activeFactor("operator", authn.FactorTOTP, time.Hour)
+
+		outcome, offered, err := r.p.Require(context.Background(), "operator", "target", byPassword)
+		if err != nil {
+			t.Fatalf("Require: %v", err)
+		}
+		if outcome != authn.MFAFactor {
+			t.Errorf("Require = %v, want MFAFactor: the effective account holds an active factor", outcome)
+		}
+		if len(offered) != 1 || offered[0].Account != "operator" || offered[0].Kind != authn.FactorTOTP {
+			t.Errorf("the list offers %+v, want the operator's own factor alone", offered)
+		}
+
+		// The effective account holds no factor: nothing more is asked of the
+		// operator, whose own factor must not raise the requirement.
+		outcome, offered, err = r.p.Require(context.Background(), "operator", "bare", byPassword)
+		if err != nil {
+			t.Fatalf("Require for an account with no factor: %v", err)
+		}
+		if outcome != authn.MFANone || len(offered) != 0 {
+			t.Errorf("Require = %v with %+v, want MFANone: the effective account holds no factor", outcome, offered)
 		}
 	})
 }
@@ -253,10 +286,10 @@ func TestRequirePassesTheAccountReadFailureOn(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, h *gorm.DB, _ string) {
 		r := newRig(t, h, newFactor(authn.FactorTOTP))
 		r.accounts.getErr = authn.ErrAccountNotFound
-		if _, _, err := r.p.Require(context.Background(), "gone", byPassword); !errors.Is(err, authn.ErrAccountNotFound) {
+		if _, _, err := r.p.Require(context.Background(), "gone", "gone", byPassword); !errors.Is(err, authn.ErrAccountNotFound) {
 			t.Errorf("an account that is not there: Require gave %v, want ErrAccountNotFound", err)
 		}
-		if _, _, err := r.p.Require(context.Background(), "", byPassword); !errors.Is(err, authn.ErrInvalidAccountID) {
+		if _, _, err := r.p.Require(context.Background(), "", "", byPassword); !errors.Is(err, authn.ErrInvalidAccountID) {
 			t.Errorf("no account: Require gave %v, want ErrInvalidAccountID", err)
 		}
 	})
@@ -322,7 +355,7 @@ func TestAFactorRegisteredDuringALoginAddsNothingToItsStrength(t *testing.T) {
 		r := newRig(t, h, totp)
 		r.accounts.required["new"] = true
 
-		outcome, _, err := r.p.Require(context.Background(), "new", byPassword)
+		outcome, _, err := r.p.Require(context.Background(), "new", "new", byPassword)
 		if err != nil || outcome != authn.MFAEnroll {
 			t.Fatalf("Require = %v, %v, want MFAEnroll", outcome, err)
 		}
@@ -346,7 +379,7 @@ func TestAFactorRegisteredDuringALoginAddsNothingToItsStrength(t *testing.T) {
 		if rec.Status != authn.FactorActive || !rec.ActivatedAt.Equal(r.clock.read()) {
 			t.Errorf("the registered factor is %+v, want it active as of the last step", rec)
 		}
-		outcome, offered, err := r.p.Require(context.Background(), "new", byPassword)
+		outcome, offered, err := r.p.Require(context.Background(), "new", "new", byPassword)
 		if err != nil || outcome != authn.MFAFactor || len(offered) != 1 {
 			t.Errorf("the next login: Require = %v, %v, %v, want MFAFactor offering the new factor", outcome, offered, err)
 		}

@@ -44,7 +44,11 @@ func (r *routes) complete(c *call, token string, rec record, raw []byte) {
 // review re-checks, for a link, a step-up or an enrollment, that the session the
 // flow was started on is still valid and still the flow's own, and that a link
 // or an enrollment still meets the freshness the account's factors call for. It
-// answers the request and returns false when it does not.
+// answers the request and returns false when it does not. A flow an impersonating
+// identity started is reviewed against the effective account: the session must
+// still belong to the operator and name the same record, so an ended
+// impersonation, or a different one on the same session, does not carry the flow
+// onto the account it was started for.
 func (r *routes) review(c *call, rec record) bool {
 	status, err := r.sessions.StatusFresh(c.ctx, authn.SessionID(rec.Session))
 	if err != nil {
@@ -55,7 +59,7 @@ func (r *routes) review(c *call, rec record) bool {
 		r.fail(c, err)
 		return false
 	}
-	if !status.Active || string(status.Account) != rec.Account || status.ImpersonationID != "" {
+	if !status.Active || !flowOwnsSession(rec, status) {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return false
 	}
@@ -67,6 +71,16 @@ func (r *routes) review(c *call, rec record) bool {
 		}
 	}
 	return true
+}
+
+// flowOwnsSession reports whether a session is still the one the flow belongs
+// to: the account the flow is bound to, or, for a flow an impersonating identity
+// started, the operator's account and the same record.
+func flowOwnsSession(rec record, st authn.SessionStatus) bool {
+	if rec.Impersonation != "" {
+		return st.Account == authn.AccountID(rec.Actor) && st.ImpersonationID == rec.Impersonation
+	}
+	return st.Account == authn.AccountID(rec.Account) && st.ImpersonationID == ""
 }
 
 // requirementFor is the freshness a link or an enrollment asks for, as the flow
@@ -281,13 +295,23 @@ func (r *routes) completeStepUp(c *call, rec record) {
 			c.serverError()
 			return
 		}
-		access, err := r.tokens.Issue(c.ctx, authn.IssueToken{
+		issue := authn.IssueToken{
 			Account:   account,
 			Session:   issued.ID,
 			Methods:   methods,
 			Assurance: result.Assurance,
 			AuthTime:  now,
-		})
+		}
+		// A step-up an impersonating identity started keeps the token an
+		// impersonation token: its subject is the effective account and its actor
+		// and record are the ones the flow was started under, so a verifier does
+		// not mistake it for the target's own credential.
+		if rec.Impersonation != "" {
+			issue.Actor = authn.AccountID(rec.Actor)
+			issue.ImpersonationID = rec.Impersonation
+			issue.Scope = rec.Scope
+		}
+		access, err := r.tokens.Issue(c.ctx, issue)
 		if err != nil {
 			r.fail(c, err)
 			return
