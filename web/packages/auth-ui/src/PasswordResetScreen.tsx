@@ -33,7 +33,7 @@
  *
  * Leaving through `onBackToSignIn` abandons an in-flight record through
  * `abandonReset` (best-effort: a failed abandon does not keep the viewer
- * on the surface). A flow-invalid or unavailable refusal offers a
+ * on the surface). A flow-invalid or account-unavailable refusal offers a
  * start-over exit, which does the same and returns to the request state.
  */
 
@@ -189,11 +189,9 @@ const FLOW_INVALID_TEXT = 'flow-invalid'
 const REQUIRED_KEY = 'form.required'
 
 /** The refusals after which the bound record cannot continue and a
- * start-over exit is offered. */
-const RESTART_CODES = new Set<string>([
-  'authn.flow_invalid',
-  'authn.password_reset_unavailable',
-])
+ * start-over exit is offered. The invalidated flow is worded separately
+ * (see FLOW_INVALID_TEXT) and carries the same exit. */
+const RESTART_CODES = new Set<string>(['authn.password_reset_unavailable'])
 
 export function PasswordResetScreen({
   session,
