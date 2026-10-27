@@ -19,10 +19,13 @@ func guardedIn(m mount.Mounter, scope speedhttp.Scope) func(speedhttp.Declared, 
 }
 
 // mountRoutes registers every management route whose group has its capability.
-// All are guarded by the gateway and none is registered impersonable: the
-// gateway answers an impersonating identity with a 401, and the handler checks
-// the same condition again. The account and membership groups are always
-// mounted; each other group follows the capability it needs.
+// All are guarded by the gateway. The groups whose action is decided in the
+// tenant domain register their routes Impersonable, so an impersonating identity
+// reaches the handler and is decided by the effective account's permissions in
+// that tenant; the platform-domain groups are not registered and the gateway
+// refuses an impersonating identity there with a 401, the handler checking the
+// same domain again. The account and membership groups are always mounted; each
+// other group follows the capability it needs.
 func (m *product) mountRoutes() {
 	m.mountAccountRoutes()
 	m.mountMembershipRoutes()
@@ -45,7 +48,7 @@ func (m *product) mountRoutes() {
 		m.postFeature(featureSSO)
 		if len(m.refreshers) > 0 {
 			mount.Declared(m.mounter, metadataRefreshOperation, mountRel(metadataRefreshOperation.Path),
-				metadataRefreshOperation.Handle(m.handleMetadataRefresh), mount.InScope(speedhttp.ScopeTenants))
+				metadataRefreshOperation.Handle(m.handleMetadataRefresh), mount.InScope(speedhttp.ScopeTenants), mount.Impersonable())
 			m.groups = append(m.groups, "sso-metadata-refresh")
 			m.postFeature(featureSSOMetadata)
 		}
@@ -109,38 +112,43 @@ func (m *product) mountSecretRoutes() {
 }
 
 // mountMembershipRoutes registers the membership group, which is always mounted:
-// the membership reads are required.
+// the membership reads are required. The group's action is decided in the path's
+// tenant, so its routes are registered Impersonable.
 func (m *product) mountMembershipRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
-	g(memberListOperation, mountRel(memberListOperation.Path), memberListOperation.Handle(m.handleMemberList))
+	g(memberListOperation, mountRel(memberListOperation.Path), memberListOperation.Handle(m.handleMemberList), mount.Impersonable())
 	g(memberWriteOperation, mountRel(memberWriteOperation.Path),
-		mount.GuardBody(nil, memberWriteOperation.Handle(m.handleMemberPut)))
-	g(memberRemoveOperation, mountRel(memberRemoveOperation.Path), memberRemoveOperation.Handle(m.handleMemberRemove))
+		mount.GuardBody(nil, memberWriteOperation.Handle(m.handleMemberPut)), mount.Impersonable())
+	g(memberRemoveOperation, mountRel(memberRemoveOperation.Path), memberRemoveOperation.Handle(m.handleMemberRemove), mount.Impersonable())
 	g(memberExemptOperation, mountRel(memberExemptOperation.Path),
-		mount.GuardBody(nil, memberExemptOperation.Handle(m.handleMemberSSOExempt)))
+		mount.GuardBody(nil, memberExemptOperation.Handle(m.handleMemberSSOExempt)), mount.Impersonable())
 	m.groups = append(m.groups, "memberships")
 }
 
 // mountSSORoutes registers the SSO provider group, mounted with the SSO module.
+// The group's action is decided in the tenant the path names, so its routes are
+// registered Impersonable.
 func (m *product) mountSSORoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
-	g(providerListOperation, mountRel(providerListOperation.Path), providerListOperation.Handle(m.handleProviderList))
+	g(providerListOperation, mountRel(providerListOperation.Path), providerListOperation.Handle(m.handleProviderList), mount.Impersonable())
 	g(providerCreateOperation, mountRel(providerCreateOperation.Path),
-		mount.GuardBody(nil, providerCreateOperation.Handle(m.handleProviderCreate)))
-	g(providerGetOperation, mountRel(providerGetOperation.Path), providerGetOperation.Handle(m.handleProviderGet))
+		mount.GuardBody(nil, providerCreateOperation.Handle(m.handleProviderCreate)), mount.Impersonable())
+	g(providerGetOperation, mountRel(providerGetOperation.Path), providerGetOperation.Handle(m.handleProviderGet), mount.Impersonable())
 	g(providerUpdateOperation, mountRel(providerUpdateOperation.Path),
-		mount.GuardBody(nil, providerUpdateOperation.Handle(m.handleProviderUpdate)))
-	g(providerDeleteOperation, mountRel(providerDeleteOperation.Path), providerDeleteOperation.Handle(m.handleProviderDelete))
+		mount.GuardBody(nil, providerUpdateOperation.Handle(m.handleProviderUpdate)), mount.Impersonable())
+	g(providerDeleteOperation, mountRel(providerDeleteOperation.Path), providerDeleteOperation.Handle(m.handleProviderDelete), mount.Impersonable())
 	g(domainClaimOperation, mountRel(domainClaimOperation.Path),
-		mount.GuardBody(nil, domainClaimOperation.Handle(m.handleDomainClaim)))
-	g(domainRemoveOperation, mountRel(domainRemoveOperation.Path), domainRemoveOperation.Handle(m.handleDomainRemove))
-	g(domainVerifyOperation, mountRel(domainVerifyOperation.Path), domainVerifyOperation.Handle(m.handleDomainVerify))
-	g(reverifyDomainsOperation, mountRel(reverifyDomainsOperation.Path), reverifyDomainsOperation.Handle(m.handleReverifyDomains))
+		mount.GuardBody(nil, domainClaimOperation.Handle(m.handleDomainClaim)), mount.Impersonable())
+	g(domainRemoveOperation, mountRel(domainRemoveOperation.Path), domainRemoveOperation.Handle(m.handleDomainRemove), mount.Impersonable())
+	g(domainVerifyOperation, mountRel(domainVerifyOperation.Path), domainVerifyOperation.Handle(m.handleDomainVerify), mount.Impersonable())
+	g(reverifyDomainsOperation, mountRel(reverifyDomainsOperation.Path), reverifyDomainsOperation.Handle(m.handleReverifyDomains), mount.Impersonable())
 }
 
 // mountImpersonationRoutes registers the impersonation record group, mounted
 // with an impersonation capability that answers the extended shape the routes
-// read a record through.
+// read a record through. The two actions are decided in the platform domain, so
+// this is the one tenant-prefixed group whose routes are not registered
+// Impersonable: the record surface is not a capability a target account holds.
 func (m *product) mountImpersonationRoutes() {
 	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
 	g(impersonationListOperation, mountRel(impersonationListOperation.Path), impersonationListOperation.Handle(m.handleImpersonationList))

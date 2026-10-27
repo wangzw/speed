@@ -27,7 +27,7 @@ func (m *product) handleMemberList(ctx context.Context, in memberListInput) (Aut
 	if err != nil {
 		return AuthnAdminMemberList{}, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, tenantDomain); err != nil {
 		return AuthnAdminMemberList{}, err
 	}
 	if in.Limit < 0 {
@@ -55,7 +55,7 @@ func (m *product) handleMemberPut(ctx context.Context, in memberWriteInput, _ *s
 	if err != nil {
 		return nil, err
 	}
-	if err := m.admit(id); err != nil {
+	if err := m.admit(id, tenantDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.Account)
@@ -95,7 +95,7 @@ func (m *product) handleMemberRemove(ctx context.Context, in memberAddressInput,
 	if err != nil {
 		return nil, err
 	}
-	if err := m.admit(id); err != nil {
+	if err := m.admit(id, tenantDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.Account)
@@ -129,7 +129,7 @@ func (m *product) handleMemberSSOExempt(ctx context.Context, in memberExemptInpu
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, tenantDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.Account)

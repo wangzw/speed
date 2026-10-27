@@ -11,16 +11,21 @@
 // before any instance is built, because a management action that could not be
 // recorded is one this module refuses to take.
 //
-// Every route is guarded by the gateway and none is registered impersonable:
-// the gateway answers an impersonating identity with a 401 there, and the
-// handler checks the same condition again and answers 403
-// impersonation-restricted without asking a Decider. The pipeline every handler
-// shares is: not impersonating, a Decider is present, the path and body are
-// well formed and agree on the tenant, the object's owner is resolved into the
-// Decision, the object exists, the Decider allows it, the actor's authentication
-// is strong enough, the mandatory audit lands, the capability is called. A read
-// ends after the decision; a write that the capability refuses gets a failed
-// audit row and the failure mapped to its answer.
+// Every route is guarded by the gateway. A route whose action is decided in the
+// tenant domain is registered Impersonable: an impersonating identity reaches
+// the handler and is decided by the effective account's permissions in that
+// tenant, exactly as the account itself is. A platform-domain route is not
+// registered, so the gateway answers an impersonating identity with a 401 there,
+// and the handler checks the same domain again and answers 403
+// impersonation-restricted without asking a Decider; a target account never
+// holds a platform permission. The pipeline every handler shares is: the
+// platform domain refuses an impersonating identity, a Decider is present, the
+// path and body are well formed and agree on the tenant, the object's owner is
+// resolved into the Decision, the object exists, the Decider allows it, the
+// actor's authentication is strong enough, the mandatory audit lands, the
+// capability is called. A read ends after the decision; a write that the
+// capability refuses gets a failed audit row and the failure mapped to its
+// answer.
 //
 // The groups of routes are mounted with the capabilities they need: the account
 // and membership groups always, the session group with the session store, the

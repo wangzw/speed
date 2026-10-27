@@ -160,7 +160,7 @@ func (m *product) handleProviderList(ctx context.Context, in tenantInput) (Authn
 	if err != nil {
 		return AuthnAdminProviderList{}, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, tenantDomain); err != nil {
 		return AuthnAdminProviderList{}, err
 	}
 	if err = m.asks(ctx, authn.Decision{Action: authn.ActionIDPManage, Actor: id, Tenant: in.Tenant}); err != nil {
@@ -192,7 +192,7 @@ func (m *product) handleProviderCreate(ctx context.Context, in providerCreateInp
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, tenantDomain); err != nil {
 		return nil, err
 	}
 	if in.BodyTenant != "" && in.BodyTenant != in.Tenant {
@@ -404,7 +404,7 @@ func (m *product) providerFor(ctx context.Context, tenant, providerID string) (a
 	if err != nil {
 		return authn.Identity{}, authn.SSOProvider{}, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, tenantDomain); err != nil {
 		return authn.Identity{}, authn.SSOProvider{}, err
 	}
 	p, err := m.ssoProviders.Get(ctx, providerID)

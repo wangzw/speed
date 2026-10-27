@@ -27,7 +27,7 @@ func (m *product) handleSecretList(ctx context.Context, in accountIDInput, _ *sp
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -59,7 +59,7 @@ func (m *product) handleSecretCreate(ctx context.Context, in secretCreateInput, 
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -105,7 +105,7 @@ func (m *product) handleSecretRevoke(ctx context.Context, in secretRevokeInput, 
 	if err != nil {
 		return nil, err
 	}
-	if err := m.admit(id); err != nil {
+	if err := m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)

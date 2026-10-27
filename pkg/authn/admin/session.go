@@ -33,7 +33,7 @@ func (m *product) handleAccountSessions(ctx context.Context, in accountIDInput, 
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -68,7 +68,7 @@ func (m *product) handleRevokeAccountSessions(ctx context.Context, in accountIDI
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -118,7 +118,7 @@ func (m *product) handleSessionRevoke(ctx context.Context, in sessionRevokeInput
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	sessionID := authn.SessionID(in.ID)

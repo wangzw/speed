@@ -35,7 +35,7 @@ func (m *product) handleFactorList(ctx context.Context, in accountIDInput, _ *sp
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -66,7 +66,7 @@ func (m *product) handleMFARequired(ctx context.Context, in mfaFlagInput, _ *spe
 	if err != nil {
 		return nil, err
 	}
-	if err := m.admit(id); err != nil {
+	if err := m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -102,7 +102,7 @@ func (m *product) handleMFAReset(ctx context.Context, in accountIDInput, _ *spee
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -144,7 +144,7 @@ func (m *product) handlePasswordReset(ctx context.Context, in passwordResetInput
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)

@@ -15,58 +15,60 @@ import (
 )
 
 // route is one management route as a case drives it: its handler, the method
-// and path, and the path parameters the handler reads. The handler is the one
-// the operation's declaration binds, so a case drives the same entry point the
-// mounter registers: the input is bound from the request before the handler
-// runs.
+// and path, the path parameters the handler reads, and the domain its action is
+// decided in. The handler is the one the operation's declaration binds, so a
+// case drives the same entry point the mounter registers: the input is bound
+// from the request before the handler runs.
 type route struct {
 	name    string
 	handler gin.HandlerFunc
 	method  string
 	path    string
 	params  gin.Params
+	domain  decisionDomain
 }
 
 // allRoutes lists every management route of the module. A case drives them to
-// hold a property that must hold of each: the impersonation refusal and the
-// refusal of a Decider that is not there. The bodies are left out, because the
+// hold a property that must hold of each: the refusal of a Decider that is not
+// there, and — split by the domain the action is decided in — either the
+// impersonation refusal or its absence. The bodies are left out, because the
 // checks those cases exercise come before a body is read.
 func allRoutes(p *product) []route {
 	return []route{
-		{"account list", accountListOperation.Handle(p.handleAccountList), http.MethodGet, "/admin/accounts", nil},
-		{"account create", accountCreateOperation.Handle(p.handleAccountCreate), http.MethodPost, "/admin/accounts", nil},
-		{"account get", accountGetOperation.Handle(p.handleAccountGet), http.MethodGet, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account patch", accountPatchOperation.Handle(p.handleAccountPatch), http.MethodPatch, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account delete", accountDeleteOperation.Handle(p.handleAccountDelete), http.MethodDelete, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account status", accountStatusOperation.Handle(p.handleAccountStatus), http.MethodPost, "/admin/accounts/x/status", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"identifier add", identifierAddOperation.Handle(p.handleIdentifierAdd), http.MethodPost, "/admin/accounts/x/identifiers", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"identifier remove", identifierRemoveOperation.Handle(p.handleIdentifierRemove), http.MethodDelete, "/admin/accounts/x/identifiers/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "identifier", Value: identifier}}},
-		{"password reset", passwordResetOperation.Handle(p.handlePasswordReset), http.MethodPost, "/admin/accounts/x/password", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"factor list", factorListOperation.Handle(p.handleFactorList), http.MethodGet, "/admin/accounts/x/factors", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"mfa required", mfaFlagOperation.Handle(p.handleMFARequired), http.MethodPost, "/admin/accounts/x/mfa-required", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"mfa reset", mfaResetOperation.Handle(p.handleMFAReset), http.MethodPost, "/admin/accounts/x/mfa-reset", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"account sessions", accountSessionsOperation.Handle(p.handleAccountSessions), http.MethodGet, "/admin/accounts/x/sessions", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"revoke sessions", revokeSessionsOperation.Handle(p.handleRevokeAccountSessions), http.MethodPost, "/admin/accounts/x/revoke-sessions", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"session revoke", sessionRevokeOperation.Handle(p.handleSessionRevoke), http.MethodDelete, "/admin/sessions/x", gin.Params{{Key: "id", Value: string(sessionA)}}},
-		{"secret list", secretListOperation.Handle(p.handleSecretList), http.MethodGet, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"secret create", secretCreateOperation.Handle(p.handleSecretCreate), http.MethodPost, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}},
-		{"secret revoke", secretRevokeOperation.Handle(p.handleSecretRevoke), http.MethodDelete, "/admin/accounts/x/secrets/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "secret", Value: secretA}}},
-		{"member list", memberListOperation.Handle(p.handleMemberList), http.MethodGet, "/admin/tenants/t/members", gin.Params{{Key: "tenant", Value: tenantA}}},
-		{"member put", memberWriteOperation.Handle(p.handleMemberPut), http.MethodPut, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
-		{"member remove", memberRemoveOperation.Handle(p.handleMemberRemove), http.MethodDelete, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
-		{"sso exempt", memberExemptOperation.Handle(p.handleMemberSSOExempt), http.MethodPut, "/admin/tenants/t/members/x/sso-exempt", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}},
-		{"provider list", providerListOperation.Handle(p.handleProviderList), http.MethodGet, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}},
-		{"provider create", providerCreateOperation.Handle(p.handleProviderCreate), http.MethodPost, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}},
-		{"provider get", providerGetOperation.Handle(p.handleProviderGet), http.MethodGet, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
-		{"provider update", providerUpdateOperation.Handle(p.handleProviderUpdate), http.MethodPut, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
-		{"provider delete", providerDeleteOperation.Handle(p.handleProviderDelete), http.MethodDelete, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}},
-		{"domain claim", domainClaimOperation.Handle(p.handleDomainClaim), http.MethodPost, "/admin/sso/providers/x/domains", gin.Params{{Key: "id", Value: idpA}}},
-		{"domain remove", domainRemoveOperation.Handle(p.handleDomainRemove), http.MethodDelete, "/admin/sso/providers/x/domains/d", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}},
-		{"domain verify", domainVerifyOperation.Handle(p.handleDomainVerify), http.MethodPost, "/admin/sso/providers/x/domains/d/verify", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}},
-		{"reverify domains", reverifyDomainsOperation.Handle(p.handleReverifyDomains), http.MethodPost, "/admin/sso/providers/x/reverify-domains", gin.Params{{Key: "id", Value: idpA}}},
-		{"metadata refresh", metadataRefreshOperation.Handle(p.handleMetadataRefresh), http.MethodPost, "/admin/sso/providers/x/metadata/refresh", gin.Params{{Key: "id", Value: idpA}}},
-		{"impersonation list", impersonationListOperation.Handle(p.handleImpersonationList), http.MethodGet, "/admin/impersonations", nil},
-		{"impersonation revoke", impersonationRevokeOperation.Handle(p.handleImpersonationRevoke), http.MethodDelete, "/admin/impersonations/x", gin.Params{{Key: "id", Value: grantA}}},
+		{"account list", accountListOperation.Handle(p.handleAccountList), http.MethodGet, "/admin/accounts", nil, platformDomain},
+		{"account create", accountCreateOperation.Handle(p.handleAccountCreate), http.MethodPost, "/admin/accounts", nil, platformDomain},
+		{"account get", accountGetOperation.Handle(p.handleAccountGet), http.MethodGet, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"account patch", accountPatchOperation.Handle(p.handleAccountPatch), http.MethodPatch, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"account delete", accountDeleteOperation.Handle(p.handleAccountDelete), http.MethodDelete, "/admin/accounts/x", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"account status", accountStatusOperation.Handle(p.handleAccountStatus), http.MethodPost, "/admin/accounts/x/status", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"identifier add", identifierAddOperation.Handle(p.handleIdentifierAdd), http.MethodPost, "/admin/accounts/x/identifiers", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"identifier remove", identifierRemoveOperation.Handle(p.handleIdentifierRemove), http.MethodDelete, "/admin/accounts/x/identifiers/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "identifier", Value: identifier}}, platformDomain},
+		{"password reset", passwordResetOperation.Handle(p.handlePasswordReset), http.MethodPost, "/admin/accounts/x/password", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"factor list", factorListOperation.Handle(p.handleFactorList), http.MethodGet, "/admin/accounts/x/factors", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"mfa required", mfaFlagOperation.Handle(p.handleMFARequired), http.MethodPost, "/admin/accounts/x/mfa-required", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"mfa reset", mfaResetOperation.Handle(p.handleMFAReset), http.MethodPost, "/admin/accounts/x/mfa-reset", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"account sessions", accountSessionsOperation.Handle(p.handleAccountSessions), http.MethodGet, "/admin/accounts/x/sessions", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"revoke sessions", revokeSessionsOperation.Handle(p.handleRevokeAccountSessions), http.MethodPost, "/admin/accounts/x/revoke-sessions", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"session revoke", sessionRevokeOperation.Handle(p.handleSessionRevoke), http.MethodDelete, "/admin/sessions/x", gin.Params{{Key: "id", Value: string(sessionA)}}, platformDomain},
+		{"secret list", secretListOperation.Handle(p.handleSecretList), http.MethodGet, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"secret create", secretCreateOperation.Handle(p.handleSecretCreate), http.MethodPost, "/admin/accounts/x/secrets", gin.Params{{Key: "id", Value: string(userID)}}, platformDomain},
+		{"secret revoke", secretRevokeOperation.Handle(p.handleSecretRevoke), http.MethodDelete, "/admin/accounts/x/secrets/y", gin.Params{{Key: "id", Value: string(userID)}, {Key: "secret", Value: secretA}}, platformDomain},
+		{"member list", memberListOperation.Handle(p.handleMemberList), http.MethodGet, "/admin/tenants/t/members", gin.Params{{Key: "tenant", Value: tenantA}}, tenantDomain},
+		{"member put", memberWriteOperation.Handle(p.handleMemberPut), http.MethodPut, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}, tenantDomain},
+		{"member remove", memberRemoveOperation.Handle(p.handleMemberRemove), http.MethodDelete, "/admin/tenants/t/members/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}, tenantDomain},
+		{"sso exempt", memberExemptOperation.Handle(p.handleMemberSSOExempt), http.MethodPut, "/admin/tenants/t/members/x/sso-exempt", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "account", Value: string(userID)}}, tenantDomain},
+		{"provider list", providerListOperation.Handle(p.handleProviderList), http.MethodGet, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}, tenantDomain},
+		{"provider create", providerCreateOperation.Handle(p.handleProviderCreate), http.MethodPost, "/admin/tenants/t/sso/providers", gin.Params{{Key: "tenant", Value: tenantA}}, tenantDomain},
+		{"provider get", providerGetOperation.Handle(p.handleProviderGet), http.MethodGet, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
+		{"provider update", providerUpdateOperation.Handle(p.handleProviderUpdate), http.MethodPut, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
+		{"provider delete", providerDeleteOperation.Handle(p.handleProviderDelete), http.MethodDelete, "/admin/sso/providers/x", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
+		{"domain claim", domainClaimOperation.Handle(p.handleDomainClaim), http.MethodPost, "/admin/sso/providers/x/domains", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
+		{"domain remove", domainRemoveOperation.Handle(p.handleDomainRemove), http.MethodDelete, "/admin/sso/providers/x/domains/d", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}, tenantDomain},
+		{"domain verify", domainVerifyOperation.Handle(p.handleDomainVerify), http.MethodPost, "/admin/sso/providers/x/domains/d/verify", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}, tenantDomain},
+		{"reverify domains", reverifyDomainsOperation.Handle(p.handleReverifyDomains), http.MethodPost, "/admin/sso/providers/x/reverify-domains", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
+		{"metadata refresh", metadataRefreshOperation.Handle(p.handleMetadataRefresh), http.MethodPost, "/admin/sso/providers/x/metadata/refresh", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
+		{"impersonation list", impersonationListOperation.Handle(p.handleImpersonationList), http.MethodGet, "/admin/impersonations", nil, platformDomain},
+		{"impersonation revoke", impersonationRevokeOperation.Handle(p.handleImpersonationRevoke), http.MethodDelete, "/admin/impersonations/x", gin.Params{{Key: "id", Value: grantA}}, platformDomain},
 	}
 }
 
@@ -252,12 +254,18 @@ func TestNoDeciderDeniesEveryRoute(t *testing.T) {
 	}
 }
 
-// TestAnImpersonatingActorIsRefusedAtTheHandler holds that an impersonating
-// identity reaching each handler directly is answered 403
-// impersonation-restricted, before the Decider is asked.
-func TestAnImpersonatingActorIsRefusedAtTheHandler(t *testing.T) {
+// TestAnImpersonatingActorIsRefusedOnThePlatformDomain holds that an
+// impersonating identity reaching a platform-domain handler directly is
+// answered 403 impersonation-restricted, before the Decider is asked. The
+// platform domain is the account, session, secret and impersonation-record
+// surfaces: none of them is a capability the impersonated account holds, since
+// a target never carries a platform permission.
+func TestAnImpersonatingActorIsRefusedOnThePlatformDomain(t *testing.T) {
 	r := newRig(t)
 	for _, rt := range allRoutes(r.p) {
+		if rt.domain != platformDomain {
+			continue
+		}
 		rec := r.invoke(rt.handler, rt.method, rt.path, rt.params, nil, impersonating()...)
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("%s as an impersonating identity: status = %d, want 403", rt.name, rec.Code)
@@ -265,6 +273,101 @@ func TestAnImpersonatingActorIsRefusedAtTheHandler(t *testing.T) {
 	}
 	if r.decider.count() != 0 {
 		t.Errorf("the Decider was asked %d times for an impersonating identity, want none", r.decider.count())
+	}
+}
+
+// TestAnImpersonatingActorIsAdmittedOnTheTenantDomain holds that the same
+// identity reaching a tenant-domain handler is not answered
+// impersonation-restricted: the tenant-domain management surface is a
+// capability the impersonated account holds when its own membership grants it,
+// so the handler decides by the effective account. The cases drive handlers
+// directly, so a body the case did not supply may answer 400 and an object it
+// did not seed may answer 404; what none of them may answer is the platform
+// domain's 403.
+func TestAnImpersonatingActorIsAdmittedOnTheTenantDomain(t *testing.T) {
+	r := newRig(t)
+	for _, rt := range allRoutes(r.p) {
+		if rt.domain != tenantDomain {
+			continue
+		}
+		rec := r.invoke(rt.handler, rt.method, rt.path, rt.params, nil, impersonating()...)
+		if rec.Code == http.StatusForbidden {
+			t.Errorf("%s as an impersonating identity: status = %d, want the tenant domain's decision; body %s",
+				rt.name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// TestATenantDomainRouteDecidesAnImpersonatingActorByTheEffectiveAccount holds
+// the whole path through the mounter for one tenant-domain route: the route is
+// registered Impersonable, so the gateway lets the identity through, and the
+// handler asks the Decider for the action with the identity whose effective
+// account is the impersonated one. The decided tenant is the request's.
+func TestATenantDomainRouteDecidesAnImpersonatingActorByTheEffectiveAccount(t *testing.T) {
+	r := newRig(t)
+	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantA+"/members", nil, impersonating()...)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a tenant-domain member list as an impersonating identity: status = %d, want 200; body %s",
+			rec.Code, rec.Body.String())
+	}
+	got, ok := r.decider.last()
+	if !ok {
+		t.Fatal("the Decider was not asked")
+	}
+	if got.Action != authn.ActionMembershipManage || got.Tenant != tenantA {
+		t.Errorf("Decision = %+v, want membership.manage in %s", got, tenantA)
+	}
+	if !got.Actor.Impersonating() || got.Actor.Account() != userID || got.Actor.Actor() != adminID {
+		t.Errorf("Decision.Actor = account %q actor %q impersonating %t; want the impersonated user decided through the operator",
+			got.Actor.Account(), got.Actor.Actor(), got.Actor.Impersonating())
+	}
+}
+
+// TestTenantDomainGroupsAreImpersonable holds the registration split: the
+// tenant-domain groups (memberships, identity providers and metadata refresh)
+// are registered Impersonable, while the platform-domain groups — the account,
+// session, secret and impersonation-record surfaces — are not.
+func TestTenantDomainGroupsAreImpersonable(t *testing.T) {
+	r := newRig(t)
+	cases := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"member list", "/api/v1/tenants/:tenant/members", true},
+		{"member write", "/api/v1/tenants/:tenant/members/:account", true},
+		{"member exempt", "/api/v1/tenants/:tenant/members/:account/sso-exempt", true},
+		{"provider list", "/api/v1/tenants/:tenant/sso/providers", true},
+		{"provider by id", "/api/v1/tenants/:tenant/sso/providers/:id", true},
+		{"provider domains", "/api/v1/tenants/:tenant/sso/providers/:id/domains", true},
+		{"provider domain", "/api/v1/tenants/:tenant/sso/providers/:id/domains/:domain", true},
+		{"metadata refresh", "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh", true},
+		{"account list", "/api/v1/system/auth/accounts", false},
+		{"account by id", "/api/v1/system/auth/accounts/:id", false},
+		{"account sessions", "/api/v1/system/auth/accounts/:id/sessions", false},
+		{"account secrets", "/api/v1/system/auth/accounts/:id/secrets", false},
+		{"session revoke", "/api/v1/system/auth/sessions/:id", false},
+		{"impersonation list", "/api/v1/tenants/:tenant/impersonations", false},
+		{"impersonation revoke", "/api/v1/tenants/:tenant/impersonations/:id", false},
+	}
+	for _, tc := range cases {
+		reg, ok := r.mounter.Registered(http.MethodGet, tc.path)
+		if !ok {
+			// A route with another method still carries the group's mark; the
+			// path lookup takes any method the group registered.
+			for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch} {
+				if reg, ok = r.mounter.Registered(method, tc.path); ok {
+					break
+				}
+			}
+		}
+		if !ok {
+			t.Errorf("%s: %s is not mounted", tc.name, tc.path)
+			continue
+		}
+		if reg.Impersonable != tc.want {
+			t.Errorf("%s: Impersonable = %t, want %t", tc.name, reg.Impersonable, tc.want)
+		}
 	}
 }
 

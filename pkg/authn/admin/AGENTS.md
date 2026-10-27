@@ -22,14 +22,18 @@ The API is the package's godoc.
 
 ## Boundaries
 
-- **One pipeline, in one order, for every route.** A handler checks that the
-  actor is not impersonating, that a `Decider` is there, the shape and the
-  tenant, resolves the object's owner into the `Decision`, reads the object,
-  asks the signup gate, asks the `Decider`, checks the actor's strength, writes
-  the mandatory audit and only then calls the capability. A read ends after the
-  decision. The impersonation check and the missing-`Decider` refusal come
-  before any read, so a deployment with no `Decider` tells a caller nothing
-  about which objects exist.
+- **One pipeline, in one order, for every route.** A handler checks the
+  impersonation rule of the route's decision domain, that a `Decider` is there,
+  the shape and the tenant, resolves the object's owner into the `Decision`,
+  reads the object, asks the signup gate, asks the `Decider`, checks the actor's
+  strength, writes the mandatory audit and only then calls the capability. A
+  read ends after the decision. An impersonating identity is refused on the
+  platform domain (account, session, secret and impersonation-record surfaces)
+  and admitted on the tenant domain (membership, identity-provider and metadata
+  refresh surfaces), where the effective account's permissions decide; both
+  checks come before any read, so a deployment with no `Decider` tells a caller
+  nothing about which objects exist. The tenant-domain groups' routes are
+  registered `Impersonable`; the platform-domain groups' are not.
 - **A management write by an unverified self-registration is refused.**
   `gateSignup` reads `SignupVerification.SignupStateOf` for the acting account
   and answers `403 contact-required` while the state is pending. It runs after

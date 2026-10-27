@@ -50,12 +50,35 @@ func (m *product) caller(ctx context.Context) (authn.Identity, error) {
 	return id, nil
 }
 
-// admit applies the two checks every management route makes before it reads
-// anything: the actor is not impersonating, and a Decider is there. It answers a
-// refusal as an error, so that a deployment with no Decider tells a caller
-// nothing about which objects exist.
-func (m *product) admit(id authn.Identity) error {
-	if id.Impersonating() {
+// decisionDomain is where a management route's action is decided. The platform
+// domain covers the account, session, secret and impersonation-record surfaces;
+// the tenant domain covers the membership, identity-provider and metadata
+// refresh surfaces. The distinction matters to one check alone: an
+// impersonating identity holds the impersonated account's capabilities and
+// none of the platform permissions a target never carries, so its requests are
+// refused on the platform domain and decided by the effective account on the
+// tenant domain.
+type decisionDomain int
+
+const (
+	// platformDomain is the surface decided in the platform domain, where an
+	// impersonating identity is refused with impersonation-restricted.
+	platformDomain decisionDomain = iota
+	// tenantDomain is the surface decided in the tenant the path or the object
+	// names, where an impersonating identity is decided by the effective
+	// account's permissions in that tenant.
+	tenantDomain
+)
+
+// admit applies the checks a management route makes before it reads anything:
+// an impersonating identity is refused on the platform domain, and a Decider is
+// there. The tenant domain admits the impersonating identity, whose capabilities
+// are the impersonated account's in that tenant, and leaves the decision to the
+// same Decider call the route makes for the account itself. It answers a refusal
+// as an error, so that a deployment with no Decider tells a caller nothing about
+// which objects exist.
+func (m *product) admit(id authn.Identity, where decisionDomain) error {
+	if where == platformDomain && id.Impersonating() {
 		return authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
 	}
 	if m.decider == nil {

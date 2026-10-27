@@ -46,7 +46,7 @@ func (m *product) handleImpersonationList(ctx context.Context, in impersonationL
 	if err != nil {
 		return AuthnAdminImpersonationList{}, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return AuthnAdminImpersonationList{}, err
 	}
 	if in.Tenant == "" {
@@ -85,7 +85,7 @@ func (m *product) handleImpersonationRevoke(ctx context.Context, in impersonatio
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	grant, err := m.records.Get(ctx, in.ID)

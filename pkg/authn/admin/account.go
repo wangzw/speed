@@ -102,7 +102,7 @@ func (m *product) handleAccountList(ctx context.Context, in accountListInput) (A
 	if err != nil {
 		return AuthnAdminAccountList{}, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return AuthnAdminAccountList{}, err
 	}
 	q, err := m.accountQuery(in)
@@ -207,7 +207,7 @@ func (m *product) handleAccountCreate(ctx context.Context, in accountCreateInput
 	if err != nil {
 		return AuthnAdminAccountEnvelope{}, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return AuthnAdminAccountEnvelope{}, err
 	}
 	kind := authn.AccountKind(in.Kind)
@@ -274,7 +274,7 @@ func (m *product) handleAccountPatch(ctx context.Context, in accountPatchInput, 
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -342,7 +342,7 @@ func (m *product) handleAccountGet(ctx context.Context, in accountIDInput, _ *sp
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -370,7 +370,7 @@ func (m *product) handleAccountDelete(ctx context.Context, in accountIDInput, _ 
 	if err != nil {
 		return nil, err
 	}
-	if err := m.admit(id); err != nil {
+	if err := m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -409,7 +409,7 @@ func (m *product) handleAccountStatus(ctx context.Context, in accountStatusInput
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -460,7 +460,7 @@ func (m *product) handleIdentifierAdd(ctx context.Context, in identifierAddInput
 	if err != nil {
 		return nil, err
 	}
-	if err = m.admit(id); err != nil {
+	if err = m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
@@ -503,7 +503,7 @@ func (m *product) handleIdentifierRemove(ctx context.Context, in identifierRemov
 	if err != nil {
 		return nil, err
 	}
-	if err := m.admit(id); err != nil {
+	if err := m.admit(id, platformDomain); err != nil {
 		return nil, err
 	}
 	accountID := authn.AccountID(in.ID)
