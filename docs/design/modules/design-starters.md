@@ -279,7 +279,7 @@ flowchart TD
 1. **回调落点先于任何会话门。** 路径是 `/sign-in/callback` 时，不论会话状态，直接渲染回调页（`AuthCallbackPage`）：重定向类与企业类登录的回调到达时会话尚不存在，回调处理器自己完成在途流程、渲染宿主给的 `absent` 视图或显示横幅（见「租户框架与回调落点」）。
 2. **区域按路径前缀判定。** 路径在 `/console` 前缀下的进控制台区，其余进租户区。区域与哪些页面特性在场无关。
 3. **租户区**：路径是邀请落点、且 `useMatch()` 命中邀请声明时，渲染接受邀请页；只有已认证、特性态为 `ready` 且特性 `authn.invitations` 在场时才会命中。受理应答只带被接受租户的标识，不带别名，宿主因此随后读一次本人租户读取解析它的别名：解析到即把该租户设为当前租户，并落到它的租户区首页（REQ-tenancy-021）；解析不到（读失败，或已落定的清单不含该标识）仍落到租户区首页，但不写当前租户——无法命名的租户会让每个租户域请求带着一个没有来源的别名发出。其余情况进租户框架 `TenantFrame`：匿名者首访看到登录面，会话中途结束后看到会话结束页，已认证者进入存在性判定。`/account/callback` 在这里不拦截，它是租户区的一条普通声明。
-4. **控制台区**先确保当前租户已落定：未知时按名册读出的默认租户（第一个启用且不是个人租户的行）落定（两域权限集的读取走受租户解析守护的端点，没有租户名的请求在 handler 之前被答 404）。名册没有这样的行、读被拒或失败时当前租户保持未知，区域照常按平台权限集判定。随后依次判定，先成立的分支即结果：
+4. **控制台区**先确保当前租户已落定：未知时按名册读出的默认租户（第一个启用且不是个人租户的行）落定（两域权限集的读取走受租户解析守护的端点，没有租户名的请求在 handler 之前被答 404）。名册没有这样的行、读被拒或失败时，当前租户改由本人租户读取落定——冒充期间服务端把它的应答收窄到授予租户，这是被冒充账户唯一能读到的租户来源；两种读都没有给出名字时当前租户保持未知，区域照常按平台权限集判定。随后依次判定，先成立的分支即结果：
    - 匿名 → 登录面（`SessionGate`）；
    - 特性态为 `pending` → 无框架的等待；为 `failed` → 无框架的失败视图，带重试；
    - 平台权限集未知、且档案的 `verification.state` 为 `pending` → 重定向到账户页的验证节 `/account?verify=1`：这样的账户读不到名册，平台权限集永远读不出，等待不会有结果；
@@ -296,7 +296,7 @@ flowchart TD
 - **非员工看不出控制台有哪些页面。** 区域只看路径前缀，平台权限集为空的已认证者访问任何 `/console/*` 路径都被重定向回首页，结果与页面特性在场与否无关。
 - **冒充期间控制台同样不可达。** 被冒充的账户不持平台域权限，因此落在上一条的判据里：控制台入口不出现，控制台区按平台权限集为空重定向到租户区首页，重定向处不加说明。冒充者的解释由租户框架里的冒充横幅与应用栏的身份指示承担（[ADR-web-impersonation-shell](../../adr/adr-web-impersonation-shell.md)、「冒充期间的壳」）。
 - **特性态未定时不误判为非员工。** 平台权限集的读取依赖特性态（见「宿主侧的特性读取」），特性态为 `pending` 或 `failed` 时权限集保持未知；控制台区先判特性态、再判权限集，取回失败的员工看到失败视图，不被重定向。控制台声明的收窄结果在 `pending`、`failed` 时恒为空，这一判同样排在特性态之后。
-- **权限读取先要一个租户名。** 两域权限集的读取走受租户解析守护的端点，没有租户名的请求在 handler 之前被答 404；当前租户未定时不读，两域保持未知，一次注定被拒的读不会记成「两域为空」。整页加载一个控制台路径时没有租户框架落定租户，控制台区因此自己从名册落定默认租户，否则平台员工会被自己的空集挡在门外。
+- **权限读取先要一个租户名。** 两域权限集的读取走受租户解析守护的端点，没有租户名的请求在 handler 之前被答 404；当前租户未定时不读，两域保持未知，一次注定被拒的读不会记成「两域为空」。整页加载一个控制台路径时没有租户框架落定租户，控制台区因此自己从名册落定默认租户，否则平台员工会被自己的空集挡在门外；名册读被拒时（冒充身份读不到它）改取本人租户读取的第一项，冒充期间即授予租户，平台权限集因此照样读得出来。
 - **权限码不经前缀继承。** 未命中任何控制台声明的路径渲染 `NotFoundPage`，与调用者持有哪些权限码无关；没有导航标签的控制台详情声明因此各自带权限码（[console-ui](web/design-web-console-ui.md)）。
 
 ### 租户框架与回调落点
@@ -462,7 +462,7 @@ flowchart TD
 | 结束冒充落定后横幅随即撤下，不等快照翻转 | 已实现 | `starters/demo/web/src/impersonation.tsx` `ImpersonationBannerSlot`；`starters/demo/web/src/impersonation.test.tsx` |
 | 冒充期间不挂租户选择器 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame` |
 | 横幅在应用栏之下、横幅的隐藏与复位、应用栏的身份指示、账户菜单的结束项 | 已实现 | `starters/demo/web/src/impersonation.tsx` `useImpersonationNoticeState`、`ImpersonationBannerSlot`、`ImpersonationChip`；`starters/demo/web/src/app.tsx` `TenantFrame`；`starters/demo/web/src/chrome.tsx` `UserMenu` |
-| 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、开始冒充时的读暂停） | 部分实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleEntry`；`starters/demo/web/src/console-routes.ts` `useConsoleTarget`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
+| 冒充期间的壳（横幅挂载、身份变更动作、当前租户、实时订阅重建、到期的有界重读、开始冒充时的读暂停） | 部分实现 | `starters/demo/web/src/impersonation.tsx` `IdentityChangeProvider`、`useImpersonationStatus`、`ImpersonationBannerSlot`；`starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleEntry`、`useConsoleTenantSettle`；`starters/demo/web/src/console-routes.ts` `useConsoleTarget`；`starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions` |
 | 注册模式下短信登录之后的完成设置页（用户名、口令） | 已实现 | `starters/demo/web/src/pages/account-setup-page.tsx` `AccountSetupPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView` |
 | 审查装配的日志邮件 `mail.review` 与开放口令注册的走查链 | 已实现 | `starters/demo/server/review.go` `reviewMailModuleName`、`reviewMailSender`、`verificationCode`、`reviewModules`、`init`；`starters/demo/server/review/sqlite.yaml`（`authn.account.password-signup`、`authn.login.email-*` 与 `authn.sms.per-source-*` 的预算设置）；`starters/demo/server/review_budget_test.go` `TestReviewWidensTheSendBudgets`；`starters/demo/server/review_signup_test.go` `TestReviewPasswordSignupVerifiesItsEmailAndBuildsAPersonalTenant`、`TestReviewBaselineHasNoRegistrationEntry` |
 | 口令注册成功落地 `/account?verify=1` 的账户页验证节与持续验证提示 | 已实现 | `starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/pages/sign-in-view.tsx` `SignInView`；`starters/demo/web/src/contact-verification-banner.tsx` `ContactVerificationBanner` |

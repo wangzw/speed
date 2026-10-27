@@ -1955,6 +1955,71 @@ describe('the impersonation shell', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/'))
   })
 
+  it('settles the console tenant from the caller list when the roster is refused', async () => {
+    // A full document load of a console path while impersonating: the roster
+    // is a platform management read and is refused, so the console area must
+    // name the tenant from the caller tenant list (narrowed to the grant) to
+    // let the effective account's platform set be read at all. With the set
+    // read as empty, the area redirects; without the read it waits forever.
+    window.history.replaceState({}, '', '/console/tenants')
+    // A full load starts with no current tenant and no alias cache.
+    setCurrentTenantId(null)
+    setTenantAliases(new Map())
+    const request: RequestFn = <T,>(
+      path: string,
+    ) => {
+      if (path === '/api/v1/system/tenants') {
+        return Promise.reject(new Error('the roster is refused to an impersonation')) as Promise<T>
+      }
+      if (path === '/api/v1/auth/me/tenants') {
+        return Promise.resolve({
+          tenants: [{ id: 'acme', alias: 'acme' }],
+        } as T)
+      }
+      if (path === '/api/v1/authz/me/permissions') {
+        return Promise.resolve({ platform: [], tenant: [] } as T)
+      }
+      return Promise.reject(new Error(`unexpected request: ${path}`))
+    }
+    bindRequestFn(request)
+    const impersonated = {
+      ...authenticatedSnapshot({ system: null }),
+      impersonating: true,
+    }
+    const base = createTestSession(impersonated)
+    const session = {
+      ...base,
+      setPermissionSet: (domain: AuthDomain, perms: readonly string[] | null) => {
+        const current = base.getSnapshot()
+        base.set({
+          ...current,
+          permissionSets: {
+            tenant:
+              domain === 'tenant' ? perms : current.permissionSets.tenant,
+            system:
+              domain === 'system' ? perms : current.permissionSets.system,
+          },
+        })
+      },
+    }
+
+    renderDemoApp({
+      session,
+      wrap: (app) => (
+        <PlatformPermissions session={session}>{app}</PlatformPermissions>
+      ),
+    })
+
+    await waitFor(() => expect(window.location.pathname).toBe('/'), {
+      timeout: 5_000,
+    })
+    expect(
+      screen.queryByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeNull()
+  })
+
   it('resets the platform set to unknown immediately before re-reading it after an impersonation ends', async () => {
     window.history.replaceState({}, '', '/')
     // The frame starts an impersonation with no settled tenant (the module

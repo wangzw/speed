@@ -1124,11 +1124,15 @@ function ConsoleFeatureGate({
  * away. The roster read settles the same default the tenant frame would.
  *
  * The number is the request surface's only use here: the console renders no
- * tenant and has no switcher. A refused or failed roster read leaves the
- * tenant undecided, and the area gate keeps its fail-closed verdict.
+ * tenant and has no switcher. When the roster read is refused or fails -- an
+ * impersonated identity cannot make it -- the caller tenant list settles the
+ * name instead: it is the membership fact and, while impersonating, the server
+ * narrows it to the grant. A tenant the request surface cannot name would leave
+ * the platform set unknown and keep the area waiting instead of deciding.
  */
 function useConsoleTenantSettle(authenticated: boolean): void {
   const tenantId = useCurrentTenantId()
+  const selfState = useSelfTenantState()
   useEffect(() => {
     if (!authenticated || tenantId !== null) {
       return undefined
@@ -1151,12 +1155,23 @@ function useConsoleTenantSettle(authenticated: boolean): void {
         setCurrentTenantId(defaultRosterTenant(answer.tenants))
       })
       .catch(() => {
-        // Undecided: the gate settles on whatever set is already known.
+        // The roster is refused or failed. Settle from the caller tenant list
+        // when it has an answer; an empty or not-yet-read list leaves the
+        // tenant undecided, and the effect runs again when it lands.
+        if (cancelled || getCurrentTenantId() !== null) {
+          return
+        }
+        const row = selfState.tenants[0]
+        if (row === undefined) {
+          return
+        }
+        setTenantAliases(new Map([[row.id, row.alias]]))
+        setCurrentTenantId(row.id)
       })
     return () => {
       cancelled = true
     }
-  }, [authenticated, tenantId])
+  }, [authenticated, tenantId, selfState])
 }
 
 /**
