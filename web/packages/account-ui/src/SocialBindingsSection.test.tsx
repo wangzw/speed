@@ -46,8 +46,32 @@ import { SocialBindingsSection } from './SocialBindingsSection.js'
 
 const PROFILE_PATH = '/api/v1/auth/me'
 const METHODS_PATH = '/api/v1/auth/methods'
+const FACTORS_PATH = '/api/v1/auth/factors'
 const LINK_FLOW_PATH = '/api/v1/auth/flows/authenticated'
+const FLOW_ANSWER = '/api/v1/auth/flows/answer'
 const ACCOUNT_CALLBACK = '/account/callback'
+
+/** One active factor, as the step-up challenge's own factor read answers it. */
+const ACTIVE_FACTOR = {
+  id: 'factor-1',
+  kind: 'totp',
+  label: 'App',
+  status: 'active',
+  created_at: '2026-01-01T00:00:00Z',
+}
+
+/** A fresh password-established session view, as the no-factor branch of the
+ * step-up challenge reads it. */
+function sessionView(): Record<string, unknown> {
+  return {
+    authenticated: true,
+    session_id: 'sess-1',
+    account_id: 'user-1',
+    methods: ['pwd'],
+    assurance: 'single',
+    auth_time: new Date().toISOString(),
+  }
+}
 
 /** The deployment's discovery document, carrying redirect methods. */
 function methodsDoc(
@@ -666,6 +690,267 @@ describe('SocialBindingsSection', () => {
     expect(alert).toHaveTextContent(zhCN.errors.authn.last_login_method)
     // The refusal leaves the row in place.
     expect(screen.getByText(zhCN.bindings.provider.github)).toBeTruthy()
+  })
+
+  it('opens the step-up challenge when the unlink asks for a fresh authentication', async () => {
+    // The unlink route requires a fresh local multi-factor authentication. An
+    // account that holds an active factor can satisfy that; the refusal is
+    // handed to the shared challenge instead of only rendering its code.
+    captureRefreshWarning()
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile([{ id: 'github-1', provider: 'github' }]),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
+        return errorResponse(401, 'authn.insufficient_user_authentication')
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      }),
+    )
+    const confirm = await screen.findByRole('dialog', {
+      name: zhCN.bindings.confirmTitle,
+    })
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.bindings.confirmLabel,
+      }),
+    )
+
+    // The challenge opens on the factor step, ready for the factor the owner
+    // holds. The refusal is not also settled as a failure in the section's
+    // region: the attempt was handed to the challenge. The scan includes
+    // hidden nodes because an open dialog hides the page behind it.
+    expect(
+      await screen.findByRole('dialog', { name: zhCN.mfa.stepUp.title }),
+    ).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'App' })).toBeTruthy()
+    expect(screen.queryAllByRole('alert', { hidden: true })).toHaveLength(0)
+    // No automatic replay: the unlink waits for a won challenge.
+    expect(
+      rig.calls.filter(
+        (call) =>
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('retries the unlink exactly once after the step-up challenge is won', async () => {
+    captureRefreshWarning()
+    let elevated = false
+    let unlinked = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile(
+            unlinked ? [] : [{ id: 'github-1', provider: 'github' }],
+          ),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [ACTIVE_FACTOR] })
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
+        if (!elevated) {
+          return errorResponse(401, 'authn.insufficient_user_authentication')
+        }
+        unlinked = true
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'POST' && call.path === LINK_FLOW_PATH) {
+        return jsonResponse(200, {
+          seq: 1,
+          state: 'second',
+          next: {
+            kind: 'factor',
+            factors: [{ id: 'factor-1', kind: 'totp', label: 'App' }],
+          },
+        })
+      }
+      if (call.method === 'POST' && call.path === FLOW_ANSWER) {
+        const body = call.body as { seq: number }
+        if (body.seq === 1) {
+          return jsonResponse(200, {
+            seq: 2,
+            state: 'second',
+            next: {
+              kind: 'challenge',
+              fields: [{ name: 'code', kind: 'text' }],
+            },
+          })
+        }
+        elevated = true
+        return jsonResponse(200, {
+          state: 'elevated',
+          token_type: 'Bearer',
+          access_token: 'access-2',
+          expires_in: 3600,
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    const rig = makeRealClientRig(respond)
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      }),
+    )
+    const confirm = await screen.findByRole('dialog', {
+      name: zhCN.bindings.confirmTitle,
+    })
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.bindings.confirmLabel,
+      }),
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'App' }))
+    await user.type(
+      await screen.findByLabelText(zhCN.flowStep.codeLabel),
+      '123456',
+    )
+    await user.click(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    )
+
+    // The won challenge replays the refused unlink, which now lands and names
+    // the provider it removed.
+    expect(
+      await screen.findByText(
+        zhCN.bindings.unlinked.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      ),
+    ).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(
+      rig.calls.filter(
+        (call) =>
+          call.method === 'DELETE' &&
+          call.path === '/api/v1/auth/links/github-1',
+      ),
+    ).toHaveLength(2)
+  })
+
+  it('shows the shared no-factor explanation when the account holds no factor', async () => {
+    // An account with no active factor cannot satisfy a local multi-factor
+    // requirement. The shared challenge names the missing two-step
+    // verification, starts no flow and offers no re-login here: a fresh
+    // single-factor session would meet the same wall. The surface inherits
+    // that shape unchanged.
+    captureRefreshWarning()
+    const rig = makeRealClientRig((call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(
+          200,
+          profile([{ id: 'github-1', provider: 'github' }]),
+        )
+      }
+      if (call.method === 'GET' && call.path === METHODS_PATH) {
+        return jsonResponse(200, methodsDoc([]))
+      }
+      if (call.method === 'GET' && call.path === FACTORS_PATH) {
+        return jsonResponse(200, { factors: [] })
+      }
+      if (call.method === 'GET' && call.path === SESSION_PATH) {
+        return jsonResponse(200, sessionView())
+      }
+      if (call.method === 'DELETE' && call.path === '/api/v1/auth/links/github-1') {
+        return errorResponse(401, 'authn.insufficient_user_authentication')
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    })
+    rig.store.set('access-1')
+    renderWithProviders(
+      <SocialBindingsSection
+        session={rig.session}
+        returnTo={ACCOUNT_CALLBACK}
+      />,
+    )
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', {
+        name: zhCN.bindings.unbindAriaWithProvider.replace(
+          '{{provider}}',
+          zhCN.bindings.provider.github,
+        ),
+      }),
+    )
+    const confirm = await screen.findByRole('dialog', {
+      name: zhCN.bindings.confirmTitle,
+    })
+    await user.click(
+      within(confirm).getByRole('button', {
+        name: zhCN.bindings.confirmLabel,
+      }),
+    )
+
+    expect(
+      await screen.findByText(zhCN.mfa.stepUp.noFactor),
+    ).toBeTruthy()
+    expect(
+      screen.queryByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+    ).toBeNull()
+    expect(
+      rig.calls.some(
+        (call) =>
+          call.method === 'POST' && call.path === LINK_FLOW_PATH,
+      ),
+    ).toBe(false)
   })
 
   it('starts a link flow with the top-level return_to and reports the redirect URL upward', async () => {

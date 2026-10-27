@@ -36,7 +36,16 @@
  * in the same region below the list -- authn.conflict when the account
  * would be left with no sign-in method (the server decides by its own
  * login-method count, never computable client-side), anything else through
- * the whitelist.
+ * the whitelist -- except a step-up shortfall. The route asks for a fresh
+ * local multi-factor authentication, so a 401
+ * authn.insufficient_user_authentication opens the shared step-up dialog
+ * with the row remembered, and a won challenge re-runs that one unlink
+ * exactly once. The failed attempt releases its identity-transition
+ * window, and the re-run is a fresh write that opens its own. A caller
+ * holding no factor gets the shared dialog's own answer for that state --
+ * the missing-two-step-verification hint, the session's first-factor
+ * re-proof, or the re-login exit -- exactly as the other gated surfaces
+ * do.
  *
  * The add area's channels come from the same discovery document: every
  * method whose kind is `redirect` and that is not already bound -- none
@@ -102,6 +111,7 @@ import {
 } from '@speed/api-sdk'
 import { useMutation } from '@tanstack/react-query'
 import type { AuthnMethodDescriptor, AuthSession } from '@speed/auth-core'
+import { useStepUpGate } from '@speed/auth-core'
 import {
   ConfirmDialog,
   ListSkeleton,
@@ -112,6 +122,7 @@ import type { WriteOutcome } from '@speed/ui-kit'
 import { AccountAsyncSection } from './internal/async-section.js'
 import { runIdentityTransition } from './internal/identity-transition.js'
 import { useProfileQuery } from './internal/queries.js'
+import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
 
@@ -137,6 +148,13 @@ export interface SocialBindingsSectionProps {
    * Rendered beside the add-area button and the bound row's label.
    */
   readonly providerIcon?: (provider: string) => ReactNode
+}
+
+/** The unlink a won step-up re-runs: the row's identifier and the provider
+ * identity its confirmation names. */
+interface UnbindAction {
+  readonly id: string
+  readonly label: string
 }
 
 /**
@@ -294,6 +312,11 @@ export function SocialBindingsSection({
   // list, and the add area's flow-start result inside the add area.
   const unbindFeedback = useWriteFeedback()
   const authorizeFeedback = useWriteFeedback()
+  // The unlink a won step-up re-runs, remembered through the shared gate so
+  // the challenge replays exactly that row once and a cancel replays none.
+  const gate = useStepUpGate<UnbindAction>((action) => {
+    void handleUnbind(action.id, action.label)
+  })
   // The deployment's methods, as read once per session. null is
   // unresolved (still reading, or the read failed): the add area is
   // withheld rather than guessed, and the bound rows fall back to the
@@ -421,6 +444,13 @@ export function SocialBindingsSection({
         )
       } catch (error) {
         setUnbindTarget(null)
+        // The route asks for a fresh local multi-factor authentication: that
+        // shortfall opens the shared challenge with this row remembered
+        // instead of settling as a refusal. The failed write released its own
+        // window above; a won challenge's replay opens a fresh one.
+        if (gate.intercept(error, { id: linkId, label: providerLabel })) {
+          return null
+        }
         throw error
       }
     })
@@ -648,6 +678,14 @@ export function SocialBindingsSection({
             void handleUnbind(unbindTarget.id, unbindTarget.label)
           }
         }}
+      />
+
+      <StepUpChallenge
+        open={gate.open}
+        reason={gate.reason}
+        session={session}
+        onSuccess={gate.succeed}
+        onCancel={gate.cancel}
       />
     </>
   )
