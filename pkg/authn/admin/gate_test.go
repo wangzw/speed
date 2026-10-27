@@ -135,10 +135,10 @@ func managementRoutes() []gateRoute {
 			return r.do(http.MethodPost, "/api/v1/tenants/"+tenantB+"/sso/providers/"+idpA+"/metadata/refresh", nil, fresh()...)
 		}},
 		{"impersonation list", false, seed, func(r *rig) *httptest.ResponseRecorder {
-			return r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/impersonations", nil, fresh()...)
+			return r.do(http.MethodGet, "/api/v1/system/tenants/"+tenantB+"/impersonations", nil, fresh()...)
 		}},
 		{"impersonation revoke", true, seed, func(r *rig) *httptest.ResponseRecorder {
-			return r.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
+			return r.do(http.MethodDelete, "/api/v1/system/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
 		}},
 		{"session delete", true, seed, func(r *rig) *httptest.ResponseRecorder {
 			return r.do(http.MethodDelete, "/api/v1/system/auth/sessions/"+string(sessionA), nil, fresh()...)

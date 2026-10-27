@@ -25,7 +25,7 @@
 - **不通知被冒充者。** authn 没有通知通道；`authn.impersonation.started` 事件是宿主接通知的钩子。
 - **不清除记录。** 记录永不由本模块删除，保留期是宿主的合规策略。
 - **不判定冒充期间业务路由的权限。** 授权取生效账户，冒充期间按被冒充账户的权限判定（[design-authz](../design-authz.md)）；本模块只管 authn 自己的处理器，并保证它们不因冒充本身把属于账户持有人的操作拒掉。
-- **不挂管理面路由。** 列出与撤销记录的 HTTP 路由 `Bt/:tenant/impersonations` 归 `authn.admin`；本模块只提供它调用的 `List`、`Revoke` 与单条读取 `Get`。
+- **不挂管理面路由。** 列出与撤销记录的 HTTP 路由 `B/tenants/:tenant/impersonations` 归 `authn.admin`，挂在平台管理作用域的基路径 `B` 下；本模块只提供它调用的 `List`、`Revoke` 与单条读取 `Get`。
 - **不提供全局冒充、嵌套冒充、冒充服务账户与可续期的冒充令牌。**
 - **不声明配置键与设置键。** 键的名字、取值域与缺省值只在 [design-authn-config](design-authn-config.md) 给全，本文只写它们的语义。
 - **不定义事件、审计与指标的取值表。** 全部类型、载荷与属性的权威表在 [design-authn-events](design-authn-events.md)；本文只写本模块在何处写、写什么约束。

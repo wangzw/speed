@@ -67,8 +67,8 @@ func allRoutes(p *product) []route {
 		{"domain verify", domainVerifyOperation.Handle(p.handleDomainVerify), http.MethodPost, "/admin/sso/providers/x/domains/d/verify", gin.Params{{Key: "id", Value: idpA}, {Key: "domain", Value: "d.example"}}, tenantDomain},
 		{"reverify domains", reverifyDomainsOperation.Handle(p.handleReverifyDomains), http.MethodPost, "/admin/sso/providers/x/reverify-domains", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
 		{"metadata refresh", metadataRefreshOperation.Handle(p.handleMetadataRefresh), http.MethodPost, "/admin/sso/providers/x/metadata/refresh", gin.Params{{Key: "id", Value: idpA}}, tenantDomain},
-		{"impersonation list", impersonationListOperation.Handle(p.handleImpersonationList), http.MethodGet, "/admin/impersonations", nil, platformDomain},
-		{"impersonation revoke", impersonationRevokeOperation.Handle(p.handleImpersonationRevoke), http.MethodDelete, "/admin/impersonations/x", gin.Params{{Key: "id", Value: grantA}}, platformDomain},
+		{"impersonation list", impersonationListOperation.Handle(p.handleImpersonationList), http.MethodGet, "/tenants/t/impersonations", gin.Params{{Key: "tenant", Value: tenantA}}, platformDomain},
+		{"impersonation revoke", impersonationRevokeOperation.Handle(p.handleImpersonationRevoke), http.MethodDelete, "/tenants/t/impersonations/x", gin.Params{{Key: "tenant", Value: tenantA}, {Key: "id", Value: grantA}}, platformDomain},
 	}
 }
 
@@ -146,8 +146,8 @@ func TestDecisionFill(t *testing.T) {
 		{"domain verify", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/domains/d.example/verify", nil, authn.ActionIDPManage, tenantB, idpA, ""},
 		{"reverify domains", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/reverify-domains", nil, authn.ActionIDPManage, tenantB, idpA, ""},
 		{"metadata refresh", http.MethodPost, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA + "/metadata/refresh", nil, authn.ActionIDPManage, tenantB, idpA, ""},
-		{"impersonation list", http.MethodGet, "/api/v1/tenants/" + tenantB + "/impersonations", nil, authn.ActionImpersonationRead, tenantB, "", ""},
-		{"impersonation revoke", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/impersonations/" + grantA, nil, authn.ActionImpersonationRevoke, tenantB, "acct-t2", "acct-t2"},
+		{"impersonation list", http.MethodGet, "/api/v1/system/tenants/" + tenantB + "/impersonations", nil, authn.ActionImpersonationRead, tenantB, "", ""},
+		{"impersonation revoke", http.MethodDelete, "/api/v1/system/tenants/" + tenantB + "/impersonations/" + grantA, nil, authn.ActionImpersonationRevoke, tenantB, "acct-t2", "acct-t2"},
 		{"session delete", http.MethodDelete, "/api/v1/system/auth/sessions/" + string(sessionA), nil, authn.ActionSessionRevoke, "", string(sessionA), "acct-t2"},
 		{"account delete", http.MethodDelete, "/api/v1/system/auth/accounts/acct-t2", nil, authn.ActionAccountDelete, "", "acct-t2", "acct-t2"},
 		{"provider delete", http.MethodDelete, "/api/v1/tenants/" + tenantB + "/sso/providers/" + idpA, nil, authn.ActionIDPManage, tenantB, idpA, ""},
@@ -230,7 +230,7 @@ func TestARecordAddressedUnderAnotherTenantIsNotFound(t *testing.T) {
 
 	r = newRig(t)
 	r.records.put(authn.ImpersonationGrant{ID: grantA, Actor: adminID, Target: userID, Tenant: tenantA})
-	rec = r.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
+	rec = r.do(http.MethodDelete, "/api/v1/system/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("impersonation record under another tenant: status = %d, want 404", rec.Code)
 	}
@@ -347,8 +347,8 @@ func TestTenantDomainGroupsAreImpersonable(t *testing.T) {
 		{"account sessions", "/api/v1/system/auth/accounts/:id/sessions", false},
 		{"account secrets", "/api/v1/system/auth/accounts/:id/secrets", false},
 		{"session revoke", "/api/v1/system/auth/sessions/:id", false},
-		{"impersonation list", "/api/v1/tenants/:tenant/impersonations", false},
-		{"impersonation revoke", "/api/v1/tenants/:tenant/impersonations/:id", false},
+		{"impersonation list", "/api/v1/system/tenants/:tenant/impersonations", false},
+		{"impersonation revoke", "/api/v1/system/tenants/:tenant/impersonations/:id", false},
 	}
 	for _, tc := range cases {
 		reg, ok := r.mounter.Registered(http.MethodGet, tc.path)
@@ -540,14 +540,14 @@ func TestTheImpersonationRecordGroup(t *testing.T) {
 	})
 
 	// A list shows only the tenant's records.
-	rec := r.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/impersonations", nil, fresh()...)
+	rec := r.do(http.MethodGet, "/api/v1/system/tenants/"+tenantB+"/impersonations", nil, fresh()...)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list: status = %d, want 200", rec.Code)
 	}
 
 	// A missing record is a 404 before the Decider.
 	missing := newRig(t)
-	rec = missing.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/absent", nil, fresh()...)
+	rec = missing.do(http.MethodDelete, "/api/v1/system/tenants/"+tenantB+"/impersonations/absent", nil, fresh()...)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("revoke of a missing record: status = %d, want 404", rec.Code)
 	}
@@ -558,14 +558,14 @@ func TestTheImpersonationRecordGroup(t *testing.T) {
 	// The revocation is best-effort: a failing audit does not stop it, and an
 	// already-ended record gets the same answer.
 	r.audit.fails(audit.ErrWriteFailed)
-	rec = r.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
+	rec = r.do(http.MethodDelete, "/api/v1/system/tenants/"+tenantB+"/impersonations/"+grantA, nil, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("revoke with a failing audit: status = %d, want 204", rec.Code)
 	}
 	if r.records.revokes != 1 {
 		t.Errorf("the record was revoked %d times, want once", r.records.revokes)
 	}
-	rec = r.do(http.MethodDelete, "/api/v1/tenants/"+tenantB+"/impersonations/ended", nil, fresh()...)
+	rec = r.do(http.MethodDelete, "/api/v1/system/tenants/"+tenantB+"/impersonations/ended", nil, fresh()...)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("revoke of an ended record: status = %d, want 204", rec.Code)
 	}
@@ -611,7 +611,7 @@ func TestRouteGroupsFollowTheirCapabilities(t *testing.T) {
 		},
 		{
 			omit:    noRecords,
-			absent:  [][2]string{{http.MethodGet, "/api/v1/tenants/:tenant/impersonations"}},
+			absent:  [][2]string{{http.MethodGet, "/api/v1/system/tenants/:tenant/impersonations"}},
 			present: [][2]string{{http.MethodGet, "/api/v1/system/auth/accounts"}},
 		},
 	}

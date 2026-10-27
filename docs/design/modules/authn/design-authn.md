@@ -305,7 +305,7 @@ type Requirement struct {
 | `authn/sso/saml` | `authn.sso.saml` | `LoginMethod`、`SSOMetadataRefresher` | 否 | `SSOProviders`、`mount.Mounter` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
 | `authn/sso/oidc` | `authn.sso.oidc` | `LoginMethod` | 否 | `SSOProviders` | `settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | 无 |
 | `authn/impersonation` | `authn.impersonation` | `Impersonation` | 是 | `db.Database`、`mount.Mounter`、`Sessions`、`Accounts`、`Memberships`、`MFA`、`audit.Audit`、`ScopeGuard`、`SignupVerification` | `Decider` ○（缺席即全拒）、`Tokens` ○、`settings.Store` ○、`event.Bus` ○ | `authn_impersonations` |
-| `authn/admin` | `authn.admin` | 无（只挂 `/api/v1/system/auth/*` 与 `/api/v1/tenants/*` 下的路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`SignupVerification`、`audit.Audit` | `Sessions` ○、`MFA` ○、`SSOProviders` ○、全部 `SSOMetadataRefresher`、`Impersonation` ○、`Tokens` ○、`Decider` ○（缺席即全拒）；每组路由随对应能力在场才挂 | 无 |
+| `authn/admin` | `authn.admin` | 无（只挂 `/api/v1/system/auth/*`、`/api/v1/system/tenants/*` 下的冒充记录与 `/api/v1/tenants/*` 下的路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`SignupVerification`、`audit.Audit` | `Sessions` ○、`MFA` ○、`SSOProviders` ○、全部 `SSOMetadataRefresher`、`Impersonation` ○、`Tokens` ○、`Decider` ○（缺席即全拒）；每组路由随对应能力在场才挂 | 无 |
 | `authn/profile` | `authn.profile` | 无（只挂 `B/me` 的两条路由） | — | `mount.Mounter`、`Accounts`、`AccountAdmin`、`MFA`、`SignupVerification` | `settings.Store` ○、`audit.Audit` ○ | 无 |
 | `authn/invite` | `authn.invite` | `Invites` | 是 | `db.Database`、`mount.Mounter`、`Accounts`、`AccountAdmin`、`Memberships`、`audit.Audit`、`SignupVerification` | `Decider` ○（缺席即全拒）、`Throttle` ○、`settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○ | `authn_invitations` |
 

@@ -75,7 +75,7 @@
 | `authn.gate.call-budget` | `time.Duration` | `5s` | 默认 | | 一次进入校验后端的调用的期限；须为正 |
 | `authn.gate.in-flight` | 整数 | `64` | 默认 | | 同时进行的后端调用数上限，满时请求收口 503；须为正 |
 | `authn.gate.mount.endpoints.default`、`.tenants`、`.system` | 字符串 | 空 | 默认 | | 各作用域的路由所挂的入口端。`default` 为空取入口模块声明的唯一端，`system` 为空取 `default`；`tenants` 无缺省，为空时该作用域不可挂载（租户管理路由的判定在该租户的策略域，必须落在租户两层的端上） |
-| `authn.gate.mount.bases.default`、`.tenants`、`.system` | 字符串 | `/api/v1/auth`、`/api/v1/tenants`、`/api/v1/system/auth` | 默认 | | 各作用域的路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin 规整后的写法 |
+| `authn.gate.mount.bases.default`、`.tenants`、`.system` | 字符串 | `/api/v1/auth`、`/api/v1/tenants`、`/api/v1/system` | 默认 | | 各作用域的路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin 规整后的写法。`system` 是整段平台管理命名空间的根，其下的 `/auth/...` 与 `/tenants/...` 都相对它书写 |
 | `authn.gate.mount.public-url` | 字符串 | 空 | 默认 | | 对外基址，只含来源不含路径 |
 | `authn.gate.mount.allow-insecure` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure`；改动要重启 |
 | `authn.gate.trusted-origins` | 字符串列表 | 空 | 主 | | 跨源检查与 `return_to` 额外信任的来源，每项 `scheme://host[:port]`，先规范成浏览器发送的形式再匹配（规则见 [design-authn-gate](design-authn-gate.md#可信来源的规范形式)）；`public-url` 的来源恒可信 |

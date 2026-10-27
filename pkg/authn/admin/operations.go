@@ -21,7 +21,10 @@ const (
 // The mounter registration resolves the same declaration against its base, so
 // each path is written once.
 const (
-	// System scope: the platform-domain account and session surfaces.
+	// System scope: the platform-domain account and session surfaces, and the
+	// platform's tenant-addressed impersonation-record group. The tenant in an
+	// impersonation path is the data the records are confined to, not the policy
+	// domain the decision is made in.
 	pathAccounts        = "/auth/accounts"
 	pathAccount         = "/auth/accounts/:id"
 	pathIdentities      = pathAccount + "/identifiers"
@@ -36,13 +39,13 @@ const (
 	pathSession         = "/auth/sessions/:id"
 	pathSecrets         = pathAccount + "/secrets"
 	pathSecret          = pathSecrets + "/:secret"
+	pathImpersonations  = "/tenants/:tenant/impersonations"
+	pathImpersonation   = pathImpersonations + "/:id"
 
 	// Tenant-prefixed scope: the tenant is the first segment, so the level and
 	// the tenant a route acts on are both on the request line. The membership,
 	// SSO provider and domain routes are decided in that tenant's own policy
-	// domain; the impersonation-record group is the exception, decided in the
-	// platform domain with the path's tenant as the data the records are
-	// confined to.
+	// domain.
 	pathMembers         = "/:tenant/members"
 	pathMember          = pathMembers + "/:account"
 	pathMemberExempt    = pathMember + "/sso-exempt"
@@ -53,8 +56,6 @@ const (
 	pathDomainVerify    = pathProviderDomain + "/verify"
 	pathDomainReverify  = pathProvider + "/reverify-domains"
 	pathMetadataRefresh = pathProvider + "/metadata/refresh"
-	pathImpersonations  = "/:tenant/impersonations"
-	pathImpersonation   = "/:tenant/impersonations/:id"
 )
 
 // The inputs of the module's operations. Each carries the request's parameters
@@ -953,13 +954,13 @@ var metadataRefreshOperation = speedhttp.NewReplyOperation[providerIDInput](
 
 // The impersonation-record group.
 
-// impersonationListOperation declares GET /admin/impersonations.
+// impersonationListOperation declares GET /tenants/:tenant/impersonations.
 var impersonationListOperation = speedhttp.NewOperation[impersonationListInput, AuthnAdminImpersonationList](
 	"authn.admin.impersonations.list",
 	http.MethodGet,
 	pathImpersonations,
 	"List impersonation records, one page at a time",
-	"Lists the impersonation records of the tenant named by the required tenant query parameter, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.",
+	"Lists the impersonation records of the tenant named by the path, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.",
 	nil,
 	speedhttp.Failures(commonFailures(),
 		problemResponse(http.StatusBadRequest, mount.CodeBadRequest, "The page query could not be read"),
@@ -969,7 +970,7 @@ var impersonationListOperation = speedhttp.NewOperation[impersonationListInput, 
 	),
 )
 
-// impersonationRevokeOperation declares DELETE /admin/impersonations/:id.
+// impersonationRevokeOperation declares DELETE /tenants/:tenant/impersonations/:id.
 var impersonationRevokeOperation = speedhttp.NewReplyOperation[impersonationIDInput](
 	"authn.admin.impersonations.revoke",
 	http.MethodDelete,
@@ -986,7 +987,8 @@ var impersonationRevokeOperation = speedhttp.NewReplyOperation[impersonationIDIn
 )
 
 // systemOperations is the part of the API decided in the platform domain:
-// accounts, their sessions and their service secrets.
+// accounts, their sessions and their service secrets, and the impersonation
+// records of a tenant (the tenant is the data the records are confined to).
 var systemOperations = speedhttp.Operations{
 	accountListOperation,
 	accountCreateOperation,
@@ -1006,11 +1008,12 @@ var systemOperations = speedhttp.Operations{
 	secretListOperation,
 	secretCreateOperation,
 	secretRevokeOperation,
+	impersonationListOperation,
+	impersonationRevokeOperation,
 }
 
 // tenantOperations is the part of the API decided in the tenant's own policy
-// domain: memberships, invitations' administrative view, identity providers and
-// impersonation records.
+// domain: memberships and identity providers.
 var tenantOperations = speedhttp.Operations{
 	memberListOperation,
 	memberWriteOperation,
@@ -1026,8 +1029,6 @@ var tenantOperations = speedhttp.Operations{
 	domainVerifyOperation,
 	reverifyDomainsOperation,
 	metadataRefreshOperation,
-	impersonationListOperation,
-	impersonationRevokeOperation,
 }
 
 // operations is every operation the module serves, for the checks that hold the

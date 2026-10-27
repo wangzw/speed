@@ -147,10 +147,12 @@ func (m *product) mountSSORoutes() {
 // mountImpersonationRoutes registers the impersonation record group, mounted
 // with an impersonation capability that answers the extended shape the routes
 // read a record through. The two actions are decided in the platform domain, so
-// this is the one tenant-prefixed group whose routes are not registered
+// the group is published in the system scope and is not registered
 // Impersonable: the record surface is not a capability a target account holds.
+// The tenant in the path is the data the records are confined to, not the level
+// the route is served at.
 func (m *product) mountImpersonationRoutes() {
-	g := guardedIn(m.mounter, speedhttp.ScopeTenants)
+	g := guardedIn(m.mounter, speedhttp.ScopeSystem)
 	g(impersonationListOperation, mountRel(impersonationListOperation.Path), impersonationListOperation.Handle(m.handleImpersonationList))
 	g(impersonationRevokeOperation, mountRel(impersonationRevokeOperation.Path), impersonationRevokeOperation.Handle(m.handleImpersonationRevoke))
 }
@@ -179,9 +181,12 @@ func closedQuery(accepted map[string]bool, next gin.HandlerFunc) gin.HandlerFunc
 // path is derived from the scope's default base rather than the configured one: a
 // configured base moves the routes without moving the contract, which is the
 // split the Spec already accepts. The scope follows from the declaration: a
-// route that names the tenant first is the tenant-domain surface, every other
-// route is the platform-domain one. A declared route that is not under its base
-// is a declaration defect, not something to mount at a guessed path.
+// route whose first segment is the tenant parameter is the tenant-domain
+// surface, every other route is the platform-domain one — including an
+// impersonation route, whose leading /tenants segment names the data the records
+// are confined to rather than the policy domain. A declared route that is not
+// under its base is a declaration defect, not something to mount at a guessed
+// path.
 func mountRel(declared string) string {
 	spec, scope := adminSpec, speedhttp.ScopeSystem
 	if strings.HasPrefix(declared, "/:tenant/") {

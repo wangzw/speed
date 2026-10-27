@@ -360,7 +360,7 @@ export type ConsoleAccountSecretCreated = AuthnAdminSecretCreated
 /** One session of an account (GET .../accounts/:id/sessions). */
 export type ConsoleAccountSession = AuthnAdminSession
 
-/** One impersonation record (GET /api/v1/tenants/{tenant}/impersonations). */
+/** One impersonation record (GET /api/v1/system/tenants/{tenant}/impersonations). */
 export type ConsoleImpersonation = AuthnAdminImpersonation
 
 /** An account target (its detail reads and its writes). */
@@ -815,7 +815,7 @@ export interface ConsoleOperations {
   // --- Impersonation surface (/api/v1/system/auth) ------------------------------
 
   /**
-   * GET /api/v1/tenants/{tenant}/impersonations -- one page of impersonation records.
+   * GET /api/v1/system/tenants/{tenant}/impersonations -- one page of impersonation records.
    * The read is tenant-scoped by a required query parameter, so it stays
    * disabled while the caller names no tenant; `enabled` lets a page hold
    * it further, for a session whose impersonation the gateway would refuse
@@ -825,7 +825,7 @@ export interface ConsoleOperations {
     params: ConsoleImpersonationListParams,
     options?: { readonly enabled?: boolean },
   ) => UseQueryResult<readonly ConsoleImpersonation[], unknown>
-  /** DELETE /api/v1/tenants/{tenant}/impersonations/:id -- terminate an impersonation. */
+  /** DELETE /api/v1/system/tenants/{tenant}/impersonations/:id -- terminate an impersonation. */
   readonly useRevokeImpersonation: () => UseMutationResult<
     void,
     unknown,

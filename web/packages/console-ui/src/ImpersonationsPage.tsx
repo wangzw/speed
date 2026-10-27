@@ -20,7 +20,7 @@
  *    empty one) and the target account must be a member of it, so the
  *    form has no separate tenant input;
  *
- *  - the tenant's impersonation records, over /api/v1/tenants/{tenant}/impersonations:
+ *  - the tenant's impersonation records, over /api/v1/system/tenants/{tenant}/impersonations:
  *    the record list (GET) and one record's termination (DELETE). The read
  *    names its tenant as a required query parameter, so the page opens that
  *    half with the same tenant selection the start form uses, fed by the

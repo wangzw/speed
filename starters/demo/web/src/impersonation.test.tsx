@@ -504,7 +504,7 @@ function makeBackend(options: {
         return Promise.resolve(undefined as T)
       }
     }
-    if (path.startsWith('/api/v1/tenants/')) {
+    if (path.startsWith('/api/v1/system/tenants/') && path.endsWith('/impersonations')) {
       recordReads += 1
       recordSignal = request?.signal
       if (options.recordsGate !== undefined) {

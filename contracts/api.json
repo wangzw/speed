@@ -5191,7 +5191,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       },
       "post": {
         "description": "Creates a user or a service account. A user account must name at least one login identifier in this request — username, email or phone — because an account without one could not sign in; a user account that states a password additionally needs a username or email address, since a phone number is not a password login name and one without either is a 409 login-identifier-required. A service account signs in with a service secret and is not held to either rule. An email address or phone number is written with the way the administrator may state (admin or import-unverified), never with a proof of ownership. Creating a service account additionally needs the client.manage action. The mandatory audit row is written before the account row.",
@@ -5309,7 +5309,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}": {
@@ -5385,7 +5385,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       },
       "get": {
         "description": "Reads one account by its identifier. A deleted account reads as not found, as does an identifier that never existed. Requires the account.read action, with the account as both the decision's target and target account.",
@@ -5466,7 +5466,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       },
       "patch": {
         "description": "Writes the display name, the whole attribute set and the protected flag, each only when the request names it; a field left out is left as it is. protected is a host's mark that the account may not be impersonated, independent of any Decider. Requires account.update.",
@@ -5588,7 +5588,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/factors": {
@@ -5671,7 +5671,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/identifiers": {
@@ -5798,7 +5798,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/identifiers/{identifier}": {
@@ -5893,7 +5893,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/mfa-required": {
@@ -6010,7 +6010,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/mfa-reset": {
@@ -6103,7 +6103,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/password": {
@@ -6230,7 +6230,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/revoke-sessions": {
@@ -6313,7 +6313,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/secrets": {
@@ -6396,7 +6396,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       },
       "post": {
         "description": "Mints a service secret for a service account; only a service account has them, so any other account is 400. The secret value is returned in this response only and can never be read again. An expiry, when given, must be in the future. Requires client.manage and a fresh local multi-factor authentication.",
@@ -6518,7 +6518,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/secrets/{secret}": {
@@ -6603,7 +6603,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/sessions": {
@@ -6686,7 +6686,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/accounts/{id}/status": {
@@ -6810,7 +6810,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/auth/sessions/{id}": {
@@ -6886,7 +6886,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "admin"
       }
     },
     "/api/v1/system/permissions": {
@@ -8836,6 +8836,197 @@
         "x-endpoint": "admin"
       }
     },
+    "/api/v1/system/tenants/{tenant}/impersonations": {
+      "get": {
+        "description": "Lists the impersonation records of the tenant named by the path, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.",
+        "operationId": "authn.admin.impersonations.list",
+        "parameters": [
+          {
+            "description": "The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page.",
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The tenant whose records the page holds, as the tenant identifier; it scopes the read and fills the decision's tenant.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnAdminImpersonationList"
+                }
+              }
+            },
+            "description": "The page of records and the next cursor"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The page query could not be read"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No usable credential",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is impersonating or may not read records"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "List impersonation records, one page at a time",
+        "tags": [
+          "authn.admin"
+        ],
+        "x-endpoint": "admin"
+      }
+    },
+    "/api/v1/system/tenants/{tenant}/impersonations/{id}": {
+      "delete": {
+        "description": "Revokes an impersonation record; the record is read first, including an already ended one, to learn its tenant and target, which fill the decision. Revoking a record that has already ended is a no-op and gets the same answer as the first revocation. This route writes no mandatory audit: revoking is a move in the safe direction, and the impersonation module writes its own best-effort row. Requires impersonation.revoke.",
+        "operationId": "authn.admin.impersonations.revoke",
+        "parameters": [
+          {
+            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The impersonation record's identifier.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The record was revoked"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No usable credential",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The caller is impersonating or may not revoke records"
+          },
+          "404": {
+            "description": "No such record"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Revoke an impersonation record",
+        "tags": [
+          "authn.admin"
+        ],
+        "x-endpoint": "admin"
+      }
+    },
     "/api/v1/system/tenants/{tenant}/roles": {
       "get": {
         "description": "Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields an empty list. The list is not paginated.",
@@ -9567,197 +9758,6 @@
           "tenant.admin"
         ],
         "x-endpoint": "admin"
-      }
-    },
-    "/api/v1/tenants/{tenant}/impersonations": {
-      "get": {
-        "description": "Lists the impersonation records of the tenant named by the required tenant query parameter, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.",
-        "operationId": "authn.admin.impersonations.list",
-        "parameters": [
-          {
-            "description": "The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.",
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "description": "The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page.",
-            "in": "query",
-            "name": "after",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The tenant whose records the page holds, as the tenant identifier; it scopes the read and fills the decision's tenant.",
-            "in": "path",
-            "name": "tenant",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthnAdminImpersonationList"
-                }
-              }
-            },
-            "description": "The page of records and the next cursor"
-          },
-          "400": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The page query could not be read"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "No usable credential",
-            "headers": {
-              "WWW-Authenticate": {
-                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The caller is impersonating or may not read records"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "A dependency could not answer"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "List impersonation records, one page at a time",
-        "tags": [
-          "authn.admin"
-        ],
-        "x-endpoint": "api"
-      }
-    },
-    "/api/v1/tenants/{tenant}/impersonations/{id}": {
-      "delete": {
-        "description": "Revokes an impersonation record; the record is read first, including an already ended one, to learn its tenant and target, which fill the decision. Revoking a record that has already ended is a no-op and gets the same answer as the first revocation. This route writes no mandatory audit: revoking is a move in the safe direction, and the impersonation module writes its own best-effort row. Requires impersonation.revoke.",
-        "operationId": "authn.admin.impersonations.revoke",
-        "parameters": [
-          {
-            "description": "The tenant's identifier (the tenant module's ID as a string), not an alias or a display name.",
-            "in": "path",
-            "name": "tenant",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The impersonation record's identifier.",
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "The record was revoked"
-          },
-          "401": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "No usable credential",
-            "headers": {
-              "WWW-Authenticate": {
-                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "The caller is impersonating or may not revoke records"
-          },
-          "404": {
-            "description": "No such record"
-          },
-          "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            },
-            "description": "A dependency could not answer"
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "sessionCookie": []
-          }
-        ],
-        "summary": "Revoke an impersonation record",
-        "tags": [
-          "authn.admin"
-        ],
-        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/invitations": {
@@ -15024,7 +15024,7 @@
     },
     {
       "module": "authn.admin",
-      "endpoint": "account"
+      "endpoint": "admin"
     },
     {
       "module": "authn.admin",

@@ -218,7 +218,7 @@ func TestARefusalStopsEveryReadRoute(t *testing.T) {
 		{"factor list", "/api/v1/system/auth/accounts/acct-t2/factors", func() int { return r.mfa.factorCalls }},
 		{"secret list", "/api/v1/system/auth/accounts/acct-t2/secrets", func() int { return r.accounts.secretCalls }},
 		{"provider list", "/api/v1/tenants/" + tenantA + "/sso/providers", func() int { return r.providers.listCalls }},
-		{"impersonation list", "/api/v1/tenants/" + tenantA + "/impersonations", func() int { return r.records.listCalls }},
+		{"impersonation list", "/api/v1/system/tenants/" + tenantA + "/impersonations", func() int { return r.records.listCalls }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -692,7 +692,7 @@ func TestPagedRoutesRefuseANegativeLimit(t *testing.T) {
 	}{
 		{"account list", "/api/v1/system/auth/accounts"},
 		{"member list", "/api/v1/tenants/" + tenantA + "/members"},
-		{"impersonation list", "/api/v1/tenants/" + tenantA + "/impersonations"},
+		{"impersonation list", "/api/v1/system/tenants/" + tenantA + "/impersonations"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sep := "?"
@@ -1129,7 +1129,7 @@ func TestTheViewsCarryTheFields(t *testing.T) {
 		ID: "live", Actor: adminID, Target: "acct-t2", Tenant: tenantB,
 		StartedAt: ended.Add(-time.Hour), EndsAt: ended.Add(time.Hour),
 	})
-	rec = imp.do(http.MethodGet, "/api/v1/tenants/"+tenantB+"/impersonations", nil, fresh()...)
+	rec = imp.do(http.MethodGet, "/api/v1/system/tenants/"+tenantB+"/impersonations", nil, fresh()...)
 	var grants struct {
 		Impersonations []struct {
 			ID        string `json:"id"`

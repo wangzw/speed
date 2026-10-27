@@ -22,6 +22,11 @@ const managementModuleName = "management.access"
 // open to the guard: without the declaration the guard's closed default would
 // refuse every one of them 403 before a handler ran.
 //
+// The impersonation-record routes are not here: they are platform-domain
+// decisions with the path's tenant as the data the records are confined to, so
+// they mount on the admin endpoint, which the authorization guard does not
+// enforce.
+//
 // The set is written out because the declaration surface matches a route by its
 // exact (method, path) pair and has no prefix form. claims_test.go holds it to
 // the committed contract's tenant-management operations, so an operation the
@@ -48,8 +53,6 @@ var tenantManagementRoutes = []struct {
 	{http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/domains/:domain/verify"},
 	{http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh"},
 	{http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/reverify-domains"},
-	{http.MethodGet, "/api/v1/tenants/:tenant/impersonations"},
-	{http.MethodDelete, "/api/v1/tenants/:tenant/impersonations/:id"},
 }
 
 // init registers the module. The import is the wiring, as for every module; the

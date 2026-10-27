@@ -739,8 +739,8 @@ table:
 | Endpoint | Claims |
 |---|---|
 | `api` | `/api` |
-| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace`, `/api/v1/system/auth` |
-| `admin` | `/api/v1/system/audit`, `/api/v1/system/permissions`, `/api/v1/system/settings`, `/api/v1/system/sms`, `/api/v1/system/tenants` |
+| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace` |
+| `admin` | `/api/v1/system/audit`, `/api/v1/system/auth`, `/api/v1/system/permissions`, `/api/v1/system/settings`, `/api/v1/system/sms`, `/api/v1/system/tenants` |
 | `ops` | `/` (omitted: it is alone on its listener) |
 | `web` | `/` |
 
@@ -838,16 +838,21 @@ The baseline now ships the guards each endpoint carries; `server/defaults.yaml`
 names the fixed part of that wiring, and no configuration file repeats it:
 
 - The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its ordinary
-  and platform-management routes — login, session, registration, profile, the
-  account-management routes and the enterprise provider register — mount on the
-  `account` endpoint under `authn.gate.mount.bases.default` and
-  `mount.bases.system` (`/api/v1/auth` and `/api/v1/system/auth` by default).
-  The tenant-management routes — membership, invitations, identity providers
-  and impersonation records — mount on `api`, under
-  `authn.gate.mount.endpoints.tenants` and `mount.bases.tenants`
-  (`/api/v1/tenants` by default), because they are decided in that tenant's
-  policy domain and have to meet `tenant.resolve` and `tenant.admission`; the
-  endpoint's `/api` claim covers the namespace. The login flow is delivered as a
+  routes — login, session, registration, profile — mount on the `account`
+  endpoint under `authn.gate.mount.bases.default` (`/api/v1/auth` by default).
+  Its platform-management routes — the account-management routes, the enterprise
+  provider register and the impersonation records — mount on `admin` under
+  `authn.gate.mount.endpoints.system` and `mount.bases.system` (`/api/v1/system`
+  by default), because they are decided in the platform domain and the endpoint
+  is outside both tenant layers. An impersonation record's path carries the
+  tenant (`/api/v1/system/tenants/:tenant/impersonations`), but the tenant is
+  the data the record is confined to, not the policy domain. The
+  tenant-management routes — membership, invitations and identity providers —
+  mount on `api`, under `authn.gate.mount.endpoints.tenants` and
+  `mount.bases.tenants` (`/api/v1/tenants` by default), because they are decided
+  in that tenant's policy domain and have to meet `tenant.resolve` and
+  `tenant.admission`; the endpoint's `/api` claim covers the namespace. The
+  login flow is delivered as a
   session cookie: the frontend's login flow
   requests `delivery: 'session'` (and `@speed/auth-core` forces it), so a
   completed login answers `{state: 'authenticated', session: {id, expires_at}}`

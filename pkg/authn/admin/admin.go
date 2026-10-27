@@ -1,5 +1,5 @@
 // Package admin is the administration module of the authentication capability:
-// it mounts the management routes under the base path's /admin tree, decides
+// it mounts the management routes under the capability's scope bases, decides
 // every one of them through the Decider seam, writes the mandatory audit before
 // a write, and calls the corresponding capability.
 //
@@ -61,19 +61,22 @@ const ModuleName = "authn.admin"
 // defaultEndpoint is the endpoint this module's platform-management fragment
 // declares its routes for. The endpoint the routes are actually mounted on is
 // the one the mounter resolves; the fragment is a static declaration written
-// before that is known, so it carries the conventional name. The
-// tenant-management fragment names api, the conventional endpoint for routes
-// decided in a tenant's policy domain.
-const defaultEndpoint = "account"
+// before that is known, so it carries the conventional name. The platform
+// administration namespace lives on the admin endpoint, which claims
+// /api/v1/system/tenants and /api/v1/system/auth alike. The tenant-management
+// fragment names api, the conventional endpoint for routes decided in a
+// tenant's policy domain.
+const defaultEndpoint = "admin"
 
 // adminFragment is this module's platform-domain OpenAPI fragment, describing
-// the account and session groups.
+// the account and session groups and the platform's tenant-addressed
+// impersonation-record group.
 //
 //go:embed openapi/admin.json
 var adminFragment []byte
 
 // adminTenantsFragment is this module's tenant-domain fragment, describing the
-// membership, identity-provider and impersonation groups.
+// membership and identity-provider groups.
 //
 //go:embed openapi/admin.tenants.json
 var adminTenantsFragment []byte

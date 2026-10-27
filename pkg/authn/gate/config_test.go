@@ -197,7 +197,7 @@ func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	if set.budget != 5*time.Second || set.inFlight != 64 {
 		t.Errorf("the budget is %s and the width %d, want 5s and 64", set.budget, set.inFlight)
 	}
-	if set.mount.Bases != (bases{Default: "/api/v1/auth", Tenants: "/api/v1/tenants", System: "/api/v1/system/auth"}) || set.mount.Endpoints != (endpoints{}) || set.mount.PublicURL != "" || set.mount.AllowInsecure {
+	if set.mount.Bases != (bases{Default: "/api/v1/auth", Tenants: "/api/v1/tenants", System: "/api/v1/system"}) || set.mount.Endpoints != (endpoints{}) || set.mount.PublicURL != "" || set.mount.AllowInsecure {
 		t.Errorf("the mount section reads %+v by default, want /api/v1/auth and nothing else", set.mount)
 	}
 	if len(set.trustedOrigins) != 0 {

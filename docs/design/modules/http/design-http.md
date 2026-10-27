@@ -314,7 +314,7 @@ func Draining(ctx context.Context) <-chan struct{}
 
 - **认领是产品固定的命名空间表，不随 import、也不随运行集增删。** 它至少覆盖可用集里各模块以 `Spec` 声明的路径所在的命名空间，以及该监听所服务的前端会寻址的命名空间，不论对应模块本次是否运行。
 - **去掉一项能力时，它的命名空间留在认领里**，不论是把它撤出运行集，还是删掉它的 import。
-- **认领按作用域命名空间写**，例如 `/api/v1/system/tenants` 而不是逐条路由的完整路径；只有要把一段子树划给另一个端点时才写更深的前缀。示范的业务端点认领 `/api`，同一监听上另两个端点因而按作用域与服务面认领各自的那段子树，例如 `/api/v1/system/tenants` 与 `/api/v1/system/auth`（[ADR-http-api-prefix](../../../adr/adr-http-api-prefix.md)、[ADR-http-api-path-scopes](../../../adr/adr-http-api-path-scopes.md)）。
+- **认领按作用域命名空间写**，例如 `/api/v1/system/tenants` 而不是逐条路由的完整路径；只有要把一段子树划给另一个端点时才写更深的前缀。示范的业务端点认领 `/api`，同一监听上另两个端点因而按作用域与服务面认领各自的那段子树，例如 `admin` 认领 `/api/v1/system/tenants` 与 `/api/v1/system/auth`，`account` 认领 `/api/v1/auth`（[ADR-http-api-prefix](../../../adr/adr-http-api-prefix.md)、[ADR-http-api-path-scopes](../../../adr/adr-http-api-path-scopes.md)）。
 - **与前端同源部署时，前端的页面路径不落在同一监听上任何非 `/` 认领之下。** 落在某条认领之下的页面路径，整页导航拿到的是那个端点的应答（未认证时是它的拒绝，已认证时是它的 404），拿不到前端的入口文档。
 - **模块的挂载路径可以配置时，认领随之改**，例如认证的挂载基路径 `authn.gate.mount.bases`（普通面与两类管理面各一条基路径）。
 

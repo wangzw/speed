@@ -58,9 +58,11 @@
 
 ### 挂载
 
-认证一族经 `mount.Mounter` 挂载，同一模块可跨作用域：普通路由（登录流程、回调、自助面）挂在 `mount.bases.default`；管理模块的账户面挂在 `mount.bases.system`，成员、提供方与冒充记录挂在 `mount.bases.tenants`。社会化登录的回调地址取默认基路径。
+认证一族经 `mount.Mounter` 挂载，同一模块可跨作用域：普通路由（登录流程、回调、自助面）挂在 `mount.bases.default`；管理模块的账户面与冒充记录挂在 `mount.bases.system`，成员与提供方挂在 `mount.bases.tenants`。冒充记录的路径是 `system` 根下的 `/tenants/{tenant}/impersonations`：它按租户寻址，但判定在平台域，租户只是记录被限定的数据。社会化登录的回调地址取默认基路径。
 
-端也按作用域分开（`authn.gate.mount.endpoints`）：普通面与 `system` 挂在租户两层之外的端（示范是 `account`），`tenants` 挂在租户解析与准入层所守的端（示范是 `api`，其 `/api` 认领覆盖 `/api/v1/tenants`）。判据是判定域：租户管理路由在该租户的策略域判定，因而走有租户层的端；`system` 里的租户只是被操作的数据，仍留在租户层之外。登录、注册、流程与自助面是全局账户的请求，不得落在被租户解析或准入层所守的端上。
+端也按作用域分开（`authn.gate.mount.endpoints`）：普通面与 `system` 挂在租户两层之外的端（示范里普通面是 `account`，`system` 是 `admin`——平台管理命名空间 `/api/v1/system/*` 由它认领），`tenants` 挂在租户解析与准入层所守的端（示范是 `api`，其 `/api` 认领覆盖 `/api/v1/tenants`）。
+
+判据是判定域，不是路径里有没有租户：一条路由落在租户两层所守的端上，当且仅当它**既按租户寻址、又由该租户治理**。租户管理路由在该租户的策略域判定，因而走有租户层的端；`system` 里的租户只是被操作的数据，仍留在租户层之外，哪怕路径带着租户。登录、注册、流程与自助面是全局账户的请求，不得落在被租户解析或准入层所守的端上。
 
 ### 不做的校验
 

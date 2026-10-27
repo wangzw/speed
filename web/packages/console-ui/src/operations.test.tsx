@@ -593,7 +593,7 @@ describe('consoleOperations administration surfaces', () => {
       '/api/v1/system/auth/accounts/acc-1/factors',
       '/api/v1/system/auth/accounts/acc-1/secrets',
       '/api/v1/system/auth/accounts/acc-1/sessions',
-      '/api/v1/tenants/acme/impersonations',
+      '/api/v1/system/tenants/acme/impersonations',
     ]) {
       expect(calls.some((c) => c.method === 'GET' && c.path === path)).toBe(true)
     }
@@ -617,7 +617,7 @@ describe('consoleOperations administration surfaces', () => {
     expect(
       calls.some(
         (call) =>
-          call.method === 'GET' && call.path === '/api/v1/tenants/acme/impersonations',
+          call.method === 'GET' && call.path === '/api/v1/system/tenants/acme/impersonations',
       ),
     ).toBe(false)
   })
@@ -643,7 +643,7 @@ describe('consoleOperations administration surfaces', () => {
       expect(calls).toContainEqual({ method: 'POST', path: '/api/v1/system/auth/accounts/acc-1/revoke-sessions' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/auth/accounts/acc-1/secrets/sec-1' })
       expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/auth/sessions/sess-1' })
-      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/tenants/acme/impersonations/imp-1' })
+      expect(calls).toContainEqual({ method: 'DELETE', path: '/api/v1/system/tenants/acme/impersonations/imp-1' })
     })
   })
 

@@ -1588,6 +1588,40 @@ export interface AuthzAdminBindingView {
 }
 
 /**
+ * One impersonation record. The reason never appears here; it is in the record and the audit row alone.
+ */
+export interface AuthnAdminImpersonation {
+  /** The identifier of the account that started the impersonation. */
+  actor: string;
+  /** Absent while the record is still in force */
+  end_reason?: string;
+  /** The zero instant 0001-01-01T00:00:00Z while the record is still in force */
+  ended_at: string;
+  /** When the impersonation lapses, as an RFC 3339 instant in UTC. */
+  ends_at: string;
+  /** The record's identifier. */
+  id: string;
+  /** The identifier of the actor's session that carries the impersonation. */
+  session_id: string;
+  /** When the impersonation started, as an RFC 3339 instant in UTC. */
+  started_at: string;
+  /** The identifier of the account being impersonated. */
+  target: string;
+  /** The tenant the impersonation is confined to. */
+  tenant: string;
+}
+
+/**
+ * One page of impersonation records of one tenant, in ascending record-identifier order, and the cursor of the next page.
+ */
+export interface AuthnAdminImpersonationList {
+  /** The records on this page; the empty array when the tenant has none. */
+  impersonations: AuthnAdminImpersonation[];
+  /** The cursor of the next page, empty on the last page */
+  next_cursor: string;
+}
+
+/**
  * One role of a tenant as the role routes report it.
  */
 export interface AuthzAdminRoleView {
@@ -1626,40 +1660,6 @@ export interface AuthzAdminGrantView {
   role: string;
   /** The tenant the grant belongs to. */
   tenant: string;
-}
-
-/**
- * One impersonation record. The reason never appears here; it is in the record and the audit row alone.
- */
-export interface AuthnAdminImpersonation {
-  /** The identifier of the account that started the impersonation. */
-  actor: string;
-  /** Absent while the record is still in force */
-  end_reason?: string;
-  /** The zero instant 0001-01-01T00:00:00Z while the record is still in force */
-  ended_at: string;
-  /** When the impersonation lapses, as an RFC 3339 instant in UTC. */
-  ends_at: string;
-  /** The record's identifier. */
-  id: string;
-  /** The identifier of the actor's session that carries the impersonation. */
-  session_id: string;
-  /** When the impersonation started, as an RFC 3339 instant in UTC. */
-  started_at: string;
-  /** The identifier of the account being impersonated. */
-  target: string;
-  /** The tenant the impersonation is confined to. */
-  tenant: string;
-}
-
-/**
- * One page of impersonation records of one tenant, in ascending record-identifier order, and the cursor of the next page.
- */
-export interface AuthnAdminImpersonationList {
-  /** The records on this page; the empty array when the tenant has none. */
-  impersonations: AuthnAdminImpersonation[];
-  /** The cursor of the next page, empty on the last page */
-  next_cursor: string;
 }
 
 /**
@@ -2494,6 +2494,17 @@ export type AuthzAdminBindingsOf200 = {
   bindings: AuthzAdminBindingView[];
 };
 
+export type AuthnAdminImpersonationsListParams = {
+/**
+ * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
+ */
+limit?: number;
+/**
+ * The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page.
+ */
+after?: string;
+};
+
 /**
  * The tenant's roles.
  */
@@ -2524,17 +2535,6 @@ export const TenantAdminTenantsSetStatusBodyStatus = {
 export type TenantAdminTenantsSetStatusBody = {
   /** active serves the tenant; disabled stops serving it. */
   status: TenantAdminTenantsSetStatusBodyStatus;
-};
-
-export type AuthnAdminImpersonationsListParams = {
-/**
- * The page size. Absent or 0 takes the default of 100; a value above 1000 is capped at 1000 rather than refused; a negative or non-integer value is 400.
- */
-limit?: number;
-/**
- * The next_cursor of the previous page, or empty for the first page; the cursor is the identifier of the last record on that page.
- */
-after?: string;
 };
 
 export type AuthnInviteListParams = {
@@ -8746,6 +8746,145 @@ export const useAuthzAdminBindingsPut = <TError = Problem,
     }
 
 /**
+ * Lists the impersonation records of the tenant named by the path, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.
+ * @summary List impersonation records, one page at a time
+ */
+export const authnAdminImpersonationsList = (
+    tenant: string,
+    params?: AuthnAdminImpersonationsListParams,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnAdminImpersonationList>(
+      {url: `/api/v1/system/tenants/${tenant}/impersonations`, method: 'GET',
+        params, signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnAdminImpersonationsListQueryKey = (tenant: string,
+    params?: AuthnAdminImpersonationsListParams,) => {
+    return [
+    `/api/v1/system/tenants/${tenant}/impersonations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(tenant: string,
+    params?: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminImpersonationsListQueryKey(tenant,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminImpersonationsList>>> = ({ signal }) => authnAdminImpersonationsList(tenant,params, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthnAdminImpersonationsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsList>>>
+export type AuthnAdminImpersonationsListQueryError = Problem
+
+
+/**
+ * @summary List impersonation records, one page at a time
+ */
+
+export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
+ tenant: string,
+    params?: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthnAdminImpersonationsListQueryOptions(tenant,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Revokes an impersonation record; the record is read first, including an already ended one, to learn its tenant and target, which fill the decision. Revoking a record that has already ended is a no-op and gets the same answer as the first revocation. This route writes no mandatory audit: revoking is a move in the safe direction, and the impersonation module writes its own best-effort row. Requires impersonation.revoke.
+ * @summary Revoke an impersonation record
+ */
+export const authnAdminImpersonationsRevoke = (
+    tenant: string,
+    id: string,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/system/tenants/${tenant}/impersonations/${id}`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnAdminImpersonationsRevokeMutationOptions = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext> => {
+
+const mutationKey = ['authnAdminImpersonationsRevoke'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, {tenant: string;id: string}> = (props) => {
+          const {tenant,id} = props ?? {};
+
+          return  authnAdminImpersonationsRevoke(tenant,id,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnAdminImpersonationsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>>
+
+    export type AuthnAdminImpersonationsRevokeMutationError = Problem | void
+
+    /**
+ * @summary Revoke an impersonation record
+ */
+export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>,
+        TError,
+        {tenant: string;id: string},
+        TContext
+      > => {
+      return useMutation(getAuthnAdminImpersonationsRevokeMutationOptions(options));
+    }
+
+/**
  * Lists every role stored for the tenant, one view each, ordered by role name ascending. The tenant is the policy domain the rows belong to and is not looked up in a roster: a tenant with no role yields an empty list. The list is not paginated.
  * @summary List a tenant's roles
  */
@@ -9214,145 +9353,6 @@ export const useTenantAdminTenantsSetStatus = <TError = Problem | void,
         TContext
       > => {
       return useMutation(getTenantAdminTenantsSetStatusMutationOptions(options));
-    }
-
-/**
- * Lists the impersonation records of the tenant named by the required tenant query parameter, one page at a time, in ascending record-identifier order. The tenant scopes the read and fills the decision's tenant, so the page holds only that tenant's records and the cursor counts them. Records are never deleted, and a record still in force whose deadline has passed is evaluated and stored as ended before it is returned. Requires impersonation.read.
- * @summary List impersonation records, one page at a time
- */
-export const authnAdminImpersonationsList = (
-    tenant: string,
-    params?: AuthnAdminImpersonationsListParams,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<AuthnAdminImpersonationList>(
-      {url: `/api/v1/tenants/${tenant}/impersonations`, method: 'GET',
-        params, signal
-    },
-      );
-    }
-
-
-
-
-export const getAuthnAdminImpersonationsListQueryKey = (tenant: string,
-    params?: AuthnAdminImpersonationsListParams,) => {
-    return [
-    `/api/v1/tenants/${tenant}/impersonations`, ...(params ? [params] : [])
-    ] as const;
-    }
-
-
-export const getAuthnAdminImpersonationsListQueryOptions = <TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(tenant: string,
-    params?: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
-) => {
-
-const {query: queryOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getAuthnAdminImpersonationsListQueryKey(tenant,params);
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnAdminImpersonationsList>>> = ({ signal }) => authnAdminImpersonationsList(tenant,params, signal);
-
-
-
-
-
-   return  { queryKey, queryFn, enabled: tenant !== null && tenant !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData> & { queryKey: QueryKey }
-}
-
-export type AuthnAdminImpersonationsListQueryResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsList>>>
-export type AuthnAdminImpersonationsListQueryError = Problem
-
-
-/**
- * @summary List impersonation records, one page at a time
- */
-
-export function useAuthnAdminImpersonationsList<TData = Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError = Problem>(
- tenant: string,
-    params?: AuthnAdminImpersonationsListParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnAdminImpersonationsList>>, TError, TData>, }
-
- ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-
-  const queryOptions = getAuthnAdminImpersonationsListQueryOptions(tenant,params,options)
-
-  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  return { ...query, queryKey: queryOptions.queryKey };
-}
-
-
-
-
-
-
-
-/**
- * Revokes an impersonation record; the record is read first, including an already ended one, to learn its tenant and target, which fill the decision. Revoking a record that has already ended is a no-op and gets the same answer as the first revocation. This route writes no mandatory audit: revoking is a move in the safe direction, and the impersonation module writes its own best-effort row. Requires impersonation.revoke.
- * @summary Revoke an impersonation record
- */
-export const authnAdminImpersonationsRevoke = (
-    tenant: string,
-    id: string,
- signal?: AbortSignal
-) => {
-
-
-      return speedRequest<void>(
-      {url: `/api/v1/tenants/${tenant}/impersonations/${id}`, method: 'DELETE', signal
-    },
-      );
-    }
-
-
-
-export const getAuthnAdminImpersonationsRevokeMutationOptions = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext> => {
-
-const mutationKey = ['authnAdminImpersonationsRevoke'];
-const {mutation: mutationOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, {tenant: string;id: string}> = (props) => {
-          const {tenant,id} = props ?? {};
-
-          return  authnAdminImpersonationsRevoke(tenant,id,)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type AuthnAdminImpersonationsRevokeMutationResult = NonNullable<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>>
-
-    export type AuthnAdminImpersonationsRevokeMutationError = Problem | void
-
-    /**
- * @summary Revoke an impersonation record
- */
-export const useAuthnAdminImpersonationsRevoke = <TError = Problem | void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>, TError,{tenant: string;id: string}, TContext>, }
- ): UseMutationResult<
-        Awaited<ReturnType<typeof authnAdminImpersonationsRevoke>>,
-        TError,
-        {tenant: string;id: string},
-        TContext
-      > => {
-      return useMutation(getAuthnAdminImpersonationsRevokeMutationOptions(options));
     }
 
 /**

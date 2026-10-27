@@ -1,9 +1,12 @@
 # pkg/authn/admin
 
 The administration module of the authentication capability. It mounts the
-management routes under the base path's `/admin` tree through `authn.mount`,
+management routes under the capability's scope bases through `authn.mount`,
 decides every one of them at the `Decider` seam, writes the mandatory audit
-before a write, and calls the capability the route belongs to.
+before a write, and calls the capability the route belongs to. The account,
+session, secret and impersonation-record routes are published in the system
+scope (`/api/v1/system`); the membership and identity-provider routes are
+published in the tenants scope (`/api/v1/tenants`).
 
 The descriptor declares the static feature `authn.admin` for the account and
 membership groups and one conditional feature per other group
@@ -49,16 +52,17 @@ The API is the package's godoc.
   misspelled filter is reported rather than swallowed by a read that ignores it;
   an accepted filter given empty is no filter. The display-name prefix is a byte
   prefix of the stored name and is case-sensitive.
-- **The tenant of a tenant-level action is the path's first segment.** Every
-  tenant-level route carries the tenant in its path, `sso/providers/:id` and its
-  domains and metadata and `impersonations/:id` included. The membership and SSO
-  provider routes are decided in that tenant's own policy domain; the
-  impersonation-record routes are the exception, decided in the platform domain,
-  and the path's tenant is the data the records are confined to. A body that
-  names another tenant than the path is a 400. A stored object that belongs to
-  another tenant answers not found, the same answer an absent object gets, so the
-  path cannot be used to probe another tenant's objects. `PUT` may not change a
-  provider's tenant.
+- **A tenant-addressed route is not automatically a tenant-domain one.** The
+  membership and SSO provider routes carry the tenant as their first segment
+  and are decided in that tenant's own policy domain; the impersonation-record
+  routes are published in the system scope at
+  `tenants/:tenant/impersonations` and are the exception, decided in the
+  platform domain, with the path's tenant the data the records are confined to.
+  `sso/providers/:id` and its domains and metadata carry their tenant too. A
+  body that names another tenant than the path is a 400. A stored object that
+  belongs to another tenant answers not found, the same answer an absent object
+  gets, so the path cannot be used to probe another tenant's objects. `PUT` may
+  not change a provider's tenant.
 - **The mandatory audit is written outside any transaction and before the
   action.** A write whose row does not land is answered 503 and the capability
   is not called; a write that fails after it gets a `failed` row linked to the

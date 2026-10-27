@@ -34,7 +34,7 @@ func TestEachScopeMountsOnItsOwnEndpoint(t *testing.T) {
 		gate: standInGate{ledger: l}, realGateModule: true,
 		register: func(m mount.Mounter) {
 			m.Public("GET", "/ping", handler)
-			m.Guarded("GET", "/accounts", handler, mount.InScope(speedhttp.ScopeSystem))
+			m.Guarded("GET", "/auth/accounts", handler, mount.InScope(speedhttp.ScopeSystem))
 			m.Guarded("GET", "/members", handler, mount.InScope(speedhttp.ScopeTenants))
 		},
 	}.drive(t, nothing)
@@ -70,7 +70,7 @@ func TestTheSystemScopeFallsBackToTheDefaultEndpoint(t *testing.T) {
 		router: &standInRouter{names: []string{"account", "api"}, ledger: l},
 		gate:   standInGate{ledger: l}, realGateModule: true,
 		register: func(m mount.Mounter) {
-			m.Guarded("GET", "/accounts", handler, mount.InScope(speedhttp.ScopeSystem))
+			m.Guarded("GET", "/auth/accounts", handler, mount.InScope(speedhttp.ScopeSystem))
 		},
 	}.drive(t, nothing)
 	if err != nil {

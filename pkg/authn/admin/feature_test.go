@@ -191,7 +191,7 @@ func TestAGroupIsPresentExactlyWhenItIsNamedAndMounted(t *testing.T) {
 				{featureServiceKeys, tc.on.secrets, http.MethodGet, "/api/v1/system/auth/accounts/:id/secrets"},
 				{featureSSO, tc.on.sso, http.MethodGet, "/api/v1/tenants/:tenant/sso/providers"},
 				{featureSSOMetadata, tc.on.sso && tc.on.refresher, http.MethodPost, "/api/v1/tenants/:tenant/sso/providers/:id/metadata/refresh"},
-				{featureImpersonations, tc.on.impersonate, http.MethodGet, "/api/v1/tenants/:tenant/impersonations"},
+				{featureImpersonations, tc.on.impersonate, http.MethodGet, "/api/v1/system/tenants/:tenant/impersonations"},
 			} {
 				_, mounted := mounter.Registered(g.method, g.path)
 				if got := slices.Contains(names, g.feature); got != g.on {

@@ -71,7 +71,7 @@ func (m *product) handleImpersonationList(ctx context.Context, in impersonationL
 	return AuthnAdminImpersonationList{Impersonations: views, NextCursor: next}, nil
 }
 
-// handleImpersonationRevoke answers DELETE /admin/impersonations/:id: it reads
+// handleImpersonationRevoke answers DELETE /tenants/:tenant/impersonations/:id: it reads
 // the record to learn its tenant and target, asks the Decider with those, and
 // revokes it. The action is impersonation.revoke, decided in the platform
 // domain: the record's tenant is the data the record is confined to, and the

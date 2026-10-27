@@ -20,7 +20,7 @@ frame, the console root being a dashboard:
   and the writes whose request body the contract declares;
 - the **session surface** over `/api/v1/system/auth/accounts/:id/sessions` --
   list one account's sessions and revoke one;
-- the **impersonation surface** over `/api/v1/tenants/{tenant}/impersonations` -- list
+- the **impersonation surface** over `/api/v1/system/tenants/{tenant}/impersonations` -- list
   a tenant's records (the read takes the tenant as a required query
   argument) and terminate one;
 - the **authorization surface** over `/api/v1/system` -- a tenant's roles,

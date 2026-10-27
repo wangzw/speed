@@ -53,10 +53,13 @@ const HumanProofMaxBytes = 8 << 10
 
 // The defaults of the management scopes. Each is derived from the same API
 // root and the scope segment, so a deployment that changes none of them gets
-// the path taxonomy the repository publishes.
+// the path taxonomy the repository publishes. The system base is the scope's
+// root and not a capability's namespace under it: the scope carries both the
+// account surface (/auth) and the platform's tenant-addressed administration
+// (/tenants), and one base has to contain every path the scope publishes.
 const (
 	DefaultTenantsBasePath = "/api/v1/tenants"
-	DefaultSystemBasePath  = "/api/v1/system/auth"
+	DefaultSystemBasePath  = "/api/v1/system"
 )
 
 // DefaultBaseFor answers the default base path of one scope. The empty scope
