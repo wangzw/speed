@@ -59,10 +59,13 @@ does.
   `step-up` and `enroll` complete on the `Open` answer route, which the gateway
   did not guard, so `review` re-reads `StatusFresh` and checks that the session
   still belongs to the flow: the flow's account, or, for a flow an impersonating
-  identity started, the operator's account and the same record. `link` and
-  `enroll` also re-check the account's freshness requirement before acting. A
-  flow an impersonating identity started stays bound to the effective account
-  while its steps prove the operator's own factors. A `login` that
+  identity started, the operator's account and the same record. Such a flow also
+  asks `Impersonation.Active` that the record still holds for the flow's actor
+  and account, because a record that lapses without `End` leaves its marker on
+  the session; an assembly without that capability refuses the completion.
+  `link` and `enroll` also re-check the account's freshness requirement before
+  acting. A flow an impersonating identity started stays bound to the effective
+  account while its steps prove the operator's own factors. A `login` that
   resolved through an automatic merge runs the account's cleanup — revoke every
   session, then delete the password — *before* the new session is created. A
   `login` whose proof replaced the account's password
