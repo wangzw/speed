@@ -181,8 +181,9 @@ func (r *routes) methods(ctx context.Context, _ struct{}, meta *speedhttp.Meta) 
 			Enabled:  signup || password,
 			Password: passwordSignupView{Enabled: password},
 		},
-		MFA:   mfaView{Factors: r.factorKinds()},
-		Human: r.humanGate(),
+		MFA:           mfaView{Factors: r.factorKinds()},
+		Human:         r.humanGate(),
+		PasswordReset: r.passwordResetCapability(disabled),
 	})
 	return c.result()
 }

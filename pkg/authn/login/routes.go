@@ -52,6 +52,16 @@ func (p *product) mountRoutes() {
 		withRequest(mount.GuardBody(r.bindingPrecheck, answerOperation.Handle(r.answer))))
 	mount.Declared(m, currentOperation, mountRel(currentOperation.Path), withRequest(currentOperation.Handle(r.current)))
 	mount.Declared(m, abandonOperation, mountRel(abandonOperation.Path), withRequest(abandonOperation.Handle(r.abandon)))
+	mount.Declared(m, passwordResetStartOperation, mountRel(passwordResetStartOperation.Path),
+		withRequest(mount.GuardBody(nil, passwordResetStartOperation.Handle(r.passwordResetStart))))
+	mount.Declared(m, passwordResetCurrentOperation, mountRel(passwordResetCurrentOperation.Path),
+		withRequest(passwordResetCurrentOperation.Handle(r.passwordResetCurrent)))
+	mount.Declared(m, passwordResetDeleteOperation, mountRel(passwordResetDeleteOperation.Path),
+		withRequest(passwordResetDeleteOperation.Handle(r.passwordResetDelete)))
+	mount.Declared(m, passwordResetVerifyOperation, mountRel(passwordResetVerifyOperation.Path),
+		withRequest(mount.GuardBody(nil, passwordResetVerifyOperation.Handle(r.passwordResetVerify))))
+	mount.Declared(m, passwordResetCompleteOperation, mountRel(passwordResetCompleteOperation.Path),
+		withRequest(mount.GuardBody(nil, passwordResetCompleteOperation.Handle(r.passwordResetComplete))))
 	m.Callback([]string{http.MethodGet}, mountRel(callbackGetOperation.Path),
 		withRequest(callbackGetOperation.Handle(r.callbackGet)))
 	m.Callback([]string{http.MethodPost}, mountRel(callbackPostOperation.Path),

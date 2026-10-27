@@ -24,15 +24,19 @@ const (
 // a route is declared once and both the fragment and the mounting read the same
 // string.
 const (
-	pathMethods      = "/auth/methods"
-	pathRegister     = "/auth/register"
-	pathFlows        = "/auth/flows"
-	pathFlowsAuth    = "/auth/flows/authenticated"
-	pathFlowsAnswer  = "/auth/flows/answer"
-	pathFlowsCurrent = "/auth/flows/current"
-	pathCallback     = "/auth/callback/:provider"
-	callbackGetID    = "authn.login.callbackGet"
-	callbackPostID   = "authn.login.callbackPost"
+	pathMethods               = "/auth/methods"
+	pathRegister              = "/auth/register"
+	pathFlows                 = "/auth/flows"
+	pathFlowsAuth             = "/auth/flows/authenticated"
+	pathFlowsAnswer           = "/auth/flows/answer"
+	pathFlowsCurrent          = "/auth/flows/current"
+	pathPasswordReset         = "/auth/password-reset"
+	pathPasswordResetCurrent  = "/auth/password-reset/current"
+	pathPasswordResetVerify   = "/auth/password-reset/verify"
+	pathPasswordResetComplete = "/auth/password-reset/complete"
+	pathCallback              = "/auth/callback/:provider"
+	callbackGetID             = "authn.login.callbackGet"
+	callbackPostID            = "authn.login.callbackPost"
 )
 
 // AuthnLoginMethods is the discovery document: one descriptor per login method
@@ -46,6 +50,17 @@ type AuthnLoginMethods struct {
 	Signup  AuthnLoginSignup        "json:\"signup\" required:\"true\" description:\"Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`.\""
 	MFA     AuthnLoginMFA           `json:"mfa" required:"true" description:"The second-factor kinds the deployment takes in."`
 	Human   AuthnLoginHuman         `json:"human" required:"true" description:"The human-verification gate a send must satisfy."`
+
+	PasswordReset AuthnLoginPasswordReset `json:"password_reset" required:"true" description:"Whether this deployment offers the anonymous password reset, and the channels it may use."`
+}
+
+// AuthnLoginPasswordReset is the deployment-level password reset capability: it
+// says nothing about any account.
+type AuthnLoginPasswordReset struct {
+	_ struct{} `description:"Whether this deployment offers the anonymous password reset and through which channels. It is a deployment fact, the same for every anonymous caller, and it says nothing about whether any account can be reset."`
+
+	Enabled bool     `json:"enabled" required:"true" description:"Whether the anonymous password reset is open: the switch is open, the audit record is present, and at least one channel is available"`
+	Methods []string `json:"methods" required:"true" description:"The channels the reset may be sent through: email and sms, sorted, leaving out a channel that is not assembled, whose template is missing or that a disabled method turned off"`
 }
 
 // AuthnLoginHuman is the human-verification gate the deployment runs.
@@ -233,6 +248,7 @@ type (
 	humanView            = AuthnLoginHuman
 	registrationReply    = AuthnLoginRegistration
 	verificationView     = AuthnLoginRegistrationContact
+	passwordResetView    = AuthnLoginPasswordReset
 )
 
 // startInput is the body of POST flows.
@@ -279,6 +295,42 @@ type registerInput struct {
 	Locale      string `json:"locale" description:"The account's language preference, optional, written to the i18n.locale attribute; a value outside the accepted language domain is a 400 bad-request."`
 	TimeZone    string `json:"time_zone" description:"The account's time-zone preference, optional, written to the i18n.tz attribute; a value outside the accepted time-zone domain is a 400 bad-request."`
 }
+
+// passwordResetStartInput is the body of POST password-reset.
+type passwordResetStartInput struct {
+	_ struct{} `description:"The first step of an anonymous password reset: the channel to prove and the identifier to send a code to."`
+
+	Channel    string `json:"channel" required:"true" enum:"email,sms" description:"The channel to prove the holder of: email proves an address verified by an emailed code, sms proves a phone number verified by a code sent to it."`
+	Identifier string `json:"identifier" required:"true" description:"The address or E.164 phone number the code is sent to. An address is trimmed and lowercased first; a malformed value is a 400 bad-request."`
+	HumanProof string `json:"human_proof" description:"The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent."`
+}
+
+// passwordResetVerifyInput is the body of POST password-reset/verify.
+type passwordResetVerifyInput struct {
+	_ struct{} `description:"The code sent to the identifier the bound reset is proving."`
+
+	Code string `json:"code" required:"true" description:"The code as the channel sent it. Empty or longer than 32 bytes is a 400 bad-request; a wrong code, an expired code and a suppressed record are all a 401 login-failed."`
+}
+
+// passwordResetCompleteInput is the body of POST password-reset/complete.
+type passwordResetCompleteInput struct {
+	_ struct{} `description:"The new password of a reset whose identifier has been proved."`
+
+	New string `json:"new_password" required:"true" description:"The new password, required and non-empty. The password module decides the policy: a value outside it is a 400 bad-request and the reset stays proved, so another password may be tried."`
+}
+
+// AuthnLoginPasswordResetState is the answer of the reset send, the current-flow
+// read and the verification step.
+type AuthnLoginPasswordResetState struct {
+	_ struct{} `description:"The state of the bound anonymous password reset: whether a code was sent or the identifier is proved, how long the code or the proved ticket lives, and, while a code is outstanding, how soon another may be asked for. It carries no account, no identifier and no code."`
+
+	State       string `json:"state" required:"true" enum:"sent,verified" description:"sent after a code was sent, verified once the code held"`
+	ExpiresIn   int    `json:"expires_in" required:"true" description:"How long the code or the proved ticket lives, in whole seconds"`
+	ResendAfter int    `json:"resend_after,omitempty" description:"How soon another code may be asked for, in whole seconds; absent once the identifier is proved"`
+}
+
+// passwordResetState is the internal name of that reply.
+type passwordResetState = AuthnLoginPasswordResetState
 
 // answerInput is the body of POST flows/answer.
 type answerInput struct {
@@ -682,6 +734,143 @@ var callbackPostOperation = speedhttp.NewReplyOperation[callbackInput](
 	speedhttp.Public(),
 )
 
+// passwordResetStartOperation declares the first step of an anonymous password
+// reset.
+var passwordResetStartOperation = speedhttp.NewReplyOperation[passwordResetStartInput](
+	"authn.login.passwordResetStart",
+	http.MethodPost,
+	pathPasswordReset,
+	"Start an anonymous password reset and send a code",
+	"Starts an anonymous password reset for the identifier in the body and sends a code to it, or follows the "+
+		"same path without sending one. A target that is not eligible — unknown, disabled, deleted, without a "+
+		"password or whose identifier is not proved by the requested channel — gets the same 202, the same "+
+		"headers and the same reset cookie as an eligible one. Every send budget overrun suppresses the message "+
+		"and still answers 202; only the originating cookie's own resend interval and the login source-address "+
+		"pre-throttle answer 429. The binding is an independent `__Host-authn-reset` cookie; the login flow "+
+		"cookie is neither read nor written, and no session is made.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The channel and the identifier to send a reset code to, and the human-verification proof the deployment may require. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+		Required:    true,
+	},
+	[]speedhttp.Response{
+		jsonAnswer(http.StatusAccepted, "A code was sent, or the request followed the suppressed path", AuthnLoginPasswordResetState{}),
+		capabilityProblem(http.StatusBadRequest, mount.CodeBadRequest,
+			"The body could not be read, the channel is not email or sms, the identifier is malformed, or the phone prefix is not served (unsupported-region)"),
+		bodyOverLimit,
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The anonymous password reset is closed (password-reset-closed), or a human-verification proof is missing or invalid (human-verification-required)"),
+		mediaTypeAnswer,
+		throttled("The originating cookie's resend interval has not elapsed, or the source-address pre-throttle is exhausted; retry after the stated delay"),
+		unavailableAnswer,
+	},
+	speedhttp.Public(),
+)
+
+// passwordResetCurrentOperation declares the read of the bound reset.
+var passwordResetCurrentOperation = speedhttp.NewReplyOperation[struct{}](
+	"authn.login.passwordResetCurrent",
+	http.MethodGet,
+	pathPasswordResetCurrent,
+	"The state of the bound anonymous password reset",
+	"Reads the anonymous password reset the request's reset cookie is bound to, so a page refresh can resume it. "+
+		"It answers whether a code is outstanding or the identifier is proved and how long either lives, and "+
+		"never the account, the identifier or the code. A missing or expired binding, and a record that is being "+
+		"completed, are a 401 flow-invalid. A closed reset answers 403 password-reset-closed.",
+	nil,
+	[]speedhttp.Response{
+		jsonAnswer(http.StatusOK, "The bound reset's state", AuthnLoginPasswordResetState{}),
+		unauthorized("The reset binding is missing or wrong, or the record is gone or being completed"),
+		speedhttp.ProblemResponseOf(http.StatusForbidden,
+			"The anonymous password reset is closed", typePrefix+mount.CodePasswordResetClosed),
+		unavailableAnswer,
+	},
+	speedhttp.Public(),
+)
+
+// passwordResetDeleteOperation declares the abandonment of the bound reset.
+var passwordResetDeleteOperation = speedhttp.NewReplyOperation[struct{}](
+	"authn.login.passwordResetDelete",
+	http.MethodDelete,
+	pathPasswordResetCurrent,
+	"Abandon the bound anonymous password reset",
+	"Removes the anonymous password reset the request's reset cookie is bound to and clears the cookie. It is "+
+		"idempotent: no binding, no record and a closed reset all answer 204. It sends nothing and changes no "+
+		"account. A dependency that cannot answer is a 503.",
+	nil,
+	[]speedhttp.Response{
+		{Status: http.StatusNoContent, Description: "The reset was removed, or there was none to remove"},
+		unavailableAnswer,
+	},
+	speedhttp.Public(),
+)
+
+// passwordResetVerifyOperation declares the code check of an anonymous password
+// reset.
+var passwordResetVerifyOperation = speedhttp.NewReplyOperation[passwordResetVerifyInput](
+	"authn.login.passwordResetVerify",
+	http.MethodPost,
+	pathPasswordResetVerify,
+	"Verify the code of the bound anonymous password reset",
+	"Checks the code sent to the identifier the bound reset is proving. A real SMS code is checked by the SMS "+
+		"capability; a real email code is compared against the salted digest in the record; a suppressed record "+
+		"compares against a local decoy and never passes. Every failure — a wrong code, an expired code, a "+
+		"suppressed record and this record's used-up attempts — is the same 401 login-failed, and the attempts "+
+		"are counted on the record itself. On a match the record moves to verified and the reset cookie's "+
+		"lifetime is refreshed to the ticket lifetime. A closed reset answers 403 password-reset-closed.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The code the channel sent. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+		Required:    true,
+	},
+	[]speedhttp.Response{
+		jsonAnswer(http.StatusOK, "The identifier is proved", AuthnLoginPasswordResetState{}),
+		capabilityProblem(http.StatusBadRequest, mount.CodeBadRequest,
+			"The body could not be read, or the code is empty or longer than 32 bytes"),
+		bodyOverLimit,
+		unauthorized("The code did not hold, or the binding is missing or wrong"),
+		speedhttp.ProblemResponseOf(http.StatusForbidden,
+			"The anonymous password reset is closed", typePrefix+mount.CodePasswordResetClosed),
+		mediaTypeAnswer,
+		unavailableAnswer,
+	},
+	speedhttp.Public(),
+)
+
+// passwordResetCompleteOperation declares the write of a proved reset.
+var passwordResetCompleteOperation = speedhttp.NewReplyOperation[passwordResetCompleteInput](
+	"authn.login.passwordResetComplete",
+	http.MethodPost,
+	pathPasswordResetComplete,
+	"Set the new password of a proved anonymous password reset",
+	"Writes the new password of a reset whose identifier has been proved. It re-reads the reset switch and the "+
+		"channel, re-checks that the account is still eligible, writes the mandatory `authn.password.reset` "+
+		"attempted audit row, then writes the password with the account's own checks inside the write "+
+		"transaction: the account must still be enabled, still hold a password credential, and the proved "+
+		"identifier must still belong to it. A password outside the policy answers 400 bad-request and the "+
+		"reset stays proved, so another password may be tried; an account that is no longer eligible answers 403 "+
+		"password-reset-unavailable. On success every browser and token session of the account is revoked, the "+
+		"reset record is removed and the cookie cleared, and the answer is 204. No session is created, and no "+
+		"factor is touched.",
+	&speedhttp.RequestBody{
+		MediaType:   "application/json",
+		Description: "The new password. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+		Required:    true,
+	},
+	[]speedhttp.Response{
+		{Status: http.StatusNoContent, Description: "The password was written and the account's sessions were revoked"},
+		capabilityProblem(http.StatusBadRequest, mount.CodeBadRequest,
+			"The body could not be read, or the new password does not meet the policy"),
+		bodyOverLimit,
+		unauthorized("The binding is missing or wrong, or the reset is not proved"),
+		speedhttp.ProblemResponse(http.StatusForbidden,
+			"The anonymous password reset is closed (password-reset-closed), or the account is no longer eligible (password-reset-unavailable)"),
+		mediaTypeAnswer,
+		unavailableAnswer,
+	},
+	speedhttp.Public(),
+)
+
 // loginOperations is the declaration of the engine's own routes. The account
 // self-service operations are added to it below, so the fragment is generated
 // from one list.
@@ -693,6 +882,11 @@ var loginOperations = speedhttp.Operations{
 	answerOperation,
 	currentOperation,
 	abandonOperation,
+	passwordResetStartOperation,
+	passwordResetCurrentOperation,
+	passwordResetDeleteOperation,
+	passwordResetVerifyOperation,
+	passwordResetCompleteOperation,
 	callbackGetOperation,
 	callbackPostOperation,
 }

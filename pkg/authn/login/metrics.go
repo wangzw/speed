@@ -19,9 +19,25 @@ const (
 	meterName               = "authn"
 	completionsInstrument   = "authn.login.completions"
 	auditFailuresInstrument = "authn.audit.write-failures"
+	resetOpsInstrument      = "authn.password.reset.operations"
 	methodAttribute         = "method"
 	outcomeAttribute        = "outcome"
 	mandatoryAttribute      = "mandatory"
+	operationAttribute      = "operation"
+	channelAttribute        = "channel"
+)
+
+// The operations and outcomes of the password reset instrument, the closed sets
+// its attributes take.
+const (
+	resetOpSend     = "send"
+	resetOpVerify   = "verify"
+	resetOpComplete = "complete"
+
+	resetSent       = "sent"
+	resetSuppressed = "suppressed"
+	resetVerified   = "verified"
+	resetCompleted  = "completed"
 )
 
 // The outcomes of a login, the closed set of the instrument's outcome attribute.
@@ -43,6 +59,7 @@ const (
 type meters struct {
 	logins        metric.Int64Counter
 	auditFailures metric.Int64Counter
+	resetOps      metric.Int64Counter
 }
 
 // newMeters creates the instruments on the meter of the capability directory.
@@ -63,7 +80,28 @@ func newMeters(provider observability.MeterProvider) (meters, error) {
 		return meters{}, fmt.Errorf("creating the %s counter: %w", auditFailuresInstrument, err)
 	}
 	m.auditFailures = failures
+	resetOps, err := meter.Int64Counter(resetOpsInstrument,
+		metric.WithUnit("{operation}"),
+		metric.WithDescription("Anonymous password reset operations, by operation, channel and outcome"))
+	if err != nil {
+		return meters{}, fmt.Errorf("creating the %s counter: %w", resetOpsInstrument, err)
+	}
+	m.resetOps = resetOps
 	return m, nil
+}
+
+// resetOperation counts one anonymous password reset operation. operation is
+// send, verify or complete, channel is email or sms, and outcome is one of the
+// closed set: sent, suppressed, verified, completed, failed, throttled or
+// unavailable.
+func (m meters) resetOperation(ctx context.Context, operation, channel, outcome string) {
+	if m.resetOps == nil {
+		return
+	}
+	m.resetOps.Add(ctx, 1, metric.WithAttributes(
+		attribute.String(operationAttribute, operation),
+		attribute.String(channelAttribute, channel),
+		attribute.String(outcomeAttribute, outcome)))
 }
 
 // login counts one login outcome. method is the login method's name and outcome
@@ -76,13 +114,19 @@ func (m meters) login(ctx context.Context, method, outcome string) {
 	}
 }
 
-// auditFailed counts one audit row that could not be written. Every row this
-// module writes is in the best-effort tier, so the mandatory attribute is false.
-func (m meters) auditFailed(ctx context.Context) {
+// auditFailed counts one audit row that could not be written. Every login and
+// registration row this module writes is in the best-effort tier, so the
+// mandatory attribute is false; the password reset rows are in the mandatory
+// tier and use auditFailedFor with true.
+func (m meters) auditFailed(ctx context.Context) { m.auditFailedFor(ctx, false) }
+
+// auditFailedFor counts one audit row that could not be written, by whether the
+// action required one.
+func (m meters) auditFailedFor(ctx context.Context, mandatory bool) {
 	if m.auditFailures == nil {
 		return
 	}
-	m.auditFailures.Add(ctx, 1, metric.WithAttributes(attribute.Bool(mandatoryAttribute, false)))
+	m.auditFailures.Add(ctx, 1, metric.WithAttributes(attribute.Bool(mandatoryAttribute, mandatory)))
 }
 
 // reportLogin counts a terminal outcome of a login flow and writes the audit row

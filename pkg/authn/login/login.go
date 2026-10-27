@@ -191,6 +191,7 @@ type product struct {
 	impersonation authn.Impersonation
 	smsCodes      authn.SMSCodes
 	emailSender   authn.EmailCodeSender
+	emailReset    authn.EmailResetCodeSender
 	sso           authn.SSOProviders
 	provisioner   authn.Provisioner
 	human         authn.HumanVerifier
@@ -204,6 +205,7 @@ type product struct {
 	// Assembled by Init.
 	resolver    *resolve.Resolver
 	selfservice *selfservice.Service
+	resetMail   *resetMailer
 	board       feature.Board
 	methods     map[string]authn.LoginMethod
 	methodNames []string
@@ -273,6 +275,10 @@ func (p *product) wire(reg *core.Registry) error {
 	if p.emailSender, err = optional[authn.EmailCodeSender](reg, "the email code channel"); err != nil {
 		return err
 	}
+	if p.emailReset, err = optional[authn.EmailResetCodeSender](reg, "the password reset email channel"); err != nil {
+		return err
+	}
+	p.resetMail = newResetMailer(resetMailWorkers)
 	if p.sso, err = optional[authn.SSOProviders](reg, "the enterprise provider register"); err != nil {
 		return err
 	}
@@ -530,7 +536,35 @@ func (p *product) diagnose(reg *core.Registry) {
 			slog.String("setting", ModuleName+"."+ipLimitKey), slog.Int("per-minute", limit))
 	}
 	p.diagnoseSignup()
+	p.diagnoseReset()
 	p.checkResolutionEndpoints(reg)
+}
+
+// diagnoseReset writes the startup lines of the anonymous password reset: whether
+// the switch is open, and which channels this assembly can carry. The switch is
+// read once here to report a deployment that starts already relaxed, and the
+// channels are the same judgement that publishes them in the discovery document.
+func (p *product) diagnoseReset() {
+	if p.settings.passwordReset() != passwordResetOpen {
+		p.logger.Info(diagnosticPrefix + "the anonymous password reset is closed, so its routes answer 403 " +
+			"password-reset-closed, because " + passwordResetPath + " is not open")
+		return
+	}
+	p.logger.Warn(diagnosticPrefix+"the anonymous password reset is open, so its routes answer anonymous "+
+		"callers, because "+passwordResetPath+" is open",
+		slog.String("setting", passwordResetPath))
+	if p.audit == nil {
+		p.logger.Warn(diagnosticPrefix + "the anonymous password reset is not published because no audit " +
+			"capability takes part")
+	}
+	if p.emailReset == nil {
+		p.logger.Info(diagnosticPrefix + "no password reset email channel takes part, so the reset's email " +
+			"channel is not published")
+	}
+	if p.smsCodes == nil {
+		p.logger.Info(diagnosticPrefix + "no SMS code capability takes part, so the reset's SMS channel is " +
+			"not published")
+	}
 }
 
 // diagnoseSignup writes the startup lines of anonymous self-registration: whether

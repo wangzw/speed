@@ -20,16 +20,22 @@ const (
 	dirAddMember    = "add-member"
 	dirRemoveMember = "remove-member"
 	dirToZero       = "to-zero"
+	// dirRelax is the direction of an explicit relaxation switch: the switch moved
+	// from its strict value to the value that lets a request through. The events
+	// contract names this class relax whatever the switch's value type is.
+	dirRelax = "relax"
 )
 
 // relaxing is, for each setting of this module whose move relaxes a check, the
 // direction it relaxes in. A setting absent from the table relaxes nothing and
 // is not watched.
 var relaxing = map[string]string{
-	flowTTLPath:         dirIncrease,
-	disabledMethodsPath: dirRemoveMember,
-	deliveryModesPath:   dirAddMember,
-	ipLimitPath:         dirToZero,
+	flowTTLPath:                dirIncrease,
+	disabledMethodsPath:        dirRemoveMember,
+	deliveryModesPath:          dirAddMember,
+	ipLimitPath:                dirToZero,
+	passwordResetPath:          dirRelax,
+	passwordResetTicketTTLPath: dirIncrease,
 }
 
 // relaxedAction is the name of the audit record of a setting moved to a more
@@ -92,6 +98,18 @@ func (p *product) onSettingsChanged(ctx context.Context, evt event.Event) error 
 // direction of every watched setting.
 func relaxes(direction, key, oldText string, oldEmpty bool, newText string, newEmpty bool) bool {
 	switch direction {
+	case dirRelax:
+		// An absent layer reads as the declared default, which is the strict value
+		// of every switch watched this way.
+		before := oldText
+		if oldEmpty {
+			before = passwordResetClosed
+		}
+		after := newText
+		if newEmpty {
+			after = passwordResetClosed
+		}
+		return before == passwordResetClosed && after == passwordResetOpen
 	case dirAddMember:
 		return addsMember(listValue(key, oldText, oldEmpty), listValue(key, newText, newEmpty))
 	case dirRemoveMember:
@@ -188,6 +206,8 @@ func declaredNumber(key string) (int64, bool) {
 		return int64(defaults.FlowTTL), true
 	case ipLimitPath:
 		return int64(defaults.IPLimit), true
+	case passwordResetTicketTTLPath:
+		return int64(defaults.PasswordResetTicketTTL), true
 	}
 	return 0, false
 }

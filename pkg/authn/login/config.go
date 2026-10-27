@@ -21,27 +21,31 @@ import (
 // a read goes by. The module declares these; the ones belonging to another
 // namespace are read, not declared, and their owners state their domains.
 const (
-	flowTTLKey               = "flow-ttl"
-	callBudgetKey            = "call-budget"
-	defaultReturnToKey       = "default-return-to"
-	callbackErrorToKey       = "callback-error-return-to"
-	disabledMethodsKey       = "disabled-methods"
-	deliveryModesKey         = "delivery-modes"
-	ipLimitKey               = "ip-limit"
-	emailCodeTTLKey          = "email-code-ttl"
-	emailResendKey           = "email-resend-interval"
-	emailPerAddressHourlyKey = "email-per-address-hourly"
-	emailPerAddressDailyKey  = "email-per-address-daily"
-	emailPerAccountHourlyKey = "email-per-account-hourly"
-	emailPerAccountDailyKey  = "email-per-account-daily"
-	emailPerSourceHourlyKey  = "email-per-source-hourly"
-	emailPerSourceDailyKey   = "email-per-source-daily"
-	emailGlobalHourlyKey     = "email-global-hourly"
+	flowTTLKey                = "flow-ttl"
+	callBudgetKey             = "call-budget"
+	defaultReturnToKey        = "default-return-to"
+	callbackErrorToKey        = "callback-error-return-to"
+	disabledMethodsKey        = "disabled-methods"
+	deliveryModesKey          = "delivery-modes"
+	ipLimitKey                = "ip-limit"
+	passwordResetKey          = "password-reset"
+	passwordResetTicketTTLKey = "password-reset-ticket-ttl"
+	emailCodeTTLKey           = "email-code-ttl"
+	emailResendKey            = "email-resend-interval"
+	emailPerAddressHourlyKey  = "email-per-address-hourly"
+	emailPerAddressDailyKey   = "email-per-address-daily"
+	emailPerAccountHourlyKey  = "email-per-account-hourly"
+	emailPerAccountDailyKey   = "email-per-account-daily"
+	emailPerSourceHourlyKey   = "email-per-source-hourly"
+	emailPerSourceDailyKey    = "email-per-source-daily"
+	emailGlobalHourlyKey      = "email-global-hourly"
 
-	disabledMethodsPath = ModuleName + "." + disabledMethodsKey
-	deliveryModesPath   = ModuleName + "." + deliveryModesKey
-	flowTTLPath         = ModuleName + "." + flowTTLKey
-	ipLimitPath         = ModuleName + "." + ipLimitKey
+	disabledMethodsPath        = ModuleName + "." + disabledMethodsKey
+	deliveryModesPath          = ModuleName + "." + deliveryModesKey
+	flowTTLPath                = ModuleName + "." + flowTTLKey
+	ipLimitPath                = ModuleName + "." + ipLimitKey
+	passwordResetPath          = ModuleName + "." + passwordResetKey
+	passwordResetTicketTTLPath = ModuleName + "." + passwordResetTicketTTLKey
 
 	// The self-registration settings the account module declares and this
 	// module only reads: the registration switch is the authority in
@@ -65,6 +69,11 @@ const (
 
 	minCallBudget = time.Second
 	maxCallBudget = 60 * time.Second
+
+	// The domain of the anonymous password reset's verified-ticket lifetime: how
+	// long a proved reset may wait before the new password is written.
+	minPasswordResetTicketTTL = time.Minute
+	maxPasswordResetTicketTTL = 30 * time.Minute
 
 	// maxIPLimit is the most verification messages the source-address
 	// pre-throttle charges a source per minute, the setting's own unit.
@@ -129,6 +138,19 @@ const (
 
 func signupInDomain(v string) bool { return v == signupClosed || v == signupOpen }
 
+// The two values of the anonymous password reset switch. closed is the strict
+// default: a deployment that never opened reset serves none.
+const (
+	passwordResetClosed = "closed"
+	passwordResetOpen   = "open"
+)
+
+func passwordResetInDomain(v string) bool { return v == passwordResetClosed || v == passwordResetOpen }
+
+func passwordResetTicketTTLInDomain(d time.Duration) bool {
+	return d >= minPasswordResetTicketTTL && d <= maxPasswordResetTicketTTL
+}
+
 func autoLinkInDomain(v string) bool {
 	return v == autoLinkNever || v == autoLinkVerifiedEmail
 }
@@ -154,15 +176,17 @@ func signupGlobalHourlyInDomain(n int) bool {
 // the settings module reads off it and which it never receives a value for. The
 // two lists are string items holding JSON, because a setting item is a scalar.
 type options struct {
-	FlowTTL         time.Duration `config:"flow-ttl"`
-	CallBudget      time.Duration `config:"call-budget"`
-	DefaultReturnTo string        `config:"default-return-to"`
-	CallbackErrorTo string        `config:"callback-error-return-to"`
-	DisabledMethods string        `config:"disabled-methods"`
-	DeliveryModes   string        `config:"delivery-modes"`
-	IPLimit         int           `config:"ip-limit"`
-	EmailCodeTTL    time.Duration `config:"email-code-ttl"`
-	EmailResend     time.Duration `config:"email-resend-interval"`
+	FlowTTL                time.Duration `config:"flow-ttl"`
+	CallBudget             time.Duration `config:"call-budget"`
+	DefaultReturnTo        string        `config:"default-return-to"`
+	CallbackErrorTo        string        `config:"callback-error-return-to"`
+	DisabledMethods        string        `config:"disabled-methods"`
+	DeliveryModes          string        `config:"delivery-modes"`
+	IPLimit                int           `config:"ip-limit"`
+	PasswordReset          string        `config:"password-reset"`
+	PasswordResetTicketTTL time.Duration `config:"password-reset-ticket-ttl"`
+	EmailCodeTTL           time.Duration `config:"email-code-ttl"`
+	EmailResend            time.Duration `config:"email-resend-interval"`
 
 	EmailPerAddressHourly int `config:"email-per-address-hourly"`
 	EmailPerAddressDaily  int `config:"email-per-address-daily"`
@@ -177,15 +201,17 @@ type options struct {
 // that cannot be made falls back to. DisabledMethods is not read through that
 // fallback: it is a mandatory switch, and a read that fails refuses.
 var defaults = options{
-	FlowTTL:         10 * time.Minute,
-	CallBudget:      10 * time.Second,
-	DefaultReturnTo: "/",
-	CallbackErrorTo: "/",
-	DisabledMethods: "[]",
-	DeliveryModes:   `["session","token"]`,
-	IPLimit:         60,
-	EmailCodeTTL:    10 * time.Minute,
-	EmailResend:     60 * time.Second,
+	FlowTTL:                10 * time.Minute,
+	CallBudget:             10 * time.Second,
+	DefaultReturnTo:        "/",
+	CallbackErrorTo:        "/",
+	DisabledMethods:        "[]",
+	DeliveryModes:          `["session","token"]`,
+	IPLimit:                60,
+	PasswordReset:          passwordResetClosed,
+	PasswordResetTicketTTL: 10 * time.Minute,
+	EmailCodeTTL:           10 * time.Minute,
+	EmailResend:            60 * time.Second,
 
 	EmailPerAddressHourly: 5,
 	EmailPerAddressDaily:  10,
@@ -317,6 +343,18 @@ func settingsSchema() settings.Schema {
 				Description: "a coarse cap on the verification messages one source address may trigger per " +
 					"minute, zero turning the layer off",
 				Domain: settings.DomainOf("whole numbers from 0 to 10000", ipLimitInDomain),
+			},
+			passwordResetKey: {
+				Description: "whether the anonymous password reset is open: closed or open; open relaxes a " +
+					"check",
+				Domain: settings.DomainOf("closed or open", passwordResetInDomain),
+			},
+			passwordResetTicketTTLKey: {
+				Description: "how long a proved anonymous password reset may wait before the new password is " +
+					"written, from " + minPasswordResetTicketTTL.String() + " to " +
+					maxPasswordResetTicketTTL.String(),
+				Domain: settings.DomainOf("durations from "+minPasswordResetTicketTTL.String()+" to "+
+					maxPasswordResetTicketTTL.String(), passwordResetTicketTTLInDomain),
 			},
 			emailCodeTTLKey: {
 				Description: "how long a self-service email verification code lives, from " +
@@ -491,6 +529,20 @@ func (r *reader) ipLimit() int {
 	return readTuned(r, ModuleName+"."+ipLimitKey, defaults.IPLimit, ipLimitInDomain)
 }
 
+// passwordReset reads the anonymous password reset switch. A read that fails or a
+// value outside the declared set reads as closed, the strict side.
+func (r *reader) passwordReset() string {
+	return readTuned(r, passwordResetPath, passwordResetClosed, passwordResetInDomain)
+}
+
+// passwordResetTicketTTL reads how long a proved reset may wait before the new
+// password is written. A failed read and a value outside the domain read as the
+// declared default.
+func (r *reader) passwordResetTicketTTL() time.Duration {
+	return readTuned(r, passwordResetTicketTTLPath, defaults.PasswordResetTicketTTL,
+		passwordResetTicketTTLInDomain)
+}
+
 // signup reads the account module's registration switch. A read that fails or a
 // value outside the declared set reads as closed.
 func (r *reader) signup() string {
@@ -523,6 +575,80 @@ func (r *reader) signupGlobalHourly() int {
 // value outside the declared set reads as never.
 func (r *reader) autoLink() string {
 	return readTuned(r, autoLinkPath, autoLinkNever, autoLinkInDomain)
+}
+
+// emailCodeTTL reads the lifetime of an emailed verification code, which the
+// self-service email route and the password reset's email channel answer with.
+func (r *reader) emailCodeTTL() time.Duration {
+	return readTuned(r, ModuleName+"."+emailCodeTTLKey, defaults.EmailCodeTTL, emailCodeTTLInDomain)
+}
+
+// emailResend reads the interval before another emailed verification code may be
+// asked for.
+func (r *reader) emailResend() time.Duration {
+	return readTuned(r, ModuleName+"."+emailResendKey, defaults.EmailResend, emailResendInDomain)
+}
+
+// The email send budget readers. The reset's email channel reads the same
+// numerical settings the self-service email branch uses and counts them on keys
+// of its own.
+func (r *reader) emailPerAddressHourly() int {
+	return readTuned(r, ModuleName+"."+emailPerAddressHourlyKey,
+		defaults.EmailPerAddressHourly, emailPerAddressHourlyInDomain)
+}
+
+func (r *reader) emailPerAddressDaily() int {
+	return readTuned(r, ModuleName+"."+emailPerAddressDailyKey,
+		defaults.EmailPerAddressDaily, emailPerAddressDailyInDomain)
+}
+
+func (r *reader) emailPerAccountHourly() int {
+	return readTuned(r, ModuleName+"."+emailPerAccountHourlyKey,
+		defaults.EmailPerAccountHourly, emailPerAccountHourlyInDomain)
+}
+
+func (r *reader) emailPerAccountDaily() int {
+	return readTuned(r, ModuleName+"."+emailPerAccountDailyKey,
+		defaults.EmailPerAccountDaily, emailPerAccountDailyInDomain)
+}
+
+func (r *reader) emailPerSourceHourly() int {
+	return readTuned(r, ModuleName+"."+emailPerSourceHourlyKey,
+		defaults.EmailPerSourceHourly, emailPerSourceHourlyInDomain)
+}
+
+func (r *reader) emailPerSourceDaily() int {
+	return readTuned(r, ModuleName+"."+emailPerSourceDailyKey,
+		defaults.EmailPerSourceDaily, emailPerSourceDailyInDomain)
+}
+
+func (r *reader) emailGlobalHourly() int {
+	return readTuned(r, ModuleName+"."+emailGlobalHourlyKey,
+		defaults.EmailGlobalHourly, emailGlobalHourlyInDomain)
+}
+
+// smsCodeTTL reads the lifetime of an SMS verification code, which the SMS
+// module declares. The SMS channel of the reset answers with it.
+func (r *reader) smsCodeTTL() time.Duration {
+	const (
+		path = "authn.sms.code-ttl"
+		def  = 5 * time.Minute
+		lo   = time.Minute
+		hi   = 10 * time.Minute
+	)
+	return readTuned(r, path, def, func(d time.Duration) bool { return d >= lo && d <= hi })
+}
+
+// smsResend reads the interval before another SMS code may be sent to one
+// number, which the SMS module declares.
+func (r *reader) smsResend() time.Duration {
+	const (
+		path = "authn.sms.resend-interval"
+		def  = 60 * time.Second
+		lo   = 30 * time.Second
+		hi   = 10 * time.Minute
+	)
+	return readTuned(r, path, def, func(d time.Duration) bool { return d >= lo && d <= hi })
 }
 
 // recentWindow reads the multi-factor module's recent-window setting, which one

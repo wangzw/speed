@@ -624,6 +624,7 @@ func newRigMethods(t *testing.T, methods ...authn.LoginMethod) *rig {
 		sessions:       sessions,
 		impersonation:  imp,
 		mfa:            mfa,
+		resetMail:      newResetMailer(resetMailWorkers),
 		methods:        map[string]authn.LoginMethod{},
 		settings:       newReader(nil, slog.New(slog.NewTextHandler(ioDiscard{}, nil))),
 		logger:         slog.New(slog.NewTextHandler(ioDiscard{}, nil)),

@@ -26,7 +26,7 @@ import (
 // auditDetailKeys is the design's closed set of audit detail key names.
 var auditDetailKeys = []string{
 	"method", "delivery", "reason_class", "sid", "peer", "identifier_mac", "factor_id",
-	"kind", "scope", "by", "tenant", "change", "provider", "ttl_seconds",
+	"kind", "scope", "by", "channel", "tenant", "change", "provider", "ttl_seconds",
 	"parent_sid", "secret_id", "source", "on_behalf_of", "impersonation_scope",
 	"session", "grant_id", "action_id",
 }
@@ -34,7 +34,7 @@ var auditDetailKeys = []string{
 // metricAttributeKeys is the union of the attribute keys of the design's
 // instrument table.
 var metricAttributeKeys = []string{
-	"outcome", "method", "factor", "scope", "operation", "protocol",
+	"outcome", "method", "factor", "scope", "operation", "channel", "protocol",
 	"algorithm", "hook", "mandatory",
 }
 
@@ -42,7 +42,8 @@ var metricAttributeKeys = []string{
 // admission counter is tenant-owned and is not in this set.
 var metricInstruments = []string{
 	"authn.gate.conclusions", "authn.login.completions", "authn.password.verifications",
-	"authn.password.derive.duration", "authn.mfa.verifications", "authn.session.operations",
+	"authn.password.derive.duration", "authn.password.reset.operations", "authn.mfa.verifications",
+	"authn.session.operations",
 	"authn.token.operations", "authn.throttle.engagements", "authn.sms.sends",
 	"authn.sso.assertions", "authn.impersonation.sessions", "authn.audit.write-failures",
 	"authn.cleanup.failures",
@@ -60,12 +61,13 @@ var metricAttributeValues = map[string][]string{
 		"sent", "uncertain", "rejected", "unroutable", "not-sendable",
 		"unsupported-region", "budget-exhausted", "suppressed", "dropped",
 		"accepted", "signature", "audience", "time", "in-response-to", "issuer", "destination", "other",
-		"started", "ended",
+		"started", "ended", "verified", "completed",
 	},
 	"method":    {"pwd", "sms", "otp", "webauthn", "oauth", "oidc", "saml", "static", "client-secret"},
 	"factor":    {"totp", "sms", "webauthn"},
 	"scope":     {"identifier", "account", "factor", "phone", "client", "signup-username"},
-	"operation": {"created", "elevated", "revoked", "revoked-all", "purged", "issued", "refreshed", "client-credentials"},
+	"operation": {"created", "elevated", "revoked", "revoked-all", "purged", "issued", "refreshed", "client-credentials", "send", "verify", "complete"},
+	"channel":   {"email", "sms"},
 	"protocol":  {"saml", "oidc"},
 	"algorithm": {"argon2id", "pbkdf2-sha256"},
 	"hook":      {"session", "mfa", "sms", "secret", "other"},

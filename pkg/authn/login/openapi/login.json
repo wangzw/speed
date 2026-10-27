@@ -192,6 +192,10 @@
             "$ref": "#/components/schemas/AuthnLoginMFA",
             "description": "The second-factor kinds the deployment takes in."
           },
+          "password_reset": {
+            "$ref": "#/components/schemas/AuthnLoginPasswordReset",
+            "description": "Whether this deployment offers the anonymous password reset, and the channels it may use."
+          },
           "signup": {
             "$ref": "#/components/schemas/AuthnLoginSignup",
             "description": "Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`."
@@ -201,7 +205,55 @@
           "methods",
           "signup",
           "mfa",
-          "human"
+          "human",
+          "password_reset"
+        ],
+        "type": "object"
+      },
+      "AuthnLoginPasswordReset": {
+        "description": "Whether this deployment offers the anonymous password reset and through which channels. It is a deployment fact, the same for every anonymous caller, and it says nothing about whether any account can be reset.",
+        "properties": {
+          "enabled": {
+            "description": "Whether the anonymous password reset is open: the switch is open, the audit record is present, and at least one channel is available",
+            "type": "boolean"
+          },
+          "methods": {
+            "description": "The channels the reset may be sent through: email and sms, sorted, leaving out a channel that is not assembled, whose template is missing or that a disabled method turned off",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "enabled",
+          "methods"
+        ],
+        "type": "object"
+      },
+      "AuthnLoginPasswordResetState": {
+        "description": "The state of the bound anonymous password reset: whether a code was sent or the identifier is proved, how long the code or the proved ticket lives, and, while a code is outstanding, how soon another may be asked for. It carries no account, no identifier and no code.",
+        "properties": {
+          "expires_in": {
+            "description": "How long the code or the proved ticket lives, in whole seconds",
+            "type": "integer"
+          },
+          "resend_after": {
+            "description": "How soon another code may be asked for, in whole seconds; absent once the identifier is proved",
+            "type": "integer"
+          },
+          "state": {
+            "description": "sent after a code was sent, verified once the code held",
+            "enum": [
+              "sent",
+              "verified"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "expires_in"
         ],
         "type": "object"
       },
@@ -2025,6 +2077,421 @@
           }
         ],
         "summary": "Change the caller's password"
+      }
+    },
+    "/auth/password-reset": {
+      "post": {
+        "description": "Starts an anonymous password reset for the identifier in the body and sends a code to it, or follows the same path without sending one. A target that is not eligible — unknown, disabled, deleted, without a password or whose identifier is not proved by the requested channel — gets the same 202, the same headers and the same reset cookie as an eligible one. Every send budget overrun suppresses the message and still answers 202; only the originating cookie's own resend interval and the login source-address pre-throttle answer 429. The binding is an independent `__Host-authn-reset` cookie; the login flow cookie is neither read nor written, and no session is made.",
+        "operationId": "authn.login.passwordResetStart",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "The first step of an anonymous password reset: the channel to prove and the identifier to send a code to.",
+                "properties": {
+                  "channel": {
+                    "description": "The channel to prove the holder of: email proves an address verified by an emailed code, sms proves a phone number verified by a code sent to it.",
+                    "enum": [
+                      "email",
+                      "sms"
+                    ],
+                    "type": "string"
+                  },
+                  "human_proof": {
+                    "description": "The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent.",
+                    "type": "string"
+                  },
+                  "identifier": {
+                    "description": "The address or E.164 phone number the code is sent to. An address is trimmed and lowercased first; a malformed value is a 400 bad-request.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel",
+                  "identifier"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "The channel and the identifier to send a reset code to, and the human-verification proof the deployment may require. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnLoginPasswordResetState"
+                }
+              }
+            },
+            "description": "A code was sent, or the request followed the suppressed path"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The body could not be read, the channel is not email or sms, the identifier is malformed, or the phone prefix is not served (unsupported-region)"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The anonymous password reset is closed (password-reset-closed), or a human-verification proof is missing or invalid (human-verification-required)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is not application/json"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The originating cookie's resend interval has not elapsed, or the source-address pre-throttle is exhausted; retry after the stated delay",
+            "headers": {
+              "Retry-After": {
+                "description": "Whole seconds to wait before retrying, when the back-off states a delay; absent otherwise.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [],
+        "summary": "Start an anonymous password reset and send a code"
+      }
+    },
+    "/auth/password-reset/complete": {
+      "post": {
+        "description": "Writes the new password of a reset whose identifier has been proved. It re-reads the reset switch and the channel, re-checks that the account is still eligible, writes the mandatory `authn.password.reset` attempted audit row, then writes the password with the account's own checks inside the write transaction: the account must still be enabled, still hold a password credential, and the proved identifier must still belong to it. A password outside the policy answers 400 bad-request and the reset stays proved, so another password may be tried; an account that is no longer eligible answers 403 password-reset-unavailable. On success every browser and token session of the account is revoked, the reset record is removed and the cookie cleared, and the answer is 204. No session is created, and no factor is touched.",
+        "operationId": "authn.login.passwordResetComplete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "The new password of a reset whose identifier has been proved.",
+                "properties": {
+                  "new_password": {
+                    "description": "The new password, required and non-empty. The password module decides the policy: a value outside it is a 400 bad-request and the reset stays proved, so another password may be tried.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "new_password"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "The new password. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The password was written and the account's sessions were revoked"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The body could not be read, or the new password does not meet the policy"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The binding is missing or wrong, or the reset is not proved",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The anonymous password reset is closed (password-reset-closed), or the account is no longer eligible (password-reset-unavailable)"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is not application/json"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [],
+        "summary": "Set the new password of a proved anonymous password reset"
+      }
+    },
+    "/auth/password-reset/current": {
+      "delete": {
+        "description": "Removes the anonymous password reset the request's reset cookie is bound to and clears the cookie. It is idempotent: no binding, no record and a closed reset all answer 204. It sends nothing and changes no account. A dependency that cannot answer is a 503.",
+        "operationId": "authn.login.passwordResetDelete",
+        "responses": {
+          "204": {
+            "description": "The reset was removed, or there was none to remove"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [],
+        "summary": "Abandon the bound anonymous password reset"
+      },
+      "get": {
+        "description": "Reads the anonymous password reset the request's reset cookie is bound to, so a page refresh can resume it. It answers whether a code is outstanding or the identifier is proved and how long either lives, and never the account, the identifier or the code. A missing or expired binding, and a record that is being completed, are a 401 flow-invalid. A closed reset answers 403 password-reset-closed.",
+        "operationId": "authn.login.passwordResetCurrent",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnLoginPasswordResetState"
+                }
+              }
+            },
+            "description": "The bound reset's state"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The reset binding is missing or wrong, or the record is gone or being completed",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The anonymous password reset is closed"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [],
+        "summary": "The state of the bound anonymous password reset"
+      }
+    },
+    "/auth/password-reset/verify": {
+      "post": {
+        "description": "Checks the code sent to the identifier the bound reset is proving. A real SMS code is checked by the SMS capability; a real email code is compared against the salted digest in the record; a suppressed record compares against a local decoy and never passes. Every failure — a wrong code, an expired code, a suppressed record and this record's used-up attempts — is the same 401 login-failed, and the attempts are counted on the record itself. On a match the record moves to verified and the reset cookie's lifetime is refreshed to the ticket lifetime. A closed reset answers 403 password-reset-closed.",
+        "operationId": "authn.login.passwordResetVerify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "The code sent to the identifier the bound reset is proving.",
+                "properties": {
+                  "code": {
+                    "description": "The code as the channel sent it. Empty or longer than 32 bytes is a 400 bad-request; a wrong code, an expired code and a suppressed record are all a 401 login-failed.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "The code the channel sent. The body must be `application/json`, is limited to 64 KiB, and refuses unknown members.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthnLoginPasswordResetState"
+                }
+              }
+            },
+            "description": "The identifier is proved"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The body could not be read, or the code is empty or longer than 32 bytes"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The code did not hold, or the binding is missing or wrong",
+            "headers": {
+              "WWW-Authenticate": {
+                "description": "The capability's challenge: the Bearer and Cookie schemes, never Basic.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The anonymous password reset is closed"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is over the endpoint's limit"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request body is not application/json"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency could not answer"
+          }
+        },
+        "security": [],
+        "summary": "Verify the code of the bound anonymous password reset"
       }
     },
     "/auth/phone": {
