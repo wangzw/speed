@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -155,6 +156,22 @@ func TestOneMethodRegistersTheRoutes(t *testing.T) {
 	for key := range want {
 		if !got[key] {
 			t.Errorf("the engine registered no route %q; it has %v", key, got)
+		}
+	}
+	// The route on an authenticated identity is the one an impersonating
+	// identity reaches; the anonymous flow routes carry no identity and are not
+	// registered for it.
+	authenticated, ok := m.Registered(http.MethodPost, "/api/v1/auth/flows/authenticated")
+	if !ok || !authenticated.Impersonable {
+		t.Errorf("POST /api/v1/auth/flows/authenticated is not registered impersonable: %+v", authenticated)
+	}
+	for _, path := range []string{"/api/v1/auth/flows", "/api/v1/auth/flows/answer"} {
+		reg, ok := m.Registered(http.MethodPost, path)
+		if !ok {
+			t.Fatalf("POST %s is not registered", path)
+		}
+		if reg.Impersonable {
+			t.Errorf("POST %s is registered impersonable, and it carries no identity", path)
 		}
 	}
 }

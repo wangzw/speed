@@ -114,16 +114,13 @@ func (r *routes) startFlow(ctx context.Context, in startInput, meta *speedhttp.M
 }
 
 // startAuthenticated begins a link, a step-up or an enrollment on the identity
-// the gateway authenticated.
+// the gateway authenticated. An impersonating identity is not refused: the flow
+// is bound to the effective account and runs on the operator's own session.
 func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	id, ok := authn.FromContext(c.ctx)
 	if !ok || id.Account() == "" {
 		c.unauthorized("")
-		return c.result()
-	}
-	if id.Impersonating() {
-		c.forbidden(mount.CodeImpersonationRestricted)
 		return c.result()
 	}
 	switch in.Purpose {
@@ -173,7 +170,7 @@ func (r *routes) startAuthenticated(ctx context.Context, in startAuthenticatedIn
 		r.fail(c, err)
 		return c.result()
 	}
-	if !status.Active || status.Account != id.Account() {
+	if !status.Active || !sessionOwns(id, status) {
 		c.unauthorized(mount.CodeFlowInvalid)
 		return c.result()
 	}

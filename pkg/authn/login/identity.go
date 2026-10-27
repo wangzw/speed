@@ -28,6 +28,16 @@ func statusIdentity(st authn.SessionStatus) authn.Identity {
 	}, "", "")
 }
 
+// sessionOwns reports whether a session is the one an identity was built from:
+// the account the row belongs to is the identity's account, or, for an
+// impersonating identity, the actor's account and a row that names a record.
+func sessionOwns(id authn.Identity, st authn.SessionStatus) bool {
+	if id.Impersonating() {
+		return st.Account == id.Actor() && st.ImpersonationID != ""
+	}
+	return st.Account == id.Account()
+}
+
 // idpAttributes is the idp.* snapshot an external identity's attribute mapping
 // produced, held to the bound the session payload carries: at most the declared
 // number of entries, a key within the declared length including the prefix, and

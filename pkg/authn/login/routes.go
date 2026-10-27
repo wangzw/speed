@@ -46,7 +46,8 @@ func (p *product) mountRoutes() {
 	mount.Declared(m, startOperation, mountRel(startOperation.Path),
 		withRequest(mount.GuardBody(nil, startOperation.Handle(r.startFlow))))
 	mount.Declared(m, startAuthenticatedOperation, mountRel(startAuthenticatedOperation.Path),
-		withRequest(mount.GuardBody(r.identityPrecheck, startAuthenticatedOperation.Handle(r.startAuthenticated))))
+		withRequest(mount.GuardBody(r.identityPrecheck, startAuthenticatedOperation.Handle(r.startAuthenticated))),
+		mount.Impersonable())
 	mount.Declared(m, answerOperation, mountRel(answerOperation.Path),
 		withRequest(mount.GuardBody(r.bindingPrecheck, answerOperation.Handle(r.answer))))
 	mount.Declared(m, currentOperation, mountRel(currentOperation.Path), withRequest(currentOperation.Handle(r.current)))
@@ -74,18 +75,15 @@ func (r *routes) bindingPrecheck(c *gin.Context) bool {
 	return true
 }
 
-// identityPrecheck refuses a request with no identity, or an impersonating one,
-// before the entry point reads the body. It is the check the start handler makes
-// first, moved ahead of the body so that the request is not read for a caller
-// the route will refuse anyway.
+// identityPrecheck refuses a request with no identity before the entry point
+// reads the body. It is the check the start handler makes first, moved ahead of
+// the body so that the request is not read for a caller the route will refuse
+// anyway. An impersonating identity passes: the flow is started on the effective
+// account and runs on the operator's session.
 func (r *routes) identityPrecheck(c *gin.Context) bool {
 	id, ok := authn.FromContext(c.Request.Context())
 	if !ok || id.Account() == "" {
 		mount.Unauthorized(c, r.endpoint, "")
-		return false
-	}
-	if id.Impersonating() {
-		mount.Forbidden(c, mount.CodeImpersonationRestricted)
 		return false
 	}
 	return true
