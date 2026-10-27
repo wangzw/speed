@@ -1115,16 +1115,20 @@ func TestAnExternalIdentityIsUnlinkedUnlessItIsTheLastWayIn(t *testing.T) {
 		if err = h.p.UnlinkExternal(ctx, withPassword, bind(withPassword, "google")); err != nil {
 			t.Errorf("unlinking with a password to fall back on gave %v", err)
 		}
-		withPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-phone", Phone: "+8613800000009",
-			PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode}})
+		withPhone, err := h.p.Create(ctx, authn.CreateAccount{
+			Username: "has-phone", Phone: "+8613800000009",
+			PhoneVerifiedVia: authn.Verification{Via: authn.VerifiedViaSMSCode},
+		})
 		if err != nil {
 			t.Fatalf("creating: %v", err)
 		}
 		if err = h.p.UnlinkExternal(ctx, withPhone.ID, bind(withPhone.ID, "github")); err != nil {
 			t.Errorf("unlinking with a proved phone number to fall back on gave %v", err)
 		}
-		withUnprovenPhone, err := h.p.Create(ctx, authn.CreateAccount{Username: "has-unproven-phone",
-			Phone: "+8613800000010", PhoneVerifiedVia: admin})
+		withUnprovenPhone, err := h.p.Create(ctx, authn.CreateAccount{
+			Username: "has-unproven-phone",
+			Phone:    "+8613800000010", PhoneVerifiedVia: admin,
+		})
 		if err != nil {
 			t.Fatalf("creating: %v", err)
 		}
