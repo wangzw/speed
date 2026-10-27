@@ -637,7 +637,7 @@ CREATE TABLE authn_webauthn_credentials (
 | 待确认行的清扫协程 | 已实现 | `pkg/authn/mfa/sweep.go` |
 | `Start` 里对 `tenant.admission` 参与性的判定与 `Warn` | 已实现 | `pkg/authn/mfa/mfa.go` `admissionModule` |
 | 账户生命周期钩子与 `authn.account.deleted` 的补偿订阅 | 已实现 | `pkg/authn/mfa/manage.go` `AccountDeleted`、`AccountDisabled`、`AccountEnabled`、`ServiceSecretRevoked`；`pkg/authn/mfa/lifecycle.go`；`pkg/authn/mfa/lifecycle_test.go` |
-| `GET B/factors`、`DELETE B/factors/:id` | 部分实现 | `pkg/authn/mfa/routes.go` |
+| `GET B/factors`、`DELETE B/factors/:id` | 已实现 | `pkg/authn/mfa/routes.go` |
 | TOTP 因素 | 已实现 | `pkg/authn/mfa/totp/factor.go`、`config.go`、`register.go`、`migrations/` |
 | 短信因素 | 已实现 | `pkg/authn/mfa/sms/sms.go` |
 | WebAuthn 因素与通行密钥登录方法 | 已实现 | `pkg/authn/mfa/webauthn/factor.go`、`method.go`、`ceremony.go`、`register.go`、`config.go` |
