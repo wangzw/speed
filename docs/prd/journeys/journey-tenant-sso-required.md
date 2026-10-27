@@ -53,4 +53,4 @@ flowchart TD
 
 ## 端到端测试
 
-未实现
+`starters/demo/web/e2e/specs/journey-tenant-sso-required.spec.ts` `tenant-sso-required: a member re-invites a colleague through the tenant's enterprise SSO after the tenant demands it`

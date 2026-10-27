@@ -324,4 +324,4 @@
 
 - **验收**：租户启用该要求后，以本地第一因素建立会话的租户管理员在目标租户的邀请与成员页发起一次邀请时，界面显示点名企业单点登录的拒绝与重新登录出口，不打开本地加强认证对话框、不列出本地两步验证方式；该管理员经该租户的企业身份提供方重新登录后重做这次邀请成功，被邀请地址收到邀请。
 - **状态**：未实现
-- **端到端测试**：未实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-tenant-sso-required.spec.ts` `tenant-sso-required: a member re-invites a colleague through the tenant's enterprise SSO after the tenant demands it`
