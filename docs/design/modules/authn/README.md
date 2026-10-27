@@ -29,18 +29,18 @@
 | 子模块 | 状态 |
 |---|---|
 | [authn-gate](design-authn-gate.md) | 已实现 |
-| [authn-account](design-authn-account.md) | 已实现 |
-| [authn-login](design-authn-login.md) | 已实现 |
-| [authn-sms](design-authn-sms.md) | 已实现 |
-| [authn-mfa](design-authn-mfa.md) | 已实现 |
+| [authn-account](design-authn-account.md) | 部分实现 |
+| [authn-login](design-authn-login.md) | 部分实现 |
+| [authn-sms](design-authn-sms.md) | 部分实现 |
+| [authn-mfa](design-authn-mfa.md) | 部分实现 |
 | [authn-session](design-authn-session.md) | 已实现 |
 | [authn-token](design-authn-token.md) | 已实现 |
 | [authn-sso](design-authn-sso.md) | 已实现 |
-| [authn-impersonation](design-authn-impersonation.md) | 已实现 |
+| [authn-impersonation](design-authn-impersonation.md) | 部分实现 |
 | [authn-admin](design-authn-admin.md) | 部分实现 |
-| [authn-config](design-authn-config.md) | 已实现 |
-| [authn-events](design-authn-events.md) | 已实现 |
-| [authn-failure](design-authn-failure.md) | 已实现 |
-| [authn-threats](design-authn-threats.md) | 已实现 |
+| [authn-config](design-authn-config.md) | 部分实现 |
+| [authn-events](design-authn-events.md) | 部分实现 |
+| [authn-failure](design-authn-failure.md) | 部分实现 |
+| [authn-threats](design-authn-threats.md) | 部分实现 |
 | [authn-invite](design-authn-invite.md) | 已实现 |
 | [authn-profile](design-authn-profile.md) | 已实现 |

@@ -240,6 +240,8 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.login.disabled-methods` | 字符串，JSON 数组 | `[]` | 登录方式名的数组 | | 移除成员 |
 | `authn.login.delivery-modes` | 字符串，JSON 数组 | `["session","token"]` | 缺省集合的子集 | | 加入成员 |
 | `authn.login.ip-limit` | 整数 | `60` | 0 到 10000，每分钟；0 关闭 | | 改小或改为 0 |
+| `authn.login.password-reset` | 字符串 | `closed` | `closed` 或 `open` | | 改为 `open` |
+| `authn.login.password-reset-ticket-ttl` | `time.Duration` | `10m` | 1m 到 30m | | 增大 |
 | `authn.login.email-code-ttl` | `time.Duration` | `10m` | 1m 到 30m | | 增大 |
 | `authn.login.email-resend-interval` | `time.Duration` | `60s` | 30s 到 10m | | 减小 |
 | `authn.login.email-per-address-hourly` | 整数 | `5` | 1 到 60 | | 增大 |
@@ -261,6 +263,7 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.sms.global-hourly-login` | 整数 | `300` | 1 到 1000000 | | 增大 |
 | `authn.sms.global-hourly-mfa` | 整数 | `300` | 1 到 1000000 | | 增大 |
 | `authn.sms.global-hourly-enroll` | 整数 | `100` | 1 到 1000000 | | 增大 |
+| `authn.sms.global-hourly-reset` | 整数 | `100` | 1 到 1000000 | | 增大 |
 | `authn.sms.per-flow-sends` | 整数 | `3` | 1 到 10 | | 增大 |
 | `authn.sms.per-account-hourly` | 整数 | `10` | 1 到 60 | | 增大 |
 | `authn.mfa.global-required` | 布尔 | `false` | 布尔 | | 由 `true` 改为 `false` |
@@ -278,6 +281,8 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 - `authn.sms.per-account-hourly` 只对 `mfa` 与 `enroll` 用途计数。
 - `authn.sms.per-source-hourly` 与 `per-source-daily` 按发送请求的来源地址计数，跨用途累计，窗口分别是滚动一小时与滚动一日；地址先经 `netip.ParseAddr` 规范化再取摘要。`SendCode.Source` 为空（调用方没有可信来源）时不施加这两个维度，见 [design-authn-sms](design-authn-sms.md)。
 - 邮箱验证码的预算由 `authn.login.email-per-address-hourly`、`email-per-address-daily`、`email-per-account-hourly`、`email-per-account-daily`、`email-per-source-hourly`、`email-per-source-daily` 与 `email-global-hourly` 设置。按地址的预算是 `email-per-address-hourly` 与 `email-per-address-daily`，它们与重发窗口都按**预算形式**计数：局部部分从第一个 `+` 起的后缀在所有域都丢掉，`gmail.com` 与 `googlemail.com` 另外去掉局部部分的点并视为同一个域；这个折叠只用于预算键与重发键，标识的语义、`Lookup`、待验证记录与真正投递的地址都保持规范化后的原样。按地址的窗口跨会话与账户共享，一个收件箱在一次重发窗口内只发一条码；`email-per-account-hourly` 与 `email-per-account-daily` 按发起的账户计；`email-per-source-hourly` 与 `email-per-source-daily` 按请求的来源地址计，地址先经 `netip.ParseAddr` 规范化再取摘要，来源为空时不施加（fail-open，不落进同一个键）。`email-global-hourly` 是全部账户与地址共享的小时总量。按地址、按账户与按来源的日窗口都是固定的 UTC 日，小时窗口都是固定的 UTC 小时。预算先预留后确认：请求被任一层拒绝时退还本次已占用的全部计数；发送失败只有在通道能证明消息未离开时退还，结果不确定时保留。地址已被其他账户预留或持有时答 409 `email-taken`，不发信、不占重发窗口、不花预算。
+
+匿名口令重置复用同一组数值设置，但按用途使用独立的计数键。邮箱的按地址、按来源、按账户与全局预算，以及短信的按号码、按来源与全局预算，超限时一律抑制发送并仍答同形的成功，不作为账户存在性的信号；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429。短信的 `reset` 用途不填 `Account`，不设按账户维度。
 - `authn.mfa.sensitive-min-age` 是冒充发起与管理员重置因素所要求的因素启用年龄。
 - `authn.humanverify.pow.difficulty` 与 `challenge-ttl` 只在 `pow` 模式读取，请求期取值：设置存储缺席、读取失败或取值越出取值域时都取声明默认值，闸因此不会因设置故障停止签发挑战。`difficulty` 是证明必须达到的前导零位数，加大它使一次证明的代价指数增长；`challenge-ttl` 是一个挑战从签发到失效的时长。
 
@@ -314,8 +319,9 @@ Argon2id 的 `memory-kib`、`iterations`、`parallelism` 各自只能在单项�
 | `authn.account.password-signup` | `open` | `closed` | `closed` 或 `open` |
 | `authn.account.auto-link` | `verified-email` | `never` | `never` 或 `verified-email` |
 | `authn.token.check-session` | `false` | `true` | 布尔 |
+| `authn.login.password-reset` | `open` | `closed` | `closed` 或 `open` |
 
-四项都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次做出决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.password-signup` 由 `Signups.Register` 读（权威检查），注册路由与发现端点读它只作预检查，`authn.account.auto-link` 在每次账户解析时读，`authn.token.check-session` 在每次令牌校验、会话步骤之前读。声明模块（`pkg/authn/account` 与 `pkg/authn/token`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这四项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
+这些开关都是设置项，审计与日志里的方向取 `relax`（判据与理由见 [design-authn-events](design-authn-events.md) 的放宽方向取值）。读它的模块在每次做出决定时读当前值：`authn.account.signup` 由登录发现端点、首登开户的解析与短信方法的投递决定读，`authn.account.password-signup` 由 `Signups.Register` 读（权威检查），注册路由与发现端点读它只作预检查，`authn.account.auto-link` 在每次账户解析时读，`authn.token.check-session` 在每次令牌校验、会话步骤之前读，`authn.login.password-reset` 由发现端点与匿名口令重置的路由读。声明模块（`pkg/authn/account`、`pkg/authn/token` 与 `pkg/authn/login`）另在启动诊断各读一次，用来写启动时已是放宽值的 `Warn`。设置缺席或读取出错时取声明默认值，即严格一侧，读取出错另记 `Error`。它们不取环境变量与命令行；配置不再承载这些设置项，旧配置里仍写着它们的宿主在启动时按未知键失败（[ADR-authn-settings-and-secrets](../../../adr/adr-authn-settings-and-secrets.md)）。运行期改动到放宽方向时，声明该键的模块写一行 `Warn` 并记一条尽力档 `authn.settings.relaxed`；启动时取值已经是放宽值时写同一行 `Warn`（[放宽变更的监视](#放宽变更的监视)、[启动诊断](#启动诊断)）。
 
 `authn.invite.ttl` 与 `authn.account.password-algorithm` 也是设置项、也在放宽方向上受监视，但不在上表：上表的判据是「一个开关，声明默认值取严的一端」，而这两项的取值本身有强弱次序，没有「打开」这一动作。前者变长扩大邀请的可用窗口，方向取 `increase`；后者改为 `pbkdf2-sha256` 降低哈希成本，方向取 `downgrade`（[design-authn-events](design-authn-events.md) 的放宽方向取值）。
 
@@ -597,7 +603,7 @@ flowchart TD
 | 口令表后端的配置项与设置 | 已实现 | `pkg/authn/static/config.go` `schema`、`settingsSchema`、`(moduleConfig).resolve` |
 | 账户、会话、令牌、登录方式、多因素、短信、SSO 与租户准入的配置项 | 已实现 | `pkg/authn/account/config.go` `schema`、`settingsSchema`；`pkg/authn/session/config.go`；`pkg/authn/token/config.go` `schema`、`(moduleConfig).resolve`；`pkg/authn/mfa/settings.go` `settingsSchema`、`pkg/authn/mfa/totp/config.go`、`pkg/authn/mfa/webauthn/config.go`；`pkg/authn/login/config.go`；`pkg/authn/login/google/config.go`、`pkg/authn/login/github/config.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go`；`pkg/authn/mount/config.go`；`pkg/authn/sms/config.go`；`pkg/authn/sso/config.go`、`pkg/authn/sso/saml/config.go`；`pkg/tenant/admission/config.go` |
 | 人机验证的配置项与证明机制的设置项 | 已实现 | `pkg/authn/humanverify/config.go` `schema`、`(moduleConfig).resolve`、`resolveTurnstile`；`pkg/authn/humanverify/pow/settings.go` `Schema`、`difficulty`、`challengeTTL` |
-| 全部设置项的声明与取值域 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema`；`pkg/authn/humanverify/pow/settings.go` `Schema` |
+| 其余设置项的声明与取值域 | 已实现 | `pkg/authn/account/config.go` `settingsSchema`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingsSchema`；`pkg/authn/mfa/settings.go`；`pkg/authn/login/config.go`；`pkg/authn/sms/settings.go` `settingsSchema`；`pkg/tenant/admission/config.go`；`pkg/authn/static/config.go` `settingsSchema`；`pkg/authn/sso/config.go` `settingsSchema`；`pkg/authn/impersonation/settings.go` `settingsSchema`；`pkg/authn/humanverify/pow/settings.go` `Schema` |
 | 设置缺席的降级与读取出错的方向 | 已实现 | `pkg/authn/account/relax.go`、`pkg/authn/account/params.go`；`pkg/authn/session/settings.go`；`pkg/authn/token/settings.go` `settingReader`、`readSetting`；`pkg/authn/mfa/settings.go`；`pkg/authn/sms/settings.go`；`pkg/tenant/admission/config.go`；`pkg/authn/sso/config.go`；`pkg/authn/impersonation/settings.go` `readTuned`、`report`；`pkg/authn/login/sms/sms.go` `signupOpen`、`reportFault`、`clearFault` |
 | 放宽开关的声明与运行期监视：`authn.account.signup`、`authn.account.auto-link`、`authn.token.check-session` | 已实现 | `pkg/authn/account/config.go` `settingsSchema`、`relax.go`；`pkg/authn/token/settings.go` `settingsSchema`、`relax.go`；`pkg/authn/login`（按路径读取 `authn.account.*`）、`pkg/authn/login/sms`（按路径读取 `authn.account.signup`） |
 | 决定守护面的清单只取主配置源 | 已实现 | `pkg/authn/gate/config.go` `schema`；`pkg/tenant/admission/config.go` |
@@ -612,3 +618,4 @@ flowchart TD
 | 登录路由按路径读取注册开关与两个注册预算（不重复声明） | 已实现 | `pkg/authn/login/config.go` `passwordSignupPath`、`signupIPLimitPath`、`signupGlobalHourlyPath`、`signupIPLimitInDomain`、`signupGlobalHourlyInDomain`、`(*reader).passwordSignup`、`signupIPLimit`、`signupGlobalHourly`；`pkg/authn/login/register.go` `signupSourceAllow`、`signupGlobalAllow`；`pkg/authn/login/respond.go` `(*routes).methods` |
 | 邮箱验证码的按地址、按账户、按来源与全局预算的设置项 | 已实现 | `pkg/authn/login/config.go` `emailPerAddressHourlyKey`、`emailPerAddressDailyKey`、`emailPerAccountHourlyKey`、`emailPerAccountDailyKey`、`emailPerSourceHourlyKey`、`emailPerSourceDailyKey`、`emailGlobalHourlyKey`、`settingsSchema`、`emailPerAddressHourlyInDomain`、`emailPerAddressDailyInDomain`、`emailPerAccountHourlyInDomain`、`emailPerAccountDailyInDomain`、`emailPerSourceHourlyInDomain`、`emailPerSourceDailyInDomain`、`emailGlobalHourlyInDomain`、`defaults`；读取与计数落点 `pkg/authn/login/internal/selfservice/settings.go` `(*counts).get`、`pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).reserveEmailBudgets`、`refundEmailBudgets`、`untilNextEmailBucket` |
 | `authn.account.signup-concurrency` 配置项 | 已实现 | `pkg/authn/account/config.go` `signupConcurrencyItem`、`configDefaults`、`(moduleConfig).resolve`；`pkg/authn/account/account.go` `newProduct`（`signupGov`） |
+| `authn.login.password-reset`、`authn.login.password-reset-ticket-ttl` 与 `authn.sms.global-hourly-reset` 的设置项与放宽监视 | 未实现 | — |

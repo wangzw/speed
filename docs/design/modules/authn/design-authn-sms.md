@@ -2,7 +2,7 @@
 
 ## 职责
 
-本模块持有短信验证码的**全部状态机**：写挑战行、发放预算、尝试次数、消费、入队与发送。短信验证码按用途区分，用途是封闭集：`login`（作第一因素）、`mfa`（作第二因素）、`enroll`（登记手机或短信因素时证明号码归属）。各用途对挑战的要求相同：一次性消费、尝试次数上限、发送预算，所以挑战状态只有一处持有，使用方是 `authn.login.sms`（用途 `login`）、`authn.mfa.sms`（用途 `mfa`）与登录引擎的手机号验证路由（用途 `enroll`），它们不持有挑战状态（[ADR-authn-sms](../../../adr/adr-authn-sms.md)）。
+本模块持有短信验证码的**全部状态机**：写挑战行、发放预算、尝试次数、消费、入队与发送。短信验证码按用途区分，用途是封闭集：`login`（作第一因素）、`mfa`（作第二因素）、`enroll`（登记手机或短信因素时证明号码归属）、`reset`（匿名口令重置时证明号码归属）。各用途对挑战的要求相同：一次性消费、尝试次数上限、发送预算，所以挑战状态只有一处持有，使用方是 `authn.login.sms`（用途 `login`）、`authn.mfa.sms`（用途 `mfa`）、登录引擎的手机号验证路由（用途 `enroll`）与登录模块的匿名口令重置路由（用途 `reset`），它们不持有挑战状态（[ADR-authn-sms](../../../adr/adr-authn-sms.md)）。
 
 本功能包括下列部分：
 
@@ -51,7 +51,7 @@
 func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
 	return sms.Message{
 		To:       in.Phone,                    // 已规范化的 E.164
-		Template: purposeTemplate(in.Purpose), // authn.code.login / mfa / enroll
+		Template: purposeTemplate(in.Purpose), // authn.code.login / mfa / enroll / reset
 		Params:   map[string]string{"code": code, "ttl_minutes": ttlMinutes},
 		Locale:   resolveLocale(in.Locale, defaultLocale, declared), // 解析到注册表声明的语言，缺省落配置的默认语言
 		DedupeID: challengeID,
@@ -59,7 +59,7 @@ func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
 }
 ```
 
-模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。这几个模板名、参数名与配置的默认语言是与注册表的配置契约：注册表持有的 `templates` 里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言——多声明一个本模块不发送的参数，该模板就没有任何消息能满足。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。**模板的语言集是有效语言集（厂商编号与本地正文的并集），所以同样的三个模板在按编号发送的载体与按正文发送的载体上都能用**：按正文发送的载体由配置里的 `bodies` 提供正文，本模块不写任何载体特有的文案。
+模板键是 `authn.code.login`、`authn.code.mfa`、`authn.code.enroll` 与 `authn.code.reset`，按用途映射；参数名固定为 `code` 与 `ttl_minutes`。`authn.code.login`、`authn.code.mfa` 与 `authn.code.enroll` 是启动的必需项：注册表持有的 `templates` 里必须写这几个模板名、恰好这两个参数，每个模板至少一种语言，且每个模板覆盖配置的默认语言——多声明一个本模块不发送的参数，该模板就没有任何消息能满足。`authn.code.reset` 是可选模板：声明了它，短信重置渠道可用，本模块按同一套参数、语言与默认语言规则核对它；没有声明，短信重置渠道不发布，其余用途照常启动。**一条消息的语言集是它所属模板声明的语言集**：本模块不声明任何语言表，一条消息能发出去的语言是它用途映射到的那个模板声明的语言；不同用途的模板可以声明不同的语言集，每个模板各自覆盖配置的默认语言。**模板的语言集是有效语言集（厂商编号与本地正文的并集），所以这些模板在按编号发送的载体与按正文发送的载体上都能用**：按正文发送的载体由配置里的 `bodies` 提供正文，本模块不写任何载体特有的文案。
 
 **覆盖由本模块在 `New` 核对。** `pkg/sms` 只让注册表报告自己持有什么，覆盖哪些组合由消费方核对，所以本模块在 `newProduct` 取到 `sms.Registry` 后立即调 `registry.Declared()`，逐项核对自己所需的（模板，参数）契约——每个必需模板的名字都要在、每个模板至少声明一种语言、每个模板都要覆盖配置的默认语言、参数名表须恰为本模块所发的两个（少一个或多一个都即 `ErrInvalidConfig` 并点名那个参数）；`New` 返回错误同样终止启动，早于服务。`Prepare` 早于 `New`、拿不到实例，核对因此落在 `New`。配置的默认语言用 `reader.Decode(i18n.ConfigNamespace, &cfg)` 读，`cfg` 的字段带 `config:"default-locale"` 且预置为 `en-US`，因而一个没有纳入 i18n 引擎、也就没有该命名空间的装配，读到的仍是英文，与那个引擎自己会读的默认一致。
 
@@ -69,9 +69,9 @@ func message(in SendCode, challengeID, code, ttlMinutes string) sms.Message {
 
 ```go
 type SendCode struct {
-	Purpose string    // login、mfa、enroll
+	Purpose string    // login、mfa、enroll、reset
 	Phone   string    // E.164，已规范化
-	Account AccountID // mfa、enroll 必填；login 不填，也不按它计数
+	Account AccountID // mfa、enroll 必填；login 与 reset 不填，也不按它计数
 	Locale  string    // 调用方填入的请求语言；空读作配置的默认语言，非空时解析到注册表声明的语言
 	Deliver bool      // 为假：只写抑制行并计入除全局维度以外的预算，不入队不发送
 	Source  string    // 请求的来源地址；为空表示调用方没有可信来源，来源预算因此不施加
@@ -90,7 +90,8 @@ type SMSCodes interface {
 
 契约的内容如下：
 
-- **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。
+- **`Send` 的调用方责任。** `Purpose` 取自封闭集，`Phone` 已规范化，`mfa` 与 `enroll` 的 `Account` 非空；`login` 与 `reset` 不要求 `Account`。违反即调用方缺陷，`Send` 返回普通错误，不属于哨兵集。每流程发送上限由调用方在 `Send` 之前核对。
+- **用途的可用性经可选接口报告。** 本模块可以实现可选接口 `PurposeSupport` 的 `SupportsPurpose(purpose string) bool`：对 `login`、`mfa`、`enroll` 恒为真，对 `reset` 当且仅当载体注册表声明了 `authn.code.reset` 模板时为真。调用方以它决定是否提供短信重置渠道；不实现该接口的实现在调用方看来不支持 `reset`。这条接口不改变 `SMSCodes` 的方法集。
 - **`Source` 为空即不施加来源维度。** `Source` 是调用方从请求上取得的来源地址。非空时本模块先经 `netip.ParseAddr` 规范成地址的规范文本，再经 `BlindIndex` 算摘要，只把摘要写进挑战行、只按摘要计数；明文地址不写表、不写日志。为空表示调用方没有可信来源：不取来源锁、不核对来源预算，这条发送不会被计入任何来源的窗口（fail-open）。判据是不把「解析不了来源」与「同一个来源」混为一谈——把全部无名来源压到一把键上，会让一个没配置可信代理的部署把全站算作一个来源。
 - **`Send` 对 `Deliver` 为真与为假的调用走同一条路径。** 应答只有 `challengeID` 一种形状，调用方无法从返回值、状态码或错误形态区分抑制行与真实行（耗时见「非保证」）。
 - **`Locale` 的来源与取值。** 本模块不声明任何语言表：它的受支持语言集是注册表声明的语言集（`registry.Declared()`），按用途模板逐条持有、由本模块在 `New` 派生一次，一条消息的可用语言是它 `Template` 指向的那个模板声明的语言，不是各模板的并集（[ADR-i18n-language-set](../../../adr/adr-i18n-language-set.md)）。`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](../design-sms.md)）。本模块不读 HTTP，也不解析 `Accept-Language`：那次解析由登录引擎在发起流程的请求上做（优先取 i18n 协商结果，取不到时为空串），存入流程记录，经方法与因素的入参交给调用方，调用方原样填入 `SendCode.Locale`；解析本身归 [design-authn-login](design-authn-login.md)。**请求语言由本模块解析到该用途模板声明的语言**：`SendCode.Locale` 为空时读作配置的默认语言；非空时取该模板声明的语言中主子标签与它相等的那一个（比较不分大小写）；没有相等的则落到配置的默认语言。**一个不受支持的请求语言因此不是被拒，而是落到默认语言**——语言是调用方的偏好，该模板声明的集合才是这条消息实际能发出去的语言。这与直接调用 `sms.Registry.Resolve` 不同：那时空 `Locale` 与编号表里没有的语言都被 `pkg/sms` 读作调用方缺陷、以 `ErrRejected` 拒绝、不调厂商（[design-sms](../design-sms.md)）。本模块构造的 `sms.Message.Locale` 取 `resolveLocale(SendCode.Locale, 配置的默认语言, 该用途模板声明的语言)`。
@@ -109,8 +110,8 @@ type SMSCodes interface {
 | 设置，`authn.sms` | `code-length`、`code-ttl`、`code-attempts` | 验证码位数、有效期、每码尝试上限 |
 | 设置，`authn.sms` | `resend-interval`、`per-phone-hourly`、`per-phone-daily` | 同号码的重发间隔与每小时、每日发放上限 |
 | 设置，`authn.sms` | `per-source-hourly`、`per-source-daily` | 同一来源地址每小时的发放上限与滚动一日的上限；`Source` 为空时不施加 |
-| 设置，`authn.sms` | `global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll` | 按用途分设的全局每小时上限 |
-| 设置，`authn.sms` | `per-flow-sends`、`per-account-hourly` | 每流程发送上限（由调用方核对）与每账户每小时上限（只对 `mfa`、`enroll` 计） |
+| 设置，`authn.sms` | `global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`、`global-hourly-reset` | 按用途分设的全局每小时上限 |
+| 设置，`authn.sms` | `per-flow-sends`、`per-account-hourly` | 每流程发送上限（由调用方核对）与每账户每小时上限（只对 `mfa`、`enroll` 计；`login` 与 `reset` 不计） |
 
 本模块不声明语言闭集：`SendCode.Locale` 的取值由该用途模板声明的语言集与配置的默认语言共同给出，请求语言按主子标签解析到前者、落不到时用后者。`pkg/sms` 不声明语言闭集，把语言当作不透明串（[design-sms](../design-sms.md)）。配置的默认语言来自 i18n 能力目录的 `i18n.default-locale` 项，与那个引擎读的是同一个，一处声明服务两个能力目录。
 
@@ -120,7 +121,7 @@ type SMSCodes interface {
 
 ### 对外接口面
 
-- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口面。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47 标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有「不施加来源维度」的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`）是配置文件里出现的取值，是本模块与载体的配置接口面。增删封闭集的成员会同时改变使用方与载体看到的面，两者一并复核。
+- `SMSCodes`、`SendCode` 的字段与方法集，以及用途与模板键这两个封闭集，是本模块对使用方的接口面。`SendCode.Locale` 的取值不是封闭集：它是一个 BCP 47 标签，由本模块解析到该消息所用模板声明的语言；`SendCode.Source` 是来源地址的原文，不是封闭集，其空值有「不施加来源维度」的语义，是本模块与使用方的契约。模板键（`authn.code.login`、`authn.code.mfa`、`authn.code.enroll`、`authn.code.reset`）是配置文件里出现的取值，是本模块与载体的配置接口面。增删封闭集的成员会同时改变使用方与载体看到的面，两者一并复核。`authn.code.reset` 是可选成员：它的缺席只关闭短信重置渠道，不使启动失败。
 - 挑战表的列与索引是本模块私有的存储形状，不在对外接口面内：其他模块不读 `authn_challenges`，只经 `SMSCodes` 与 `AccountLifecycle` 交互。
 - 单个载体叶子包可替换、可撤掉，不改变 `SMSCodes` 的行为。
 
@@ -266,7 +267,7 @@ stateDiagram-v2
 | `purpose` | 文本 | `login`、`mfa`、`enroll` |
 | `phone_mac` | 文本 | 规范化号码的带密钥摘要，用于预算统计与关联；号码本身不在表里留存 |
 | `source_mac` | 文本，可空 | 请求来源地址的带密钥摘要，用于来源预算统计；地址本身不在表里留存。`Source` 为空时为 NULL：历史行不补写，NULL 不是来源 |
-| `account_id` | 文本，可空 | `mfa`、`enroll` 用途填，每账户预算与账户删除的清理凭它；`login` 不填 |
+| `account_id` | 文本，可空 | `mfa`、`enroll` 用途填，每账户预算与账户删除的清理凭它；`login` 与 `reset` 不填 |
 | `suppressed` | 布尔，缺省假 | 抑制行标记 |
 | `code_mac` | 文本 | 带密钥摘要，覆盖挑战标识与验证码 |
 | `attempts` | 整数，缺省 0 | 已计数的比对次数 |
@@ -335,7 +336,7 @@ flowchart TD
 | 每号码每日（`per-phone-daily`） | 同 `phone_mac` 近一日的行数 | 全部 | `ErrThrottled` | 号码锁 `authn.sms:lock:phone:<phone_mac>` |
 | 每来源每小时（`per-source-hourly`） | 同 `source_mac` 近一小时的行数，跨用途 | 全部，`Source` 非空时 | `ErrThrottled` | 来源锁 `authn.sms:lock:source:<source_mac>` |
 | 每来源每日（`per-source-daily`） | 同 `source_mac` 近一日的行数，跨用途 | 全部，`Source` 非空时 | `ErrThrottled` | 来源锁 `authn.sms:lock:source:<source_mac>` |
-| 全局每小时，按用途分设（`global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`） | 同用途近一小时、未抑制的行数 | 各自的用途 | `ErrThrottled` | 全局锁 `authn.sms:lock:global:<用途>` |
+| 全局每小时，按用途分设（`global-hourly-login`、`global-hourly-mfa`、`global-hourly-enroll`、`global-hourly-reset`） | 同用途近一小时、未抑制的行数 | 各自的用途 | `ErrThrottled` | 全局锁 `authn.sms:lock:global:<用途>` |
 | 每账户每小时（`per-account-hourly`） | 同 `account_id` 近一小时的行数 | 只对 `mfa`、`enroll` 计 | `ErrThrottled` | 账户锁 `authn.sms:lock:account:<account_id>` |
 | 每流程发送数（`per-flow-sends`） | 流程记录的 `sends` | 全部 | 由调用方核对，不在本模块 | 无 |
 
@@ -343,7 +344,7 @@ flowchart TD
 
 - **全局预算按用途分设。** 匿名流量耗尽 `login` 的预算，不挤占已通过口令的第二因素与登记的发送。
 - **全局维度只计未抑制的行，其余维度计抑制行。** 抑制行是给未登记号码写的行，不发出任何消息；若它也消耗全局预算，匿名请求不花成本就能耗尽部署的发送量。号码、来源与账户维度若照此只计真实行，未登记号码达到超限所需的次数与已登记号码不同，耗尽速度即成号码枚举的观测点；两个方向的取舍取后者，全局维度省下的额度以其余维度仍计抑制行为代价。
-- **账户维度只对 `mfa` 与 `enroll` 计。** 判据是账户不得由手机号推出：这两种用途的账户由第一因素或会话确定；`login` 用途若按账户计，已登记号码有账户可计、未登记号码没有，应答随之不同。
+- **账户维度只对 `mfa` 与 `enroll` 计。** 判据是账户不得由手机号推出：这两种用途的账户由第一因素或会话确定；`login` 与 `reset` 用途若按账户计，已登记号码有账户可计、未登记号码没有，应答随之不同。
 - **号码维度跨用途累计。** 同一号码换一个用途不能绕开另一个用途的重发间隔与小时、日上限。
 - **来源维度只对 `Source` 非空的发送计，且跨用途累计。** 一个来源换号码或换用途不能绕开来源的窗口；`Source` 为空时不施加，判据见「`SMSCodes` 的挑战状态机」里 `Source` 的语义。
 - **确定失败退回预算，未确定不退回。** 厂商以 `ErrRejected`、`ErrUnroutable` 或 `ErrThrottled` 答复，说明消息没有进入厂商的处理管线，工作池把该行标为退款并在同一条语句里置为已消费：各维度不再统计它，用户以同一号码在同一窗口内重发即可通过，且这条从未送达的验证码不能通过校验。请求路径上还有两条确定没发出的同步路径——注册表拒绝构建消息、行已写入但入队失败——同样标为退款，消息同样从未离开本模块。`ErrUncertain`（以及闭集之外的错误）不退款，该次仍计入预算——消息可能已经送达时，按已发送处理是唯一不会造成伤害的方向。抑制行从不入队，也就从不退款，其计数口径不受本规则影响。
@@ -373,6 +374,7 @@ flowchart TD
 | `login` | `authn.login.sms` | `ScopePhone`，键为规范化 E.164 号码的 SHA-256 十六进制 | 登录时没有账户也没有因素标识，号码是唯一稳定的键 |
 | `enroll` | 登录引擎的手机号验证路由 | `ScopePhone`，键同上 | 登记时因素尚未存在，同样只有号码可作键 |
 | `mfa` | `authn.mfa.sms` | `ScopeFactor`，键为因素标识，由 `authn.mfa` 的统一收口施加 | 因素标识在发码前已确定；不另计 `ScopePhone`，使登录一侧对号码的错误提交不锁住已通过第一因素的第二因素 |
+| `reset` | 登录模块的匿名口令重置路由 | 不施加跨挑战退避；每码尝试上限由挑战行与重置记录各计一次 | 重置是匿名路径，按号码的退避会让攻击者用错误码锁住受害者；发送预算与每码上限共同约束 |
 
 施加的次序是：`Verify` 之前 `Throttle.Check`，退避中不调用 `Verify`；`Verify` 返回 `ErrInvalidCredentials` 时 `Throttle.Fail`，返回 `nil` 时 `Throttle.Succeed`。对 `Deliver` 为假的挑战同样施加：使用方不区分行的真假，所以未登记号码与已登记号码的退避累计路径一致。`Verify` 返回 `ErrUnavailable` 时既不 `Fail` 也不 `Succeed`。
 
@@ -493,7 +495,7 @@ flowchart TD
 ## 扩展点
 
 - **新增厂商不是本模块的扩展点。** 它归 [design-sms](../design-sms.md)：新增一个载体叶子包，注册一个排他交付 `sms.Sender` 的模块；本模块与使用方不改动。
-- **新增用途与新增渠道不是扩展点。** 用途是封闭集，增加即修改契约；邮件通道是与 `sms.Sender` 对称的另一个接缝（根包 `EmailCodeSender`，`pkg/authn/email.go`）与另一套使用方，不改本模块。
+- **新增用途与新增渠道不是扩展点。** 用途是封闭集（`login`、`mfa`、`enroll`、`reset`），增加即修改契约；邮件通道是与 `sms.Sender` 对称的另一个接缝（根包 `EmailCodeSender` 与可选的 `EmailResetCodeSender`，`pkg/authn/email.go`）与另一套使用方，不改本模块。
 
 ## 实现状态
 
@@ -502,7 +504,8 @@ flowchart TD
 | 能力 | 状态 | 代码 |
 |---|---|---|
 | 根包接口：`SMSCodes`、`SendCode` 与短信哨兵 | 已实现 | `pkg/authn/sms.go` `SMSCodes`；`pkg/authn/internal/model/sms.go` `SendCode`；`pkg/authn/errors.go` `ErrUnsupportedRegion` |
-| 模板覆盖核对：模板键到用途的映射，启动期经 `registry.Declared()` 核对所需模板、参数与配置的默认语言；请求语言解析到该用途模板声明的语言 | 已实现 | `pkg/authn/sms/templates.go` `templateLocales`、`resolveLocale`、`checkSender`；`pkg/authn/sms/config.go` `readDefaultLocale`；`pkg/authn/sms/module.go` `newProduct` |
+| 模板覆盖核对：模板键到用途的映射，启动期经 `registry.Declared()` 核对必需模板（`authn.code.login`、`mfa`、`enroll`）的参数与配置的默认语言；请求语言解析到该用途模板声明的语言 | 已实现 | `pkg/authn/sms/templates.go` `templateLocales`、`resolveLocale`、`checkSender`；`pkg/authn/sms/config.go` `readDefaultLocale`；`pkg/authn/sms/module.go` `newProduct` |
+| `reset` 用途、可选模板 `authn.code.reset`、`global-hourly-reset` 预算与 `PurposeSupport` 可用性查询 | 未实现 | — |
 | `authn.sms` 引擎：挑战状态机、预算、抑制行 | 已实现 | `pkg/authn/sms/send.go`、`verify.go`、`register.go`（`countRealPurposeSince`、`oldestRealPurposeSince`）、`config.go`、`module.go` |
 | 来源维度：`source_mac` 的规范化与摘要、每来源小时与日预算、来源锁、`Source` 为空的 fail-open | 已实现 | `pkg/authn/sms/send.go` `sourceMAC`、`checkBudgets`；`pkg/authn/sms/register.go` `countSourceSince`、`oldestSourceSince`、`lock`；`pkg/authn/sms/settings.go` `perSourceHourly`、`perSourceDaily`；`pkg/authn/sms/source_test.go`、`budget_integration_test.go` |
 | `authn_challenges` 迁移集 | 已实现 | `pkg/authn/sms/migrations/postgres/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql`、`0004_authn_challenges_refunded.sql`；`migrations/sqlite/0001_authn_challenges.sql`、`0002_authn_challenges_source.sql`、`0003_authn_challenges_budget_indexes.sql`、`0004_authn_challenges_refunded.sql` |

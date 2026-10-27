@@ -21,7 +21,7 @@
 - **不实现短信验证码引擎与发送方。** 短信因素复用 `authn.sms` 的 `SMSCodes`（[authn-sms](design-authn-sms.md)）。
 - **不持有登录会话。** 加强认证完成后更新会话的是 `Sessions.Elevate`（[authn-session](design-authn-session.md)）；`MFA.Reset` 与删除因素时的撤销、轮换只经 `Sessions` 发起。`MFA.Remove` 本身不撤销会话、也不对会话作任何承诺，删除后的撤销与轮换由用户面 DELETE 路由编排（见「删除与重置」）。
 - **不实现失败退避的算法与存储。** 本模块经 `Throttle` 使用范围 `ScopeFactor`，退避算法与表由 `authn.account` 承载（[authn-account](design-authn-account.md)）。
-- **不提供恢复码、不提供「记住此设备」、不提供短信或邮箱找回。** 找回途径限于本文「找回途径」一节列出的几项。
+- **不提供恢复码、不提供「记住此设备」、不以短信或邮箱找回因素。** 找回途径限于本文「找回途径」一节列出的各项；口令的匿名重置归 [design-authn-login](design-authn-login.md)。
 - **不核验求助者的身份。** 确认来求助的人就是账户主人是组织流程，不由本模块自动化。
 - **不发邮件。** 认证功能目录不拥有邮件投递通道；邮箱验证码经 `EmailCodeSender` 接缝交由 mail 模块投递。
 - **不读写流程记录，不依赖 kv。** WebAuthn 的仪式数据放进流程记录的私有字节，由引擎保存与一次性消费。
@@ -538,15 +538,17 @@ CREATE TABLE authn_webauthn_credentials (
 找回途径限于下列各项（封闭集），排列顺序即使用顺序：依赖的外部判断由少到多，靠前的不可用时才退到靠后的（[ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)）。
 
 1. **冗余。** 账户登记了不止一个因素时，丢了一个，用另一种做加强认证，撤销丢失的并重新登记。账户只有一个因素时，登录与登记的应答带 `warnings: ["single-factor"]`，建议再登记一个。
-2. **管理员重置因素。** 路由 `POST B/accounts/:id/mfa-reset`，效果见「删除与重置」。发起者必须有新鲜的本地多因素，其强认证里含非短信因素，名下有启用已满 `sensitive-min-age` 的非短信因素（`MFA.Seasoned`），不得是静态口令表主体，不得在冒充中。`Decider` 可以实现双人复核。
-3. **管理员重置口令。** 路由 `POST B/accounts/:id/password`，经 `Decider`（动作 `authn.account.update`，缺席即全拒）；发起者的要求同管理员重置因素；管理员提交的临时口令是请求体，从不回显、不进日志与审计，缺省置 `must_change`；强制审计；成功后撤销该账户的全部会话。这是只有口令登录名的管理员创建账户的唯一重置路径，也是忘记口令之后组织内的找回途径。
-4. **运维经 Go 接口。** 宿主的命令直接调用 `MFA.Reset` 与 `Passwords.Set`，不经 `Decider`，是最后手段。
+2. **匿名口令重置。** 路由见 [design-authn-login](design-authn-login.md) 的「匿名口令重置」。账户本人凭一条已证明的邮箱（`email-code`）或手机（`sms-code`）收码并设定新口令，不建立会话；因素行不被触碰，重置后的下一次登录仍要先过第一因素，再按账户原来的要求过第二因素。
+3. **管理员重置因素。** 路由 `POST B/accounts/:id/mfa-reset`，效果见「删除与重置」。发起者必须有新鲜的本地多因素，其强认证里含非短信因素，名下有启用已满 `sensitive-min-age` 的非短信因素（`MFA.Seasoned`），不得是静态口令表主体，不得在冒充中。`Decider` 可以实现双人复核。
+4. **管理员重置口令。** 路由 `POST B/accounts/:id/password`，经 `Decider`（动作 `authn.account.update`，缺席即全拒）；发起者的要求同管理员重置因素；管理员提交的临时口令是请求体，从不回显、不进日志与审计，缺省置 `must_change`；强制审计；成功后撤销该账户的全部会话。这是只有口令登录名的管理员创建账户的唯一重置路径，也是组织内的口令找回途径。
+5. **运维经 Go 接口。** 宿主的命令直接调用 `MFA.Reset` 与 `Passwords.Set`，不经 `Decider`，是最后手段。
 
-忘记口令没有自助找回流程（REQ-security-020），找回途径限于本节列出的各项；经其他登录方式登录同样要过该账户的第二因素。找回途径的判据见 [ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)。
+找回途径限于本节列出的各项；经其他登录方式登录同样要过该账户的第二因素。匿名口令重置只解决口令，不解决因素丢失：同时丢失口令与唯一强因素的账户仍走管理员或运维。找回途径的判据见 [ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)。
 
 **接受的代价。**
 
 - 只有一个因素又没有可用管理员的账户，丢失该因素后无法自助找回，只能由运维直接改库。
+- 匿名口令重置的强度取决于账户本人证明过的那条邮箱或手机：持有该渠道的人可以改口令。第二因素保护登录，不保护改凭据这一动作；没有第二因素的账户因此可被渠道的持有者接管。
 - 管理员重置是找回链上最弱的一环（社会工程）；本模块只提供判定接缝、审计与事件，身份核验在认证功能目录之外。
 - 首次登记因素是信任首次使用；真用户会在 `sensitive-min-age` 内被自己不拥有的因素挡在最高权限动作之外，要靠管理员重置。
 - 没有「记住设备」使使用多因素的用户每次登录都要答第二因素。
@@ -618,7 +620,7 @@ CREATE TABLE authn_webauthn_credentials (
   - 同一种类至多一个实现，同种两个实现启动失败（`ErrFactorConflict`）。
 - **保障等级的新增取值。** 出现需要把抗钓鱼本身作为准入条件的策略时，取值在 `Assurance` 里新增，合成处仍只有 `MFA.Assurance`。
 - **采信 IdP 声明的条件不可扩展。** 采信条件是封闭集，放宽只能改本模块的合成处。
-- **邮件投递。** 认证功能目录不拥有邮件投递通道；邮箱验证码经 `EmailCodeSender` 接缝。带外证明与邮箱找回不在扩展点内。
+- **邮件投递。** 认证功能目录不拥有邮件投递通道；邮箱验证码经 `EmailCodeSender` 接缝，匿名口令重置码经 `EmailResetCodeSender` 接缝。带外证明与以短信或邮箱清除因素不在扩展点内。
 
 ## 实现状态
 
@@ -644,3 +646,4 @@ CREATE TABLE authn_webauthn_credentials (
 | 根包 import 守卫 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
 | operation 声明与对外契约片段生成：`openapi/mfa.json` | 已实现 | `pkg/authn/mfa/operations.go`；`pkg/authn/mfa/openapi_generated_test.go`；片段 `pkg/authn/mfa/openapi/mfa.json` |
 | 静态特性 `authn.mfa` 的声明 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/feature_test.go` `TestTheModuleDeclaresTheMultiFactorFeature` |
+| 找回途径中的匿名口令重置（因素保留、下一次登录仍过第二因素） | 未实现 | — |

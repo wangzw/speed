@@ -6,7 +6,7 @@
 
 族内各组件驱动会话契约的自己那一部分，登录一律按 `@speed/auth-core` 的流程操作分步推进：
 
-- `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的「口令注册」渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用。
+- `SignInScreen` 读取部署的发现文档（`session.listMethods`），按每个方法描述符的 `kind` 分组渲染：`form` 收在标签页条之后，`redirect` 渲染按钮，`enterprise` 渲染邮箱优先入口，`webauthn` 渲染通行密钥按钮与仪式。四类的先后由宿主的 `order` 决定；屏幕可安插宿主内容（`slots`）、按提供方给出图标（`providerIcon`），并可在每次起手前询问宿主的门（`beforeStart`）。`signup.password.enabled` 为真时，注册模式另加入一个合成的「口令注册」渠道并默认选中，它渲染 `PasswordRegisterForm`；password 描述符仍不带 `opens_account`，登录模式的口令渠道不变。渠道选择属于做出选择的那一侧：登录模式选中的渠道切到注册模式时不沿用。发现文档的 `password_reset.enabled` 为真且宿主给了 `onForgotPassword` 时，口令渠道下渲染一个「忘记口令」文本按钮；注册模式不渲染，入口点击只报告给宿主，由宿主导航。
 - `PasswordSignInForm` 起一条 `method: 'password'` 的登录流程，按字段提交与后续步答复；`SMSSignInForm` 起 `method: 'sms'` 的流程，两步（手机号步与验证码步）收在同一个表单里；描述符为其他 `form` 方法给出首步字段时，由通用描述符表单驱动。三个可单独挂载的入口都接受同一个 `beforeStart` 门。
 - `PasswordRegisterForm` 渲染注册表单：用户名、邮箱、口令与确认口令（确认口令只在客户端比较，不上线）。邮箱字段先按服务端规则本地校验（去空白、可打印 ASCII、恰好一个 `@` 且两侧非空、不超过 254 字节），不合格在该字段渲染 `register.invalidEmail` 且不发请求；服务端答 409 `authn.email_taken` 时，邮箱字段渲染 `register.emailTaken` 并把焦点移到该字段——注册在事务里预留地址，被拒的是这一个值，不是整次尝试。它经 `session.register` 一次请求建号，注册不建立会话；成功后以同一凭据起一条 `method: 'password'` 的既有登录流程，走通则报 `mode: 'register'`、`channel: 'password'`，自动登录被拒则退回登录表单并预填用户名。自动登录落地（首次或重试）后表单进入「已登录」态，收起「账户已创建，请登录」与重试动作；宿主不导航时界面也不停留在「已登录却仍提示请登录」。注册被 429 拒绝且应答带 `Retry-After` 时，提交键按该等待禁用、横幅给出秒数，等待到点后自行恢复；应答没有该头时保持立即可重试，文案说明原因。400 不映射为口令策略，走通用 `errors.authn.*` 文案。登录表单不复用为注册表单：`PasswordSignInForm` 的标签与 `autoComplete="current-password"` 是登录语义，注册由这个独立表单承担。
 - `SocialSignInSection` 渲染一组 redirect 方法，每个方法起一条登录流程；开始响应的 `redirect` 步交出授权地址，由宿主导航。
@@ -14,14 +14,16 @@
 - `SignOutButton` 驱动 `session.logout()`；`SignOutMenuItem` 是同一动作在宿主账户菜单里的形态，先调宿主的 `onActivate`（通常关闭菜单）再驱动登出，吞掉拒绝（登出是终局的，本地会话无论如何翻成匿名，菜单项也随之消失）。
 - `SessionEndedScreen` 是宿主挂在一处已认证视图刚翻成匿名时的占位屏。它的文案不陈述成因：显式登出与会话死亡在快照上是同一个翻转，本包区分不了，所以屏上的话对两者都成立——已退出，或登录状态已失效，再次登录即可继续。
 - `AcceptInvitationScreen` 渲染邀请受理面：读取令牌指向的邀请（acceptView）并受理它（accept）。它驱动的不是会话操作，而是宿主交给它的两个邀请操作。
+- `PasswordResetScreen` 渲染匿名口令重置面：用户选择部署提供的邮箱或短信渠道，提交该渠道的标识，取得验证码后提交验证码与新口令。它驱动的不是会话操作，而是宿主交给它的重置操作；成功不建立会话，屏幕只报告完成，由宿主导航回登录面。
 - `ImpersonationBanner` 渲染冒充期间应用壳顶部栏之下的横幅：谁被冒充、租户、到期时刻与「结束冒充」，并带一个隐藏控件。`ImpersonationIndicator` 是顶部栏里的身份指示，冒充期间始终渲染，同时是横幅的显示开关。`ImpersonationEndMenuItem` 是宿主账户菜单里的「结束冒充」项。`ImpersonationNoticeProvider` 把这三个部件连到同一个隐藏状态与宿主的同一次结束尝试。`ImpersonationNoticeBanner` 与 `ImpersonationNoticeIndicator` 是读提供者的同名绑定：宿主不必手工把受控属性逐项接上。这些部件都不驱动会话，也不发请求，结束操作由宿主交给提供者。
 
-驱动会话的组件各持有一个 `session` 属性，会话由宿主传入；`AcceptInvitationScreen` 不驱动会话，它的两个操作经属性的 `invitations` 取用（见「外部接口契约」）。组件不消费 auth-core 的**钩子**（`useAuthState`、`usePermission`），只经属性调用会话的**操作**——发现读取（`listMethods`、`discoverSso`）即在其列（见「非职责」）。内建文案一律取自 `auth-ui` 命名空间；品牌名（提供方自己的名字）由发现文档带，不进命名空间。
+驱动会话的组件各持有一个 `session` 属性，会话由宿主传入；`AcceptInvitationScreen` 不驱动会话，它的两个操作经属性的 `invitations` 取用；`PasswordResetScreen` 也不驱动会话，它的重置操作经属性的 `operations` 取用，`session` 只用于取得人机证明（见「外部接口契约」）。组件不消费 auth-core 的**钩子**（`useAuthState`、`usePermission`），只经属性调用会话的**操作**——发现读取（`listMethods`、`discoverSso`）即在其列（见「非职责」）。内建文案一律取自 `auth-ui` 命名空间；品牌名（提供方自己的名字）由发现文档带，不进命名空间。
 
 ### 非职责
 
 - **不拥有会话状态机。** 流程的推进、会话的建立与撤销归 `@speed/auth-core`（[authn 登录](../authn/design-authn-login.md)）；本包渲染的会话契约的每一项都是 auth-core 交付的操作。要在本包见不到的操作里做点别的，那是 auth-core 契约该长的地方，不是本包里的第二次 HTTP。
 - **不拥有邀请状态机，不做登录门禁，不引用生成契约的类型。** 邀请的读取与受理由宿主交给 `AcceptInvitationScreen` 的 `InvitationOperations` 执行（生成操作在宿主侧绑定）；本包不发邀请的 HTTP、不把 `@speed/api-sdk` 的类型带上公开面，也不自行判定令牌是否存在或能否兑现——不存在由读取的 404 给出，不可兑现由读取应答体的 `status` 与 `expires_at` 给出；受理时不可兑现才是 409。受理面只按读取应答携带的 `status` 与 `expires_at` 决定是否提供受理动作，不据此写入任何东西。接受是公开的、令牌即凭据：成员关系落到**被邀请地址**的账户上，而非登录账号（REQ-tenancy-017）。宿主可在受理面前渲染它自己的登录面（先登录或注册再受理是宿主的组合），本包不内建这道门禁，那道门禁也不约束成员关系落到哪个账户。
+- **不拥有匿名口令重置状态机。** 重置的发送、验证码核验与口令写入由服务端完成，宿主把生成的 SDK 操作绑定成 `PasswordResetOperations` 交给 `PasswordResetScreen`；本包不发重置的 HTTP、不把 `@speed/api-sdk` 的类型带上公开面，也不判定某账户是否具备重置条件——宿主按发现文档的 `password_reset.methods` 取得渠道，经 `channels` 交给屏幕；合格与不合格目标的服务端应答同形。
 - **不决定登录之后。** 登录成功之后导航到哪、是否刷新缓存、是否重新取权限，是宿主的；本包只触发一次回调。
 - **不拥有注册状态机，但内建注册表单。** 自助注册是 `@speed/auth-core` 的 `session.register` 操作，一次请求建号，不建立会话、不发送邮件（[authn-account](../authn/design-authn-account.md)、[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。本包渲染 `PasswordRegisterForm` 并驱动该操作；字段规范化、口令策略、用户名占用与邮箱预留的写入都在服务端。注册成功后的会话仍由既有口令登录流程建立，本包不自行铸造会话；建号与自动登录都经 auth-core 的会话操作，本包不在它之外发请求。`SignInScreen` 在部署开放口令注册时给出这个渠道，开户仍由服务端完成。
 - **不消费 auth-core 的钩子，不读存储。** 组件读到的会话状态只有它驱动的那些操作，其余状态经宿主的钩子观察。一个自己订阅会话的组件必须已挂在宿主的 `attachSession` 之下，故这一层留在宿主。**读取发现文档是一个例外**：`SignInScreen` 经它持有的 `session` 属性上的 `listMethods` 与 `discoverSso` 操作读取部署的登录方式与企业提供方，给了 `absent` 的 `SocialCallbackHandler` 经 `listMethods` 读取部署有没有 redirect 类与 enterprise 类方法——那是会话操作，不是 auth-core 的钩子，而组件本就在驱动这个会话；这条例外不放松「不消费钩子、不读存储」。
@@ -31,11 +33,11 @@
 
 ## 外部接口契约
 
-`@speed/auth-ui` 的公开面是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`PasswordRegisterForm` 连同 `PasswordRegisterFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`、`AcceptInvitationInput`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的助手（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)。
+`@speed/auth-ui` 的公开面是 `web/packages/auth-ui/src/index.ts` 的导出：`SignInScreen`（连同 `SignInScreenProps`、`SignInChannel`、`SignInMode`、`SignInGroup`、`SignInScreenSlots`、`SignInBeforeStart`、`SignInStartContext`、`SignInContext`、`SocialSignInOptions`）、各渠道的表单（`PasswordSignInForm` 连同 `PasswordSignInFormProps`；`PasswordRegisterForm` 连同 `PasswordRegisterFormProps`；`SMSSignInForm` 连同 `SMSSignInFormProps`）、社交对（`SocialSignInSection` 连同 `SocialSignInSectionProps`、`SocialProvider`、`SocialProviderConfig`，以及 `SocialCallbackHandler` 连同 `SocialCallbackHandlerProps`）、`SignOutButton`（连同 `SignOutButtonProps`）、`SignOutMenuItem`（连同 `SignOutMenuItemProps`）、`SessionEndedScreen`（连同 `SessionEndedScreenProps`）、`AcceptInvitationScreen`（连同 `AcceptInvitationScreenProps`、`InvitationOperations`、`InvitationSummary`、`AcceptInvitationInput`）、`PasswordResetScreen`（连同 `PasswordResetScreenProps`、`PasswordResetOperations`、`PasswordResetRequest`、`PasswordResetChannel`（从 `@speed/auth-core` 再导出）、`PasswordResetSent`、`PasswordResetVerified`）、`ImpersonationBanner`（连同 `ImpersonationBannerProps`、`ImpersonationBannerState`）、冒充通告的提供者与部件（`ImpersonationNoticeProvider`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`useImpersonationNotice`，连同 `ImpersonationNoticeProviderProps`、`ImpersonationIndicatorProps`、`ImpersonationNotice`、`ImpersonationEndMenuItemProps`、`ImpersonationNoticeBannerProps`），以及命名空间对（`AUTH_UI_NAMESPACE`、`authUiResources`）。`web/packages/auth-ui/src/internal/` 下的助手（发现读取、方法标签、通用描述符表单、企业入口、通行密钥入口，以及把一步 `AuthnStep` 渲染成分支字段的步进渲染器）是族内共享管线，不外导。`SocialProvider` 是 `string`（方法名），不再是名字闭集：redirect 方法的集合由发现给出，见 [ADR-web-auth-channel-discovery](../../../adr/adr-web-auth-channel-discovery.md)。
 
 ### 受控组件的形状
 
-每个组件从它驱动的会话操作取一个 `session` 属性，从该操作的结果取一个回调，不读别的会话状态：
+每个驱动会话操作的组件从它驱动的会话操作取一个 `session` 属性，从该操作的结果取一个回调，不读别的会话状态；`AcceptInvitationScreen` 与 `PasswordResetScreen` 不驱动会话操作，它们的操作由宿主经属性交给它们（见下）：
 
 ```tsx
 // SignInScreen：把发现文档的分组渲染成登录面。
@@ -54,7 +56,43 @@ interface SignInScreenProps {
   readonly channels?: readonly SignInChannel[] // 已弃用：仍窄化 form 标签页条，一个 major 内生效
   readonly defaultChannel?: SignInChannel      // 已弃用
   readonly initialError?: string            // 宿主从外部带回的错误码，渲染在渠道之上
+  readonly onForgotPassword?: () => void    // 发现面提供匿名口令重置时在口令渠道下渲染入口；宿主导航
 }
+
+// PasswordResetScreen：匿名重置面，操作由宿主绑定。
+// PasswordResetChannel 取自 @speed/auth-core，是发现面 password_reset.methods 的元素类型。
+interface PasswordResetRequest {
+  readonly channel: PasswordResetChannel
+  readonly identifier: string
+  readonly humanProof?: string
+}
+interface PasswordResetSent {
+  readonly state: 'sent'
+  readonly expiresIn: number
+  readonly resendAfter: number
+}
+interface PasswordResetVerified {
+  readonly state: 'verified'
+  readonly expiresIn: number
+}
+interface PasswordResetOperations {
+  requestReset(input: PasswordResetRequest): Promise<PasswordResetSent>
+  verifyReset(input: { code: string }): Promise<PasswordResetVerified>
+  completeReset(input: { newPassword: string }): Promise<void>
+  currentReset?(): Promise<PasswordResetSent | PasswordResetVerified>
+  abandonReset?(): Promise<void>
+}
+interface PasswordResetScreenProps {
+  readonly session: AuthSession
+  readonly channels: readonly PasswordResetChannel[]
+  readonly operations: PasswordResetOperations
+  readonly humanGate?: AuthnHumanGate
+  readonly headingLevel?: HeadingLevel
+  readonly onDone?: () => void
+  readonly onBackToSignIn?: () => void
+}
+
+`session` 用于 `useHumanVerification` 取得人机证明；屏幕把证明交给 `requestReset`。重置操作携带 `__Host-authn-reset` cookie，宿主绑定生成的 SDK 操作时保持同源凭据。`channels` 由宿主从发现文档的 `password_reset.methods` 映射，屏幕不自己读发现文档。
 
 // 四组渠道与两个宿主内容位。
 type SignInGroup = 'form' | 'redirect' | 'enterprise' | 'webauthn'
@@ -237,7 +275,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 | `SignOutMenuItem` | `session.logout` |
 | `SessionEndedScreen` | 无 |
 
-`AcceptInvitationScreen` 不在上表：它驱动的不是会话操作，而是宿主交给它的两个邀请操作（`invitations.readInvitation` 与 `invitations.acceptInvitation`）。冒充通告的部件（`ImpersonationBanner`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`ImpersonationNoticeProvider`）同样不在上表：它们不持 `session`，状态与操作都由宿主经属性交给提供者（`impersonation`、`identityKey`、`onEnd`、`pending`、`failureCode`、`successMessage`），结束冒充的 HTTP 在宿主绑定的那次尝试里。
+`AcceptInvitationScreen` 与 `PasswordResetScreen` 不在上表：它们驱动的不是会话操作，而是宿主交给它们的操作——邀请面的 `invitations.readInvitation` 与 `invitations.acceptInvitation`，重置面的 `PasswordResetOperations`。冒充通告的部件（`ImpersonationBanner`、`ImpersonationIndicator`、`ImpersonationEndMenuItem`、`ImpersonationNoticeBanner`、`ImpersonationNoticeIndicator`、`ImpersonationNoticeProvider`）同样不在上表：它们不持 `session`，状态与操作都由宿主经属性交给提供者（`impersonation`、`identityKey`、`onEnd`、`pending`、`failureCode`、`successMessage`），结束冒充的 HTTP 在宿主绑定的那次尝试里。
 
 每个渠道的表单只驱动它那一个方法：`startFlow` 起流程，后续每一步（第二因素、改口令、登记因素、通行密钥仪式）由步进渲染器按 `next.kind` 渲染并交 `session.answerFlow`，直到流程落到完成。一次登录的落地由 auth-core 在同一会话上提交，视图不自己持有登录态。注册表单多一步建号：它先驱动 `session.register`，该操作只返回注册应答、不改变会话快照；随后以同一凭据起一条口令登录流程，登录的推进与落地仍走上面这条管线。因此注册与登录不是同一个操作，注册渠道也不在登录模式的渠道集合里。
 
@@ -247,6 +285,7 @@ function ImpersonationNoticeIndicator(): ReactElement | null
 - **每个驱动会话的组件持一个 `session` 属性，且不消费 auth-core 的钩子。** 这条是宿主据以装配的接口面：组件挂在宿主的 `attachSession` 之下，状态变化只经属性与回调进出。`SignInScreen` 的发现读取经这个 `session` 属性的操作完成，不构成对钩子的消费（见「非职责」）。
 - **结果回调在操作判决之后触发，且被包住。** `onSignedIn` 与 `onAuthorizeUrl` 在各自的操作判决之后触发；一个抛出的回调不是那次操作的失败：本包不因此渲染错误横幅、不把结果重新归成失败态、不为一次已成功的操作提供重试，且把抛出挡在 fire-and-forget 的 promise 之外，不产生未处理的拒绝。另有三个回调报告控制事件而非结果：`onSignIn` 在查看者要求重新登录时触发，由宿主导航，其前没有操作；`onModeChange` 在模式切换被点击时触发，其前没有请求；`SignOutMenuItem` 的 `onActivate` 在 `session.logout()` 之前触发，其中抛出被挡下，登出照常进行。
 - **注册文案在 `auth-ui` 命名空间的顶层 `register` 节。** `zh-CN` 与 `en-US` 两份目录的叶子键集一致，承载注册表单的标题、说明、字段、提交、邮箱格式、用户名占用、限流、不可用、限流等待的秒数、已登录提示与自动登录失败；注册模式的标题与切换按钮仍取既有的模式词条。
+- **重置文案在 `auth-ui` 命名空间的顶层 `passwordReset` 节。** `zh-CN` 与 `en-US` 的叶子键集一致，承载渠道名、字段、发送、非承诺的已发送提示、验证码、新口令、确认、提交、成功、返回登录、限流等待与各错误码；口令渠道的入口词条是 `passwordSignIn.forgotPassword`。文案不主张账户存在，不点名「已发送到某地址」。
 - **文档化的用法是可执行的。** README 的快速开始由 `web/packages/auth-ui/src/usage-example.test.tsx` 端到端编译并运行，故文档里的装配不能与 API 漂移。
 
 ## 依赖
@@ -305,7 +344,7 @@ sequenceDiagram
 | 邀请视图 | `InvitationSummary` | 受理面渲染的邀请字段：租户、地址、状态、期限 |
 | 邀请操作 | `InvitationOperations` | 宿主绑定的两个邀请操作：读取与受理 |
 | 受理入参 | `AcceptInvitationInput` | 受理可带的显示名与初始口令（地址尚无账户时用） |
-| 命名空间 | `authUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同；注册表单的文案在顶层 `register` 节 |
+| 命名空间 | `authUiResources` | `zh-CN` 与 `en-US` 两份目录，叶子键集相同；注册表单的文案在顶层 `register` 节，匿名口令重置的文案在顶层 `passwordReset` 节 |
 
 ## 核心算法与流程
 
@@ -490,3 +529,6 @@ sequenceDiagram
 | 不支持的步骤的出口 | 已实现 | `web/packages/auth-ui/src/internal/flow-step.tsx` `FlowStepFields`、`HumanGatedFlowStep`；`web/packages/auth-ui/src/PasswordSignInForm.tsx` `PasswordSignInForm`；`web/packages/auth-ui/src/SMSSignInForm.tsx` `SMSSignInForm`；`web/packages/auth-ui/src/PasswordRegisterForm.tsx` `PasswordRegisterForm`；`web/packages/auth-ui/src/internal/sign-in-methods.tsx` `DescriptorSignInForm`、`PasskeySignIn`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/auth-ui/src/locales/en-US.json`、`zh-CN.json` `signInFlow.unsupportedStepAction` |
 | 命名空间资源 | 已实现 | `web/packages/auth-ui/src/resources.ts` |
 | 本部署不提供回调落点时渲染 `absent` | 已实现 | `web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler` |
+| 登录屏的「忘记口令」入口（发现面提供匿名口令重置且宿主给了 `onForgotPassword`） | 未实现 | — |
+| 匿名口令重置屏 `PasswordResetScreen`（宿主绑定的重置操作与渠道选择） | 未实现 | — |
+| `passwordReset` i18n 节与 `passwordSignIn.forgotPassword`（zh-CN 与 en-US 键集一致） | 未实现 | — |

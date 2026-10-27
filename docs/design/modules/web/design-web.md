@@ -273,8 +273,8 @@ jsdom 不求值媒体查询与容器查询，不做布局，也不判定可聚�
 | 契约无关的传输运行时 | 已实现 | `web/packages/api-client/src/index.ts` `createClient`、`ApiError` |
 | `@speed/api-client` 的公开面不含 `./react` 子路径与预认证配置取回 | 已实现 | `web/packages/api-client/src/index.ts`、`web/packages/api-client/package.json` |
 | 生成的契约面 | 已实现 | `web/packages/api-sdk/src/runtime.ts` `bindRequestFn`、`speedRequest`、`speedRequestCredentialless`；生成面见 `web/packages/api-sdk/src/index.ts`；特性名见 `web/packages/api-sdk/src/features.ts` |
-| 浏览器会话状态机与 hooks | 已实现 | `web/packages/auth-core/src/session.ts` `createAuthSession`；`web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission`、`useFeature`、`useFeatureState`、`featurePresence` |
-| 登录组件族 | 已实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SignOutButton.tsx` `SignOutButton`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` `SessionEndedScreen` |
+| 浏览器会话状态机与 hooks | 部分实现 | `web/packages/auth-core/src/session.ts` `createAuthSession`；`web/packages/auth-core/src/hooks.ts` `attachSession`、`useAuthState`、`usePermission`、`useFeature`、`useFeatureState`、`featurePresence` |
+| 登录组件族 | 部分实现 | `web/packages/auth-ui/src/SignInScreen.tsx` `SignInScreen`；`web/packages/auth-ui/src/SignOutButton.tsx` `SignOutButton`；`web/packages/auth-ui/src/SessionEndedScreen.tsx` `SessionEndedScreen` |
 | 账户管理组件族 | 已实现 | `web/packages/account-ui/src/index.ts` `ProfileSection`、`PasswordSection`、`PhoneSection`、`IdentifiersSection`、`PreferencesSection`、`SessionsSection`、`SocialBindingsSection`、`MfaSection` |
 | 租户切换控件 | 已实现 | `web/packages/tenancy-ui/src/index.ts` `TenantSwitcher`、`TenantOption`、`TenantSwitcherProps`；`web/packages/tenancy-ui/src/resources.ts` `TENANCY_UI_NAMESPACE`、`tenancyUiResources` |
 | 组装壳与装配入口 | 已实现 | `web/packages/product-shell/src/index.ts` `ProductShell`；`web/packages/product-shell/src/bootstrap.tsx` `bootstrapSpeedApp` |

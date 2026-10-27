@@ -58,7 +58,7 @@
 | 对外不区分成因 | 每个对外的 503 应答 | 应答体不携带是哪个依赖不可用；成因只进日志与指标 |
 | 没答与答了拒绝不混 | 网关对校验后端的收口 | 零值判决收口 401、单独计 `unspoken`、记 Error；凭据存在而后端答不了是 503，不是匿名，可选认证的路由上也一样（理由见 [ADR-authn-verdict](../../../adr/adr-authn-verdict.md)） |
 | 补充校验不由库覆盖 | 本功能目录在库的校验之外另加的每一项检查 | 库返回成功而补充校验不通过，结果是失败，并记一条 Error |
-| 403 的位置 | 全部 authn 与准入层的拒绝 | 403 只带 `impersonation-restricted`、`forbidden`、`method-disabled`、`account-unavailable`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required` 这些码，且只在 authn 自己的处理器里；`ErrImpersonationRestricted` 与 `ErrImpersonationNeedsSession` 同带 `impersonation-restricted`，`ErrFactorNotSeasoned` 带 `factor-not-seasoned`，`ErrSignupClosed` 在自助注册路由上带 `signup-closed`，`ErrContactRequired` 带 `contact-required`，`ErrHumanVerificationRequired` 带 `human-verification-required`；网关与 `tenant.admission` 不写 403 |
+| 403 的位置 | 全部 authn 与准入层的拒绝 | 403 只带 `impersonation-restricted`、`forbidden`、`method-disabled`、`account-unavailable`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required`、`password-reset-closed`、`password-reset-unavailable` 这些码，且只在 authn 自己的处理器里；`ErrImpersonationRestricted` 与 `ErrImpersonationNeedsSession` 同带 `impersonation-restricted`，`ErrFactorNotSeasoned` 带 `factor-not-seasoned`，`ErrSignupClosed` 在自助注册路由上带 `signup-closed`，`ErrContactRequired` 带 `contact-required`，`ErrHumanVerificationRequired` 带 `human-verification-required`；网关与 `tenant.admission` 不写 403 |
 | 撤销不依赖时钟 | 会话、刷新令牌与访问令牌的撤销 | 撤销以会话行的 `revoked_at` 为准、不比较时间；时钟偏差不会让撤销失效 |
 
 ### 对外的失败应答
@@ -237,7 +237,7 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | `ErrPasswordPolicy`、`ErrInvalidIdentifier` | 口令不合策略（过短、超长、等于本人标识、低于 OWASP 下限、与当前口令相同）；标识规范化失败（用户名、邮箱、手机格式不合） | 400 `bad-request` |
 | `ErrInvalidArgument` | 写入的值越过调用允许的域：属性集越界、显示名过长、`via` 不在 `Verification` 接受的形式内、`reason` 不在 `ReasonClass` 闭集 | 管理路由 400 `bad-request`；模块在自己写下的值（会话载荷的 `idp.*` 属性）上遇到它是自身的缺陷，503 |
 | `ErrFactorLimit`、`ErrIdentifierRequired` | 某种因素已达 `max-per-kind`；账户没有可作登录名的标识而要设口令，或带口令凭据的账户删除最后一个登录名（`DELETE /auth/identifiers/:id`） | 409 `conflict`、409 `login-identifier-required` |
-| `ErrAccountUnavailable`、`ErrMethodDisabled` | 外部登录路径上账户停用；方法被 `disabled-methods` 关掉 | 403 `account-unavailable`、403 `method-disabled` |
+| `ErrAccountUnavailable`、`ErrMethodDisabled` | 账户不可用：外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足；方法被 `disabled-methods` 关掉 | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable`；403 `method-disabled` |
 | `ErrCleanupIncomplete` | 账户状态或服务密钥状态已生效而某个 `AccountLifecycle` 钩子失败（重试同一调用幂等地补完） | 503 |
 | `ErrSessionRevoked` | `Sessions.ForCredential` 遇到已撤销的 service 会话行 | 拒绝换令牌；令牌端点的 `error` 取值见 [design-authn-token](design-authn-token.md) |
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 退避中；自助注册的按用户名退避（`ThrottleScope` 的 `signup-username`）、来源地址分钟预算或全局小时预算生效 | 429 `throttled`，带 `Retry-After`；令牌端点是 401 `invalid_client` 并带 `Retry-After`；Basic 路径是 `Denied` |
@@ -263,6 +263,16 @@ type ThrottledError struct{ RetryAfter time.Duration }
 
 **403 只出现在 authn 自己的处理器里**，范围见「对调用方的承诺」。`ErrUnavailable` 只指外部依赖不可用这一类，不是全部运行期失败的总称：调用方要区分配置缺陷、被拒绝与后端故障，补救动作不同。
 
+**匿名口令重置的映射。** 下表是重置路径的全部路由。重置不新增哨兵；它新增 `password-reset-closed` 与 `password-reset-unavailable`，都是兼容增量：
+
+| 路径 | 成功 | 失败 |
+|---|---|---|
+| `POST B/password-reset` | 202 `{state:"sent"}` | 400 `bad-request`（体或标识形状不合法）；403 `human-verification-required`；403 `password-reset-closed`（开关关闭，或 `disabled-methods` 含 `sms` 且请求短信渠道）；429 `throttled`（同一 cookie 的重发间隔或登录的 `ip-limit`）；503 `unavailable`（审计缺席、渠道未装配或依赖不可用）。合格与不合格目标在这些失败之外给出同一个 202；发送预算超限抑制并仍答 202 |
+| `GET B/password-reset/current` | 200 `{state:"sent"}` 或 `{state:"verified"}` | 401 `flow-invalid`（无绑定、绑定不符、记录过期、`processing`、`failed`、并发败者）；403 `password-reset-closed`（开关关闭或该渠道被关闭）；503 `unavailable` |
+| `DELETE B/password-reset/current` | 204（没有绑定、没有记录或开关关闭同样 204） | 503 `unavailable` |
+| `POST B/password-reset/verify` | 200 `{state:"verified"}` | 401 `login-failed`（错码、码过期、已用、抑制、尝试用尽）；401 `flow-invalid`（无绑定、绑定不符、记录过期、状态不符、并发败者）；403 `password-reset-closed`（开关关闭或该渠道被关闭）；503 `unavailable` |
+| `POST B/password-reset/complete` | 204 | 400 `bad-request`（口令策略）；401 `flow-invalid`（不在 `verified`、记录过期、并发败者）；403 `password-reset-unavailable`（账户已停用、已删除、失去口令或标识不再由同一证明渠道证明）；403 `password-reset-closed`（开关关闭或该渠道被关闭）；503 `unavailable`（审计、db、kv 或口令派生不可用） |
+
 ### 依赖不可用时每条路径的方向
 
 表中「方向」取值见核心数据结构一节；「有界放」各项的控制项与上界见放宽清单，本表不重复数值。下表是请求期路径的全部方向（封闭集合）：
@@ -271,11 +281,11 @@ type ThrottledError struct{ RetryAfter time.Duration }
 |---|---|---|---|
 | db | 会话校验（cookie）、访问令牌校验（`check-session` 为真） | 缓存命中按缓存放行；未命中 503 | 有界放：会话的校验缓存 |
 | db | 访问令牌校验（`check-session` 设为假） | 会话不读；账户状态、`valid_after` 与冒充记录的核对照常执行，其读取缓存未命中时 503 | 有界放：`check-session` 的显式放宽 |
-| db | 登录（口令、短信、社交、SSO）、自助注册、注册验证状态读取、刷新令牌、撤销、因素校验、管理面、冒充 | 503，不校验也不撤销 | 拒 |
+| db | 登录（口令、短信、社交、SSO）、自助注册、注册验证状态读取、匿名口令重置、刷新令牌、撤销、因素校验、管理面、冒充 | 503，不校验也不撤销；重置不写口令 | 拒 |
 | db | `tenant.admission` 的成员检查 | 缓存命中按缓存放行，未命中 503 | 有界放：成员关系的校验缓存 |
 | db | `authn.static` 的 Basic | 不受影响（配置里的表、进程内退避、进程内缓存） | — |
 | db | 失败退避（`Throttle`），含登录路径与匿名注册的 `signup-username` 范围 | 503，不校验；注册答 `unavailable` 而不是放过 | 拒 |
-| kv | 开始与继续登录流程、WebAuthn 仪式 | 503 | 拒 |
+| kv | 开始与继续登录流程、WebAuthn 仪式、匿名口令重置的记录与尝试计数 | 503；重置不发送、不校验，记录丢失只使该次重置失败 | 拒 |
 | kv | 已建立的会话、访问令牌、刷新令牌 | 不受影响（在 db） | — |
 | kv | 按来源地址的前置减负（若开；含登录与匿名注册的来源分钟预算） | 跳过该层，写 Warn 与计数 | 放：权威退避在 db 或 `Signups.Register`，上界是退避的自由次数 |
 | kv | 匿名注册的全局小时预算（若开） | 503 `unavailable`，不开户 | 拒：全局预算是这条路径唯一的全局上界 |
@@ -287,7 +297,8 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | audit | 强制档动作 | 先写审计、写成功才动作；写失败 503，动作不执行 | 拒 |
 | audit | 尽力档动作 | 记 Error 与 `authn.audit.write-failures`，业务继续 | 放：审计缺失，写入非保证 |
 | 账户生命周期钩子 | 停用、删除、撤销服务密钥之后的清理 | 账户状态已在本模块事务里生效；钩子失败返回 `ErrCleanupIncomplete`（503），重试幂等；发件箱在场时事件补偿；`valid_after` 与账户状态检查兜底 | 拒：状态已生效，清理待补 |
-| 短信发送方 | 登录与因素的短信 | 异步工作池记 Warn 与指标，用户收不到；`sms.ErrUncertain` 不盲目重发；入队时队列满 503 | 拒：不发 |
+| 短信发送方 | 登录、因素与匿名口令重置的短信 | 异步工作池记 Warn 与指标，用户收不到；`sms.ErrUncertain` 不盲目重发；入队时队列满 503 | 拒：不发 |
+| 邮箱重置的发送 | 匿名口令重置的邮箱渠道 | 有界工作池记 Warn 与指标，用户收不到；应答在入队时已返回 202，用户按重发间隔重试；队列满时在写记录之前 503 | 拒：不发 |
 | IdP（OIDC 发现、JWKS、令牌端点） | 企业 OIDC 与社交登录 | 该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响 | 拒 |
 | 受限出站客户端拒绝的连接（目的地不是公网地址、方案不是 https、响应体超上限） | IdP 的发现文档、JWKS、元数据与 userinfo 的出站请求 | 与该 IdP 不可用同形：该 IdP 的登录 503，流程保留至到期，其他 IdP 不受影响；成因进日志，不进应答 | 拒 |
 | IdP 元数据（SAML） | 证书更新 | 不自动刷新；管理员触发的刷新失败保留上一份有效配置并记 Warn | 有界放：IdP 元数据的证书陈旧 |
@@ -380,3 +391,4 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 未验证账户的问题码 `contact-required` 与状态映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeContactRequired`、`statusOf` |
 | 未验证账户的 `contact-required` 运行时映射（要求已验证邮箱的门控） | 已实现 | `pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |
 | 人机验证的问题码 `human-verification-required` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeHumanVerificationRequired`、`statusOf`、`Forbidden`；`pkg/authn/login/routes.go` `(*routes).fail`；`pkg/authn/login/internal/selfservice/call.go` `(*routes).fail` |
+| 匿名口令重置的问题码 `password-reset-closed`、`password-reset-unavailable` 与运行时映射 | 未实现 | — |

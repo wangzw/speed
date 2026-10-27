@@ -69,7 +69,7 @@
 - **不提供配置式的豁免、可选认证与可冒充清单。** 这些登记只来自代码：一条命令行参数不该能改变哪些路径不需要认证、哪些路径可以匿名、哪些路径放行冒充身份（[ADR-authn-exemption](../../../adr/adr-authn-exemption.md)）。
 - **不把认证 scheme 名与 cookie 名做成输入项。** 它们由各校验后端在代码里自报；输入项清单按完整集合判冲突，而载体的撞车落不进那份清单的任何一条判据，装配期以 `ErrClaimConflict` 点名双方。
 - **网关不读入口模块的路由表，读它的端名。** 端名经入口模块的 `Router.Endpoints()` 与保留端名 `*` 取得，用来展开 `endpoints` 并校验登记所在的端；登记面不提供路由的枚举，网关无从核对一条登记是否对应一条已登记的路由，请求期只拿 gin 为本次请求报出的 `c.FullPath()` 与登记的方法、路径逐字比对（见 [http](../http/design-http.md)）。
-- **不实现邮件的传输、忘记口令流程、冒充与异常登录的邮件通知与邮件链接登录。** 邮箱标识除经 IdP 或管理员的断言成为已验证标识外，还可由本人经登录自助面发码到地址、兑现码后写入（见 [design-authn-login](design-authn-login.md)）。投递接缝是根包的 `EmailCodeSender`，传输由顶层能力的 `mail.Sender` 承担（[design-mail](../design-mail.md)）：仓库提供一个可选的适配模块 `authn.emailcode`，把验证码渲染成邮件并经 `mail.Sender` 发出；不装配它时，宿主可以自己实现 `EmailCodeSender`，否则邮箱验证这一面不可用。
+- **不实现邮件的传输、冒充与异常登录的邮件通知与邮件链接登录。** 邮箱标识除经 IdP 或管理员的断言成为已验证标识外，还可由本人经登录自助面发码到地址、兑现码后写入；匿名口令重置经同一类投递接缝发送重置验证码，流程归 [design-authn-login](design-authn-login.md)。投递接缝是根包的 `EmailCodeSender` 与可选的 `EmailResetCodeSender`，传输由顶层能力的 `mail.Sender` 承担（[design-mail](../design-mail.md)）：仓库提供一个可选的适配模块 `authn.emailcode`，把验证码渲染成邮件并经 `mail.Sender` 发出；不装配它时，宿主可以自己实现 `EmailCodeSender` 与 `EmailResetCodeSender`，否则邮箱验证与邮箱重置不可用。
 - **不做 SAML 单点登出与 OIDC 背向通道登出，不在后台自动刷新 IdP 元数据，不提供每租户的 SP 密钥。** IdP 侧的登出不终止登录会话，会话受自己的空闲期限与绝对期限约束（见 [design-authn-sso](design-authn-sso.md)）。
 - **不提供个人访问令牌与“记住此设备”。** 用户名加口令的自助注册由独立的匿名路由一次建号；注册的必填项、注册后的登录与验证时机、验证前的能力限制见 REQ-signup-004、REQ-signup-024 与 REQ-signup-025（[ADR-authn-signup](../../../adr/adr-authn-signup.md)）。注册时收集的邮箱先写成一条未证明预留，不是标识，也不是登录名；邮箱被证明之后才写入标识。注册开关 `authn.account.password-signup` 与首登开户开关 `authn.account.signup` 相互独立，缺省都关闭。
 - **不承载宿主的资料字段。** 账户表不留自由字段，宿主扩展用户字段的途径见[扩展点](#扩展点)。
@@ -286,10 +286,10 @@ type Requirement struct {
 | `authn/mount` | `authn.mount` | 内部 `mount.Mounter` | 是 | `Gate` | `http.Router`；读 `authn.gate` 的路由挂载键 | 无 |
 | `authn/static` | `authn.static` | `Verifier`（认领 `basic`） | 否 | 无 | `settings.Store` ○；失败退避恒在进程内，不取 db 的 `Throttle` | 无 |
 | `authn/account` | `authn.account` | `Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle`、`Signups`、`SignupVerification` | 各自是 | `db.Database` | `settings.Store` ○、`event.Bus` ○、`outbox.Outbox` ○、`audit.Audit` ○、全部 `AccountLifecycle` | `authn_accounts`、`authn_identifiers`、`authn_pending_contacts`、`authn_external_identities`、`authn_memberships`、`authn_password_credentials`、`authn_service_secrets`、`authn_throttles` |
-| `authn/emailcode` | `authn.emailcode` | `EmailCodeSender` | 是 | `mail.Sender` | `i18n.Localizer` | 无 |
+| `authn/emailcode` | `authn.emailcode` | `EmailCodeSender`、`EmailResetCodeSender` | 是 | `mail.Sender` | `i18n.Localizer` | 无 |
 | `authn/session` | `authn.session` | `Sessions`；`Verifier`（认领会话 cookie）；`AccountLifecycle` | `Sessions` 是 | `db.Database`、`mount.Mounter`、`Accounts` | `Impersonation` ○、`settings.Store` ○、`event.Bus` ○ | `authn_sessions` |
 | `authn/token` | `authn.token` | `Tokens`；`Verifier`（认领 `bearer`） | `Tokens` 是 | `db.Database`、`mount.Mounter`、`Accounts`、`Sessions`、`Passwords`、`Throttle` | `Impersonation` ○、全部 `ClaimsContributor`、`settings.Store` ○、`event.Bus` ○、`audit.Audit` ○ | `authn_refresh_tokens` |
-| `authn/login` | `authn.login` | 无（流程引擎与路由） | — | `mount.Mounter`、`kv.KV`、`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle`、`Sessions`、`MFA`、`Signups`、`SignupVerification` | 全部 `LoginMethod`、`Tokens` ○、`SMSCodes` ○、`SSOProviders` ○、`Provisioner` ○、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | 无 |
+| `authn/login` | `authn.login` | 无（流程引擎与路由） | — | `mount.Mounter`、`kv.KV`、`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`Throttle`、`Sessions`、`MFA`、`Signups`、`SignupVerification` | 全部 `LoginMethod`、`Tokens` ○、`SMSCodes` ○、`EmailCodeSender` ○、`EmailResetCodeSender` ○、`SSOProviders` ○、`Provisioner` ○、`settings.Store` ○、`audit.Audit` ○、`event.Bus` ○ | 无 |
 | `authn/login/password` | `authn.login.password` | `LoginMethod` | 否 | `Passwords`、`Throttle` | 无 | 无 |
 | `authn/login/sms` | `authn.login.sms` | `LoginMethod` | 否 | `SMSCodes`、`Accounts` | 无 | 无 |
 | `authn/login/google`、`authn/login/github` | `authn.login.google`、`authn.login.github` | `LoginMethod` | 否 | 无 | 无 | 无 |
@@ -416,7 +416,7 @@ classDiagram
 
 `gateway` 未导出，它持有各类登记表、按 scheme 与 cookie 名的分派表与在飞闸门（见 [design-authn-gate](design-authn-gate.md)）。
 
-下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`pkg/internal/literal` 是共享单元，被两个短信载体与四个登录叶子共用；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。`authn/emailcode` 是可选的邮件适配模块：它交付 `EmailCodeSender`，经 `mail.Sender` 投递、经 `i18n.Localizer` 渲染模板，不装配它的宿主不因此把邮件能力带进闭包。
+下图给出包之间的依赖方向。箭头从依赖方指向被依赖方，虚线是可选依赖。根包只依赖标准库与 `internal/model`、`internal/identity`、`internal/verdict`、`internal/step`，这些内部包只依赖标准库；其余内部包是实现侧共用的部件，不被根包 import，可以依赖根包、`pkg/log` 与第三方库（`internal/mount` 依赖根包与 gin，`internal/password` 依赖根包、Argon2 与信号量库）；库类型只出现在叶子包里；`pkg/internal/literal` 是共享单元，被两个短信载体与四个登录叶子共用；authn 的任何子包都不 import `pkg/tenant`，tenant 目录与授权功能目录经根包的接口依赖本功能目录。`authn/emailcode` 是可选的邮件适配模块：它交付 `EmailCodeSender` 与 `EmailResetCodeSender`，经 `mail.Sender` 投递、经 `i18n.Localizer` 渲染模板，不装配它的宿主不因此把邮件能力带进闭包。
 
 ```mermaid
 flowchart LR
@@ -704,7 +704,7 @@ type Provisioner interface {
 }
 ```
 
-**邮件投递的接缝与可选的适配模块。** 根包声明 `EmailCodeSender`（`pkg/authn/email.go`），只做把验证码投递到地址这一件事，与顶层发送能力 `sms.Sender` 对称。`authn.emailcode` 是仓库提供的适配模块，把验证码渲染成 `authn.email.verify.*` 模板（zh-CN 与 en-US）并经 `mail.Sender` 发出；装配它才把邮件能力带进闭包，不装配它时宿主可以自己实现 `EmailCodeSender`。验证码的产生、记录与比对落在登录模块的自助件里，不另立 `LoginMethod` 或 `Factor`（见 [design-authn-login](design-authn-login.md)）。
+**邮件投递的接缝与可选的适配模块。** 根包声明 `EmailCodeSender` 与可选的 `EmailResetCodeSender`（`pkg/authn/email.go`），只做把验证码投递到地址这一件事，与顶层发送能力 `sms.Sender` 对称。`authn.emailcode` 是仓库提供的适配模块，把验证码渲染成 `authn.email.verify.*` 与 `authn.email.reset.*` 模板（zh-CN 与 en-US）并经 `mail.Sender` 发出；装配它才把邮件能力带进闭包，不装配它时宿主可以自己实现 `EmailCodeSender` 与 `EmailResetCodeSender`。`EmailResetCodeSender` 的方法集是 `SendResetCode(ctx, to, code, ttl, locale) error`，与 `EmailCodeSender.SendCode` 同形；实现可以另发布 `CertifiesNotSent(err) bool`，语义与 `EmailCodeSender` 的同一可选方法相同，`ErrEmailUncertain` 仍表示投递结果不确定。重置模板的叶子键是 `authn.email.reset.subject`、`body_text`、`body_html`，每种语言各一份，占位符为 `code` 与 `ttl_minutes`；`authn.emailcode` 在 `Module()` 注册期读内置 catalog，三个叶子在每个语言都齐备才把 `EmailResetCodeSender` 放进 `Provides`，缺了只交付 `EmailCodeSender`，启动照常。宿主自带的实现若没有重置模板，就不实现该接缝，邮箱重置渠道随之不发布，邮箱验证不受影响。验证码的产生、记录与比对落在登录模块的自助件里，不另立 `LoginMethod` 或 `Factor`（见 [design-authn-login](design-authn-login.md)）。
 
 ## 实现状态
 
@@ -714,7 +714,7 @@ type Provisioner interface {
 | 判决不可字面构造与零值读作没答 | 已实现 | `pkg/authn/internal/verdict/verdict.go` `Verdict`、`OutcomeOf`；`pkg/authn/verdict.go` |
 | 判决携带 `Principal` | 已实现 | `pkg/authn/verdict.go` `Authenticated`；`pkg/authn/internal/verdict/verdict.go` `NewAuthenticated`、`PrincipalOf`；`pkg/authn/internal/model/principal.go` `Principal` |
 | 值类型的落点与根包别名：`AccountID`、`SessionID`、`Method`、`Assurance`、`Access`、`Requirement`、`Principal`，以及登录、因素、标识、外部绑定、账户、成员关系、会话、令牌、冒充、短信与 SSO 提供方的值类型 | 已实现 | `pkg/authn/internal/model`；`pkg/authn/ids.go` |
-| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`EmailCodeSender`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SSOProviders`、`SSOMetadataRefresher`、`HumanVerifier`，`HumanProof` 值类型，事件类型与载荷，哨兵 | 已实现 | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/email.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/human.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
+| 接缝的根包声明：`Accounts`、`AccountAdmin`、`Passwords`、`Memberships`、`AccountLifecycle`、`Provisioner`、`EmailCodeSender`、`EmailResetCodeSender`、`Sessions`、`LoginMethod`、`Factor`、`MFA`、`Decider`、`Impersonation`、`Tokens`、`ClaimsContributor`、`SMSCodes`、`SSOProviders`、`SSOMetadataRefresher`、`HumanVerifier`，`HumanProof` 值类型，事件类型与载荷，哨兵 | 部分实现 | `pkg/authn/account.go`；`pkg/authn/membership.go`；`pkg/authn/lifecycle.go`；`pkg/authn/provision.go`；`pkg/authn/email.go`；`pkg/authn/session.go`；`pkg/authn/login.go`；`pkg/authn/factor.go`；`pkg/authn/decide.go`；`pkg/authn/impersonation.go`；`pkg/authn/token.go`；`pkg/authn/claims.go`；`pkg/authn/sms.go`；`pkg/authn/sso.go`；`pkg/authn/human.go`；`pkg/authn/events.go`；`pkg/authn/errors.go`；`pkg/authn/surface_test.go` `exportedSurface` |
 | 属性集的分项上限与检查，账户与会话载荷各一份上限，合计低于盖章处的总上限 | 已实现 | `pkg/authn/internal/model/bounds.go` `CheckAccountAttributes`、`CheckIDPAttributes`、`TruncateUTF8`；`pkg/authn/gate/attribute_bounds_test.go` |
 | 路由共用部件：问题码与 `Fail` 一族、`Decode`、`Wrap`、`AllowCallback`，与测试用的 `Mounter` | 已实现 | `pkg/authn/internal/mount/problem.go`；`pkg/authn/internal/mount/decode.go`；`pkg/authn/internal/mount/wrap.go`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 身份的类型化字段与责任键 | 已实现 | `pkg/authn/internal/identity/identity.go` `Identity`、`New`、`Key`、`Satisfies`；`pkg/authn/identity.go` `Identity` |
@@ -724,12 +724,12 @@ type Provisioner interface {
 | 根包导出面清单 | 已实现 | `pkg/authn/surface_test.go` `exportedSurface`、`TestExportedSurfaceIsPinned`、`TestTheSurfaceHoldsNoNameOfTheOwnershipModel` |
 | 测试构造口 `authntest` | 已实现 | `pkg/authn/authntest`；`pkg/authn/deps_test.go`；`pkg/authn/gate/exitcheck_parity_test.go` `TestAuthntestAndTheExitCheckAgreeOnEveryShapeAndBound` |
 | 挂路由口 `authn.mount` 与 `mount.Mounter` | 已实现 | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/internal/mount/mount.go` `Mounter`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
-| 账户存储 `authn.account` | 已实现 | `pkg/authn/account/account.go` `Module` |
+| 账户存储 `authn.account` | 部分实现 | `pkg/authn/account/account.go` `Module` |
 | 登录会话 `authn.session` | 已实现 | `pkg/authn/session/session.go` `Module` |
 | 访问令牌、刷新令牌与服务账户 `authn.token` | 已实现 | `pkg/authn/token` 的 `Module`；配置、迁移、路由、清扫与事件订阅俱在 |
-| 登录引擎 `authn.login` 与全部登录方式 | 已实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go`、`pkg/authn/login/sms/sms.go`、`pkg/authn/login/google/google.go`、`pkg/authn/login/github/github.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go` 各自的 `Module` |
-| 多因素编排 `authn.mfa` 与全部因素 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn` |
-| 短信验证码 `authn.sms` | 已实现 | `pkg/authn/sms` 的 `Module` |
+| 登录引擎 `authn.login` 与全部登录方式 | 部分实现 | `pkg/authn/login/login.go` `Module`；`pkg/authn/login/password/password.go`、`pkg/authn/login/sms/sms.go`、`pkg/authn/login/google/google.go`、`pkg/authn/login/github/github.go`、`pkg/authn/login/wechatweb/wechatweb.go`、`pkg/authn/login/wechatmp/wechatmp.go` 各自的 `Module` |
+| 多因素编排 `authn.mfa` 与全部因素 | 部分实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/totp`、`pkg/authn/mfa/sms`、`pkg/authn/mfa/webauthn` |
+| 短信验证码 `authn.sms` | 部分实现 | `pkg/authn/sms` 的 `Module` |
 | 人机验证 `authn.humanverify` 与 `pow`、`turnstile` 两个机制 | 已实现 | `pkg/authn/humanverify/module.go` `Module`；`pkg/authn/humanverify/provider.go` `newProvider`；`pkg/authn/humanverify/pow/pow.go` `(*Provider).Issue`、`Verify`；`pkg/authn/humanverify/turnstile/turnstile.go` `(*Provider).Verify` |
 | 企业 SSO `authn.sso` 与 SAML、企业 OIDC | 已实现 | `pkg/authn/sso/module.go` `Module`；`pkg/authn/sso/saml/saml.go`、`pkg/authn/sso/oidc/oidc.go` 各自的 `Module` |
 | 冒充 `authn.impersonation` | 已实现 | `pkg/authn/impersonation/impersonation.go` `Module` |
@@ -738,4 +738,5 @@ type Provisioner interface {
 | 租户准入层 `tenant.admission` | 已实现 | `pkg/tenant/admission/admission.go` `Module`；`pkg/tenant/capabilities.go` `Admission` |
 | 链上次序的装配测试 | 已实现 | `pkg/tenant/admission/assembly_test.go`；`pkg/tenant/admission/live_test.go` |
 | 匿名注册 `Signups.Register`、注册验证状态 `SignupVerification` 与未验证账户的门控 | 已实现 | `pkg/authn/account/signup.go` `(*product).Register`、`SignupStateOf`、`PendingAccountByContact`；`pkg/authn/profile/read.go` `handleGetMe`；`pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |
-| 可选的邮件适配模块 `authn.emailcode` | 已实现 | `pkg/authn/emailcode/emailcode.go` `Module`、`(*product).SendCode`、`(*product).render`；`pkg/authn/emailcode/messages.go` `messageCatalog`、`catalogLocales`；消息 `pkg/authn/emailcode/locales/zh-CN.json`、`en-US.json`（`authn.email.verify.subject`、`body_text`、`body_html`）；`pkg/authn/emailcode/AGENTS.md` |
+| 可选的邮件适配模块 `authn.emailcode` | 部分实现 | `pkg/authn/emailcode/emailcode.go` `Module`、`(*product).SendCode`、`(*product).render`；`pkg/authn/emailcode/messages.go` `messageCatalog`、`catalogLocales`；消息 `pkg/authn/emailcode/locales/zh-CN.json`、`en-US.json`（`authn.email.verify.subject`、`body_text`、`body_html`）；`pkg/authn/emailcode/AGENTS.md` |
+| `EmailResetCodeSender` 与 `authn.email.reset.subject`、`body_text`、`body_html` 模板 | 未实现 | — |

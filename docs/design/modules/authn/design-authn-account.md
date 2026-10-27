@@ -164,15 +164,23 @@ type Passwords interface {
 type VerifyResult struct{ MustChange bool }
 
 type SetPasswordOptions struct {
-	Current    string // 自助改口令时的当前口令
-	MustChange bool   // 置 must_change；管理员重置缺省真
+	Current           string // 自助改口令时的当前口令
+	MustChange        bool   // 置 must_change；管理员重置缺省真
+	By                string // 事件归因：self、admin 或 reset；空按 Current 有无推断
+	Channel           string // 事件载荷的 channel：email 或 sms；非重置路径为空
+	RequireActive     bool   // 写事务内要求账户仍为启用
+	RequireExisting   bool   // 写事务内要求账户已有口令凭据，不新建
+	RequireIdentifier string // 写事务内要求这条标识行仍属于该账户
+	AdvanceValidAfter bool   // 写事务内把 valid_after 推进到本秒之后
 }
 ```
+
+`By` 的取值是封闭集 `self`、`admin`、`reset`；空表示按 `Current` 有无推断——非空记 `self`，空记 `admin`。`import` 不在 `Set` 的取值内，由 `ImportHash` 发出。`Channel` 只取 `email` 或 `sms`，非重置路径留空，作为 `authn.password.changed` 载荷的 `channel`。`RequireActive`、`RequireExisting` 与 `RequireIdentifier` 在写事务内复核账户状态、凭据行与标识行，任一不满足返回 `ErrAccountUnavailable`；`AdvanceValidAfter` 用 `laterOf(valid_after, ceilSecond(now))` 推进账户的 `valid_after`，使既有会话在会话状态缓存过期后失效。重置后的新登录落在同一秒内时，会话时间戳可能早于 `valid_after` 而被判无效，最长约一秒；客户端重试即可，这一秒窗口是 `ceilSecond` 的代价。
 
 | 方法 | 承诺 |
 |---|---|
 | `Verify` | `identifier` 先规范化：含 `@` 按邮箱，否则按用户名；手机号不作口令登录名。对未知标识、停用账户、无口令账户，先做一次与当前参数等成本的诱饵派生，再统一返回 `ErrInvalidCredentials`。已知账户上的账户级失败退避在此静默计数，到阈值后照常派生并返回 `ErrInvalidCredentials`，不返回 429（[失败退避](#失败退避)）。成功时 `VerifyResult.MustChange` 为真表示凭据带 `must_change`，口令方法据此要求先设新口令。 |
-| `Set` | 经口令策略校验，违反返回 `ErrPasswordPolicy`；新口令不得与当前口令相同。`Set` 不撤销任何会话：撤销其余会话是调用方（改口令的处理器）在 `Set` 成功之后调 `Sessions.RevokeAccount(except)` 的事，所以本接口不依赖会话模块。 |
+| `Set` | 经口令策略校验，违反返回 `ErrPasswordPolicy`；新口令不得与当前口令相同。`By` 非空时作为 `authn.password.changed` 的 `by`，为空按 `Current` 有无推断；`Channel` 作为同一事件的 `channel`。`RequireActive`、`RequireExisting` 与 `RequireIdentifier` 在写事务内复核账户状态、凭据行与标识行，不满足返回 `ErrAccountUnavailable`；`AdvanceValidAfter` 在同一事务里推进 `valid_after`。`Set` 不撤销任何会话：撤销会话是调用方在 `Set` 成功之后调 `Sessions.RevokeAccount` 的事，改口令的处理器传 `except = 当前会话`，匿名口令重置的处理器不传、撤销该账户全部 browser 与 token 会话。 |
 | `Clear` | 删除该账户的口令凭据，使账户没有口令、须重设。幂等：没有凭据返回 nil。登录引擎在自动并入（规则 A10）成功之后调用它。 |
 | `ImportHash` | 把 PHC 或遗留条目写成账户的口令凭据；遗留条目无损转成 PHC（盐与密钥的字节相同，只改外壳）。 |
 | `VerifyServiceSecret` | 按 `SHA-256(secret)` 取未撤销、未过期的行；行里的账户标识与出示的 `clientID` 常量时间相等，且账户是启用的 `service`。返回账户标识、密钥标识与到期时刻（零值表示不过期）。 |
@@ -927,7 +935,7 @@ flowchart TD
 | `ErrThrottled`（经 `*ThrottledError` 与 `errors.As` 取 `RetryAfter`） | 标识级退避中；注册的 `signup-username` 退避中 | 429 `throttled`，带 `Retry-After` |
 | `ErrBindingConflict` | 外部身份已被别的账户占用 | 409 |
 | `ErrLastLoginMethod` | 解绑最后一种登录方式 | 409 |
-| `ErrAccountUnavailable` | 外部登录路径上账户停用 | 403 `account-unavailable` |
+| `ErrAccountUnavailable` | 外部登录路径上账户停用，或要求状态、凭据行或标识行的写入发现它不满足 | 外部登录 403 `account-unavailable`；匿名口令重置 403 `password-reset-unavailable` |
 | `ErrLinkRequired` | 社交登录无绑定而邮箱命中现有账户；或 JIT 开户遇到已被占用的邮箱 | 401 `link-required` |
 | `ErrNotProvisioned`、`ErrDomainMismatch`、`ErrProvisionRefused` | 企业 SSO 未预开户；企业 SSO 邮箱的域不属于该租户已验证的域；宿主拒绝开户 | 一律 401 `login-failed`，成因进日志 |
 | `ErrSignupClosed` | 首登开户关闭；自助注册开关 `authn.account.password-signup` 不是 `open` | 首登开户路径 401 `login-failed`；自助注册路由 403 `signup-closed` |
@@ -985,7 +993,7 @@ flowchart TD
 - **匿名注册不经人机验证，也不做一次性邮箱识别。** 注册不发送消息，人机验证闸的是发送，因此注册路径不问它；批量注册的上界由按来源地址的分钟预算、全局小时预算、入口层限流与按用户名的退避给出；自动化与一次性邮箱不被检测，这是残余风险。
 - **未验证账户会存在。** 长期不活动且不验证的自助注册账户在被清理之前占着用户名与一条未证明的邮箱预留，地址因此对其他账户不可用；清理是删除账户的破坏性动作，期限由 `authn.account.unverified-ttl` 给出，取 `0` 时关闭。持续登录但不验证的自助注册账户不被清理，预留一直保持。管理员预置与导入的未验证账户不在清理范围内，在本人证明或管理员处置之前一直停在受限状态，并一直占着它写下的邮箱地址。
 - **没有邮件通道的部署无法解除限制。** 自助注册开关关闭只挡住注册入口；管理员预置与导入的账户仍可能带着未证明的邮箱，它们要等到部署能投递验证码、本人兑现后才能做受限能力。
-- **账户模块自身不带任何邮件通道。** 产品不提供忘记口令的自助找回流程（REQ-security-020）：账户主人经其他登录方式登录后在账户设置中改口令，或由管理员重置。自助添加邮箱走登录模块的自助路由，其验证码经宿主提供的 `EmailCodeSender` 投递，账户模块不经手发送（[design-authn-login](design-authn-login.md)）。
+- **账户模块自身不带任何邮件通道。** 口令的写入路径如下：已认证账户在账户设置里改口令，需要当前口令；匿名口令重置走登录模块的路由，凭账户已证明的邮箱或手机重置，账户模块只执行写入口令与状态复核；管理员重置仍由管理面发起。自助添加邮箱与匿名口令重置的验证码都经宿主提供的发送接缝投递，账户模块不经手发送（[design-authn-login](design-authn-login.md)、[ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)）。
 - **自动关联缺省关闭。** 先用别的方式注册过的用户，第一次社交登录会被当作新用户或被开户策略拒绝，要用绑定流程手工关联。
 - **遗留写法的解析要一直维护。** 口令表里的遗留条目与 PHC 条目并存读取；自写的 PBKDF2 PHC 方言与 passlib 一派不能互读，用 Python 工具写表的运维改用 `static.Hash`。
 - **口令派生的并发内存峰值未实测**，见[口令凭据](#口令凭据phc)里的假设。
@@ -1057,6 +1065,7 @@ type Provisioner interface {
 | 外部身份绑定与自动关联的规则、首登开户（执行在 `authn.login` 的账户解析步） | 已实现 | `pkg/authn/account/admin.go` `LinkExternal`、`UnlinkExternal`、`AddIdentifier`、`RemoveIdentifier`；`pkg/authn/account/accounts.go` `ByExternal`；`pkg/authn/account/admin.go` `Create`；`pkg/authn/login/internal/resolve` |
 | 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 已实现 | `pkg/authn/account/password.go` `Verify`；`pkg/authn/account/credentials.go` `Set`、`Clear`、`ImportHash`；`pkg/authn/internal/password` `Parse`、`Params`、`Governor`、`Decoy` |
 | 口令凭据的删除（规则 A10） | 已实现 | `pkg/authn/account/credentials.go` `Clear`；`pkg/authn/account.go` `Passwords.Clear` |
+| `SetPasswordOptions` 的 `By`、`Channel`、`RequireActive`、`RequireExisting`、`RequireIdentifier` 与 `AdvanceValidAfter` | 未实现 | — |
 | 口令表遗留写法 `pbkdf2-sha256$<迭代>$<盐>$<密钥>` 的解析与比对 | 已实现 | `pkg/authn/internal/password/phc.go` `Parse`；`pkg/authn/static/hash.go` `ParseHash`；`pkg/authn/static/static.go` `wire` |
 | 失败退避的 db 实现与进程内实现 | 已实现 | `pkg/authn/account/throttle.go`；`pkg/authn/internal/password/throttle.go` `Throttle` |
 | `authn_throttles` 与 `authn_service_secrets` 的清扫 | 已实现 | `pkg/authn/account/sweep.go` |

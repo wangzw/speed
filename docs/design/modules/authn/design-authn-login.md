@@ -158,6 +158,10 @@ type Proof struct {
 | `GET B/flows/current`、`DELETE B/flows/current` | Open | 读当前流程状态，供界面刷新后续接；放弃流程，幂等；要求绑定 |
 | `GET\|POST B/callback/:provider` | Open | OAuth 与企业 OIDC 的回跳、SAML 的 ACS；`:provider` 对社交类方法是方法名，对企业 SSO 是 IdP 标识；`POST` 登记跨源检查旁路；SAML 回跳的体上限见 [authn-sso](design-authn-sso.md) |
 | `PUT B/password`、`POST B/phone`、`POST B/phone/verify`、`POST B/identifiers`、`POST B/identifiers/verify`、`DELETE B/identifiers/:id`、`DELETE B/links/:id` | Required，`Impersonable` | 账户自助：改口令、添加或更换手机、添加登录标识、删标识、解绑外部身份；改动认证事实的都要新鲜认证并过 CSRF，冒充身份与被冒充账户本人相同；`POST B/phone` 与 `POST B/phone/verify` 只在 `SMSCodes` 在场时挂；`POST B/identifiers` 的邮箱分支只在 `EmailCodeSender` 在场时可用；发送验证码的分支（`POST B/phone` 与邮箱分支）先校验人机凭证 |
+| `POST B/password-reset` | Open | 匿名口令重置的第一步：body `{channel, identifier, human_proof?}`；按渠道发送验证码或走抑制路径，合格与不合格目标同形；建立独立的 `__Host-authn-reset` 绑定，不读登录流程 cookie |
+| `GET\|DELETE B/password-reset/current` | Open | 读当前重置流程或放弃它；要求重置绑定；`GET` 只答状态与期限，不答账户或标识 |
+| `POST B/password-reset/verify` | Open | 提交验证码，body `{code}`；通过则进入已证明状态，错码、过期与抑制路径同答 401 `login-failed` |
+| `POST B/password-reset/complete` | Open | 提交新口令，body `{new_password}`；写口令、推进 `valid_after`、撤销该账户全部会话；不建立会话 |
 
 `B/me` 的两条路由——本人的资料视图与它的写——归 [authn-profile](design-authn-profile.md)，本模块不挂。
 
@@ -181,7 +185,7 @@ type Proof struct {
 
 请求体一律 `application/json`，否则 415；拒绝未知字段；体上限 64 KiB（SAML 回跳例外），超过上限归 400 `bad-request`（与体不合法同答，不为超限另立码）。开始请求的 `input`（`Start.Fields`）至多 8 个字段、每个至多 512 字符；答复的 `input`（`StepInput.Fields`）至多 8 个字段，每个的上界更大——通行密钥的凭据 JSON 超过 1 KiB——且仍远小于 64 KiB 的体上限；两者越界一律归 400 `bad-request`。经 `Mounter` 登记的处理器所写的响应带 `Cache-Control: no-store`：`Wrap` 在调用处理器之前写好该头，处理器可以覆盖它（如密钥集自带缓存头）。网关在处理器之前自产的 401/503，以及入口模块对 panic 的缺陷响应，不在这一范围内：前者不经 `Wrap`，后者由入口模块按它自己的缺陷应答形状处置，会删去 `Cache-Control` 一类表示性头。
 
-`GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, binding_providers, fields}], "signup":{"enabled","password":{"enabled"}}, "mfa":{"factors":[...]}, "human":{"required","provider","site_key"}}`。`human.required` 是本部署是否要求每次发送先提交人机凭证；`provider` 是校验机制（`off`、`pow` 或 `turnstile`），没有接缝与 `off` 模式都读作 `off`；`site_key` 是客户端控件需要的公开标识，`off` 与 `pow` 不带。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`binding_providers` 是该方法 link 流程把绑定存下的提供方取值或命名空间前缀——`google`、`github`、`wechat` 与 `wechat-openid:`（微信无 union id 时按应用标识存）、`oidc:` 与 `saml:` 之后接提供方标识——为空表示绑定落在方法名下；它是方法的常量命名，不表示任何账户是否已绑定，客户端据此把一条已绑定的 `links` 取值归到方法，`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 在 `authn.account.signup` 或 `authn.account.password-signup` 任一为 `open` 时为真；本模块按路径读取这两个设置项的当前值、只作预检查，不重复声明，注册开关的权威检查在 `Signups.Register`。`signup.password.enabled` 单独发布 `authn.account.password-signup` 的取值。`opens_account` 只描述方法自己的开户能力：口令方法始终不带 `opens_account`，`authn.account.signup` 关闭时短信与社交方法的 `opens_account` 在应答里清为 false，避免前端把已关闭的首登开户显示成入口。`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。
+`GET B/methods` 的应答是方法描述符文档：`{"methods":[{name, kind, protocol, label, opens_account, binding_providers, fields}], "signup":{"enabled","password":{"enabled"}}, "mfa":{"factors":[...]}, "human":{"required","provider","site_key"}, "password_reset":{"enabled","methods":["email","sms"]}}`。`human.required` 是本部署是否要求每次发送先提交人机凭证；`provider` 是校验机制（`off`、`pow` 或 `turnstile`），没有接缝与 `off` 模式都读作 `off`；`site_key` 是客户端控件需要的公开标识，`off` 与 `pow` 不带。`methods` 按方法名排序，每项是一个方法自报的描述符：`kind` 是渲染类别（`form`/`redirect`/`enterprise`/`webauthn`），`protocol` 是 `redirect` 与 `enterprise` 类方法所讲的线协议（`oauth2`/`oidc`/`saml`，其余为空），`label` 是方法品牌名（如 `Google`、`WeChat`，缺失时客户端按方法名查 i18n 回退），`binding_providers` 是该方法 link 流程把绑定存下的提供方取值或命名空间前缀——`google`、`github`、`wechat` 与 `wechat-openid:`（微信无 union id 时按应用标识存）、`oidc:` 与 `saml:` 之后接提供方标识——为空表示绑定落在方法名下；它是方法的常量命名，不表示任何账户是否已绑定，客户端据此把一条已绑定的 `links` 取值归到方法，`fields` 是该方法首步所要的字段（仅 `form` 类给出，取自 `Begin` 以空字段调用时所答的首个 prompt），`opens_account` 是该法能否在首登为未知标识开户。`signup.enabled` 在 `authn.account.signup` 或 `authn.account.password-signup` 任一为 `open` 时为真；本模块按路径读取这两个设置项的当前值、只作预检查，不重复声明，注册开关的权威检查在 `Signups.Register`。`signup.password.enabled` 单独发布 `authn.account.password-signup` 的取值。`opens_account` 只描述方法自己的开户能力：口令方法始终不带 `opens_account`，`authn.account.signup` 关闭时短信与社交方法的 `opens_account` 在应答里清为 false，避免前端把已关闭的首登开户显示成入口。`mfa.factors` 是装配收到的第二因素种类，属部署级，与 `GET B/factors` 所答的本人已登记因素语义不同。企业 SSO 的提供方清单不进此应答，仍走 `POST B/sso/discover`。`password_reset` 发布本部署是否提供匿名口令重置与可用的渠道：`enabled` 在设置 `authn.login.password-reset` 为 `open`、审计在场、且至少一个渠道可用时为真；`methods` 只列已装配、模板齐备且未被 `disabled-methods` 关闭的渠道，按 `email`、`sms` 排序。它是部署能力，不是任何账户的事实：不说明某个账户有没有已证明的邮箱或手机。
 
 **`GET B/methods` 是认证的匿名发现面，只承载登录前就要用的认证事实**：方法描述符、注册开关与可登记的因素种类。进此应答的事实满足匿名发现面的准入判据（[architecture](../../architecture.md#特性与前端定制)）；往此应答加字段是本模块对外接口面的变更。此应答的边界由该准入判据与下列规则一起划定，这些规则是穷举的：
 
@@ -189,6 +193,7 @@ type Proof struct {
 - **描述符发布的是方法的常量，不是账户状态。** `binding_providers` 只说该方法把绑定存在哪些提供方取值下，不说任何账户是否已绑定；某个账户已绑定什么仍只经 `GET B/me` 的 `links` 读。
 - **同一事实只有一个发布点。** 可登记的因素种类只在 `mfa.factors` 里；特性文档里只有多因素的自助面是否存在（`authn.mfa`，[authn-mfa](design-authn-mfa.md)），不按因素种类分出特性名（[ADR-feature-ownership](../../../adr/adr-feature-ownership.md)）。
 - **只是参数、经流程应答送达或会暴露租户、IdP、账户维度的事实不发布。** 例：`authn.account.auto-link` 的结果经 401 `link-required` 送达，`authn.sms.allowed-prefixes` 的违反答 400 `unsupported-region`，全局强制 MFA（`authn.mfa.global-required`）经登录流程的登记步送达。
+- **匿名口令重置的能力位只发布部署事实。** `password_reset` 不按账户变化：同一个部署对所有匿名调用者给出同一份渠道清单；某个账户是否具备重置条件只在提交该账户的标识后由同形应答处理。
 - **别的模块的登录前事实不进此应答。** 它们经拥有该事实的模块自己的匿名发现面发布。
 
 成功应答是 `{"seq": 2, "state": "...", "next": {"kind": "..."}}`。`next.kind` 的取值是封闭集：
@@ -227,6 +232,34 @@ type Proof struct {
 - **注册开关的权威检查在 `Signups.Register`。** 本路由与 `GET B/methods` 读同一个设置项只作预检查，便于在校验与派生之前早拒；预检查放过的请求仍可能被 `Signups.Register` 以 `ErrSignupClosed` 拒绝，两处答同一个 403 `signup-closed`。
 - 注册按来源地址的分钟预算与全局小时预算限流，超限答 429；查用户名之前先按 `signup-username` 读一次退避，退避中同样答 429 带 `Retry-After`。用户名冲突与邮箱占用都是显式的 409：`Signups.Register` 在开户事务里插入邮箱预留，`(kind, value)` 的唯一索引是地址的唯一仲裁点，冲突返回 `ErrContactTaken`，路由答 409 `email-taken`；注册不在插入之前检查邮箱占用，冲突时整个开户事务回滚。
 
+### 匿名口令重置
+
+匿名口令重置让忘记口令的人在没有已认证会话的情况下设定新口令。它不是登录流程：不写登录流程记录、不进入 `POST B/flows` 的目的闭集、不建立会话，也不复用登录流程的绑定 cookie。它只写口令，不触碰因素；重置之后的下一次登录仍要先过第一因素，再按账户原来的要求过第二因素（[authn-mfa](design-authn-mfa.md)、[ADR-authn-mfa-recovery](../../../adr/adr-authn-mfa-recovery.md)）。
+
+**渠道与资格。** 请求带 `channel`（`email` 或 `sms`）与对应的标识。`email` 只接受 `VerifiedVia = email-code` 的邮箱标识，`sms` 只接受 `VerifiedVia = sms-code` 的手机标识；IdP 断言、邀请、管理员断言、`self` 与未证明预留都不作重置依据。账户必须是启用的用户账户并持有口令凭据；没有口令的账户不借这条路径设置首个口令，停用与删除的账户不合格。任一项不成立时不发送消息，走与合格目标相同的应答与验证路径。
+
+**渠道由用户选择。** 同一个账户同时具备已证明邮箱与已证明手机时两种渠道都可走，只有一种时只有那一种可走。邮箱经根包可选的 `EmailResetCodeSender` 投递，短信经 `SMSCodes.Send` 的 `reset` 用途发送，模板是 `authn.code.reset`。每个渠道的发送都先核验人机验证门槛，再核验预算。
+
+**绑定与状态。** 重置有独立的绑定 cookie（`__Host-authn-reset`，`Secure`、`HttpOnly`、`SameSite=Strict`、`Path=/`；允许不安全传输时用不带 `__Host-` 的名字且不设 `Secure`）与独立的 KV 记录，键是 cookie 令牌的 SHA-256。记录保存账户标识与标识行标识（不合格目标为空）、渠道、规范化标识的带密钥摘要、真实或抑制的标记、码的摘要（真实短信为挑战标识，抑制记录为本地随机摘要）、状态、每码尝试计数、已发送条数、码过期时刻与记录期限，不保存邮箱或手机原文；记录期限严格长于码过期时刻，因此码过期答 `401 login-failed`、记录过期答 `401 flow-invalid` 都可达。状态是 `sent`、`verified`、`processing`、`failed`；`processing` 是写口令期间的内部态，`GET current` 对它答 `401 flow-invalid`；写入成功即删除记录，没有 `done`。每次迁移是比较并交换，并发败者按 `flow-invalid` 拒绝。记录过期、被删除、绑定不符或状态不符都读作 `401 flow-invalid`，唯一的例外是 `verify` 在 `failed` 上仍答 `401 login-failed`，与错码同形。每条记录只属于请求它的 cookie，另一个 cookie 不能兑现它的码；不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时，各自得到自己的记录，发送被通道的重发窗口抑制并答 202。`expires_in` 在 `sent` 取该渠道的码有效期（短信 `authn.sms.code-ttl`、邮箱 `authn.login.email-code-ttl`），在 `verified` 取 `authn.login.password-reset-ticket-ttl`；验证通过时同时把绑定 cookie 的 `Max-Age` 刷新到票据期限。
+
+| 路由 | 行为 |
+|---|---|
+| `POST B/password-reset` | 体 `{channel, identifier, human_proof?}`。规范化标识、判定资格、预留预算、发送或写抑制记录，应答 `202 {state:"sent", expires_in, resend_after}`；合格与不合格目标的应答体、响应头与 cookie 逐字相同。同一 cookie 的存活 `sent` 记录、渠道与标识摘要都相同时视为重发：未到重发间隔答 429；短信渠道的已发送条数达到 `authn.sms.per-flow-sends` 后抑制发送并仍答 202。不同 cookie 提交同一地址或号码、落在该地址或号码的重发窗口内时抑制发送并仍答 202。 |
+| `GET B/password-reset/current` | 读绑定记录：`sent` 答 `{state:"sent", expires_in, resend_after}`，`verified` 答 `{state:"verified", expires_in}`；不答账户、标识或码；`processing` 与其他不符状态答 `401 flow-invalid`。 |
+| `DELETE B/password-reset/current` | 删除记录并清 cookie；幂等，没有绑定、没有记录或开关已关闭都答 204，依赖不可用答 503；它不发送、不改账户。 |
+| `POST B/password-reset/verify` | 体 `{code}`。真实短信经 `SMSCodes.Verify` 核验，真实邮箱比对带盐摘要；抑制记录比对记录里的本地诱饵摘要，不调用 `SMSCodes.Verify`；每码尝试由本记录自己的原子计数约束。通过后 `sent` 换成 `verified`，应答 `{state:"verified", expires_in}`。错码、码过期、已用、抑制路径与记录自己的尝试用尽同答 `401 login-failed`；尝试用尽后记录转 `failed`，后续答复仍答 `401 login-failed`，与错码同形。 |
+| `POST B/password-reset/complete` | 体 `{new_password}`，只在 `verified` 上接受。先重读开关与该渠道的可用性，关闭时答 403 `password-reset-closed`；再重核资格（账户仍启用、仍有凭据、标识仍属该账户且仍由同一证明渠道证明），再写强制档审计 `authn.password.reset` 的 `attempted` 行，再 `Passwords.Set`（`By=reset`、`Channel` 取本次渠道、`MustChange=false`、`RequireActive`、`RequireExisting`、`RequireIdentifier` 取记录里的标识行、`AdvanceValidAfter`），成功后撤销该账户全部 browser 与 token 会话，删除记录并清 cookie，应答 204。不建立会话、不签发令牌。口令策略拒绝答 400 `bad-request`，记录留在 `verified`，可用另一个口令重试；账户不再合格答 403 `password-reset-unavailable`。 |
+
+**同形与抑制。** 不合格目标不发送消息，但走与合格目标相同的记录与验证路径：邮箱写一条码摘要为随机诱饵的记录，短信先尝试 `SMSCodes.Send`（`Deliver=false`）取得抑制挑战行；若 `Send` 因任何发送预算或重发窗口超限返回 `ErrThrottled`，同样写一条抑制记录并答 202。发送步一律答 202；验证步对抑制记录用本地随机摘要做比较与计数，不调用 `SMSCodes.Verify`，恒不通过并答同一个 401 `login-failed`；真实记录才调用 `SMSCodes.Verify`。发送预算的任何超限都抑制发送并仍答 202；只有同一 cookie 的重发间隔与登录的 `ip-limit` 答 429，二者都与账户无关。
+
+**预算与重发。** 邮箱复用 `authn.login.email-*` 的数值设置，按重置用途使用独立的计数键；按账户的预算只在合格目标上计数，超限抑制。短信复用 `authn.sms` 的按号码与按来源预算，另加 `authn.sms.global-hourly-reset` 的全局小时预算；`reset` 不填 `Account`，不设按账户维度。重发窗口按发往的地址或号码持有，跨渠道用途共享：一个收件箱或号码在窗口内只发一条码。邮箱的发送交给有界工作池，响应路径不等待载体；工作池满时在写记录之前答 503，合格与抑制目标走同一次容量判定。短信发送本来就在 `authn.sms` 的有界工作池里。人机凭证在任何预算被消耗之前核验。
+
+**写入与结算。** `POST B/password-reset/complete` 在写口令之前写强制档审计 `authn.password.reset` 的 `attempted` 行；审计写不成即答 503，口令不变，记录留在 `verified`。`Passwords.Set` 的 `AdvanceValidAfter` 在同一事务里把 `valid_after` 推进到本秒之后，撤销语句随后结束该账户的 browser 与 token 会话；`Set` 成功后补一条 `success` 审计行，拒绝时补一条 `denied` 行，两条都用同一个 `action_id` 关联。`Set` 拒绝时口令不变，记录回到 `verified`；撤销失败只记 Error，口令已改，应答仍是 204。`authn.password.changed` 由 `Set` 发出，`by=reset`、`channel` 取本次渠道；`authn.session.revoked` 由撤销语句发出，`reason_class=password-change`。重置不结束发起者的 cookie 冒充会话（它属于发起者）；目标账户的 bearer 冒充令牌按 `valid_after` 失效，这是目标凭据变更的自然结果。`success`/`denied` 行写失败只记 Error 与指标，不改变已提交的口令；`attempted` 行是这条路径的强制留痕。
+
+**MFA。** 因素行、`mfa_required` 与因素启用时长都不改变。重置不解除、不降级、不重新登记任何因素；下一次用新口令登录仍按账户原来的要求过第二因素。
+
+**失败方向。** kv、db、审计或口令派生不可用答 503，不写口令；记录丢失只使流程失败，用户重新开始。短信前缀不在放行表答 400 `unsupported-region`，发送预算超限抑制并答 202，短信通道不可用答 503。邮箱发送的结果不影响已返回的 202：工作池在入队后失败只记日志与指标，用户按重发间隔重试。设置 `authn.login.password-reset` 不为 `open`、`disabled-methods` 含 `sms` 且请求的是短信渠道、渠道未装配或审计缺席时，发现应答不发布对应渠道；直接调用时，关闭的开关与 `disabled-methods` 含 `sms` 的短信渠道答 403 `password-reset-closed`，审计缺席答 503 `unavailable`，未装配的渠道答 503 `unavailable`。`GET`、`verify` 与 `complete` 在动手前重读开关与该渠道的可用性，关闭时答 403 `password-reset-closed`；`DELETE` 不因开关关闭而变，仍答 204，依赖不可用答 503。知道受害者地址或号码的人可以在预算窗口内耗尽该地址或号码的发送预算，使受害者的重置被抑制；这是发送预算的既有代价，受害者可换渠道或等窗口。
+
 ### 问题码
 
 失败一律是 `application/problem+json`，机器可读的码放在 `Problem.Type`，取 `urn:speed:authn:<码>`；入口模块的 `Problem` 没有扩展成员，`type` 是现成字段。`Fail` 之前设置的响应头保留，响应体不带成因。码的集合是封闭集，新增码是兼容的，删除、改名或改变既有码的含义是破坏性变更：
@@ -238,7 +271,7 @@ type Proof struct {
 | 401 | `flow-invalid` | 流程过期、已用、绑定不符、步序不符、被并发消费 |
 | 401 | `link-required` | 社交登录无绑定而已验证邮箱命中现有账户 |
 | 401 | `insufficient_user_authentication` | 加强认证，同时带 `WWW-Authenticate`（[authn-mfa](design-authn-mfa.md)） |
-| 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力，`human-verification-required` 是部署要求人机验证而请求缺少或提交了无效的凭证且因此不发送 |
+| 403 | `method-disabled`、`account-unavailable`、`impersonation-restricted`、`forbidden`、`factor-not-seasoned`、`signup-closed`、`contact-required`、`human-verification-required`、`password-reset-closed`、`password-reset-unavailable` | 对认证之外的策略的转述，只在 authn 自己的处理器里写；`signup-closed` 是自助注册开关关闭，`contact-required` 是未验证账户（有邮箱而没有一条已证明的）调用了要求已验证邮箱的能力，`human-verification-required` 是部署要求人机验证而请求缺少或提交了无效的凭证且因此不发送，`password-reset-closed` 是匿名口令重置开关关闭或短信渠道被 `disabled-methods` 关闭，`password-reset-unavailable` 是重置的账户在验证之后不再满足资格（停用、删除、失去口令或标识不再由同一证明渠道证明） |
 | 409 | `conflict`、`login-identifier-required`、`username-taken`、`email-taken` | 外部身份冲突、解绑最后一种登录方式、删最后一个因素、某种因素已达上限；账户没有可作登录名的标识而设口令，或删除带口令凭据账户的最后一个登录名；自助注册的用户名已被占用；邮箱地址已被别的账户预留或持有 |
 | 415、429、503 | `unsupported-media-type`、`throttled`（带 `Retry-After`）、`unavailable` | `unavailable` 对外不区分是哪个依赖不可用 |
 
@@ -269,6 +302,8 @@ type Proof struct {
 - 流程记录带版本字段，读到不认识的版本一律拒绝。
 - `LoginMethod`、`Step` 构造器、`Proof` 的字段是第三方方法依赖的面，增加字段不破坏既有方法；删改它们是不兼容变更，按宿主可见面的变更处理。
 - 声明的特性名 `authn.phone`、`authn.identifiers.email` 与各自指的面：前端经生成的特性名类型引用它们，改名、撤去或改变所指的面是宿主可见的破坏性变更；它们在不在随装配变化，不在接口面内。
+- `POST B/password-reset` 系列路由与发现应答的 `password_reset` 段是宿主可见面：新路由与新字段是兼容增量，删除或改变语义是破坏性变更。
+- `EmailResetCodeSender` 是宿主可见的投递接缝；`SMSCodes` 的可选 `PurposeSupport` 与模板键 `authn.code.reset` 是契约增量。`SetPasswordOptions` 的新字段、`authn.password.changed` 的 `by=reset` 与 `channel` 同样是接口面的增长，订阅方须容忍新值。
 
 ## 依赖
 
@@ -286,12 +321,13 @@ type Proof struct {
 | `MFA` | 是 | 第二因素与登记的编排、保障等级的合成 |
 | 全部 `LoginMethod` | 经 `ResolveAll` | 缺席合法，但没有任何方法即启动期 `ErrNoLoginMethod` |
 | `Tokens` | 可选 | `Issue` 与 `NewRefresh`；缺席时 `delivery=token` 不启用，启动诊断写一行 |
-| `SMSCodes` | 可选 | `POST B/phone` 与 `POST B/phone/verify` 经它发码与校验；缺席时不挂这些路由，启动诊断写一行。短信登录方式的发码在 `authn.login.sms` 里，不经引擎 |
+| `SMSCodes` | 可选 | `POST B/phone` 与 `POST B/phone/verify` 经它发码与校验；匿名口令重置的短信渠道经它发送 `reset` 用途并核验挑战；缺席时不挂手机路由、不发布短信重置渠道，启动诊断写一行。短信登录方式的发码在 `authn.login.sms` 里，不经引擎 |
 | `EmailCodeSender` | 可选 | `POST B/identifiers` 的邮箱分支经它把验证码投递到该地址；缺席时该分支答 503 `unavailable`，启动诊断写一行。验证码的产生、记录与比对在本模块的自助件里，不经它 |
+| `EmailResetCodeSender` | 可选 | 匿名口令重置的邮箱渠道经它投递重置验证码；未实现或未装配时邮箱重置渠道不发布。它的投递在有界工作池里执行，响应路径不等待 |
 | `SSOProviders` | 可选 | IdP 发起的 SAML 读提供方行的 `allow_idp_initiated` |
 | `Provisioner` | 可选 | 首登开户之前的宿主钩子 |
 | `settings.Store` | 可选 | 本模块的设置，缺席取声明的默认值 |
-| `audit.Audit`、`event.Bus` | 可选 | 登录审计与 `authn.login.succeeded`；缺席时对应输出不做，启动诊断写一行 |
+| `audit.Audit`、`event.Bus` | 可选；口令重置面要求 `audit.Audit` 在场 | 登录审计与 `authn.login.succeeded`；缺席时对应输出不做，启动诊断写一行。匿名口令重置的强制档审计要求 `audit.Audit` 在场，缺席时不发布重置能力 |
 | `feature.Board` | 可选，`Init` 经 `core.Resolve` 取用，不列入 `Requires` | 报告 `authn.phone` 与 `authn.identifiers.email`；缺席时不报告 |
 
 方向满足架构不变量：`authn/login` 只依赖根包、内部包、`pkg/feature` 根包与依赖表里的功能接口，不依赖任何方法叶子包，也不 import `pkg/tenant`；`pkg/feature` 根包只依赖标准库，`authn/login` 为声明特性 import 它不扩大自己的闭包，也不 import `pkg/feature/board`（[feature](../design-feature.md)）；叶子包只依赖根包与 `internal/egress`、`internal/password` 这类内部包，库类型只出现在叶子包里，不出现在根包签名里（[ADR-authn-packaging](../../../adr/adr-authn-packaging.md)、[ADR-authn-wiring](../../../adr/adr-authn-wiring.md)）。`authn.login` 把 `MFA` 当必需：装配里没有 MFA 模块而库里已有账户登记了因素时，登录不得无声跳过第二因素。
@@ -843,6 +879,9 @@ Location: <落地页>#authn_error=<码>
 - **流程记录是唯一的并发裁判。** 每次迁移是 `CompareAndSwap(旧, 新)`，同一条流程上的并发请求至多一个胜出；败者按 `flow-invalid` 拒绝，不重试，也不做第二次读。
 - **回跳的并发消费在方法之外裁决。** 两个并发回跳读到同一份旧记录时，只有一个能交换成 `processing`；败者在 `Answer` 被调用之前就被挡住，所以授权码至多换一次。
 - **终态动作先交换后执行。** `ready` 交换成 `done` 的败者拒绝，胜者执行动作；动作失败时流程已消耗。这使「登录完成只成功一次」只依赖 kv 的原子性。
+- **重置记录的并发裁判。** 重置的每次迁移同样是 `CompareAndSwap`：验证码通过时 `sent` 换成 `verified`，两个并发提交只有一个胜出；写口令时 `verified` 换成 `processing`，胜者才写审计与口令，并发败者按 `flow-invalid` 拒绝。策略拒绝或审计、依赖失败把 `processing` 换回 `verified`，用户可用同一个码重试；口令写入成功后删除记录。这使一次重置至多写一次口令、至多一条成功审计行。
+- **重置绑定独立于登录绑定。** 重置用 `__Host-authn-reset` 与自己的 KV 记录，不复用登录流程的 cookie；同一浏览器里开始一次登录不会覆盖进行中的重置，反之亦然。
+- **valid_after 与撤销同批。** 写口令、推进 `valid_after` 在账户模块的同一事务里完成；随后调用 `Sessions.RevokeAccount` 结束该账户的 browser 与 token 会话。其他副本在会话状态缓存过期后看到新的 `valid_after`，撤销语句清本副本缓存并发布 `authn.session.revoked`。
 - **注册的一次建号在账户模块的事务里完成。** 注册处理器只做路由、请求校验与哨兵映射；账户、用户名标识、口令凭据与未证明预留由 `Signups.Register` 在同一事务写入，预留的插入是地址的唯一仲裁点。注册不建会话、不发邮件，因而没有跨模块的写。
 - **跨模块的写不在一个事务里。** 账户解析、开户与绑定在 `authn.account` 自己的事务里完成；会话、因素、审计、事件各在自己的模块里写。引擎的一次完成因而是一串各自原子的调用：失败时可能留下已建而未交付的会话，它不可用于认证之外的任何事，随期限到期，用户重新登录。
 - **自动并入先撤销后建会话。** 撤销该账户既有会话发生在本次登录建立新会话之前，次序不可颠倒，否则新会话也会被撤销。
@@ -885,3 +924,5 @@ Location: <落地页>#authn_error=<码>
 | 匿名注册路由 `POST B/register` 与 `signup.password.enabled` 发现面 | 已实现 | `pkg/authn/login/register.go` `(*routes).register`、`signupSourceAllow`、`signupGlobalAllow`、`failRegister`；`pkg/authn/login/operations.go` `registerOperation`、`AuthnLoginRegistration`、`AuthnLoginSignupPassword`；`pkg/authn/login/respond.go` `(*routes).methods`、`descriptorView`；`pkg/authn/login/config.go` `passwordSignupPath`、`signupIPLimitPath`、`signupGlobalHourlyPath`、`(*reader).passwordSignup`、`signupIPLimit`、`signupGlobalHourly`；`pkg/authn/login/login.go` `Module`（`authn.Signups`）、`diagnoseSignup` |
 | 未验证账户的 `purpose=link` 门控（`SignupStateOf` 为 `SignupPending` 时 403 `contact-required`，经 `SignupVerification.SignupStateOf` 读取；没有邮箱的 `SignupNone` 不受限） | 已实现 | `pkg/authn/login/start.go` `(*routes).startAuthenticated` |
 | 证明账户自己已持有的未证明邮箱标识（`POST B/identifiers` 重发到本账户地址、`POST B/identifiers/verify` 兑现后由 `AddIdentifier` 就地提升） | 已实现 | `pkg/authn/login/internal/selfservice/addidentifier.go` `(*routes).addEmail`、`(*routes).verifyIdentifier`；`pkg/authn/account/admin.go` `(*product).AddIdentifier` |
+| 匿名口令重置的路由与状态机（`POST B/password-reset`、`GET\|DELETE B/password-reset/current`、`POST B/password-reset/verify`、`POST B/password-reset/complete`） | 未实现 | — |
+| 发现面的 `password_reset` 能力位 | 未实现 | — |

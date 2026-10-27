@@ -57,7 +57,7 @@
 | `authn.identifier.changed` | `account_id`、`kind`、`change`（`added`、`removed`） | 空 | 否 |
 | `authn.binding.changed` | `account_id`、`provider_class`（`google`、`github`、`wechat`、`oidc`、`saml`）、`change`（`linked`、`unlinked`）、`source`（`explicit`、`auto`、`jit`） | 空 | 否 |
 | `authn.membership.changed` | `account_id`、`change`（`added`、`suspended`、`resumed`、`removed`、`sso-exempt-set`、`sso-exempt-cleared`）、`source` | 信封 | 是 |
-| `authn.password.changed` | `account_id`、`by`（`self`、`admin`、`import`）；再哈希不发 | 空 | 否 |
+| `authn.password.changed` | `account_id`、`by`（`self`、`admin`、`import`、`reset`）、`channel`（`email`、`sms`，非重置路径为空）；再哈希不发 | 空 | 否 |
 | `authn.factor.changed` | `account_id`、`factor_id`、`kind`、`change`（`enrolled`、`removed`、`reset`、`flagged`）、`by` | 空 | 否 |
 | `authn.login.succeeded` | `account_id`、`session_id`、`methods`（逗号连接）、`assurance`、`delivery` | 空 | 否 |
 | `authn.session.revoked` | `session_id`（`scope=all` 时为空）、`account_id`、`scope`（`one`、`all`）、`reason_class` | 空 | 否 |
@@ -79,6 +79,8 @@
 | `kind` | `authn.identifier.changed` | 标识种类，见 [design-authn-account](design-authn-account.md) |
 | `kind` | `authn.factor.changed` | 因素种类 `totp`、`sms`、`webauthn` |
 | `by` | `authn.factor.changed` | 发起者的类别，取值域由产生该事件的模块文档承载 |
+| `by` | `authn.password.changed` | `self`、`admin`、`import`、`reset` |
+| `channel` | `authn.password.changed` | `email`、`sms`；非重置路径为空 |
 | `source` | `authn.membership.changed` | 成员关系的来源，取值域由 [design-authn-account](design-authn-account.md) 承载；来源可带 IdP 标识，仍是标识而不是自由文本 |
 | `methods` | `authn.login.succeeded` | `Method` 的取值，逗号连接 |
 | `delivery` | `authn.login.succeeded` | `session`、`token` |
@@ -127,8 +129,9 @@
 - 已认证路由上，`Record` 取上下文里的身份。登录引擎记登录审计行时用新认定的身份派生上下文（`internal/identity` 的 `With`，只在 authn 树内可见，登录引擎在 [design-authn](design-authn.md) 的写入方名单里，由依赖测试断言；派生的上下文只用于这一次 `Record`、不流回请求链），使 `actor` 是登录的账户而不是空串。
 - 登录失败时 `actor` 为空，用 `identifier_mac` 关联同一标识的多次失败。
 - 匿名注册没有身份：成功时以新账户标识作 `actor`，与登录引擎同一做法，派生的上下文只交给这一次 `Record`；失败时 `actor` 为空。注册的审计行不带邮箱明文与验证码。
+- 匿名口令重置的 `attempted`、`success` 与 `denied` 行都以被重置的账户标识作 `actor`，派生的上下文只交给这一次 `Record`；每行的明细带 `channel` 与 `action_id`。不合格与抑制目标不写审计行。审计行不带邮箱、手机、验证码、新旧口令与重置令牌。
 
-**明细键名**是下列封闭集合：`method`、`delivery`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`。明细键名不得取的名字有两部分：[design-audit](../audit/design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
+**明细键名**是下列封闭集合：`method`、`delivery`、`reason_class`、`sid`、`peer`、`identifier_mac`、`factor_id`、`kind`、`scope`、`by`、`channel`、`tenant`、`change`、`provider`、`ttl_seconds`、`parent_sid`、`secret_id`、`source`、`on_behalf_of`、`impersonation_scope`、`session`、`grant_id`、`action_id`。明细键名不得取的名字有两部分：[design-audit](../audit/design-audit.md) 的审计敏感闭集，以及下列禁用名的封闭集合：`code`、`otp`、`refresh_token`、`id_token`、`assertion`、`state`。值只放标识、枚举、计数与密钥摘要的前缀：
 
 - `identifier_mac` 是带密钥的摘要的前 16 个十六进制字符，用来关联同一标识的多次失败而不存标识。
 - `grant_id` 是冒充开始的动作标识，在 `Decide` 通过之后、审计写入之前预先生成。
@@ -145,6 +148,7 @@
 | `authn.password.change`、`authn.factor.enroll`、`authn.factor.remove`、`authn.binding.link`、`authn.binding.unlink` | 账户标识 | `success`、`denied` | 尽力 |
 | `authn.mfa.reset` | 账户标识 | `success` | 强制 |
 | `authn.account.password` | 账户标识 | `success`、`denied` | 强制（管理员重置口令） |
+| `authn.password.reset` | 账户标识 | `attempted`、`success`、`denied` | 强制（匿名口令重置） |
 | `authn.settings.relaxed` | 设置键名 | `relaxed` | 尽力（只含键名与方向，不含值） |
 | `authn.account.create`、`authn.account.disable`、`authn.account.delete`、`authn.account.update` | 账户标识 | `success`、`denied` | 强制 |
 | `authn.membership.set`、`authn.membership.remove` | 账户标识 | `success`、`denied` | 强制 |
@@ -159,7 +163,7 @@
 
 **`authn.session.revoke` 的适用面是「撤销本身即那次动作」的路径**：管理员撤销他人的会话，以及自助面的登出与撤销会话。账户级动作（改口令、重置因素、停用账户、自助改凭据）与超限淘汰都会让会话结束，但那是它们的**副作用**而不是它们宣告的事实——它们各自写自己的动作行，不另写本动作。一次批量撤销命中多个对象时，准许行与失败行都逐对象各写一行。
 
-**强制档的适用面。** 强制档只对 HTTP 管理面与冒充成立：`authn.admin` 与 `authn.impersonation` 把 `audit.Audit` 当必需依赖，装配里没有审计即启动失败。经 Go 接口的直接调用（宿主自己的命令）不受强制档约束，没有审计的装配里只写 Warn。
+**强制档的适用面。** 强制档对 HTTP 管理面、冒充与匿名口令重置成立：`authn.admin` 与 `authn.impersonation` 把 `audit.Audit` 当必需依赖，装配里没有审计即启动失败；登录模块的重置面在审计缺席时不发布，成功路径在写口令之前写强制档行，写不成即拒绝。经 Go 接口的直接调用（宿主自己的命令）不受强制档约束，没有审计的装配里只写 Warn。
 
 **语句级采集。** 语句级审计行对认证自己的表照常产生，只记表、动作与受影响行数，不记值，经模型路径的写才有；登录路径上的 `Touch`、`Throttle` 与计数推进走原生 SQL，不留行。这些行没有业务语义，业务语义由接缝级的行给出。
 
@@ -188,7 +192,7 @@
 
 **放宽方向的取值**是下列封闭集合，也是 `authn.settings.relaxed` 明细键 `change` 的取值集：`increase`、`decrease`、`add-member`、`remove-member`、`to-false`、`to-zero`、`downgrade`、`relax`。判据把键按移动的性质分成互斥的几类，一个键只取一个方向。
 
-- **放宽开关表里的键一律用 `relax`，与取值类型无关。** 表见 [design-authn-config](design-authn-config.md) 的放宽开关一节，键是 `authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link` 与 `authn.token.check-session`，`relax` 表示「一个声明为放宽开关的键被移到该键的放宽取值」。单列这一取值有两个理由。其一，`authn.account.signup`、`authn.account.password-signup` 与 `authn.account.auto-link` 的取值域是无序枚举（`closed`/`open`、`never`/`verified-email`），既不是数值也不是布尔，机械类的六个取值没有一个能表达它们的移动；为每个枚举各造一个取值（如 `to-open`）会让取值集随开关增加而增长，而按类型分派又要求运维先知道每个键的类型。其二，这些键要表达的是同一件事：一个显式放宽开关被打开。运维的告警规则据此按类别匹配一条规则即可，不必按每个键的取值类型各配一条。`authn.token.check-session` 虽是布尔、其移动本可写成 `to-false`，但把它拆出去会让同一类开关分散在两个取值上，正与上一条理由相反，所以它随类别取 `relax`。
+- **放宽开关表里的键一律用 `relax`，与取值类型无关。** 表见 [design-authn-config](design-authn-config.md) 的放宽开关一节，键是 `authn.account.signup`、`authn.account.password-signup`、`authn.account.auto-link`、`authn.token.check-session` 与 `authn.login.password-reset`，`relax` 表示「一个声明为放宽开关的键被移到该键的放宽取值」。单列这一取值有两个理由。其一，`authn.account.signup`、`authn.account.password-signup` 与 `authn.account.auto-link` 的取值域是无序枚举（`closed`/`open`、`never`/`verified-email`），既不是数值也不是布尔，机械类的六个取值没有一个能表达它们的移动；为每个枚举各造一个取值（如 `to-open`）会让取值集随开关增加而增长，而按类型分派又要求运维先知道每个键的类型。其二，这些键要表达的是同一件事：一个显式放宽开关被打开。运维的告警规则据此按类别匹配一条规则即可，不必按每个键的取值类型各配一条。`authn.token.check-session` 虽是布尔、其移动本可写成 `to-false`，但把它拆出去会让同一类开关分散在两个取值上，正与上一条理由相反，所以它随类别取 `relax`。
 - **不属放宽开关表的设置按值的机械移动定。** 取值变大即放宽的用 `increase`，变小即放宽的用 `decrease`，列表加入成员即放宽的用 `add-member`，列表移除成员即放宽的用 `remove-member`，数值改为 0 即放宽（0 表示关闭）的用 `to-zero`；布尔设置中不属放宽开关表的（如 `authn.mfa` 与 `tenant.admission` 的 `require-*`）由 `true` 改 `false` 即放宽的用 `to-false`。
 - **取值有强弱次序而无数值次序、移动即降级的设置用 `downgrade`。** `authn.account.password-algorithm` 的取值域是 `argon2id` 与 `pbkdf2-sha256`，两者是无序枚举：移到 `pbkdf2-sha256` 降低哈希的计算成本，是一次降级，而它既不是更大的数也不是更小的数，机械类的六个取值没有一个能表达这次移动。为它单列 `downgrade`，方向说的是「换成了更弱的一档」，与数值移动无关；改回 `argon2id` 不放宽，不写记录。
 
@@ -234,6 +238,7 @@
 | `authn.login.completions` | `{login}` | `method`：登录方式名，闭集，SSO 只到 `oidc`、`saml`，不含提供方标识；`outcome`：`success`、`failed`、`throttled`、`refused`、`unavailable`、`expired` |
 | `authn.password.verifications` | `{verification}` | `outcome`：`ok`、`bad`、`cached`、`busy`、`upgraded` |
 | `authn.password.derive.duration` | `s`（直方图） | `algorithm`：`argon2id`、`pbkdf2-sha256` |
+| `authn.password.reset.operations` | `{operation}` | `operation`：`send`、`verify`、`complete`；`channel`：`email`、`sms`；`outcome`：`sent`、`suppressed`、`verified`、`completed`、`failed`、`throttled`、`unavailable` |
 | `authn.mfa.verifications` | `{verification}` | `factor`：`totp`、`sms`、`webauthn`；`outcome`：`ok`、`bad`、`replay`、`throttled`、`unavailable` |
 | `authn.session.operations` | `{operation}` | `operation`：`created`、`elevated`、`revoked`、`revoked-all`、`purged` |
 | `authn.token.operations` | `{operation}` | `operation`：`issued`、`refreshed`、`revoked`、`client-credentials`；`outcome`：`ok`、`invalid`、`reuse-detected`、`unavailable` |
@@ -443,6 +448,9 @@ audit.Entry{
 | 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 已实现 | `pkg/authn/login/metrics.go`；`pkg/authn/mfa/mfa.go`；`pkg/authn/session/session.go`；`pkg/authn/token/product.go` `takeMeter`；`pkg/authn/account/meters.go`；`pkg/authn/sms/meters.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/sso/oidc/metrics.go`、`pkg/authn/sso/saml/reject.go`；`pkg/authn/impersonation/signal.go` |
 | 守住外部行为假设与纪律的测试 | 已实现 | `pkg/authn/summary_test.go`；`pkg/authn/account/audit_test.go`；`pkg/authn/session/observability_test.go`；`pkg/tenant/admission/decide_test.go` |
 | 匿名注册的账户创建事件（`authn.account.created` 的 `via=signup`） | 已实现 | `pkg/authn/account/signup.go` `(*product).Register`、`pkg/authn/account/events.go` `accountCreated`、`bySignup` |
+| `authn.password.changed` 的 `by=reset` 与 `channel` 字段 | 未实现 | — |
+| 审计动作 `authn.password.reset` 与匿名口令重置的 `attempted`、`success`、`denied` 行 | 未实现 | — |
+| 指标 `authn.password.reset.operations` | 未实现 | — |
 | 匿名注册的尽力档审计 `authn.signup` | 已实现 | `pkg/authn/login/signup_audit.go` `(*routes).auditSignup`、`signupAuditOutcome`；`pkg/authn/login/register.go` `(*routes).register`、`(*routes).failRegister`、`(*routes).signupSourceAllow`、`(*routes).signupGlobalAllow`；`pkg/authn/login/metrics.go` `newMeters`、`meters.auditFailed` |
 
 事件、审计与指标在各模块里的发出点，随各模块的实现状态由 [design-authn-session](design-authn-session.md) 等文档承载。

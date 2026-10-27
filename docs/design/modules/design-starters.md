@@ -111,6 +111,8 @@ starters/demo/
 
 **日志邮件与短信承载注册验证的走查。** `mail.review` 实现 `pkg/mail.Sender`，把渲染后的邮件写进进程日志，验证码落在 `verification_code` 字段（同样避开已登记的敏感键名 `code`）。审查走查链是：登录页切到注册模式，提交用户名、邮箱与口令 → 自动登录 → 落在 `/account?verify=1`（账户页的邮箱验证节；应用栏之下的验证提示也指向那里）→ 从 `mail.review` 的日志读邮箱验证码 → 提交验证 → `verification.state` 变为 `verified`，注册限制解除。个人租户在账户创建时已由 `AccountCreated` 钩子建立，不依赖这次验证。手机走查仍可在账户页经 `sms.review` 的日志读码验证手机，但手机验证不解除注册限制，只作为登录方式与额外安全因素。
 
+**匿名口令重置在审查装配里打开。** `review/sqlite.yaml` 把 `authn.login.password-reset` 写为 `open`，并在 `sms.registry.templates` 里声明 `authn.code.reset`；邮箱重置由 `authn.emailcode` 的 `EmailResetCodeSender` 提供，码仍落在 `mail.review` 的 `verification_code`。邮箱走查链是：注册并证明邮箱 → 退出 → 登录页的「忘记口令」→ 选邮箱 → 从日志读码 → 设新口令 → 新口令登录。短信走查链在邮箱链之前加一步「在账户页添加并验证手机」（经 `sms.review` 的日志读码），否则该账户没有 `sms-code` 手机，短信分支只会走抑制路径。第二个浏览器上下文的旧会话在本副本立即失效，其他副本最多一个 `check-ttl` 之后失效。基线不打开该设置，也没有投递载体，发现面因此不发布该能力。Fly 部署把该设置写为 `open`，邮件由 `mail.smtp` 投递；短信族不在部署里，部署只有邮箱渠道。
+
 **审查装配只在回环地址上监听。** `server/review.go` 的 `reviewGuardModule` 在 `Prepare` 里、任何套接字绑定之前，读 `http.listeners` 每一项的地址，主机不是回环就拒绝启动：`localhost` 与 IP 回环地址算回环；空主机（所有网卡）、`0.0.0.0`、`::` 与其它不能判定为回环的写法都拒绝，误拒落在安全一侧。监听地址只能来自主配置文件，环境变量与命令行不能设置它，守卫与 http 模块读同一份配置，没有第二条通道绕过它。理由是审查装配带着公开的种子管理员口令与开放注册，能被网络访问的进程把这两样交给任何人。守卫只限定监听地址，不限定日志的去向：验证码写进进程日志，日志被收集或导出到别处时，验证码随之出机。
 
 **审查装配的两条控制路由是测试控制，不是产品 API。** `review.sms.control` 在 `admin` 端的 `/api/v1/system/sms/review/verdicts` 上落一个语言的审核判定，`review.notification` 在 `api` 端的 `/api/v1/notifications/review/notice` 上为调用方派发一次通知。两条路由都只在 `review` 构建标签下编译、只由审查装配登记，任何部署或基线二进制都不含它们。它们由认证网关识别调用方，认证之后不做权限判定；这条放行的依据是审查装配为只监听回环地址的测试进程，而不是它们对产品调用方安全。前端对应的两个控制仍由特性门控：特性 `review.sms.control` 与 `review.notification.control` 不在场时不渲染控件、不发请求（[ADR-starters-skeleton](../../adr/adr-starters-skeleton.md)）。
@@ -455,6 +457,7 @@ flowchart TD
 | 前端的组合次序：区域按路径前缀、先存在性后权限、权限码按精确命中 | 部分实现 | `starters/demo/web/src/app.tsx` `AppFrame`、`ConsoleFeatureGate`、`ConsoleAreaGate`、`ConsoleRouteGuard` |
 | 租户框架 `TenantFrame` 与回调落点的 `absent` 视图 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`；`web/packages/auth-ui/src/SocialCallbackHandler.tsx` `SocialCallbackHandler`；`web/packages/account-ui/src/BindingCallbackHandler.tsx` `BindingCallbackHandler` |
 | 宿主侧的特性读取与特性态失败的呈现 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame`、`ConsoleFeatureGate`、`RoutePresenceFailed`；`starters/demo/web/src/platform-permissions.tsx` `PlatformPermissions`；`starters/demo/web/src/pages/account-page.tsx` `AccountSettingsPage`；`starters/demo/web/src/pages/home-page.tsx` `HomePage` |
+| 匿名口令重置的审查与部署装配（设置开关、`authn.code.reset` 模板、宿主重置页与端到端旅程） | 未实现 | — |
 | 两域权限集以当前租户为门控，控制台区自行落定默认租户 | 已实现 | `starters/demo/web/src/platform-permissions.tsx` `usePlatformPermissions`；`starters/demo/web/src/app.tsx` `ConsoleAreaGate`、`useConsoleTenantSettle`、`defaultRosterTenant` |
 | 结束冒充落定后横幅随即撤下，不等快照翻转 | 已实现 | `starters/demo/web/src/impersonation.tsx` `ImpersonationBannerSlot`；`starters/demo/web/src/impersonation.test.tsx` |
 | 冒充期间不挂租户选择器 | 已实现 | `starters/demo/web/src/app.tsx` `TenantFrame` |
