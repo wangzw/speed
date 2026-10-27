@@ -392,8 +392,9 @@ var (
 	ErrImpersonationActive = errors.New("authn: an impersonation is already active on this session")
 
 	// ErrNotImpersonating reports an end with no unended record on the session, a
-	// revoke of a record that does not exist, and a query on a session with no
-	// valid record. Outwardly it is a 404.
+	// revoke of a record that does not exist, a query on a session with no valid
+	// record, and an access token asked for a record that is not active. On the
+	// management routes it is outwardly a 404.
 	ErrNotImpersonating = errors.New("authn: there is no impersonation")
 
 	// ErrImpersonationNeedsSession reports a caller with no session to bind to.

@@ -260,12 +260,16 @@ func (f *fakeThrottle) Succeed(_ context.Context, _ authn.ThrottleScope, key str
 	return f.succeedErr
 }
 
-// fakeImpersonation records the records ended by force.
+// fakeImpersonation records the records ended by force and answers for one
+// record's validity, which the issuing path asks for the remaining time.
 type fakeImpersonation struct {
 	authn.Impersonation
-	mu      sync.Mutex
-	revoked []string
-	err     error
+	mu        sync.Mutex
+	revoked   []string
+	err       error
+	grant     authn.ImpersonationGrant
+	active    bool
+	activeErr error
 }
 
 func newFakeImpersonation() *fakeImpersonation { return &fakeImpersonation{} }
@@ -275,6 +279,12 @@ func (f *fakeImpersonation) Revoke(_ context.Context, id string, _ authn.Identit
 	defer f.mu.Unlock()
 	f.revoked = append(f.revoked, id)
 	return f.err
+}
+
+func (f *fakeImpersonation) Active(_ context.Context, _ string) (authn.ImpersonationGrant, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.grant, f.active, f.activeErr
 }
 
 // recordingBus records published events and the handlers subscribed to it.
@@ -441,6 +451,15 @@ func newRig(t *testing.T) *rig {
 	p.impersonation = r.imp
 	r.p = p
 	return r
+}
+
+// activeRecord makes the fake impersonation answer an active record id that
+// binds acct-admin to the issued account and ends at endsAt.
+func (r *rig) activeRecord(id string, endsAt time.Time) {
+	r.imp.mu.Lock()
+	defer r.imp.mu.Unlock()
+	r.imp.grant = authn.ImpersonationGrant{ID: id, Actor: "acct-admin", Target: account, EndsAt: endsAt}
+	r.imp.active = true
 }
 
 // fakeAccounts is the account store the module requires but the issuing and

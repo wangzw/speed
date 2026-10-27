@@ -358,6 +358,7 @@ func TestTheRevocationEndpointAnswers200ForATokenOutcome(t *testing.T) {
 		in := normalIssue(admin)
 		in.Actor = "acct-admin"
 		in.ImpersonationID = "grant-1"
+		r.activeRecord("grant-1", epoch.Add(defaults.AccessTTL))
 		access, err := r.p.Issue(context.Background(), in)
 		if err != nil {
 			t.Fatalf("Issue: %v", err)

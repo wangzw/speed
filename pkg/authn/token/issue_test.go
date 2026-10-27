@@ -112,6 +112,7 @@ func TestAnImpersonationTokenCarriesTheOperatorsLevelAndTheActor(t *testing.T) {
 	in.ImpersonationID = "grant-1"
 	in.Scope = "tenant-a"
 	in.AuthTime = epoch
+	r.activeRecord("grant-1", epoch.Add(time.Hour))
 
 	access, err := r.p.Issue(context.Background(), in)
 	if err != nil {
@@ -133,6 +134,55 @@ func TestAnImpersonationTokenCarriesTheOperatorsLevelAndTheActor(t *testing.T) {
 	}
 	if claims["imp_tenant"] != "tenant-a" {
 		t.Errorf("imp_tenant is %v, want tenant-a", claims["imp_tenant"])
+	}
+}
+
+// TestAnImpersonationTokenExpiresNoLaterThanItsRecord holds the cap on the
+// issuing path: a record with less time left than the access-ttl setting makes
+// the token expire with the record, so an offline verifier reading exp alone
+// cannot extend the impersonation past its own end.
+func TestAnImpersonationTokenExpiresNoLaterThanItsRecord(t *testing.T) {
+	r := newRig(t)
+	remaining := 3 * time.Minute
+	r.activeRecord("grant-1", epoch.Add(remaining))
+
+	in := normalIssue(authn.SessionID("sess-1"))
+	in.Actor = "acct-admin"
+	in.ImpersonationID = "grant-1"
+	in.Scope = "tenant-a"
+	access, err := r.p.Issue(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if want := epoch.Add(remaining); !access.ExpiresAt.Equal(want) {
+		t.Errorf("the impersonation token expires at %v, want the record's end %v", access.ExpiresAt, want)
+	}
+	claims := r.issuedClaims(access.Value)
+	iat := int64(claims["iat"].(float64))
+	exp := int64(claims["exp"].(float64))
+	if exp-iat != int64(remaining.Seconds()) {
+		t.Errorf("exp - iat is %d, want the record's %d remaining seconds", exp-iat, int64(remaining.Seconds()))
+	}
+}
+
+// TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold holds the failure
+// direction of the cap: no remaining time can be read from a record that is not
+// active, and an assembly with no impersonation capability cannot read one at
+// all, so neither issues a token.
+func TestAnImpersonationTokenIsRefusedForARecordThatDoesNotHold(t *testing.T) {
+	in := normalIssue(authn.SessionID("sess-1"))
+	in.Actor = "acct-admin"
+	in.ImpersonationID = "grant-1"
+
+	r := newRig(t)
+	if _, err := r.p.Issue(context.Background(), in); !errors.Is(err, authn.ErrNotImpersonating) {
+		t.Fatalf("an inactive record gave %v, want ErrNotImpersonating", err)
+	}
+
+	noCapability := newRig(t)
+	noCapability.p.impersonation = nil
+	if _, err := noCapability.p.Issue(context.Background(), in); !errors.Is(err, authn.ErrUnavailable) {
+		t.Fatalf("an assembly with no impersonation capability gave %v, want ErrUnavailable", err)
 	}
 }
 

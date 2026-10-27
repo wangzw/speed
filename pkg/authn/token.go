@@ -11,9 +11,12 @@ import "context"
 // The login engine takes it as optional, and an assembly without it can only
 // deliver cookies.
 type Tokens interface {
-	// Issue signs an access token from the facts of in alone: it reads nothing out
-	// of the request's context. With no signing key configured it is
-	// ErrNoSigningKey, which the caller answers with a 503.
+	// Issue signs an access token from the facts of in and, for an impersonation
+	// token, the remaining time of the record it names: it reads nothing of the
+	// caller's identity out of the request's context. With no signing key
+	// configured it is ErrNoSigningKey, which the caller answers with a 503. An
+	// impersonation token whose record is not active, or whose assembly has no
+	// impersonation capability, is refused rather than issued past the record.
 	Issue(ctx context.Context, in IssueToken) (AccessToken, error) // ErrNoSigningKey
 	// NewRefresh makes the first refresh token of a token session. A browser
 	// session and a service session are ErrInvalidGrant, and an impersonation

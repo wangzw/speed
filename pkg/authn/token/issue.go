@@ -39,11 +39,12 @@ const (
 	outcomeAttribute   = "outcome"
 )
 
-// Issue signs an access token from the facts of in alone. The token's header
-// carries the signing key's kid and typ=at+jwt, and its claim set is the fixed
-// one the design states: the registered claims, the session and authentication
-// facts of the request, and whatever the command's ClaimsContributor
-// implementations add. With no signing key configured it is ErrNoSigningKey.
+// Issue signs an access token from the facts of in and, for an impersonation
+// token, the remaining time of the record it names. The token's header carries
+// the signing key's kid and typ=at+jwt, and its claim set is the fixed one the
+// design states: the registered claims, the session and authentication facts of
+// the request, and whatever the command's ClaimsContributor implementations add.
+// With no signing key configured it is ErrNoSigningKey.
 func (p *product) Issue(ctx context.Context, in authn.IssueToken) (authn.AccessToken, error) {
 	token, err := p.signAccess(ctx, in)
 	if err != nil {
@@ -69,6 +70,12 @@ func (p *product) signAccess(ctx context.Context, in authn.IssueToken) (authn.Ac
 	ttl, err := p.issueTTL(in.TTL)
 	if err != nil {
 		return authn.AccessToken{}, err
+	}
+	if in.ImpersonationID != "" {
+		ttl, err = p.recordTTL(ctx, in.ImpersonationID, now, ttl)
+		if err != nil {
+			return authn.AccessToken{}, err
+		}
 	}
 	extra, err := p.contributorClaims(ctx, in)
 	if err != nil {
@@ -122,6 +129,34 @@ func (p *product) issueTTL(requested time.Duration) (time.Duration, error) {
 	if ttl <= 0 || ttl > accessTTLUpperBound {
 		return 0, fmt.Errorf("%w: an access token's lifetime is %s, and it must be over zero and at "+
 			"most %s", authn.ErrInvalidArgument, ttl, accessTTLUpperBound)
+	}
+	return ttl, nil
+}
+
+// recordTTL caps an impersonation token's lifetime at the time the record has
+// left, so exp does not outlive the record even for a verifier that reads exp
+// alone. The record must still hold: with no impersonation capability there is
+// no remaining time to read, and a record that has lapsed issues no token. The
+// remaining time is read through the same cache the verifying backend uses; the
+// record's end is fixed, so a cached answer bounds the lifetime correctly.
+func (p *product) recordTTL(ctx context.Context, id string, now time.Time, ttl time.Duration) (time.Duration, error) {
+	if p.impersonation == nil {
+		return 0, fmt.Errorf("%w: an impersonation token was asked for and no impersonation capability is present",
+			authn.ErrUnavailable)
+	}
+	grant, active, err := p.activeGrant(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("%w: asking whether the impersonation record holds: %w", authn.ErrUnavailable, err)
+	}
+	if !active {
+		return 0, fmt.Errorf("%w: the impersonation record %s is not active", authn.ErrNotImpersonating, id)
+	}
+	remaining := grant.EndsAt.Sub(now)
+	if remaining <= 0 {
+		return 0, fmt.Errorf("%w: the impersonation record %s has expired", authn.ErrNotImpersonating, id)
+	}
+	if remaining < ttl {
+		ttl = remaining
 	}
 	return ttl, nil
 }
