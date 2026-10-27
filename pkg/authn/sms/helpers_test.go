@@ -432,6 +432,8 @@ func declaredValue(key string) (any, bool) {
 		return defaults.GlobalMFA, true
 	case globalEnrollPath:
 		return defaults.GlobalEnroll, true
+	case globalResetPath:
+		return defaults.GlobalReset, true
 	case perFlowSendsPath:
 		return defaults.PerFlowSends, true
 	case perAccountHourlyPath:

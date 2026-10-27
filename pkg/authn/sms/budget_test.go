@@ -21,6 +21,7 @@ func (r *rig) liftBudgets() {
 	r.store.set(globalLoginPath, 1000000)
 	r.store.set(globalMFAPath, 1000000)
 	r.store.set(globalEnrollPath, 1000000)
+	r.store.set(globalResetPath, 1000000)
 	r.store.set(perAccountHourlyPath, 1000)
 }
 

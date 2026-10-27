@@ -86,11 +86,13 @@ func TestTheGlobalBudgetIsChosenByPurpose(t *testing.T) {
 	store.set(globalLoginPath, 11)
 	store.set(globalMFAPath, 22)
 	store.set(globalEnrollPath, 33)
+	store.set(globalResetPath, 44)
 
 	cases := map[string]int{
 		authn.SMSPurposeLogin:  11,
 		authn.SMSPurposeMFA:    22,
 		authn.SMSPurposeEnroll: 33,
+		authn.SMSPurposeReset:  44,
 	}
 	for purpose, want := range cases {
 		if got := r.globalHourly(purpose); got != want {
@@ -167,7 +169,7 @@ func TestTheSettingsSchemaDeclaresEveryKeyUnderTheModuleNamespace(t *testing.T) 
 	want := []string{
 		allowedPrefixesKey, codeLengthKey, codeTTLKey, codeAttemptsKey, resendIntervalKey,
 		perPhoneHourlyKey, perPhoneDailyKey, perSourceHourlyKey, perSourceDailyKey,
-		globalLoginKey, globalMFAKey, globalEnrollKey,
+		globalLoginKey, globalMFAKey, globalEnrollKey, globalResetKey,
 		perFlowSendsKey, perAccountHourlyKey,
 	}
 	for _, key := range want {

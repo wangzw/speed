@@ -185,6 +185,9 @@ var seamSignatures = map[string][]string{
 		"Send(ctx context.Context, in SendCode) (challengeID string, err error)",
 		"Verify(ctx context.Context, challengeID, code string) error",
 	},
+	"PurposeSupport": {
+		"SupportsPurpose(purpose string) bool",
+	},
 	"SSOProviders": {
 		"Get(ctx context.Context, id string) (SSOProvider, error)",
 		"Secret(ctx context.Context, id string) (string, error)",

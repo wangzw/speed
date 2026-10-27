@@ -85,6 +85,7 @@ func TestTheWireValuesOfTheNewConstantsAreFrozen(t *testing.T) {
 		{SMSPurposeLogin, "login"},
 		{SMSPurposeMFA, "mfa"},
 		{SMSPurposeEnroll, "enroll"},
+		{SMSPurposeReset, "reset"},
 		{SSOProtocolOIDC, "oidc"},
 		{SSOProtocolSAML, "saml"},
 		{ProvisioningJIT, "jit"},

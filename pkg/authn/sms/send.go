@@ -161,16 +161,18 @@ func checkSendCode(in authn.SendCode) error {
 	if in.Phone == "" {
 		return fmt.Errorf("%w: the phone number is empty", errCallerDefect)
 	}
-	if in.Purpose != purposeLogin && in.Account == "" {
+	if in.Purpose != purposeLogin && in.Purpose != purposeReset && in.Account == "" {
 		return fmt.Errorf("%w: the purpose %q counts against an account, and none is set",
 			errCallerDefect, in.Purpose)
 	}
 	return nil
 }
 
-// accountOf returns the account the row carries. The login purpose has none.
+// accountOf returns the account the row carries. The login and reset purposes
+// have none: neither has an account the number was derived from, so a row for
+// either fills no account whatever the caller set.
 func accountOf(in authn.SendCode) *string {
-	if in.Purpose == purposeLogin || in.Account == "" {
+	if in.Purpose == purposeLogin || in.Purpose == purposeReset || in.Account == "" {
 		return nil
 	}
 	account := string(in.Account)
@@ -322,10 +324,10 @@ func (p *product) checkBudgets(tx *gorm.DB, in authn.SendCode, sourceMAC *string
 		}
 	}
 
-	// The account budget is only for mfa and enroll: a login by phone has no
-	// account the number was derived from, so counting one would tell a
-	// registered number from an unregistered one.
-	if in.Purpose != purposeLogin {
+	// The account budget is only for mfa and enroll: a login by phone and an
+	// anonymous reset have no account the number was derived from, so counting
+	// one would tell a registered number from an unregistered one.
+	if in.Purpose == purposeMFA || in.Purpose == purposeEnroll {
 		account := string(in.Account)
 		if err := p.throttleOver(
 			func() (int64, error) { return p.register.countAccountSince(tx, account, hourlySince) },

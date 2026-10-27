@@ -17,6 +17,7 @@ const (
 	purposeLogin  = authn.SMSPurposeLogin
 	purposeMFA    = authn.SMSPurposeMFA
 	purposeEnroll = authn.SMSPurposeEnroll
+	purposeReset  = authn.SMSPurposeReset
 )
 
 // decoyMAC is the digest a check compares against when there is no row to
@@ -54,10 +55,25 @@ func ttlMinutes(ttl time.Duration) string {
 	return fmt.Sprintf("%d", minutes)
 }
 
+// SupportsPurpose reports whether a code may be sent for purpose. The login,
+// mfa and enroll purposes are always carried; the reset purpose is carried only
+// when the carrier declared the authn.code.reset template. A purpose outside the
+// closed set is not supported, as it is not a purpose this module sends for.
+func (p *product) SupportsPurpose(purpose string) bool {
+	switch purpose {
+	case purposeLogin, purposeMFA, purposeEnroll:
+		return true
+	case purposeReset:
+		return p.resetSupported
+	default:
+		return false
+	}
+}
+
 // validPurpose reports whether p is one of the closed set of purposes.
 func validPurpose(p string) bool {
 	switch p {
-	case purposeLogin, purposeMFA, purposeEnroll:
+	case purposeLogin, purposeMFA, purposeEnroll, purposeReset:
 		return true
 	}
 	return false

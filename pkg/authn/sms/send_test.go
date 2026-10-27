@@ -130,11 +130,11 @@ func TestTheCallerContractIsEnforced(t *testing.T) {
 		name string
 		in   authn.SendCode
 	}{
-		{"purpose", authn.SendCode{Purpose: "reset", Phone: phone, Deliver: true}},
+		{"purpose", authn.SendCode{Purpose: "signup", Phone: phone, Deliver: true}},
 		// A purpose outside the set with an account set: the account check that
 		// follows does not catch this one, so the closed-purpose check is what
 		// has to refuse it.
-		{"purpose-with-account", authn.SendCode{Purpose: "reset", Phone: phone, Account: acct, Deliver: true}},
+		{"purpose-with-account", authn.SendCode{Purpose: "signup", Phone: phone, Account: acct, Deliver: true}},
 		{"phone", authn.SendCode{Purpose: authn.SMSPurposeLogin, Phone: "", Deliver: true}},
 		{"account", authn.SendCode{Purpose: authn.SMSPurposeMFA, Phone: phone, Deliver: true}},
 	}

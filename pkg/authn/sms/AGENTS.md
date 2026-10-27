@@ -6,10 +6,13 @@ budgets, counts the attempts, consumes the code and hands the sending to a
 carrier through the sending seam. It delivers `authn.SMSCodes` exclusively and
 the `authn.AccountLifecycle` hook beside it.
 
-A purpose is one of the closed set `login`, `mfa` and `enroll`. The state of a
-challenge is one table whatever the purpose, so the code is held once and its
-consumers — the SMS login method, the SMS factor and the phone routes of the
-login engine — hold none of it. The module takes the top-level `pkg/sms`
+A purpose is one of the closed set `login`, `mfa`, `enroll` and `reset`, the
+last being the anonymous password reset's proof that its caller holds a number.
+The state of a challenge is one table whatever the purpose, so the code is held
+once and its consumers — the SMS login method, the SMS factor, the phone routes
+of the login engine and its password reset route — hold none of it. Only `login`
+and `reset` send without an account: a reset row fills no account and neither
+purpose counts against the per-account budget. The module takes the top-level `pkg/sms`
 capability's `Sender` and `Registry` as requirements, each delivered exclusively
 by its provider: a command tree names one of each, and two at once fail in
 resolution. The registry holds the templates in force and decides which one a
@@ -54,7 +57,15 @@ compatibility break for a dashboard written against it.
   cannot exhaust it; the other dimensions keep counting suppressed rows, because
   a refusal that arrived at a different count for an unregistered number would be
   a phone-enumeration oracle (`TestTheGlobalBudgetCountsOnlyRealSends`,
-  `TestASuppressedSendStillSpendsThePhoneBudget`).
+  `TestASuppressedSendStillSpendsThePhoneBudget`). The global budgets are set per
+  purpose — `global-hourly-login`, `-mfa`, `-enroll` and `-reset` — so one
+  purpose's exhaustion never refuses another's. The number, source and resend
+  dimensions are shared across purposes; the account dimension counts only `mfa`
+  and `enroll`
+  (`TestTheResetPurposeHasItsOwnGlobalBudget`,
+  `TestTheLoginBudgetDoesNotRefuseAReset`,
+  `TestTheResetPurposeSharesTheNumberSourceAndResendBudgets`,
+  `TestAResetSendFillsNoAccountAndSkipsTheAccountBudget`).
 - **The budget is a hard cap, read under the send's own lock order.** `Send` reads
   every limit before it opens the write transaction, then the transaction takes
   transaction-scoped advisory locks in the fixed order global purpose → number →
@@ -155,19 +166,32 @@ compatibility break for a dashboard written against it.
   in `New`.** The top-level `pkg/sms` capability carries the first-class template
   declaration and does not know what a consumer needs; this module maps each
   purpose to a template key (`authn.code.login`, `authn.code.mfa`,
-  `authn.code.enroll`), and checks against `Registry.Declared()` after the
-  registry is resolved in `newProduct` that every template is present, carries
-  exactly the `code` and `ttl_minutes` parameters, has at least one language, and
-  covers the configured default language. The parameter names are compared for
-  equality, not containment. A template's language set is its effective one —
-  the languages it has a vendor code for and the languages it has a body for,
-  together — so the same three templates serve a carrier that sends by code and
-  one that sends by rendered body. The body text is a configuration value, not
-  something this module writes: it carries no carrier-specific copy. A mismatch —
-  a missing template, a stray parameter, or a template without the default
-  language — stops the startup with `ErrInvalidConfig` naming it, ahead of any
-  code. `Prepare` runs before `New` and has no instance, so the check lives in
-  `New` (`templates.go`, `newProduct`).
+  `authn.code.enroll`, `authn.code.reset`), and checks against
+  `Registry.Declared()` after the registry is resolved in `newProduct` that every
+  required template is present, carries exactly the `code` and `ttl_minutes`
+  parameters, has at least one language, and covers the configured default
+  language. The parameter names are compared for equality, not containment. A
+  template's language set is its effective one — the languages it has a vendor
+  code for and the languages it has a body for, together — so the same templates
+  serve a carrier that sends by code and one that sends by rendered body. The
+  body text is a configuration value, not something this module writes: it
+  carries no carrier-specific copy. A mismatch — a missing required template, a
+  stray parameter, or a template without the default language — stops the startup
+  with `ErrInvalidConfig` naming it, ahead of any code. `Prepare` runs before
+  `New` and has no instance, so the check lives in `New` (`templates.go`,
+  `newProduct`).
+- **The reset template is optional, and its presence is the reset channel's
+  availability.** `authn.code.reset` is held to the same shape as the required
+  templates when the carrier declares it; declaring a malformed one stops the
+  startup. Declaring none keeps the startup and every other purpose working and
+  leaves the reset purpose unsupported
+  (`TestTheResetTemplateIsOptional`,
+  `TestACarrierThatDeclaresAResetTemplateItCannotCarryIsRefused`,
+  `TestADeclaredResetTemplateThatCannotBeCarriedStopsTheNewStage`). The product
+  publishes the optional `authn.PurposeSupport`, whose `SupportsPurpose` answers
+  true for `login`, `mfa` and `enroll` always and for `reset` exactly when that
+  template was declared; it changes no `SMSCodes` method
+  (`TestTheResetTemplateIsOptional`, `TestAResetSendCarriesTheResetTemplate`).
 - **The set of languages is derived, and a requested language is resolved, never
   refused.** The languages a message may be sent in are the ones the template its
   purpose maps to declares, taken from the registry's declaration, not a set

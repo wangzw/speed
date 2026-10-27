@@ -84,7 +84,7 @@ func TestTTLMinutesRoundsUp(t *testing.T) {
 // answers false for a root constant here. The near-misses hold the other side:
 // the accepted set carries no member the root package does not name.
 func TestValidPurposeIsTheRootPackageClosedSet(t *testing.T) {
-	for _, p := range []string{authn.SMSPurposeLogin, authn.SMSPurposeMFA, authn.SMSPurposeEnroll} {
+	for _, p := range []string{authn.SMSPurposeLogin, authn.SMSPurposeMFA, authn.SMSPurposeEnroll, authn.SMSPurposeReset} {
 		if !validPurpose(p) {
 			t.Errorf("validPurpose(%q) = false, want true: %q is a root package SMSPurpose constant", p, p)
 		}

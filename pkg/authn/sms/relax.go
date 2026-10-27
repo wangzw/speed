@@ -37,6 +37,7 @@ var relaxing = map[string]string{
 	globalLoginPath:      dirIncrease,
 	globalMFAPath:        dirIncrease,
 	globalEnrollPath:     dirIncrease,
+	globalResetPath:      dirIncrease,
 	perFlowSendsPath:     dirIncrease,
 	perAccountHourlyPath: dirIncrease,
 }
@@ -172,6 +173,8 @@ func declaredNumber(key string) (int64, bool) {
 		return int64(defaults.GlobalMFA), true
 	case globalEnrollPath:
 		return int64(defaults.GlobalEnroll), true
+	case globalResetPath:
+		return int64(defaults.GlobalReset), true
 	case perFlowSendsPath:
 		return int64(defaults.PerFlowSends), true
 	case perAccountHourlyPath:

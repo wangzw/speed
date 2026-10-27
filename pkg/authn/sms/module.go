@@ -3,14 +3,19 @@
 // challenge row, spends the budgets, counts the attempts, consumes the code and
 // hands the sending to a carrier through the sending seam.
 //
-// A purpose is one of the closed set login, mfa and enroll: the first factor of
-// a login, the second factor, and the proof of a number during enrollment. The
-// state of a challenge is one table whatever the purpose, so the code is held
-// once and the consumers — the SMS login method, the SMS factor and the phone
-// routes of the login engine — hold none of it.
+// A purpose is one of the closed set login, mfa, enroll and reset: the first
+// factor of a login, the second factor, the proof of a number during enrollment,
+// and the proof of a number during an anonymous password reset. The state of a
+// challenge is one table whatever the purpose, so the code is held once and the
+// consumers — the SMS login method, the SMS factor, the phone routes of the login
+// engine and its password reset route — hold none of it. Only login and reset
+// send a code without an account: neither counts against the per-account budget,
+// and a reset row fills no account at all.
 //
 // The module delivers authn.SMSCodes exclusively and the authn.AccountLifecycle
-// hook beside it, as the module that holds data keyed by an account. It takes
+// hook beside it, as the module that holds data keyed by an account, and it
+// publishes the optional authn.PurposeSupport so a caller can learn whether the
+// carrier declares the reset template. It takes
 // the sending seam sms.Sender and the template registry sms.Registry as
 // exclusive requirements: a command tree names one of each, and two at once fail
 // in resolution. The registry decides which template a message goes out under; a
@@ -86,6 +91,7 @@ func init() { core.ProcessRegistry.Register(Module()) }
 var (
 	_ authn.SMSCodes         = (*product)(nil)
 	_ authn.AccountLifecycle = (*product)(nil)
+	_ authn.PurposeSupport   = (*product)(nil)
 )
 
 // Module is the descriptor a host registers.
@@ -205,6 +211,10 @@ type product struct {
 	// snapshot.
 	defaultLocale     string
 	localesByTemplate map[string][]string
+	// resetSupported is true when the carrier declared the authn.code.reset
+	// template, which is what makes the reset purpose available. It is derived
+	// from the same declaration that produced localesByTemplate.
+	resetSupported bool
 
 	register *register
 	pool     *pool
@@ -273,6 +283,9 @@ func newProduct(reg *core.Registry) (*product, error) {
 // Init is still one that does not panic.
 func build(database db.Database, registry sms.Registry, sender sms.Sender, cfg resolved, defaultLocale string, localesByTemplate map[string][]string) *product {
 	logger := log.Default()
+	// templateLocales writes an entry for the reset template only when the
+	// carrier declared it, so its presence is the support answer.
+	_, resetSupported := localesByTemplate[templateReset]
 	return &product{
 		database:          database,
 		handle:            database.DB(),
@@ -280,6 +293,7 @@ func build(database db.Database, registry sms.Registry, sender sms.Sender, cfg r
 		sender:            sender,
 		defaultLocale:     defaultLocale,
 		localesByTemplate: localesByTemplate,
+		resetSupported:    resetSupported,
 		register:          &register{handle: database.DB(), dialect: database.Dialect()},
 		pool:              newPool(cfg.Workers, cfg.QueueSize),
 		meters:            &meters{},

@@ -33,3 +33,19 @@ type SMSCodes interface {
 	// which the caller keeps in its own flow record.
 	Verify(ctx context.Context, challengeID, code string) error
 }
+
+// PurposeSupport is the optional interface a sender of verification codes may
+// publish to say which purposes it can carry. It changes no method of SMSCodes:
+// a caller resolves SMSCodes, asserts it to this interface, and treats an
+// implementation that does not publish it as supporting only the purposes every
+// sender carries.
+//
+// The login, mfa and enroll purposes are always supported. The reset purpose —
+// an anonymous password reset proving the holder of a number — depends on the
+// carrier declaring the authn.code.reset template, so a deployment whose carrier
+// does not declare it publishes no SMS reset channel while the other purposes
+// keep working.
+type PurposeSupport interface {
+	// SupportsPurpose reports whether a code may be sent for purpose.
+	SupportsPurpose(purpose string) bool
+}

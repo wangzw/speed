@@ -27,6 +27,7 @@ const (
 	globalLoginKey      = "global-hourly-login"
 	globalMFAKey        = "global-hourly-mfa"
 	globalEnrollKey     = "global-hourly-enroll"
+	globalResetKey      = "global-hourly-reset"
 	perFlowSendsKey     = "per-flow-sends"
 	perAccountHourlyKey = "per-account-hourly"
 )
@@ -45,6 +46,7 @@ var (
 	globalLoginPath      = ModuleName + "." + globalLoginKey
 	globalMFAPath        = ModuleName + "." + globalMFAKey
 	globalEnrollPath     = ModuleName + "." + globalEnrollKey
+	globalResetPath      = ModuleName + "." + globalResetKey
 	perFlowSendsPath     = ModuleName + "." + perFlowSendsKey
 	perAccountHourlyPath = ModuleName + "." + perAccountHourlyKey
 )
@@ -102,6 +104,7 @@ type options struct {
 	GlobalLogin      int           `config:"global-hourly-login"`
 	GlobalMFA        int           `config:"global-hourly-mfa"`
 	GlobalEnroll     int           `config:"global-hourly-enroll"`
+	GlobalReset      int           `config:"global-hourly-reset"`
 	PerFlowSends     int           `config:"per-flow-sends"`
 	PerAccountHourly int           `config:"per-account-hourly"`
 }
@@ -122,6 +125,7 @@ var defaults = options{
 	GlobalLogin:      300,
 	GlobalMFA:        300,
 	GlobalEnroll:     100,
+	GlobalReset:      100,
 	PerFlowSends:     3,
 	PerAccountHourly: 10,
 }
@@ -231,6 +235,10 @@ func settingsSchema() settings.Schema {
 				Description: "the most enrollment codes sent in an hour, across every number",
 				Domain:      settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
 			},
+			globalResetKey: {
+				Description: "the most password reset codes sent in an hour, across every number",
+				Domain:      settings.DomainOf("whole numbers from 1 to 1000000", globalHourlyInDomain),
+			},
 			perFlowSendsKey: {
 				Description: "the most sends one login flow may make; declared here and checked by the " +
 					"caller, which holds the flow record",
@@ -330,6 +338,8 @@ func (r *reader) globalHourly(purpose string) int {
 		return readTuned(r, globalMFAPath, defaults.GlobalMFA, globalHourlyInDomain)
 	case authn.SMSPurposeEnroll:
 		return readTuned(r, globalEnrollPath, defaults.GlobalEnroll, globalHourlyInDomain)
+	case authn.SMSPurposeReset:
+		return readTuned(r, globalResetPath, defaults.GlobalReset, globalHourlyInDomain)
 	}
 	return defaults.GlobalLogin
 }

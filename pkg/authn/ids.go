@@ -425,6 +425,7 @@ const (
 	SMSPurposeLogin  = model.SMSPurposeLogin
 	SMSPurposeMFA    = model.SMSPurposeMFA
 	SMSPurposeEnroll = model.SMSPurposeEnroll
+	SMSPurposeReset  = model.SMSPurposeReset
 )
 
 // SendCode is what asking for a verification code takes.

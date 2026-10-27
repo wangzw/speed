@@ -14,22 +14,25 @@ import (
 // the carrier maps each name, with a language, to a template number it holds or
 // to a body this module's message is rendered into, so the name is what this
 // module needs covered and the number or the body is the carrier's own. A
-// carrier that does not declare one of them stops the startup, before any code
-// is sent.
+// carrier that does not declare one of the required templates stops the startup,
+// before any code is sent. The reset template is optional: its absence withdraws
+// the SMS reset channel and leaves every other purpose working.
 const (
 	templateLogin  = "authn.code.login"
 	templateMFA    = "authn.code.mfa"
 	templateEnroll = "authn.code.enroll"
+	templateReset  = "authn.code.reset"
 )
 
 // templateParams are the parameter names every one of this module's templates
 // substitutes: the code and its lifetime in whole minutes.
 var templateParams = []string{"code", "ttl_minutes"}
 
-// requiredTemplates are the template names this module sends its codes under,
-// one per purpose. A carrier that does not declare one of them — neither a
-// vendor code nor a body for any language — cannot carry this module's messages
-// and stops the startup.
+// requiredTemplates are the template names every purpose but reset sends its
+// codes under. A carrier that does not declare one of them — neither a vendor
+// code nor a body for any language — cannot carry this module's messages and
+// stops the startup. The reset template is not here: a carrier may carry the
+// three login ways and no password reset, which withdraws that channel alone.
 var requiredTemplates = []string{templateLogin, templateMFA, templateEnroll}
 
 // purposeTemplate maps a purpose to the template name its message carries. The
@@ -43,6 +46,8 @@ func purposeTemplate(purpose string) string {
 		return templateMFA
 	case purposeEnroll:
 		return templateEnroll
+	case purposeReset:
+		return templateReset
 	default:
 		return ""
 	}
@@ -64,9 +69,15 @@ func templateLocales(declared []sms.Template) map[string][]string {
 	for _, t := range declared {
 		held[t.Name] = t
 	}
-	out := make(map[string][]string, len(requiredTemplates))
+	out := make(map[string][]string, len(requiredTemplates)+1)
 	for _, name := range requiredTemplates {
 		out[name] = append([]string(nil), held[name].Locales...)
+	}
+	// The reset template is present only when the carrier declares it; its
+	// absence is what leaves the SMS reset channel out, so no entry is written
+	// for it and a message under it has no languages to resolve into.
+	if t, ok := held[templateReset]; ok {
+		out[templateReset] = append([]string(nil), t.Locales...)
 	}
 	return out
 }
@@ -98,9 +109,11 @@ func primarySubtag(tag string) string {
 	return strings.ToLower(first)
 }
 
-// checkSender verifies that the registry declares every template this module
-// sends under, exactly the parameters it sends, and the configured default
-// language, and returns the first combination it gets wrong, naming it. Every
+// checkSender verifies that the registry declares every required template this
+// module sends under, exactly the parameters it sends, and the configured
+// default language, and returns the first combination it gets wrong, naming it.
+// The reset template is held to the same shape when the carrier declares it, and
+// its absence is not a failure: it withdraws the SMS reset channel alone. Every
 // failure wraps authn.ErrInvalidConfig.
 //
 // The parameter names are compared for equality, not containment. Resolve
@@ -135,25 +148,45 @@ func checkSender(declared []sms.Template, defaultLocale string) error {
 		if !ok {
 			return fmt.Errorf("%w: the carrier declares no template %q", authn.ErrInvalidConfig, name)
 		}
-		if len(t.Locales) == 0 {
-			return fmt.Errorf("%w: the carrier's template %q has neither a code nor a body for any language",
-				authn.ErrInvalidConfig, name)
+		if err := checkTemplate(t, defaultLocale); err != nil {
+			return err
 		}
-		if !slices.Contains(t.Locales, defaultLocale) {
-			return fmt.Errorf("%w: the carrier's template %q has neither a code nor a body for the default "+
-				"language %q", authn.ErrInvalidConfig, name, defaultLocale)
+	}
+	// The reset template is optional in its presence but not in its shape: a
+	// carrier that declares it and cannot satisfy the same parameters, languages
+	// and default-language rule has promised a reset channel every message under
+	// which would be refused at send time, so the startup fails naming it. A
+	// carrier that declares none keeps the channel closed and starts normally.
+	if t, ok := held[templateReset]; ok {
+		if err := checkTemplate(t, defaultLocale); err != nil {
+			return err
 		}
-		for _, param := range templateParams {
-			if !slices.Contains(t.Params, param) {
-				return fmt.Errorf("%w: the carrier's template %q does not declare the parameter %q",
-					authn.ErrInvalidConfig, name, param)
-			}
+	}
+	return nil
+}
+
+// checkTemplate holds one declared template to the module's contract: at least
+// one language, the configured default language among them, exactly the two
+// parameters every message of this module carries, and no other.
+func checkTemplate(t sms.Template, defaultLocale string) error {
+	if len(t.Locales) == 0 {
+		return fmt.Errorf("%w: the carrier's template %q has neither a code nor a body for any language",
+			authn.ErrInvalidConfig, t.Name)
+	}
+	if !slices.Contains(t.Locales, defaultLocale) {
+		return fmt.Errorf("%w: the carrier's template %q has neither a code nor a body for the default "+
+			"language %q", authn.ErrInvalidConfig, t.Name, defaultLocale)
+	}
+	for _, param := range templateParams {
+		if !slices.Contains(t.Params, param) {
+			return fmt.Errorf("%w: the carrier's template %q does not declare the parameter %q",
+				authn.ErrInvalidConfig, t.Name, param)
 		}
-		for _, param := range t.Params {
-			if !slices.Contains(templateParams, param) {
-				return fmt.Errorf("%w: the carrier's template %q declares the parameter %q, which this "+
-					"module never sends", authn.ErrInvalidConfig, name, param)
-			}
+	}
+	for _, param := range t.Params {
+		if !slices.Contains(templateParams, param) {
+			return fmt.Errorf("%w: the carrier's template %q declares the parameter %q, which this "+
+				"module never sends", authn.ErrInvalidConfig, t.Name, param)
 		}
 	}
 	return nil
