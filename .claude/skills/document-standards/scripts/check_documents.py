@@ -244,7 +244,8 @@ LINE_NUMBER_REF_RE = re.compile(
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})\s*(\S*)")
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
-TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?[\s:|-]+\|[\s:|-]*$")
+TABLE_SEPARATOR_RE = re.compile(
+    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$")
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 REQ_ID_RE = re.compile(r"^req-([a-z0-9]+(?:-[a-z0-9]+)*)-(\d+)$")
 CODE_ANCHOR_RE = re.compile(r"`[^`]*[./][^`]*`")
@@ -322,6 +323,52 @@ def scan_lines(text: str) -> list[tuple[int, str, bool, str]]:
             fence, lang = None, ""
             continue
         out.append((n, raw, fence is not None, lang))
+    return out
+
+
+SETEXT_UNDERLINE_RE = re.compile(r"^\s*(?:=+|-{3,})\s*$")
+
+
+def setext_headings(lines: list[tuple[int, str, bool, str]]) -> list[tuple[int, str]]:
+    """(line, title) for every setext heading: a text line underlined by === or ---."""
+    out = []
+    for i in range(len(lines) - 1):
+        n, raw, in_fence, _ = lines[i]
+        following = lines[i + 1]
+        if in_fence or following[2] or not raw.strip() or "|" in raw:
+            continue
+        if SETEXT_UNDERLINE_RE.match(following[1]):
+            out.append((n, raw.strip()))
+    return out
+
+
+def table_blocks(lines: list[tuple[int, str, bool, str]]) -> list[tuple[tuple[int, list[str]], list]]:
+    """((header line, header cells), body rows) for every pipe table.
+
+    A table is a line containing `|` followed by a separator line; the
+    leading pipe is optional, as GFM allows."""
+    out = []
+    i = 0
+    while i < len(lines):
+        n, raw, in_fence, _ = lines[i]
+        if in_fence or "|" not in raw or TABLE_SEPARATOR_RE.match(raw.strip()):
+            i += 1
+            continue
+        following = i + 1
+        while following < len(lines) and not lines[following][1].strip():
+            following += 1
+        if (following >= len(lines) or lines[following][2]
+                or not TABLE_SEPARATOR_RE.match(lines[following][1].strip())):
+            i += 1
+            continue
+        body = []
+        j = following + 1
+        while j < len(lines) and not lines[j][2] and lines[j][1].strip() and "|" in lines[j][1]:
+            body.append(lines[j])
+            j += 1
+        cells = [cell.strip() for cell in raw.strip().strip("|").split("|")]
+        out.append(((n, cells), body))
+        i = j
     return out
 
 
@@ -865,12 +912,14 @@ def adr_id(name: str) -> str | None:
 def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[list[Finding], str | None]:
     """Findings and the record's own id."""
     found: list[Finding] = []
-    record_id = adr_id(os.path.basename(path))
+    name = os.path.basename(path)
+    record_id = adr_id(name)
     if record_id is None:
         found.append(Finding(rel, 0,
                              "file name does not match adr-<slug>; an ADR's name carries "
                              "no date and no sequence number"))
-        found += check_filename_sequence(rel)
+        if not ADR_DATE_TOKEN_RE.search(name[:-3] if name.endswith(".md") else name):
+            found += check_filename_sequence(rel)
         return found, None
 
     found += check_filename_sequence(rel)
@@ -883,7 +932,13 @@ def check_adr_record(path: str, rel: str, text: str, language: str) -> tuple[lis
             found.append(Finding(rel, section.line,
                                  f"section {section.title!r} records a status; an ADR carries "
                                  f"no status, state or acceptance field"))
-    for n, raw, in_fence, _ in scan_lines(text):
+    lines = scan_lines(text)
+    for n, title in setext_headings(lines):
+        if normalize_heading(title) in ADR_STATUS_HEADINGS:
+            found.append(Finding(rel, n,
+                                 f"section {title!r} records a status; an ADR carries no "
+                                 f"status, state or acceptance field"))
+    for n, raw, in_fence, _ in lines:
         if in_fence or FENCE_RE.match(raw):
             continue
         field = ADR_STATUS_FIELD_RE.match(raw)
@@ -945,35 +1000,26 @@ def check_adr_tree(tree: str, root: str, language: str) -> list[Finding]:
                                  "the index is not grouped by topic; each topic is an H2"))
         first_topic = min((s.line for s in sections if s.level == 2), default=0)
         lines = scan_lines(text)
-        for i, (n, raw, in_fence, _) in enumerate(lines):
-            if in_fence or n < first_topic or "|" not in raw:
+        for (header_line, header_cells), body in table_blocks(lines):
+            if header_line < first_topic:
                 continue
-            if TABLE_SEPARATOR_RE.match(raw.strip()):
+            if not any(re.search(r"\]\(adr-[^)]+\.md\)", raw) for _, raw, _, _ in body):
                 continue
-            following = i + 1
-            while following < len(lines) and not lines[following][1].strip():
-                following += 1
-            if (following >= len(lines) or lines[following][2]
-                    or not TABLE_SEPARATOR_RE.match(lines[following][1].strip())):
-                continue
-            cells = [cell.strip() for cell in raw.strip().strip("|").split("|")]
-            if any(forbidden_column(cell) for cell in cells):
-                found.append(Finding(rel_readme, n,
+            if any(forbidden_column(cell) for cell in header_cells):
+                found.append(Finding(rel_readme, header_line,
                                      "the index carries a date or status column; an ADR's "
                                      "identity is its decision, nothing else"))
-        for n, raw, in_fence, _ in lines:
-            if in_fence or n < first_topic or not raw.strip().startswith("|"):
-                continue
-            match = re.search(r"\[([^\]]*)\]\((adr-[^)]+\.md)\)", raw)
-            if not match:
-                continue
-            record_id = adr_id(os.path.basename(match.group(2)))
-            if record_id is None or record_id not in titles:
-                continue
-            if normalize_heading(match.group(1)) != normalize_heading(titles[record_id]):
-                found.append(Finding(rel_readme, n,
-                                     f"index row for {record_id} does not use the record's "
-                                     f"own title ({titles[record_id]!r})"))
+            for n, raw, _, _ in body:
+                match = re.search(r"\[([^\]]*)\]\((adr-[^)]+\.md)\)", raw)
+                if not match:
+                    continue
+                record_id = adr_id(os.path.basename(match.group(2)))
+                if record_id is None or record_id not in titles:
+                    continue
+                if normalize_heading(match.group(1)) != normalize_heading(titles[record_id]):
+                    found.append(Finding(rel_readme, n,
+                                         f"index row for {record_id} does not use the record's "
+                                         f"own title ({titles[record_id]!r})"))
     return found
 
 

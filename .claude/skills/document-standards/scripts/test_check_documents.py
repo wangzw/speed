@@ -512,6 +512,16 @@ class AdrTreeTests(CheckerCase):
                                             "adr-core-scope-2026-01-02.md")},
                         "file name does not match adr-<slug>;")
 
+    def test_date_file_name_is_not_reported_as_a_sequence_number(self):
+        code, report = self.run_on({
+            "docs/adr/adr-core-scope.md": None,
+            "docs/adr/adr-core-scope-2026-01-02.md": ADR_RECORD,
+            "docs/adr/README.md": ADR_README.replace(
+                "adr-core-scope.md", "adr-core-scope-2026-01-02.md")})
+        self.assertEqual(code, 1)
+        self.assertIn("file name does not match adr-<slug>;", report)
+        self.assertNotIn("carries a sequence number", report)
+
     def test_file_name_with_a_date_in_the_middle(self):
         self.assert_red({"docs/adr/adr-core-scope.md": None,
                          "docs/adr/adr-2026-01-02-core-scope.md": ADR_RECORD,
@@ -557,6 +567,49 @@ class AdrTreeTests(CheckerCase):
                                    .replace("(adr-core-scope.md) |",
                                             "(adr-core-scope.md) | Accepted |")},
                         "date or status column")
+
+    def test_index_with_a_state_column(self):
+        self.assert_red({"docs/adr/README.md":
+                         ADR_README.replace("| Record |\n|---|",
+                                            "| Record | State |\n|---|---|")
+                                   .replace("(adr-core-scope.md) |",
+                                            "(adr-core-scope.md) | active |")},
+                        "date or status column")
+
+    def test_index_forbidden_column_vocabulary(self):
+        for token in ("State", "Acceptance", "Deprecated"):
+            with self.subTest(token=token):
+                self.assert_red({"docs/adr/README.md":
+                                 ADR_README.replace("| Record |\n|---|",
+                                                    f"| Record | {token} |\n|---|---|")
+                                           .replace("(adr-core-scope.md) |",
+                                                    "(adr-core-scope.md) | x |")},
+                                "date or status column")
+
+    def test_index_without_leading_pipes_is_checked(self):
+        self.assert_red({"docs/adr/README.md":
+                         "# Architecture Decision Records\n\nRecords.\n\n## Core\n\n"
+                         "Record | Date\n---|---\n"
+                         "[core owns registration](adr-core-scope.md) | 2026-01-02\n"},
+                        "date or status column")
+
+    def test_non_index_table_is_not_checked_as_the_index(self):
+        self.assert_green({"docs/adr/README.md":
+                           ADR_README + "\n## Legend\n\n| Term | Status |\n|---|---|\n"
+                                        "| core | stable |\n"})
+
+    def test_index_without_leading_pipes_title_is_checked(self):
+        self.assert_red({"docs/adr/README.md":
+                         "# Architecture Decision Records\n\nRecords.\n\n## Core\n\n"
+                         "Record | Note\n---|---\n"
+                         "[a registry lives in core](adr-core-scope.md) | setup\n"},
+                        "does not use the record's own title")
+
+    def test_setext_status_heading_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ADR_RECORD.replace("## Context",
+                                            "Status\n------\n\nAccepted\n\n## Context")},
+                        "records a status")
 
     def test_orphan_record(self):
         self.assert_red({"docs/adr/adr-config-source.md":
@@ -733,11 +786,24 @@ classDiagram
                          .replace("## 背景\n", "## 背景\n\n已被 ADR-core-rights 取代\n")},
                         "supersession line", base=ZH_FILES)
 
+    def test_chinese_status_heading_at_level_three_is_refused(self):
+        self.assert_red({"docs/adr/adr-core-scope.md":
+                         ZH_FILES["docs/adr/adr-core-scope.md"]
+                         .replace("## 背景", "### 状态\n\n已接受\n\n## 背景")},
+                        "records a status", base=ZH_FILES)
+
     def test_chinese_status_section_is_refused(self):
         self.assert_red({"docs/adr/adr-core-scope.md":
                          ZH_FILES["docs/adr/adr-core-scope.md"]
                          .replace("## 背景", "## 状态\n\n已接受\n\n## 背景")},
                         "records a status", base=ZH_FILES)
+
+    def test_chinese_index_with_a_deprecated_column(self):
+        self.assert_red({"docs/adr/README.md":
+                         ZH_FILES["docs/adr/README.md"]
+                         .replace("| 记录 |\n|---|", "| 记录 | 已废弃 |\n|---|---|")
+                         .replace("(adr-core-scope.md) |", "(adr-core-scope.md) | x |")},
+                        "date or status column", base=ZH_FILES)
 
     def test_chinese_index_with_a_status_column(self):
         self.assert_red({"docs/adr/README.md":
