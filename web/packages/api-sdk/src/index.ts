@@ -6327,7 +6327,7 @@ export const useAuthnAdminAccountsAddIdentifier = <TError = Problem | void,
     }
 
 /**
- * Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. A password account cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. Requires account.update.
+ * Removes the identifier named by its own identifier (the identifier row's id, not its value) from the account. Removing an identifier the account does not hold succeeds without changing anything. A password account cannot lose its last username or email address: that removal is a 409 login-identifier-required and changes nothing. A removal that would leave the account with no usable way to sign in beside a passkey is a 409 conflict and changes nothing. Requires account.update.
  * @summary Remove an identifier from an account
  */
 export const authnAdminAccountsRemoveIdentifier = (
@@ -6457,7 +6457,7 @@ export const useAuthnAdminAccountsSetMFARequired = <TError = Problem | void,
     }
 
 /**
- * Disables every factor registered on the account, sets the account's mfa_required flag so it must register a factor again, revokes every session of the account, and answers how many factors were removed. Requires mfa.reset, a fresh local non-SMS multi-factor authentication and a seasoned non-SMS factor of the caller's own; a caller without one gets 403 factor-not-seasoned. An account whose only way to log in is a factor is refused 409 conflict, because resetting it would leave the account with no way in; it must first be given a password, a phone number or an external identity.
+ * Disables every factor registered on the account, sets the account's mfa_required flag so it must register a factor again, revokes every session of the account, and answers how many factors were removed. Requires mfa.reset, a fresh local non-SMS multi-factor authentication and a seasoned non-SMS factor of the caller's own; a caller without one gets 403 factor-not-seasoned. An account whose only way to log in is a factor is refused 409 conflict, because resetting it would leave the account with no way in; it must first be given a password, a phone number whose ownership was proved, or an external identity. A phone number an administrator stated does not count.
  * @summary Remove an account's registered factors
  */
 export const authnAdminAccountsResetMFA = (
