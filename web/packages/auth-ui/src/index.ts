@@ -34,6 +34,12 @@
  * handing the viewer back to its sign-in surface. Both render only
  * auth-ui-namespace text and neither reads session state.
  *
+ * PasswordResetScreen is the anonymous reset surface. It drives the
+ * host-bound reset operations rather than the session, which it uses only
+ * for the human-verification proof a send may present; SignInScreen
+ * reports the host's forgot-password navigation from the discovery
+ * document's published capability.
+ *
  * ImpersonationBanner is the same kind of presentational surface for an
  * impersonated session: the host keeps it mounted in the app frame, says
  * whether an impersonation is current and binds the operation that ends
@@ -94,6 +100,15 @@ export {
   type InvitationOperations,
   type InvitationSummary,
 } from './AcceptInvitationScreen.js'
+export { type PasswordResetChannel } from '@speed/auth-core'
+export {
+  PasswordResetScreen,
+  type PasswordResetOperations,
+  type PasswordResetRequest,
+  type PasswordResetScreenProps,
+  type PasswordResetSent,
+  type PasswordResetVerified,
+} from './PasswordResetScreen.js'
 export {
   ImpersonationBanner,
   type ImpersonationBannerProps,

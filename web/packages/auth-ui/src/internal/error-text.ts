@@ -40,6 +40,8 @@ export const ERROR_TEXT_CODES = [
   'authn.link_required',
   'authn.method_disabled',
   'authn.account_unavailable',
+  'authn.password_reset_closed',
+  'authn.password_reset_unavailable',
   'authn.conflict',
   'authn.throttled',
   'authn.unavailable',

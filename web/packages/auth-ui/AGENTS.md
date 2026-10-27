@@ -6,7 +6,8 @@ discovery document and grouped by kind -- the password and SMS-code forms
 behind a tab strip, the redirect section and the callback handler that
 resumes its flow, the enterprise email-first entry, the passkey ceremony
 -- assembled in `SignInScreen`, plus `SignOutButton` and the
-`SessionEndedScreen` placeholder. The package sits at the same
+`SessionEndedScreen` placeholder, and the anonymous reset surface
+`PasswordResetScreen`. The package sits at the same
 auth-agnostic tier as `@speed/ui-kit` and `@speed/layout-kit`: it depends
 on nothing auth- or routing-shaped beyond auth-core's session and hooks,
 and it never decides what happens after a sign-in. It ships one
@@ -235,7 +236,10 @@ components (`PasswordSignInForm`, `PasswordRegisterForm`,
 (`SocialSignInSection` with `SocialProvider` -- a method-name `string`,
 not a closed set -- and `SocialProviderConfig`, `SocialCallbackHandler`),
 `SignOutButton`, `SignOutMenuItem`, `SessionEndedScreen`,
-`AcceptInvitationScreen` with its operation shapes, the impersonation
+`AcceptInvitationScreen` with its operation shapes,
+`PasswordResetScreen` with `PasswordResetOperations`,
+`PasswordResetRequest`, `PasswordResetSent`, `PasswordResetVerified` and
+the re-exported `PasswordResetChannel`, the impersonation
 surface (`ImpersonationBanner`, the notice provider and its consumers --
 including the provider-reading `ImpersonationNoticeBanner` and
 `ImpersonationNoticeIndicator`), and the resource pair

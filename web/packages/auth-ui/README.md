@@ -5,7 +5,8 @@ deployment's login methods, read from the discovery document and grouped
 by kind -- the password and SMS-code forms behind a tab strip, the social
 sign-in section and the callback handler that resumes its flow, the
 enterprise email-first entry, the passkey ceremony -- plus the sign-out
-action and the session-ended placeholder, assembled in `SignInScreen`.
+action and the session-ended placeholder, assembled in `SignInScreen`,
+plus the anonymous reset surface `PasswordResetScreen`.
 Every piece is a controlled component over an `@speed/auth-core` session
 passed in as a prop, at the same tier as `ui-kit` and `layout-kit`:
 components never consume the auth-core hooks, never read session state,
@@ -48,6 +49,7 @@ storage and navigates nowhere.
 | `SignOutMenuItem.tsx` | `SignOutMenuItem`, `SignOutMenuItemProps` |
 | `SessionEndedScreen.tsx` | `SessionEndedScreen`, `SessionEndedScreenProps` |
 | `AcceptInvitationScreen.tsx` | `AcceptInvitationScreen`, `AcceptInvitationScreenProps`, `AcceptInvitationInput`, `InvitationOperations`, `InvitationSummary` |
+| `PasswordResetScreen.tsx` | `PasswordResetScreen`, `PasswordResetScreenProps`, `PasswordResetOperations`, `PasswordResetRequest`, `PasswordResetSent`, `PasswordResetVerified`, `PasswordResetChannel` (re-exported from `@speed/auth-core`) |
 | `ImpersonationBanner.tsx` | `ImpersonationBanner`, `ImpersonationBannerProps`, `ImpersonationBannerState` |
 | `ImpersonationNotice.tsx` | `ImpersonationNoticeProvider`, `ImpersonationNoticeProviderProps`, `ImpersonationIndicator`, `ImpersonationIndicatorProps`, `ImpersonationEndMenuItem`, `ImpersonationEndMenuItemProps`, `ImpersonationNoticeBanner`, `ImpersonationNoticeBannerProps`, `ImpersonationNoticeIndicator`, `useImpersonationNotice`, `ImpersonationNotice` |
 | `resources.ts` | `AUTH_UI_NAMESPACE`, `authUiResources` |
@@ -330,6 +332,7 @@ The surface is assembleable without changing its defaults:
 | `providerIcon` | `(provider: SocialProvider) => ReactNode` | each redirect method's mark |
 | `social` | `SocialSignInOptions` | the redirect / enterprise block host config; omitted to run without one |
 | `onSignedIn` | `(context: SignInContext) => void` | fired once after a sign-in commits on a channel the screen drives (a form or the passkey ceremony), with the mode and the channel's method name; redirect and enterprise methods complete through the callback route and fire none |
+| `onForgotPassword` | `() => void` | reports the password channel's forgot-password click; rendered only where the discovery document publishes `password_reset.enabled` and only in sign-in mode, beneath the password form; the host navigates |
 | `channels` | `readonly ('password' \| 'sms')[]` | **deprecated**: still narrows the form strip for one major |
 | `defaultChannel` | `'password' \| 'sms'` | **deprecated**: the channel selected in sign-in mode on first render (register mode starts on the first account-opening channel) |
 | `initialError` | `string` | an error code the host brought in from outside the screen, rendered as the inline whole-attempt error above the channels; the screen neither reads the URL nor decides where the code came from |
@@ -663,6 +666,39 @@ the page); the accepted confirmation takes the level one below.
 | `onAccepted` | `() => void` | fired once after the acceptance lands; the host navigates |
 | `newAccountFields` | `{ displayName?: boolean; password?: boolean }` | which new-account inputs to offer; both default to true |
 | `headingLevel` | `'h1'…'h6'` | the title's heading element; defaults to `'h1'` |
+
+## PasswordResetScreen
+
+The anonymous password reset surface. It drives the host-bound
+`PasswordResetOperations` rather than the session; `session` is used only
+for the deployment's human-verification proof, which a send may present.
+`channels` is the deployment's published `password_reset.methods`, mapped
+by the host, so the screen never reads the discovery document and never
+judges whether an account can be reset.
+
+The surface moves through four states: `request` (channel, identifier,
+send), `sent` (code, new password and confirmation in one action),
+`verified` (a resumed proved ticket, or a retry after a password-policy
+refusal, so only the password write runs) and `done`. The sent notice
+names no account and no address. The code field carries the collapsed
+wrong-code refusal; the new-password field carries the password policy;
+the whole-attempt banner carries a closed deployment, an unavailable
+dependency and an invalidated flow, and the last offers a start-over exit.
+A stated `Retry-After` wait disables the send until it elapses, and the
+resend control states its own remaining interval. A host that binds
+`currentReset` resumes the bound record on mount; a sent record names no
+channel or identifier, so a resumed surface offers no resend.
+`onBackToSignIn` abandons an in-flight record first (best-effort).
+
+| Prop | Type | Notes |
+|---|---|---|
+| `session` | `AuthSession` (required) | used only for the human-verification gate and proof |
+| `channels` | `readonly PasswordResetChannel[]` (required) | the published channels, in order; an empty list renders the unavailable notice |
+| `operations` | `PasswordResetOperations` (required) | host-bound `requestReset`, `verifyReset`, `completeReset`, and optionally `currentReset` / `abandonReset` |
+| `humanGate` | `AuthnHumanGate` | a gate the host already read; omitted, the screen reads it |
+| `headingLevel` | `'h1'…'h6'` | the titles' heading element; defaults to `'h1'` |
+| `onDone` | `() => void` | fired once after the password write lands; the host navigates |
+| `onBackToSignIn` | `() => void` | reports the return-to-sign-in request after abandoning the record |
 
 ## Impersonation notice
 

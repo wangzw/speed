@@ -273,7 +273,8 @@ plus `AuthDomain` and `AuthPermissionSets`, the two names that
 parameterise the host-attached permission lists); the response models
 (`AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`,
 `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`,
-`AuthnSessionView`, `AuthnLoginRegisterBody`, `AuthnLoginRegistration`);
+`AuthnSessionView`, `AuthnLoginRegisterBody`, `AuthnLoginRegistration`,
+`PasswordResetChannel`);
 the supersession rejection pair
 (`OperationSupersededError` and its `isOperationSuperseded` guard -- the
 one non-`ApiError` rejection of the session-establishing commits); the

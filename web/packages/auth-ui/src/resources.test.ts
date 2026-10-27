@@ -29,6 +29,16 @@ function newInstance(): ReturnType<typeof createI18n> {
   })
 }
 
+/** Every dotted leaf path of a resource section, in traversal order. */
+function leafPaths(value: unknown, prefix = ''): string[] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return [prefix]
+  }
+  return Object.entries(value as Record<string, unknown>).flatMap(
+    ([key, child]) => leafPaths(child, prefix === '' ? key : `${prefix}.${key}`),
+  )
+}
+
 describe('auth-ui resources', () => {
   it('register cleanly on a fresh instance (parity enforced by registerNamespace)', () => {
     const i18n = newInstance()
@@ -51,6 +61,7 @@ describe('auth-ui resources', () => {
       'impersonation',
       'mode',
       'passkey',
+      'passwordReset',
       'passwordSignIn',
       'register',
       'sessionEnded',
@@ -60,6 +71,14 @@ describe('auth-ui resources', () => {
       'social',
       'socialCallback',
     ])
+  })
+
+  it('carry the same passwordReset leaves in both languages', () => {
+    expect(leafPaths(zhCN.passwordReset).sort()).toEqual(
+      leafPaths(enUS.passwordReset).sort(),
+    )
+    expect(leafPaths(zhCN.passwordSignIn)).toContain('forgotPassword')
+    expect(leafPaths(enUS.passwordSignIn)).toContain('forgotPassword')
   })
 
   it('render the zh-CN bundle verbatim through the registered namespace', () => {

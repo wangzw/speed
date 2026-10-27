@@ -56,7 +56,7 @@ guards".
 
 | File | Exports |
 |---|---|
-| `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `AuthnLoginRegisterBody`, `AuthnLoginRegistration`, `OperationSupersededError`, `isOperationSuperseded` |
+| `session.ts` | `createAuthSession(store?)`, `AuthSession`, `AuthSnapshot`, `FeatureState`, `AuthSessionListener`, `AuthDomain`, `AuthPermissionSets`, `AuthnPrincipal`, `AuthnFlowState`, `AuthnStep`, `AuthnField`, `AuthnFactorOption`, `AuthnMethodList`, `AuthnIdentifier`, `AuthnLink`, `AuthnLoginRegisterBody`, `AuthnLoginRegistration`, `PasswordResetChannel`, `OperationSupersededError`, `isOperationSuperseded` |
 | `hooks.ts` | `attachSession(session)`, `useAuthState()`, `usePermission(domain, permission)`, `useFeature(name)`, `useFeatureState()`, `featurePresence(state)`, `TenantProvider`, `useCurrentTenant()` |
 | `query-key.ts` | `tenantQueryKey(tenantId, ...tail)`, `useTenantQueryKey(bareKey)`, `TenantQueryKey`, `evictTenantQueries(queryClient, tenantId)` |
 | `step-up-gate.ts` | `useStepUpGate(onRetry, isShortfall?)`, `StepUpGate` |
@@ -498,7 +498,11 @@ the response models. This package re-exports them --
 and guards every body-carrying 2xx at runtime: the guard
 checks that the body is an object and that it carries the required
 fields, and refuses anything else as a `status: 200`, `code:
-client.protocol` ApiError. The same guard covers the feature document:
+client.protocol` ApiError. The discovery document's
+`password_reset.methods` are narrowed to `PasswordResetChannel`
+(`'email' | 'sms'`); a document that omits the whole section is read as
+closed, so a client newer than its server keeps working. The same guard
+covers the feature document:
 `GET /api/v1/features` must answer an object carrying a string array in
 `features`; anything else is a protocol violation, never an empty
 document. A contract-violating 2xx is never a
