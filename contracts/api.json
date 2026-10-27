@@ -9739,7 +9739,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not read memberships"
+            "description": "The caller may not read memberships"
           },
           "503": {
             "content": {
@@ -9831,7 +9831,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not remove memberships"
+            "description": "The caller may not remove memberships"
           },
           "404": {
             "description": "No such account"
@@ -9945,7 +9945,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not write memberships"
+            "description": "The caller may not write memberships"
           },
           "404": {
             "description": "No such account"
@@ -10071,7 +10071,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not write the exemption"
+            "description": "The caller may not write the exemption"
           },
           "404": {
             "description": "No such membership"
@@ -10174,7 +10174,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not read providers"
+            "description": "The caller may not read providers"
           },
           "503": {
             "content": {
@@ -10273,7 +10273,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not create providers"
+            "description": "The caller may not create providers"
           },
           "413": {
             "content": {
@@ -10375,7 +10375,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not delete the provider"
+            "description": "The caller may not delete the provider"
           },
           "404": {
             "description": "No such provider"
@@ -10465,7 +10465,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not read the provider"
+            "description": "The caller may not read the provider"
           },
           "404": {
             "description": "No such provider"
@@ -10576,7 +10576,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not update the provider"
+            "description": "The caller may not update the provider"
           },
           "404": {
             "description": "No such provider"
@@ -10709,7 +10709,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not claim domains"
+            "description": "The caller may not claim domains"
           },
           "404": {
             "description": "No such provider"
@@ -10833,7 +10833,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not write domains"
+            "description": "The caller may not write domains"
           },
           "404": {
             "description": "No such provider; removing a claim the provider does not hold succeeds without changing anything and answers 204"
@@ -10927,7 +10927,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not write domains"
+            "description": "The caller may not write domains"
           },
           "404": {
             "description": "No such provider; a domain with no claim and a TXT record without the token are not mapped by this route and answer 503"
@@ -11039,7 +11039,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not refresh metadata"
+            "description": "The caller may not refresh metadata"
           },
           "404": {
             "description": "No such provider"
@@ -11124,7 +11124,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating or may not write domains"
+            "description": "The caller may not write domains"
           },
           "404": {
             "description": "No such provider"
@@ -11188,7 +11188,7 @@
                 }
               }
             },
-            "description": "The caller is impersonating, is a service account, or is a static-table subject that cannot own a tenant"
+            "description": "The caller is a service account, or a static-table subject that cannot own a tenant"
           },
           "409": {
             "content": {
