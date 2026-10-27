@@ -49,4 +49,4 @@
 
 ## 端到端测试
 
-未实现
+`starters/demo/web/e2e/specs/journey-password-reset-sms.spec.ts` `password-reset-sms: a phone-code reset writes a new password and ends the old sessions`

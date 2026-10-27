@@ -305,5 +305,5 @@
 系统必须在部署提供匿名口令重置时于登录面给出该入口，并在部署不提供时不给。
 
 - **验收**：部署提供时，登录面的口令渠道下出现「忘记口令」入口，选择后进入口令重置面；部署不提供时，登录面不出现该入口。入口只在登录面出现，注册面不出现。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-password-reset-email.spec.ts` `password-reset-email: an addressed code resets the password and ends the old sessions`；`starters/demo/web/e2e/specs/journey-password-reset-sms.spec.ts` `password-reset-sms: a phone-code reset writes a new password and ends the old sessions`

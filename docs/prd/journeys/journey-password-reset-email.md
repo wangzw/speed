@@ -47,4 +47,4 @@
 
 ## 端到端测试
 
-未实现
+`starters/demo/web/e2e/specs/journey-password-reset-email.spec.ts` `password-reset-email: an addressed code resets the password and ends the old sessions`

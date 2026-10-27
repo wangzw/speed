@@ -179,8 +179,8 @@
 系统必须让忘记口令的账户本人在未登录状态下，凭一条本人已用验证码证明过的邮箱或手机收到的验证码设定新口令；本人选择用哪一种联系方式。
 
 - **验收**：账户同时有已证明邮箱与已证明手机时，口令重置面提供两种联系方式供选择；只有一种时只提供那一种；提交该联系方式并提交正确的验证码后，可以设定新口令；随后用新口令登录成功，旧口令不再可用。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-password-reset-email.spec.ts` `password-reset-email: an addressed code resets the password and ends the old sessions`；`starters/demo/web/e2e/specs/journey-password-reset-sms.spec.ts` `password-reset-sms: a phone-code reset writes a new password and ends the old sessions`
 
 ### REQ-security-021
 
@@ -291,15 +291,15 @@
 系统必须只接受账户本人已用验证码证明过的邮箱或手机作为口令重置的依据，并且不因提交的联系方式是否属于一个账户而改变界面的可见应答。
 
 - **验收**：未证明的邮箱或手机、从未与本产品关联的邮箱或手机、已停用或已删除账户的联系方式、以及没有口令的账户，提交后都不会收到消息；界面给出的状态、提示与「验证码已发送」的合格情形相同；提交任意错误的验证码得到同一条拒绝提示。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-password-reset-email.spec.ts` `password-reset-email: an addressed code resets the password and ends the old sessions`；`starters/demo/web/e2e/specs/journey-password-reset-sms.spec.ts` `password-reset-sms: a phone-code reset writes a new password and ends the old sessions`
 
 ### REQ-security-035
 
 系统必须在口令重置完成后不建立已认证会话，并且不改变账户已登记的第二因素；下一次登录仍要求先通过第一因素、再通过该账户原本要求的第二因素。
 
 - **验收**：重置成功后回到登录面而不是进入账户区；用新口令登录时，登记了第二因素的账户仍停在第二因素；重置前后，账户页列出的第二因素清单不变。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-security-036
@@ -307,15 +307,15 @@
 系统必须在口令重置成功后结束该账户已有的全部浏览器会话与令牌会话。
 
 - **验收**：重置前在另一台设备上保持登录，重置后该设备的下一次请求被要求重新登录；重置完成后不存在由重置本身建立的会话。
-- **状态**：未实现
-- **端到端测试**：未实现
+- **状态**：已实现
+- **端到端测试**：`starters/demo/web/e2e/specs/journey-password-reset-email.spec.ts` `password-reset-email: an addressed code resets the password and ends the old sessions`；`starters/demo/web/e2e/specs/journey-password-reset-sms.spec.ts` `password-reset-sms: a phone-code reset writes a new password and ends the old sessions`
 
 ### REQ-security-037
 
 系统必须在部署未显式提供口令重置能力时，不向任何访客提供该能力；提供与否只由部署决定。
 
 - **验收**：缺省部署的登录面没有「忘记口令」入口，直接进入口令重置面得到「本部署不提供该方式」的可见结果；部署显式提供后，入口与重置面出现。
-- **状态**：未实现
+- **状态**：已实现
 - **端到端测试**：未实现
 
 ### REQ-security-038
