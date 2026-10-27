@@ -33,7 +33,7 @@
  * credential and answers anonymous is discarded instead of ending the
  * session, and the window closes once the refetch that follows the write
  * has settled. A refused unbind renders its code text
- * in the same region below the list -- authn.conflict when the account
+ * in the same region below the list -- authn.last_login_method when the account
  * would be left with no sign-in method (the server decides by its own
  * login-method count, never computable client-side), anything else through
  * the whitelist -- except a step-up shortfall. The route asks for a fresh
