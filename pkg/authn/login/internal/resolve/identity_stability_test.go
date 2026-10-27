@@ -193,8 +193,8 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			if id == "" {
 				t.Fatalf("%s: the account has no identifier", path)
 			}
-			if _, err := authn.ParseAccountID(id.String()); err != nil {
-				t.Errorf("%s: identifier %q is not well formed: %v", path, id, err)
+			if _, parseErr := authn.ParseAccountID(id.String()); parseErr != nil {
+				t.Errorf("%s: identifier %q is not well formed: %v", path, id, parseErr)
 			}
 			minted = append(minted, createdBy{path: path, id: id, notEqual: notEqual})
 			return id
@@ -252,10 +252,10 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 		if identifiers := identifiersOf(t, accounts, unverifiedID); len(identifiers) != 0 {
 			t.Errorf("the account made without a verified address holds the identifiers %+v, want none", identifiers)
 		}
-		if again, err := r.Resolve(ctx, Request{
+		if again, resolveErr := r.Resolve(ctx, Request{
 			Proof: social("github", "github-subject", "", false), Purpose: authn.PurposeLogin,
-		}); err != nil || again.Account != unverifiedID || again.Outcome != OutcomeBound {
-			t.Errorf("the second login of the unverified identity = %+v, %v, want the same account bound", again, err)
+		}); resolveErr != nil || again.Account != unverifiedID || again.Outcome != OutcomeBound {
+			t.Errorf("the second login of the unverified identity = %+v, %v, want the same account bound", again, resolveErr)
 		}
 
 		// Five: an enterprise provider's just-in-time first login.
@@ -273,8 +273,8 @@ func TestEveryCreationPathMintsAnAccountIdentifierThatOutlivesProfileChanges(t *
 			t.Fatalf("the first enterprise login = %+v, %v, want a new account", jitLogin, err)
 		}
 		jitID := record("enterprise just-in-time first sign-in", jitLogin.Account, "jit-subject", "jit@acme.com")
-		if member, ok, err := memberships.Membership(ctx, tenantAcme, jitID); err != nil || !ok || !member.Active {
-			t.Errorf("the enterprise account's membership = %+v, %v, %v, want an active one", member, ok, err)
+		if member, ok, memberErr := memberships.Membership(ctx, tenantAcme, jitID); memberErr != nil || !ok || !member.Active {
+			t.Errorf("the enterprise account's membership = %+v, %v, %v, want an active one", member, ok, memberErr)
 		}
 
 		// Six: accepting an invitation, which is the account-opening path of
