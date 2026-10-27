@@ -50,29 +50,36 @@ var impersonatedOptions = []authntest.Option{
 // The request path reads the identity out of the request the layer received, in
 // a real chain, on both ways out of it: the handler returned, and the handler
 // panicked. The four-path case above calls recordRequest directly and so cannot
-// tell a layer that hands recordRequest a request without the context.
+// tell a layer that hands recordRequest a request without the context. The write
+// case is the one the impersonation change newly allows: a mutating method
+// reaches the handler, and the row it leaves still names the operator as the
+// actor and carries the target, the grant's tenant and the session in its detail.
 func TestAnImpersonationReachesTheRowOfARequestThroughTheChain(t *testing.T) {
 	for name, c := range map[string]struct {
-		request, path string
-		handler       gin.HandlerFunc
-		status        int
-		outcome       string
+		request, method, path string
+		handler               gin.HandlerFunc
+		status                int
+		outcome               string
 	}{
 		"a request that returns": {
-			"GET /ok", "/ok", func(c *gin.Context) { c.Status(nethttp.StatusNoContent) },
+			"GET /ok", "GET", "/ok", func(c *gin.Context) { c.Status(nethttp.StatusNoContent) },
+			nethttp.StatusNoContent, "204",
+		},
+		"a write that returns": {
+			"POST /orders", "POST", "/orders", func(c *gin.Context) { c.Status(nethttp.StatusNoContent) },
 			nethttp.StatusNoContent, "204",
 		},
 		"a request that panics": {
-			"GET /boom", "/boom", func(*gin.Context) { panic("the handler fell over") },
+			"GET /boom", "GET", "/boom", func(*gin.Context) { panic("the handler fell over") },
 			nethttp.StatusInternalServerError, "panic",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			servedRequests(t, []string{c.request}, func(endpoint speedhttp.Endpoint) {
 				endpoint.Use(gateStandIn(t, impersonatedOptions...))
-				endpoint.Route("GET", c.path, c.handler)
+				endpoint.Route(c.method, c.path, c.handler)
 			}, func(ctx context.Context, s *served) error {
-				s.expect(ctx, "GET", c.path, c.status)
+				s.expect(ctx, c.method, c.path, c.status)
 				rows := s.awaitRows(1)
 				if len(rows) != 1 {
 					t.Errorf("the rows are %v, want the one request", describe(rows))
