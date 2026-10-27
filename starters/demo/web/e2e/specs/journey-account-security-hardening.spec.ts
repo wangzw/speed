@@ -726,16 +726,12 @@ test('account-security-hardening: an account enrols two factors, ends another de
         })
         .click()
 
-      // The passkey step's own control starts the ceremony. Once it settles,
-      // the step is replaced by the parked `complete` step, whose confirmation
-      // carries the same label; waiting for the prompt to leave keeps the
-      // second click off the start control while the ceremony is working.
-      const verify = dialog.getByRole('button', {
-        name: copy('accountUi', 'mfa.stepUp.confirmLabel'),
-        exact: true,
-      })
-      await expect(verify).toBeVisible()
-      await verify.click()
+      // Choosing the passkey factor is the whole interaction: the assertion
+      // step starts the browser ceremony as soon as it arrives, so there is
+      // no start control to click. When the ceremony settles, the step is
+      // replaced by the parked `complete` step, whose confirmation carries
+      // the same label; the prompt leaving is what distinguishes that
+      // settled step from the start control it replaces.
       await expect(
         dialog.getByText(copy('accountUi', 'flowStep.passkeyPrompt'), {
           exact: true,

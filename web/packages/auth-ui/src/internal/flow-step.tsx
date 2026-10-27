@@ -341,17 +341,23 @@ function TotpFields({
   )
 }
 
-/** The passkey ceremony step: one button that drives the browser's WebAuthn
- * ceremony against the step's options and reports the credential it returns.
+/** The passkey ceremony step: drives the browser's WebAuthn ceremony against
+ * the step's options and reports the credential it returns.
+ *
+ * The two ceremonies start differently. An assertion step is the login
+ * itself: the viewer already chose the passkey entry, so the step starts
+ * its ceremony on arrival and never offers a start control -- one click,
+ * like a social provider. A registration step waits for a click, because
+ * a creation ceremony needs the user activation some browsers require.
  *
  * The ceremony can sit pending for as long as the browser waits on the
  * device (a page with no authenticator at all keeps it pending until it is
- * dismissed), so a click moves the step into an explicit waiting state: the
- * waiting message and a cancel control replace the button instead of
- * leaving a disabled button as the only signal. The waiting notice mounts
- * as an empty `role="status"` region and fills a commit later, so a screen
- * reader announces it; focus moves to the cancel control, since the button
- * that had it unmounted. Cancel is its own state
+ * dismissed), so the step shows an explicit waiting state: the waiting
+ * message and a cancel control instead of leaving a disabled button as the
+ * only signal. The waiting notice mounts as an empty `role="status"` region
+ * and fills a commit later, so a screen reader announces it; focus moves to
+ * the cancel control, since the control that had it unmounted. Cancel is
+ * its own state
  * transition, taken at once: it shows the failure and retry without waiting
  * for the ceremony to settle, and only best-effort asks the browser to give
  * up the ceremony (the credential API does not guarantee it honours an
@@ -385,7 +391,11 @@ function PasskeyFields({
   readonly onClientFailure?: (key: string | null) => void
 }) {
   const { t } = useAuthUiTranslation()
-  const [working, setWorking] = useState(false)
+  // Assertion steps start on arrival, so the first render is already the
+  // waiting state: the start control never flashes before the effect below
+  // begins the ceremony.
+  const arrivalKey = assertionKey(options)
+  const [working, setWorking] = useState(arrivalKey !== null)
   // The scope owns the failure: it renders the banner and keeps it mutually
   // exclusive with the channel's server failure. This step only reports it.
   const errorKey = clientFailure
@@ -401,6 +411,10 @@ function PasskeyFields({
     controller: AbortController
   } | null>(null)
   const attemptRef = useRef(0)
+  // The latest `run`, read by the arrival effect. The effect keys on the
+  // step's challenge rather than on this function or the options object, so
+  // a re-render leaves a running ceremony alone.
+  const runRef = useRef<() => Promise<void>>(async () => {})
 
   // Abandon the ceremony with the surface. An unmounted step has no flow to
   // answer and no host to complete for, so the attempt is invalidated (a
@@ -423,8 +437,9 @@ function PasskeyFields({
   // region would be silent. The text is therefore gated on
   // `waitingCommitted`, which lags the waiting phase by one commit: the
   // region is born empty and the text fills it a commit later. The same
-  // effect moves focus to the cancel control, because the Continue button
-  // that had it unmounted with the phase change.
+  // effect moves focus to the cancel control, because the control that had
+  // it (the Continue button, or the entry that opened the step) unmounted
+  // with the phase change.
   useEffect(() => {
     setWaitingCommitted(working)
     if (working) {
@@ -455,6 +470,33 @@ function PasskeyFields({
       }
     }
   }
+  // Publish the latest `run` for the arrival effect. This effect is
+  // declared before the arrival effect, so the assignment lands before the
+  // arrival effect reads it; a re-render refreshes it without restarting
+  // the ceremony.
+  useEffect(() => {
+    runRef.current = run
+  })
+
+  // An assertion step is the login: its arrival starts the ceremony, so the
+  // click that chose the passkey entry is the whole interaction. A
+  // registration step stays parked until the viewer clicks. The effect keys
+  // on the challenge rather than the options object, so an ordinary
+  // re-render does not restart the ceremony, while a new challenge rebinds
+  // it. Under StrictMode's double mount the first ceremony is abandoned by
+  // this cleanup and the second starts cleanly; only the live attempt
+  // answers (see `run`).
+  useEffect(() => {
+    if (arrivalKey === null) {
+      return
+    }
+    void runRef.current()
+    return () => {
+      const pending = pendingRef.current
+      pendingRef.current = null
+      pending?.controller.abort()
+    }
+  }, [arrivalKey])
 
   function cancel(): void {
     const pending = pendingRef.current
@@ -507,6 +549,24 @@ function PasskeyFields({
       )}
     </Box>
   )
+}
+
+/** The identity of an assertion step's ceremony: its kind plus the server's
+ * challenge. A registration step returns `null` -- it starts on a click --
+ * and the arrival effect watches this value, so a re-render does not
+ * restart the ceremony while a new challenge rebinds it. Options without a
+ * challenge still key on the kind, so a mounted step runs once. */
+function assertionKey(options: unknown): string | null {
+  if (webauthnStepOf(options) !== 'assert') {
+    return null
+  }
+  if (typeof options === 'object' && options !== null) {
+    const challenge = (options as Record<string, unknown>).challenge
+    if (typeof challenge === 'string' && challenge !== '') {
+      return `assert:${challenge}`
+    }
+  }
+  return 'assert:'
 }
 
 /** The bundle key of the message a failed ceremony renders. */

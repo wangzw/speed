@@ -204,7 +204,9 @@ rendered by the shared step renderer (`src/internal/flow-step.tsx`): a
 `factor` step renders one button per offered second factor, an `enroll`
 step one button per registerable kind, a `webauthn` step drives the
 browser's WebAuthn ceremony (`@speed/auth-core/webauthn`) from its
-public-key options and reports the credential it returns, and a `ready` step (whose
+public-key options and reports the credential it returns (an assertion
+step starts its ceremony as it arrives -- the passkey entry was the
+click -- while a registration step waits for a click), and a `ready` step (whose
 `next.kind` is `complete`) is
 taken automatically with `step: 'complete'`. A `redirect` step reaching the
 renderer (a callback route opened before the provider answered) renders an

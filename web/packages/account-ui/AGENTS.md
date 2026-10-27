@@ -197,7 +197,9 @@ session as a required prop; `PreferencesSection` takes it optionally
    the same way: a known kind renders its translated name, an unknown one
    renders the server's own kind value (the deployment's vocabulary, never
    a generic "other" label), and a factor option's server-supplied label
-   wins over both.
+   wins over both. All three start an assertion passkey ceremony on the
+   step's arrival and a registration ceremony on a click, because a
+   creation ceremony needs the user activation some browsers require.
 2. **State is discovered through the spec's own answers; the package
    renders exactly the operations that exist.** Registration is not a
    factor route — it is the login engine's enroll purpose — so

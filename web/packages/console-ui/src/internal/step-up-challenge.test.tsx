@@ -253,7 +253,6 @@ describe('StepUpChallenge', () => {
   })
 
   it('answers a passkey step-up under the factor step, driven by its options', async () => {
-    const user = userEvent.setup()
     const requests: Array<{ step: string | undefined; input?: Readonly<Record<string, string>> }> = []
     const session: AuthSession = {
       ...flowSession().session,
@@ -302,9 +301,9 @@ describe('StepUpChallenge', () => {
           onCancel={() => undefined}
         />,
       )
-      // The passkey step drives the ceremony; its answer travels under the
-      // second factor's step (`factor`), not the enrollment one.
-      await user.click(await screen.findByRole('button', { name: zhCN.stepUp.submit }))
+      // The assertion step starts its ceremony on arrival -- choosing the
+      // passkey factor was the only click -- and its answer travels under
+      // the second factor's step (`factor`), not the enrollment one.
       await vi.waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1))
     } finally {
       if (original === undefined) {
@@ -771,9 +770,8 @@ describe('StepUpChallenge', () => {
         />,
       )
 
-      // The ceremony produces a credential and the server refuses it: the
-      // server banner stands alone.
-      await user.click(await screen.findByRole('button', { name: zhCN.stepUp.submit }))
+      // The arrival ceremony produces a credential and the server refuses
+      // it: the server banner stands alone.
       const serverAlert = await screen.findByRole('alert')
       expect(serverAlert).toHaveTextContent(zhCN.errors.authn.login_failed)
       expect(screen.queryByText(zhCN.stepUp.passkeyCancelled)).toBeNull()

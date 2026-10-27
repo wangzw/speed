@@ -9,15 +9,18 @@
  * given; an enrollment kind follows the same known/unknown rule. The
  * package keeps its vocabulary locally (auth-ui and console-ui keep their
  * own copies), so this suite is the account-ui side of the registered
- * sync obligation. The ceremony cases pin the waiting state and its
- * cancel control (with the focus the unmounted button held), the
- * immediate failure a cancel renders and the retry that runs the
- * ceremony again, the registration prompt's own wording, and the
- * ceremony being abandoned when the step unmounts.
+ * sync obligation. The ceremony cases pin the assertion step starting its
+ * ceremony on arrival (also under StrictMode's double mount, where the
+ * abandoned first attempt gives way to the second), the waiting state and
+ * its cancel control (with the focus the control that opened the step
+ * held), the immediate failure a cancel renders and the retry that runs
+ * the ceremony again, a registration step waiting for a click, the
+ * registration prompt's own wording, and the ceremony being abandoned when
+ * the step unmounts.
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { configure, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -113,11 +116,11 @@ describe('FlowStep labels', () => {
     expect(screen.getByRole('button', { name: 'magic' })).toBeTruthy()
   })
 
-  it('waits on the ceremony, cancels into a retry, and retries the ceremony', async () => {
-    // The ceremony sits pending in the browser: the click must move the
-    // step into an explicit waiting state whose cancel control takes the
-    // focus the unmounted button held, and cancel must fail at once and
-    // offer a retry that drives the ceremony again.
+  it('waits on the arrival ceremony, cancels into a retry, and retries the ceremony', async () => {
+    // The assertion ceremony starts on arrival and sits pending in the
+    // browser: it shows an explicit waiting state whose cancel control takes
+    // the focus the control that opened the step held, and cancel fails at
+    // once and offers a retry that drives the ceremony again.
     const get = vi
       .fn()
       // The cancelled attempt never settles; its late answer is irrelevant.
@@ -129,8 +132,7 @@ describe('FlowStep labels', () => {
       const user = userEvent.setup()
 
       expect(screen.getByText(zhCN.flowStep.passkeyPrompt)).toBeTruthy()
-      await user.click(screen.getByRole('button', { name: 'Continue' }))
-
+      // No click starts the assertion: the step arrival did.
       expect(await screen.findByText(zhCN.flowStep.passkeyWaiting)).toBeTruthy()
       const cancel = screen.getByRole('button', {
         name: zhCN.flowStep.passkeyCancel,
@@ -151,6 +153,87 @@ describe('FlowStep labels', () => {
         step: 'answer',
         input: { credential: expect.stringContaining('cred-1') },
       })
+    } finally {
+      restore()
+    }
+  })
+
+  it('starts an assertion ceremony on arrival, without a second click', async () => {
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      render(ASSERT_STEP)
+      // The waiting state is the first thing the step shows: the Continue
+      // control never renders, because the assertion started itself.
+      expect(await screen.findByText(zhCN.flowStep.passkeyWaiting)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull()
+      expect(get).toHaveBeenCalledTimes(1)
+    } finally {
+      restore()
+    }
+  })
+
+  it('starts the second ceremony after StrictMode abandons the first', async () => {
+    // StrictMode mounts, unmounts and mounts again in development: the
+    // first arrival's ceremony is abandoned by the cleanup, and the second
+    // one must start cleanly and be the only one that answers.
+    const get = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce(ASSERTION_CREDENTIAL)
+    const restore = installCredentials({ get, create: vi.fn() })
+    // The StrictMode root is what double-invokes the effects; RTL does not
+    // mount one by default.
+    configure({ reactStrictMode: true })
+    try {
+      const onSubmit = vi.fn()
+      renderWithProviders(
+        <FlowStep
+          step={ASSERT_STEP}
+          busy={false}
+          answerStep="answer"
+          submitLabel="Continue"
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+      expect(get).toHaveBeenCalledTimes(2)
+      const first = get.mock.calls[0]?.[0] as { signal?: AbortSignal }
+      expect(first.signal?.aborted).toBe(true)
+      const second = get.mock.calls[1]?.[0] as { signal?: AbortSignal }
+      expect(second.signal?.aborted).toBe(false)
+      expect(onSubmit).toHaveBeenCalledWith({
+        step: 'answer',
+        input: { credential: expect.stringContaining('cred-1') },
+      })
+    } finally {
+      configure({ reactStrictMode: false })
+      restore()
+    }
+  })
+
+  it('waits for a click before a registration ceremony starts', async () => {
+    // A creation ceremony needs the user activation some browsers require,
+    // so a registration step stays parked until the viewer clicks.
+    const create = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get: vi.fn(), create })
+    try {
+      const step: AuthnStep = {
+        kind: 'webauthn',
+        options: {
+          challenge: 'Y2hhbGxlbmdl',
+          user: { id: 'AQID', name: 'ada' },
+        },
+      }
+      render(step)
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeTruthy()
+      expect(create).not.toHaveBeenCalled()
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'Continue' }))
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
     } finally {
       restore()
     }
@@ -183,9 +266,8 @@ describe('FlowStep labels', () => {
     const restore = installCredentials({ get, create: vi.fn() })
     try {
       const { unmount } = render(ASSERT_STEP)
-      const user = userEvent.setup()
 
-      await user.click(screen.getByRole('button', { name: 'Continue' }))
+      // The arrival started the ceremony; nothing was clicked.
       await screen.findByText(zhCN.flowStep.passkeyWaiting)
       expect(received?.signal?.aborted).toBe(false)
 

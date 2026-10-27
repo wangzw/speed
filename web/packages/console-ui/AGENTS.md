@@ -274,7 +274,10 @@ request body.
 - **The step renderer has two siblings.** `src/internal/flow-step.tsx` is
   one of three copies (`auth-ui`, `account-ui`, `console-ui`) kept in
   lockstep by hand: a change to how a step renders lands in all three in
-  the same change. No compiler check or test compares the copies.
+  the same change. No compiler check or test compares the copies. All
+  three start an assertion passkey ceremony on the step's arrival -- the
+  entry was the click -- and a registration ceremony on a click, because
+  a creation ceremony needs the user activation some browsers require.
 - **No routing in package code.** No path matching, no `react-router`. The
   shell links each labelled entry to its declaration's path; a page builds
   a row's detail link from its own matched path plus a row id, and a

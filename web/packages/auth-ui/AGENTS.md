@@ -80,9 +80,12 @@ account-resolution outcome where the deployment enables that.
   server-supplied label wins over both. The `webauthn` step drives the
   browser's WebAuthn ceremony (`@speed/auth-core/webauthn`) from its
   public-key options and reports the credential it returns, while a
-  `redirect` step reaching the renderer renders an unavailable notice. A
-  step the server answers `authn.flow_invalid` returns the form to its
-  channel's first step.
+  `redirect` step reaching the renderer renders an unavailable notice. An
+  assertion passkey step starts its ceremony on arrival -- the passkey
+  entry was the click -- and a registration step waits for a click,
+  because a creation ceremony needs the user activation some browsers
+  require. A step the server answers `authn.flow_invalid` returns the form
+  to its channel's first step.
 - **A parked step that may send carries the proof block.**
   `HumanGatedFlowStep` (in `src/internal/flow-step.tsx`) wraps the shared
   step renderer: when the deployment's gate requires a proof and the step

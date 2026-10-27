@@ -609,7 +609,9 @@ is `test-utils/real-client.ts`, the render harness
   (`navigator.credentials.create`/`get`, driven by
   `@speed/auth-core/webauthn`), so it needs a secure context with an
   authenticator; where the browser offers none, the step renders its own
-  message and the flow cannot proceed. The step waits visibly, can be
+  message and the flow cannot proceed. An assertion step starts the
+  ceremony as it arrives -- the passkey entry was the click -- while a
+  registration step waits for a click. The step waits visibly, can be
   cancelled (best effort, by aborting the ceremony) and retried, and
   abandons a pending ceremony on unmount.
 - The step-up dialog covers the factor and challenge steps; a flow that

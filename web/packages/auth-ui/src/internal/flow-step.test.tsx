@@ -10,8 +10,9 @@
  * suite is the auth-ui side of the registered sync obligation.
  */
 
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AuthnStep } from '@speed/auth-core'
 import zhCN from '../locales/zh-CN.json' with { type: 'json' }
@@ -32,6 +33,22 @@ function render(next: AuthnStep, onUnsupported: () => void = vi.fn()) {
       onUnsupported={onUnsupported}
     />,
   )
+}
+
+/** Installs a `navigator.credentials` stub, answering the restorer. */
+function installCredentials(credentials: unknown): () => void {
+  const original = Object.getOwnPropertyDescriptor(window.navigator, 'credentials')
+  Object.defineProperty(window.navigator, 'credentials', {
+    value: credentials,
+    configurable: true,
+  })
+  return () => {
+    if (original === undefined) {
+      delete (window.navigator as { credentials?: unknown }).credentials
+    } else {
+      Object.defineProperty(window.navigator, 'credentials', original)
+    }
+  }
 }
 
 describe('FlowStepFields labels', () => {
@@ -74,6 +91,86 @@ describe('FlowStepFields labels', () => {
       screen.getByRole('button', { name: zhCN.signInFlow.factorKind.webauthn }),
     ).toBeTruthy()
     expect(screen.getByRole('button', { name: 'magic' })).toBeTruthy()
+  })
+})
+
+describe('FlowStepFields passkey arrival', () => {
+  it('starts an assertion ceremony on arrival and does not restart it on a re-render', async () => {
+    // The passkey entry the viewer clicked is the only control: the
+    // assertion step it opens starts the browser's ceremony itself.
+    const get = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get, create: vi.fn() })
+    try {
+      const onAnswer = vi.fn()
+      // A state update re-renders the renderer with a fresh step object,
+      // which is what a parent's ordinary re-render looks like.
+      function Harness() {
+        const [, setTick] = useState(0)
+        return (
+          <>
+            <button type="button" onClick={() => setTick((tick) => tick + 1)}>
+              rerender
+            </button>
+            <FlowStepFields
+              step={step({
+                kind: 'webauthn',
+                options: { challenge: 'Y2hhbGxlbmdl' },
+              })}
+              busy={false}
+              onAnswer={onAnswer}
+              onUnsupported={vi.fn()}
+            />
+          </>
+        )
+      }
+      renderWithProviders(<Harness />)
+
+      expect(
+        await screen.findByText(zhCN.signInFlow.passkeyWaiting),
+      ).toBeInTheDocument()
+      // No second click: the start control is not offered at all.
+      expect(
+        screen.queryByRole('button', { name: zhCN.signInFlow.submit }),
+      ).toBeNull()
+      expect(get).toHaveBeenCalledTimes(1)
+
+      // The same challenge in a fresh options object is the same ceremony:
+      // an ordinary re-render leaves it running.
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: 'rerender' }))
+      expect(get).toHaveBeenCalledTimes(1)
+      expect(onAnswer).not.toHaveBeenCalled()
+    } finally {
+      restore()
+    }
+  })
+
+  it('waits for a click before a registration ceremony starts', async () => {
+    // A creation ceremony needs the user activation some browsers require,
+    // so a registration step stays parked until the viewer clicks.
+    const create = vi.fn().mockReturnValue(new Promise(() => {}))
+    const restore = installCredentials({ get: vi.fn(), create })
+    try {
+      render({
+        kind: 'webauthn',
+        options: {
+          challenge: 'Y2hhbGxlbmdl',
+          user: { id: 'AQID', name: 'ada' },
+        },
+      })
+      expect(
+        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
+      ).toBeTruthy()
+      expect(create).not.toHaveBeenCalled()
+
+      await userEvent
+        .setup()
+        .click(screen.getByRole('button', { name: zhCN.signInFlow.submit }))
+      await waitFor(() => expect(create).toHaveBeenCalledTimes(1))
+    } finally {
+      restore()
+    }
   })
 })
 

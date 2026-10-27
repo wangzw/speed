@@ -500,11 +500,12 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
-      // The ceremony step drives navigator.credentials.get against the
-      // step's options and reports the credential it returns.
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-      )
+      // The assertion step starts navigator.credentials.get against the
+      // step's options on arrival: choosing the passkey entry is the whole
+      // interaction, and no start control is offered.
+      expect(
+        screen.queryByRole('button', { name: zhCN.signInFlow.submit }),
+      ).not.toBeInTheDocument()
       await waitFor(() => expect(onSignedIn).toHaveBeenCalledTimes(1))
     } finally {
       if (original === undefined) {
@@ -556,9 +557,8 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-      )
+      // The assertion ceremony starts on arrival and fails at once; no
+      // second click was needed to reach it.
       expect(
         await screen.findByText(zhCN.signInFlow.passkeyUnsupported),
       ).toBeInTheDocument()
@@ -590,9 +590,8 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-      )
+      // The assertion step is already waiting: it started its ceremony on
+      // arrival, without a second click.
       expect(
         await screen.findByText(zhCN.signInFlow.passkeyWaiting),
       ).toBeInTheDocument()
@@ -625,9 +624,7 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-      )
+      // The arrival itself started the ceremony.
       await screen.findByText(zhCN.signInFlow.passkeyWaiting)
       await user.click(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
@@ -683,9 +680,7 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-      )
+      // The ceremony starts on arrival and rejects at once.
       expect(
         await screen.findByText(zhCN.signInFlow.passkeyCancelled),
       ).toBeInTheDocument()
@@ -720,9 +715,7 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-      )
+      // The arrival started the ceremony; nothing else was clicked.
       await screen.findByText(zhCN.signInFlow.passkeyWaiting)
       const signal = (
         get.mock.calls[0]?.[0] as { signal?: AbortSignal } | undefined
@@ -758,10 +751,16 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
+      // The arrival started the ceremony; cancel it so the retry below is
+      // the click that mounts a fresh waiting state in one commit.
+      await screen.findByText(zhCN.signInFlow.passkeyWaiting)
+      await user.click(
+        screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
+      )
       act(() => {
         flushSync(() => {
           screen
-            .getByRole('button', { name: zhCN.signInFlow.submit })
+            .getByRole('button', { name: zhCN.signInFlow.passkeyRetry })
             .click()
         })
         // The waiting region is born empty: a live region announces only
@@ -784,15 +783,16 @@ describe('SignInScreen', () => {
             ),
         ).toBe(true),
       )
-      // The Continue button that had focus unmounted with the phase; the
-      // control the waiting state offers has it now.
+      // The control that had focus unmounted with the phase; the control
+      // the waiting state offers has it now.
       expect(
         screen.getByRole('button', { name: zhCN.signInFlow.passkeyCancel }),
       ).toHaveFocus()
     } finally {
       restore()
     }
-    expect(get).toHaveBeenCalledTimes(1)
+    // The arrival's ceremony and the retry's.
+    expect(get).toHaveBeenCalledTimes(2)
   })
 
   it('prompt for registration on a passkey enrollment step', async () => {
@@ -1732,11 +1732,8 @@ describe('SignInScreen', () => {
       )
       const user = userEvent.setup()
       await user.click(screen.getByRole('button', { name: 'Passkey' }))
-      // The ceremony returns a credential and the server refuses the answer:
-      // the channel's failure banner renders.
-      await user.click(
-        screen.getByRole('button', { name: zhCN.signInFlow.submit }),
-      )
+      // The arrival's ceremony returns a credential and the server refuses
+      // the answer: the channel's failure banner renders.
       expect(await screen.findByRole('alert')).toHaveTextContent(
         zhCN.errors.authn.login_failed,
       )
