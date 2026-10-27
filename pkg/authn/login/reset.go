@@ -1067,7 +1067,10 @@ func (r *routes) passwordResetComplete(ctx context.Context, in passwordResetComp
 	if setErr != nil {
 		r.revertReset(c, token, procRaw, rec)
 		switch {
-		case errors.Is(setErr, authn.ErrAccountUnavailable):
+		case errors.Is(setErr, authn.ErrAccountUnavailable), errors.Is(setErr, authn.ErrAccountNotFound),
+			errors.Is(setErr, authn.ErrIdentifierRequired):
+			// The account turned ineligible between the re-check and the write: it was
+			// disabled, deleted, lost its credential or no longer has a login name.
 			r.resetAudit(c, account, rec.Channel, resetOutcomeDenied, actionID)
 			r.meters.resetOperation(c.ctx, resetOpComplete, rec.Channel, outcomeFailed)
 			c.forbidden(mount.CodePasswordResetUnavailable)

@@ -694,6 +694,28 @@ func TestResetDeniedWriteAppendsADeniedRow(t *testing.T) {
 	}
 }
 
+// TestResetCompleteMapsARacingIneligibilityToUnavailable holds the write
+// transaction's own refusal: an account that turns ineligible between the
+// re-check and the write answers password-reset-unavailable, not an outage, and
+// appends a denied row.
+func TestResetCompleteMapsARacingIneligibilityToUnavailable(t *testing.T) {
+	r := newResetRig(t)
+	r.seedResetAccount("acct-a", authn.IdentifierEmail, "a@example.com", authn.VerifiedViaEmailCode)
+	cookie, code := r.emailStart(t, "a@example.com")
+	if got := r.verify(cookie, code); got.Code != http.StatusOK {
+		t.Fatalf("verify answered %d: %s", got.Code, got.Body.String())
+	}
+	r.passwords.err = fmt.Errorf("%w: the account is gone", authn.ErrAccountNotFound)
+	got := r.complete(cookie, "a whole new password")
+	if got.Code != http.StatusForbidden || resetProblemCode(t, got) != "password-reset-unavailable" {
+		t.Fatalf("complete answered %d %q, want 403 password-reset-unavailable", got.Code, resetProblemCode(t, got))
+	}
+	rows := r.audit.rows()
+	if len(rows) != 2 || rows[1].Outcome != "denied" {
+		t.Errorf("audit rows %+v, want attempted then denied", rows)
+	}
+}
+
 // TestResetBudgetOverrunsAreSuppressedAndSameShape holds the suppression shape:
 // an SMS budget overrun and an email resend-window overrun both answer 202 with
 // the same body as a real send, never a 429.
