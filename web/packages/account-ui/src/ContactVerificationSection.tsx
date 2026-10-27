@@ -99,7 +99,7 @@ import {
   useAuthnLoginVerifyIdentifier,
 } from '@speed/api-sdk'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
-import { humanGateNeedsProof, useStepUpGate, useHumanVerification } from '@speed/auth-core'
+import { humanGateNeedsProof, stepUpReasonOf, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
   errorCodeOf,
   FORM_MAX_WIDTH,
@@ -115,8 +115,6 @@ import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
-
-const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 
 /** The resend note's id, referenced by the resend control while it counts down. */
 const RESEND_NOTE_ID = 'contact-verification-resend-note'
@@ -319,7 +317,8 @@ export function ContactVerificationSection({
         })
       } catch (error) {
         const failureCode = errorCodeOf(error)
-        if (failureCode === STEP_UP_REQUIRED) {
+        const reason = stepUpReasonOf(failureCode)
+        if (reason !== null) {
           // A step-up refusal precedes the proof check, so the proof is
           // still valid for the re-run.
           // A dialog the visitor did not ask for is not opened for them: the
@@ -329,7 +328,7 @@ export function ContactVerificationSection({
             setAutoStepUp(true)
             return null
           }
-          gate.arm({ step: 'send', email: address })
+          gate.arm({ step: 'send', email: address }, reason)
           return null
         }
         // Any other refusal reached the send's own checks, which spend the
@@ -387,8 +386,9 @@ export function ContactVerificationSection({
         )
       } catch (error) {
         const failureCode = errorCodeOf(error)
-        if (failureCode === STEP_UP_REQUIRED) {
-          gate.arm({ step: 'verify', code: nextCode })
+        const reason = stepUpReasonOf(failureCode)
+        if (reason !== null) {
+          gate.arm({ step: 'verify', code: nextCode }, reason)
           return null
         }
         if (failureCode === 'authn.login_failed') {
@@ -752,6 +752,7 @@ export function ContactVerificationSection({
 
       <StepUpChallenge
         open={gate.open}
+        reason={gate.reason}
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}

@@ -186,6 +186,7 @@ export function ProfileSection({ session }: ProfileSectionProps) {
 
       <StepUpChallenge
         open={gate.open}
+        reason={gate.reason}
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}

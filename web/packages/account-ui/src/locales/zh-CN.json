@@ -7,6 +7,7 @@
       "flow_invalid": "登录流程已失效，请重新开始。",
       "link_required": "该社交账号的邮箱已属于本站的一个账户。请先用原先的登录方式登录该账户，再到「账户设置 → 社交绑定」里关联此账号。",
       "insufficient_user_authentication": "此操作需要你重新验证身份。",
+      "sso_required": "本次操作要求通过企业单点登录重新认证，请重新登录。",
       "method_disabled": "该登录方式已停用，请选择其他登录方式。",
       "account_unavailable": "该账户当前不可用，请联系管理员。",
       "impersonation_restricted": "正在以其他账户身份查看时无法执行此操作。",
@@ -147,6 +148,8 @@
     },
     "stepUp": {
       "title": "重新验证身份",
+      "ssoTitle": "需要企业单点登录",
+      "ssoRequired": "本次操作要求通过企业单点登录重新认证，请重新登录。",
       "description": "此操作需要你重新验证身份。",
       "starting": "正在开始验证…",
       "confirmLabel": "验证",

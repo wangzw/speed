@@ -361,6 +361,7 @@ export function PhoneSection({ session, humanGate }: PhoneSectionProps) {
 
       <StepUpChallenge
         open={gate.open}
+        reason={gate.reason}
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}

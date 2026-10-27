@@ -140,7 +140,7 @@ import {
   useAuthnLoginVerifyIdentifier,
 } from '@speed/api-sdk'
 import type { AuthSession, AuthnHumanGate } from '@speed/auth-core'
-import { humanGateNeedsProof, useStepUpGate, useHumanVerification } from '@speed/auth-core'
+import { humanGateNeedsProof, stepUpReasonOf, useStepUpGate, useHumanVerification } from '@speed/auth-core'
 import {
   ConfirmDialog,
   errorCodeOf,
@@ -158,8 +158,6 @@ import { retryAfterMsOf } from './internal/retry-after.js'
 import { StepUpChallenge } from './internal/step-up-challenge.js'
 import { useAccountUiTranslation } from './internal/translation.js'
 import { WriteFeedbackRegion } from './internal/write-feedback.js'
-
-const STEP_UP_REQUIRED = 'authn.insufficient_user_authentication'
 
 export interface IdentifiersSectionProps {
   /** The session whose step-up flow the dialog drives. */
@@ -454,8 +452,9 @@ export function IdentifiersSection({
       } catch (error) {
         setRemoveTarget(null)
         const failure = errorCodeOf(error)
-        if (failure === STEP_UP_REQUIRED) {
-          gate.arm({ step: 'remove', id })
+        const reason = stepUpReasonOf(failure)
+        if (reason !== null) {
+          gate.arm({ step: 'remove', id }, reason)
           return null
         }
         // The refusal is the server's judgement on the current state, which
@@ -525,10 +524,11 @@ export function IdentifiersSection({
         return await settleAdded(result)
       } catch (error) {
         const failure = errorCodeOf(error)
-        if (failure === STEP_UP_REQUIRED) {
+        const reason = stepUpReasonOf(failure)
+        if (reason !== null) {
           // A step-up refusal precedes the proof check, so the proof is
           // still valid for the re-run.
-          gate.arm({ step: 'add', kind, value })
+          gate.arm({ step: 'add', kind, value }, reason)
           return null
         }
         // The send reached its own checks, which spend the single-use
@@ -585,8 +585,9 @@ export function IdentifiersSection({
         )
       } catch (error) {
         const failure = errorCodeOf(error)
-        if (failure === STEP_UP_REQUIRED) {
-          gate.arm({ step: 'verify', code: nextCode })
+        const reason = stepUpReasonOf(failure)
+        if (reason !== null) {
+          gate.arm({ step: 'verify', code: nextCode }, reason)
           return null
         }
         if (failure === 'authn.email_taken') {
@@ -659,9 +660,10 @@ export function IdentifiersSection({
         return null
       } catch (error) {
         const failure = errorCodeOf(error)
-        if (failure === STEP_UP_REQUIRED) {
+        const reason = stepUpReasonOf(failure)
+        if (reason !== null) {
           // The proof is not spent by a step-up refusal.
-          gate.arm({ step: 'rowSend', value: address })
+          gate.arm({ step: 'rowSend', value: address }, reason)
           return null
         }
         if (presented !== null) {
@@ -701,8 +703,9 @@ export function IdentifiersSection({
         )
       } catch (error) {
         const failure = errorCodeOf(error)
-        if (failure === STEP_UP_REQUIRED) {
-          gate.arm({ step: 'rowVerify', code: nextCode })
+        const reason = stepUpReasonOf(failure)
+        if (reason !== null) {
+          gate.arm({ step: 'rowVerify', code: nextCode }, reason)
           return null
         }
         if (failure === 'authn.login_failed') {
@@ -1230,6 +1233,7 @@ export function IdentifiersSection({
 
       <StepUpChallenge
         open={gate.open}
+        reason={gate.reason}
         session={session}
         onSuccess={gate.succeed}
         onCancel={gate.cancel}

@@ -68,7 +68,8 @@ import {
   getAuthnMfaFactorsQueryKey,
   useAuthnMfaRemoveFactor,
 } from '@speed/api-sdk'
-import type { AuthSession, AuthnStep } from '@speed/auth-core'
+import type { AuthSession, AuthnStep, StepUpReason } from '@speed/auth-core'
+import { stepUpReasonOf } from '@speed/auth-core'
 import {
   ConfirmDialog,
   errorCodeOf,
@@ -111,10 +112,18 @@ const ENROLL_LABEL_KEYS: Readonly<Record<string, string>> = {
   sms: 'mfa.enroll.sms',
 }
 
-/** The action a won step-up re-runs. */
+/** The action a won step-up re-runs, with what the refusal asked for. */
 type GatedAction =
-  | { readonly kind: 'enroll'; readonly factorKind: string }
-  | { readonly kind: 'remove'; readonly factorId: string }
+  | {
+      readonly kind: 'enroll'
+      readonly factorKind: string
+      readonly reason: StepUpReason
+    }
+  | {
+      readonly kind: 'remove'
+      readonly factorId: string
+      readonly reason: StepUpReason
+    }
 
 /** The open enrollment wizard: the step it is parked on and its sequence. */
 interface EnrollWizard {
@@ -246,8 +255,9 @@ export function MfaSection({ session }: MfaSectionProps) {
         return null
       } catch (error) {
         const code = errorCodeOf(error)
-        if (code === 'authn.insufficient_user_authentication') {
-          setGate({ kind: 'enroll', factorKind })
+        const reason = stepUpReasonOf(code)
+        if (reason !== null) {
+          setGate({ kind: 'enroll', factorKind, reason })
           return null
         }
         throw error
@@ -339,8 +349,9 @@ export function MfaSection({ session }: MfaSectionProps) {
       } catch (error) {
         setRemoveTarget(null)
         const code = errorCodeOf(error)
-        if (code === 'authn.insufficient_user_authentication') {
-          setGate({ kind: 'remove', factorId })
+        const reason = stepUpReasonOf(code)
+        if (reason !== null) {
+          setGate({ kind: 'remove', factorId, reason })
           return null
         }
         throw error
@@ -568,6 +579,7 @@ export function MfaSection({ session }: MfaSectionProps) {
 
       <StepUpChallenge
         open={gate !== null}
+        reason={gate?.reason}
         session={session}
         onSuccess={handleStepUpSuccess}
         onCancel={() => setGate(null)}

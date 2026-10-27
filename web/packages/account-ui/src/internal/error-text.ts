@@ -75,6 +75,7 @@ export const ERROR_TEXT_CODES = [
   'authn.flow_invalid',
   'authn.link_required',
   'authn.insufficient_user_authentication',
+  'authn.sso_required',
   'authn.method_disabled',
   'authn.account_unavailable',
   'authn.impersonation_restricted',

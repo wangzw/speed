@@ -88,7 +88,12 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import type { AuthnSessionView } from '@speed/api-sdk'
-import type { AuthSession, AuthnFlowAnswer, AuthnStep } from '@speed/auth-core'
+import type {
+  AuthSession,
+  AuthnFlowAnswer,
+  AuthnStep,
+  StepUpReason,
+} from '@speed/auth-core'
 import { humanGateNeedsProof, useStepUp } from '@speed/auth-core'
 import { HumanVerification } from '@speed/ui-kit'
 import { InlineError } from './inline-error.js'
@@ -114,6 +119,10 @@ type RefusalVerdict =
 export interface StepUpChallengeProps {
   /** Whether the dialog is showing. Opening resets its per-attempt state. */
   readonly open: boolean
+  /** What the refusal asked for: the local factor challenge (the default) or a
+   * fresh sign-in through the tenant's identity provider ("sso"), which no
+   * local factor can satisfy. */
+  readonly reason?: StepUpReason | null
   /** The session whose step-up flow the dialog drives. */
   readonly session: AuthSession
   /** Fired once when the flow settles the elevation. The host closes the dialog. */
@@ -130,18 +139,23 @@ export interface StepUpChallengeProps {
 
 export function StepUpChallenge({
   open,
+  reason = 'mfa',
   session,
   onSuccess,
   onCancel,
   accountHref,
 }: StepUpChallengeProps) {
+  const { t } = useAccountUiTranslation()
   const titleId = useId()
+  // The SSO refusal cannot be satisfied by any local factor, so the dialog
+  // starts no flow and reads no factor: it offers the sign-in exit alone.
+  const sso = reason === 'sso'
   // The caller's own registered factors, read while the dialog is open. No
   // factor read, or a failed one, falls back to the flow's own refusal.
-  const factors = useFactorsQuery(open)
-  const checking = open && factors.isPending
+  const factors = useFactorsQuery(open && !sso)
+  const checking = open && !sso && factors.isPending
   const noFactor =
-    open && factors.isSuccess && activeFactorCount(factors.data) === 0
+    open && !sso && factors.isSuccess && activeFactorCount(factors.data) === 0
   // Only an account with no factor needs its session read: with a factor
   // the flow enters at the factor step and names no method. The query
   // stays disabled -- the cached view may predate a sign-in completed
@@ -212,6 +226,14 @@ export function StepUpChallenge({
     return null
   }
 
+  // The SSO exit: end the session so the host's session gate converges on its
+  // sign-in surface, where the operator signs in through the tenant's identity
+  // provider. No local factor can clear this refusal.
+  function handleRelogin(): void {
+    onCancel()
+    void session.logout().catch(() => undefined)
+  }
+
   return (
     <Dialog
       open={open}
@@ -220,22 +242,39 @@ export function StepUpChallenge({
       maxWidth="xs"
       fullWidth
     >
-      <StepUpFlow
-        key={run}
-        session={session}
-        active={startFlow}
-        titleId={titleId}
-        onSuccess={onSuccess}
-        onCancel={onCancel}
-        onRestart={() => setRun((count) => count + 1)}
-        accountHref={accountHref}
-        freshFirst={freshFirst}
-        reloginOnly={reloginOnly}
-        checking={checking}
-        readingSession={readingSession}
-        reproveFirst={reproveFirst}
-        reproofMethod={reproofMethod}
-      />
+      {sso ? (
+        <>
+          <DialogTitle id={titleId}>{t('mfa.stepUp.ssoTitle')}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              {t('mfa.stepUp.ssoRequired')}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onCancel}>{t('mfa.stepUp.cancelLabel')}</Button>
+            <Button variant="contained" onClick={handleRelogin}>
+              {t('mfa.stepUp.relogin')}
+            </Button>
+          </DialogActions>
+        </>
+      ) : (
+        <StepUpFlow
+          key={run}
+          session={session}
+          active={startFlow}
+          titleId={titleId}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onRestart={() => setRun((count) => count + 1)}
+          accountHref={accountHref}
+          freshFirst={freshFirst}
+          reloginOnly={reloginOnly}
+          checking={checking}
+          readingSession={readingSession}
+          reproveFirst={reproveFirst}
+          reproofMethod={reproofMethod}
+        />
+      )}
     </Dialog>
   )
 }

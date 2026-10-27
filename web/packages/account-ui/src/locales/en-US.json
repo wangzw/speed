@@ -7,6 +7,7 @@
       "flow_invalid": "Your sign-in attempt is no longer valid. Please start again.",
       "link_required": "This social account's email belongs to an account here. Sign in to that account the way you signed in before, then link this account under Account settings → Social bindings.",
       "insufficient_user_authentication": "This action requires you to verify your identity again.",
+      "sso_required": "This action requires re-authentication through enterprise single sign-on. Sign in again.",
       "method_disabled": "This sign-in method is turned off. Choose another one.",
       "account_unavailable": "This account is unavailable. Contact an administrator for help.",
       "impersonation_restricted": "This action is not available while you are viewing as another account.",
@@ -147,6 +148,8 @@
     },
     "stepUp": {
       "title": "Verify your identity",
+      "ssoTitle": "Enterprise single sign-on required",
+      "ssoRequired": "This action requires re-authentication through enterprise single sign-on. Sign in again.",
       "description": "This action requires you to verify your identity again.",
       "starting": "Starting verification…",
       "confirmLabel": "Verify",

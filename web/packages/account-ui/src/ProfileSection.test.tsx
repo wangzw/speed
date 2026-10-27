@@ -7,8 +7,10 @@
  * live region and refetches the profile; a refused save renders its code
  * text in the banner; a save refused with 401
  * authn.insufficient_user_authentication opens the step-up dialog, and a
- * won step-up re-runs that one save exactly once; and a load that failed
- * renders the error state with a retry that refetches.
+ * won step-up re-runs that one save exactly once; a save refused with 401
+ * authn.sso_required names the enterprise sign-in and offers only the
+ * re-login exit; and a load that failed renders the error state with a retry
+ * that refetches.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -293,6 +295,60 @@ describe('ProfileSection', () => {
     )
     // One shortfall, one refresh failure: a duplicated save would warn again.
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the enterprise sign-in exit for a 401 authn.sso_required', async () => {
+    const warn = captureRefreshWarning()
+    let factorsRead = false
+    const respond: RealResponder = (call: RealCall) => {
+      if (call.method === 'GET' && call.path === PROFILE_PATH) {
+        return jsonResponse(200, profileBody({ display_name: 'Ada' }))
+      }
+      if (call.method === 'PATCH' && call.path === PROFILE_PATH) {
+        return errorResponse(401, 'authn.sso_required')
+      }
+      if (call.path === '/api/v1/auth/factors') {
+        factorsRead = true
+        return jsonResponse(200, {
+          factors: [
+            {
+              id: 'factor-1',
+              kind: 'totp',
+              label: 'App',
+              status: 'active',
+              created_at: '2026-01-01T00:00:00Z',
+            },
+          ],
+        })
+      }
+      throw new Error(`unexpected ${call.method} ${call.path}`)
+    }
+    mount(respond)
+    const user = userEvent.setup()
+
+    const field = await screen.findByRole('textbox', {
+      name: zhCN.profile.displayName.label,
+    })
+    await user.clear(field)
+    await user.type(field, 'Grace')
+    await user.click(screen.getByRole('button', { name: zhCN.profile.save }))
+
+    // A local factor cannot satisfy the SSO requirement: the dialog names the
+    // enterprise sign-in and offers the re-login exit, and it reads no factor.
+    expect(await screen.findByText(zhCN.mfa.stepUp.ssoRequired)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: zhCN.mfa.stepUp.relogin }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(zhCN.mfa.stepUp.description)).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: zhCN.mfa.stepUp.confirmLabel }),
+    ).not.toBeInTheDocument()
+    expect(factorsRead).toBe(false)
+    // The SSO shortfall's 401 is the expected refresh-failure diagnostic.
+    expect(warn).toHaveBeenCalledWith(
+      'access token refresh failed',
+      expect.objectContaining({ status: 401, code: 'authn.sso_required' }),
+    )
   })
 
   it('renders the error state with a retry that refetches when the load fails', async () => {

@@ -351,6 +351,7 @@ export function PreferencesSection({ session }: PreferencesSectionProps = {}) {
       {session !== undefined && (
         <StepUpChallenge
           open={gate.open}
+          reason={gate.reason}
           session={session}
           onSuccess={gate.succeed}
           onCancel={gate.cancel}
