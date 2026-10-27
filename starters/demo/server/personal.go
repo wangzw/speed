@@ -277,7 +277,8 @@ func init() { core.ProcessRegistry.Register(personalModule()) }
 // without an entry point the routes are not mounted, without a board the
 // conditional feature is simply absent from the document, and without the
 // gateway's registration surface the route is guarded by the gateway's default
-// and an impersonating caller is answered by the gateway instead of the handler.//
+// and an impersonating caller is answered by the gateway instead of the handler.
+//
 // The module provides the account lifecycle hook: the personal tenant follows
 // the account that owns it, and the account module calls the hooks after its own
 // transaction commits. Where the assembly also carries an event bus, the module
