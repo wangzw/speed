@@ -342,6 +342,15 @@ export const journeys: readonly JourneyEntry[] = [
     ],
   },
   {
+    journey: 'journey-passkey-user-verification.md',
+    status: 'covered',
+    covers: [
+      'REQ-security-008',
+      'REQ-security-039',
+      'REQ-signin-024',
+    ],
+  },
+  {
     journey: 'journey-personalize-interface.md',
     status: 'covered',
     covers: [

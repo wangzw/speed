@@ -28,6 +28,18 @@ export interface VirtualAuthenticator {
    * turned back on.
    */
   setPresent(present: boolean): Promise<void>
+  /**
+   * Whether the authenticator answers as if the user verified themselves, so
+   * the assertions it produces carry the user-verified flag.
+   *
+   * Turning this off makes a ceremony that asks for user verification fail in
+   * the browser with `NotAllowedError`; the authenticator produces no
+   * assertion at all. That is the only way the virtual device can express
+   * "the user was not verified": the CDP fixture cannot return an assertion
+   * whose user-verified flag is clear while the relying party requires the
+   * flag, so a spec that needs one cannot drive it through this device.
+   */
+  setUserVerified(verified: boolean): Promise<void>
   /** Detach the CDP session that owns the authenticator. */
   close(): Promise<void>
 }
@@ -58,6 +70,12 @@ export async function addVirtualAuthenticator(
       await session.send('WebAuthn.setAutomaticPresenceSimulation', {
         authenticatorId,
         enabled: present,
+      })
+    },
+    async setUserVerified(verified: boolean): Promise<void> {
+      await session.send('WebAuthn.setUserVerified', {
+        authenticatorId,
+        isUserVerified: verified,
       })
     },
     async close(): Promise<void> {
