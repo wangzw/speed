@@ -228,7 +228,15 @@ func (p *product) wire(reg *core.Registry) error {
 		names[speedhttp.ScopeTenants] = tenants
 	}
 	wired := make(map[speedhttp.Scope]wiredEndpoint, len(names))
-	for scope, name := range names {
+	// The scopes are visited in a fixed order. The map would otherwise decide
+	// which key a failure names: an unset system scope aliases the default's
+	// name, so an invalid default fails twice and the reader would be pointed at
+	// whichever scope the iteration reached first.
+	for _, scope := range []speedhttp.Scope{"", speedhttp.ScopeSystem, speedhttp.ScopeTenants} {
+		name, configured := names[scope]
+		if !configured {
+			continue
+		}
 		endpoint, lookupErr := router.Endpoint(name)
 		if lookupErr != nil {
 			if errors.Is(lookupErr, speedhttp.ErrUnknownEndpoint) {
