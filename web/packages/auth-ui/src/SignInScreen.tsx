@@ -646,15 +646,15 @@ export function SignInScreen({
         </Button>
       ) : null}
       {initialError === undefined ? null : (
-        <>
-          <InlineError code={initialError} />
-          {initialError === 'authn.link_required' &&
-          initialErrorEmail !== undefined ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {t('social.linkRequiredEmail', { email: initialErrorEmail })}
-            </Typography>
-          ) : null}
-        </>
+        <InlineError
+          code={initialError}
+          detail={
+            initialError === 'authn.link_required' &&
+            initialErrorEmail !== undefined
+              ? t('social.linkRequiredEmail', { email: initialErrorEmail })
+              : undefined
+          }
+        />
       )}
       {slots?.aboveChannels}
       {groupOrder.filter((group) => hasGroup[group]).map(renderGroup)}

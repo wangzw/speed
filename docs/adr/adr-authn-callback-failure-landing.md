@@ -46,7 +46,7 @@
 - 码取问题类型 `urn:speed:authn:<码>` 的 `<码>` 一段，是既有的封闭词汇；不带码的 500 落成 `unavailable`。
 - 片段而非查询串：片段不随请求发往服务器，码与掩码地址都不进访问日志，也不进页面能发出的 `Referer`。
 - 落地页读不出或不合规时退回问题文档：把用户代理送到一个未经校验的地址，比留在 JSON 上更糟。
-- 客户端把码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给登录面的内联错误渲染；白名单之外的码落通用文案。登录面为此多一个宿主注入的 `initialError` 属性，它自己不读 URL；`link-required` 的掩码地址另以 `initialErrorEmail` 注入，登录面只在码为 `authn.link_required` 时把它渲染为内联错误下方的一行。
+- 客户端把码按 api-client 的推导归一到 `authn.<码>`（连字符换下划线），交给登录面的内联错误渲染；白名单之外的码落通用文案。登录面为此多一个宿主注入的 `initialError` 属性，它自己不读 URL；`link-required` 的掩码地址另以 `initialErrorEmail` 注入，登录面只在码为 `authn.link_required` 时把它渲染进同一条内联错误横幅，与拒绝句一起被播报。
 
 ## 后果
 

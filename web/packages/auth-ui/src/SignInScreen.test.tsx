@@ -171,12 +171,12 @@ describe('SignInScreen', () => {
       />,
     )
     // The copy comes from the bundle, not the test; the server already
-    // masked the address, so the line shows it as it arrived.
-    expect(
-      screen.getByText(
-        zhCN.social.linkRequiredEmail.replace('{{email}}', 'a***@home.org'),
-      ),
-    ).toBeInTheDocument()
+    // masked the address, so the line shows it as it arrived. The address
+    // belongs to the same alert as the refusal, so one announcement names
+    // both.
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      zhCN.social.linkRequiredEmail.replace('{{email}}', 'a***@home.org'),
+    )
   })
 
   it('render no address line when no address is set', () => {

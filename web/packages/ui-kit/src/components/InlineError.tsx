@@ -24,7 +24,9 @@
  */
 
 import { forwardRef } from 'react'
+import type { ReactNode } from 'react'
 import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
 import { layerSx } from '../internal/root-style-props.js'
 import type { RootStyleProps } from '../internal/root-style-props.js'
 
@@ -110,6 +112,13 @@ export interface InlineErrorProps extends RootStyleProps {
    * namespace or falls back across languages.
    */
   readonly resolve: (code: string) => string
+  /**
+   * Content rendered inside the alert, below the resolved sentence. A
+   * failure that names something -- the address a refusal collided on --
+   * goes here rather than beside the banner, so the name is part of the
+   * one region announced when the alert appears.
+   */
+  readonly detail?: ReactNode
 }
 
 /**
@@ -117,7 +126,7 @@ export interface InlineErrorProps extends RootStyleProps {
  * error nothing renders, so a host ref stays unattached.
  */
 export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
-  function InlineError({ code, resolve, sx, className }, ref) {
+  function InlineError({ code, resolve, detail, sx, className }, ref) {
     if (code === null) {
       return null
     }
@@ -130,6 +139,11 @@ export const InlineError = forwardRef<HTMLDivElement, InlineErrorProps>(
         sx={layerSx({ width: '100%' }, sx)}
       >
         {resolve(code)}
+        {detail === undefined ? null : (
+          <Box component="div" sx={{ mt: 0.5 }}>
+            {detail}
+          </Box>
+        )}
       </Alert>
     )
   },

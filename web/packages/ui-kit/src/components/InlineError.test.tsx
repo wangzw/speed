@@ -45,6 +45,19 @@ describe('InlineError', () => {
     )
   })
 
+  it('renders its detail inside the same alert, so it is announced with the message', () => {
+    renderWithProviders(
+      <InlineError
+        code="authn.session_revoked"
+        resolve={resolverOf()}
+        detail="named detail"
+      />,
+    )
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('authn.session_revoked text')
+    expect(alert).toHaveTextContent('named detail')
+  })
+
   it('renders the resolver fallback for a code outside the listing', () => {
     renderWithProviders(
       <InlineError code="authn.future_code" resolve={resolverOf()} />,

@@ -155,9 +155,9 @@ test('social-account-linking: a password account links Google, then signs in wit
     // Automatic linking is off, so the provider's verified address is refused
     // with the binding sentence and the browser stays on the sign-in surface.
     await expect(
-      page.getByText(copy('authUi', 'errors.authn.link_required'), {
-        exact: true,
-      }),
+      page
+        .getByRole('alert')
+        .filter({ hasText: copy('authUi', 'errors.authn.link_required') }),
     ).toBeVisible()
     await expect(signInHeading(page)).toBeVisible()
     await expect(homeHeading(page)).toHaveCount(0)
@@ -233,9 +233,9 @@ test('social-account-linking: a password account links Google, then signs in wit
     // completes.
     await expect(homeHeading(page)).toBeVisible()
     await expect(
-      page.getByText(copy('authUi', 'errors.authn.link_required'), {
-        exact: true,
-      }),
+      page
+        .getByRole('alert')
+        .filter({ hasText: copy('authUi', 'errors.authn.link_required') }),
     ).toHaveCount(0)
 
     // The same account: it still holds the proved email identifier and the

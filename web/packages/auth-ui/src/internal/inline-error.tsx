@@ -13,16 +13,19 @@
  * key, anything else renders the errors.unknown fallback).
  */
 
+import type { ReactNode } from 'react'
 import { InlineError as SharedInlineError } from '@speed/ui-kit'
 import { useAuthUiErrorText } from './error-text.js'
 
 export interface InlineErrorProps {
   /** The code to render, or null for no error (renders nothing). */
   readonly code: string | null
+  /** Content rendered inside the banner, below the message. */
+  readonly detail?: ReactNode
 }
 
 /** The family's whole-attempt failure banner, one role="alert" per error. */
-export function InlineError({ code }: InlineErrorProps) {
+export function InlineError({ code, detail }: InlineErrorProps) {
   const resolve = useAuthUiErrorText()
-  return <SharedInlineError code={code} resolve={resolve} />
+  return <SharedInlineError code={code} resolve={resolve} detail={detail} />
 }

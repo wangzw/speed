@@ -206,22 +206,21 @@ test.describe('the provider address already belongs to an account', () => {
     })
 
     await test.step('the product lands back on sign-in with the binding refusal', async () => {
-      await expect(
-        page.getByText(copy('authUi', 'errors.authn.link_required'), {
-          exact: true,
-        }),
-      ).toBeVisible()
-      // The refusal names the colliding address, masked by the server to its
-      // first character and the domain as written, so the visitor can tell
-      // which address is already taken.
+      // The refusal and the colliding address are one alert: the sentence
+      // names what happened, the address names which of the visitor's
+      // addresses the account already holds, masked by the server to its
+      // first character and the domain as written. One region, one
+      // announcement.
       const [local = '', domain = ''] = identityProviderUser.email.split('@')
-      await expect(
-        page.getByText(
-          copy('authUi', 'social.linkRequiredEmail', {
-            email: `${local.charAt(0)}***@${domain}`,
-          }),
-        ),
-      ).toBeVisible()
+      const refusal = page
+        .getByRole('alert')
+        .filter({ hasText: copy('authUi', 'errors.authn.link_required') })
+      await expect(refusal).toBeVisible()
+      await expect(refusal).toContainText(
+        copy('authUi', 'social.linkRequiredEmail', {
+          email: `${local.charAt(0)}***@${domain}`,
+        }),
+      )
       // The visitor is not signed in: the sign-in surface is still the
       // document, not the tenant area, so nothing was taken over.
       await expect(signInHeading(page)).toBeVisible()
