@@ -85,12 +85,13 @@ func TestTheRoutesAreTheTwoTheDesignNamesAndBothAreGuarded(t *testing.T) {
 		t.Fatalf("%d routes registered, want 2: %+v", len(got), got)
 	}
 	want := []mounttest.Registration{
-		{Kind: mounttest.Guarded, Methods: []string{http.MethodGet}, Path: "/api/v1/auth/factors"},
-		{Kind: mounttest.Guarded, Methods: []string{http.MethodDelete}, Path: "/api/v1/auth/factors/:id"},
+		{Kind: mounttest.Guarded, Methods: []string{http.MethodGet}, Path: "/api/v1/auth/factors", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{http.MethodDelete}, Path: "/api/v1/auth/factors/:id", Impersonable: true},
 	}
 	for i := range want {
-		if got[i].Kind != want[i].Kind || !slices.Equal(got[i].Methods, want[i].Methods) || got[i].Path != want[i].Path || got[i].Impersonable {
-			t.Errorf("route %d is %+v, want %+v and not impersonable", i, got[i], want[i])
+		if got[i].Kind != want[i].Kind || !slices.Equal(got[i].Methods, want[i].Methods) ||
+			got[i].Path != want[i].Path || got[i].Impersonable != want[i].Impersonable {
+			t.Errorf("route %d is %+v, want %+v", i, got[i], want[i])
 		}
 	}
 }
@@ -632,31 +633,42 @@ func TestAnAnonymousRequestIsTurnedAwayAndTheFactorStays(t *testing.T) {
 	}
 }
 
-// The gateway refuses an impersonating identity on a route that was not registered
-// for it, and the handlers refuse it themselves as well, so the refusal does not
-// depend on one layer. The second is exercised without the gateway in front.
-func TestAnImpersonatingIdentityCannotDeleteAFactor(t *testing.T) {
+// An impersonating identity reaches both factor routes and acts on the
+// effective account: it lists and removes the impersonated account's factors,
+// with the operator's own freshness satisfying the requirement. The handler is
+// exercised without the gateway in front too, so the route's behaviour does not
+// rest on the registration alone.
+func TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor(t *testing.T) {
 	r := routed(t, authn.FactorTOTP)
 	id := r.activeFactor(acct, authn.FactorTOTP, time.Hour)
+	r.sessions.add(sessionUUID, "admin-1")
 	impersonating := append(multiAt(time.Minute),
 		authntest.WithActor("admin-1"), authntest.WithSession(sessionUUID), authntest.WithScope("tenant-1"))
 
 	r.mounter.As(impersonating...)
-	if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusUnauthorized {
-		t.Errorf("through the gateway: DELETE = %d, want 401", w.Code)
+	if w := r.do(http.MethodGet, listPath, nil); w.Code != http.StatusOK {
+		t.Fatalf("GET %s while impersonating = %d: %s", listPath, w.Code, w.Body.String())
+	}
+	if w := r.do(http.MethodDelete, listPath+"/"+id, nil); w.Code != http.StatusNoContent {
+		t.Fatalf("DELETE %s while impersonating = %d: %s", listPath+"/"+id, w.Code, w.Body.String())
+	}
+	if _, there := r.status(id); there {
+		t.Error("the effective account's factor is still there")
 	}
 
+	// The handler alone, the path a registration made wrongly would expose.
+	id = r.activeFactor(acct, authn.FactorTOTP, time.Hour)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodDelete, listPath+"/"+id, nil)
 	c.Request = c.Request.WithContext(authntest.Context(t, c.Request.Context(), impersonating...))
 	c.Params = gin.Params{{Key: "id", Value: id}}
 	removeFactorOperation.Handle(r.p.deleteFactor)(c)
-	if w.Code != http.StatusForbidden || problemOf(t, w).Type != problemType+mount.CodeImpersonationRestricted {
-		t.Errorf("the handler alone: DELETE = %d %s, want 403 impersonation-restricted", w.Code, w.Body.String())
+	if w.Code != http.StatusNoContent {
+		t.Errorf("the handler alone: DELETE = %d %s, want 204", w.Code, w.Body.String())
 	}
-	if _, there := r.status(id); !there {
-		t.Error("the factor was deleted by an impersonating identity")
+	if _, there := r.status(id); there {
+		t.Error("the factor was not removed by the handler alone")
 	}
 }
 

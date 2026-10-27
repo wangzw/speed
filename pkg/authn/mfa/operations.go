@@ -120,8 +120,9 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 		"pending or disabled factor ends no session and rotates none, and a session store that fails "+
 		"after the factor is gone is reported as an outage. "+
 		"The call requires a fresh multi-factor authentication verified "+
-		"locally, so one merely declared by an identity provider does not satisfy it; an impersonating "+
-		"identity is refused. A factor that is not the caller's answers the same as one already gone, "+
+		"locally, so one merely declared by an identity provider does not satisfy it; the requirement is "+
+		"the effective account's and the proof is the caller's own, so an impersonating identity removes "+
+		"the impersonated account's factor. A factor that is not the caller's answers the same as one already gone, "+
 		"so the route never answers 404 and repeating a removal is idempotent: it finishes any session "+
 		"revocation and rotation an earlier attempt could not. When the account has "+
 		"mfa_required set, its last active factor cannot be removed.",
@@ -130,8 +131,6 @@ var removeFactorOperation = speedhttp.NewReplyOperation[removeFactorInput](
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The factor identifier is malformed"),
 		unauthorized(removeChallengeHeader,
 			"No usable credential, or a fresh multi-factor authentication is required"),
-		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The identity is impersonating, which the route refuses"),
 		speedhttp.ProblemResponse(http.StatusConflict,
 			"The factor is the account's last active factor, which cannot be removed while the account "+
 				"requires multi-factor authentication"),

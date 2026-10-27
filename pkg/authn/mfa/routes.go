@@ -34,16 +34,16 @@ const stepUpDescription = "A stronger or more recent authentication is required"
 const cacheControlSetCookie = `no-cache="Set-Cookie"`
 
 // mountRoutes registers the routes. Both are guarded by the gateway, which is
-// what makes them Required, and neither is registered Impersonable: the gateway
-// refuses an impersonating identity on them, and the handler refuses one too, so
-// the refusal does not depend on a single layer. Each route is registered from
-// the operation that declares it, so the handler's input and answer types, the
+// what makes them Required, and both are registered Impersonable: an
+// impersonating identity lists and removes the effective account's factors,
+// exactly as the account's own holder does. Each route is registered from the
+// operation that declares it, so the handler's input and answer types, the
 // fragment and the route are one source.
 func (m *product) mountRoutes() {
 	mount.Declared(m.mounter, factorsOperation, mountRel(mfaSpec, factorsOperation.Path),
-		factorsOperation.Handle(m.listFactors))
+		factorsOperation.Handle(m.listFactors), mount.Impersonable())
 	mount.Declared(m.mounter, removeFactorOperation, mountRel(mfaSpec, removeFactorOperation.Path),
-		removeFactorOperation.Handle(m.deleteFactor))
+		removeFactorOperation.Handle(m.deleteFactor), mount.Impersonable())
 }
 
 // mountRel turns a declared route into the relative path the mounter joins to
@@ -117,20 +117,19 @@ func (m *product) listFactors(ctx context.Context, _ struct{}) (AuthnMfaFactorLi
 
 // deleteFactor answers DELETE /factors/:id. It asks for a fresh multi-factor
 // authentication that was verified here: an IdP's declaration of one is not
-// enough to remove an account's own factor. The route is where the account's
-// other sessions are ended after a successful removal of an active factor and the
-// requesting one is rotated: the device that removed the factor stays signed in
-// on a new token, and the token it held before no longer authenticates. A factor
-// that is not the caller's reads as one already gone, because the route has no
-// 404 among its answers and a different answer for another account's identifier
-// would say it exists.
+// enough to remove an account's own factor. The requirement is the effective
+// account's, while the proof is the caller's own, so an impersonating identity
+// removes the impersonated account's factor with its own freshness. The route is
+// where the account's other sessions are ended after a successful removal of an
+// active factor and the requesting one is rotated: the device that removed the
+// factor stays signed in on a new token, and the token it held before no longer
+// authenticates. A factor that is not the caller's reads as one already gone,
+// because the route has no 404 among its answers and a different answer for
+// another account's identifier would say it exists.
 func (m *product) deleteFactor(ctx context.Context, in removeFactorInput, _ *speedhttp.Meta) (speedhttp.Reply, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
 		return nil, m.unauthorized()
-	}
-	if id.Impersonating() {
-		return nil, authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
 	}
 	requirement := authn.FreshLocalMulti(m.settings.recentWindow())
 	if !id.Satisfies(requirement, m.clock.Now()) {

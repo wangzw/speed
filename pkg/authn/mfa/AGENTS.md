@@ -52,9 +52,13 @@ dashboard or an audit query written against it.
   multi-factor; a mandatory switch and an account with no factor means register;
   an IdP's declaration is believed only with a factor absent and nothing requiring
   one; otherwise one factor completes the login
-  (`TestRequireFollowsThePolicyTable`, `Require`). A factor whose kind has no
-  implementation here is unavailable and not absent, so it is left out of the list
-  rather than read as the account having none
+  (`TestRequireFollowsThePolicyTable`, `Require`). The outcome is decided by the
+  requirement account and the offered list holds the proof account's factors:
+  they are the same account for an ordinary login, and apart when an impersonating
+  identity proves its own factors for the impersonated account
+  (`TestRequireDecidesTheOutcomeFromTheRequirementAccount`). A factor whose kind
+  has no implementation here is unavailable and not absent, so it is left out of
+  the list rather than read as the account having none
   (`TestAKindWithNoImplementationIsRefusedAndNeverCounted`).
 - **The assurance is composed in one place and read nowhere else.** `Assurance` is
   a pure function of the first factor's proof and the second factor's pass; the
@@ -152,14 +156,16 @@ dashboard or an audit query written against it.
   `TestACleanupThatFailsIsReturnedAndTheRepeatFinishesIt`,
   `TestADisabledAccountKeepsItsFactors`,
   `TestTheDeletionEventCompensatesAndIsDeduplicatedByItsID`).
-- **The two routes are the two below, both guarded, and a deletion
-  asks for a fresh local multi-factor verified here.** `GET B/factors` lists the
-  caller's own factors and nothing of a kind's own; `DELETE B/factors/:id` refuses
-  an impersonating identity, requires `FreshLocalMulti(recent-window)` — an IdP's
+- **The two routes are the two below, both guarded and both impersonable, and a
+  deletion asks for a fresh local multi-factor verified here.** `GET B/factors`
+  lists the caller's own factors and nothing of a kind's own; `DELETE
+  B/factors/:id` acts on the effective account's factors, requires
+  `FreshLocalMulti(recent-window)` from the caller's own proof — an IdP's
   declared multi-factor does not satisfy it — and reads a factor that is not the
-  caller's as one already gone (`TestTheRoutesAreTheTwoTheDesignNamesAndBothAreGuarded`,
+  effective account's as one already gone
+  (`TestTheRoutesAreTheTwoTheDesignNamesAndBothAreGuarded`,
   `TestDeletingAFactorNeedsAFreshMultiFactorAuthenticationVerifiedHere`,
-  `TestAnImpersonatingIdentityCannotDeleteAFactor`,
+  `TestAnImpersonatingIdentityRemovesTheEffectiveAccountsFactor`,
   `TestTheListIsTheCallersOwnAndCarriesNothingSecret`).
 - **The failure direction is closed: a dependency that cannot be read is an
   outage, never a refusal.** The database and the back-off store being unreadable
