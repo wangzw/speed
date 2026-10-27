@@ -64,9 +64,10 @@ The API is the package's godoc.
   drive includes fails the startup rather than running insecurely.
 - **The routes are mounted through `mount.Mounter` and the access level is
   registered beside them.** `GET /session` is optional and impersonable and
-  answers `authenticated: false` with no credential; `POST /logout` is
-  guarded and impersonable; listing and revoking sessions is guarded and not
-  impersonable, and the handler refuses an impersonating identity again.
+  answers `authenticated: false` with no credential; the other four are guarded
+  and impersonable. The read and logout act on the operator's own session;
+  listing and revoking sessions act on the effective account's sessions, so an
+  impersonating identity neither lists nor revokes the operator's own.
 - **The routes are declared as HTTP operations, and the fragment is generated
   from the declarations.** `operations.go` declares the five operations —
   method, path relative to the API root, summary, description, path parameter

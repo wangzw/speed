@@ -167,11 +167,9 @@ var listOperation = speedhttp.NewOperation[struct{}, AuthnSessionList](
 	"Lists the caller's own live browser and token sessions, most recently created first (by creation "+
 		"instant, then by identifier), with the current one flagged. Service-account sessions are not "+
 		"listed, and the list is not paginated: every live session of the account is returned. An "+
-		"impersonating identity is refused with 403.",
+		"impersonating identity lists the impersonated account's sessions, never the operator's own.",
 	nil,
 	speedhttp.Failures(commonFailures,
-		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The identity is impersonating, which the route refuses"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "The session store could not be reached"),
 		speedhttp.Response{
 			Status:      http.StatusOK,
@@ -191,12 +189,10 @@ var revokeOthersOperation = speedhttp.NewOperation[struct{}, AuthnSessionRevoked
 	"Revokes every unrevoked browser and token session of the caller's account except the one the "+
 		"request came with, in a single statement, and answers with the number of rows it changed. "+
 		"Expiry is not a condition: a session past its expiry that was never revoked is revoked and "+
-		"counted too. Service-account sessions are untouched. An impersonating identity is refused with "+
-		"403.",
+		"counted too. Service-account sessions are untouched. An impersonating identity revokes the "+
+		"impersonated account's sessions; the operator's own session is outside that set and stays.",
 	nil,
 	speedhttp.Failures(commonFailures,
-		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The identity is impersonating, which the route refuses"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "The session store could not be reached"),
 		speedhttp.Response{
 			Status:      http.StatusOK,
@@ -222,7 +218,7 @@ var revokeOneOperation = speedhttp.NewReplyOperation[revokeOneInput](
 	nil,
 	speedhttp.Failures(commonFailures,
 		speedhttp.ProblemResponse(http.StatusForbidden,
-			"The session is not the caller's, does not exist, or the identity is impersonating"),
+			"The session is not the caller's, does not exist, or is a service-account session"),
 		speedhttp.ProblemResponse(http.StatusServiceUnavailable, "The session store could not be reached"),
 		speedhttp.Response{
 			Status:      http.StatusNoContent,

@@ -20,15 +20,15 @@ import (
 // The five self-service routes are mounted through the mounter with the access
 // level the design gives each: the session read is optional and impersonable,
 // logout is guarded and impersonable, and listing and revoking sessions is
-// guarded and not impersonable.
+// guarded and impersonable because they act on the effective account's sessions.
 func TestTheSelfServiceRoutesAreMountedWithTheirAccessLevels(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	want := []mounttest.Registration{
 		{Kind: mounttest.Optional, Methods: []string{"GET"}, Path: "/api/v1/auth/session", Impersonable: true},
 		{Kind: mounttest.Guarded, Methods: []string{"POST"}, Path: "/api/v1/auth/logout", Impersonable: true},
-		{Kind: mounttest.Guarded, Methods: []string{"GET"}, Path: "/api/v1/auth/sessions"},
-		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/api/v1/auth/sessions"},
-		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/api/v1/auth/sessions/:id"},
+		{Kind: mounttest.Guarded, Methods: []string{"GET"}, Path: "/api/v1/auth/sessions", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/api/v1/auth/sessions", Impersonable: true},
+		{Kind: mounttest.Guarded, Methods: []string{"DELETE"}, Path: "/api/v1/auth/sessions/:id", Impersonable: true},
 	}
 	got := f.mounter.Registrations()
 	if len(got) != len(want) {
@@ -55,33 +55,60 @@ func TestAnAnonymousSessionReadSaysNobodyIsLoggedIn(t *testing.T) {
 	}
 }
 
-// An identity that is impersonating reaches the session read and logout, which
-// are impersonable, and is refused on the three routes that manage sessions.
-func TestAnImpersonatingIdentityIsRefusedOnTheSessionManagementRoutes(t *testing.T) {
+// An identity that is impersonating reaches every session route. The listing
+// and both revocations act on the impersonated account's sessions: the
+// operator's own session is outside that set, so it is listed nowhere, kept by
+// the "revoke the others" call and refused by the one-session call.
+func TestAnImpersonatingIdentityManagesTheTargetsSessions(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
 	f.accounts.add("acct-victim", nil)
-	issued := f.create(newBrowser(alice))
+	operators := f.create(newBrowser(alice))
+	victimCurrent := f.create(newBrowser("acct-victim"))
+	victimOther := f.create(newBrowser("acct-victim"))
 	f.mounter.As(
 		authntest.WithAccount("acct-victim"),
 		authntest.WithActor(alice),
-		authntest.WithSession(issued.ID),
+		authntest.WithSession(operators.ID),
 		authntest.WithScope("acme"),
 	)
 
-	if rec := get(t, f, "/api/v1/auth/session"); rec.Code != http.StatusOK {
-		t.Errorf("the impersonable session read answered %d, want 200", rec.Code)
+	rec := get(t, f, "/api/v1/auth/sessions")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the listing answered %d, want 200: %s", rec.Code, rec.Body)
 	}
-	for _, c := range []struct {
-		method, path string
-	}{
-		{http.MethodGet, "/api/v1/auth/sessions"},
-		{http.MethodDelete, "/api/v1/auth/sessions"},
-		{http.MethodDelete, "/api/v1/auth/sessions/" + string(issued.ID)},
-	} {
-		if rec := send(t, f, c.method, c.path); rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s %s answered %d, want 401 for an impersonating identity", c.method, c.path, rec.Code)
-		}
+	body := rec.Body.String()
+	if !strings.Contains(body, string(victimCurrent.ID)) || !strings.Contains(body, string(victimOther.ID)) {
+		t.Errorf("the listing does not name the impersonated account's sessions:\n%s", body)
+	}
+	if strings.Contains(body, string(operators.ID)) {
+		t.Errorf("the listing names the operator's own session:\n%s", body)
+	}
+
+	// One of the target's sessions is revoked; the operator's own is not the
+	// caller's to touch and answers as not found.
+	if rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions/"+string(victimOther.ID)); rec.Code != http.StatusNoContent {
+		t.Fatalf("revoking the target's session answered %d, want 204", rec.Code)
+	}
+	if !f.row(victimOther.ID).RevokedAt.Valid {
+		t.Error("the impersonated account's session was not revoked")
+	}
+	if rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions/"+string(operators.ID)); rec.Code != http.StatusForbidden {
+		t.Errorf("revoking the operator's own session answered %d, want 403", rec.Code)
+	}
+	if f.row(operators.ID).RevokedAt.Valid {
+		t.Error("the operator's own session was revoked")
+	}
+
+	// Revoking the others ends the target's sessions and leaves the operator's.
+	if rec := send(t, f, http.MethodDelete, "/api/v1/auth/sessions"); rec.Code != http.StatusOK {
+		t.Fatalf("revoking the others answered %d, want 200", rec.Code)
+	}
+	if !f.row(victimCurrent.ID).RevokedAt.Valid {
+		t.Error("the impersonated account's remaining session was not revoked")
+	}
+	if f.row(operators.ID).RevokedAt.Valid {
+		t.Error("the operator's own session was revoked by the target's revoke-the-others")
 	}
 }
 
@@ -247,33 +274,22 @@ func send(t *testing.T, f *fixture, method, path string) *httptest.ResponseRecor
 	return f.mounter.Do(r)
 }
 
-// The handlers of the session-management routes refuse an impersonating identity
-// themselves, so the refusal does not rest on the gateway's guard alone. Here
+// The handlers of the session-management routes act for the effective account
+// themselves, so the behaviour does not rest on the gateway's guard alone. Here
 // each is called without the gateway in front, with the identity on the request.
-func TestAnImpersonatingIdentityIsRefusedByTheHandlersThemselves(t *testing.T) {
+func TestAnImpersonatingIdentityHandlersActOnTheTarget(t *testing.T) {
 	f := newFixture(t, dialects[0])
 	f.accounts.add(alice, nil)
 	f.accounts.add("acct-victim", nil)
-	issued := f.create(newBrowser(alice))
+	operators := f.create(newBrowser(alice))
+	victim := f.create(newBrowser("acct-victim"))
 	id := authntest.Context(t, context.Background(),
 		authntest.WithAccount("acct-victim"),
 		authntest.WithActor(alice),
-		authntest.WithSession(issued.ID),
+		authntest.WithSession(operators.ID),
 		authntest.WithScope("acme"),
 	)
 
-	check := func(name string, w *httptest.ResponseRecorder) {
-		t.Helper()
-		if w.Code != http.StatusForbidden {
-			t.Errorf("%s: the handler alone answered %d, want 403", name, w.Code)
-		}
-		var p struct {
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil || p.Type != "urn:speed:authn:"+mount.CodeImpersonationRestricted {
-			t.Errorf("%s: the handler alone answered %s, want impersonation-restricted (%v)", name, w.Body.String(), err)
-		}
-	}
 	call := func(method, path string, params gin.Params, h gin.HandlerFunc) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
@@ -283,15 +299,24 @@ func TestAnImpersonatingIdentityIsRefusedByTheHandlersThemselves(t *testing.T) {
 		return w
 	}
 
-	check("GET /sessions", call(http.MethodGet, "/api/v1/auth/sessions", nil,
-		listOperation.Handle(f.p.handleSessions)))
-	check("DELETE /sessions", call(http.MethodDelete, "/api/v1/auth/sessions", nil,
-		revokeOthersOperation.Handle(f.p.handleRevokeOthers)))
-	check("DELETE /sessions/:id", call(http.MethodDelete, "/api/v1/auth/sessions/"+string(issued.ID),
-		gin.Params{{Key: "id", Value: string(issued.ID)}}, revokeOneOperation.Handle(f.p.handleRevokeOne)))
-
-	if f.row(issued.ID).RevokedAt.Valid {
-		t.Error("an impersonating identity revoked a session through a handler")
+	listed := call(http.MethodGet, "/api/v1/auth/sessions", nil, listOperation.Handle(f.p.handleSessions))
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), string(victim.ID)) {
+		t.Errorf("the handler alone listed %d %s, want the impersonated account's session", listed.Code, listed.Body.String())
+	}
+	one := call(http.MethodDelete, "/api/v1/auth/sessions/"+string(victim.ID),
+		gin.Params{{Key: "id", Value: string(victim.ID)}}, revokeOneOperation.Handle(f.p.handleRevokeOne))
+	if one.Code != http.StatusNoContent {
+		t.Errorf("the handler alone revoked the target's session with %d, want 204", one.Code)
+	}
+	if !f.row(victim.ID).RevokedAt.Valid {
+		t.Error("the handler alone did not revoke the impersonated account's session")
+	}
+	others := call(http.MethodDelete, "/api/v1/auth/sessions", nil, revokeOthersOperation.Handle(f.p.handleRevokeOthers))
+	if others.Code != http.StatusOK {
+		t.Errorf("the handler alone revoked the others with %d, want 200", others.Code)
+	}
+	if f.row(operators.ID).RevokedAt.Valid {
+		t.Error("the handler alone revoked the operator's own session")
 	}
 }
 

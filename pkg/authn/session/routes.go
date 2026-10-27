@@ -62,21 +62,21 @@ func (p *product) recordAudit(ctx context.Context, e audit.Entry) {
 // method behind the cross-origin check.
 //
 // GET /session may be asked without a credential and answers that nobody is
-// logged in; a credential that does not hold is still a 401. POST /logout and
-// GET /session are open to an identity that is impersonating, and the three
-// routes that list and revoke sessions are not registered for it: the gateway
-// refuses an impersonating identity there, and each handler refuses it again.
+// logged in; a credential that does not hold is still a 401. All five routes are
+// open to an identity that is impersonating: the session read and logout act on
+// the operator's own session, and listing and revoking sessions act on the
+// effective account's sessions, never on the operator's.
 func (p *product) mountRoutes() {
 	mount.Declared(p.mounter, sessionOperation, mountRel(sessionOperation.Path),
 		sessionOperation.Handle(p.handleSession), mount.Impersonable())
 	mount.Declared(p.mounter, logoutOperation, mountRel(logoutOperation.Path),
 		logoutOperation.Handle(p.handleLogout), mount.Impersonable())
 	mount.Declared(p.mounter, listOperation, mountRel(listOperation.Path),
-		listOperation.Handle(p.handleSessions))
+		listOperation.Handle(p.handleSessions), mount.Impersonable())
 	mount.Declared(p.mounter, revokeOthersOperation, mountRel(revokeOthersOperation.Path),
-		revokeOthersOperation.Handle(p.handleRevokeOthers))
+		revokeOthersOperation.Handle(p.handleRevokeOthers), mount.Impersonable())
 	mount.Declared(p.mounter, revokeOneOperation, mountRel(revokeOneOperation.Path),
-		revokeOneOperation.Handle(p.handleRevokeOne))
+		revokeOneOperation.Handle(p.handleRevokeOne), mount.Impersonable())
 }
 
 // mountRel turns a declared route into the relative path the mounter joins to
@@ -235,10 +235,10 @@ func (p *product) handleRevokeOne(ctx context.Context, in revokeOneInput, _ *spe
 	return reply, nil
 }
 
-// ownSessionCaller reads the caller of a route that lists or revokes sessions and
-// refuses one that is impersonating: the gateway already does, as the route is not
-// registered for it, and this is the same refusal where the route is reached by a
-// path that does not go through the gateway.
+// ownSessionCaller reads the caller of a route that lists or revokes sessions.
+// The account every one of them reads is the identity's own, which is the
+// impersonated account under an impersonation: the operator's session is outside
+// that set, so it is neither listed nor revoked through these routes.
 func (p *product) ownSessionCaller(ctx context.Context) (authn.Identity, error) {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -253,9 +253,6 @@ func (p *product) ownSessionCaller(ctx context.Context) (authn.Identity, error) 
 				Value: mount.UnauthorizedChallenge(p.mounter.Endpoint()),
 			}},
 		}
-	}
-	if id.Impersonating() {
-		return authn.Identity{}, authnFailure(http.StatusForbidden, mount.CodeImpersonationRestricted)
 	}
 	return id, nil
 }
