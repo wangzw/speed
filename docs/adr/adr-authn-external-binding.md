@@ -67,8 +67,8 @@
 
 - Google 取 `sub`。
 - GitHub 取数字 `id`；`login` 会变，只作展示。
-- 企业 OIDC 取 `sub`，命名空间是 `oidc:<IdP 标识>`。
-- SAML 取 `NameID` 或提供方行映射指定的属性，命名空间是 `saml:<IdP 标识>`。
+- 企业 OIDC 取 `sub`，或提供方行映射指定的稳定声明；`email` 不得映射为主体。命名空间是 `oidc:<IdP 标识>`。
+- SAML 取 `NameID` 或提供方行映射指定的属性；该属性必须承载稳定标识，邮箱地址属性不可用。命名空间是 `saml:<IdP 标识>`。
 - 微信取 `unionid`；没有 `unionid` 时取 `wechat-openid:<appid>` 命名空间下的 `openid`。
 
 **微信的补键。** 微信登录方法交出的主体取 `unionid`，没有则取 `openid` 的命名空间键，并把另一个键作为旧键别名一并交给引擎。已有以 `openid` 为键的绑定、而本次断言带来 `unionid` 时，没有账户占用该 `unionid` 就给同一账户补一条以 `unionid` 为键的绑定；已被别的账户占用则以 `ErrBindingConflict` 失败，不合并。

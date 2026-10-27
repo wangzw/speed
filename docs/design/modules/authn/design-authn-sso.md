@@ -342,10 +342,10 @@ CREATE INDEX authn_saml_assertions_expiry ON authn_saml_assertions (not_on_or_af
 | 协议 | 键 | 含义与校验 |
 |---|---|---|
 | oidc | `issuer`、`client_id`、`scopes`、`algs` | `issuer` 必须是具体的 `https` issuer，与发现文档的 `issuer` 逐字相等（含末尾斜杠，go-oidc 的要求），拒绝 `common`、`organizations` 这类聚合地址，所以不用库注释自称不安全的 `InsecureIssuerURLContext`；`scopes` 缺省 `["openid","email","profile"]`，`openid` 是取回 ID 令牌所必需；`algs` 缺省 `["RS256","ES256"]`，不得含 `none` 与 `HS*` |
-| oidc、saml | `claims` | 声明名到目标的映射，目标只许 `email`、`display_name`、`subject`（缺省 OIDC 取 `sub`、SAML 取 `NameID`）与至多 8 个 `attr.<名>`（写入属性集时加 `idp.` 前缀）。只有 `subject` 有缺省；`email` 与 `display_name` 没有缺省，未映射即留空——`jit` 开户缺 `email` 映射按首登失败处理。取值只从字符串声明填充，非字符串（数组、数字）的声明值被丢弃 |
+| oidc、saml | `claims` | 声明名到目标的映射，目标只许 `email`、`display_name`、`subject`（缺省 OIDC 取 `sub`、SAML 取 `NameID`）与至多 8 个 `attr.<名>`（写入属性集时加 `idp.` 前缀）。只有 `subject` 有缺省；`email` 与 `display_name` 没有缺省，未映射即留空——`jit` 开户缺 `email` 映射按首登失败处理。取值只从字符串声明填充，非字符串（数组、数字）的声明值被丢弃。映射到 `subject` 的声明必须是该提供方给出的稳定标识；`email` 不得映射为 `subject`，校验按 `ErrInvalidConfig` 拒绝——邮箱会变，作主体会让提供方侧换邮箱后的登录找不到原绑定 |
 | oidc、saml | `mfa_acr_values` | `trust_idp_mfa` 为真时，哪些 `acr` 或 `AuthnContextClassRef` 取值算多因素；空表即不信任任何取值 |
 | saml | `idp_entity_id`、`idp_sso_url`、`idp_certs` | 以下键必填：`idp_entity_id` 为空时库跳过颁发者校验；`idp_sso_url` 为 https 且无用户信息；`idp_certs` 是 IdP 签名证书的 PEM 列表，1 到 4 个，任一可验签（证书轮换时当前与下一张并存），证书是公钥，不加密 |
-| saml | `metadata_url`、`name_id_format`、`subject_attribute`、`sign_requests` | `metadata_url` 可空，只在刷新时取一次；`name_id_format` 缺省 `persistent`，`transient` 一律拒绝（没有稳定标识），`emailAddress` 格式不稳定、须配置 `subject_attribute` 改取别的属性；`sign_requests` 为真时必须配了 SP 密钥 |
+| saml | `metadata_url`、`name_id_format`、`subject_attribute`、`sign_requests` | `metadata_url` 可空，只在刷新时取一次；`name_id_format` 缺省 `persistent`，`transient` 一律拒绝（没有稳定标识），`emailAddress` 格式不稳定、须配置 `subject_attribute` 改取别的属性；`subject_attribute` 指向的属性必须承载稳定标识，不得是邮箱地址属性；`sign_requests` 为真时必须配了 SP 密钥 |
 
 `claims` 的目标集是封闭集（`email`、`display_name`、`subject`、`attr.<名>`）。`attr.<名>` 里的名字与 `idp.` 前缀拼成的键须满足会话载荷里 `idp.*` 的分项上限（键含前缀至多 32 字节，所以名字至多 28 字节；界限只在 [design-authn-gate](design-authn-gate.md#出口检查) 写一份），名字超出的映射在 `config` 校验时按 `ErrInvalidConfig` 拒绝；`idp.` 与 `authn.` 是保留前缀，账户属性不得使用，`idp.` 只能由本映射写入。
 
