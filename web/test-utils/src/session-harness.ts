@@ -96,9 +96,9 @@ export interface MethodDescriptorBody {
 }
 
 /** The GET /api/v1/auth/methods body: the deployment's enabled method
- * descriptors, whether a first login may open an account, and the second
- * factor kinds offered. A plain string is shorthand for a `form`
- * descriptor of that name. */
+ * descriptors, whether a first login may open an account, the second
+ * factor kinds offered, and the anonymous password reset capability. A
+ * plain string is shorthand for a `form` descriptor of that name. */
 export function methodList(
   methods: readonly (string | MethodDescriptorBody)[],
   overrides: {
@@ -108,12 +108,15 @@ export function methodList(
     humanRequired?: boolean
     humanProvider?: string
     humanSiteKey?: string
+    passwordReset?: boolean
+    passwordResetMethods?: readonly string[]
   } = {},
 ): {
   methods: MethodDescriptorBody[]
   signup: { enabled: boolean; password: { enabled: boolean } }
   mfa: { factors: string[] }
   human: { required: boolean; provider: string; site_key?: string }
+  password_reset: { enabled: boolean; methods: string[] }
 } {
   return {
     methods: methods.map((entry) =>
@@ -130,6 +133,10 @@ export function methodList(
       ...(overrides.humanSiteKey === undefined
         ? {}
         : { site_key: overrides.humanSiteKey }),
+    },
+    password_reset: {
+      enabled: overrides.passwordReset ?? false,
+      methods: [...(overrides.passwordResetMethods ?? [])],
     },
   }
 }

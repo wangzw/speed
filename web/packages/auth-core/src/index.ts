@@ -140,4 +140,5 @@ export type {
   AuthnSsoProvider,
   AuthnStep,
   FeatureState,
+  PasswordResetChannel,
 } from './session.js'

@@ -539,6 +539,16 @@ export interface AuthnLoginMFA {
 }
 
 /**
+ * Whether this deployment offers the anonymous password reset and through which channels. It is a deployment fact, the same for every anonymous caller, and it says nothing about whether any account can be reset.
+ */
+export interface AuthnLoginPasswordReset {
+  /** Whether the anonymous password reset is open: the switch is open, the audit record is present, and at least one channel is available */
+  enabled: boolean;
+  /** The channels the reset may be sent through: email and sms, sorted, leaving out a channel that is not assembled, whose template is missing or that a disabled method turned off */
+  methods: string[];
+}
+
+/**
  * Whether the anonymous name-and-password register route is open, reported on its own because it is independent of a first login opening an account.
  */
 export interface AuthnLoginSignupPassword {
@@ -566,8 +576,33 @@ export interface AuthnLoginMethods {
   methods: AuthnMethodDescriptor[];
   /** The second-factor kinds the deployment takes in. */
   mfa: AuthnLoginMFA;
+  /** Whether this deployment offers the anonymous password reset, and the channels it may use. */
+  password_reset: AuthnLoginPasswordReset;
   /** Whether registration is open on this deployment: true when either `authn.account.signup` or `authn.account.password-signup` is `open`. */
   signup: AuthnLoginSignup;
+}
+
+/**
+ * sent after a code was sent, verified once the code held
+ */
+export type AuthnLoginPasswordResetStateState = typeof AuthnLoginPasswordResetStateState[keyof typeof AuthnLoginPasswordResetStateState];
+
+
+export const AuthnLoginPasswordResetStateState = {
+  sent: 'sent',
+  verified: 'verified',
+} as const;
+
+/**
+ * The state of the bound anonymous password reset: whether a code was sent or the identifier is proved, how long the code or the proved ticket lives, and, while a code is outstanding, how soon another may be asked for. It carries no account, no identifier and no code.
+ */
+export interface AuthnLoginPasswordResetState {
+  /** How long the code or the proved ticket lives, in whole seconds */
+  expires_in: number;
+  /** How soon another code may be asked for, in whole seconds; absent once the identifier is proved */
+  resend_after?: number;
+  /** sent after a code was sent, verified once the code held */
+  state: AuthnLoginPasswordResetStateState;
 }
 
 /**
@@ -1999,6 +2034,45 @@ export type AuthnLoginChangePasswordBody = {
   current_password?: string;
   /** The new password, required and non-empty. The password module decides the policy: a value outside it is a 400 bad-request, and a value equal to the current password is refused. */
   new_password?: string;
+};
+
+/**
+ * The channel to prove the holder of: email proves an address verified by an emailed code, sms proves a phone number verified by a code sent to it.
+ */
+export type AuthnLoginPasswordResetStartBodyChannel = typeof AuthnLoginPasswordResetStartBodyChannel[keyof typeof AuthnLoginPasswordResetStartBodyChannel];
+
+
+export const AuthnLoginPasswordResetStartBodyChannel = {
+  email: 'email',
+  sms: 'sms',
+} as const;
+
+/**
+ * The first step of an anonymous password reset: the channel to prove and the identifier to send a code to.
+ */
+export type AuthnLoginPasswordResetStartBody = {
+  /** The channel to prove the holder of: email proves an address verified by an emailed code, sms proves a phone number verified by a code sent to it. */
+  channel: AuthnLoginPasswordResetStartBodyChannel;
+  /** The human-verification proof the deployment may require before it sends a verification message: a Turnstile token or a proof-of-work token. It is ignored when the deployment requires none. A value longer than 8 KiB is a 400 bad-request before any provider is asked; a missing or invalid proof is a 403 human-verification-required and no message is sent. */
+  human_proof?: string;
+  /** The address or E.164 phone number the code is sent to. An address is trimmed and lowercased first; a malformed value is a 400 bad-request. */
+  identifier: string;
+};
+
+/**
+ * The new password of a reset whose identifier has been proved.
+ */
+export type AuthnLoginPasswordResetCompleteBody = {
+  /** The new password, required and non-empty. The password module decides the policy: a value outside it is a 400 bad-request and the reset stays proved, so another password may be tried. */
+  new_password: string;
+};
+
+/**
+ * The code sent to the identifier the bound reset is proving.
+ */
+export type AuthnLoginPasswordResetVerifyBody = {
+  /** The code as the channel sent it. Empty or longer than 32 bytes is a 400 bad-request; a wrong code, an expired code and a suppressed record are all a 401 login-failed. */
+  code: string;
 };
 
 /**
@@ -4213,6 +4287,334 @@ export const useAuthnLoginChangePassword = <TError = Problem,
         TContext
       > => {
       return useMutation(getAuthnLoginChangePasswordMutationOptions(options));
+    }
+
+/**
+ * Starts an anonymous password reset for the identifier in the body and sends a code to it, or follows the same path without sending one. A target that is not eligible — unknown, disabled, deleted, without a password or whose identifier is not proved by the requested channel — gets the same 202, the same headers and the same reset cookie as an eligible one. Every send budget overrun suppresses the message and still answers 202; only the originating cookie's own resend interval and the login source-address pre-throttle answer 429. The binding is an independent `__Host-authn-reset` cookie; the login flow cookie is neither read nor written, and no session is made.
+ * @summary Start an anonymous password reset and send a code
+ */
+export const authnLoginPasswordResetStart = (
+    authnLoginPasswordResetStartBody: AuthnLoginPasswordResetStartBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnLoginPasswordResetState>(
+      {url: `/api/v1/auth/password-reset`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnLoginPasswordResetStartBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginPasswordResetStartMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetStart>>, TError,{data: AuthnLoginPasswordResetStartBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetStart>>, TError,{data: AuthnLoginPasswordResetStartBody}, TContext> => {
+
+const mutationKey = ['authnLoginPasswordResetStart'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginPasswordResetStart>>, {data: AuthnLoginPasswordResetStartBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authnLoginPasswordResetStart(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginPasswordResetStartMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginPasswordResetStart>>>
+    export type AuthnLoginPasswordResetStartMutationBody = AuthnLoginPasswordResetStartBody
+    export type AuthnLoginPasswordResetStartMutationError = Problem
+
+    /**
+ * @summary Start an anonymous password reset and send a code
+ */
+export const useAuthnLoginPasswordResetStart = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetStart>>, TError,{data: AuthnLoginPasswordResetStartBody}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginPasswordResetStart>>,
+        TError,
+        {data: AuthnLoginPasswordResetStartBody},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginPasswordResetStartMutationOptions(options));
+    }
+
+/**
+ * Writes the new password of a reset whose identifier has been proved. It re-reads the reset switch and the channel, re-checks that the account is still eligible, writes the mandatory `authn.password.reset` attempted audit row, then writes the password with the account's own checks inside the write transaction: the account must still be enabled, still hold a password credential, and the proved identifier must still belong to it. A password outside the policy answers 400 bad-request and the reset stays proved, so another password may be tried; an account that is no longer eligible answers 403 password-reset-unavailable. On success every browser and token session of the account is revoked, the reset record is removed and the cookie cleared, and the answer is 204. No session is created, and no factor is touched.
+ * @summary Set the new password of a proved anonymous password reset
+ */
+export const authnLoginPasswordResetComplete = (
+    authnLoginPasswordResetCompleteBody: AuthnLoginPasswordResetCompleteBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/auth/password-reset/complete`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnLoginPasswordResetCompleteBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginPasswordResetCompleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetComplete>>, TError,{data: AuthnLoginPasswordResetCompleteBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetComplete>>, TError,{data: AuthnLoginPasswordResetCompleteBody}, TContext> => {
+
+const mutationKey = ['authnLoginPasswordResetComplete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginPasswordResetComplete>>, {data: AuthnLoginPasswordResetCompleteBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authnLoginPasswordResetComplete(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginPasswordResetCompleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginPasswordResetComplete>>>
+    export type AuthnLoginPasswordResetCompleteMutationBody = AuthnLoginPasswordResetCompleteBody
+    export type AuthnLoginPasswordResetCompleteMutationError = Problem
+
+    /**
+ * @summary Set the new password of a proved anonymous password reset
+ */
+export const useAuthnLoginPasswordResetComplete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetComplete>>, TError,{data: AuthnLoginPasswordResetCompleteBody}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginPasswordResetComplete>>,
+        TError,
+        {data: AuthnLoginPasswordResetCompleteBody},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginPasswordResetCompleteMutationOptions(options));
+    }
+
+/**
+ * Removes the anonymous password reset the request's reset cookie is bound to and clears the cookie. It is idempotent: no binding, no record and a closed reset all answer 204. It sends nothing and changes no account. A dependency that cannot answer is a 503.
+ * @summary Abandon the bound anonymous password reset
+ */
+export const authnLoginPasswordResetDelete = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<void>(
+      {url: `/api/v1/auth/password-reset/current`, method: 'DELETE', signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginPasswordResetDeleteMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetDelete>>, TError,void, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetDelete>>, TError,void, TContext> => {
+
+const mutationKey = ['authnLoginPasswordResetDelete'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginPasswordResetDelete>>, void> = () => {
+
+
+          return  authnLoginPasswordResetDelete()
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginPasswordResetDeleteMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginPasswordResetDelete>>>
+
+    export type AuthnLoginPasswordResetDeleteMutationError = Problem
+
+    /**
+ * @summary Abandon the bound anonymous password reset
+ */
+export const useAuthnLoginPasswordResetDelete = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetDelete>>, TError,void, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginPasswordResetDelete>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAuthnLoginPasswordResetDeleteMutationOptions(options));
+    }
+
+/**
+ * Reads the anonymous password reset the request's reset cookie is bound to, so a page refresh can resume it. It answers whether a code is outstanding or the identifier is proved and how long either lives, and never the account, the identifier or the code. A missing or expired binding, and a record that is being completed, are a 401 flow-invalid. A closed reset answers 403 password-reset-closed.
+ * @summary The state of the bound anonymous password reset
+ */
+export const authnLoginPasswordResetCurrent = (
+
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnLoginPasswordResetState>(
+      {url: `/api/v1/auth/password-reset/current`, method: 'GET', signal
+    },
+      );
+    }
+
+
+
+
+export const getAuthnLoginPasswordResetCurrentQueryKey = () => {
+    return [
+    `/api/v1/auth/password-reset/current`
+    ] as const;
+    }
+
+
+export const getAuthnLoginPasswordResetCurrentQueryOptions = <TData = Awaited<ReturnType<typeof authnLoginPasswordResetCurrent>>, TError = Problem>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnLoginPasswordResetCurrent>>, TError, TData>, }
+) => {
+
+const {query: queryOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAuthnLoginPasswordResetCurrentQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof authnLoginPasswordResetCurrent>>> = ({ signal }) => authnLoginPasswordResetCurrent(signal);
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof authnLoginPasswordResetCurrent>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AuthnLoginPasswordResetCurrentQueryResult = NonNullable<Awaited<ReturnType<typeof authnLoginPasswordResetCurrent>>>
+export type AuthnLoginPasswordResetCurrentQueryError = Problem
+
+
+/**
+ * @summary The state of the bound anonymous password reset
+ */
+
+export function useAuthnLoginPasswordResetCurrent<TData = Awaited<ReturnType<typeof authnLoginPasswordResetCurrent>>, TError = Problem>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof authnLoginPasswordResetCurrent>>, TError, TData>, }
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAuthnLoginPasswordResetCurrentQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+/**
+ * Checks the code sent to the identifier the bound reset is proving. A real SMS code is checked by the SMS capability; a real email code is compared against the salted digest in the record; a suppressed record compares against a local decoy and never passes. Every failure — a wrong code, an expired code, a suppressed record and this record's used-up attempts — is the same 401 login-failed, and the attempts are counted on the record itself. On a match the record moves to verified and the reset cookie's lifetime is refreshed to the ticket lifetime. A closed reset answers 403 password-reset-closed.
+ * @summary Verify the code of the bound anonymous password reset
+ */
+export const authnLoginPasswordResetVerify = (
+    authnLoginPasswordResetVerifyBody: AuthnLoginPasswordResetVerifyBody,
+ signal?: AbortSignal
+) => {
+
+
+      return speedRequest<AuthnLoginPasswordResetState>(
+      {url: `/api/v1/auth/password-reset/verify`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: authnLoginPasswordResetVerifyBody, signal
+    },
+      );
+    }
+
+
+
+export const getAuthnLoginPasswordResetVerifyMutationOptions = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetVerify>>, TError,{data: AuthnLoginPasswordResetVerifyBody}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetVerify>>, TError,{data: AuthnLoginPasswordResetVerifyBody}, TContext> => {
+
+const mutationKey = ['authnLoginPasswordResetVerify'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof authnLoginPasswordResetVerify>>, {data: AuthnLoginPasswordResetVerifyBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  authnLoginPasswordResetVerify(data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AuthnLoginPasswordResetVerifyMutationResult = NonNullable<Awaited<ReturnType<typeof authnLoginPasswordResetVerify>>>
+    export type AuthnLoginPasswordResetVerifyMutationBody = AuthnLoginPasswordResetVerifyBody
+    export type AuthnLoginPasswordResetVerifyMutationError = Problem
+
+    /**
+ * @summary Verify the code of the bound anonymous password reset
+ */
+export const useAuthnLoginPasswordResetVerify = <TError = Problem,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof authnLoginPasswordResetVerify>>, TError,{data: AuthnLoginPasswordResetVerifyBody}, TContext>, }
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof authnLoginPasswordResetVerify>>,
+        TError,
+        {data: AuthnLoginPasswordResetVerifyBody},
+        TContext
+      > => {
+      return useMutation(getAuthnLoginPasswordResetVerifyMutationOptions(options));
     }
 
 /**

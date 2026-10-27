@@ -149,6 +149,7 @@ describe('list methods', () => {
       signup: { enabled: true, password: { enabled: true } },
       mfa: { factors: ['totp'] },
       human: { required: false, provider: 'off' },
+      password_reset: { enabled: false, methods: [] },
     })
     expect(harness.calls).toHaveLength(1)
     expect(harness.calls[0]?.path).toBe('/api/v1/auth/methods')
@@ -275,6 +276,83 @@ describe('list methods', () => {
       }),
     })
     await expectProtocolViolation(harness.session.listMethods(), harness)
+  })
+
+  it('reads the password reset capability the deployment publishes', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () =>
+        methodList([], {
+          passwordReset: true,
+          passwordResetMethods: ['email', 'sms'],
+        }),
+    })
+    const methods = await harness.session.listMethods()
+    expect(methods.password_reset).toEqual({
+      enabled: true,
+      methods: ['email', 'sms'],
+    })
+  })
+
+  it('reads a methods 2xx that drops the password reset section as closed (an older server)', async () => {
+    const harness = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
+      }),
+    })
+    const methods = await harness.session.listMethods()
+    expect(methods.password_reset).toEqual({ enabled: false, methods: [] })
+  })
+
+  it('refuses a password reset section that is malformed', async () => {
+    const notADocument = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
+        password_reset: 'email',
+      }),
+    })
+    await expectProtocolViolation(notADocument.session.listMethods(), notADocument)
+
+    const notABoolean = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
+        password_reset: { enabled: 'yes', methods: [] },
+      }),
+    })
+    await expectProtocolViolation(notABoolean.session.listMethods(), notABoolean)
+
+    const noMethods = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
+        password_reset: { enabled: true },
+      }),
+    })
+    await expectProtocolViolation(noMethods.session.listMethods(), noMethods)
+
+    const unknownChannel = makeHarness({
+      [LOGIN_METHODS]: () => ({
+        methods: [],
+        signup: { enabled: false, password: { enabled: false } },
+        mfa: { factors: [] },
+        human: { required: false, provider: 'off' },
+        password_reset: { enabled: true, methods: ['email', 'post'] },
+      }),
+    })
+    await expectProtocolViolation(
+      unknownChannel.session.listMethods(),
+      unknownChannel,
+    )
   })
 })
 

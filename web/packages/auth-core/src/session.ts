@@ -173,6 +173,7 @@ import type {
   AuthnLoginFlow,
   AuthnLoginHuman,
   AuthnLoginMethods,
+  AuthnLoginPasswordReset,
   AuthnLoginRegisterBody,
   AuthnLoginRegistration,
   AuthnLoginSession,
@@ -290,6 +291,10 @@ export type AuthnFlowState =
  * settings and the modules in the assembly, so the frontend renders it
  * rather than hard-coding a set. */
 export type AuthnMethodList = AuthnLoginMethods
+
+/** The channel an anonymous password reset can use: one member of the
+ * discovery document's `password_reset.methods`. */
+export type PasswordResetChannel = 'email' | 'sms'
 
 /** The human-verification gate the discovery document reports: whether a
  * send must present a proof, which mechanism checks it, and the public
@@ -1061,6 +1066,47 @@ function parseHumanGate(value: unknown): AuthnHumanGate {
   }
 }
 
+/** The capability a methods document that carries no password reset
+ * section is read as: closed, with no channel. A client newer than its
+ * server must keep working against the older answer. */
+const PASSWORD_RESET_CLOSED: AuthnLoginPasswordReset = {
+  enabled: false,
+  methods: [],
+}
+
+/** Validates the anonymous password reset capability of a methods answer.
+ * The member is optional on the wire for the reason the closed fallback
+ * exists; when it is present, its enabled switch and channel list are
+ * required, and a channel outside the known set is a contract violation
+ * rather than a value the screen could render. */
+function parsePasswordReset(value: unknown): AuthnLoginPasswordReset {
+  if (value === undefined) {
+    return { ...PASSWORD_RESET_CLOSED, methods: [] }
+  }
+  const reset = asObject(value, 'methods password_reset is not a document')
+  if (typeof reset.enabled !== 'boolean') {
+    throw protocolViolation('methods password_reset carries no enabled boolean')
+  }
+  if (!Array.isArray(reset.methods)) {
+    throw protocolViolation('methods password_reset carries no methods array')
+  }
+  return {
+    enabled: reset.enabled,
+    methods: reset.methods.map((entry) => {
+      const channel = requireString(
+        entry,
+        'methods password_reset carries a non-string channel',
+      )
+      if (channel !== 'email' && channel !== 'sms') {
+        throw protocolViolation(
+          `methods password_reset carries an unknown channel ${channel}`,
+        )
+      }
+      return channel
+    }),
+  }
+}
+
 function parseMethodList(body: unknown): AuthnMethodList {
   const rec = asObject(body, 'methods 2xx carries no body document')
   if (!Array.isArray(rec.methods)) {
@@ -1094,6 +1140,7 @@ function parseMethodList(body: unknown): AuthnMethodList {
       ),
     },
     human,
+    password_reset: parsePasswordReset(rec.password_reset),
   }
 }
 
