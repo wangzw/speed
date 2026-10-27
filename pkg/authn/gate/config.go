@@ -18,7 +18,7 @@ const (
 	endpointsItem      = "endpoints"
 	budgetItem         = "call-budget"
 	inFlightItem       = "in-flight"
-	mountEndpointItem  = "mount.endpoint"
+	mountEndpointsItem = "mount.endpoints"
 	mountBasesItem     = "mount.bases"
 	mountPublicURLItem = "mount.public-url"
 	mountInsecureItem  = "mount.allow-insecure"
@@ -84,10 +84,13 @@ type moduleConfig struct {
 
 // mountConfig is the mount.* section of the configuration.
 type mountConfig struct {
-	// Endpoint is the endpoint the capability's own routes are mounted on.
-	// Empty means the one endpoint the entry point declares, when it declares
-	// exactly one.
-	Endpoint string `config:"endpoint"`
+	// Endpoints is the endpoint each scope's routes are mounted on. The
+	// capability's routes span policy domains, and the endpoint decides which
+	// layers a request meets before its handler: the tenant-administration
+	// routes are decided in the tenant's domain and need the tenant layers,
+	// while the ordinary and platform-management routes are decided outside
+	// it.
+	Endpoints endpoints `config:"endpoints"`
 	// Bases is the base path of each scope the capability's routes are mounted
 	// under: the levels are published under different path segments.
 	Bases bases `config:"bases"`
@@ -96,6 +99,25 @@ type mountConfig struct {
 	PublicURL string `config:"public-url"`
 	// AllowInsecure admits an http public URL, for development.
 	AllowInsecure bool `config:"allow-insecure"`
+}
+
+// endpoints is the endpoint of each scope the capability's routes are published
+// under. The default scope is the ordinary surface; the two management scopes
+// are published beside it.
+type endpoints struct {
+	// Default is the endpoint the ordinary routes are mounted on. Empty means
+	// the one endpoint the entry point declares.
+	Default string `config:"default"`
+	// Tenants is the endpoint the tenant-administration routes are mounted on.
+	// It has no fallback: those routes are decided in the tenant policy domain,
+	// and the endpoint has to be one both tenant layers cover. Empty leaves the
+	// scope unmountable, which is the state of an assembly that publishes no
+	// tenant-administration routes.
+	Tenants string `config:"tenants"`
+	// System is the endpoint the platform-management routes are mounted on.
+	// Empty means the default endpoint: both are decided outside the tenant
+	// policy domain and share a chain unless the deployment separates them.
+	System string `config:"system"`
 }
 
 // bases is the base path of the ordinary surface and of each management scope
@@ -306,9 +328,18 @@ func schema() config.Schema {
 				Description: "how many calls into credential-verifying backends may run at " +
 					"once before further requests end as an outage",
 			},
-			mountEndpointItem: {
-				Description: "the endpoint the authentication routes are mounted on; empty " +
-					"takes the entry point's only endpoint",
+			mountEndpointsItem + ".default": {
+				Description: "the endpoint the ordinary authentication routes are mounted " +
+					"on; empty takes the entry point's only endpoint",
+			},
+			mountEndpointsItem + ".tenants": {
+				Description: "the endpoint the tenant-administration routes are mounted on; " +
+					"it has to be one the tenant resolution and admission layers cover, " +
+					"and empty leaves that scope unmountable",
+			},
+			mountEndpointsItem + ".system": {
+				Description: "the endpoint the platform-administration routes are mounted " +
+					"on; empty takes the default endpoint",
 			},
 			mountBasesItem + ".default": {
 				Description: "the base path the ordinary authentication routes are mounted under",

@@ -254,7 +254,15 @@ func Assembly(t *testing.T, module core.Module) ([]core.Module, map[string]any) 
 	config := routecontract.Config(databaseConfig, map[string]any{
 		"authn": map[string]any{
 			"gate": map[string]any{
-				"mount": map[string]any{"public-url": PublicURL},
+				"mount": map[string]any{
+					"public-url": PublicURL,
+					// The fixture drives to Init, where the tenant scope's
+					// routes have to have an endpoint to mount on. The
+					// gateway's Start then judges that endpoint against the
+					// tenant layers, which this assembly does not carry; a
+					// case about that pairing drives its own assembly.
+					"endpoints": map[string]any{"tenants": routecontract.DefaultEndpoint},
+				},
 			},
 		},
 	})

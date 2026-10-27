@@ -118,7 +118,7 @@ func TestMountEndpointJudgementSaysWhichSettingItJudged(t *testing.T) {
 			g.router = routerWith("public")
 			g.mounted = true
 			g.scope = fakeScope{"public": true}
-			g.settings.mount.Endpoint = c.configured
+			g.settings.mount.Endpoints.Default = c.configured
 			err := g.checkMount(nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("checkMount returned %v, want it to say %q", err, c.want)
@@ -189,7 +189,7 @@ func TestStartupDiagnosticsNameWhatIsOpenedAndWhatImpersonationReaches(t *testin
 			logs := liveAssembly{
 				endpoints: []string{"admin", "public"},
 				scope:     c.scope,
-				gateItems: `"mount":{"endpoint":"public"}`,
+				gateItems: `"mount":{"endpoints":{"default":"public"}}`,
 				backends:  []authn.Verifier{basicBackend("static", "static.")},
 				optional:  []liveRoute{{endpoint: "public", method: "GET", path: "/catalog"}},
 			}.serve(t, func(*live) {})

@@ -48,11 +48,12 @@ func (p *product) Callback(methods []string, rel string, h gin.HandlerFunc) {
 // BaseIn is the base path routes of the given scope are joined to.
 func (p *product) BaseIn(scope speedhttp.Scope) string { return p.bases[scope] }
 
-// Endpoint is the endpoint the routes are mounted on. It is settled in Init, and
-// empty before it.
+// Endpoint is the endpoint the ordinary scope is mounted on. It is settled in
+// Init, and empty before it. A handler's own 401 names it as its realm, the
+// protection space being the ordinary authentication surface.
 func (p *product) Endpoint() string {
 	if w := p.wired.Load(); w != nil {
-		return w.name
+		return w.defaultName
 	}
 	return ""
 }
@@ -72,6 +73,12 @@ func (p *product) CSRF() *http.CrossOriginProtection { return p.csrf }
 // method and path, which is the whole of what makes the pair one registration.
 // A registration outside the window either surface accepts one in panics, with
 // the route named in front of the surface's own text.
+//
+// The endpoint is the one configured for the route's scope. No scope falls back
+// to another except the platform-management scope, which shares the ordinary
+// one: a tenant-scoped route on the ordinary endpoint would be decided on a
+// chain no tenant layer guards, so the missing key is refused here at its call
+// site rather than mounted somewhere it does not belong.
 func (p *product) register(call string, lvl level, methods []string, rel string, h gin.HandlerFunc, spec mount.Spec, callback bool) {
 	w := p.wired.Load()
 	if w == nil {
@@ -87,26 +94,33 @@ func (p *product) register(call string, lvl level, methods []string, rel string,
 		panic(fmt.Sprintf("%s: %s(%s, %q) was registered for the scope %q, which has no configured "+
 			"base path", ModuleName, call, strings.Join(methods, ", "), rel, scope))
 	}
+	endpoint, mounted := w.endpoints[scope]
+	if !mounted {
+		panic(fmt.Sprintf("%s: %s(%s, %q) was registered for the scope %q, which has no configured "+
+			"endpoint. A route of that scope is decided in the tenant's policy domain, so its "+
+			"endpoint has to be covered by the tenant resolution and admission layers; write %s",
+			ModuleName, call, strings.Join(methods, ", "), rel, scope, key(tenantsMountItem)))
+	}
 	p.checkCall(call, methods, rel, h, base)
 
 	path := base + rel
-	chain := mount.Wrap(p.csrf, w.name, h)
+	chain := mount.Wrap(p.csrf, endpoint.name, h)
 	if callback {
 		registering(call, strings.Join(methods, ", "), path, func() { mount.AllowCallback(p.csrf, methods, path) })
 	}
 	for _, method := range methods {
 		registering(call, method, path, func() {
-			w.endpoint.Route(method, path, chain)
+			endpoint.endpoint.Route(method, path, chain)
 			switch lvl {
 			case levelPublic:
-				w.gate.Exempt(w.name, method, path)
+				w.gate.Exempt(endpoint.name, method, path)
 			case levelOptional:
-				w.gate.Optional(w.name, method, path)
+				w.gate.Optional(endpoint.name, method, path)
 			case levelGuarded:
 				// The gateway guards every route it has not been told otherwise about.
 			}
 			if spec.Impersonable {
-				w.gate.Impersonable(w.name, method, path)
+				w.gate.Impersonable(endpoint.name, method, path)
 			}
 		})
 	}

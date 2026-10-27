@@ -21,18 +21,18 @@ func TestTheKeysAreReadFromTheGatewaysSectionWithItsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading the defaults: %v", err)
 	}
-	if got.Mount.Bases != want || got.Mount.Endpoint != "" || got.Mount.PublicURL != "" ||
+	if got.Mount.Bases != want || got.Mount.Endpoints != (endpoints{}) || got.Mount.PublicURL != "" ||
 		got.Mount.AllowInsecure || len(got.TrustedOrigins) != 0 {
 		t.Errorf("the defaults read %+v, want %+v and nothing else", got, want)
 	}
 
-	got, err = readSettings(newReader(t, gateBody(`"mount":{"endpoint":"admin","bases":{`+
+	got, err = readSettings(newReader(t, gateBody(`"mount":{"endpoints":{"default":"admin"},"bases":{`+
 		`"default":"/identity","tenants":"/identity","system":"/identity"},`+
 		`"public-url":"https://app.example.com","allow-insecure":true},"trusted-origins":["https://other.example.com"]`)))
 	if err != nil {
 		t.Fatalf("reading written values: %v", err)
 	}
-	if got.Mount.Endpoint != "admin" || got.Mount.Bases.Default != "/identity" || got.Mount.PublicURL != "https://app.example.com" ||
+	if got.Mount.Endpoints.Default != "admin" || got.Mount.Bases.Default != "/identity" || got.Mount.PublicURL != "https://app.example.com" ||
 		!got.Mount.AllowInsecure || len(got.TrustedOrigins) != 1 || got.TrustedOrigins[0] != "https://other.example.com" {
 		t.Errorf("the written values read %+v, which is not what the configuration says", got)
 	}

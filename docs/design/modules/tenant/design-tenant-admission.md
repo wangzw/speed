@@ -24,7 +24,7 @@
 - **不解析租户。** 请求属于哪个租户由 `tenant.resolve` 认定；准入层读 `tenant.FromContext`，不读请求面的租户名，也不读名册（[design-tenant](design-tenant.md)）。
 - **不登记、不改写、不结束冒充，不核对冒充的发起条件。** 记录与限制归 `authn.impersonation`（[design-authn-impersonation](../authn/design-authn-impersonation.md)）；准入层只比对身份带的范围与请求的租户。
 - **不合成保障等级。** 等级只在 `authn.mfa` 一处合成；准入层读身份上已盖章的 `Assurance()` 与 `AssuranceFromIDP()`（[design-authn-mfa](../authn/design-authn-mfa.md)）。
-- **不核对网关的挂载端是否落在自己所守的端里。** 这条核对由网关在 `Start` 里经 `ScopeGuard.Covers` 执行（[design-authn-gate](../authn/design-authn-gate.md)）。
+- **不核对网关的挂载端是否落在自己所守的端里。** 这条核对由网关在 `Start` 里经 `ScopeGuard.Covers` 执行（[design-authn-gate](../authn/design-authn-gate.md)）；本模块只核对自己的清单落在解析层清单之内。
 - **不核对宿主有没有在所守的端上开租户解析的豁免。** `ScopeGuard.Covers` 只说准入层守哪些端。
 - **不约束账户登录。** 强度要求与冒充范围约束的是该租户内的请求；账户全局，仍可登录、仍可访问它所属的其他租户。
 - **不提供判定接缝、成员关系或 IdP 登记的默认实现。** `Decider`、`SSOProviders` 缺席时的行为是判定的一部分，写在核心算法与流程。
@@ -38,6 +38,10 @@
 |---|---|---|
 | 所守的端 | 本文 | `tenant.admission.endpoints` 列出的端点：准入层在这些端上登记了中间件。`ScopeGuard.Covers` 对这些端回答真。 |
 | 有效保障等级 | 本文 | 准入层在比对 `tenant.admission.require-mfa` 时使用的等级，由身份的 `Assurance()` 与 `AssuranceFromIDP()` 导出；规则见「有效保障等级」一节。 |
+
+## 哪些路由落在所守的端上
+
+一条路由只有在**既按租户寻址**（路径带租户标识）、**又由该租户治理**（判定发生在该租户的策略域）时，才落在准入层所守的端上。路径带租户而判定在平台域的路由——例如 `/api/v1/system/tenants/{tenant}/...`——不落在准入层里：租户在那里是被操作的数据，不是请求的域。判据是判定域，不是路径里有没有租户；按形状推断会把平台域的租户数据操作误判成租户域。认证功能目录据此把租户管理作用域的路由挂到 `authn.gate.mount.endpoints.tenants`，并让该端同时出现在本层与解析层的清单里；普通面与平台管理作用域的路由不在两层之内。
 
 ## 外部接口契约
 
@@ -71,7 +75,7 @@ type ScopeGuard interface {
 `ScopeGuard.Covers(endpoint)` 报出 `endpoints` 里是否有该端：清单只含具体端名，不含 `*`，所以回答是精确的集合成员判定。消费方：
 
 - `authn.impersonation` 把 `ScopeGuard` 当必需依赖：没有准入层的装配里冒充无法限定在一个租户内，该装配在构造之前以 `core.ErrMissingProvider` 失败（[design-authn-impersonation](../authn/design-authn-impersonation.md)）。
-- 网关把 `ScopeGuard` 当可选依赖：冒充身份只被放进准入层所守的端与登记为 `Impersonable` 的路由；网关在 `Start` 里核对 `Covers(mount.endpoint)` 为真即 `ErrInvalidConfig`（[design-authn-gate](../authn/design-authn-gate.md)）。
+- 网关把 `ScopeGuard` 当可选依赖：冒充身份只被放进准入层所守的端与登记为 `Impersonable` 的路由；网关在 `Start` 里按作用域核对：普通面与平台管理作用域的挂载端上 `Covers` 为真即 `ErrInvalidConfig`，租户管理作用域的挂载端（`authn.gate.mount.endpoints.tenants`）上 `Covers` 为假同样终止（[design-authn-gate](../authn/design-authn-gate.md)）。
 
 ### 链上的位置
 
@@ -95,7 +99,7 @@ type ScopeGuard interface {
 
 输入项的完整键表、取值域与缺省值只在 [design-authn-config](../authn/design-authn-config.md) 给出；本节写语义。
 
-- **`tenant.admission.endpoints`**（配置，字符串列表）：准入层所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`**（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。清单的形状同 `tenant.resolve.endpoints`，一般与它相同；对 `*` 的处置不同：解析层把 `*` 当作未声明的端名，以 `ErrUnknownEndpoint` 终止，准入层以 `ErrInvalidConfig` 终止。清单不得含认证的挂载端，核对由网关执行。
+- **`tenant.admission.endpoints`**（配置，字符串列表）：准入层所守的端。**必填、无缺省、不接受 `*`，空清单是 `ErrInvalidConfig`**（[ADR-tenant-admission](../../../adr/adr-tenant-admission.md)）。清单的形状同 `tenant.resolve.endpoints`，一般与它相同；对 `*` 的处置不同：解析层把 `*` 当作未声明的端名，以 `ErrUnknownEndpoint` 终止，准入层以 `ErrInvalidConfig` 终止。**清单必须是 `tenant.resolve.endpoints` 的子集**：本模块在 `Prepare` 里读对方清单，列出对方不解析的端即 `ErrInvalidConfig`。落在那样的端上的请求没有租户上下文，而本层对非冒充的无租户上下文请求一律放行，成员检查就不会发生；对方清单未写出或未声明时无从比较，那一档由解析层自己的必填与空清单规则处理。清单不得含普通面与平台管理作用域的认证挂载端；租户管理作用域的挂载端必须同时在本清单与解析清单里，覆盖关系的核对由网关执行。
 - **`tenant.admission.require-mfa`、`tenant.admission.require-sso`**（设置，布尔）：按租户取值，租户行、全局行、声明的默认值依次回落；默认关闭。
 - **`tenant.admission.check-ttl`**（设置，时长）：成员结果与放行结果在进程内的缓存时长，只读全局层；0 关闭缓存，有上限。
 
@@ -104,7 +108,7 @@ type ScopeGuard interface {
 ### 对宿主的要求
 
 - **把 `tenant.admission`、`authn.account`、`tenant.resolve` 与 `tenant.catalog` 的模块名一并写进命令。** 命令缺其一，依赖解析终止启动。
-- **`endpoints` 写成业务端，与 `tenant.resolve.endpoints` 一致。** 准入层所守的端上，租户解析豁免的路由没有租户上下文：非冒充身份照常放行，冒充身份得 404。宿主不应在允许冒充的端上对业务路由开租户解析的豁免。
+- **`endpoints` 写成业务端，是 `tenant.resolve.endpoints` 的子集，并覆盖租户管理作用域的认证挂载端。** 准入层所守的端上，租户解析豁免的路由没有租户上下文：非冒充身份照常放行，冒充身份得 404。宿主不应在允许冒充的端上对业务路由开租户解析的豁免。认证的租户管理路由挂在 `authn.gate.mount.endpoints.tenants`，该端必须在两份清单里；普通面与平台管理作用域的路由不得落在本层所守的端上。
 - **对租户与普通管理员不开放 `tenant.admission.*` 设置的写权限。** 设置的写入面没有访问控制，由宿主自己鉴权（[design-settings](../settings/design-settings.md)）。
 - **需要运营账号读租户数据时，经 `authn.tenant.access` 放行，或自写 handler。** 静态口令表主体不是任何租户的成员。
 - **装配里要有授权或宿主自己的角色判定。** 准入层之后的权限判定不在本层。
@@ -313,7 +317,7 @@ flowchart TD
 
 | 哨兵错误 | 触发条件 | 修复动作 |
 |---|---|---|
-| `ErrInvalidConfig`（`pkg/authn` 根包） | `tenant.admission.endpoints` 写成空清单、含空名，或含 `*`；网关核对出 `Covers(mount.endpoint)` 为真（该条由网关报出） | 点名该键与不合法之处；挂载端被准入层所守时，从 `endpoints` 里去掉它 |
+| `ErrInvalidConfig`（`pkg/authn` 根包） | `tenant.admission.endpoints` 写成空清单、含空名，或含 `*`；清单里的端不在 `tenant.resolve.endpoints` 里（对方清单读得出时）；网关核对出普通面或平台管理作用域的挂载端被本层所守，或租户管理作用域的挂载端未被本层所守（这些核对由网关报出） | 点名该键与不合法之处；把该端加进解析层清单，或从本层清单里去掉；挂载端与清单按作用域对齐 |
 | `ErrUnknownEndpoint`（`pkg/tenant` 根包） | `endpoints` 里的端名在入口模块里不存在 | 点名该端名；改端名，或在入口模块的配置里声明这个端 |
 | `ErrDuplicateEndpoint`（`pkg/tenant` 根包） | `endpoints` 里同一个端名出现两次 | 点名该端名；删掉重复的那一条 |
 | `ErrNoRouter`（`pkg/tenant` 根包） | `Init` 里取不到路由功能 | 把入口模块的 `ModuleName` 写进这条命令 |
@@ -389,7 +393,7 @@ flowchart TD
 | 模块 `tenant.admission`、排他交付、`Stage` 声明授权阶段、不带 `After` | 已实现 | `pkg/tenant/admission/admission.go` `Module` |
 | `tenant.Admission` 标记接口 | 已实现 | `pkg/tenant/capabilities.go` `Admission`；`pkg/tenant/admission/admission.go` `(*layer).AdmissionLayer` |
 | `authn.ScopeGuard` 与 `Covers` | 已实现 | `pkg/authn/scope.go` `ScopeGuard`；`pkg/tenant/admission/admission.go` `(*layer).Covers` |
-| `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对 | 已实现 | `pkg/tenant/admission/config.go` `(moduleConfig).resolve` |
+| `endpoints` 的必填、空清单与 `*` 的拒绝、端名核对，以及它是 `tenant.resolve.endpoints` 的子集 | 已实现 | `pkg/tenant/admission/config.go` `(moduleConfig).resolve`、`checkResolutionCoverage` |
 | 判定次序：租户上下文、身份、冒充范围、成员、豁免、多因素强度、SSO 强度 | 已实现 | `pkg/tenant/admission/decide.go` `decide` |
 | 经 `Decider` 的 `authn.tenant.access` 放行 | 已实现 | `pkg/tenant/admission/decide.go`；`pkg/authn/decide.go` `Decider` |
 | 成员、豁免与放行结果的缓存，以及 `authn.membership.changed` 订阅 | 已实现 | `pkg/tenant/admission/cache.go`；`pkg/tenant/admission/admission.go` |

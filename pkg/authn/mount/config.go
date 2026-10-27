@@ -21,12 +21,28 @@ const gateNamespace = "authn.gate"
 
 // The keys this module reads, relative to gateNamespace.
 const (
-	endpointItem       = "mount.endpoint"
+	endpointsItem      = "mount.endpoints"
 	basesItem          = "mount.bases"
 	publicURLItem      = "mount.public-url"
 	insecureItem       = "mount.allow-insecure"
 	trustedOriginsItem = "trusted-origins"
 )
+
+// The item naming one scope's endpoint, relative to the mount section.
+const (
+	defaultMountItem = endpointsItem + ".default"
+	tenantsMountItem = endpointsItem + ".tenants"
+	systemMountItem  = endpointsItem + ".system"
+)
+
+// endpoints is the endpoint each scope's routes are mounted on. The scopes span
+// policy domains, and the endpoint decides which layers decide a request before
+// its handler, so the mount points are written per scope beside the base paths.
+type endpoints struct {
+	Default string `config:"default"`
+	Tenants string `config:"tenants"`
+	System  string `config:"system"`
+}
 
 // bases is the base path of the management scopes plus the ordinary surface.
 // The capability's routes span the levels, so the mount points are written per
@@ -50,10 +66,10 @@ func defaultBases() bases {
 // settings is the part of the gateway's section this module reads.
 type settings struct {
 	Mount struct {
-		Endpoint      string `config:"endpoint"`
-		Bases         bases  `config:"bases"`
-		PublicURL     string `config:"public-url"`
-		AllowInsecure bool   `config:"allow-insecure"`
+		Endpoints     endpoints `config:"endpoints"`
+		Bases         bases     `config:"bases"`
+		PublicURL     string    `config:"public-url"`
+		AllowInsecure bool      `config:"allow-insecure"`
 	} `config:"mount"`
 	TrustedOrigins []string `config:"trusted-origins"`
 }

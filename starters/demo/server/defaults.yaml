@@ -30,7 +30,7 @@ http:
       prefixes: ["/api"]
     account:
       listener: backend
-      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace", "/api/v1/tenants", "/api/v1/system/auth"]
+      prefixes: ["/api/v1/auth", "/api/v1/features", "/api/v1/workspace", "/api/v1/system/auth"]
     admin:
       listener: backend
       prefixes: ["/api/v1/system/audit", "/api/v1/system/permissions", "/api/v1/system/settings", "/api/v1/system/sms", "/api/v1/system/tenants"]
@@ -62,13 +62,18 @@ webui:
   endpoint: web
 
 # The identity system: the gateway guards the API, account and admin endpoints
-# and never the web endpoint, and the capability's own routes mount on the
-# account endpoint, which the tenant layers do not cover.
+# and never the web endpoint. Its ordinary and platform-management routes mount
+# on the account endpoint, which the tenant layers do not cover; its
+# tenant-administration routes mount on the API endpoint, which they do cover,
+# because those routes are decided in the tenant policy domain.
 authn:
   gate:
     endpoints: [api, account, admin]
     mount:
-      endpoint: account
+      endpoints:
+        default: account
+        tenants: api
+        system: account
 
 # Tenant resolution and admission guard the API endpoint and never the account
 # endpoint the authentication routes mount on. The header extractor is this

@@ -155,7 +155,7 @@ func assembleWith(t *testing.T, extra []core.Module, use func(h *harness)) {
 		"kv": map[string]any{"memory": map[string]any{"replicas": 1}},
 		"authn": map[string]any{
 			"gate": map[string]any{"mount": map[string]any{
-				"endpoint":   "public",
+				"endpoints":  map[string]any{"default": "public"},
 				"public-url": "http://127.0.0.1", "allow-insecure": true,
 			}},
 		},

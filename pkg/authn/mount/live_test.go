@@ -140,8 +140,7 @@ func counted(n *atomic.Int64, h gin.HandlerFunc) gin.HandlerFunc {
 type liveStack struct {
 	// endpoints are the entry point's endpoints, "main" by default.
 	endpoints []string
-	// mountEndpoint is the key that names the endpoint the routes go on; empty
-	// leaves it out.
+	// mountEndpoint is the ordinary scope's endpoint; empty leaves the key out.
 	mountEndpoint string
 	// gateItems is text for the gateway's section, JSON members without the
 	// braces, such as `"trusted-origins":["https://other.example.com"]`.
@@ -175,7 +174,7 @@ func (s liveStack) body(endpoints []string) string {
 	}
 	mounts := `"public-url":` + strconv.Quote(publicURL)
 	if s.mountEndpoint != "" {
-		mounts += `,"endpoint":` + strconv.Quote(s.mountEndpoint)
+		mounts += `,"endpoints":{"default":` + strconv.Quote(s.mountEndpoint) + `}`
 	}
 	items := `"mount":{` + mounts + `}`
 	if s.gateItems != "" {
@@ -518,7 +517,7 @@ func TestTheRealEntryPointWithSeveralEndpointsAndNoKeyFailsWithErrRoutesUnconfig
 	if !errors.Is(err, authn.ErrRoutesUnconfigured) {
 		t.Fatalf("the drive returned %v, want %v", err, authn.ErrRoutesUnconfigured)
 	}
-	if !strings.Contains(err.Error(), "admin, public") || !strings.Contains(err.Error(), "authn.gate.mount.endpoint") {
+	if !strings.Contains(err.Error(), "admin, public") || !strings.Contains(err.Error(), "authn.gate.mount.endpoints.default") {
 		t.Errorf("the failure %q does not name the key and the endpoints to choose from", err)
 	}
 }

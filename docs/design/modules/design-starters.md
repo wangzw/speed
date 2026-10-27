@@ -138,7 +138,7 @@ starters/demo/
 | 端 | `prefixes` |
 |---|---|
 | `api` | `/api` |
-| `account` | `/api/v1/auth`、`/api/v1/features`、`/api/v1/workspace`、`/api/v1/tenants`、`/api/v1/system/auth` |
+| `account` | `/api/v1/auth`、`/api/v1/features`、`/api/v1/workspace`、`/api/v1/system/auth` |
 | `admin` | `/api/v1/system/audit`、`/api/v1/system/permissions`、`/api/v1/system/settings`、`/api/v1/system/sms`、`/api/v1/system/tenants` |
 | `web` | `/`：`backend` 监听的[兜底端点](../../glossary.md)，`webui` 的通配路由挂在这里 |
 
@@ -146,9 +146,11 @@ starters/demo/
 
 每个模块的 API 路由都以 `/api/v1/<作用域>/<能力>` 为根（租户级是 `/api/v1/tenants/<租户>/…`）；ops 探针留在 `ops` 监听的根上（[ADR-http-api-prefix](../../adr/adr-http-api-prefix.md)）。
 
+认证一族的作用域挂载端同样由平台默认文档写出：普通面与平台管理作用域挂在 `account`，租户管理作用域挂在 `api`（`authn.gate.mount.endpoints`）。租户管理路由在该租户的策略域判定，落在 `api` 上才与 `tenant.resolve`、`tenant.admission` 所守的端一致；`/api/v1/tenants` 由 `api` 的 `/api` 认领覆盖，不再是 `account` 的一条认领。租户管理路由的判定在 handler 内经 `authn.Decider` 做出，`api` 端的授权守卫不为其再判一次；宿主因此在 `management.access` 模块里把这组路由登记为开放，列表与提交的契约双向核对。
+
 - **认领是产品固定的命名空间表，去掉一项能力不删它的认领。** 撤出运行集也好，删掉 import 也好，那项能力的命名空间都留在认领里：示范的二进制 import 了 `sms.admin` 而基线不运行它，`admin` 仍认领 `/api/v1/system/sms`；从示范拷出、删掉 `tenant.admin` import 的产品，仍认领 `/api/v1/system/tenants`。认领表覆盖可用集里每个 operation 的命名空间，以及平台前端包会寻址的命名空间。
 - **前端页面路径不落在 `/` 以外的任何认领之下。** 落在这类认领之下的页面路径，整页导航得到那个端的应答，拿不到入口文档。
-- **开发代理由共享清单生成。** `starters/demo/web/backend-prefixes.json` 列出 `backend` 监听上全部非 `/` 的认领；`vite.config.ts` 的 `server.proxy` 由它生成按段边界匹配的正则键（`/api/v1/tenants` 的键不匹配 `/api/v1/tenants-old`），前端测试据它核对页面路径。
+- **开发代理由共享清单生成。** `starters/demo/web/backend-prefixes.json` 列出 `backend` 监听上全部非 `/` 的认领；`vite.config.ts` 的 `server.proxy` 由它生成按段边界匹配的正则键（`/api/v1/workspace` 的键不匹配 `/api/v1/workspace-old`），前端测试据它核对页面路径。
 
 **认领由测试守住。**
 

@@ -254,7 +254,7 @@ func TestAMountEndpointTheResolutionListCannotBeReadForIsOnlyAWarning(t *testing
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			a := liveAssembly{
-				gateItems: `"mount":{"endpoint":"public"}`,
+				gateItems: `"mount":{"endpoints":{"default":"public"}}`,
 				topItems:  c.top,
 				backends:  []authn.Verifier{basicBackend("static", "static.")},
 			}
@@ -382,7 +382,7 @@ func TestAMountEndpointLeftEmptyIsJudgedWhenAModuleMountsRoutes(t *testing.T) {
 			if !strings.Contains(err.Error(), c.want) {
 				t.Errorf("the failure reads %q and does not carry %q", err, c.want)
 			}
-			if !strings.Contains(err.Error(), mountEndpointItem) || !strings.Contains(err.Error(), `"public"`) {
+			if !strings.Contains(err.Error(), defaultMountItem) || !strings.Contains(err.Error(), `"public"`) {
 				t.Errorf("the failure reads %q and does not name the key and the endpoint it took", err)
 			}
 		})
@@ -403,5 +403,82 @@ func TestAModuleThatMountsRoutesWithNoEndpointToPickIsRefusedAtStartToo(t *testi
 	}.drive(t, nothing)
 	if !errors.Is(err, authn.ErrRoutesUnconfigured) {
 		t.Fatalf("the drive returned %v, want one wrapping %v", err, authn.ErrRoutesUnconfigured)
+	}
+}
+
+// TestTheTenantScopesMountEndpointMustBeCoveredByBothTenantLayers is the
+// opposite rule for the tenant-administration scope: its routes decide in the
+// tenant's own policy domain, so the endpoint they are mounted on has to be one
+// both tenant layers guard. The ordinary and platform-management scopes keep the
+// other direction, which the cases above hold. Each refusal names the key and
+// the layer the endpoint is missing from, so a host knows which line to change.
+func TestTheTenantScopesMountEndpointMustBeCoveredByBothTenantLayers(t *testing.T) {
+	resolved := `"tenant":{"resolve":{"endpoints":["api"]}}`
+	for _, c := range []struct {
+		name    string
+		body    string
+		modules []core.Module
+		scope   authn.ScopeGuard
+		want    string // text the failure must carry; empty means the start succeeds
+	}{
+		{
+			name:    "covered by both layers",
+			body:    `{"authn":{"gate":{"endpoints":["account","api"],"mount":{"endpoints":{"default":"account","tenants":"api"}}}},` + resolved + `}`,
+			modules: []core.Module{resolutionLayer("")},
+			scope:   fakeScope{"api": true},
+		},
+		{
+			name:    "the admission layer does not cover it",
+			body:    `{"authn":{"gate":{"endpoints":["account","api"],"mount":{"endpoints":{"default":"account","tenants":"api"}}}},` + resolved + `}`,
+			modules: []core.Module{resolutionLayer("")},
+			scope:   fakeScope{"other": true},
+			want:    "tenant admission layer",
+		},
+		{
+			name:    "no admission layer is in the command",
+			body:    `{"authn":{"gate":{"endpoints":["account","api"],"mount":{"endpoints":{"default":"account","tenants":"api"}}}},` + resolved + `}`,
+			modules: []core.Module{resolutionLayer("")},
+			want:    "tenant admission layer",
+		},
+		{
+			name:    "the resolution layer does not resolve on it",
+			body:    `{"authn":{"gate":{"endpoints":["account","api"],"mount":{"endpoints":{"default":"account","tenants":"api"}}}},"tenant":{"resolve":{"endpoints":["other"]}}}`,
+			modules: []core.Module{resolutionLayer("")},
+			scope:   fakeScope{"api": true},
+			want:    "tenant.resolve.endpoints",
+		},
+		{
+			name:  "no resolution list is configured",
+			body:  `{"authn":{"gate":{"endpoints":["account","api"],"mount":{"endpoints":{"default":"account","tenants":"api"}}}}}`,
+			scope: fakeScope{"api": true},
+			want:  "tenant.resolve.endpoints",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			a := assembly{
+				body:     c.body,
+				backends: []authn.Verifier{basicBackend("static", "static.")},
+				router:   routerWith("account", "api"),
+				modules:  c.modules,
+			}
+			if c.scope != nil {
+				a.supplied = []supply{{module: "stand-in.admission", token: (*authn.ScopeGuard)(nil), instance: c.scope}}
+			}
+			err := a.drive(t, nothing)
+			if c.want == "" {
+				if err != nil {
+					t.Fatalf("the drive failed: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, authn.ErrInvalidConfig) {
+				t.Fatalf("the drive returned %v, want one wrapping %v", err, authn.ErrInvalidConfig)
+			}
+			for _, text := range []string{c.want, "authn.gate.mount.endpoints.tenants", `"api"`} {
+				if !strings.Contains(err.Error(), text) {
+					t.Errorf("the failure reads %q and does not carry %q", err, text)
+				}
+			}
+		})
 	}
 }

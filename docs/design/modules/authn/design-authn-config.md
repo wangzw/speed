@@ -74,7 +74,7 @@
 | `authn.gate.endpoints` | 字符串列表 | `["*"]` | 主 | | 网关所守的入口端；`*` 即入口模块声明的每一个端 |
 | `authn.gate.call-budget` | `time.Duration` | `5s` | 默认 | | 一次进入校验后端的调用的期限；须为正 |
 | `authn.gate.in-flight` | 整数 | `64` | 默认 | | 同时进行的后端调用数上限，满时请求收口 503；须为正 |
-| `authn.gate.mount.endpoint` | 字符串 | 空 | 默认 | | authn 自己的路由所挂的入口端 |
+| `authn.gate.mount.endpoints.default`、`.tenants`、`.system` | 字符串 | 空 | 默认 | | 各作用域的路由所挂的入口端。`default` 为空取入口模块声明的唯一端，`system` 为空取 `default`；`tenants` 无缺省，为空时该作用域不可挂载（租户管理路由的判定在该租户的策略域，必须落在租户两层的端上） |
 | `authn.gate.mount.bases.default`、`.tenants`、`.system` | 字符串 | `/api/v1/auth`、`/api/v1/tenants`、`/api/v1/system/auth` | 默认 | | 各作用域的路由基路径；以 `/` 起头、不以 `/` 结尾、无通配，是 gin 规整后的写法 |
 | `authn.gate.mount.public-url` | 字符串 | 空 | 默认 | | 对外基址，只含来源不含路径 |
 | `authn.gate.mount.allow-insecure` | 布尔 | `false` | 主 | | 仅开发用的放宽项，配置项：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure`；改动要重启 |
@@ -489,16 +489,16 @@ flowchart TD
 | 自检 | 失败的哨兵 |
 |---|---|
 | `authn.gate.endpoints` 非空、无空名、无重名，`*` 不与具体端名混写；`authn.gate.call-budget` 与 `authn.gate.in-flight` 为正；`authn.token.issuer` 解析后非空（`issuer` 与 `authn.gate.mount.public-url` 都没给出即失败，此时空的 `audience` 也无从取默认值）、`authn.token.algorithm` 取 `ES256` 或 `RS256`、`authn.token.client-id` 非空 | `ErrInvalidConfig` |
-| `tenant.admission.endpoints` 非空，且不含 `*` | `ErrInvalidConfig` |
+| `tenant.admission.endpoints` 非空，且不含 `*`；每一项都在 `tenant.resolve.endpoints` 里（该清单读得出时） | `ErrInvalidConfig` |
 | `authn.gate.endpoints` 里的端名存在于入口模块 | `ErrUnknownEndpoint` |
 | `authn.gate.mount.public-url` 非空（由需要它的模块判）；`authn.gate.mount.public-url` 不是带主机的 http 或 https URL，或带用户信息、路径、查询、片段、空端口、越界端口、通配，或主机不是 ASCII（国际化域名写 punycode） | `ErrInvalidConfig` |
 | `authn.gate.mount.bases.{default,tenants,system}` 的任一项不以 `/` 起头、以 `/` 结尾、含通配或路径参数（`*`、`:`）、`?` 或 `#`，或不是 `path.Clean` 之后的写法 | `ErrInvalidConfig` |
 | `authn.gate.trusted-origins` 的某一项不是 `scheme://host[:port]`：scheme 不是 http 或 https，带用户信息、路径、查询、片段、空端口、通配，端口不在 1 到 65535，或主机不是 ASCII（国际化域名写 punycode）；每项先规范成浏览器发送的形式，规范后相同的项并作一项 | `ErrInvalidConfig` |
 | `authn.static.cache-size` 不在 1 到 1000000（0 被拒绝）；`authn.static.concurrency` 不在 1 到 256 | `ErrInvalidConfig` |
 | `authn.gate.mount.public-url` 是 https（回环主机与 `allow-insecure` 为真时除外）；`authn.session.same-site` 不取 `none` | `ErrInsecureConfig` |
-| `authn.gate.mount.endpoint` 存在于入口模块 | `ErrUnknownEndpoint` |
-| `authn.gate.mount.endpoint` 被网关所守；`authn.mount` 在 `authn.gate.mount.endpoint` 为空且入口声明的端不是恰好一个时失败，网关在 `Start` 对同一规则再判一次 | `ErrRoutesUnguarded`、`ErrRoutesUnconfigured` |
-| `authn.gate.mount.endpoint` 不被 `ScopeGuard` 所守；不在 `tenant.resolve.endpoints` 里（核不了则 `Warn`） | `ErrInvalidConfig` |
+| `authn.gate.mount.endpoints.{default,tenants,system}` 里的端名存在于入口模块 | `ErrUnknownEndpoint` |
+| `authn.gate.mount.endpoints.{default,tenants,system}` 被网关所守；`authn.mount` 在 `authn.gate.mount.endpoints.default` 为空且入口声明的端不是恰好一个时失败，网关在 `Start` 对同一规则再判一次 | `ErrRoutesUnguarded`、`ErrRoutesUnconfigured` |
+| `authn.gate.mount.endpoints.default`、`.system` 不被 `ScopeGuard` 所守，也不在 `tenant.resolve.endpoints` 里（核不了则 `Warn`）；`authn.gate.mount.endpoints.tenants` 反向：必须同时被 `ScopeGuard` 所守且列在 `tenant.resolve.endpoints` 里（该清单读不出即失败） | `ErrInvalidConfig` |
 | 加密列往返（`db` 根密钥在）；`BlindIndex` 自检（包 `recover`） | `ErrNoEncryptionKey` |
 | 签名与验证密钥文件可读、解析成功、算法一致、RSA 至少 2048 位、`kid` 不重复 | `ErrInvalidKey` |
 | 每个口令表条目可解析且主体名合法；表非空 | `ErrInvalidClaim`；条目读不了时同时包住 `static.ErrMalformedHash` |
@@ -508,7 +508,7 @@ flowchart TD
 | 带表模块的迁移已施加（`Start` 里探测自己的表） | `ErrNotMigrated` |
 | `Requires` 里的排他功能齐备（在构造之前） | `core.ErrMissingProvider` |
 
-阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoint` 是否被网关所守与是否被 `ScopeGuard` 所守由网关在 `Start` 里核对；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。人机验证的机制与 Turnstile 的必填项在 `Prepare` 判，`pow` 所需的键值存储在 `New` 判、路由挂载口在 `Init` 判。
+阶段：`authn.gate.mount.public-url` 与 `authn.gate.mount.bases` 的每一项由需要它们的模块在自己的 `Prepare` 里判；`mount.endpoints` 的每一项是否被网关所守、以及各作用域与租户两层的覆盖关系，由网关在 `Start` 里核对；`authn.mount` 在 `Init` 里定下 `default`（无端可挑即 `ErrRoutesUnconfigured`），并在登记时拒绝落在未配置租户端上的租户作用域路由；加密列往返与迁移探测在 `Start` 里做，因为 `New` 里表还没建。人机验证的机制与 Turnstile 的必填项在 `Prepare` 判，`pow` 所需的键值存储在 `New` 判、路由挂载口在 `Init` 判。
 
 ### 加密列往返自检
 

@@ -9672,7 +9672,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/impersonations/{id}": {
@@ -9757,7 +9757,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/invitations": {
@@ -9863,7 +9863,7 @@
         "tags": [
           "authn.invite"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       },
       "post": {
         "description": "Normalizes the address (trimmed, lower-cased printable ASCII with exactly one @, at most 254 bytes), then issues a pending invitation. A pending invitation for the same tenant and address is superseded in the same transaction, so its token stops working. expires_at is optional: when absent, the zero instant or the configured lifetime applies (168 hours by default), and a deadline not later than the current time is refused. Requires the authn.membership.manage decision in the tenant; failure to write the mandatory audit row answers 503 without issuing.",
@@ -9998,7 +9998,7 @@
         "tags": [
           "authn.invite"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/invitations/{id}": {
@@ -10103,7 +10103,7 @@
         "tags": [
           "authn.invite"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/members": {
@@ -10209,7 +10209,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/members/{account}": {
@@ -10314,7 +10314,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       },
       "put": {
         "description": "Writes one account's membership in one tenant: active true adds or resumes it and active false suspends it, and a suspended membership reads as no membership. source records how it came to exist; omitted records it as an administrator's change. The account must exist and not be a tombstone. Requires membership.manage with the path's tenant.",
@@ -10438,7 +10438,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/members/{account}/sso-exempt": {
@@ -10564,7 +10564,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/sso/providers": {
@@ -10644,7 +10644,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       },
       "post": {
         "description": "Creates an SSO provider in the tenant. The path and the body must agree on the tenant: an absent body tenant takes the path's, and a different one is 400. protocol is oidc or saml; provisioning is jit or preprovisioned and has no default. A client secret is carried only by an OIDC provider. Every write raises the provider's version. Requires idp.manage.",
@@ -10763,7 +10763,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/sso/providers/{id}": {
@@ -10848,7 +10848,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       },
       "get": {
         "description": "Reads one provider by its identifier. The provider's own tenant, resolved from the store, is the decision's tenant. The encrypted client secret never appears. Requires idp.manage.",
@@ -10938,7 +10938,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       },
       "put": {
         "description": "A full write of the provider: protocol, name, provisioning and config must be present, and the config is validated with unknown keys refused. Booleans left out keep their stored value, and an omitted client_secret keeps the stored one. The tenant is immutable: a body naming another tenant is 400. Requires idp.manage; each write raises version.",
@@ -11069,7 +11069,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/sso/providers/{id}/domains": {
@@ -11212,7 +11212,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/sso/providers/{id}/domains/{domain}": {
@@ -11306,7 +11306,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/sso/providers/{id}/domains/{domain}/verify": {
@@ -11410,7 +11410,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/sso/providers/{id}/metadata/refresh": {
@@ -11512,7 +11512,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/tenants/{tenant}/sso/providers/{id}/reverify-domains": {
@@ -11597,7 +11597,7 @@
         "tags": [
           "authn.admin"
         ],
-        "x-endpoint": "account"
+        "x-endpoint": "api"
       }
     },
     "/api/v1/workspace/personal": {
@@ -15028,7 +15028,7 @@
     },
     {
       "module": "authn.admin",
-      "endpoint": "account"
+      "endpoint": "api"
     },
     {
       "module": "authn.humanverify",
@@ -15044,7 +15044,7 @@
     },
     {
       "module": "authn.invite",
-      "endpoint": "account"
+      "endpoint": "api"
     },
     {
       "module": "authn.login",

@@ -131,7 +131,7 @@ type Gate interface {
 - 同一类别内对同一（方法，路径）的重复登记仍是一条登记，冻结时合并，启动诊断里只出现一次。
 - 审计行与诊断只写端名、方法与路径，不写自报的模块名：登记面拿不到调用方的身份。由此带来的非保证见 [design-authn](design-authn.md) 的非保证。
 
-宿主为网关预置的实例不是本模块的产物时，网关对从 `Migrate` 到 `Close` 的回调都不做事（以 `productOf` 判别），预置的一方持有窗口、校验与冻结；`mount.endpoint` 是否受守、`Impersonable` 与 `ScopeGuard` 的核对也随之缺席，由预置自己网关的宿主负责。脱敏规则同样不登记，非保证见 [design-authn](design-authn.md)。这样的宿主仍可纳入 `authn.mount` 与挂路由的 authn 模块，它们只经 `Gate` 的公开登记面登记（[ADR-supplied-instance](../../../adr/adr-supplied-instance.md)）。
+宿主为网关预置的实例不是本模块的产物时，网关对从 `Migrate` 到 `Close` 的回调都不做事（以 `productOf` 判别），预置的一方持有窗口、校验与冻结；`mount.endpoints` 的每一项是否受守、各作用域与租户两层的覆盖关系、`Impersonable` 与 `ScopeGuard` 的核对也随之缺席，由预置自己网关的宿主负责。脱敏规则同样不登记，非保证见 [design-authn](design-authn.md)。这样的宿主仍可纳入 `authn.mount` 与挂路由的 authn 模块，它们只经 `Gate` 的公开登记面登记（[ADR-supplied-instance](../../../adr/adr-supplied-instance.md)）。
 
 ### 冒充范围守卫的取用
 
@@ -213,7 +213,7 @@ var ErrMalformedHash error
 | `authn.gate.endpoints` | 网关守的端。缺省守入口模块声明的每一个端；保留端名 `*` 表示全部，写具体端名即收窄。具体端名必须存在（`ErrUnknownEndpoint`），不得为空名或重名；写成空清单，或把 `*` 与具体端名混写，都是 `ErrInvalidConfig`。空清单不表示关闭：守不住任何端的网关是配置错误，不想要网关就不纳入 `authn.gate`。清单之外的端没有认证层 |
 | `authn.gate.call-budget` | 一次后端调用的期限；超出之后交回的答案一律作废为 503。它归配置而非设置，尽管它每次后端调用都要读：网关的生产闭包不含 `pkg/settings`（`pkg/authn/gate/deps_test.go` 的 `forbidden` 断言），读设置会把设置存储及其下层拖进闭包，网关就不再是存储不可用时作答的那一层 |
 | `authn.gate.in-flight` | 同时在飞的后端调用数；满则 503，不排队 |
-| `authn.gate.mount.endpoint` | authn 自己的路由挂在哪个端。空且入口模块恰好声明了一个端时取那一个，否则 `ErrRoutesUnconfigured`；这一条由 `authn.mount` 在 `Init` 里判，因为入口模块的端要等路由器实例存在才读得到，网关在 `Start` 对同一规则再判一次；必须是网关所守的端（`ErrRoutesUnguarded`；缺省的唯一端必然受守，受守集合是入口声明端的非空子集）；不得是准入层所守的端（`ScopeGuard.Covers` 为真即 `ErrInvalidConfig`）；不得出现在 `tenant.resolve.endpoints` 里：全局账户的请求不带租户名，被解析层所守的端对它们答 404。网关在 `Start` 核对，读得出该清单且挂载端在其中时 `ErrInvalidConfig`，读不出解码形状时只写一行 `Warn`，不终止启动 |
+| `authn.gate.mount.endpoints.default`、`.tenants`、`.system` | 各作用域的路由挂在哪个端。`default` 为空且入口模块恰好声明了一个端时取那一个，否则 `ErrRoutesUnconfigured`（由 `authn.mount` 在 `Init` 里判，网关在 `Start` 对同一规则再判一次）；`system` 为空取 `default`；`tenants` 无缺省，为空时该作用域不可挂载，`authn.mount` 拒绝登记租户作用域的路由。每一项都必须是网关所守的端（`ErrRoutesUnguarded`）。`default` 与 `system` 不得是准入层所守的端（`ScopeGuard.Covers` 为真即 `ErrInvalidConfig`），也不得出现在 `tenant.resolve.endpoints` 里：全局账户的请求不带租户名，被解析层所守的端对它们答 404；网关在 `Start` 核对，读得出该清单且端在其中时 `ErrInvalidConfig`，读不出解码形状时只写一行 `Warn`。`tenants` 的方向相反：必须同时被 `ScopeGuard` 所守且列在 `tenant.resolve.endpoints` 里，该清单读不出即 `ErrInvalidConfig`，因为租户管理路由在该租户的策略域判定，落不到这两层上就会在没有租户、没有成员检查的链上被服务 |
 | `authn.gate.mount.bases.default`、`.tenants`、`.system` | 各作用域的路由基路径 `B`；须是 gin 规整后的写法，以 `/` 起头、不以 `/` 结尾、无通配 |
 | `authn.gate.mount.public-url` | 对外基址，只含来源、不含路径；入口模块没有对外基址的概念，不能从 `Host` 与 `X-Forwarded-*` 可靠推出。OIDC 的 `redirect_uri`、SAML 的 ACS 与实体标识、通行密钥的依赖方来源、令牌的 `iss`、`__Host-` cookie 都要它；需要它的模块在自己的 `Prepare` 里读，空即 `ErrInvalidConfig`。要求 `https`，回环主机除外，否则 `ErrInsecureConfig` |
 | `authn.gate.mount.allow-insecure` | 仅开发：放行 http 基址，cookie 去掉 `__Host-` 前缀与 `Secure`；为真时启动诊断写一行 Warn |
@@ -234,7 +234,7 @@ var ErrMalformedHash error
 - **宿主自己的路由用 `Route` 加 `Gate.Exempt`、`Gate.Optional` 或 `Gate.Impersonable` 配对登记**，并共用同一组常量。
 - **宿主自写校验后端时声明自己的账户前缀**，并自己负责它交回的账户标识的真伪。
 - **在允许冒充的端上不对业务路由开租户解析的豁免**：这样的路由没有租户上下文，冒充身份仍到得了它们（见 [design-authn](design-authn.md) 的非保证）。
-- **自备 `Gate` 时自己核对挂载端受守。** `mount.endpoint` 指向网关不守的端、而挂路由模块只登记 `Guarded` 路由时，唯一拦住它的是网关 `Start` 的 `ErrRoutesUnguarded`。宿主预置自己的 `Gate` 替身、不纳入 `authn.gate` 时没有这道检查，`Guarded` 路由会在无人守护的端上被静默公开。预置自有 `Gate` 的宿主因此自己负责这一核对。
+- **自备 `Gate` 时自己核对挂载端。** `mount.endpoints` 指向网关不守的端、而挂路由模块只登记 `Guarded` 路由时，唯一拦住它的是网关 `Start` 的 `ErrRoutesUnguarded`；租户作用域还要求该端被租户两层覆盖，这一核对同样只在网关的 `Start` 里。宿主预置自己的 `Gate` 替身、不纳入 `authn.gate` 时没有这些检查，`Guarded` 路由会在无人守护的端上被静默公开，租户管理路由也可能落在没有租户层的端上。预置自有 `Gate` 的宿主因此自己负责这些核对。
 - **鉴别阶段里排在网关之外的层（经 `Before`、取比网关小的 `Order`，或 `Order` 相同而先于网关登记），作不作答、怎样作答，不取决于请求匹配了哪条路由、有没有匹配。** 这样的层不凭 `c.FullPath()` 或 `c.Params` 决定应答，读它们写日志、打点不在此限。入口模块对观测阶段与防护阶段的层立有同一条契约（见 [design-http](../http/design-http.md) 的各阶段的契约），却不认识网关，排在网关之前的鉴别层由写它的模块作者与纳入它的宿主负责。
 - **同一端上，[匿名面路由](../../../glossary.md)与其余路由的匹配域不相交。** 同一端上可能同时挂出的一条匿名面路由与一条其余路由，不得有某个（方法，路径）同时被两者的模式匹配：gin 的静态段优先于参数段，一条静态路由会遮住另一条带参数路由的一部分取值，被遮住的请求在两种装配下分别命中匿名面路由与其余路由，应答的差异暴露那条非匿名路由所属的模块在不在场。网关不读路由表，入口模块不认识匿名登记，两者都判不出这一条；它由写匿名面路由的模块作者与宿主负责。
 
@@ -425,8 +425,8 @@ sequenceDiagram
 | `Prepare` | 取配置读取面并 `Decode` 自己那份配置；校验 `public-url`（非空时）与 `bases` 的形状；表态 `StateEnabled`。任何输入项都有缺省，本阶段不因缺项失败 | 不声明输入项；读 `authn.gate.mount.*` 与 `trusted-origins`；表态 `StateEnabled` |
 | `New` | 建在飞闸门、`CrossOriginProtection`（加入 `trusted-origins` 与 `public-url` 的来源）与 `Gate` 实例；向日志功能登记键名脱敏规则与不依赖 scheme 的值形状规则（JWT、令牌前缀、`otpauth://`、查询串里的机密对、会话 cookie 的 `sid` 对） | 建 `Mounter`，含它自己的 `CrossOriginProtection` |
 | `Migrate` | 打开 `Exempt`、`Optional`、`Impersonable` 的登记窗口 | 无动作 |
-| `Init` | 取 `Router`（缺则 `ErrNoRouter`）；`Router.Endpoints()` 得全集并算出受守的端；`ResolveAll[Verifier]` 建分派表并校验准入；可选取 `ScopeGuard`；逐端建挑战；逐端 `Use` 中间件；取日志（`Named`）与指标；登记依赖各后端认领的 scheme 的值形状脱敏规则；写启动诊断，其中每个不带 `__Host-` 前缀的被认领 cookie 名各占一行 `Warn` | 取 `Router`，经 `mount.Endpoint` 得出挂载端：键为空而入口声明的端不是恰好一个（零个或多个）即 `ErrRoutesUnconfigured`；挂路由的模块在各自的 `Init` 里经 `Mounter` 登记 |
-| `Start` | 关闭登记窗口；校验并冻结登记表；校验生效的挂载端：存在、受守、不被 `ScopeGuard` 守；读得出 `tenant.resolve.endpoints` 的解码形状时，核对挂载端不在其中，读不出只写一行 `Warn`，不终止启动。配置写明的挂载端一律核对；键为空时，仅当装配里有交付 `mount.Mounter` 的模块才核对入口模块的唯一端，没有挂路由的模块就没有挂载端可核对，一个只有单端、该端本就开了租户解析而又不挂 authn 路由的命令因此不被误拒 | 无动作 |
+| `Init` | 取 `Router`（缺则 `ErrNoRouter`）；`Router.Endpoints()` 得全集并算出受守的端；`ResolveAll[Verifier]` 建分派表并校验准入；可选取 `ScopeGuard`；逐端建挑战；逐端 `Use` 中间件；取日志（`Named`）与指标；登记依赖各后端认领的 scheme 的值形状脱敏规则；写启动诊断，其中每个不带 `__Host-` 前缀的被认领 cookie 名各占一行 `Warn` | 取 `Router`，经 `mount.Endpoint` 得出各作用域的挂载端：`default` 为空而入口声明的端不是恰好一个（零个或多个）即 `ErrRoutesUnconfigured`，`system` 为空取 `default`，`tenants` 为空则该作用域不可挂载；挂路由的模块在各自的 `Init` 里经 `Mounter` 登记 |
+| `Start` | 关闭登记窗口；校验并冻结登记表；逐作用域校验生效的挂载端：存在、受守；`default` 与 `system` 不被 `ScopeGuard` 守且不在 `tenant.resolve.endpoints` 里（该清单读不出只写一行 `Warn`），`tenants` 反向要求被两者覆盖（读不出即失败）。配置写明的端一律核对；`default` 为空时，仅当装配里有交付 `mount.Mounter` 的模块才核对入口模块的唯一端，没有挂路由的模块就没有挂载端可核对，一个只有单端、该端本就开了租户解析而又不挂 authn 路由的命令因此不被误拒 | 无动作 |
 | `Serve` | 无动作 | 无动作 |
 | `Stop` | 停止接受新的后端调用 | 无动作 |
 | `Close` | 等在飞调用排空，以 `call-budget` 为界，超时 `ErrDrainTimeout`；撤下收口计数的登记 | 无动作 |
@@ -705,7 +705,7 @@ sequenceDiagram
 | 冒充范围核对与 `ScopeGuard` 的可选取用 | 已实现 | `pkg/authn/gate/serve.go` `impersonationAdmitted`；`pkg/authn/gate/gate.go` `wire` |
 | `endpoints` 缺省守全部端（`Router.Endpoints()` 展开、`*`、空清单与混写的 `ErrInvalidConfig`） | 已实现 | `pkg/authn/gate/gate.go` `expandGuarded`；`pkg/authn/gate/config.go` `checkEndpoints` |
 | 入口模块的端枚举与保留端名 `*` | 已实现 | `pkg/http/router.go` `(*router).Endpoints`；`pkg/http/config.go` `reservedEndpointName` |
-| `authn.gate.mount.*` 与 `trusted-origins` 配置键，`Start` 对挂载端的核对（存在、受守、不被 `ScopeGuard` 守、不在 `tenant.resolve.endpoints` 里） | 已实现 | `pkg/authn/gate/config.go`；`pkg/authn/gate/gate.go` `wire`、`checkMount`、`checkResolution`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/mount/config.go` |
+| `authn.gate.mount.*` 与 `trusted-origins` 配置键，`Start` 对挂载端的核对（存在、受守；`default` 与 `system` 不被 `ScopeGuard` 守且不在 `tenant.resolve.endpoints` 里，`tenants` 反向须被两者覆盖） | 已实现 | `pkg/authn/gate/config.go`；`pkg/authn/gate/gate.go` `wire`、`checkMount`、`checkSurface`、`checkTenantScope`、`resolutionEndpoints`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/mount/config.go` |
 | `authn.mount` 与 `mount.Mounter` | 已实现 | `pkg/authn/mount/mount.go` `Module`；`pkg/authn/mount/mounter.go` `(product).Guarded`、`(product).Optional`、`(product).Public`、`(product).Endpoint`；`pkg/authn/internal/mount/mount.go` `Mounter`、`Option`、`Impersonable`、`Resolve`；`pkg/authn/internal/mount/endpoint.go` `Endpoint`；`pkg/authn/internal/mount/origin.go` `Origin`、`TrustedOrigins`、`CrossOrigin`；`pkg/authn/internal/mount/wrap.go` `Wrap`、`AllowCallback`；`pkg/authn/internal/mount/mounttest/mounttest.go` |
 | 401 的挑战头：各后端认领的 scheme、`Challenger`、只有 cookie 时的 `Cookie` 挑战、被拒时按后端重新生成（含出口检查不符与冒充范围不符） | 已实现 | `pkg/authn/gate/challenge.go` `newChallenge`、`valueFor` |
 | 脱敏规则的登记 | 已实现 | `pkg/authn/gate/redact.go` `registerNewRules`、`registerValueRule`、`credentialKeyNames`、`keySpellings`、`shapeMatcher`、`credentialMatcher`；`pkg/internal/literal/literal.go` `Register`、`Matcher` |

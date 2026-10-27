@@ -210,10 +210,10 @@ func TestTheMountEndpointIsHeldToBeingGuardedAndOutsideTheAdmissionLayer(t *test
 		{"no endpoint configured, routes mounted, no admission layer", []string{"public"}, []string{"public"}, "", true, nil, nil, ""},
 		{"no endpoint configured, routes mounted, the only endpoint left unguarded", nil, []string{"public"}, "", true, nil, authn.ErrRoutesUnguarded, "public"},
 		{"no endpoint configured, routes mounted, several declared", []string{"admin", "public"}, []string{"admin", "public"}, "", true, fakeScope{"admin": true}, authn.ErrRoutesUnconfigured, "admin, public"},
-		{"no endpoint configured, routes mounted, none declared", []string{"public"}, nil, "", true, nil, authn.ErrRoutesUnconfigured, mountEndpointItem},
+		{"no endpoint configured, routes mounted, none declared", []string{"public"}, nil, "", true, nil, authn.ErrRoutesUnconfigured, defaultMountItem},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			set := settings{endpoints: c.guarded, budget: 1, inFlight: 1, mount: mountConfig{Endpoint: c.mount}}
+			set := settings{endpoints: c.guarded, budget: 1, inFlight: 1, mount: mountConfig{Endpoints: endpoints{Default: c.mount}}}
 			g := gatewayWith(t, set, basicBackend("static", "static."))
 			g.scope = c.scope
 			g.mounted = c.mounted
@@ -266,10 +266,10 @@ func TestTheMountEndpointIsNotOneTheResolutionLayerResolvesATenantOn(t *testing.
 		body    string
 		wantErr bool
 	}{
-		{"the mount endpoint is one the layer resolves on", `{"authn":{"gate":{"mount":{"endpoint":"public"}}},"tenant":{"resolve":{"endpoints":["public"]}}}`, true},
-		{"the mount endpoint is among several it resolves on", `{"authn":{"gate":{"mount":{"endpoint":"admin"}}},"tenant":{"resolve":{"endpoints":["public","admin"]}}}`, true},
-		{"the layer resolves on another endpoint", `{"authn":{"gate":{"mount":{"endpoint":"admin"}}},"tenant":{"resolve":{"endpoints":["public"]}}}`, false},
-		{"no resolution layer is configured", `{"authn":{"gate":{"mount":{"endpoint":"admin"}}}}`, false},
+		{"the mount endpoint is one the layer resolves on", `{"authn":{"gate":{"mount":{"endpoints":{"default":"public"}}}},"tenant":{"resolve":{"endpoints":["public"]}}}`, true},
+		{"the mount endpoint is among several it resolves on", `{"authn":{"gate":{"mount":{"endpoints":{"default":"admin"}}}},"tenant":{"resolve":{"endpoints":["public","admin"]}}}`, true},
+		{"the layer resolves on another endpoint", `{"authn":{"gate":{"mount":{"endpoints":{"default":"admin"}}}},"tenant":{"resolve":{"endpoints":["public"]}}}`, false},
+		{"no resolution layer is configured", `{"authn":{"gate":{"mount":{"endpoints":{"default":"admin"}}}}}`, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			err := assembly{

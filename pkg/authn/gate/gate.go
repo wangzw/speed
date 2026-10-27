@@ -596,50 +596,159 @@ func registrationAttrs(routes map[string]map[route]access, has func(access) bool
 	return attrs
 }
 
-// checkMount holds the endpoint the capability's routes are mounted on to the
-// rules this module can judge: the entry point has it, the gateway guards it,
-// and neither the tenant admission layer nor the tenant resolution layer
-// resolves on it.
+// The configuration keys of the endpoints the capability's scopes mount on,
+// relative to the gateway's namespace.
+const (
+	defaultMountItem = mountEndpointsItem + ".default"
+	tenantsMountItem = mountEndpointsItem + ".tenants"
+	systemMountItem  = mountEndpointsItem + ".system"
+)
+
+// checkMount holds every endpoint the capability's routes are mounted on to the
+// rules this module can judge, in the direction each scope's policy domain
+// requires.
 //
-// The endpoint judged is the one the routes actually go on. With the key
-// written that is its value, whether or not any module mounts routes. With the
-// key empty it is the entry point's only endpoint, and only when a module that
-// mounts routes is in the assembly (g.mounted): a command that mounts nothing
-// has no endpoint of that kind, and judging the only endpoint it has would
-// refuse one whose tenant resolution is perfectly in order. The module that
-// mounts routes settles the empty case in its own Init and reports an entry
+// The ordinary and platform-management routes are decided outside the tenant's
+// domain: the gateway has to guard their endpoint, and neither tenant layer may
+// cover it. The admission layer answers an impersonating request with no tenant
+// context 404, which would leave an impersonating caller unable even to end the
+// impersonation, and the resolution layer answers a global account's request,
+// which carries no tenant name, the same way. The tenant-administration routes
+// are the reverse: they carry a tenant in their path and are decided in that
+// tenant's policy domain, so their endpoint has to be one both tenant layers
+// cover, or the route would serve a non-member with no membership check.
+//
+// The endpoints judged are the ones the routes actually go on. A written value
+// is judged whether or not any module mounts routes. The default and system
+// endpoints fall back to the entry point's only endpoint when unwritten, and
+// only when a module that mounts routes is in the assembly (g.mounted): a
+// command that mounts nothing has no endpoint of that kind, and judging the only
+// endpoint it has would refuse one whose tenant resolution is perfectly in
+// order. The tenant endpoint has no fallback, and its check runs only when the
+// key is written: an unwritten key leaves the scope unmountable, and the module
+// that mounts routes refuses a tenant-scoped registration on it. The module that
+// mounts routes settles the empty default in its own Init and reports an entry
 // point it cannot settle on (ErrRoutesUnconfigured) there, before this runs; the
 // same rule is read again here, so an implementation that did not check still
 // gets the same answer. An only endpoint is always one this gateway guards, the
 // guarded set being a non-empty subset of the declared endpoints, so the guard
 // check cannot fail for the defaulted case and is not special-cased.
 //
-// The routes have to be guarded or they would be served by a layer nobody asked
-// to authenticate them. They must not be on an endpoint the admission layer
-// covers, because that layer answers an impersonating request with no tenant
-// context 404, which would leave an impersonating caller unable even to end the
-// impersonation. The tenant resolution layer has the same effect on a global
-// account, whose requests carry no tenant name, and its endpoint list is read
-// when its shape can be read at all: a shape that cannot be decoded is a line
-// of warning and not a failed startup, since the list is another module's.
+// The tenant resolution layer's endpoint list is another module's, read when its
+// shape can be read at all: for the ordinary surfaces a shape that cannot be
+// decoded is a line of warning and not a failed startup, since the routes are
+// safe on an endpoint nobody showed to be resolved on. For the tenant scope the
+// requirement is coverage, so a list that cannot be read fails the startup: the
+// routes would otherwise rest on an assumption this module cannot verify.
 func (g *gateway) checkMount(reg *core.Registry) error {
-	endpoint := g.settings.mount.Endpoint
-	if endpoint == "" && !g.mounted {
+	configured := g.settings.mount.Endpoints
+	if configured.Default == "" && configured.Tenants == "" && configured.System == "" && !g.mounted {
 		return nil
 	}
-	endpoint, err := mount.Endpoint(endpoint, g.router.Endpoints(), ConfigNamespace+"."+mountEndpointItem)
+	declared := g.router.Endpoints()
+	defaultEndpoint, err := mount.Endpoint(configured.Default, declared, ConfigNamespace+"."+defaultMountItem)
 	if err != nil {
 		return err
 	}
-	where := fmt.Sprintf("%s.%s is %q", ConfigNamespace, mountEndpointItem, endpoint)
-	if g.settings.mount.Endpoint == "" {
-		where = fmt.Sprintf("%s.%s is empty, which takes the entry point's only endpoint, %q",
-			ConfigNamespace, mountEndpointItem, endpoint)
+	defaultWhere := fmt.Sprintf("%s.%s is %q", ConfigNamespace, defaultMountItem, defaultEndpoint)
+	if configured.Default == "" {
+		defaultWhere = fmt.Sprintf("%s.%s is empty, which takes the entry point's only endpoint, %q",
+			ConfigNamespace, defaultMountItem, defaultEndpoint)
 	}
+	systemEndpoint, systemWhere := configured.System, ""
+	if systemEndpoint == "" {
+		systemEndpoint = defaultEndpoint
+		systemWhere = fmt.Sprintf("%s.%s is empty, which takes the default endpoint, %q",
+			ConfigNamespace, systemMountItem, systemEndpoint)
+	} else {
+		systemWhere = fmt.Sprintf("%s.%s is %q", ConfigNamespace, systemMountItem, systemEndpoint)
+	}
+	for _, surface := range []struct {
+		item     string
+		where    string
+		endpoint string
+	}{
+		{defaultMountItem, defaultWhere, defaultEndpoint},
+		{systemMountItem, systemWhere, systemEndpoint},
+	} {
+		if err := g.checkSurface(reg, surface.item, surface.where, surface.endpoint); err != nil {
+			return err
+		}
+	}
+	if configured.Tenants != "" {
+		where := fmt.Sprintf("%s.%s is %q", ConfigNamespace, tenantsMountItem, configured.Tenants)
+		return g.checkTenantScope(reg, where, configured.Tenants)
+	}
+	return nil
+}
+
+// checkSurface holds one ordinary or platform-management mount endpoint to the
+// gateway and to the two layers that must not cover it.
+func (g *gateway) checkSurface(reg *core.Registry, item, where, endpoint string) error {
+	if err := g.checkMountEndpoint(item, endpoint); err != nil {
+		return err
+	}
+	if g.scope != nil && g.scope.Covers(endpoint) {
+		return fmt.Errorf("%w: %s, an endpoint the tenant admission layer guards. That "+
+			"layer answers an impersonating request without a tenant context with 404, so an "+
+			"impersonating caller could not even end the impersonation. Mount the routes on an "+
+			"endpoint the admission layer does not guard", authn.ErrInvalidConfig, where)
+	}
+	listed, readable := g.resolutionEndpoints(reg)
+	if !readable {
+		return nil
+	}
+	if slices.Contains(listed, endpoint) {
+		return fmt.Errorf("%w: %s, which %s.%s also lists. A global account's request "+
+			"carries no tenant name, and the tenant resolution layer answers it with 404, so "+
+			"the authentication routes would be unreachable to it. Mount the routes on an "+
+			"endpoint the resolution layer does not resolve", authn.ErrInvalidConfig,
+			where, resolutionNamespace, resolutionEndpointsItem)
+	}
+	return nil
+}
+
+// checkTenantScope holds the tenant-administration scope's mount endpoint to the
+// two layers that must cover it: its routes are decided in the tenant's policy
+// domain, and an endpoint outside those layers would serve them with no tenant
+// and no membership check.
+func (g *gateway) checkTenantScope(reg *core.Registry, where, endpoint string) error {
+	if err := g.checkMountEndpoint(tenantsMountItem, endpoint); err != nil {
+		return err
+	}
+	if g.scope == nil || !g.scope.Covers(endpoint) {
+		return fmt.Errorf("%w: %s, the tenant-administration scope's mount endpoint, which "+
+			"the tenant admission layer does not cover. Those routes are decided in the "+
+			"tenant's policy domain, and an endpoint the layer does not guard would serve them "+
+			"with no membership check. Write %s.%s as an endpoint the layer covers, or mount "+
+			"them on one", authn.ErrInvalidConfig, where, ConfigNamespace, tenantsMountItem)
+	}
+	listed, readable := g.resolutionEndpoints(reg)
+	if !readable {
+		return fmt.Errorf("%w: %s, the tenant-administration scope's mount endpoint, which "+
+			"cannot be shown to be one %s.%s resolves a tenant on: its list could not be read "+
+			"at startup. Those routes carry a tenant in their path, so the resolution layer "+
+			"has to run there. Write %s.%s as an endpoint that layer resolves on", authn.ErrInvalidConfig,
+			where, resolutionNamespace, resolutionEndpointsItem, ConfigNamespace, tenantsMountItem)
+	}
+	if !slices.Contains(listed, endpoint) {
+		return fmt.Errorf("%w: %s, the tenant-administration scope's mount endpoint, which "+
+			"%s.%s does not list. Those routes carry a tenant in their path, so the resolution "+
+			"layer has to resolve a tenant there. Write %s.%s as an endpoint that layer resolves "+
+			"on, or mount them on one", authn.ErrInvalidConfig, where, resolutionNamespace,
+			resolutionEndpointsItem, ConfigNamespace, tenantsMountItem)
+	}
+	return nil
+}
+
+// checkMountEndpoint holds one mount endpoint to what every scope requires: the
+// entry point declares it and the gateway guards it, or the routes would be
+// served by a layer nobody asked to authenticate them.
+func (g *gateway) checkMountEndpoint(item, endpoint string) error {
 	if _, err := g.router.Endpoint(endpoint); err != nil {
 		if errors.Is(err, speedhttp.ErrUnknownEndpoint) {
 			return fmt.Errorf("%w: %s.%s names the endpoint %q, which the entry point does not "+
-				"have", authn.ErrUnknownEndpoint, ConfigNamespace, mountEndpointItem, endpoint)
+				"have", authn.ErrUnknownEndpoint, ConfigNamespace, item, endpoint)
 		}
 		return fmt.Errorf("%schecking the endpoint %q the routes are mounted on: %w", diagnosticPrefix,
 			endpoint, err)
@@ -650,13 +759,7 @@ func (g *gateway) checkMount(reg *core.Registry) error {
 			"mount the routes on another", authn.ErrRoutesUnguarded, endpoint,
 			describeGuarded(g.guarded), ConfigNamespace, endpointsItem)
 	}
-	if g.scope != nil && g.scope.Covers(endpoint) {
-		return fmt.Errorf("%w: %s, an endpoint the tenant admission layer guards. That "+
-			"layer answers an impersonating request without a tenant context with 404, so an "+
-			"impersonating caller could not even end the impersonation. Mount the routes on an "+
-			"endpoint the admission layer does not guard", authn.ErrInvalidConfig, where)
-	}
-	return g.checkResolution(reg, endpoint, where)
+	return nil
 }
 
 // resolutionNamespace and resolutionEndpointsItem are where the tenant
@@ -667,19 +770,23 @@ const (
 	resolutionEndpointsItem = "endpoints"
 )
 
-// checkResolution refuses a mount endpoint the tenant resolution layer also
-// resolves a tenant on, since a global account's request carries no tenant name
-// and that layer answers it 404.
-func (g *gateway) checkResolution(reg *core.Registry, endpoint, where string) error {
+// resolutionEndpoints reads the tenant resolution layer's endpoint list. The
+// second result is false when the list cannot be read at all: no reader was
+// handed to the registry, or the shape is not one this module can decode. A list
+// nobody wrote reads as empty and is readable, since nothing is resolved on any
+// endpoint. A decoding failure is a line of warning; whether that is enough is
+// the caller's to decide, because the ordinary surfaces and the tenant scope
+// make opposite requirements of the same list.
+func (g *gateway) resolutionEndpoints(reg *core.Registry) ([]string, bool) {
 	if reg == nil {
-		return nil
+		return nil, false
 	}
 	reader, err := core.Resolve[config.Reader](reg)
 	if err != nil {
 		g.logger.Warn(diagnosticPrefix+"could not take up the configuration reader to check the "+
 			"mount endpoint against the tenant resolution layer's endpoints",
 			slog.String("cause", err.Error()))
-		return nil
+		return nil, false
 	}
 	var shape struct {
 		Endpoints []string `config:"endpoints"`
@@ -687,25 +794,18 @@ func (g *gateway) checkResolution(reg *core.Registry, endpoint, where string) er
 	if err := reader.Decode(resolutionNamespace, &shape); err != nil {
 		if errors.Is(err, config.ErrMissingRequired) {
 			// The layer is in the assembly and nobody wrote its endpoint
-			// list: it resolves a tenant on no endpoint, so the mount
-			// endpoint is not one of them. That is a configuration read, not
+			// list: it resolves a tenant on no endpoint, so no mount
+			// endpoint is one of them. That is a configuration read, not
 			// a shape this module could not read.
-			return nil
+			return nil, true
 		}
 		g.logger.Warn(diagnosticPrefix+"could not read the tenant resolution layer's endpoint "+
-			"list, so the mount endpoint is not checked against it",
+			"list, so the mount endpoints are not checked against it",
 			slog.String("key", resolutionNamespace+"."+resolutionEndpointsItem),
 			slog.String("cause", err.Error()))
-		return nil
+		return nil, false
 	}
-	if slices.Contains(shape.Endpoints, endpoint) {
-		return fmt.Errorf("%w: %s, which %s.%s also lists. A global account's request "+
-			"carries no tenant name, and the tenant resolution layer answers it with 404, so "+
-			"the authentication routes would be unreachable to it. Mount the routes on an "+
-			"endpoint the resolution layer does not resolve", authn.ErrInvalidConfig,
-			where, resolutionNamespace, resolutionEndpointsItem)
-	}
-	return nil
+	return shape.Endpoints, true
 }
 
 // stop runs in Stop: no further backend call may join.

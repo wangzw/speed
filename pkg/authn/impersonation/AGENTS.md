@@ -74,8 +74,9 @@ The API is the package's godoc.
   registered beside them.** `POST /impersonation` is guarded and not
   impersonable; `GET` and `DELETE /impersonation` are guarded and
   impersonable, so an administrator can always see and end an impersonation.
-  The mount endpoint may not be one the admission layer guards, which the
-  module's `Start` refuses with `ErrInvalidConfig`.
+  The ordinary scope's mount endpoint (`authn.gate.mount.endpoints.default`)
+  may not be one the admission layer guards, which the module's `Start` refuses
+  with `ErrInvalidConfig`.
 - **An unverified self-registration cannot start an impersonation.** The first
   condition of the actor's group reads `SignupVerification.SignupStateOf` and
   answers `ErrContactRequired` (`403 contact-required`) when the state is

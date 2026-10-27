@@ -208,7 +208,7 @@ func TestALookupFailureIsNotReadAsAnUnknownEndpoint(t *testing.T) {
 
 	g = testGateway(t, []string{"public"}, basicBackend("static", "static."))
 	g.router = failingLookupRouter{err: boom}
-	g.settings.mount.Endpoint = "public"
+	g.settings.mount.Endpoints.Default = "public"
 	err = g.checkMount(nil)
 	if !errors.Is(err, boom) || errors.Is(err, authn.ErrUnknownEndpoint) {
 		t.Errorf("checkMount returned %v, want the router's own failure and not ErrUnknownEndpoint", err)

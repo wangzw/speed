@@ -8,7 +8,7 @@ import (
 	"github.com/vislake/speed/pkg/authn"
 )
 
-const endpointKey = "authn.gate.mount.endpoint"
+const endpointKey = "authn.gate.mount.endpoints.default"
 
 // TestEndpointIsTheConfiguredOneOrTheOnlyOneDeclared holds the rule the module
 // that mounts routes and the gateway both read: a name that was written wins over

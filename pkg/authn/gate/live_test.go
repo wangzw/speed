@@ -65,7 +65,7 @@ type liveAssembly struct {
 	// guard.
 	scope authn.ScopeGuard
 	// gateItems is further text for the gateway's own section, written as JSON
-	// members without the braces, such as `"mount":{"endpoint":"admin"}`.
+	// members without the braces, such as `"mount":{"endpoints":{"default":"admin"}}`.
 	gateItems string
 	// authnItems is further text for the authn section beside the gateway's,
 	// written the same way, such as `"static":{"subjects":{...}}`.

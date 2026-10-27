@@ -306,9 +306,7 @@ func TestAnAbsentResolutionLayerListIsNotAShapeTheGatewayCouldNotRead(t *testing
 			h := &recorder{}
 			g := testGateway(t, []string{"public"}, basicBackend("static", "static."))
 			g.logger = slog.New(h)
-			if err := g.checkResolution(reg, "public", "where"); err != nil {
-				t.Fatalf("checkResolution refused the mount endpoint: %v", err)
-			}
+			g.resolutionEndpoints(reg)
 			if got := len(warnings(h)); got != c.warnings {
 				t.Errorf("%d warning(s) written, want %d: %v", got, c.warnings, h.recordsOf())
 			}

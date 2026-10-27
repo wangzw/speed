@@ -202,9 +202,10 @@ does.
   `opens_account`, because it never opens an account.
 - **The routes are mounted through `mount.Mounter` with their access level in one
   call, and the callback bypasses the cross-origin check.** The base path is
-  `authn.gate.mount.base-path` on the endpoint `authn.gate.mount.endpoint`; the
-  flow cookie is `SameSite=None` so that a SAML POST navigation still carries it,
-  and the `__Host-` prefix is dropped only under `allow-insecure`.
+  `authn.gate.mount.bases.default` on the endpoint
+  `authn.gate.mount.endpoints.default`; the flow cookie is `SameSite=None` so
+  that a SAML POST navigation still carries it, and the `__Host-` prefix is
+  dropped only under `allow-insecure`.
 - **A setting moved toward more lenient is visible after the fact, never
   blocked.** The subscription to `settings.changed` writes a `Warn` and a
   best-effort `authn.settings.relaxed` audit row naming the key and the

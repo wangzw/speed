@@ -542,6 +542,30 @@ func sameExceptDate(t *testing.T, what string, want, got rawResponse) {
 
 // send makes one request and reads the whole answer. A non-nil body is encoded
 // as JSON and the content type is set for it; the headers are set as given.
+// withTenant copies a request's headers and adds the tenant the request
+// announces as X-Tenant. The api endpoint resolves a tenant from that header,
+// so a tenant-addressed management route there is decided in that tenant's
+// policy domain; the account and admin endpoints ignore it.
+func withTenant(headers map[string]string, tenant string) map[string]string {
+	out := make(map[string]string, len(headers)+1)
+	for name, value := range headers {
+		out[name] = value
+	}
+	out["X-Tenant"] = tenant
+	return out
+}
+
+// tenantOfPath answers the tenant a path under /api/v1/tenants/ names, so a
+// case that drives the console's pages announces the same one as the route.
+func tenantOfPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/api/v1/tenants/")
+	if !ok {
+		return ""
+	}
+	tenant, _, _ := strings.Cut(rest, "/")
+	return tenant
+}
+
 func send(t *testing.T, client *http.Client, method, url string, body any,
 	headers map[string]string,
 ) response {
@@ -1207,9 +1231,12 @@ func TestSeedBootstrapsTheConsole(t *testing.T) {
 	adminGet := func(t *testing.T, identifier, path string) response {
 		t.Helper()
 		token := signIn(t, accountBase, identifier, seedPassword)
+		headers := map[string]string{"Authorization": "Bearer " + token}
+		if tenant := tenantOfPath(path); tenant != "" {
+			headers = withTenant(headers, tenant)
+		}
 		return send(t, &http.Client{Timeout: 10 * time.Second}, http.MethodGet,
-			adminBase+path, nil,
-			map[string]string{"Authorization": "Bearer " + token})
+			adminBase+path, nil, headers)
 	}
 
 	// The account the seed marks is an administrator: the platform roster
@@ -1468,7 +1495,7 @@ func TestSeedBindsTheAdministratorInEveryServedTenant(t *testing.T) {
 		} {
 			got := send(t, client, http.MethodGet,
 				adminBase+"/api/v1/tenants/"+tenant+path, nil,
-				map[string]string{"Authorization": "Bearer " + token})
+				withTenant(map[string]string{"Authorization": "Bearer " + token}, tenant))
 			if got.status != http.StatusOK {
 				t.Errorf("the seeded administrator was refused the %s page of tenant %q with %d: %s",
 					path, tenant, got.status, got.body)
@@ -1537,7 +1564,7 @@ func TestCreatingATenantWritesTheFirstTenantAdminBinding(t *testing.T) {
 	// membership is what lets it enter the tenant: a binding alone names an
 	// account the admission layer refuses.
 	members := send(t, client, http.MethodGet,
-		base+"/api/v1/tenants/"+created+"/members", nil, auth)
+		base+"/api/v1/tenants/"+created+"/members", nil, withTenant(auth, created))
 	if members.status != http.StatusOK {
 		t.Fatalf("reading the new tenant's members answered %d:\n%s", members.status, members.body)
 	}
@@ -1613,7 +1640,7 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	// membership is written first — the order the seed uses as well.
 	member := send(t, client, http.MethodPut,
 		base+"/api/v1/tenants/"+system+"/members/"+who.AccountID,
-		map[string]any{"active": true}, auth)
+		map[string]any{"active": true}, withTenant(auth, system))
 	if member.status != http.StatusNoContent {
 		t.Fatalf("adding the target to the system tenant answered %d:\n%s", member.status, member.body)
 	}
@@ -1649,7 +1676,7 @@ func TestRemovingASystemMembershipWithdrawsThePlatformBinding(t *testing.T) {
 	}
 
 	removed := send(t, client, http.MethodDelete,
-		base+"/api/v1/tenants/"+system+"/members/"+who.AccountID, nil, auth)
+		base+"/api/v1/tenants/"+system+"/members/"+who.AccountID, nil, withTenant(auth, system))
 	if removed.status != http.StatusNoContent {
 		t.Fatalf("removing the target's system membership answered %d:\n%s", removed.status, removed.body)
 	}

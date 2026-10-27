@@ -197,7 +197,7 @@ func TestTheDefaultsAreTheDesignsAndGuardEverything(t *testing.T) {
 	if set.budget != 5*time.Second || set.inFlight != 64 {
 		t.Errorf("the budget is %s and the width %d, want 5s and 64", set.budget, set.inFlight)
 	}
-	if set.mount.Bases != (bases{Default: "/api/v1/auth", Tenants: "/api/v1/tenants", System: "/api/v1/system/auth"}) || set.mount.Endpoint != "" || set.mount.PublicURL != "" || set.mount.AllowInsecure {
+	if set.mount.Bases != (bases{Default: "/api/v1/auth", Tenants: "/api/v1/tenants", System: "/api/v1/system/auth"}) || set.mount.Endpoints != (endpoints{}) || set.mount.PublicURL != "" || set.mount.AllowInsecure {
 		t.Errorf("the mount section reads %+v by default, want /api/v1/auth and nothing else", set.mount)
 	}
 	if len(set.trustedOrigins) != 0 {
@@ -242,7 +242,7 @@ func TestTheEndpointListAndTheMountKeysAreReadFromConfiguration(t *testing.T) {
 		"endpoints":["public","admin"],
 		"call-budget":"2s",
 		"in-flight":4,
-		"mount":{"endpoint":"admin","bases":{"default":"/identity","tenants":"/identity","system":"/identity"},"public-url":"https://id.example.com","allow-insecure":false},
+		"mount":{"endpoints":{"default":"admin"},"bases":{"default":"/identity","tenants":"/identity","system":"/identity"},"public-url":"https://id.example.com","allow-insecure":false},
 		"trusted-origins":["https://app.example.com"]
 	}}}`
 	set, err := readSettings(authntest.ConfigReader(t, Module(), body))
@@ -255,7 +255,7 @@ func TestTheEndpointListAndTheMountKeysAreReadFromConfiguration(t *testing.T) {
 	if set.budget != 2*time.Second || set.inFlight != 4 {
 		t.Errorf("the budget reads %s and the width %d", set.budget, set.inFlight)
 	}
-	if set.mount != (mountConfig{Endpoint: "admin", Bases: bases{Default: "/identity", Tenants: "/identity", System: "/identity"}, PublicURL: "https://id.example.com"}) {
+	if set.mount != (mountConfig{Endpoints: endpoints{Default: "admin"}, Bases: bases{Default: "/identity", Tenants: "/identity", System: "/identity"}, PublicURL: "https://id.example.com"}) {
 		t.Errorf("the mount section reads %+v", set.mount)
 	}
 	if len(set.trustedOrigins) != 1 || set.trustedOrigins[0] != "https://app.example.com" {
@@ -288,7 +288,7 @@ func TestTheKeysThatDecideWhatIsGuardedTakeTheMainSourceAlone(t *testing.T) {
 			t.Errorf("%s is required, but every key has a default", key)
 		}
 	}
-	for _, key := range []string{budgetItem, inFlightItem, mountEndpointItem, mountBasesItem + ".default", mountPublicURLItem} {
+	for _, key := range []string{budgetItem, inFlightItem, defaultMountItem, tenantsMountItem, systemMountItem, mountBasesItem + ".default", mountPublicURLItem} {
 		if _, found := items[key]; !found {
 			t.Errorf("the schema does not declare %q", key)
 		}

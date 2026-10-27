@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	speedhttp "github.com/vislake/speed/pkg/http"
 )
 
 // originVector is one Origin header value and whether the trust set of the
@@ -134,7 +136,13 @@ func TestACallbackBypassHoldsForTheRegisteredPatternAndNoOtherPost(t *testing.T)
 	}
 	// The bypass is written the way the module writes it for a callback; the
 	// check is read directly so that the pattern is what is under test.
-	p.wired.Store(&wiring{name: "main", endpoint: standInEndpoint{name: "main", ledger: &ledger{}}, gate: standInGate{ledger: &ledger{}}})
+	p.wired.Store(&wiring{
+		defaultName: "main",
+		endpoints: map[speedhttp.Scope]wiredEndpoint{
+			"": {name: "main", endpoint: standInEndpoint{name: "main", ledger: &ledger{}}},
+		},
+		gate: standInGate{ledger: &ledger{}},
+	})
 	p.Callback([]string{"POST"}, "/sso/:provider/callback", handler)
 	p.Callback([]string{"POST"}, "/files/*rest", handler)
 

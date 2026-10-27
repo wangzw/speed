@@ -24,7 +24,7 @@ app talks to its own origin by default (the client base URL falls back to
 backend endpoints claim onto the demo's backend listener: the api, account,
 admin and content endpoints all answer on one port. The claimed prefixes live in
 `backend-prefixes.json` beside this package (`/api`, `/content`; `/api/v1/auth`,
-`/api/v1/features`, `/api/v1/workspace`, `/api/v1/tenants` and `/api/v1/system/auth`;
+`/api/v1/features`, `/api/v1/workspace` and `/api/v1/system/auth`;
 `/api/v1/system/audit`, `/api/v1/system/permissions`, `/api/v1/system/settings`,
 `/api/v1/system/sms` and `/api/v1/system/tenants`), and
 `vite.config.ts` generates one segment-anchored proxy key per prefix from that

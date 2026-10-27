@@ -52,29 +52,40 @@ const diagnosticPrefix = "authn: "
 type product struct {
 	// bases is the base path of each scope the capability's routes span.
 	bases map[speedhttp.Scope]string
+	// endpoints is the configured endpoint of each scope. A scope left empty
+	// keeps the empty value; the default scope settles it in Init, the system
+	// scope falls back to the default one, and the tenant scope has none.
+	endpoints map[speedhttp.Scope]string
 	// publicURL is the origin of the configured public URL in the form a browser
 	// sends it, and empty when none is configured.
 	publicURL string
-	// configured is the endpoint the configuration names, empty when it names
-	// none.
-	configured string
 	// csrf is the cross-origin check every registration passes through, built
 	// from the public URL and the trusted origins and carrying the bypass
 	// patterns of the callbacks.
 	csrf *http.CrossOriginProtection
 
-	// wired is what Init settles: the endpoint the routes are mounted on and
-	// the two registration surfaces they are written to. It is nil before Init
-	// and read-only afterwards.
+	// wired is what Init settles: the endpoint each scope's routes are mounted
+	// on and the two registration surfaces they are written to. It is nil before
+	// Init and read-only afterwards.
 	wired atomic.Pointer[wiring]
 }
 
 // wiring is the part of the module that exists once Init has run.
 type wiring struct {
-	// name is the endpoint the routes are mounted on.
+	// defaultName is the endpoint the ordinary scope is mounted on. It is the
+	// realm a handler's own 401 names, the protection space being the ordinary
+	// authentication surface.
+	defaultName string
+	// endpoints is the endpoint of each scope that may be mounted, by scope.
+	endpoints map[speedhttp.Scope]wiredEndpoint
+	gate      authn.Gate
+}
+
+// wiredEndpoint is one scope's mount point: the name the gateway is told and
+// the entry point's own surface the route is written to.
+type wiredEndpoint struct {
 	name     string
 	endpoint speedhttp.Endpoint
-	gate     authn.Gate
 }
 
 // product must satisfy the capability it delivers.
@@ -172,20 +183,28 @@ func newProduct(set settings) (*product, error) {
 			speedhttp.ScopeTenants: set.Mount.Bases.Tenants,
 			speedhttp.ScopeSystem:  set.Mount.Bases.System,
 		},
-		publicURL: origin, configured: set.Mount.Endpoint, csrf: csrf,
+		endpoints: map[speedhttp.Scope]string{
+			"":                     set.Mount.Endpoints.Default,
+			speedhttp.ScopeTenants: set.Mount.Endpoints.Tenants,
+			speedhttp.ScopeSystem:  set.Mount.Endpoints.System,
+		},
+		publicURL: origin, csrf: csrf,
 	}, nil
 }
 
-// wire runs in Init: it settles the endpoint the routes go on, takes up the two
+// wire runs in Init: it settles the endpoint of each scope, takes up the two
 // registration surfaces and writes the startup diagnostic.
 //
-// The endpoint is judged for the one thing only this module can say, that there
-// is one: the key empty and the entry point declaring anything but exactly one
-// endpoint leaves nothing to pick (ErrRoutesUnconfigured), which can only be
-// told here because the entry point's endpoints are not known before its
-// instance exists. That it is guarded, that the admission layer does not cover
-// it and that tenant resolution does not resolve on it are the gateway's to
-// judge in Start, on the same name.
+// The default endpoint is judged for the one thing only this module can say,
+// that there is one: the key empty and the entry point declaring anything but
+// exactly one endpoint leaves nothing to pick (ErrRoutesUnconfigured), which can
+// only be told here because the entry point's endpoints are not known before its
+// instance exists. The system scope shares the default endpoint unless it names
+// one of its own. The tenant scope has no fallback: an unwritten key leaves it
+// unmountable, and a tenant-scoped registration is refused at its call site
+// rather than landing on an endpoint no tenant layer guards. That each endpoint
+// is guarded, and that the tenant layers cover the tenant scope's endpoint and
+// no other, are the gateway's to judge in Start, on the same names.
 func (p *product) wire(reg *core.Registry) error {
 	router, err := core.Resolve[speedhttp.Router](reg)
 	if err != nil {
@@ -196,25 +215,37 @@ func (p *product) wire(reg *core.Registry) error {
 		}
 		return fmt.Errorf("%staking up the HTTP entry point to mount routes on: %w", diagnosticPrefix, err)
 	}
-	name, err := mount.Endpoint(p.configured, router.Endpoints(), key(endpointItem))
+	defaultName, err := mount.Endpoint(p.endpoints[""], router.Endpoints(), key(defaultMountItem))
 	if err != nil {
 		return err
 	}
-	endpoint, err := router.Endpoint(name)
-	if err != nil {
-		if errors.Is(err, speedhttp.ErrUnknownEndpoint) {
-			return fmt.Errorf("%w: %s names the endpoint %q, which the entry point does not have. "+
-				"Correct the name, or declare that endpoint in the entry point's configuration",
-				authn.ErrUnknownEndpoint, key(endpointItem), name)
+	names := map[speedhttp.Scope]string{"": defaultName}
+	names[speedhttp.ScopeSystem] = p.endpoints[speedhttp.ScopeSystem]
+	if names[speedhttp.ScopeSystem] == "" {
+		names[speedhttp.ScopeSystem] = defaultName
+	}
+	if tenants := p.endpoints[speedhttp.ScopeTenants]; tenants != "" {
+		names[speedhttp.ScopeTenants] = tenants
+	}
+	wired := make(map[speedhttp.Scope]wiredEndpoint, len(names))
+	for scope, name := range names {
+		endpoint, lookupErr := router.Endpoint(name)
+		if lookupErr != nil {
+			if errors.Is(lookupErr, speedhttp.ErrUnknownEndpoint) {
+				return fmt.Errorf("%w: %s names the endpoint %q, which the entry point does not have. "+
+					"Correct the name, or declare that endpoint in the entry point's configuration",
+					authn.ErrUnknownEndpoint, key(mountItemFor(scope)), name)
+			}
+			return fmt.Errorf("%staking up the endpoint %q the routes are mounted on: %w", diagnosticPrefix, name, lookupErr)
 		}
-		return fmt.Errorf("%staking up the endpoint %q the routes are mounted on: %w", diagnosticPrefix, name, err)
+		wired[scope] = wiredEndpoint{name: name, endpoint: endpoint}
 	}
 	gate, err := core.Resolve[authn.Gate](reg)
 	if err != nil {
 		return fmt.Errorf("%staking up the gateway to register the routes' access levels on: %w",
 			diagnosticPrefix, err)
 	}
-	p.wired.Store(&wiring{name: name, endpoint: endpoint, gate: gate})
+	p.wired.Store(&wiring{defaultName: defaultName, endpoints: wired, gate: gate})
 
 	logger := log.Default()
 	delivered, err := core.Resolve[log.Logger](reg)
@@ -228,9 +259,24 @@ func (p *product) wire(reg *core.Registry) error {
 		return fmt.Errorf("%staking up the logging capability for the startup diagnostic: %w", diagnosticPrefix, err)
 	}
 	logger.Info(diagnosticPrefix+"the authentication routes are mounted",
-		slog.String("endpoint", name),
+		slog.String("endpoint", defaultName),
+		slog.String("tenants_endpoint", wired[speedhttp.ScopeTenants].name),
+		slog.String("system_endpoint", wired[speedhttp.ScopeSystem].name),
 		slog.String("default_base_path", p.bases[""]),
 		slog.String("tenants_base_path", p.bases[speedhttp.ScopeTenants]),
 		slog.String("system_base_path", p.bases[speedhttp.ScopeSystem]))
 	return nil
+}
+
+// mountItemFor is the configuration item that names one scope's endpoint,
+// relative to the gateway's mount section.
+func mountItemFor(scope speedhttp.Scope) string {
+	switch scope {
+	case speedhttp.ScopeTenants:
+		return tenantsMountItem
+	case speedhttp.ScopeSystem:
+		return systemMountItem
+	default:
+		return defaultMountItem
+	}
 }

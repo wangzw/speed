@@ -739,7 +739,7 @@ table:
 | Endpoint | Claims |
 |---|---|
 | `api` | `/api` |
-| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace`, `/api/v1/tenants`, `/api/v1/system/auth` |
+| `account` | `/api/v1/auth`, `/api/v1/features`, `/api/v1/workspace`, `/api/v1/system/auth` |
 | `admin` | `/api/v1/system/audit`, `/api/v1/system/permissions`, `/api/v1/system/settings`, `/api/v1/system/sms`, `/api/v1/system/tenants` |
 | `ops` | `/` (omitted: it is alone on its listener) |
 | `web` | `/` |
@@ -837,13 +837,18 @@ refuses it 401, and once admitted the api endpoint answers its own 404 (or its
 The baseline now ships the guards each endpoint carries; `server/defaults.yaml`
 names the fixed part of that wiring, and no configuration file repeats it:
 
-- The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its own
-  routes — login, session, registration, profile, the account-management routes,
-  invitations, impersonation and the enterprise provider register — mount on the
-  `account` endpoint under the scope's base path (`authn.gate.mount.bases`;
-  `/api/v1/auth`, `/api/v1/auth`, `/api/v1/tenants` and
-  `/api/v1/system/auth` by default). The login flow is delivered as a session
-  cookie: the frontend's login flow
+- The gateway (`authn.gate`) guards `api`, `account` and `admin`. Its ordinary
+  and platform-management routes — login, session, registration, profile, the
+  account-management routes and the enterprise provider register — mount on the
+  `account` endpoint under `authn.gate.mount.bases.default` and
+  `mount.bases.system` (`/api/v1/auth` and `/api/v1/system/auth` by default).
+  The tenant-management routes — membership, invitations, identity providers
+  and impersonation records — mount on `api`, under
+  `authn.gate.mount.endpoints.tenants` and `mount.bases.tenants`
+  (`/api/v1/tenants` by default), because they are decided in that tenant's
+  policy domain and have to meet `tenant.resolve` and `tenant.admission`; the
+  endpoint's `/api` claim covers the namespace. The login flow is delivered as a
+  session cookie: the frontend's login flow
   requests `delivery: 'session'` (and `@speed/auth-core` forces it), so a
   completed login answers `{state: 'authenticated', session: {id, expires_at}}`
   with a `Set-Cookie` and no token pair, and a page reload stays signed in by
@@ -856,7 +861,8 @@ names the fixed part of that wiring, and no configuration file repeats it:
   `api`; the authorization guard (`authz.guard`) enforces `api`; the rate
   limiter's quota layer (`ratelimit`) limits `api`, and its address shield
   (`ratelimit.address`) guards `account` -- a coarse per-source request cap
-  before identity is settled, not a per-recipient send limit. Resolution reads
+  before identity is settled, not a per-recipient send limit. Admission's list
+  is a subset of resolution's. Resolution reads
   the tenant from the request's `X-Tenant` header (the header extractor
   `tenant.resolve.extractor` names; the header name itself is the module's own
   default), so an `api` call without that header is refused 404 -- the tenant is
@@ -867,6 +873,12 @@ names the fixed part of that wiring, and no configuration file repeats it:
 - The platform's management surfaces mount on `admin`: the roster
   (`tenant.admin`), the authorization catalog (`authz.admin`), the settings
   surface (`settings.admin`) and the journal's query routes (`audit.admin`).
+- The tenant-management route set decides each action in its handler through
+  `authn.Decider`, so `server/management.go` (`management.access`) registers it
+  open on the authorization guard's declaration surface: `api` carries the
+  guard, whose closed default would otherwise refuse every one of those routes
+  403 before a handler ran. `claims_test.go` holds the list to the committed
+  contract in both directions.
 - The caller's own permission read (`authz.self`) mounts on `api`: every
   authenticated caller may read the permissions it holds in the platform domain
   and in the request's tenant, and the frontend attaches both sets to the

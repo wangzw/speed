@@ -9,13 +9,13 @@ import (
 	"github.com/vislake/speed/pkg/authn/internal/mount"
 )
 
-// mountOn is the configuration body that names the endpoint the routes go on;
-// an empty name leaves the key out.
+// mountOn is the configuration body that names the endpoint the ordinary
+// scope's routes go on; an empty name leaves the key out.
 func mountOn(endpoint string) string {
 	if endpoint == "" {
 		return `{}`
 	}
-	return `{"authn":{"gate":{"mount":{"endpoint":"` + endpoint + `"}}}}`
+	return `{"authn":{"gate":{"mount":{"endpoints":{"default":"` + endpoint + `"}}}}}`
 }
 
 // TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares holds
@@ -38,11 +38,11 @@ func TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares(t *
 		{name: "several declared, the key names the other", declared: []string{"admin", "default"}, configured: "admin", want: "admin"},
 		{
 			name: "no endpoint declared, key empty", wantErr: authn.ErrRoutesUnconfigured,
-			inMessage: []string{"authn.gate.mount.endpoint", "no endpoint"},
+			inMessage: []string{"authn.gate.mount.endpoints.default", "no endpoint"},
 		},
 		{
 			name: "two endpoints declared, key empty", declared: []string{"default", "admin"},
-			wantErr: authn.ErrRoutesUnconfigured, inMessage: []string{"authn.gate.mount.endpoint", "admin, default"},
+			wantErr: authn.ErrRoutesUnconfigured, inMessage: []string{"authn.gate.mount.endpoints.default", "admin, default"},
 		},
 		{
 			name: "three endpoints declared, key empty", declared: []string{"a", "b", "c"},
@@ -50,7 +50,7 @@ func TestTheMountEndpointIsTheConfiguredOneOrTheOnlyOneTheEntryPointDeclares(t *
 		},
 		{
 			name: "the key names an endpoint the entry point does not have", declared: []string{"main"},
-			configured: "ghost", wantErr: authn.ErrUnknownEndpoint, inMessage: []string{"authn.gate.mount.endpoint", `"ghost"`},
+			configured: "ghost", wantErr: authn.ErrUnknownEndpoint, inMessage: []string{"authn.gate.mount.endpoints.default", `"ghost"`},
 		},
 		{
 			name: "the key names an endpoint and none is declared", configured: "ghost",
@@ -113,7 +113,7 @@ func TestTheStartupDiagnosticNamesTheEndpointAndTheBasePath(t *testing.T) {
 	logs := &recorder{}
 	l := &ledger{}
 	err := stack{
-		body:   `{"authn":{"gate":{"mount":{"endpoint":"admin","bases":{"default":"/identity","tenants":"/identity","system":"/identity"}}}}}`,
+		body:   `{"authn":{"gate":{"mount":{"endpoints":{"default":"admin"},"bases":{"default":"/identity","tenants":"/identity","system":"/identity"}}}}}`,
 		router: &standInRouter{names: []string{"admin", "default"}, ledger: l},
 		gate:   standInGate{ledger: l}, realGateModule: true,
 		logs: logs,

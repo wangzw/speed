@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -615,6 +616,69 @@ func checkPlatformClaims(t *testing.T, locator string, served []byte) {
 		for _, configuration := range configurations {
 			checkClaimsCover(t, configuration.name, document.name,
 				configuration.claims, operations, fragments)
+		}
+	}
+}
+
+// tenantParam is the path form the authorization guard's declaration table
+// matches: gin keeps a parameter as :name, while the contract writes {name}.
+var tenantParam = regexp.MustCompile(`\{([^}]+)\}`)
+
+// TestTheTenantManagementRoutesAreDeclaredOpenForTheAuthorizationGuard holds the
+// host's declaration list to the committed contract. The tenant-management
+// operations are served on the api endpoint, whose chain carries the
+// authorization guard; their handlers decide each action through the Decider,
+// so an operation the host does not declare open is refused 403 before its
+// handler runs. The check runs both ways: a contract operation missing from the
+// list, and a list entry the contract does not serve.
+func TestTheTenantManagementRoutesAreDeclaredOpenForTheAuthorizationGuard(t *testing.T) {
+	contract, err := os.ReadFile(filepath.Clean(platformContractPath))
+	if err != nil {
+		t.Fatalf("reading the committed platform contract: %v", err)
+	}
+	var document struct {
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(contract, &document); err != nil {
+		t.Fatalf("the committed contract is not readable: %v", err)
+	}
+
+	declared := make(map[string]bool, len(tenantManagementRoutes))
+	for _, r := range tenantManagementRoutes {
+		declared[r.method+" "+r.path] = true
+	}
+	served := make(map[string]bool)
+	for path, item := range document.Paths {
+		if !strings.HasPrefix(path, "/api/v1/tenants/") {
+			continue
+		}
+		for method, raw := range item {
+			var operation struct {
+				Endpoint string   `json:"x-endpoint"`
+				Tags     []string `json:"tags"`
+			}
+			if err := json.Unmarshal(raw, &operation); err != nil {
+				t.Fatalf("reading %s %s: %v", method, path, err)
+			}
+			if operation.Endpoint != "api" ||
+				(!slices.Contains(operation.Tags, "authn.admin") && !slices.Contains(operation.Tags, "authn.invite")) {
+				continue
+			}
+			key := strings.ToUpper(method) + " " + tenantParam.ReplaceAllString(path, ":$1")
+			served[key] = true
+			if !declared[key] {
+				t.Errorf("the contract serves %s on the api endpoint, and management.go does not declare it "+
+					"open to the authorization guard", key)
+			}
+		}
+	}
+	if len(served) == 0 {
+		t.Fatal("the contract lists no tenant-management operation on the api endpoint")
+	}
+	for key := range declared {
+		if !served[key] {
+			t.Errorf("management.go declares %s open, which the contract does not serve as a "+
+				"tenant-management operation", key)
 		}
 	}
 }

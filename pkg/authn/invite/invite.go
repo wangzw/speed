@@ -53,10 +53,12 @@ const ModuleName = "authn.invite"
 // module's own name, as a registering module's namespace always is.
 const ConfigNamespace = ModuleName
 
-// defaultEndpoint is the endpoint this module's own OpenAPI fragment declares its
-// routes for. The endpoint the routes are actually mounted on is the one the
-// mounter resolves; the fragment is a static declaration written before that is
-// known, so it carries the conventional name.
+// defaultEndpoint is the endpoint this module's ordinary OpenAPI fragment
+// declares its routes for. The endpoint the routes are actually mounted on is
+// the one the mounter resolves; the fragment is a static declaration written
+// before that is known, so it carries the conventional name. The
+// tenant-management fragment names api, the conventional endpoint for routes
+// decided in a tenant's policy domain.
 const defaultEndpoint = "account"
 
 // inviteFragment is this module's public OpenAPI fragment, describing the
@@ -85,7 +87,7 @@ var (
 		Document: inviteFragment,
 	}
 	inviteTenantsSpec = speedhttp.Spec{
-		Endpoint: defaultEndpoint,
+		Endpoint: "api",
 		Prefix:   "api",
 		Version:  "v1",
 		Scope:    speedhttp.ScopeTenants,

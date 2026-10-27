@@ -1618,7 +1618,7 @@ func TestTheEnsureCreatesForAnAccountOfAnotherTenant(t *testing.T) {
 	added := send(t, client, http.MethodPut,
 		base+"/api/v1/tenants/demo/members/"+who.AccountID,
 		map[string]any{"active": true},
-		map[string]string{"Authorization": "Bearer " + operatorToken})
+		withTenant(map[string]string{"Authorization": "Bearer " + operatorToken}, "demo"))
 	if added.status != http.StatusNoContent {
 		t.Fatalf("writing the membership answered %d, want 204:\n%s", added.status, added.body)
 	}
@@ -1702,7 +1702,7 @@ func TestTheTenantAdminHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 
 	added := send(t, client, http.MethodPut,
 		base+"/api/v1/tenants/"+personalID+"/members/"+who.AccountID,
-		map[string]any{"active": true}, memberAuth)
+		map[string]any{"active": true}, withTenant(memberAuth, personalID))
 	if added.status != http.StatusForbidden {
 		t.Errorf("the personal tenant's tenant-admin wrote a membership and answered %d, want 403:\n%s",
 			added.status, added.body)
@@ -1710,7 +1710,7 @@ func TestTheTenantAdminHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 
 	invited := send(t, client, http.MethodPost,
 		base+"/api/v1/tenants/"+personalID+"/invitations",
-		map[string]any{"email": "someone@example.test"}, memberAuth)
+		map[string]any{"email": "someone@example.test"}, withTenant(memberAuth, personalID))
 	if invited.status != http.StatusForbidden {
 		t.Errorf("the personal tenant's tenant-admin issued an invitation and answered %d, want 403:\n%s",
 			invited.status, invited.body)
@@ -1721,7 +1721,7 @@ func TestTheTenantAdminHoldsTheAllowlistAndCannotManageTheTenant(t *testing.T) {
 	// The last tenant-admin binding and the self-removal refusal stand behind
 	// that, and the account is the tenant's only member.
 	left := send(t, client, http.MethodDelete,
-		base+"/api/v1/tenants/"+personalID+"/members/"+who.AccountID, nil, memberAuth)
+		base+"/api/v1/tenants/"+personalID+"/members/"+who.AccountID, nil, withTenant(memberAuth, personalID))
 	if left.status != http.StatusForbidden {
 		t.Errorf("the personal tenant's holder removed its own membership and answered %d, want 403:\n%s",
 			left.status, left.body)
@@ -1855,9 +1855,10 @@ func TestThePolicyWriteGuardRefusesAPersonalTenantsPolicyWrite(t *testing.T) {
 }
 
 // TestThePersonalTenantRefusesAMembershipAddition holds the addition half of the
-// single-member rule: the platform administrator has no membership.manage in the
-// personal tenant's domain, and the tenant's own tenant-admin holds an
-// allowlist without it, so neither can add a member.
+// single-member rule: the platform administrator is admitted to the personal
+// tenant as a cross-tenant operator, but holds no membership.manage in its
+// domain, and the tenant's own tenant-admin holds an allowlist without it, so
+// neither can add a member.
 func TestThePersonalTenantRefusesAMembershipAddition(t *testing.T) {
 	base, memberToken := personalServe(t, true)
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -1884,7 +1885,7 @@ func TestThePersonalTenantRefusesAMembershipAddition(t *testing.T) {
 
 	added := send(t, client, http.MethodPut,
 		base+"/api/v1/tenants/"+reply.Tenant.ID+"/members/"+who.AccountID,
-		map[string]any{"active": true}, operatorAuth)
+		map[string]any{"active": true}, withTenant(operatorAuth, reply.Tenant.ID))
 	if added.status != http.StatusForbidden {
 		t.Errorf("the platform administrator added a member to the personal tenant and answered %d, "+
 			"want 403:\n%s", added.status, added.body)

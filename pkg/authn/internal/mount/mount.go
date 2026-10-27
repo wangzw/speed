@@ -96,9 +96,10 @@ type Mounter interface {
 	Callback(methods []string, rel string, h gin.HandlerFunc)
 	// BaseIn is the base path routes of the given scope are joined to.
 	BaseIn(scope speedhttp.Scope) string
-	// Endpoint is the name of the endpoint the routes are mounted on. A handler
-	// that answers 401 itself writes it as the realm of its challenge, the name
-	// of the protection space being the endpoint, as the gateway's own is.
+	// Endpoint is the name of the endpoint the ordinary scope's routes are
+	// mounted on. A handler that answers 401 itself writes it as the realm of
+	// its challenge, the name of the protection space being the endpoint, as
+	// the gateway's own is.
 	Endpoint() string
 	// PublicURL is the origin the deployment is reached at from outside,
 	// without a path.

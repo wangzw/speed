@@ -377,6 +377,13 @@ var (
 		// See notification.go.
 		notificationModuleName,
 
+		// The host's own declaration of the authentication capability's
+		// tenant-management routes. They mount on the api endpoint and decide
+		// each action through the Decider in the path tenant's domain, so this
+		// module registers them open to the authorization guard, which would
+		// otherwise refuse them 403 as undeclared. See management.go.
+		managementModuleName,
+
 		// The host's own personal-tenant policy: off by configuration in the
 		// baseline, on in the review assembly. When on it mounts
 		// POST /api/v1/workspace/personal on the account endpoint and declares the
