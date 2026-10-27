@@ -448,9 +448,9 @@ audit.Entry{
 | 其余仪器（登录、口令、因素、会话、令牌、退避、短信、SSO、冒充、审计写失败、清理失败） | 已实现 | `pkg/authn/login/metrics.go`；`pkg/authn/mfa/mfa.go`；`pkg/authn/session/session.go`；`pkg/authn/token/product.go` `takeMeter`；`pkg/authn/account/meters.go`；`pkg/authn/sms/meters.go`；`pkg/tenant/admission/admission.go`；`pkg/authn/sso/oidc/metrics.go`、`pkg/authn/sso/saml/reject.go`；`pkg/authn/impersonation/signal.go` |
 | 守住外部行为假设与纪律的测试 | 已实现 | `pkg/authn/summary_test.go`；`pkg/authn/account/audit_test.go`；`pkg/authn/session/observability_test.go`；`pkg/tenant/admission/decide_test.go` |
 | 匿名注册的账户创建事件（`authn.account.created` 的 `via=signup`） | 已实现 | `pkg/authn/account/signup.go` `(*product).Register`、`pkg/authn/account/events.go` `accountCreated`、`bySignup` |
-| `authn.password.changed` 的 `by=reset` 与 `channel` 字段 | 未实现 | — |
-| 审计动作 `authn.password.reset` 与匿名口令重置的 `attempted`、`success`、`denied` 行 | 未实现 | — |
-| 指标 `authn.password.reset.operations` | 未实现 | — |
+| `authn.password.changed` 的 `by=reset` 与 `channel` 字段 | 已实现 | `pkg/authn/account/events.go` `byReset`、`channelEmail`、`channelSMS`；`pkg/authn/account/credentials.go` `attribution`、`(*product).Set` |
+| 审计动作 `authn.password.reset` 与匿名口令重置的 `attempted`、`success`、`denied` 行 | 已实现 | `pkg/authn/login/reset.go` `actionPasswordReset`、`(*routes).passwordResetComplete`；`pkg/authn/login/reset_test.go` |
+| 指标 `authn.password.reset.operations` | 已实现 | `pkg/authn/login/metrics.go` `resetOpsInstrument`、`resetOperation`；`pkg/authn/login/reset.go` 的发送、核验与完成路径 |
 | 匿名注册的尽力档审计 `authn.signup` | 已实现 | `pkg/authn/login/signup_audit.go` `(*routes).auditSignup`、`signupAuditOutcome`；`pkg/authn/login/register.go` `(*routes).register`、`(*routes).failRegister`、`(*routes).signupSourceAllow`、`(*routes).signupGlobalAllow`；`pkg/authn/login/metrics.go` `newMeters`、`meters.auditFailed` |
 
 事件、审计与指标在各模块里的发出点，随各模块的实现状态由 [design-authn-session](design-authn-session.md) 等文档承载。

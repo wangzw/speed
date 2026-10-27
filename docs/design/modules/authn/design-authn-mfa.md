@@ -650,4 +650,4 @@ CREATE TABLE authn_webauthn_credentials (
 | 根包 import 守卫 | 已实现 | `pkg/authn/deps_test.go` `TestTheRootPackageImportsOnlyWhatItMay`、`TestTheRootPackageClosureHoldsNoThirdPartyPackage` |
 | operation 声明与对外契约片段生成：`openapi/mfa.json` | 已实现 | `pkg/authn/mfa/operations.go`；`pkg/authn/mfa/openapi_generated_test.go`；片段 `pkg/authn/mfa/openapi/mfa.json` |
 | 静态特性 `authn.mfa` 的声明 | 已实现 | `pkg/authn/mfa/mfa.go` `Module`；`pkg/authn/mfa/feature_test.go` `TestTheModuleDeclaresTheMultiFactorFeature` |
-| 找回途径中的匿名口令重置（因素保留、下一次登录仍过第二因素） | 未实现 | — |
+| 找回途径中的匿名口令重置（因素保留、下一次登录仍过第二因素） | 已实现 | `pkg/authn/login/reset.go` `(*routes).passwordResetComplete`；`pkg/authn/login/reset_test.go` `TestResetKeepsTheSecondFactor` |

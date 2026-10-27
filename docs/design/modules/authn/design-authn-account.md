@@ -1068,7 +1068,7 @@ type Provisioner interface {
 | 非因素登录方式的计数与查询（口令凭据、`Proves` 为真的手机号、外部身份任一即真，通行密钥不算，未证明的手机号不算） | 已实现 | `pkg/authn/account/admin.go` `loginWayHeld`、`HasLoginWayOtherThanPasskey` |
 | 口令凭据的 PHC 编解码、解析界限、强度下限、再哈希、内存预算 | 已实现 | `pkg/authn/account/password.go` `Verify`；`pkg/authn/account/credentials.go` `Set`、`Clear`、`ImportHash`；`pkg/authn/internal/password` `Parse`、`Params`、`Governor`、`Decoy` |
 | 口令凭据的删除（规则 A10） | 已实现 | `pkg/authn/account/credentials.go` `Clear`；`pkg/authn/account.go` `Passwords.Clear` |
-| `SetPasswordOptions` 的 `By`、`Channel`、`RequireActive`、`RequireExisting`、`RequireIdentifier` 与 `AdvanceValidAfter` | 未实现 | — |
+| `SetPasswordOptions` 的 `By`、`Channel`、`RequireActive`、`RequireExisting`、`RequireIdentifier` 与 `AdvanceValidAfter` | 已实现 | `pkg/authn/account.go` `SetPasswordOptions`；`pkg/authn/account/credentials.go` `(*product).Set`、`requireInTx`、`attribution`；`pkg/authn/errors.go` `ErrAccountUnavailable`；`pkg/authn/account/credentials_test.go` |
 | 口令表遗留写法 `pbkdf2-sha256$<迭代>$<盐>$<密钥>` 的解析与比对 | 已实现 | `pkg/authn/internal/password/phc.go` `Parse`；`pkg/authn/static/hash.go` `ParseHash`；`pkg/authn/static/static.go` `wire` |
 | 失败退避的 db 实现与进程内实现 | 已实现 | `pkg/authn/account/throttle.go`；`pkg/authn/internal/password/throttle.go` `Throttle` |
 | `authn_throttles` 与 `authn_service_secrets` 的清扫 | 已实现 | `pkg/authn/account/sweep.go` |

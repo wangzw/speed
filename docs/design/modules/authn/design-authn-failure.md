@@ -391,4 +391,4 @@ type ThrottledError struct{ RetryAfter time.Duration }
 | 未验证账户的问题码 `contact-required` 与状态映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeContactRequired`、`statusOf` |
 | 未验证账户的 `contact-required` 运行时映射（要求已验证邮箱的门控） | 已实现 | `pkg/authn/login/start.go` `startAuthenticated`；`pkg/authn/invite/pipeline.go` `gateSignup`；`pkg/authn/admin/pipeline.go` `gateSignup`；`pkg/authn/impersonation/start.go` `checkSignup` |
 | 人机验证的问题码 `human-verification-required` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodeHumanVerificationRequired`、`statusOf`、`Forbidden`；`pkg/authn/login/routes.go` `(*routes).fail`；`pkg/authn/login/internal/selfservice/call.go` `(*routes).fail` |
-| 匿名口令重置的问题码 `password-reset-closed`、`password-reset-unavailable` 与运行时映射 | 未实现 | — |
+| 匿名口令重置的问题码 `password-reset-closed`、`password-reset-unavailable` 与运行时映射 | 已实现 | `pkg/authn/internal/mount/problem.go` `CodePasswordResetClosed`、`CodePasswordResetUnavailable`；`pkg/authn/login/reset.go` `(*routes).resetOpen`、`passwordResetStart`、`passwordResetCurrent`、`passwordResetVerify`、`passwordResetComplete`；`pkg/authn/internal/mount/problem_test.go`；`pkg/authn/login/reset_test.go` |
