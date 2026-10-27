@@ -109,6 +109,9 @@ var seamSignatures = map[string][]string{
 	"EmailCodeSender": {
 		"SendCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error",
 	},
+	"EmailResetCodeSender": {
+		"SendResetCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error",
+	},
 	"HumanVerifier": {
 		"Required() bool",
 		"Provider() string",

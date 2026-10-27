@@ -45,3 +45,23 @@ type EmailCodeSender interface {
 	// to keep.
 	SendCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error
 }
+
+// EmailResetCodeSender is the channel an anonymous password reset's verification
+// code goes out over. Its method set is SendResetCode, the same shape as
+// EmailCodeSender.SendCode: the reset flow draws the code and holds the record,
+// and this seam renders the reset message and delivers it. It is a host-provided
+// capability beside EmailCodeSender; a deployment that does not implement it
+// publishes no email reset channel, while email address verification is
+// unaffected.
+//
+// A channel may also publish CertifiesNotSent(err error) bool, with the meaning
+// EmailCodeSender gives it, and a delivery whose outcome is unknown is wrapped
+// in ErrEmailUncertain in the same way.
+type EmailResetCodeSender interface {
+	// SendResetCode delivers a password-reset code to the address to, rendered
+	// in the language locale, and valid for ttl. The delivery contract is
+	// EmailCodeSender.SendCode's: every failure is answered the same way by the
+	// caller, and a code reaching no output anywhere is the implementer's to
+	// keep.
+	SendResetCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error
+}

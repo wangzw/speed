@@ -28,7 +28,7 @@ var eventTable = []struct {
 	{EventIdentifierChanged, reflect.TypeFor[IdentifierChanged](), []string{"account_id", "kind", "change"}, nil},
 	{EventBindingChanged, reflect.TypeFor[BindingChanged](), []string{"account_id", "provider_class", "change", "source"}, nil},
 	{EventMembershipChanged, reflect.TypeFor[MembershipChanged](), []string{"account_id", "change", "source"}, nil},
-	{EventPasswordChanged, reflect.TypeFor[PasswordChanged](), []string{"account_id", "by"}, nil},
+	{EventPasswordChanged, reflect.TypeFor[PasswordChanged](), []string{"account_id", "by", "channel"}, nil},
 	{EventFactorChanged, reflect.TypeFor[FactorChanged](), []string{"account_id", "factor_id", "kind", "change", "by"}, nil},
 	{EventLoginSucceeded, reflect.TypeFor[LoginSucceeded](), []string{"account_id", "session_id", "methods", "assurance", "delivery"}, nil},
 	{EventSessionRevoked, reflect.TypeFor[SessionRevoked](), []string{"session_id", "account_id", "scope", "reason_class"}, nil},

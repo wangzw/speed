@@ -93,7 +93,8 @@ type MembershipChanged struct {
 // change and publishes nothing.
 type PasswordChanged struct {
 	AccountID string `json:"account_id"`
-	By        string `json:"by"` // self, admin or import
+	By        string `json:"by"`      // self, admin, import or reset
+	Channel   string `json:"channel"` // email or sms on a reset; empty otherwise
 }
 
 // FactorChanged is the payload of EventFactorChanged.
