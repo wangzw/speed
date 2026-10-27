@@ -211,9 +211,13 @@ export function PasswordResetScreen({
       confirmPassword: '',
     },
   })
-  const currentReset = operations.currentReset
+  // The resume read is captured once at mount: a host that binds the
+  // operations inline hands a new function identity on every render, and
+  // re-running the resume on each one would read the bound record again
+  // after every field change.
+  const [resume] = useState(() => operations.currentReset)
   const initialStage: Stage =
-    currentReset === undefined ? { kind: 'request' } : { kind: 'checking' }
+    resume === undefined ? { kind: 'request' } : { kind: 'checking' }
   const [stage, setStage] = useState<Stage>(initialStage)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Failure | null>(null)
@@ -245,11 +249,11 @@ export function PasswordResetScreen({
   // read (no binding, an expired or failed record) starts the surface
   // fresh; the record's own state is the only thing read.
   useEffect(() => {
-    if (currentReset === undefined) {
+    if (resume === undefined) {
       return undefined
     }
     let cancelled = false
-    currentReset().then(
+    resume().then(
       (state) => {
         if (cancelled) {
           return
@@ -273,7 +277,7 @@ export function PasswordResetScreen({
     return () => {
       cancelled = true
     }
-  }, [currentReset])
+  }, [resume])
 
   // A stated Retry-After wait ends on its own: the send control
   // re-enables and the stale wait sentence goes away.

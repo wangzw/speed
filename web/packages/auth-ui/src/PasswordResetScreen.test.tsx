@@ -11,13 +11,19 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '@speed/api-client'
+import type { AuthSession } from '@speed/auth-core'
 import { apiError, makeHarness } from '@speed/test-utils/session-harness'
 import { installFakeTurnstile } from '@speed/test-utils/turnstile'
 import { PasswordResetScreen } from './PasswordResetScreen.js'
-import type { PasswordResetOperations } from './PasswordResetScreen.js'
+import type {
+  PasswordResetOperations,
+  PasswordResetSent,
+  PasswordResetVerified,
+} from './PasswordResetScreen.js'
 import { renderWithProviders } from '../test-utils/render.js'
 import { expectNoAxeViolations } from '../test-utils/axe.js'
 import zhCN from './locales/zh-CN.json' with { type: 'json' }
@@ -93,6 +99,37 @@ async function fillCodeAndPassword(
   )
   await user.click(
     screen.getByRole('button', { name: zhCN.passwordReset.submit }),
+  )
+}
+
+/** A host that binds the operations inline and can re-render itself, so
+ * every host render hands the screen new operation and resume identities. */
+function RebindingHost({
+  session,
+  resume,
+}: {
+  readonly session: AuthSession
+  readonly resume: () => Promise<PasswordResetSent | PasswordResetVerified>
+}) {
+  const [tick, setTick] = useState(0)
+  return (
+    <>
+      <PasswordResetScreen
+        session={session}
+        channels={['email']}
+        operations={{
+          requestReset: () => Promise.resolve(SENT),
+          verifyReset: () => Promise.resolve(VERIFIED),
+          completeReset: () => Promise.resolve(),
+          currentReset: () => resume(),
+        }}
+      />
+      <button
+        type="button"
+        aria-label={`tick-${tick}`}
+        onClick={() => setTick(tick + 1)}
+      />
+    </>
   )
 }
 
@@ -495,6 +532,26 @@ describe('PasswordResetScreen', () => {
     expect(
       await screen.findByLabelText(zhCN.passwordReset.emailLabel),
     ).toBeInTheDocument()
+  })
+
+  it('read the bound record once when the host rebinds its operations', async () => {
+    const resume = vi.fn(() => Promise.resolve(VERIFIED))
+    const harness = makeHarness({})
+    renderWithProviders(
+      <RebindingHost session={harness.session} resume={resume} />,
+    )
+    await screen.findByLabelText(zhCN.passwordReset.newPasswordLabel)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'tick-0' }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(resume).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: 'tick-1' }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(resume).toHaveBeenCalledTimes(1)
   })
 
   it('offer a start-over exit when the flow is no longer valid', async () => {
