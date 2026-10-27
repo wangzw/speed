@@ -1165,7 +1165,7 @@ function useConsoleTenantSettle(authenticated: boolean): void {
         if (row === undefined) {
           return
         }
-        setTenantAliases(new Map([[row.id, row.alias]]))
+        setTenantAlias(row.id, row.alias)
         setCurrentTenantId(row.id)
       })
     return () => {
