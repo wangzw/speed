@@ -358,10 +358,11 @@ var moduleDeliveries = map[string][]reflect.Type{
 		reflect.TypeFor[Sessions](), reflect.TypeFor[Verifier](), reflect.TypeFor[CookieClearer](),
 		reflect.TypeFor[AccountLifecycle](),
 	},
-	"mfa":     {reflect.TypeFor[MFA](), reflect.TypeFor[AccountLifecycle]()},
-	"sms":     {reflect.TypeFor[SMSCodes](), reflect.TypeFor[AccountLifecycle]()},
-	"token":   {reflect.TypeFor[Tokens](), reflect.TypeFor[Verifier](), reflect.TypeFor[Challenger]()},
-	"passkey": {reflect.TypeFor[Factor](), reflect.TypeFor[LoginMethod]()},
+	"emailcode": {reflect.TypeFor[EmailCodeSender](), reflect.TypeFor[EmailResetCodeSender]()},
+	"mfa":       {reflect.TypeFor[MFA](), reflect.TypeFor[AccountLifecycle]()},
+	"sms":       {reflect.TypeFor[SMSCodes](), reflect.TypeFor[AccountLifecycle]()},
+	"token":     {reflect.TypeFor[Tokens](), reflect.TypeFor[Verifier](), reflect.TypeFor[Challenger]()},
+	"passkey":   {reflect.TypeFor[Factor](), reflect.TypeFor[LoginMethod]()},
 }
 
 // nameClashes reports the method names that two of the interfaces share with
