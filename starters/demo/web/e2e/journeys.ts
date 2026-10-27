@@ -432,7 +432,7 @@ export const journeys: readonly JourneyEntry[] = [
     journey: 'journey-password-reset-email.md',
     status: 'pending',
     reason:
-      'The path is designed and its specification is due with the anonymous password reset implementation: the sign-in surface will offer the forgot-password entry, and the spec drives the email code round trip, the new password and the invalidation of the other browser context.',
+      'The path is neither rendered nor covered yet: the anonymous password reset is designed but not implemented, so the sign-in surface offers no forgot-password entry and the tier cannot drive the journey today. The spec and the covered label arrive with the implementation; until then this entry records the gap rather than a scheduled spec.',
     covers: [
       'REQ-security-020',
       'REQ-security-034',
@@ -447,7 +447,7 @@ export const journeys: readonly JourneyEntry[] = [
     journey: 'journey-password-reset-sms.md',
     status: 'pending',
     reason:
-      'The path is designed and its specification is due with the anonymous password reset implementation: the review assembly publishes the SMS carrier for the reset purpose, and the spec drives the SMS code round trip, the new password and the invalidation of the other browser context.',
+      'The path is neither rendered nor covered yet: the anonymous password reset is designed but not implemented, so no reset channel is published and the tier cannot drive the journey today. The spec and the covered label arrive with the implementation; until then this entry records the gap rather than a scheduled spec.',
     covers: [
       'REQ-security-020',
       'REQ-security-034',
