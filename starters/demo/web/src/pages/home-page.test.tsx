@@ -99,14 +99,13 @@ describe('the start page', () => {
     )
   })
 
-  it('hides the console card during an impersonation, keeping the member-facing cards', () => {
-    // The impersonated snapshot still carries a platform set (the empty one
-    // is attached later by the identity-keyed read). The card must follow
-    // the identity, exactly as the header entry does, so the two never
-    // disagree while that set is stale.
+  it('hides the console card from an impersonating identity whose effective set is empty', () => {
+    // The effective account is the impersonated one, and a real target holds no
+    // platform permission, so the console card is absent -- through the
+    // permission criterion itself, not through the impersonation flag.
     renderDemoApp({
       session: createTestSession({
-        ...authenticatedSnapshot({ system: ['tenant.read'] }),
+        ...authenticatedSnapshot({ system: [] }),
         impersonating: true,
       }),
     })
@@ -120,6 +119,21 @@ describe('the start page', () => {
       'href',
       NOTIFICATIONS_PATH,
     )
+  })
+
+  it('offers the console card to an impersonating identity whose effective set holds a platform permission', () => {
+    // The criterion is the effective account's platform set alone. A target
+    // that held a platform permission would be refused as an impersonation
+    // target, but the flag itself must not hide the card: the panel follows the
+    // set, and the header entry follows the same derivation.
+    renderDemoApp({
+      session: createTestSession({
+        ...authenticatedSnapshot({ system: ['tenant.read'] }),
+        impersonating: true,
+      }),
+    })
+
+    expect(hasCard(demoEnUS.home.cards.console.title)).toBe(true)
   })
 
   it('keeps the console card hidden while the platform permission set is unknown', () => {

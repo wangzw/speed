@@ -329,45 +329,43 @@ function AppFrame({
       presence.state === 'ready' ? presence.has : (): boolean => false
     return (
       <SessionGate>
-        {/* An impersonated session never enters the console: its platform
-            management reads are refused by the gateway whatever the
-            impersonated account holds, so the whole area redirects to the
-            tenant home, silently, before the feature state is even
-            consulted. The explanation belongs to the tenant frame's
-            banner, not to this redirect. */}
-        <ConsoleImpersonationGate>
-          <ConsoleFeatureGate presence={presence}>
-            <ConsoleAreaGate>
-              {consoleRoutes.length === 0 ? (
-                // No console page is served: the URL is the tenant area's,
-                // where the gated declarations render the same 404 an
-                // unregistered path does.
-                <TenantFrame
-                  presence={presence}
-                  shellLayout={shellLayout}
-                  sidebarCollapsed={sidebarCollapsed}
-                  onSidebarCollapsedChange={setSidebarCollapsed}
-                >
+        {/* The console area is decided by the effective account's platform
+            permission set (ConsoleAreaGate). An impersonating identity is the
+            target account, which never holds a platform permission, so the area
+            turns it away through the same criterion that turns an ordinary
+            member away; no separate impersonation gate runs. The explanation
+            belongs to the tenant frame's banner, not to this redirect. */}
+        <ConsoleFeatureGate presence={presence}>
+          <ConsoleAreaGate>
+            {consoleRoutes.length === 0 ? (
+              // No console page is served: the URL is the tenant area's,
+              // where the gated declarations render the same 404 an
+              // unregistered path does.
+              <TenantFrame
+                presence={presence}
+                shellLayout={shellLayout}
+                sidebarCollapsed={sidebarCollapsed}
+                onSidebarCollapsedChange={setSidebarCollapsed}
+              >
+                <RouteView />
+              </TenantFrame>
+            ) : (
+              <ConsoleArea
+                routes={consoleRoutes}
+                hasFeature={hasFeature}
+                shellLayout={shellLayout}
+                onImpersonationChange={applyIdentityChange}
+                onImpersonationStarting={onImpersonationStarting}
+                sidebarCollapsed={sidebarCollapsed}
+                onSidebarCollapsedChange={setSidebarCollapsed}
+              >
+                <ConsoleRouteGuard>
                   <RouteView />
-                </TenantFrame>
-              ) : (
-                <ConsoleArea
-                  routes={consoleRoutes}
-                  hasFeature={hasFeature}
-                  shellLayout={shellLayout}
-                  onImpersonationChange={applyIdentityChange}
-                  onImpersonationStarting={onImpersonationStarting}
-                  sidebarCollapsed={sidebarCollapsed}
-                  onSidebarCollapsedChange={setSidebarCollapsed}
-                >
-                  <ConsoleRouteGuard>
-                    <RouteView />
-                  </ConsoleRouteGuard>
-                </ConsoleArea>
-              )}
-            </ConsoleAreaGate>
-          </ConsoleFeatureGate>
-        </ConsoleImpersonationGate>
+                </ConsoleRouteGuard>
+              </ConsoleArea>
+            )}
+          </ConsoleAreaGate>
+        </ConsoleFeatureGate>
       </SessionGate>
     )
   }
@@ -998,15 +996,16 @@ function TenantFrame({
  * may open, shown only to a principal that holds a platform permission and
  * only while at least one console declaration is in force.
  *
- * The target comes from useConsoleTarget (src/console-routes.ts): null for an
- * impersonated session, otherwise the first labelled declaration, in table
- * order, with no permission code or one the platform permission set holds.
- * The set is not known synchronously -- the host attaches it once the
- * caller's platform permissions have been read, and useAuthState reads null
- * until then -- so the entry is hidden until the set lands, which is the safe
- * direction: a member never sees the entry for the moment before the set
- * arrives. The start page's console card calls the same hook, so the two
- * never disagree.
+ * The target comes from useConsoleTarget (src/console-routes.ts): the first
+ * labelled declaration, in table order, with no permission code or one the
+ * effective account's platform permission set holds. An impersonating identity
+ * gets the effective account's answer, which for a real target is null because
+ * a target holds no platform permission. The set is not known synchronously --
+ * the host attaches it once the caller's platform permissions have been read,
+ * and useAuthState reads null until then -- so the entry is hidden until the set
+ * lands, which is the safe direction: a member never sees the entry for the
+ * moment before the set arrives. The start page's console card calls the same
+ * hook, so the two never disagree.
  *
  * It routes in place (the same seam every other entry uses), so entering the
  * console does not reload the page and sign the operator out, and it keeps its
@@ -1022,8 +1021,8 @@ function ConsoleEntry({
    * icon fits; the accessible name stays the entry's label. */
   readonly narrow?: boolean
 }): ReactElement | null {
-  // An impersonated session has no console to enter; the shared derivation
-  // carries that rule for the header entry and the start page's card alike.
+  // The console entry follows the effective account's platform set alone; an
+  // impersonating identity gets the same derivation as any other viewer.
   const target = useConsoleTarget(routes)
   if (target === null) {
     return null
@@ -1084,30 +1083,6 @@ function SessionGate({
     // setup page (the register mode's landing belongs to the app's own
     // sign-in page).
     return <SignInView keepLanding />
-  }
-  return <>{children}</>
-}
-
-/**
- * The console area's impersonation gate: an impersonated session has no
- * console. The gateway refuses every platform management read to an
- * impersonated identity, whatever the impersonated account holds, so the
- * whole area leaves the console path space for the tenant home. The
- * redirect is silent, like the empty-permission redirect below it: the
- * visitor's explanation is the tenant frame's persistent banner, which the
- * tenant home now renders. The session gate runs first (an anonymous
- * viewer sees the sign-in surface); this gate runs before the feature
- * state, because no feature document makes the console available during an
- * impersonation.
- */
-function ConsoleImpersonationGate({
-  children,
-}: {
-  readonly children: ReactNode
-}): ReactElement {
-  const snapshot = useAuthState()
-  if (snapshot.state === 'authenticated' && snapshot.impersonating) {
-    return <TenantHomeRedirect />
   }
   return <>{children}</>
 }

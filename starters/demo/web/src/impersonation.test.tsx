@@ -1,10 +1,10 @@
 /**
  * The impersonation shell in the demo host: the identity-change action, the
- * banner in the tenant frame, the console's redirect while impersonating,
- * the status read's bare-404 rule, the expiry timer, and the read cutover a
- * start write opens (its in-flight reads cancelled, new ones held until the
- * identity change settles, and the session's identity-transition guard
- * opened once and released exactly once).
+ * banner in the tenant frame, the console's permission-set criterion during an
+ * impersonation, the status read's bare-404 rule, the expiry timer, and the read
+ * cutover a start write opens (its in-flight reads cancelled, new ones held
+ * until the identity change settles, and the session's identity-transition
+ * guard opened once and released exactly once).
  *
  * The suites drive the real views over a scripted session and request
  * function: the session's restore() commits whatever identity the script
@@ -20,7 +20,6 @@ import { onlineManager } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthDomain, AuthSnapshot } from '@speed/auth-core'
 import type { RequestFn, RequestOptions, SpeedClient } from '@speed/api-client'
-import { FEATURE_NAMES } from '@speed/api-sdk/features'
 import { getAuthnImpersonationStatusQueryKey } from '@speed/api-sdk'
 import { bindRequestFn } from '@speed/api-sdk/runtime'
 import { AUTH_UI_NAMESPACE } from '@speed/auth-ui'
@@ -135,14 +134,12 @@ function operatorSnapshot(): AuthSnapshot {
 }
 
 /**
- * The impersonated identity. The platform permission set is deliberately
- * left non-empty: the console redirect and the hidden entry must not depend
- * on it.
+ * The impersonated identity. Its effective account is the target, which holds
+ * no platform permission: that empty platform set is what keeps the console
+ * out, exactly as the permission criterion keeps an ordinary member out.
  */
 function targetSnapshot(): AuthSnapshot {
-  const base = authenticatedSnapshot({
-    system: ['tenant.read', 'authn.impersonation.read'],
-  })
+  const base = authenticatedSnapshot({ system: [] })
   return {
     ...base,
     principal: {
@@ -673,8 +670,10 @@ describe('the impersonation shell', () => {
       expect(backend.statusReadsWithGrant()).toBeGreaterThan(0),
     )
 
-    // The impersonated snapshot still holds a platform permission; the
-    // console is offered on the identity, not on the set.
+    // The impersonated account holds no platform permission, so the console
+    // is offered on the effective account's set, not on the impersonation
+    // flag: the header entry is absent for the same reason the ordinary
+    // member's is.
     expect(
       screen.queryByRole('link', { name: demoEnUS.nav.console }),
     ).not.toBeInTheDocument()
@@ -1912,62 +1911,49 @@ describe('the impersonation shell', () => {
     }
   })
 
-  it.each([
-    [
-      'a failed feature document and an unknown set',
-      { state: 'failed' as const, error: new Error('unavailable') },
-      null,
-    ],
-    [
-      'a pending feature document and an unknown set',
-      { state: 'pending' as const },
-      null,
-    ],
-    [
-      'a ready document and an unknown set',
-      {
-        state: 'ready' as const,
-        names: new Set(FEATURE_NAMES),
-      },
-      null,
-    ],
-    [
-      'a ready document with no console feature and a known set',
-      { state: 'ready' as const, names: new Set<string>() },
-      ['tenant.read'],
-    ],
-  ])(
-    'leaves /console/* for the tenant home before the feature state and permission set (%s)',
-    async (_label, features, system) => {
-      window.history.replaceState({}, '', '/console/tenants')
-      const backend = makeBackend()
-      bindRequestFn(backend.fn)
-      const impersonated = {
-        ...authenticatedSnapshot({ system, features }),
-        impersonating: true,
-      }
-      const operator = {
-        ...authenticatedSnapshot({ system, features }),
-        impersonating: false,
-      }
-      renderDemoApp({
-        session: scriptedSession(impersonated, () => operator),
-      })
+  it('decides the console by the effective account\'s platform set, not by the impersonation flag', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const backend = makeBackend()
+    bindRequestFn(backend.fn)
+    // The effective account holds a platform permission. A real target never
+    // does -- the Decider refuses a platform administrator as a target -- but
+    // the flag alone must not keep the identity out: the criterion is the set.
+    const impersonated = {
+      ...authenticatedSnapshot({ system: ['tenant.read'] }),
+      impersonating: true,
+    }
+    renderDemoApp({
+      session: scriptedSession(impersonated, () => impersonated),
+    })
 
-      // The impersonation gate runs first, so the console's own feature
-      // waiting/failure views and its access placeholder never render.
-      await waitFor(() => expect(window.location.pathname).toBe('/'))
-      expect(screen.queryByText(demoEnUS.route.failed)).toBeNull()
-      expect(
-        screen.queryByRole('progressbar', { name: demoEnUS.route.pending }),
-      ).toBeNull()
-      expect(
-        screen.queryByRole('progressbar', {
-          name: demoEnUS.console.accessPending,
-        }),
-      ).toBeNull()
-    },
-  )
+    // The area gate grants on the known non-empty set, so the console URL is
+    // kept; nothing redirects it for the impersonation itself.
+    await waitFor(() => expect(window.location.pathname).toBe('/console/tenants'))
+    expect(
+      screen.queryByRole('progressbar', {
+        name: demoEnUS.console.accessPending,
+      }),
+    ).toBeNull()
+  })
+
+  it('sends an impersonating identity with an empty platform set to the tenant home', async () => {
+    window.history.replaceState({}, '', '/console/tenants')
+    const backend = makeBackend()
+    bindRequestFn(backend.fn)
+    const impersonated = {
+      ...authenticatedSnapshot({ system: [] }),
+      impersonating: true,
+    }
+    renderDemoApp({
+      session: scriptedSession(impersonated, () => impersonated),
+    })
+
+    // The same permission criterion that turns an ordinary member away: the
+    // set is known and empty, so the console path space is left behind. The
+    // redirect does not mention the impersonation; the tenant frame's banner
+    // is the visitor's explanation.
+    await waitFor(() => expect(window.location.pathname).toBe('/'))
+  })
 
   it('resets the platform set to unknown immediately before re-reading it after an impersonation ends', async () => {
     window.history.replaceState({}, '', '/')

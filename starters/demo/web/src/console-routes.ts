@@ -80,19 +80,16 @@ export function firstConsoleTarget(
  * derivation the header entry (src/app.tsx) and the start page's console
  * card (src/pages/home-page.tsx) share, so the two never disagree.
  *
- * An impersonated session has no console to enter -- the area redirects it
- * home whatever the platform permission set says -- so the answer is null
- * there. The set may still be the non-empty one the viewer held before the
- * start (the identity change has not finished re-attaching the empty set),
- * which is exactly the window in which the two entry points would otherwise
- * disagree about whether the console is offered.
+ * The criterion is the effective account's platform permission set alone. An
+ * impersonating identity therefore gets the same answer its effective account
+ * gets: a real target holds no platform permission, so the answer is null for
+ * the same reason an ordinary member's is. The set may still be unknown for a
+ * moment after an identity change; the entry stays hidden then, as it does for
+ * any viewer whose set has not landed.
  */
 export function useConsoleTarget(
   routes: readonly ConsoleRoute[],
 ): string | null {
   const snapshot = useAuthState()
-  if (snapshot.state === 'authenticated' && snapshot.impersonating) {
-    return null
-  }
   return firstConsoleTarget(routes, snapshot.permissionSets.system)
 }
