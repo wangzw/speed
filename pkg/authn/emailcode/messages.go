@@ -2,6 +2,7 @@ package emailcode
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"path"
@@ -50,4 +51,37 @@ func catalogLocales() ([]i18n.Locale, error) {
 	}
 	slices.Sort(locales)
 	return locales, nil
+}
+
+// catalogCarriesReset reports whether the catalog at fsys carries every reset
+// message, and carries it non-empty, in every locale file matching pattern. It
+// is a fact about the compiled-in catalog, read once per Module call, and it is
+// what puts the reset channel into the descriptor's Provides: a catalog with one
+// locale missing a leaf offers only the verifying channel rather than a channel
+// that would fail at the first send in that language.
+//
+// A pattern that matches nothing, a file that cannot be read or parsed, and an
+// empty leaf all read as not carried, because each leaves the reset message
+// unable to reach a recipient.
+func catalogCarriesReset(fsys fs.FS, pattern string) bool {
+	names, err := fs.Glob(fsys, pattern)
+	if err != nil || len(names) == 0 {
+		return false
+	}
+	for _, name := range names {
+		raw, err := fs.ReadFile(fsys, name)
+		if err != nil {
+			return false
+		}
+		var entries map[string]string
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return false
+		}
+		for _, key := range resetKeys {
+			if strings.TrimSpace(entries[string(key)]) == "" {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -36,16 +36,26 @@ import (
 const ModuleName = "authn.emailcode"
 
 // The message keys the module renders. They are namespaced by the capability so
-// no other module's catalog can collide with one.
+// no other module's catalog can collide with one. The verify set carries a code
+// to prove an address; the reset set carries one to prove the holder of an
+// address during an anonymous password reset.
 const (
 	subjectKey i18n.Key = "authn.email.verify.subject"
 	textKey    i18n.Key = "authn.email.verify.body_text"
 	htmlKey    i18n.Key = "authn.email.verify.body_html"
+
+	resetSubjectKey i18n.Key = "authn.email.reset.subject"
+	resetTextKey    i18n.Key = "authn.email.reset.body_text"
+	resetHTMLKey    i18n.Key = "authn.email.reset.body_html"
 )
 
-// messageKeys is the full set of messages the module renders, in the order the
-// startup check reads them.
+// messageKeys is the full set of messages the verifying channel renders, in the
+// order the startup check reads them.
 var messageKeys = []i18n.Key{subjectKey, textKey, htmlKey}
+
+// resetKeys is the full set of messages the reset channel renders, in the order
+// the startup check reads them.
+var resetKeys = []i18n.Key{resetSubjectKey, resetTextKey, resetHTMLKey}
 
 // init registers this module with the process registry, so a host that imports
 // the package can take it into a command by name.
@@ -62,15 +72,21 @@ func init() { core.ProcessRegistry.Register(Module()) }
 // the key it cannot render. The module declares no configuration item: the mail
 // carrier's section carries everything it needs, and the catalog is compiled in
 // as a resource.
+//
+// The reset channel is offered exactly when the compiled-in catalog carries its
+// three leaves in every language. The decision is made here, at registration,
+// because it is a fact about the catalog this package ships and not about a
+// request or an assembly: a build whose catalog lacks the reset message offers
+// only the verifying channel and starts normally, and every command tree that
+// names this module sees the same descriptor.
 func Module() core.Module {
+	providesReset := catalogCarriesReset(localesFS, catalogPattern)
 	return core.Module{
 		Name: ModuleName,
 		Requires: []core.Requirement{
 			{Token: (*mail.Sender)(nil)},
 		},
-		Provides: []core.Provision{
-			{Token: (*authn.EmailCodeSender)(nil), Exclusive: true},
-		},
+		Provides:  provisions(providesReset),
 		Resources: []any{messageCatalog()},
 
 		Prepare: func(context.Context, *core.Registry) (core.Enablement, error) {
@@ -86,9 +102,20 @@ func Module() core.Module {
 			if err != nil {
 				return nil, fmt.Errorf("%s: taking up the message localizer: %w", ModuleName, err)
 			}
-			return newProduct(sender, localizer)
+			return newProduct(sender, localizer, providesReset)
 		},
 	}
+}
+
+// provisions is what the module delivers: the verifying channel always, and the
+// reset channel when the catalog carries its messages. Each is exclusive, so a
+// command tree names one provider per seam and two conflict in resolution.
+func provisions(providesReset bool) []core.Provision {
+	out := []core.Provision{{Token: (*authn.EmailCodeSender)(nil), Exclusive: true}}
+	if providesReset {
+		out = append(out, core.Provision{Token: (*authn.EmailResetCodeSender)(nil), Exclusive: true})
+	}
+	return out
 }
 
 // product is the module's instance: the mail seam and the catalog behind it.
@@ -97,23 +124,33 @@ type product struct {
 	localizer i18n.Localizer
 }
 
-var _ authn.EmailCodeSender = (*product)(nil)
+var (
+	_ authn.EmailCodeSender      = (*product)(nil)
+	_ authn.EmailResetCodeSender = (*product)(nil)
+)
 
 // newProduct checks that every message the module renders is carried by every
-// locale its catalog declares, then returns the sender.
+// locale its catalog declares, then returns the sender. The reset messages are
+// checked only when the module offers the reset channel; a build whose catalog
+// lacks them offers only the verifying channel, and its absence is the decision
+// the descriptor already carries.
 //
 // The check runs at startup because a missing message is a defect of this
 // package and not a fact about a request: without it the first code sent in that
 // language would reach the carrier as the key itself, and the recipient would
 // receive no usable code. A localizer that does not carry the catalog is named
 // with the locale and key it lacks, never with a value from the message.
-func newProduct(sender mail.Sender, localizer i18n.Localizer) (*product, error) {
+func newProduct(sender mail.Sender, localizer i18n.Localizer, providesReset bool) (*product, error) {
 	locales, err := catalogLocales()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ModuleName, err)
 	}
+	keys := messageKeys
+	if providesReset {
+		keys = append(append([]i18n.Key(nil), messageKeys...), resetKeys...)
+	}
 	for _, locale := range locales {
-		for _, key := range messageKeys {
+		for _, key := range keys {
 			if _, ok := localizer.Translate(locale, key, nil); !ok {
 				return nil, fmt.Errorf("%s: the catalog carries no %q for %q", ModuleName, key, locale)
 			}
@@ -131,7 +168,22 @@ func newProduct(sender mail.Sender, localizer i18n.Localizer) (*product, error) 
 // state is the caller's to collapse into one answer, and this module adds
 // nothing a client could tell the three apart by.
 func (p *product) SendCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error {
-	subject, text, html, err := p.render(code, ttl, locale)
+	return p.send(ctx, "a verification code", messageKeys, to, code, ttl, locale)
+}
+
+// SendResetCode renders the code into the module's reset messages and hands the
+// result to the mail capability. Its contract is SendCode's: the same lifetime
+// unit, the same fallback through the catalog, the same pass-through of a
+// carrier error, and no code, recipient or body in any log line or error text.
+func (p *product) SendResetCode(ctx context.Context, to, code string, ttl time.Duration, locale string) error {
+	return p.send(ctx, "a password reset code", resetKeys, to, code, ttl, locale)
+}
+
+// send renders one code into the messages of keys and hands the result to the
+// mail capability. The kind names the send in the one log line without carrying
+// anything about its content.
+func (p *product) send(ctx context.Context, kind string, keys []i18n.Key, to, code string, ttl time.Duration, locale string) error {
+	subject, text, html, err := p.render(code, ttl, locale, keys)
 	if err != nil {
 		return err
 	}
@@ -145,14 +197,14 @@ func (p *product) SendCode(ctx context.Context, to, code string, ttl time.Durati
 	logger := log.FromContext(ctx)
 	elapsed := time.Since(started).Milliseconds()
 	if err != nil {
-		logger.Error(ModuleName+": sending a verification code failed",
+		logger.Error(ModuleName+": sending "+kind+" failed",
 			"outcome", outcomeOf(err),
 			"provider_id", receipt.ProviderID,
 			"duration_ms", elapsed,
 			"cause", err.Error())
 		return publishUncertain(err)
 	}
-	logger.Info(ModuleName+": a verification code was sent",
+	logger.Info(ModuleName+": "+kind+" was sent",
 		"outcome", "sent",
 		"provider_id", receipt.ProviderID,
 		"duration_ms", elapsed)
@@ -195,26 +247,26 @@ func outcomeOf(err error) string {
 	}
 }
 
-// render draws the three messages for a code in the language the caller asked
-// for. A locale the catalog does not carry falls back by primary subtag and then
-// to English, so a request for a language the deployment does not translate
-// still reaches the recipient with a code rather than the message key. The error
-// it answers names the key and the locale, never the code.
-func (p *product) render(code string, ttl time.Duration, locale string) (string, string, string, error) {
+// render draws the three messages in keys for a code in the language the caller
+// asked for. A locale the catalog does not carry falls back by primary subtag
+// and then to English, so a request for a language the deployment does not
+// translate still reaches the recipient with a code rather than the message key.
+// The error it answers names the subject key and the locale, never the code.
+func (p *product) render(code string, ttl time.Duration, locale string, keys []i18n.Key) (string, string, string, error) {
 	args := i18n.Args{
 		"code":        i18n.String(code),
 		"ttl_minutes": i18n.Int(ttlMinutes(ttl)),
 	}
 	for _, candidate := range localesFor(locale) {
-		subject, ok := p.localizer.Translate(candidate, subjectKey, args)
+		subject, ok := p.localizer.Translate(candidate, keys[0], args)
 		if !ok {
 			continue
 		}
-		text, _ := p.localizer.Translate(candidate, textKey, args)
-		html, _ := p.localizer.Translate(candidate, htmlKey, args)
+		text, _ := p.localizer.Translate(candidate, keys[1], args)
+		html, _ := p.localizer.Translate(candidate, keys[2], args)
 		return subject, text, html, nil
 	}
-	return "", "", "", fmt.Errorf("%s: no catalog carries %q for %q", ModuleName, subjectKey, locale)
+	return "", "", "", fmt.Errorf("%s: no catalog carries %q for %q", ModuleName, keys[0], locale)
 }
 
 // ttlMinutes renders a lifetime in whole minutes, rounded up and never below

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/vislake/speed/pkg/authn"
@@ -193,11 +194,14 @@ func TestTheDescriptorNamesWhatItDeliversAndRequires(t *testing.T) {
 	if m.Name != ModuleName || ModuleName != "authn.emailcode" {
 		t.Errorf("module name = %q (constant %q), want authn.emailcode", m.Name, ModuleName)
 	}
-	if len(m.Provides) != 1 {
-		t.Fatalf("Provides = %+v, want exactly the email channel", m.Provides)
+	if len(m.Provides) != 2 {
+		t.Fatalf("Provides = %+v, want the verifying and reset channels", m.Provides)
 	}
 	if p := m.Provides[0]; p.Token != core.Token((*authn.EmailCodeSender)(nil)) || !p.Exclusive {
 		t.Errorf("Provides[0] = %+v, want authn.EmailCodeSender exclusively", p)
+	}
+	if p := m.Provides[1]; p.Token != core.Token((*authn.EmailResetCodeSender)(nil)) || !p.Exclusive {
+		t.Errorf("Provides[1] = %+v, want authn.EmailResetCodeSender exclusively", p)
 	}
 	if len(m.Requires) != 1 {
 		t.Fatalf("Requires = %+v, want the mail sending capability alone", m.Requires)
@@ -237,13 +241,13 @@ func TestTheCatalogCarriesEveryMessageInBothLanguages(t *testing.T) {
 	}
 	for _, locale := range locales {
 		entries := readCatalog(t, locale)
-		for _, key := range messageKeys {
+		for _, key := range append(append([]i18n.Key(nil), messageKeys...), resetKeys...) {
 			text, ok := entries[string(key)]
 			if !ok || strings.TrimSpace(text) == "" {
 				t.Errorf("%s carries no %q", locale, key)
 				continue
 			}
-			if key != subjectKey {
+			if key != subjectKey && key != resetSubjectKey {
 				for _, param := range []string{"{{code}}", "{{ttl_minutes}}"} {
 					if !strings.Contains(text, param) {
 						t.Errorf("%s %q does not interpolate %s", locale, key, param)
@@ -434,6 +438,184 @@ func TestTheLifetimeIsRenderedInWholeMinutesRoundedUp(t *testing.T) {
 			t.Errorf("ttlMinutes(%v) = %d, want %d", tc.ttl, got, tc.want)
 		}
 	}
+}
+
+// driveResetEmailcode is driveEmailcode answering the reset channel instead.
+func driveResetEmailcode(t *testing.T, sender mail.Sender) (authn.EmailResetCodeSender, error) {
+	t.Helper()
+	reader := authntest.ConfigReaderAll(t, "{}", Module(), catalog.Module())
+	reg := core.New()
+	reg.Register(Module())
+	reg.Register(catalog.Module())
+	reg.Register(config.Module())
+	reg.Supply(reader, config.ModuleName)
+	reg.Register(standIn(mailModule, sender, true, (*mail.Sender)(nil)))
+
+	var got authn.EmailResetCodeSender
+	err := reg.Drive(t.Context(), core.Drive{
+		Depth: core.StageNew,
+		Participants: []string{
+			ModuleName, catalog.ModuleName, config.ModuleName, mailModule,
+		},
+		Action: func(_ context.Context, reg *core.Registry) error {
+			var err error
+			got, err = core.Resolve[authn.EmailResetCodeSender](reg)
+			return err
+		},
+	})
+	return got, err
+}
+
+// TestSendResetCodeRendersTheResetMessages holds the reset channel end to end:
+// the message reaches the carrier with the reset messages, not the verifying
+// ones, interpolated with the code and the lifetime, and the two languages
+// differ so a case that always answered one could not pass.
+func TestSendResetCodeRendersTheResetMessages(t *testing.T) {
+	sender := &recordingSender{}
+	channel, err := driveResetEmailcode(t, sender)
+	if err != nil {
+		t.Fatalf("driving the reset channel: %v", err)
+	}
+	for _, locale := range []string{"zh-CN", "en-US"} {
+		if err := channel.SendResetCode(t.Context(), address, testCode, 10*time.Minute, locale); err != nil {
+			t.Fatalf("SendResetCode(%s): %v", locale, err)
+		}
+	}
+	sent := sender.sent()
+	if len(sent) != 2 {
+		t.Fatalf("the carrier received %d message(s), want two", len(sent))
+	}
+	args := map[string]string{"code": testCode, "ttl_minutes": "10"}
+	for i, locale := range []string{"zh-CN", "en-US"} {
+		entries := readCatalog(t, i18n.Locale(locale))
+		got := sent[i]
+		if want := interpolate(entries[string(resetSubjectKey)], args); got.Subject != want {
+			t.Errorf("%s: Subject = %q, want the reset message %q", locale, got.Subject, want)
+		}
+		if want := interpolate(entries[string(resetTextKey)], args); got.Text != want {
+			t.Errorf("%s: Text = %q, want the reset message %q", locale, got.Text, want)
+		}
+		if want := interpolate(entries[string(resetHTMLKey)], args); got.HTML != want {
+			t.Errorf("%s: HTML = %q, want the reset message %q", locale, got.HTML, want)
+		}
+		if got.Subject == entries[string(subjectKey)] && entries[string(subjectKey)] != entries[string(resetSubjectKey)] {
+			t.Errorf("%s: the reset send carried the verifying subject %q", locale, got.Subject)
+		}
+	}
+	if sent[0].Subject == sent[1].Subject {
+		t.Errorf("both languages rendered the same subject %q", sent[0].Subject)
+	}
+}
+
+// TestTheResetSeamIsProvidedExactlyWhenTheCatalogCarriesIt holds the
+// registration-time decision: the built-in catalog carries the reset leaves, so
+// the descriptor offers the reset channel; a catalog missing a leaf in one
+// language, or with a malformed or empty file, does not, and the descriptor
+// builder offers only the verifying channel.
+func TestTheResetSeamIsProvidedExactlyWhenTheCatalogCarriesIt(t *testing.T) {
+	if !catalogCarriesReset(localesFS, catalogPattern) {
+		t.Fatal("the built-in catalog does not carry the reset messages")
+	}
+	if !hasProvision(Module().Provides, core.Token((*authn.EmailResetCodeSender)(nil))) {
+		t.Error("the descriptor offers no reset channel over a catalog that carries it")
+	}
+
+	full := func() map[string]string {
+		entries := map[string]string{
+			string(subjectKey):      "Your verification code",
+			string(textKey):         "Your code is {{code}}, valid {{ttl_minutes}} minutes.",
+			string(htmlKey):         "<p>Your code is {{code}}, valid {{ttl_minutes}} minutes.</p>",
+			string(resetSubjectKey): "Reset your password",
+			string(resetTextKey):    "Your reset code is {{code}}, valid {{ttl_minutes}} minutes.",
+			string(resetHTMLKey):    "<p>Your reset code is {{code}}, valid {{ttl_minutes}} minutes.</p>",
+		}
+		return entries
+	}
+	encode := func(entries map[string]string) []byte {
+		raw, err := json.Marshal(entries)
+		if err != nil {
+			t.Fatalf("encoding a test catalog: %v", err)
+		}
+		return raw
+	}
+
+	cases := []struct {
+		name string
+		fs   fstest.MapFS
+		want bool
+	}{
+		{
+			name: "every locale carries every reset leaf",
+			fs: fstest.MapFS{
+				"locales/en-US.json": &fstest.MapFile{Data: encode(full())},
+				"locales/zh-CN.json": &fstest.MapFile{Data: encode(full())},
+			},
+			want: true,
+		},
+		{
+			name: "one locale lacks a reset leaf",
+			fs: fstest.MapFS{
+				"locales/en-US.json": &fstest.MapFile{Data: encode(full())},
+				"locales/zh-CN.json": &fstest.MapFile{Data: encode(map[string]string{
+					string(subjectKey):      "验证码",
+					string(textKey):         "{{code}} {{ttl_minutes}}",
+					string(htmlKey):         "{{code}} {{ttl_minutes}}",
+					string(resetSubjectKey): "重置",
+					string(resetTextKey):    "{{code}} {{ttl_minutes}}",
+				})},
+			},
+			want: false,
+		},
+		{
+			name: "a reset leaf is empty",
+			fs: func() fstest.MapFS {
+				broken := full()
+				broken[string(resetHTMLKey)] = "  "
+				return fstest.MapFS{
+					"locales/en-US.json": &fstest.MapFile{Data: encode(broken)},
+					"locales/zh-CN.json": &fstest.MapFile{Data: encode(full())},
+				}
+			}(),
+			want: false,
+		},
+		{
+			name: "a catalog file is malformed",
+			fs: fstest.MapFS{
+				"locales/en-US.json": &fstest.MapFile{Data: []byte("not json")},
+				"locales/zh-CN.json": &fstest.MapFile{Data: encode(full())},
+			},
+			want: false,
+		},
+		{
+			name: "the catalog has no file",
+			fs:   fstest.MapFS{},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := catalogCarriesReset(tc.fs, catalogPattern); got != tc.want {
+				t.Errorf("catalogCarriesReset = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	if got := provisions(true); len(got) != 2 {
+		t.Errorf("a carrying catalog produced %d provision(s), want two", len(got))
+	}
+	if got := provisions(false); len(got) != 1 || hasProvision(got, core.Token((*authn.EmailResetCodeSender)(nil))) {
+		t.Errorf("a catalog without the reset messages produced %+v, want the verifying channel alone", got)
+	}
+}
+
+// hasProvision reports whether provisions includes token.
+func hasProvision(provisions []core.Provision, token core.Token) bool {
+	for _, p := range provisions {
+		if p.Token == token {
+			return true
+		}
+	}
+	return false
 }
 
 // readCatalog reads one locale's message file out of the module's embedded

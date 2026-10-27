@@ -1,5 +1,8 @@
 {
   "authn.email.verify.subject": "Your verification code",
   "authn.email.verify.body_text": "Your verification code is {{code}}. It is valid for {{ttl_minutes}} minutes. If you did not ask for it, ignore this message.",
-  "authn.email.verify.body_html": "<p>Your verification code is <strong>{{code}}</strong>.</p><p>It is valid for {{ttl_minutes}} minutes. If you did not ask for it, ignore this message.</p>"
+  "authn.email.verify.body_html": "<p>Your verification code is <strong>{{code}}</strong>.</p><p>It is valid for {{ttl_minutes}} minutes. If you did not ask for it, ignore this message.</p>",
+  "authn.email.reset.subject": "Reset your password",
+  "authn.email.reset.body_text": "Your password reset code is {{code}}. It is valid for {{ttl_minutes}} minutes. If you did not ask for it, ignore this message.",
+  "authn.email.reset.body_html": "<p>Your password reset code is <strong>{{code}}</strong>.</p><p>It is valid for {{ttl_minutes}} minutes. If you did not ask for it, ignore this message.</p>"
 }

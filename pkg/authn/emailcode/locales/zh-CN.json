@@ -1,5 +1,8 @@
 {
   "authn.email.verify.subject": "你的验证码",
   "authn.email.verify.body_text": "你的验证码是 {{code}}，{{ttl_minutes}} 分钟内有效。若非本人操作，请忽略这封邮件。",
-  "authn.email.verify.body_html": "<p>你的验证码是 <strong>{{code}}</strong>。</p><p>有效期 {{ttl_minutes}} 分钟。若非本人操作，请忽略这封邮件。</p>"
+  "authn.email.verify.body_html": "<p>你的验证码是 <strong>{{code}}</strong>。</p><p>有效期 {{ttl_minutes}} 分钟。若非本人操作，请忽略这封邮件。</p>",
+  "authn.email.reset.subject": "重置你的密码",
+  "authn.email.reset.body_text": "你的密码重置验证码是 {{code}}，{{ttl_minutes}} 分钟内有效。若非本人操作，请忽略这封邮件。",
+  "authn.email.reset.body_html": "<p>你的密码重置验证码是 <strong>{{code}}</strong>。</p><p>有效期 {{ttl_minutes}} 分钟。若非本人操作，请忽略这封邮件。</p>"
 }

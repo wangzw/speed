@@ -1,12 +1,15 @@
 # pkg/authn/emailcode
 
 The optional email channel of the authentication capability, registered as
-`authn.emailcode`. It adapts the root package's `EmailCodeSender` to the
-top-level `pkg/mail` capability: it renders a verification code into the
-`authn.email.verify` messages and hands the finished message to a mail carrier.
-It delivers `authn.EmailCodeSender` exclusively, so a command tree names this
-module or leaves the email self-service face unavailable; the host may instead
-implement the seam itself and carry no mail capability at all.
+`authn.emailcode`. It adapts the root package's `EmailCodeSender` and
+`EmailResetCodeSender` to the top-level `pkg/mail` capability: it renders a
+verification code into the `authn.email.verify` messages or a password reset
+code into the `authn.email.reset` messages, and hands the finished message to a
+mail carrier. It delivers `authn.EmailCodeSender` exclusively, and
+`authn.EmailResetCodeSender` when the compiled-in catalog carries the reset
+messages, so a command tree names this module or leaves the email faces
+unavailable; the host may instead implement the seams itself and carry no mail
+capability at all.
 
 The module declares no configuration item. Everything it needs to send is the
 mail carrier's own section (`mail.smtp` in this repository's carrier), and its
@@ -17,11 +20,20 @@ the seam does.
 
 ## Boundaries
 
+- **The reset channel is offered exactly when the catalog carries it.** `Module`
+  reads the embedded catalog at registration time; the three
+  `authn.email.reset.subject`, `body_text` and `body_html` leaves must be present
+  and non-empty in every locale it carries for `EmailResetCodeSender` to enter
+  `Provides`. A build whose catalog lacks one offers only the verifying channel
+  and starts normally (`provisions`, `catalogCarriesReset`,
+  `TestTheResetSeamIsProvidedExactlyWhenTheCatalogCarriesIt`). `New` checks the
+  reset messages too when the channel is offered, so a localizer that does not
+  carry the catalog fails the startup rather than the first reset send.
 - **The code is drawn elsewhere and only passes through here.** The login
   module draws it, keeps the pending record and compares the answer; this
-  package turns one `SendCode` call into one `mail.Message`. It holds no budget,
-  no record, no attempt count and no retry, because those belong to the consumer
-  that owns the code.
+  package turns one `SendCode` or `SendResetCode` call into one `mail.Message`.
+  It holds no budget, no record, no attempt count and no retry, because those
+  belong to the consumer that owns the code.
 - **The code, the recipient and the bodies reach no log, no error text and no
   metric.** Each send logs one outcome line with the carrier's receipt and its
   duration; the line carries neither the code nor the address nor the message.
@@ -37,9 +49,11 @@ the seam does.
   budget its attempt reserved. A sender that does not publish it is treated as
   uncertain.
 - **The messages are checked at startup, not at the first request.** `New`
-  renders every message in every locale the embedded catalog carries and fails
-  with the missing key and locale when one is absent, so a catalog edited badly
-  stops the process instead of sending a message that is only its key.
+  renders every message in every locale the embedded catalog carries — the
+  verifying messages always, the reset messages when that channel is offered —
+  and fails with the missing key and locale when one is absent, so a catalog
+  edited badly stops the process instead of sending a message that is only its
+  key.
 - **A language the catalog does not carry falls back, it is not refused.** The
   requested tag is tried as written, then by primary subtag (`zh-HK` to zh-CN,
   `en-GB` to en-US), then English, so a recipient in a language this deployment
