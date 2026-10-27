@@ -78,9 +78,11 @@ The flow-step renderer (`src/internal/flow-step.*`) exists once in each of
 `auth-ui`, `account-ui` and `console-ui`. The copies are deliberate -- the
 renderer owns UI and each package owns its own step vocabulary -- and they
 carry a sync obligation: a change to how a step renders lands in all three
-copies in the same change. The obligation is documentation-only: no
-compiler check and no test compares the copies, so a copy that misses the
-change is not caught by the build.
+copies in the same change. A source-level parity suite in
+`packages/console-ui` (`src/internal/flow-step-parity.test.ts`) reads the
+three files and fails when they disagree on the rendered step kinds, the
+answer properties they report, the render primitives they use, or the
+WebAuthn seam they drive, naming the copy that drifted.
 
 ## The strict typecheck
 

@@ -48,7 +48,7 @@
 - `auth-core` 的公开面增加 `./webauthn` 子路径与门控导出；主入口保持无 DOM，只读会话的宿主不加载 WebAuthn 代码。
 - `account-ui` 的公开面增加 `StepUpDialog`，它成为宿主的接缝，也是与控制台之间的复制面。
 - `console-ui` 与 `account-ui` 的对话框副本不合并：同一对话框的样式与文案变化要在两处分别落地。接受的代价是重复维护。
-- 流程步渲染器的副本继续存在，同步义务只靠文档约束：既没有编译器检查，也没有测试比对三份副本。接受的代价：新增一步的渲染要改多处，漏掉一处不会被门禁发现。
+- 流程步渲染器的副本继续存在，仍由人工保持同步；`console-ui` 包内的源码级平价测试（`web/packages/console-ui/src/internal/flow-step-parity.test.ts`）读取三份文件，比对渲染的步骤种类、答复属性、渲染原语与通行密钥接缝，漏改一处会由该测试点名失败。接受的代价：新增一步的渲染仍要改多处。
 - `auth-ui`、`account-ui` 与 `console-ui` 的本地 WebAuthn 驱动不再保留，各包切换到 `./webauthn` 子路径时删除。
 - `auth-core` 成为 WebAuthn 驱动的唯一持有处，也是步进门控的唯一实现处；`console-ui` 调用门控时显式传入 `session.isStepUpShortfall`，行为不变。
 

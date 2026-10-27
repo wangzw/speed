@@ -192,8 +192,11 @@ session as a required prop; `PreferencesSection` takes it optionally
    binds a phone the account has already proved) and presents none. The step renderer
    (`src/internal/flow-step.tsx`) is one of three copies (`auth-ui`,
    `account-ui`, `console-ui`) kept in lockstep by hand: a change to how a
-   step renders lands in all three in the same change. No compiler check
-   or test compares the copies. All three label a factor or enroll kind
+   step renders lands in all three in the same change. The workspace's
+   source-level parity suite (`console-ui`'s
+   `src/internal/flow-step-parity.test.ts`) reads the three files, compares
+   the rendered step kinds, the answer properties, the render primitives
+   and the WebAuthn seam, and names the copy that drifts. All three label a factor or enroll kind
    the same way: a known kind renders its translated name, an unknown one
    renders the server's own kind value (the deployment's vocabulary, never
    a generic "other" label), and a factor option's server-supplied label

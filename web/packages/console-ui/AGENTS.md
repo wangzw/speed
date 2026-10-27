@@ -274,7 +274,10 @@ request body.
 - **The step renderer has two siblings.** `src/internal/flow-step.tsx` is
   one of three copies (`auth-ui`, `account-ui`, `console-ui`) kept in
   lockstep by hand: a change to how a step renders lands in all three in
-  the same change. No compiler check or test compares the copies. All
+  the same change. This package hosts the workspace's source-level parity
+  suite (`src/internal/flow-step-parity.test.ts`): it reads the three
+  files, compares the rendered step kinds, the answer properties, the
+  render primitives and the WebAuthn seam, and names the copy that drifts. All
   three start an assertion passkey ceremony on the step's arrival -- the
   entry was the click -- keying the arrival on the step number and the
   challenge so a re-sent challenge starts a fresh ceremony while an
