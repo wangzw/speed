@@ -48,5 +48,3 @@ flowchart TD
 ## 端到端测试
 
 `starters/demo/web/e2e/specs/journey-passkey-user-verification.spec.ts` `passkey-user-verification: a user-verifying passkey signs in without a second factor`
-
-浏览器层驱动的是「带用户验证的断言单独完成登录」与「以不带用户验证的认证器尝试登录被拒」；「已提交的不带用户验证断言被服务端拒绝」这一半由 `pkg/authn/mfa/webauthn` 的用例覆盖——Chromium 的虚拟认证器在依赖方要求用户验证时产不出无 UV 断言（仪式直接失败，不会产生提交）。
