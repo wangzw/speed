@@ -336,7 +336,16 @@ func (r *routes) startRequirement(c *call, id authn.Identity, purpose string) (r
 func (r *routes) applyEnroll(c *call, token, echo string, rec record, raw []byte, kind string, fields map[string]string) {
 	f := r.flowState(rec, token)
 	in := authn.StepInput{Action: authn.InputSubmit, Fields: fields, Client: c.clientInfo()}
-	got, ok := r.invoke(c.ctx, "enroll", func(cctx context.Context) (authn.Step, error) {
+	// The registration's terminal audit row is written by the multi-factor
+	// module from the context the step runs under. The answer route is public
+	// and carries no identity, so an impersonating flow derives one from its
+	// record here; a flow the account's own holder started keeps the anonymous
+	// context its row has always had.
+	ctx := c.ctx
+	if rec.Impersonation != "" {
+		ctx = r.flowAuditContext(c.ctx, rec)
+	}
+	got, ok := r.invoke(ctx, "enroll", func(cctx context.Context) (authn.Step, error) {
 		return r.mfa.Enroll(cctx, f, authn.FactorKind(kind), in)
 	})
 	if !ok {

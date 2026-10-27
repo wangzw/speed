@@ -227,6 +227,11 @@ type fakeMFA struct {
 	factors   []authn.FactorRecord
 	enroll    func(kind authn.FactorKind, in authn.StepInput) authn.Step
 	enrolls   []authn.StepInput
+	// enrollIDs and enrollFound record the identity each Enroll call ran under.
+	// The multi-factor module writes a registration's terminal audit row from
+	// this context, so a case reads here the identity that row is written under.
+	enrollIDs   []authn.Identity
+	enrollFound []bool
 	// required records every Require call: the proof account and the account
 	// whose policy was applied.
 	required []requireCall
@@ -263,7 +268,10 @@ func (m *fakeMFA) Verify(_ context.Context, _ authn.FlowState, factorID string, 
 	return authn.StepPassed(authn.Pass{Methods: []authn.Method{authn.MethodTOTP}}), nil
 }
 
-func (m *fakeMFA) Enroll(_ context.Context, _ authn.FlowState, kind authn.FactorKind, in authn.StepInput) (authn.Step, error) {
+func (m *fakeMFA) Enroll(ctx context.Context, _ authn.FlowState, kind authn.FactorKind, in authn.StepInput) (authn.Step, error) {
+	id, ok := authn.FromContext(ctx)
+	m.enrollIDs = append(m.enrollIDs, id)
+	m.enrollFound = append(m.enrollFound, ok)
 	m.enrolls = append(m.enrolls, in)
 	if m.enroll != nil {
 		return m.enroll(kind, in), nil
@@ -429,33 +437,89 @@ func (a *fakeAdmin) Touch(context.Context, authn.AccountID, time.Time) error {
 }
 
 // auditing is an audit sink that records the entries it was handed and the
-// acting account of the context each row was written under, so a case can see
-// both what was written and which identity reached it. An armed err is returned
-// to the caller, which is how a case makes a best-effort write fail.
+// identity each row was written under, so a case can see both what was written
+// and which identity reached it. An armed err is returned to the caller, which
+// is how a case makes a best-effort write fail.
+//
+// The sink completes the detail the way the audit module's documented contract
+// does, so a case sees the row the journal would write: an impersonating
+// identity fills on_behalf_of, impersonation_scope and session, and on every
+// other row those keys are stripped. Without this the double would show only
+// the caller's half of the row.
 type auditing struct {
 	audit.Audit
 	mu      sync.Mutex
-	acts    []string // the account string of each row's identity; "" when there was none
+	ids     []authn.Identity // the identity of each row; the zero value when there was none
+	found   []bool           // whether the context carried an identity
 	entries []audit.Entry
 	err     error
 }
 
 func (a *auditing) Record(ctx context.Context, e audit.Entry) error {
-	account := ""
-	if id, ok := authn.FromContext(ctx); ok {
-		account = string(id.Account())
-	}
+	id, ok := authn.FromContext(ctx)
+	e.Detail = completedDetail(e.Detail, id, ok)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.acts = append(a.acts, account)
+	a.ids = append(a.ids, id)
+	a.found = append(a.found, ok)
 	a.entries = append(a.entries, e)
 	return a.err
 }
 
+// completedDetail is the detail an audit row is written with: the caller's keys
+// plus, for an impersonating identity, the account, scope and session the
+// journal writes, and minus those three keys on every other row.
+func completedDetail(detail map[string]string, id authn.Identity, ok bool) map[string]string {
+	const onBehalfOf, scope, session = "on_behalf_of", "impersonation_scope", "session"
+	if !ok || !id.Impersonating() {
+		if _, a := detail[onBehalfOf]; !a {
+			if _, b := detail[scope]; !b {
+				if _, c := detail[session]; !c {
+					return detail
+				}
+			}
+		}
+		out := map[string]string{}
+		for k, v := range detail {
+			if k != onBehalfOf && k != scope && k != session {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	out := make(map[string]string, len(detail)+3)
+	for k, v := range detail {
+		out[k] = v
+	}
+	tenant, _ := id.Scope()
+	out[onBehalfOf] = string(id.Account())
+	out[scope] = tenant
+	if s := string(id.Session()); s != "" {
+		out[session] = s
+	} else {
+		delete(out, session)
+	}
+	return out
+}
+
+// identities is the actor key of each row's identity, the column the audit
+// table records; "" when the row was written in an anonymous context.
 func (a *auditing) identities() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return append([]string(nil), a.acts...)
+	out := make([]string, len(a.ids))
+	for i, id := range a.ids {
+		out[i] = id.Key()
+	}
+	return out
+}
+
+// writtenUnder returns the identity of each row and whether the context that
+// wrote it carried one.
+func (a *auditing) writtenUnder() ([]authn.Identity, []bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]authn.Identity(nil), a.ids...), append([]bool(nil), a.found...)
 }
 
 func (a *auditing) rows() []audit.Entry {

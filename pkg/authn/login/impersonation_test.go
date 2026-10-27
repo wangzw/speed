@@ -209,6 +209,175 @@ func TestAnImpersonatedEnrollmentCannotCompleteAfterTheRecordLapses(t *testing.T
 	}
 }
 
+// TestAnImpersonatedEnrollmentAuditNamesTheOperator holds the identity the
+// registration's terminal audit row is written under. The row is written by the
+// multi-factor module on the step that completes a registration, which a client
+// submits on the Open answer route: that route carries no request identity, so
+// the row can only name the operator if the step is called with an identity
+// derived from the flow's record — the effective account, the operator as the
+// actor, the grant's tenant and the session. Those are the facts the journal
+// turns into the actor column and the on_behalf_of, impersonation_scope and
+// session detail keys.
+func TestAnImpersonatedEnrollmentAuditNamesTheOperator(t *testing.T) {
+	r := newRig(t, &fakeMethod{name: "password"})
+	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
+	// The first step prompts; the step that completes the registration is the
+	// answer submitted on the Open route, where the request carries no identity.
+	r.mfa.enroll = func(authn.FactorKind, authn.StepInput) authn.Step {
+		if len(r.mfa.enrolls) == 1 {
+			return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
+		}
+		return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
+	}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"123456"}}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the completing enrollment step answered %d: %s", done.Code, done.Body.String())
+	}
+
+	if len(r.mfa.enrollIDs) != 2 {
+		t.Fatalf("MFA.Enroll ran %d times, want the prompt and the completing step", len(r.mfa.enrollIDs))
+	}
+	if !r.mfa.enrollFound[1] {
+		t.Fatal("the completing step ran in the anonymous context of the Open answer route, so its audit row loses the operator")
+	}
+	requireOperatorIdentity(t, r.mfa.enrollIDs[1])
+}
+
+// TestAnOwnEnrollmentKeepsItsAuditShape holds the other side: a registration the
+// account's own holder starts is not impersonating anyone, so the completing
+// step keeps the anonymous context of the Open answer route and the row keeps
+// its shape — no actor invented, and no on_behalf_of, impersonation_scope or
+// session detail.
+func TestAnOwnEnrollmentKeepsItsAuditShape(t *testing.T) {
+	r := newRig(t, &fakeMethod{name: "password"})
+	r.loginAsAuthenticated("acct1", "sid")
+	r.mfa.enroll = func(authn.FactorKind, authn.StepInput) authn.Step {
+		if len(r.mfa.enrolls) == 1 {
+			return authn.StepPrompt("code", nil, authn.Field{Name: "code", Kind: authn.FieldCode, Required: true})
+		}
+		return authn.StepEnrolled(authn.FactorRecord{ID: "f1", Kind: authn.FactorTOTP, Status: authn.FactorActive})
+	}
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"enroll","input":{"kind":"totp"}}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	seq := int(decode(t, start.Body.String())["seq"].(float64))
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer",
+		`{"seq":`+itoa(seq)+`,"step":"enroll","input":{"code":"123456"}}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the completing enrollment step answered %d: %s", done.Code, done.Body.String())
+	}
+
+	if len(r.mfa.enrollFound) != 2 {
+		t.Fatalf("MFA.Enroll ran %d times, want the prompt and the completing step", len(r.mfa.enrollFound))
+	}
+	if r.mfa.enrollFound[1] {
+		t.Errorf("the completing step ran under the identity %q, want the anonymous context its audit row has always used",
+			r.mfa.enrollIDs[1].Key())
+	}
+}
+
+// TestAnImpersonatedLinkAuditNamesTheOperator holds the two terminal rows of a
+// link completed while impersonating. The row's object is the impersonated
+// account, its actor is the operator, and the detail carries the journal's three
+// impersonation keys with the target, the grant's tenant and the session.
+func TestAnImpersonatedLinkAuditNamesTheOperator(t *testing.T) {
+	m := &redirectMethod{}
+	m.answer = func(authn.FlowState, authn.StepInput) (authn.Step, error) {
+		return authn.StepProven(authn.Proof{External: &authn.External{
+			Provider: "google", Subject: "g1", Email: "ann@x.org", EmailVerified: true,
+		}}), nil
+	}
+	r := newRigMethod(t, m)
+	r.impersonatedAuthenticated("acct-admin", "acct-target", "sid-op")
+	sink := &auditing{}
+	r.p.audit = sink
+
+	start := r.send(http.MethodPost, "/api/v1/auth/flows/authenticated",
+		`{"purpose":"link","method":"password","return_to":"/account/callback"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("POST flows/authenticated answered %d: %s", start.Code, start.Body.String())
+	}
+	cookie := flowCookie(t, start)
+	cb := r.send(http.MethodGet, "/api/v1/auth/callback/password", "", "Cookie", cookie)
+	if cb.Code != http.StatusSeeOther {
+		t.Fatalf("the link callback answered %d, want 303: %s", cb.Code, cb.Body.String())
+	}
+	done := r.send(http.MethodPost, "/api/v1/auth/flows/answer", `{"seq":1,"step":"complete"}`, "Cookie", cookie)
+	if done.Code != http.StatusOK {
+		t.Fatalf("the completing answer answered %d, want 200: %s", done.Code, done.Body.String())
+	}
+
+	rows := sink.rows()
+	ids, found := sink.writtenUnder()
+	index := -1
+	for i, row := range rows {
+		if row.Action == "authn.binding.link" {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		t.Fatalf("the audit holds no authn.binding.link row: %+v", rows)
+	}
+	row := rows[index]
+	if row.Object != "acct-target" || row.Outcome != "success" {
+		t.Errorf("the link row = %+v, want object acct-target and outcome success", row)
+	}
+	if row.Detail["provider"] != "google" {
+		t.Errorf("the link row's provider detail = %q, want google", row.Detail["provider"])
+	}
+	if !found[index] {
+		t.Fatal("the link row ran in the anonymous context of the Open reply route, so its actor is the target rather than the operator")
+	}
+	if got, want := ids[index].Key(), "acct-admin"; got != want {
+		t.Errorf("the link row's actor = %q, want the operator %q", got, want)
+	}
+	requireImpersonationDetail(t, row.Detail)
+}
+
+// requireOperatorIdentity holds an identity to the operator's facts under an
+// impersonation: the actor key is the operator, the account is the effective
+// account, and the grant's tenant and the session are set.
+func requireOperatorIdentity(t *testing.T, id authn.Identity) {
+	t.Helper()
+	scope, scoped := id.Scope()
+	if !id.Impersonating() || id.Key() != "acct-admin" || id.Account() != "acct-target" ||
+		!scoped || scope != "tenant-a" || id.Session() != "sid-op" {
+		t.Errorf("the identity is key %q, account %q, scope %q (scoped %t), session %q (impersonating %t); "+
+			"want the operator acct-admin acting for acct-target in tenant-a under sid-op",
+			id.Key(), id.Account(), scope, scoped, id.Session(), id.Impersonating())
+	}
+}
+
+// requireImpersonationDetail holds a completed row's detail to the journal's
+// three impersonation keys and the values the impersonated flow fixes.
+func requireImpersonationDetail(t *testing.T, detail map[string]string) {
+	t.Helper()
+	want := map[string]string{
+		"on_behalf_of":        "acct-target",
+		"impersonation_scope": "tenant-a",
+		"session":             "sid-op",
+	}
+	for key, value := range want {
+		if got := detail[key]; got != value {
+			t.Errorf("the detail's %s = %q, want %q; detail = %v", key, got, value, detail)
+		}
+	}
+}
+
 // TestAnImpersonatedFlowIsRefusedWithoutTheImpersonationCapability holds the
 // absent-dependency direction: an assembly with no impersonation capability
 // cannot confirm the record, so the completion of an impersonating flow is

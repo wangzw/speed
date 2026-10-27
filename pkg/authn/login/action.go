@@ -288,7 +288,7 @@ func (r *routes) completeLink(c *call, rec record) {
 			"cause", err.Error())
 	}
 	r.publishBinding(c.ctx, account, ext.Provider)
-	r.auditBindingLink(c, account, ext.Provider)
+	r.auditBindingLink(c, rec, ext.Provider)
 	writeAction(c, stateLinked)
 }
 

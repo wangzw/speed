@@ -194,30 +194,59 @@ func (r *routes) publishLogin(ctx context.Context, account authn.AccountID, sess
 // table. It is in the best-effort tier beside the unlink path's own action.
 const actionBindingLink = "authn.binding.link"
 
+// flowIdentity is the identity a flow's terminal action is audited under,
+// derived from the flow record. The account is the effective account the action
+// lands on. An impersonating flow also carries the operator that started it,
+// the grant's tenant and the session it runs in, so the journal writes the row's
+// actor as the operator and its on_behalf_of, impersonation_scope and session
+// detail from the impersonated account, the scope and the session. A flow the
+// account's own holder started has no actor, so its row's actor is that account
+// and the journal adds no impersonation detail.
+func (r *routes) flowIdentity(rec record) authn.Identity {
+	p := authn.Principal{
+		Account:  authn.AccountID(rec.Account),
+		Session:  authn.SessionID(rec.Session),
+		AuthTime: r.clock.Now(),
+	}
+	if rec.Impersonation != "" {
+		p.Actor = authn.AccountID(rec.Actor)
+		p.Scope = rec.Scope
+	}
+	return identity.New(p, "", "")
+}
+
+// flowAuditContext is the context one terminal audit write of a flow is made
+// under. The flow's routes are public, so the request carries no identity and
+// the row would otherwise lose the operator; the context is derived for this one
+// call and is never handed to a handler or written back to the request.
+func (r *routes) flowAuditContext(ctx context.Context, rec record) context.Context {
+	return identity.With(ctx, r.flowIdentity(rec))
+}
+
 // auditBindingLink writes the best-effort audit row of a completed link: a
 // failure is an Error and never fails the link. The object is the account the
 // identity was bound to and the detail names the provider class, which is the
 // shape the unlink path records its own row in.
 //
-// The row's actor is the account the link was made for. The flow's routes are
-// public, so the request carries no identity and the row would otherwise be
-// written with an empty actor; the context it is written under is derived for
-// this one call, exactly as auditLogin derives its own. It is handed to no
-// handler and never becomes the request's context.
-func (r *routes) auditBindingLink(c *call, account authn.AccountID, provider string) {
+// The row's actor is the operator the flow was started by and, under an
+// impersonation, the detail carries the impersonated account, the grant's tenant
+// and the session; a link the account's own holder made has that account as its
+// actor. The flow's routes are public, so the request carries no identity and
+// the row would otherwise be written without one; the context it is written
+// under is derived from the flow's record for this one call, exactly as
+// auditLogin derives its own. It is handed to no handler and never becomes the
+// request's context.
+func (r *routes) auditBindingLink(c *call, rec record, provider string) {
 	if r.audit == nil {
 		return
 	}
 	base := c.ctx
-	id := identity.New(authn.Principal{
-		Account:  account,
-		AuthTime: r.clock.Now(),
-	}, "", "")
+	account := authn.AccountID(rec.Account)
 	detail := map[string]string{}
 	if class, known := bindingProviderClass(provider); known {
 		detail["provider"] = class
 	}
-	err := r.audit.Record(identity.With(base, id), audit.Entry{
+	err := r.audit.Record(r.flowAuditContext(base, rec), audit.Entry{
 		Action:  actionBindingLink,
 		Object:  string(account),
 		Outcome: outcomeSuccess,
