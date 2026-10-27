@@ -6,12 +6,11 @@
 //
 // Every route runs on the identity the gateway authenticated. A route that
 // changes how the account is proven asks for a fresh authentication first (a
-// local multi-factor one when the account has an active factor, a first factor
-// otherwise), goes through the Mounter's cross-origin check, and is refused
-// whenever the identity is an impersonation: the gateway already answers 401
-// for such a request because none of these routes is registered as
-// impersonable, and the handler answers 403 again as the fallback for a
-// registration that was made wrongly.
+// local multi-factor one when the effective account has an active factor, a
+// first factor otherwise), goes through the Mounter's cross-origin check, and is
+// open to an impersonating identity: the change is the effective account's own,
+// so the requirement is taken from the impersonated account's factors while the
+// proof is the operator's own.
 //
 // The package depends on the root package's interfaces, on the route
 // components in internal/mount and on kv.KV. It knows nothing of the login
@@ -154,34 +153,37 @@ const (
 // accepts a post.
 //
 // Every route is guarded: the gateway authenticates it, and a request without a
-// credential never reaches a handler.
+// credential never reaches a handler. Every route is registered impersonable:
+// the change is the effective account's own, so an impersonating identity makes
+// it as the account's holder would.
 func (s *Service) Mount(m mount.Mounter, rel func(string) string, post func(name string)) {
 	r := &routes{Service: s, endpoint: m.Endpoint()}
 	mount.Declared(m, passwordOperation, rel(pathPassword),
-		withWriter(r.guardedBody(actionPasswordChange, passwordOperation.Handle(r.changePassword))))
+		withWriter(r.guardedBody(actionPasswordChange, passwordOperation.Handle(r.changePassword))), mount.Impersonable())
 	if s.deps.SMSCodes != nil {
 		mount.Declared(m, startPhoneOperation, rel(pathPhone),
-			withWriter(r.guardedBody("", startPhoneOperation.Handle(r.startPhone))))
+			withWriter(r.guardedBody("", startPhoneOperation.Handle(r.startPhone))), mount.Impersonable())
 		mount.Declared(m, verifyPhoneOperation, rel(pathPhoneVerify),
-			withWriter(r.guardedBody("", verifyPhoneOperation.Handle(r.verifyPhone))))
+			withWriter(r.guardedBody("", verifyPhoneOperation.Handle(r.verifyPhone))), mount.Impersonable())
 		postFeature(post, FeaturePhone)
 	}
 	if s.deps.EmailSender != nil {
 		postFeature(post, FeatureEmail)
 	}
 	mount.Declared(m, addIdentifierOperation, rel(pathIdentifiers),
-		withWriter(r.guardedBody("", addIdentifierOperation.Handle(r.addIdentifier))))
+		withWriter(r.guardedBody("", addIdentifierOperation.Handle(r.addIdentifier))), mount.Impersonable())
 	mount.Declared(m, verifyIdentifierOperation, rel(pathIdentifiersVerify),
-		withWriter(r.guardedBody("", verifyIdentifierOperation.Handle(r.verifyIdentifier))))
+		withWriter(r.guardedBody("", verifyIdentifierOperation.Handle(r.verifyIdentifier))), mount.Impersonable())
 	mount.Declared(m, removeIdentifierOperation, rel(pathIdentifier),
-		withWriter(removeIdentifierOperation.Handle(r.removeIdentifier)))
-	mount.Declared(m, unlinkOperation, rel(pathLink), withWriter(unlinkOperation.Handle(r.unlink)))
+		withWriter(removeIdentifierOperation.Handle(r.removeIdentifier)), mount.Impersonable())
+	mount.Declared(m, unlinkOperation, rel(pathLink), withWriter(unlinkOperation.Handle(r.unlink)), mount.Impersonable())
 }
 
 // guardedBody applies the capability's body rules before the entry point binds
 // a write route's body: the media type, then the identity, session and
 // freshness checks the handler makes first, then the 64 KiB cap. The caller the
-// check decided is carried to the handler, so the checks run once.
+// check decided is carried to the handler, so the checks run once. An
+// impersonating identity passes: the route acts for the effective account.
 func (r *routes) guardedBody(action string, next gin.HandlerFunc) gin.HandlerFunc {
 	return mount.GuardBody(func(c *gin.Context) bool {
 		call := r.call(c.Request.Context(), nil)

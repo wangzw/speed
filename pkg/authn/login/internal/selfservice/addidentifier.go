@@ -241,9 +241,10 @@ func normalizeEmail(raw string) (string, bool) {
 // where the identifier is written with the proof.
 //
 // The write is held to the same freshness as every other change of what proves
-// the account, refuses an impersonation, and ends like the phone routes: the
-// current session gets a fresh token and the account's other sessions are
-// revoked, because a new login name is a new way into the account.
+// the account, acts for the effective account whether or not the identity is
+// impersonating, and ends like the phone routes: the current session gets a
+// fresh token and the account's other sessions are revoked, because a new login
+// name is a new way into the account.
 func (r *routes) addIdentifier(ctx context.Context, in addIdentifierInput, meta *speedhttp.Meta) (speedhttp.Reply, error) {
 	c := r.call(ctx, meta)
 	who, ok := r.authorize(c, "")

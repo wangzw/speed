@@ -42,20 +42,19 @@ func TestTheRoutesAreTheseAndNoOthers(t *testing.T) {
 	}
 }
 
-// TestEveryRouteIsGuardedAndNoneIsImpersonable holds the access level of each
+// TestEveryRouteIsGuardedAndImpersonable holds the access level of each
 // registration. A route registered as public or optional would be reachable with
-// no identity, and one registered as impersonable would let the gateway pass an
-// impersonating identity to a handler that changes the account. None of these
-// routes is impersonable: the profile, which an impersonating identity may read,
-// is the profile module's route.
-func TestEveryRouteIsGuardedAndNoneIsImpersonable(t *testing.T) {
+// no identity; every route here changes how the account is proven, so each is
+// guarded and each is impersonable, because the change is the effective
+// account's own.
+func TestEveryRouteIsGuardedAndImpersonable(t *testing.T) {
 	h := newHarness(t)
 	for _, r := range h.m.Registrations() {
 		if r.Kind != mounttest.Guarded {
 			t.Errorf("%v %s is %s, want guarded", r.Methods, r.Path, r.Kind)
 		}
-		if r.Impersonable {
-			t.Errorf("%v %s is impersonable, and none of these routes is", r.Methods, r.Path)
+		if !r.Impersonable {
+			t.Errorf("%v %s is not impersonable, and every self-service route is", r.Methods, r.Path)
 		}
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vislake/speed/pkg/authn"
 	"github.com/vislake/speed/pkg/authn/authntest"
 )
 
@@ -15,63 +16,45 @@ func (h *harness) impersonating() {
 	h.as(append(localMulti(time.Second), authntest.WithActor("admin-1"), authntest.WithScope("tenant-a"))...)
 }
 
-// TestAnImpersonatingIdentityIsRefusedByEveryRouteBeforeAnyCall puts an
-// impersonating identity in front of the handlers directly, which is what a route
-// registered as impersonable by mistake would do. Each is a 403
-// impersonation-restricted, and nothing downstream is touched: no factor read, no
-// password written, no code sent, no store, no audit row, no event.
-func TestAnImpersonatingIdentityIsRefusedByEveryRouteBeforeAnyCall(t *testing.T) {
-	for _, tc := range mutating {
-		t.Run(tc.name, func(t *testing.T) {
-			h := newHarness(t, func(c *config) { c.impersonable = true })
-			h.impersonating()
-			w := h.do(tc.req)
-			if w.Code != http.StatusForbidden || problemType(t, w) != "impersonation-restricted" {
-				t.Fatalf("answer = %d %s, want 403 impersonation-restricted", w.Code, w.Body)
-			}
-			if calls := h.log.all(); len(calls) != 0 {
-				t.Errorf("an impersonating request made calls: %v", calls)
-			}
-			if rows, events := h.audit.entries(), h.bus.published(); len(rows) != 0 || len(events) != 0 {
-				t.Errorf("an impersonating request wrote %v and published %v", rows, events)
-			}
-			if w.Header().Get("Set-Cookie") != "" {
-				t.Error("an impersonating request was given a cookie")
-			}
-		})
+// TestAnImpersonatingIdentityChangesTheEffectiveAccountsPassword holds that the
+// routes act for the impersonated account instead of refusing the identity: the
+// password written is the effective account's, the rotated session is the
+// operator's own, and the sessions revoked as the others are the effective
+// account's.
+func TestAnImpersonatingIdentityChangesTheEffectiveAccountsPassword(t *testing.T) {
+	h := newHarness(t)
+	h.impersonating()
+	w := h.put("/password", newPassword)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("PUT /password while impersonating = %d %s, want 204", w.Code, w.Body)
+	}
+	if len(h.pw.sets) != 1 || h.pw.sets[0].account != account {
+		t.Errorf("Set was called with %+v, want the effective account %q", h.pw.sets, account)
+	}
+	if len(h.sessions.rotated) != 1 || h.sessions.rotated[0] != session {
+		t.Errorf("Rotate was called for %v, want the operator's session %q", h.sessions.rotated, session)
+	}
+	if len(h.sessions.revoked) != 1 || h.sessions.revoked[0] != (revokeCall{account, session, authn.ReasonPasswordChange}) {
+		t.Errorf("RevokeAccount was called with %+v, want the effective account's other sessions", h.sessions.revoked)
 	}
 }
 
-// TestTheImpersonationCheckComesBeforeTheFreshnessOne holds the order: an
-// impersonating identity whose proof is also stale is told it is restricted, not
-// asked to prove itself again, and the account's factors are not read for it.
-func TestTheImpersonationCheckComesBeforeTheFreshnessOne(t *testing.T) {
-	h := newHarness(t, func(c *config) { c.impersonable = true })
-	h.activeFactor()
-	h.as(append(single(time.Hour), authntest.WithActor("admin-1"), authntest.WithScope("tenant-a"))...)
-	w := h.put("/password", `{"new_password":"x"}`)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("answer = %d, want 403", w.Code)
-	}
-	if h.log.count("mfa.Factors") != 0 {
-		t.Error("the factors were read for an impersonating identity")
-	}
-}
-
-// TestTheGatewayRefusesAnImpersonatingIdentityOnEveryRoute holds the layering
-// with the routes registered as they are: none of the five is impersonable, so
-// the gateway's 401 answers before a handler is called.
-func TestTheGatewayRefusesAnImpersonatingIdentityOnEveryRoute(t *testing.T) {
+// TestNoSelfServiceRouteRefusesAnImpersonatingIdentity holds that the guard of
+// every self-service route lets an impersonating identity through: the route
+// then acts for the effective account or refuses for its own reason, and the
+// freshness the effective account calls for is decided from that account.
+func TestNoSelfServiceRouteRefusesAnImpersonatingIdentity(t *testing.T) {
 	for _, tc := range mutating {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
+			h.richAccount()
 			h.impersonating()
 			w := h.do(tc.req)
-			if w.Code != http.StatusUnauthorized {
-				t.Fatalf("answer = %d, want the gateway's 401", w.Code)
+			if w.Code == http.StatusForbidden && problemType(t, w) == "impersonation-restricted" {
+				t.Fatalf("answer = %d %s, want the route to act for the effective account", w.Code, w.Body)
 			}
-			if calls := h.log.all(); len(calls) != 0 {
-				t.Errorf("calls = %v", calls)
+			if h.log.count("mfa.Factors") != 1 {
+				t.Errorf("the guard's factor read did not run: calls = %v", h.log.names())
 			}
 		})
 	}

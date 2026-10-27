@@ -144,19 +144,11 @@ func busyFailure(description string) speedhttp.Response {
 	return response
 }
 
-// impersonation is the refusal every route here writes for an impersonating
-// identity.
-func impersonation() speedhttp.Response {
-	return speedhttp.ProblemResponse(http.StatusForbidden, "The identity is impersonating, which the route refuses")
-}
-
-// sendImpersonation is the 403 of a route that sends a verification message: the
-// impersonation refusal, and the human-verification refusal a deployment may
-// turn on.
-func sendImpersonation() speedhttp.Response {
+// humanRefused is the 403 of a route that sends a verification message: the
+// human-verification refusal a deployment may turn on.
+func humanRefused() speedhttp.Response {
 	return speedhttp.ProblemResponse(http.StatusForbidden,
-		"The identity is impersonating, which the route refuses, or a human-verification proof is missing "+
-			"or invalid (human-verification-required)")
+		"A human-verification proof is missing or invalid (human-verification-required)")
 }
 
 // mediaType is the refusal of a body of another media type.
@@ -203,7 +195,7 @@ var passwordOperation = speedhttp.NewReplyOperation[changePasswordInput](
 	"Change the caller's password",
 	"Changes the caller's password. The call requires the fresh authentication every change of what proves "+
 		"the account asks for — a fresh local multi-factor when the account holds an active factor, a fresh "+
-		"first factor otherwise — and refuses an impersonating identity with 403 impersonation-restricted. The "+
+		"first factor otherwise. The "+
 		"current password may be empty for an account that signed up through a provider and holds no "+
 		"password; a wrong one is a 401 login-failed, and a new password outside the password module's policy "+
 		"is a 400 bad-request. On success the current session is rotated to a new token, the account's other "+
@@ -219,7 +211,6 @@ var passwordOperation = speedhttp.NewReplyOperation[changePasswordInput](
 		badRequest("The new password is outside the policy"),
 		bodyOverLimit,
 		unauthorized("No usable credential, or the current password did not hold"),
-		impersonation(),
 		speedhttp.ProblemResponse(http.StatusConflict, "The request conflicts with the account's state"),
 		mediaType(),
 		tooMany(),
@@ -251,7 +242,7 @@ var startPhoneOperation = speedhttp.NewReplyOperation[startPhoneInput](
 		badRequest("The body could not be read, the number is outside its domain, or the proof is over its limit"),
 		bodyOverLimit,
 		unauthorized("No usable credential"),
-		sendImpersonation(),
+		humanRefused(),
 		mediaType(),
 		tooMany(),
 		unavailable("A dependency could not answer"),
@@ -282,7 +273,6 @@ var verifyPhoneOperation = speedhttp.NewReplyOperation[verifyPhoneInput](
 		badRequest("The body could not be read, or the code is empty or longer than 32 bytes"),
 		bodyOverLimit,
 		unauthorized("No usable credential"),
-		impersonation(),
 		speedhttp.ProblemResponse(http.StatusConflict, "The number belongs to another account"),
 		mediaType(),
 		tooMany(),
@@ -298,8 +288,8 @@ var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput]
 	"Removes one login identifier the caller's account holds. The identifier must be the caller's own: one "+
 		"that does not exist and one that belongs to another account are answered identically as a 400 "+
 		"bad-request, so the route discloses nothing about what another account holds. The call requires the "+
-		"fresh authentication every change of what proves the account asks for and refuses an impersonating "+
-		"identity. An account that holds a password credential cannot lose its last username or email address: "+
+		"fresh authentication every change of what proves the account asks for. An account that holds a "+
+		"password credential cannot lose its last username or email address: "+
 		"that removal is a 409 login-identifier-required and changes nothing. An account without a password "+
 		"credential may lose its last login name, and removing a phone number is always allowed. Unlike the "+
 		"routes that add a way in, this one does not revoke the caller's other sessions, and it publishes no "+
@@ -309,7 +299,6 @@ var removeIdentifierOperation = speedhttp.NewReplyOperation[identifierPathInput]
 		{Status: http.StatusNoContent, Description: "The identifier was removed"},
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The identifier cannot be removed"),
 		unauthorized("No usable credential"),
-		impersonation(),
 		speedhttp.ProblemResponseOf(http.StatusConflict,
 			"The removal would leave a password account with no login name", typePrefix+mount.CodeLoginIdentifierRequired),
 		tooMany(),
@@ -328,7 +317,7 @@ var addIdentifierOperation = speedhttp.NewReplyOperation[addIdentifierInput](
 		"`POST /auth/identifiers/verify` accepts the code. A second code to the same normalized address within "+
 		"the resend interval is a 429 throttled; the window is held against the address and shared across "+
 		"sessions and accounts. The call requires the fresh authentication every change of what proves the "+
-		"account asks for and refuses an impersonating identity; a write rotates the caller's session token and "+
+		"account asks for; a write rotates the caller's session token and "+
 		"revokes the account's other sessions. A login name or address another account holds is a 409 conflict, "+
 		"and a deployment with no email channel answers the email branch with 503 unavailable.",
 	&speedhttp.RequestBody{
@@ -342,7 +331,7 @@ var addIdentifierOperation = speedhttp.NewReplyOperation[addIdentifierInput](
 		badRequest("The body could not be read, the kind or the value is outside its domain, or the proof is over its limit"),
 		bodyOverLimit,
 		unauthorized("No usable credential, or the freshness a change of what proves the account asks for"),
-		sendImpersonation(),
+		humanRefused(),
 		speedhttp.ProblemResponse(http.StatusConflict, "The login name or address belongs to another account"),
 		mediaType(),
 		tooMany(),
@@ -373,7 +362,6 @@ var verifyIdentifierOperation = speedhttp.NewReplyOperation[verifyIdentifierInpu
 		badRequest("The body could not be read, or the code is empty or longer than 32 bytes"),
 		bodyOverLimit,
 		unauthorized("No usable credential, or no pending verification for this session"),
-		impersonation(),
 		speedhttp.ProblemResponse(http.StatusConflict, "The address belongs to another account"),
 		mediaType(),
 		tooMany(),
@@ -389,8 +377,8 @@ var unlinkOperation = speedhttp.NewReplyOperation[linkPathInput](
 	"Unbinds one external identity from the caller's account. The binding must be the caller's own; one that "+
 		"is not, whether it does not exist or belongs to another account, is a 400 bad-request. The call "+
 		"requires the fresh authentication every change of what proves the account asks for — a multi-factor "+
-		"assurance merely declared by an identity provider does not count — and refuses an impersonating "+
-		"identity. The account module refuses to remove the last way to sign in (409 conflict); a way only an "+
+		"assurance merely declared by an identity provider does not count. The account module refuses to remove "+
+		"the last way to sign in (409 conflict); a way only an "+
 		"identity provider declared does not count as a way to sign in, which is why this route asks for local "+
 		"freshness. On success the call publishes `authn.binding.changed` when the provider is in the event "+
 		"payload's closed set, rotates the caller's session token, revokes the account's other sessions, and "+
@@ -400,7 +388,6 @@ var unlinkOperation = speedhttp.NewReplyOperation[linkPathInput](
 		{Status: http.StatusNoContent, Description: "The external identity was unbound"},
 		speedhttp.ProblemResponse(http.StatusBadRequest, "The binding cannot be removed"),
 		unauthorized("No usable credential"),
-		impersonation(),
 		speedhttp.ProblemResponse(http.StatusConflict, "The binding is the account's last way in"),
 		tooMany(),
 		unavailable("A dependency could not answer"),

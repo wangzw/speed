@@ -8,7 +8,6 @@ import (
 
 	"github.com/vislake/speed/pkg/audit"
 	"github.com/vislake/speed/pkg/authn"
-	"github.com/vislake/speed/pkg/authn/internal/mount"
 	"github.com/vislake/speed/pkg/event"
 	"github.com/vislake/speed/pkg/log"
 )
@@ -52,13 +51,16 @@ func callerFrom(ctx context.Context) (caller, bool) {
 // before it reads the request body or calls anything. It answers the request and
 // returns false when the identity may not go on:
 //
-//   - an impersonating identity is refused with 403 impersonation-restricted,
-//     before any call is made;
 //   - an identity with no login session has nothing to revoke the others
 //     against and is refused with the plain 401;
 //   - an identity that does not meet the freshness the account's factors call
 //     for is refused with the step-up 401. A requirement that cannot be decided
 //     because the factors cannot be read is a 503.
+//
+// An impersonating identity is not refused: the change is the effective
+// account's own, so the caller it returns names the impersonated account and
+// the operator's session. The requirement is taken from the effective account's
+// factors, while the proof it is held to is the operator's own.
 //
 // action names the audit action of a refusal for a step-up, empty for a route
 // whose refusals leave no row.
@@ -70,10 +72,6 @@ func (r *routes) authorize(c *call, action string) (caller, bool) {
 	id, ok := authn.FromContext(ctx)
 	if !ok || id.Account() == "" {
 		c.unauthorized("")
-		return caller{}, false
-	}
-	if id.Impersonating() {
-		c.forbidden(mount.CodeImpersonationRestricted)
 		return caller{}, false
 	}
 	if id.Session() == "" {
