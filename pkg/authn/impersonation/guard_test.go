@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,26 +30,48 @@ func TestAnImpersonatingIdentityIsKeyedByItsActor(t *testing.T) {
 	}
 }
 
-// TestGuardRequireRefusesAnImpersonatingIdentity holds the acceptance the design
-// names: because the level is capped at a single factor, a route that requires a
-// multi-factor authentication refuses an impersonating identity with the step-up
-// 401, whatever the administrator's own session carried.
-func TestGuardRequireRefusesAnImpersonatingIdentity(t *testing.T) {
-	ctx := authntest.Context(t, context.Background(), impersonatingOpts(sessionBackend)...)
-
-	reached := false
-	e := gin.New()
-	e.GET("/x", guard.Require(authn.Requirement{Assurance: authn.AssuranceMulti}), func(c *gin.Context) {
-		reached = true
-		c.Status(http.StatusOK)
-	})
-	w := httptest.NewRecorder()
-	e.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(ctx))
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", w.Code)
+// TestGuardRequireDecidesAnImpersonatingIdentityByTheOperatorsLevel holds the
+// step-up decision on an impersonating identity: the operator is the one who
+// authenticated, so the identity carries the operator's level and a route that
+// requires multi-factor authentication is met by a multi-factor operator and
+// refused to a single-factor one.
+func TestGuardRequireDecidesAnImpersonatingIdentityByTheOperatorsLevel(t *testing.T) {
+	cases := []struct {
+		name       string
+		assurance  authn.Assurance
+		wantStatus int
+		wantPass   bool
+	}{
+		{"a multi-factor operator meets a multi-factor requirement", authn.AssuranceMulti, http.StatusOK, true},
+		{"a single-factor operator falls short of it", authn.AssuranceSingle, http.StatusUnauthorized, false},
 	}
-	if reached {
-		t.Error("the handler past the step-up middleware ran")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := authntest.Context(t, context.Background(),
+				authntest.WithAccount(targetID),
+				authntest.WithActor(actorID),
+				authntest.WithSession(sessionID),
+				authntest.WithScope(tenantA),
+				authntest.WithAssurance(c.assurance),
+				authntest.WithAuthTime(time.Now()),
+				authntest.WithBackend(sessionBackend),
+			)
+
+			reached := false
+			e := gin.New()
+			e.GET("/x", guard.Require(authn.Requirement{Assurance: authn.AssuranceMulti}), func(c *gin.Context) {
+				reached = true
+				c.Status(http.StatusOK)
+			})
+			w := httptest.NewRecorder()
+			e.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/x", nil).WithContext(ctx))
+
+			if w.Code != c.wantStatus {
+				t.Fatalf("status = %d, want %d", w.Code, c.wantStatus)
+			}
+			if reached != c.wantPass {
+				t.Errorf("the handler past the step-up middleware ran = %t, want %t", reached, c.wantPass)
+			}
+		})
 	}
 }
